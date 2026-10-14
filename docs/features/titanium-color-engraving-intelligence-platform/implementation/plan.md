@@ -127,3 +127,23 @@ Implement an offline acquisition algorithm that scores candidate parameter sets 
 
 Requirements: REQ-001, REQ-006, REQ-015, REQ-016
 Decisions: DEC-009, DEC-013, DEC-015, DEC-016
+
+## Implementation status
+
+Branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0. GitHub issue #n tracks plan item I-n; issues close only when the work is merged. "Implemented" means code and automated tests exist; "not verified" names what no test can show.
+
+| Item | Status | Code | Not verified / open |
+|---|---|---|---|
+| I-1 | Implemented | `db.py`, `profiles.py`, `api/`, `cli.py`, `ui/` | Tablet access tested only on this Mac (`--host 0.0.0.0`). |
+| I-2 | Implemented | `plans.py` | Exported `.lbrn2` (incl. N=32) not yet opened in LightBurn 2.1.04; checked by re-reading with `lightburn.py`. Marker format and marker-layer settings are proposed (DEC-027). |
+| I-3 | Implemented | `lightburn.py`, `ingest.py` | Parser checked against one real `.lbrn2` file; curved paths are approximated by their vertices. |
+| I-4 | Implemented | `photo.py`, `ingest.py` | Chart detection and correction verified on OpenCV test images and synthetic renders only, not on a real RAW rig photo (DEC-025). Edge exclusion is proposed (DEC-028). |
+| I-5 | Implemented | `model.py` | Estimate formulas are proposed (DEC-026, DEC-029). |
+| I-6 | Implemented | `knowledge.py` | Independence per DEC-021; thresholds have no defaults and must be agreed by the operator. Lower-stage rules are proposed (DEC-029). |
+| I-7 | Implemented | `conversion.py` (discrete) | Threshold semantics proposed (DEC-030). |
+| I-8 | Implemented | `conversion.py` (continuous) | Mapping without parameter interpolation proposed (DEC-032). |
+| I-9 | Implemented | `analysis.py` | Uses the shared ingestion path; real engraved results not yet measured. |
+| I-10 | Implemented | `designer.py` | Model and acquisition defaults proposed (DEC-033). No LLM adapter is wired; only the text-attachment interface exists. |
+
+Browser UI: Russian (DEC-034), visual system of prototype v10 (DEC-019). Walked through in a browser with synthetic files: profile, rig, marker layer, plate preview and creation, pair upload, check, mask overlay, accept, analysis, color map, knowledge, discrete conversion with an unreachable color excluded, plan export. Four defects found that way were fixed with regression tests.
+
