@@ -79,3 +79,42 @@ def test_the_currentTarget_guard_flags_the_original_bug_and_accepts_the_fix():
     assert offending_lines(fixed) == []
     assert offending_lines("ev.currentTarget.disabled = true;") != []   # reading it directly is flagged even before an await
 
+
+
+def test_ui_files_are_revalidated_so_an_upgrade_takes_effect_on_reload(tmp_path):
+    """Regression: without Cache-Control a reloaded tab kept the old screen scripts after they changed."""
+    with TestClient(create_app(tmp_path / "d")) as c:
+        for path in ("/", "/index.html", "/styles.css", "/app.js", "/screens/designer.js", "/some/client/route"):
+            r = c.get(path)
+            assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache", path
+        etag = c.get("/styles.css").headers["etag"]
+        assert c.get("/styles.css", headers={"If-None-Match": etag}).status_code == 304   # still cheap when unchanged
+
+
+def test_fields_and_buttons_in_one_line_use_the_bottom_aligned_toolbar():
+    """Regression: in a centred flex row the button sat 14 px above the inputs (the label pushes the input down)."""
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\.toolbar \{[^}]*align-items:flex-end", css)
+    offenders = []
+    for src in SCRIPTS:
+        for n, line in enumerate((UI_DIR / src.lstrip("/")).read_text(encoding="utf-8").splitlines(), start=1):
+            if re.search(r"class: '(card )?row'\}, (field\(|h\('div', \{(style: 'min-width|class: 'f-wrap))", line):
+                offenders.append(f"{src}:{n}")
+    assert offenders == [], "a row starts with a labelled field; use class 'toolbar':\n" + "\n".join(offenders)
+
+
+def test_every_file_input_is_shown_through_the_russian_file_picker():
+    """Regression: the native file input showed 'Choose File / no file selected' in English, off-centre in its box."""
+    pattern = re.compile(r"field\('[^']*', (\w+)\)")
+    offenders = []
+    for src in SCRIPTS:
+        text = (UI_DIR / src.lstrip("/")).read_text(encoding="utf-8")
+        file_vars = set(re.findall(r"const (\w+) = h\('input', \{type: 'file'", text))
+        for var in file_vars:
+            if f"App.filePick({var}" not in text:
+                offenders.append(f"{src}: {var}")
+        offenders += [f"{src}: {m} passed raw to field()" for m in pattern.findall(text) if m in file_vars]
+    assert offenders == [], "wrap file inputs with App.filePick(input, label):\n" + "\n".join(offenders)
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert ".file-field>input.file-native" in css and "opacity:0" in css   # the real input stays clickable on top
+

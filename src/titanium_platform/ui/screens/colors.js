@@ -60,9 +60,10 @@
         s && s.available ? num(s.confidence) : '—', s && s.available ? num(s.expected_delta_e) : '—', s ? stab(s.stability) : '—'];
     });
     const header = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных версий профиля не объединяются.')),
-      h('span', {class: 'spacer'}), h('div', {style: 'min-width:240px'}, field('Версия профиля', picker)), btn('Целевой цвет', () => predictDialog(pid), 'primary'), link('/designer?profile=' + pid, 'Спланировать эксперимент'));
-    if (!map.samples.length) return h('div', {class: 'stack'}, header, h('div', {class: 'card empty'}, h('h3', {}, 'Для этой версии профиля нет наблюдений'), link('/ingest', 'Добавить наблюдение')));
-    return h('div', {class: 'stack'}, header,
+      h('span', {class: 'spacer'}));
+    const controls = h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap wide'}, field('Версия профиля', picker)), btn('Целевой цвет', () => predictDialog(pid), 'primary'), link('/designer?profile=' + pid, 'Спланировать эксперимент'));
+    if (!map.samples.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этой версии профиля нет наблюдений'), link('/ingest', 'Добавить наблюдение')));
+    return h('div', {class: 'stack'}, header, controls,
       h('div', {class: 'card'}, h('h3', {}, 'Покрытие в плоскости a × b'), mapPlot(map.samples),
         h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок (одна гравировка). Карта — приблизительное экранное представление Lab.')),
       map.unstable.length ? h('div', {class: 'alert warn'}, 'Нестабильные наборы: ' + map.unstable.map((u) => `${u.parameters.power}/${u.parameters.frequency}/${u.parameters.speed}`).join(', ')) : null,

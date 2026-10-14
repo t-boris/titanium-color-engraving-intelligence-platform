@@ -95,15 +95,16 @@ a.btn.primary:hover {color:#11192d}
 label.f {display:flex;flex-direction:column;gap:7px;min-width:0}
 label.f>span:first-child {font-size:12px;font-weight:650;color:#c6d1e4;letter-spacing:.15px}
 label.f>span.small {font-size:12px;color:var(--muted);line-height:1.5}
-input:not([type=checkbox]):not([type=radio]),select,textarea {width:100%;min-height:44px;padding:10px 13px;border:1px solid var(--line-2);border-radius:10px;
+input:not([type=checkbox]):not([type=radio]),select,textarea {width:100%;min-height:44px;height:44px;padding:10px 13px;border:1px solid var(--line-2);border-radius:10px;
   background:#0e1520;color:var(--text);box-shadow:inset 0 2px 5px #00000025;transition:border-color .18s,box-shadow .18s,background .18s}
 input:not([type=checkbox]):not([type=radio]):hover,select:hover,textarea:hover {border-color:#6d7d9a}
+textarea {height:auto;min-height:96px;resize:vertical}
 input:focus,select:focus,textarea:focus {outline:none;background:#111b2b;border-color:var(--accent);box-shadow:0 0 0 3px #a9b8ff20}
 input::placeholder,textarea::placeholder {color:#8796af}
 input:disabled,select:disabled {background:#1c2431;color:#8b98ac;border-color:var(--line)}
 input[type=checkbox],input[type=radio] {width:18px;height:18px;accent-color:var(--accent);flex:none}
-input[type=file] {padding:7px;font-size:13px}
-input[type=file]::file-selector-button {margin-right:12px;padding:8px 12px;border:1px solid #4b5c80;border-radius:8px;background:#27324b;color:#d3ddff;font:inherit;cursor:pointer}
+input[type=file] {height:auto;min-height:44px;padding:4px 6px;font-size:13px;line-height:1.4;overflow:visible}
+input[type=file]::file-selector-button {margin-right:12px;padding:6px 12px;border:1px solid #4b5c80;border-radius:8px;background:#27324b;color:#d3ddff;font:inherit;cursor:pointer}
 input[type=file]::file-selector-button:hover {background:#354360}
 label.row {cursor:pointer;gap:10px}
 details summary {cursor:pointer;color:#c6d1e4;font-weight:600;margin-bottom:10px}
@@ -186,3 +187,40 @@ svg[role=img] {display:block;border:1px solid #485776;border-radius:14px;box-sha
 }
 @media (prefers-reduced-motion:reduce) {*,*::before,*::after {animation:none!important;transition:none!important}}
 @media (forced-colors:active) {.btn,.card,.alert,.pill,input,select,textarea,.nav-link[aria-current=page] {border:1px solid CanvasText}}
+
+/* 6) панель управления: поля с подписями и кнопки в одной строке ------------------------------------------------
+   Кнопки и поля выравниваются по нижнему краю (линия полей ввода), а не по центру: подпись над полем
+   иначе сдвигает кнопку выше поля. Поля одинаковой ширины; кнопки высотой в поле (44 px). */
+.toolbar {display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 16px}
+.toolbar>label.f,.toolbar>.f-wrap {flex:0 1 220px;min-width:150px}
+.toolbar>label.f.wide,.toolbar>.f-wrap.wide {flex-basis:300px}
+.toolbar>.btn,.toolbar>a.btn {min-height:44px}
+.toolbar>a:not(.btn) {align-self:center;margin-top:24px}
+.toolbar>.spacer {align-self:stretch}
+.toolbar-hint {flex-basis:100%;margin:0;color:var(--muted);font-size:12px}
+
+/* 7) выпадающие списки -------------------------------------------------------------------------------------
+   WebKit (Safari и браузер MarkView) игнорирует высоту и отступы нативного <select> при appearance:auto: список
+   оставался 23 px вместо 44 px и выбивался из строки. Своё оформление и стрелка в стиле прототипа v10. */
+select {-webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:42px;line-height:1.4;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23bdc9dc' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px}
+select:hover:not(:disabled) {background-color:#131c2a}
+select:disabled {cursor:not-allowed;opacity:.7}
+select option {background:#141b26;color:var(--text)}
+select::-ms-expand {display:none}
+@media (forced-colors:active) {select {-webkit-appearance:auto;appearance:auto;background-image:none;padding-right:13px}}
+
+/* 8) выбор файла (filepick.js) ------------------------------------------------------------------------------
+   Настоящий input скрыт визуально, но остаётся в фокусе и принимает щелчок: он растянут поверх видимого поля. */
+.file-field {position:relative;display:block}
+.file-field>input.file-native {position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;opacity:0;cursor:pointer;z-index:1}
+.file-pick {display:flex;align-items:center;gap:12px;min-height:44px;padding:0 6px 0 5px;border:1px dashed #44536d;border-radius:10px;
+  background:#0e1520;box-shadow:inset 0 2px 5px #00000025;transition:border-color .18s,background .18s}
+.file-field:hover .file-pick {border-color:#6d7d9a;background:#111a28}
+.file-field>input.file-native:focus-visible+.file-pick {border-color:var(--accent);box-shadow:0 0 0 3px #a9b8ff33;outline:none}
+.file-pick .file-button {flex:none;min-height:32px;margin:0;pointer-events:none;background:#27324b;border-color:#4b5c80;color:#d3ddff}
+.file-pick .file-name {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8796af;font-size:13px}
+.file-pick.has-file {border-style:solid;border-color:#3e6b5c}
+.file-pick.has-file .file-name {color:#d7e0ef}
+.file-pick.has-file .file-name::before {content:"✓ ";color:var(--success)}

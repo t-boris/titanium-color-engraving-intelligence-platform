@@ -15,6 +15,20 @@ from .common import install_error_handlers
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 
+class UIFiles(StaticFiles):
+    """Static UI files that the browser must revalidate on every load.
+
+    Without a Cache-Control header browsers apply heuristic caching to the scripts, so after an upgrade a
+    tablet or a reloaded tab can keep running old screens against the new API. ``no-cache`` still allows the
+    cached copy, but only after a cheap ETag check, so an upgrade takes effect on the next reload.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app(data_dir: str | Path) -> FastAPI:
     app = FastAPI(title="Titanium Color Engraving Intelligence Platform", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.store = Store(data_dir)
@@ -37,8 +51,10 @@ def create_app(data_dir: str | Path) -> FastAPI:
         if request.url.path.startswith("/api/"):
             return JSONResponse({"error": "not found", "kind": "not_found"}, status_code=404)
         index = UI_DIR / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "not found"}, status_code=404)
+        if not index.exists():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
     if UI_DIR.exists():
-        app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
+        app.mount("/", UIFiles(directory=UI_DIR, html=True), name="ui")
     return app

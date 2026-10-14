@@ -48,7 +48,7 @@
     const body = tab === 'laser' ? laserTab(p, reload) : tab === 'material' ? SetupForms.materialTab(await get('/materials'), reload)
       : tab === 'stand' ? SetupForms.standTab(await get('/setups'), reload) : tab === 'rules' ? await SetupRules.rulesTab(p, reload) : await SetupRules.markersTab(reload);
     return h('div', {class: 'stack'}, h('h2', {}, 'Профили и условия измерения'), h('p', {class: 'sub'}, 'Лазер, титан, стенд и пороги оценки.'),
-      h('div', {class: 'row'}, h('div', {style: 'min-width:260px'}, field('Версия профиля', picker)), h('span', {class: 'spacer'}),
+      h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap wide'}, field('Версия профиля', picker)), h('span', {class: 'spacer'}),
         h('div', {class: 'row', role: 'tablist'}, TABS.map(([id, label]) => h('a', {href: `#/profiles?tab=${id}${p ? '&profile=' + p.id : ''}`, class: 'btn' + (id === tab ? ' primary' : ''), role: 'tab', 'aria-selected': id === tab}, label)))),
       body);
   }});

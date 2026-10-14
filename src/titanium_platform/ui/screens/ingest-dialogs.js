@@ -14,7 +14,7 @@ const IngestDialogs = (() => {
   /** «Исправить пару»: другой файл LightBurn. Проверка, подтверждение и проверка масок сбрасываются на сервере. */
   function fixFile(pair, reload) {
     const file = h('input', {type: 'file', accept: '.lbrn,.lbrn2'});
-    modal('Исправить пару', field('Другой файл LightBurn', file), [
+    modal('Исправить пару', field('Другой файл LightBurn', App.filePick(file, 'Выбрать файл LightBurn')), [
       {label: 'Отмена', run: (m) => m.close()},
       {label: 'Заменить файл', cls: 'primary', run: async (m) => {
         if (!file.files[0]) throw new Error('Выберите файл .lbrn или .lbrn2');
