@@ -244,6 +244,22 @@ def test_api_lens_flow(client):
     assert client.post("/api/lenses", json={"name": "x", "focal_length_mm": 1}).status_code == 422
 
 
+def test_m2_entered_next_to_the_lens_turns_the_bound_into_a_spot_and_keeps_the_rest_of_the_passport(client):
+    """The Lens tab saves M2 with the same PATCH as the passport form: the spot becomes calculated, the question goes, nothing else changes."""
+    d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
+    lens = client.post("/api/lenses", json={"name": "F174", "focal_length_mm": 174, "field_mm": 170}).json()
+    before = client.put(f"/api/devices/{d['id']}/lens", json={"lens_id": lens["id"]}).json()
+    spot = lambda dev: next(i for i in dev["characterization"]["items"] if i["key"] == "spot_diameter")
+    assert spot(before)["state"] == "reference" and spot(before)["waiting_for"] == ["m2"] and [q["kind"] for q in before["open_questions"]] == ["m2", "serial"]
+    after = client.patch(f"/api/devices/{d['id']}", json={"passport": before["passport"] | {"m2": 1.3, "spot_diameter_um": None}}).json()
+    assert spot(after)["basis"] == "calculated" and spot(after)["state"] == "used" and spot(after)["waiting_for"] == []
+    assert spot(after)["value"] == pytest.approx(4 * 1.3 * 1.064 * 174 / (math.pi * 7.0), rel=1e-9)
+    assert [q["kind"] for q in after["open_questions"]] == ["serial"]
+    assert after["lens"]["id"] == lens["id"] and after["passport"]["pulse_steps"] == before["passport"]["pulse_steps"]
+    cleared = client.patch(f"/api/devices/{d['id']}", json={"passport": after["passport"] | {"m2": None}}).json()
+    assert spot(cleared)["state"] == "reference" and "m2" in [q["kind"] for q in cleared["open_questions"]]
+
+
 def test_api_charts_and_the_operating_point_use_the_installed_lens(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
     client.patch(f"/api/devices/{d['id']}", json={"passport": d["passport"] | {"m2": 1.3}})
