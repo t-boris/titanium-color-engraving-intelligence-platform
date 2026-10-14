@@ -188,3 +188,13 @@ A. Read pulse width and line interval from each layer when the file has them. Co
 ### AI · 2026-10-14
 
 Recorded DEC-020 (Python/FastAPI/SQLite stack), DEC-021 (independent repetition = separate physical engraving) and DEC-022 (layers with different constants are imported as not comparable) from the answers above. Marked DEC-012 superseded by DEC-015, aligned DEC-014 with DEC-017, fixed the stale REQ-014 reference in DEC-013 and filled the empty Consequences of DEC-019. Proposed DEC-023 (SemVer from 0.1.0) and DEC-024 (build a wheel and install it into a local virtual environment) because the repository defines no versioning or deploy rules; both wait for confirmation.
+
+### Answer to Q-018 · 2026-10-14
+
+Which physical color reference chart is in the frame of every rig photograph?
+
+A. A standard 24-patch ColorChecker Classic (X-Rite or Calibrite). Use its published patch values and detect it with OpenCV's detector, verified on real photos.
+
+### AI · 2026-10-14
+
+Recorded DEC-025 from Q-018. An OpenCV ColorChecker detection probe on 8 synthetic images found no chart, so detection is unverified; it stays behind an interface and is marked unverified until a real RAW rig photograph is available.
