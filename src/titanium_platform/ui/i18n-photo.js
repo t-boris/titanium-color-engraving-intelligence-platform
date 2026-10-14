@@ -1,0 +1,28 @@
+/* Сообщения фотографии, выравнивания, файла LightBurn, контекста и решений по знанию (DEC-034). Загружается последним. */
+'use strict';
+I18N.add([
+  [/^no registration markers were detected: place the four image corners/i, 'Маркеры не найдены: поставьте четыре угла работы на фотографии'],
+  [/^registration markers not detected: (.+)$/i, 'Регистрационные маркеры не распознаны. Сопоставление остановлено, без догадок'],
+  [/^the plate has no marker definition/i, 'У платы нет описания маркеров'],
+  [/^the experiment identifier QR code could not be read/i, 'Идентификатор эксперимента (QR) не прочитан с фотографии'],
+  [/^the photographed plate is (\S+) but the LightBurn file is (\S+)/i, (m) => 'На фотографии плата ' + m[1] + ', а в файле LightBurn — ' + m[2]],
+  [/^the LightBurn file has no geometry to align to/i, 'В файле LightBurn нет геометрии для выравнивания'],
+  [/^cannot compute the alignment from the markers/i, 'Не удалось вычислить выравнивание по маркерам'],
+  [/^exactly four corners are required/i, 'Нужно ровно четыре угла'],
+  [/^corners must be finite/i, 'Координаты углов должны быть конечными числами'],
+  [/^the four corners must form a convex quadrilateral/i, 'Четыре угла должны образовывать выпуклый четырёхугольник по порядку: верхний левый, верхний правый, нижний правый, нижний левый'],
+  [/^region is too small after excluding its edges/i, 'Область слишком мала после исключения краёв'],
+  [/^cannot decode RAW file/i, 'Файл RAW не удалось прочитать'],
+  [/^cannot decode the image/i, 'Не удалось прочитать изображение'],
+  [/^could not render the overlay/i, 'Не удалось построить наложение масок'],
+  [/^could not render the photograph/i, 'Не удалось подготовить фотографию'],
+  [/^focus must be a (finite )?number/i, 'Фокус — конечное число'],
+  [/^date must be YYYY-MM-DD/i, 'Дата — в формате ГГГГ-ММ-ДД'],
+  [/^not a LightBurn project/i, 'Это не проект LightBurn: файл не читается'],
+  [/^invalid XForm/i, 'В файле LightBurn неверное преобразование фигуры'],
+  [/^a layer has no readable index/i, 'У слоя в файле LightBurn нет читаемого номера'],
+  [/^choose a lower stage/i, 'Выберите более низкую стадию'],
+  [/^choose a transition that has a previous stage/i, 'Выберите переход, у которого есть предыдущая стадия'],
+  [/^rollback would not lower the current stage/i, 'Откат не понизил бы текущую стадию, поэтому недоступен'],
+  [/^rolling back a production entry needs your explicit confirmation/i, 'Для отката производственной записи нужно явное подтверждение'],
+]);

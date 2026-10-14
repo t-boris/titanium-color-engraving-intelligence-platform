@@ -1,0 +1,59 @@
+/* Цветная гравировка: форма начала (изображение, ширина, порог ΔE, маркеры) и окна замены цвета и параметров под вопросом
+   (REQ-004, DEC-009, DEC-018). Порог ΔE всегда явный: либо введён здесь, либо взят из сохранённого допуска профиля. */
+'use strict';
+const ArtworkParts = (() => {
+  const {h, btn, field, link, get, patch, go, modal, num, labText, swatch} = App;
+  const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с`;
+
+  function startForm(profiles) {
+    const prof = h('select', {'aria-label': 'Версия профиля'}, profiles.map((p) => h('option', {value: p.id}, `${p.name} · версия ${p.version}`)));
+    const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
+    const name = h('input', {placeholder: 'Название плана'}), width = h('input', {type: 'number', step: 'any', value: 60});
+    const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из профиля'}), markers = h('input', {type: 'checkbox'});
+    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const show = (m) => { err.textContent = m; err.hidden = !m; };
+    const submit = btn('Сопоставить цвета', async (ev) => {
+      show('');
+      if (!img.files[0]) return show('Добавьте изображение для цветной гравировки');
+      const fd = new FormData();
+      fd.append('profile_id', prof.value); fd.append('name', name.value); fd.append('width_mm', width.value);
+      fd.append('markers', markers.checked); fd.append('image', img.files[0]);
+      if (thr.value !== '') fd.append('threshold', thr.value);
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); self.disabled = false; }
+    }, 'primary');
+    return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
+      h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Изображение', img), field('Название плана', name), field('Ширина работы, мм', width),
+        field('Порог ΔE', thr, 'пусто — взять допуск из профиля; если его нет, порог нужно задать')),
+      h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')), err, submit));
+  }
+
+  function replaceDialog(plan, m, palette, reload) {
+    let chosen = plan.replacements[m.source_key] || null;
+    const rows = palette.map((e) => h('label', {class: 'row'}, h('input', {type: 'radio', name: 'rep', checked: e.id === chosen, onChange: () => { chosen = e.id; }}),
+      swatch(e.lab), labText(e.lab), h('span', {class: 'muted small'}, `${params(e.parameters)} · ΔE ${num(e.expected_delta_e)} · уверенность ${num(e.confidence)}`)));
+    const none = [h('p', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этой версии профиля')];
+    modal('Заменить цвет', h('div', {class: 'stack'}, h('p', {}, 'Выберите цвет из допустимой палитры (валидированные и производственные).'), ...(rows.length ? rows : none)), [
+      {label: 'Отмена', run: (x) => x.close()},
+      {label: 'Применить замену', cls: 'primary', run: async (x) => {
+        if (!chosen) throw new Error('Выберите цвет');
+        await patch('/discrete/' + plan.id, {replacements: {...plan.replacements, [m.source_key]: chosen}});
+        x.close(); reload();
+      }}]);
+  }
+
+  async function questionedDialog(plan, reload) {
+    const all = (await get(`/profiles/${plan.profile_id}/palette?include_questioned=true`)).filter((e) => e.questioned);
+    const picked = new Set(plan.allowed_questioned);
+    const rows = all.map((e) => h('div', {class: 'alert warn'},
+      h('label', {class: 'row'}, h('input', {type: 'checkbox', checked: picked.has(e.id), onChange: (ev) => { if (ev.target.checked) picked.add(e.id); else picked.delete(e.id); }}), swatch(e.lab), labText(e.lab)),
+      h('p', {class: 'small'}, (e.doubt && I18N.tr(e.doubt.reason)) || 'Параметры под вопросом'), link('/knowledge/' + e.id, 'Наблюдения')));
+    modal('Включить параметры под вопросом в этот план', h('div', {class: 'stack'},
+      h('p', {}, 'Разрешение действует только для этого плана. Стадия знания и флаг не изменятся.'), ...(rows.length ? rows : [h('p', {}, 'Нет производственных параметров под вопросом')])), [
+      {label: 'Отмена', run: (x) => x.close()},
+      {label: 'Применить к этому плану', cls: 'primary', run: async (x) => { await patch('/discrete/' + plan.id, {allowed_questioned: [...picked]}); x.close(); reload(); }}]);
+  }
+
+  return {startForm, replaceDialog, questionedDialog, params};
+})();
