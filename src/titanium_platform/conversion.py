@@ -278,3 +278,110 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
     plan["layers"] = layers
     _persist(store, plan, ST_READY, plan["markers_enabled"])
     return pl.get_plan(store, plan_id)
+
+
+# ======================================================================================================
+# Continuous Photo Engraving: Tonal and Color-path on one transfer-function abstraction (DEC-007, proposed DEC-032)
+# ======================================================================================================
+MODE_FOR = {"tonal": pl.MODE_TONAL, "color_path": pl.MODE_COLOR_PATH}
+MAX_BANDS = pl.MAX_LAYERS
+
+
+def build_transfer(mode: str, entries: list[dict], path_ids: list[int] | None = None) -> dict:
+    """One abstraction: an ordered list of measured entries, each with a position in 0..1.
+
+    Tonal: entries sorted by measured lightness, position = lightness normalised between the darkest and the
+    brightest entry. Color-path: the operator's ordered trajectory, position = cumulative delta E along it.
+    Parameters are never interpolated, so every band uses a parameter set that was measured.
+    """
+    if mode == "tonal":
+        if len({round(e["lab"][0], 6) for e in entries}) < 2:
+            raise ConversionError("a Tonal curve needs at least two eligible colors with different lightness")
+        ordered = sorted(entries, key=lambda e: (e["lab"][0], e["id"]))
+        lo, hi = ordered[0]["lab"][0], ordered[-1]["lab"][0]
+        points = [{"knowledge_id": e["id"], "position": (e["lab"][0] - lo) / (hi - lo)} for e in ordered]
+    elif mode == "color_path":
+        by_id = {e["id"]: e for e in entries}
+        ids = list(path_ids or [])
+        if len(ids) < 2 or len(set(ids)) != len(ids):
+            raise ConversionError("a Color-path needs an ordered trajectory of at least two distinct eligible colors")
+        if not set(ids) <= set(by_id):
+            raise ConversionError("the trajectory uses a color that is not eligible (validated or production, and not questioned unless allowed)")
+        steps = [color.delta_e(by_id[a]["lab"], by_id[b]["lab"]) for a, b in zip(ids, ids[1:])]
+        total = sum(steps)
+        if total <= 0:
+            raise ConversionError("the trajectory colors are identical")
+        cum = np.concatenate(([0.0], np.cumsum(steps))) / total
+        points = [{"knowledge_id": i, "position": float(p)} for i, p in zip(ids, cum)]
+    else:
+        raise ConversionError("mode must be 'tonal' or 'color_path'")
+    return {"mode": mode, "points": points}
+
+
+def band_entries(transfer: dict, n: int) -> list[int]:
+    """Knowledge id for each band: the point nearest the band middle (i + 0.5) / n; ties go to the lower position."""
+    pts = transfer["points"]
+    # Distances are rounded before comparing: 0.5 - 1/3 and 2/3 - 0.5 differ in the last float digit, which would
+    # otherwise decide a mathematical tie by rounding noise instead of by the documented lower-position rule.
+    return [min(pts, key=lambda p: (round(abs(p["position"] - (i + 0.5) / n), 9), p["position"]))["knowledge_id"] for i in range(n)]
+
+
+def quantize_luminance(img_rgb: np.ndarray, n: int) -> np.ndarray:
+    """Band index per pixel from Lab lightness: u = L / 100, band = floor(u * n), last band includes u = 1."""
+    lab = color.srgb8_to_lab(img_rgb.reshape(-1, 3).astype(float))
+    u = np.clip(lab[:, 0] / 100.0, 0.0, 1.0)
+    return np.minimum((u * n).astype(int), n - 1).reshape(img_rgb.shape[:2])
+
+
+def _check_bands(n) -> int:
+    if int(n) != n or n < 1:
+        raise ConversionError("enter a positive whole number of bands")
+    if n > MAX_BANDS:
+        raise ConversionError(f"{int(n)} bands need more LightBurn layers than the {MAX_BANDS} available")
+    return int(n)
+
+
+def preview_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
+                       path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None) -> dict:
+    """Compute the banding without saving anything. Returns the layers, warnings and per-band pixel share."""
+    n = _check_bands(n_bands)
+    allowed = [int(x) for x in (allowed_questioned or [])]
+    if mode == "tonal":
+        # Tonal may use questioned production entries with a warning and no confirmation (DEC-018)
+        entries = eligible_palette(store, profile_id, include_questioned_warning=True)
+    else:
+        entries = eligible_palette(store, profile_id, allowed_questioned=allowed)
+    transfer = build_transfer(mode, entries, path_ids)
+    rgb, px_mm = raster(decode_image_bytes(image_bytes), width_mm)
+    bands = quantize_luminance(rgb, n)
+    chosen = band_entries(transfer, n)
+    by_id = {e["id"]: e for e in entries}
+    layers, counts = [], np.bincount(bands.ravel(), minlength=n)
+    for i in range(n):
+        regions = mask_to_rects(bands == i, px_mm)
+        layers.append(layer_from_entry(i + 1, f"B{i + 1:02d}", by_id[chosen[i]], regions, band=i, pixels=int(counts[i]), share=float(counts[i] / bands.size)))
+    warnings = []
+    if mode == "tonal":
+        used = sorted({l["knowledge_id"] for l in layers if l["questioned"]})
+        if used:
+            warnings.append({"type": "questioned_in_tonal", "knowledge_ids": used,
+                             "message": "This Tonal plan uses production parameter sets that are questioned. No confirmation is needed; review the observations behind them.",
+                             "observation_ids": sorted({o for k in used for o in by_id[k]["observation_ids"]})})
+    return {"transfer": transfer, "layers": layers, "warnings": warnings, "size_mm": {"width": float(width_mm), "height": rgb.shape[0] * px_mm}, "px_mm": px_mm,
+            "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum())}
+
+
+def create_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int, name: str,
+                      path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False) -> int:
+    if not (name or "").strip():
+        raise ConversionError("give the plan a name")
+    pf.get_profile(store, profile_id)
+    p = preview_continuous(store, profile_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
+    identifier = pl.new_identifier("TCE-P")
+    data = {"image_path": _store_image(store, image_bytes), "size_mm": p["size_mm"], "px_mm": p["px_mm"], "transfer": p["transfer"],
+            "path_ids": list(path_ids or []), "allowed_questioned": sorted(int(x) for x in (allowed_questioned or [])), "warnings": p["warnings"],
+            "layers": p["layers"], "markers": _plan_markers(identifier, markers, p["size_mm"]["width"], p["size_mm"]["height"], store),
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode}
+    with store.transaction():
+        return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, profile_id=profile_id, markers=markers,
+                         identifier=identifier, band_count=p["bands"], data=data)
