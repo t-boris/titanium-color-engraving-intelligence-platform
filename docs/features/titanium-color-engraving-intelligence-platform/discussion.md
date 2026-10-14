@@ -197,4 +197,4 @@ A. A standard 24-patch ColorChecker Classic (X-Rite or Calibrite). Use its publi
 
 ### AI · 2026-10-14
 
-Recorded DEC-025 from Q-018. An OpenCV ColorChecker detection probe on 8 synthetic images found no chart, so detection is unverified; it stays behind an interface and is marked unverified until a real RAW rig photograph is available.
+Recorded DEC-025 from Q-018. An OpenCV ColorChecker probe first reported no detection because of an error in my call (I passed the chart type where the chart count belongs). With the correct call it detects the chart in OpenCV's two published test images and in 8 synthetic renders. It is still unverified on a real RAW rig photograph, so it stays behind an interface and is marked unverified until you supply one.
