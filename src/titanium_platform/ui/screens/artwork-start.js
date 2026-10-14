@@ -24,7 +24,7 @@ const ArtworkParts = (() => {
       try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
-      h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Изображение', img), field('Название плана', name), field('Ширина работы, мм', width),
+      h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Изображение', App.filePick(img, 'Выбрать изображение')), field('Название плана', name), field('Ширина работы, мм', width),
         field('Порог ΔE', thr, 'пусто — взять допуск из профиля; если его нет, порог нужно задать')),
       h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')), err, submit));
   }

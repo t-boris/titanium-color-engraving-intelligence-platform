@@ -210,3 +210,17 @@ select:disabled {cursor:not-allowed;opacity:.7}
 select option {background:#141b26;color:var(--text)}
 select::-ms-expand {display:none}
 @media (forced-colors:active) {select {-webkit-appearance:auto;appearance:auto;background-image:none;padding-right:13px}}
+
+/* 8) выбор файла (filepick.js) ------------------------------------------------------------------------------
+   Настоящий input скрыт визуально, но остаётся в фокусе и принимает щелчок: он растянут поверх видимого поля. */
+.file-field {position:relative;display:block}
+.file-field>input.file-native {position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;opacity:0;cursor:pointer;z-index:1}
+.file-pick {display:flex;align-items:center;gap:12px;min-height:44px;padding:0 6px 0 5px;border:1px dashed #44536d;border-radius:10px;
+  background:#0e1520;box-shadow:inset 0 2px 5px #00000025;transition:border-color .18s,background .18s}
+.file-field:hover .file-pick {border-color:#6d7d9a;background:#111a28}
+.file-field>input.file-native:focus-visible+.file-pick {border-color:var(--accent);box-shadow:0 0 0 3px #a9b8ff33;outline:none}
+.file-pick .file-button {flex:none;min-height:32px;margin:0;pointer-events:none;background:#27324b;border-color:#4b5c80;color:#d3ddff}
+.file-pick .file-name {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8796af;font-size:13px}
+.file-pick.has-file {border-style:solid;border-color:#3e6b5c}
+.file-pick.has-file .file-name {color:#d7e0ef}
+.file-pick.has-file .file-name::before {content:"✓ ";color:var(--success)}

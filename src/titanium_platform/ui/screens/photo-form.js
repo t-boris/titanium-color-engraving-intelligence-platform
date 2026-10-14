@@ -52,7 +52,7 @@ const PhotoForm = (() => {
       host.replaceChildren(
         h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Непрерывная фотогравировка'), h('p', {class: 'sub'}, 'Одна передаточная функция, два режима. Параметры между измеренными наборами не интерполируются.')),
           h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Подрежим фотогравировки'}, modeBtns), link('/colors', 'Карта цветов')),
-        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Фотография', img), field('Название плана', name), field('Ширина работы, мм', width),
+        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Фотография', App.filePick(img, 'Выбрать фотографию')), field('Название плана', name), field('Ширина работы, мм', width),
           field('Число полос', bands, 'положительное целое; 1–255 (слоёв в LightBurn не больше 255)')),
         h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))),
         state.mode === 'color_path' ? pathPicker(palette, state, () => invalidate()) : null,

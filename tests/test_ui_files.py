@@ -101,3 +101,20 @@ def test_fields_and_buttons_in_one_line_use_the_bottom_aligned_toolbar():
             if re.search(r"class: '(card )?row'\}, (field\(|h\('div', \{(style: 'min-width|class: 'f-wrap))", line):
                 offenders.append(f"{src}:{n}")
     assert offenders == [], "a row starts with a labelled field; use class 'toolbar':\n" + "\n".join(offenders)
+
+
+def test_every_file_input_is_shown_through_the_russian_file_picker():
+    """Regression: the native file input showed 'Choose File / no file selected' in English, off-centre in its box."""
+    pattern = re.compile(r"field\('[^']*', (\w+)\)")
+    offenders = []
+    for src in SCRIPTS:
+        text = (UI_DIR / src.lstrip("/")).read_text(encoding="utf-8")
+        file_vars = set(re.findall(r"const (\w+) = h\('input', \{type: 'file'", text))
+        for var in file_vars:
+            if f"App.filePick({var}" not in text:
+                offenders.append(f"{src}: {var}")
+        offenders += [f"{src}: {m} passed raw to field()" for m in pattern.findall(text) if m in file_vars]
+    assert offenders == [], "wrap file inputs with App.filePick(input, label):\n" + "\n".join(offenders)
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert ".file-field>input.file-native" in css and "opacity:0" in css   # the real input stays clickable on top
+
