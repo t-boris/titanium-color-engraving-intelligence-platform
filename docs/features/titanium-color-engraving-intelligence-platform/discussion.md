@@ -166,3 +166,25 @@ DEC-017, DEC-018 written into REQ-001, REQ-003, REQ-004, REQ-005, REQ-010, REQ-0
 Наиболее полезный следующий вопрос: **независимый повтор обязательно должен быть на новом физическом изделии, или отдельная гравировка на новом участке того же листа тоже считается повтором?** В прототипе повторы считаются по разным `pieceId`; это может исключать ваши реальные калибровочные эксперименты. Моя рекомендация — считать отдельные физические гравировки, сохраняя связь с листом; повторная фотография повтором гравировки не считается.
 
 Решение, которое уже можно записать: использовать этот архив как источник для спецификации, отдельно отмечая демонстрационные значения, пробелы и противоречия.
+
+### Answer to Q-015 · 2026-10-14
+
+Which implementation stack should the single local web process use?
+
+A. Python 3: FastAPI + SQLite, with OpenCV, rawpy and numpy/scikit-learn (RAW, chart correction, marker detection and the uncertainty model). The UI is served as static files from the same process.
+
+### Answer to Q-016 · 2026-10-14
+
+What counts as an independent repetition toward the 'repeated' and 'validated' stages?
+
+A. Each separate physical engraving counts, whether on a new piece or a new area of the same sheet. The sheet link is kept for context. A re-photograph of the same engraving never counts.
+
+### Answer to Q-017 · 2026-10-14
+
+How should the importer use the pulse width and line interval that real .lbrn2 layers record?
+
+A. Read pulse width and line interval from each layer when the file has them. Compare them with the linked profile's constants. If they differ, import the layer with a warning and mark it 'not comparable'. It never enters the model or the repetition counts. The stored parameter vector still takes its constants from the profile version. Focus, material batch and passes stay unknown, because the file doesn't record them.
+
+### AI · 2026-10-14
+
+Recorded DEC-020 (Python/FastAPI/SQLite stack), DEC-021 (independent repetition = separate physical engraving) and DEC-022 (layers with different constants are imported as not comparable) from the answers above. Marked DEC-012 superseded by DEC-015, aligned DEC-014 with DEC-017, fixed the stale REQ-014 reference in DEC-013 and filled the empty Consequences of DEC-019. Proposed DEC-023 (SemVer from 0.1.0) and DEC-024 (build a wheel and install it into a local virtual environment) because the repository defines no versioning or deploy rules; both wait for confirmation.
