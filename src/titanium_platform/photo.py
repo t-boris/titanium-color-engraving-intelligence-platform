@@ -23,6 +23,8 @@ from . import color
 RAW_EXTENSIONS = {".raw", ".nef", ".nrw", ".cr2", ".cr3", ".arw", ".dng", ".raf", ".rw2", ".orf", ".pef", ".srw"}
 EDGE_FRACTION = 0.2
 MIN_MASK_PIXELS = 25
+MIN_CHART_AREA_PX = 400.0       # a real 24-patch chart outline is far larger than this
+MIN_PATCH_SPREAD = 8.0          # mean per-channel standard deviation of the 24 patch colors (0..255)
 MAX_CORRECTION_RESIDUAL = 12.0  # mean patch delta E after correction above which the correction is rejected
 
 REFERENCE_SRGB = np.array([
@@ -73,12 +75,19 @@ def detect_chart(img_bgr: np.ndarray) -> Chart:
     if not found:
         return Chart(False, reason="reference chart not detected")
     checker = det.getBestColorChecker()
+    box = np.asarray(checker.getBox(), dtype=np.float32)
     patches = checker.getChartsRGB()[:, 1].reshape(24, 3).astype(float)  # column 1 = patch mean, RGB order
+    # OpenCV's detector can report a chart on an image that has none (observed: an all-zero box and 24 identical
+    # patches). Treat such output as "no chart" instead of trusting the boolean it returns.
+    if not np.isfinite(box).all() or abs(cv2.contourArea(box.reshape(-1, 1, 2))) < MIN_CHART_AREA_PX:
+        return Chart(False, reason="the detector returned a degenerate chart outline")
+    if float(patches.std(axis=0).mean()) < MIN_PATCH_SPREAD:
+        return Chart(False, reason="the detected patches are all the same color")
     # A chart seen upside down lists the grey ramp the wrong way round: patch 19 (white) must be brighter
     # than patch 24 (black). Reverse the patch order if it is not.
     if patches[18].sum() < patches[23].sum():
         patches = patches[::-1].copy()
-    return Chart(True, patches, np.asarray(checker.getBox()).tolist())
+    return Chart(True, patches, box.tolist())
 
 
 @dataclass
@@ -132,6 +141,17 @@ def detect_markers(img_bgr: np.ndarray) -> dict[int, np.ndarray]:
 def read_identifier(img_bgr: np.ndarray) -> str | None:
     text = cv2.QRCodeDetector().detectAndDecode(img_bgr)[0]
     return text[5:] if text.startswith("TCE1:") else None
+
+
+def read_identifier_rectified(img_bgr: np.ndarray, image_to_mm: np.ndarray, area_mm: tuple[float, float, float, float],
+                              px_per_mm: float = 20.0) -> str | None:
+    """Read the QR identifier from a view rectified with the marker homography (more robust than the raw frame)."""
+    x0, y0, w, h = area_mm
+    scale = np.array([[px_per_mm, 0, -x0 * px_per_mm], [0, px_per_mm, -y0 * px_per_mm], [0, 0, 1]])
+    size = (int(np.ceil(w * px_per_mm)), int(np.ceil(h * px_per_mm)))
+    if size[0] < 10 or size[1] < 10 or size[0] * size[1] > 60_000_000:
+        return None
+    return read_identifier(cv2.warpPerspective(img_bgr, scale @ image_to_mm, size, borderValue=(255, 255, 255)))
 
 
 def homography_from_markers(found: dict[int, np.ndarray], markers: dict, x_offset: float = 0.0, y_offset: float = 0.0) -> np.ndarray:

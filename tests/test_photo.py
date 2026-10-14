@@ -98,3 +98,46 @@ def test_color_roundtrip_and_delta_e():
     assert color.lab_to_srgb8(lab).tolist() == [120, 70, 200]
     assert color.delta_e([50, 0, 0], [53, 4, 0]) == pytest.approx(5.0)
     assert color.valid_lab([50, 0, 0]) and not color.valid_lab([101, 0, 0]) and not color.valid_lab([50, float("nan"), 0])
+
+
+def test_a_degenerate_detector_result_is_not_treated_as_a_chart(monkeypatch):
+    """OpenCV once reported a chart on a photo without one: all-zero box, 24 identical patches."""
+    class FakeChecker:
+        def getBox(self):
+            return np.zeros((4, 2), np.float32)
+
+        def getChartsRGB(self):
+            return np.tile(np.array([[770, 100.0, 1, 99, 101]]), (72, 1))
+
+    class FakeDetector:
+        def process(self, img, nc):
+            return True
+
+        def getBestColorChecker(self):
+            return FakeChecker()
+
+    monkeypatch.setattr(cv2.mcc, "CCheckerDetector_create", lambda: FakeDetector())
+    chart = ph.detect_chart(np.zeros((100, 100, 3), np.uint8))
+    assert not chart.detected and "degenerate" in chart.reason
+    corrected, chart2, corr = ph.correct(np.zeros((100, 100, 3), np.uint8))
+    assert corrected is None and not chart2.detected
+
+
+def test_uniform_patches_with_a_real_looking_box_are_still_rejected(monkeypatch):
+    class FakeChecker:
+        def getBox(self):
+            return np.array([[0, 0], [600, 0], [600, 400], [0, 400]], np.float32)
+
+        def getChartsRGB(self):
+            return np.tile(np.array([[770, 100.0, 1, 99, 101]]), (72, 1))
+
+    class FakeDetector:
+        def process(self, img, nc):
+            return True
+
+        def getBestColorChecker(self):
+            return FakeChecker()
+
+    monkeypatch.setattr(cv2.mcc, "CCheckerDetector_create", lambda: FakeDetector())
+    chart = ph.detect_chart(np.zeros((100, 100, 3), np.uint8))
+    assert not chart.detected and "same color" in chart.reason

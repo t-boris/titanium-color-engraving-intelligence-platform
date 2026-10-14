@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS observation (
     model_eligible INTEGER NOT NULL,
     repeat_eligible INTEGER NOT NULL,
     eligibility_reason TEXT NOT NULL,
+    evidence_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
 CREATE TRIGGER IF NOT EXISTS observation_no_update BEFORE UPDATE ON observation
