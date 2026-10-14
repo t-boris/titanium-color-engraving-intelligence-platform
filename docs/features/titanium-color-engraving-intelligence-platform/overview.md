@@ -2,7 +2,7 @@
 type: feature
 id: titanium-color-engraving-intelligence-platform
 title: Titanium Color Engraving Intelligence Platform
-status: exploring
+status: implementing
 owner: Boris Tsekinovsky
 created: 2026-10-14
 provenance: Created from the new-project intake
@@ -12,24 +12,24 @@ understanding:
   Primary Workflow: known
   Permissions: known
   Failure Scenarios: known
-  Data Model: partial
+  Data Model: known
   Notifications: n/a
   Security: n/a
   Analytics: partial
-  Dependencies: partial
+  Dependencies: known
   Acceptance Criteria: known
 understanding_notes:
-  Problem: Невоспроизводимость цветов на титане; нужна систематическая калибровка с оценкой неопределённости и переводом знания в планы гравировки.
-  Target Users: Один исследователь/мастер с одним лазером; личный локальный инструмент (DEC-001).
-  Primary Workflow: Замкнутый цикл калибровки, два режима гравировки с под-режимами, экспорт в LightBurn полосами, пост-анализ с опциональными маркерами.
-  Permissions: Один пользователь, ролей нет; production меняется только явным действием пользователя.
-  Failure Scenarios: Недостижимые цвета (DEC-009), гравировки без маркеров (DEC-010), деградация production-цвета (DEC-011 — флаг «под вопросом», без автопонижения). Пороги отклонения — настраиваемые, определяет исполнитель.
-  Data Model: Известны профили, платы, эксперименты, измерения, стадии зрелости + флаг questioned, EngravingPlan. Детальные сущности БД — предмет самой спецификации, вопросов к владельцу не требуют.
-  Notifications: Локальный однопользовательский инструмент; достаточно индикации в UI.
-  Security: Локальные данные, один пользователь, без внешних сервисов.
-  Analytics: Стабильность/воспроизводимость и покрытие цветового пространства заложены как функции; отдельная продуктовая аналитика не нужна.
-  Dependencies: LightBurn (импорт слоёв), фотографическая установка с эталонной картой и RAW. Конкретная модель камеры/карты — вне спецификации.
-  Acceptance Criteria: Результат первого шага — полная Product + System Specification в Markdown по доменам 01–16, пригодная для передачи coding agent.
+  Problem: Плохая воспроизводимость цвета на титане; нужен замкнутый цикл обучения с измерениями как источником истины.
+  Target Users: Один исследователь/мастер с одним лазером (DEC-001).
+  Primary Workflow: Единая единица ввода — пара «LightBurn-файл + фото на стенде с эталоном» для плат и готовых работ; маркеры → автовыравнивание, иначе по углам.
+  Permissions: Ролей нет, локальное однопользовательское приложение.
+  Failure Scenarios: Фото без эталона отклоняется; недостижимые цвета → Designer; production-цвет «под вопросом» исключается из планов.
+  Data Model: Наблюдение = параметры из файла + цвет из скорректированного фото + стадия зрелости + опциональный контекст. Отдельного legacy-уровня нет (DEC-012 заменено).
+  Notifications: Не требуется для локального инструмента.
+  Security: Локальные данные, один пользователь.
+  Analytics: Стабильность/повторяемость и покрытие цветового пространства описаны; конкретные отчёты определит исполнитель.
+  Dependencies: LightBurn (.lbrn/.lbrn2), фотостенд с эталонной картой, RAW-камера; опциональный LLM для пояснений.
+  Acceptance Criteria: Критерии зафиксированы в REQ-001…REQ-016.
 questions_left: 0
 confirmed: 2026-10-14
 ---
