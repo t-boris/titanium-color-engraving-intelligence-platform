@@ -1,0 +1,79 @@
+"""Shared API plumbing: store access, error mapping, upload limits, response shaping."""
+from __future__ import annotations
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
+
+from .. import analysis, conversion, designer, ingest, knowledge, photo, profiles
+from ..db import ImmutableError, Store
+
+MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
+MAX_PHOTO_BYTES = 600 * 1024 * 1024
+MAX_IMAGE_BYTES = 60 * 1024 * 1024
+
+USER_ERRORS = (profiles.ValidationError, ingest.IngestError, conversion.ConversionError, designer.DesignerError,
+               knowledge.KnowledgeError, photo.PhotoError)
+
+
+def store_of(request: Request) -> Store:
+    return request.app.state.store
+
+
+def install_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(profiles.ProtectedError)
+    async def protected(_, exc):
+        return JSONResponse({"error": str(exc), "kind": "protected"}, status_code=409)
+
+    @app.exception_handler(ImmutableError)
+    async def immutable(_, exc):
+        return JSONResponse({"error": str(exc), "kind": "immutable"}, status_code=409)
+
+    @app.exception_handler(KeyError)
+    async def missing(_, exc):
+        return JSONResponse({"error": str(exc.args[0]) if exc.args else "not found", "kind": "not_found"}, status_code=404)
+
+    for cls in USER_ERRORS:
+        @app.exception_handler(cls)
+        async def user_error(_, exc):
+            return JSONResponse({"error": str(exc), "kind": "invalid"}, status_code=422)
+
+
+async def read_upload(file: UploadFile | None, limit: int, label: str) -> tuple[str, bytes]:
+    """Read an uploaded file, refusing a missing, empty or oversized one with a message the operator can act on."""
+    if file is None or not file.filename:
+        raise HTTPException(422, {"error": f"choose the {label} file", "kind": "invalid"})
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, {"error": f"the {label} file is larger than {limit // (1024 * 1024)} MB", "kind": "too_large"})
+    if not data:
+        raise HTTPException(422, {"error": f"the {label} file is empty", "kind": "invalid"})
+    return file.filename, data
+
+
+def public_pair(pair: dict) -> dict:
+    """A pair without server file paths."""
+    return {k: v for k, v in pair.items() if k not in ("lightburn_path", "photo_path")}
+
+
+def public_plan(plan: dict, with_regions: bool = False) -> dict:
+    """A plan without server file paths; layer regions are summarised unless asked for (they can number thousands)."""
+    out = {k: v for k, v in plan.items() if k not in ("image_path", "labels_path")}
+    layers = []
+    for layer in plan.get("layers", []):
+        item = dict(layer)
+        regions = item.pop("regions", [])
+        item["region_count"] = len(regions)
+        if with_regions:
+            item["regions"] = regions
+        layers.append(item)
+    out["layers"] = layers
+    markers = out.get("markers")
+    if markers:  # the marker rectangles are file geometry; the UI needs only where they are
+        out["markers"] = {"identifier": markers["identifier"], "extent": markers["extent"], "settings": markers["settings"],
+                          "aruco": [{"id": a["id"], "x": a["x"], "y": a["y"], "size": a["size"]} for a in markers["aruco"]],
+                          "qr": {k: markers["qr"][k] for k in ("x", "y", "size", "module", "modules")}}
+    return out
+
+
+def refresh_after_change(store: Store, profile_id: int) -> None:
+    knowledge.refresh(store, profile_id)
