@@ -75,5 +75,19 @@ def public_plan(plan: dict, with_regions: bool = False) -> dict:
     return out
 
 
+def content_disposition(name: str, extension: str) -> str:
+    """A ``Content-Disposition`` header that survives any plan name (RFC 6266 / RFC 5987).
+
+    HTTP header values must be Latin-1, but plan names are typed in a Russian UI. The plain ``filename`` is an
+    ASCII fallback (every other character becomes ``_``); ``filename*`` carries the real name as UTF-8, which
+    current browsers prefer. Quotes, backslashes, control characters and path separators never reach the header.
+    """
+    from urllib.parse import quote
+
+    cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/:*?<>|%').strip(" .") or "plan"
+    ascii_name = "".join(c if c.isascii() and (c.isalnum() or c in "-_. ") else "_" for c in cleaned).strip(" .") or "plan"
+    return f"attachment; filename=\"{ascii_name}{extension}\"; filename*=UTF-8''{quote(cleaned + extension, safe='')}"
+
+
 def refresh_after_change(store: Store, profile_id: int) -> None:
     knowledge.refresh(store, profile_id)

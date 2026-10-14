@@ -96,7 +96,7 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
     assert plan["mode"] == "Calibration plate" and plan["markers"]["identifier"] == plates[0]["experiment_id"] and "rects" not in json.dumps(plan["markers"])
     lbrn = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2")
     assert lbrn.status_code == 200 and b"TCE1:" + plates[0]["experiment_id"].encode() in lbrn.content
-    assert 'filename="Plate_' in lbrn.headers["content-disposition"]
+    assert 'filename="Plate TCE-' in lbrn.headers["content-disposition"]
 
     full = __import__("titanium_platform.plans", fromlist=["x"])
     st = client.app.state.store
@@ -174,3 +174,27 @@ def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
     assert max(img.shape[:2]) == 1400 and abs(img.shape[1] / img.shape[0] - 1.5) < 0.01
     assert client.get("/api/pairs/999/photo.png").status_code == 404
 
+
+
+@pytest.mark.parametrize("name,ascii_part,utf8_part", [
+    ("Портрет мамы", "filename=\"_______ ____.lbrn2\"", "filename*=UTF-8''%D0%9F%D0%BE%D1%80%D1%82%D1%80%D0%B5%D1%82%20%D0%BC%D0%B0%D0%BC%D1%8B.lbrn2"),
+    ("Plate 1", "filename=\"Plate 1.lbrn2\"", "filename*=UTF-8''Plate%201.lbrn2"),
+    ('a"b\\c/d:e*f?g', "filename=\"abcdefg.lbrn2\"", "filename*=UTF-8''abcdefg.lbrn2"),
+    ("   ...   ", "filename=\"plan.lbrn2\"", "filename*=UTF-8''plan.lbrn2"),
+])
+def test_content_disposition_survives_any_plan_name(name, ascii_part, utf8_part):
+    """Regression: a Russian plan name made the export answer 500 (header values must be Latin-1)."""
+    from titanium_platform.api.common import content_disposition
+    header = content_disposition(name, ".lbrn2")
+    header.encode("latin-1")                       # must not raise
+    assert header.startswith("attachment; ") and ascii_part in header and utf8_part in header
+    assert "\n" not in header and "\r" not in header
+
+
+def test_exporting_a_plan_with_a_russian_name_works_end_to_end(client):
+    s = setup(client)
+    plates = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
+    client.app.state.store.execute("UPDATE plan SET name=? WHERE id=?", ("Рисунок A", plates[0]["plan_id"]))
+    r = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2")
+    assert r.status_code == 200 and r.content.startswith(b"<?xml")
+    assert "filename*=UTF-8''%D0%A0%D0%B8%D1%81%D1%83%D0%BD%D0%BE%D0%BA%20A.lbrn2" in r.headers["content-disposition"]

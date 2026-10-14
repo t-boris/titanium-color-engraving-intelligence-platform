@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import conversion, designer, plans, profiles as pf
-from .common import MAX_IMAGE_BYTES, public_plan, read_upload, store_of
+from .common import MAX_IMAGE_BYTES, content_disposition, public_plan, read_upload, store_of
 
 router = APIRouter(prefix="/api")
 
@@ -62,8 +62,7 @@ def export_plan(plan_id: int, request: Request):
         raise conversion.ConversionError("the plan is a draft: finish the conversion before exporting")
     data = plans.export_lbrn2(plan)
     s.execute("UPDATE plan SET status=? WHERE id=? AND status=?", ("Exported", plan_id, conversion.ST_READY))
-    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in plan["name"])
-    return Response(data, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="{safe}.lbrn2"'})
+    return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(plan["name"], ".lbrn2")})
 
 
 @router.put("/plans/{plan_id}/markers")
