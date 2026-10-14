@@ -36,7 +36,7 @@
         h('p', {class: 'sub'}, `Текущий порог ΔE: ${plan.threshold}. Он сравнивается с суммой расстояния до цели и ожидаемой ошибки записи (DEC-030).`)),
       h('span', {class: 'spacer'}), link('/designer?profile=' + plan.profile_id, 'Цели экспериментов')),
       palette.length ? null : h('div', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этой версии профиля: все цвета недостижимы.'),
-      h('div', {class: 'card row'}, field('Порог ΔE', thr),
+      h('div', {class: 'card toolbar'}, field('Порог ΔE', thr),
         btn('Сопоставить цвета', async () => { try { await patch('/discrete/' + id, {threshold: +thr.value}); reload(); } catch (e) { fail(e); } }),
         btn('Включить параметры под вопросом в этот план', () => questionedDialog(plan, reload)), markerBtn),
       h('div', {class: 'card'}, h('h3', {}, 'Цвета рисунка'), table(['Исходный цвет', 'Статус', 'Цвет титана', 'ΔE до цели', 'Ожидаемая ошибка', 'Уверенность · стабильность', ''], rows)),

@@ -42,9 +42,11 @@
           prop.boards.length ? h('p', {}, 'Платы созданы: ', prop.boards.map((b) => '№ ' + b).join(', ')) : btn('Создать калибровочные платы', () => plateDialog(prop, reload), 'primary')));
     }
     return h('div', {class: 'stack'}, h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Планировщик экспериментов'), h('p', {class: 'sub'}, 'Что измерить следующим: пробелы, неопределённость, нестабильность и цели.')),
-      h('span', {class: 'spacer'}), h('div', {style: 'min-width:240px'}, field('Версия профиля', picker)), link('/colors?profile=' + pid, 'Карта цветов'), link('/ingest', 'Добавить измерения')),
+      h('span', {class: 'spacer'})),
+    h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap wide'}, field('Версия профиля', picker)), link('/colors?profile=' + pid, 'Карта цветов'), link('/ingest', 'Добавить измерения')),
     h('div', {class: 'card stack'}, h('h3', {}, 'Цели из недостижимых цветов'), targets),
-    h('div', {class: 'card row'}, field('Зерно', seed), field('Число наборов', size), propose),
+    h('div', {class: 'card toolbar'}, field('Зерно', seed), field('Число наборов', size), propose,
+      h('p', {class: 'toolbar-hint'}, 'То же зерно и те же данные дают то же предложение. Число наборов — от 1 до 40.')),
     map.samples.length ? null : h('div', {class: 'alert warn'}, 'Добавьте измерения для анализа цветового пространства: пока наборы выбираются только по пробелам.'), body);
   }});
 })();
