@@ -31,8 +31,9 @@
     const draft = p.status === 'Draft';
     const editRoute = p.mode === 'Discrete color engraving' ? '/artwork?plan=' + p.id : p.mode.includes('photo engraving') ? '/photo?plan=' + p.id : null;
     const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
-      ev.currentTarget.disabled = true;
-      try { await download(p); toast('Файл подготовлен и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); App.render(); } catch (e) { fail(e); ev.currentTarget.disabled = false; }
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await download(p); toast('Файл подготовлен и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); App.render(); } catch (e) { fail(e); self.disabled = false; }
     }, 'primary', draft || !p.layers.length);
     const warnings = (p.warnings || []).map((w) => h('div', {class: 'alert warn'}, [h('strong', {}, 'Используются производственные параметры под вопросом. '), 'В тональном режиме отдельное подтверждение не требуется. ',
       link('/knowledge/' + w.knowledge_ids[0], 'Посмотреть наблюдения')]));

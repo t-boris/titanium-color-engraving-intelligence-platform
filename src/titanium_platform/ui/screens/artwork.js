@@ -43,8 +43,9 @@
       unresolved ? h('div', {class: 'alert bad'}, `Нерешённые цвета: ${unresolved}. Замените или исключите каждый: создание плана отключено. Они уже переданы планировщику как цели.`) : null,
       active === 0 && !unresolved ? h('div', {class: 'alert warn'}, 'Все области исключены: создание отключено.') : null,
       h('div', {class: 'row'}, btn('Создать план', async (ev) => {
-        ev.currentTarget.disabled = true;
-        try { await post(`/discrete/${id}/finalize`); go('/plans/' + id); } catch (e) { fail(e); ev.currentTarget.disabled = false; }
+        const self = ev.currentTarget;
+        self.disabled = true;
+        try { await post(`/discrete/${id}/finalize`); go('/plans/' + id); } catch (e) { fail(e); self.disabled = false; }
       }, 'primary', unresolved > 0 || active === 0)));
   }});
 })();

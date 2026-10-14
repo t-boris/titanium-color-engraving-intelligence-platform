@@ -19,8 +19,9 @@ const ArtworkParts = (() => {
       fd.append('profile_id', prof.value); fd.append('name', name.value); fd.append('width_mm', width.value);
       fd.append('markers', markers.checked); fd.append('image', img.files[0]);
       if (thr.value !== '') fd.append('threshold', thr.value);
-      ev.currentTarget.disabled = true;
-      try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); ev.currentTarget.disabled = false; }
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Изображение', img), field('Название плана', name), field('Ширина работы, мм', width),

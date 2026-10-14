@@ -36,9 +36,10 @@ const IngestUpload = (() => {
       if (ctx.query.plan) fd.append('plan_id', ctx.query.plan);
       if (ctx.query.rephoto) fd.append('rephoto_of', ctx.query.rephoto);
       fd.append('lightburn', lb.files[0]); fd.append('photo', photo.files[0]);
-      ev.currentTarget.disabled = true;
+      const self = ev.currentTarget;
+      self.disabled = true;
       try { const p = await form('/pairs', fd); toast('Пара загружена. Теперь выполните проверку', 'ok'); go('/ingest?pair=' + p.id); }
-      catch (e) { show(e.message); } finally { ev.currentTarget.disabled = false; }
+      catch (e) { show(e.message); } finally { self.disabled = false; }
     }, 'primary');
 
     return h('div', {class: 'stack'},

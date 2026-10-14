@@ -8,9 +8,10 @@ const IngestReview = (() => {
     const ready = pair.status === 'Ready to accept';
     const flag = h('input', {type: 'checkbox', checked: pair.masks_reviewed, disabled: !ready || pair.masks_reviewed});
     const accept = btn('Принять наблюдения', async (ev) => {
-      ev.currentTarget.disabled = true;
+      const self = ev.currentTarget;
+      self.disabled = true;
       try { await post(`/pairs/${pair.id}/accept`); toast('Наблюдения приняты', 'ok'); go('/analysis/' + pair.id); }
-      catch (e) { fail(e); ev.currentTarget.disabled = false; }
+      catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !ready || !pair.masks_reviewed);
     flag.addEventListener('change', async () => {
       if (!flag.checked) return;

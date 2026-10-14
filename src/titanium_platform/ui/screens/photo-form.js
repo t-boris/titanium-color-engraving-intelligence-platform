@@ -40,8 +40,9 @@ const PhotoForm = (() => {
     }
     async function doCreate(ev) {
       if (!state.preview || previewSig !== signature()) return show('Сначала сделайте актуальный предпросмотр');
-      ev.currentTarget.disabled = true;
-      try { const p = await form('/continuous', body(true)); toast('План создан', 'ok'); go('/plans/' + p.id); } catch (e) { show(e.message); ev.currentTarget.disabled = false; }
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const p = await form('/continuous', body(true)); toast('План создан', 'ok'); go('/plans/' + p.id); } catch (e) { show(e.message); self.disabled = false; }
     }
 
     function draw() {
