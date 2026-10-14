@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
 from ..db import Store
-from . import routes_devices, routes_plans, routes_setup, routes_work
+from . import routes_devices, routes_lenses, routes_plans, routes_setup, routes_work
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -43,7 +43,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
         app.state.store.one("SELECT 1")
         return {"status": "ok"}
 
-    for r in (routes_setup.router, routes_devices.router, routes_work.router, routes_plans.router):
+    for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router):
         app.include_router(r)
 
     @app.exception_handler(404)

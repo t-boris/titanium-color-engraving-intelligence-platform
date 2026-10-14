@@ -53,7 +53,9 @@ def test_handwritten_controller_values_are_flagged_and_never_certain(unit):
     assert by_key["Galvo 1 Scale"]["status"] == "handwritten" and by_key["Galvo 1 Scale"]["value"] == "см. фото"
     assert by_key["Max PWM"]["value"] == 200.0 and by_key["Max PWM"]["status"] == "printed"
     assert not [f for f in fields if f["status"] == "confirmed"]                       # only the operator may confirm
-    assert any("Масштабы гальво" in t for t in unit["passport"]["open_items"])        # every unread value is an open item
+    unread = {f["key"] for f in fields if f["value"] == dv.UNREAD}                    # every unread value is an open question,
+    derived = {q["key"] for q in dv.open_questions(dv.validate_passport(passport_of(unit)), unit["serial"]) if q["kind"] == "unread"}
+    assert unread and derived == unread                                                # derived from the data, not stored text
 
 
 @pytest.mark.parametrize("bad", [
@@ -136,6 +138,29 @@ def test_running_the_import_again_changes_nothing_but_makes_a_backup(tmp_path, p
     assert len(backups) == 1 and sqlite3.connect(backups[0] / "titanium.sqlite").execute("SELECT COUNT(*) FROM laser_device").fetchone()[0] == 1
 
 
+def test_a_changed_serial_number_does_not_make_the_import_create_a_second_device(tmp_path, photos, unit):
+    """The operator replaced the serial with the machine number: the unit is still found by its test report."""
+    tool, data = load_tool(), tmp_path / "data"
+    run(tool, data, photos)
+    store = Store(data)
+    try:
+        [d] = dv.list_devices(store)
+        dv.update_device(store, d["id"], serial="HEZ74042812X")
+    finally:
+        store.close()
+    assert run(tool, data, photos) == 0
+    store = Store(data)
+    try:
+        [d] = dv.list_devices(store)
+        assert d["serial"] == "HEZ74042812X" and len(d["documents"]) == 5
+    finally:
+        store.close()
+
+
+def test_the_unit_file_carries_the_manufacturers_m2_limit_and_the_beam_diameter(unit):
+    assert unit["passport"]["m2_max"] == 1.5 and unit["passport"]["beam_diameter_mm"] == 7.0
+
+
 def test_a_missing_photograph_stops_the_import_before_anything_is_written(tmp_path, photos, capsys):
     tool, data = load_tool(), tmp_path / "data"
     (photos / "IMG_3263.JPG").unlink()
@@ -145,6 +170,36 @@ def test_a_missing_photograph_stops_the_import_before_anything_is_written(tmp_pa
 
 def test_the_import_can_link_an_existing_profile_without_a_new_version(tmp_path, photos):
     tool, data = load_tool(), tmp_path / "data"
+
+
+def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp_path, photos):
+    """The operator's confirmed, corrected, removed and added settings survive a second import."""
+    tool, data = load_tool(), tmp_path / "data"
+    run(tool, data, photos)
+    store = Store(data)
+    try:
+        d = dv.list_devices(store)[0]
+        controller = json.loads(json.dumps(d["passport"]["controller"]))
+        for t in controller["tabs"]:
+            if t["key"] == "field":
+                t["fields"] = [f for f in t["fields"] if f["key"] != "Special pos. Y"]
+                next(f for f in t["fields"] if f["key"] == "Galvo 1 Scale").update(value=78.585, status="confirmed")
+                t["fields"].append({"key": "Lens focal length", "value": 160, "unit": "мм", "status": "confirmed"})
+        dv.update_device(store, d["id"], passport=d["passport"] | {"controller": controller, "spot_diameter_um": 65, "open_items": ["my note"]})
+    finally:
+        store.close()
+    assert run(tool, data, photos) == 0
+    store = Store(data)
+    try:
+        [d] = dv.list_devices(store)
+        fields = {f["key"]: f for t in d["passport"]["controller"]["tabs"] if t["key"] == "field" for f in t["fields"]}
+        assert fields["Galvo 1 Scale"]["value"] == 78.585 and fields["Galvo 1 Scale"]["status"] == "confirmed"
+        assert "Special pos. Y" not in fields and fields["Lens focal length"]["value"] == 160
+        assert d["passport"]["spot_diameter_um"] == 65 and d["passport"]["open_items"] == ["my note"]
+        assert len(d["documents"]) == 5
+    finally:
+        store.close()
+
     store = Store(data)
     p = pf.create_profile(store, "JPT MOPA M7 60W", 200, 0.025, 1)
     store.close()

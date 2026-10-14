@@ -231,6 +231,21 @@ def layer_report(layer: lb.Layer, profile: dict) -> dict:
 
 
 # -- checking ------------------------------------------------------------------------------------------
+def lens_check(store: Store, plate: dict) -> dict:
+    """Compare the lens a plate was made for with the lens installed now (DEC-041). A difference is a warning, never a block."""
+    made = json.loads(plate["lens_json"]) if plate.get("lens_json") else None
+    profile = pf.get_profile(store, plate["profile_id"])
+    now_lens = (profile.get("device") or {}).get("lens")
+    warnings = []
+    if made and now_lens and (made["id"] != now_lens["id"] or made["focal_length_mm"] != now_lens["focal_length_mm"] or made["expansion"] != now_lens["expansion"]):
+        warnings.append(f"the lens installed now ({now_lens['name']}, {now_lens['focal_length_mm']:g} mm) differs from the lens of this plate ({made['name']}, {made['focal_length_mm']:g} mm)")
+    elif made and not now_lens and profile.get("device"):
+        warnings.append(f"no lens is installed on the laser now; the plate was made with {made['name']} ({made['focal_length_mm']:g} mm)")
+    elif now_lens and not made:
+        warnings.append("this plate has no record of its lens")
+    return {"plate": made, "installed": None if not now_lens else {"id": now_lens["id"], "name": now_lens["name"], "focal_length_mm": now_lens["focal_length_mm"]}, "warnings": warnings}
+
+
 def _load_plate(store: Store, identifier: str | None):
     """(plate, plan) for a TCE1 identifier found in the LightBurn file, or (None, None)."""
     if not identifier:
@@ -310,6 +325,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
         report["plate"] = {"experiment_id": plate["experiment_id"], "profile_id": plate["profile_id"]}
         if plate["profile_id"] != row["profile_id"]:
             problems.append("this plate was generated for a different laser profile version than the one selected")
+        report["lens"] = lens_check(store, plate)
     # The marker layer of a system-generated file is never measured. A user's own file may legitimately use
     # layer index 0 (the real file this was checked against does), so skip it only for files this system wrote.
     system_plan = plan if plate is not None else (pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None)

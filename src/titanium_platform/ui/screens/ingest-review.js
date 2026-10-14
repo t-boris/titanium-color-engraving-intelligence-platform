@@ -54,7 +54,8 @@ const IngestReview = (() => {
       h('p', {}, 'Эталонная карта: ', check.chart.detected ? pill('обнаружена', 'ok') : pill('не обнаружена', 'bad'),
         check.chart.residual != null ? ` · остаточная ошибка коррекции ΔE ${num(check.chart.residual, 1)}` : ''),
       h('p', {}, 'Выравнивание: ', check.alignment.valid ? pill(check.alignment.method === 'markers' ? 'по маркерам' : 'вручную по углам', 'ok') : pill('не выполнено', 'warn')),
-      ...check.problems.map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m)))));
+      ...check.problems.map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
+      ...((check.lens && check.lens.warnings) || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))));
     if (!check.alignment.valid && check.problems.some((m) => /four image corners/i.test(m))) out.append(cornersCard(pair, run).card);
     if (check.discrepancies.length) {
       const conf = pair.file_confirmation;

@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS laser_profile (
     created_at TEXT NOT NULL,
     UNIQUE (family, version)
 );
+CREATE TABLE IF NOT EXISTS lens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    focal_length_mm REAL NOT NULL,
+    field_mm REAL,
+    expansion REAL NOT NULL DEFAULT 1,
+    note TEXT,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS laser_device (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -33,6 +42,7 @@ CREATE TABLE IF NOT EXISTS laser_device (
     serial TEXT,
     description TEXT,
     data_json TEXT NOT NULL,
+    lens_id INTEGER REFERENCES lens(id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -74,6 +84,7 @@ CREATE TABLE IF NOT EXISTS plate (
     geometry_json TEXT NOT NULL,
     cells_json TEXT NOT NULL,
     proposal_id INTEGER,
+    lens_json TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS plan (
@@ -203,9 +214,13 @@ class Store:
         A data directory written by this version stays readable by the previous one: the new column is nullable
         and the previous version ignores columns it does not know.
         """
-        columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(laser_profile)")}
-        if "device_id" not in columns:
-            self.conn.execute("ALTER TABLE laser_profile ADD COLUMN device_id INTEGER REFERENCES laser_device(id)")
+        for table, column, definition in (
+                ("laser_profile", "device_id", "INTEGER REFERENCES laser_device(id)"),
+                ("laser_device", "lens_id", "INTEGER REFERENCES lens(id)"),   # DEC-041
+                ("plate", "lens_json", "TEXT")):
+            columns = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def close(self) -> None:
         self.conn.close()

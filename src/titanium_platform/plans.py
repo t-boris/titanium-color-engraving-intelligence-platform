@@ -22,7 +22,7 @@ from xml.sax.saxutils import quoteattr
 import cv2
 import numpy as np
 
-from . import profiles as pf
+from . import characterization, lenses, profiles as pf
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -112,7 +112,7 @@ def save_marker_layer_settings(store: Store, power: float, frequency: float, spe
 
 
 # -- calibration plate series -------------------------------------------------------------------------------
-OPERATING_POINT_KEYS = ("output_power_w", "pulse_energy_mj", "power_factor", "below_cutoff", "areal_energy_j_cm2", "pulse_pitch_um")
+OPERATING_POINT_KEYS = ("output_power_w", "pulse_energy_mj", "power_factor", "below_cutoff", "outside_controller_range", "areal_energy_j_cm2", "pulse_pitch_um")
 
 
 def _add_operating_points(profile: dict, cells: list[dict]) -> None:
@@ -127,8 +127,23 @@ def _add_operating_points(profile: dict, cells: list[dict]) -> None:
     c = profile["constants"]
     for cell in cells:
         p = cell["parameters"]
-        op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"])
+        op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"], device.get("lens"))
         cell["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
+
+
+def check_work_field(profile: dict, width: float, height: float) -> None:
+    """A plate with its markers must fit the work field of the laser, when the field is printed or confirmed (REQ-018, DEC-040)."""
+    device = profile.get("device")
+    if device is None:
+        return
+    from . import characterization
+    field, _ = characterization.work_field(device["passport"], device.get("lens"))
+    if field is None:
+        return
+    ext = marker_geometry("TCE-00000000", width, height)["extent"]       # same identifier length as a real plate, so the same QR size
+    need_w, need_h = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
+    if need_w > field["width"] or need_h > field["height"]:
+        raise pf.ValidationError(f"the plate with its markers is {need_w:.0f} x {need_h:.0f} mm, larger than the work field {field['width']:g} x {field['height']:g} mm of the laser")
 
 
 def build_grid(profile: dict, powers: list[float], frequencies: list[float], speed: float,
@@ -144,6 +159,7 @@ def build_grid(profile: dict, powers: list[float], frequencies: list[float], spe
     if problems:
         raise pf.ValidationError("; ".join(dict.fromkeys(problems)))
     cols, rows = len(powers), len(frequencies)
+    check_work_field(profile, cols * cell_w + (cols - 1) * gap, rows * cell_h + (rows - 1) * gap)
     if cols * rows + 1 > MAX_LAYERS + 1:
         raise pf.ValidationError(f"{cols * rows} cells need more LightBurn layers than the {MAX_LAYERS} available")
     cells = []
@@ -183,6 +199,8 @@ def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: flo
     if marker_layer_settings(store) is None:
         raise pf.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
     profile = pf.get_profile(store, profile_id)
+    lens = lenses.snapshot((profile.get("device") or {}).get("lens"), characterization.characterize((profile["device"] or {}).get("passport"), profile["device"].get("lens"))["spot_diameter_um"] if profile.get("device") else None)
+    lens_json = json.dumps(lens) if lens else None   # DEC-041: the lens is remembered by the plate
     grids = []
     for item in series:
         grid = build_grid(profile, item["powers"], item["frequencies"], item["speed"], cell_w, cell_h, gap)
@@ -200,9 +218,9 @@ def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: flo
             ident = new_identifier()
             markers = marker_geometry(ident, item["geometry"]["width"], item["geometry"]["height"])
             plate_id = store.execute(
-                "INSERT INTO plate(experiment_id,profile_id,speed,geometry_json,cells_json,proposal_id,created_at) VALUES (?,?,?,?,?,?,?)",
-                (ident, profile_id, speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, now())).lastrowid
-            plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store)}
+                "INSERT INTO plate(experiment_id,profile_id,speed,geometry_json,cells_json,proposal_id,lens_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (ident, profile_id, speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, lens_json, now())).lastrowid
+            plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store), "lens": lens}
             plan_id = store.execute(
                 "INSERT INTO plan(name,mode,status,profile_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", profile_id, plate_id, 1, ident, None,
@@ -235,7 +253,7 @@ def with_operating_points(store: Store, plan: dict) -> dict:
         p = layer.get("parameters") or {}
         if layer.get("operating_point") is None and all(k in p for k in ("power", "frequency", "speed")):
             try:
-                op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"])
+                op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"], device.get("lens"))
             except pf.ValidationError:
                 continue
             layer["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}

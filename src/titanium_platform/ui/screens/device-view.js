@@ -9,11 +9,11 @@ const DeviceView = (() => {
     const p = d.passport, r = p.repetition_rate_khz;
     return h('div', {class: 'card stack'}, h('h3', {}, 'Паспорт'),
       d.description ? h('details', {}, h('summary', {class: 'small muted'}, 'Описание лазера'), h('p', {class: 'muted'}, d.description)) : null,
-      facts([['Производитель', d.manufacturer], ['Модель', d.model], ['Серийный номер', d.serial || 'не указан'], ['Номинальная мощность', p.rated_power_w + ' Вт'],
+      facts([['Производитель', d.manufacturer], ['Модель', d.model], ['Серийный номер', d.serial || 'не указан'], ['Номинальная мощность', p.rated_power_w + ' Вт' + (d.characterization.power_basis === 'measured' ? ` (у вашего экземпляра измерено ${d.characterization.effective_power_w} Вт)` : '')],
         ['Длина волны', p.wavelength_nm ? p.wavelength_nm + ' нм' : null], ['Частота повторения', `${r.min}–${r.max} кГц`],
         ['Наибольшая энергия импульса', p.max_pulse_energy_mj ? p.max_pulse_energy_mj + ' мДж' : null],
         ['Диаметр пятна на металле', p.spot_diameter_um ? p.spot_diameter_um + ' мкм' : 'не задан: плотность энергии не считается']]),
-      (p.open_items || []).length ? h('details', {class: 'alert warn'}, h('summary', {}, h('strong', {}, 'Открытые вопросы по паспорту: ' + p.open_items.length)), h('ul', {}, p.open_items.map((t) => h('li', {}, t)))) : null);
+      DeviceQuestions.card(d));
   }
 
   function stepsCard(d) {

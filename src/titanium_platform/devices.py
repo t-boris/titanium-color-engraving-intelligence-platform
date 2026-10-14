@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from . import profiles as pf
+from . import lenses
+from .characterization import UNREAD, characterize
 from .db import Store, now
 
 DOCUMENT_KINDS = ("test_report", "cutoff_table", "waveform", "controller_config", "packing_list", "manual", "other")
@@ -143,6 +145,8 @@ def validate_passport(raw: Any) -> dict:
     return {"rated_power_w": rated, "wavelength_nm": _optional_positive(raw.get("wavelength_nm"), "wavelength"),
             "max_pulse_energy_mj": _optional_positive(raw.get("max_pulse_energy_mj"), "maximum pulse energy"),
             "spot_diameter_um": _optional_positive(raw.get("spot_diameter_um"), "spot diameter"),
+            "beam_diameter_mm": _optional_positive(raw.get("beam_diameter_mm"), "beam diameter"), "m2": _optional_positive(raw.get("m2"), "M2"),
+            "m2_max": _optional_positive(raw.get("m2_max"), "M2 limit"),
             "repetition_rate_khz": {"min": lo, "max": hi}, "pulse_steps": steps,
             "test_report": _test_report(raw.get("test_report")), "controller": _controller(raw.get("controller")),
             "waveforms": _waveforms(raw.get("waveforms")), "open_items": [t.strip() for t in open_items if t.strip()]}
@@ -175,7 +179,7 @@ TEMPLATES = {
                         "ignored by the laser, which keeps the last valid one. Below the cut-off frequency of the chosen pulse width "
                         "the output power falls in proportion to the repetition rate (manufacturer's table and Fig. 3)."),
         "passport": {
-            "rated_power_w": 60, "wavelength_nm": 1064, "max_pulse_energy_mj": 1.5,
+            "rated_power_w": 60, "wavelength_nm": 1064, "max_pulse_energy_mj": 1.5, "m2_max": 1.5, "beam_diameter_mm": 7.0,
             "repetition_rate_khz": {"min": 1, "max": 4000},
             "pulse_steps": [{"pulse_width_ns": w, "cutoff_khz": c} for w, c in JPT_60_M7_STEPS],
         },
@@ -200,8 +204,8 @@ def brief(store: Store, device_id: int | None) -> dict | None:
     if device_id is None:
         return None
     row = _row(store, device_id)
-    return {"id": row["id"], "name": row["name"], "manufacturer": row["manufacturer"], "model": row["model"], "serial": row["serial"],
-            "passport": json.loads(row["data_json"])}
+    return {"id": row["id"], "name": row["name"], "title": display_title(row["name"], row["serial"]), "manufacturer": row["manufacturer"],
+            "model": row["model"], "serial": row["serial"], "passport": json.loads(row["data_json"]), "lens": lenses.installed(store, device_id)}
 
 
 def linked_profiles(store: Store, device_id: int) -> list[dict]:
@@ -213,16 +217,49 @@ def _document_public(row) -> dict:
     return {k: row[k] for k in ("id", "device_id", "kind", "title", "filename", "media_type", "size", "created_at")}
 
 
+def display_title(name: str, serial: str | None) -> str:
+    """The model with its current serial number; the name itself holds no serial number (REQ-018)."""
+    return f"{name} · {serial}" if serial and serial not in name else name
+
+
 def _public(store: Store, row) -> dict:
     d = dict(row)
     d["passport"] = json.loads(d.pop("data_json"))
     d["documents"] = [_document_public(r) for r in store.query("SELECT * FROM device_document WHERE device_id=? ORDER BY id", (d["id"],))]
     d["profiles"] = linked_profiles(store, d["id"])
+    d["lens"] = lenses.installed(store, d["id"])
+    d["open_questions"] = open_questions(d["passport"], d.get("serial"), d["lens"])
+    d["characterization"] = characterize(d["passport"], d["lens"])
+    d["title"] = display_title(d["name"], d.get("serial"))
     return d
 
 
 def _text(value: Any) -> str | None:
     return (str(value).strip() or None) if value is not None else None
+
+
+def open_questions(passport: dict, serial: str | None, lens: dict | None = None) -> list[dict]:
+    """What is still unknown about a device, derived from its data (DEC-039).
+
+    Nothing here is stored: filling a value in, confirming it or setting the spot diameter removes its question at
+    once. The only stored questions are the operator's own notes (``open_items``).
+    """
+    out, unconfirmed = [], []
+    for tab in (passport.get("controller") or {}).get("tabs", []):
+        for f in tab["fields"]:
+            if f["value"] == UNREAD:
+                out.append({"kind": "unread", "tab": tab["key"], "key": f["key"]})
+            elif f["status"] == "handwritten":
+                unconfirmed.append({"tab": tab["key"], "key": f["key"]})
+    if unconfirmed:
+        out.append({"kind": "unconfirmed", "count": len(unconfirmed), "items": unconfirmed})
+    if lens is None and not passport.get("spot_diameter_um"):
+        out.append({"kind": "lens"})
+    elif not passport.get("spot_diameter_um") and not passport.get("m2"):
+        out.append({"kind": "m2"})
+    if not serial:
+        out.append({"kind": "serial"})
+    return out + [{"kind": "note", "text": t} for t in passport.get("open_items") or []]
 
 
 
@@ -269,6 +306,7 @@ def update_device(store: Store, device_id: int, name: Any = _UNSET, manufacturer
 
 def delete_device(store: Store, device_id: int) -> None:
     _row(store, device_id)
+    store.execute("UPDATE laser_device SET lens_id=NULL WHERE id=?", (device_id,))    # the lens stays as a record
     linked = len(linked_profiles(store, device_id))
     if linked:
         raise pf.ProtectedError(f"this laser is linked to {linked} laser profile versions; unlink them first")
@@ -354,7 +392,8 @@ def _round(value: float | None, digits: int = 6) -> float | None:
     return None if value is None else round(value, digits)
 
 
-def operating_point(passport: dict, power: float, frequency: float, speed: float, pulse_width: float, line_interval: float, passes: int = 1) -> dict:
+def operating_point(passport: dict, power: float, frequency: float, speed: float, pulse_width: float, line_interval: float, passes: int = 1,
+                    lens: dict | None = None) -> dict:
     """Passport-model figures for one parameter set. Nothing here is measured."""
     power = pf._finite(power, "power", True)
     if power > 100:
@@ -367,33 +406,43 @@ def operating_point(passport: dict, power: float, frequency: float, speed: float
     cutoff = step["cutoff_khz"]
     cw = cutoff is None
     problems, notes = [], []
-    rate = passport["repetition_rate_khz"]
+    ch = characterize(passport, lens)
+    rate, ctl = passport["repetition_rate_khz"], ch["frequency_range_khz"]
+    outside = False
     if not rate["min"] <= freq <= rate["max"]:
         problems.append(f"frequency {freq:g} kHz is outside the repetition rate range {rate['min']:g}-{rate['max']:g} kHz of this laser")
+    elif not ctl["min"] <= freq <= ctl["max"]:
+        outside = True
+        notes.append(f"frequency {freq:g} kHz is outside the controller range {ctl['min']:g}-{ctl['max']:g} kHz (Min PWM and Max PWM of the laser settings)")
     factor = 1.0 if cw or freq >= cutoff else freq / cutoff
     below = factor < 1.0
     if below:
         notes.append(f"frequency {freq:g} kHz is below the cut-off frequency {cutoff:g} kHz of the {pulse_width:g} ns step: the output power is {factor * 100:.0f} % of the power set")
-    output = passport["rated_power_w"] * power / 100 * factor
-    per_pass = output / (speed * interval) * 100          # W / (mm/s x mm) = J/mm2, x100 = J/cm2
+    output = ch["effective_power_w"] * power / 100 * factor      # the unit's measured power when its test report gives one (DEC-040)
     pitch = energy = density = fluence = overlap = None
     if cw:
         notes.append("CW setting: the laser does not pulse, so pulse energy and pulse pitch are not defined")
     else:
         energy = output / freq                            # W / kHz = mJ
+        stated = passport.get("max_pulse_energy_mj")
+        if stated and energy > stated * (1 + 1e-9):
+            notes.append(f"the calculated pulse energy {energy:.3g} mJ exceeds the passport maximum {stated:g} mJ: limited to the maximum")
+            energy, output = stated, stated * freq
+    per_pass = output / (speed * interval) * 100          # W / (mm/s x mm) = J/mm2, x100 = J/cm2
+    if not cw:
         pitch = speed / freq                              # (mm/s) / kHz = um
         density = 1 / (pitch / 1000 * interval) * passes
-        spot = passport.get("spot_diameter_um")
+        spot = ch["spot_diameter_um"]                    # measured by the operator, else calculated from the installed lens (REQ-019)
         if spot:
             fluence = energy / 1000 / (math.pi * (spot * 1e-4 / 2) ** 2)
             overlap = max(0.0, 1 - pitch / spot)
         else:
-            notes.append("spot diameter is not set for this laser: fluence and pulse overlap are not calculated")
+            notes.append("spot diameter is not known for this laser: fluence and pulse overlap are not calculated")
     return {"basis": "passport model", "pulse_width_ns": pulse_width, "cw": cw, "cutoff_khz": cutoff, "set_power_pct": power, "frequency_khz": freq,
-            "speed_mm_s": speed, "line_interval_mm": interval, "passes": int(passes), "power_factor": _round(factor), "below_cutoff": below,
+            "speed_mm_s": speed, "line_interval_mm": interval, "passes": int(passes), "power_factor": _round(factor), "below_cutoff": below, "outside_controller_range": outside, "power_basis": ch["power_basis"],
             "output_power_w": _round(output), "pulse_energy_mj": _round(energy), "pulse_pitch_um": _round(pitch), "pulses_per_mm2": _round(density),
             "areal_energy_j_cm2": _round(per_pass * passes), "coverage_rate_mm2_s": _round(speed * interval / passes),
-            "fluence_j_cm2": _round(fluence), "pulse_overlap": _round(overlap), "problems": problems, "notes": notes}
+            "fluence_j_cm2": _round(fluence), "pulse_overlap": _round(overlap), "spot_diameter_um": _round(ch["spot_diameter_um"]), "spot_basis": ch["spot_basis"], "problems": problems, "notes": notes}
 
 
 def waveform_stats(w: dict, rated_power_w: float) -> dict:
@@ -402,7 +451,7 @@ def waveform_stats(w: dict, rated_power_w: float) -> dict:
     peak = max(range(len(p)), key=lambda i: p[i])
     energy_mj = sum((max(p[i], 0) + max(p[i + 1], 0)) / 2 * (t[i + 1] - t[i]) for i in range(len(t) - 1)) / 1000
     passport = rated_power_w / w["frequency_khz"] if w.get("frequency_khz") else None
-    return {"peak_kw": _round(p[peak], 3), "peak_t_ns": _round(t[peak], 3), "energy_mj": _round(energy_mj),
+    return {"power_w": _round(rated_power_w, 3), "peak_kw": _round(p[peak], 3), "peak_t_ns": _round(t[peak], 3), "energy_mj": _round(energy_mj),
             "passport_energy_mj": _round(passport), "ratio": _round(energy_mj / passport, 3) if passport else None}
 
 
@@ -410,11 +459,13 @@ def log_space(low: float, high: float, count: int) -> list[float]:
     return [low * (high / low) ** (i / (count - 1)) for i in range(count)]
 
 
-def charts(passport: dict) -> dict:
+def charts(passport: dict, lens: dict | None = None) -> dict:
     """Series for the device charts, computed from the passport alone (REQ-017): nothing is typed twice."""
-    rated, lo, hi = passport["rated_power_w"], passport["repetition_rate_khz"]["min"], passport["repetition_rate_khz"]["max"]
+    ch = characterize(passport, lens)
+    rated, lo, hi = ch["effective_power_w"], passport["repetition_rate_khz"]["min"], passport["repetition_rate_khz"]["max"]
+    cap = passport.get("max_pulse_energy_mj")
     pulsed = [s for s in passport["pulse_steps"] if s["cutoff_khz"] is not None]
-    cutoff = [{"pulse_width_ns": s["pulse_width_ns"], "cutoff_khz": s["cutoff_khz"], "max_pulse_energy_mj": _round(rated / s["cutoff_khz"])} for s in pulsed]
+    cutoff = [{"pulse_width_ns": s["pulse_width_ns"], "cutoff_khz": s["cutoff_khz"], "max_pulse_energy_mj": _round(min(rated / s["cutoff_khz"], cap) if cap else rated / s["cutoff_khz"])} for s in pulsed]
     curves = []
     for s in pulsed:
         knee = s["cutoff_khz"]
@@ -422,10 +473,12 @@ def charts(passport: dict) -> dict:
         points = []
         for f in freqs:
             power = rated * min(1.0, f / knee)
+            if cap and power / f > cap:
+                power = cap * f
             points.append({"frequency_khz": _round(f), "power_w": _round(power), "pulse_energy_mj": _round(power / f)})
         curves.append({"pulse_width_ns": s["pulse_width_ns"], "cutoff_khz": knee, "points": points})
     waveforms = [w | {"stats": waveform_stats(w, rated)} for w in passport.get("waveforms") or []]
-    return {"rated_power_w": rated, "repetition_rate_khz": {"min": lo, "max": hi}, "stated_max_pulse_energy_mj": passport.get("max_pulse_energy_mj"),
+    return {"rated_power_w": passport["rated_power_w"], "effective_power_w": rated, "power_basis": ch["power_basis"], "repetition_rate_khz": {"min": lo, "max": hi}, "stated_max_pulse_energy_mj": passport.get("max_pulse_energy_mj"),
             "cw_steps": [s["pulse_width_ns"] for s in passport["pulse_steps"] if s["cutoff_khz"] is None], "cutoff": cutoff, "curves": curves,
             "waveforms": waveforms}
 

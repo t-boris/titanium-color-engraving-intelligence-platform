@@ -34,6 +34,22 @@ I18N.add([
     (m) => 'Частота ' + m[1] + ' кГц вне диапазона лазера ' + m[2] + '–' + m[3] + ' кГц'],
   [/^frequency (\S+) kHz is below the cut-off frequency (\S+) kHz of the (\S+) ns step: the output power is (\S+) % of the power set/i,
     (m) => 'Частота ' + m[1] + ' кГц ниже частоты среза ' + m[2] + ' кГц для импульса ' + m[3] + ' нс: выходная мощность — ' + m[4] + ' % от заданной'],
+  [/^frequency (\S+) kHz is outside the controller range (\S+)-(\S+) kHz/i,
+    (m) => 'Частота ' + m[1] + ' кГц вне диапазона контроллера ' + m[2] + '–' + m[3] + ' кГц (Min PWM и Max PWM в настройках лазера): проверьте настройки LightBurn'],
+  [/^the calculated pulse energy (\S+) mJ exceeds the passport maximum (\S+) mJ: limited to the maximum/i,
+    (m) => 'Расчётная энергия импульса ' + m[1] + ' мДж больше паспортного максимума ' + m[2] + ' мДж: берётся максимум'],
+  [/^the plate with its markers is (\S+) x (\S+) mm, larger than the work field (\S+) x (\S+) mm of the laser/i,
+    (m) => 'Плата вместе с маркерами ' + m[1] + ' × ' + m[2] + ' мм больше рабочего поля лазера ' + m[3] + ' × ' + m[4] + ' мм: уменьшите ячейки или число значений'],
   [/^CW setting: the laser does not pulse/i, 'Режим CW: лазер не импульсный, энергия и шаг импульсов не определены'],
-  [/^spot diameter is not set for this laser/i, 'Диаметр пятна лазера не задан: плотность энергии и перекрытие импульсов не рассчитываются'],
+  [/^spot diameter is not known for this laser/i, 'Диаметр пятна не известен (нужны линза и M² или измеренное пятно): плотность энергии и перекрытие импульсов не рассчитываются'],
+  // линзы
+  [/^lens name is required/i, 'Укажите название линзы'],
+  [/^(.+) must be between (\S+) and (\S+)$/i,
+    (m) => ({'focal length': 'Фокусное расстояние', 'lens field': 'Поле линзы', 'beam expansion': 'Расширитель пучка'}[m[1].toLowerCase()] || m[1]) + ' — от ' + m[2] + ' до ' + m[3]],
+  [/^this lens is installed on a laser; remove it from the laser first/i, 'Линза установлена на лазере: сначала снимите её'],
+  [/^this lens is already installed on another laser \((.+)\); remove it there first/i, (m) => 'Эта линза уже стоит на другом лазере (' + m[1] + '): сначала снимите её там'],
+  [/^the lens installed now \((.+)\) differs from the lens of this plate \((.+)\)$/i, (m) => 'Сейчас стоит линза ' + m[1] + ', а плата делалась на ' + m[2] + ': цвета нельзя считать сравнимыми'],
+  [/^no lens is installed on the laser now; the plate was made with (.+)$/i, (m) => 'Сейчас на лазере нет линзы, а плата делалась на ' + m[1]],
+  [/^this plate has no record of its lens/i, 'У этой платы нет записи о линзе'],
+
 ]);

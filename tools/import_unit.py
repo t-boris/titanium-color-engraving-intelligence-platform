@@ -26,7 +26,11 @@ def backup(data_dir: Path) -> Path | None:
     db = data_dir / "titanium.sqlite"
     if not db.exists():
         return None
-    target = data_dir / f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    base = f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    target, n = data_dir / base, 1
+    while target.exists():   # two imports within one second must not collide
+        n += 1
+        target = data_dir / f"{base}-{n}"
     target.mkdir()
     import sqlite3
     src, dst = sqlite3.connect(db), sqlite3.connect(target / "titanium.sqlite")
@@ -38,7 +42,15 @@ def backup(data_dir: Path) -> Path | None:
 
 
 def find_device(store: Store, serial: str) -> dict | None:
-    return next((d for d in devices.list_devices(store) if d["serial"] == serial), None)
+    """The device of this unit: by its serial number, or by the serial of its test report.
+
+    The operator may replace the serial number (for instance with the machine number), so the serial printed in the
+    test report is the second key; otherwise a second import would create a duplicate device.
+    """
+    for d in devices.list_devices(store):
+        if d["serial"] == serial or ((d["passport"].get("test_report") or {}).get("serial") == serial):
+            return d
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,8 +76,21 @@ def main(argv: list[str] | None = None) -> int:
             print("created device", device["id"], device["name"])
         else:
             print("device", device["id"], "already exists: updating")
-        passport = dict(device["passport"]) | unit["passport"]
-        device = devices.update_device(store, device["id"], passport=passport)
+        # Only sections the device does not have yet are filled in: what the operator confirmed, corrected, removed or
+        # added is never overwritten by what was read from the photographs (DEC-039).
+        if device["serial"] and device["serial"] in device["name"] and unit["name"] != device["name"]:
+            device = devices.update_device(store, device["id"], name=unit["name"])      # the title adds the current serial itself
+            print("renamed to", unit["name"], "(the serial number is shown by the title)")
+        passport, filled = dict(device["passport"]), []
+        for key, value in unit["passport"].items():
+            if passport.get(key) in (None, [], {}):
+                passport[key] = value
+                filled.append(key)
+        if filled:
+            device = devices.update_device(store, device["id"], passport=passport)
+            print("filled in:", ", ".join(filled))
+        else:
+            print("nothing to fill in: the operator's data is kept as it is")
         have = {d["filename"] for d in device["documents"]}
         for doc in unit["documents"]:
             if doc["file"] in have:

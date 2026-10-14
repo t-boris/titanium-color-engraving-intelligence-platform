@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import devices, profiles as pf
+from .. import devices, lenses, profiles as pf
 from .common import content_disposition, read_upload, store_of
 
 router = APIRouter(prefix="/api")
@@ -82,7 +82,8 @@ def delete_device(device_id: int, request: Request):
 
 @router.get("/devices/{device_id}/charts")
 def device_charts(device_id: int, request: Request):
-    return devices.charts(devices.get_passport(store_of(request), device_id))
+    s = store_of(request)
+    return devices.charts(devices.get_passport(s, device_id), lenses.installed(s, device_id))
 
 
 @router.post("/devices/{device_id}/documents", status_code=201)
@@ -116,4 +117,4 @@ def operating_point(body: OperatingPointIn, request: Request):
     if profile["device"] is None:
         raise pf.ValidationError("link a laser device to this profile to calculate pulse energy")
     c = profile["constants"]
-    return devices.operating_point(profile["device"]["passport"], body.power, body.frequency, body.speed, c["pulse_width"], c["line_interval"], c["passes"])
+    return devices.operating_point(profile["device"]["passport"], body.power, body.frequency, body.speed, c["pulse_width"], c["line_interval"], c["passes"], profile["device"].get("lens"))
