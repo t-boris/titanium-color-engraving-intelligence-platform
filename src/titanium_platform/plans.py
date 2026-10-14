@@ -209,11 +209,21 @@ def _cut_setting(index: int, name: str, power: float, frequency_khz: float, spee
             f'        <priority Value="{index}"/>\n    </CutSetting>\n')
 
 
-def export_lbrn2(plan: dict, x_offset: float = 0.0, y_offset: float = 0.0) -> bytes:
+def export_offset(plan: dict) -> tuple[float, float]:
+    """Shift that moves the markers (which lie at negative plan coordinates) into LightBurn's positive workspace."""
+    markers = plan.get("markers")
+    if markers and plan.get("markers_enabled", True):
+        return -markers["extent"]["min_x"], -markers["extent"]["min_y"]
+    return 0.0, 0.0
+
+
+def export_lbrn2(plan: dict) -> bytes:
     """Write a plan as a LightBurn project: one layer per band/colour with its own power, frequency, speed.
 
     Refuses a plan whose layers lack parameters or, for predictions, any of the three estimates (REQ-002).
+    Plan coordinates are shifted by :func:`export_offset`; the offset is the same for every shape.
     """
+    x_offset, y_offset = export_offset(plan)
     layers = plan["layers"]
     if not layers:
         raise pf.ValidationError("the plan has no layers to export")
@@ -241,5 +251,7 @@ def export_lbrn2(plan: dict, x_offset: float = 0.0, y_offset: float = 0.0) -> by
             shapes += [_rect(r["x"] + x_offset, r["y"] + y_offset, r["width"], r["height"], MARKER_LAYER_INDEX) for r in m["rects"]]
         shapes += [_rect(r["x"] + x_offset, r["y"] + y_offset, r["width"], r["height"], MARKER_LAYER_INDEX) for r in markers["qr"]["rects"]]
     out += shapes
-    out.append('    <Notes ShowOnLoad="0" Notes=""/>\n</LightBurnProject>\n')
+    ident = plan.get("plan_identifier") or (markers or {}).get("identifier") or ""
+    notes = quoteattr(f"TCE1:{ident}") if ident else '""'
+    out.append(f'    <Notes ShowOnLoad="0" Notes={notes}/>\n</LightBurnProject>\n')
     return "".join(out).encode("utf-8")

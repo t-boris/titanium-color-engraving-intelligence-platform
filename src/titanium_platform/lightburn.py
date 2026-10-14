@@ -32,9 +32,13 @@ class Region:
     y: float
     width: float
     height: float
+    # Outline in project mm. Rect/bitmap: the four corners. Path: the on-curve vertices only, so curved
+    # edges are approximated by straight chords.
+    polygon: list[tuple[float, float]] = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {"kind": self.kind, "x": self.x, "y": self.y, "width": self.width, "height": self.height}
+        return {"kind": self.kind, "x": self.x, "y": self.y, "width": self.width, "height": self.height,
+                "polygon": [list(p) for p in self.polygon]}
 
 
 @dataclass
@@ -73,6 +77,13 @@ class Project:
     app_version: str | None
     device_name: str | None
     layers: list[Layer]
+    notes: str = ""
+
+    @property
+    def identifier(self) -> str | None:
+        """Experiment/plan identifier written by this system as ``TCE1:<id>`` in the project notes."""
+        m = re.search(r"TCE1:([A-Za-z0-9_-]+)", self.notes or "")
+        return m.group(1) if m else None
 
     def layer(self, index: int) -> Layer | None:
         return next((l for l in self.layers if l.index == index), None)
@@ -129,7 +140,7 @@ def _region(shape: ET.Element) -> Region | None:
             return None
         if w != w or h != h:
             return None
-        corners = [_apply(m, sx * w / 2, sy * h / 2) for sx in (-1, 1) for sy in (-1, 1)]
+        corners = [_apply(m, sx * w / 2, sy * h / 2) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
     elif kind == "Path":
         verts = [(float(x), float(y)) for x, y in _VERT.findall(shape.findtext("VertList") or "")]
         if not verts:
@@ -138,7 +149,7 @@ def _region(shape: ET.Element) -> Region | None:
     else:
         return None
     x, y, w, h = _box(corners)
-    return Region(kind.lower(), x, y, w, h)
+    return Region(kind.lower(), x, y, w, h, polygon=corners)
 
 
 def parse_bytes(data: bytes) -> Project:
@@ -185,7 +196,9 @@ def parse_bytes(data: bytes) -> Project:
         if layer is not None and region is not None:
             layer.regions.append(region)
 
-    return Project(root.get("AppVersion"), root.get("DeviceName"), sorted(layers.values(), key=lambda l: l.index))
+    notes_el = root.find("Notes")
+    notes = (notes_el.get("Notes") or "") if notes_el is not None else ""
+    return Project(root.get("AppVersion"), root.get("DeviceName"), sorted(layers.values(), key=lambda l: l.index), notes)
 
 
 def parse_file(path: str) -> Project:

@@ -72,7 +72,13 @@ def test_plate_export_round_trips_through_the_lightburn_reader(store, ready):
     assert len(cells) == 4
     l = cells["r2c1"]
     assert (l.power, l.frequency_khz, l.speed, l.pulse_width, l.line_interval) == (10, 80, 900, 200, 0.025)
-    assert l.regions[0].x == pytest.approx(0) and l.regions[0].y == pytest.approx(5) and l.regions[0].width == pytest.approx(5)
+    dx, dy = pl.export_offset(pl.get_plan(store, out["plan_id"]))
+    assert dx > 0 and dy > 0  # markers moved into the positive workspace
+    assert l.regions[0].x == pytest.approx(0 + dx) and l.regions[0].y == pytest.approx(5 + dy) and l.regions[0].width == pytest.approx(5)
+    assert project.identifier == out["experiment_id"]
+    # the file stores centre and size with 5 decimals (0.01 micrometre), so allow that much rounding
+    assert min(r.x for lay in project.layers for r in lay.regions) >= -1e-4
+    assert min(r.y for lay in project.layers for r in lay.regions) >= -1e-4
     marker = project.layer(pl.MARKER_LAYER_INDEX)
     assert (marker.power, marker.frequency_khz, marker.speed) == (20, 60, 300) and len(marker.regions) > 20
 

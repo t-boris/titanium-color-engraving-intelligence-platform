@@ -98,3 +98,13 @@ def test_compare_with_profile_constants_dec_022():
     assert len(diffs) == 1 and "pulse width" in diffs[0]
     img = lb.parse_bytes(SAMPLE).layer(7)  # file records neither constant: not a difference
     assert lb.compare_with_profile(img, pulse_width=200, line_interval=0.025) == []
+
+
+def test_regions_expose_their_outline_and_the_notes_identifier():
+    p = lb.parse_bytes(SAMPLE)
+    rect = p.layer(0).regions[0]
+    assert [tuple(round(v, 6) for v in pt) for pt in rect.polygon] == [(80, 83), (90, 83), (90, 87), (80, 87)]
+    assert len(p.layer(0).regions[1].polygon) == 3  # the path's on-curve vertices
+    assert p.identifier is None
+    q = lb.parse_bytes(b'<LightBurnProject><Notes ShowOnLoad="0" Notes="TCE1:TCE-0A1B2C3D"/></LightBurnProject>')
+    assert q.identifier == "TCE-0A1B2C3D"
