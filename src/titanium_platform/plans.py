@@ -151,29 +151,53 @@ def _plate_layers(grid: dict) -> list[dict]:
     return layers
 
 
-def create_plate_series(store: Store, profile_id: int, powers_text: str, frequencies_text: str, speeds_text: str,
-                        cell_w: float, cell_h: float, gap: float, proposal_id: int | None = None) -> list[dict]:
-    """One plate (and one EngravingPlan) per speed, in one transaction. Markers are mandatory (REQ-003)."""
+def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: float, cell_h: float, gap: float,
+                  proposal_id: int | None = None) -> list[dict]:
+    """One plate (and one EngravingPlan) per item of ``series`` = [{speed, powers, frequencies, proposed?}], atomically.
+
+    Markers are mandatory (REQ-003). ``proposed`` is an optional set of (power, frequency) pairs the Experiment
+    Designer actually chose; the other cells of the Cartesian grid are marked as intersections, not
+    recommendations (prototype BP-53).
+    """
     if marker_layer_settings(store) is None:
         raise pf.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
     profile = pf.get_profile(store, profile_id)
-    series = preview_series(profile, powers_text, frequencies_text, speeds_text, cell_w, cell_h, gap)
+    grids = []
+    for item in series:
+        grid = build_grid(profile, item["powers"], item["frequencies"], item["speed"], cell_w, cell_h, gap)
+        chosen = item.get("proposed")  # None = every cell is wanted; else {(power, frequency): {"reason", "target_id"}}
+        for cell in grid["cells"]:
+            p = cell["parameters"]
+            meta = None if chosen is None else chosen.get((p["power"], p["frequency"]))
+            cell["proposed"] = chosen is None or meta is not None
+            cell["reason"] = (meta or {}).get("reason")
+            cell["target_id"] = (meta or {}).get("target_id")
+        grids.append((item["speed"], grid))
     out = []
     with store.transaction():
-        for item in series:
+        for speed, item in grids:
             ident = new_identifier()
             markers = marker_geometry(ident, item["geometry"]["width"], item["geometry"]["height"])
             plate_id = store.execute(
                 "INSERT INTO plate(experiment_id,profile_id,speed,geometry_json,cells_json,proposal_id,created_at) VALUES (?,?,?,?,?,?,?)",
-                (ident, profile_id, item["speed"], json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, now())).lastrowid
+                (ident, profile_id, speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, now())).lastrowid
             plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store)}
             plan_id = store.execute(
                 "INSERT INTO plan(name,mode,status,profile_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (f"Plate {ident} (speed {item['speed']:g})", MODE_PLATE, "Ready to export", profile_id, plate_id, 1, ident, None,
+                (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", profile_id, plate_id, 1, ident, None,
                  json.dumps(plan_data), now())).lastrowid
-            out.append({"plate_id": plate_id, "plan_id": plan_id, "experiment_id": ident, "speed": item["speed"],
-                        "geometry": item["geometry"], "cells": len(item["cells"])})
+            out.append({"plate_id": plate_id, "plan_id": plan_id, "experiment_id": ident, "speed": speed,
+                        "geometry": item["geometry"], "cells": len(item["cells"]),
+                        "intersections": sum(1 for c in item["cells"] if not c["proposed"])})
     return out
+
+
+def create_plate_series(store: Store, profile_id: int, powers_text: str, frequencies_text: str, speeds_text: str,
+                        cell_w: float, cell_h: float, gap: float, proposal_id: int | None = None) -> list[dict]:
+    """One plate per speed over the same power x frequency grid, from operator-typed value lists."""
+    powers, freqs = parse_numbers(powers_text, "power"), parse_numbers(frequencies_text, "frequency")
+    series = [{"speed": s, "powers": powers, "frequencies": freqs} for s in parse_numbers(speeds_text, "speed")]
+    return create_plates(store, profile_id, series, cell_w, cell_h, gap, proposal_id)
 
 
 def get_plan(store: Store, plan_id: int) -> dict:
