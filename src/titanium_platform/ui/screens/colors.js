@@ -13,7 +13,7 @@
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', 'Карта измеренных цветов в плоскости a и b');
-    svg.style.cssText = 'width:100%;max-width:640px;background:#0f1520;border-radius:10px';
+    svg.style.cssText = 'width:100%;max-width:720px';   // look comes from styles.css (svg[role=img])
     samples.forEach((s) => {
       const c = document.createElementNS(SVG, 'circle');
       c.setAttribute('cx', 20 + ((s.lab[1] - lo[0]) / (hi[0] - lo[0])) * (W - 40));
