@@ -198,3 +198,20 @@ A. A standard 24-patch ColorChecker Classic (X-Rite or Calibrite). Use its publi
 ### AI · 2026-10-14
 
 Recorded DEC-025 from Q-018. An OpenCV ColorChecker probe first reported no detection because of an error in my call (I passed the chart type where the chart count belongs). With the correct call it detects the chart in OpenCV's two published test images and in 8 synthetic renders. It is still unverified on a real RAW rig photograph, so it stays behind an interface and is marked unverified until you supply one.
+
+### Answer to scope question · 2026-10-14
+
+How to proceed with the rest of the implementation (I-7 to I-10, the HTTP API and UI, then PR, CI, merge, deploy)?
+
+A. Continue with everything in the plan: conversions, analysis, designer, API and a browser UI, then the PR/CI/merge/deploy steps. Treat the proposed decisions as working defaults and list them in the PR for your review. (Recorded as DEC-031.)
+
+### Answer to Q-019 · 2026-10-14
+
+Which language should the browser UI use?
+
+A. Russian UI, matching the prototype. I translate the server messages the UI shows, and keep English in the API and the docs. (Recorded as DEC-034.)
+
+### AI · 2026-10-14
+
+Recorded DEC-031 and DEC-034 from your answers. Added DEC-032 (continuous mapping) and DEC-033 (designer model) as proposed, plus DEC-023, DEC-024, DEC-026 to DEC-030 earlier. All proposed decisions are working defaults and are listed in the pull request for you to accept or change.
+
