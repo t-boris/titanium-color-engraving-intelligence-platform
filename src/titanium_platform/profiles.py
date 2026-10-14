@@ -19,6 +19,7 @@ DEFAULT_AXES = [
     {"key": "speed", "name": "Speed", "unit": "mm/s", "min": 1.0, "max": 10000.0},
 ]
 CONSTANT_KEYS = ("pulse_width", "line_interval", "passes")
+_UNSET = object()   # "not given" for a field where None means "remove the link"
 RULE_KEYS = ("repeat_threshold", "delta_tolerance", "variance_threshold")
 
 
@@ -67,20 +68,29 @@ def _profile_dict(row) -> dict:
     return d
 
 
+def _check_device_step(store: Store, device_id: int | None, pulse_width: float) -> None:
+    """A profile linked to a device must use a pulse width the laser offers (DEC-035)."""
+    if device_id is None:
+        return
+    from . import devices   # devices imports this module
+    devices.require_selectable(devices.get_passport(store, device_id), pulse_width)
+
+
 def create_profile(store: Store, name: str, pulse_width: float, line_interval: float, passes: int,
-                   axes: list[dict] | None = None, family: str | None = None) -> dict:
+                   axes: list[dict] | None = None, family: str | None = None, device_id: int | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValidationError("profile name is required")
     pw, li = _finite(pulse_width, "pulse width", True), _finite(line_interval, "line interval", True)
     if int(passes) != passes or passes < 1:
         raise ValidationError("passes must be a positive integer")
+    _check_device_step(store, device_id, pw)
     clean = validate_axes(axes if axes is not None else [dict(a) for a in DEFAULT_AXES])
     family = family or name
     last = store.one("SELECT MAX(version) AS v FROM laser_profile WHERE family=?", (family,))["v"] or 0
     cur = store.execute(
-        "INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at) VALUES (?,?,?,?,?,?,?,?)",
-        (family, last + 1, name, json.dumps(clean), pw, li, int(passes), now()))
+        "INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at,device_id) VALUES (?,?,?,?,?,?,?,?,?)",
+        (family, last + 1, name, json.dumps(clean), pw, li, int(passes), now(), device_id))
     return get_profile(store, cur.lastrowid)
 
 
@@ -90,6 +100,8 @@ def get_profile(store: Store, profile_id: int) -> dict:
         raise KeyError(f"laser profile {profile_id} not found")
     d = _profile_dict(row)
     d["linked"] = profile_links(store, profile_id)
+    from . import devices
+    d["device"] = devices.brief(store, d.get("device_id"))
     return d
 
 
@@ -103,9 +115,20 @@ def profile_links(store: Store, profile_id: int) -> dict:
 
 
 def update_profile(store: Store, profile_id: int, name: str | None = None, pulse_width: float | None = None,
-                   line_interval: float | None = None, passes: int | None = None, confirm_new_version: bool = False) -> dict:
-    """Rename in place; a changed constant needs confirmation and creates a new version."""
+                   line_interval: float | None = None, passes: int | None = None, confirm_new_version: bool = False,
+                   device_id: Any = _UNSET) -> dict:
+    """Rename or relink the device in place; a changed constant needs confirmation and creates a new version.
+
+    The device link is not a constant: changing it never creates a version (DEC-035). A new version keeps the
+    link, and its pulse width is checked against the device.
+    """
     cur = get_profile(store, profile_id)
+    if device_id is not _UNSET and device_id is not None:
+        from . import devices
+        try:
+            devices.get_passport(store, device_id)
+        except KeyError:
+            raise ValidationError("the laser device was not found") from None
     consts = cur["constants"]
     new = {"pulse_width": consts["pulse_width"] if pulse_width is None else _finite(pulse_width, "pulse width", True),
            "line_interval": consts["line_interval"] if line_interval is None else _finite(line_interval, "line interval", True),
@@ -117,7 +140,11 @@ def update_profile(store: Store, profile_id: int, name: str | None = None, pulse
         if not confirm_new_version:
             raise ValidationError("changing a profile constant creates a new version; confirm to continue")
         return create_profile(store, name or cur["name"], new["pulse_width"], new["line_interval"], int(new["passes"]),
-                              axes=cur["axes"], family=cur["family"])
+                              axes=cur["axes"], family=cur["family"],
+                              device_id=cur.get("device_id") if device_id is _UNSET else device_id)
+    if device_id is not _UNSET:
+        _check_device_step(store, device_id, consts["pulse_width"])
+        store.execute("UPDATE laser_profile SET device_id=? WHERE id=?", (device_id, profile_id))
     if name is not None:
         name = name.strip()
         if not name:

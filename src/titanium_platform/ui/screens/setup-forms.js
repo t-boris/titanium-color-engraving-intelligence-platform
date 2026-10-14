@@ -4,12 +4,18 @@ const SetupForms = (() => {
   const {h, btn, field, post, put, del, toast, fail, confirmBox} = App;
   const val = (el) => el.value.trim();
 
-  function newProfileForm(reload) {
+  /** Выпадающий список лазеров; пустое значение — «без лазера» (REQ-017). */
+  function devicePicker(devices, current) {
+    return h('select', {'aria-label': 'Лазер'}, [h('option', {value: ''}, 'без лазера')].concat((devices || []).map((d) => h('option', {value: d.id, selected: d.id === current}, d.name))));
+  }
+
+  function newProfileForm(reload, devices) {
+    const device = devicePicker(devices, null);
     const name = h('input', {placeholder: 'Например, MOPA 60 Вт'}), pw = h('input', {type: 'number', step: 'any', placeholder: 'нс'});
     const li = h('input', {type: 'number', step: 'any', placeholder: '0.025'}), passes = h('input', {type: 'number', step: '1', value: 1});
-    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, field('Название', name), field('Длительность импульса', pw), field('Интервал линий, мм', li), field('Проходы', passes)),
+    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, field('Название', name), field('Лазер', device), field('Длительность импульса, нс', pw), field('Интервал линий, мм', li), field('Проходы', passes)),
       btn('Создать профиль', async () => {
-        try { const p = await post('/profiles', {name: val(name), pulse_width: +pw.value, line_interval: +li.value, passes: +passes.value}); toast('Профиль создан', 'ok'); reload(p.id); } catch (e) { fail(e); }
+        try { const p = await post('/profiles', {name: val(name), pulse_width: +pw.value, line_interval: +li.value, passes: +passes.value, device_id: device.value === '' ? null : +device.value}); toast('Профиль создан', 'ok'); reload(p.id); } catch (e) { fail(e); }
       }, 'primary'));
   }
 
@@ -43,5 +49,5 @@ const SetupForms = (() => {
         async () => { await del('/setups/' + s.id); toast('Запись удалена', 'ok'); reload(); }), 'danger') : null));
   }
 
-  return {newProfileForm, materialTab, standTab};
+  return {newProfileForm, devicePicker, materialTab, standTab};
 })();

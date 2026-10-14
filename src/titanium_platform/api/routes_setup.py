@@ -15,6 +15,7 @@ class ProfileIn(BaseModel):
     pulse_width: float
     line_interval: float
     passes: int
+    device_id: int | None = None
 
 
 class ProfilePatch(BaseModel):
@@ -23,6 +24,7 @@ class ProfilePatch(BaseModel):
     line_interval: float | None = None
     passes: int | None = None
     confirm_new_version: bool = False
+    device_id: int | None = None
 
 
 class MaterialIn(BaseModel):
@@ -58,7 +60,7 @@ def list_profiles(request: Request):
 
 @router.post("/profiles", status_code=201)
 def create_profile(body: ProfileIn, request: Request):
-    return pf.create_profile(store_of(request), body.name, body.pulse_width, body.line_interval, body.passes)
+    return pf.create_profile(store_of(request), body.name, body.pulse_width, body.line_interval, body.passes, device_id=body.device_id)
 
 
 @router.get("/profiles/{profile_id}")
@@ -68,7 +70,8 @@ def get_profile(profile_id: int, request: Request):
 
 @router.patch("/profiles/{profile_id}")
 def update_profile(profile_id: int, body: ProfilePatch, request: Request):
-    return pf.update_profile(store_of(request), profile_id, **body.model_dump())
+    given = body.model_dump(exclude_unset=True)   # device_id: null removes the link, an absent field leaves it
+    return pf.update_profile(store_of(request), profile_id, **given)
 
 
 @router.delete("/profiles/{profile_id}", status_code=204)

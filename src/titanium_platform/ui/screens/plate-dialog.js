@@ -4,6 +4,13 @@
 const PlateDialog = (() => {
   const {h, btn, field, post, toast, modal, table} = App;
 
+  /** Мощность и энергия импульса ячейки, если профиль привязан к лазеру; расчёт, не измерение. */
+  function passport(o) {
+    if (!o) return '—';
+    const energy = o.pulse_energy_mj == null ? '' : ` · ${+o.pulse_energy_mj.toPrecision(3)} мДж`;
+    return h('span', {}, `≈ ${+o.output_power_w.toPrecision(3)} Вт${energy}`, o.below_cutoff ? [' ', App.pill('ниже среза', 'warn')] : '');
+  }
+
   function open(profiles, reload) {
     const prof = h('select', {'aria-label': 'Версия профиля'}, profiles.map((p) => h('option', {value: p.id}, `${p.name} · версия ${p.version}`)));
     const f = {powers: h('input', {value: '10 20 30'}), frequencies: h('input', {value: '40 80'}), speeds: h('input', {value: '900'}),
@@ -25,7 +32,7 @@ const PlateDialog = (() => {
         fresh = true;
         out.replaceChildren(...grids.map((g) => h('div', {class: 'card'}, h('strong', {}, `Скорость ${g.speed} мм/с`),
           h('p', {class: 'muted small'}, `${g.geometry.columns} × ${g.geometry.rows} ячеек, ${g.geometry.width.toFixed(1)} × ${g.geometry.height.toFixed(1)} мм`),
-          table(['Ячейка', 'Мощность', 'Частота'], g.cells.map((c) => [c.id, c.parameters.power, c.parameters.frequency])))));
+          table(['Ячейка', 'Мощность', 'Частота', 'По паспорту лазера'], g.cells.map((c) => [c.id, c.parameters.power, c.parameters.frequency, passport(c.operating_point)])))));
       }},
       {label: 'Создать планы', cls: 'primary', run: async (x) => {
         if (!fresh) throw new Error('Сначала сделайте актуальный предпросмотр');

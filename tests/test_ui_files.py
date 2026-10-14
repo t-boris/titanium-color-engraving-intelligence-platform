@@ -30,7 +30,10 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/setup-forms.js", "/screens/setup.js"), ("/screens/setup-rules.js", "/screens/setup.js"), ("/screens/plate-dialog.js", "/screens/experiments.js"),
                       ("/screens/corners.js", "/screens/ingest-review.js"), ("/screens/ingest-dialogs.js", "/screens/ingest-review.js"), ("/screens/ingest-upload.js", "/screens/ingest.js"),
                       ("/screens/ingest-review.js", "/screens/ingest.js"), ("/screens/knowledge.js", "/screens/colors.js"), ("/screens/artwork-start.js", "/screens/artwork.js"),
-                      ("/screens/photo-form.js", "/screens/photo.js")]:
+                      ("/screens/photo-form.js", "/screens/photo.js"), ("/screens/device-charts.js", "/screens/device-plots.js"), ("/screens/device-plots.js", "/screens/device.js"),
+                      ("/screens/device-forms.js", "/screens/device-view.js"), ("/screens/device-view.js", "/screens/device.js"), ("/screens/device-calc.js", "/screens/device.js"),
+                      ("/screens/device-forms.js", "/screens/setup.js"), ("/screens/glossary-profile.js", "/screens/profile-help.js"), ("/screens/profile-help.js", "/screens/setup.js"),
+                      ("/screens/glossary-report.js", "/screens/device-report.js"), ("/screens/device-report.js", "/screens/device.js"), ("/screens/device-controller.js", "/screens/device.js")]:
         assert order[dep] < order[user], (dep, user)
 
 

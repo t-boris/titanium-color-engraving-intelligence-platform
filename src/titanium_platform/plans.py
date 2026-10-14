@@ -112,6 +112,25 @@ def save_marker_layer_settings(store: Store, power: float, frequency: float, spe
 
 
 # -- calibration plate series -------------------------------------------------------------------------------
+OPERATING_POINT_KEYS = ("output_power_w", "pulse_energy_mj", "power_factor", "below_cutoff", "areal_energy_j_cm2", "pulse_pitch_um")
+
+
+def _add_operating_points(profile: dict, cells: list[dict]) -> None:
+    """Passport-model figures per cell when the profile has a laser device (REQ-017, DEC-036).
+
+    They are stored next to the parameter vector, never inside it: the vector that observations store is unchanged.
+    """
+    device = profile.get("device")
+    if device is None:
+        return
+    from . import devices
+    c = profile["constants"]
+    for cell in cells:
+        p = cell["parameters"]
+        op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"])
+        cell["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
+
+
 def build_grid(profile: dict, powers: list[float], frequencies: list[float], speed: float,
                cell_w: float, cell_h: float, gap: float) -> dict:
     for label, v in (("cell width", cell_w), ("cell height", cell_h)):
@@ -133,6 +152,7 @@ def build_grid(profile: dict, powers: list[float], frequencies: list[float], spe
             cells.append({"id": f"r{r + 1}c{c + 1}", "row": r, "column": c,
                           "parameters": pf.parameter_vector(profile, p, f, speed),
                           "geometry": {"x": c * (cell_w + gap), "y": r * (cell_h + gap), "width": cell_w, "height": cell_h}})
+    _add_operating_points(profile, cells)
     return {"cells": cells, "geometry": {"cell_width": cell_w, "cell_height": cell_h, "gap": gap, "columns": cols, "rows": rows,
                                          "width": cols * cell_w + (cols - 1) * gap, "height": rows * cell_h + (rows - 1) * gap}}
 
@@ -147,7 +167,8 @@ def _plate_layers(grid: dict) -> list[dict]:
     layers = []
     for i, cell in enumerate(grid["cells"], start=1):
         layers.append({"index": i, "name": cell["id"], "parameters": cell["parameters"], "regions": [cell["geometry"]], "cell_id": cell["id"],
-                       "prediction": None, "knowledge_id": None, "stage": None, "questioned": False})
+                       "prediction": None, "knowledge_id": None, "stage": None, "questioned": False,
+                       "operating_point": cell.get("operating_point")})
     return layers
 
 
@@ -198,6 +219,27 @@ def create_plate_series(store: Store, profile_id: int, powers_text: str, frequen
     powers, freqs = parse_numbers(powers_text, "power"), parse_numbers(frequencies_text, "frequency")
     series = [{"speed": s, "powers": powers, "frequencies": freqs} for s in parse_numbers(speeds_text, "speed")]
     return create_plates(store, profile_id, series, cell_w, cell_h, gap, proposal_id)
+
+
+def with_operating_points(store: Store, plan: dict) -> dict:
+    """Fill in passport-model figures for layers that were stored without them (plans made before a device was linked).
+
+    Computed at read time and never stored, so they follow the device's passport (REQ-017, DEC-036).
+    """
+    device = pf.get_profile(store, plan["profile_id"]).get("device")
+    if device is None:
+        return plan
+    from . import devices
+    c = pf.get_profile(store, plan["profile_id"])["constants"]
+    for layer in plan.get("layers", []):
+        p = layer.get("parameters") or {}
+        if layer.get("operating_point") is None and all(k in p for k in ("power", "frequency", "speed")):
+            try:
+                op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], c["pulse_width"], c["line_interval"], c["passes"])
+            except pf.ValidationError:
+                continue
+            layer["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
+    return plan
 
 
 def get_plan(store: Store, plan_id: int) -> dict:

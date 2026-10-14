@@ -22,7 +22,7 @@ APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why"}
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage"}                       # return "text" or return (stage, "text")
 NOTE_KEYS = {"note"}                                                              # row["note"] = "text"
 EVENT_REASON_ARG = 5                                                              # _event(store, id, type, from, to, REASON, ...)
-TABLES = ["i18n.js", "i18n-more.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js"]
+TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js"]
 PLACEHOLDER = "7"
 
 

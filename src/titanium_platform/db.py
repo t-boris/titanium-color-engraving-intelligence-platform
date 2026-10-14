@@ -25,6 +25,28 @@ CREATE TABLE IF NOT EXISTS laser_profile (
     created_at TEXT NOT NULL,
     UNIQUE (family, version)
 );
+CREATE TABLE IF NOT EXISTS laser_device (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    manufacturer TEXT,
+    model TEXT,
+    serial TEXT,
+    description TEXT,
+    data_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS device_document (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    path TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS material_profile (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -173,6 +195,17 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute("PRAGMA journal_mode = WAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive, idempotent changes to tables that an older version already created (DEC-035).
+
+        A data directory written by this version stays readable by the previous one: the new column is nullable
+        and the previous version ignores columns it does not know.
+        """
+        columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(laser_profile)")}
+        if "device_id" not in columns:
+            self.conn.execute("ALTER TABLE laser_profile ADD COLUMN device_id INTEGER REFERENCES laser_device(id)")
 
     def close(self) -> None:
         self.conn.close()

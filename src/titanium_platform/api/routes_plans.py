@@ -36,7 +36,8 @@ class DesignerPlatesIn(BaseModel):
 
 
 def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
-    return public_plan(plans.get_plan(store_of(request), plan_id), with_regions=regions)
+    s = store_of(request)
+    return public_plan(plans.with_operating_points(s, plans.get_plan(s, plan_id)), with_regions=regions)
 
 
 @router.get("/plans")

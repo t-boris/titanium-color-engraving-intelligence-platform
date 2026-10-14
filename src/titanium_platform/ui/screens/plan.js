@@ -7,10 +7,19 @@
   const STATUS = {Draft: 'Черновик', 'Ready to export': 'Готов к экспорту', Exported: 'Экспортирован'};
   const STAGE = {measured: 'Измерено', candidate: 'Кандидат', repeated: 'Повторено', validated: 'Валидировано', production: 'Производственное'};
 
+  /** Расчёт по паспорту лазера (REQ-017): энергия импульса и предупреждение о частоте ниже среза. Это не измерение. */
+  function operating(l) {
+    const o = l.operating_point;
+    if (!o) return '';
+    const energy = o.pulse_energy_mj == null ? '' : ` · ${+o.pulse_energy_mj.toPrecision(3)} мДж`;
+    return h('div', {class: 'muted small', title: 'Расчёт по паспорту лазера, не измерение'}, `≈ ${+o.output_power_w.toPrecision(3)} Вт${energy}`,
+      o.below_cutoff ? [' ', pill('ниже среза: ' + Math.round(o.power_factor * 100) + ' % мощности', 'warn')] : '');
+  }
+
   function layerRows(p) {
     return p.layers.map((l) => {
       const pr = l.prediction;
-      return [l.name, `${num(l.parameters.power, 1)} % · ${num(l.parameters.frequency, 0)} кГц · ${num(l.parameters.speed, 0)} мм/с`,
+      return [l.name, h('span', {}, `${num(l.parameters.power, 1)} % · ${num(l.parameters.frequency, 0)} кГц · ${num(l.parameters.speed, 0)} мм/с`, operating(l)),
         pr ? h('span', {}, swatch(pr.lab), labText(pr.lab)) : '—', pr ? num(pr.confidence) : '—', pr ? num(pr.expected_delta_e) : '—',
         pr ? (pr.stability.assessed ? 'дисперсия ' + num(pr.stability.variance) : 'не оценена') : '—',
         l.stage ? h('span', {}, STAGE[l.stage], l.questioned ? [' ', pill('под вопросом', 'bad')] : '') : '—', l.region_count];
