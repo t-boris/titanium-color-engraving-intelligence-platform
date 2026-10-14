@@ -354,9 +354,7 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
     for rep in report["layers"]:
         if not rep["compatible"]:
             continue
-        mask = np.zeros(shape, bool)
-        for region in by_index[rep["index"]].regions:
-            mask |= ph.region_mask(region.polygon, h, shape)
+        mask = ph.layer_mask([region.polygon for region in by_index[rep["index"]].regions], h, shape)
         try:
             rep["measured_lab"], rep["pixels"] = ph.sample_lab(corrected, mask)
         except ph.PhotoError as exc:

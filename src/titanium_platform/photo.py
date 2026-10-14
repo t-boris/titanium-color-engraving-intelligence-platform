@@ -195,6 +195,18 @@ def homography_from_corners(corners_px: list[tuple[float, float]], area: tuple[f
 
 
 # -- masks and sampling ----------------------------------------------------------------------------------
+def _erode(mask_u8: np.ndarray, k: int) -> np.ndarray:
+    """Erode by k pixels treating everything outside the image as empty.
+
+    OpenCV's default border value for erosion is the maximum, which would leave an area that touches the
+    frame un-eroded on that side. A region cut off by the frame has no valid pixels beyond it, so its edge
+    is excluded like any other.
+    """
+    if k <= 0:
+        return mask_u8
+    return cv2.erode(mask_u8, np.ones((2 * k + 1, 2 * k + 1), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+
+
 def region_mask(polygon_mm: list[tuple[float, float]], image_to_mm: np.ndarray, shape: tuple[int, int],
                 edge_fraction: float = EDGE_FRACTION) -> np.ndarray:
     """Boolean mask in image pixels for a region given in file mm, with its edges excluded by erosion."""
@@ -204,10 +216,32 @@ def region_mask(polygon_mm: list[tuple[float, float]], image_to_mm: np.ndarray, 
     cv2.fillPoly(mask, [np.round(pts).astype(np.int32)], 1)
     xs, ys = pts[:, 0], pts[:, 1]
     side = min(xs.max() - xs.min(), ys.max() - ys.min())
-    k = int(round(side * edge_fraction))
-    if k > 0:
-        mask = cv2.erode(mask, np.ones((2 * k + 1, 2 * k + 1), np.uint8))
-    return mask.astype(bool)
+    return _erode(mask, int(round(side * edge_fraction))).astype(bool)
+
+
+def layer_mask(polygons_mm: list[list[tuple[float, float]]], image_to_mm: np.ndarray, shape: tuple[int, int],
+               edge_fraction: float = EDGE_FRACTION) -> np.ndarray:
+    """Mask of a whole layer: the union of its shapes with the edge of each connected area excluded (DEC-028).
+
+    A layer made of many touching shapes (a conversion plan stores one as hundreds of rectangles) is one
+    area. Eroding every shape on its own would also cut away the seams between neighbouring shapes, so the
+    shapes are merged first and each connected area is eroded by a fraction of its own smaller side.
+    """
+    if not polygons_mm:
+        return np.zeros(shape, bool)
+    mm_to_image = np.linalg.inv(image_to_mm).astype(np.float32)
+    union = np.zeros(shape, np.uint8)
+    for poly in polygons_mm:
+        pts = cv2.perspectiveTransform(np.array([poly], np.float32), mm_to_image)[0]
+        cv2.fillPoly(union, [np.round(pts).astype(np.int32)], 1)
+    count, labels = cv2.connectedComponents(union, connectivity=8)
+    out = np.zeros(shape, bool)
+    for lab in range(1, count):
+        area = labels == lab
+        ys, xs = np.nonzero(area)
+        side = min(xs.max() - xs.min() + 1, ys.max() - ys.min() + 1)
+        out |= _erode(area.astype(np.uint8), int(round(side * edge_fraction))).astype(bool)
+    return out
 
 
 def sample_lab(corrected_rgb: np.ndarray, mask: np.ndarray) -> tuple[list[float], int]:
