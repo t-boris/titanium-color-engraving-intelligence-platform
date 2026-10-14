@@ -503,3 +503,21 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True) -> bytes:
     return buf.tobytes()
 
 
+def photo_preview_png(store: Store, pair_id: int, corrected: bool = False) -> bytes:
+    """The decoded photograph, downscaled, so the operator can place the four corners on it."""
+    import cv2
+
+    row = _pair_row(store, pair_id)
+    img = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
+    if corrected:
+        rgb, _, _ = ph.correct(img)
+        if rgb is not None:
+            img = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    scale = min(1.0, MAX_OVERLAY_PX / max(img.shape[:2]))
+    if scale < 1.0:
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        raise IngestError("could not render the photograph")
+    return buf.tobytes()
+

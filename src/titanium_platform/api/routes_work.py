@@ -131,6 +131,11 @@ def overlay(pair_id: int, request: Request, corrected: bool = True):
     return Response(ingest.overlay_png(store_of(request), pair_id, corrected=corrected), media_type="image/png")
 
 
+@router.get("/pairs/{pair_id}/photo.png")
+def photo_preview(pair_id: int, request: Request, corrected: bool = False):
+    return Response(ingest.photo_preview_png(store_of(request), pair_id, corrected=corrected), media_type="image/png")
+
+
 @router.get("/pairs/{pair_id}/report")
 def report(pair_id: int, request: Request):
     return analysis.report_for_pair(store_of(request), pair_id)

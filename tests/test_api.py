@@ -162,3 +162,15 @@ def test_deleting_a_plate_plan_removes_the_plate_with_it(client):
     st = client.app.state.store
     assert st.one("SELECT COUNT(*) AS n FROM plate")["n"] == 0 and st.one("SELECT COUNT(*) AS n FROM plan")["n"] == 0
     assert client.delete(f"/api/plans/{plates[0]['plan_id']}").status_code == 404
+
+
+def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
+    s = setup(client)
+    big = synth.scene(width=3000, height=2000)
+    pair = upload_pair(client, s, b'<LightBurnProject><Notes Notes=""/></LightBurnProject>', png(big)).json()
+    r = client.get(f"/api/pairs/{pair['id']}/photo.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+    assert max(img.shape[:2]) == 1400 and abs(img.shape[1] / img.shape[0] - 1.5) < 0.01
+    assert client.get("/api/pairs/999/photo.png").status_code == 404
+
