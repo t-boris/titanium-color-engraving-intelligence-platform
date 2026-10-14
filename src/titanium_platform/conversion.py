@@ -293,13 +293,17 @@ def build_transfer(mode: str, entries: list[dict], path_ids: list[int] | None = 
     Tonal: entries sorted by measured lightness, position = lightness normalised between the darkest and the
     brightest entry. Color-path: the operator's ordered trajectory, position = cumulative delta E along it.
     Parameters are never interpolated, so every band uses a parameter set that was measured.
+
+    Each point stores a snapshot of its Lab at planning time. Analysis compares a result with the trajectory
+    *as planned*; reading it from live knowledge would let the measurement under evaluation move the very
+    trajectory it is compared with.
     """
     if mode == "tonal":
         if len({round(e["lab"][0], 6) for e in entries}) < 2:
             raise ConversionError("a Tonal curve needs at least two eligible colors with different lightness")
         ordered = sorted(entries, key=lambda e: (e["lab"][0], e["id"]))
         lo, hi = ordered[0]["lab"][0], ordered[-1]["lab"][0]
-        points = [{"knowledge_id": e["id"], "position": (e["lab"][0] - lo) / (hi - lo)} for e in ordered]
+        points = [{"knowledge_id": e["id"], "position": (e["lab"][0] - lo) / (hi - lo), "lab": list(e["lab"])} for e in ordered]
     elif mode == "color_path":
         by_id = {e["id"]: e for e in entries}
         ids = list(path_ids or [])
@@ -312,7 +316,7 @@ def build_transfer(mode: str, entries: list[dict], path_ids: list[int] | None = 
         if total <= 0:
             raise ConversionError("the trajectory colors are identical")
         cum = np.concatenate(([0.0], np.cumsum(steps))) / total
-        points = [{"knowledge_id": i, "position": float(p)} for i, p in zip(ids, cum)]
+        points = [{"knowledge_id": i, "position": float(p), "lab": list(by_id[i]["lab"])} for i, p in zip(ids, cum)]
     else:
         raise ConversionError("mode must be 'tonal' or 'color_path'")
     return {"mode": mode, "points": points}
