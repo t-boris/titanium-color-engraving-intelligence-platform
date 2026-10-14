@@ -78,7 +78,8 @@ def main(argv: list[str] | None = None) -> int:
             print("device", device["id"], "already exists: updating")
         # Only sections the device does not have yet are filled in: what the operator confirmed, corrected, removed or
         # added is never overwritten by what was read from the photographs (DEC-039).
-        if device["serial"] and device["serial"] in device["name"] and unit["name"] != device["name"]:
+        old_format = unit["serial"] in device["name"] or bool(device["serial"] and device["serial"] in device["name"])
+        if old_format and unit["name"] != device["name"]:
             device = devices.update_device(store, device["id"], name=unit["name"])      # the title adds the current serial itself
             print("renamed to", unit["name"], "(the serial number is shown by the title)")
         passport, filled = dict(device["passport"]), []

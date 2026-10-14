@@ -145,7 +145,7 @@ def test_a_changed_serial_number_does_not_make_the_import_create_a_second_device
     store = Store(data)
     try:
         [d] = dv.list_devices(store)
-        dv.update_device(store, d["id"], serial="HEZ74042812X")
+        dv.update_device(store, d["id"], serial="HEZ74042812X", name="JPT YDFLP-E-60-M7-M-R (MC2BDJD71684)")   # the old name format
     finally:
         store.close()
     assert run(tool, data, photos) == 0
@@ -153,6 +153,7 @@ def test_a_changed_serial_number_does_not_make_the_import_create_a_second_device
     try:
         [d] = dv.list_devices(store)
         assert d["serial"] == "HEZ74042812X" and len(d["documents"]) == 5
+        assert d["name"] == "JPT YDFLP-E-60-M7-M-R" and d["title"] == "JPT YDFLP-E-60-M7-M-R · HEZ74042812X"   # no stale serial in the name
     finally:
         store.close()
 
