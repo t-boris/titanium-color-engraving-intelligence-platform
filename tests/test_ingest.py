@@ -120,3 +120,122 @@ def test_same_as_previous_uses_the_last_accepted_pair_of_the_profile(world):
     ig.review_masks(s, pid)
     ig.accept_pair(s, pid)
     assert ig.previous_context(s, world["profile"]["id"])["batch"] == "B-7"
+
+
+def edited_lbrn(world, power_for_r1c2=None, pulse_width=None):
+    """The plate file as exported, then edited the way an operator might in LightBurn."""
+    text = world["lbrn"].decode()
+    if power_for_r1c2 is not None:
+        # r1c2 is the second cell: power 20, frequency 40
+        text = text.replace('<name Value="r1c2"/>\n        <maxPower Value="20"/>\n        <maxPower2 Value="20"/>',
+                            f'<name Value="r1c2"/>\n        <maxPower Value="{power_for_r1c2}"/>\n        <maxPower2 Value="{power_for_r1c2}"/>')
+    if pulse_width is not None:
+        text = text.replace('<QPulseWidth Value="200"/>', f'<QPulseWidth Value="{pulse_width}"/>', 1)
+    return text.encode()
+
+
+def test_a_file_that_differs_from_the_plate_blocks_acceptance_until_confirmed(world):
+    s = world["store"]
+    pid = make_pair(world, lbrn=edited_lbrn(world, power_for_r1c2=33))
+    report = ig.check_pair(s, pid)
+    assert report["discrepancies"] == [{"cell_id": "r1c2", "field": "power", "defined": 20, "from_file": 33}]
+    assert any("differs from the plate definition" in p for p in report["problems"])
+    ig.review_masks(s, pid)
+    with pytest.raises(ig.IngestError):
+        ig.accept_pair(s, pid)
+    with pytest.raises(ig.IngestError, match="own words"):
+        ig.confirm_file(s, pid, "  ")
+    conf = ig.confirm_file(s, pid, "I engraved with this exact file")
+    assert conf["discrepancies"] == report["discrepancies"] and conf["file_name"] == "plate.lbrn2"
+    assert ig.get_pair(s, pid)["status"] == ig.ST_READY
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    power = {r["layer_index"]: json.loads(r["parameters_json"])["power"] for r in s.query("SELECT layer_index, parameters_json FROM observation")}
+    # layers follow the cell order r1c1, r1c2, r2c1, r2c2 -> indices 1..4; r1c2 was edited from 20 to 33 in the file
+    assert power == {1: 10, 2: 33, 3: 10, 4: 20}  # the FILE's value is stored for the edited cell, not the plate definition's
+    evidence = json.loads(s.one("SELECT evidence_json FROM observation WHERE layer_index=2")["evidence_json"])
+    assert evidence["discrepancies"][0]["from_file"] == 33 and evidence["file_confirmation"]["text"].startswith("I engraved")
+    assert s.one("SELECT COUNT(*) AS n FROM audit WHERE action='file_confirmed'")["n"] == 1
+
+
+def test_correcting_the_pair_with_a_matching_file_clears_the_mismatch(world):
+    s = world["store"]
+    pid = make_pair(world, lbrn=edited_lbrn(world, power_for_r1c2=33))
+    ig.check_pair(s, pid)
+    ig.confirm_file(s, pid, "used")
+    ig.replace_lightburn_file(s, pid, "fixed.lbrn2", world["lbrn"])
+    pair = ig.get_pair(s, pid)
+    assert pair["status"] == ig.ST_PENDING and pair["file_confirmation"] is None and not pair["masks_reviewed"] and pair["check"] is None
+    assert ig.check_pair(s, pid)["discrepancies"] == []
+    with pytest.raises(ig.IngestError, match="no discrepancy"):
+        ig.confirm_file(s, pid, "used")
+
+
+def test_a_layer_with_a_different_pulse_width_is_skipped_not_comparable(world):
+    s = world["store"]
+    pid = make_pair(world, lbrn=edited_lbrn(world, pulse_width=500))
+    report = ig.check_pair(s, pid)
+    skipped = [l for l in report["layers"] if not l["compatible"] and l["index"] != pl.MARKER_LAYER_INDEX]
+    assert len(skipped) == 1 and any("pulse width" in n and "not comparable" in n for n in skipped[0]["notes"])
+    assert skipped[0]["measured_lab"] is None
+    ig.review_masks(s, pid)
+    ids = ig.accept_pair(s, pid)
+    assert len(ids) == 3  # the incomparable layer never becomes an observation
+
+
+def test_the_marker_layer_is_never_measured(world):
+    s = world["store"]
+    pid = make_pair(world)
+    report = ig.check_pair(s, pid)
+    marker = next(l for l in report["layers"] if l["index"] == pl.MARKER_LAYER_INDEX)
+    assert marker["measured_lab"] is None and "not measured" in marker["notes"][0]
+
+
+def test_a_rephotograph_shares_the_engraving_and_is_never_an_independent_repetition(world):
+    s = world["store"]
+    first = make_pair(world)
+    ig.check_pair(s, first)
+    ig.review_masks(s, first)
+    ig.accept_pair(s, first)
+    again = make_pair(world, rephoto_of=first)
+    ig.check_pair(s, again)
+    ig.review_masks(s, again)
+    ig.accept_pair(s, again)
+    rows = s.query("SELECT pair_id, engraving_id, repeat_eligible, model_eligible FROM observation")
+    assert len({r["engraving_id"] for r in rows}) == 1
+    assert {r["repeat_eligible"] for r in rows if r["pair_id"] == first} == {1}
+    assert {r["repeat_eligible"] for r in rows if r["pair_id"] == again} == {0}
+    assert {r["model_eligible"] for r in rows} == {1}
+    with pytest.raises(ig.IngestError, match="accepted pair"):
+        make_pair(world, rephoto_of=make_pair(world))
+
+
+def test_a_marked_work_without_a_known_plate_needs_corners_and_aligns_manually(world):
+    """A finished work from LightBurn: no markers, so the operator places the four corners."""
+    s = world["store"]
+    lbrn = (b'<LightBurnProject AppVersion="2.0.04"><CutSetting type="Scan"><index Value="5"/><name Value="C05"/>'
+            b'<maxPower Value="24"/><speed Value="900"/><frequency Value="40000"/><QPulseWidth Value="200"/><interval Value="0.025"/></CutSetting>'
+            b'<Shape Type="Rect" CutIndex="5" W="40" H="20" Cr="0"><XForm>1 0 0 1 30 20</XForm></Shape></LightBurnProject>')
+    import numpy as np
+    img = synth.scene(work_rgb=(200, 120, 40), work_box=(560, 200, 960, 400))
+    pid = make_pair(world, lbrn=lbrn, photo=png(img))
+    first = ig.check_pair(s, pid)
+    assert not first["alignment"]["valid"] and any("four image corners" in p for p in first["problems"])
+    corners = [(560, 200), (960, 200), (960, 400), (560, 400)]
+    report = ig.check_pair(s, pid, corners=corners)
+    assert report["problems"] == [] and report["alignment"]["method"] == "manual"
+    lab = report["layers"][0]["measured_lab"]
+    from titanium_platform import color
+    assert color.delta_e(lab, color.srgb8_to_lab(np.array([200, 120, 40]))) < 6
+    assert ig.get_pair(s, pid)["corners"] == [list(c) for c in corners]  # stored as JSON lists
+    bad = ig.check_pair(s, pid, corners=[(0, 0), (10, 0), (0, 10), (10, 10)])
+    assert not bad["alignment"]["valid"] and "convex" in bad["alignment"]["error"]
+
+
+def test_a_photo_of_another_plate_is_refused(world):
+    s = world["store"]
+    other = pl.create_plate_series(s, world["profile"]["id"], "10 20", "40 80", "1200", 5, 4, 1)[0]
+    other_plan = pl.get_plan(s, other["plan_id"])
+    pid = make_pair(world, photo=png(synth.plate_photo(other_plan, CELLS)))
+    report = ig.check_pair(s, pid)
+    assert not report["alignment"]["valid"] and "photographed plate is" in report["alignment"]["error"]
