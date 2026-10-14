@@ -66,8 +66,23 @@ class Chart:
     reason: str = ""
 
 
-def detect_chart(img_bgr: np.ndarray) -> Chart:
+def chart_detector():
+    """A ColorChecker detector configured explicitly, never relying on OpenCV's defaults.
+
+    In the opencv-contrib 5.0 Linux x86_64 wheel a new ``CCheckerDetector`` sometimes starts with an
+    uninitialised chart type (measured on CI: 100 of 200 new detectors reported type 832 instead of MCC24 = 0),
+    and then finds nothing, not even OpenCV's own test image. Setting the type and the DNN flag explicitly made
+    detection succeed 30/30 there on both a real test image and our synthetic scene. The DNN path needs a model
+    file this application does not ship, so it is switched off.
+    """
     det = cv2.mcc.CCheckerDetector_create()
+    det.setColorChartType(cv2.mcc.MCC24)
+    det.setUseDnnModel(False)
+    return det
+
+
+def detect_chart(img_bgr: np.ndarray) -> Chart:
+    det = chart_detector()
     try:
         found = det.process(img_bgr, 1)
     except cv2.error as exc:

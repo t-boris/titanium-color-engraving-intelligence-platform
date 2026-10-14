@@ -110,6 +110,12 @@ def test_a_degenerate_detector_result_is_not_treated_as_a_chart(monkeypatch):
             return np.tile(np.array([[770, 100.0, 1, 99, 101]]), (72, 1))
 
     class FakeDetector:
+        def setColorChartType(self, t):
+            pass
+
+        def setUseDnnModel(self, flag):
+            pass
+
         def process(self, img, nc):
             return True
 
@@ -132,6 +138,12 @@ def test_uniform_patches_with_a_real_looking_box_are_still_rejected(monkeypatch)
             return np.tile(np.array([[770, 100.0, 1, 99, 101]]), (72, 1))
 
     class FakeDetector:
+        def setColorChartType(self, t):
+            pass
+
+        def setUseDnnModel(self, flag):
+            pass
+
         def process(self, img, nc):
             return True
 
@@ -141,3 +153,28 @@ def test_uniform_patches_with_a_real_looking_box_are_still_rejected(monkeypatch)
     monkeypatch.setattr(cv2.mcc, "CCheckerDetector_create", lambda: FakeDetector())
     chart = ph.detect_chart(np.zeros((100, 100, 3), np.uint8))
     assert not chart.detected and "same color" in chart.reason
+
+
+def test_the_chart_detector_is_configured_explicitly_not_by_opencv_defaults(monkeypatch):
+    """Regression: on Linux x86_64 a new detector sometimes starts with chart type 832 and finds nothing.
+
+    The detector must always be told it looks for a 24-patch ColorChecker without the DNN path.
+    """
+    calls = {}
+
+    class Recorder:
+        def setColorChartType(self, t):
+            calls["type"] = t
+
+        def setUseDnnModel(self, flag):
+            calls["dnn"] = flag
+
+    monkeypatch.setattr(cv2.mcc, "CCheckerDetector_create", lambda: Recorder())
+    ph.chart_detector()
+    assert calls == {"type": cv2.mcc.MCC24, "dnn": False}
+
+
+def test_the_real_detector_reports_the_configuration_it_was_given():
+    det = ph.chart_detector()
+    assert int(det.getColorChartType()) == int(cv2.mcc.MCC24) and det.getUseDnnModel() is False
+
