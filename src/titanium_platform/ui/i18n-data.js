@@ -23,6 +23,7 @@
     // слои файла
     [/^not comparable to the laser profile: (.+)$/i, (m) => 'Не сопоставим с профилем лазера: ' + t(m[1])],
     [/^the layer has no fill geometry/i, 'У слоя нет геометрии заливки'],
+    [/^registration marker layer: not measured/i, 'Слой регистрационных маркеров: не измеряется'],
     [/^pulse width (\S+) in file, (\S+) in profile/i, (m) => 'длительность импульса ' + m[1] + ' в файле, ' + m[2] + ' в профиле'],
     [/^line interval (\S+) in file, (\S+) in profile/i, (m) => 'интервал линий ' + m[1] + ' в файле, ' + m[2] + ' в профиле'],
     [/^(\w+) (\S+) (\S+) is outside (\S+)-(\S+)$/i, (m) => (TAG[m[1]] || m[1]) + ' ' + m[2] + ' ' + m[3] + ' вне диапазона профиля ' + m[4] + '–' + m[5]],

@@ -42,7 +42,7 @@ def scene(width: int = 1500, height: int = 1000, chart_at=(60, 40), work_rgb=(12
 
 
 def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: float = 20.0, size=(1500, 1900),
-                origin=(520, 80), chart_at=(40, 40), gains=None, with_chart: bool = True) -> np.ndarray:
+                origin=(520, 80), chart_at=None, gains=None, with_chart: bool = True) -> np.ndarray:
     """Render a plate from its plan: white sheet, grey cells coloured per ``cell_rgb``, ArUco markers, QR.
 
     ``plan`` is an EngravingPlan with markers. The plan's own geometry is used, so a photo made from a plan
@@ -65,6 +65,10 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
         img[sy(r["y"]):sy(r["y"] + r["height"]), sx(r["x"]):sx(r["x"] + r["width"])] = 0
     if with_chart:
         c = chart_image()
+        if chart_at is None:   # park the chart in the free strip left of the plate, never over a marker
+            chart_at = (max(0, min(40, ox - c.shape[1] - 40)), 40)
         cx, cy = chart_at
+        # the white sheet starts 30 px left of the leftmost marker; a chart drawn over a marker silently breaks detection
+        assert cx + c.shape[1] <= ox - 30, f"the chart (right edge {cx + c.shape[1]} px) would cover the plate that starts at {ox - 30} px: move the origin right"
         img[cy:cy + c.shape[0], cx:cx + c.shape[1]] = c
     return cast(img, gains) if gains else img
