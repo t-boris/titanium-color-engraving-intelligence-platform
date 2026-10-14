@@ -34,18 +34,40 @@
     return {card, onPoint};
   }
 
-  async function detail(id) {
+  // Вкладки карточки лазера: каждый блок на своём месте, без длинной прокрутки. Адрес: #/devices/:id?tab=...
+  const TABS = [['overview', 'Обзор'], ['charts', 'Графики'], ['pulses', 'Формы импульса'], ['report', 'Протокол'], ['controller', 'Настройки EZCAD'], ['documents', 'Документы']];
+
+  async function detail(id, wanted) {
     let d;
     try { d = await get('/devices/' + id); } catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Лазер не найден'), link('/devices', 'К списку лазеров')); }
-    const charts = await get(`/devices/${id}/charts`), plots = chartsCard(d, charts);
+    const tab = TABS.some((t) => t[0] === wanted) ? wanted : 'overview';
+    const refresh = (deviceId) => { location.hash = `#/devices/${deviceId}?tab=${tab}`; App.render(); };
+    const open = d.passport.open_items || [];
+    const counts = {pulses: (d.passport.waveforms || []).length, documents: d.documents.length, controller: ((d.passport.controller || {}).tabs || []).reduce((n, t) => n + t.fields.length, 0), report: ((d.passport.test_report || {}).rows || []).length};
+    let body;
+    if (tab === 'charts') {
+      const charts = await get(`/devices/${id}/charts`), plots = chartsCard(d, charts);
+      body = h('div', {class: 'stack'}, DeviceCalc.calculator(d, plots.onPoint), plots.card);
+    } else if (tab === 'pulses') {
+      body = DeviceReport.waveformsCard(d, await get(`/devices/${id}/charts`)) || h('div', {class: 'card'}, 'Формы импульса в паспорте не записаны');
+    } else if (tab === 'report') {
+      body = h('div', {class: 'stack'}, DeviceReport.reportCard(d) || h('div', {class: 'card'}, 'Протокол испытаний не загружен'), DeviceView.stepsCard(d));
+    } else if (tab === 'controller') {
+      body = DeviceController.controllerCard(d, refresh);
+    } else if (tab === 'documents') {
+      body = DeviceView.documentsCard(d, refresh);
+    } else {
+      body = h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, DeviceView.passportCard(d), DeviceView.profilesCard(d)),
+        h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Изменить паспорт: серийный номер, диаметр пятна, ступени, открытые вопросы')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
+    }
+    const nav = h('div', {class: 'row', role: 'tablist'}, TABS.map(([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, role: 'tab', 'aria-selected': key === tab,
+      class: 'btn' + (key === tab ? ' primary' : '')}, label + (counts[key] ? ` · ${counts[key]}` : ''))));
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, d.name), h('p', {class: 'sub'}, [d.manufacturer, d.model].filter(Boolean).join(' · '))), h('span', {class: 'spacer'}), link('/devices', 'Все лазеры'),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, d.name), h('p', {class: 'sub'}, [d.manufacturer, d.model].filter(Boolean).join(' · '))), h('span', {class: 'spacer'}),
+        open.length ? pill('открытых вопросов: ' + open.length, 'warn') : null, link('/devices', 'Все лазеры'),
         btn('Удалить лазер', () => confirmBox('Удалить лазер', 'Действие необратимо: паспорт и документы будут удалены. Лазер, привязанный к профилю, удалить нельзя.', 'Удалить',
           async () => { await del('/devices/' + id); toast('Лазер удалён', 'ok'); reload(); }), 'danger')),
-      h('div', {class: 'grid g2'}, DeviceView.passportCard(d), DeviceView.profilesCard(d)),
-      DeviceCalc.calculator(d, plots.onPoint), plots.card, DeviceReport.waveformsCard(d, charts), DeviceView.stepsCard(d), DeviceReport.reportCard(d),
-      DeviceController.controllerCard(d), DeviceView.documentsCard(d, reload),
-      h('div', {class: 'card stack'}, h('h3', {}, 'Изменить паспорт'), DeviceForms.editForm(d, reload)));
+      nav, body);
   }
 
   async function list() {
@@ -59,5 +81,5 @@
     return h('div', {class: 'stack'}, head, devices.length ? h('div', {class: 'grid g2'}, rows) : h('div', {class: 'card empty'}, h('h3', {}, 'Лазеров пока нет'), h('p', {}, 'Добавьте лазер из шаблона или введите паспорт.')), templates);
   }
 
-  App.register({id: 'devices', async render(ctx) { return ctx.arg ? detail(ctx.arg) : list(); }});
+  App.register({id: 'devices', async render(ctx) { return ctx.arg ? detail(ctx.arg, ctx.query.tab) : list(); }});
 })();

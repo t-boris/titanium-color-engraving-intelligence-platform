@@ -224,3 +224,8 @@ select::-ms-expand {display:none}
 .file-pick.has-file {border-style:solid;border-color:#3e6b5c}
 .file-pick.has-file .file-name {color:#d7e0ef}
 .file-pick.has-file .file-name::before {content:"✓ ";color:var(--success)}
+
+/* 9) компактные таблицы (экран «Лазеры»): меньше прокрутки ----------------------------------------------------------- */
+.tw.compact th,.tw.compact td {padding:6px 12px}
+.tw.compact details>summary {cursor:pointer;font-weight:650;list-style-position:inside}
+.tw.compact details>p {margin:6px 0 2px;color:var(--muted);font-size:13px;max-width:60ch}

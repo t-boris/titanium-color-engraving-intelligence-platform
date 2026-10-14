@@ -1,50 +1,39 @@
-/* Настройки контроллера (EZCAD) лазера: все найденные на фотографии, у каждого значения — признак надёжности (DEC-039). */
+/* Настройки контроллера (EZCAD): таблица по разделам, значения правятся прямо в строках; можно подтвердить, исправить,
+   убрать и добавить настройку. Правки копятся в карточке и уходят одним сохранением в паспорт лазера (DEC-039);
+   измерений они не касаются. Строки и форма добавления — controller-rows.js. */
 'use strict';
 const DeviceController = (() => {
-  const {h, pill, table} = App;
-  const TAB = {field: 'Поле (Field)', laser_control: 'Управление лазером (Laser Control)', port: 'Порты (Port)', other: 'Прочее (Other)', workspace: 'Рабочая область (System parameter)'};
-  const STATUS = {printed: ['напечатано', 'ok'], handwritten: ['от руки, не подтверждено', 'warn'], confirmed: ['подтверждено', 'ok']};
-  /** Что делает каждая настройка — коротко и по-человечески. Ключи совпадают с названиями в EZCAD. */
-  const HELP = {
-    'Field Size': 'Размер рабочего поля линзы, мм. Скан-голова рисует только внутри квадрата такой стороны.',
-    'Offset X': 'Сдвиг поля по X, мм. 0 — центр поля совпадает с центром линзы.', 'Offset Y': 'Сдвиг поля по Y, мм.',
-    'Angle': 'Поворот всего поля, градусы. 0 — без поворота.', 'After Mark Goto': 'Куда перейти после гравировки. «No Move» — зеркала остаются где закончили.',
-    'Special pos. X': 'Особая позиция X, мм: куда уходит луч, если выбрано «Special pos».', 'Special pos. Y': 'Особая позиция Y, мм.',
-    'Galvo 1 Scale': 'Поправка размера по оси первого гальванометра. Подгоняет напечатанный размер к заданному; вписано от руки.',
-    'Galvo 2 Scale': 'Поправка размера по оси второго гальванометра; вписано от руки.',
-    'Laser type': 'Тип источника. «Fiber» — волоконный лазер.', 'Enable PWM signal': 'Включён ли сигнал частоты на лазер. Для импульсного лазера нужен.',
-    'Max PWM': 'Наибольшая частота повторения импульсов, которую контроллер разрешит, кГц.', 'Max PWM: рукописная пометка': 'Число, написанное от руки рядом с Max PWM; не прочитано, см. фото.',
-    'Min PWM': 'Наименьшая частота повторения, кГц.', 'Enable Tickle': 'Подпитка: слабые импульсы между метками, чтобы лазер не «остывал» и первый импульс был ровным.',
-    'Pulse Width': 'Ширина управляющего импульса на входе, мкс. Это не длительность импульса излучения: ту задаёт лазер.', 'Pulse Period': 'Частота слабых импульсов подпитки, кГц.',
-    'FPK Start power': 'Начальная мощность подавления первого импульса (First Pulse Killer), %.', 'FPK Increment power': 'Шаг роста мощности после первого импульса, %.',
-    'FirstPulseKiller': 'Время подавления «гигантского» первого импульса после паузы, мкс.', 'Fiber Serial': 'Протокол обмена с лазером, здесь IPG_YLP.',
-    'Open MO Delay': 'Задержка включения задающего генератора (MO) перед меткой, мс.', 'SPI Wave': 'Номер формы импульса для лазеров SPI; для JPT не используется.',
-    'Simmer Cur': 'Ток «дежурного» режима, %.', 'Analog MinV': 'Наименьшее аналоговое напряжение управления, В.', 'Analog MaxV': 'Наибольшее аналоговое напряжение, В.',
-    'VT1': 'Задержка аналогового управления 1, мкс.', 'VT2': 'Задержка аналогового управления 2, мкс.',
-    'Laser power IO: Port': 'Порт управления мощностью лазера.', 'Red Light Pointer IO: Outport': 'Выходной порт красной указки.', 'Red Light Pointer IO: Inport': 'Входной порт красной указки.',
-    'Marking IO: Outport': 'Выход «идёт гравировка».', 'Marking Finish IO: Outport': 'Выход «гравировка закончена».', 'Marking Finish IO: Pulse width': 'Длительность сигнала «закончено», мс.',
-    'Start Mark IO: Inport': 'Вход кнопки старта; вписано от руки.', 'Start Mark IO: Pulse Mode': 'Старт по импульсу, а не по уровню сигнала.',
-    'Door IO: Inport': 'Вход датчика дверцы.', 'Laser Ready IO: Inport': 'Вход «лазер готов».', 'Laser Ready IO: Outport': 'Выход «лазер готов».',
-    'Start Mark Delay': 'Пауза перед началом метки, мс.', 'Finish Mark Delay': 'Пауза после метки, мс.', 'Min Power Delay': 'Задержка при минимальной мощности, мс.',
-    'Max Power Delay': 'Задержка при максимальной мощности, мс.', 'Analog current FPK': 'Длительность аналогового управления FPK, мкс.',
-    'Red light pointer: light Speed': 'Скорость красной указки при обводке контура, мм/с.', 'Red light pointer: Offset Pos X': 'Сдвиг указки по X, мм; от руки.',
-    'Red light pointer: Offset Pos Y': 'Сдвиг указки по Y, мм; от руки.', 'Red light pointer: Size ScaleX': 'Масштаб указки по X: подгоняет контур указки под реальный размер; от руки.',
-    'Red light pointer: Size ScaleY': 'Масштаб указки по Y; от руки.', 'EZCAD version': 'Версия программы EZCAD.', 'Show workspace': 'Показывать рабочую область в окне.',
-    'Left bottom corner X': 'Левый нижний угол рабочей области по X, мм: −85 — половина поля 170 мм.', 'Left bottom corner Y': 'Левый нижний угол по Y, мм.',
-    'Size Width': 'Ширина рабочей области, мм.', 'Size Height': 'Высота рабочей области, мм.', 'Machine number (S/N)': 'Номер станка; вписан от руки, не прочитан.'};
+  const {h, patch, toast, fail, table} = App;
+  const {TAB} = GlossaryController;
+  const {UNREAD, working, row, addForm, small} = ControllerRows;
 
-  const val = (f) => (typeof f.value === 'boolean' ? (f.value ? 'да' : 'нет') : f.value) + (f.unit && typeof f.value !== 'string' ? ' ' + f.unit : '');
+  function controllerCard(d, reload, wanted) {
+    const c = working(d.passport.controller), photo = d.documents.find((x) => x.kind === 'controller_config');
+    let section = TAB[wanted] ? wanted : c.tabs[0].key, dirty = false;
+    const ctx = {help: false, change: () => { dirty = true; draw(); }};
+    const root = h('div', {class: 'card stack'});
+    const save = async () => {
+      try { await patch('/devices/' + d.id, {passport: {...d.passport, controller: c}}); toast('Настройки сохранены', 'ok'); reload(d.id); } catch (e) { fail(e); }
+    };
 
-  function controllerCard(d) {
-    const c = d.passport.controller;
-    if (!c) return null;
-    const photo = d.documents.find((x) => x.kind === 'controller_config');
-    const sections = c.tabs.map((t) => h('div', {class: 'stack'}, h('h3', {}, TAB[t.key] || t.key),
-      table(['Настройка', 'Значение', 'Надёжность', 'Что это'], t.fields.map((f) => [h('strong', {}, f.key), val(f), pill(...STATUS[f.status]), h('span', {class: 'small'}, HELP[f.key] || '')]))));
-    return h('div', {class: 'card stack'}, h('h3', {}, `Настройки контроллера ${c.software || ''}`),
-      h('p', {class: 'muted small'}, 'Это настройки программы управления лазером (EZCAD), с которой лазер продаётся. Они не влияют на расчёты в этом приложении, но нужны, чтобы настроить станок так же. '
-        + '«Напечатано» — прочитано с печатного снимка экрана, «от руки» — вписано ручкой и не подтверждено: сверьте с фотографией. Галочки, которые на фото не разобрать, не записаны.'),
-      photo ? h('a', {href: `/api/devices/${d.id}/documents/${photo.id}`, target: '_blank', rel: 'noopener'}, 'Открыть оригинал на фотографии') : null, ...sections);
+    function draw() {
+      const all = c.tabs.flatMap((t) => t.fields), unread = all.filter((f) => f.value === UNREAD).length;
+      const count = (s) => all.filter((f) => f.status === s && f.value !== UNREAD).length;
+      const cur = c.tabs.find((t) => t.key === section);
+      const tabs = h('div', {class: 'row', role: 'tablist'}, c.tabs.map((t) => h('button', {type: 'button', role: 'tab', 'aria-selected': t.key === section,
+        class: 'btn btn-small' + (t.key === section ? ' primary' : ''), onClick: () => { section = t.key; draw(); }}, `${TAB[t.key]} · ${t.fields.length}`)));
+      root.replaceChildren(h('h3', {}, `Настройки контроллера ${c.software || ''}`),
+        h('p', {class: 'muted small'}, 'Настройки программы управления лазером (EZCAD). В расчётах приложения они не участвуют, нужны, чтобы настроить станок так же. '
+          + 'Исправленное или добавленное вами считается подтверждённым. ✓ — значение сверено с оригиналом, × — убрать из списка.'),
+        h('div', {class: 'row'}, h('span', {class: 'small muted'}, `Всего ${all.length}: напечатано ${count('printed')} · от руки ${count('handwritten')} · подтверждено ${count('confirmed')} · не прочитано ${unread}`),
+          h('span', {class: 'spacer'}), photo ? h('a', {href: `/api/devices/${d.id}/documents/${photo.id}`, target: '_blank', rel: 'noopener'}, 'Оригинал на фото') : null,
+          h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: ctx.help, onChange: (e) => { ctx.help = e.target.checked; draw(); }}), 'Пояснения')),
+        tabs, table(['Настройка', 'Значение', 'Ед.', 'Надёжность', ''], cur.fields.map((f) => row(f, cur.fields, ctx)), 'В этом разделе настроек нет', true), addForm(cur.fields, ctx),
+        dirty ? h('div', {class: 'alert warn row'}, 'Есть несохранённые изменения.', h('span', {class: 'spacer'}),
+          small('Записать в паспорт лазера', 'Сохранить', save, 'Сохранить'), small('Отменить все правки', 'Отменить', () => reload(d.id), 'Отменить')) : null);
+    }
+    draw();
+    return root;
   }
   return {controllerCard};
 })();

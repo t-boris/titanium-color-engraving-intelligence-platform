@@ -47,9 +47,9 @@ Object.assign(App, (() => {
   }
 
   /** Таблица из заголовков и строк (ячейка — строка, число или узел). */
-  function table(head, rows, empty) {
+  function table(head, rows, empty, compact) {
     if (!rows.length) return h('p', {class: 'muted'}, empty || 'Нет данных');
-    return h('div', {class: 'tw'}, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', {}, t)))),
+    return h('div', {class: 'tw' + (compact ? ' compact' : '')}, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', {}, t)))),
       h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c) => h('td', {}, c)))))));
   }
 

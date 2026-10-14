@@ -8,21 +8,21 @@ const DeviceView = (() => {
   function passportCard(d) {
     const p = d.passport, r = p.repetition_rate_khz;
     return h('div', {class: 'card stack'}, h('h3', {}, 'Паспорт'),
-      d.description ? h('p', {class: 'muted'}, d.description) : null,
+      d.description ? h('details', {}, h('summary', {class: 'small muted'}, 'Описание лазера'), h('p', {class: 'muted'}, d.description)) : null,
       facts([['Производитель', d.manufacturer], ['Модель', d.model], ['Серийный номер', d.serial || 'не указан'], ['Номинальная мощность', p.rated_power_w + ' Вт'],
         ['Длина волны', p.wavelength_nm ? p.wavelength_nm + ' нм' : null], ['Частота повторения', `${r.min}–${r.max} кГц`],
         ['Наибольшая энергия импульса', p.max_pulse_energy_mj ? p.max_pulse_energy_mj + ' мДж' : null],
         ['Диаметр пятна на металле', p.spot_diameter_um ? p.spot_diameter_um + ' мкм' : 'не задан: плотность энергии не считается']]),
-      (p.open_items || []).length ? h('div', {class: 'alert warn'}, h('strong', {}, 'Открытые вопросы по паспорту'), h('ul', {}, p.open_items.map((t) => h('li', {}, t)))) : null);
+      (p.open_items || []).length ? h('details', {class: 'alert warn'}, h('summary', {}, h('strong', {}, 'Открытые вопросы по паспорту: ' + p.open_items.length)), h('ul', {}, p.open_items.map((t) => h('li', {}, t)))) : null);
   }
 
   function stepsCard(d) {
     const rows = d.passport.pulse_steps.map((s) => [s.pulse_width_ns + ' нс', s.cutoff_khz == null ? 'CW: без среза' : s.cutoff_khz + ' кГц',
       s.cutoff_khz == null ? '—' : g(d.passport.rated_power_w / s.cutoff_khz) + ' мДж']);
-    return h('div', {class: 'card stack'}, h('h3', {}, 'Ступени длительности импульса'),
+    return h('details', {class: 'card stack'}, h('summary', {}, h('strong', {}, `Ступени длительности импульса и частоты среза: ${d.passport.pulse_steps.length}`)),
       h('p', {class: 'muted small'}, 'Лазер принимает только эти значения. Любое другое он игнорирует и оставляет прежнее, поэтому профиль с другой длительностью не создаётся. '
         + 'Ниже частоты среза мощность падает пропорционально частоте. Энергия — расчёт по паспорту, не измерение.'),
-      table(['Длительность импульса', 'Частота среза', 'Наибольшая энергия импульса'], rows));
+      table(['Длительность импульса', 'Частота среза', 'Наибольшая энергия импульса'], rows, undefined, true));
   }
 
   function documentsCard(d, reload) {

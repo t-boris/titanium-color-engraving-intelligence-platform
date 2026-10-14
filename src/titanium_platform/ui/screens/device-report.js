@@ -10,12 +10,11 @@ const DeviceReport = (() => {
   function reportCard(d) {
     const r = d.passport.test_report;
     if (!r) return null;
-    const rows = r.rows.map((x) => [h('div', {}, h('strong', {}, ROW_RU[x.key] || x.key), h('div', {class: 'muted small'}, x.key)),
-      x.condition || '—', x.unit || '—', cell(x.min), cell(x.typ), cell(x.max), x.result == null ? pill('нет числа', 'warn') : h('strong', {}, cell(x.result)),
-      h('span', {class: 'small'}, GlossaryReport.ROWS[x.key] || '')]);
+    const rows = r.rows.map((x) => [h('div', {}, h('strong', {}, ROW_RU[x.key] || x.key), h('div', {class: 'small muted'}, GlossaryReport.ROWS[x.key] || x.key)),
+      x.condition || '—', x.unit || '—', cell(x.min), cell(x.typ), cell(x.max), x.result == null ? pill('нет числа', 'warn') : h('strong', {}, cell(x.result))]);
     return h('div', {class: 'card stack'}, h('h3', {}, 'Протокол испытаний вашего экземпляра'),
       h('p', {class: 'muted small'}, `Серийный номер ${r.serial || '—'} · модель ${r.part_number || '—'} · испытан ${r.tested_on || '—'}. ${GlossaryReport.COLUMNS}`),
-      table(['Характеристика', 'Условия', 'Ед.', 'Мин.', 'Типичное', 'Макс.', 'Результат', 'Что это значит'], rows));
+      table(['Характеристика и что это значит', 'Условия', 'Ед.', 'Мин.', 'Типичное', 'Макс.', 'Результат'], rows, undefined, true));
   }
 
   /** Формы импульса: те же оси, что на оригинале; рядом фото-источник и сверка энергии с паспортом. */
