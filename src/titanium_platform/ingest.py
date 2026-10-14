@@ -276,7 +276,7 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, work_layers, report
     raise ph.PhotoError("no registration markers were detected: place the four image corners of the work")
 
 
-def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = False) -> dict:
+def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = False, corners_fraction=None) -> dict:
     """Run every check and measure the layers. Never writes observations. Returns the check report."""
     row = _pair_row(store, pair_id)
     _guard_mutable(row)
@@ -318,16 +318,26 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     for rep in report["layers"]:
         if rep["index"] == marker_idx:
             rep["compatible"], rep["notes"] = False, ["registration marker layer: not measured"]
-    return _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw)
+    return _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
+                    corners_fraction)
 
 
-def _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw):
+def _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
+             corners_fraction=None):
     """Photograph steps of the check: decode, chart gate, alignment, plate discrepancies, region sampling."""
     try:
         img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=allow_non_raw or non_raw_allowed(store))
     except ph.PhotoError as exc:
         problems.append(f"Photograph: {exc}")
         return finish(False)
+    height, width = img_bgr.shape[:2]
+    report["image_size"] = [width, height]
+    if corners_fraction:
+        if len(corners_fraction) != 4 or any(not (0 <= x <= 1 and 0 <= y <= 1) for x, y in corners_fraction):
+            problems.append("Alignment: the four corners must lie inside the photograph")
+            return finish(False)
+        corners = [(x * width, y * height) for x, y in corners_fraction]
+        pair["corners"] = corners
     corrected, chart, corr = ph.correct(img_bgr)
     report["chart"] = {"detected": chart.detected, "reason": chart.reason,
                        "residual": None if corr is None else round(corr.residual, 3)}
@@ -341,6 +351,7 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
         problems.append(f"Alignment: {exc}")
         return finish(False)
     report["alignment"]["valid"] = True
+    report["alignment"]["image_to_mm"] = np.asarray(h, float).tolist()
     if plate is not None:
         discrepancies, _, missing = compare_plate(plate["cells"], work_layers, dx, dy)
         report["discrepancies"] = discrepancies
@@ -449,4 +460,46 @@ def delete_pair(store: Store, pair_id: int) -> None:
     for col in ("lightburn_path", "photo_path"):
         Path(row[col]).unlink(missing_ok=True)
     store.audit("pair_deleted", pair_id=pair_id)
+
+
+# -- overlay for the mask review -----------------------------------------------------------------------
+MAX_OVERLAY_PX = 1400
+
+
+def overlay_png(store: Store, pair_id: int, corrected: bool = True) -> bytes:
+    """PNG of the photograph with every measured layer's mask outlined, for the operator's review (REQ-015).
+
+    The overlay is recomputed from the stored alignment, so it shows exactly what ``check_pair`` measured.
+    ``corrected=False`` shows the photograph as decoded, before chart correction.
+    """
+    import cv2
+
+    row = _pair_row(store, pair_id)
+    pair = get_pair(store, pair_id)
+    check = pair.get("check") or {}
+    h = (check.get("alignment") or {}).get("image_to_mm")
+    if not h:
+        raise IngestError("the photograph is not aligned yet: run the check first")
+    img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
+    if corrected:
+        rgb, _, _ = ph.correct(img_bgr)
+        if rgb is not None:
+            img_bgr = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    project = lb.parse_file(row["lightburn_path"])
+    by_index = {layer.index: layer for layer in project.layers}
+    palette = [(60, 60, 255), (60, 200, 60), (255, 120, 40), (30, 220, 220), (220, 60, 200), (200, 200, 60)]
+    for n, rep in enumerate(check.get("layers", [])):
+        if rep.get("measured_lab") is None:
+            continue
+        mask = ph.layer_mask([r.polygon for r in by_index[rep["index"]].regions], np.asarray(h, float), img_bgr.shape[:2])
+        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img_bgr, contours, -1, palette[n % len(palette)], max(2, img_bgr.shape[1] // 400))
+    scale = min(1.0, MAX_OVERLAY_PX / max(img_bgr.shape[:2]))
+    if scale < 1.0:
+        img_bgr = cv2.resize(img_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".png", img_bgr)
+    if not ok:
+        raise IngestError("could not render the overlay")
+    return buf.tobytes()
+
 

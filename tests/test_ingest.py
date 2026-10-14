@@ -37,7 +37,9 @@ def test_a_good_plate_pair_passes_every_check_and_measures_each_cell(world):
     pid = make_pair(world)
     report = ig.check_pair(s, pid)
     assert report["problems"] == [], report
-    assert report["chart"]["detected"] and report["alignment"] == {"method": "markers", "valid": True, "error": None}
+    al = report["alignment"]
+    assert report["chart"]["detected"] and (al["method"], al["valid"], al["error"]) == ("markers", True, None)
+    assert len(al["image_to_mm"]) == 3 and all(len(r) == 3 for r in al["image_to_mm"])  # kept so the overlay matches the measurement
     assert report["discrepancies"] == [] and report["plate"]["experiment_id"] == world["plate"]["experiment_id"]
     measured = {l["name"]: l["measured_lab"] for l in report["layers"] if l["measured_lab"]}
     assert set(measured) == set(CELLS)
@@ -239,3 +241,36 @@ def test_a_photo_of_another_plate_is_refused(world):
     pid = make_pair(world, photo=png(synth.plate_photo(other_plan, CELLS)))
     report = ig.check_pair(s, pid)
     assert not report["alignment"]["valid"] and "photographed plate is" in report["alignment"]["error"]
+
+
+def test_corners_can_be_given_as_fractions_of_the_photo_and_must_lie_inside_it(world):
+    s = world["store"]
+    lbrn = (b'<LightBurnProject AppVersion="2.0.04"><CutSetting type="Scan"><index Value="5"/><name Value="C05"/>'
+            b'<maxPower Value="24"/><speed Value="900"/><frequency Value="40000"/><QPulseWidth Value="200"/><interval Value="0.025"/></CutSetting>'
+            b'<Shape Type="Rect" CutIndex="5" W="40" H="20" Cr="0"><XForm>1 0 0 1 30 20</XForm></Shape></LightBurnProject>')
+    img = synth.scene(work_rgb=(200, 120, 40), work_box=(560, 200, 960, 400))   # 1500 x 1000 px
+    pid = make_pair(world, lbrn=lbrn, photo=png(img))
+    report = ig.check_pair(s, pid, corners_fraction=[(560 / 1500, 0.2), (960 / 1500, 0.2), (960 / 1500, 0.4), (560 / 1500, 0.4)])
+    assert report["problems"] == [] and report["alignment"]["method"] == "manual" and report["image_size"] == [1500, 1000]
+    assert len(report["alignment"]["image_to_mm"]) == 3
+    stored = ig.get_pair(s, pid)["corners"]
+    assert stored[0] == pytest.approx([560, 200]) and stored[2] == pytest.approx([960, 400])
+    bad = ig.check_pair(s, pid, corners_fraction=[(0, 0), (1.2, 0), (1, 1), (0, 1)])
+    assert any("inside the photograph" in p for p in bad["problems"])
+
+
+def test_the_overlay_outlines_the_measured_layers_on_the_photograph(world):
+    import numpy as np
+    s = world["store"]
+    pid = make_pair(world)
+    with pytest.raises(ig.IngestError, match="not aligned"):
+        ig.overlay_png(s, pid)
+    ig.check_pair(s, pid)
+    raw = cv2.imdecode(np.frombuffer(ig.overlay_png(s, pid, corrected=False), np.uint8), cv2.IMREAD_COLOR)
+    plain = cv2.imdecode(np.frombuffer(open(ig.get_pair(s, pid)["photo_path"], "rb").read(), np.uint8), cv2.IMREAD_COLOR)
+    scale = raw.shape[1] / plain.shape[1]
+    assert scale <= 1.0 and raw.shape[2] == 3
+    resized = cv2.resize(plain, (raw.shape[1], raw.shape[0]), interpolation=cv2.INTER_AREA)
+    changed = (np.abs(raw.astype(int) - resized.astype(int)).sum(axis=2) > 30)
+    assert 0 < changed.mean() < 0.05  # thin outlines were drawn, the picture is otherwise untouched
+    assert len(ig.overlay_png(s, pid, corrected=True)) > 1000
