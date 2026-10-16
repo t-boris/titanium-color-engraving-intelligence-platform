@@ -57,9 +57,11 @@ robust homography, hold-out test).
 
 ## Still open, and why
 
-- Reference chart: `IMG_3281.DNG` has none, so REQ-009 forbids observations from it. Offered the option of storing finished works without a chart
-  as camera-relative evidence (as plates already are); the operator declined (2026-10-16): wait for a photograph with the chart in frame.
-  The only photograph of this work is `IMG_3281.DNG`; the other raw photos in Downloads are plates and tests.
+- Reference chart: the operator first chose to wait for a photograph with the card, then (2026-10-16), once it was clear that the card is a
+  physical ColorChecker and not a file, allowed measurement without it (DEC-053). Finished works without a chart are measured relative to
+  the camera, flagged and kept out of the colour model; `allow_relative_finished_works` (default on) restores the strict rule. The pilot
+  pair runs to acceptance on a copy of the real database: 19 layers measured, 19 observations, none model-eligible. Photographs with the
+  card remain the way to standard colours.
 - No photograph of an image-mode work with its file was available: the tonal profile and the choice of the picture's up edge are tested on
   synthetic photographs with a known answer, not on a real one. DEC-052 and REQ-026 stay proposed/draft until that check.
 - Image settings that LightBurn applies before engraving (brightness, contrast, gamma, enhance, dithering) are recorded, not modelled.

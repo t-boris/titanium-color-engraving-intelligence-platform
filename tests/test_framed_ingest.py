@@ -126,3 +126,43 @@ def test_a_checked_framed_pair_can_be_reviewed_and_accepted_into_observations(wo
         settings = json.loads(row["parameters_json"]).get("source_settings", {})
         assert "priority" not in settings                  # the run order is job context, not part of the recipe (DEC-051)
         assert len(json.loads(row["lab_json"])) == 3
+
+
+# -- a finished work without a reference chart (DEC-053) ---------------------------------------------------------
+@pytest.fixture
+def chartless(tmp_path):
+    work = synth.framed_work(seed=3, blobs=60, with_chart=False)
+    store = Store(tmp_path)
+    store.set_setting("allow_non_raw_photos", True)
+    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
+    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="work.lbrn2", lightburn_bytes=work["lightburn"],
+                         photo_name="work.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
+                         context={"material_id": material["id"]})
+    yield store, pid
+    store.close()
+
+
+def test_a_finished_work_without_a_chart_is_measured_relative_to_the_camera(chartless):
+    store, pid = chartless
+    report = ig.check_pair(store, pid)
+    assert report["problems"] == [] and report["alignment"]["method"] == "element anchors"
+    assert report["color_measurement"] == {"mode": "raw_camera_relative", "reference_chart_used": False, "relative": True}
+    assert any(w.startswith("Finished work measured from decoded RAW") for w in report["warnings"])
+
+
+def test_such_observations_are_kept_as_evidence_and_never_enter_the_colour_model(chartless):
+    store, pid = chartless
+    ig.check_pair(store, pid)
+    ig.review_masks(store, pid)
+    ids = ig.accept_pair(store, pid)
+    rows = store.query("SELECT model_eligible, eligibility_reason FROM observation WHERE pair_id=?", (pid,))
+    assert len(ids) >= 5 and {r["model_eligible"] for r in rows} == {0}
+    assert all("excluded from standard-color predictions" in r["eligibility_reason"] for r in rows)
+
+
+def test_the_strict_rule_of_req_009_comes_back_with_the_setting(chartless):
+    store, pid = chartless
+    store.set_setting("allow_relative_finished_works", False)
+    report = ig.check_pair(store, pid)
+    assert any("Reference chart not detected" in p for p in report["problems"])

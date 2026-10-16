@@ -134,6 +134,15 @@ def previous_context(store: Store, profile_id: int) -> dict | None:
 
 
 # -- creation ------------------------------------------------------------------------------------------
+def relative_finished_allowed(store: Store) -> bool:
+    """A finished work photographed without a reference chart may be measured relative to the camera (DEC-053).
+
+    Its observations are flagged camera-relative and excluded from the colour model, as for plates. The operator
+    allowed this on 2026-10-16; set the setting ``allow_relative_finished_works`` to false for the strict rule of REQ-009.
+    """
+    return bool(store.get_setting("allow_relative_finished_works", True))
+
+
 def non_raw_allowed(store: Store) -> bool:
     """Test/demo switch. Measurement requires RAW (DEC-003); this is off unless explicitly set and is not exposed by the API."""
     return bool(store.get_setting("allow_non_raw_photos", False))
@@ -1334,14 +1343,17 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
                        "residual": None if corr is None else round(corr.residual, 3),
                        "max_residual": ph.MAX_CORRECTION_RESIDUAL}
     plate_relative = plate is not None and plan is not None and plan.get("mode") in (pl.MODE_PLATE, pl.MODE_CAPABILITY)
-    if corrected is None and plate_relative:
+    finished_relative = plate is None and relative_finished_allowed(store)
+    if corrected is None and (plate_relative or finished_relative):
         # The calibration plate is itself the experiment target; no separate ColorChecker is required.
+        # A finished work without a chart is measured the same way when the operator allows it (DEC-053).
         # Keep these measurements useful for same-camera comparisons while making their limitations explicit.
         corrected = ph.decoded_srgb(img_bgr)
         report["color_measurement"] = {"mode": "raw_camera_relative", "reference_chart_used": False,
                                        "relative": True}
         report["warnings"].append(
-            "Calibration plate measured from decoded RAW without reference-chart correction; Lab values are camera-relative, not standard-calibrated. These values are stored for experiment analysis but excluded from standard-color predictions."
+            ("Calibration plate" if plate_relative else "Finished work") +
+            " measured from decoded RAW without reference-chart correction; Lab values are camera-relative, not standard-calibrated. These values are stored for experiment analysis but excluded from standard-color predictions."
         )
     elif corrected is not None:
         report["color_measurement"] = {"mode": "reference_chart_corrected", "reference_chart_used": True,
