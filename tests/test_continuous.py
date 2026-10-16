@@ -65,8 +65,8 @@ def test_quantisation_puts_black_in_the_first_band_and_white_in_the_last():
 
 
 def test_a_tonal_preview_makes_n_layers_that_tile_the_image_and_carry_estimates(store, w):
-    p = cv.preview_continuous(store, w["profile"]["id"], "tonal", gradient_png(), 50, 32)
-    assert len(p["layers"]) == 32 and p["distinct_entries"] == 4
+    p = cv.preview_continuous(store, w["profile"]["id"], "tonal", gradient_png(), 50, 29)
+    assert len(p["layers"]) == 29 and p["distinct_entries"] == 4
     area = sum(r["width"] * r["height"] for l in p["layers"] for r in l["regions"])
     assert area == pytest.approx(p["size_mm"]["width"] * p["size_mm"]["height"], rel=1e-6)
     assert all(set(l["prediction"]) == {"lab", "confidence", "expected_delta_e", "stability"} for l in p["layers"])
@@ -76,12 +76,12 @@ def test_a_tonal_preview_makes_n_layers_that_tile_the_image_and_carry_estimates(
     assert sum(shares) == pytest.approx(1.0) and min(shares) > 0
 
 
-def test_creating_a_32_band_plan_exports_32_layers_with_their_own_parameters(store, w):
-    pid = cv.create_continuous(store, w["profile"]["id"], "tonal", gradient_png(200), 60, 32, "Portrait")
+def test_creating_a_29_band_plan_exports_29_layers_with_their_own_parameters(store, w):
+    pid = cv.create_continuous(store, w["profile"]["id"], "tonal", gradient_png(200), 60, 29, "Portrait")
     plan = pl.get_plan(store, pid)
-    assert plan["mode"] == pl.MODE_TONAL and plan["band_count"] == 32 and plan["status"] == cv.ST_READY
+    assert plan["mode"] == pl.MODE_TONAL and plan["band_count"] == 29 and plan["status"] == cv.ST_READY
     project = lb.parse_bytes(pl.export_lbrn2(plan))
-    assert len(project.layers) == 32
+    assert len(project.layers) == 29  # This plan has no markers; one output color remains free.
     assert {(l.power, l.frequency_khz, l.speed) for l in project.layers} == {(p, 40.0, 900.0) for p in (10.0, 20.0, 30.0, 40.0)}
 
 

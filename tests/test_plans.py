@@ -68,7 +68,7 @@ def test_plate_export_round_trips_through_the_lightburn_reader(store, ready):
     out = pl.create_plate_series(store, ready["id"], "10 20", "40 80", "900", 5, 4, 1)[0]
     data = pl.export_lbrn2(pl.get_plan(store, out["plan_id"]))
     project = lb.parse_bytes(data)
-    cells = {l.name: l for l in project.layers if l.index != pl.MARKER_LAYER_INDEX}
+    cells = {l.name: l for l in project.layers if l.index not in (pl.CLEAN_LAYER_INDEX, pl.PLATE_MARKER_LAYER_INDEX)}
     assert len(cells) == 4
     l = cells["r2c1"]
     assert (l.power, l.frequency_khz, l.speed, l.pulse_width, l.line_interval) == (10, 80, 900, 200, 0.025)
@@ -79,7 +79,7 @@ def test_plate_export_round_trips_through_the_lightburn_reader(store, ready):
     # the file stores centre and size with 5 decimals (0.01 micrometre), so allow that much rounding
     assert min(r.x for lay in project.layers for r in lay.regions) >= -1e-4
     assert min(r.y for lay in project.layers for r in lay.regions) >= -1e-4
-    marker = project.layer(pl.MARKER_LAYER_INDEX)
+    marker = project.layer(pl.PLATE_MARKER_LAYER_INDEX)
     assert (marker.power, marker.frequency_khz, marker.speed) == (20, 60, 300) and len(marker.regions) > 20
 
 
@@ -126,10 +126,12 @@ def _discrete_plan(n, with_prediction=True):
     return {"layers": layers, "markers": None}
 
 
-def test_32_band_export_has_32_layers_each_with_its_own_parameters():
-    project = lb.parse_bytes(pl.export_lbrn2(_discrete_plan(32)))
-    assert len(project.layers) == 32
-    assert {(l.power, l.frequency_khz, l.speed) for l in project.layers} == {(10.0 + i, 40.0 + i, 900.0 + i) for i in range(1, 33)}
+def test_export_respects_lightburn_output_palette_limit_and_keeps_each_layer_parameters():
+    project = lb.parse_bytes(pl.export_lbrn2(_discrete_plan(29)))
+    assert len(project.layers) == 29 and max(layer.index for layer in project.layers) == 29
+    assert {(l.power, l.frequency_khz, l.speed) for l in project.layers} == {(10.0 + i, 40.0 + i, 900.0 + i) for i in range(1, 30)}
+    with pytest.raises(pf.ValidationError, match="output layers"):
+        pl.export_lbrn2(_discrete_plan(30))
 
 
 def test_export_refuses_incomplete_predictions_and_missing_parameters():

@@ -209,7 +209,7 @@ def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp
     try:
         profiles = pf.list_profiles(store)
         assert [x["version"] for x in profiles] == [1] and profiles[0]["id"] == p["id"] and profiles[0]["device"]["serial"] == "MC2BDJD71684"
-        assert profiles[0]["constants"] == p["constants"]
+        assert not {"pulse_width", "line_interval", "passes", "constants"} & profiles[0].keys()
     finally:
         store.close()
 

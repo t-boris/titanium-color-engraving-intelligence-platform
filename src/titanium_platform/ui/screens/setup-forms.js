@@ -1,4 +1,4 @@
-/* Формы вкладок «Титан» и «Стенд» и форма нового профиля лазера (REQ-010, REQ-009). */
+/* Формы идентичности лазера с линзой и конкретных партий материалов. */
 'use strict';
 const SetupForms = (() => {
   const {h, btn, field, post, put, del, toast, fail, confirmBox} = App;
@@ -9,45 +9,42 @@ const SetupForms = (() => {
     return h('select', {'aria-label': 'Лазер'}, [h('option', {value: ''}, 'без лазера')].concat((devices || []).map((d) => h('option', {value: d.id, selected: d.id === current}, d.name))));
   }
 
-  function newProfileForm(reload, devices) {
+  function lensPicker(lenses, current) {
+    return h('select', {'aria-label': 'Линза'}, [h('option', {value: ''}, 'без линзы')].concat((lenses || []).map((l) => h('option', {value: l.id, selected: l.id === current}, `${l.name} · ${l.focal_length_mm} мм`))));
+  }
+
+  function newProfileForm(reload, devices = [], lenses = []) {
     const device = devicePicker(devices, null);
-    const name = h('input', {placeholder: 'Например, MOPA 60 Вт'}), pw = h('input', {type: 'number', step: 'any', placeholder: 'нс'});
-    const li = h('input', {type: 'number', step: 'any', placeholder: '0.025'}), passes = h('input', {type: 'number', step: '1', value: 1});
-    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, field('Название', name), field('Лазер', device), field('Длительность импульса, нс', pw), field('Интервал линий, мм', li), field('Проходы', passes)),
-      btn('Создать профиль', async () => {
-        try { const p = await post('/profiles', {name: val(name), pulse_width: +pw.value, line_interval: +li.value, passes: +passes.value, device_id: device.value === '' ? null : +device.value}); toast('Профиль создан', 'ok'); reload(p.id); } catch (e) { fail(e); }
+    const lens = lensPicker(lenses, null);
+    const name = h('input', {placeholder: 'Например, JPT M7 · F-Theta 174 мм'});
+    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, field('Название установки', name), field('Лазер', device), field('Конкретная линза', lens)),
+      h('p', {class: 'muted small'}, 'Здесь сохраняется только связка оборудования. Мощность, частота, скорость, импульс, интервал и проходы задаются отдельно для каждой платы и слоя.'),
+      btn('Сохранить лазер + линзу', async () => {
+        try { const p = await post('/profiles', {name: val(name), device_id: device.value === '' ? null : +device.value, lens_id: lens.value === '' ? null : +lens.value}); toast('Связка лазера и линзы сохранена', 'ok'); reload(p.id); } catch (e) { fail(e); }
       }, 'primary'));
   }
 
   function materialTab(items, reload) {
-    const m = items[0] || {};
-    const name = h('input', {value: m.name || ''}), batch = h('input', {value: m.batch || ''});
-    return h('div', {class: 'card stack'}, h('h3', {}, 'Титан'),
-      h('p', {class: 'muted small'}, 'Материал и партия необязательны: неизвестное значение остаётся «неизвестно» и не мешает приёму наблюдений.'),
-      field('Название', name), field('Идентификатор партии или листа', batch, 'необязательно'),
-      btn(m.id ? 'Сохранить материал' : 'Создать материал', async () => {
-        try {
-          const body = {name: val(name), batch: val(batch) || null};
-          if (m.id) await put('/materials/' + m.id, body); else await post('/materials', body);
-          toast('Материал сохранён', 'ok'); reload();
-        } catch (e) { fail(e); }
-      }, 'primary'));
+    const editor = (m = {}) => {
+      const f = {name: h('input', {value: m.name || '', placeholder: 'Например, Grade 2 · лист A'}),
+        family: h('input', {value: m.family || 'Titanium', placeholder: 'Titanium, Steel, Brass…'}),
+        grade: h('input', {value: m.grade || '', placeholder: 'Grade 2, Ti-6Al-4V…'}),
+        batch: h('input', {value: m.batch || '', placeholder: 'номер партии или листа'}),
+        thickness: h('input', {type: 'number', step: 'any', min: '0', value: m.thickness_mm ?? '', placeholder: 'мм'}),
+        surface: h('input', {value: m.surface || '', placeholder: 'шлифовка, полировка…'})};
+      const body = () => ({name: val(f.name), family: val(f.family), grade: val(f.grade) || null, batch: val(f.batch) || null,
+        thickness_mm: f.thickness.value === '' ? null : +f.thickness.value, surface: val(f.surface) || null});
+      return h('div', {class: 'card stack'}, m.id ? h('strong', {}, `Материал № ${m.id}`) : h('strong', {}, 'Добавить материал'),
+        h('div', {class: 'grid g2'}, field('Название', f.name), field('Материал', f.family), field('Марка / сплав', f.grade), field('Партия или лист', f.batch),
+          field('Толщина, мм', f.thickness), field('Поверхность / подготовка', f.surface)),
+        btn(m.id ? 'Сохранить материал' : 'Добавить материал', async () => {
+          try { if (m.id) await put('/materials/' + m.id, body()); else await post('/materials', body()); toast('Материал сохранён', 'ok'); reload(null, 'material'); }
+          catch (e) { fail(e); }
+        }, 'primary'));
+    };
+    return h('div', {class: 'stack'}, h('div', {class: 'alert'}, 'Добавьте отдельную запись для каждой партии или листа. При загрузке результата выберите именно выгравированную заготовку. Для других материалов сначала нужен свой рецепт очистки; титановая очистка к ним не применяется.'),
+      ...items.map((m) => editor(m)), editor());
   }
 
-  function standTab(items, reload) {
-    const s = items[0] || {};
-    const f = {name: h('input', {value: s.name || ''}), camera: h('input', {value: s.camera || ''}), lighting: h('input', {value: s.lighting || ''}),
-      angle: h('input', {value: s.angle || ''}), reference_chart: h('input', {value: s.reference_chart || 'ColorChecker Classic (24 поля)'})};
-    return h('div', {class: 'card stack'}, h('h3', {}, 'Стенд'),
-      h('p', {class: 'muted small'}, 'Формат фотографий — RAW. Эталонная карта — ColorChecker Classic (DEC-025); её обнаружение проверено только на тестовых изображениях, а не на реальном снимке со стенда.'),
-      h('div', {class: 'grid g2'}, field('Название стенда', f.name), field('Камера и стойка', f.camera), field('Освещение', f.lighting),
-        field('Угол съёмки · число или описание', f.angle), field('Эталонная карта', f.reference_chart)),
-      h('div', {class: 'row'}, btn(s.id ? 'Сохранить стенд' : 'Создать стенд', async () => {
-        const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, val(el)]));
-        try { if (s.id) await put('/setups/' + s.id, body); else await post('/setups', body); toast('Стенд сохранён', 'ok'); reload(); } catch (e) { fail(e); }
-      }, 'primary'), s.id ? btn('Удалить стенд', () => confirmBox('Удалить стенд', 'Действие необратимо. Стенд, использованный в сохранённых парах, удалить нельзя.', 'Удалить',
-        async () => { await del('/setups/' + s.id); toast('Запись удалена', 'ok'); reload(); }), 'danger') : null));
-  }
-
-  return {newProfileForm, devicePicker, materialTab, standTab};
+  return {newProfileForm, devicePicker, lensPicker, materialTab};
 })();

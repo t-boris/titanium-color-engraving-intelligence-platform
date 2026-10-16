@@ -36,7 +36,8 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/glossary-report.js", "/screens/device-report.js"), ("/screens/device-report.js", "/screens/device.js"), ("/screens/device-controller.js", "/screens/device.js"),
                       ("/screens/glossary-controller.js", "/screens/controller-rows.js"), ("/screens/controller-rows.js", "/screens/device-controller.js"),
                       ("/screens/glossary-controller.js", "/screens/device-questions.js"), ("/screens/device-questions.js", "/screens/device-view.js"),
-                      ("/screens/device-profile-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js")]:
+                      ("/screens/device-profile-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
+                      ("/markdown.js", "/screens/research.js")]:
         assert order[dep] < order[user], (dep, user)
 
 
@@ -50,7 +51,7 @@ def test_every_ui_script_parses():
 def test_the_app_serves_the_ui_and_unknown_pages_fall_back_to_it(tmp_path):
     with TestClient(create_app(tmp_path / "d")) as c:
         home = c.get("/")
-        assert home.status_code == 200 and "Цвет титана" in home.text and 'lang="ru"' in home.text
+        assert home.status_code == 200 and "Лазерная мастерская" in home.text and 'lang="ru"' in home.text
         for src in SCRIPTS + ["/styles.css"]:
             r = c.get(src)
             assert r.status_code == 200 and len(r.content) > 50, src

@@ -5,19 +5,20 @@ from titanium_platform.db import now
 
 
 def make(store, **kw):
-    args = dict(name="MOPA", pulse_width=200, line_interval=0.025, passes=1)
+    args = dict(name="MOPA")
     args.update(kw)
     return pf.create_profile(store, **args)
 
 
-def test_create_profile_has_three_variable_axes_and_constants(store):
-    p = make(store)
+def test_create_profile_identifies_hardware_without_process_settings(store):
+    # Legacy process arguments are tolerated during migration but are not saved on a hardware identity.
+    p = make(store, pulse_width=200, line_interval=0.025, passes=1)
     assert [a["key"] for a in p["axes"]] == ["power", "frequency", "speed"]
-    assert p["constants"] == {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
+    assert not {"pulse_width", "line_interval", "passes", "constants"} & p.keys()
     assert p["version"] == 1
 
 
-@pytest.mark.parametrize("kw", [dict(name="  "), dict(pulse_width=0), dict(pulse_width="x"), dict(line_interval=-1), dict(passes=0), dict(passes=1.5)])
+@pytest.mark.parametrize("kw", [dict(name="  ")])
 def test_create_profile_validates(store, kw):
     with pytest.raises(pf.ValidationError):
         make(store, **kw)
@@ -38,14 +39,11 @@ def test_extra_axis_needs_no_migration(store):
     assert [a["key"] for a in p["axes"]][-1] == "focus"
 
 
-def test_changing_a_constant_creates_a_new_version_after_confirmation(store):
-    p1 = make(store)
-    with pytest.raises(pf.ValidationError, match="new version"):
-        pf.update_profile(store, p1["id"], pulse_width=250)
-    p2 = pf.update_profile(store, p1["id"], pulse_width=250, confirm_new_version=True)
-    assert p2["id"] != p1["id"] and p2["version"] == 2 and p2["family"] == p1["family"]
-    assert pf.get_profile(store, p1["id"])["constants"]["pulse_width"] == 200
-    assert p2["axes"] == p1["axes"]
+def test_process_settings_do_not_create_profile_versions(store):
+    p = make(store, pulse_width=200, line_interval=0.025, passes=1)
+    unchanged = pf.update_profile(store, p["id"], pulse_width=250, line_interval=0.05, passes=3)
+    assert unchanged["id"] == p["id"] and unchanged["version"] == 1
+    assert not {"pulse_width", "line_interval", "passes", "constants"} & unchanged.keys()
 
 
 def test_rename_keeps_the_version(store):
@@ -64,10 +62,10 @@ def test_unlinked_profile_can_be_deleted_linked_one_cannot(store):
         pf.delete_profile(store, q["id"])
 
 
-def test_parameter_vector_contains_constants_and_profile_version(store):
+def test_parameter_vector_contains_each_layers_process_settings(store):
     p = make(store)
-    v = pf.parameter_vector(p, 24, 40, 900)
-    assert v == {"power": 24, "frequency": 40, "speed": 900, "pulse_width": 200, "line_interval": 0.025, "passes": 1, "profile_id": p["id"]}
+    v = pf.parameter_vector(p, 24, 40, 900, pulse_width=250, line_interval=0.05, passes=3)
+    assert v == {"power": 24, "frequency": 40, "speed": 900, "pulse_width": 250, "line_interval": 0.05, "passes": 3, "profile_id": p["id"]}
 
 
 def test_range_check(store):

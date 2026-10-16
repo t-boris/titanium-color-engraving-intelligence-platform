@@ -6,8 +6,8 @@ import json
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, plans, profiles as pf
-from .common import MAX_IMAGE_BYTES, content_disposition, public_plan, read_upload, store_of
+from .. import conversion, designer, ingest, plans, profiles as pf
+from .common import MAX_IMAGE_BYTES, content_disposition, public_plan, read_upload, refresh_after_change, store_of
 
 router = APIRouter(prefix="/api")
 
@@ -27,6 +27,9 @@ class ProposeIn(BaseModel):
     profile_id: int
     seed: int = 1729
     size: int = designer.DEFAULT_SIZE
+    pulse_widths: str | None = None
+    line_intervals: str = "0.025 0.05 0.1"
+    passes: str = "1 2 3"
 
 
 class DesignerPlatesIn(BaseModel):
@@ -37,16 +40,26 @@ class DesignerPlatesIn(BaseModel):
 
 def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
     s = store_of(request)
-    return public_plan(plans.with_operating_points(s, plans.get_plan(s, plan_id)), with_regions=regions)
+    result = public_plan(plans.with_operating_points(s, _visible_plan(s, plan_id)), with_regions=regions)
+    result["active_pairs"] = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))["n"]
+    return result
+
+
+def _visible_plan(s, plan_id: int) -> dict:
+    plan = plans.get_plan(s, plan_id)
+    if plan["status"] == "Deleted":
+        raise KeyError(f"plan {plan_id} not found")
+    return plan
 
 
 @router.get("/plans")
 def list_plans(request: Request):
     s = store_of(request)
     out = []
-    for r in s.query("SELECT id FROM plan ORDER BY id DESC"):
+    for r in s.query("SELECT id FROM plan WHERE status!='Deleted' ORDER BY id DESC"):
         p = public_plan(plans.get_plan(s, r["id"]))
-        out.append({k: p.get(k) for k in ("id", "name", "mode", "status", "profile_id", "band_count", "plan_identifier", "created_at")} | {"layers": len(p.get("layers", []))})
+        out.append({k: p.get(k) for k in ("id", "name", "mode", "status", "profile_id", "band_count", "plan_identifier", "created_at",
+                                           "test_type", "experiment")} | {"layers": len(p.get("layers", []))})
     return out
 
 
@@ -58,9 +71,11 @@ def get_plan(plan_id: int, request: Request):
 @router.get("/plans/{plan_id}/export.lbrn2")
 def export_plan(plan_id: int, request: Request):
     s = store_of(request)
-    plan = plans.get_plan(s, plan_id)
+    plan = _visible_plan(s, plan_id)
     if plan["status"] == conversion.ST_DRAFT:
         raise conversion.ConversionError("the plan is a draft: finish the conversion before exporting")
+    if plan["status"] in {"Superseded", "Cancelled"}:
+        raise pf.ProtectedError("эта плата заменена или отменена; откройте актуальную плату исследования")
     data = plans.export_lbrn2(plan)
     s.execute("UPDATE plan SET status=? WHERE id=? AND status=?", ("Exported", plan_id, conversion.ST_READY))
     return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(plan["name"], ".lbrn2")})
@@ -68,16 +83,34 @@ def export_plan(plan_id: int, request: Request):
 
 @router.put("/plans/{plan_id}/markers")
 def set_markers(plan_id: int, body: MarkersIn, request: Request):
-    conversion.set_markers(store_of(request), plan_id, body.enabled)
+    s = store_of(request)
+    _visible_plan(s, plan_id)
+    conversion.set_markers(s, plan_id, body.enabled)
     return _plan(request, plan_id)
 
 
 @router.delete("/plans/{plan_id}", status_code=204)
-def delete_plan(plan_id: int, request: Request):
+def delete_plan(plan_id: int, request: Request, with_pairs: bool = False):
     s = store_of(request)
-    plan = plans.get_plan(s, plan_id)
-    if s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=?", (plan_id,))["n"]:
-        raise pf.ProtectedError("this plan is linked to stored pairs and keeps their measurement history")
+    plan = _visible_plan(s, plan_id)
+    active_pairs = s.query("SELECT id,profile_id FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))
+    if active_pairs and not with_pairs:
+        raise pf.ProtectedError("active input pairs are linked to this plan; delete those pairs first")
+    if active_pairs:
+        # The explicit cascade is used by the experiment dashboard's delete action. It uses the same
+        # archival path as deleting photographs individually, so accepted observations remain auditable.
+        for pair in active_pairs:
+            ingest.delete_pair(s, pair["id"])
+        for profile_id in {pair["profile_id"] for pair in active_pairs}:
+            refresh_after_change(s, profile_id)
+    archived_pairs = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status='Deleted'", (plan_id,))["n"]
+    if archived_pairs:
+        # Keep the plan and plate rows as the immutable context for archived pair measurements.
+        # The Deleted status removes the plan from active experiment lists and public routes.
+        with s.transaction():
+            s.execute("UPDATE plan SET status='Deleted' WHERE id=?", (plan_id,))
+            s.audit("plan_archived", plan_id=plan_id, archived_pairs=archived_pairs)
+        return
     with s.transaction():
         s.execute("DELETE FROM target_color WHERE source_plan_id=? AND proposal_id IS NULL", (plan_id,))
         if s.one("SELECT COUNT(*) AS n FROM target_color WHERE source_plan_id=?", (plan_id,))["n"]:
@@ -98,20 +131,24 @@ async def start_discrete(request: Request, profile_id: int = Form(...), name: st
 
 @router.patch("/discrete/{plan_id}")
 def update_discrete(plan_id: int, body: DiscreteUpdate, request: Request):
-    conversion.update_discrete(store_of(request), plan_id, **body.model_dump())
+    s = store_of(request)
+    _visible_plan(s, plan_id)
+    conversion.update_discrete(s, plan_id, **body.model_dump())
     return _plan(request, plan_id)
 
 
 @router.get("/discrete/{plan_id}/palette")
 def discrete_palette(plan_id: int, request: Request):
     s = store_of(request)
-    plan = plans.get_plan(s, plan_id)
+    plan = _visible_plan(s, plan_id)
     return conversion.eligible_palette(s, plan["profile_id"], allowed_questioned=plan.get("allowed_questioned", []))
 
 
 @router.post("/discrete/{plan_id}/finalize")
 def finalize_discrete(plan_id: int, request: Request):
-    conversion.finalize_discrete(store_of(request), plan_id)
+    s = store_of(request)
+    _visible_plan(s, plan_id)
+    conversion.finalize_discrete(s, plan_id)
     return _plan(request, plan_id)
 
 
@@ -150,7 +187,10 @@ def palette(profile_id: int, request: Request, include_questioned: bool = False)
 
 @router.post("/designer/propose")
 def propose(body: ProposeIn, request: Request):
-    return designer.propose(store_of(request), body.profile_id, body.seed, body.size)
+    pulse_widths = plans.parse_numbers(body.pulse_widths, "pulse width") if body.pulse_widths else None
+    line_intervals = plans.parse_numbers(body.line_intervals, "line interval")
+    pass_values = plans.parse_numbers(body.passes, "passes")
+    return designer.propose(store_of(request), body.profile_id, body.seed, body.size, pulse_widths, line_intervals, pass_values)
 
 
 @router.get("/profiles/{profile_id}/proposals")

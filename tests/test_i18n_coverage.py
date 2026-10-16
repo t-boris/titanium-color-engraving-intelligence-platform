@@ -125,7 +125,8 @@ def test_wrapper_messages_are_recognised_and_given_a_translatable_inner_part():
 
 def test_the_collector_finds_the_messages_and_expands_conditional_fragments():
     msgs = {m for _, _, m in raised_messages()}
-    assert "registration marker layer: not measured" in msgs   # assigned through a tuple, which the first version of the collector missed
+    assert "registration marker layer: not measured" not in msgs  # measured output layers are no longer discarded as service-only geometry
+    assert "the plate has no marker definition" in msgs
     assert len(msgs) > 90
     assert "7 must be a finite positive number" in msgs and "7 must be a finite number" in msgs   # both branches of the f-string
     assert any("Reference chart not detected" in m for m in msgs)   # appended to the problems list, not raised

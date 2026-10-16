@@ -55,7 +55,8 @@ def _breaks_thresholds(summary: dict, rules: dict) -> list[str]:
 
 
 def refresh(store: Store, profile_id: int) -> list[dict]:
-    """Re-derive knowledge for one laser profile version after observations changed. Idempotent."""
+    """Refresh one laser/lens knowledge base, combining legacy IDs for that same hardware pair."""
+    profile_id = model.canonical_profile_id(store, profile_id)
     rules = pf.get_rules(store, profile_id)
     changes = []
     with store.transaction():
@@ -101,7 +102,8 @@ def get(store: Store, kid: int) -> dict:
 
 
 def list_for_profile(store: Store, profile_id: int) -> list[dict]:
-    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE profile_id=? ORDER BY id", (profile_id,))]
+    canonical = model.canonical_profile_id(store, profile_id)
+    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE profile_id=? ORDER BY id", (canonical,))]
 
 
 # -- operator decisions ---------------------------------------------------------------------------------

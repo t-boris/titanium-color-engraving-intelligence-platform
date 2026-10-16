@@ -19,19 +19,22 @@ const DeviceCalc = (() => {
     if (!d.profiles.length) {
       return h('div', {class: 'card'}, h('h3', {}, 'Рабочая точка'), h('p', {class: 'muted'}, 'Привяжите профиль к лазеру, чтобы рассчитать мощность и энергию импульса.'));
     }
-    const prof = h('select', {'aria-label': 'Профиль'}, d.profiles.map((p) => h('option', {value: p.id}, `${p.name} · версия ${p.version} · ${p.pulse_width} нс`)));
-    const f = {power: h('input', {type: 'number', step: 'any', value: 30}), frequency: h('input', {type: 'number', step: 'any', value: 80}), speed: h('input', {type: 'number', step: 'any', value: 900})};
+    const prof = h('select', {'aria-label': 'Лазер + линза'}, d.profiles.map((p) => h('option', {value: p.id}, `${p.name}${p.device ? ` · ${p.device.name}` : ''}${p.lens ? ` · ${p.lens.name}` : ''}`)));
+    const f = {power: h('input', {type: 'number', step: 'any', value: 30}), frequency: h('input', {type: 'number', step: 'any', value: 80}), speed: h('input', {type: 'number', step: 'any', value: 900}),
+      pulse: h('input', {type: 'number', step: 'any', value: 200}), interval: h('input', {type: 'number', step: 'any', value: 0.025}), passes: h('input', {type: 'number', min: '1', step: '1', value: 1})};
     const out = h('div', {class: 'stack'});
     const run = async () => {
       try {
-        const o = await post('/operating-point', {profile_id: +prof.value, power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value});
+        const o = await post('/operating-point', {profile_id: +prof.value, power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value,
+          pulse_width: +f.pulse.value, line_interval: +f.interval.value, passes: +f.passes.value});
         out.replaceChildren(...result(o));
         onResult(o);
       } catch (e) { fail(e); }
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Рабочая точка'),
       h('p', {class: 'muted small'}, 'Расчёт по паспортной модели: мощность растёт с частотой до частоты среза и дальше не растёт.'),
-      h('div', {class: 'grid g3'}, field('Профиль', prof), field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed)),
+      h('div', {class: 'grid g3'}, field('Лазер + линза', prof), field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed),
+        field('Импульс, нс', f.pulse), field('Интервал линий, мм', f.interval), field('Проходы слоя', f.passes)),
       h('div', {class: 'row'}, btn('Рассчитать', run, 'primary')), out);
   }
   return {calculator};

@@ -61,3 +61,21 @@ def test_an_area_touching_the_frame_still_loses_its_edge_there():
         ys, xs = np.nonzero(mask)
         assert xs.min() >= 22 and ys.min() >= 22
 
+
+
+def test_a_hole_of_a_shape_is_not_part_of_the_mask():
+    outer = [(0, 0), (40, 0), (40, 30), (0, 30)]
+    hole = [(15, 10), (25, 10), (25, 20), (15, 20)]
+    full = ph.layer_mask([outer], IMG_TO_MM, SHAPE, edge_fraction=0)
+    holed = ph.layer_mask([outer], IMG_TO_MM, SHAPE, edge_fraction=0, holes_mm=[[hole]])
+    assert full.sum() - holed.sum() == pytest.approx(10 * 10 * PX_PER_MM ** 2, rel=0.06)   # the hole outline pixels go too
+    assert not holed[int(15 * PX_PER_MM), int(20 * PX_PER_MM)]            # inside the hole
+    assert holed[int(5 * PX_PER_MM), int(5 * PX_PER_MM)]                  # in the fill
+
+
+def test_a_hole_does_not_remove_pixels_that_another_shape_of_the_layer_fills():
+    outer = [(0, 0), (40, 0), (40, 30), (0, 30)]
+    hole = [(15, 10), (25, 10), (25, 20), (15, 20)]
+    plug = [(10, 5), (30, 5), (30, 25), (10, 25)]       # a second shape of the same layer covers the hole
+    mask = ph.layer_mask([outer, plug], IMG_TO_MM, SHAPE, edge_fraction=0, holes_mm=[[hole], []])
+    assert mask[int(15 * PX_PER_MM), int(20 * PX_PER_MM)]

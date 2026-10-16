@@ -53,6 +53,21 @@ issues:
     summary: Implement an offline acquisition algorithm that scores candidate parameter sets using coverage gaps, uncertainty, instability and target colors, then produces calibration-plate proposals with per-setting reasons and target references. Make proposals reproducible for a fixed database state and seed, incorporate eligible evidence from every artefact source, and pass proposals into calibration-plate generation. Provide an optional LLM explanation adapter that stores only explanatory text and hypotheses, cannot select parameters or modify observations, and leaves proposals identical and fully functional without an API key.
     requirements: [REQ-001, REQ-006, REQ-015, REQ-016]
     decisions: [DEC-009, DEC-013, DEC-015, DEC-016]
+  - id: I-11
+    title: Task-aware experiment records and outcome knowledge
+    summary: Extend each plan, imported job and measured region with an explicit engraving intent and relevant image/geometry features. Keep raw parameter/photo/file evidence separate from derived recipes. Build task-conditioned mappings from the full LightBurn operation and hardware/material context to the measured outcome, so text, lines, filled vectors, tonal images and color images do not inherit one generic recommendation. Use only quality metrics supported by the captured image, calibration reference or independent measurement.
+    requirements: [REQ-020]
+    decisions: [DEC-042]
+  - id: I-12
+    title: Image-to-vector engraving workflow
+    summary: Accept an image and requested engraving result, prepare an editable vector representation, classify regions and paths by the selected task, and map them to supported evidence-backed strategies. Preview geometry, assignments, confidence, out-of-coverage areas and unresolved choices before writing a standard LightBurn project. Preserve the source image, vector document, generated job and eventual result as one linked work record.
+    requirements: [REQ-021]
+    decisions: []
+  - id: I-13
+    title: Periodic findings and experiment acquisition loop
+    summary: Reanalyze accepted evidence after new measurements and on a configurable periodic run. Surface reproducible improvements, anomalies, unstable settings and task/material coverage gaps with source links and sample counts. Rank follow-up experiments by the question they answer and expected information gain, save each hypothesis and proposed settings, and export accepted proposals as plates with the configured cleaning operation first.
+    requirements: [REQ-022]
+    decisions: [DEC-009, DEC-013]
 updated: 2026-10-14
 ---
 
@@ -128,6 +143,25 @@ Implement an offline acquisition algorithm that scores candidate parameter sets 
 Requirements: REQ-001, REQ-006, REQ-015, REQ-016
 Decisions: DEC-009, DEC-013, DEC-015, DEC-016
 
+## I-11: Task-aware experiment records and outcome knowledge
+
+Extend plans and observations with the requested engraving intent and only the source features needed to explain the result. Keep measurements and original files immutable; store inferred findings and recommended recipes separately with evidence links. Condition mappings on task, laser, historical lens, titanium/stock and the complete LightBurn operation. Do not treat a single Lab measurement as proof of line quality, text legibility or image similarity.
+
+Requirements: REQ-020
+Decisions: DEC-042
+
+## I-12: Image-to-vector engraving workflow
+
+Build the complete path from an uploaded source image to an editable vector engraving plan and standard LightBurn file. Let the operator choose the intended result, prepare/vectorize geometry, assign supported strategies to regions and paths, preview the result, and show where evidence is weak or absent. Link source image, intermediate vector, exported job and photographed outcome so actual work expands the same task-specific knowledge base.
+
+Requirements: REQ-021
+
+## I-13: Periodic findings and experiment acquisition loop
+
+Recompute evidence-backed findings after accepted measurements and on a configurable schedule. Explain what improved, what is unstable and which task/material combinations remain unknown. Propose experiments with a named question, candidate settings and the reason the result would be useful; save the proposal and connect its generated plate and result back to that question. Every calibration/test plate puts its configured surface-cleaning pass before test marks.
+
+Requirements: REQ-022
+
 ## Implementation status
 
 Branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0. GitHub issue #n tracks plan item I-n; issues close only when the work is merged. "Implemented" means code and automated tests exist; "not verified" names what no test can show.
@@ -144,6 +178,9 @@ Branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0
 | I-8 | Implemented | `conversion.py` (continuous) | Mapping without parameter interpolation proposed (DEC-032). |
 | I-9 | Implemented | `analysis.py` | Uses the shared ingestion path; real engraved results not yet measured. |
 | I-10 | Implemented | `designer.py` | Model and acquisition defaults proposed (DEC-033). No LLM adapter is wired; only the text-attachment interface exists. |
+| I-11 | Specified | REQ-020 | Current observations measure outcomes but do not yet carry a task-intent taxonomy or task-conditioned recipes. |
+| I-12 | Specified | REQ-021 | Current image conversion has plans for artwork/photo modes; end-to-end editable vectorization and evidence-aware LightBurn generation remain to be verified and completed. |
+| I-13 | Specified | REQ-022 | Current designer proposes calibration settings; periodic evidence reports and question-linked follow-up experiments are not yet complete. |
 
 Browser UI: Russian (DEC-034), visual system of prototype v10 (DEC-019). Walked through in a browser with synthetic files: profile, rig, marker layer, plate preview and creation, pair upload, check, mask overlay, accept, analysis, color map, knowledge, discrete conversion with an unreachable color excluded, plan export. Four defects found that way were fixed with regression tests.
 

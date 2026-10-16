@@ -12,24 +12,23 @@ router = APIRouter(prefix="/api")
 
 class ProfileIn(BaseModel):
     name: str
-    pulse_width: float
-    line_interval: float
-    passes: int
     device_id: int | None = None
+    lens_id: int | None = None
 
 
 class ProfilePatch(BaseModel):
     name: str | None = None
-    pulse_width: float | None = None
-    line_interval: float | None = None
-    passes: int | None = None
-    confirm_new_version: bool = False
     device_id: int | None = None
+    lens_id: int | None = None
 
 
 class MaterialIn(BaseModel):
     name: str
+    family: str | None = None
     batch: str | None = None
+    grade: str | None = None
+    thickness_mm: float | None = None
+    surface: str | None = None
 
 
 class SetupIn(BaseModel):
@@ -60,7 +59,7 @@ def list_profiles(request: Request):
 
 @router.post("/profiles", status_code=201)
 def create_profile(body: ProfileIn, request: Request):
-    return pf.create_profile(store_of(request), body.name, body.pulse_width, body.line_interval, body.passes, device_id=body.device_id)
+    return pf.create_profile(store_of(request), body.name, device_id=body.device_id, lens_id=body.lens_id)
 
 
 @router.get("/profiles/{profile_id}")
@@ -101,12 +100,12 @@ def list_materials(request: Request):
 
 @router.post("/materials", status_code=201)
 def create_material(body: MaterialIn, request: Request):
-    return pf.save_material(store_of(request), body.name, body.batch)
+    return pf.save_material(store_of(request), **body.model_dump())
 
 
 @router.put("/materials/{material_id}")
 def update_material(material_id: int, body: MaterialIn, request: Request):
-    return pf.save_material(store_of(request), body.name, body.batch, material_id)
+    return pf.save_material(store_of(request), **body.model_dump(), material_id=material_id)
 
 
 @router.get("/setups")

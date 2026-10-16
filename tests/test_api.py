@@ -28,8 +28,9 @@ def png(img) -> bytes:
 def setup(client) -> dict:
     prof = client.post("/api/profiles", json={"name": "MOPA", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
     stand = client.post("/api/setups", json={"name": "Rig", "camera": "cam", "lighting": "LED", "angle": "90", "reference_chart": "ColorChecker Classic"}).json()
+    material = client.post("/api/materials", json={"name": "Grade 2 sheet", "grade": "Grade 2", "thickness_mm": 1, "surface": "brushed"}).json()
     client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
-    return {"profile": prof, "stand": stand}
+    return {"profile": prof, "stand": stand, "material": material}
 
 
 def test_version_health_and_ui_fallback(client):
@@ -42,13 +43,16 @@ def test_version_health_and_ui_fallback(client):
 def test_profile_crud_and_error_mapping(client):
     r = client.post("/api/profiles", json={"name": " ", "pulse_width": 200, "line_interval": 0.025, "passes": 1})
     assert r.status_code == 422 and "name" in r.json()["error"]
-    assert client.post("/api/profiles", json={"name": "x"}).status_code == 422          # schema error
+    minimal = client.post("/api/profiles", json={"name": "x"})
+    assert minimal.status_code == 201  # a profile identifies hardware; process settings belong to experiments
+    assert "pulse_width" not in minimal.json() and "constants" not in minimal.json()
     p = client.post("/api/profiles", json={"name": "A", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
     r = client.patch(f"/api/profiles/{p['id']}", json={"pulse_width": 250})
-    assert r.status_code == 422 and "new version" in r.json()["error"]
+    assert r.status_code == 200 and r.json()["id"] == p["id"] and r.json()["version"] == 1
     v2 = client.patch(f"/api/profiles/{p['id']}", json={"pulse_width": 250, "confirm_new_version": True}).json()
-    assert v2["version"] == 2 and v2["id"] != p["id"]
+    assert v2["version"] == 1 and v2["id"] == p["id"]
     assert client.get("/api/profiles/9999").status_code == 404
+    assert client.delete(f"/api/profiles/{minimal.json()['id']}").status_code == 204
     assert client.delete(f"/api/profiles/{p['id']}").status_code == 204
 
 
@@ -70,7 +74,8 @@ def test_rules_start_unset_and_agreeing_needs_thresholds(client):
 
 
 def upload_pair(client, s, lbrn, photo, **form):
-    data = {"profile_id": s["profile"]["id"], "stand_id": s["stand"]["id"], "context": json.dumps(form.pop("context", {})), **form}
+    context = form.pop("context", {"material_id": s["material"]["id"]})
+    data = {"profile_id": s["profile"]["id"], "stand_id": s["stand"]["id"], "context": json.dumps(context), **form}
     return client.post("/api/pairs", data=data, files={"lightburn": ("plate.lbrn2", lbrn), "photo": ("plate.png", photo)})
 
 
@@ -109,19 +114,20 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
     assert client.post(f"/api/pairs/{pair['id']}/accept").status_code == 422             # masks not reviewed yet
     overlay = client.get(f"/api/pairs/{pair['id']}/overlay.png")
     assert overlay.status_code == 200 and overlay.headers["content-type"] == "image/png" and overlay.content[:4] == b"\x89PNG"
+    layer_index = next(layer["index"] for layer in checked["check"]["layers"] if layer["measured_lab"] is not None)
+    isolated = client.get(f"/api/pairs/{pair['id']}/overlay.png", params={"layer_index": layer_index, "visibility": "lifted"})
+    assert isolated.status_code == 200 and isolated.content[:4] == b"\x89PNG" and isolated.content != overlay.content
     assert client.post(f"/api/pairs/{pair['id']}/review-masks").status_code == 200
     accepted = client.post(f"/api/pairs/{pair['id']}/accept").json()
-    assert len(accepted["observation_ids"]) == 4 and accepted["pair"]["status"] == "Accepted"
-    assert client.delete(f"/api/pairs/{pair['id']}").status_code == 422                 # protected
-
+    assert len(accepted["observation_ids"]) == 6 and accepted["pair"]["status"] == "Accepted"
     knowledge = client.get(f"/api/profiles/{pid}/knowledge").json()
-    assert len(knowledge) == 4 and {k["stage"] for k in knowledge} == {"measured"}
+    assert len(knowledge) == 5 and {k["stage"] for k in knowledge} == {"measured"}
     m = client.get(f"/api/profiles/{pid}/map").json()
-    assert len(m["samples"]) == 4 and not any(s_["available"] for s_ in m["samples"])   # one engraving: no estimates yet
+    assert len(m["samples"]) == 5 and not any(s_["available"] for s_ in m["samples"])   # one engraving: no estimates yet
     assert client.post(f"/api/profiles/{pid}/predict", json={"lab": [50, 0, 0]}).json()["available"] is False
 
     report = client.get(f"/api/pairs/{pair['id']}/report").json()
-    assert report["mode"] == "Calibration plate" and len(report["rows"]) == 4
+    assert report["mode"] == "Calibration plate" and len(report["rows"]) == 6
     prop = client.post("/api/designer/propose", json={"profile_id": pid, "size": 4}).json()
     assert len(prop["parameters"]) == 4 and prop["model"]["gaussian_process"] is True
     again = client.post("/api/designer/propose", json={"profile_id": pid, "size": 4}).json()
@@ -129,8 +135,21 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
     made = client.post(f"/api/designer/proposals/{prop['id']}/plates", json={"cell_width": 5, "cell_height": 4, "gap": 1})
     assert made.status_code == 201 and sum(p["cells"] for p in made.json()) >= 4
 
+    stored_paths = st.one("SELECT lightburn_path,photo_path FROM pair WHERE id=?", (pair["id"],))
+    assert client.delete(f"/api/pairs/{pair['id']}").status_code == 204
+    assert all(not __import__("pathlib").Path(stored_paths[k]).exists() for k in ("lightburn_path", "photo_path"))
+    assert not any(item["id"] == pair["id"] for item in client.get("/api/pairs").json())
+    assert client.get(f"/api/pairs/{pair['id']}").status_code == 404
+    assert st.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair["id"],))["n"] == 6
+    assert st.one("SELECT COUNT(*) AS n FROM observation o JOIN pair p ON p.id=o.pair_id WHERE p.status='Accepted'")["n"] == 0
+    plan_id = plates[0]["plan_id"]
+    assert client.delete(f"/api/plans/{plan_id}").status_code == 204
+    assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
+    assert st.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair["id"],))["n"] == 6
+    assert st.one("SELECT COUNT(*) AS n FROM audit WHERE action='plan_archived'")["n"] == 1
 
-def test_a_photo_without_a_chart_is_rejected_by_the_check_and_cannot_be_accepted(client):
+
+def test_a_system_plate_without_a_separate_chart_can_be_checked_and_accepted(client):
     s = setup(client)
     pid = s["profile"]["id"]
     plates = client.post("/api/plates", json={"profile_id": pid, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
@@ -139,12 +158,114 @@ def test_a_photo_without_a_chart_is_rejected_by_the_check_and_cannot_be_accepted
     lbrn = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2").content
     pair = upload_pair(client, s, lbrn, png(synth.plate_photo(plan_full, CELLS, with_chart=False))).json()
     checked = client.post(f"/api/pairs/{pair['id']}/check", json={}).json()
-    assert checked["status"] == "Needs correction" and not checked["check"]["chart"]["detected"]
-    r = client.post(f"/api/pairs/{pair['id']}/review-masks")   # nothing is aligned, so there is nothing to review
-    assert r.status_code == 422 and "align" in r.json()["error"]
-    assert client.post(f"/api/pairs/{pair['id']}/accept").status_code == 422
-    assert client.get(f"/api/pairs/{pair['id']}/report").status_code == 422
-    assert client.app.state.store.one("SELECT COUNT(*) AS n FROM observation")["n"] == 0
+    assert checked["status"] == "Ready to accept" and not checked["check"]["chart"]["detected"]
+    assert checked["check"]["color_measurement"]["mode"] == "raw_camera_relative"
+    assert client.post(f"/api/pairs/{pair['id']}/review-masks").status_code == 200
+    accepted = client.post(f"/api/pairs/{pair['id']}/accept")
+    assert accepted.status_code == 200 and len(accepted.json()["observation_ids"]) == 6
+    assert client.get(f"/api/pairs/{pair['id']}/report").status_code == 200
+    assert client.app.state.store.one("SELECT COUNT(*) AS n FROM observation WHERE model_eligible=1")["n"] == 0
+    mapped = client.get(f"/api/profiles/{pid}/map").json()
+    assert mapped["samples"] == [] and len(mapped["camera_relative_sets"]) == 1
+    assert len(mapped["camera_relative_sets"][0]["samples"]) == 6
+
+
+def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
+    s = setup(client)
+    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10 20", "frequencies": "40 80",
+                                              "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
+    from titanium_platform import plans
+    store = client.app.state.store
+    plan = plans.get_plan(store, plate["plan_id"])
+    lightburn = client.get(f"/api/plans/{plate['plan_id']}/export.lbrn2").content
+    image = png(synth.plate_photo(plan, CELLS, with_chart=False))
+    original = upload_pair(client, s, lightburn, image).json()
+    rejected = client.post(f"/api/pairs/{original['id']}/rephotos", files={"photo": ("new.png", image)})
+    assert rejected.status_code == 422
+    assert client.post(f"/api/pairs/{original['id']}/check", json={}).status_code == 200
+    assert client.post(f"/api/pairs/{original['id']}/review-masks").status_code == 200
+    assert client.post(f"/api/pairs/{original['id']}/accept").status_code == 200
+
+    response = client.post(f"/api/pairs/{original['id']}/rephotos", files={"photo": ("new.png", image)})
+    assert response.status_code == 201
+    new = response.json()
+    assert new["status"] == "Awaiting check" and new["rephoto_of"] == original["id"]
+    assert new["photo_name"] == "new.png" and new["lightburn_name"] == original["lightburn_name"]
+    renamed = client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "Титан — первый запуск"})
+    assert renamed.status_code == 200
+    assert {p["engraving_title"] for p in client.get("/api/pairs").json()} == {"Титан — первый запуск"}
+    assert client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "   "}).status_code == 422
+    for key in ("profile_id", "material_id", "plate_id", "plan_id", "engraving_id", "context", "hardware"):
+        assert new[key] == client.get(f"/api/pairs/{original['id']}").json()[key]
+    assert client.get(f"/api/pairs/{new['id']}/lightburn").content == lightburn
+    assert client.post(f"/api/pairs/{new['id']}/check", json={}).json()["status"] == "Ready to accept"
+    assert client.post(f"/api/pairs/{new['id']}/review-masks").status_code == 200
+    assert client.post(f"/api/pairs/{new['id']}/accept").status_code == 200
+    variant_image = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+    variant_image[100, 100, 0] ^= 255
+    same_name_other_file = client.post(f"/api/pairs/{new['id']}/rephotos",
+                                       files={"photo": ("new.png", png(variant_image))}).json()
+    listed = {item["id"]: item for item in client.get("/api/pairs").json()}
+    assert listed[original["id"]]["photo_sha256"] == listed[new["id"]]["photo_sha256"]
+    assert listed[new["id"]]["photo_name"] == listed[same_name_other_file["id"]]["photo_name"]
+    assert listed[new["id"]]["photo_sha256"] != listed[same_name_other_file["id"]]["photo_sha256"]
+    assert client.delete(f"/api/pairs/{same_name_other_file['id']}").status_code == 204
+    report = client.get(f"/api/pairs/{new['id']}/report").json()
+    assert report["rephoto_of"] == original["id"]
+    assert [item["id"] for item in report["photos"]] == [original["id"], new["id"]]
+    assert {row["repeat_eligible"] for row in store.query("SELECT repeat_eligible FROM observation WHERE pair_id=?", (new["id"],))} == {0}
+    assert client.delete(f"/api/pairs/{original['id']}").status_code == 204
+    third = client.post(f"/api/pairs/{new['id']}/rephotos", files={"photo": ("third.png", image)}).json()
+    assert third["rephoto_of"] == new["id"] and third["engraving_id"] == new["engraving_id"]
+    assert third["engraving_title"] == "Титан — первый запуск"
+    assert client.get(f"/api/pairs/{third['id']}/lightburn").content == lightburn
+    assert client.delete(f"/api/pairs/{third['id']}").status_code == 204
+    remaining = client.get("/api/pairs").json()
+    assert [p["id"] for p in remaining] == [new["id"]]
+    assert remaining[0]["engraving_title"] == "Титан — первый запуск"
+    assert client.get(f"/api/pairs/{new['id']}/report").json()["photos"] == [
+        {"id": new["id"], "photo_name": "new.png", "status": "Accepted", "created_at": new["created_at"]}]
+
+
+def test_accepted_photo_alignment_can_be_revised_without_a_new_upload(client):
+    s = setup(client)
+    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10 20", "frequencies": "40 80",
+                                              "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
+    from titanium_platform import plans
+    plan = plans.get_plan(client.app.state.store, plate["plan_id"])
+    lightburn = client.get(f"/api/plans/{plate['plan_id']}/export.lbrn2").content
+    image = png(synth.plate_photo(plan, CELLS, with_chart=False))
+    original = upload_pair(client, s, lightburn, image).json()
+    original_id = original["id"]
+    assert client.post(f"/api/pairs/{original_id}/check", json={}).status_code == 200
+    assert client.post(f"/api/pairs/{original_id}/review-masks").status_code == 200
+    assert client.post(f"/api/pairs/{original_id}/accept").status_code == 200
+    store = client.app.state.store
+    old_data = json.loads(store.one("SELECT data_json FROM pair WHERE id=?", (original_id,))["data_json"])
+    old_data["check"]["alignment"].pop("work_corners_fraction", None)  # accepted before the editor existed
+    old_data["check"]["alignment"].pop("snap_candidates", None)
+    store.execute("UPDATE pair SET data_json=? WHERE id=?", (json.dumps(old_data), original_id))
+
+    response = client.post(f"/api/pairs/{original_id}/alignment-revisions")
+    assert response.status_code == 201
+    revision = response.json()
+    assert revision["correction_of"] == original_id and revision["status"] == "Ready to accept"
+    assert revision["check"]["alignment"]["valid"] and revision["masks_reviewed"] is False
+    assert len(revision["check"]["alignment"]["work_corners_fraction"]) == 4
+    assert "snap_candidates" in revision["check"]["alignment"]
+    assert revision["engraving_id"] == original["engraving_id"]
+    assert client.get(f"/api/pairs/{original_id}").status_code == 200
+    moved = client.post(f"/api/pairs/{revision['id']}/check", json={"translation_fraction": [.002, 0]}).json()
+    assert moved["status"] == "Ready to accept" and moved["check"]["alignment"]["method"] == "manual shift"
+    full_turn = client.post(f"/api/pairs/{revision['id']}/check", json={"rotation_degrees": 360}).json()
+    assert full_turn["status"] == "Ready to accept"
+    assert full_turn["check"]["alignment"]["method"] == "manual shift"
+    assert client.get(f"/api/pairs/{revision['id']}/vector-overlay.png").headers["content-type"] == "image/png"
+    assert client.post(f"/api/pairs/{revision['id']}/review-masks").status_code == 200
+    assert client.post(f"/api/pairs/{revision['id']}/accept").status_code == 200
+    assert client.get(f"/api/pairs/{original_id}").status_code == 404
+    assert [p["id"] for p in client.get("/api/pairs").json()] == [revision["id"]]
+    assert client.get(f"/api/pairs/{revision['id']}/report").status_code == 200
 
 
 def test_exporting_a_draft_plan_is_refused(client):
@@ -164,6 +285,54 @@ def test_deleting_a_plate_plan_removes_the_plate_with_it(client):
     assert client.delete(f"/api/plans/{plates[0]['plan_id']}").status_code == 404
 
 
+def test_archiving_a_plan_with_deleted_pairs_hides_it_but_preserves_pair_history(client):
+    s = setup(client)
+    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
+    plan_id = plate["plan_id"]
+    plan_xml = client.get(f"/api/plans/{plan_id}/export.lbrn2").content
+    pair = upload_pair(client, s, plan_xml, png(synth.scene()), plan_id=plan_id).json()
+    st = client.app.state.store
+
+    blocked = client.delete(f"/api/plans/{plan_id}")
+    assert blocked.status_code == 409 and "active input pairs" in blocked.json()["error"]
+
+    assert client.delete(f"/api/pairs/{pair['id']}").status_code == 204
+    assert not client.get("/api/pairs").json()
+    assert client.delete(f"/api/plans/{plan_id}").status_code == 204
+
+    assert all(row["id"] != plan_id for row in client.get("/api/plans").json())
+    assert client.get(f"/api/plans/{plan_id}").status_code == 404
+    assert client.get(f"/api/plans/{plan_id}/export.lbrn2").status_code == 404
+    archived_pair = st.one("SELECT plan_id,status FROM pair WHERE id=?", (pair["id"],))
+    assert archived_pair["plan_id"] == plan_id and archived_pair["status"] == "Deleted"
+    assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
+    assert st.one("SELECT COUNT(*) AS n FROM plate WHERE id=?", (plate["plate_id"],))["n"] == 1
+
+
+def test_deleting_a_test_with_linked_checks_archives_both_in_one_action(client):
+    s = setup(client)
+    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40",
+        "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
+    plan_id = plate["plan_id"]
+    plan_xml = client.get(f"/api/plans/{plan_id}/export.lbrn2").content
+    from titanium_platform import plans
+    st = client.app.state.store
+    photo = png(synth.plate_photo(plans.get_plan(st, plan_id), CELLS))
+    pair = upload_pair(client, s, plan_xml, photo, plan_id=plan_id).json()
+    assert client.post(f"/api/pairs/{pair['id']}/check", json={}).status_code == 200
+    assert client.post(f"/api/pairs/{pair['id']}/review-masks").status_code == 200
+    assert client.post(f"/api/pairs/{pair['id']}/accept").status_code == 200
+    assert client.get(f"/api/plans/{plan_id}").json()["active_pairs"] == 1
+    assert client.delete(f"/api/plans/{plan_id}?with_pairs=true").status_code == 204
+    assert not client.get("/api/plans").json()
+    assert not client.get("/api/pairs").json()
+    assert st.one("SELECT status,plan_id FROM pair WHERE id=?", (pair["id"],))["status"] == "Deleted"
+    assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
+    assert st.one("SELECT COUNT(*) AS n FROM plate WHERE id=?", (plate["plate_id"],))["n"] == 1
+    assert st.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair["id"],))["n"] > 0
+    assert client.get(f"/api/profiles/{s['profile']['id']}/map").json()["samples"] == []
+
+
 def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
     s = setup(client)
     big = synth.scene(width=3000, height=2000)
@@ -172,6 +341,10 @@ def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
     assert max(img.shape[:2]) == 1400 and abs(img.shape[1] / img.shape[0] - 1.5) < 0.01
+    lifted = client.get(f"/api/pairs/{pair['id']}/photo.png?visibility=lifted")
+    brighter = cv2.imdecode(np.frombuffer(lifted.content, np.uint8), cv2.IMREAD_COLOR)
+    assert lifted.status_code == 200 and brighter.mean() > img.mean()
+    assert client.get(f"/api/pairs/{pair['id']}/photo.png?visibility=unknown").status_code == 422
     assert client.get("/api/pairs/999/photo.png").status_code == 404
 
 

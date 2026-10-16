@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS material_profile (
     name TEXT NOT NULL,
     family TEXT NOT NULL,
     batch TEXT,
+    grade TEXT,
+    thickness_mm REAL,
+    surface TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS capture_setup (
@@ -85,6 +88,8 @@ CREATE TABLE IF NOT EXISTS plate (
     cells_json TEXT NOT NULL,
     proposal_id INTEGER,
     lens_json TEXT,
+    material_id INTEGER REFERENCES material_profile(id),
+    test_type TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS plan (
@@ -104,16 +109,19 @@ CREATE TABLE IF NOT EXISTS pair (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     status TEXT NOT NULL,
     profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
-    stand_id INTEGER NOT NULL REFERENCES capture_setup(id),
+    stand_id INTEGER REFERENCES capture_setup(id),
+    material_id INTEGER REFERENCES material_profile(id),
     plate_id INTEGER REFERENCES plate(id),
     plan_id INTEGER REFERENCES plan(id),
     engraving_id TEXT NOT NULL,
+    engraving_title TEXT,
     lightburn_name TEXT NOT NULL,
     lightburn_path TEXT NOT NULL,
     photo_name TEXT NOT NULL,
     photo_path TEXT NOT NULL,
     context_json TEXT NOT NULL,
     data_json TEXT NOT NULL,
+    hardware_json TEXT,
     created_at TEXT NOT NULL,
     accepted_at TEXT
 );
@@ -137,6 +145,55 @@ CREATE TRIGGER IF NOT EXISTS observation_no_update BEFORE UPDATE ON observation
 BEGIN SELECT RAISE(ABORT, 'observations are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS observation_no_delete BEFORE DELETE ON observation
 BEGIN SELECT RAISE(ABORT, 'observations are immutable'); END;
+CREATE TABLE IF NOT EXISTS capability_finding (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pair_id INTEGER NOT NULL REFERENCES pair(id),
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    parameters_json TEXT,
+    evidence_json TEXT NOT NULL,
+    next_test TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(pair_id, purpose)
+);
+CREATE TABLE IF NOT EXISTS research_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER NOT NULL REFERENCES lens(id),
+    material_id INTEGER NOT NULL REFERENCES material_profile(id),
+    goal TEXT NOT NULL,
+    target TEXT NOT NULL,
+    model TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES research_session(id),
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tool_trace_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_memory (
+    session_id INTEGER PRIMARY KEY REFERENCES research_session(id),
+    through_message_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_insight (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES research_session(id),
+    purpose TEXT NOT NULL,
+    claim TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    evidence_pair_ids_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS research_message_session_idx ON research_message(session_id,id);
+CREATE INDEX IF NOT EXISTS research_insight_session_idx ON research_insight(session_id,id);
 CREATE TABLE IF NOT EXISTS knowledge (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
@@ -216,11 +273,52 @@ class Store:
         """
         for table, column, definition in (
                 ("laser_profile", "device_id", "INTEGER REFERENCES laser_device(id)"),
+                ("laser_profile", "lens_id", "INTEGER REFERENCES lens(id)"),
                 ("laser_device", "lens_id", "INTEGER REFERENCES lens(id)"),   # DEC-041
-                ("plate", "lens_json", "TEXT")):
+                ("plate", "lens_json", "TEXT"),
+                ("plate", "material_id", "INTEGER REFERENCES material_profile(id)"),
+                ("plate", "test_type", "TEXT"),
+                ("material_profile", "grade", "TEXT"),
+                ("material_profile", "thickness_mm", "REAL"),
+                ("material_profile", "surface", "TEXT"),
+                ("pair", "material_id", "INTEGER REFERENCES material_profile(id)"),
+                ("pair", "engraving_title", "TEXT"),
+                ("pair", "hardware_json", "TEXT")):
             columns = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in columns:
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        plan_columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(plan)")}
+        if "research_session_id" not in plan_columns:
+            self.conn.execute("ALTER TABLE plan ADD COLUMN research_session_id INTEGER REFERENCES research_session(id)")
+        # Existing profiles followed the currently installed lens. Freeze that pairing during migration.
+        self.conn.execute("UPDATE laser_profile SET lens_id=(SELECT lens_id FROM laser_device WHERE laser_device.id=laser_profile.device_id) WHERE lens_id IS NULL AND device_id IS NOT NULL")
+        self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
+        for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):
+            known = self.conn.execute("SELECT engraving_title FROM pair WHERE engraving_id=? AND engraving_title IS NOT NULL LIMIT 1",
+                                      (engraving["engraving_id"],)).fetchone()
+            first = self.conn.execute("SELECT lightburn_name FROM pair WHERE engraving_id=? ORDER BY id LIMIT 1",
+                                      (engraving["engraving_id"],)).fetchone()
+            title = known["engraving_title"] if known else Path(first["lightburn_name"]).stem
+            self.conn.execute("UPDATE pair SET engraving_title=? WHERE engraving_id=? AND engraving_title IS NULL",
+                              (title, engraving["engraving_id"]))
+        # Freeze the equipment association on older imports before any future lens edits. A plate's
+        # stored snapshot takes precedence over the linked identity's lens record.
+        for row in self.conn.execute(
+                "SELECT pa.id,pr.device_id,pr.lens_id,d.name,d.manufacturer,d.model,d.serial,d.data_json,"
+                "l.name AS lens_name,l.focal_length_mm,l.field_mm,l.expansion,t.lens_json "
+                "FROM pair pa JOIN laser_profile pr ON pr.id=pa.profile_id "
+                "LEFT JOIN laser_device d ON d.id=pr.device_id LEFT JOIN lens l ON l.id=pr.lens_id "
+                "LEFT JOIN plate t ON t.id=pa.plate_id WHERE pa.hardware_json='{}' AND d.id IS NOT NULL"):
+            if row["lens_json"]:
+                lens = json.loads(row["lens_json"])
+            elif row["lens_id"] is not None:
+                lens = {"id": row["lens_id"], "name": row["lens_name"], "focal_length_mm": row["focal_length_mm"],
+                        "field_mm": row["field_mm"], "expansion": row["expansion"],
+                        "spot_diameter_um": json.loads(row["data_json"]).get("spot_diameter_um")}
+            else:
+                lens = None
+            hardware = {"device": {k: row[k] for k in ("device_id", "name", "manufacturer", "model", "serial")}, "lens": lens}
+            self.conn.execute("UPDATE pair SET hardware_json=? WHERE id=?", (json.dumps(hardware), row["id"]))
 
     def close(self) -> None:
         self.conn.close()

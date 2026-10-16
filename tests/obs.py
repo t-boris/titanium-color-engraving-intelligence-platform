@@ -12,17 +12,22 @@ def setup(store: Store) -> dict:
 
 
 def add(store: Store, w: dict, lab, power=10, frequency=40, speed=900, engraving=None, rephoto=False,
-        batch=None, focus=None, repeat_eligible=None, model_eligible=1) -> int:
+        batch=None, focus=None, repeat_eligible=None, model_eligible=1, material_id=None) -> int:
     w["n"] += 1
     eng = engraving or f"e{w['n']}"
     p = pf.parameter_vector(w["profile"], power, frequency, speed)
+    context = {"batch": batch, "focus": focus, "material_id": material_id}
+    if material_id is not None:
+        material = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))
+        context.update(titanium_name=material["name"], titanium_grade=material["grade"],
+                       titanium_thickness_mm=material["thickness_mm"], titanium_surface=material["surface"])
     pair = store.execute(
-        "INSERT INTO pair(status,profile_id,stand_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at)"
-        " VALUES ('Accepted',?,?,?,'a.lbrn2','/x','p.raw','/y',?,'{}',?)",
-        (w["profile"]["id"], w["stand"]["id"], eng, json.dumps({"batch": batch, "focus": focus}), now())).lastrowid
+        "INSERT INTO pair(status,profile_id,stand_id,material_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at)"
+        " VALUES ('Accepted',?,?,?,?,'a.lbrn2','/x','p.raw','/y',?,'{}',?)",
+        (w["profile"]["id"], w["stand"]["id"], material_id, eng, json.dumps(context), now())).lastrowid
     rep = (0 if rephoto else 1) if repeat_eligible is None else repeat_eligible
     return store.execute(
         "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
         "model_eligible,repeat_eligible,eligibility_reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (pair, 1, w["profile"]["id"], eng, json.dumps(list(lab)), json.dumps(p), "markers", json.dumps({"batch": batch, "focus": focus}),
+        (pair, 1, w["profile"]["id"], eng, json.dumps(list(lab)), json.dumps(p), "markers", json.dumps(context),
          model_eligible, rep, "test", now())).lastrowid

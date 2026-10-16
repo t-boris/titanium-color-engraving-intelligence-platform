@@ -50,7 +50,8 @@ const App = (() => {
     const data = json ? await res.json() : await res.blob();
     if (!res.ok) {
       const d = data && data.detail ? data.detail : data;
-      const raw = d && d.error ? d.error : (Array.isArray(d) ? 'Проверьте заполнение полей формы' : JSON.stringify(d));
+      const raw = d && d.error ? d.error : (Array.isArray(d) ? 'Проверьте заполнение полей формы'
+        : typeof d === 'string' ? d : `Ошибка сервера (${res.status}). Проверка не завершилась.`);
       throw Object.assign(new Error(I18N.tr(raw)), {kind: d && d.kind, status: res.status});
     }
     return data;
@@ -62,5 +63,25 @@ const App = (() => {
   const del = (p) => api('DELETE', p);
   const form = (p, fd) => api('POST', p, fd, true);
 
-  return {h, btn, field, link, pill, labText, num, swatch, api, get, post, put, patch, del, form};
+  function formProgress(path, fd, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api' + path);
+      xhr.responseType = 'json';
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100));
+      };
+      xhr.onerror = () => reject(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'));
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response);
+        const data = xhr.response;
+        const detail = data?.detail || data;
+        const raw = detail?.error || (typeof detail === 'string' ? detail : `Ошибка сервера (${xhr.status}). Загрузка не завершилась.`);
+        reject(new Error(I18N.tr(raw)));
+      };
+      xhr.send(fd);
+    });
+  }
+
+  return {h, btn, field, link, pill, labText, num, swatch, api, get, post, put, patch, del, form, formProgress};
 })();

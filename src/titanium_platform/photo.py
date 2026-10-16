@@ -125,9 +125,14 @@ def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENC
 
 def apply_correction(img_bgr: np.ndarray, corr: Correction) -> np.ndarray:
     """Corrected image as float sRGB (RGB order), values 0..1."""
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
+    rgb = decoded_srgb(img_bgr)
     lin = color.srgb_to_linear(rgb) @ corr.matrix.T
     return color.linear_to_srgb(np.clip(lin, 0, 1))
+
+
+def decoded_srgb(img_bgr: np.ndarray) -> np.ndarray:
+    """Return the decoded photo as float sRGB (RGB order), before any reference-chart correction."""
+    return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
 
 
 def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> tuple[np.ndarray | None, Chart, Correction | None]:
@@ -153,6 +158,46 @@ def detect_markers(img_bgr: np.ndarray) -> dict[int, np.ndarray]:
     return {int(i): c.reshape(4, 2) for i, c in zip(ids.ravel(), corners) if int(i) in (0, 1, 2, 3)}
 
 
+def detect_marker_candidates(img_bgr: np.ndarray) -> list[dict[int, np.ndarray]]:
+    """Detect ArUco markers in all eight image orientations and map corners back to source pixels.
+
+    Photos of engraved plates may be mirrored or rotated. The QR identifier is checked after rectification,
+    so testing these orientation candidates does not silently accept a different plate.
+    """
+    h, w = img_bgr.shape[:2]
+    transforms = [
+        ("identity", np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], np.float64), lambda: img_bgr),
+        ("flip_x", np.array([[-1, 0, w - 1], [0, 1, 0], [0, 0, 1]], np.float64), lambda: cv2.flip(img_bgr, 1)),
+        ("flip_y", np.array([[1, 0, 0], [0, -1, h - 1], [0, 0, 1]], np.float64), lambda: cv2.flip(img_bgr, 0)),
+        ("rotate_180", np.array([[-1, 0, w - 1], [0, -1, h - 1], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_180)),
+        ("rotate_90_cw", np.array([[0, -1, h - 1], [1, 0, 0], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_90_CLOCKWISE)),
+        ("rotate_90_ccw", np.array([[0, 1, 0], [-1, 0, w - 1], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)),
+        ("transpose", np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]], np.float64), lambda: cv2.transpose(img_bgr)),
+        ("anti_transpose", np.array([[0, -1, h - 1], [-1, 0, w - 1], [0, 0, 1]], np.float64), lambda: cv2.flip(cv2.transpose(img_bgr), -1)),
+    ]
+    detector = cv2.aruco.ArucoDetector(
+        cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), cv2.aruco.DetectorParameters())
+    candidates, seen = [], set()
+    for _, source_to_view, make_view in transforms:
+        view = make_view()
+        corners, ids, _ = detector.detectMarkers(cv2.cvtColor(view, cv2.COLOR_BGR2GRAY))
+        if ids is None:
+            continue
+        view_to_source = np.linalg.inv(source_to_view)
+        found = {}
+        for marker_id, corner in zip(ids.ravel(), corners):
+            marker_id = int(marker_id)
+            if marker_id not in (0, 1, 2, 3):
+                continue
+            source_corner = cv2.perspectiveTransform(corner.astype(np.float32), view_to_source.astype(np.float64))[0]
+            found[marker_id] = source_corner
+        key = tuple(sorted((marker_id, tuple(np.round(points, 1).ravel())) for marker_id, points in found.items()))
+        if found and key not in seen:
+            candidates.append(found)
+            seen.add(key)
+    return sorted(candidates, key=lambda found: -len(found))
+
+
 def read_identifier(img_bgr: np.ndarray) -> str | None:
     text = cv2.QRCodeDetector().detectAndDecode(img_bgr)[0]
     return text[5:] if text.startswith("TCE1:") else None
@@ -170,12 +215,14 @@ def read_identifier_rectified(img_bgr: np.ndarray, image_to_mm: np.ndarray, area
 
 
 def homography_from_markers(found: dict[int, np.ndarray], markers: dict, x_offset: float = 0.0, y_offset: float = 0.0) -> np.ndarray:
-    """Homography image -> file mm from the four ArUco markers. Fails rather than guessing (REQ-003)."""
-    missing = [i for i in (0, 1, 2, 3) if i not in found]
-    if missing:
-        raise PhotoError(f"registration markers not detected: {missing}")
+    """Homography image -> file mm from at least three ArUco markers, never from an underconstrained pair."""
+    marker_ids = {m["id"] for m in markers["aruco"]}
+    usable = [m for m in markers["aruco"] if m["id"] in found]
+    if len(usable) < 3:
+        missing = sorted(marker_ids - set(found))
+        raise PhotoError(f"fewer than three registration markers detected; missing {missing}")
     img_pts, plan_pts = [], []
-    for m in markers["aruco"]:
+    for m in usable:
         x, y, s = m["x"] + x_offset, m["y"] + y_offset, m["size"]
         plan_pts += [(x, y), (x + s, y), (x + s, y + s), (x, y + s)]
         img_pts += found[m["id"]].tolist()
@@ -235,27 +282,47 @@ def region_mask(polygon_mm: list[tuple[float, float]], image_to_mm: np.ndarray, 
 
 
 def layer_mask(polygons_mm: list[list[tuple[float, float]]], image_to_mm: np.ndarray, shape: tuple[int, int],
-               edge_fraction: float = EDGE_FRACTION) -> np.ndarray:
+               edge_fraction: float = EDGE_FRACTION, holes_mm: list[list[list[tuple[float, float]]]] | None = None) -> np.ndarray:
     """Mask of a whole layer: the union of its shapes with the edge of each connected area excluded (DEC-028).
 
     A layer made of many touching shapes (a conversion plan stores one as hundreds of rectangles) is one
     area. Eroding every shape on its own would also cut away the seams between neighbouring shapes, so the
     shapes are merged first and each connected area is eroded by a fraction of its own smaller side.
+    ``holes_mm[i]`` lists the loops inside ``polygons_mm[i]`` that are not filled (REQ-023); a hole never
+    removes pixels that another shape of the layer fills.
     """
     if not polygons_mm:
         return np.zeros(shape, bool)
     mm_to_image = np.linalg.inv(image_to_mm).astype(np.float32)
     union = np.zeros(shape, np.uint8)
-    for poly in polygons_mm:
-        pts = cv2.perspectiveTransform(np.array([poly], np.float32), mm_to_image)[0]
-        cv2.fillPoly(union, [np.round(pts).astype(np.int32)], 1)
-    count, labels = cv2.connectedComponents(union, connectivity=8)
+
+    def to_pixels(poly):
+        return np.round(cv2.perspectiveTransform(np.array([poly], np.float32), mm_to_image)[0]).astype(np.int32)
+
+    for k, poly in enumerate(polygons_mm):
+        pts = to_pixels(poly)
+        holes = holes_mm[k] if holes_mm is not None and holes_mm[k] else None
+        if not holes:
+            cv2.fillPoly(union, [pts], 1)
+            continue
+        x0, y0 = np.maximum(pts.min(axis=0) - 1, 0)
+        x1, y1 = np.minimum(pts.max(axis=0) + 2, (shape[1], shape[0]))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        window = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        cv2.fillPoly(window, [pts], 1, offset=(-int(x0), -int(y0)))
+        for hole in holes:
+            cv2.fillPoly(window, [to_pixels(hole)], 0, offset=(-int(x0), -int(y0)))
+        union[y0:y1, x0:x1] |= window
+    if edge_fraction <= 0:
+        return union.astype(bool)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(union, connectivity=8)
     out = np.zeros(shape, bool)
     for lab in range(1, count):
-        area = labels == lab
-        ys, xs = np.nonzero(area)
-        side = min(xs.max() - xs.min() + 1, ys.max() - ys.min() + 1)
-        out |= _erode(area.astype(np.uint8), int(round(side * edge_fraction))).astype(bool)
+        x, y, width, height, _ = stats[lab]
+        area = (labels[y:y+height, x:x+width] == lab).astype(np.uint8)
+        side = min(width, height)
+        out[y:y+height, x:x+width] |= _erode(area, int(round(side * edge_fraction))).astype(bool)
     return out
 
 

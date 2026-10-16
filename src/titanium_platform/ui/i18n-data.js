@@ -13,6 +13,7 @@
     [/^no delta E tolerance is saved for this laser profile/i, 'Допуск ΔE для профиля не сохранён: отклонения показаны, но не оцениваются'],
     [/^stability is not assessed for parameter sets with fewer than two/i, 'Стабильность не оценена для наборов параметров, у которых меньше двух независимых гравировок'],
     [/^the photograph was aligned manually by four corners/i, 'Фотография выровнена вручную по четырём углам: уверенность выравнивания ниже, чем по маркерам'],
+    [/^the photograph was aligned manually or corrected by hand: review its vector overlay before using these measurements$/i, 'Фотография совмещена или поправлена вручную. Проверьте векторное наложение, прежде чем использовать эти измерения.'],
     [/^the plan does not store its trajectory colors/i, 'План не хранит цвета траектории: расстояние от пути вычислить нельзя'],
     [/^calibration plate cells have no planned color/i, 'У ячеек калибровочной платы нет планового цвета'],
     [/^the layer is not part of the original plan/i, 'Слой не входит в исходный план'],

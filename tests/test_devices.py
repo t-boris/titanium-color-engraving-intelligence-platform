@@ -151,50 +151,50 @@ def test_a_profile_can_be_linked_and_carries_the_device(store):
     assert profile(store, name="Free")["device"] is None
 
 
-def test_a_profile_with_a_pulse_width_the_laser_does_not_offer_is_refused(store):
+def test_process_settings_are_validated_when_used_against_the_selected_laser(store):
     d = jpt(store)
+    p = profile(store, d["id"], pulse_width=210)
+    assert p["device"]["id"] == d["id"] and "pulse_width" not in p
     with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        profile(store, d["id"], pulse_width=210)
-    assert pf.list_profiles(store) == []
+        pf.parameter_vector(p, 20, 48, 900, pulse_width=210)
 
 
-def test_linking_and_unlinking_never_creates_a_version_or_changes_constants(store):
+def test_linking_and_unlinking_never_versions_or_saves_process_settings(store):
     d = jpt(store)
     p = profile(store)
     linked = pf.update_profile(store, p["id"], device_id=d["id"])
-    assert linked["id"] == p["id"] and linked["version"] == 1 and linked["constants"] == p["constants"] and linked["device"]["id"] == d["id"]
+    assert linked["id"] == p["id"] and linked["version"] == 1 and linked["device"]["id"] == d["id"]
+    assert not {"pulse_width", "line_interval", "passes", "constants"} & linked.keys()
     assert pf.update_profile(store, p["id"], name="Renamed")["device"]["id"] == d["id"]     # an absent field leaves the link
     unlinked = pf.update_profile(store, p["id"], device_id=None)
     assert unlinked["device"] is None and len(pf.list_profiles(store)) == 1
 
 
-def test_linking_a_profile_whose_pulse_width_is_not_a_step_is_refused_and_leaves_it_unlinked(store):
+def test_a_profile_does_not_bind_process_settings_to_its_hardware_link(store):
     d = jpt(store)
     p = profile(store, pulse_width=210)
-    with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        pf.update_profile(store, p["id"], device_id=d["id"])
-    assert pf.get_profile(store, p["id"])["device"] is None
-    with pytest.raises(pf.ValidationError, match="not found"):
+    linked = pf.update_profile(store, p["id"], device_id=d["id"])
+    assert linked["device"]["id"] == d["id"] and "pulse_width" not in linked
+    with pytest.raises(KeyError, match="not found"):
         pf.update_profile(store, p["id"], device_id=999)
 
 
-def test_a_new_version_keeps_the_device_and_checks_the_new_pulse_width(store):
+def test_changing_process_settings_does_not_create_a_new_hardware_version(store):
     d = jpt(store)
     p = profile(store, d["id"])
     v2 = pf.update_profile(store, p["id"], pulse_width=250, confirm_new_version=True)
-    assert v2["version"] == 2 and v2["device_id"] == d["id"]
+    assert v2["version"] == 1 and v2["device_id"] == d["id"]
+    assert pf.update_profile(store, p["id"], pulse_width=255, confirm_new_version=True)["version"] == 1
     with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        pf.update_profile(store, p["id"], pulse_width=255, confirm_new_version=True)
-    assert [x["version"] for x in pf.list_profiles(store)] == [1, 2]
+        pf.parameter_vector(v2, 20, 48, 900, pulse_width=255)
+    assert [x["version"] for x in pf.list_profiles(store)] == [1]
 
 
-def test_a_passport_edit_that_removes_a_linked_pulse_width_is_refused(store):
+def test_a_passport_edit_does_not_depend_on_profile_process_settings(store):
     d = jpt(store)
     profile(store, d["id"], pulse_width=200)
     trimmed = dict(d["passport"], pulse_steps=[s for s in d["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
-    with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        dv.update_device(store, d["id"], passport=trimmed)
-    assert len(dv.get_device(store, d["id"])["passport"]["pulse_steps"]) == 17
+    assert len(dv.update_device(store, d["id"], passport=trimmed)["passport"]["pulse_steps"]) == 16
 
 
 def test_a_device_linked_to_a_profile_cannot_be_deleted(store):
@@ -272,7 +272,7 @@ def test_plate_cells_of_a_profile_with_a_device_carry_the_operating_point_outsid
 
 
 
-def test_a_plan_made_before_the_device_was_linked_shows_the_figures_at_read_time_without_storing_them(client):
+def test_a_plan_missing_process_settings_keeps_them_unknown_after_hardware_link(client):
     prof = client.post("/api/profiles", json={"name": "Old", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
     client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
     r = client.post("/api/plates", json={"profile_id": prof["id"], "powers": "50", "frequencies": "24", "speeds": "900", "cell_width": 6, "cell_height": 5, "gap": 1})
@@ -281,7 +281,7 @@ def test_a_plan_made_before_the_device_was_linked_shows_the_figures_at_read_time
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
     client.patch(f"/api/profiles/{prof['id']}", json={"device_id": d["id"]})
     op = client.get(f"/api/plans/{plan_id}").json()["layers"][0]["operating_point"]
-    assert op["below_cutoff"] is True and op["output_power_w"] == pytest.approx(15) and op["basis"] == "passport model"
+    assert op is None  # the hardware identity must not supply guessed process settings
     stored = client.app.state.store.one("SELECT data_json FROM plan WHERE id=?", (plan_id,))["data_json"]
     assert '"operating_point": null' in stored
 
@@ -334,10 +334,13 @@ def test_api_device_flow(client):
     assert r.status_code == 422 and "link a laser device" in r.json()["error"]
 
 
-def test_api_patch_leaves_the_link_when_the_field_is_absent_and_refuses_a_bad_pulse_width(client):
+def test_api_profile_ignores_legacy_process_fields_and_validates_experiments(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
     bad = client.post("/api/profiles", json={"name": "B", "pulse_width": 210, "line_interval": 0.025, "passes": 1, "device_id": d["id"]})
-    assert bad.status_code == 422 and "selectable step" in bad.json()["error"]
+    assert bad.status_code == 201 and "pulse_width" not in bad.json()
+    invalid_point = client.post("/api/operating-point", json={"profile_id": bad.json()["id"], "power": 20, "frequency": 48,
+                                                              "speed": 900, "pulse_width": 210, "line_interval": 0.025})
+    assert invalid_point.status_code == 422 and "selectable step" in invalid_point.json()["error"]
     p = client.post("/api/profiles", json={"name": "A", "pulse_width": 200, "line_interval": 0.025, "passes": 1, "device_id": d["id"]}).json()
     assert client.patch(f"/api/profiles/{p['id']}", json={"name": "A2"}).json()["device"]["id"] == d["id"]
     assert client.delete(f"/api/devices/{d['id']}").status_code == 409

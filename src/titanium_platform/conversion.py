@@ -273,8 +273,9 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
         entry = palette[kid]
         mask = np.isin(labels, [key_index[k] for k in keys])
         layers.append(layer_from_entry(n, f"K{kid}", entry, mask_to_rects(mask, plan["px_mm"]), source_color_keys=keys))
-    if len(layers) > pl.MAX_LAYERS:
-        raise ConversionError(f"{len(layers)} distinct colors need more LightBurn layers than the {pl.MAX_LAYERS} available")
+    available = pl.MAX_LAYERS - 1  # color 00 remains reserved for the marker layer in engraving plans
+    if len(layers) > available:
+        raise ConversionError(f"{len(layers)} distinct colors need more LightBurn layers than the {available} available after registration")
     plan["layers"] = layers
     _persist(store, plan, ST_READY, plan["markers_enabled"])
     return pl.get_plan(store, plan_id)
@@ -284,7 +285,7 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
 # Continuous Photo Engraving: Tonal and Color-path on one transfer-function abstraction (DEC-007, proposed DEC-032)
 # ======================================================================================================
 MODE_FOR = {"tonal": pl.MODE_TONAL, "color_path": pl.MODE_COLOR_PATH}
-MAX_BANDS = pl.MAX_LAYERS
+MAX_BANDS = pl.MAX_LAYERS - 1  # one output color is reserved for registration when enabled
 
 
 def build_transfer(mode: str, entries: list[dict], path_ids: list[int] | None = None) -> dict:

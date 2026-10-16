@@ -18,12 +18,12 @@
       const c = document.createElementNS(SVG, 'circle');
       c.setAttribute('cx', 20 + ((s.lab[1] - lo[0]) / (hi[0] - lo[0])) * (W - 40));
       c.setAttribute('cy', H - 20 - ((s.lab[2] - lo[1]) / (hi[1] - lo[1])) * (H - 40));
-      c.setAttribute('r', 6 + Math.min(8, s.engravings * 2));
+      c.setAttribute('r', 6 + Math.min(8, (s.engravings || 1) * 2));
       c.setAttribute('fill', swatch(s.lab).style.background || '#888');
       c.setAttribute('stroke', s.available ? '#fff' : '#777');
       if (!s.available) c.setAttribute('stroke-dasharray', '3 2');
       const t = document.createElementNS(SVG, 'title');
-      t.textContent = `${labText(s.lab)} · гравировок ${s.engravings}`;
+      t.textContent = `${s.name ? s.name + ' · ' : ''}${labText(s.lab)} · гравировок ${s.engravings || 1}`;
       c.append(t);
       svg.append(c);
     });
@@ -45,6 +45,66 @@
       }}]);
   }
 
+  function variantSettings(p) {
+    const source = p.source_settings || {};
+    const wobble = source.wobbleEnable?.Value;
+    return [
+      params(p),
+      `Q-Pulse ${p.pulse_width == null ? 'не записан' : p.pulse_width + ' нс'}`,
+      p.line_interval == null ? null : `шаг ${p.line_interval} мм`,
+      `${p.passes ?? '—'} проход(а)`,
+      p.global_passes == null ? null : `глобально ${p.global_passes}×`,
+      p.bidirectional == null ? null : `двунаправленно ${p.bidirectional ? 'да' : 'нет'}`,
+      p.cross_hatch == null ? null : `перекрёстная заливка ${p.cross_hatch ? 'да' : 'нет'}`,
+      p.scan_angle == null ? null : `угол ${p.scan_angle}°`,
+      p.angle_increment == null ? null : `приращение угла ${p.angle_increment}°`,
+      wobble == null ? null : wobble === '1'
+        ? `Wobble: размер ${source.wobbleSize?.Value ?? '—'} мм, шаг ${source.wobbleStep?.Value ?? '—'} мм`
+        : 'Wobble выключен',
+    ].filter(Boolean).join(' · ');
+  }
+
+  function relativeCard(set) {
+    const samples = set.samples || [];
+    const variants = set.color_variants || [];
+    const plotSamples = samples.map((s) => ({...s, engravings: 1, available: false}));
+    const findingRows = (set.findings || []).map((f) => [f.label, f.name,
+      h('span', {}, swatch(f.lab), labText(f.lab)), params(f.parameters), f.delta_e == null ? '—' : num(f.delta_e)]);
+    const sampleRows = samples.flatMap((s) => {
+      const main = [h('span', {}, swatch(s.lab), `${s.relative_appearance} · ${labText(s.lab)}`), s.name,
+        h('div', {}, s.role === 'pre-test cleaning witness' ? 'Свидетель чистки' : s.role === 'registration, QR and engraved labels' ? 'Метки и подписи' : 'Тестовый участок',
+          ...(s.notes || []).map((note) => h('div', {class: 'muted small'}, I18N.tr(note)))),
+        params(s.parameters), num(s.delta_e_from_clean_witness), s.pixels == null ? '—' : num(s.pixels, 0)];
+      const subs = (s.submeasurements || []).filter((sub) => sub.measured_lab).map((sub) => [
+        h('span', {}, swatch(sub.measured_lab), labText(sub.measured_lab)), `${s.name} / ${sub.name}`, 'Часть слоя',
+        params(s.parameters), num(sub.delta_e_from_clean_witness), sub.pixels == null ? '—' : num(sub.pixels, 0)]);
+      return [main, ...subs];
+    });
+    const material = [set.material?.name, set.material?.grade, set.material?.batch && `партия ${set.material.batch}`].filter(Boolean).join(' · ');
+    const variantCards = variants.map((v) => h('article', {class: 'color-variant'},
+      h('div', {class: 'color-variant-head'}, swatch(v.lab), h('div', {}, h('strong', {}, v.name),
+        h('span', {class: 'muted small'}, labText(v.lab)))),
+      h('p', {class: 'small'}, variantSettings(v.parameters)),
+      h('p', {class: 'muted small'}, `Отличие от очищенного фона на этом снимке: ΔE ${num(v.delta_e_from_clean_witness, 1)}`,
+        v.settings_complete ? '' : ' · настройки неполные'),
+      link('/analysis/' + set.pair_id, 'Фото и измерения')));
+    return h('div', {class: 'card stack'},
+      h('div', {class: 'row'}, h('div', {}, h('h3', {}, `${set.provisional ? 'Предварительные RAW-наблюдения' : 'RAW-наблюдения'} · пара ${set.pair_id}`),
+        h('p', {class: 'muted small'}, `${set.photo_name || 'фото'} · ${set.lightburn_name || 'LightBurn'}${material ? ` · ${material}` : ''}`))),
+      set.provisional ? h('div', {class: 'alert warn'}, `Результаты уже измерены, но ещё не приняты: ${set.masks_reviewed ? 'маски проверены' : 'нужно проверить наложение масок'}; состояние пары — ${set.status}. Это предварительные данные.`) : null,
+      ...(set.warnings || []).map((warning) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(warning))),
+      h('div', {class: 'alert warn'}, 'Это оттенки и Lab, измеренные относительно данного RAW-снимка. Карта показывает их для сравнения; они не участвуют в стандартных цветовых прогнозах и не сравниваются между разными фотосессиями.'),
+      variants.length ? h('section', {}, h('h4', {}, `Цветовые варианты из тестовых квадратов · ${variants.length}`),
+        h('p', {class: 'muted small'}, 'Каждый вариант связан с конкретным участком, настройками LightBurn и этим фото. Цвет плашки на экране условный; для рабочего рецепта нужен повтор с эталонной картой.'),
+        h('div', {class: 'color-variant-grid'}, ...variantCards)) : null,
+      h('h4', {}, 'Относительная карта a* × b*'), mapPlot(plotSamples),
+      findingRows.length ? h('div', {}, h('h4', {}, 'Что видно в этой паре'),
+        table(['Наблюдение', 'Слой', 'Оттенок на снимке', 'Параметры', 'ΔE от чистой поверхности'], findingRows)) : null,
+      h('details', {}, h('summary', {}, `Все измеренные слои (${samples.length})`),
+        table(['Оттенок на снимке', 'Слой', 'Роль', 'Параметры', 'ΔE от чистой поверхности', 'Пиксели'], sampleRows)),
+      set.provisional ? link('/ingest?pair=' + set.pair_id, 'Открыть проверку слоёв и принять пару') : null);
+  }
+
   App.register({id: 'colors', async render(ctx) {
     if (ctx.id === 'knowledge') return KnowledgeView.render(ctx.arg);
     const profiles = await get('/profiles');
@@ -62,11 +122,13 @@
     const header = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных версий профиля не объединяются.')),
       h('span', {class: 'spacer'}));
     const controls = h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap wide'}, field('Версия профиля', picker)), btn('Целевой цвет', () => predictDialog(pid), 'primary'), link('/designer?profile=' + pid, 'Спланировать эксперимент'));
-    if (!map.samples.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этой версии профиля нет наблюдений'), link('/ingest', 'Добавить наблюдение')));
+    const relativeSets = map.camera_relative_sets || [];
+    if (!map.samples.length && !relativeSets.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этой версии профиля пока нет проверенных измерений'), link('/ingest', 'Добавить фото эксперимента')));
     return h('div', {class: 'stack'}, header, controls,
-      h('div', {class: 'card'}, h('h3', {}, 'Покрытие в плоскости a × b'), mapPlot(map.samples),
-        h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок (одна гравировка). Карта — приблизительное экранное представление Lab.')),
+      map.samples.length ? h('div', {class: 'card'}, h('h3', {}, 'Калиброванные наблюдения для прогноза'), mapPlot(map.samples),
+        h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок повторяемости. Цвета показаны как экранное представление Lab.')) : null,
+      relativeSets.map(relativeCard),
       map.unstable.length ? h('div', {class: 'alert warn'}, 'Нестабильные наборы: ' + map.unstable.map((u) => `${u.parameters.power}/${u.parameters.frequency}/${u.parameters.speed}`).join(', ')) : null,
-      h('div', {class: 'card'}, h('h3', {}, 'Знание'), table(['Цвет', 'Мощность / частота / скорость', 'Стадия', 'Флаг', 'Независимых', 'Уверенность', 'Ошибка ΔE', 'Стабильность'], rows)));
+      rows.length ? h('div', {class: 'card'}, h('h3', {}, 'Модель цветовых параметров'), table(['Цвет', 'Мощность / частота / скорость', 'Стадия', 'Флаг', 'Независимых', 'Уверенность', 'Ошибка ΔE', 'Стабильность'], rows)) : null);
   }});
 })();

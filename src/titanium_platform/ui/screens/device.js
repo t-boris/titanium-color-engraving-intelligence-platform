@@ -35,7 +35,7 @@
   }
 
   // Вкладки карточки лазера: каждый блок на своём месте, без длинной прокрутки. Адрес: #/devices/:id?tab=...
-  const TABS = [['overview', 'Обзор'], ['charts', 'Графики'], ['pulses', 'Формы импульса'], ['report', 'Протокол'], ['lens', 'Линза'], ['controller', 'Настройки лазера'], ['documents', 'Документы']];
+  const TABS = [['overview', 'Обзор'], ['experiments', 'Эксперименты и база результатов'], ['charts', 'Графики'], ['pulses', 'Формы импульса'], ['report', 'Протокол'], ['lens', 'Линза'], ['controller', 'Настройки лазера'], ['documents', 'Документы']];
 
   async function detail(id, wanted, section) {
     let d;
@@ -46,7 +46,9 @@
     openPill.dataset.openCount = '1';
     const counts = {lens: d.lens ? 1 : 0, pulses: (d.passport.waveforms || []).length, documents: d.documents.length, controller: ((d.passport.controller || {}).tabs || []).reduce((n, t) => n + t.fields.length, 0), report: ((d.passport.test_report || {}).rows || []).length};
     let body;
-    if (tab === 'charts') {
+    if (tab === 'experiments') {
+      body = DeviceView.experimentsCard(await get(`/devices/${id}/experiments`), d);
+    } else if (tab === 'charts') {
       const charts = await get(`/devices/${id}/charts`), plots = chartsCard(d, charts);
       body = h('div', {class: 'stack'}, DeviceCalc.calculator(d, plots.onPoint), plots.card);
     } else if (tab === 'pulses') {
@@ -60,7 +62,9 @@
     } else if (tab === 'documents') {
       body = DeviceView.documentsCard(d, refresh);
     } else {
-      body = h('div', {class: 'stack'}, DeviceProfileCard.card(d), h('div', {class: 'grid g2'}, DeviceView.passportCard(d), DeviceView.profilesCard(d)),
+      const capabilityResults = await get(`/devices/${id}/capability-results`);
+      body = h('div', {class: 'stack'}, DeviceProfileCard.card(d), DeviceView.capabilityResultsCard(capabilityResults, id),
+        h('div', {class: 'grid g2'}, DeviceView.passportCard(d), DeviceView.profilesCard(d)),
         h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Изменить паспорт: серийный номер, диаметр пятна, ступени, открытые вопросы')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
     }
     const nav = h('div', {class: 'row', role: 'tablist'}, TABS.map(([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, role: 'tab', 'aria-selected': key === tab,

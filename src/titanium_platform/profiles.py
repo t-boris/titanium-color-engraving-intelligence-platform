@@ -1,9 +1,8 @@
-"""Laser profiles, material profiles, capture setups and evaluation rules (REQ-010, REQ-009, REQ-005).
+"""Laser/lens identities, material profiles, capture setups and evaluation rules.
 
-A laser profile *version* is immutable once observations or plates reference it. Changing a profile
-constant (pulse width, line interval, passes) creates a new version; data of different versions is never
-merged silently (DEC-005). Axes are stored as a JSON list, so adding a variable axis later needs no
-migration of stored parameter vectors (REQ-010).
+An engraving profile identifies the physical laser and the particular lens used for a data series. All
+six process settings are per test layer and live in the full observation vector; changing them never
+creates a hardware-profile version. Power/frequency/speed bounds remain search limits, not saved settings.
 """
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ DEFAULT_AXES = [
     {"key": "frequency", "name": "Frequency", "unit": "kHz", "min": 1.0, "max": 4000.0},
     {"key": "speed", "name": "Speed", "unit": "mm/s", "min": 1.0, "max": 10000.0},
 ]
-CONSTANT_KEYS = ("pulse_width", "line_interval", "passes")
 _UNSET = object()   # "not given" for a field where None means "remove the link"
 RULE_KEYS = ("repeat_threshold", "delta_tolerance", "variance_threshold")
 
@@ -64,33 +62,46 @@ def validate_axes(axes: list[dict]) -> list[dict]:
 def _profile_dict(row) -> dict:
     d = dict(row)
     d["axes"] = json.loads(d.pop("axes_json"))
-    d["constants"] = {"pulse_width": d.pop("pulse_width"), "line_interval": d.pop("line_interval"), "passes": d.pop("passes")}
+    # These nullable columns are retained only so older SQLite files migrate additively. They are
+    # intentionally absent from the profile API: none of them is a profile setting.
+    d.pop("pulse_width", None)
+    d.pop("line_interval", None)
+    d.pop("passes", None)
     return d
 
 
-def _check_device_step(store: Store, device_id: int | None, pulse_width: float) -> None:
-    """A profile linked to a device must use a pulse width the laser offers (DEC-035)."""
-    if device_id is None:
-        return
-    from . import devices   # devices imports this module
-    devices.require_selectable(devices.get_passport(store, device_id), pulse_width)
+def _validate_hardware(store: Store, device_id: int | None, lens_id: int | None) -> None:
+    if device_id is not None:
+        from . import devices
+        devices.get_passport(store, device_id)
+    if lens_id is not None:
+        from . import lenses
+        lens = lenses.get_lens(store, lens_id)
+        host = lens.get("installed_on")
+        if host and host["id"] != device_id:
+            raise ValidationError("the selected lens is installed on a different laser")
 
 
-def create_profile(store: Store, name: str, pulse_width: float, line_interval: float, passes: int,
-                   axes: list[dict] | None = None, family: str | None = None, device_id: int | None = None) -> dict:
+def create_profile(store: Store, name: str, pulse_width: float | None = None, line_interval: float | None = None,
+                   passes: int | None = None, axes: list[dict] | None = None, family: str | None = None,
+                   device_id: int | None = None, lens_id: int | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValidationError("profile name is required")
-    pw, li = _finite(pulse_width, "pulse width", True), _finite(line_interval, "line interval", True)
-    if int(passes) != passes or passes < 1:
-        raise ValidationError("passes must be a positive integer")
-    _check_device_step(store, device_id, pw)
+    if device_id is not None and lens_id is None:
+        from . import lenses
+        installed = lenses.installed(store, device_id)
+        lens_id = installed["id"] if installed else None
+    # Accept the old positional arguments during migration, but never use or persist them as profile
+    # values. On pre-migration databases the legacy columns are NOT NULL, so harmless sentinels are
+    # written there solely to satisfy the old schema.
+    _validate_hardware(store, device_id, lens_id)
     clean = validate_axes(axes if axes is not None else [dict(a) for a in DEFAULT_AXES])
-    family = family or name
+    family = family or (f"laser-{device_id}-lens-{lens_id}" if device_id is not None else name)
     last = store.one("SELECT MAX(version) AS v FROM laser_profile WHERE family=?", (family,))["v"] or 0
     cur = store.execute(
-        "INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at,device_id) VALUES (?,?,?,?,?,?,?,?,?)",
-        (family, last + 1, name, json.dumps(clean), pw, li, int(passes), now(), device_id))
+        "INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at,device_id,lens_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (family, last + 1, name, json.dumps(clean), 1, 0.05, 1, now(), device_id, lens_id))
     return get_profile(store, cur.lastrowid)
 
 
@@ -102,6 +113,13 @@ def get_profile(store: Store, profile_id: int) -> dict:
     d["linked"] = profile_links(store, profile_id)
     from . import devices
     d["device"] = devices.brief(store, d.get("device_id"))
+    if d.get("lens_id") is not None:
+        from . import lenses
+        d["lens"] = lenses.get_lens(store, d["lens_id"])
+    else:
+        d["lens"] = None
+    if d["device"] is not None:
+        d["device"]["lens"] = d["lens"]
     return d
 
 
@@ -116,35 +134,21 @@ def profile_links(store: Store, profile_id: int) -> dict:
 
 def update_profile(store: Store, profile_id: int, name: str | None = None, pulse_width: float | None = None,
                    line_interval: float | None = None, passes: int | None = None, confirm_new_version: bool = False,
-                   device_id: Any = _UNSET) -> dict:
-    """Rename or relink the device in place; a changed constant needs confirmation and creates a new version.
+                   device_id: Any = _UNSET, lens_id: Any = _UNSET) -> dict:
+    """Rename an identity or change its hardware pair while it has no linked experimental history.
 
-    The device link is not a constant: changing it never creates a version (DEC-035). A new version keeps the
-    link, and its pulse width is checked against the device.
+    The legacy process-setting arguments are accepted for old clients but ignored. A profile linked to
+    records cannot be retargeted to different hardware; create a new laser/lens identity instead.
     """
     cur = get_profile(store, profile_id)
-    if device_id is not _UNSET and device_id is not None:
-        from . import devices
-        try:
-            devices.get_passport(store, device_id)
-        except KeyError:
-            raise ValidationError("the laser device was not found") from None
-    consts = cur["constants"]
-    new = {"pulse_width": consts["pulse_width"] if pulse_width is None else _finite(pulse_width, "pulse width", True),
-           "line_interval": consts["line_interval"] if line_interval is None else _finite(line_interval, "line interval", True),
-           "passes": consts["passes"] if passes is None else passes}
-    if int(new["passes"]) != new["passes"] or new["passes"] < 1:
-        raise ValidationError("passes must be a positive integer")
-    changed = {k: (consts[k], new[k]) for k in CONSTANT_KEYS if new[k] != consts[k]}
-    if changed:
-        if not confirm_new_version:
-            raise ValidationError("changing a profile constant creates a new version; confirm to continue")
-        return create_profile(store, name or cur["name"], new["pulse_width"], new["line_interval"], int(new["passes"]),
-                              axes=cur["axes"], family=cur["family"],
-                              device_id=cur.get("device_id") if device_id is _UNSET else device_id)
-    if device_id is not _UNSET:
-        _check_device_step(store, device_id, consts["pulse_width"])
-        store.execute("UPDATE laser_profile SET device_id=? WHERE id=?", (device_id, profile_id))
+    new_device = cur.get("device_id") if device_id is _UNSET else device_id
+    new_lens = cur.get("lens_id") if lens_id is _UNSET else lens_id
+    _validate_hardware(store, new_device, new_lens)
+    pair_changed = new_device != cur.get("device_id") or new_lens != cur.get("lens_id")
+    if pair_changed and any(cur["linked"].values()):
+        raise ValidationError("this laser/lens identity has experimental history; create a new profile for the other hardware pair")
+    if pair_changed:
+        store.execute("UPDATE laser_profile SET device_id=?,lens_id=? WHERE id=?", (new_device, new_lens, profile_id))
     if name is not None:
         name = name.strip()
         if not name:
@@ -162,10 +166,18 @@ def delete_profile(store: Store, profile_id: int) -> None:
     store.audit("laser_profile_deleted", id=profile_id)
 
 
-def parameter_vector(profile: dict, power: float, frequency: float, speed: float) -> dict:
-    """Full parameter vector: variable axes plus the profile constants (REQ-010)."""
-    vec = {"power": power, "frequency": frequency, "speed": speed, **profile["constants"], "profile_id": profile["id"]}
-    return vec
+def parameter_vector(profile: dict, power: float, frequency: float, speed: float, pulse_width: float = 200.0,
+                     line_interval: float = 0.025, passes: int = 1) -> dict:
+    """Full, per-layer process vector. Process settings are never read from the hardware profile."""
+    pw = _finite(pulse_width, "pulse width", True)
+    interval = _finite(line_interval, "line interval", True)
+    if int(passes) != passes or passes < 1:
+        raise ValidationError("passes must be a positive integer")
+    if profile.get("device"):
+        from . import devices
+        devices.require_selectable(profile["device"]["passport"], pw)
+    return {"power": float(power), "frequency": float(frequency), "speed": float(speed),
+            "pulse_width": pw, "line_interval": interval, "passes": int(passes), "profile_id": profile["id"]}
 
 
 def check_in_range(profile: dict, power: float, frequency: float, speed: float) -> list[str]:
@@ -178,16 +190,29 @@ def check_in_range(profile: dict, power: float, frequency: float, speed: float) 
 
 
 # -- materials -----------------------------------------------------------------------------------
-def save_material(store: Store, name: str, batch: str | None = None, material_id: int | None = None) -> dict:
+def save_material(store: Store, name: str, batch: str | None = None, material_id: int | None = None,
+                 grade: str | None = None, thickness_mm: float | None = None, surface: str | None = None,
+                 family: str | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValidationError("material name is required")
+    previous = store.one("SELECT family FROM material_profile WHERE id=?", (material_id,)) if material_id is not None else None
+    family = (family if family is not None else previous["family"] if previous else "Titanium").strip()
+    if not family:
+        raise ValidationError("material family is required")
     batch = (batch or "").strip() or None
+    grade = (grade or "").strip() or None
+    surface = (surface or "").strip() or None
+    thickness = None if thickness_mm in (None, "") else _finite(thickness_mm, "titanium thickness", True)
     if material_id is None:
-        cur = store.execute("INSERT INTO material_profile(name,family,batch,created_at) VALUES (?,?,?,?)", (name, "Titanium", batch, now()))
+        cur = store.execute("INSERT INTO material_profile(name,family,batch,grade,thickness_mm,surface,created_at) VALUES (?,?,?,?,?,?,?)",
+                            (name, family, batch, grade, thickness, surface, now()))
         material_id = cur.lastrowid
     else:
-        store.execute("UPDATE material_profile SET name=?, batch=? WHERE id=?", (name, batch, material_id))
+        if store.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
+            raise KeyError(f"titanium stock {material_id} not found")
+        store.execute("UPDATE material_profile SET name=?,family=?,batch=?,grade=?,thickness_mm=?,surface=? WHERE id=?",
+                      (name, family, batch, grade, thickness, surface, material_id))
     return dict(store.one("SELECT * FROM material_profile WHERE id=?", (material_id,)))
 
 

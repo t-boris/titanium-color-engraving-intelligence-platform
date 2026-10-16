@@ -16,7 +16,7 @@ import json
 
 import numpy as np
 
-from . import color, ingest, model, plans as pl, profiles as pf
+from . import capability_results, color, ingest, model, plans as pl, profiles as pf
 from .db import Store
 
 
@@ -59,7 +59,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
         pred = (layer or {}).get("prediction")
         row = {"observation_id": o["id"], "layer_index": o["layer_index"], "name": o["evidence"].get("layer_name"), "parameters": o["parameters"],
                "measured_lab": o["lab"], "planned_lab": None, "delta_e": None, "within_tolerance": None, "planned_prediction": pred,
-               "alignment": o["alignment"], "knowledge": None}
+               "alignment": o["alignment"], "knowledge": None, "role": o["evidence"].get("role", "test feature"),
+               "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics")}
         if pred is not None:
             row["planned_lab"] = pred["lab"]
             row["delta_e"] = color.delta_e(o["lab"], pred["lab"])
@@ -69,17 +70,25 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
             row["note"] = "the layer is not part of the original plan"
         if row["delta_e"] is not None and tol is not None:
             row["within_tolerance"] = row["delta_e"] <= tol
-        s = summaries.get(model.parameters_key(o["parameters"]))
+        s = summaries.get(model.observation_key(o["parameters"], o["context"]))
         if s:
             row["knowledge"] = {"independent_engravings": s["independent_engravings"], "stability": s["stability"], "rig_repeatability": s["rig_repeatability"],
                                 "attribution_note": s["attribution_note"]}
         rows.append(row)
-    result = {"pair_id": pair_id, "plan_id": pair["plan_id"], "mode": mode, "alignment": rows[0]["alignment"] if rows else None, "rows": rows,
+    result = {"pair_id": pair_id, "engraving_id": pair["engraving_id"], "engraving_title": pair["engraving_title"],
+              "plan_id": pair["plan_id"], "mode": mode, "alignment": rows[0]["alignment"] if rows else None, "rows": rows,
               "tolerance": tol, "limitations": limitations, "metrics": {}}
+    result["rephoto_of"] = pair.get("rephoto_of")
+    result["photos"] = [dict(row) for row in store.query(
+        "SELECT id,photo_name,status,created_at FROM pair WHERE engraving_id=? AND status!='Deleted' ORDER BY id",
+        (pair["engraving_id"],))]
+    result["capability"] = capability_results.report_for_pair(store, pair_id)
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")
-    if tol is None:
+    if tol is None and result["capability"] is None:
         limitations.append("no delta E tolerance is saved for this laser profile: deviations are shown but not classified")
+    if any(o["evidence"].get("color_measurement", {}).get("mode") == "raw_camera_relative" for o in obs):
+        limitations.append("these Lab readings are camera-relative RAW measurements; they are preserved for experiment analysis but excluded from standard-color predictions")
     if mode == pl.MODE_TONAL:
         _tonal(result, rows, planned)
     elif mode == pl.MODE_COLOR_PATH:
@@ -87,12 +96,12 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     elif rows and any(r["delta_e"] is not None for r in rows):
         d = [r["delta_e"] for r in rows if r["delta_e"] is not None]
         result["metrics"] = {"kind": "color_deviation", "mean_delta_e": float(np.mean(d)), "max_delta_e": float(max(d)), "layers": len(d)}
-    if any(not (r["knowledge"] or {}).get("stability", {}).get("assessed") for r in rows):
+    if result["capability"] is None and any(not (r["knowledge"] or {}).get("stability", {}).get("assessed") for r in rows):
         limitations.append("stability is not assessed for parameter sets with fewer than two independent engravings")
     notes = {r["knowledge"]["attribution_note"] for r in rows if r["knowledge"] and r["knowledge"]["attribution_note"]}
     limitations += sorted(notes)
-    if any(o["alignment"] == "manual" for o in obs):
-        limitations.append("the photograph was aligned manually by four corners: alignment confidence is lower than with markers")
+    if any(o["alignment"] in ("manual", "manual shift", "manual rotation", "manual transform", "element anchor") for o in obs):
+        limitations.append("the photograph was aligned manually or corrected by hand: review its vector overlay before using these measurements")
     return result
 
 

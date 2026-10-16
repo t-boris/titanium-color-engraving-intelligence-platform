@@ -72,3 +72,104 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
         assert cx + c.shape[1] <= ox - 30, f"the chart (right edge {cx + c.shape[1]} px) would cover the plate that starts at {ox - 30} px: move the origin right"
         img[cy:cy + c.shape[0], cx:cx + c.shape[1]] = c
     return cast(img, gains) if gains else img
+
+
+# -- a framed finished work (REQ-024, DEC-048): a LightBurn file and a photograph that disagree like a real pair ----
+def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: int = 12, size=(2000, 2700),
+                px_per_mm: float = 9.5, rotate_deg: float = 1.2, mirror: bool = True, perspective=(2.0e-5, -1.5e-5),
+                extra=(), concentric: bool = False, with_chart: bool = False, with_frame: bool = True, style: str = "regions") -> dict:
+    """150 x 150 mm plate (file mm 10..160) with closed 'cloud' outlines on ``layers`` layers.
+
+    The photograph shows the plate mirrored vertically, rotated, in perspective, inside a black frame that hides
+    ``hide_mm`` of the plate on every side. ``extra`` adds (layer, polygon in mm) outlines; ``concentric`` replaces the
+    clouds by nested squares, a drawing whose orientation cannot be told. Returns the LightBurn bytes, the photograph,
+    the true file-mm -> pixel matrix and the outlines.
+    """
+    rng = np.random.default_rng(seed)
+    palette = []
+    for i in range(layers):
+        hsv = np.uint8([[[int(180 * ((i * 0.381) % 1.0)), int(rng.uniform(120, 230)), int(rng.uniform(120, 235))]]])
+        palette.append(tuple(int(v) for v in cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]))
+    shapes: list[tuple[int, np.ndarray]] = []
+    if concentric:
+        for k in range(1, 13):
+            half = 6.0 * k
+            shapes.append((1 + k % layers, np.array([(85 - half, 85 - half), (85 + half, 85 - half),
+                                                     (85 + half, 85 + half), (85 - half, 85 + half)], float)))
+    elif style == "none":                # only what ``extra`` adds
+        pass
+    elif style == "clouds":              # overlapping outlines: many of them are painted over and cannot be seen
+        theta = np.linspace(0, 2 * np.pi, 90, endpoint=False)
+        for _ in range(blobs):
+            centre, r0 = rng.uniform(22, 148, 2), rng.uniform(5, 15)
+            r = r0 * (1 + sum(rng.uniform(0.02, 0.12) * np.cos(k * theta + rng.uniform(0, 6.28)) for k in range(2, 7)))
+            shapes.append((int(rng.integers(1, layers + 1)), np.column_stack([centre[0] + r * np.cos(theta), centre[1] + r * np.sin(theta)])))
+    else:                                 # touching regions, like a posterised picture: every outline is visible
+        step = 0.25
+        axis = 10 + (np.arange(int(150 / step)) + 0.5) * step
+        gx, gy = np.meshgrid(axis, axis)
+        seeds = rng.uniform(10, 160, (blobs, 2))
+        label = np.argmin((gx[..., None] - seeds[:, 0]) ** 2 + (gy[..., None] - seeds[:, 1]) ** 2, axis=2)
+        neighbours = {i: set() for i in range(blobs)}
+        for a, b in ((label[:, :-1], label[:, 1:]), (label[:-1], label[1:])):
+            for i, j in set(zip(a[a != b].tolist(), b[a != b].tolist())):
+                neighbours[i].add(j); neighbours[j].add(i)
+        layer_of: dict[int, int] = {}
+        for i in sorted(neighbours, key=lambda k: -len(neighbours[k])):
+            used = {layer_of[j] for j in neighbours[i] if j in layer_of}
+            layer_of[i] = next((k for k in range(1, layers + 1) if k not in used), 1 + i % layers)
+        for i in range(blobs):
+            contours, _ = cv2.findContours((label == i).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if not contours:
+                continue
+            contour = max(contours, key=cv2.contourArea)
+            approx = cv2.approxPolyDP(contour, 0.8, True).reshape(-1, 2)
+            if len(approx) >= 3 and cv2.contourArea(approx.astype(np.float32)) * step ** 2 > 4:
+                shapes.append((layer_of[i], 10 + (approx + 0.5) * step))
+    shapes += [(int(layer), np.asarray(poly, float)) for layer, poly in extra]
+    shapes.sort(key=lambda item: item[0])
+
+    cut = "".join(f'<CutSetting type="Scan"><index Value="{i}"/><name Value="C{i:02d}"/><maxPower Value="50"/><speed Value="{1000 + 50 * i}"/>'
+                  f'<frequency Value="48000"/><QPulseWidth Value="4"/><interval Value="0.005"/></CutSetting>' for i in range(layers + 1))
+    body = '<Shape Type="Rect" CutIndex="0" W="150" H="150" Cr="0"><XForm>1 0 0 1 85 85</XForm></Shape>'
+    for layer, poly in shapes:
+        n = len(poly)
+        verts = "".join(f"V{x:.5f} {y:.5f}c0x1c1x1" for x, y in poly)
+        prims = "".join(f"L{i} {(i + 1) % n}" for i in range(n))
+        body += (f'<Shape Type="Path" CutIndex="{layer}"><XForm>1 0 0 1 0 0</XForm><VertList>{verts}</VertList>'
+                 f'<PrimList>{prims}</PrimList></Shape>')
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="2.1.04" DeviceName="JPT MOPA M7 60W">'
+           f'{cut}{body}<Notes ShowOnLoad="0" Notes=""/></LightBurnProject>').encode()
+
+    height, width = size
+    th = np.deg2rad(rotate_deg)
+    lin = px_per_mm * np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]) @ np.diag([1, -1 if mirror else 1])
+    affine = np.eye(3)
+    affine[:2, :2] = lin
+    affine[:2, 2] = -lin @ [85.0, 85.0]
+    persp = np.array([[1, 0, 0], [0, 1, 0], [perspective[0], perspective[1], 1.0]])
+    centre = np.array([[1, 0, 0.62 * width], [0, 1, 0.5 * height], [0, 0, 1.0]])
+    mm_to_px = centre @ persp @ affine
+
+    def project(poly):
+        return cv2.perspectiveTransform(np.asarray(poly, np.float32)[None], mm_to_px)[0]
+
+    work = np.full((height, width, 3), (150, 155, 150), np.uint8)       # the table, also where there is no frame
+    cv2.fillConvexPoly(work, np.round(project([(10, 10), (160, 10), (160, 160), (10, 160)])).astype(np.int32), (190, 195, 200))
+    for layer, poly in shapes:
+        cv2.fillPoly(work, [np.round(project(poly)).astype(np.int32)], palette[(layer - 1) % layers], cv2.LINE_AA)
+    img = np.full((height, width, 3), (150, 155, 150), np.uint8)
+    if with_frame:
+        cv2.fillConvexPoly(img, np.round(project([(0, 0), (170, 0), (170, 170), (0, 170)])).astype(np.int32), (14, 14, 14))
+        aperture = np.zeros((height, width), np.uint8)
+        a, b = 10 + hide_mm, 160 - hide_mm
+        cv2.fillConvexPoly(aperture, np.round(project([(a, a), (b, a), (b, b), (a, b)])).astype(np.int32), 1)
+        img[aperture > 0] = work[aperture > 0]
+    else:
+        img = work
+    img = cv2.GaussianBlur(img, (0, 0), 1.0)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 2, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    if with_chart:
+        c = chart_image()
+        img[1500:1500 + c.shape[0], 120:120 + c.shape[1]] = c
+    return {"lightburn": xml, "photo": img, "mm_to_px": mm_to_px, "shapes": shapes, "palette": palette, "hide_mm": hide_mm}

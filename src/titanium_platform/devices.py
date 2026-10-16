@@ -209,8 +209,8 @@ def brief(store: Store, device_id: int | None) -> dict | None:
 
 
 def linked_profiles(store: Store, device_id: int) -> list[dict]:
-    return [{"id": r["id"], "name": r["name"], "version": r["version"], "pulse_width": r["pulse_width"]}
-            for r in store.query("SELECT id,name,version,pulse_width FROM laser_profile WHERE device_id=? ORDER BY family, version", (device_id,))]
+    return [{"id": r["id"], "name": r["name"], "version": r["version"], "lens_id": r["lens_id"]}
+            for r in store.query("SELECT id,name,version,lens_id FROM laser_profile WHERE device_id=? ORDER BY family, version", (device_id,))]
 
 
 def _document_public(row) -> dict:
@@ -296,8 +296,6 @@ def update_device(store: Store, device_id: int, name: Any = _UNSET, manufacturer
         raise pf.ValidationError("device name is required")
     if passport is not _UNSET:
         data = validate_passport(passport)
-        for profile in linked_profiles(store, device_id):   # a linked profile must keep a selectable pulse width
-            require_selectable(data, profile["pulse_width"])
         values["data_json"] = json.dumps(data)
     store.execute("UPDATE laser_device SET name=?,manufacturer=?,model=?,serial=?,description=?,data_json=?,updated_at=? WHERE id=?",
                   (values["name"], values["manufacturer"], values["model"], values["serial"], values["description"], values["data_json"], now(), device_id))
