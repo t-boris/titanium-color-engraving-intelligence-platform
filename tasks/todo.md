@@ -55,6 +55,11 @@ robust homography, hold-out test).
 - Image layers: mode, kind (tonal / depth), dpi, dot width and correction, cleanup pass, passes, sub-layer, picture processing; the picture
   is PNG in `Data`, shared by the objects of one file (DEC-052, REQ-026). The tonal profile is validated on synthetic photographs only.
 
+## Pilot pair accepted by the operator (2026-10-16)
+
+Pair 21 (`unbreakable.lbrn2` + `IMG_3281.DNG`, profile JPT MOPA M7 60W) was created in the running application, reviewed and accepted by the
+operator: 19 observations, alignment `element anchors`, camera-relative (none model-eligible), run order not in the recipe.
+
 ## Still open, and why
 
 - Reference chart: the operator first chose to wait for a photograph with the card, then (2026-10-16), once it was clear that the card is a
