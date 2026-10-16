@@ -391,13 +391,15 @@ def layer_report(layer: lb.Layer, profile: dict) -> dict:
     if not layer.regions:
         compatible = False
         notes.append("the layer has no fill geometry")
+    image = layer.image_summary()
     return {"index": layer.index, "name": layer.name, "type": layer.layer_type, "power": layer.power,
             "frequency_khz": layer.frequency_khz, "speed": layer.speed, "pulse_width": layer.pulse_width,
             "line_interval": layer.line_interval, "passes": layer.passes, "global_passes": layer.global_passes,
             "bidirectional": layer.bidirectional, "cross_hatch": layer.cross_hatch, "scan_angle": layer.scan_angle,
             "angle_increment": layer.angle_increment, "source_settings": layer.source_settings,
             "regions": len(layer.regions), "readable": layer.readable,
-            "compatible": compatible, "notes": notes, "measured_lab": None, "pixels": None}
+            "compatible": compatible, "notes": notes, "measured_lab": None, "pixels": None,
+            **({"image": image} if image else {})}
 
 
 
@@ -813,6 +815,95 @@ def _element_status(details: dict) -> dict:
     for (layer_index, region_index), status in zip(details["element_refs"], details["statuses"]):
         out.setdefault(str(layer_index), {})[str(region_index)] = status
     return out
+
+
+TONAL_BINS = 16
+TONAL_BLUR_MM = 0.25    # dithered dots are far finer than the photograph resolves: compare local averages, not pixels
+
+
+def _picture_gray(png: bytes) -> np.ndarray | None:
+    """The embedded picture as grey levels 0..1 (black engraves); a transparent area counts as white."""
+    img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+    if img.dtype != np.uint8:
+        img = (img.astype(np.float32) / (65535.0 if img.dtype == np.uint16 else 1.0) * 255).clip(0, 255).astype(np.uint8)
+    if img.ndim == 2:
+        return img.astype(np.float32) / 255.0
+    gray = cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+    if img.shape[2] == 4:
+        alpha = img[..., 3].astype(np.float32) / 255.0
+        gray = gray * alpha + (1 - alpha)
+    return gray
+
+
+def _prefer_reading(rho: float, other: float | None) -> bool:
+    """Is a reading with this rank correlation better than the other? A clear positive agreement wins; with none, the stronger."""
+    if other is None:
+        return True
+    return rho > other if max(rho, other) >= 0.3 else abs(rho) > abs(other)
+
+
+def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape: tuple[int, int],
+                   allowed: np.ndarray | None) -> dict | None:
+    """How the grey levels of an image object came out on the metal: L* of the photograph against the grey level of the
+    embedded picture at the same place (REQ-004, tonal evaluation).
+
+    The picture is laid over the photograph through the alignment of the work. Which edge of the picture is up is not
+    stated by the file, so both are tried and the one that agrees better is kept and reported. The grey levels are
+    those of the picture as stored, before LightBurn's brightness, contrast and gamma, and dithering is not modelled:
+    this is a measurement of what was photographed, not a prediction.
+    """
+    mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
+    lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)[:, :, 0]
+    best = None
+    for region in layer.regions:
+        bm = region.bitmap
+        gray = _picture_gray(bm["png"]) if bm and bm.get("png") else None
+        if gray is None:
+            continue
+        rows, cols = gray.shape
+        a, b, c, d, e, f = bm["matrix"]
+        local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
+        px_per_mm = float(np.sqrt(abs(np.linalg.det(mm_to_image[:2, :2]))))
+        sigma = max(1.0, TONAL_BLUR_MM * px_per_mm)
+        shrink = cv2.erode(cv2.fillConvexPoly(np.zeros(shape, np.uint8), np.round(cv2.perspectiveTransform(
+            np.asarray(region.polygon, np.float32)[None], mm_to_image.astype(np.float32))[0]).astype(np.int32), 1),
+            np.ones((int(max(3, 2 * sigma)) | 1,) * 2, np.uint8)).astype(bool)
+        if allowed is not None:
+            shrink &= allowed
+        for flip in (False, True):
+            to_local = np.array([[bm["w"] / cols, 0, -bm["w"] / 2],
+                                 [0, (-1 if flip else 1) * bm["h"] / rows, (bm["h"] / 2 if flip else -bm["h"] / 2)],
+                                 [0, 0, 1.0]])
+            warp = mm_to_image @ local_to_mm @ to_local
+            laid = cv2.GaussianBlur(cv2.warpPerspective(gray, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA), (0, 0), sigma)
+            lit = cv2.GaussianBlur(lab, (0, 0), sigma)
+            inside = shrink & (cv2.warpPerspective(np.ones_like(gray), warp, (shape[1], shape[0])) > 0.999)
+            if int(inside.sum()) < 400:
+                continue
+            ys, xs = np.nonzero(inside)
+            pick = np.random.default_rng(3).choice(len(xs), min(len(xs), 60000), replace=False)
+            g, lightness = laid[ys[pick], xs[pick]], lit[ys[pick], xs[pick]]
+            rank = lambda v: np.argsort(np.argsort(v)).astype(np.float64)
+            rho = float(np.corrcoef(rank(g), rank(lightness))[0, 1]) if np.ptp(g) > 1e-6 and np.ptp(lightness) > 1e-6 else 0.0
+            # Engraved (black) parts are expected to come out darker, so a positive relation is preferred; a picture
+            # turned over with an inverted tone cannot be told from the plain one, and this is the reading that is kept.
+            if _prefer_reading(rho - (0.02 if flip else 0.0), None if best is None else best["rho"]):     # a tie keeps the plain reading
+                edges = np.linspace(0, 1, TONAL_BINS + 1)
+                which = np.clip(np.digitize(g, edges) - 1, 0, TONAL_BINS - 1)
+                bins = [{"gray": round(float((edges[i] + edges[i + 1]) / 2), 3),
+                         "L": round(float(np.median(lightness[which == i])), 2), "n": int((which == i).sum())}
+                        for i in range(TONAL_BINS) if (which == i).sum() >= 50]
+                best = {"samples": int(len(g)), "rho": round(rho, 3), "vertical_flip": flip, "bins": bins}
+    if best is None or len(best["bins"]) < 3:
+        return None
+    levels = [x["L"] for x in best["bins"]]
+    best.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1],
+                evidence="clear" if abs(best["rho"]) >= 0.5 else "weak",
+                limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "
+                           "modelled. Which edge of the picture is up is taken from the better positive agreement: a turned picture with an inverted tone looks the same.")
+    return best
 
 
 def _burn_order(layer) -> tuple[float, int]:
@@ -1388,6 +1479,13 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
                 if line_metrics:
                     rep["line_metrics"] = line_metrics
                 continue
+        if layer.layer_type == "Image" and rep.get("role") == "test feature":
+            allowed = visible_surface
+            if covered is not None:
+                allowed = ~covered if allowed is None else allowed & ~covered
+            tonal = _tonal_profile(corrected, layer_h, layer, shape, allowed)
+            if tonal is not None:
+                rep["tonal"] = tonal
         if rep.get("role") == "registration, QR and engraved labels" and plan and plan.get("markers"):
             aruco = [{"name": f"ArUco {marker['id']}", "rects": marker["rects"]} for marker in plan["markers"].get("aruco", [])]
             subfeatures = [_sample_marker_subfeature(corrected, h, item["rects"], item["name"],

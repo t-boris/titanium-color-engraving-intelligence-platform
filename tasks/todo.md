@@ -45,11 +45,22 @@ robust homography, hold-out test).
   application and copy `titanium.sqlite` and `files/` back. Device, passport documents, lens, profile, titanium stock, plans, plates and
   research notes were kept. The change is recorded in the audit log.
 
+## Checked against the operator's own files (170 LightBurn files in `Dropbox/Sirius Art`, read only)
+
+- All 170 parse without errors in 26 s. They contain 2370 groups nested up to 7 deep, 86 image layers (grayscale, 3dslice, stucki, jarvis,
+  sketch, threshold), 99 image objects, 95 texts (all carry a converted outline) and 45 ellipses; nothing is left unread.
+- Group transforms: LightBurn's own thumbnail in the file matches the new reading (circle, letter D and plants of DACUSAN-1; both cards of
+  the vCard), while ignoring group transforms shrinks or scatters the drawing.
+- `BackupPath` carries the same XForm as its text object (found on real data; the first guess applied it twice and was fixed).
+- Image layers: mode, kind (tonal / depth), dpi, dot width and correction, cleanup pass, passes, sub-layer, picture processing; the picture
+  is PNG in `Data`, shared by the objects of one file (DEC-052, REQ-026). The tonal profile is validated on synthetic photographs only.
+
 ## Still open, and why
 
 - Reference chart: `IMG_3281.DNG` has none, so REQ-009 forbids observations from it; a new photograph is needed. Not something code can fix.
-- Text without a converted outline, and image-mode (dither) engraving: no file with them was available. Image settings are captured, not
-  interpreted; tonal measurement of photo engraving (REQ-004) is a separate feature.
+- No photograph of an image-mode work with its file was available: the tonal profile and the choice of the picture's up edge are tested on
+  synthetic photographs with a known answer, not on a real one. DEC-052 and REQ-026 stay proposed/draft until that check.
+- Image settings that LightBurn applies before engraving (brightness, contrast, gamma, enhance, dithering) are recorded, not modelled.
 
 ## Review
 
@@ -64,7 +75,7 @@ robust homography, hold-out test).
 - `ingest.py`: new route before `register_geometry`; frame window limits the measured surface; overlay draws the hidden part in
   magenta; per-layer notes; `_line_metrics` farthest pair via convex hull (was O(N^2): 66 s -> 14 s on the pilot pair).
 - UI: method pill, anchor statistics, hidden margins marked approximate, refusal reason; Russian translations added.
-- Tests: 471 pass (29 new: geometry, mask holes, anchoring on synthetic framed work, whole pair check and acceptance, farthest pair,
+- Tests: 486 pass (44 new: geometry, mask holes, anchoring on synthetic framed work, whole pair check and acceptance, farthest pair,
   sub-layers, groups, unsupported shapes, run order, overlap exclusion, key stability).
 
 ### Limits to remember

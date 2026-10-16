@@ -302,14 +302,25 @@ def test_an_ellipse_is_read_as_a_closed_outline_under_its_transform():
 
 
 def test_a_text_object_with_its_converted_outline_is_read_and_one_without_is_reported():
+    # layout of LightBurn 1.7: the BackupPath carries the same XForm as the text, its vertices are local
     xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
            b'<frequency Value="48000"/></CutSetting>'
-           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="A" H="3.5" HasBackupPath="1"><XForm>1 0 0 1 20 30</XForm>'
-           b'<BackupPath Type="Path"><XForm>1 0 0 1 0 0</XForm><VertList>V0 0c0x1c1x1V4 0c0x1c1x1V4 6c0x1c1x1V0 6c0x1c1x1</VertList>'
-           b'<PrimList>L0 1L1 2L2 3L3 0</PrimList></BackupPath></Shape>'
+           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="A" H="3.5" HasBackupPath="1">'
+           b'<BackupPath Type="Path" CutIndex="0"><XForm>1 0 0 1 20 30</XForm><VertList>V0 0c0x1c1x1V4 0c0x1c1x1V4 6c0x1c1x1V0 6c0x1c1x1</VertList>'
+           b'<PrimList>L0 1L1 2L2 3L3 0</PrimList></BackupPath><XForm>1 0 0 1 20 30</XForm></Shape>'
            b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="B" H="3.5" HasBackupPath="0"><XForm>1 0 0 1 40 30</XForm></Shape>'
            b'</LightBurnProject>')
     layer = lb.parse_bytes(xml).layer(0)
     assert len(layer.regions) == 1 and layer.unsupported == {"Text": 1}
     region = layer.regions[0]
     assert region.closed and (region.x, region.y, region.width, region.height) == pytest.approx((20, 30, 4, 6), abs=1e-9)
+
+
+def test_a_text_outline_inside_a_group_is_moved_by_the_group_once():
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
+           b'<frequency Value="48000"/></CutSetting><Shape Type="Group"><XForm>1 0 0 1 100 50</XForm><Children>'
+           b'<Shape Type="Text" CutIndex="0" Str="A" HasBackupPath="1"><BackupPath Type="Path" CutIndex="0"><XForm>1 0 0 1 20 30</XForm>'
+           b'<VertList>V0 0c0x1c1x1V4 0c0x1c1x1V4 6c0x1c1x1</VertList><PrimList>L0 1L1 2L2 0</PrimList></BackupPath>'
+           b'<XForm>1 0 0 1 20 30</XForm></Shape></Children></Shape></LightBurnProject>')
+    (region,) = lb.parse_bytes(xml).layer(0).regions
+    assert (region.x, region.y) == pytest.approx((120, 80), abs=1e-9)

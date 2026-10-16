@@ -15,14 +15,15 @@ Both are XML. The structure used here was observed in a real LightBurn 2.0 .lbrn
   ``source_settings``. A ``Group`` lists its shapes under ``Children``; a shape's own XForm is applied first, then that
   of every group above it. An ``Ellipse`` has ``Rx``/``Ry``; a ``Text`` with a ``BackupPath`` child is read as that path.
   Shape types that are not read (a ``Text`` without outline, ...) are counted per layer in ``unsupported`` and
-  reported, never dropped silently (REQ-025). The ``Ellipse`` and ``BackupPath`` layouts follow the public
-  descriptions of the format (lbrn2-to-svg), not a file seen here.
+  reported, never dropped silently (REQ-025). ``Ellipse`` follows the public description of the format
+  (lbrn2-to-svg); the ``BackupPath`` layout was checked on LightBurn 1.7 files.
 
 The file does not record focus or material batch. A missing pass-count tag means LightBurn's default of one pass.
 Unreadable layer parameters are reported, never replaced by guesses (REQ-015).
 """
 from __future__ import annotations
 
+import base64
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -51,6 +52,9 @@ class Region:
     polygon: list[tuple[float, float]] = field(default_factory=list)
     closed: bool = False
     holes: list[list[tuple[float, float]]] = field(default_factory=list)   # loops inside ``polygon`` that stay unfilled
+    # Image objects only: the embedded picture (PNG bytes, not serialised), its nominal size, the transform of its
+    # centre-origin frame to project mm and its processing settings.
+    bitmap: dict | None = None
 
     def as_dict(self) -> dict:
         out = {"kind": self.kind, "x": self.x, "y": self.y, "width": self.width, "height": self.height,
@@ -84,6 +88,34 @@ class Layer:
     @property
     def readable(self) -> bool:
         return not self.unreadable
+
+    def image_summary(self) -> dict | None:
+        """How an image layer engraves its picture; None for any other layer. Read from LightBurn 1.7 files."""
+        if self.layer_type != "Image":
+            return None
+        settings = self.source_settings
+
+        def raw(tag):
+            value = settings.get(tag)
+            return value.get("Value") if isinstance(value, dict) else value
+
+        def number(tag):
+            try:
+                return float(raw(tag))
+            except (TypeError, ValueError):
+                return None
+
+        def flag(tag):
+            value = raw(tag)
+            return None if value is None else str(value).strip().lower() in ("1", "true", "yes")
+
+        sub = settings.get("SubLayer")
+        mode = raw("ditherMode")
+        return {"dither": mode, "kind": "depth" if mode == "3dslice" else "tonal", "dpi": number("dpi"),
+                "dot_width_mm": number("dotWidth"), "dot_correction": flag("useDotCorrection"),
+                "cleanup_pass": flag("cleanupPass"), "passes": number("numPasses"), "line_interval_mm": number("interval"),
+                "sub_layers": 0 if sub is None else len(sub) if isinstance(sub, list) else 1,
+                "processing": settings.get("bitmaps", [])}
 
     @property
     def frequency_khz(self) -> float | None:
@@ -243,15 +275,14 @@ def _compose(parent, local):
 
 
 def _shapes(container: ET.Element, parent=_IDENTITY):
-    """Every drawable shape with its transform to project mm; a group passes its own transform on to its children."""
+    """Every drawable shape with the transform of the groups above it; a group passes its own transform on to its children."""
     for shape in container.findall("Shape"):
-        world = _compose(parent, _xform(shape))
         if shape.get("Type") == "Group":
             children = shape.find("Children")
             if children is not None:
-                yield from _shapes(children, world)
+                yield from _shapes(children, _compose(parent, _xform(shape)))
         else:
-            yield shape, world
+            yield shape, parent
 
 
 def _apply(m, x: float, y: float) -> tuple[float, float]:
@@ -383,8 +414,9 @@ def _path_regions(shape: ET.Element, m) -> list[Region]:
     return regions
 
 
-def _regions(shape: ET.Element, m) -> list[Region]:
+def _regions(shape: ET.Element, parent=_IDENTITY) -> list[Region]:
     kind = shape.get("Type", "")
+    m = _compose(parent, _xform(shape))
     if kind in ("Rect", "Bitmap"):
         try:
             w, h = float(shape.get("W", "nan")), float(shape.get("H", "nan"))
@@ -394,7 +426,14 @@ def _regions(shape: ET.Element, m) -> list[Region]:
             return []
         corners = [_apply(m, sx * w / 2, sy * h / 2) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         x, y, bw, bh = _box(corners)
-        return [Region(kind.lower(), x, y, bw, bh, polygon=corners, closed=True)]
+        region = Region(kind.lower(), x, y, bw, bh, polygon=corners, closed=True)
+        if kind == "Bitmap":
+            try:
+                png = base64.b64decode(shape.get("Data") or "", validate=False) or None
+            except ValueError:
+                png = None
+            region.bitmap = {"png": png, "file": shape.get("File") or "", "w": w, "h": h, "matrix": m}
+        return [region]
     if kind == "Path":
         return _path_regions(shape, m)
     if kind == "Ellipse":
@@ -412,9 +451,10 @@ def _regions(shape: ET.Element, m) -> list[Region]:
     if kind == "Text":
         # LightBurn keeps the converted outline of a text object in a ``BackupPath`` child (``HasBackupPath="1"``);
         # without it the file holds only the font and the string, and the object has no outline to measure.
+        # Its own XForm equals the text's (checked on files of LightBurn 1.7), so it is not applied on top of the text's.
         backup = shape.find("BackupPath")
         if backup is not None:
-            return _path_regions(backup, _compose(m, _xform(backup)))
+            return _path_regions(backup, _compose(parent, _xform(backup)))
     return []
 
 
@@ -466,7 +506,7 @@ def parse_bytes(data: bytes) -> Project:
         )
 
     bitmaps: dict[int, list[dict]] = {}
-    for shape, world in _shapes(root):
+    for shape, parent in _shapes(root):
         raw = shape.get("CutIndex")
         try:
             idx = int(raw) if raw is not None else None
@@ -475,7 +515,7 @@ def parse_bytes(data: bytes) -> Project:
         layer = layers.get(idx) if idx is not None else None
         if layer is None:
             continue
-        found = _regions(shape, world)
+        found = _regions(shape, parent)
         layer.regions.extend(found)
         kind = shape.get("Type", "")
         if not found and kind not in ("Rect", "Bitmap", "Path"):
@@ -486,6 +526,12 @@ def parse_bytes(data: bytes) -> Project:
                 bitmaps[layer.index].append(attrs)
     for index, items in bitmaps.items():
         layers[index].source_settings["bitmaps"] = items
+    pictures = {r.bitmap["file"]: r.bitmap["png"] for layer in layers.values() for r in layer.regions
+                if r.bitmap and r.bitmap["png"] and r.bitmap["file"]}
+    for layer in layers.values():           # an image used on several layers is stored once, with the first object
+        for region in layer.regions:
+            if region.bitmap and not region.bitmap["png"]:
+                region.bitmap["png"] = pictures.get(region.bitmap["file"])
 
     notes_el = root.find("Notes")
     notes = (notes_el.get("Notes") or "") if notes_el is not None else ""

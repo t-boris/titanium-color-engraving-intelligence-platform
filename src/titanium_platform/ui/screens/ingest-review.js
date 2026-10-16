@@ -453,6 +453,26 @@ const IngestReview = (() => {
       ...((check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))),
       ...check.problems.map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
       ...((check.lens && check.lens.warnings) || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))));
+    const imageLayers = (check.layers || []).filter((l) => l.image);
+    if (imageLayers.length) {
+      const DITHER = {stucki: 'Стаки', jarvis: 'Джарвис', threshold: 'порог', grayscale: 'градации серого', sketch: 'эскиз', '3dslice': '3D-слайс',
+        atkinson: 'Аткинсон', dither: 'растр', halftone: 'полутона', newsprint: 'газетный растр', passthrough: 'без растрирования'};
+      out.append(h('div', {class: 'card stack'}, h('h3', {}, 'Слои-изображения'),
+        ...imageLayers.map((l) => {
+          const i = l.image, t = l.tonal;
+          return h('div', {class: 'stack'},
+            h('p', {}, `${l.name}: ${i.kind === 'depth' ? 'глубина (3D-слайс)' : 'фотогравировка'}, режим «${DITHER[i.dither] || i.dither || 'не указан'}»`
+              + (i.dpi ? `, ${num(i.dpi, 0)} DPI` : '') + (i.dot_width_mm != null ? `, ширина точки ${num(i.dot_width_mm, 3)} мм` : '')
+              + (i.dot_correction ? ', поправка точки включена' : '') + (i.cleanup_pass ? ', есть проход очистки' : '')
+              + (i.passes ? `, проходов ${num(i.passes, 0)}` : '') + '.'),
+            t ? h('p', {class: 'small'}, `Тон на металле: L* от ${num(t.dark_L, 0)} (тёмные места картинки) до ${num(t.light_L, 0)} (светлые), размах ${num(t.range_L, 0)}. `
+              + `Связь серого уровня с яркостью ${num(t.rho, 2)} (${t.evidence === 'clear' ? 'уверенная' : 'слабая'}). `
+              + 'Серые уровни взяты из картинки в файле, до яркости, контраста и гаммы LightBurn; растрирование не моделируется. '
+              + (i.kind === 'depth' ? 'Для глубины яркость не мера результата. ' : '')
+              + (t.vertical_flip ? 'Картинка наложена перевёрнутой по вертикали: так лучше совпадает с фото.' : ''))
+              : h('p', {class: 'muted small'}, 'Тональный профиль не построен: нет картинки в файле или слишком мало видимых пикселей.'));
+        })));
+    }
     if (check.alignment.image_to_mm) {
       out.append(masks(pair, reload, run));
       out.append(h('details', {class: 'card'}, h('summary', {}, 'Точная правка масштаба и перспективы по четырём углам'),
