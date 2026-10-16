@@ -72,11 +72,17 @@ operator: 19 observations, alignment `element anchors`, camera-relative (none mo
 
 ## Still open, and why
 
-- Brightness, contrast and gamma of LightBurn are recorded and listed in the profile, not modelled (they do not reorder grey levels); the
-  dithering of other modes is not modelled; the grey-to-power rule is the documented linear one, a forum reply says it follows the sRGB curve.
-- The operator asked for two changes of the application that are not done yet and need a plan first: (1) experiments as single objects
-  (plate, engraving and photo inside the experiment, no separate lists of plates, engravings and photos; the conclusions per material stay),
-  (2) one general full colour map: where a wanted colour occurred, without going through experiments. See the plan below.
+Everything that the code can do from the operator's requests is done. What remains needs a physical step or a decision of the operator:
+
+- **Grey-to-power rule of LightBurn** is the documented linear one between Min and Max; a forum reply of LightBurn staff says it follows the sRGB curve.
+  Both orders are monotone, so no existing pair can tell them apart. Test that settles it: one grayscale-mode wedge of known grey levels next to flat fills of the
+  predicted powers, same settings, one photograph; the closer colour wins. It is a new plate type, so it needs the operator's approval (MarkView question).
+- **Absolute colours** need a photograph with a reference chart (ColorChecker). Until then every colour on the map is camera-relative and drawn against the
+  clean titanium of its own photograph (dashed outline). The portrait has no clean titanium in the photograph, so its 14 steps stay off the map until the operator
+  switches "show colours without a clean surface" on (agreed design, DEC-056).
+- **11 plates wait for a photograph**: they have to be engraved and photographed; each shows in its experiment as "plate ready".
+- Brightness, contrast and gamma of LightBurn are recorded and listed in the profile, not modelled (they do not reorder grey levels); the dithering of other modes
+  is not modelled.
 
 ## Experiments as single objects and one general colour map (operator, 2026-10-16): done
 
