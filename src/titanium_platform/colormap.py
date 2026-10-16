@@ -5,7 +5,8 @@ Colours measured against a reference chart are absolute (CIE Lab). Colours measu
 cannot be compared between photographs, so each is expressed against the cleaned titanium of the *same* photograph (the cleaning
 witness): the ratio of the two in linear light does not depend on the exposure, and multiplied with the nominal clean titanium it
 gives the colour shown. They are marked approximate. A colour with no witness has no
-reference: it is counted and listed apart, and put on the map only when asked for.
+reference: it is still on the map, as it was photographed and flagged ``referenced: false``, but it takes no part in the search
+unless asked, because its distance to the other colours would mean nothing (operator, 2026-10-16).
 """
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def _kind(evidence: dict, eligible: int) -> str:
     return "calibrated" if mode == "reference_chart_corrected" or (mode is None and eligible) else "relative"
 
 
-def collect(store: Store, include_unreferenced: bool = False, setup: str | None = None, material: str | None = None,
+def collect(store: Store, include_unreferenced: bool = True, setup: str | None = None, material: str | None = None,
             measurement: str | None = None) -> dict:
     """Every colour of the map. Filters narrow the points; the options and counts describe everything that exists."""
     rows = list(_rows(store))
@@ -92,7 +93,7 @@ def collect(store: Store, include_unreferenced: bool = False, setup: str | None 
     calibrated_clean = [w["lab"] for w in witness.values() if w["kind"] == "calibrated"]
     nominal = [float(v) for v in np.median(np.array(calibrated_clean), axis=0)] if calibrated_clean else list(DEFAULT_CLEAN)
 
-    points, unreferenced, setups, materials = [], 0, set(), set()
+    points, setups, materials = [], set(), set()
     for row in rows:
         evidence = json.loads(row["evidence_json"] or "{}")
         role = evidence.get("role")
@@ -112,10 +113,6 @@ def collect(store: Store, include_unreferenced: bool = False, setup: str | None 
         setups.add(info["setup"])
         if info["material"]:
             materials.add(info["material"])
-        if not referenced:
-            unreferenced += 1
-            if not include_unreferenced:
-                continue
         params = json.loads(row["parameters_json"] or "{}")
         points.append({"id": row["id"], "pair_id": row["pair_id"], "layer_index": row["layer_index"], "layer_name": evidence.get("layer_name"),
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "lab": lab, "delta": delta, "display_lab": display,
@@ -149,10 +146,6 @@ def collect(store: Store, include_unreferenced: bool = False, setup: str | None 
                 setups.add(info["setup"])
                 if info["material"]:
                     materials.add(info["material"])
-                if not referenced:
-                    unreferenced += 1
-                    if not include_unreferenced:
-                        continue
                 params = {"power": step["power_pct"], "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
                           "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
                           "layer_type": "Image", "grayscale": True}
@@ -162,15 +155,19 @@ def collect(store: Store, include_unreferenced: bool = False, setup: str | None 
                                "group": f"{model.parameters_key(params)}|tonal|{pair_id}|{rep['index']}|{info['setup']}|{info['material']}", **info})
     shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["material"] == material)
              and (measurement is None or p["measurement"] == measurement)]
+    unreferenced = sum(not p["referenced"] for p in shown)
+    if not include_unreferenced:
+        shown = [p for p in shown if p["referenced"]]
     return {"points": shown, "nominal_clean": {"lab": nominal, "source": "chart" if calibrated_clean else "default"},
             "options": {"setups": sorted(setups), "materials": sorted(materials)},
             "counts": {"calibrated": sum(p["measurement"] == "calibrated" for p in shown),
                        "relative": sum(p["measurement"] == "relative" for p in shown), "unreferenced": unreferenced}}
 
 
-def search(store: Store, lab: list[float], limit: int = 12, **filters) -> dict:
-    """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how often it came out and where."""
-    data = collect(store, **filters)
+def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced: bool = False, **filters) -> dict:
+    """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how often it came out and where.
+    Colours without a clean reference are left out unless asked for; their number is returned."""
+    data = collect(store, include_unreferenced=include_unreferenced, **filters)
     best: dict[str, dict] = {}
     for point in data["points"]:
         distance = color.delta_e(lab, point["display_lab"])

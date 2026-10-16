@@ -70,17 +70,14 @@ operator: 19 observations, alignment `element anchors`, camera-relative (none mo
   (rank correlation with grey: L* 0.64..0.80, a* -0.64, b* 0.50..0.72). DEC-052, DEC-054, REQ-026 and REQ-027 accepted on this evidence.
 - The frame of that photograph is brushed metal; the old dark-frame detector does not find it, the step at the inner edge does.
 
-## Still open, and why
+## Answers of the operator (2026-10-16) and what is still open
 
-Everything that the code can do from the operator's requests is done. What remains needs a physical step or a decision of the operator:
-
-- **Grey-to-power rule of LightBurn** is the documented linear one between Min and Max; a forum reply of LightBurn staff says it follows the sRGB curve.
-  Both orders are monotone, so no existing pair can tell them apart. Test that settles it: one grayscale-mode wedge of known grey levels next to flat fills of the
-  predicted powers, same settings, one photograph; the closer colour wins. It is a new plate type, so it needs the operator's approval (MarkView question).
-- **Absolute colours** need a photograph with a reference chart (ColorChecker). Until then every colour on the map is camera-relative and drawn against the
-  clean titanium of its own photograph (dashed outline). The portrait has no clean titanium in the photograph, so its 14 steps stay off the map until the operator
-  switches "show colours without a clean surface" on (agreed design, DEC-056).
-- **11 plates wait for a photograph**: they have to be engraved and photographed; each shows in its experiment as "plate ready".
+- **Grey to power: settled (Q-024 answered, DEC-057).** Power = Min + (Max - Min) x (1 - grey) with the layer's own Min and Max; checked against the portrait
+  (Min 5, Max 16.1, grayscale). The unverified-sRGB caveat is gone; no wedge plate.
+- **Portrait steps: shown on the map by default** (pale, dotted outline, "без привязки к чистому титану"); a checkbox hides them; they stay out of the search until
+  "Искать и среди них" (their distances to referenced colours mean nothing).
+- **Photographs of plates: the operator sends them one by one** after engraving; nothing to do until then (11 plates show "plate ready").
+- **ColorChecker: the operator is thinking about where to get one.** Until a photograph with a chart exists every colour is camera-relative (dashed outline).
 - Brightness, contrast and gamma of LightBurn are recorded and listed in the profile, not modelled (they do not reorder grey levels); the dithering of other modes
   is not modelled.
 

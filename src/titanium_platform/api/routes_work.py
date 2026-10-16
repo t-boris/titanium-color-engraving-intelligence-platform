@@ -183,8 +183,8 @@ def create_plates(body: PlatesIn, request: Request):
 
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
-               include_unreferenced: bool = False):
-    """The general colour map: every measured colour of every kept experiment (REQ-029)."""
+               include_unreferenced: bool = True):
+    """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are flagged."""
     return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
                             measurement=measurement)
 

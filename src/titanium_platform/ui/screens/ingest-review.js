@@ -481,7 +481,7 @@ const IngestReview = (() => {
               const pick = t.bins.filter((_, k) => k % Math.max(1, Math.ceil(t.bins.length / 8)) === 0);
               const cell = (text) => h('td', {}, text);
               return h('div', {class: 'stack'},
-                h('p', {class: 'small muted'}, `Серый уровень картинки${hasPower ? ' → мощность (линейно между Min и Max по документации LightBurn)' : ''} → цвет на металле `
+                h('p', {class: 'small muted'}, `Серый уровень картинки${hasPower ? ' → мощность (линейно между Min и Max из настроек слоя: самый светлый серый — Min, самый тёмный — Max)' : ''} → цвет на металле `
                   + `(L*a*b* относительно камеры; связь с серым: L* ${num(t.rho, 2)}, a* ${num(t.rho_a, 2)}, b* ${num(t.rho_b, 2)}, цветность ${num(t.rho_chroma, 2)}).`),
                 h('table', {class: 'small'}, h('thead', {}, h('tr', {}, ...['Серый', hasPower ? 'Мощность, %' : null, 'L*', 'a*', 'b*', 'C*'].filter(Boolean).map((x) => h('th', {}, x)))),
                   h('tbody', {}, ...pick.map((b) => h('tr', {}, cell(num(b.gray, 2)), ...(hasPower ? [cell(num(b.power_pct, 1))] : []),

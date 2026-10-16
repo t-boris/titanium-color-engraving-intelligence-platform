@@ -74,12 +74,13 @@ def test_a_calibrated_colour_stays_absolute_and_defines_the_nominal_clean_titani
     assert data["nominal_clean"] == {"lab": [72.0, 0.5, 3.0], "source": "chart"}
 
 
-def test_a_colour_without_a_clean_reference_is_counted_and_kept_off_the_map_unless_asked(world):
+def test_a_colour_without_a_clean_reference_is_on_the_map_flagged_and_can_be_left_out(world):
     pair_with(world, [(1, [20.0, 8.0, 21.0], 50.0, "test feature")])
-    assert colormap.collect(world["store"])["points"] == []
-    assert colormap.collect(world["store"])["counts"]["unreferenced"] == 1
-    (point,) = colormap.collect(world["store"], include_unreferenced=True)["points"]
-    assert point["referenced"] is False and point["approximate"]
+    data = colormap.collect(world["store"])
+    (point,) = data["points"]
+    assert point["referenced"] is False and point["approximate"] and point["display_lab"] == [20.0, 8.0, 21.0] and data["counts"]["unreferenced"] == 1
+    left_out = colormap.collect(world["store"], include_unreferenced=False)
+    assert left_out["points"] == [] and left_out["counts"]["unreferenced"] == 1
 
 
 def test_service_layers_and_deleted_experiments_are_not_colours(world):
@@ -142,11 +143,10 @@ TONAL = {"color_measurement": {"mode": "raw_camera_relative"}, "layers": [{
 def test_a_grayscale_work_gives_one_colour_per_step_of_its_grey_to_power_profile(world):
     pid = pair_with(world, [(7, [3.4, 0.2, 1.4], 16.1, "test feature")])          # layer 7 is not the cleaning layer: no reference
     world["store"].execute("UPDATE pair SET data_json=? WHERE id=?", (json.dumps({"check": TONAL}), pid))
-    assert colormap.collect(world["store"])["points"] == []                       # no clean reference: counted, not drawn
-    data = colormap.collect(world["store"], include_unreferenced=True)
-    steps = [p for p in data["points"] if p.get("source") == "tonal"]
-    assert [p["parameters"]["power"] for p in steps] == [12.9, 9.5, 6.0]
+    steps = [p for p in colormap.collect(world["store"])["points"] if p.get("source") == "tonal"]
+    assert [p["parameters"]["power"] for p in steps] == [12.9, 9.5, 6.0] and not any(p["referenced"] for p in steps)
     assert all(p["parameters"]["frequency"] == 60.0 and p["parameters"]["speed"] == 128.0 and p["parameters"]["pulse_width"] == 300.0 for p in steps)
     assert steps[0]["layer_name"] == "C07 · серый 0.30" and steps[0]["lab"] == [2.0, 0.1, -0.4]
+    assert colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3)["matches"] == []             # no reference: not part of the search
     found = colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3, include_unreferenced=True)["matches"][0]
     assert found["parameters"]["power"] == 6.0 and found["source"] == "tonal"

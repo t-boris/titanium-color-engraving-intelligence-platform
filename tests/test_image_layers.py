@@ -83,6 +83,29 @@ def test_the_tonal_profile_follows_the_grey_levels_of_the_picture():
     assert profile["range_L"] == pytest.approx(70, abs=12)
 
 
+def test_in_grayscale_mode_the_power_of_a_grey_level_runs_linearly_from_min_for_the_lightest_to_max_for_the_darkest():
+    """Operator, Q-024: the layer's Min and Max power are the ends, the grey level of the picture picks the power between them."""
+    png = ramp_png()
+    data = project(png, mode="grayscale").replace(b'<maxPower Value="25"/>', b'<minPower Value="5"/><maxPower Value="16.1"/>')
+    layer = lb.parse_bytes(data).layer(0)
+    rgb = photographed(png, lambda g: 15 + 70 * g)
+    profile = ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], None)
+    assert profile["power_range"] == [5.0, 16.1]
+    for step in profile["bins"]:
+        assert step["power_pct"] == pytest.approx(5.0 + 11.1 * (1 - step["gray"]), abs=0.01)
+    lightest, darkest = max(profile["bins"], key=lambda b: b["gray"]), min(profile["bins"], key=lambda b: b["gray"])
+    assert lightest["power_pct"] < 6.0 and darkest["power_pct"] > 15.0
+    assert "operator" in profile["limitation"] and "forum" not in profile["limitation"]
+
+
+def test_the_other_dither_modes_have_no_power_per_grey_level():
+    png = ramp_png()
+    layer = lb.parse_bytes(project(png, mode="stucki")).layer(0)
+    rgb = photographed(png, lambda g: 15 + 70 * g)
+    profile = ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], None)
+    assert profile["power_range"] is None and all("power_pct" not in b for b in profile["bins"])
+
+
 def test_a_picture_that_looks_the_same_turned_over_is_not_reported_as_turned():
     png = ramp_png()
     layer = lb.parse_bytes(project(png)).layer(0)

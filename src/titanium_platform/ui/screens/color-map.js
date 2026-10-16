@@ -37,8 +37,9 @@ const ColorMap = (() => {
     add('text', {x: x(0) + 8, y: pad - 10, fill: '#9fb0c8', 'font-size': 12}, 'b*  жёлтый ↑');
     points.slice().sort((p, q) => q.display_lab[0] - p.display_lab[0]).forEach((p) => {
       const c = add('circle', {cx: x(p.display_lab[1]), cy: y(p.display_lab[2]), r: picked && picked.id === p.id ? 10 : 7,
-        fill: swatch(p.display_lab).style.background || '#888', stroke: picked && picked.id === p.id ? '#ffffff' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
-        'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': p.approximate ? '3 2' : '', style: 'cursor:pointer'});
+        fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced ? 1 : 0.45,
+        stroke: picked && picked.id === p.id ? '#ffffff' : !p.referenced ? '#e0b050' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
+        'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer'});
       c.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: `${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}`}));
       c.addEventListener('click', () => onPick(p));
     });
@@ -50,7 +51,7 @@ const ColorMap = (() => {
 
   function where(p) {
     return h('div', {class: 'stack small'},
-      h('p', {}, h('strong', {}, `${p.layer_name || 'слой ' + p.layer_index}`), p.source === 'tonal' ? pill('серый → мощность') : null, ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
+      h('p', {}, h('strong', {}, `${p.layer_name || 'слой ' + p.layer_index}`), p.source === 'tonal' ? pill('серый → мощность') : null, p.referenced ? null : pill('без привязки к чистому титану', 'warn'), ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
         ' · ', link(`/analysis/${p.pair_id}`, 'разбор измерений')),
       h('p', {class: 'muted'}, [p.setup, p.material, `фото ${p.photo}`, when(p.date)].filter(Boolean).join(' · ')),
       h('p', {}, settings(p.parameters)));
@@ -58,14 +59,14 @@ const ColorMap = (() => {
 
   async function render(ctx) {
     const state = JSON.parse(sessionStorage.getItem('color-map') || '{}');
-    const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', unreferenced: !!state.unreferenced};
+    const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', hide: !!state.hide, within: !!state.within};
     const q = new URLSearchParams();
     if (f.setup) q.set('setup', f.setup);
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
-    if (f.unreferenced) q.set('include_unreferenced', 'true');
+    if (f.hide) q.set('include_unreferenced', 'false');
     const [data, profiles] = await Promise.all([get('/colors' + (q.toString() ? '?' + q : '')), get('/profiles')]);
-    const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, ...patch})); App.render({preserveScroll: true}); };
+    const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, target, ...patch})); App.render({preserveScroll: true}); };
     const select = (label, key, values, current, names) => h('label', {class: 'f'}, h('span', {}, label),
       h('select', {onChange: (e) => remember({[key]: e.target.value})}, h('option', {value: ''}, 'Все'),
         ...values.map((v) => h('option', {value: v, selected: v === current}, names ? names[v] : v))));
@@ -74,7 +75,8 @@ const ColorMap = (() => {
     const results = h('div', {class: 'stack'}), detail = h('div', {class: 'card stack', hidden: true}), plotBox = h('div', {});
     const drawPlot = () => plotBox.replaceChildren(plot(data.points, (p) => { picked = p; detail.hidden = false;
       detail.replaceChildren(h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
-        h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement])), where(p),
+        h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
+        p.referenced ? null : pill('как снято, без привязки', 'warn')), where(p),
         btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked));
     async function setTarget(lab) {
       target = lab.map((v) => +(+v).toFixed(1));
@@ -82,14 +84,16 @@ const ColorMap = (() => {
       sessionStorage.setItem('color-map', JSON.stringify({...f, target}));
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
       for (const k of ['setup', 'material', 'measurement']) if (f[k]) p.set(k, f[k]);
-      if (f.unreferenced) p.set('include_unreferenced', 'true');
+      if (f.within) p.set('include_unreferenced', 'true');
       const r = await get('/colors/search?' + p);
       drawPlot();
       results.replaceChildren(h('h3', {}, 'Где встречался такой цвет'),
         !r.matches.length ? h('p', {class: 'muted'}, 'Подходящих цветов пока нет.') : h('div', {class: 'stack'}, ...r.matches.map((m) => h('article', {class: 'card stack color-hit'},
           h('div', {class: 'row'}, swatch(m.display_lab), h('strong', {}, `ΔE ${num(m.distance, 1)}`), pill(...KIND[m.measurement]),
             m.approximate ? pill('условный оттенок', 'warn') : null, h('span', {class: 'muted small'}, m.repeats > 1 ? `получался ${times(m.repeats)} в ${m.experiments.length} экспериментах` : 'получен один раз')),
-          where(m)))));
+          where(m)))),
+        r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
+          btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null);
     }
     const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(hexToLab(e.target.value))});
     const L = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: target ? target[0] : 40, 'aria-label': 'L'});
@@ -100,9 +104,6 @@ const ColorMap = (() => {
     drawPlot();
     if (target) setTarget(target);
 
-    const unrefNote = data.counts.unreferenced && !f.unreferenced
-      ? h('div', {class: 'alert warn'}, `${colours(data.counts.unreferenced)} не показано на карте: у их снимков нет эталонной карты и нет чистой поверхности для сравнения. `,
-        btn('Показать всё равно', () => remember({unreferenced: true}), 'btn-small')) : null;
     const total = data.points.length;
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов'),
@@ -111,11 +112,12 @@ const ColorMap = (() => {
       h('div', {class: 'card stack'}, h('div', {class: 'toolbar'},
         select('Лазер и линза', 'setup', data.options.setups, f.setup), select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
-        h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.unreferenced, onChange: (e) => remember({unreferenced: e.target.checked})}),
-          'Показывать цвета без чистой поверхности')),
-        h('p', {class: 'muted small'}, `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}. `
-          + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур).')),
-      unrefNote,
+        h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
+          'Скрыть цвета без чистого титана на снимке')),
+        h('p', {class: 'muted small'}, `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}`
+          + (data.counts.unreferenced && !f.hide ? ` · из них без привязки к чистому титану ${data.counts.unreferenced}` : '') + '. '
+          + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
+          + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')),
       h('div', {class: 'color-map-grid'},
         h('div', {class: 'card stack'}, h('h3', {}, 'Карта a* × b*'), plotBox, detail),
         h('div', {class: 'card stack'}, h('h3', {}, 'Какой цвет нужен'),

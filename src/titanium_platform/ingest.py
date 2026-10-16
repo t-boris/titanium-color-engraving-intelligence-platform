@@ -934,8 +934,8 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
                 evidence="clear" if abs(best["rho"]) >= 0.5 else "weak",
                 limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "
                            "modelled. Which edge of the picture is up is taken from the better positive agreement: a turned picture with an inverted tone looks the same. "
-                           "The power of a bin is the linear grey-to-power rule of LightBurn's documentation; a forum reply of LightBurn staff says the "
-                           "real mapping follows the sRGB curve, which is not verified here.")
+                           "The power of a bin follows the settings of the layer: the lightest grey gets Min power, the darkest Max power, linearly between "
+                           "(rule confirmed by the operator, Q-024).")
     return best
 
 
