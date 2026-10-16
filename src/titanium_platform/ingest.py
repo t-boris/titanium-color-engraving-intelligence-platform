@@ -939,6 +939,26 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     return best
 
 
+def _picture_silhouettes(project, image_to_mm: np.ndarray, shape: tuple[int, int]) -> np.ndarray | None:
+    """Mask, in photograph pixels, of the strongest edges (silhouettes) of the picture stored in the file."""
+    regions = [r for layer in project.layers for r in layer.regions if r.bitmap and r.bitmap.get("png")]
+    if not regions:
+        return None
+    region = max(regions, key=lambda r: r.width * r.height)
+    gray = _picture_gray(region.bitmap["png"])
+    if gray is None:
+        return None
+    n = 512
+    small = cv2.GaussianBlur(cv2.resize(gray, (n, n), interpolation=cv2.INTER_AREA), (0, 0), 1.0)
+    magnitude = cv2.magnitude(cv2.Sobel(small, cv2.CV_32F, 1, 0), cv2.Sobel(small, cv2.CV_32F, 0, 1))
+    edges = (magnitude > np.percentile(magnitude, 94)).astype(np.uint8) * 255
+    a, b, c, d, e, f = region.bitmap["matrix"]
+    to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]]) @ np.array(
+        [[region.bitmap["w"] / n, 0, -region.bitmap["w"] / 2], [0, region.bitmap["h"] / n, -region.bitmap["h"] / 2], [0, 0, 1.0]])
+    laid = cv2.warpPerspective(edges, np.linalg.inv(image_to_mm) @ to_mm, (shape[1], shape[0]), flags=cv2.INTER_NEAREST)
+    return laid > 100
+
+
 def _burn_order(layer) -> tuple[float, int]:
     """LightBurn runs layers by priority, then by index; what is run later is on top where outlines overlap."""
     value = layer.source_settings.get("priority")
@@ -1797,6 +1817,13 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
                         cv2.polylines(img_bgr, [run], False, color if seen[start] else hidden_color,
                                       width if seen[start] else width + 1, cv2.LINE_AA)
                     start = i
+    if (check.get("alignment") or {}).get("method") == "picture":
+        silhouettes = _picture_silhouettes(project, np.asarray(h, float), img_bgr.shape[:2])
+        if silhouettes is not None:        # where the silhouettes of the stored picture were found on the photograph
+            img_bgr[silhouettes] = (0, 255, 0, 255) if transparent else (0, 255, 0)
+    if window_px:       # the visible window of a frame: what is measured; the rest of the outlines is inferred
+        cv2.polylines(img_bgr, [np.round(np.asarray(window_px, float)).astype(np.int32)], True,
+                      (255, 255, 0, 255) if transparent else (255, 255, 0), max(2, thickness // 2), cv2.LINE_AA)
     visible_surface = _visible_surface_mask(img_bgr.shape[:2], check.get("alignment") or {}, include_window=False)
     if visible_surface is not None:
         img_bgr[~visible_surface] = background[~visible_surface]

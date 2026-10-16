@@ -37,6 +37,17 @@ def test_the_orientation_beats_every_other_with_a_clear_margin(registered):
     assert d["orientation"]["mirror"] is True and d["zncc"] > picturing.MIN_MARGIN * d["second_orientation_zncc"]
 
 
+def test_the_picture_is_not_skewed_in_perspective_beyond_what_the_camera_gives(work, registered):
+    """A homography fitted where the edge of the picture is outside the photograph used to run off (right side 11% taller)."""
+    _, result, _ = registered
+    q = np.array(result.details["picture_quad_px"])
+    side = lambda i, j: float(np.linalg.norm(q[i] - q[j]))
+    assert abs(side(0, 1) - side(3, 2)) / side(0, 1) < 0.05 and abs(side(0, 3) - side(1, 2)) / side(0, 3) < 0.05
+    truth = cv2.perspectiveTransform(np.float32([[(0, 0), (256, 0), (256, 256), (0, 256)]]), work["picture_to_px"])[0]
+    assert min(np.linalg.norm(q - np.roll(truth[::-1], k, axis=0), axis=1).max() for k in range(4)) < 12 or \
+        min(np.linalg.norm(q - np.roll(truth, k, axis=0), axis=1).max() for k in range(4)) < 12
+
+
 def test_the_margins_hidden_by_the_frame_are_found_from_the_step_at_its_inner_edge(work, registered):
     _, result, _ = registered
     assert result.details["window_found"]
@@ -131,3 +142,12 @@ def test_the_frame_is_not_part_of_the_measured_colour(checked, work):
     lab = report["layers"][0]["measured_lab"]
     lip = color.srgb8_to_lab(np.array([168.0, 170.0, 175.0]))
     assert lab is not None and lab[0] < 40 and color.delta_e(lab, lip) > 30       # an engraved tone (L* 8..38 here), not the bright lip (L* about 70)
+
+
+def test_the_overview_shows_where_the_silhouettes_of_the_picture_were_found(checked):
+    store, pid, _ = checked
+    png = ig.overlay_png(store, pid, corrected=False)
+    img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR)
+    green = (img[..., 1] > 240) & (img[..., 0] < 20) & (img[..., 2] < 20)
+    cyan = (img[..., 0] > 240) & (img[..., 1] > 240) & (img[..., 2] < 20)
+    assert green.sum() > 800 and cyan.sum() > 200          # silhouettes of the picture, and the outline of the visible window

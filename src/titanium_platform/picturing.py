@@ -76,22 +76,52 @@ def _candidates(width: int, height: int):
                         yield (mirror, rotation), np.roll(quad, -rotation, axis=0)
 
 
+MAX_PERSPECTIVE = 0.05     # opposite sides of the picture may differ by this share in the photograph (the camera is nearly frontal)
+
+
+def _ecc(lab: np.ndarray, gray: np.ndarray, m: np.ndarray, size: int, sigma: float, motion: int) -> np.ndarray:
+    """One ECC step at ``size``: ``m`` and the result map picture pixels (PICTURE units) to photo pixels."""
+    f = size / PICTURE
+    m_n = m @ np.diag([1 / f, 1 / f, 1.0])
+    template = _picture_structure(gray, size, sigma)
+    moving = _structure(_warp_photo(lab, m_n, size), sigma)
+    template, moving = template / max(template.max(), 1e-6), moving / max(moving.max(), 1e-6)
+    warp = np.eye(2, 3, dtype=np.float32) if motion == cv2.MOTION_AFFINE else np.eye(3, dtype=np.float32)
+    try:
+        _, warp = cv2.findTransformECC(template, moving, warp, motion,
+                                       (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 150, 1e-6), None, 5)
+    except cv2.error:
+        return m
+    if warp.shape == (2, 3):
+        warp = np.vstack([warp, [0, 0, 1]]).astype(np.float32)
+    return m_n @ warp @ np.diag([f, f, 1.0])
+
+
+def _perspective(m: np.ndarray) -> float:
+    """How unequal opposite sides of the picture are in the photograph (0 for a parallel projection)."""
+    q = cv2.perspectiveTransform(np.float32([[[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE]]]), m)[0]
+    side = lambda i, j: float(np.linalg.norm(q[i] - q[j]))
+    return max(abs(side(0, 1) - side(3, 2)) / max(side(0, 1), side(3, 2), 1e-6), abs(side(0, 3) - side(1, 2)) / max(side(0, 3), side(1, 2), 1e-6))
+
+
 def _refine(lab: np.ndarray, gray: np.ndarray, m: np.ndarray) -> np.ndarray:
-    """ECC homography from coarse to fine; ``m`` and the result map picture pixels (PICTURE units) to photo pixels."""
+    """Refine coarse to fine in two ways and keep the one that agrees better and stays nearly parallel.
+
+    * a homography at every scale: exact when the whole picture is in the photograph;
+    * an affine map first and a homography only at full resolution: the edge of a picture that is partly outside the
+      photograph does not hold a homography at coarse scales, which then runs off into a perspective skew.
+    """
+    template = _picture_structure(gray, PICTURE, 1.8)
+    score = lambda mm: _zncc(template, _structure(_warp_photo(lab, mm, PICTURE), 1.8))
+    plain = m
     for size, sigma in ((128, 1.0), (256, 1.4), (PICTURE, 1.8)):
-        f = size / PICTURE
-        m_n = m @ np.diag([1 / f, 1 / f, 1.0])
-        template = _picture_structure(gray, size, sigma)
-        moving = _structure(_warp_photo(lab, m_n, size), sigma)
-        template, moving = template / max(template.max(), 1e-6), moving / max(moving.max(), 1e-6)
-        warp = np.eye(3, dtype=np.float32)
-        try:
-            _, warp = cv2.findTransformECC(template, moving, warp, cv2.MOTION_HOMOGRAPHY,
-                                           (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 120, 1e-6), None, 5)
-        except cv2.error:
-            continue
-        m = m_n @ warp @ np.diag([f, f, 1.0])
-    return m
+        plain = _ecc(lab, gray, plain, size, sigma, cv2.MOTION_HOMOGRAPHY)
+    careful = m
+    for size, sigma in ((128, 1.0), (256, 1.4), (PICTURE, 1.8)):
+        careful = _ecc(lab, gray, careful, size, sigma, cv2.MOTION_AFFINE)
+    careful_full = _ecc(lab, gray, careful, PICTURE, 1.8, cv2.MOTION_HOMOGRAPHY)
+    options = [(score(c), c) for c in (plain, careful_full, careful) if _perspective(c) <= MAX_PERSPECTIVE]
+    return max(options, key=lambda item: item[0])[1] if options else careful
 
 
 def _hidden_margins(lab: np.ndarray, m: np.ndarray) -> dict:
@@ -188,6 +218,7 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
     size_mm = float(max(bm["w"], bm["h"]) * np.sqrt(abs(np.linalg.det(local_to_mm[:2, :2]))))
     details = {"zncc": round(best, 3), "second_orientation_zncc": round(second, 3), "px_per_mm": round(px_per_mm, 3),
                "orientation": {"mirror": bool(key[0]), "rotation_degrees": 90 * int(key[1])},
+               "picture_quad_px": cv2.perspectiveTransform(np.float32([[[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE]]]), to_photo)[0].round(1).tolist(),
                "window_found": bool(found), "window_px": window.round(1).tolist(),
                "hidden_mm": {k: round(v * size_mm, 1) for k, v in inset.items()}, "hidden_share": {k: round(v, 4) for k, v in inset.items()}}
     reflected = bool(np.linalg.det(image_to_mm[:2, :2]) < 0)
