@@ -57,7 +57,9 @@ robust homography, hold-out test).
 
 ## Still open, and why
 
-- Reference chart: `IMG_3281.DNG` has none, so REQ-009 forbids observations from it; a new photograph is needed. Not something code can fix.
+- Reference chart: `IMG_3281.DNG` has none, so REQ-009 forbids observations from it. Offered the option of storing finished works without a chart
+  as camera-relative evidence (as plates already are); the operator declined (2026-10-16): wait for a photograph with the chart in frame.
+  The only photograph of this work is `IMG_3281.DNG`; the other raw photos in Downloads are plates and tests.
 - No photograph of an image-mode work with its file was available: the tonal profile and the choice of the picture's up edge are tested on
   synthetic photographs with a known answer, not on a real one. DEC-052 and REQ-026 stay proposed/draft until that check.
 - Image settings that LightBurn applies before engraving (brightness, contrast, gamma, enhance, dithering) are recorded, not modelled.
