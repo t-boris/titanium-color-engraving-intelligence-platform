@@ -115,7 +115,7 @@ class Layer:
                 "dot_width_mm": number("dotWidth"), "dot_correction": flag("useDotCorrection"),
                 "cleanup_pass": flag("cleanupPass"), "passes": number("numPasses"), "line_interval_mm": number("interval"),
                 "sub_layers": 0 if sub is None else len(sub) if isinstance(sub, list) else 1,
-                "processing": settings.get("bitmaps", [])}
+                "processing": settings.get("bitmaps", []), "adjusted": changed_processing(settings.get("bitmaps", []))}
 
     @property
     def frequency_khz(self) -> float | None:
@@ -188,6 +188,24 @@ def normalize_saved_orientation(project: Project, *, mirror_x: bool, mirror_y: b
         region.x, region.y = min(xs), min(ys)
         region.width, region.height = max(xs) - region.x, max(ys) - region.y
     return [axis for axis, flipped in (("X", flip_x), ("Y", flip_y)) if flipped]
+
+
+BITMAP_DEFAULTS = {"Gamma": 1.0, "Contrast": 0.0, "Brightness": 0.0, "EnhanceAmount": 0.0, "EnhanceRadius": 0.0, "EnhanceDenoise": 0.0}
+MONOTONE_ADJUSTMENTS = ("Gamma", "Contrast", "Brightness")      # they reorder no grey levels; the Enhance settings filter locally
+
+
+def changed_processing(items: list[dict]) -> dict:
+    """The picture-processing settings of image objects that differ from LightBurn's defaults (first value per setting)."""
+    out: dict = {}
+    for item in items:
+        for tag, default in BITMAP_DEFAULTS.items():
+            try:
+                value = float(item[tag])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if abs(value - default) > 1e-9 and tag not in out:
+                out[tag] = round(value, 4)
+    return out
 
 
 EXECUTION_ORDER_TAGS = ("priority",)

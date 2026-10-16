@@ -899,6 +899,9 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     if best is None or len(best["bins"]) < 3:
         return None
     levels = [x["L"] for x in best["bins"]]
+    adjusted = (layer.image_summary() or {}).get("adjusted") or {}
+    best["adjustments"] = adjusted                       # applied by LightBurn before engraving; the grey axis is before them
+    best["adjustments_keep_order"] = not any(tag not in lb.MONOTONE_ADJUSTMENTS for tag in adjusted)
     best.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1],
                 evidence="clear" if abs(best["rho"]) >= 0.5 else "weak",
                 limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "

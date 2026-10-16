@@ -142,3 +142,27 @@ def test_a_checked_pair_with_an_image_layer_reports_its_tones(tmp_path):
     assert layer["tonal"]["rho"] > 0.9 and layer["tonal"]["range_L"] > 40
     assert layer["measured_lab"] is not None                      # the single median tone is still reported, as before
     store.close()
+
+
+def test_adjustments_that_differ_from_lightburns_defaults_are_listed_and_monotone_ones_keep_the_order():
+    png = ramp_png()
+    xml = project(png).replace(b'Gamma="1" Contrast="0" Brightness="0"', b'Gamma="1.35" Contrast="0" Brightness="0.03"')
+    layer = lb.parse_bytes(xml).layer(0)
+    assert layer.image_summary()["adjusted"] == {"Gamma": 1.35, "Brightness": 0.03}
+    rgb = photographed(png, lambda g: 15 + 70 * g)
+    profile = ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], None)
+    assert profile["adjustments"] == {"Gamma": 1.35, "Brightness": 0.03} and profile["adjustments_keep_order"] is True
+    assert profile["rho"] > 0.95
+
+
+def test_a_local_filter_is_not_called_order_preserving():
+    png = ramp_png()
+    xml = project(png).replace(b'EnhanceAmount="0"', b'EnhanceAmount="40"')
+    layer = lb.parse_bytes(xml).layer(0)
+    rgb = photographed(png, lambda g: 15 + 70 * g)
+    profile = ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], None)
+    assert profile["adjustments"] == {"EnhanceAmount": 40.0} and profile["adjustments_keep_order"] is False
+
+
+def test_default_processing_lists_no_adjustments():
+    assert lb.parse_bytes(project(ramp_png())).layer(0).image_summary()["adjusted"] == {}
