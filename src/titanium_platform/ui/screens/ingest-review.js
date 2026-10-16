@@ -404,6 +404,7 @@ const IngestReview = (() => {
         : check.alignment.method === 'marker templates' ? 'по узорам 4 меток'
         : check.alignment.method === 'two marker + QR' ? (check.alignment.qr_used_as_anchor === false
           ? 'по двум меткам; QR подтвердил плату' : 'по двум меткам и QR-коду платы')
+        : check.alignment.method === 'picture' ? `по вложенной картинке (корреляция ${num((check.alignment.picture || {}).zncc, 2)})`
         : check.alignment.method === 'element anchors' ? `по элементам-якорям (${(check.alignment.element_matches || []).length})`
         : check.alignment.method === 'geometry' ? `по деталям рисунка (${(check.alignment.element_matches || []).length})`
         : check.alignment.method === 'single distinctive detail' ? 'по одной характерной детали'
@@ -474,7 +475,18 @@ const IngestReview = (() => {
                 ? `Поправки LightBurn к картинке: ${Object.entries(t.adjustments).map(([k, v]) => `${{Gamma: 'гамма', Contrast: 'контраст', Brightness: 'яркость', EnhanceAmount: 'усиление', EnhanceRadius: 'радиус усиления', EnhanceDenoise: 'шумоподавление'}[k] || k} ${num(v, 2)}`).join(', ')}. `
                   + (t.adjustments_keep_order ? 'Они не меняют порядок серых уровней, поэтому связь и размах яркости верны; шкала серого указана до поправок.'
                     : 'Усиление фильтрует картинку по месту и не моделируется: сравнение с исходными серыми уровнями приблизительное.') : ''))
-              : h('p', {class: 'muted small'}, 'Тональный профиль не построен: нет картинки в файле или слишком мало видимых пикселей.'));
+              : h('p', {class: 'muted small'}, 'Тональный профиль не построен: нет картинки в файле или слишком мало видимых пикселей.'),
+            t && t.bins && t.bins.length >= 4 ? (() => {
+              const hasPower = t.bins.some((b) => b.power_pct != null);
+              const pick = t.bins.filter((_, k) => k % Math.max(1, Math.ceil(t.bins.length / 8)) === 0);
+              const cell = (text) => h('td', {}, text);
+              return h('div', {class: 'stack'},
+                h('p', {class: 'small muted'}, `Серый уровень картинки${hasPower ? ' → мощность (линейно между Min и Max по документации LightBurn)' : ''} → цвет на металле `
+                  + `(L*a*b* относительно камеры; связь с серым: L* ${num(t.rho, 2)}, a* ${num(t.rho_a, 2)}, b* ${num(t.rho_b, 2)}, цветность ${num(t.rho_chroma, 2)}).`),
+                h('table', {class: 'small'}, h('thead', {}, h('tr', {}, ...['Серый', hasPower ? 'Мощность, %' : null, 'L*', 'a*', 'b*', 'C*'].filter(Boolean).map((x) => h('th', {}, x)))),
+                  h('tbody', {}, ...pick.map((b) => h('tr', {}, cell(num(b.gray, 2)), ...(hasPower ? [cell(num(b.power_pct, 1))] : []),
+                    cell(num(b.L, 1)), cell(num(b.a, 1)), cell(num(b.b, 1)), cell(num(b.C, 1)))))));
+            })() : null);
         })));
     }
     if (check.alignment.image_to_mm) {

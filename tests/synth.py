@@ -173,3 +173,65 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
         c = chart_image()
         img[1500:1500 + c.shape[0], 120:120 + c.shape[1]] = c
     return {"lightburn": xml, "photo": img, "mm_to_px": mm_to_px, "shapes": shapes, "palette": palette, "hide_mm": hide_mm}
+
+
+# -- a work engraved from a picture, photographed in a frame (REQ-027, DEC-054) -------------------------------------
+def picture_work(seed: int = 4, margins_mm=(3.0, 7.0, 4.0, 3.0), size=(1900, 1500), px_per_mm: float = 9.0, rotate_deg: float = 1.5,
+                 mirror: bool = True, perspective=(1.5e-5, -1.0e-5), min_power: float = 5.0, max_power: float = 16.0,
+                 tonal: bool = True, with_chart: bool = False) -> dict:
+    """A 150 x 150 mm grayscale-mode engraving (file mm 10..160) as a LightBurn file and a photograph.
+
+    The picture is smoothed noise with a few shapes. The metal takes the colour of its grey level: darker grey = more power =
+    darker, less coloured; lighter grey = less power = lighter and browner (as in the operator's work). A frame hides
+    ``margins_mm`` (left, right, top, bottom). The photograph is mirrored vertically (the file's y is up), turned and in perspective.
+    """
+    import base64
+    rng = np.random.default_rng(seed)
+    n = 256
+    base = cv2.resize(rng.random((16, 16)).astype(np.float32), (n, n), interpolation=cv2.INTER_CUBIC)
+    base = cv2.GaussianBlur(base, (0, 0), 2.0)
+    for _ in range(14):
+        cx, cy, r = rng.integers(20, n - 20, 2).tolist() + [int(rng.integers(8, 40))]
+        cv2.circle(base, (cx, cy), r, float(rng.random()), -1)
+    base = cv2.GaussianBlur(base, (0, 0), 1.2)
+    gray = (base - base.min()) / (base.max() - base.min())
+    png = cv2.imencode(".png", (gray * 255).astype(np.uint8))[1].tobytes()
+    data = base64.b64encode(png).decode()
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="1.7.01" DeviceName="JPT MOPA M7 60W">'
+           f'<CutSetting_Img type="Image"><index Value="0"/><name Value="C00"/><minPower Value="{min_power}"/><maxPower Value="{max_power}"/>'
+           f'<maxPower2 Value="20"/><speed Value="128"/><frequency Value="60000"/><QPulseWidth Value="300"/><interval Value="0.0169"/>'
+           f'<ditherMode Value="grayscale"/><dpi Value="1503"/></CutSetting_Img>'
+           f'<Shape Type="Bitmap" CutIndex="0" W="150" H="150" Gamma="1" Contrast="0" Brightness="0" EnhanceAmount="0" EnhanceRadius="0" '
+           f'EnhanceDenoise="0" File="/x/portrait.png" SourceHash="0" Data="{data}"><XForm>1 0 0 1 85 85</XForm></Shape>'
+           f'<Notes ShowOnLoad="0" Notes=""/></LightBurnProject>').encode()
+
+    # the colour the metal takes at each grey level (Lab, camera-relative and dark like the real photographs)
+    lightness = (8 + 30 * gray) if tonal else np.full_like(gray, 20)
+    lab = np.dstack([lightness, 1.5 - 3.0 * gray, 7.0 * gray]).astype(np.float32)
+    colour = cv2.cvtColor(cv2.cvtColor(lab, cv2.COLOR_Lab2RGB), cv2.COLOR_RGB2BGR)
+    height, width = size
+    th = np.deg2rad(rotate_deg)
+    lin = px_per_mm * np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]) @ np.diag([1, -1 if mirror else 1])
+    affine = np.eye(3)
+    affine[:2, :2] = lin
+    affine[:2, 2] = -lin @ [85.0, 85.0]
+    persp = np.array([[1, 0, 0], [0, 1, 0], [perspective[0], perspective[1], 1.0]])
+    mm_to_px = np.array([[1, 0, 0.5 * width], [0, 1, 0.5 * height], [0, 0, 1.0]]) @ persp @ affine
+    step = 150.0 / n
+    picture_to_px = mm_to_px @ np.array([[step, 0, 10.0], [0, step, 10.0], [0, 0, 1.0]])
+    img = np.full((height, width, 3), (150, 155, 150), np.uint8)
+    plate = cv2.warpPerspective(np.full((n, n), 255, np.uint8), picture_to_px, (width, height)) > 127
+    img[plate] = (175, 170, 168)                                     # the bright brushed lip of the frame
+    left, right, top, bottom = (m / step for m in margins_mm)
+    window = np.zeros((n, n), np.uint8)
+    window[int(round(top)):n - int(round(bottom)), int(round(left)):n - int(round(right))] = 255
+    inside = cv2.warpPerspective(window, picture_to_px, (width, height)) > 127
+    engraved = cv2.warpPerspective(colour, picture_to_px, (width, height), flags=cv2.INTER_LINEAR)
+    img[inside] = (engraved[inside] * 255).astype(np.uint8)
+    img = cv2.GaussianBlur(img, (0, 0), 1.0)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 1.5, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    if with_chart:
+        c = chart_image()
+        img[40:40 + c.shape[0], 30:30 + c.shape[1]] = c
+    return {"lightburn": xml, "photo": img, "picture_to_px": picture_to_px, "mm_to_px": mm_to_px, "gray": gray, "png": png,
+            "margins_mm": margins_mm, "picture_size": n}

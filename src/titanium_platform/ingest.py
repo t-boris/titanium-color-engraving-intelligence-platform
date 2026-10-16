@@ -532,7 +532,7 @@ def _visible_surface_mask(shape: tuple[int, int], alignment: dict, include_windo
         import cv2
         inside = np.zeros(shape, np.uint8)
         cv2.fillConvexPoly(inside, np.round(np.asarray(window, float)).astype(np.int32), 1)
-        px_per_mm = ((alignment.get("anchoring") or {}).get("details") or {}).get("px_per_mm") or 20.0
+        px_per_mm = (alignment.get("px_per_mm") or ((alignment.get("anchoring") or {}).get("details") or {}).get("px_per_mm") or 20.0)
         k = int(max(3, round(FRAME_MARGIN_MM * px_per_mm))) | 1
         inside = cv2.erode(inside, np.ones((k, k), np.uint8)).astype(bool)
         result = inside if result is None else result & inside
@@ -864,7 +864,7 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     this is a measurement of what was photographed, not a prediction.
     """
     mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
-    lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)[:, :, 0]
+    lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)
     best = None
     for region in layer.regions:
         bm = region.bitmap
@@ -881,40 +881,61 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
             np.ones((int(max(3, 2 * sigma)) | 1,) * 2, np.uint8)).astype(bool)
         if allowed is not None:
             shrink &= allowed
+        lit = [cv2.GaussianBlur(lab[:, :, c], (0, 0), sigma) for c in range(3)]
         for flip in (False, True):
             to_local = np.array([[bm["w"] / cols, 0, -bm["w"] / 2],
                                  [0, (-1 if flip else 1) * bm["h"] / rows, (bm["h"] / 2 if flip else -bm["h"] / 2)],
                                  [0, 0, 1.0]])
             warp = mm_to_image @ local_to_mm @ to_local
             laid = cv2.GaussianBlur(cv2.warpPerspective(gray, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA), (0, 0), sigma)
-            lit = cv2.GaussianBlur(lab, (0, 0), sigma)
             inside = shrink & (cv2.warpPerspective(np.ones_like(gray), warp, (shape[1], shape[0])) > 0.999)
             if int(inside.sum()) < 400:
                 continue
             ys, xs = np.nonzero(inside)
             pick = np.random.default_rng(3).choice(len(xs), min(len(xs), 60000), replace=False)
-            g, lightness = laid[ys[pick], xs[pick]], lit[ys[pick], xs[pick]]
+            g = laid[ys[pick], xs[pick]]
+            lightness, ca, cb = (lit[c][ys[pick], xs[pick]] for c in range(3))
             rank = lambda v: np.argsort(np.argsort(v)).astype(np.float64)
-            rho = float(np.corrcoef(rank(g), rank(lightness))[0, 1]) if np.ptp(g) > 1e-6 and np.ptp(lightness) > 1e-6 else 0.0
+            rho_of = lambda v: float(np.corrcoef(rank(g), rank(v))[0, 1]) if np.ptp(g) > 1e-6 and np.ptp(v) > 1e-6 else 0.0
+            rho = rho_of(lightness)
             # Engraved (black) parts are expected to come out darker, so a positive relation is preferred; a picture
             # turned over with an inverted tone cannot be told from the plain one, and this is the reading that is kept.
             if _prefer_reading(rho - (0.02 if flip else 0.0), None if best is None else best["rho"]):     # a tie keeps the plain reading
                 edges = np.linspace(0, 1, TONAL_BINS + 1)
                 which = np.clip(np.digitize(g, edges) - 1, 0, TONAL_BINS - 1)
-                bins = [{"gray": round(float((edges[i] + edges[i + 1]) / 2), 3),
-                         "L": round(float(np.median(lightness[which == i])), 2), "n": int((which == i).sum())}
-                        for i in range(TONAL_BINS) if (which == i).sum() >= 50]
-                best = {"samples": int(len(g)), "rho": round(rho, 3), "vertical_flip": flip, "bins": bins}
+                bins = []
+                for i in range(TONAL_BINS):
+                    sel = which == i
+                    if sel.sum() < 50:
+                        continue
+                    l_, a_, b_ = (float(np.median(v[sel])) for v in (lightness, ca, cb))
+                    bins.append({"gray": round(float((edges[i] + edges[i + 1]) / 2), 3), "L": round(l_, 2), "a": round(a_, 2),
+                                 "b": round(b_, 2), "C": round(float(np.hypot(a_, b_)), 2), "n": int(sel.sum())})
+                best = {"samples": int(len(g)), "rho": round(rho, 3), "rho_a": round(rho_of(ca), 3), "rho_b": round(rho_of(cb), 3),
+                        "rho_chroma": round(rho_of(np.hypot(ca, cb)), 3), "vertical_flip": flip, "bins": bins}
     if best is None or len(best["bins"]) < 3:
         return None
     levels = [x["L"] for x in best["bins"]]
     adjusted = (layer.image_summary() or {}).get("adjusted") or {}
+    summary = layer.image_summary() or {}
+    best["power_range"] = None
+    if summary.get("dither") == "grayscale":
+        # LightBurn's documentation: grayscale varies the power between Min (lightest) and Max (darkest)
+        try:
+            low, high = float(layer.source_settings["minPower"]["Value"]), float(layer.source_settings["maxPower"]["Value"])
+            best["power_range"] = [low, high]
+            for item in best["bins"]:
+                item["power_pct"] = round(low + (high - low) * (1 - item["gray"]), 2)
+        except (KeyError, TypeError, ValueError):
+            pass
     best["adjustments"] = adjusted                       # applied by LightBurn before engraving; the grey axis is before them
     best["adjustments_keep_order"] = not any(tag not in lb.MONOTONE_ADJUSTMENTS for tag in adjusted)
     best.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1],
                 evidence="clear" if abs(best["rho"]) >= 0.5 else "weak",
                 limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "
-                           "modelled. Which edge of the picture is up is taken from the better positive agreement: a turned picture with an inverted tone looks the same.")
+                           "modelled. Which edge of the picture is up is taken from the better positive agreement: a turned picture with an inverted tone looks the same. "
+                           "The power of a bin is the linear grey-to-power rule of LightBurn's documentation; a forum reply of LightBurn staff says the "
+                           "real mapping follows the sRGB curve, which is not verified here.")
     return best
 
 
@@ -1115,6 +1136,23 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                 f"The frame hides part of the work: {counts['partly hidden']} elements are measured on their visible part only, "
                 f"{counts['hidden']} are entirely under it and are not measured; their positions are inferred from the matched elements.")
         return matched.image_to_mm, 0.0, 0.0
+    if any(r.bitmap and r.bitmap.get("png") for layer in work_layers for r in layer.regions):
+        from . import picturing
+        picture_diagnostics: dict = {}
+        matched = picturing.register(img_bgr, work_layers, picture_diagnostics)
+        report["alignment"]["picture"] = picture_diagnostics
+        if matched is not None:
+            d = matched.details
+            hidden = d["hidden_mm"]
+            report["alignment"].update(method=matched.method, element_matches=[], residual_px=matched.residual_px,
+                                       reflected=matched.reflected, window_px=d["window_px"], px_per_mm=d["px_per_mm"],
+                                       hidden_mm=hidden, window_found=d["window_found"])
+            report["warnings"].append(
+                f"The picture of the file was matched to the photograph (correlation {d['zncc']:.2f}). The frame hides about "
+                f"{hidden['left']:g} mm on the left, {hidden['right']:g} on the right, {hidden['top']:g} at the top and "
+                f"{hidden['bottom']:g} at the bottom; that part is not measured."
+                + ("" if d["window_found"] else " The edge of the frame was not found on every side, so a margin of 6% was assumed there."))
+            return matched.image_to_mm, 0.0, 0.0
     matched = registration.register_geometry(img_bgr, work_layers)
     if matched is not None:
         report["alignment"].update(method=matched.method, element_matches=matched.matches,

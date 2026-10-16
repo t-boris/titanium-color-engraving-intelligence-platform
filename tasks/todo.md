@@ -60,16 +60,23 @@ robust homography, hold-out test).
 Pair 21 (`unbreakable.lbrn2` + `IMG_3281.DNG`, profile JPT MOPA M7 60W) was created in the running application, reviewed and accepted by the
 operator: 19 observations, alignment `element anchors`, camera-relative (none model-eligible), run order not in the recipe.
 
+## Photo engraving checked on the operator's own pair (2026-10-16): `Inna - 2.lbrn2` + `IMG_3283.DNG`
+
+- One grayscale image layer: power 5..16.1 %, 300 ns, 60 kHz, 128 mm/s, 1503 dpi. The grey level of the picture sets the power and the power sets
+  the oxide colour (the operator's method, confirmed by LightBurn's documentation: Min power for the lightest, Max for the darkest).
+- `picturing.py`: the picture's silhouettes (edge maps of the three Lab channels) are matched to the photograph over 8 orientations, refined by
+  ECC. Orientation: vertical mirror, margin 2.1 times; hidden by the frame 2.9 / 7.3 / 3.8 / 3.2 mm (left, right, top, bottom); 5.7 s for the check.
+- Tonal profile on the real photograph: smooth and monotone, near black and neutral at about 14 % power, brown and most coloured at about 7 %
+  (rank correlation with grey: L* 0.64..0.80, a* -0.64, b* 0.50..0.72). DEC-052, DEC-054, REQ-026 and REQ-027 accepted on this evidence.
+- The frame of that photograph is brushed metal; the old dark-frame detector does not find it, the step at the inner edge does.
+
 ## Still open, and why
 
-- Reference chart: the operator first chose to wait for a photograph with the card, then (2026-10-16), once it was clear that the card is a
-  physical ColorChecker and not a file, allowed measurement without it (DEC-053). Finished works without a chart are measured relative to
-  the camera, flagged and kept out of the colour model; `allow_relative_finished_works` (default on) restores the strict rule. The pilot
-  pair runs to acceptance on a copy of the real database: 19 layers measured, 19 observations, none model-eligible. Photographs with the
-  card remain the way to standard colours.
-- No photograph of an image-mode work with its file was available: the tonal profile and the choice of the picture's up edge are tested on
-  synthetic photographs with a known answer, not on a real one. DEC-052 and REQ-026 stay proposed/draft until that check.
-- Image settings that LightBurn applies before engraving (brightness, contrast, gamma, enhance, dithering) are recorded, not modelled.
+- Brightness, contrast and gamma of LightBurn are recorded and listed in the profile, not modelled (they do not reorder grey levels); the
+  dithering of other modes is not modelled; the grey-to-power rule is the documented linear one, a forum reply says it follows the sRGB curve.
+- The operator asked for two changes of the application that are not done yet and need a plan first: (1) experiments as single objects
+  (plate, engraving and photo inside the experiment, no separate lists of plates, engravings and photos; the conclusions per material stay),
+  (2) one general full colour map: where a wanted colour occurred, without going through experiments. See the plan below.
 
 ## Review
 

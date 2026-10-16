@@ -268,7 +268,7 @@
     const lens = c?.lens?.name;
     const align = {'markers': 'по маркерам', 'marker templates': 'по узорам маркеров', manual: 'вручную',
       'manual shift': 'сдвиг вручную', 'manual rotation': 'поворот вручную', 'manual transform': 'масштаб или зеркало',
-      'element anchor': 'по детали', 'element anchors': 'по элементам-якорям', geometry: 'по деталям рисунка',
+      'element anchor': 'по детали', 'element anchors': 'по элементам-якорям', picture: 'по вложенной картинке', geometry: 'по деталям рисунка',
       'single distinctive detail': 'по одной характерной детали', 'two marker + QR': 'по двум меткам и QR'}[r.alignment] || 'не указано';
     const revise = btn('Исправить совмещение', async (ev) => {
       const control = ev.currentTarget; control.disabled = true; control.textContent = 'Создаём исправление…';
