@@ -483,3 +483,27 @@ select::-ms-expand {display:none}
 .analysis-conclusions p:not(.analysis-lead) {-webkit-line-clamp:1}
 @media (max-width:1100px) {.analysis-primary {grid-template-columns:1fr}.analysis-modules {grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:700px) {.analysis-kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr))}.analysis-bottom,.analysis-modules {grid-template-columns:1fr}.analysis-hero {display:block}.analysis-actions {justify-content:flex-start;margin-top:10px}.dashboard-task-selectors,.dashboard-task-result,.analysis-settings-grid,.analysis-source-grid {grid-template-columns:1fr}}
+
+/* Эксперимент как один объект (REQ-028) */
+.exp-columns {grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+.exp-card {display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:start}
+.exp-thumb-link {display:block}
+.exp-thumb {display:block;width:96px;height:96px;object-fit:cover;border-radius:9px;border:1px solid #344258;background:#0b1220}
+.exp-thumb-empty {display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
+.exp-filters {display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.exp-filters input {flex:1 1 220px;min-width:0}
+.exp-head {align-items:flex-start;gap:12px;flex-wrap:wrap}
+.exp-photo-card {padding:12px}
+.exp-stage {display:flex;justify-content:center;background:#0b1220;border-radius:10px;padding:8px}
+.exp-photo {display:block;max-width:100%;max-height:78vh;width:auto;height:auto;border-radius:6px}
+.exp-tools {gap:8px;flex-wrap:wrap;align-items:center}
+.exp-checks {display:flex;flex-direction:column;gap:6px}
+.exp-check {display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #344258;border-radius:10px;background:#111b2a;flex-wrap:wrap}
+.exp-check.is-current {border-color:#6f86ff}
+.exp-check-name {max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+@media (max-width: 900px) {.exp-columns {grid-template-columns:minmax(0,1fr)}.exp-card {grid-template-columns:72px minmax(0,1fr)}.exp-thumb {width:72px;height:72px}}
+
+/* Общая карта цветов (REQ-029) */
+.color-map-grid {display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:12px;align-items:start}
+.color-hit {padding:12px}
+@media (max-width: 1000px) {.color-map-grid {grid-template-columns:minmax(0,1fr)}}

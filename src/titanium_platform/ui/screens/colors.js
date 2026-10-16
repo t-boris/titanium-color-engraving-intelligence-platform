@@ -107,6 +107,7 @@
 
   App.register({id: 'colors', async render(ctx) {
     if (ctx.id === 'knowledge') return KnowledgeView.render(ctx.arg);
+    if (!ctx.query.profile && !ctx.query.profileId) return ColorMap.render(ctx);     // the general map; ?profile= opens the model of one profile version
     const profiles = await get('/profiles');
     if (!profiles.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Нет измеренных цветов'), link('/profiles', 'Профили'), ' ', link('/ingest', 'Добавить наблюдение'));
     const pid = +(ctx.query.profile || ctx.query.profileId || profiles[profiles.length - 1].id);

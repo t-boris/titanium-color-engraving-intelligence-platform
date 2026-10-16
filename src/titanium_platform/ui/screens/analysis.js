@@ -285,7 +285,7 @@
         h('div', {}, h('h2', {}, r.engraving_title || 'Анализ гравировки'),
           h('p', {class: 'sub'}, [MODE[r.mode] || 'Гравировка', device, lens, material].filter(Boolean).join(' · ')),
           h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`)),
-        h('div', {class: 'analysis-actions'}, link('/experiments', 'К экспериментам'),
+        h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
           r.plan_id ? link('/plans/' + r.plan_id, 'Плата') : null,
           link('/ingest?rephoto=' + id, '+ Фото'), revise, remove)),
       r.photos?.length > 1 ? h('div', {class: 'analysis-photo-strip'},

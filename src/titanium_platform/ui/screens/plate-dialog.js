@@ -260,7 +260,7 @@ const PlateDialog = (() => {
         const parts = made.parts || [made];
         if (parts.length === 1) {
           toast(`Создано: ${parts[0].name} · ${parts[0].summary.layers} тестовых слоёв`, 'ok');
-          go('/plans/' + parts[0].plan_id);
+          go('/experiment/plan-' + parts[0].plan_id);
         } else {
           modal('Части компактного теста', h('div', {class: 'stack'},
             h('p', {}, `Создано ${parts.length} самостоятельных LightBurn-файла. Каждый начинается с локальной чистки${parts[0].summary.registration === 'full' ? ' и имеет собственные метки' : ''}.`),

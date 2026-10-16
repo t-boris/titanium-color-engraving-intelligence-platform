@@ -959,6 +959,26 @@ def _picture_silhouettes(project, image_to_mm: np.ndarray, shape: tuple[int, int
     return laid > 100
 
 
+def _finished_work_cleaning_layer(project) -> int | None:
+    """The layer of a finished work that cleans its plate before the engraving: run first, one filled rectangle that
+    encloses everything else. Where later layers did not overwrite it, it shows the cleaned titanium of this very
+    photograph, the reference that makes colours of different photographs comparable (DEC-056)."""
+    layers = [layer for layer in project.layers if layer.regions]
+    if len(layers) < 3:
+        return None
+    first = min(layers, key=_burn_order)
+    if first.layer_type != "Scan" or len(first.regions) != 1:
+        return None
+    frame = first.regions[0]
+    others = [region for layer in layers if layer is not first for region in layer.regions]
+    if frame.kind != "rect" or not frame.closed or len(others) < 3:
+        return None
+    x0, y0 = min(r.x for r in others), min(r.y for r in others)
+    x1, y1 = max(r.x + r.width for r in others), max(r.y + r.height for r in others)
+    inside = (frame.x <= x0 + 0.05 and frame.y <= y0 + 0.05 and frame.x + frame.width >= x1 - 0.05 and frame.y + frame.height >= y1 - 0.05)
+    return first.index if inside else None
+
+
 def _burn_order(layer) -> tuple[float, int]:
     """LightBurn runs layers by priority, then by index; what is run later is on top where outlines overlap."""
     value = layer.source_settings.get("priority")
@@ -1352,6 +1372,8 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     marker_idx = marker.index if marker else None
     clean_layer = next((layer for layer in project.layers if layer.name.startswith("CLEAN-CROSSHATCH-")), None) if system_plan else None
     clean_idx = clean_layer.index if clean_layer else None
+    if system_plan is None and clean_idx is None:
+        clean_idx = _finished_work_cleaning_layer(project)         # a finished work cleans its plate first (DEC-056)
     for rep in report["layers"]:
         if rep["index"] == marker_idx:
             rep["role"] = "registration, QR and engraved labels"

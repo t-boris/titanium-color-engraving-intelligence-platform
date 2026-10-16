@@ -78,43 +78,20 @@ operator: 19 observations, alignment `element anchors`, camera-relative (none mo
   (plate, engraving and photo inside the experiment, no separate lists of plates, engravings and photos; the conclusions per material stay),
   (2) one general full colour map: where a wanted colour occurred, without going through experiments. See the plan below.
 
-## Plan awaiting approval: experiments as single objects, one general colour map (operator, 2026-10-16)
+## Experiments as single objects and one general colour map (operator, 2026-10-16): done
 
-What the operator asked: no separate lists of plates, engravings and photos; an experiment is opened as one thing that contains the plate used,
-the engraving file, the photos and the checks (a plate is used once, templates stay for creating, and the plate can be changed afterwards, also by
-asking the assistant); "conclusions for the material" stay and are the interesting part. The colour map must be one general, complete map: wanting a
-colour, find where it occurred, without going through experiments.
+Operator decisions: camera-relative colours are expressed against the clean titanium of their own photograph; all laser and lens versions on one map
+with a filter; the working-task panel stays, compact, on top. The photograph with its overlay is always shown in an experiment.
 
-Today: `experiments.js` shows three columns (plates / engravings and photos / conclusions) plus a "working task" panel; `colors.js` is per profile
-version and, inside it, per pair (one card per experiment).
-
-### A. Experiments (no schema change at first)
-
-- [ ] A1. API `GET /experiments`: one entry per experiment, derived from existing rows (a plan with its pairs, or an engraving group without a plan),
-  with status (plate ready / waiting for a photo / needs review / accepted), laser, lens, titanium, counts, last result.
-- [ ] A2. API `GET /experiments/{id}`: plate (the plan, editable), the LightBurn file(s), photos with their checks, measured layers, findings of this experiment.
-- [ ] A3. One list screen "Эксперименты": newest first, search and filter by status, "Новый эксперимент" (from a template or from a file + photo);
-  the panel of conclusions for the material stays; the plate, engraving and photo columns go.
-- [ ] A4. One experiment screen: plate (open/change it, ask the assistant to change it), file, photos (add a photo, re-check, delete), results, conclusions.
-- [ ] A5. Old routes (`/plans/:id`, `/ingest?pair=`, `/analysis/:id`) keep working and link back to their experiment.
-- [ ] A6. Tests: derivation of experiments from plans and pairs (plan with several pairs, pair without plan, rephoto, deleted pairs); UI files; i18n.
-
-### B. One general colour map
-
-- [ ] B1. API `GET /colors`: every measured colour of every accepted observation, with its parameters (power, frequency, speed, pulse width, interval,
-  passes, mode), where it came from (experiment, layer, photo, date), how it was measured (chart-corrected / camera-relative), laser and lens.
-- [ ] B2. API `GET /colors/search`: a wanted colour (Lab or picked on screen) -> nearest measured colours with distance, parameters and provenance.
-- [ ] B3. One screen "Карта цветов": a*b* plane with lightness, all colours at once, filters (laser/lens, material, measurement kind), a colour picker to ask
-  "where did I get this colour", every point opens its parameters and its experiment. Per-pair cards and per-profile pages go.
-- [ ] B4. Decide how camera-relative colours of different photographs sit on one map (see questions below).
-- [ ] B5. Tests.
-
-### Questions the plan depends on (asked in the conversation)
-
-1. Camera-relative colours are not comparable between photographs (different exposure). Option: express them relative to the cleaned titanium of the
-   same photo (the clean witness) and mark them; calibrated colours stay absolute.
-2. Profile versions (laser + lens) are kept apart by an earlier decision; the general map would show all with a filter instead.
-3. Does the "working task" panel (goal -> material -> next test) stay on the experiments screen?
+- [x] A1-A2. `experiments.py`, `GET /experiments` and `/experiments/{key}`: derived from plates and checks (DEC-055, REQ-028), no schema change.
+- [x] A3-A4. One list screen (thumbnail, state, laser, lens, titanium, search, state filter, conclusions beside it); one experiment screen with the
+  photograph and its overlay first, then the checks, the measured layers, the plate, the file and the conclusions.
+- [x] A5. Old routes keep working and link back; new plates open as experiments.
+- [x] B1-B2. `colormap.py`, `GET /colors` and `/colors/search` (DEC-056, REQ-029).
+- [x] B3. One map screen: filters, a*b* plane, a palette or Lab input, nearest recipes with settings and where they came from; the model page stays
+  reachable (`/colors?profile=`).
+- [x] B4. Cleaning layer of a finished work recognised (also for works accepted earlier, from the stored file); linear-light ratio to the clean surface.
+- [x] A6/B5. Tests (524 pass); checked in the running application on the operator's pairs.
 
 ## Review
 

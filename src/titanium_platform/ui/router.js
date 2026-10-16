@@ -6,9 +6,9 @@ Object.assign(App, (() => {
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/artwork', 'Цветная гравировка'],
     ['/photo', 'Фотогравировка'], ['/designer', 'Планировщик экспериментов'], ['/devices', 'Лазеры'], ['/profiles', 'Профили'],
     ['/research', 'AI-исследователь']];
-  const ROUTE_ID = {experiments: 'experiments', profiles: 'profiles', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
+  const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', profiles: 'profiles', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', plans: 'plan', designer: 'designer', devices: 'devices', research: 'research'};
-  const NAV_OF = {ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors'};
+  const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors'};
   let token = 0;
 
   const register = (def) => screens.set(def.id, def);

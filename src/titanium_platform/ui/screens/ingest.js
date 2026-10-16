@@ -7,16 +7,17 @@
       ? h('div', {}, h('h2', {}, 'Повторная фотография'), h('p', {class: 'sub'}, 'Тот же эксперимент и та же гравировка; требуется только новый RAW-снимок.'))
       : h('div', {}, h('h2', {}, 'Добавить эксперимент'), h('p', {class: 'sub'}, 'Фактический файл LightBurn, фотография, связка лазер+линза и использованный титан.'));
     const back = link('/experiments', 'Назад к экспериментам');
+    const backTo = (pair) => link('/experiment/' + (pair.plan_id ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id), 'Назад к эксперименту');
     if (ctx.query.pair) {
       let pair;
       try { pair = await get('/pairs/' + ctx.query.pair); }
       catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Пара не найдена'), h('p', {}, 'Её можно начать заново.'), link('/ingest', 'Новая пара')); }
-      return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(Boolean(pair.rephoto_of)), h('span', {class: 'spacer'}), back), await IngestReview.render(pair, () => App.render({preserveScroll: true})));
+      return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(Boolean(pair.rephoto_of)), h('span', {class: 'spacer'}), backTo(pair)), await IngestReview.render(pair, () => App.render({preserveScroll: true})));
     }
     if (ctx.query.rephoto) {
       try {
         const source = await get('/pairs/' + ctx.query.rephoto);
-        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), back), IngestUpload.rephoto(source));
+        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), backTo(source)), IngestUpload.rephoto(source));
       } catch (e) {
         return h('div', {class: 'card empty'}, h('h3', {}, 'Исходная пара не найдена'), link('/experiments', 'Вернуться к экспериментам'));
       }

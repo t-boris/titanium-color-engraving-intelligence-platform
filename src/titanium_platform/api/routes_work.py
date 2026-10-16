@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import analysis, application_guide, capability_plates, designer, ingest, knowledge, model, plans, profiles as pf
+from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, plans, profiles as pf
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, public_pair, public_plan, read_upload, refresh_after_change, store_of)
 from .common import content_disposition
 
@@ -179,6 +179,33 @@ def create_plates(body: PlatesIn, request: Request):
                                      body.cell_width, body.cell_height, body.gap, pulse_width=body.pulse_width,
                                      line_interval=body.line_interval, passes=body.passes,
                                      lightburn_settings={k: getattr(body, k) for k in ("global_passes", "bidirectional", "cross_hatch", "scan_angle", "angle_increment")})
+
+
+@router.get("/colors")
+def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
+               include_unreferenced: bool = False):
+    """The general colour map: every measured colour of every kept experiment (REQ-029)."""
+    return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
+                            measurement=measurement)
+
+
+@router.get("/colors/search")
+def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
+                  material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False):
+    """Where did a wanted colour occur: the nearest recipes, with their settings and the experiments they came from."""
+    return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
+                           measurement=measurement, include_unreferenced=include_unreferenced)
+
+
+@router.get("/experiments")
+def list_experiments(request: Request):
+    """One entry per experiment: a plate with all its checks, or a finished work with its photographs (REQ-028)."""
+    return experiments.list_experiments(store_of(request))
+
+
+@router.get("/experiments/{key}")
+def get_experiment(key: str, request: Request):
+    return experiments.get_experiment(store_of(request), key)
 
 
 @router.get("/pairs")

@@ -166,3 +166,15 @@ def test_the_strict_rule_of_req_009_comes_back_with_the_setting(chartless):
     store.set_setting("allow_relative_finished_works", False)
     report = ig.check_pair(store, pid)
     assert any("Reference chart not detected" in p for p in report["problems"])
+
+
+def test_the_cleaning_rectangle_of_a_finished_work_is_its_clean_titanium_reference(report):
+    layers = {rep["index"]: rep for rep in report["layers"]}
+    assert layers[0]["role"] == "pre-test cleaning witness" and layers[1]["role"] == "test feature"
+    assert layers[0]["measured_lab"] is not None                  # the plate's own clean surface, measured where nothing was engraved over it
+
+
+def test_the_witness_becomes_observation_minus_one_and_the_colours_keep_their_layer_index(pair):
+    store, pid = pair                                            # accepted by the test above
+    indices = sorted(r["layer_index"] for r in store.query("SELECT layer_index FROM observation WHERE pair_id=?", (pid,)))
+    assert indices.count(-1) == 1 and 0 not in indices and max(indices) >= 5
