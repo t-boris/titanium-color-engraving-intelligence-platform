@@ -50,7 +50,7 @@ const ColorMap = (() => {
 
   function where(p) {
     return h('div', {class: 'stack small'},
-      h('p', {}, h('strong', {}, `${p.layer_name || 'слой ' + p.layer_index}`), ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
+      h('p', {}, h('strong', {}, `${p.layer_name || 'слой ' + p.layer_index}`), p.source === 'tonal' ? pill('серый → мощность') : null, ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
         ' · ', link(`/analysis/${p.pair_id}`, 'разбор измерений')),
       h('p', {class: 'muted'}, [p.setup, p.material, `фото ${p.photo}`, when(p.date)].filter(Boolean).join(' · ')),
       h('p', {}, settings(p.parameters)));

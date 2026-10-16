@@ -130,3 +130,23 @@ def test_a_work_accepted_before_its_cleaning_layer_was_recognised_gets_its_witne
     points = colormap.collect(world["store"])["points"]
     assert [p["layer_index"] for p in points] == [1] and points[0]["referenced"] and points[0]["pair_id"] == pid
     assert points[0]["delta"] == pytest.approx([-10.0, 8.0, 15.0])
+
+
+TONAL = {"color_measurement": {"mode": "raw_camera_relative"}, "layers": [{
+    "index": 7, "name": "C07", "frequency_khz": 60.0, "speed": 128.0, "pulse_width": 300.0, "line_interval": 0.0169, "passes": 1,
+    "tonal": {"evidence": "clear", "power_range": [5.0, 16.1], "bins": [
+        {"gray": 0.3, "power_pct": 12.9, "L": 2.0, "a": 0.1, "b": -0.4}, {"gray": 0.6, "power_pct": 9.5, "L": 2.0, "a": 0.5, "b": 1.2},
+        {"gray": 0.9, "power_pct": 6.0, "L": 7.2, "a": -0.4, "b": 1.9}]}}]}
+
+
+def test_a_grayscale_work_gives_one_colour_per_step_of_its_grey_to_power_profile(world):
+    pid = pair_with(world, [(7, [3.4, 0.2, 1.4], 16.1, "test feature")])          # layer 7 is not the cleaning layer: no reference
+    world["store"].execute("UPDATE pair SET data_json=? WHERE id=?", (json.dumps({"check": TONAL}), pid))
+    assert colormap.collect(world["store"])["points"] == []                       # no clean reference: counted, not drawn
+    data = colormap.collect(world["store"], include_unreferenced=True)
+    steps = [p for p in data["points"] if p.get("source") == "tonal"]
+    assert [p["parameters"]["power"] for p in steps] == [12.9, 9.5, 6.0]
+    assert all(p["parameters"]["frequency"] == 60.0 and p["parameters"]["speed"] == 128.0 and p["parameters"]["pulse_width"] == 300.0 for p in steps)
+    assert steps[0]["layer_name"] == "C07 · серый 0.30" and steps[0]["lab"] == [2.0, 0.1, -0.4]
+    found = colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3, include_unreferenced=True)["matches"][0]
+    assert found["parameters"]["power"] == 6.0 and found["source"] == "tonal"

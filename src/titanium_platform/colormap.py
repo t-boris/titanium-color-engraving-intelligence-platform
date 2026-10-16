@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import color, experiments, lightburn as lb, model
+from . import color, experiments, ingest, lightburn as lb, model
 from .db import Store
 
 DEFAULT_CLEAN = [68.0, 0.0, 2.0]          # cleaned titanium when no photograph with a chart has measured it yet
@@ -34,7 +34,7 @@ def _rows(store: Store):
 @lru_cache(maxsize=64)
 def _cleaning_layer(path: str, stamp: int) -> int | None:
     """The cleaning layer of a finished work, found again from its stored LightBurn file (DEC-056); None if there is none."""
-    from .ingest import _finished_work_cleaning_layer
+    from .ingest import _finished_work_cleaning_layer     # noqa: F811 (same module, imported at call time to keep the cache simple)
     try:
         return _finished_work_cleaning_layer(lb.parse_file(path))
     except (OSError, lb.LightBurnError):
@@ -122,6 +122,44 @@ def collect(store: Store, include_unreferenced: bool = False, setup: str | None 
                        "parameters": {k: params.get(k) for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes",
                                                                   "layer_type", "global_passes", "bidirectional", "cross_hatch", "scan_angle")},
                        "group": f"{model.parameters_key(params)}|{info['setup']}|{info['material']}", **info})
+    # A grayscale-mode image is a continuum of recipes: the grey level sets the power and the power sets the colour. Each step of
+    # its tonal profile is a colour with the settings of that power (DEC-056).
+    first_row = {}
+    for row in rows:
+        first_row.setdefault(row["pair_id"], row)
+    for pair_id, row in first_row.items():
+        info = _pair_info(row)
+        check = ingest.get_pair(store, pair_id).get("check") or {}
+        kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
+        ref = witness.get(pair_id)
+        for rep in check.get("layers", []):
+            tonal = rep.get("tonal")
+            if not tonal or tonal.get("evidence") != "clear" or not tonal.get("power_range"):
+                continue
+            for step in tonal["bins"]:
+                if "power_pct" not in step:
+                    continue
+                lab = [step["L"], step["a"], step["b"]]
+                if kind == "calibrated":
+                    display, approximate, referenced = lab, False, True
+                elif ref:
+                    display, approximate, referenced = _against_clean(lab, ref["lab"], nominal), True, True
+                else:
+                    display, approximate, referenced = lab, True, False
+                setups.add(info["setup"])
+                if info["material"]:
+                    materials.add(info["material"])
+                if not referenced:
+                    unreferenced += 1
+                    if not include_unreferenced:
+                        continue
+                params = {"power": step["power_pct"], "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
+                          "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
+                          "layer_type": "Image", "grayscale": True}
+                points.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],
+                               "layer_name": f"{rep.get('name')} · серый {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
+                               "referenced": referenced, "lab": lab, "delta": None, "display_lab": display, "parameters": params, "source": "tonal",
+                               "group": f"{model.parameters_key(params)}|tonal|{pair_id}|{rep['index']}|{info['setup']}|{info['material']}", **info})
     shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["material"] == material)
              and (measurement is None or p["measurement"] == measurement)]
     return {"points": shown, "nominal_clean": {"lab": nominal, "source": "chart" if calibrated_clean else "default"},
