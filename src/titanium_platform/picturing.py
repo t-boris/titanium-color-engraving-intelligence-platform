@@ -4,10 +4,11 @@ A photo engraving has no outlines to match: its file holds one image object. The
 silhouettes of the picture (where its tones change) are looked for on the photograph, in all three channels of Lab
 because the engraved colour often carries more of the picture than the lightness does.
 
-1. the 8 orientations of the picture (four rotations, with and without mirror; a LightBurn file may be a mirror image
-   of the photograph) and a grid of sizes and positions are scored by the correlation of the two edge maps at low
-   resolution;
-2. the best candidate of the two best orientations is refined with ECC (a homography) from coarse to fine;
+1. the edges of the picture, each with its direction, are searched in a small copy of the photograph over every pose
+   (mirror, four right angles with small offsets, the picture's scale from 0.3 to 1.5 of the photograph, every
+   shift) by the same direction-aware correlation as the element anchoring of vector works (``anchoring.global_search``);
+   a LightBurn file may be a mirror image of the photograph;
+2. the best pose of each of the best few orientations is refined with ECC (a homography) from coarse to fine;
 3. the result is refused unless the match is clearly better than any other orientation;
 4. the edges of the visible window (the inner edge of a frame that covers part of the picture) are found from the
    step of the median profile along each side, and the margins hidden by the frame are reported.
@@ -27,9 +28,7 @@ WORK_LONG_SIDE = 1200      # photograph, working resolution
 PICTURE = 512              # picture resolution used for the final correlation
 MIN_ZNCC = 0.25            # correlation of the edge maps after refinement
 MIN_MARGIN = 1.4           # the best orientation must beat the second by this factor
-SCALES = (0.8, 0.9, 1.0, 1.1)
-SHIFTS_ALONG = (-0.12, -0.06, 0.0, 0.06)
-SHIFTS_ACROSS = (-0.05, 0.0, 0.05)
+REFINE_TOP = 4             # poses of the global search (best per orientation) refined with ECC; the coarse ranking is weak
 BAND = 0.15                # share of the picture inspected for the edge of the window, per side
 FALLBACK_INSET = 0.06      # assumed hidden share per side when no edge of a window is found
 
@@ -62,18 +61,24 @@ def _warp_photo(lab: np.ndarray, m: np.ndarray, size: int) -> np.ndarray:
                       for c in range(3)])
 
 
-def _candidates(width: int, height: int):
-    side = float(min(width, height))
-    for mirror in (False, True):
-        for rotation in range(4):
-            for scale in SCALES:
-                for along in SHIFTS_ALONG:
-                    for across in SHIFTS_ACROSS:
-                        dx, dy = (across * width, along * height) if height >= width else (along * width, across * height)
-                        cx, cy, half = width / 2 + dx, height / 2 + dy, side * scale / 2
-                        quad = np.float32([[cx - half, cy - half], [cx + half, cy - half], [cx + half, cy + half], [cx - half, cy + half]])
-                        quad = quad[::-1] if mirror else quad
-                        yield (mirror, rotation), np.roll(quad, -rotation, axis=0)
+def _picture_samples(gray: np.ndarray, picture_to_mm: np.ndarray, n: int = 4000) -> tuple[np.ndarray, np.ndarray]:
+    """Edge samples of the picture (file mm) with their tangent directions: the landmarks the photograph is searched for."""
+    size = gray.shape[0]
+    g8 = (np.clip(gray, 0, 1) * 255).astype(np.uint8)
+    edges = cv2.Canny(cv2.GaussianBlur(g8, (0, 0), 1.0), 40, 100)
+    gx = cv2.Sobel(g8.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(g8.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
+    ys, xs = np.nonzero(edges)
+    if len(xs) == 0:
+        return np.zeros((0, 2)), np.zeros((0, 2))
+    pick = np.random.default_rng(0).choice(len(xs), min(len(xs), n), replace=False)
+    ys, xs = ys[pick], xs[pick]
+    tangent = np.column_stack([-gy[ys, xs], gx[ys, xs]])
+    tangent /= np.maximum(np.linalg.norm(tangent, axis=1), 1e-6)[:, None]
+    points = np.c_[np.column_stack([xs, ys]).astype(float) * (PICTURE / size), np.ones(len(xs))] @ picture_to_mm.T
+    tangent_mm = tangent @ picture_to_mm[:2, :2].T
+    tangent_mm /= np.maximum(np.linalg.norm(tangent_mm, axis=1), 1e-6)[:, None]
+    return points[:, :2], tangent_mm
 
 
 MAX_PERSPECTIVE = 0.05     # opposite sides of the picture may differ by this share in the photograph (the camera is nearly frontal)
@@ -169,27 +174,37 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
     if gray is None or float(np.ptp(gray)) < 0.05:
         return refuse("the picture of the file has no tones to match")
 
+    bm = region.bitmap
+    a, b, c, d, e, f = bm["matrix"]
+    local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
+    picture_to_local = np.array([[bm["w"] / PICTURE, 0, -bm["w"] / 2], [0, bm["h"] / PICTURE, -bm["h"] / 2], [0, 0, 1.0]])
+    picture_to_mm = local_to_mm @ picture_to_local
+
     h0, w0 = img_bgr.shape[:2]
     s = WORK_LONG_SIDE / max(h0, w0)
     small = cv2.resize(ph.decoded_srgb(img_bgr).astype(np.float32), None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
     lab = cv2.cvtColor(small, cv2.COLOR_RGB2LAB)
-    height, width = lab.shape[:2]
-    corners = np.float32([[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE]])
-    tmpl = _picture_structure(gray, 128, 1.0)
 
-    corners_coarse = np.float32([[0, 0], [128, 0], [128, 128], [0, 128]])
-    best_per_orientation: dict = {}
-    for key, quad in _candidates(width, height):
-        coarse = _warp_photo(lab, cv2.getPerspectiveTransform(corners_coarse, quad), 128)
-        score = _zncc(tmpl, _structure(coarse, 1.0))
-        if score > best_per_orientation.get(key, (-1, None))[0]:
-            best_per_orientation[key] = (score, cv2.getPerspectiveTransform(corners, quad))
-    ranked = sorted(best_per_orientation.items(), key=lambda kv: -kv[1][0])
+    # 1. the start: the picture's edges searched over every pose, as the element anchoring searches outlines
+    from . import anchoring
+    points, tangents = _picture_samples(cv2.resize(gray, (PICTURE, PICTURE), interpolation=cv2.INTER_AREA), picture_to_mm)
+    if len(points) < 100:
+        return refuse("the picture of the file has no tones to match")
+    corners_mm = np.c_[np.float32([[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE]]), np.ones(4)] @ picture_to_mm.T
+    prep = anchoring.prepare(img_bgr, anchoring.COARSE_LONG_SIDE)
+    poses = anchoring.global_search(prep, points, tangents, corners_mm[:, :2])
+    diag["search"] = [{"mirror": p["mirror"], "rotation_degrees": 90 * p["k"], "score": round(p["score"], 3)} for p in poses]
+    if not poses:
+        return refuse("the picture of the file does not match the photograph closely enough")
+
+    # 2. ECC refinement of the best pose of each of the best few orientations; the refined correlation decides
+    template = _picture_structure(gray, PICTURE, 1.8)
     refined = []
-    for key, (score, m) in ranked[:2]:
+    for pose in poses[:REFINE_TOP]:
+        m = (np.diag([s / prep.scale, s / prep.scale, 1.0]) @ pose["h"] @ picture_to_mm).astype(np.float64)
         mm = _refine(lab, gray, m)
-        final = _zncc(_picture_structure(gray, PICTURE, 1.8), _structure(_warp_photo(lab, mm, PICTURE), 1.8))
-        refined.append((final, key, mm))
+        final = _zncc(template, _structure(_warp_photo(lab, mm, PICTURE), 1.8))
+        refined.append((final, (pose["mirror"], pose["k"]), mm))
     refined.sort(key=lambda r: -r[0])
     best, key, m = refined[0]
     second = refined[1][0] if len(refined) > 1 else 0.0
@@ -202,11 +217,6 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
 
     # picture (PICTURE units) -> photo (original pixels) and -> file mm
     to_photo = np.diag([1 / s, 1 / s, 1.0]) @ m
-    bm = region.bitmap
-    a, b, c, d, e, f = bm["matrix"]
-    local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
-    picture_to_local = np.array([[bm["w"] / PICTURE, 0, -bm["w"] / 2], [0, bm["h"] / PICTURE, -bm["h"] / 2], [0, 0, 1.0]])
-    picture_to_mm = local_to_mm @ picture_to_local
     image_to_mm = picture_to_mm @ np.linalg.inv(to_photo)
     px_per_mm = float(np.sqrt(abs(np.linalg.det(np.linalg.inv(image_to_mm)[:2, :2]))))
 

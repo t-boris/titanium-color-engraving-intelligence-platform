@@ -1,4 +1,4 @@
-"""Element-anchored registration of an unmarked, framed work (REQ-024, DEC-048, DEC-049)."""
+"""Element-anchored registration of an unmarked work, framed or not (REQ-024, DEC-048, DEC-049)."""
 import cv2
 import numpy as np
 import pytest
@@ -78,12 +78,58 @@ def test_prediction_uncertainty_of_the_plate_corners_is_small(registered):
     assert max(result.details["plate_uncertainty_mm"]) < 0.5
 
 
-def test_a_photograph_without_a_frame_is_refused_with_a_reason():
+def accuracy_mm(work, result, lo=20, hi=151) -> float:
+    grid = np.array([(x, y) for x in range(lo, hi, 10) for y in range(lo, hi, 10)], np.float32)
+    px = cv2.perspectiveTransform(grid[None], work["mm_to_px"])[0]
+    back = cv2.perspectiveTransform(px[None], result.image_to_mm.astype(np.float32))[0]
+    return float(np.linalg.norm(back - grid, axis=1).max())
+
+
+def test_a_photograph_without_a_frame_is_registered_and_nothing_is_hidden():
     plain = synth.framed_work(with_frame=False)
     layers = [layer for layer in lb.parse_bytes(plain["lightburn"]).layers if layer.regions]
     diagnostics = {}
-    assert anchoring.register(plain["photo"], layers, diagnostics) is None
-    assert "frame window" in diagnostics["refused"]
+    result = anchoring.register(plain["photo"], layers, diagnostics)
+    assert result is not None, diagnostics
+    assert accuracy_mm(plain, result) < 0.3
+    assert result.details["window_found"] is False and not any(result.details["frame_sides"].values())
+    assert result.details["counts"]["hidden"] == 0 and max(result.details["plate_hidden_mm"]) <= 0.5
+
+
+def test_a_black_silhouette_touching_the_frame_does_not_move_the_frame_edge():
+    # the whole left and bottom edge of the plate is engraved black, as dark as the frame around it
+    silhouette = np.array([(10, 90), (60, 90), (60, 150), (90, 150), (90, 160), (10, 160)], float)
+    work = synth.framed_work(seed=5, blobs=60, extra=[(7, silhouette)], dark_layers=(7,))
+    layers = [layer for layer in lb.parse_bytes(work["lightburn"]).layers if layer.regions]
+    diagnostics = {}
+    result = anchoring.register(work["photo"], layers, diagnostics)
+    assert result is not None, diagnostics
+    assert accuracy_mm(work, result) < 0.4          # a quarter of the plate has no anchors under the silhouette
+    assert all(result.details["frame_sides"].values())
+    assert all(1.5 < v < 3.6 for v in result.details["plate_hidden_mm"])      # 2 mm per side, as without the silhouette
+
+
+def test_a_drawing_of_parallel_strokes_is_registered_in_the_right_orientation():
+    work = synth.framed_work(seed=6, blobs=30, style="strokes")
+    layers = [layer for layer in lb.parse_bytes(work["lightburn"]).layers if layer.regions]
+    diagnostics = {}
+    result = anchoring.register(work["photo"], layers, diagnostics)
+    assert result is not None, diagnostics
+    assert result.reflected and accuracy_mm(work, result) < 0.3
+
+
+def test_a_registration_from_another_route_is_confirmed_by_the_elements_or_refused(work):
+    layers = [layer for layer in lb.parse_bytes(work["lightburn"]).layers if layer.regions]
+    right = np.linalg.inv(work["mm_to_px"])
+    diagnostics = {}
+    confirmed = anchoring.confirm(work["photo"], layers, right, diagnostics)
+    assert confirmed is not None, diagnostics
+    assert confirmed.method == "element anchors" and accuracy_mm(work, confirmed) < 0.3
+    assert confirmed.details["orientation"]["margin"] is None and diagnostics["anchors"] >= 20
+    flip = np.array([[-1, 0, 170], [0, 1, 0], [0, 0, 1]], float)                # the same work mirrored in x
+    diagnostics = {}
+    assert anchoring.confirm(work["photo"], layers, np.linalg.inv(work["mm_to_px"] @ flip), diagnostics) is None
+    assert diagnostics["refused"]
 
 
 def test_a_drawing_whose_orientation_cannot_be_told_is_refused():
