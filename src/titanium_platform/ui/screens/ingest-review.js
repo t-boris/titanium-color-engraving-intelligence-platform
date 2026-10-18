@@ -362,7 +362,8 @@ const IngestReview = (() => {
       заново, а принятое наблюдение запоминает, какие настройки из файла и какие введены оператором. До принятия
       введённое можно убрать. */
   async function suppliedSettingsCard(pair, reload) {
-    const gaps = (pair.check?.layers || []).filter((l) => (l.missing_settings || []).length);
+    // cleaning, markers and labels are never knowledge (DEC-027): only the layers measured as test features are offered
+    const gaps = (pair.check?.layers || []).filter((l) => (l.missing_settings || []).length && (l.role || 'test feature') === 'test feature');
     if (!gaps.length || pair.matrix) return null;
     const device = gaps.some((l) => l.missing_settings.includes('pulse_width')) ? await App.get('/devices/' + pair.device_id).catch(() => null) : null;
     const steps = device ? device.passport.pulse_steps.map((s) => s.pulse_width_ns) : [];

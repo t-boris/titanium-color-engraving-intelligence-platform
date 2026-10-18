@@ -406,7 +406,10 @@ class Store:
         """A measured spot belongs to the lens it was measured with, not to the laser (REQ-019): a lens swap must not carry it
         to another lens. A value an older version kept in the laser passport moves, once, to the lens installed on that
         laser (a value the lens already has is kept); the move is recorded in the audit with the value. A laser without
-        an installed lens names no lens to give it to: the value then stays only in the audit."""
+        an installed lens names no lens to give it to: the value then stays only in the audit. An empty passport field is
+        dropped without a record."""
+        self.conn.execute("UPDATE laser_device SET data_json=json_remove(data_json, '$.spot_diameter_um') "
+                          "WHERE json_type(data_json, '$.spot_diameter_um') = 'null'")
         rows = self.conn.execute("SELECT id, lens_id, data_json FROM laser_device "
                                  "WHERE json_extract(data_json, '$.spot_diameter_um') IS NOT NULL").fetchall()
         for device in rows:
