@@ -63,3 +63,11 @@ def valid_lab(lab) -> bool:
     except (TypeError, ValueError):
         return False
     return all(np.isfinite([L, a, b])) and 0 <= L <= 100 and -128 <= a <= 127 and -128 <= b <= 127
+
+
+def against_clean(lab, clean, nominal) -> list[float]:
+    """The colour as it would look next to nominal clean titanium: its ratio to the clean surface of the *same* photograph, per
+    channel in linear light (exposure and illuminant cancel), applied to the nominal clean titanium (DEC-056)."""
+    ratio = np.clip(lab_to_linear_rgb(np.asarray(lab, float)), 0, 1) / np.maximum(lab_to_linear_rgb(np.asarray(clean, float)), 1e-4)
+    shown = np.clip(lab_to_linear_rgb(np.asarray(nominal, float)) * ratio, 0, 1)
+    return [float(v) for v in linear_rgb_to_lab(shown)]

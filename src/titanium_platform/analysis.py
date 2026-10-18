@@ -53,6 +53,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     summaries = model.knowledge_summaries(store, pair["profile_id"])
     limitations = []
     planned = {l["index"]: l for l in plan["layers"]} if plan else {}
+    # colours of a photograph without a chart, as they would look next to clean titanium (derived by get_pair, DEC-056)
+    checked = {rep["index"]: rep for rep in (pair.get("check") or {}).get("layers", [])}
     rows = []
     for o in obs:
         layer = planned.get(o["layer_index"])
@@ -60,7 +62,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
         row = {"observation_id": o["id"], "layer_index": o["layer_index"], "name": o["evidence"].get("layer_name"), "parameters": o["parameters"],
                "measured_lab": o["lab"], "planned_lab": None, "delta_e": None, "within_tolerance": None, "planned_prediction": pred,
                "alignment": o["alignment"], "knowledge": None, "role": o["evidence"].get("role", "test feature"),
-               "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics")}
+               "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics"),
+               "measured_lab_against_clean": (checked.get(o["layer_index"]) or {}).get("measured_lab_against_clean")}
         if pred is not None:
             row["planned_lab"] = pred["lab"]
             row["delta_e"] = color.delta_e(o["lab"], pred["lab"])
@@ -77,6 +80,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
         rows.append(row)
     result = {"pair_id": pair_id, "engraving_id": pair["engraving_id"], "engraving_title": pair["engraving_title"],
               "plan_id": pair["plan_id"], "mode": mode, "alignment": rows[0]["alignment"] if rows else None, "rows": rows,
+              "clean_reference": (pair.get("check") or {}).get("clean_reference"),
               "tolerance": tol, "limitations": limitations, "metrics": {}}
     result["rephoto_of"] = pair.get("rephoto_of")
     result["photos"] = [dict(row) for row in store.query(

@@ -5,8 +5,11 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 * The chart is a 24-patch ColorChecker Classic found with OpenCV's ``mcc`` detector (DEC-025). Detection is
   verified on OpenCV test images and synthetic renders only, never on a real rig photograph.
 * Reference patch values are approximate published sRGB (D65) values and can be replaced per capture setup.
-* Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. White point, observing
-  conditions and the exact calibration method are not fixed by the requirements.
+* Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. The patches and the measured
+  surface are taken from a 16-bit *linear* decode of the RAW (DEC-059): the 8-bit gamma-encoded decode read as sRGB
+  under-read the dark tones up to threefold (chart black L* 13 instead of 21.7). The 8-bit decode serves detection,
+  alignment and previews only. White point, observing conditions and the exact calibration method are not fixed by
+  the requirements.
 * The mask edge exclusion is a fraction of the region's smaller side (``EDGE_FRACTION``); its size is not
   specified by the requirements.
 """
@@ -58,12 +61,49 @@ def decode_image(path: str | Path, allow_non_raw: bool = False) -> np.ndarray:
     return img
 
 
+def decode_linear(path: str | Path, allow_non_raw: bool = False) -> np.ndarray:
+    """The photograph as float32 linear RGB (RGB order, 0..1) for colour measurement: a RAW is developed in 16 bits
+    without a tone curve (camera white balance, no brightness change); a non-RAW test image is linearised from sRGB."""
+    path = Path(path)
+    if path.suffix.lower() in RAW_EXTENSIONS:
+        import rawpy
+        try:
+            with rawpy.imread(str(path)) as raw:
+                rgb16 = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16, gamma=(1, 1),
+                                        output_color=rawpy.ColorSpace.sRGB)
+        except Exception as exc:
+            raise PhotoError(f"cannot decode RAW file: {exc}") from exc
+        return (rgb16.astype(np.float32) / 65535.0)
+    return color.srgb_to_linear(decoded_srgb(decode_image(path, allow_non_raw))).astype(np.float32)
+
+
 @dataclass
 class Chart:
     detected: bool
-    patches_rgb: np.ndarray | None = None  # (24, 3) sRGB 0..255 as photographed
+    patches_rgb: np.ndarray | None = None  # (24, 3) sRGB 0..255 as photographed (8-bit decode)
     box: list | None = None
     reason: str = ""
+    patches_linear: np.ndarray | None = None  # (24, 3) linear RGB 0..1 from the linear decode, same order
+
+
+def chart_patches_linear(chart: Chart, linear_rgb: np.ndarray, inset: float = 0.2) -> np.ndarray:
+    """The 24 patch means read from the linear image: a 6 x 4 grid inside the detected outline, the central part of every
+    cell. The order follows the detected outline and is turned round like ``patches_rgb`` when the grey ramp runs the
+    wrong way."""
+    box = np.asarray(chart.box, np.float32).reshape(-1, 2)
+    to_photo = cv2.getPerspectiveTransform(np.float32([[0, 0], [6, 0], [6, 4], [0, 4]]), box)
+    height, width = linear_rgb.shape[:2]
+    out = np.zeros((24, 3), np.float64)
+    for index, (row, col) in enumerate((r, c) for r in range(4) for c in range(6)):
+        cell = np.float32([[col + inset, row + inset], [col + 1 - inset, row + inset], [col + 1 - inset, row + 1 - inset], [col + inset, row + 1 - inset]])
+        poly = cv2.perspectiveTransform(cell[None], to_photo)[0]
+        mask = cv2.fillConvexPoly(np.zeros((height, width), np.uint8), np.round(poly).astype(np.int32), 1).astype(bool)
+        out[index] = linear_rgb[mask].reshape(-1, 3).mean(axis=0) if mask.any() else np.nan
+    if not np.isfinite(out).all():
+        raise PhotoError("the reference chart lies partly outside the photograph")
+    if out[18].sum() < out[23].sum():
+        out = out[::-1].copy()
+    return out
 
 
 def chart_detector():
@@ -109,10 +149,12 @@ def detect_chart(img_bgr: np.ndarray) -> Chart:
 class Correction:
     matrix: np.ndarray  # 3x3, applied to linear RGB
     residual: float     # mean patch delta E (CIE76) after correction
+    grey_ramp: dict | None = None   # L* of the six grey patches: reference, corrected (how the tones come out)
 
 
-def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
-    src = color.srgb_to_linear(patches_rgb / 255.0)
+def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
+    """Least-squares 3x3 matrix from the photographed patches (linear RGB) to the reference (sRGB 0..255)."""
+    src = np.clip(np.asarray(patches_linear, float), 0, None)
     dst = color.srgb_to_linear(reference_rgb / 255.0)
     sol, *_ = np.linalg.lstsq(src, dst, rcond=None)
     matrix = sol.T
@@ -120,31 +162,65 @@ def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENC
     lab_c = color.linear_rgb_to_lab(corrected)
     lab_r = color.linear_rgb_to_lab(dst)
     residual = float(np.mean(np.linalg.norm(lab_c - lab_r, axis=1)))
-    return Correction(matrix, residual)
+    ramp = {"reference": [round(float(v), 1) for v in lab_r[18:24, 0]], "corrected": [round(float(v), 1) for v in lab_c[18:24, 0]]}
+    return Correction(matrix, residual, ramp)
 
 
-def apply_correction(img_bgr: np.ndarray, corr: Correction) -> np.ndarray:
-    """Corrected image as float sRGB (RGB order), values 0..1."""
-    rgb = decoded_srgb(img_bgr)
-    lin = color.srgb_to_linear(rgb) @ corr.matrix.T
-    return color.linear_to_srgb(np.clip(lin, 0, 1))
+def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
+    """The fit from the 8-bit decode's patches (sRGB 0..255); kept for photographs without a linear decode."""
+    return fit_correction_linear(color.srgb_to_linear(patches_rgb / 255.0), reference_rgb)
 
 
-def decoded_srgb(img_bgr: np.ndarray) -> np.ndarray:
-    """Return the decoded photo as float sRGB (RGB order), before any reference-chart correction."""
+def apply_correction(img_bgr: np.ndarray, corr: Correction, linear: np.ndarray | None = None) -> np.ndarray:
+    """Corrected image as float sRGB (RGB order), values 0..1, from the linear decode when given."""
+    lin = linear if linear is not None else color.srgb_to_linear(decoded_srgb(img_bgr))
+    return color.linear_to_srgb(np.clip(lin @ corr.matrix.T, 0, 1))
+
+
+def decoded_srgb(img_bgr: np.ndarray, linear: np.ndarray | None = None) -> np.ndarray:
+    """The photograph as float sRGB (RGB order) before any reference-chart correction: encoded from the linear decode
+    when given, else from the 8-bit decode."""
+    if linear is not None:
+        return color.linear_to_srgb(np.clip(linear, 0, 1))
     return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
 
 
-def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> tuple[np.ndarray | None, Chart, Correction | None]:
-    """Detect the chart and correct the image. Without a detectable chart nothing is returned (REQ-009)."""
-    chart = detect_chart(img_bgr)
+EXPOSED_WHITE = 0.85            # the 99.5th percentile of luminance is brought here for detection (never for measurement)
+
+
+def exposed_bgr(linear: np.ndarray) -> np.ndarray:
+    """An 8-bit rendering of the linear decode with its exposure normalised: an under-exposed photograph (the operator's are
+    1.5–4 stops under) hides the chart's dark frame and patches from the detector and the cells from the matrix finder.
+    Geometry only: colours are always read from ``linear``."""
+    lum = np.asarray(linear, np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    gain = EXPOSED_WHITE / max(float(np.percentile(lum, 99.5)), 1e-4)
+    srgb = color.linear_to_srgb(np.clip(linear * gain, 0, 1))
+    return cv2.cvtColor((srgb * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+
+def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+            linear: np.ndarray | None = None) -> tuple[np.ndarray | None, Chart, Correction | None]:
+    """Detect the chart and correct the image, from the linear decode when given. The chart is looked for on the
+    exposure-normalised rendering of the linear decode first, then on the 8-bit decode. Without a detectable chart
+    nothing is returned (REQ-009)."""
+    chart = detect_chart(exposed_bgr(linear)) if linear is not None else Chart(False, reason="reference chart not detected")
+    if not chart.detected:
+        chart = detect_chart(img_bgr)
     if not chart.detected:
         return None, chart, None
-    corr = fit_correction(chart.patches_rgb, reference_rgb)
+    if linear is not None:
+        try:
+            chart.patches_linear = chart_patches_linear(chart, linear)
+        except PhotoError as exc:
+            chart.reason = str(exc)
+            return None, chart, None
+        corr = fit_correction_linear(chart.patches_linear, reference_rgb)
+    else:
+        corr = fit_correction(chart.patches_rgb, reference_rgb)
     if corr.residual > MAX_CORRECTION_RESIDUAL:
         chart.reason = f"chart correction residual {corr.residual:.1f} exceeds {MAX_CORRECTION_RESIDUAL:g}"
         return None, chart, corr
-    return apply_correction(img_bgr, corr), chart, corr
+    return apply_correction(img_bgr, corr, linear), chart, corr
 
 
 # -- alignment -------------------------------------------------------------------------------------------
