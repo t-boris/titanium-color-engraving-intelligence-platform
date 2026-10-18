@@ -157,6 +157,12 @@ def _hidden_margins(lab: np.ndarray, m: np.ndarray) -> dict:
     return out
 
 
+def side_insets(margins: dict) -> dict[str, float]:
+    """The share of the picture hidden on each side: the measured one where the frame's edge was found, exactly
+    ``FALLBACK_INSET`` where it was not (REQ-027): an assumption, reported as such, never a floor under a measurement."""
+    return {k: (v["share"] if v["edge_found"] else FALLBACK_INSET) for k, v in margins.items()}
+
+
 def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None) -> Registration | None:
     """Align the photograph to the picture of the largest image object of ``layers``; None when it is not supported."""
     diag = diagnostics if diagnostics is not None else {}
@@ -222,7 +228,7 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
 
     margins = _hidden_margins(lab, m)
     found = all(v["edge_found"] for v in margins.values())
-    inset = {k: (v["share"] if v["edge_found"] else max(v["share"], FALLBACK_INSET)) for k, v in margins.items()}
+    inset = side_insets(margins)
     lo_x, hi_x, lo_y, hi_y = inset["left"] * PICTURE, PICTURE * (1 - inset["right"]), inset["top"] * PICTURE, PICTURE * (1 - inset["bottom"])
     window = cv2.perspectiveTransform(np.float32([[[lo_x, lo_y], [hi_x, lo_y], [hi_x, hi_y], [lo_x, hi_y]]]), to_photo)[0]
     size_mm = float(max(bm["w"], bm["h"]) * np.sqrt(abs(np.linalg.det(local_to_mm[:2, :2]))))
@@ -230,6 +236,7 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
                "orientation": {"mirror": bool(key[0]), "rotation_degrees": 90 * int(key[1])},
                "picture_quad_px": cv2.perspectiveTransform(np.float32([[[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE]]]), to_photo)[0].round(1).tolist(),
                "window_found": bool(found), "window_px": window.round(1).tolist(),
+               "frame_sides": {k: bool(v["edge_found"]) for k, v in margins.items()},
                "hidden_mm": {k: round(v * size_mm, 1) for k, v in inset.items()}, "hidden_share": {k: round(v, 4) for k, v in inset.items()}}
     reflected = bool(np.linalg.det(image_to_mm[:2, :2]) < 0)
     diag["details"] = details

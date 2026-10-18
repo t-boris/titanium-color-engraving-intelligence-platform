@@ -53,6 +53,14 @@ def test_the_check_aligns_by_element_anchors_and_reports_the_frame(report):
     assert any("The frame hides part of the work" in w for w in report["warnings"])
 
 
+def test_the_alignment_record_keeps_the_hidden_margin_of_each_side_in_mm(report, work):
+    """REQ-024 AC7: what the frame hides is stored per side of the plate, with whether the frame's edge was found there."""
+    alignment = report["alignment"]
+    assert set(alignment["hidden_mm"]) == {"top", "right", "bottom", "left"} and all(alignment["frame_sides"].values())
+    assert all(abs(v - work["hide_mm"]) < 1.0 for v in alignment["hidden_mm"].values()), alignment["hidden_mm"]   # an estimate
+    assert len(alignment["anchoring"]["details"]["plate_hidden_mm"]) == 4          # the corner distances are kept as well
+
+
 def test_layers_with_elements_under_the_frame_say_so(report):
     layers = {rep["index"]: rep for rep in report["layers"]}
     assert layers[5]["frame"]["hidden"] >= 1 and any("under the frame" in n for n in layers[5]["notes"])

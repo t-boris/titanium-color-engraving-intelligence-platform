@@ -1626,12 +1626,15 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
             hidden = d["hidden_mm"]
             report["alignment"].update(method=matched.method, element_matches=[], residual_px=matched.residual_px,
                                        reflected=matched.reflected, window_px=d["window_px"], px_per_mm=d["px_per_mm"],
-                                       hidden_mm=hidden, window_found=d["window_found"])
+                                       hidden_mm=hidden, frame_sides=d["frame_sides"], window_found=d["window_found"])
             report["warnings"].append(
                 f"The picture of the file was matched to the photograph (correlation {d['zncc']:.2f}). The frame hides about "
                 f"{hidden['left']:g} mm on the left, {hidden['right']:g} on the right, {hidden['top']:g} at the top and "
-                f"{hidden['bottom']:g} at the bottom; that part is not measured."
-                + ("" if d["window_found"] else " The edge of the frame was not found on every side, so a margin of 6% was assumed there."))
+                f"{hidden['bottom']:g} at the bottom; that part is not measured.")
+            for side in ("left", "right", "top", "bottom"):            # REQ-027: an assumed margin is said, side by side
+                if not d["frame_sides"][side]:
+                    report["warnings"].append(f"The edge of the frame was not found on the {side} side: a margin of "
+                                              f"{picturing.FALLBACK_INSET * 100:g}% ({hidden[side]:g} mm) is assumed there.")
             return matched.image_to_mm, dx, dy
     matched = registration.register_geometry(img_bgr, work_layers)
     if matched is not None:
@@ -1677,6 +1680,8 @@ def _anchored(report: dict, matched) -> np.ndarray:
     report["alignment"].update(method=matched.method, element_matches=matched.matches,
                                residual_px=matched.residual_px, reflected=matched.reflected,
                                window_px=details["window_px"], window_found=details["window_found"],
+                               # what the frame hides, per side of the plate in mm, and on which sides its edge was found (REQ-024)
+                               hidden_mm=details["hidden_side_mm"], frame_sides=details["frame_sides"],
                                element_status=_element_status(details))
     counts = details["counts"]
     if counts["partly hidden"] or counts["hidden"]:

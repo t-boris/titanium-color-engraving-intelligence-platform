@@ -58,6 +58,27 @@ def test_the_margins_hidden_by_the_frame_are_found_from_the_step_at_its_inner_ed
     assert hidden["top"] == pytest.approx(top, abs=1.5) and hidden["bottom"] == pytest.approx(bottom, abs=1.5)
 
 
+def test_a_side_without_a_found_frame_edge_assumes_exactly_six_percent_and_a_found_side_keeps_its_measurement():
+    """REQ-027 AC4: the assumption is 6 % there, not a floor under what is measured elsewhere or outside the photograph."""
+    margins = {"left": {"share": 0.02, "edge_found": True}, "right": {"share": 0.09, "edge_found": False},
+               "top": {"share": 0.01, "edge_found": False}, "bottom": {"share": 0.03, "edge_found": True}}
+    assert picturing.side_insets(margins) == {"left": 0.02, "right": 0.06, "top": 0.06, "bottom": 0.03}
+
+
+def test_a_picture_cut_by_the_edge_of_the_photograph_says_which_side_is_assumed():
+    """The right side of the work is 11.7 mm outside the photograph, past its 7 mm frame margin: no frame edge to find there."""
+    cut = synth.picture_work(centre=(0.62, 0.5))
+    layers = [layer for layer in lb.parse_bytes(cut["lightburn"]).layers if layer.regions]
+    result = picturing.register(cut["photo"], layers, {})
+    assert result is not None
+    assert result.details["frame_sides"] == {"left": True, "right": False, "top": True, "bottom": True}
+    hidden = result.details["hidden_mm"]
+    assert hidden["right"] == pytest.approx(150 * picturing.FALLBACK_INSET)               # exactly 6 %, not what lies outside
+    left, _, top, bottom = cut["margins_mm"]
+    assert hidden["left"] == pytest.approx(left, abs=1.5) and hidden["top"] == pytest.approx(top, abs=1.5)
+    assert hidden["bottom"] == pytest.approx(bottom, abs=1.5)
+
+
 def test_the_window_polygon_lies_inside_the_picture_and_outside_the_frame_lip(work, registered):
     _, result, _ = registered
     window = np.array(result.details["window_px"], np.float32)
@@ -126,6 +147,23 @@ def test_the_pair_check_aligns_by_the_picture_and_reports_what_the_frame_hides(c
     assert a["valid"] and a["method"] == "picture" and not report["problems"]
     assert set(a["hidden_mm"]) == {"left", "right", "top", "bottom"} and len(a["window_px"]) == 4
     assert any("The picture of the file was matched" in w for w in report["warnings"])
+    assert all(a["frame_sides"].values()) and not any("was not found on the" in w for w in report["warnings"])
+
+
+def test_the_pair_check_says_for_each_side_where_a_margin_was_assumed(tmp_path):
+    cut = synth.picture_work(centre=(0.62, 0.5))
+    store = Store(tmp_path)
+    store.set_setting("allow_non_raw_photos", True)
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="cut.lbrn2", lightburn_bytes=cut["lightburn"],
+                         photo_name="cut.png", photo_bytes=cv2.imencode(".png", cut["photo"])[1].tobytes(), context={"material_id": material["id"]})
+    report = ig.check_pair(store, pid)
+    store.close()
+    assert report["alignment"]["frame_sides"]["right"] is False and report["alignment"]["hidden_mm"]["right"] == pytest.approx(9.0)
+    assumed = [w for w in report["warnings"] if "was not found on the" in w]
+    assert assumed == ["The edge of the frame was not found on the right side: a margin of 6% (9 mm) is assumed there."]
 
 
 def test_the_tonal_profile_follows_grey_to_power_to_colour(checked):

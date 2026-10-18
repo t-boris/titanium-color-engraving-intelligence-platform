@@ -28,7 +28,7 @@ const IngestDialogs = (() => {
     return h('div', {class: 'stack small'}, ...details);
   };
   const layersTable = (layers) => table(['Слой', 'Мощность, %', 'Частота, кГц', 'Скорость, мм/с', 'Областей', 'Результат'],
-    layers.map((l) => [l.name, num(l.power, 1), num(l.frequency_khz, 0), num(l.speed, 0), l.regions, layerResult(l)]), 'Слоёв нет');
+    layers.map((l) => [I18N.name(l.name), num(l.power, 1), num(l.frequency_khz, 0), num(l.speed, 0), l.regions, layerResult(l)]), 'Слоёв нет');
 
   /** «Исправить пару»: другой файл LightBurn. Проверка, подтверждение и проверка масок сбрасываются на сервере. */
   function fixFile(pair, reload) {

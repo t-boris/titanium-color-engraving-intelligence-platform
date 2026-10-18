@@ -210,12 +210,13 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
 # -- a work engraved from a picture, photographed in a frame (REQ-027, DEC-054) -------------------------------------
 def picture_work(seed: int = 4, margins_mm=(3.0, 7.0, 4.0, 3.0), size=(1900, 1500), px_per_mm: float = 9.0, rotate_deg: float = 1.5,
                  mirror: bool = True, perspective=(1.5e-5, -1.0e-5), min_power: float = 5.0, max_power: float = 16.0,
-                 tonal: bool = True, with_chart: bool = False) -> dict:
+                 tonal: bool = True, with_chart: bool = False, centre=(0.5, 0.5)) -> dict:
     """A 150 x 150 mm grayscale-mode engraving (file mm 10..160) as a LightBurn file and a photograph.
 
     The picture is smoothed noise with a few shapes. The metal takes the colour of its grey level: darker grey = more power =
     darker, less coloured; lighter grey = less power = lighter and browner (as in the operator's work). A frame hides
-    ``margins_mm`` (left, right, top, bottom). The photograph is mirrored vertically (the file's y is up), turned and in perspective.
+    ``margins_mm`` (left, right, top, bottom). The photograph is mirrored vertically (the file's y is up), turned and in perspective;
+    ``centre`` (shares of the photograph's width and height) places the work, off centre to cut a side by the photograph's edge.
     """
     import base64
     rng = np.random.default_rng(seed)
@@ -248,7 +249,7 @@ def picture_work(seed: int = 4, margins_mm=(3.0, 7.0, 4.0, 3.0), size=(1900, 150
     affine[:2, :2] = lin
     affine[:2, 2] = -lin @ [85.0, 85.0]
     persp = np.array([[1, 0, 0], [0, 1, 0], [perspective[0], perspective[1], 1.0]])
-    mm_to_px = np.array([[1, 0, 0.5 * width], [0, 1, 0.5 * height], [0, 0, 1.0]]) @ persp @ affine
+    mm_to_px = np.array([[1, 0, centre[0] * width], [0, 1, centre[1] * height], [0, 0, 1.0]]) @ persp @ affine
     step = 150.0 / n
     picture_to_px = mm_to_px @ np.array([[step, 0, 10.0], [0, step, 10.0], [0, 0, 1.0]])
     img = np.full((height, width, 3), (150, 155, 150), np.uint8)

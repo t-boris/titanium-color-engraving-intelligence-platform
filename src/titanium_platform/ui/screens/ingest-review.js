@@ -250,7 +250,7 @@ const IngestReview = (() => {
     const layers = (pair.check?.layers || []).filter((l) => l.regions > 0);
     const layerPicker = h('select', {'aria-label': 'Слои, показанные на фотографии', onChange: (ev) => { selectedLayer = ev.target.value; refresh(); }},
       [h('option', {value: 'all', selected: true}, 'Все измеренные слои'),
-        ...layers.map((l) => h('option', {value: l.index}, `${l.name}${l.measured_lab ? '' : ' · измерение пропущено'}`))]);
+        ...layers.map((l) => h('option', {value: l.index}, `${I18N.name(l.name)}${l.measured_lab ? '' : ' · измерение пропущено'}`))]);
     const chartUsable = pair.check?.chart?.usable === true;
     const measuredLayers = layers.filter((l) => l.measured_lab != null);
     const skippedLayers = layers.filter((l) => l.measured_lab == null);
@@ -259,7 +259,7 @@ const IngestReview = (() => {
       imageStatus,
       h('div', {class: 'alert ' + (skippedLayers.length ? 'warn' : 'ok'), role: 'status'},
         `Результат распознавания: измерены ${measuredLayers.length} из ${layers.length} слоёв` +
-        (skippedLayers.length ? `; пропущен: ${skippedLayers.map((l) => l.name).join(', ')}.` : '.') +
+        (skippedLayers.length ? `; пропущен: ${skippedLayers.map((l) => I18N.name(l.name)).join(', ')}.` : '.') +
         (imageSize ? ` Размер исходного фото: ${imageSize[0]} × ${imageSize[1]} пикс.` : '')),
       h('p', {class: 'muted small'}, 'Цветные контуры показывают полные векторы из LightBurn в их исходном размере. Цвет измеряется внутри фигур: края и последующие гравировки исключаются из пробы. Поднятие яркости меняет только просмотр; результаты рассчитаны по исходному RAW. ' + (pair.check?.alignment?.method === 'picture' ? 'Зелёные линии — контуры вложенной картинки, найденные на фото. Голубая рамка — видимое окно, оно и измеряется; розовым показано продолжение контуров под рамкой, это вывод по расстояниям, а не измерение.' : '')),
       h('div', {class: 'row'}, h('label', {class: 'f'}, h('span', {}, 'Показать контуры'), layerPicker),
@@ -338,6 +338,20 @@ const IngestReview = (() => {
       choose, holder, h('div', {class: 'row'}, apply));
   }
 
+  // -- what the frame hides, per side of the plate (REQ-024, REQ-027) ---------------------------------------------------
+  const SIDES = [['left', 'слева'], ['right', 'справа'], ['top', 'сверху'], ['bottom', 'снизу']];
+
+  /** Скрытые рамкой края по сторонам, мм. Где край рамки не найден: у картинки принято 6 % и так и сказано, у вектора
+      это край пластины («рамки нет»). null — запись выравнивания старая и сторон не знает. */
+  function hiddenMargins(alignment) {
+    const mm = alignment && alignment.hidden_mm;
+    if (!mm || typeof mm !== 'object' || Array.isArray(mm)) return null;
+    if (alignment.method !== 'picture' && alignment.window_found === false) return null;     // no frame: nothing is hidden
+    const found = alignment.frame_sides || {};
+    return SIDES.filter(([k]) => mm[k] != null).map(([k, word]) => `${word} ${num(Math.max(mm[k], 0), 1)}`
+      + (found[k] === false ? (alignment.method === 'picture' ? ' (край рамки не найден — принято 6 %)' : ' (рамки нет)') : '')).join(' · ');
+  }
+
   // -- settings the LightBurn file lacks, supplied by the operator with provenance (REQ-015, REQ-016) --------------------
   const SUPPLIED = {power: ['Мощность', '%'], frequency: ['Частота', 'кГц'], speed: ['Скорость', 'мм/с'],
     pulse_width: ['Длительность импульса (Q-Pulse)', 'нс'], line_interval: ['Шаг линий', 'мм'], passes: ['Проходы', '']};
@@ -404,7 +418,7 @@ const IngestReview = (() => {
       ...Array.from({length: m.cols}, (_, c) => {
         const layer = layers.find((l) => l.index === r * m.cols + c);
         const lab = layer && (layer.measured_lab_against_clean || layer.measured_lab);
-        return h('td', {title: lab ? `${layer.name}: ${labText(lab)}` : 'не измерено'}, lab ? swatch(lab) : '—');
+        return h('td', {title: lab ? `${I18N.name(layer.name)}: ${labText(lab)}` : 'не измерено'}, lab ? swatch(lab) : '—');
       })));
     return h('div', {class: 'matrix-grid', style: 'overflow-x:auto'}, h('table', {class: 'small'}, h('thead', {}, head), h('tbody', {}, ...rows)));
   }
@@ -524,7 +538,7 @@ const IngestReview = (() => {
       }
     };
     const out = h('div', {class: 'stack'});
-    out.append(h('div', {class: 'card'}, h('h3', {}, pair.engraving_title || (pair.rephoto_of ? 'Повторная фотография той же гравировки' : 'Гравировка')),
+    out.append(h('div', {class: 'card'}, h('h3', {}, pair.engraving_title ? I18N.name(pair.engraving_title) : (pair.rephoto_of ? 'Повторная фотография той же гравировки' : 'Гравировка')),
       h('p', {}, `LightBurn: ${pair.lightburn_name} · Фото: ${pair.photo_name}`),
       pair.rephoto_of ? h('p', {class: 'muted small'}, `Исходная пара №${pair.rephoto_of} · LightBurn, лазер, линза и титан унаследованы.`,
         pair.plan_id ? ' ' : null, pair.plan_id ? link('/plans/' + pair.plan_id, pair.plan_mode === 'Restored from file' ? 'План, восстановленный из файла' : 'Экспериментальная плата') : null) : null,
@@ -578,10 +592,13 @@ const IngestReview = (() => {
           h('p', {class: 'small'},
             (d.window_found === false
               ? 'Рамка на фотографии не найдена: измеряется вся пластина. '
-              : `Рамка закрывает края пластины (мм, по углам, ориентировочно ±1): ${d.plate_hidden_mm.map((v) => num(Math.round(Math.max(v, 0) * 2) / 2, 1)).join(' · ')}. `
+              : (hiddenMargins(check.alignment) ? `Рамка закрывает края пластины, мм (ориентировочно ±1): ${hiddenMargins(check.alignment)}. `
+                : `Рамка закрывает края пластины (мм, по углам, ориентировочно ±1): ${d.plate_hidden_mm.map((v) => num(Math.round(Math.max(v, 0) * 2) / 2, 1)).join(' · ')}. `)
                 + `Скрытое не измеряется: его положение вычислено по расстояниям между найденными элементами, статистическая погрешность до ${num(d.hidden_uncertainty_mm, 2)} мм.`)
             + (d.extrapolation_mm && d.extrapolation_mm.median != null ? ` Строгая проверка: если спрятать внешние ${num(d.extrapolation_mm.ring * 100, 0)}% окна и предсказать их по остальным, ошибка предсказания ${num(d.extrapolation_mm.median, 2)} мм (медиана), ${num(d.extrapolation_mm.p90, 2)} мм (90%). Полоса под рамкой намного уже, так что это оценка сверху.` : ''))];
       })() : []),
+      ...(check.alignment.valid && check.alignment.method === 'picture' && hiddenMargins(check.alignment) ? [h('p', {class: 'small'},
+        `Рамка закрывает края картинки, мм (ориентировочно ±1,5): ${hiddenMargins(check.alignment)}. Скрытое не измеряется.`)] : []),
       ...(check.alignment.anchoring && check.alignment.anchoring.refused && check.alignment.method !== 'element anchors' ? [h('p', {class: 'small'},
         `Автоматическое выравнивание по элементам не выполнено: ${I18N.tr(check.alignment.anchoring.refused)}.`)] : []),
       ...(check.alignment.geometry_confirmation && check.alignment.geometry_confirmation.refused && !check.alignment.valid ? [h('p', {class: 'small'},
@@ -683,5 +700,5 @@ const IngestReview = (() => {
     out.append(IngestTasks.card(pair, reload));          // REQ-020: задача каждого слоя и метрики с основанием
     return out;
   }
-  return {render, matrixGrid};
+  return {render, matrixGrid, hiddenMargins};
 })();

@@ -11,10 +11,19 @@
     'single distinctive detail': 'по одной характерной детали', 'element anchor': 'по детали', manual: 'вручную по углам',
     'manual shift': 'сдвиг вручную', 'manual rotation': 'поворот вручную', 'manual transform': 'масштаб или зеркало'};
   const MEASURE = {raw_camera_relative: 'относительно камеры', reference_chart_corrected: 'по эталонной карте'};
+  // a setting the file lacks and the operator supplied is shown as the operator's (REQ-016)
+  const supplied = (p, k) => (p.supplied_settings || {})[k];
   const params = (p) => [p.power == null ? null : `${num(p.power, 1)}%`, p.frequency_khz == null ? null : `${num(p.frequency_khz, 0)} кГц`,
-    p.speed == null ? null : `${num(p.speed, 0)} мм/с`, p.pulse_width == null ? 'Q-Pulse нет в файле' : `${num(p.pulse_width, 0)} нс`,
+    p.speed == null ? null : `${num(p.speed, 0)} мм/с`,
+    p.pulse_width != null ? `${num(p.pulse_width, 0)} нс` : supplied(p, 'pulse_width') ? `${num(supplied(p, 'pulse_width').value, 0)} нс (введено оператором)` : 'Q-Pulse нет в файле',
     p.line_interval == null ? null : `шаг ${num(p.line_interval, 4)} мм`, p.passes == null ? null : `${p.passes} проход(а)`].filter(Boolean).join(' · ');
   const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
+
+  /** Что скрывает рамка, по сторонам в мм (REQ-024, REQ-027): из записи выравнивания проверки. */
+  function frameNote(check) {
+    const sides = IngestReview.hiddenMargins(check.alignment);
+    return sides ? h('p', {class: 'small'}, `Рамка закрывает края, мм (ориентировочно): ${sides}. Скрытое не измеряется.`) : null;
+  }
 
   App.register({id: 'experiment', async render(ctx) {
     const key = decodeURIComponent(ctx.arg || '');
@@ -92,12 +101,13 @@
           ? [swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean), h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`)]
           : [swatch(l.measured_lab), labText(l.measured_lab)],
         Tasks.colourBasis(l.metrics) ? h('div', {class: 'muted small'}, Tasks.colourBasis(l.metrics)) : null),
-        l.name, Tasks.badge(l.task), params(l),
+        I18N.name(l.name), Tasks.badge(l.task), params(l),
         h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null)]);
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
       fill(result,
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
         ...(check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m))),
+        frameNote(check),
         ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
           `Цвета приведены к чистому титану этой же фотографии (слой очистки: L* ${num(ref.lab[0], 1)} как снято, принят за L* ${num(ref.nominal[0], 0)}`
           + `${ref.nominal_source === 'chart' ? ', по измерениям с картой' : ', значение по умолчанию'}). `
@@ -147,7 +157,7 @@
       : acceptedPair ? link('/ingest?rephoto=' + acceptedPair.id, 'Добавить фото')
         : h('span', {class: 'muted small'}, 'Фото можно добавить после принятия проверки');
     const remove = btn('Удалить эксперимент', () => confirmBox('Удалить эксперимент',
-      `«${exp.title}»: будут удалены ${exp.plan_id ? 'плата и ' : ''}все проверки (${pairs.length}) с загруженными копиями файлов. История измерений сохранится, но перестанет влиять на рекомендации.`,
+      `«${I18N.name(exp.title)}»: будут удалены ${exp.plan_id ? 'плата и ' : ''}все проверки (${pairs.length}) с загруженными копиями файлов. История измерений сохранится, но перестанет влиять на рекомендации.`,
       'Удалить', async () => {
         for (const p of pairs) await del('/pairs/' + p.id);       // each check on its own, then the plate (DEC-047)
         if (exp.plan_id) await del(`/plans/${exp.plan_id}`);
@@ -157,7 +167,7 @@
     refreshAll();
     return h('div', {class: 'stack experiment'},
       h('div', {class: 'row exp-head'}, h('div', {}, link('/experiments', '← Эксперименты'),
-        h('h2', {}, exp.title),
+        h('h2', {}, I18N.name(exp.title)),
         h('p', {class: 'sub'}, [exp.kind, exp.laser, exp.lens, exp.material].filter(Boolean).join(' · ')
           + (exp.created_at ? ` · ${when(exp.created_at)}` : '')),
         (exp.tasks || []).length ? h('div', {class: 'row small'}, h('span', {class: 'muted'}, 'Задачи:'), ...exp.tasks.map((k) => pill(Tasks.name(k)))) : null),

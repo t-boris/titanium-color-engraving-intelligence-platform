@@ -771,9 +771,32 @@ def _classify(h, elements, anchors, dist, window, scale, cap, plate, src, dst, o
     extrapolation = _ring_holdout(window, anchors, elements, src, dst, owner, good, h, dist, scale, cap)
     return {"statuses": statuses, "counts": counts, "elements": len(elements), "extrapolation_mm": extrapolation,
             "plate_hidden_mm": hidden_mm,                        # TL, TR, BR, BL: > 0 means under the frame
+            "hidden_side_mm": side_margins(h, plate, window),    # per side, as the frame sides are named (REQ-024)
             "plate_uncertainty_mm": [round(u, 3) for u in unc[:4]],
             "hidden_uncertainty_mm": round(max(unc[4:], default=0.0), 3),
             "anchors": len(anchors)}
+
+
+SIDES = ("top", "right", "bottom", "left")       # plate sides c0-c1, c1-c2, c2-c3, c3-c0, named as ``window_from_frame`` names them
+
+
+def side_margins(h: np.ndarray, plate: np.ndarray, window: np.ndarray) -> dict[str, float]:
+    """How far the visible window lies inside the plate on each side, in file millimetres (> 0: hidden by the frame,
+    0: the plate edge is the window edge). The window (pixels under ``h``) is taken back to the file, and each side's
+    margin is the inward distance of the window side from the plate side at the middle of the side, so a slightly
+    tilted frame edge is reported by its mean."""
+    window_mm = to_px(np.linalg.inv(h), np.asarray(window, float))
+    centre = plate.mean(axis=0)
+    out = {}
+    for i, name in enumerate(SIDES):
+        a, b = plate[i], plate[(i + 1) % 4]
+        along = (b - a) / np.linalg.norm(b - a)
+        inward = np.array([-along[1], along[0]])
+        if inward @ (centre - (a + b) / 2) < 0:
+            inward = -inward
+        middle = (window_mm[i] + window_mm[(i + 1) % 4]) / 2
+        out[name] = round(float((middle - a) @ inward), 2)
+    return out
 
 
 def _ring_holdout(window, anchors, elements, src, dst, owner, good, h, dist, scale, cap, ring: float = 0.12):

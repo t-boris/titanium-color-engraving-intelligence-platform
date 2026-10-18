@@ -55,6 +55,24 @@ def test_the_hidden_margin_of_the_plate_and_the_window_are_reported(work, regist
     assert max(min(np.linalg.norm(p - t) for t in truth) for p in window) < 12
 
 
+def test_the_hidden_margin_is_reported_per_side_of_the_plate_in_millimetres(work, registered):
+    """REQ-024: per side, not per corner: the synthetic frame hides 2 mm on every side. The frame-edge finder places the
+    edge where the blurred dark run ends, which reads the margin about 0.6 mm short here: an estimate, within 1 mm."""
+    _, result, _ = registered
+    sides = result.details["hidden_side_mm"]
+    assert set(sides) == {"top", "right", "bottom", "left"} == set(result.details["frame_sides"])
+    assert all(abs(v - work["hide_mm"]) < 1.0 for v in sides.values()), sides
+    assert max(sides.values()) - min(sides.values()) < 0.3                      # the same frame on every side reads the same
+
+
+def test_a_side_margin_is_the_inward_distance_of_the_window_edge_from_the_plate_edge():
+    plate = np.array([(10, 10), (160, 10), (160, 160), (10, 160)], float)
+    h = np.diag([2.0, 2.0, 1.0])                                  # mm -> px, 2 px per mm
+    window = np.array([(13, 11), (155, 11), (155, 157), (13, 157)], float) * 2
+    assert anchoring.side_margins(h, plate, window) == {"top": 1.0, "right": 5.0, "bottom": 3.0, "left": 3.0}
+    assert anchoring.side_margins(h, plate, plate * 2) == {"top": 0.0, "right": 0.0, "bottom": 0.0, "left": 0.0}
+
+
 def test_an_outline_under_the_frame_is_inferred_and_one_on_its_edge_is_partly_hidden(registered):
     layers, result, _ = registered
     elements = anchoring.elements_from_layers(layers)
@@ -94,6 +112,7 @@ def test_a_photograph_without_a_frame_is_registered_and_nothing_is_hidden():
     assert accuracy_mm(plain, result) < 0.3
     assert result.details["window_found"] is False and not any(result.details["frame_sides"].values())
     assert result.details["counts"]["hidden"] == 0 and max(result.details["plate_hidden_mm"]) <= 0.5
+    assert result.details["hidden_side_mm"] == {"top": 0.0, "right": 0.0, "bottom": 0.0, "left": 0.0}    # the plate edge is the window
 
 
 def test_a_black_silhouette_touching_the_frame_does_not_move_the_frame_edge():
