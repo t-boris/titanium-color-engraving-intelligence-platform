@@ -105,3 +105,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   work landed on the branch.
 - Rule: every commit that implements or verifies something updates, in the same push, the plan.md status row, the ticked
   acceptance criteria (code + test seen) and the issue comment/label.
+
+## Test servers never appear in the operator's browser
+- Remark (2026-10-18): "не удали мои эксперименты … фотографий нет, выводов нет". A worker had opened its test server
+  (port 8791, a database copy without the photo files) in the operator's MarkView window; the operator took it for the real app.
+- Rule: workers never use the MarkView browser tools; UI is checked by static tests and API calls. The lead checks a new version
+  on a full copy (database and files) before the deploy, and says in every message which port is the operator's (8765).
