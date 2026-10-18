@@ -52,7 +52,7 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
       Done 2026-10-18: DEC-058..061 accepted, REQ-030/031 approved, Q-025 answered (DEC-062), DEC-063 (full schema
       migration), DEC-064 (AI researcher exception), DEC-065 (contour vectoriser), DEC-066 (9 reconciliations); issues #13-#19
       (I-11..I-17), draft PR #20; plan.md items I-14..I-17 and statuses.
-- [ ] WP-2 Translations (DEC-034) and a coverage test that collects KeyError, api/ and wrapped messages.
+- [x] WP-2 Translations (DEC-034) and a coverage test that collects KeyError, api/ and wrapped messages.
 - [x] WP-3 Closed-loop bugs: generated plans ingestible and auto-aligned (REQ-013), full settings on export (REQ-012), revision
       keeps its repetition (DEC-021), deletion rebuild and plan protection (DEC-047), marker/label never model-eligible
       (DEC-027/028), device delete, unreadable QR (REQ-003).
@@ -76,7 +76,9 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
 - [x] WP-10 REQ-021 image -> vector LightBurn job (approach per the operator's answer).
 - [x] WP-11 REQ-030 predicted look of a photo engraving (after Q-025).
 - [x] WP-12 Designer and oxide model per comparable partition; REQ-002 values on computed settings.
-- [ ] WP-13 Tests for every criterion that has code but no test.
+- [x] WP-13 Tests for every criterion that has code but no test.
+      Final: 909 passed (0 skipped); QR 0/1000 failures; pre-deploy check on an isolated full copy (database + files):
+      16/16 experiments accepted as in the running app, every photo and overlay served, 565/565 colour-map points.
 - [ ] WP-14 Version 0.4.0, PR, CI, merge, tag, deploy (DEC-024), browser walkthrough, manual checklist.
 
 # New experiment kind: a parameter matrix (LightBurn Material Test) read from its photograph — goal set 2026-10-18
