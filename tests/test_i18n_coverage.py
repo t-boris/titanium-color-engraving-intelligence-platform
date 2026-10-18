@@ -20,7 +20,7 @@ USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerErr
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why"}   # <name>.append(text) / <x>["name"].append(text)
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage"}                       # return "text" or return (stage, "text")
-NOTE_KEYS = {"note"}                                                              # row["note"] = "text"
+NOTE_KEYS = {"note"}                                                              # row["note"] = "text" or {"note": "text"}
 EVENT_REASON_ARG = 5                                                              # _event(store, id, type, from, to, REASON, ...)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js"]
 PLACEHOLDER = "7"
@@ -51,6 +51,9 @@ def variants(node) -> list[str] | None:
         return [a + b for a in (left or [PLACEHOLDER]) for b in (right or [PLACEHOLDER])]
     if isinstance(node, ast.BoolOp):
         out = [v for sub in node.values for v in (variants(sub) or [])]
+        return out or None
+    if isinstance(node, ast.IfExp):                       # "text a" if condition else "text b": both reach the screen
+        out = (variants(node.body) or []) + (variants(node.orelse) or [])
         return out or None
     return None
 
@@ -96,6 +99,10 @@ def raised_messages() -> list[tuple[str, int, str]]:
                 add(path, node, node.value.elt)
             elif isinstance(node, ast.Assign) and len(node.targets) == 1 and _target_name(node.targets[0]) in NOTE_KEYS:
                 add(path, node, node.value)
+            elif isinstance(node, ast.Dict):
+                for key, value in zip(node.keys, node.values):
+                    if isinstance(key, ast.Constant) and key.value in NOTE_KEYS:
+                        add(path, node, value)
             elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Tuple) and isinstance(node.value, ast.Tuple):
                 # `rep["compatible"], rep["notes"] = False, ["text"]`: pair each target with its value
                 for tgt, val in zip(node.targets[0].elts, node.value.elts):

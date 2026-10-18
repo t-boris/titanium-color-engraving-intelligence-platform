@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, plans, profiles as pf
+from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, oxide, plans, profiles as pf
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, public_pair, public_plan, read_upload, refresh_after_change, store_of)
 from .common import content_disposition
 
@@ -197,6 +197,26 @@ def search_colors(request: Request, L: float, a: float, b: float, limit: int = 1
                            measurement=measurement, include_unreferenced=include_unreferenced)
 
 
+@router.get("/oxide/model")
+def oxide_model(request: Request, refit: bool = False):
+    """The thin-film model of the oxide colour fitted to the calibrated observations: parameters, the thickness spiral, every
+    observation's thickness, dark share and residual (research step 1)."""
+    return oxide.report(store_of(request), refit=refit)
+
+
+@router.get("/colors/settings")
+def settings_for_colour(request: Request, L: float, a: float, b: float):
+    """Settings for a wanted colour from the film model: thickness candidates, the measured settings that made such films,
+    the kinetics law when usable (research step 3)."""
+    return oxide.settings_for_colour(store_of(request), [L, a, b])
+
+
+@router.get("/oxide/kinetics")
+def oxide_kinetics(request: Request):
+    """Film thickness against the dose of the settings on the calibrated observations, with the fitted law (research step 2)."""
+    return oxide.kinetics(store_of(request))
+
+
 @router.get("/experiments")
 def list_experiments(request: Request):
     """One entry per experiment: a plate with all its checks, or a finished work with its photographs (REQ-028)."""
@@ -250,6 +270,46 @@ async def create_pair(request: Request, profile_id: int = Form(...), stand_id: i
 @router.get("/pairs/{pair_id}")
 def get_pair(pair_id: int, request: Request):
     return public_pair(ingest.get_pair(store_of(request), pair_id))
+
+
+class MatrixEditIn(BaseModel):
+    edit: dict = {}
+    confirm: bool = False
+
+
+@router.post("/matrix-pairs", status_code=201)
+async def create_matrix_pair(request: Request, profile_id: int = Form(...), stand_id: int | None = Form(None),
+                             context: str = Form("{}"), photo: UploadFile = File(None)):
+    """A parameter matrix (LightBurn Material Test) from its photograph alone: found, its labels read, a LightBurn file
+    generated from them; the settings wait for the operator's confirmation (REQ-031)."""
+    ph_name, ph_bytes = await read_upload(photo, MAX_PHOTO_BYTES, "photograph")
+    try:
+        ctx = json.loads(context or "{}")
+    except json.JSONDecodeError:
+        raise pf.ValidationError("the context is not valid JSON") from None
+    pid = ingest.create_matrix_pair(store_of(request), profile_id=profile_id, stand_id=stand_id, photo_name=ph_name,
+                                    photo_bytes=ph_bytes, context=ctx)
+    return public_pair(ingest.get_pair(store_of(request), pid))
+
+
+@router.post("/pairs/{pair_id}/matrix")
+def edit_matrix(pair_id: int, body: MatrixEditIn, request: Request):
+    """Correct the settings read from a matrix (and confirm them): the file is generated again and the photo re-checked."""
+    ingest.update_matrix(store_of(request), pair_id, body.edit, confirm=body.confirm)
+    return public_pair(ingest.get_pair(store_of(request), pair_id))
+
+
+@router.post("/pairs/{pair_id}/matrix/confirm")
+def confirm_matrix(pair_id: int, request: Request):
+    ingest.confirm_matrix(store_of(request), pair_id)
+    return public_pair(ingest.get_pair(store_of(request), pair_id))
+
+
+@router.post("/pairs/{pair_id}/matrix/others/{index}", status_code=201)
+def create_matrix_sibling(pair_id: int, index: int, request: Request):
+    """Another matrix found in the same photograph, as its own experiment."""
+    new_id = ingest.create_matrix_sibling(store_of(request), pair_id, index)
+    return public_pair(ingest.get_pair(store_of(request), new_id))
 
 
 @router.post("/pairs/{pair_id}/rephotos", status_code=201)

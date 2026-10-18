@@ -13,11 +13,12 @@ const IngestUpload = (() => {
         bar.value = percent;
         label.textContent = `Загрузка фотографии: ${percent} %`;
       },
-      checking: () => {
+      checking: (what) => {
         label.hidden = bar.hidden = false;
         bar.removeAttribute('value');
         const start = Date.now();
-        const tick = () => { label.textContent = `Файл сохранён. Совмещаем фотографию с LightBurn и измеряем гравировку… ${Math.floor((Date.now() - start) / 1000)} с`; };
+        const tick = () => { label.textContent = `${what || 'Файл сохранён. Совмещаем фотографию с LightBurn и измеряем гравировку…'} ${Math.floor((Date.now() - start) / 1000)} с`; };
+        if (timer) clearInterval(timer);
         tick(); timer = setInterval(tick, 1000);
       },
       stop: () => { if (timer) clearInterval(timer); timer = null; bar.hidden = true; },
@@ -69,7 +70,32 @@ const IngestUpload = (() => {
         err, progress.el, h('div', {class: 'row'}, send)));
   }
 
+  // a parameter matrix (LightBurn Material Test): the photograph is the whole input; the settings are read from it
+  async function sendMatrix(prof, mat, context, photo, progress, show, self) {
+    if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
+    if (!mat.value) return show('Выберите использованный титан');
+    const fd = new FormData();
+    fd.append('profile_id', prof.value); fd.append('context', JSON.stringify(context())); fd.append('photo', photo.files[0]);
+    self.disabled = true;
+    try {
+      progress.uploading(0);
+      const upload = formProgress('/matrix-pairs', fd, (percent) => {
+        if (percent < 100) progress.uploading(percent); else progress.checking('Фото загружено. Ищем матрицу и читаем выгравированные параметры…');
+      });
+      const pair = await upload;
+      progress.checking('Матрица найдена. Корректируем цвет по карте и измеряем каждую ячейку…');
+      try { await post(`/pairs/${pair.id}/check`, {}); } catch (e) { toast(`Проверка не завершилась: ${e.message}`, 'warn'); }
+      progress.stop();
+      toast('Матрица распознана. Проверьте прочитанные параметры и подтвердите их.', 'ok');
+      go('/ingest?pair=' + pair.id, {preserveScroll: true});
+    } catch (e) { progress.stop(); progress.error(I18N.tr(e.message)); show(I18N.tr(e.message)); self.disabled = false; }
+  }
+
   async function render(ctx, profiles, materials) {
+    const matrixMode = ctx.query.kind === 'matrix';
+    const kinds = h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Что добавляем:'),
+      matrixMode ? link('/ingest?kind=file', 'Работа с файлом LightBurn') : h('strong', {}, 'Работа с файлом LightBurn'), ' · ',
+      matrixMode ? h('strong', {}, 'Матрица параметров (Material Test)') : link('/ingest?kind=matrix', 'Матрица параметров (Material Test)'));
     const prof = h('select', {'aria-label': 'Лазер и линза'}, profiles.map((p) => h('option', {value: p.id}, `${p.name}${p.device ? ` · ${p.device.name}` : ''}${p.lens ? ` · ${p.lens.name}` : ''}`)));
     if (ctx.query.profile) prof.value = ctx.query.profile;
     const lb = h('input', {type: 'file', accept: '.lbrn,.lbrn2', 'aria-label': 'Файл LightBurn'});
@@ -113,7 +139,23 @@ const IngestUpload = (() => {
       finally { self.disabled = false; }
     }, 'primary');
 
-    return h('div', {class: 'stack'},
+    const conditions = h('div', {class: 'card stack'}, h('h3', {}, 'Условия'),
+      h('div', {class: 'grid g2'}, field('Лазер + установленная линза (обязательно)', prof), field('Использованный титан / лист / партия (обязательно)', mat)),
+      h('p', {class: 'small'}, 'Не нашли оборудование или титан? ', link('/profiles', 'Настроить установки и добавить титан')),
+      h('details', {}, h('summary', {}, 'Дополнительные условия'),
+        h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same));
+    if (matrixMode) {
+      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(prof, mat, context, photo, progress, show, self); }, 'primary');
+      return h('div', {class: 'stack'}, kinds,
+        h('div', {class: 'card empty'}, h('h3', {}, 'Фотография матрицы параметров'),
+          h('p', {}, 'Сетка квадратов, где каждый квадрат выгравирован своими настройками, а значения выгравированы рядом: по одной оси одна настройка, по другой другая, '
+            + 'постоянные настройки написаны над сеткой (как печатает LightBurn Material Test). Файл LightBurn не нужен: настройки прочитаются с фотографии, '
+            + 'а вы проверите и подтвердите их перед принятием.'),
+          h('p', {class: 'muted small'}, 'В кадре: вся сетка с подписями и эталонная цветовая карта; снимайте прямо сверху. Если на снимке несколько матриц, каждая станет своим экспериментом.')),
+        h('div', {class: 'card stack'}, h('h3', {}, 'Фотография'), field('Фотография RAW', App.filePick(photo, 'Выбрать фотографию'))),
+        conditions, err, progress.el, h('div', {class: 'row'}, sendM));
+    }
+    return h('div', {class: 'stack'}, kinds,
       h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте файл LightBurn и фотографию результата'),
         h('p', {}, 'Параметры наблюдения будут прочитаны из фактически использованного файла. Измерения появятся только после проверки и принятия.')),
       h('div', {class: 'grid g2'},

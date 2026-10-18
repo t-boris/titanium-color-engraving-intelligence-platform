@@ -19,6 +19,12 @@ const App = (() => {
     }
     return el;
   }
+  // replace an element's children the way h() appends them: null, undefined and false are skipped, where the DOM's
+  // replaceChildren would print them as the text "null"
+  function fill(el, ...kids) {
+    el.replaceChildren(...kids.flat(Infinity).filter((kid) => kid != null && kid !== false).map((kid) => (kid.nodeType ? kid : String(kid))));
+    return el;
+  }
   const btn = (label, onClick, cls = '', disabled = false) => h('button', {type: 'button', class: 'btn ' + cls, onClick, disabled}, label);
   const field = (label, input, help) => h('label', {class: 'f'}, h('span', {}, label), input, help ? h('span', {class: 'small muted'}, help) : null);
   const link = (route, label) => h('a', {href: '#' + route}, label);
@@ -83,5 +89,5 @@ const App = (() => {
     });
   }
 
-  return {h, btn, field, link, pill, labText, num, swatch, api, get, post, put, patch, del, form, formProgress};
+  return {h, fill, btn, field, link, pill, labText, num, swatch, api, get, post, put, patch, del, form, formProgress};
 })();

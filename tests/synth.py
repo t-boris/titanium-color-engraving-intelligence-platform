@@ -77,13 +77,15 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
 # -- a framed finished work (REQ-024, DEC-048): a LightBurn file and a photograph that disagree like a real pair ----
 def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: int = 12, size=(2000, 2700),
                 px_per_mm: float = 9.5, rotate_deg: float = 1.2, mirror: bool = True, perspective=(2.0e-5, -1.5e-5),
-                extra=(), concentric: bool = False, with_chart: bool = False, with_frame: bool = True, style: str = "regions") -> dict:
+                extra=(), concentric: bool = False, with_chart: bool = False, with_frame: bool = True, style: str = "regions",
+                dark_layers=(), inset: float = 0.0) -> dict:
     """150 x 150 mm plate (file mm 10..160) with closed 'cloud' outlines on ``layers`` layers.
 
     The photograph shows the plate mirrored vertically, rotated, in perspective, inside a black frame that hides
     ``hide_mm`` of the plate on every side. ``extra`` adds (layer, polygon in mm) outlines; ``concentric`` replaces the
-    clouds by nested squares, a drawing whose orientation cannot be told. Returns the LightBurn bytes, the photograph,
-    the true file-mm -> pixel matrix and the outlines.
+    clouds by nested squares, a drawing whose orientation cannot be told; ``dark_layers`` are engraved black, as dark
+    as the frame; ``inset`` (mm) keeps the tiled regions away from the plate edge so that a ring of the cleaned plate
+    stays visible. Returns the LightBurn bytes, the photograph, the true file-mm -> pixel matrix and the outlines.
     """
     rng = np.random.default_rng(seed)
     palette = []
@@ -98,6 +100,17 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
                                                      (85 + half, 85 + half), (85 - half, 85 + half)], float)))
     elif style == "none":                # only what ``extra`` adds
         pass
+    elif style == "strokes":             # rows of parallel slanted strokes of uneven length, like a low-poly lion's mane
+        for row in range(blobs):
+            y = 14 + row * 136 / blobs
+            x = 12.0 + rng.uniform(0, 6)
+            while x < 150:
+                length = rng.uniform(4, 16)
+                if x + length > 156:
+                    break
+                shapes.append((1 + (row * 3 + int(x)) % layers,
+                               np.array([(x, y), (x + length, y), (x + length + 2.5, y + 3.2), (x + 2.5, y + 3.2)], float)))
+                x += length + rng.uniform(1.5, 5)
     elif style == "clouds":              # overlapping outlines: many of them are painted over and cannot be seen
         theta = np.linspace(0, 2 * np.pi, 90, endpoint=False)
         for _ in range(blobs):
@@ -106,9 +119,9 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
             shapes.append((int(rng.integers(1, layers + 1)), np.column_stack([centre[0] + r * np.cos(theta), centre[1] + r * np.sin(theta)])))
     else:                                 # touching regions, like a posterised picture: every outline is visible
         step = 0.25
-        axis = 10 + (np.arange(int(150 / step)) + 0.5) * step
+        axis = 10 + inset + (np.arange(int((150 - 2 * inset) / step)) + 0.5) * step      # ``inset`` leaves a ring of clean plate
         gx, gy = np.meshgrid(axis, axis)
-        seeds = rng.uniform(10, 160, (blobs, 2))
+        seeds = rng.uniform(10 + inset, 160 - inset, (blobs, 2))
         label = np.argmin((gx[..., None] - seeds[:, 0]) ** 2 + (gy[..., None] - seeds[:, 1]) ** 2, axis=2)
         neighbours = {i: set() for i in range(blobs)}
         for a, b in ((label[:, :-1], label[:, 1:]), (label[:-1], label[1:])):
@@ -125,7 +138,7 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
             contour = max(contours, key=cv2.contourArea)
             approx = cv2.approxPolyDP(contour, 0.8, True).reshape(-1, 2)
             if len(approx) >= 3 and cv2.contourArea(approx.astype(np.float32)) * step ** 2 > 4:
-                shapes.append((layer_of[i], 10 + (approx + 0.5) * step))
+                shapes.append((layer_of[i], 10 + inset + (approx + 0.5) * step))
     shapes += [(int(layer), np.asarray(poly, float)) for layer, poly in extra]
     shapes.sort(key=lambda item: item[0])
 
@@ -157,7 +170,8 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
     work = np.full((height, width, 3), (150, 155, 150), np.uint8)       # the table, also where there is no frame
     cv2.fillConvexPoly(work, np.round(project([(10, 10), (160, 10), (160, 160), (10, 160)])).astype(np.int32), (190, 195, 200))
     for layer, poly in shapes:
-        cv2.fillPoly(work, [np.round(project(poly)).astype(np.int32)], palette[(layer - 1) % layers], cv2.LINE_AA)
+        colour = (12, 12, 12) if layer in dark_layers else palette[(layer - 1) % layers]      # black engraving, as dark as a frame
+        cv2.fillPoly(work, [np.round(project(poly)).astype(np.int32)], colour, cv2.LINE_AA)
     img = np.full((height, width, 3), (150, 155, 150), np.uint8)
     if with_frame:
         cv2.fillConvexPoly(img, np.round(project([(0, 0), (170, 0), (170, 170), (0, 170)])).astype(np.int32), (14, 14, 14))
@@ -235,3 +249,68 @@ def picture_work(seed: int = 4, margins_mm=(3.0, 7.0, 4.0, 3.0), size=(1900, 150
         img[40:40 + c.shape[0], 30:30 + c.shape[1]] = c
     return {"lightburn": xml, "photo": img, "picture_to_px": picture_to_px, "mm_to_px": mm_to_px, "gray": gray, "png": png,
             "margins_mm": margins_mm, "picture_size": n}
+
+
+# -- a photographed LightBurn Material Test (REQ-031) -----------------------------------------------------------------
+def material_test(cols: int = 6, rows: int = 5, pitch: int = 90, gap: int = 12, x_values=None, y_values=None,
+                  x_title: str = "Power (%)", y_title: str = "Speed (mm/s)",
+                  header=("Interval: 0.0030 mm  Passes: 1", "Frequency: 330.0 KHz  Q-Pulse: 4.00 ns"),
+                  rotate_deg: float = 1.0, exposure: float = 1.0, size=(1500, 1300), seed: int = 2) -> dict:
+    """A plate with a grid of filled squares, its row labels left of it, its column labels under it (rotated, reading
+    upwards), the fixed settings above it and the axis titles, as LightBurn's Material Test prints them; a reference
+    chart beside it. ``exposure`` < 1 darkens the whole photograph in linear light (an under-exposed shot). Returns the
+    photograph, the true cell centres (photo px, [row][col]) and the values."""
+    x_values = list(x_values or np.linspace(25, 50, cols).round(1))
+    y_values = list(y_values or np.linspace(1500, 300, rows).round(0))
+    rng = np.random.default_rng(seed)
+    height, width = size
+    plate = np.full((height, width, 3), (178, 182, 186), np.uint8)
+    x0, y0 = 330, 230
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    dark = (40, 40, 44)
+    for k, line in enumerate(header):
+        (tw, th), _ = cv2.getTextSize(line, font, 0.9, 2)
+        cv2.putText(plate, line, (x0 + (cols * pitch - tw) // 2, y0 - 95 + 40 * k), font, 0.9, dark, 2, cv2.LINE_AA)
+    centres = []
+    for r in range(rows):
+        row = []
+        for c in range(cols):
+            hue = int(180 * ((0.13 * c + 0.21 * r) % 1.0))
+            colour = cv2.cvtColor(np.uint8([[[hue, int(60 + 30 * c), int(200 - 15 * r)]]]), cv2.COLOR_HSV2BGR)[0, 0]
+            cx, cy = x0 + c * pitch + pitch // 2, y0 + r * pitch + pitch // 2
+            half = (pitch - gap) // 2
+            cv2.rectangle(plate, (cx - half, cy - half), (cx + half, cy + half), tuple(int(v) for v in colour), -1)
+            row.append((cx, cy))
+        centres.append(row)
+        label = f"{y_values[r]:g}" if float(y_values[r]).is_integer() else f"{y_values[r]}"
+        (tw, th), _ = cv2.getTextSize(label, font, 1.0, 2)
+        cv2.putText(plate, label, (x0 - 14 - tw, y0 + r * pitch + pitch // 2 + th // 2), font, 1.0, dark, 2, cv2.LINE_AA)
+    for c in range(cols):
+        label = f"{x_values[c]:.1f}"
+        (tw, th), _ = cv2.getTextSize(label, font, 1.0, 2)
+        strip = np.full((th + 14, tw + 10, 3), (178, 182, 186), np.uint8)
+        cv2.putText(strip, label, (5, th + 5), font, 1.0, dark, 2, cv2.LINE_AA)
+        strip = cv2.rotate(strip, cv2.ROTATE_90_COUNTERCLOCKWISE)            # reads upwards, as LightBurn prints it
+        sx, sy = x0 + c * pitch + pitch // 2 - strip.shape[1] // 2, y0 + rows * pitch + 10
+        plate[sy:sy + strip.shape[0], sx:sx + strip.shape[1]] = strip
+    (tw, th), _ = cv2.getTextSize(x_title, font, 0.9, 2)
+    cv2.putText(plate, x_title, (x0 + (cols * pitch - tw) // 2, y0 + rows * pitch + 150), font, 0.9, dark, 2, cv2.LINE_AA)
+    (tw, th), _ = cv2.getTextSize(y_title, font, 0.8, 2)
+    strip = np.full((th + 14, tw + 10, 3), (178, 182, 186), np.uint8)
+    cv2.putText(strip, y_title, (5, th + 5), font, 0.8, dark, 2, cv2.LINE_AA)
+    strip = cv2.rotate(strip, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    plate[y0 + (rows * pitch - strip.shape[0]) // 2:y0 + (rows * pitch - strip.shape[0]) // 2 + strip.shape[0], x0 - 165 - strip.shape[1]:x0 - 165] = strip
+    chart = chart_image()
+    plate[height - chart.shape[0] - 30:height - 30, width - chart.shape[1] - 30:width - 30] = chart
+    # turn the whole photograph a little about the grid's centre, blur, noise, exposure
+    centre = (x0 + cols * pitch / 2, y0 + rows * pitch / 2)
+    turn = cv2.getRotationMatrix2D(centre, rotate_deg, 1.0)
+    img = cv2.warpAffine(plate, turn, (width, height), flags=cv2.INTER_LINEAR, borderValue=(178, 182, 186))
+    img = cv2.GaussianBlur(img, (0, 0), 0.8)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 1.5, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    if exposure != 1.0:
+        lin = color.srgb_to_linear(img / 255.0) * exposure
+        img = (color.linear_to_srgb(np.clip(lin, 0, 1)) * 255).round().astype(np.uint8)
+    pts = np.array([[p for p in row] for row in centres], float).reshape(-1, 2)
+    turned = (np.c_[pts, np.ones(len(pts))] @ turn.T).reshape(rows, cols, 2)
+    return {"photo": img, "centres": turned, "x_values": x_values, "y_values": y_values, "cols": cols, "rows": rows, "pitch": pitch}

@@ -10,7 +10,8 @@ const IngestDialogs = (() => {
   const labText = (lab) => lab ? `L* ${num(lab[0], 1)} · a* ${num(lab[1], 1)} · b* ${num(lab[2], 1)}` : 'нет читаемых пикселей';
   const layerResult = (l) => {
     if (!l.measured_lab) return h('span', {}, pill(l.readable ? 'пропущен' : 'нечитаем', 'warn'), ' ', l.notes.map((n) => I18N.tr(n)).join('; '));
-    const details = [h('div', {}, pill('измерен', 'ok'), ` · ${labText(l.measured_lab)} · ${num(l.pixels, 0)} пикс.`)];
+    const details = [h('div', {}, pill('измерен', 'ok'), ` · ${labText(l.measured_lab_against_clean || l.measured_lab)}`
+      + `${l.measured_lab_against_clean ? ' относительно чистого титана' : ''} · ${num(l.pixels, 0)} пикс.`)];
     if (l.role) details.push(h('div', {class: 'muted small'}, l.role));
     if (l.measurement) details.push(h('div', {class: 'muted small'}, I18N.tr(l.measurement)));
     if (l.submeasurements?.length) details.push(...l.submeasurements.map((m) => h('div', {class: 'muted small'}, `${m.name}: ${labText(m.measured_lab)} · ${num(m.pixels, 0)} пикс.`)));

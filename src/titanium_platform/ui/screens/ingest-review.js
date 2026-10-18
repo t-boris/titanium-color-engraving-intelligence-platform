@@ -2,7 +2,7 @@
    Принять можно только после проверки без проблем, подтверждения файла при расхождении и проверки масок. */
 'use strict';
 const IngestReview = (() => {
-  const {h, btn, link, pill, post, del, toast, fail, go, confirmBox, num} = App;
+  const {h, btn, link, pill, post, del, toast, fail, go, confirmBox, num, swatch, labText} = App;
 
   function masks(pair, reload, run) {
     const ready = pair.status === 'Ready to accept';
@@ -338,6 +338,103 @@ const IngestReview = (() => {
       choose, holder, h('div', {class: 'row'}, apply));
   }
 
+  // -- a parameter matrix (LightBurn Material Test) read from its photograph (REQ-031) --------------------------------
+  const MATRIX_PARAMS = [['power', 'Мощность, %'], ['speed', 'Скорость, мм/с'], ['frequency', 'Частота, кГц'], ['pulse_width', 'Q-Pulse, нс'],
+    ['line_interval', 'Шаг строк, мм'], ['passes', 'Проходы']];
+  const paramName = (p) => (MATRIX_PARAMS.find(([k]) => k === p) || [null, '—'])[1];
+
+  function matrixGrid(pair) {
+    const m = pair.matrix, s = m.spec, layers = (pair.check && pair.check.layers) || [];
+    const fmt = (v, d) => (v == null ? '?' : num(v, d));
+    const head = h('tr', {}, h('th', {}, `${paramName(s.y.param)} \\ ${paramName(s.x.param)}`),
+      ...Array.from({length: m.cols}, (_, c) => h('th', {}, s.x.values ? fmt(s.x.values[c], s.x.decimals) : `${c + 1}`)));
+    const rows = Array.from({length: m.rows}, (_, r) => h('tr', {}, h('th', {}, s.y.values ? fmt(s.y.values[r], s.y.decimals) : `${r + 1}`),
+      ...Array.from({length: m.cols}, (_, c) => {
+        const layer = layers.find((l) => l.index === r * m.cols + c);
+        const lab = layer && (layer.measured_lab_against_clean || layer.measured_lab);
+        return h('td', {title: lab ? `${layer.name}: ${labText(lab)}` : 'не измерено'}, lab ? swatch(lab) : '—');
+      })));
+    return h('div', {class: 'matrix-grid', style: 'overflow-x:auto'}, h('table', {class: 'small'}, h('thead', {}, head), h('tbody', {}, ...rows)));
+  }
+
+  function matrixCard(pair, reload) {
+    const m = pair.matrix, s = m.spec;
+    const input = (value, attrs = {}) => h('input', {type: 'number', step: 'any', value: value == null ? '' : value, style: 'width:8em', ...attrs});
+    const select = (current) => h('select', {}, h('option', {value: ''}, '— не знаю —'),
+      ...MATRIX_PARAMS.map(([k, label]) => h('option', {value: k, selected: k === current}, label)));
+    const axis = (key, count, word) => {
+      const a = s[key];
+      const el = {param: select(a.param), first: input(a.values ? a.values[0] : null), last: input(a.values ? a.values[a.values.length - 1] : null)};
+      el.row = h('div', {class: 'row small'}, h('strong', {}, `${word} (${count}):`), el.param,
+        h('span', {}, count > 1 ? 'первое' : 'значение'), el.first, ...(count > 1 ? [h('span', {}, 'последнее'), el.last] : []));
+      return el;
+    };
+    const x = axis('x', m.cols, 'По столбцам'), y = axis('y', m.rows, 'По строкам');
+    const fixed = {};
+    const fixedRow = h('div', {class: 'row small'});
+    const drawFixed = () => {
+      fixedRow.replaceChildren(h('strong', {}, 'Постоянные:'));
+      for (const [k, label] of MATRIX_PARAMS) {
+        if (k === (x.param.value || s.x.param) || k === (y.param.value || s.y.param)) continue;
+        fixed[k] = fixed[k] || input(s.fixed ? s.fixed[k] : null);
+        fixedRow.append(h('label', {class: 'row'}, h('span', {}, label), fixed[k]));
+      }
+    };
+    drawFixed();
+    x.param.addEventListener('change', drawFixed); y.param.addEventListener('change', drawFixed);
+    const extent = {cols: input(m.cols, {step: 1, min: 1, style: 'width:5em'}), rows: input(m.rows, {step: 1, min: 1, style: 'width:5em'}),
+      col_shift: input(0, {step: 1, style: 'width:5em'}), row_shift: input(0, {step: 1, style: 'width:5em'}), pitch: input(s.pitch_mm)};
+    const edit = () => {
+      const axisEdit = (el, count) => ({param: el.param.value || null, first: el.first.value === '' ? null : +el.first.value,
+        last: count > 1 ? (el.last.value === '' ? null : +el.last.value) : (el.first.value === '' ? null : +el.first.value)});
+      const cols = +extent.cols.value, rows = +extent.rows.value;
+      return {x: axisEdit(x, cols), y: axisEdit(y, rows),
+        fixed: Object.fromEntries(Object.entries(fixed).filter(([k]) => k !== x.param.value && k !== y.param.value).map(([k, el]) => [k, el.value === '' ? null : +el.value])),
+        extent: {cols, rows, col_shift: +extent.col_shift.value, row_shift: +extent.row_shift.value}, pitch_mm: extent.pitch.value === '' ? null : +extent.pitch.value};
+    };
+    const send = async (confirm, button) => {
+      button.disabled = true;
+      const status = h('span', {class: 'muted small', role: 'status'}, 'Пересобираем файл и перепроверяем фото…');
+      button.after(status);
+      try { await post(`/pairs/${pair.id}/matrix`, {edit: edit(), confirm}); toast(confirm ? 'Параметры подтверждены и применены' : 'Исправления применены, фото перепроверено', 'ok'); await reload(); }
+      catch (e) { status.remove(); button.disabled = false; fail(e); }
+    };
+    const apply = btn('Применить исправления', (ev) => { const self = ev.currentTarget; send(false, self); });
+    const confirmBtn = btn('Параметры верны', (ev) => { const self = ev.currentTarget; send(true, self); }, 'primary');
+    const fit = m.axis_fit || {x: {}, y: {}};
+    const labels = m.labels || {};
+    const readings = (obj) => Object.entries(obj || {}).map(([k, v]) => `${+k + 1}: ${(v || []).join(' / ') || '—'}`).join(' · ');
+    const others = (m.others || []);
+    return h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Матрица параметров'), h('span', {class: 'spacer'}),
+        m.confirmed ? pill('параметры подтверждены', 'ok') : pill('параметры ждут подтверждения', 'warn')),
+      h('p', {class: 'small'}, `Сетка ${m.cols} × ${m.rows}; очертания найдены у ${m.outlined_cells} ячеек, остальные достроены по решётке. `
+        + `Подписи строк: прочитано ${fit.y.read ?? 0}, согласуются ${fit.y.agreeing ?? 0}; подписи столбцов: прочитано ${fit.x.read ?? 0}, согласуются ${fit.x.agreeing ?? 0}. `
+        + 'Значения по осям LightBurn делит равномерно между первым и последним, поэтому неверно прочитанная подпись восстанавливается по остальным.'
+        + (m.ocr ? '' : ' Распознавание текста (tesseract) на этом компьютере не установлено: введите значения сами.')),
+      s.missing && s.missing.length ? h('div', {class: 'alert warn'}, 'Не хватает: ', s.missing.map((x) => I18N.tr(x)).join('; '), '. Введите недостающее и нажмите «Применить исправления».') : null,
+      s.unusual && s.unusual.length ? h('div', {class: 'alert warn'}, 'Необычное значение, вероятно прочитано неверно: ', s.unusual.map(paramName).join(', '), '. Сверьте с гравировкой.') : null,
+      x.row, y.row, fixedRow,
+      h('details', {}, h('summary', {}, 'Границы сетки и размер ячейки'),
+        h('div', {class: 'row small'}, h('span', {}, 'Столбцов'), extent.cols, h('span', {}, 'строк'), extent.rows,
+          h('span', {}, 'сдвиг первой ячейки: вправо'), extent.col_shift, h('span', {}, 'вниз'), extent.row_shift, h('span', {}, 'шаг ячеек, мм'), extent.pitch),
+        h('p', {class: 'muted small'}, 'Если сетка найдена не целиком (бледные ячейки у края) или захватила лишнее, поправьте число столбцов и строк и сдвиг первой ячейки. Шаг влияет только на вид созданного файла LightBurn.')),
+      h('div', {class: 'row'}, apply, confirmBtn),
+      h('details', {}, h('summary', {}, 'Что прочитано с фотографии'),
+        h('p', {class: 'small'}, h('strong', {}, 'Над сеткой: '), (labels.header || []).join(' | ') || 'не прочитано'),
+        h('p', {class: 'small'}, h('strong', {}, 'Подписи осей: '), [...(labels.x_title || []), ...(labels.y_title || [])].join(' | ') || 'не прочитаны'),
+        h('p', {class: 'small'}, h('strong', {}, 'Строки: '), readings(labels.rows) || '—'),
+        h('p', {class: 'small'}, h('strong', {}, 'Столбцы: '), readings(labels.cols) || '—')),
+      pair.check ? h('div', {class: 'stack'}, h('h4', {}, 'Измеренный цвет каждой ячейки'), matrixGrid(pair)) : null,
+      others.length ? h('div', {class: 'stack'}, h('p', {class: 'small'}, `На этом снимке ещё ${others.length} ${others.length === 1 ? 'матрица' : 'матрицы'}: каждая может стать своим экспериментом.`),
+        h('div', {class: 'row'}, ...others.map((o, k) => o.created_pair_id ? link('/ingest?pair=' + o.created_pair_id, `Матрица ${o.cols} × ${o.rows}: эксперимент №${o.created_pair_id}`)
+          : btn(`Создать эксперимент из матрицы ${o.cols} × ${o.rows}`, async (ev) => {
+            const self = ev.currentTarget;
+            self.disabled = true;
+            try { const created = await post(`/pairs/${pair.id}/matrix/others/${k}`); await post(`/pairs/${created.id}/check`, {}); go('/ingest?pair=' + created.id); }
+            catch (e) { self.disabled = false; fail(e); }
+          })))) : null);
+  }
+
   async function render(pair, reload) {
     if (pair.status === 'Accepted') {
       return h('div', {class: 'stack'}, h('div', {class: 'alert ok'}, 'Принятые измерения неизменяемы и участвуют в знаниях лазера.'),
@@ -389,6 +486,7 @@ const IngestReview = (() => {
           run({reset_alignment: true}, self);
         }) : null,
         btn('Удалить пару', () => confirmBox('Удалить пару', 'Действие необратимо.', 'Удалить', async () => { await del('/pairs/' + pair.id); toast('Запись удалена', 'ok'); go('/experiments'); }), 'danger'))));
+    if (pair.matrix) out.append(matrixCard(pair, reload));
     if (!check) {
       out.append(h('p', {class: 'muted'}, 'Нажмите «Проверить пару»: будут прочитаны параметры слоёв, выровнена фотография и измерены области гравировки.'));
       return out;
@@ -398,7 +496,9 @@ const IngestReview = (() => {
       h('p', {}, 'Калибровочная карта цвета: ', relative ? pill(check.chart.detected ? 'не использована; Lab относительно RAW-камеры' : 'не найдена; Lab относительно RAW-камеры', 'warn')
         : !check.chart.detected ? pill('не обнаружена', 'bad')
         : check.chart.usable === false ? pill('кандидат найден, карта не подтверждена', 'bad') : pill('обнаружена и проверена', 'ok'),
-        !relative && check.chart.residual != null ? ` · остаточная ошибка коррекции ΔE ${num(check.chart.residual, 1)}${check.chart.max_residual != null ? ` (порог ${num(check.chart.max_residual, 1)})` : ''}` : ''),
+        !relative && check.chart.residual != null ? ` · остаточная ошибка коррекции ΔE ${num(check.chart.residual, 1)}${check.chart.max_residual != null ? ` (порог ${num(check.chart.max_residual, 1)})` : ''}` : '',
+        !relative && check.chart.grey_ramp ? h('span', {class: 'muted small'},
+          ` · серая шкала после коррекции L* ${check.chart.grey_ramp.corrected.map((v) => num(v, 0)).join(' · ')} (эталон ${check.chart.grey_ramp.reference.map((v) => num(v, 0)).join(' · ')})`) : ''),
       h('p', {}, 'Выравнивание: ', check.alignment.valid ? pill(check.alignment.method === 'markers'
         ? `по маркерам${check.alignment.marker_count != null ? ` (${check.alignment.marker_count})` : ''}`
         : check.alignment.method === 'marker templates' ? 'по узорам 4 меток'
@@ -421,14 +521,19 @@ const IngestReview = (() => {
         return [h('p', {},
           `Элементы файла: ${c.anchor} опорных, ${c.confirmed} подтверждены независимо, ${c.computed} определены только расчётом, ${c['partly hidden']} частично и ${c.hidden} целиком под рамкой. `
           + `Остаток контуров: медиана ${num(d.residual_median_mm, 2)} мм, 90% ${num(d.residual_p90_mm, 2)} мм. `
-          + `Ориентация: ${o.mirror ? 'зеркальная' : 'прямая'}${o.rotation_degrees ? `, поворот ${o.rotation_degrees}°` : ''}, запас над следующим вариантом ${num(1 / o.margin, 1)}×.`),
+          + `Ориентация: ${o.mirror ? 'зеркальная' : 'прямая'}${o.rotation_degrees ? `, поворот ${o.rotation_degrees}°` : ''}`
+          + (o.margin != null ? `, запас над следующим вариантом ${num(1 / o.margin, 1)}×.` : '; старт по целым фигурам, подтверждён элементами.')),
           h('p', {class: 'small'},
-            `Рамка закрывает края пластины (мм, по углам, ориентировочно ±1): ${d.plate_hidden_mm.map((v) => num(Math.round(Math.max(v, 0) * 2) / 2, 1)).join(' · ')}. `
-            + `Скрытое не измеряется: его положение вычислено по расстояниям между найденными элементами, статистическая погрешность до ${num(d.hidden_uncertainty_mm, 2)} мм.`
+            (d.window_found === false
+              ? 'Рамка на фотографии не найдена: измеряется вся пластина. '
+              : `Рамка закрывает края пластины (мм, по углам, ориентировочно ±1): ${d.plate_hidden_mm.map((v) => num(Math.round(Math.max(v, 0) * 2) / 2, 1)).join(' · ')}. `
+                + `Скрытое не измеряется: его положение вычислено по расстояниям между найденными элементами, статистическая погрешность до ${num(d.hidden_uncertainty_mm, 2)} мм.`)
             + (d.extrapolation_mm && d.extrapolation_mm.median != null ? ` Строгая проверка: если спрятать внешние ${num(d.extrapolation_mm.ring * 100, 0)}% окна и предсказать их по остальным, ошибка предсказания ${num(d.extrapolation_mm.median, 2)} мм (медиана), ${num(d.extrapolation_mm.p90, 2)} мм (90%). Полоса под рамкой намного уже, так что это оценка сверху.` : ''))];
       })() : []),
       ...(check.alignment.anchoring && check.alignment.anchoring.refused && check.alignment.method !== 'element anchors' ? [h('p', {class: 'small'},
         `Автоматическое выравнивание по элементам не выполнено: ${I18N.tr(check.alignment.anchoring.refused)}.`)] : []),
+      ...(check.alignment.geometry_confirmation && check.alignment.geometry_confirmation.refused && !check.alignment.valid ? [h('p', {class: 'small'},
+        `Совпадение целых фигур найдено, но элементы файла его не подтвердили, и оно не использовано: ${I18N.tr(check.alignment.geometry_confirmation.refused)}.`)] : []),
       ...(check.alignment.valid && check.alignment.qr_used_as_anchor === false &&
           Math.hypot(...(check.alignment.qr_offset_px || [0, 0])) > 10 ? [h('p', {class: 'alert warn'},
         `QR-код подтверждает этот файл, но на фото он сдвинут относительно основной матрицы на ${check.alignment.qr_offset_px.map((v) => num(v, 1)).join(', ')} пикс. Его контур и измерение поправлены отдельно; остальная схема совмещена по меткам и найденным векторам.`)] : []),
@@ -523,5 +628,5 @@ const IngestReview = (() => {
     out.append(h('div', {class: 'card stack'}, h('h3', {}, 'Слои файла'), IngestDialogs.layersTable(check.layers)));
     return out;
   }
-  return {render};
+  return {render, matrixGrid};
 })();

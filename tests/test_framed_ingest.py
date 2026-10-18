@@ -14,7 +14,8 @@ from test_anchoring import circle
 
 @pytest.fixture(scope="module")
 def work():
-    return synth.framed_work(seed=3, blobs=60, with_chart=True, extra=[(5, circle(11.0, 80.0, 0.7, 16)), (6, circle(16.0, 120.0, 5.5))])
+    # the tiled regions stop 8 mm short of the plate edge: a ring of the cleaned plate stays visible (the clean reference)
+    return synth.framed_work(seed=3, blobs=60, with_chart=True, inset=8.0, extra=[(5, circle(11.0, 80.0, 0.7, 16)), (6, circle(16.0, 120.0, 5.5))])
 
 
 @pytest.fixture(scope="module")
@@ -131,7 +132,7 @@ def test_a_checked_framed_pair_can_be_reviewed_and_accepted_into_observations(wo
 # -- a finished work without a reference chart (DEC-053) ---------------------------------------------------------
 @pytest.fixture
 def chartless(tmp_path):
-    work = synth.framed_work(seed=3, blobs=60, with_chart=False)
+    work = synth.framed_work(seed=3, blobs=60, with_chart=False, inset=8.0)
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
     profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
@@ -149,6 +150,22 @@ def test_a_finished_work_without_a_chart_is_measured_relative_to_the_camera(char
     assert report["problems"] == [] and report["alignment"]["method"] == "element anchors"
     assert report["color_measurement"] == {"mode": "raw_camera_relative", "reference_chart_used": False, "relative": True}
     assert any(w.startswith("Finished work measured from decoded RAW") for w in report["warnings"])
+
+
+def test_colours_of_a_chartless_photograph_are_also_given_against_the_clean_titanium_of_that_photograph(chartless):
+    """An underexposed photograph makes every camera-relative colour dark; the ratio to the cleaned plate in the same
+    photograph does not depend on the exposure (DEC-056), so every colour is also expressed next to nominal clean titanium."""
+    store, pid = chartless
+    report = ig.check_pair(store, pid)
+    ref = report["clean_reference"]
+    assert ref["layer_index"] == 0 and ref["nominal_source"] == "default" and len(ref["nominal"]) == 3
+    witness = {rep["index"]: rep for rep in report["layers"]}[0]
+    assert "measured_lab_against_clean" not in witness                     # the reference itself is not re-expressed
+    measured = [rep for rep in report["layers"] if rep.get("measured_lab") and rep["index"] != 0]
+    assert measured and all(rep.get("measured_lab_against_clean") for rep in measured)
+    for rep in measured:                                                   # lighter than the clean plate stays lighter, darker darker
+        assert (rep["measured_lab_against_clean"][0] > ref["nominal"][0]) == (rep["measured_lab"][0] > ref["lab"][0])
+    assert ig.get_pair(store, pid)["check"]["clean_reference"] == ref      # derived on every read, not only on the check
 
 
 def test_such_observations_are_kept_as_evidence_and_never_enter_the_colour_model(chartless):
@@ -178,3 +195,26 @@ def test_the_witness_becomes_observation_minus_one_and_the_colours_keep_their_la
     store, pid = pair                                            # accepted by the test above
     indices = sorted(r["layer_index"] for r in store.query("SELECT layer_index FROM observation WHERE pair_id=?", (pid,)))
     assert indices.count(-1) == 1 and 0 not in indices and max(indices) >= 5
+
+
+def test_a_cleaning_layer_engraved_over_entirely_is_not_measured_and_says_so(tmp_path):
+    """Every square millimetre of the plate is engraved by layer 1: nothing of the first layer shows, so it is not a
+    clean reference and must not fall into the narrow-stroke fallback that would sample the whole plate."""
+    cover = [(10, 10), (160, 10), (160, 160), (10, 160)]
+    spots = [(25, 25, 6), (85, 22, 7), (145, 28, 8), (22, 88, 9), (148, 84, 10), (28, 143, 11), (88, 148, 12), (143, 140, 13), (85, 85, 14)]
+    extra = [(1, np.array(cover, float))] + [(2 + i % 3, circle(x, y, r, 48)) for i, (x, y, r) in enumerate(spots)]
+    work = synth.framed_work(style="none", extra=extra, with_chart=True)
+    store = Store(tmp_path)
+    store.set_setting("allow_non_raw_photos", True)
+    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
+    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
+                         photo_name="x.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
+                         context={"material_id": material["id"]})
+    report = ig.check_pair(store, pid)
+    assert report["alignment"]["valid"], (report["problems"], report["alignment"].get("anchoring"))
+    witness = {rep["index"]: rep for rep in report["layers"]}[0]
+    assert witness["role"] == "pre-test cleaning witness" and witness["measured_lab"] is None
+    assert any("engraved over entirely" in n for n in witness["notes"])
+    assert "clean_reference" not in report
+    store.close()

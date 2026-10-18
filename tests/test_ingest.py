@@ -221,7 +221,7 @@ def test_plate_chart_candidate_with_rejected_correction_falls_back_to_raw_relati
     pid = make_pair(world)
     chart = ig.ph.Chart(True, reason="chart correction residual 40.5 exceeds 12")
     correction = ig.ph.Correction(np.eye(3), 40.5)
-    monkeypatch.setattr(ig.ph, "correct", lambda _img: (None, chart, correction))
+    monkeypatch.setattr(ig.ph, "correct", lambda _img, **_kw: (None, chart, correction))
 
     report = ig.check_pair(s, pid)
 

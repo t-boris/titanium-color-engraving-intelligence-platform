@@ -107,7 +107,9 @@
     return h('div', {class: 'analysis-detail-body'},
       allSettings(row.parameters),
       measurements.length ? h('div', {class: 'analysis-detail-kpis'}, ...measurements) : null,
-      row.measured_lab ? h('p', {class: 'analysis-lab'}, swatch(row.measured_lab),
+      row.measured_lab_against_clean ? h('p', {class: 'analysis-lab'}, swatch(row.measured_lab_against_clean),
+        `Цвет относительно чистого титана: ${labText(row.measured_lab_against_clean)}`, h('span', {class: 'muted small'}, ` · как снято: ${labText(row.measured_lab)}`))
+      : row.measured_lab ? h('p', {class: 'analysis-lab'}, swatch(row.measured_lab),
         `${capability ? 'Отклик камеры' : 'Измеренный цвет'}: ${labText(row.measured_lab)}`) : h('p', {class: 'muted small'}, 'На фото не измерено'),
       row.planned_lab ? h('p', {class: 'small'}, 'Плановый цвет: ', swatch(row.planned_lab), labText(row.planned_lab),
         row.delta_e != null ? ` · ΔE ${num(row.delta_e, 1)}` : '') : null,
@@ -131,7 +133,7 @@
       ...rows.map((row) => h('details', {class: 'analysis-detail-item'},
         h('summary', {}, h('strong', {}, row.name || `Слой ${row.layer_index}`),
           row.line_metrics ? h('span', {class: 'muted small'}, `${row.line_metrics.visible_line_count}/${row.line_metrics.line_count} линий`) :
-            row.measured_lab ? h('span', {class: 'muted small'}, `L* ${num(row.measured_lab[0], 1)}`) : null),
+            row.measured_lab ? h('span', {class: 'muted small'}, `L* ${num((row.measured_lab_against_clean || row.measured_lab)[0], 1)}`) : null),
         detailBody(row, capability))));
     modal(title, body, [{label: 'Закрыть', run: ({close}) => close()}]);
   }
@@ -249,9 +251,15 @@
       [r.rows.filter((row) => row.measured_lab).length, 'участков с цветом'], ['—', 'плановый цвет']];
     const layers = r.rows.map((row) => h('button', {type: 'button', class: 'analysis-module', onClick: () => showElement(row, false)},
       h('strong', {}, row.name || `Слой ${row.layer_index}`),
-      h('span', {}, row.measured_lab ? [swatch(row.measured_lab), labText(row.measured_lab)] : 'На фото не измерено'),
+      h('span', {}, row.measured_lab ? [swatch(row.measured_lab_against_clean || row.measured_lab), labText(row.measured_lab_against_clean || row.measured_lab)] : 'На фото не измерено'),
       h('small', {}, settingsLabel(row.parameters))));
+    const ref = r.clean_reference;
     return [h('div', {class: 'analysis-kpi-grid'}, ...values.map(([value, label]) => kpi(value, label))),
+      ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
+        `Цвета приведены к чистому титану этой же фотографии: слой очистки снят как L* ${num(ref.lab[0], 1)} и принят за L* ${num(ref.nominal[0], 0)}`
+        + `${ref.nominal_source === 'chart' ? ' (по измерениям с картой)' : ' (значение по умолчанию)'}`
+        + (Math.abs(ref.exposure_stops) >= 1 ? `; снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции` : '')
+        + '. Отношение цвета к чистому титану в линейном свете от экспозиции не зависит; значение «как снято» сохранено как свидетельство.')] : []),
       card('Измеренные элементы', h('div', {class: 'analysis-modules'}, ...layers)),
       r.limitations?.length ? h('details', {class: 'analysis-footnote'}, h('summary', {}, `Ограничения измерений (${r.limitations.length})`),
         ...r.limitations.map((text) => h('p', {}, I18N.tr(text)))) : null];

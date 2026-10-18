@@ -2,7 +2,7 @@
    Маршрут /experiment/:ключ, где ключ plan-<id> (плата и её проверки) или eng-<id> (готовая работа и её фото). */
 'use strict';
 (() => {
-  const {h, btn, link, pill, get, del, toast, confirmBox, go, fail, num, swatch, labText, table} = App;
+  const {h, fill, btn, link, pill, get, del, toast, confirmBox, go, fail, num, swatch, labText, table} = App;
   const KIND = {'Awaiting check': ['Ожидает проверки', ''], 'Needs correction': ['Требует исправления', 'warn'],
     'Ready to accept': ['Готова к принятию', 'ok'], Accepted: ['Принята', 'ok']};
   const STATUS_KIND = {plate_ready: 'warn', needs_review: 'warn', accepted: 'ok'};
@@ -32,10 +32,13 @@
     const photoTools = h('div', {class: 'row exp-tools'});
     const checks = h('div', {class: 'exp-checks'});
     const result = h('div', {class: 'stack'});
+    // the photograph is shown the way its colours were measured: corrected by the chart when a chart was used,
+    // so that the swatches and the picture share one exposure (the RAW as shot is darker)
+    const shownCorrected = (pair) => pair.measurement === 'reference_chart_corrected';
     function url(pair) {
       const base = '/api/pairs/' + pair.id, stamp = pair.accepted_at || pair.created_at || '';
-      const view = `visibility=${lifted ? 'lifted' : 'normal'}&full=false&t=${encodeURIComponent(stamp)}`;
-      return contours && pair.alignment ? `${base}/overlay.png?corrected=false&${view}` : `${base}/photo.png?${view}`;
+      const view = `corrected=${shownCorrected(pair)}&visibility=${lifted ? 'lifted' : 'normal'}&full=false&t=${encodeURIComponent(stamp)}`;
+      return contours && pair.alignment ? `${base}/overlay.png?${view}` : `${base}/photo.png?${view}`;
     }
     function showPhoto() {
       if (!current) {
@@ -47,13 +50,14 @@
       }
       const img = h('img', {class: 'exp-photo', alt: `Фото «${current.photo_name}» с наложением контуров`, src: url(current)});
       img.addEventListener('error', () => {       // проверка ещё не выровняла фото: покажем снимок без контуров
-        if (!img.dataset.plain) { img.dataset.plain = '1'; img.src = `/api/pairs/${current.id}/photo.png?visibility=${lifted ? 'lifted' : 'normal'}&full=false`; }
+        if (!img.dataset.plain) { img.dataset.plain = '1'; img.src = `/api/pairs/${current.id}/photo.png?corrected=${shownCorrected(current)}&visibility=${lifted ? 'lifted' : 'normal'}&full=false`; }
       });
-      stage.replaceChildren(h('a', {href: '/api/pairs/' + current.id + '/overlay.png?corrected=false&full=true&visibility=' + (lifted ? 'lifted' : 'normal'),
+      stage.replaceChildren(h('a', {href: `/api/pairs/${current.id}/overlay.png?corrected=${shownCorrected(current)}&full=true&visibility=${lifted ? 'lifted' : 'normal'}`,
         target: '_blank', rel: 'noopener', title: 'Открыть в полном размере'}, img));
       const method = current.alignment ? `Выравнивание ${ALIGN[current.alignment] || current.alignment}` : 'Фото ещё не выровнено';
       caption.textContent = `${current.photo_name} · проверка №${current.id} · ${method}`
-        + (current.measurement ? ` · цвет ${MEASURE[current.measurement] || current.measurement}` : '');
+        + (current.measurement ? ` · цвет ${MEASURE[current.measurement] || current.measurement}` : '')
+        + (shownCorrected(current) ? ' · фото показано после коррекции по карте, в той же экспозиции, что и плашки' : ' · фото показано как снято');
     }
     function showTools() {
       photoTools.replaceChildren(
@@ -81,14 +85,27 @@
       if (!current || current.id !== shown) return;
       const check = pair.check || {};
       const layers = (check.layers || []).filter((l) => l.measured_lab);
-      const rows = layers.map((l) => [h('span', {}, swatch(l.measured_lab), labText(l.measured_lab)), l.name, params(l),
-        h('span', {class: 'small'}, (l.notes || []).map((n) => I18N.tr(n)).join(' · '))]);
+      const ref = check.clean_reference;
+      const rows = layers.map((l) => [
+        l.measured_lab_against_clean
+          ? h('span', {}, swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean),
+              h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`))
+          : h('span', {}, swatch(l.measured_lab), labText(l.measured_lab)),
+        l.name, params(l), h('span', {class: 'small'}, (l.notes || []).map((n) => I18N.tr(n)).join(' · '))]);
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
-      result.replaceChildren(
+      fill(result,
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
         ...(check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m))),
+        ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
+          `Цвета приведены к чистому титану этой же фотографии (слой очистки: L* ${num(ref.lab[0], 1)} как снято, принят за L* ${num(ref.nominal[0], 0)}`
+          + `${ref.nominal_source === 'chart' ? ', по измерениям с картой' : ', значение по умолчанию'}). `
+          + (Math.abs(ref.exposure_stops) >= 1 ? `Снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции; ` : '')
+          + 'отношение цвета к чистому титану в линейном свете от экспозиции не зависит.')] : []),
+        pair.matrix ? h('div', {class: 'card stack'}, h('h3', {}, `Матрица параметров ${pair.matrix.cols} × ${pair.matrix.rows}`),
+          h('p', {class: 'muted small'}, pair.matrix.confirmed ? 'Настройки прочитаны с фотографии и подтверждены.' : 'Настройки прочитаны с фотографии и ещё не подтверждены.'),
+          IngestReview.matrixGrid(pair)) : null,
         layers.length ? h('div', {class: 'card stack'}, h('h3', {}, `Измеренные слои · ${layers.length}`),
-          table(['Цвет на фото', 'Слой', 'Параметры', 'Заметки'], rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
+          table([ref ? 'Цвет относительно чистого титана' : 'Цвет на фото', 'Слой', 'Параметры', 'Заметки'], rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
         ...images.map((l) => h('p', {class: 'small'}, `${l.name}: тональный профиль — связь серого уровня картинки с яркостью ${num(l.tonal.rho, 2)}, `
           + `размах L* ${num(l.tonal.range_L, 0)}. `, link(`/ingest?pair=${shown}`, 'Таблица «серый → мощность → цвет»'))));
     }

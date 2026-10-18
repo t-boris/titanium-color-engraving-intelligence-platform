@@ -61,7 +61,7 @@ def _summary(key: str, group: dict, observations: dict[int, int]) -> dict:
     stamps += [p["created_at"] for p in pairs] + [p["accepted_at"] for p in pairs if p.get("accepted_at")]
     meta = (plan or {}).get("experiment") or {}
     return {"key": key, "title": title, "status": _status(group), "status_text": STATUS[_status(group)],
-            "kind": (meta.get("test_name") or plan["mode"]) if plan else "Готовая работа",
+            "kind": (meta.get("test_name") or plan["mode"]) if plan else ("Матрица параметров" if pairs and pairs[0].get("matrix") else "Готовая работа"),
             "plan_id": plan["id"] if plan else None, "engraving_id": pairs[0]["engraving_id"] if pairs and not plan else None,
             "checks": len(pairs), "photos": len({p["photo_name"] for p in pairs}),
             "needs_review": sum(p["status"] in NEEDS_REVIEW for p in pairs),

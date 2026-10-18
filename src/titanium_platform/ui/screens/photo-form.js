@@ -3,7 +3,7 @@
    с теми же значениями. Любое изменение значений предпросмотр сбрасывает. */
 'use strict';
 const PhotoForm = (() => {
-  const {h, btn, field, link, get, form, toast, fail, go} = App;
+  const {h, fill, btn, field, link, get, form, toast, fail, go} = App;
 
   async function render(ctx, profiles, parts) {
     const {bandTable, pathPicker, MODES} = parts;
@@ -49,7 +49,7 @@ const PhotoForm = (() => {
       const p = state.preview;
       const modeBtns = MODES.map(([id, label]) => h('button', {type: 'button', class: 'btn' + (state.mode === id ? ' primary' : ''), 'aria-pressed': state.mode === id,
         onClick: async () => { if (state.mode === id) return; state.mode = id; state.path = []; state.allowed = []; state.preview = null; await loadPalette(); draw(); }}, label));
-      host.replaceChildren(
+      fill(host,
         h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Непрерывная фотогравировка'), h('p', {class: 'sub'}, 'Одна передаточная функция, два режима. Параметры между измеренными наборами не интерполируются.')),
           h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Подрежим фотогравировки'}, modeBtns), link('/colors', 'Карта цветов')),
         h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Версия профиля', prof), field('Фотография', App.filePick(img, 'Выбрать фотографию')), field('Название плана', name), field('Ширина работы, мм', width),

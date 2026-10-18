@@ -34,6 +34,7 @@ from typing import Callable
 import numpy as np
 import cv2
 
+from . import color
 from . import lightburn as lb
 from . import photo as ph
 from . import plans as pl
@@ -44,7 +45,8 @@ ST_PENDING, ST_CORRECTION, ST_READY, ST_ACCEPTED, ST_DELETED = "Awaiting check",
 PARAM_TOLERANCE = 1e-6
 CONTEXT_KEYS = ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm", "titanium_surface",
                 "batch", "focus", "engraved_at", "note")
-DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check")
+DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check",
+             "matrix")
 
 
 class IngestError(ValueError):
@@ -63,7 +65,35 @@ def get_pair(store: Store, pair_id: int) -> dict:
     d["context"] = json.loads(d.pop("context_json"))
     d["hardware"] = json.loads(d.pop("hardware_json") or "{}")
     d.update(json.loads(d.pop("data_json")))
+    if d.get("check"):
+        express_against_clean(store, d["check"])
     return d
+
+
+def express_against_clean(store: Store, check: dict) -> None:
+    """A photograph without a chart is measured as the camera exposed it: an underexposed shot makes every colour dark and
+    "light colours are not found". Where the work's cleaning layer shows clean titanium in the same photograph, every
+    measured colour is also given as it would look next to nominal clean titanium (ratio in linear light, DEC-056); the
+    camera-relative value stays as the evidence. Derived on every read, never stored, so a later calibrated witness
+    improves old checks too."""
+    if (check.get("color_measurement") or {}).get("mode") != "raw_camera_relative":
+        return
+    witness = next((rep for rep in check.get("layers", []) if rep.get("role") == "pre-test cleaning witness" and rep.get("measured_lab")), None)
+    if witness is None:
+        return
+    from . import colormap
+    nominal, source = colormap.nominal_clean(store)
+    clean = witness["measured_lab"]
+    y_clean = max(float(color.lab_to_linear_rgb(np.asarray(clean, float)) @ (0.2126, 0.7152, 0.0722)), 1e-6)
+    y_nominal = float(color.lab_to_linear_rgb(np.asarray(nominal, float)) @ (0.2126, 0.7152, 0.0722))
+    check["clean_reference"] = {"layer_index": witness["index"], "lab": clean, "nominal": nominal, "nominal_source": source,
+                               "exposure_stops": round(float(np.log2(y_nominal / y_clean)), 2)}
+    for rep in check["layers"]:
+        if rep.get("measured_lab") and rep is not witness:
+            rep["measured_lab_against_clean"] = color.against_clean(rep["measured_lab"], clean, nominal)
+            for sub in rep.get("submeasurements") or []:
+                if sub.get("measured_lab"):
+                    sub["measured_lab_against_clean"] = color.against_clean(sub["measured_lab"], clean, nominal)
 
 
 def _normalize_project_to_plan(project: lb.Project, plan: dict | None) -> list[str]:
@@ -74,8 +104,29 @@ def _normalize_project_to_plan(project: lb.Project, plan: dict | None) -> list[s
         mirror_y=bool(plan.get("export_mirror_y", False)))
 
 
+DERIVED_CHECK_KEYS = ("clean_reference",)              # added by express_against_clean on every read, never stored
+DERIVED_LAYER_KEYS = ("measured_lab_against_clean",)
+
+
+def _without_derived(check):
+    if not isinstance(check, dict):
+        return check
+    out = {k: v for k, v in check.items() if k not in DERIVED_CHECK_KEYS}
+    if isinstance(out.get("layers"), list):
+        layers = []
+        for rep in out["layers"]:
+            rep = {k: v for k, v in rep.items() if k not in DERIVED_LAYER_KEYS}
+            if isinstance(rep.get("submeasurements"), list):
+                rep["submeasurements"] = [{k: v for k, v in s.items() if k not in DERIVED_LAYER_KEYS} for s in rep["submeasurements"]]
+            layers.append(rep)
+        out["layers"] = layers
+    return out
+
+
 def _save(store: Store, pair_id: int, data: dict, status: str | None = None, plate_id=None, plan_id=None) -> None:
-    sets, params = ["data_json=?"], [json.dumps({k: data.get(k) for k in DATA_KEYS})]
+    stored = {k: data.get(k) for k in DATA_KEYS}
+    stored["check"] = _without_derived(stored.get("check"))
+    sets, params = ["data_json=?"], [json.dumps(stored)]
     for col, val in (("status", status), ("plate_id", plate_id), ("plan_id", plan_id)):
         if val is not None:
             sets.append(f"{col}=?")
@@ -230,6 +281,8 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     photo_path.write_bytes(photo_bytes)
     data = {"rephoto_of": root_pair_id, "masks_reviewed": False, "file_confirmation": source_data.get("file_confirmation"),
             "corners": None, "anchor": None, "check": None}
+    if source_data.get("matrix"):
+        data["matrix"] = _matrix_for_rephoto(store, source_data, photo_name, photo_bytes)
     pair_id = store.execute(
         "INSERT INTO pair(status,profile_id,stand_id,material_id,plate_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -238,6 +291,150 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
          json.dumps(data), source["hardware_json"], now())).lastrowid
     store.audit("rephoto_created", source_pair_id=source_pair_id, pair_id=pair_id, engraving_id=source["engraving_id"])
     return pair_id
+
+
+# -- a parameter matrix (LightBurn Material Test) recognised from its photograph (REQ-031, DEC-061) ------------------------
+def _detect_matrices(store: Store, photo_name: str, photo_bytes: bytes) -> dict:
+    """Every complete matrix in a photograph (the photograph is decoded from a temporary copy)."""
+    from . import matrix
+    folder = store.data_dir / "tmp"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{uuid.uuid4().hex[:12]}-{_safe_name(photo_name)}"
+    path.write_bytes(photo_bytes)
+    try:
+        linear = ph.decode_linear(path, allow_non_raw=non_raw_allowed(store))
+        exposed = ph.exposed_bgr(linear)
+        chart = ph.detect_chart(exposed)
+        if not chart.detected:
+            chart = ph.detect_chart(ph.decode_image(path, allow_non_raw=non_raw_allowed(store)))
+        return matrix.detect(exposed, chart.box if chart.detected else None)
+    except ph.PhotoError as exc:
+        raise IngestError(f"the photograph cannot be read: {exc}") from exc
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _matrix_record(grid: dict, detection: dict, index: int) -> dict:
+    others = [g for k, g in enumerate(detection["grids"]) if k != index]
+    return {**grid, "confirmed": False, "grid_index": index, "grids_in_photo": len(detection["grids"]),
+            "ocr": detection["ocr"], "squares": detection["squares"], "others": [{**g, "created_pair_id": None} for g in others]}
+
+
+def _stored(store: Store, pair_id: int) -> dict:
+    """The pair's data as stored (``get_pair`` adds derived values that are never written back)."""
+    return json.loads(_pair_row(store, pair_id)["data_json"] or "{}")
+
+
+def create_matrix_pair(store: Store, *, profile_id: int, photo_name: str, photo_bytes: bytes, context: dict | None = None,
+                       stand_id: int | None = None, grid: dict | None = None, detection: dict | None = None) -> int:
+    """A pair from a photograph of a parameter matrix: the matrix is found, its labels are read and a LightBurn file
+    with one layer per cell is generated from what was read. The settings stay a proposal until the operator confirms
+    them (``confirm_matrix``); nothing is accepted before (REQ-003)."""
+    from . import matrix
+    if Path(photo_name).suffix.lower() not in ph.RAW_EXTENSIONS and not non_raw_allowed(store):
+        raise IngestError("A RAW photograph is required for measurement")
+    if not photo_bytes:
+        raise IngestError("Файл фотографии пуст")
+    index = 0
+    if grid is None:
+        detection = _detect_matrices(store, photo_name, photo_bytes)
+        if not detection["grids"]:
+            raise IngestError("no parameter matrix was found in the photograph: photograph the whole test with its labels, "
+                              "square to the camera")
+        grid = detection["grids"][0]
+    record = _matrix_record(grid, detection or {"grids": [grid], "ocr": matrix.ocr_available(), "squares": None}, index)
+    spec = record["spec"]
+    title = matrix.title(spec, photo_name)
+    pair_id = create_pair(store, profile_id=profile_id, stand_id=stand_id, lightburn_name=f"{_safe_name(title)}.lbrn2",
+                          lightburn_bytes=matrix.lightburn_bytes(spec, record["cols"], record["rows"]),
+                          photo_name=photo_name, photo_bytes=photo_bytes, context=context)
+    data = _stored(store, pair_id)
+    data["matrix"] = record
+    _save(store, pair_id, data)
+    store.execute("UPDATE pair SET engraving_title=? WHERE id=?", (title, pair_id))
+    store.audit("matrix_pair_created", pair_id=pair_id, cols=record["cols"], rows=record["rows"],
+                missing=len(spec["missing"]), grids_in_photo=record["grids_in_photo"])
+    return pair_id
+
+
+def create_matrix_sibling(store: Store, pair_id: int, index: int) -> int:
+    """Another matrix of the same photograph as its own experiment, from the detection already made."""
+    row = _pair_row(store, pair_id)
+    pair = _stored(store, pair_id)
+    record = pair.get("matrix")
+    if not record or not 0 <= index < len(record.get("others") or []):
+        raise IngestError("this photograph holds no such other matrix")
+    other = record["others"][index]
+    if other.get("created_pair_id"):
+        raise IngestError(f"that matrix is already experiment №{other['created_pair_id']}")
+    photo = Path(row["photo_path"])
+    if not photo.is_file():
+        raise IngestError("the photograph of this pair is no longer available")
+    grid = {k: v for k, v in other.items() if k != "created_pair_id"}
+    context = json.loads(row["context_json"])
+    new_id = create_matrix_pair(store, profile_id=row["profile_id"], stand_id=row["stand_id"], photo_name=row["photo_name"],
+                                photo_bytes=photo.read_bytes(), context={k: context.get(k) for k in ("material_id", "focus", "engraved_at", "note")},
+                                grid=grid)
+    record["others"][index]["created_pair_id"] = new_id
+    if row["status"] != ST_ACCEPTED:
+        pair["matrix"] = record
+        _save(store, pair_id, pair)
+    return new_id
+
+
+def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False) -> dict:
+    """The operator's corrections of what was read (axis settings, first and last values, fixed settings, extent):
+    the LightBurn file is generated again and the photograph checked again. ``confirm`` also confirms the result."""
+    from . import matrix
+    row = _pair_row(store, pair_id)
+    _guard_mutable(row)
+    pair = _stored(store, pair_id)
+    if not pair.get("matrix"):
+        raise IngestError("this pair is not a parameter matrix")
+    try:
+        record = matrix.apply_edit(pair["matrix"], edit or {})
+    except ValueError as exc:
+        raise IngestError(str(exc)) from exc
+    spec = record["spec"]
+    if confirm:
+        if spec["missing"]:
+            raise IngestError("the matrix settings are incomplete: " + "; ".join(spec["missing"]))
+        record["confirmed"] = True
+    title = matrix.title(spec, row["photo_name"])
+    Path(row["lightburn_path"]).write_bytes(matrix.lightburn_bytes(spec, record["cols"], record["rows"]))
+    pair["matrix"] = record
+    _save(store, pair_id, pair)
+    store.execute("UPDATE pair SET engraving_title=?, lightburn_name=? WHERE id=?", (title, f"{_safe_name(title)}.lbrn2", pair_id))
+    store.audit("matrix_settings_edited", pair_id=pair_id, confirmed=record["confirmed"], cols=record["cols"], rows=record["rows"])
+    return check_pair(store, pair_id)
+
+
+def confirm_matrix(store: Store, pair_id: int) -> None:
+    """The operator states that the settings read from the matrix are the ones engraved."""
+    row = _pair_row(store, pair_id)
+    _guard_mutable(row)
+    pair = _stored(store, pair_id)
+    record = pair.get("matrix")
+    if not record:
+        raise IngestError("this pair is not a parameter matrix")
+    if record["spec"]["missing"]:
+        raise IngestError("the matrix settings are incomplete: " + "; ".join(record["spec"]["missing"]))
+    record["confirmed"] = True
+    pair["matrix"] = record
+    _save(store, pair_id, pair)
+    store.audit("matrix_settings_confirmed", pair_id=pair_id)
+
+
+def _matrix_for_rephoto(store: Store, source: dict, photo_name: str, photo_bytes: bytes) -> dict:
+    """A new photograph of an accepted matrix: the matrix is found again in it; the confirmed settings carry over when
+    a matrix of the same size is there."""
+    detection = _detect_matrices(store, photo_name, photo_bytes)
+    old = source["matrix"]
+    same = [g for g in detection["grids"] if g["cols"] == old["cols"] and g["rows"] == old["rows"]]
+    if not same:
+        raise IngestError(f"no {old['cols']} x {old['rows']} matrix was found in the new photograph")
+    grid = {**same[0], "spec": {**old["spec"], "cell_fraction": same[0]["spec"].get("cell_fraction", old["spec"].get("cell_fraction"))}}
+    return {**_matrix_record(grid, detection, detection["grids"].index(same[0])), "confirmed": old.get("confirmed", False)}
 
 
 def create_alignment_revision(store: Store, source_pair_id: int) -> int:
@@ -573,10 +770,16 @@ def _sample_subfeature(rgb: np.ndarray, h: np.ndarray, regions: list[dict], name
 
 def _clean_witness_mask(clean_layer: lb.Layer, other_layers: list[lb.Layer], h: np.ndarray,
                         shape: tuple[int, int], qr_local=None, alignment=None) -> np.ndarray:
-    """Keep cleaned titanium that later engraving did not overwrite, for an isolated cleaning readout."""
+    """Keep cleaned titanium that later engraving did not overwrite, for an isolated cleaning readout. The cleaned
+    plate shows only where no later layer engraved (often a ring at the edge and the gaps between elements), so the
+    plate rectangle is not shrunk by the usual share of its side; a guard of one millimetre around every later
+    outline and along the plate edge keeps engraved edges out of the sample."""
     import cv2
 
-    clean = ph.layer_mask([r.polygon for r in clean_layer.regions], h, shape)
+    px_per_mm = float(np.sqrt(abs(np.linalg.det(np.linalg.inv(np.asarray(h, float))[:2, :2]))))
+    guard = int(max(3, round(CLEAN_GUARD_MM * px_per_mm))) | 1
+    clean = cv2.erode(ph.layer_mask([r.polygon for r in clean_layer.regions], h, shape, edge_fraction=0.0).astype(np.uint8),
+                      np.ones((guard, guard), np.uint8)).astype(bool)
     covered = np.zeros(shape, np.uint8)
     mm_to_image = np.linalg.inv(h).astype(np.float32)
     alignment = alignment or {}
@@ -590,8 +793,7 @@ def _clean_witness_mask(clean_layer: lb.Layer, other_layers: list[lb.Layer], h: 
                       if layer.name == "Markers and labels" else layer_to_image)
             pts = cv2.perspectiveTransform(np.array([region.polygon], np.float32), matrix)[0]
             cv2.fillPoly(covered, [np.round(pts).astype(np.int32)], 1)
-    # A 2 px guard avoids mixing an engraved edge into the clean-only sample after perspective resampling.
-    covered = cv2.dilate(covered, np.ones((5, 5), np.uint8))
+    covered = cv2.dilate(covered, np.ones((guard, guard), np.uint8))
     return clean & (covered == 0)
 
 
@@ -959,6 +1161,15 @@ def _picture_silhouettes(project, image_to_mm: np.ndarray, shape: tuple[int, int
     return laid > 100
 
 
+CLEAN_GUARD_MM = 1.0             # clean titanium is sampled this far from every later outline and from the plate edge
+CLEAN_TITANIUM_MIN_L = 50.0      # cleaned titanium is light ...
+CLEAN_TITANIUM_MAX_CHROMA = 15.0  # ... and nearly neutral; a first layer darker or more coloured is a background fill
+
+
+def _looks_like_clean_titanium(lab) -> bool:
+    return lab is not None and lab[0] >= CLEAN_TITANIUM_MIN_L and float(np.hypot(lab[1], lab[2])) <= CLEAN_TITANIUM_MAX_CHROMA
+
+
 def _finished_work_cleaning_layer(project) -> int | None:
     """The layer of a finished work that cleans its plate before the engraving: run first, one filled rectangle that
     encloses everything else. Where later layers did not overwrite it, it shows the cleaned titanium of this very
@@ -1027,6 +1238,13 @@ def _note_frame(rep: dict, alignment: dict) -> None:
 def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
            prefer_corners: bool = False) -> tuple:
     """Returns (image->mm homography, dx, dy). Raises PhotoError instead of guessing (REQ-003)."""
+    matrix_record = json.loads(row["data_json"] or "{}").get("matrix")
+    if matrix_record and not (prefer_corners and corners):
+        from . import matrix
+        report["alignment"].update(method="material test grid", residual_px=matrix_record.get("residual_px"), reflected=False,
+                                   matrix={"cols": matrix_record["cols"], "rows": matrix_record["rows"],
+                                           "outlined_cells": matrix_record.get("outlined_cells")})
+        return matrix.image_to_mm(matrix_record), 0.0, 0.0
     if plate is not None:
         if plan is None or not plan.get("markers"):
             raise ph.PhotoError("the plate has no marker definition")
@@ -1166,16 +1384,7 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
     matched = anchoring.register(img_bgr, work_layers, diagnostics)
     report["alignment"]["anchoring"] = diagnostics
     if matched is not None:
-        report["alignment"].update(method=matched.method, element_matches=matched.matches,
-                                   residual_px=matched.residual_px, reflected=matched.reflected,
-                                   window_px=matched.details["window_px"],
-                                   element_status=_element_status(matched.details))
-        counts = matched.details["counts"]
-        if counts["partly hidden"] or counts["hidden"]:
-            report["warnings"].append(
-                f"The frame hides part of the work: {counts['partly hidden']} elements are measured on their visible part only, "
-                f"{counts['hidden']} are entirely under it and are not measured; their positions are inferred from the matched elements.")
-        return matched.image_to_mm, 0.0, 0.0
+        return _anchored(report, matched), 0.0, 0.0
     if any(r.bitmap and r.bitmap.get("png") for layer in work_layers for r in layer.regions):
         from . import picturing
         picture_diagnostics: dict = {}
@@ -1195,13 +1404,28 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
             return matched.image_to_mm, 0.0, 0.0
     matched = registration.register_geometry(img_bgr, work_layers)
     if matched is not None:
-        report["alignment"].update(method=matched.method, element_matches=matched.matches,
-                                   residual_px=matched.residual_px, reflected=matched.reflected)
-        if matched.method == "single distinctive detail":
-            report["warnings"].append(
-                "Only one distinctive detail was matched; distant outlines are extrapolated from it and require careful review."
-            )
-        return matched.image_to_mm, 0.0, 0.0
+        # Three whole shapes can agree by chance in a dense drawing (a mirrored fit of a lion of parallel strokes
+        # was accepted once). The fit is only a start: the elements of the file must confirm it independently.
+        confirmation: dict = {}
+        confirmed = anchoring.confirm(img_bgr, work_layers, matched.image_to_mm, confirmation)
+        report["alignment"]["geometry_confirmation"] = confirmation
+        if confirmed is not None:
+            return _anchored(report, confirmed), 0.0, 0.0
+        outlines = sum(1 for e in anchoring.elements_from_layers(work_layers) if not e.boundary and len(e.points) >= 25)
+        if outlines < WHOLE_SHAPE_GUARD_MIN_OUTLINES:
+            # A simple work: its few whole shapes are distinct, so a fit of three of them is real evidence, and
+            # there are too few outlines to confirm it by anchors. The operator is told it is unconfirmed.
+            report["alignment"].update(method=matched.method, element_matches=matched.matches,
+                                       residual_px=matched.residual_px, reflected=matched.reflected)
+            if matched.method == "single distinctive detail":
+                report["warnings"].append(
+                    "Only one distinctive detail was matched; distant outlines are extrapolated from it and require careful review."
+                )
+            if confirmation.get("refused"):
+                report["warnings"].append(
+                    "The fit of whole shapes was not confirmed by element anchors; review the layer overlay before accepting."
+                )
+            return matched.image_to_mm, 0.0, 0.0
     if anchor:
         return _element_anchor(anchor, work_layers, report), 0.0, 0.0
     if corners:
@@ -1211,6 +1435,24 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
         report["alignment"]["method"] = "manual"
         return ph.homography_from_corners([tuple(c) for c in corners], area), 0.0, 0.0
     raise ph.PhotoError("no reliable combination of LightBurn details was found: place the four image corners of the work")
+
+
+WHOLE_SHAPE_GUARD_MIN_OUTLINES = 30   # from this many outlines on, a fit of three whole shapes must be confirmed by anchors
+
+
+def _anchored(report: dict, matched) -> np.ndarray:
+    """Report an element-anchored registration: anchors, the visible window, what the frame hides."""
+    details = matched.details
+    report["alignment"].update(method=matched.method, element_matches=matched.matches,
+                               residual_px=matched.residual_px, reflected=matched.reflected,
+                               window_px=details["window_px"], window_found=details["window_found"],
+                               element_status=_element_status(details))
+    counts = details["counts"]
+    if counts["partly hidden"] or counts["hidden"]:
+        report["warnings"].append(
+            f"The frame hides part of the work: {counts['partly hidden']} elements are measured on their visible part only, "
+            f"{counts['hidden']} are entirely under it and are not measured; their positions are inferred from the matched elements.")
+    return matched.image_to_mm
 
 
 def _overlay_override(pair: dict, *, translation_fraction=None, rotation_degrees=None, scale_factor=None,
@@ -1331,6 +1573,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     def finish(ok: bool) -> dict:
         pair["check"] = report
         _save(store, pair_id, pair, ST_READY if ok else ST_CORRECTION, **ids)
+        express_against_clean(store, report)       # derived, after the save: the stored check stays the evidence
         return report
 
     try:
@@ -1342,7 +1585,17 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
                          "identifier": project.identifier, "mirror_x": project.mirror_x,
                          "mirror_y": project.mirror_y}
     report["layers"] = [layer_report(layer, profile) for layer in project.layers]
-    overflow_indices = [layer.index for layer in project.layers if layer.index >= pl.MAX_LAYERS]
+    matrix_record = pair.get("matrix")
+    overflow_indices = [layer.index for layer in project.layers if layer.index >= pl.MAX_LAYERS] if not matrix_record else []
+    if matrix_record:
+        from . import matrix
+        spec = matrix_record["spec"]
+        if spec.get("missing"):
+            problems.append("the matrix settings are incomplete: " + "; ".join(spec["missing"]))
+        for item in report["layers"]:
+            col, row_ = item["index"] % matrix_record["cols"], item["index"] // matrix_record["cols"]
+            item["matrix_cell"] = {"col": col, "row": row_, **{k: v for k, v in matrix.cell_settings(spec, col, row_).items()}}
+            item["notes"] = [n for n in item["notes"] if "outside LightBurn's 30 standard output colors" not in n]
     if overflow_indices:
         low, high = min(overflow_indices), max(overflow_indices)
         report["warnings"].append(
@@ -1391,6 +1644,7 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
     """Decode, choose chart-corrected or plate-relative color, align, compare, and sample the regions."""
     try:
         img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=allow_non_raw or non_raw_allowed(store))
+        linear = ph.decode_linear(row["photo_path"], allow_non_raw=allow_non_raw or non_raw_allowed(store))
     except ph.PhotoError as exc:
         problems.append(f"Photograph: {exc}")
         return finish(False)
@@ -1418,17 +1672,18 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
             return finish(False)
         corners = [(x * width, y * height) for x, y in corners_fraction]
         pair["corners"] = corners
-    corrected, chart, corr = ph.correct(img_bgr)
+    corrected, chart, corr = ph.correct(img_bgr, linear=linear)
     report["chart"] = {"detected": chart.detected, "usable": corrected is not None, "reason": chart.reason,
                        "residual": None if corr is None else round(corr.residual, 3),
-                       "max_residual": ph.MAX_CORRECTION_RESIDUAL}
+                       "max_residual": ph.MAX_CORRECTION_RESIDUAL,
+                       "grey_ramp": None if corr is None else corr.grey_ramp}
     plate_relative = plate is not None and plan is not None and plan.get("mode") in (pl.MODE_PLATE, pl.MODE_CAPABILITY)
     finished_relative = plate is None and relative_finished_allowed(store)
     if corrected is None and (plate_relative or finished_relative):
         # The calibration plate is itself the experiment target; no separate ColorChecker is required.
         # A finished work without a chart is measured the same way when the operator allows it (DEC-053).
         # Keep these measurements useful for same-camera comparisons while making their limitations explicit.
-        corrected = ph.decoded_srgb(img_bgr)
+        corrected = ph.decoded_srgb(img_bgr, linear)
         report["color_measurement"] = {"mode": "raw_camera_relative", "reference_chart_used": False,
                                        "relative": True}
         report["warnings"].append(
@@ -1556,6 +1811,11 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
                         rep["notes"].append(f"{rep['covered_by_later_layers_percent']:g}% of the sampled area is engraved again by a "
                                             "later layer and is not sampled")
         _note_frame(rep, report["alignment"])
+        if rep.get("role") == "pre-test cleaning witness" and int(mask.sum()) < ph.MIN_MASK_PIXELS:
+            # the first layer is engraved over entirely: nothing of it shows, and there is no clean reference here
+            rep["measured_lab"], rep["pixels"] = None, int(mask.sum())
+            rep["notes"].append("the cleaning layer is engraved over entirely: no clean titanium is visible in this photograph")
+            continue
         try:
             rep["measured_lab"], rep["pixels"] = ph.sample_lab(corrected, mask)
         except ph.PhotoError as exc:
@@ -1574,6 +1834,12 @@ def _measure(store, row, pair, profile, project, plate, plan, corners, work_laye
                 if line_metrics:
                     rep["line_metrics"] = line_metrics
                 continue
+        if rep.get("role") == "pre-test cleaning witness" and not _looks_like_clean_titanium(rep["measured_lab"]):
+            # a first-run enclosing rectangle burned dark is a background fill, not a cleaning pass: a colour, no reference
+            lab_ = rep["measured_lab"]
+            rep["notes"].append(f"the first layer is not clean titanium (L* {lab_[0]:.0f}, chroma {float(np.hypot(lab_[1], lab_[2])):.0f}): "
+                                "a background fill, measured as a colour; this photograph has no clean reference")
+            rep["role"] = "test feature"
         if layer.layer_type == "Image" and rep.get("role") == "test feature":
             allowed = visible_surface
             if covered is not None:
@@ -1663,6 +1929,8 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], 
         raise IngestError("the LightBurn file differs from the plate definition: correct the pair or confirm the file")
     if not pair["masks_reviewed"]:
         raise IngestError("review the layer masks overlaid on the photograph before accepting")
+    if pair.get("matrix") and not pair["matrix"].get("confirmed"):
+        raise IngestError("confirm the settings read from the matrix before accepting")
     layers = [rep for rep in check["layers"] if rep["measured_lab"] is not None]
     if not layers:
         raise IngestError("no readable, comparable layer to accept")
@@ -1705,7 +1973,8 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], 
                         "pixels": rep["pixels"], "chart_residual": check["chart"]["residual"], "layer_name": rep["name"],
                         "lightburn_file": row["lightburn_name"], "color_measurement": check["color_measurement"],
                         "role": rep.get("role"), "submeasurements": rep.get("submeasurements", []),
-                        "line_metrics": rep.get("line_metrics"), "parameter_error": param_error}
+                        "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
+                        "matrix_cell": rep.get("matrix_cell")}
             model_eligible = color_mode == "reference_chart_corrected" and rep["compatible"] and param_error is None
             observation_reason = reason
             if not rep["compatible"] or param_error:
@@ -1769,7 +2038,7 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
         raise IngestError("the photograph is not aligned yet: run the check first")
     img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
     if corrected and not transparent:
-        rgb, _, _ = ph.correct(img_bgr)
+        rgb, _, _ = ph.correct(img_bgr, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)))
         if rgb is not None:
             img_bgr = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted" and not transparent:
@@ -1868,7 +2137,7 @@ def photo_preview_png(store: Store, pair_id: int, corrected: bool = False, visib
         raise IngestError("unknown photo preview visibility mode")
     img = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
     if corrected:
-        rgb, _, _ = ph.correct(img)
+        rgb, _, _ = ph.correct(img, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)))
         if rgb is not None:
             img = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted":

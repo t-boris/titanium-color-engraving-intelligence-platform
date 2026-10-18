@@ -88,6 +88,56 @@ def test_the_currentTarget_guard_flags_the_original_bug_and_accepts_the_fix():
 
 
 
+NULLABLE = re.compile(r":\s*(null|undefined|false)\s*$")
+
+
+def nullable_children(source: str) -> list[str]:
+    """Top-level arguments of ``.replaceChildren(...)`` that can be null: the DOM inserts them as the text "null"."""
+    out = []
+    for m in re.finditer(r"\.replaceChildren\(", source):
+        i, depth, args, cur = m.end(), 1, [], ""
+        while depth and i < len(source):
+            ch = source[i]
+            i += 1
+            if ch in "'\"`":                                  # a string: its brackets and commas are text
+                end = i
+                while end < len(source) and source[end] != ch:
+                    end += 2 if source[end] == "\\" else 1
+                cur += source[i - 1:end + 1]
+                i = end + 1
+                continue
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            if depth == 1 and ch == ",":
+                args.append(cur)
+                cur = ""
+            elif depth:
+                cur += ch
+        args.append(cur)
+        out += [a.strip() for a in args if not a.strip().startswith("...")
+                and (NULLABLE.search(a.strip()) or (re.match(r"^[\w.!()]+\s*&&", a.strip()) and "?" not in a))]
+    return out
+
+
+def test_no_screen_passes_a_possibly_null_child_to_replaceChildren():
+    """Regression: the colour search printed "null" above the film card. ``h()`` skips null children, the DOM's
+    ``replaceChildren`` does not; ``App.fill(el, ...)`` replaces children the way ``h()`` appends them."""
+    offenders = []
+    for src in SCRIPTS:
+        offenders += [f"{src}: {arg[:90]}" for arg in nullable_children((UI_DIR / src.lstrip("/")).read_text(encoding="utf-8"))]
+    assert offenders == [], "use App.fill(el, ...) for children that can be null:\n" + "\n".join(offenders)
+
+
+def test_the_null_child_guard_flags_the_original_bug_and_accepts_the_fix():
+    buggy = "results.replaceChildren(h('h3', {}, 'a, (b'), r.n && !f.within ? h('div') : null, film ? card(film) : null);"
+    assert nullable_children(buggy) == ["r.n && !f.within ? h('div') : null", "film ? card(film) : null"]
+    assert nullable_children("fill(results, h('h3'), film ? card(film) : null);") == []
+    assert nullable_children("el.replaceChildren(...items.map((x) => (x ? h('p') : null)), h('p', {}, ok ? 'a' : 'b'));") == []
+    assert nullable_children("el.replaceChildren(h('p'), shown && h('div'));") == ["shown && h('div')"]
+
+
 def test_ui_files_are_revalidated_so_an_upgrade_takes_effect_on_reload(tmp_path):
     """Regression: without Cache-Control a reloaded tab kept the old screen scripts after they changed."""
     with TestClient(create_app(tmp_path / "d")) as c:
