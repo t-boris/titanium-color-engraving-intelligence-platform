@@ -211,16 +211,26 @@ def _add_operating_points(setup: dict, cells: list[dict]) -> None:
         cell["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
 
 
-def check_work_field(setup: dict, width: float, height: float) -> None:
-    """A plate with its markers must fit the work field of the laser, when the field is printed or confirmed (REQ-018, DEC-040)."""
+def work_field_check(setup: dict, need_w: float, need_h: float) -> dict:
+    """Whether a plate of ``need_w`` x ``need_h`` mm, markers included, fits the work field of the laser and its lens
+    (REQ-018, DEC-040). A known field that is too small refuses the plate. An unknown field is never a successful fit:
+    the result says that the placement was not checked."""
     from . import characterization
-    field, _ = characterization.work_field(setup["device"]["passport"], setup["lens"])
+    field, waiting = characterization.work_field(setup["device"]["passport"], setup["lens"])
+    need = {"width": round(need_w, 2), "height": round(need_h, 2)}
     if field is None:
-        return
-    ext = marker_geometry("TCE-00000000", width, height)["extent"]       # same identifier length as a real plate, so the same QR size
-    need_w, need_h = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
+        return {"checked": False, "needed_mm": need, "field_mm": None, "source": None, "waiting_for": waiting,
+                "note": "the work field of the lens is unknown: the placement was not checked"}
     if need_w > field["width"] or need_h > field["height"]:
         raise su.ValidationError(f"the plate with its markers is {need_w:.0f} x {need_h:.0f} mm, larger than the work field {field['width']:g} x {field['height']:g} mm of the laser")
+    return {"checked": True, "needed_mm": need, "field_mm": {"width": field["width"], "height": field["height"]},
+            "source": field["source"], "waiting_for": [], "note": None}
+
+
+def check_work_field(setup: dict, width: float, height: float) -> dict:
+    """The work-field check of a grid plate of ``width`` x ``height`` mm with the markers around it."""
+    ext = marker_geometry("TCE-00000000", width, height)["extent"]       # same identifier length as a real plate, so the same QR size
+    return work_field_check(setup, ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"])
 
 
 def build_grid(setup: dict, powers: list[float], frequencies: list[float], speed: float,
@@ -239,7 +249,7 @@ def build_grid(setup: dict, powers: list[float], frequencies: list[float], speed
     if problems:
         raise su.ValidationError("; ".join(dict.fromkeys(problems)))
     cols, rows = len(powers), len(frequencies)
-    check_work_field(setup, cols * cell_w + (cols - 1) * gap, rows * cell_h + (rows - 1) * gap)
+    placement = check_work_field(setup, cols * cell_w + (cols - 1) * gap, rows * cell_h + (rows - 1) * gap)
     # A system-generated plate reserves C00 for cleaning and C01 for registration markers.
     if cols * rows + 2 > MAX_LAYERS:
         raise su.ValidationError(f"{cols * rows} cells need more than the {MAX_LAYERS - 2} test layers available after cleaning and markers")
@@ -252,7 +262,7 @@ def build_grid(setup: dict, powers: list[float], frequencies: list[float], speed
     _add_operating_points(setup, cells)
     return {"cells": cells, "geometry": {"cell_width": cell_w, "cell_height": cell_h, "gap": gap, "columns": cols, "rows": rows,
                                          "width": cols * cell_w + (cols - 1) * gap, "height": rows * cell_h + (rows - 1) * gap},
-            "lightburn_settings": scan_settings(lightburn_settings)}
+            "lightburn_settings": scan_settings(lightburn_settings), "work_field": placement}
 
 
 def preview_series(setup: dict, powers_text: str, frequencies_text: str, speeds_text: str,
@@ -286,6 +296,7 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
     if marker_layer_settings(store) is None:
         raise su.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
     setup = su.installed(store, device_id)
+    marker_layer = marker_layer_for(store, setup["device"]["passport"])     # offered by this laser, its pulse width a step (REQ-017)
     lens = su.lens_snapshot(setup)
     lens_json = json.dumps(lens) if lens else None   # DEC-041: the lens is remembered by the plate
     grids = []
@@ -309,9 +320,9 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
                 "INSERT INTO plate(experiment_id,device_id,lens_id,speed,geometry_json,cells_json,proposal_id,lens_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (ident, device_id, setup["lens_id"], speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, lens_json, now())).lastrowid
             process = item["cells"][0]["parameters"]
-            plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store), "lens": lens,
+            plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer, "lens": lens,
                          "process_settings": {k: process[k] for k in ("pulse_width", "line_interval", "passes")},
-                         "lightburn_settings": item["lightburn_settings"],
+                         "lightburn_settings": item["lightburn_settings"], "work_field": item["work_field"],
                          # its cells are filled areas measured for their colour; Fill mode says so by itself (REQ-020)
                          "engraving_task": tasks.plan_task("fill", basis=tasks.DERIVED)}
             plan_id = store.execute(
@@ -320,7 +331,8 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
                  json.dumps(plan_data), now())).lastrowid
             out.append({"plate_id": plate_id, "plan_id": plan_id, "experiment_id": ident, "speed": speed,
                         "geometry": item["geometry"], "cells": len(item["cells"]),
-                        "intersections": sum(1 for c in item["cells"] if not c["proposed"])})
+                        "intersections": sum(1 for c in item["cells"] if not c["proposed"]),
+                        "work_field": item["work_field"]})     # an unknown field says the placement was not checked (REQ-018)
     return out
 
 

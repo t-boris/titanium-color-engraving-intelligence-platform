@@ -2,6 +2,18 @@
 'use strict';
 const PlateDialog = (() => {
   const {h, btn, field, get, post, toast, fail, modal, go} = App;
+  const UNCHECKED = 'поле линзы неизвестно — размещение не проверено';
+
+  /** Проверка размещения по рабочему полю лазера и линзы (REQ-018): неизвестное поле — не «помещается», а «не проверено». */
+  function placementText(summary) {
+    const w = summary && summary.work_field;
+    if (!w) return '';
+    return w.checked ? `помещается в рабочее поле ${w.field_mm.width} × ${w.field_mm.height} мм` : UNCHECKED;
+  }
+  const placement = (summary) => {
+    const text = placementText(summary);
+    return text ? h('span', {class: summary.work_field.checked ? 'muted' : 'pill warn'}, ` · ${text}`) : null;
+  };
 
   const DEFAULTS = {power: 20, frequency: 48, speed: 900, pulse_width: 200, line_interval: 0.025, passes: 1, global_passes: 1};
   const MATRIX_AXES = {
@@ -250,7 +262,7 @@ const PlateDialog = (() => {
           return h('div', {}, `Часть ${index + 1}/${parts.length}: ${size.width} × ${size.height} мм · `,
             `${part.summary.registration === 'full' ? 'QR и метки' : 'без меток'} · `,
             `${part.summary.test_features} квадрат(а) · ${part.output_layers} выходных слоя · `,
-            `очистка ${part.summary.clean_area_mm2} мм²`);
+            `очистка ${part.summary.clean_area_mm2} мм²`, placement(part.summary));
         }));
       } catch (e) { fail(e); }
     }));
@@ -263,13 +275,14 @@ const PlateDialog = (() => {
         if (reload) reload();
         const parts = made.parts || [made];
         if (parts.length === 1) {
-          toast(`Создано: ${parts[0].name} · ${parts[0].summary.layers} тестовых слоёв`, 'ok');
+          const unchecked = parts[0].summary.work_field && !parts[0].summary.work_field.checked;
+          toast(`Создано: ${parts[0].name} · ${parts[0].summary.layers} тестовых слоёв${unchecked ? ' · ' + UNCHECKED : ''}`, unchecked ? 'warn' : 'ok');
           go('/experiment/plan-' + parts[0].plan_id);
         } else {
           modal('Части компактного теста', h('div', {class: 'stack'},
             h('p', {}, `Создано ${parts.length} самостоятельных LightBurn-файла. Каждый начинается с локальной чистки${parts[0].summary.registration === 'full' ? ' и имеет собственные метки' : ''}.`),
             ...parts.map((part, index) => h('div', {class: 'card row'},
-              h('strong', {}, `Часть ${index + 1}/${parts.length} · квадраты ${part.sample_indexes.join(', ')}`),
+              h('strong', {}, `Часть ${index + 1}/${parts.length} · квадраты ${part.sample_indexes.join(', ')}`), placement(part.summary),
               h('span', {class: 'spacer'}),
               h('a', {href: part.download_url, download: ''}, 'Скачать LightBurn'),
               h('a', {href: '#/plans/' + part.plan_id}, 'Открыть план')))),

@@ -24,5 +24,7 @@
       (m) => `Частота ${m[1]} кГц ниже Min PWM ${m[2]} кГц в настройках лазера: проверьте настройки LightBurn`],
     [/^frequency (\S+) kHz is above Max PWM (\S+) kHz of the laser settings$/i,
       (m) => `Частота ${m[1]} кГц выше Max PWM ${m[2]} кГц в настройках лазера: проверьте настройки LightBurn`],
+    // поле линзы неизвестно: размещение не проверено, а не «помещается» (REQ-018)
+    [/^the work field of the lens is unknown: the placement was not checked$/i, 'Поле линзы неизвестно — размещение не проверено'],
   ]);
 })();

@@ -219,7 +219,6 @@ def _layer(index: int, name: str, p: dict, regions: list[dict], *, mode: str = "
 def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict]:
     repetition = passport["repetition_rate_khz"]
     steps = passport["pulse_steps"]
-    selectable = [float(s["pulse_width_ns"]) for s in steps]
     values = {**DEFAULT_TEST, **supplied}
     values["power"] = su._finite(values["power"], "мощность")
     if not 0 < values["power"] <= 100:
@@ -233,8 +232,7 @@ def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict
     if values.get("pulse_width") in (None, ""):
         raise su.ValidationError("выберите длительность импульса из ступеней лазера")
     values["pulse_width"] = su._finite(values["pulse_width"], "длительность импульса", True)
-    if values["pulse_width"] not in selectable:
-        raise su.ValidationError("выбранной длительности импульса нет в паспорте лазера")
+    devices.require_selectable(passport, values["pulse_width"])        # refused with the laser's steps listed (REQ-017)
     values["line_interval"] = su._finite(values["line_interval"], "шаг линий", True)
     if values["line_interval"] > 1:
         raise su.ValidationError("шаг линий должен быть не больше 1 мм")
@@ -880,9 +878,9 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
             clean_regions.append(_rect(qr["x"], qr["y"], qr["size"], qr["size"]))
     if total_w > limits["width"] + 1e-6 or total_h > limits["height"] + 1e-6:
         raise su.ValidationError(f"эта плата с метками занимает {total_w:.1f} × {total_h:.1f} мм; заданный предел — {limits['width']:g} × {limits['height']:g} мм")
-    field = lens.get("field_mm")
-    if field and max(total_w, total_h) > float(field):
-        raise su.ValidationError(f"плата {total_w:.1f} × {total_h:.1f} мм не помещается в поле линзы {field:g} мм")
+    # the work field of the laser and its lens (the smaller of the lens field and the confirmed settings field); an
+    # unknown field is reported as not checked, never as a fit (REQ-018)
+    placement = plans.work_field_check({"device": device, "lens": lens}, total_w, total_h)
     if len(layers) + 1 + int(marked) > plans.MAX_LAYERS:
         raise su.ValidationError("для этого теста слишком много слоёв LightBurn")
     # C01, the system layer of the markers and the engraved labels, burns with the operator's marker-layer settings
@@ -905,7 +903,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
                   "summary": {"layers": len(layers), "test_features": len(geometry["cells"]),
                               "visual_features": geometry.get("feature_count", len(geometry["cells"])),
                               "size_mm": {"width": round(total_w, 2), "height": round(total_h, 2)},
-                              "limit_mm": limits, "registration": "full" if marked else "none",
+                              "limit_mm": limits, "work_field": placement, "registration": "full" if marked else "none",
                               "sample_area_mm2": geometry.get("sample_area_mm2"),
                               "clean_area_mm2": round(sum(r["width"] * r["height"] for r in clean_regions), 2)
                               if clean_regions is not None else round(total_w * total_h, 2)}}

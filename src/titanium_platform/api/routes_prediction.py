@@ -14,7 +14,7 @@ from collections import OrderedDict
 import numpy as np
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from .. import prediction, prediction_store, setup as su
+from .. import devices, prediction, prediction_store, setup as su
 from .common import MAX_LIGHTBURN_BYTES, lens_param, read_upload, store_of
 
 router = APIRouter(prefix="/api")
@@ -85,7 +85,9 @@ async def predict_photo(request: Request, device_id: int = Form(...), lens_id: s
     name, data = await read_upload(lightburn, MAX_LIGHTBURN_BYTES, "LightBurn")
     s = store_of(request)
     lens = lens_param(lens_id)
-    su.resolve(s, device_id, lens)
+    setup = su.resolve(s, device_id, lens)
+    if pulse_width is not None:                 # a width the laser does not offer is refused with its steps (REQ-017)
+        devices.require_selectable(setup["device"]["passport"], pulse_width)
     if material_id is not None and s.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
         raise KeyError(f"titanium {material_id} not found")
     overrides = {"min_power": min_power, "max_power": max_power, "speed": speed, "frequency": frequency, "pulse_width": pulse_width,

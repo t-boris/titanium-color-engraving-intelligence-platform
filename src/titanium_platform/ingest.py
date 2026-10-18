@@ -538,6 +538,7 @@ def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False)
     if confirm:
         if spec["missing"]:
             raise IngestError("the matrix settings are incomplete: " + "; ".join(spec["missing"]))
+        require_matrix_steps(su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"], record)
         record["confirmed"] = True
     title = matrix.title(spec, row["photo_name"])
     Path(row["lightburn_path"]).write_bytes(matrix.lightburn_bytes(spec, record["cols"], record["rows"]))
@@ -547,6 +548,15 @@ def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False)
     store.audit("matrix_settings_edited", pair_id=pair_id, confirmed=record["confirmed"], cols=record["cols"], rows=record["rows"])
     restore_plan(store, pair_id)
     return check_pair(store, pair_id)
+
+
+def require_matrix_steps(passport: dict, record: dict) -> None:
+    """Every pulse width of a matrix's cells must be a step of the laser: the laser ignores any other, so a cell with one
+    would not record the job that was engraved. Refused with the steps listed (REQ-017)."""
+    from . import devices, matrix
+    widths = {matrix.cell_settings(record["spec"], col, row)["pulse_width"] for row in range(record["rows"]) for col in range(record["cols"])}
+    for width in sorted(w for w in widths if w is not None):
+        devices.require_selectable(passport, width)
 
 
 def confirm_matrix(store: Store, pair_id: int) -> None:
@@ -559,6 +569,7 @@ def confirm_matrix(store: Store, pair_id: int) -> None:
         raise IngestError("this pair is not a parameter matrix")
     if record["spec"]["missing"]:
         raise IngestError("the matrix settings are incomplete: " + "; ".join(record["spec"]["missing"]))
+    require_matrix_steps(su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"], record)
     record["confirmed"] = True
     pair["matrix"] = record
     _save(store, pair_id, pair)
@@ -1813,6 +1824,10 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
         spec = matrix_record["spec"]
         if spec.get("missing"):
             problems.append("the matrix settings are incomplete: " + "; ".join(spec["missing"]))
+        try:
+            require_matrix_steps(setup["device"]["passport"], matrix_record)
+        except su.ValidationError as exc:
+            problems.append(str(exc))                  # a pulse width the laser does not offer, with its steps (REQ-017)
         for item in report["layers"]:
             col, row_ = item["index"] % matrix_record["cols"], item["index"] // matrix_record["cols"]
             item["matrix_cell"] = {"col": col, "row": row_, **{k: v for k, v in matrix.cell_settings(spec, col, row_).items()}}
