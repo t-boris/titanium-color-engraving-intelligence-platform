@@ -182,7 +182,7 @@
       h('h4', {}, 'Платы и файлы'), planBox,
       h('h4', {}, 'Фотографии и проверки'), photoBox,
       h('div', {class: 'research-evidence-actions'}, link(active.plans.length ?
-        `/ingest?plan=${active.plans[0].id}&material=${active.material_id}${active.profile_id ? `&profile=${active.profile_id}` : ''}` : '/ingest', 'Добавить RAW-фото'),
+        `/ingest?plan=${active.plans[0].id}&material=${active.material_id}&device=${active.device_id}&lens=${App.lensParam(active.lens_id)}` : '/ingest', 'Добавить RAW-фото'),
         link('/experiments', 'Все эксперименты')),
       insightBox, memoryBox);
     return h('div', {class: 'research-page'},

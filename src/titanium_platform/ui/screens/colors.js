@@ -30,13 +30,13 @@
     return svg;
   }
 
-  function predictDialog(pid) {
+  function predictDialog(pick) {
     const L = h('input', {type: 'number', step: 'any', value: 50}), a = h('input', {type: 'number', step: 'any', value: 0}), b = h('input', {type: 'number', step: 'any', value: 0});
     const out = h('div', {class: 'stack'});
     modal('Целевой цвет', h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, field('L (0–100)', L), field('a (−128…127)', a), field('b (−128…127)', b)), out), [
       {label: 'Закрыть', run: (m) => m.close()},
       {label: 'Подобрать параметры', cls: 'primary', run: async () => {
-        const r = await post(`/profiles/${pid}/predict`, {lab: [+L.value, +a.value, +b.value]});
+        const r = await post('/predict', {device_id: pick.deviceId(), lens_id: pick.lensId(), lab: [+L.value, +a.value, +b.value]});
         out.replaceChildren(!r.available
           ? h('div', {class: 'alert warn'}, 'Недостаточно данных для прогноза: параметры без уверенности, ошибки и стабильности не выдаются.')
           : h('div', {class: 'stack'}, r.outside_coverage ? h('div', {class: 'alert warn'}, 'Вне измеренного цветового пространства') : h('div', {class: 'alert ok'}, 'В пределах измеренного покрытия'),
@@ -107,24 +107,23 @@
 
   App.register({id: 'colors', async render(ctx) {
     if (ctx.id === 'knowledge') return KnowledgeView.render(ctx.arg);
-    if (!ctx.query.profile && !ctx.query.profileId) return ColorMap.render(ctx);     // the general map; ?profile= opens the model of one profile version
-    const profiles = await get('/profiles');
-    if (!profiles.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Нет измеренных цветов'), link('/profiles', 'Профили'), ' ', link('/ingest', 'Добавить наблюдение'));
-    const pid = +(ctx.query.profile || ctx.query.profileId || profiles[profiles.length - 1].id);
-    const [map, know] = await Promise.all([get(`/profiles/${pid}/map`), get(`/profiles/${pid}/knowledge`)]);
-    const picker = h('select', {'aria-label': 'Версия профиля', onChange: (e) => { location.hash = '#/colors?profile=' + e.target.value; }},
-      profiles.map((p) => h('option', {value: p.id, selected: p.id === pid}, `${p.name} · версия ${p.version}`)));
+    if (!ctx.query.device) return ColorMap.render(ctx);     // the general map; ?device=&lens= opens the model of one laser and lens
+    const lists = await App.hardwareLists();
+    if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Нет измеренных цветов'), link('/devices', 'Лазеры'), ' ', link('/ingest', 'Добавить наблюдение'));
+    const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { location.hash = '#/colors?' + pick.route(); }});
+    const [map, know] = await Promise.all([get('/color-model?' + pick.query()), get('/knowledge?' + pick.query())]);
     const rows = know.map((k) => {
       const s = k.summary;
       return [link('/knowledge/' + k.id, labText(s && s.lab)), `${num(k.parameters.power, 1)} / ${num(k.parameters.frequency, 0)} / ${num(k.parameters.speed, 0)}`,
         pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''), k.questioned ? pill('под вопросом', 'bad') : '', s ? s.independent_engravings : 0,
         s && s.available ? num(s.confidence) : '—', s && s.available ? num(s.expected_delta_e) : '—', s ? stab(s.stability) : '—'];
     });
-    const header = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных версий профиля не объединяются.')),
+    const header = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных лазеров и линз (в том числе неизвестной) не объединяются.')),
       h('span', {class: 'spacer'}));
-    const controls = h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap wide'}, field('Версия профиля', picker)), btn('Целевой цвет', () => predictDialog(pid), 'primary'), link('/designer?profile=' + pid, 'Спланировать эксперимент'));
+    const controls = h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap'}, field('Лазер', pick.laser)), h('div', {class: 'f-wrap'}, field('Линза', pick.lens)),
+      btn('Целевой цвет', () => predictDialog(pick), 'primary'), link('/designer?' + pick.route(), 'Спланировать эксперимент'));
     const relativeSets = map.camera_relative_sets || [];
-    if (!map.samples.length && !relativeSets.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этой версии профиля пока нет проверенных измерений'), link('/ingest', 'Добавить фото эксперимента')));
+    if (!map.samples.length && !relativeSets.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этого лазера с этой линзой пока нет проверенных измерений'), link('/ingest', 'Добавить фото эксперимента')));
     return h('div', {class: 'stack'}, header, controls,
       map.samples.length ? h('div', {class: 'card'}, h('h3', {}, 'Калиброванные наблюдения для прогноза'), mapPlot(map.samples),
         h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок повторяемости. Цвета показаны как экранное представление Lab.')) : null,

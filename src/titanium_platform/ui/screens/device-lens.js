@@ -3,7 +3,7 @@
    M² и измеренное пятно вводятся на этой же вкладке: сообщение о том, чего не хватает, всегда рядом с полем для ответа. */
 'use strict';
 const DeviceLens = (() => {
-  const {h, btn, field, pill, get, post, put, patch, del, toast, fail, confirmBox, table, facts} = App;
+  const {h, btn, field, pill, get, post, put, patch, del, toast, fail, confirmBox, modal, table, facts} = App;
   const val = (el) => el.value.trim();
   const num = (el) => (val(el) === '' ? null : +val(el).replace(',', '.'));
   const g = (v, d = 4) => (v == null ? '—' : String(+(+v).toPrecision(d)));
@@ -32,11 +32,13 @@ const DeviceLens = (() => {
     }
     const range = spot.low ? `${g(spot.low, 3)}${spot.high ? '–' + g(spot.high, 3) : '+'} мкм (границы, в расчётах не участвуют)` : null;
     const wf = c.work_field_mm;
-    return h('div', {class: 'stack'}, facts([['Установлена', `${lens.name} · фокус ${g(lens.focal_length_mm)} мм` + (lens.expansion !== 1 ? ` · расширитель ×${lens.expansion}` : '')],
+    return h('div', {class: 'stack'}, facts([['Установлена', App.lensLabel(lens) + (lens.expansion !== 1 ? ` · расширитель ×${lens.expansion}` : '')],
       ['Диаметр пятна', spot.value != null ? `${g(spot.value, 3)} мкм (${spot.basis === 'measured' ? 'измерено вами' : 'рассчитано'})` : (range || 'не определён')],
       ['Рабочее поле', wf ? `${g(wf.width)} × ${g(wf.height)} мм (${SOURCE[wf.source] || wf.source})` : 'не определено']]),
     spot.waiting_for.includes('m2') ? h('div', {class: 'alert warn'}, `Линза учтена: фокус ${g(lens.focal_length_mm)} мм, диаметр пучка на ней ${g(d.passport.beam_diameter_mm)} мм. Для диаметра пятна не хватает только M² (качества пучка).`
       + (d.passport.m2_max ? ` В руководстве сказано «не больше ${g(d.passport.m2_max)}»: это предел, а не число вашего лазера, поэтому в расчётах его нет.` : '') + ' Впишите M² или измеренное пятно ниже.') : null,
+    spot.waiting_for.includes('focal_length') ? h('div', {class: 'alert warn'}, 'Фокусное расстояние этой линзы не указано: диаметр пятна, плотность энергии и перекрытие импульсов не рассчитываются. '
+      + 'Остальные расчёты рабочей точки доступны. Укажите фокус в списке линз ниже или впишите измеренное пятно.') : null,
     spotForm(d, refresh),                                    // всегда на виду: введённое значение можно поправить здесь же
     wf && wf.settings_exceeds_lens ? h('div', {class: 'alert warn'}, 'Поле в настройках лазера больше поля линзы: плата ограничена полем линзы.') : null);
   }
@@ -47,17 +49,26 @@ const DeviceLens = (() => {
     const set = btn(here ? 'Снять' : 'Поставить', async () => {
       try { await put(`/devices/${d.id}/lens`, {lens_id: here ? null : l.id}); toast(here ? 'Линза снята' : 'Линза установлена', 'ok'); refresh(d.id); } catch (e) { fail(e); }
     }, here ? '' : 'primary', !!elsewhere);
-    const remove = btn('Удалить', () => confirmBox('Удалить линзу', `«${l.name}». Установленную линзу удалить нельзя. Старые платы сохранят её описание.`, 'Удалить',
+    const remove = btn('Удалить', () => confirmBox('Удалить линзу', `«${l.name}». Установленную линзу и линзу, с которой есть платы или измерения, удалить нельзя.`, 'Удалить',
       async () => { await del('/lenses/' + l.id); toast('Линза удалена', 'ok'); refresh(d.id); }), 'danger', here);
-    return [h('div', {}, h('strong', {}, l.name), l.note ? h('div', {class: 'small muted'}, l.note) : null), `${g(l.focal_length_mm)} мм`, l.field_mm ? `${g(l.field_mm)} мм` : '—',
+    const focal = l.focal_length_mm == null ? btn('Указать фокус', () => focalDialog(d, l, refresh), 'btn-small') : `${g(l.focal_length_mm)} мм`;
+    return [h('div', {}, h('strong', {}, l.name), l.note ? h('div', {class: 'small muted'}, l.note) : null), focal, l.field_mm ? `${g(l.field_mm)} мм` : '—',
       l.expansion === 1 ? '—' : '×' + l.expansion, here ? pill('установлена', 'ok') : elsewhere ? pill('на «' + l.installed_on.name + '»', 'warn') : '', h('span', {class: 'row'}, set, remove)];
+  }
+
+  /** Фокусное расстояние линзы, записанной без него: запись дополняется, данные с этой линзой остаются её данными (DEC-063). */
+  function focalDialog(d, l, refresh) {
+    const focal = h('input', {type: 'number', step: 'any', placeholder: 'мм', 'aria-label': 'Фокусное расстояние'});
+    modal('Фокусное расстояние линзы', h('div', {class: 'stack'}, h('p', {}, `«${l.name}»: впишите значение с оправы или из документации.`), field('Фокусное расстояние, мм', focal)), [
+      {label: 'Отмена', run: (m) => m.close()},
+      {label: 'Сохранить', cls: 'primary', run: async (m) => { await patch('/lenses/' + l.id, {focal_length_mm: num(focal)}); m.close(); toast('Фокус сохранён', 'ok'); refresh(d.id); }}]);
   }
 
   function form(d, refresh) {
     const f = {name: h('input', {placeholder: 'например, F-theta 254', 'aria-label': 'Название линзы'}), focal: h('input', {type: 'number', step: 'any', placeholder: 'мм', 'aria-label': 'Фокусное расстояние'}),
       fieldMm: h('input', {type: 'number', step: 'any', placeholder: 'мм, например 175', 'aria-label': 'Поле линзы'}), exp: h('input', {type: 'number', step: 'any', value: 1, 'aria-label': 'Расширитель пучка'}),
       note: h('input', {placeholder: 'необязательно', 'aria-label': 'Заметка'})};
-    return h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, field('Название', f.name), field('Фокусное расстояние, мм', f.focal, 'выгравировано на оправе: F=…'),
+    return h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, field('Название', f.name), field('Фокусное расстояние, мм', f.focal, 'выгравировано на оправе: F=…; если неизвестно, оставьте пустым'),
       field('Поле линзы, мм', f.fieldMm, 'сторона квадрата, например 110, 150, 175'), field('Расширитель пучка', f.exp, '1, если расширителя нет; ×2 уменьшает пятно вдвое'), field('Заметка', f.note)),
     btn('Добавить и установить', async () => {
       try {

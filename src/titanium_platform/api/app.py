@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__, capability_results, research
-from ..db import Store
+from ..db import open_store
 from . import routes_devices, routes_lenses, routes_plans, routes_research, routes_setup, routes_work
 from .common import install_error_handlers
 
@@ -31,7 +31,7 @@ class UIFiles(StaticFiles):
 
 def create_app(data_dir: str | Path) -> FastAPI:
     app = FastAPI(title="Laser Workshop", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
-    app.state.store = Store(data_dir)
+    app.state.store = open_store(data_dir)          # a database the migration refuses ends the start with exit code 2
     capability_results.backfill_findings(app.state.store)
     install_error_handlers(app)
 

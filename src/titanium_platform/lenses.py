@@ -2,13 +2,15 @@
 
 A lens is its own record. At most one lens is installed on a laser and a lens sits on at most one laser. A plate stores a
 snapshot of the lens it was made for, so editing or replacing a lens later never changes what a stored plate means.
+Records of work name the lens by its record (DEC-063): an edit of the lens does not split their knowledge. A lens may stay
+incomplete: an unknown focal length leaves the spot and what depends on it unavailable (REQ-019).
 The spot diameter is derived from the installed lens in :mod:`characterization`; this module only keeps the records.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from . import profiles as pf
+from . import setup as su
 from .db import Store, now
 
 FOCAL_RANGE_MM = (20.0, 1500.0)
@@ -18,9 +20,9 @@ _UNSET = object()
 
 
 def _bounded(value: Any, name: str, lo: float, hi: float) -> float:
-    number = pf._finite(value, name, True)
+    number = su._finite(value, name, True)
     if not lo <= number <= hi:
-        raise pf.ValidationError(f"{name} must be between {lo:g} and {hi:g}")   # name is one of: focal length, lens field, beam expansion
+        raise su.ValidationError(f"{name} must be between {lo:g} and {hi:g}")   # name is one of: focal length, lens field, beam expansion
     return number
 
 
@@ -41,14 +43,14 @@ def _public(store: Store, row) -> dict:
 def _clean(name: Any, focal: Any, field: Any, expansion: Any, note: Any) -> tuple:
     name = str(name or "").strip()
     if not name:
-        raise pf.ValidationError("lens name is required")
-    focal = _bounded(focal, "focal length", *FOCAL_RANGE_MM)
+        raise su.ValidationError("lens name is required")
+    focal = None if focal in (None, "") else _bounded(focal, "focal length", *FOCAL_RANGE_MM)
     field = None if field in (None, "") else _bounded(field, "lens field", *FIELD_RANGE_MM)
     expansion = 1.0 if expansion in (None, "") else _bounded(expansion, "beam expansion", *EXPANSION_RANGE)
     return name, focal, field, expansion, (str(note).strip() or None) if note is not None else None
 
 
-def create_lens(store: Store, name: str, focal_length_mm: Any, field_mm: Any = None, expansion: Any = 1.0, note: str | None = None) -> dict:
+def create_lens(store: Store, name: str, focal_length_mm: Any = None, field_mm: Any = None, expansion: Any = 1.0, note: str | None = None) -> dict:
     values = _clean(name, focal_length_mm, field_mm, expansion, note)
     cur = store.execute("INSERT INTO lens(name,focal_length_mm,field_mm,expansion,note,created_at) VALUES (?,?,?,?,?,?)", (*values, now()))
     return get_lens(store, cur.lastrowid)
@@ -77,7 +79,10 @@ def update_lens(store: Store, lens_id: int, name: Any = _UNSET, focal_length_mm:
 def delete_lens(store: Store, lens_id: int) -> None:
     lens = get_lens(store, lens_id)
     if lens["installed_on"]:
-        raise pf.ProtectedError("this lens is installed on a laser; remove it from the laser first")
+        raise su.ProtectedError("this lens is installed on a laser; remove it from the laser first")
+    used = sum(store.one(f"SELECT COUNT(*) AS n FROM {table} WHERE lens_id=?", (lens_id,))["n"] for table in su.RECORD_TABLES)
+    if used:
+        raise su.ProtectedError(f"this lens is named by {used} stored records of work and keeps their history")
     store.execute("DELETE FROM lens WHERE id=?", (lens_id,))
     store.audit("lens_deleted", id=lens_id)
 
@@ -90,7 +95,7 @@ def install(store: Store, device_id: int, lens_id: int | None) -> None:
         _row(store, lens_id)
         other = store.one("SELECT name FROM laser_device WHERE lens_id=? AND id<>?", (lens_id, device_id))
         if other is not None:
-            raise pf.ValidationError(f"this lens is already installed on another laser ({other['name']}); remove it there first")
+            raise su.ValidationError(f"this lens is already installed on another laser ({other['name']}); remove it there first")
     store.execute("UPDATE laser_device SET lens_id=?, updated_at=? WHERE id=?", (lens_id, now(), device_id))
     store.audit("lens_installed", device_id=device_id, lens_id=lens_id)
 
@@ -100,9 +105,17 @@ def installed(store: Store, device_id: int) -> dict | None:
     return None if row is None or row["lens_id"] is None else get_lens(store, row["lens_id"])
 
 
-def snapshot(lens: dict | None, spot_diameter_um: float | None = None) -> dict | None:
-    """What a plate remembers about its lens; independent of later edits of the lens record."""
+def label(lens: dict) -> str:
+    """A lens as server text names it: the name with the focal length, or that the focal length is unknown."""
+    if lens.get("focal_length_mm") is None:
+        return f"{lens['name']}, focal length unknown"
+    return f"{lens['name']}, {lens['focal_length_mm']:g} mm"
+
+
+def snapshot(lens: dict | None, spot_diameter_um: float | None = None, spot_basis: str | None = None) -> dict | None:
+    """What a plate remembers about its lens, with the spot value and its basis; independent of later edits of the lens record."""
     if not lens:
         return None
     return {"id": lens["id"], "name": lens["name"], "focal_length_mm": lens["focal_length_mm"], "field_mm": lens["field_mm"],
-            "expansion": lens["expansion"], "spot_diameter_um": spot_diameter_um, "taken_at": now()}
+            "expansion": lens["expansion"], "spot_diameter_um": spot_diameter_um, "spot_basis": spot_basis if spot_diameter_um else None,
+            "taken_at": now()}

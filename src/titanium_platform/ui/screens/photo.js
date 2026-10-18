@@ -30,12 +30,12 @@
     return h('div', {class: 'card stack'}, h('h3', {}, 'Траектория в цветовом пространстве титана'),
       h('p', {class: 'muted small'}, 'Выберите минимум два разных цвета и расположите их по порядку: яркость изображения будет двигаться вдоль этого пути.'),
       state.path.length ? list : h('p', {class: 'muted'}, 'Траектория пуста'),
-      free.length ? h('div', {class: 'row'}, adders) : h('p', {class: 'muted small'}, palette.length ? 'Все допустимые цвета уже в траектории' : 'Нет допустимых цветов для этой версии профиля'));
+      free.length ? h('div', {class: 'row'}, adders) : h('p', {class: 'muted small'}, palette.length ? 'Все допустимые цвета уже в траектории' : 'Нет допустимых цветов для этого лазера с этой линзой'));
   }
 
   App.register({id: 'photo', async render(ctx) {
-    const profiles = await get('/profiles');
-    if (!profiles.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала настройте профиль лазера'), link('/profiles', 'Профили'));
-    return PhotoForm.render(ctx, profiles, {bandTable, pathPicker, MODES});
+    const lists = await App.hardwareLists();
+    if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
+    return PhotoForm.render(ctx, lists, {bandTable, pathPicker, MODES});
   }});
 })();

@@ -89,12 +89,13 @@ const PlateDialog = (() => {
       passes: h('input', {type: 'number', min: '1', max: '20', step: '1', value: DEFAULTS.passes}),
       global: h('input', {type: 'number', min: '1', max: '20', step: '1', value: DEFAULTS.global_passes}),
     };
+    // 200 нс — только начальное значение, и только если лазер даёт такую ступень; иначе длительность выбирает оператор (DEC-043)
     const pulseOptions = (laser, chosen) => {
       const steps = laser?.passport?.pulse_steps || [];
-      const active = steps.find((p) => +p.pulse_width_ns === +chosen) ||
-        steps.reduce((best, p) => !best || Math.abs(+p.pulse_width_ns - +chosen) < Math.abs(+best.pulse_width_ns - +chosen) ? p : best, null);
-      settings.pulse.replaceChildren(...steps.map((p) => h('option', {value: p.pulse_width_ns, selected: p === active}, `${p.pulse_width_ns} нс${p.cutoff_khz == null ? ' · CW' : ` · срез ${p.cutoff_khz} кГц`}`)));
-      if (active) settings.pulse.value = String(active.pulse_width_ns);
+      const active = steps.find((p) => +p.pulse_width_ns === +chosen) || null;
+      settings.pulse.replaceChildren(h('option', {value: '', selected: !active}, 'выберите'),
+        ...steps.map((p) => h('option', {value: p.pulse_width_ns, selected: p === active}, `${p.pulse_width_ns} нс${p.cutoff_khz == null ? ' · CW' : ` · срез ${p.cutoff_khz} кГц`}`)));
+      settings.pulse.value = active ? String(active.pulse_width_ns) : '';
     };
     const matrixRange = (axis, laser) => {
       const d = MATRIX_AXES[axis];
@@ -137,7 +138,7 @@ const PlateDialog = (() => {
         return;
       }
       const lens = laser.lens;
-      hardware.textContent = `Линза будет взята из паспорта выбранного лазера: ${lens.name}, ${lens.focal_length_mm} мм${lens.field_mm ? ` · поле ${lens.field_mm} мм` : ''}.`;
+      hardware.textContent = `Плата делается с линзой, установленной на выбранном лазере: ${App.lensLabel(lens)}${lens.field_mm ? ` · поле ${lens.field_mm} мм` : ''}.`;
       const range = laser.passport?.repetition_rate_khz || {min: 1, max: 4000};
       settings.frequency.value = Math.min(Math.max(DEFAULTS.frequency, range.min), range.max);
       pulseOptions(laser, DEFAULTS.pulse_width);
@@ -203,7 +204,7 @@ const PlateDialog = (() => {
           h('div', {class: 'grid g3'}, field('Материал', newMaterial.family), field('Название / лист', newMaterial.name), field('Марка / сплав', newMaterial.grade), field('Партия', newMaterial.batch)),
           btn('Сохранить заготовку', addMaterial))),
       h('details', {class: 'card'}, h('summary', {}, 'Основные параметры опыта'),
-        h('p', {class: 'muted small'}, 'Эти значения не сохраняются в профиле. Тип платы сам перебирает указанные в описании оси; поля задают остальные условия. Для матрицы выбранные оси переопределяют соответствующие базовые значения. Для частотного теста выбирается CW-ступень, если она указана в паспорте.'),
+        h('p', {class: 'muted small'}, 'Эти значения — настройки этой платы и сохраняются с ней. Тип платы сам перебирает указанные в описании оси; поля задают остальные условия. Для матрицы выбранные оси переопределяют соответствующие базовые значения. Для частотного теста выбирается CW-ступень, если она указана в паспорте.'),
         h('div', {class: 'grid g3'}, field('Базовая мощность, %', settings.power), field('Базовая частота, кГц', settings.frequency), field('Базовая скорость, мм/с', settings.speed),
           field('Q-Pulse, нс', settings.pulse), field('Интервал линий, мм', settings.interval), field('Проходы слоя', settings.passes),
           field('Глобальные проходы', settings.global))),
@@ -215,6 +216,7 @@ const PlateDialog = (() => {
       if (!laser) throw new Error('Выбери лазер с установленной линзой');
       if (!type.value) throw new Error('Выбери тип экспериментальной платы');
       if (!material.value) throw new Error('Выбери или добавь конкретную заготовку');
+      if (settings.pulse.value === '') throw new Error('Выбери длительность импульса Q-Pulse из ступеней лазера');
       const out = {device_id: +laser.id, material_id: +material.value, test_type: type.value,
         power: +settings.power.value, frequency: +settings.frequency.value, speed: +settings.speed.value,
         pulse_width: +settings.pulse.value, line_interval: +settings.interval.value,

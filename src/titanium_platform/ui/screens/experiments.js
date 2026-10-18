@@ -31,8 +31,8 @@
     items.length ? h('div', {class: 'dashboard-list'}, ...items) : h('p', {class: 'muted small'}, empty));
 
   App.register({id: 'experiments', async render() {
-    const [profiles, experiments, devices, materials, goals] = await Promise.all([
-      get('/profiles'), get('/experiments'), get('/devices'), get('/materials'), get('/application-goals')]);
+    const [experiments, devices, materials, goals] = await Promise.all([
+      get('/experiments'), get('/devices'), get('/materials'), get('/application-goals')]);
     const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
     const selectedDevice = devices.find((device) => device.id === rememberedDevice) || devices[0];
     const rememberedMaterial = Number(sessionStorage.getItem('experiment-dashboard-material'));
@@ -105,12 +105,17 @@
       sessionStorage.setItem('experiment-dashboard-material', event.target.value); reload();
     }}, materials.map((material) => h('option', {value: material.id, selected: material.id === selectedMaterial?.id},
       [material.name, material.grade, material.batch].filter(Boolean).join(' · '))));
+    // 200 нс предлагается, только если лазер даёт эту ступень; иначе длительность импульса выбирает оператор (DEC-043)
+    const askPulse = guide?.plate && guide.plate.settings?.pulse_width == null;
+    const pulseChoice = askPulse ? h('select', {'aria-label': 'Длительность импульса'}, h('option', {value: ''}, 'выберите'),
+      (selectedDevice?.passport?.pulse_steps || []).map((s) => h('option', {value: s.pulse_width_ns}, `${s.pulse_width_ns} нс`))) : null;
     const nextPlate = guide?.plate ? btn('Создать следующий тест', async (ev) => {
       const self = ev.currentTarget;
+      if (askPulse && pulseChoice.value === '') return App.fail(new Error('Выберите длительность импульса из ступеней лазера'));
       self.disabled = true; self.textContent = 'Создаём плату…';
       try {
         const made = await App.post('/application-guide/next-plate', {
-          device_id: selectedDevice.id, material_id: selectedMaterial.id, goal: selectedGoal.id});
+          device_id: selectedDevice.id, material_id: selectedMaterial.id, goal: selectedGoal.id, pulse_width: askPulse ? +pulseChoice.value : null});
         toast(`Создана плата ${made.name}`, 'ok'); App.go('/experiment/plan-' + made.plan_id);
       } catch (error) { self.disabled = false; self.textContent = 'Создать следующий тест'; App.fail(error); }
     }, 'primary') : null;
@@ -131,7 +136,8 @@
           settingSummary(guide?.finding?.parameters || guide?.finding?.evidence?.parameters)
             ? h('p', {class: 'muted small'}, 'Параметры наблюдения: ' + settingSummary(guide.finding.parameters || guide.finding.evidence.parameters)) : null),
         h('div', {class: 'dashboard-task-next'}, h('small', {}, 'Следующий шаг'),
-          h('p', {}, guide?.next_step || 'Создайте материал и первую плату.'), nextPlate,
+          h('p', {}, guide?.next_step || 'Создайте материал и первую плату.'),
+          pulseChoice ? field('Длительность импульса (у этого лазера нет ступени 200 нс)', pulseChoice) : null, nextPlate,
           guide?.pending_plan_id ? link('/plans/' + guide.pending_plan_id, 'Открыть созданную плату') : null)),
       guide?.plate ? h('p', {class: 'dashboard-task-foot'},
         `Плата: ${guide.plate.test_type === 'text_readability' ? 'надписи 3 × 3, три размера' : guide.plate.test_type === 'material_matrix' ? 'матрица 3 × 3' : guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null);

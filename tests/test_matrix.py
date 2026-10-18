@@ -11,7 +11,8 @@ from titanium_platform import ingest as ig
 from titanium_platform import lightburn as lb
 from titanium_platform import matrix as mx
 from titanium_platform import photo as ph
-from titanium_platform import profiles as pf
+from titanium_platform import devices
+from titanium_platform import setup as su
 from titanium_platform.db import Store
 
 needs_ocr = pytest.mark.skipif(not mx.ocr_available(), reason="tesseract is not installed")
@@ -162,17 +163,17 @@ def test_an_edit_spaces_the_values_evenly_and_moves_or_resizes_the_grid(work):
 def world(tmp_path):
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    yield store, profile, material
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    yield store, laser, material
     store.close()
 
 
 def test_a_photographed_matrix_becomes_one_confirmed_observation_per_cell(world):
-    store, profile, material = world
+    store, laser, material = world
     work = synth.material_test(cols=4, rows=3, x_values=[20.0, 30.0, 40.0, 50.0], y_values=[900.0, 600.0, 300.0])
     photo = cv2.imencode(".png", work["photo"])[1].tobytes()
-    pid = ig.create_matrix_pair(store, profile_id=profile["id"], photo_name="matrix.png", photo_bytes=photo,
+    pid = ig.create_matrix_pair(store, device_id=laser["id"], lens_id=None, photo_name="matrix.png", photo_bytes=photo,
                                 context={"material_id": material["id"]})
     pair = ig.get_pair(store, pid)
     assert pair["matrix"]["cols"] == 4 and pair["matrix"]["rows"] == 3 and pair["matrix"]["confirmed"] is False
@@ -194,9 +195,9 @@ def test_a_photographed_matrix_becomes_one_confirmed_observation_per_cell(world)
 
 
 def test_an_unconfirmed_or_incomplete_matrix_is_never_accepted(world):
-    store, profile, material = world
+    store, laser, material = world
     work = synth.material_test(cols=3, rows=3, x_values=[20.0, 30.0, 40.0], y_values=[900.0, 600.0, 300.0])
-    pid = ig.create_matrix_pair(store, profile_id=profile["id"], photo_name="m.png",
+    pid = ig.create_matrix_pair(store, device_id=laser["id"], lens_id=None, photo_name="m.png",
                                 photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(), context={"material_id": material["id"]})
     ig.update_matrix(store, pid, {"fixed": {"frequency": None}})
     with pytest.raises(ig.IngestError, match="incomplete"):
@@ -210,7 +211,7 @@ def test_an_unconfirmed_or_incomplete_matrix_is_never_accepted(world):
 
 
 def test_a_photograph_without_a_matrix_is_refused_with_a_reason(world):
-    store, profile, material = world
+    store, laser, material = world
     with pytest.raises(ig.IngestError, match="no parameter matrix"):
-        ig.create_matrix_pair(store, profile_id=profile["id"], photo_name="empty.png",
+        ig.create_matrix_pair(store, device_id=laser["id"], lens_id=None, photo_name="empty.png",
                               photo_bytes=cv2.imencode(".png", synth.scene())[1].tobytes(), context={"material_id": material["id"]})

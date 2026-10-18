@@ -4,12 +4,15 @@ Stages: measured < candidate < repeated < validated < production. Automatic prom
 and only runs once the operator has saved the thresholds and agreed the criteria; production needs an
 explicit action and is never lowered automatically (not even by rollback). A production entry whose later
 observations break the saved thresholds is flagged questioned and keeps its stage.
+
+Knowledge belongs to one laser and one lens record (DEC-063) and, within them, to one recipe key: entries of
+different lasers, lenses (an unknown lens included) or job settings never share counts, stages or approval.
 """
 from __future__ import annotations
 
 import json
 
-from . import model, profiles as pf
+from . import model, setup as su
 from .db import Store, now
 
 STAGES = ["measured", "candidate", "repeated", "validated", "production"]
@@ -54,18 +57,17 @@ def _breaks_thresholds(summary: dict, rules: dict) -> list[str]:
     return why
 
 
-def refresh(store: Store, profile_id: int) -> list[dict]:
-    """Refresh one laser/lens knowledge base, combining legacy IDs for that same hardware pair."""
-    profile_id = model.canonical_profile_id(store, profile_id)
-    rules = pf.get_rules(store, profile_id)
+def refresh(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    """Refresh the knowledge of one laser and lens record from its eligible observations."""
+    rules = su.get_rules(store, device_id, lens_id)
     changes = []
     with store.transaction():
-        for key, s in model.knowledge_summaries(store, profile_id).items():
-            row = store.one("SELECT * FROM knowledge WHERE profile_id=? AND parameters_key=?", (profile_id, key))
+        for key, s in model.knowledge_summaries(store, device_id, lens_id).items():
+            row = store.one("SELECT * FROM knowledge WHERE device_id=? AND lens_id IS ? AND parameters_key=?", (device_id, lens_id, key))
             target, why = automatic_stage(s, rules)
             if row is None:
-                kid = store.execute("INSERT INTO knowledge(profile_id,parameters_key,parameters_json,stage,questioned,updated_at) VALUES (?,?,?,?,0,?)",
-                                    (profile_id, key, json.dumps(s["parameters"]), "measured", now())).lastrowid
+                kid = store.execute("INSERT INTO knowledge(device_id,lens_id,parameters_key,parameters_json,stage,questioned,updated_at) VALUES (?,?,?,?,?,0,?)",
+                                    (device_id, lens_id, key, json.dumps(s["parameters"]), "measured", now())).lastrowid
                 _event(store, kid, "created", None, "measured", "first eligible observation", s["observation_ids"])
                 row = store.one("SELECT * FROM knowledge WHERE id=?", (kid,))
             cur = row["stage"]
@@ -96,14 +98,14 @@ def get(store: Store, kid: int) -> dict:
     d["questioned"] = bool(d["questioned"])
     d["history"] = [dict(e, observation_ids=json.loads(e.pop("observation_ids_json"))) for e in
                     (dict(r) for r in store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,)))]
-    s = model.knowledge_summaries(store, d["profile_id"]).get(d["parameters_key"])
+    s = model.knowledge_summaries(store, d["device_id"], d["lens_id"]).get(d["parameters_key"])
     d["summary"] = s
     return d
 
 
-def list_for_profile(store: Store, profile_id: int) -> list[dict]:
-    canonical = model.canonical_profile_id(store, profile_id)
-    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE profile_id=? ORDER BY id", (canonical,))]
+def list_for_setup(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE device_id=? AND lens_id IS ? ORDER BY id",
+                                                     (device_id, lens_id))]
 
 
 # -- operator decisions ---------------------------------------------------------------------------------

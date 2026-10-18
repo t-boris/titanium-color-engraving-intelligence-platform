@@ -65,7 +65,7 @@ def test_a_power_law_is_recovered_and_a_short_series_gives_none():
 def test_kinetics_without_calibrated_observations_says_what_is_missing(tmp_path):
     from titanium_platform.db import Store
     store = Store(tmp_path)
-    result = oxide.kinetics(store)
+    result = oxide.kinetics(store, (1, None))
     assert result["summary"]["observations"] == 0 and result["summary"]["regimes"] == [] and result["summary"]["usable_regimes"] == 0
     assert "monotone dose ramp" in result["summary"]["note"]
     store.close()
@@ -80,7 +80,8 @@ def test_settings_for_a_colour_name_the_film_and_say_when_no_film_gives_it(tmp_p
     gold = oxide.settings_for_colour(store, [float(v) for v in target])
     assert gold["reachable_by_a_film"] and any(c["thickness_nm"] <= 40 for c in gold["candidates"])
     assert gold["kinetics"]["usable"] is False and gold["candidates"][0]["same_film_measured"] == []
-    assert gold["candidates"][0]["by_regime"] == []
+    assert gold["candidates"][0]["by_regime"] == [] and gold["partition"] is None
+    assert gold["kinetics"]["note"].startswith("choose a laser and lens")         # no setting is computed across lasers and lenses
     green = oxide.settings_for_colour(store, [50.0, -70.0, 60.0])        # a saturated green no titanium oxide gives
     assert not green["reachable_by_a_film"]
     store.close()
@@ -103,7 +104,7 @@ def ramp_points(truth, pair_id=1, regime=(330.0, 4.0), seed=3):
     for k, d in enumerate(truth):
         lab = oxide.mixture_lab(spectra[[int(d / oxide.THICKNESS_STEP_NM)]], params.gloss, 0.0)[0] + rng.normal(0, 1.0, 3)
         fit = oxide.fit_point(lab, table)
-        points.append({"pair_id": pair_id, "profile_id": 1, "parameters": {"frequency": regime[0], "pulse_width": regime[1]},
+        points.append({"pair_id": pair_id, "device_id": 1, "lens_id": None, "parameters": {"frequency": regime[0], "pulse_width": regime[1]},
                        "dose": {"areal_energy_j_cm2": 40.0 * 1.3 ** k}, "lab": lab.tolist(),
                        "coloured": bool(np.hypot(lab[1], lab[2]) >= oxide.COLOURED_CHROMA), "thickness_nm": fit["thickness_nm"],
                        "dark_share": fit["dark_share"], "residual_de": fit["residual_de"], "alternative": fit["alternative"],
@@ -141,7 +142,41 @@ def test_each_pulse_regime_gets_its_own_law_and_a_scattered_regime_none():
     assert "for each pulse regime" in oxide._kinetics_note(list(laws.values()))
 
 
+def test_settings_computed_from_a_law_name_the_laser_and_lens_whose_measurements_gave_it(store):
+    """DEC-042/063: a law and the power that reaches its dose belong to one laser and lens; the dose is computed on them."""
+    import obs
+    w = obs.setup(store)
+    points = []
+    for e in np.geomspace(50, 800, 10):
+        points.append({"pair_id": 1, "work": "ramp", "layer": "C01", "lab": [50, 0, 0], "device_id": 999, "lens_id": None,
+                       "parameters": {"frequency": 40.0, "pulse_width": 200.0, "speed": 900.0, "line_interval": 0.025, "passes": 1,
+                                      "power": 20.0},
+                       "dose": {"areal_energy_j_cm2": float(e)}, "coloured": True, "thickness_determined": True,
+                       "thickness_nm": float(3.0 * e ** 0.5)})
+    regimes = oxide.regime_laws(points)
+    (entry,) = oxide._by_regime(store, regimes, points, 30.0, w["setup"])         # 100 J/cm2: reachable on this laser
+    assert (entry["device_id"], entry["lens_id"]) == w["setup"] and entry["settings"]["power"] is not None   # computed on this laser
+
+
 def test_the_power_for_a_dose_is_found_and_none_when_no_power_reaches_it():
     assert oxide._power_for_dose(lambda power: 4.0 * power, 150.0) == 37.5
     assert oxide._power_for_dose(lambda power: 4.0 * power, 500.0) is None
     assert oxide._power_for_dose(lambda power: None, 10.0) is None
+
+
+def test_only_model_eligible_observations_are_fitted_and_a_laser_and_lens_keep_their_own_fit(store):
+    """The film fit takes chart-corrected, model-eligible observations; asked for one laser and lens it uses theirs alone."""
+    import obs
+    w = obs.setup(store)
+    device_id, lens_id = w["setup"]
+    evidence = {"role": "test feature", "color_measurement": {"mode": "reference_chart_corrected"}}
+    for k in range(8):
+        for lens, eligible in ((lens_id, 1), (None, 1), (lens_id, 0)):
+            obs.add(store, w, (40 + k, 5, 10 + k), power=10 + k, lens_id=lens, model_eligible=eligible, evidence=evidence)
+    everything = oxide.calibrated_observations(store)
+    assert len(everything) == 16 and {store.one("SELECT model_eligible FROM observation WHERE id=?", (o["observation_id"],))[0] for o in everything} == {1}
+    known = oxide.calibrated_observations(store, (device_id, lens_id))
+    assert len(known) == 8 and {(o["device_id"], o["lens_id"]) for o in known} == {(device_id, lens_id)}
+    oxide.report(store, partition=(device_id, None))
+    assert store.get_setting(f"oxide_model:laser:{device_id}/lens:unknown")["stamp"]["count"] == 8
+    assert store.get_setting("oxide_model") is None                  # the partition's fit is kept apart from the general one

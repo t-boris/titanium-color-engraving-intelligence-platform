@@ -10,8 +10,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from . import application_guide, devices, profiles, research
-from .db import Store
+from . import application_guide, devices, research, setup as su
+from .db import Store, open_store
 
 
 def build_server(store: Store) -> FastMCP:
@@ -25,7 +25,7 @@ def build_server(store: Store) -> FastMCP:
     @server.tool()
     def list_materials() -> list[dict]:
         """List physical material stocks, grades and batches."""
-        return profiles.list_materials(store)
+        return su.list_materials(store)
 
     @server.tool()
     def list_research_goals() -> list[dict]:
@@ -54,12 +54,13 @@ def build_server(store: Store) -> FastMCP:
 
     @server.tool()
     def preview_lightburn_test(session_id: int, test_type: str, settings: dict | None = None) -> dict:
-        """Preview a content-sized plate; small_patches makes 1–4 squares of 3–5 mm. The 100 mm size is a ceiling."""
+        """Preview a content-sized plate; small_patches makes 1–4 squares of 3–5 mm. The 100 mm size is a ceiling.
+        settings.pulse_width (ns) is required and must be a step of the laser: no value is filled in."""
         return research.preview_plate(store, session_id, test_type, settings)
 
     @server.tool()
     def create_lightburn_test(session_id: int, test_type: str, settings: dict | None = None) -> dict:
-        """Create a compact, validated test plate and return the LightBurn download URL."""
+        """Create a compact, validated test plate and return the LightBurn download URL; settings.pulse_width is required."""
         return research.create_plate(store, session_id, test_type, settings)
 
     @server.tool()
@@ -95,7 +96,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Local MCP tools for laser research")
     parser.add_argument("--data-dir", type=Path, default=Path.home() / ".titanium-platform")
     args = parser.parse_args(argv)
-    store = Store(args.data_dir)
+    store = open_store(args.data_dir, "titanium-research-mcp")
     try:
         build_server(store).run(transport="stdio")
     finally:

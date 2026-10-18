@@ -172,9 +172,9 @@ def findings_for_device(store: Store, device_id: int, purpose: str | None = None
     if purpose is not None and purpose not in {"line", "text", "color", "image"}:
         raise ValueError("unknown engraving purpose")
     rows = store.query(
-        "SELECT f.*,p.profile_id,p.material_id,pr.lens_id,p.engraving_id,p.accepted_at,p.hardware_json,p.context_json "
+        "SELECT f.*,p.device_id,p.material_id,p.lens_id,p.engraving_id,p.accepted_at,p.hardware_json,p.context_json "
         "FROM capability_finding f JOIN pair p ON p.id=f.pair_id "
-        "JOIN laser_profile pr ON pr.id=p.profile_id WHERE p.status='Accepted' AND pr.device_id=? "
+        "WHERE p.status='Accepted' AND p.device_id=? "
         "AND p.id=(SELECT MAX(p2.id) FROM pair p2 WHERE p2.engraving_id=p.engraving_id AND p2.status='Accepted') "
         + ("AND f.purpose=? " if purpose else "") + "ORDER BY p.accepted_at DESC,f.id DESC",
         (device_id, purpose) if purpose else (device_id,))
@@ -270,8 +270,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
     test_rows = [row for row in rows if row["role"] == "test feature"]
     operation_rows = [row for row in rows if row["role"] != "test feature"]
 
-    device_profile = store.one("SELECT device_id,lens_id FROM laser_profile WHERE id=?", (pair["profile_id"],))
-    device = store.one("SELECT name,manufacturer,model,serial FROM laser_device WHERE id=?", (device_profile["device_id"],)) if device_profile and device_profile["device_id"] else None
+    device = store.one("SELECT name,manufacturer,model,serial FROM laser_device WHERE id=?", (pair["device_id"],))
     lens = json.loads(plate["lens_json"]) if plate["lens_json"] else None
     context = json.loads(pair["context_json"] or "{}")
     lightness_range = None
@@ -334,7 +333,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
 
     return {"pair_id": pair_id, "plate_id": plate["id"], "test_type": test_type,
             "test_name": cp.TYPE_BY_ID[test_type]["name"], "test_description": cp.TYPE_BY_ID[test_type]["description"],
-            "device": None if device is None else dict(device), "device_id": device_profile["device_id"] if device_profile else None,
+            "device": None if device is None else dict(device), "device_id": pair["device_id"],
             "lens": lens, "material": {"name": context.get("titanium_name"), "grade": context.get("titanium_grade"),
                                         "batch": context.get("batch")},
             "measurement_modes": sorted(measurement_modes),
@@ -349,10 +348,9 @@ def for_device(store: Store, device_id: int) -> list[dict]:
     """Accepted capability-test reports for one physical laser, preserving each plate's lens identity."""
     rows = store.query(
         "SELECT DISTINCT pa.id FROM pair pa "
-        "JOIN laser_profile pr ON pr.id=pa.profile_id "
         "JOIN plan p ON p.id=pa.plan_id OR p.plate_id=pa.plate_id "
         "JOIN plate t ON t.id=COALESCE(pa.plate_id,p.plate_id) "
-        "WHERE pa.status='Accepted' AND pr.device_id=? AND t.test_type IS NOT NULL "
+        "WHERE pa.status='Accepted' AND pa.device_id=? AND t.test_type IS NOT NULL "
         "AND pa.id=(SELECT MAX(pa2.id) FROM pair pa2 WHERE pa2.engraving_id=pa.engraving_id AND pa2.status='Accepted') "
         "ORDER BY pa.accepted_at DESC,pa.id DESC", (device_id,))
     return [report for r in rows if (report := report_for_pair(store, r["id"])) is not None]

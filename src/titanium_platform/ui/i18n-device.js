@@ -1,6 +1,8 @@
 /* Сообщения о лазерах (паспорт, документы, расчёт рабочей точки) — REQ-017, DEC-034, DEC-035.
    Загружается после i18n-more.js; более раннее правило имеет приоритет. */
 'use strict';
+// a lens as the server names it: «name, 174 mm» or «name, focal length unknown»
+const lensRu = (s) => s.replace(/, focal length unknown$/, ', фокус неизвестен').replace(/ mm$/, ' мм');
 I18N.add([
   // паспорт
   [/^device name is required/i, 'Укажите название лазера'],
@@ -14,9 +16,8 @@ I18N.add([
   [/^pulse width (\S+) ns is not a selectable step of this laser; the steps are (.+)$/i,
     (m) => 'Длительность импульса ' + m[1] + ' нс — не ступень этого лазера: лазер её проигнорирует и оставит прежнюю. Доступны (нс): ' + m[2]],
   [/^the laser device was not found/i, 'Лазер не найден'],
-  [/^this laser is linked to (\d+) laser profile versions; unlink them first/i, (m) => 'Лазер привязан к версиям профиля (' + m[1] + '). Сначала отвяжите их'],
+  [/^this laser is named by (\d+) stored records of work and keeps their history/i, (m) => 'Лазер указан в сохранённых записях работ (' + m[1] + ') и хранит их историю: удалить его нельзя'],
   [/^the laser template is not known/i, 'Шаблон лазера неизвестен'],
-  [/^link a laser device to this profile to calculate pulse energy/i, 'Привяжите к профилю лазер, чтобы рассчитать энергию импульса'],
   [/^the controller settings are not valid/i, 'Настройки контроллера записаны неверно'],
   [/^the test report is not valid/i, 'Протокол испытаний записан неверно'],
   [/^a waveform is not valid/i, 'Форма импульса записана неверно: нужны время в возрастающем порядке и мощность для каждой точки'],
@@ -47,9 +48,14 @@ I18N.add([
   [/^(.+) must be between (\S+) and (\S+)$/i,
     (m) => ({'focal length': 'Фокусное расстояние', 'lens field': 'Поле линзы', 'beam expansion': 'Расширитель пучка'}[m[1].toLowerCase()] || m[1]) + ' — от ' + m[2] + ' до ' + m[3]],
   [/^this lens is installed on a laser; remove it from the laser first/i, 'Линза установлена на лазере: сначала снимите её'],
+  [/^this lens is named by (\d+) stored records of work and keeps their history/i, (m) => 'Линза указана в сохранённых записях работ (' + m[1] + ') и хранит их историю: удалить её нельзя'],
   [/^this lens is already installed on another laser \((.+)\); remove it there first/i, (m) => 'Эта линза уже стоит на другом лазере (' + m[1] + '): сначала снимите её там'],
-  [/^the lens installed now \((.+)\) differs from the lens of this plate \((.+)\)$/i, (m) => 'Сейчас стоит линза ' + m[1] + ', а плата делалась на ' + m[2] + ': цвета нельзя считать сравнимыми'],
-  [/^no lens is installed on the laser now; the plate was made with (.+)$/i, (m) => 'Сейчас на лазере нет линзы, а плата делалась на ' + m[1]],
+  [/^the lens installed now \((.+)\) differs from the lens of this plate \((.+)\)$/i, (m) => 'Сейчас стоит линза ' + lensRu(m[1]) + ', а плата делалась на ' + lensRu(m[2]) + ': цвета нельзя считать сравнимыми'],
+  [/^no lens is installed on the laser now; the plate was made with (.+)$/i, (m) => 'Сейчас на лазере нет линзы, а плата делалась на ' + lensRu(m[1])],
   [/^this plate has no record of its lens/i, 'У этой платы нет записи о линзе'],
+  [/^the lens chosen for this photograph \((.+)\) differs from the lens of this plate \((.+)\): the measurements are kept with the plate's lens$/i,
+    (m) => 'Для фотографии выбрана линза ' + lensRu(m[1]) + ', а плата делалась на ' + lensRu(m[2]) + ': измерения записываются с линзой платы'],
+  [/^no lens was chosen for this photograph; the plate was made with (.+): the measurements are kept with the plate's lens$/i,
+    (m) => 'Для фотографии линза не выбрана; плата делалась на ' + lensRu(m[1]) + ': измерения записываются с линзой платы'],
 
 ]);

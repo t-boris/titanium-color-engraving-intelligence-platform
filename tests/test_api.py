@@ -10,6 +10,7 @@ from titanium_platform import __version__
 from titanium_platform.api.app import create_app
 
 CELLS = {"r1c1": (200, 60, 60), "r1c2": (60, 200, 60), "r2c1": (60, 60, 200), "r2c2": (200, 200, 60)}
+JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 
 
 @pytest.fixture
@@ -26,11 +27,13 @@ def png(img) -> bytes:
 
 
 def setup(client) -> dict:
-    prof = client.post("/api/profiles", json={"name": "MOPA", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
+    laser = client.post("/api/devices/from-template", json={"template": "jpt-ydflp-e-60-m7-m-r"}).json()
+    lens = client.post("/api/lenses", json={"name": "F-Theta 174", "focal_length_mm": 174, "field_mm": 170}).json()
+    client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
     stand = client.post("/api/setups", json={"name": "Rig", "camera": "cam", "lighting": "LED", "angle": "90", "reference_chart": "ColorChecker Classic"}).json()
     material = client.post("/api/materials", json={"name": "Grade 2 sheet", "grade": "Grade 2", "thickness_mm": 1, "surface": "brushed"}).json()
     client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
-    return {"profile": prof, "stand": stand, "material": material}
+    return {"laser": laser, "lens": lens, "setup": f"device_id={laser['id']}&lens_id={lens['id']}", "stand": stand, "material": material}
 
 
 def test_version_health_and_ui_fallback(client):
@@ -40,48 +43,44 @@ def test_version_health_and_ui_fallback(client):
     assert r.status_code == 404 and r.json()["kind"] == "not_found"
 
 
-def test_profile_crud_and_error_mapping(client):
-    r = client.post("/api/profiles", json={"name": " ", "pulse_width": 200, "line_interval": 0.025, "passes": 1})
+def test_errors_are_mapped_and_laser_profiles_no_longer_exist(client):
+    r = client.post("/api/materials", json={"name": " "})
     assert r.status_code == 422 and "name" in r.json()["error"]
-    minimal = client.post("/api/profiles", json={"name": "x"})
-    assert minimal.status_code == 201  # a profile identifies hardware; process settings belong to experiments
-    assert "pulse_width" not in minimal.json() and "constants" not in minimal.json()
-    p = client.post("/api/profiles", json={"name": "A", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
-    r = client.patch(f"/api/profiles/{p['id']}", json={"pulse_width": 250})
-    assert r.status_code == 200 and r.json()["id"] == p["id"] and r.json()["version"] == 1
-    v2 = client.patch(f"/api/profiles/{p['id']}", json={"pulse_width": 250, "confirm_new_version": True}).json()
-    assert v2["version"] == 1 and v2["id"] == p["id"]
-    assert client.get("/api/profiles/9999").status_code == 404
-    assert client.delete(f"/api/profiles/{minimal.json()['id']}").status_code == 204
-    assert client.delete(f"/api/profiles/{p['id']}").status_code == 204
-
-
-def test_a_linked_profile_cannot_be_deleted(client):
+    assert client.get("/api/profiles").status_code == 404 and client.post("/api/profiles", json={"name": "x"}).status_code in (404, 405)
     s = setup(client)
-    r = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1})
+    assert client.get(f"/api/knowledge?device_id={s['laser']['id']}&lens_id=nonsense").json()["error"] == "choose the lens or mark it unknown"
+    assert client.get(f"/api/knowledge?device_id={s['laser']['id']}").status_code == 422      # the lens is never assumed
+    assert client.get(f"/api/knowledge?device_id={s['laser']['id']}&lens_id=unknown").json() == []
+
+
+def test_a_laser_with_stored_plates_cannot_be_deleted(client):
+    s = setup(client)
+    r = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1})
     assert r.status_code == 201
-    d = client.delete(f"/api/profiles/{s['profile']['id']}")
+    d = client.delete(f"/api/devices/{s['laser']['id']}")
     assert d.status_code == 409 and d.json()["kind"] == "protected"
 
 
 def test_rules_start_unset_and_agreeing_needs_thresholds(client):
     s = setup(client)
-    pid = s["profile"]["id"]
-    assert client.get(f"/api/profiles/{pid}/rules").json() == {"repeat_threshold": None, "delta_tolerance": None, "variance_threshold": None, "criteria_agreed": False}
-    assert client.put(f"/api/profiles/{pid}/rules", json={"criteria_agreed": True}).status_code == 422
-    r = client.put(f"/api/profiles/{pid}/rules", json={"repeat_threshold": 2, "delta_tolerance": 6, "variance_threshold": 5, "criteria_agreed": True})
+    target = {"device_id": s["laser"]["id"], "lens_id": s["lens"]["id"]}
+    assert client.get(f"/api/rules?{s['setup']}").json() == {"repeat_threshold": None, "delta_tolerance": None, "variance_threshold": None, "criteria_agreed": False}
+    assert client.put("/api/rules", json={**target, "criteria_agreed": True}).status_code == 422
+    r = client.put("/api/rules", json={**target, "repeat_threshold": 2, "delta_tolerance": 6, "variance_threshold": 5, "criteria_agreed": True})
     assert r.status_code == 200 and r.json()["criteria_agreed"] is True
+    assert client.get(f"/api/rules?device_id={s['laser']['id']}&lens_id=unknown").json()["criteria_agreed"] is False   # another partition
+    assert client.put("/api/rules", json={"device_id": s["laser"]["id"], "delta_tolerance": 6}).status_code == 422   # the lens is required
 
 
 def upload_pair(client, s, lbrn, photo, **form):
     context = form.pop("context", {"material_id": s["material"]["id"]})
-    data = {"profile_id": s["profile"]["id"], "stand_id": s["stand"]["id"], "context": json.dumps(context), **form}
+    data = {"device_id": s["laser"]["id"], "lens_id": str(s["lens"]["id"]), "stand_id": s["stand"]["id"], "context": json.dumps(context), **form}
     return client.post("/api/pairs", data=data, files={"lightburn": ("plate.lbrn2", lbrn), "photo": ("plate.png", photo)})
 
 
 def test_uploads_are_validated(client):
     s = setup(client)
-    base = {"profile_id": s["profile"]["id"], "stand_id": s["stand"]["id"]}
+    base = {"device_id": s["laser"]["id"], "lens_id": "unknown", "stand_id": s["stand"]["id"]}
     assert client.post("/api/pairs", data=base).status_code == 422                     # no files
     r = client.post("/api/pairs", data=base, files={"lightburn": ("a.lbrn2", b""), "photo": ("p.png", b"x")})
     assert r.status_code == 422 and "empty" in json.dumps(r.json())
@@ -89,13 +88,14 @@ def test_uploads_are_validated(client):
     assert r.status_code == 422 and "lbrn" in r.json()["error"]
     r = client.post("/api/pairs", data={**base, "context": "{bad"}, files={"lightburn": ("a.lbrn2", b"x"), "photo": ("p.png", b"x")})
     assert r.status_code == 422 and "JSON" in r.json()["error"]
+    r = client.post("/api/pairs", data={**base, "lens_id": "999"}, files={"lightburn": ("a.lbrn2", b"x"), "photo": ("p.png", b"x")})
+    assert r.status_code == 404 and "lens 999" in r.json()["error"]
 
 
 def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(client):
     s = setup(client)
-    pid = s["profile"]["id"]
-    client.put(f"/api/profiles/{pid}/rules", json={"repeat_threshold": 2, "delta_tolerance": 6, "variance_threshold": 5})
-    plates = client.post("/api/plates", json={"profile_id": pid, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
+    client.put("/api/rules", json={"device_id": s["laser"]["id"], "lens_id": s["lens"]["id"], "repeat_threshold": 2, "delta_tolerance": 6, "variance_threshold": 5})
+    plates = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
     assert len(plates) == 1
     plan = client.get(f"/api/plans/{plates[0]['plan_id']}").json()
     assert plan["mode"] == "Calibration plate" and plan["markers"]["identifier"] == plates[0]["experiment_id"] and "rects" not in json.dumps(plan["markers"])
@@ -120,18 +120,21 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
     assert client.post(f"/api/pairs/{pair['id']}/review-masks").status_code == 200
     accepted = client.post(f"/api/pairs/{pair['id']}/accept").json()
     assert len(accepted["observation_ids"]) == 6 and accepted["pair"]["status"] == "Accepted"
-    knowledge = client.get(f"/api/profiles/{pid}/knowledge").json()
+    knowledge = client.get(f"/api/knowledge?{s['setup']}").json()
     assert len(knowledge) == 5 and {k["stage"] for k in knowledge} == {"measured"}
-    m = client.get(f"/api/profiles/{pid}/map").json()
+    m = client.get(f"/api/color-model?{s['setup']}").json()
     assert len(m["samples"]) == 5 and not any(s_["available"] for s_ in m["samples"])   # one engraving: no estimates yet
-    assert client.post(f"/api/profiles/{pid}/predict", json={"lab": [50, 0, 0]}).json()["available"] is False
+    assert client.post("/api/predict", json={"device_id": s["laser"]["id"], "lens_id": s["lens"]["id"], "lab": [50, 0, 0]}).json()["available"] is False
 
     report = client.get(f"/api/pairs/{pair['id']}/report").json()
     assert report["mode"] == "Calibration plate" and len(report["rows"]) == 6
-    prop = client.post("/api/designer/propose", json={"profile_id": pid, "size": 4}).json()
+    design = {"device_id": s["laser"]["id"], "lens_id": s["lens"]["id"], **JOB, "size": 4}
+    assert client.post("/api/designer/propose", json={k: v for k, v in design.items() if k != "pulse_width"}).status_code == 422
+    prop = client.post("/api/designer/propose", json=design).json()
     assert len(prop["parameters"]) == 4 and prop["model"]["gaussian_process"] is True
-    again = client.post("/api/designer/propose", json={"profile_id": pid, "size": 4}).json()
-    assert again["id"] == prop["id"]
+    again = client.post("/api/designer/propose", json=design).json()
+    assert again["id"] == prop["id"] and prop["group"] == JOB
+    assert [p["id"] for p in client.get(f"/api/designer/proposals?{s['setup']}").json()] == [prop["id"]]
     made = client.post(f"/api/designer/proposals/{prop['id']}/plates", json={"cell_width": 5, "cell_height": 4, "gap": 1})
     assert made.status_code == 201 and sum(p["cells"] for p in made.json()) >= 4
 
@@ -151,8 +154,7 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
 
 def test_a_system_plate_without_a_separate_chart_can_be_checked_and_accepted(client):
     s = setup(client)
-    pid = s["profile"]["id"]
-    plates = client.post("/api/plates", json={"profile_id": pid, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
+    plates = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10 20", "frequencies": "40 80", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
     from titanium_platform import plans
     plan_full = plans.get_plan(client.app.state.store, plates[0]["plan_id"])
     lbrn = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2").content
@@ -165,14 +167,14 @@ def test_a_system_plate_without_a_separate_chart_can_be_checked_and_accepted(cli
     assert accepted.status_code == 200 and len(accepted.json()["observation_ids"]) == 6
     assert client.get(f"/api/pairs/{pair['id']}/report").status_code == 200
     assert client.app.state.store.one("SELECT COUNT(*) AS n FROM observation WHERE model_eligible=1")["n"] == 0
-    mapped = client.get(f"/api/profiles/{pid}/map").json()
+    mapped = client.get(f"/api/color-model?{s['setup']}").json()
     assert mapped["samples"] == [] and len(mapped["camera_relative_sets"]) == 1
     assert len(mapped["camera_relative_sets"][0]["samples"]) == 6
 
 
 def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
     s = setup(client)
-    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10 20", "frequencies": "40 80",
+    plate = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10 20", "frequencies": "40 80",
                                               "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
     from titanium_platform import plans
     store = client.app.state.store
@@ -195,7 +197,7 @@ def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
     assert renamed.status_code == 200
     assert {p["engraving_title"] for p in client.get("/api/pairs").json()} == {"Титан — первый запуск"}
     assert client.patch(f"/api/engravings/{new['engraving_id']}", json={"title": "   "}).status_code == 422
-    for key in ("profile_id", "material_id", "plate_id", "plan_id", "engraving_id", "context", "hardware"):
+    for key in ("device_id", "lens_id", "material_id", "plate_id", "plan_id", "engraving_id", "context", "hardware"):
         assert new[key] == client.get(f"/api/pairs/{original['id']}").json()[key]
     assert client.get(f"/api/pairs/{new['id']}/lightburn").content == lightburn
     assert client.post(f"/api/pairs/{new['id']}/check", json={}).json()["status"] == "Ready to accept"
@@ -229,7 +231,7 @@ def test_rephoto_upload_needs_only_photo_and_keeps_the_same_experiment(client):
 
 def test_accepted_photo_alignment_can_be_revised_without_a_new_upload(client):
     s = setup(client)
-    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10 20", "frequencies": "40 80",
+    plate = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10 20", "frequencies": "40 80",
                                               "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
     from titanium_platform import plans
     plan = plans.get_plan(client.app.state.store, plate["plan_id"])
@@ -271,14 +273,14 @@ def test_accepted_photo_alignment_can_be_revised_without_a_new_upload(client):
 def test_exporting_a_draft_plan_is_refused(client):
     s = setup(client)
     st = client.app.state.store
-    st.execute("INSERT INTO plan(name,mode,status,profile_id,markers,data_json,created_at) VALUES ('d','Discrete color engraving','Draft',?,0,'{\"layers\":[]}','t')", (s["profile"]["id"],))
+    st.execute("INSERT INTO plan(name,mode,status,device_id,lens_id,markers,data_json,created_at) VALUES ('d','Discrete color engraving','Draft',?,?,0,'{\"layers\":[]}','t')", (s["laser"]["id"], s["lens"]["id"]))
     r = client.get("/api/plans/1/export.lbrn2")
     assert r.status_code == 422 and "draft" in r.json()["error"]
 
 
 def test_deleting_a_plate_plan_removes_the_plate_with_it(client):
     s = setup(client)
-    plates = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
+    plates = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
     assert client.delete(f"/api/plans/{plates[0]['plan_id']}").status_code == 204
     st = client.app.state.store
     assert st.one("SELECT COUNT(*) AS n FROM plate")["n"] == 0 and st.one("SELECT COUNT(*) AS n FROM plan")["n"] == 0
@@ -287,7 +289,7 @@ def test_deleting_a_plate_plan_removes_the_plate_with_it(client):
 
 def test_archiving_a_plan_with_deleted_pairs_hides_it_but_preserves_pair_history(client):
     s = setup(client)
-    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
+    plate = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
     plan_id = plate["plan_id"]
     plan_xml = client.get(f"/api/plans/{plan_id}/export.lbrn2").content
     pair = upload_pair(client, s, plan_xml, png(synth.scene()), plan_id=plan_id).json()
@@ -311,7 +313,7 @@ def test_archiving_a_plan_with_deleted_pairs_hides_it_but_preserves_pair_history
 
 def test_deleting_a_test_with_linked_checks_archives_both_in_one_action(client):
     s = setup(client)
-    plate = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40",
+    plate = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40",
         "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
     plan_id = plate["plan_id"]
     plan_xml = client.get(f"/api/plans/{plan_id}/export.lbrn2").content
@@ -330,7 +332,7 @@ def test_deleting_a_test_with_linked_checks_archives_both_in_one_action(client):
     assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
     assert st.one("SELECT COUNT(*) AS n FROM plate WHERE id=?", (plate["plate_id"],))["n"] == 1
     assert st.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair["id"],))["n"] > 0
-    assert client.get(f"/api/profiles/{s['profile']['id']}/map").json()["samples"] == []
+    assert client.get(f"/api/color-model?{s['setup']}").json()["samples"] == []
 
 
 def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):
@@ -366,7 +368,7 @@ def test_content_disposition_survives_any_plan_name(name, ascii_part, utf8_part)
 
 def test_exporting_a_plan_with_a_russian_name_works_end_to_end(client):
     s = setup(client)
-    plates = client.post("/api/plates", json={"profile_id": s["profile"]["id"], "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
+    plates = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40", "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()
     client.app.state.store.execute("UPDATE plan SET name=? WHERE id=?", ("Рисунок A", plates[0]["plan_id"]))
     r = client.get(f"/api/plans/{plates[0]['plan_id']}/export.lbrn2")
     assert r.status_code == 200 and r.content.startswith(b"<?xml")

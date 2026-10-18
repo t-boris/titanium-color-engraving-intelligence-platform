@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api")
 
 class LensIn(BaseModel):
     name: str
-    focal_length_mm: float
+    focal_length_mm: float | None = None       # unknown until documented or measured (REQ-019)
     field_mm: float | None = None
     expansion: float = 1.0
     note: str | None = None

@@ -76,7 +76,7 @@ const ColorMap = (() => {
       m.dark_share > 0 && m.dark_share < 0.6 ? ` · тёмного оксида ${num(m.dark_share * 100, 0)} %` : '');
   }
 
-  // what the film model says about a wanted colour
+  // what the film model says about a wanted colour; settings are computed only for one laser and lens (DEC-063)
   function filmCard(r) {
     const cand = (c) => h('article', {class: 'card stack'},
       h('p', {}, h('strong', {}, `Плёнка ${num(c.thickness_nm, 0)} нм`), c.dark_share > 0 ? ` с долей тёмного оксида ${num(c.dark_share * 100, 0)} %` : '', ` · расхождение с целью ΔE ${num(c.residual_de, 1)}`),
@@ -93,14 +93,15 @@ const ColorMap = (() => {
       h('p', {class: 'small'}, r.reachable_by_a_film ? 'Цвет лежит на спирали интерференции: его даёт плёнка указанной толщины. Толщины ниже это измеренные режимы, а не расчёт.'
         : 'Цвет лежит вне спирали интерференции больше чем на 8 ΔE: по этой модели ни одна оксидная плёнка титана его не даёт.'),
       ...r.candidates.map(cand),
-      h('p', {class: 'muted small'}, r.kinetics.usable ? `Кинетика: закон толщины от дозы подогнан для режимов импульса: ${r.kinetics.regimes}.` : `Кинетика пока не даёт расчёта настроек: ${I18N.tr(r.kinetics.note)}.`));
+      h('p', {class: 'muted small'}, !r.partition ? 'Настройки по закону толщины от дозы рассчитываются только для одного лазера с одной линзой: выберите их в фильтре «Лазер и линза».'
+        : r.kinetics.usable ? `Кинетика: закон толщины от дозы подогнан для режимов импульса: ${r.kinetics.regimes}.` : `Кинетика пока не даёт расчёта настроек: ${I18N.tr(r.kinetics.note)}.`));
   }
 
   function where(p) {
     return h('div', {class: 'stack small'},
       h('p', {}, h('strong', {}, `${p.layer_name || 'слой ' + p.layer_index}`), p.source === 'tonal' ? pill('серый → мощность') : null, p.referenced ? null : pill('без привязки к чистому титану', 'warn'), ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
         ' · ', link(`/analysis/${p.pair_id}`, 'разбор измерений')),
-      h('p', {class: 'muted'}, [p.setup, p.material, `фото ${p.photo}`, when(p.date)].filter(Boolean).join(' · ')),
+      h('p', {class: 'muted'}, [p.setup_label, p.material, `фото ${p.photo}`, when(p.date)].filter(Boolean).join(' · ')),
       h('p', {}, settings(p.parameters)));
   }
 
@@ -112,7 +113,15 @@ const ColorMap = (() => {
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
     if (f.hide) q.set('include_unreferenced', 'false');
-    const [data, profiles, model] = await Promise.all([get('/colors' + (q.toString() ? '?' + q : '')), get('/profiles'), get('/oxide/model').catch(() => null)]);
+    const data = await get('/colors' + (q.toString() ? '?' + q : ''));
+    // the laser and lens chosen in the filter: the film model, its laws and computed settings are theirs alone
+    const chosen = data.options.setups.find((o) => o.key === f.setup) || null;
+    if (f.setup && !chosen) {                 // a filter remembered from before the laser and lens were keyed by their records
+      sessionStorage.setItem('color-map', JSON.stringify({...state, setup: ''}));
+      return render(ctx);
+    }
+    const partition = chosen ? `device_id=${chosen.device_id}&lens_id=${App.lensParam(chosen.lens_id)}` : '';
+    const model = await get('/oxide/model' + (partition ? '?' + partition : '')).catch(() => null);
     const plane = state.plane || 'ab', band = state.band || [0, 100];
     const shown = () => data.points.filter((p) => p.display_lab[0] >= band[0] && p.display_lab[0] <= band[1]);
     const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, target, plane, band, ...patch})); App.render({preserveScroll: true}); };
@@ -135,7 +144,8 @@ const ColorMap = (() => {
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
       for (const k of ['setup', 'material', 'measurement']) if (f[k]) p.set(k, f[k]);
       if (f.within) p.set('include_unreferenced', 'true');
-      const [r, film] = await Promise.all([get('/colors/search?' + p), get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}`).catch(() => null)]);
+      const [r, film] = await Promise.all([get('/colors/search?' + p),
+        get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}${partition ? '&' + partition : ''}`).catch(() => null)]);
       drawPlot();
       fill(results, h('h3', {}, 'Где встречался такой цвет'),
         !r.matches.length ? h('p', {class: 'muted'}, 'Подходящих цветов пока нет.') : h('div', {class: 'stack'}, ...r.matches.map((m) => h('article', {class: 'card stack color-hit'},
@@ -159,9 +169,11 @@ const ColorMap = (() => {
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов'),
         h('p', {class: 'sub'}, 'Все измеренные цвета всех экспериментов. Выберите нужный цвет и увидите, где он встречался и какими настройками получен.')), h('span', {class: 'spacer'}),
-        profiles.length ? link('/colors?profile=' + profiles[profiles.length - 1].id, 'Модель и прогноз параметров по версии профиля') : null),
+        chosen ? link(`/colors?device=${chosen.device_id}&lens=${App.lensParam(chosen.lens_id)}`, 'Модель и прогноз параметров для этого лазера с линзой')
+          : h('span', {class: 'muted small'}, 'Выберите лазер и линзу, чтобы открыть их модель и прогноз')),
       h('div', {class: 'card stack'}, h('div', {class: 'toolbar'},
-        select('Лазер и линза', 'setup', data.options.setups, f.setup), select('Материал', 'material', data.options.materials, f.material),
+        select('Лазер и линза', 'setup', data.options.setups.map((o) => o.key), f.setup, Object.fromEntries(data.options.setups.map((o) => [o.key, o.label]))),
+        select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
           'Скрыть цвета без чистого титана на снимке')),

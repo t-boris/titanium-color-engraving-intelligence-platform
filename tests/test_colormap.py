@@ -6,21 +6,21 @@ import numpy as np
 import pytest
 
 import synth
-from titanium_platform import colormap, ingest as ig, profiles as pf
+from titanium_platform import colormap, devices, ingest as ig, setup as su
 
 
 @pytest.fixture
 def world(store):
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    return {"store": store, "profile": profile, "material": material}
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    return {"store": store, "laser": laser, "material": material}
 
 
 def pair_with(w, observations, *, mode="raw_camera_relative", seed=3, status="Accepted"):
     """A pair row with observation rows written directly: (layer_index, lab, power, role)."""
     data = synth.framed_work(seed=seed, blobs=6)
-    pid = ig.create_pair(w["store"], profile_id=w["profile"]["id"], lightburn_name=f"work{seed}.lbrn2", lightburn_bytes=data["lightburn"],
+    pid = ig.create_pair(w["store"], device_id=w["laser"]["id"], lens_id=None, lightburn_name=f"work{seed}.lbrn2", lightburn_bytes=data["lightburn"],
                          photo_name=f"photo{seed}.png", photo_bytes=cv2.imencode(".png", data["photo"])[1].tobytes(),
                          context={"material_id": w["material"]["id"]})
     w["store"].execute("UPDATE pair SET status=?, accepted_at='2026-10-16T12:00:00+00:00', hardware_json=? WHERE id=?",
@@ -29,9 +29,9 @@ def pair_with(w, observations, *, mode="raw_camera_relative", seed=3, status="Ac
     for index, lab, power, role in observations:
         evidence = {"role": role, "layer_name": f"C{index:02d}", "color_measurement": {"mode": mode}}
         w["store"].execute(
-            "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,"
-            "repeat_eligible,eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (pid, index, w["profile"]["id"], engraving, json.dumps(lab),
+            "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,"
+            "repeat_eligible,eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (pid, index, w["laser"]["id"], None, engraving, json.dumps(lab),
              json.dumps({"power": power, "frequency": 300.0, "speed": 1000.0, "pulse_width": 10.0, "line_interval": 0.005, "passes": 1, "layer_type": "Scan"}),
              "element anchors", "{}", int(mode == "reference_chart_corrected"), 1, "x", json.dumps(evidence), "2026-10-16T12:00:00+00:00"))
     return pid
@@ -94,13 +94,16 @@ def test_each_colour_says_where_it_came_from_and_with_which_settings(world):
     pid = pair_with(world, [WITNESS, (5, [20.0, 8.0, 21.0], 50.0, "test feature")])
     (p,) = colormap.collect(world["store"])["points"]
     assert p["pair_id"] == pid and p["layer_name"] == "C05" and p["photo"] == "photo3.png" and p["experiment"].startswith("eng-")
-    assert p["setup"] == "JPT · F-Theta" and p["material"] == "Grade 2 sheet · Grade 2" and p["parameters"]["power"] == 50.0
+    assert p["setup"] == f"laser:{world['laser']['id']}/lens:unknown" and p["setup_label"] == "JPT YDFLP-E-60-M7-M-R · линза неизвестна"
+    assert p["material"] == "Grade 2 sheet · Grade 2" and p["parameters"]["power"] == 50.0
 
 
 def test_filters_narrow_the_points_but_the_options_describe_everything(world):
     pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
-    data = colormap.collect(world["store"], setup="another laser")
-    assert data["points"] == [] and data["options"]["setups"] == ["JPT · F-Theta"]
+    data = colormap.collect(world["store"], setup="laser:99/lens:unknown")
+    assert data["points"] == [] and data["options"]["setups"] == [
+        {"key": f"laser:{world['laser']['id']}/lens:unknown", "label": "JPT YDFLP-E-60-M7-M-R · линза неизвестна",
+         "device_id": world["laser"]["id"], "lens_id": None}]
     assert len(colormap.collect(world["store"], measurement="relative")["points"]) == 1
     assert colormap.collect(world["store"], measurement="calibrated")["points"] == []
 
@@ -150,3 +153,15 @@ def test_a_grayscale_work_gives_one_colour_per_step_of_its_grey_to_power_profile
     assert colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3)["matches"] == []             # no reference: not part of the search
     found = colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3, include_unreferenced=True)["matches"][0]
     assert found["parameters"]["power"] == 6.0 and found["source"] == "tonal"
+
+
+def test_two_lasers_with_the_same_name_stay_apart_on_the_map(world):
+    """The map's laser and lens filter is keyed by the records; names are only labels (DEC-063)."""
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
+    twin = devices.create_from_template(world["store"], "jpt-ydflp-e-60-m7-m-r")
+    other = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=4)
+    world["store"].execute("UPDATE pair SET device_id=? WHERE id=?", (twin["id"], other))
+    data = colormap.collect(world["store"])
+    assert len(data["options"]["setups"]) == 2 and len({p["group"] for p in data["points"]}) == 2
+    only = colormap.collect(world["store"], setup=f"laser:{twin['id']}/lens:unknown")["points"]
+    assert [p["pair_id"] for p in only] == [other]

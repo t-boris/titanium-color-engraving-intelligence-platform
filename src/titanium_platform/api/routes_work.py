@@ -9,8 +9,9 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, oxide, plans, profiles as pf
-from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, public_pair, public_plan, read_upload, refresh_after_change, store_of)
+from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, oxide, plans, setup as su
+from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, public_pair, public_plan, read_upload, refresh_after_change,
+                     store_of)
 from .common import content_disposition
 
 router = APIRouter(prefix="/api")
@@ -27,16 +28,16 @@ def _photo_digest(path: str, size: int, modified_ns: int) -> str:
 
 
 class PlatesIn(BaseModel):
-    profile_id: int
+    device_id: int
     powers: str
     frequencies: str
     speeds: str
     cell_width: float
     cell_height: float
     gap: float
-    pulse_width: float = 200.0
-    line_interval: float = 0.025
-    passes: int = 1
+    pulse_width: float          # job settings are always given: nothing is filled in (DEC-043)
+    line_interval: float
+    passes: int
     global_passes: int = 1
     bidirectional: bool = True
     cross_hatch: bool = False
@@ -51,7 +52,7 @@ class CapabilityPlateIn(BaseModel):
     power: float = 20.0
     frequency: float = 48.0
     speed: float = 900.0
-    pulse_width: float = 200.0
+    pulse_width: float
     line_interval: float = 0.025
     passes: int = 1
     global_passes: int = 1
@@ -68,6 +69,7 @@ class ApplicationGoalIn(BaseModel):
     device_id: int
     material_id: int
     goal: str
+    pulse_width: float | None = None      # the operator's choice when the suggestion has no pulse width (DEC-043)
 
 
 class CornersIn(BaseModel):
@@ -104,7 +106,7 @@ class RollbackIn(BaseModel):
 @router.post("/plates/preview")
 def preview_plates(body: PlatesIn, request: Request):
     s = store_of(request)
-    return plans.preview_series(pf.get_profile(s, body.profile_id), body.powers, body.frequencies, body.speeds,
+    return plans.preview_series(su.installed(s, body.device_id), body.powers, body.frequencies, body.speeds,
                                 body.cell_width, body.cell_height, body.gap, body.pulse_width, body.line_interval, body.passes,
                                 {k: getattr(body, k) for k in ("global_passes", "bidirectional", "cross_hatch", "scan_angle", "angle_increment")})
 
@@ -130,8 +132,10 @@ def create_next_application_plate(body: ApplicationGoalIn, request: Request):
     suggestion = application_guide.suggest(s, body.device_id, body.material_id, body.goal)
     plate = suggestion["plate"]
     if plate is None:
-        raise pf.ValidationError(suggestion["message"])
+        raise su.ValidationError(suggestion["message"])
     settings = {**plate["settings"], "research_goal": body.goal, "source_pair_id": plate["source_pair_id"]}
+    if body.pulse_width is not None:
+        settings["pulse_width"] = body.pulse_width
     return capability_plates.create(s, body.device_id, body.material_id, plate["test_type"], settings)
 
 
@@ -175,7 +179,7 @@ def create_capability_plate(body: CapabilityPlateIn, request: Request):
 
 @router.post("/plates", status_code=201)
 def create_plates(body: PlatesIn, request: Request):
-    return plans.create_plate_series(store_of(request), body.profile_id, body.powers, body.frequencies, body.speeds,
+    return plans.create_plate_series(store_of(request), body.device_id, body.powers, body.frequencies, body.speeds,
                                      body.cell_width, body.cell_height, body.gap, pulse_width=body.pulse_width,
                                      line_interval=body.line_interval, passes=body.passes,
                                      lightburn_settings={k: getattr(body, k) for k in ("global_passes", "bidirectional", "cross_hatch", "scan_angle", "angle_increment")})
@@ -197,24 +201,30 @@ def search_colors(request: Request, L: float, a: float, b: float, limit: int = 1
                            measurement=measurement, include_unreferenced=include_unreferenced)
 
 
+def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:
+    """One laser and lens when the request names a laser (its lens is then required, ``unknown`` included), else None."""
+    return None if device_id is None else (device_id, lens_param(lens_id))
+
+
 @router.get("/oxide/model")
-def oxide_model(request: Request, refit: bool = False):
+def oxide_model(request: Request, refit: bool = False, device_id: int | None = None, lens_id: str | None = None):
     """The thin-film model of the oxide colour fitted to the calibrated observations: parameters, the thickness spiral, every
-    observation's thickness, dark share and residual (research step 1)."""
-    return oxide.report(store_of(request), refit=refit)
+    observation's thickness, dark share and residual (research step 1); of one laser and lens when they are given."""
+    return oxide.report(store_of(request), refit=refit, partition=_partition(device_id, lens_id))
 
 
 @router.get("/colors/settings")
-def settings_for_colour(request: Request, L: float, a: float, b: float):
+def settings_for_colour(request: Request, L: float, a: float, b: float, device_id: int | None = None, lens_id: str | None = None):
     """Settings for a wanted colour from the film model: thickness candidates, the measured settings that made such films,
-    the kinetics law when usable (research step 3)."""
-    return oxide.settings_for_colour(store_of(request), [L, a, b])
+    and, for one laser and lens only, the settings computed from its kinetics law when usable (research step 3)."""
+    return oxide.settings_for_colour(store_of(request), [L, a, b], partition=_partition(device_id, lens_id))
 
 
 @router.get("/oxide/kinetics")
-def oxide_kinetics(request: Request):
-    """Film thickness against the dose of the settings on the calibrated observations, with the fitted law (research step 2)."""
-    return oxide.kinetics(store_of(request))
+def oxide_kinetics(request: Request, device_id: int, lens_id: str):
+    """Film thickness against the dose of the settings on the calibrated observations of one laser and lens, with the
+    fitted law (research step 2)."""
+    return oxide.kinetics(store_of(request), (device_id, lens_param(lens_id)))
 
 
 @router.get("/experiments")
@@ -254,15 +264,19 @@ def rename_engraving(engraving_id: str, body: EngravingTitleIn, request: Request
 
 
 @router.post("/pairs", status_code=201)
-async def create_pair(request: Request, profile_id: int = Form(...), stand_id: int | None = Form(None), plan_id: int | None = Form(None),
-                      rephoto_of: int | None = Form(None), context: str = Form("{}"), lightburn: UploadFile = File(None), photo: UploadFile = File(None)):
+async def create_pair(request: Request, device_id: int = Form(...), lens_id: str = Form(...), stand_id: int | None = Form(None),
+                      plan_id: int | None = Form(None), rephoto_of: int | None = Form(None), context: str = Form("{}"),
+                      lightburn: UploadFile = File(None), photo: UploadFile = File(None)):
+    """A LightBurn file and its photograph, of the laser and the lens the operator chose (``lens_id=unknown`` when the lens
+    of the work is not known: the lens installed now is never assumed, REQ-016)."""
     lb_name, lb_bytes = await read_upload(lightburn, MAX_LIGHTBURN_BYTES, "LightBurn")
     ph_name, ph_bytes = await read_upload(photo, MAX_PHOTO_BYTES, "photograph")
     try:
         ctx = json.loads(context or "{}")
     except json.JSONDecodeError:
-        raise pf.ValidationError("the context is not valid JSON") from None
-    pid = ingest.create_pair(store_of(request), profile_id=profile_id, stand_id=stand_id, lightburn_name=lb_name, lightburn_bytes=lb_bytes,
+        raise su.ValidationError("the context is not valid JSON") from None
+    pid = ingest.create_pair(store_of(request), device_id=device_id, lens_id=lens_param(lens_id), stand_id=stand_id,
+                             lightburn_name=lb_name, lightburn_bytes=lb_bytes,
                              photo_name=ph_name, photo_bytes=ph_bytes, plan_id=plan_id, rephoto_of=rephoto_of, context=ctx)
     return public_pair(ingest.get_pair(store_of(request), pid))
 
@@ -278,7 +292,7 @@ class MatrixEditIn(BaseModel):
 
 
 @router.post("/matrix-pairs", status_code=201)
-async def create_matrix_pair(request: Request, profile_id: int = Form(...), stand_id: int | None = Form(None),
+async def create_matrix_pair(request: Request, device_id: int = Form(...), lens_id: str = Form(...), stand_id: int | None = Form(None),
                              context: str = Form("{}"), photo: UploadFile = File(None)):
     """A parameter matrix (LightBurn Material Test) from its photograph alone: found, its labels read, a LightBurn file
     generated from them; the settings wait for the operator's confirmation (REQ-031)."""
@@ -286,8 +300,8 @@ async def create_matrix_pair(request: Request, profile_id: int = Form(...), stan
     try:
         ctx = json.loads(context or "{}")
     except json.JSONDecodeError:
-        raise pf.ValidationError("the context is not valid JSON") from None
-    pid = ingest.create_matrix_pair(store_of(request), profile_id=profile_id, stand_id=stand_id, photo_name=ph_name,
+        raise su.ValidationError("the context is not valid JSON") from None
+    pid = ingest.create_matrix_pair(store_of(request), device_id=device_id, lens_id=lens_param(lens_id), stand_id=stand_id, photo_name=ph_name,
                                     photo_bytes=ph_bytes, context=ctx)
     return public_pair(ingest.get_pair(store_of(request), pid))
 
@@ -326,9 +340,10 @@ def create_alignment_revision(pair_id: int, request: Request):
     return public_pair(ingest.get_pair(s, new_id))
 
 
-@router.get("/profiles/{profile_id}/previous-context")
-def previous_context(profile_id: int, request: Request):
-    return ingest.previous_context(store_of(request), profile_id) or {}
+@router.get("/devices/{device_id}/previous-context")
+def previous_context(device_id: int, request: Request):
+    """'Same as previous' for this laser: the context and the lens of its last accepted pair."""
+    return ingest.previous_context(store_of(request), device_id) or {}
 
 
 @router.post("/pairs/{pair_id}/check")
@@ -380,7 +395,7 @@ def delete_pair(pair_id: int, request: Request):
     s = store_of(request)
     pair = ingest.get_pair(s, pair_id)
     ingest.delete_pair(s, pair_id)
-    refresh_after_change(s, pair["profile_id"])
+    refresh_after_change(s, pair["device_id"], pair["lens_id"])
 
 
 @router.get("/pairs/{pair_id}/overlay.png")
@@ -431,11 +446,12 @@ def report(pair_id: int, request: Request):
     return analysis.report_for_pair(store_of(request), pair_id)
 
 
-@router.get("/profiles/{profile_id}/knowledge")
-def list_knowledge(profile_id: int, request: Request):
+@router.get("/knowledge")
+def list_knowledge(request: Request, device_id: int, lens_id: str):
     s = store_of(request)
-    pf.get_profile(s, profile_id)
-    return knowledge.list_for_profile(s, profile_id)
+    lens = lens_param(lens_id)
+    su.resolve(s, device_id, lens)
+    return knowledge.list_for_setup(s, device_id, lens)
 
 
 @router.get("/knowledge/{kid}")
@@ -463,24 +479,27 @@ def rollback(kid: int, body: RollbackIn, request: Request):
     return knowledge.rollback(store_of(request), kid, body.event_id, body.confirm_production)
 
 
-@router.get("/profiles/{profile_id}/map")
-def color_map(profile_id: int, request: Request):
-    """Measured coverage, unstable regions and open targets of one laser profile version."""
+@router.get("/color-model")
+def color_model(request: Request, device_id: int, lens_id: str):
+    """Measured coverage, unstable regions and open targets of one laser and lens (``lens_id=unknown`` included)."""
     s = store_of(request)
-    pf.get_profile(s, profile_id)
-    samples = list(model.knowledge_summaries(s, profile_id).values())
-    rules = pf.get_rules(s, profile_id)
-    return {"samples": samples, "camera_relative_sets": model.camera_relative_sets(s, profile_id),
-            "unstable": model.unstable_regions(samples, rules["variance_threshold"]), "targets": designer.open_targets(s, profile_id),
+    lens = lens_param(lens_id)
+    su.resolve(s, device_id, lens)
+    samples = list(model.knowledge_summaries(s, device_id, lens).values())
+    rules = su.get_rules(s, device_id, lens)
+    return {"samples": samples, "camera_relative_sets": model.camera_relative_sets(s, device_id, lens),
+            "unstable": model.unstable_regions(samples, rules["variance_threshold"]), "targets": designer.open_targets(s, device_id, lens),
             "rules": rules}
 
 
 class LabIn(BaseModel):
+    device_id: int
+    lens_id: int | None            # required: null is the unknown lens
     lab: list[float]
 
 
-@router.post("/profiles/{profile_id}/predict")
-def predict(profile_id: int, body: LabIn, request: Request):
+@router.post("/predict")
+def predict(body: LabIn, request: Request):
     s = store_of(request)
-    pf.get_profile(s, profile_id)
-    return model.predict_for_lab(list(model.knowledge_summaries(s, profile_id).values()), body.lab)
+    su.resolve(s, body.device_id, body.lens_id)
+    return model.predict_for_lab(list(model.knowledge_summaries(s, body.device_id, body.lens_id).values()), body.lab)

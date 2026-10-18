@@ -4,14 +4,14 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import analysis, conversion, designer, ingest, knowledge, photo, profiles
+from .. import analysis, conversion, designer, ingest, knowledge, photo, setup as su
 from ..db import ImmutableError, Store
 
 MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
 MAX_PHOTO_BYTES = 600 * 1024 * 1024
 MAX_IMAGE_BYTES = 60 * 1024 * 1024
 
-USER_ERRORS = (profiles.ValidationError, ingest.IngestError, conversion.ConversionError, designer.DesignerError,
+USER_ERRORS = (su.ValidationError, ingest.IngestError, conversion.ConversionError, designer.DesignerError,
                knowledge.KnowledgeError, photo.PhotoError)
 
 
@@ -20,7 +20,7 @@ def store_of(request: Request) -> Store:
 
 
 def install_error_handlers(app: FastAPI) -> None:
-    @app.exception_handler(profiles.ProtectedError)
+    @app.exception_handler(su.ProtectedError)
     async def protected(_, exc):
         return JSONResponse({"error": str(exc), "kind": "protected"}, status_code=409)
 
@@ -89,5 +89,16 @@ def content_disposition(name: str, extension: str) -> str:
     return f"attachment; filename=\"{ascii_name}{extension}\"; filename*=UTF-8''{quote(cleaned + extension, safe='')}"
 
 
-def refresh_after_change(store: Store, profile_id: int) -> None:
-    knowledge.refresh(store, profile_id)
+def refresh_after_change(store: Store, device_id: int, lens_id: int | None) -> None:
+    knowledge.refresh(store, device_id, lens_id)
+
+
+def lens_param(value: str | None) -> int | None:
+    """A lens given in a form or a query: its record id, or ``unknown`` for a work whose lens is not known (DEC-063).
+    It is never left out, so an unknown lens is always an explicit choice."""
+    text = (value or "").strip()
+    if text == "unknown":
+        return None
+    if not text.isdigit():
+        raise su.ValidationError("choose the lens or mark it unknown")
+    return int(text)

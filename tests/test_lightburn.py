@@ -93,15 +93,6 @@ def test_layer_without_index_is_an_error():
         lb.parse_bytes(b'<LightBurnProject><CutSetting type="Scan"><maxPower Value="1"/></CutSetting></LightBurnProject>')
 
 
-def test_compare_with_profile_constants_dec_022():
-    l0 = lb.parse_bytes(SAMPLE).layer(0)
-    assert lb.compare_with_profile(l0, pulse_width=4, line_interval=0.025) == []
-    diffs = lb.compare_with_profile(l0, pulse_width=200, line_interval=0.025)
-    assert len(diffs) == 1 and "pulse width" in diffs[0]
-    img = lb.parse_bytes(SAMPLE).layer(7)  # file records neither constant: not a difference
-    assert lb.compare_with_profile(img, pulse_width=200, line_interval=0.025) == []
-
-
 def test_regions_expose_their_outline_and_the_notes_identifier():
     p = lb.parse_bytes(SAMPLE)
     rect = p.layer(0).regions[0]

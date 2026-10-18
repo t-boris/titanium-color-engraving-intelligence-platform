@@ -7,26 +7,30 @@ import numpy as np
 import pytest
 
 import synth
+from titanium_platform import devices, lenses
 from titanium_platform import ingest as ig
 from titanium_platform import plans as pl
-from titanium_platform import profiles as pf
+from titanium_platform import setup as su
 from titanium_platform import registration
 from titanium_platform import lightburn as lb
 
 CELLS = {"r1c1": (200, 60, 60), "r1c2": (60, 200, 60), "r2c1": (60, 60, 200), "r2c2": (200, 200, 60)}
+JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 
 
 @pytest.fixture
 def world(store):
     store.set_setting("allow_non_raw_photos", True)  # tests use PNG renders; real use requires RAW
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    stand = pf.save_capture_setup(store, "Rig", "cam", "LED", "90", "ColorChecker Classic")
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    device = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    lens = lenses.create_lens(store, "F-Theta 174", 174, 170)
+    lenses.install(store, device["id"], lens["id"])
+    stand = su.save_capture_setup(store, "Rig", "cam", "LED", "90", "ColorChecker Classic")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
     pl.save_marker_layer_settings(store, 20, 60, 300)
-    out = pl.create_plate_series(store, profile["id"], "10 20", "40 80", "900", 5, 4, 1)[0]
+    out = pl.create_plate_series(store, device["id"], "10 20", "40 80", "900", 5, 4, 1, **JOB)[0]
     plan = pl.get_plan(store, out["plan_id"])
-    return {"store": store, "profile": profile, "stand": stand, "material": material, "plan": plan,
-            "plate": out, "lbrn": pl.export_lbrn2(plan)}
+    return {"store": store, "device": device, "lens": lens, "setup": (device["id"], lens["id"]), "stand": stand,
+            "material": material, "plan": plan, "plate": out, "lbrn": pl.export_lbrn2(plan)}
 
 
 def png(img) -> bytes:
@@ -47,7 +51,8 @@ def test_line_measurement_outside_a_manually_aligned_photo_is_missing_evidence()
 
 def make_pair(w, lbrn=None, photo=None, **kw):
     context = {"material_id": w["material"]["id"], **kw.pop("context", {})}
-    return ig.create_pair(w["store"], profile_id=w["profile"]["id"], stand_id=w["stand"]["id"], lightburn_name="plate.lbrn2",
+    return ig.create_pair(w["store"], device_id=w["device"]["id"], lens_id=kw.pop("lens_id", w["lens"]["id"]),
+                          stand_id=w["stand"]["id"], lightburn_name="plate.lbrn2",
                           lightburn_bytes=lbrn or w["lbrn"], photo_name="plate.png", context=context,
                           photo_bytes=photo or png(synth.plate_photo(w["plan"], CELLS, gains=(0.9, 0.97, 1.08))), **kw)
 
@@ -139,8 +144,9 @@ def test_accepting_requires_the_mask_review_then_writes_immutable_observations(w
         ig.accept_pair(s, pid)
     ig.review_masks(s, pid)
     calls = []
-    ids = ig.accept_pair(s, pid, on_accepted=lambda st, prof: calls.append(prof))
-    assert len(ids) == 6 and calls == [world["profile"]["id"]]
+    ids = ig.accept_pair(s, pid, on_accepted=lambda st, device_id, lens_id: calls.append((device_id, lens_id)))
+    assert len(ids) == 6 and calls == [world["setup"]]
+    assert {(r["device_id"], r["lens_id"]) for r in s.query("SELECT device_id, lens_id FROM observation")} == {world["setup"]}
     obs = s.one("SELECT * FROM observation WHERE evidence_json LIKE '%r1c1%' LIMIT 1")
     params = json.loads(obs["parameters_json"])
     assert {k: params[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")} == {
@@ -157,7 +163,7 @@ def test_accepting_requires_the_mask_review_then_writes_immutable_observations(w
     with pytest.raises(KeyError, match="not found"):
         ig.get_pair(s, pid)
     from titanium_platform import model
-    assert all(o["pair_id"] != pid for o in model.eligible_observations(s, world["profile"]["id"]))
+    assert all(o["pair_id"] != pid for o in model.eligible_observations(s, *world["setup"]))
 
 
 def test_a_system_plate_without_a_separate_chart_is_measured_relative_to_the_raw_photo(world):
@@ -174,9 +180,9 @@ def test_a_system_plate_without_a_separate_chart_is_measured_relative_to_the_raw
     assert evidence["color_measurement"]["mode"] == "raw_camera_relative"
     assert s.one("SELECT model_eligible FROM observation ORDER BY id LIMIT 1")["model_eligible"] == 0
     from titanium_platform import model
-    relative_sets = model.camera_relative_sets(s, world["profile"]["id"])
+    relative_sets = model.camera_relative_sets(s, *world["setup"])
     assert len(relative_sets) == 1 and len(relative_sets[0]["samples"]) == 6
-    assert model.knowledge_summaries(s, world["profile"]["id"]) == {}
+    assert model.knowledge_summaries(s, *world["setup"]) == {}
 
 
 def test_a_mirrored_plate_with_three_markers_aligns_only_after_its_qr_matches(world):
@@ -303,7 +309,7 @@ def test_a_small_element_anchor_cannot_be_stretched_over_the_entire_plate(world,
 
 def test_manual_plate_alignment_still_rejects_a_readable_wrong_qr(world, monkeypatch):
     s = world["store"]
-    other = pl.create_plate_series(s, world["profile"]["id"], "10 20", "40 80", "1200", 5, 4, 1)[0]
+    other = pl.create_plate_series(s, world["device"]["id"], "10 20", "40 80", "1200", 5, 4, 1, **JOB)[0]
     other_plan = pl.get_plan(s, other["plan_id"])
     extent = other_plan["markers"]["extent"]
     scale, ox, oy = 20.0, 520, 80
@@ -381,9 +387,9 @@ def test_a_non_raw_photo_is_refused_when_not_allowed(world):
 def test_bad_inputs_are_rejected_before_anything_is_stored(world):
     s = world["store"]
     with pytest.raises(ig.IngestError, match="lbrn"):
-        ig.create_pair(s, profile_id=world["profile"]["id"], stand_id=world["stand"]["id"], lightburn_name="x.txt", lightburn_bytes=b"x", photo_name="p.png", photo_bytes=b"x")
+        ig.create_pair(s, device_id=world["device"]["id"], lens_id=None, stand_id=world["stand"]["id"], lightburn_name="x.txt", lightburn_bytes=b"x", photo_name="p.png", photo_bytes=b"x")
     with pytest.raises(ig.IngestError, match="capture setup"):
-        ig.create_pair(s, profile_id=world["profile"]["id"], stand_id=999, lightburn_name="x.lbrn2", lightburn_bytes=b"x", photo_name="p.png", photo_bytes=b"x")
+        ig.create_pair(s, device_id=world["device"]["id"], lens_id=None, stand_id=999, lightburn_name="x.lbrn2", lightburn_bytes=b"x", photo_name="p.png", photo_bytes=b"x")
     assert s.one("SELECT COUNT(*) AS n FROM pair")["n"] == 0
 
 
@@ -394,19 +400,57 @@ def test_context_is_optional_and_defaults_to_unknown():
     c = ig.clean_context({"focus": "1.5", "engraved_at": "2026-10-14", "batch": " B1 "})
     assert (c["focus"], c["engraved_at"], c["batch"]) == (1.5, "2026-10-14", "B1")
     for bad in ({"focus": "abc"}, {"focus": "nan"}, {"engraved_at": "14.10.2026"}):
-        with pytest.raises(pf.ValidationError):
+        with pytest.raises(su.ValidationError):
             ig.clean_context(bad)
 
 
-def test_same_as_previous_uses_the_last_accepted_pair_of_the_profile(world):
+def test_same_as_previous_uses_the_last_accepted_pair_of_the_laser_with_its_lens(world):
     s = world["store"]
-    assert ig.previous_context(s, world["profile"]["id"]) is None
+    assert ig.previous_context(s, world["device"]["id"]) is None
     s.execute("UPDATE material_profile SET batch='B-7' WHERE id=?", (world["material"]["id"],))
     pid = make_pair(world, context={"batch": "B-7", "focus": 0.5})
     ig.check_pair(s, pid)
     ig.review_masks(s, pid)
     ig.accept_pair(s, pid)
-    assert ig.previous_context(s, world["profile"]["id"])["batch"] == "B-7"
+    previous = ig.previous_context(s, world["device"]["id"])
+    assert previous["batch"] == "B-7" and previous["lens_id"] == world["lens"]["id"]
+
+
+def test_an_imported_work_is_not_given_the_installed_lens(world):
+    """REQ-016: the lens installed now is never asserted for an imported work; unknown stays unknown."""
+    s = world["store"]
+    pid = make_pair(world, lens_id=None)
+    pair = ig.get_pair(s, pid)
+    assert pair["lens_id"] is None and pair["hardware"]["lens"] is None and pair["hardware"]["device"]["id"] == world["device"]["id"]
+
+
+def test_a_photograph_of_a_plate_takes_the_plates_lens_and_says_so(world):
+    """REQ-019: comparability follows the lens the plate was made with; the other choice stays visible as a warning."""
+    s = world["store"]
+    pid = make_pair(world, lens_id=None)
+    report = ig.check_pair(s, pid)
+    assert report["problems"] == [] and report["lens"]["lens_id"] == world["lens"]["id"]
+    assert any(w.startswith("no lens was chosen for this photograph") for w in report["lens"]["warnings"])
+    pair = ig.get_pair(s, pid)
+    assert pair["lens_id"] == world["lens"]["id"] and pair["hardware"]["lens"]["id"] == world["lens"]["id"]
+    again = ig.check_pair(s, pid)                    # the operator's choice and the warning stay on a re-check
+    assert again["lens"]["chosen_lens_id"] is None and any(w.startswith("no lens was chosen") for w in again["lens"]["warnings"])
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    assert {r["lens_id"] for r in s.query("SELECT lens_id FROM observation WHERE pair_id=?", (pid,))} == {world["lens"]["id"]}
+
+
+def test_a_plate_made_for_another_laser_blocks_the_pair(world):
+    s = world["store"]
+    other = devices.create_from_template(s, "jpt-ydflp-e-60-m7-m-r", "Second laser")
+    pid = ig.create_pair(s, device_id=other["id"], lens_id=None, stand_id=world["stand"]["id"], lightburn_name="plate.lbrn2",
+                         lightburn_bytes=world["lbrn"], photo_name="plate.png", context={"material_id": world["material"]["id"]},
+                         photo_bytes=png(synth.plate_photo(world["plan"], CELLS, gains=(0.9, 0.97, 1.08))))
+    report = ig.check_pair(s, pid)
+    assert "this plate was made for a different laser than the one selected" in report["problems"]
+    assert ig.get_pair(s, pid)["status"] == ig.ST_CORRECTION
+    with pytest.raises(ig.IngestError, match="not ready to accept"):
+        ig.accept_pair(s, pid)
 
 
 def edited_lbrn(world, power_for_r1c2=None, pulse_width=None):
@@ -486,7 +530,7 @@ def test_omitted_q_pulse_and_cut_interval_are_unknown_not_plate_differences(worl
     differences, mapping, missing = ig.compare_plate(cells, project.layers, 0, 0)
     assert differences == []
     assert missing == [] and mapping[cells[0]["id"]] is target
-    assert not any("line interval is missing" in note for note in ig.layer_report(target, pf.get_profile(world["store"], world["profile"]["id"]))["notes"])
+    assert not any("line interval is missing" in note for note in ig.layer_report(target, world["device"]["passport"])["notes"])
 
 
 def test_export_rounding_is_not_a_false_plate_discrepancy():
@@ -559,7 +603,7 @@ def test_a_marked_work_without_a_known_plate_needs_corners_and_aligns_manually(w
 
 def test_a_photo_of_another_plate_is_refused(world):
     s = world["store"]
-    other = pl.create_plate_series(s, world["profile"]["id"], "10 20", "40 80", "1200", 5, 4, 1)[0]
+    other = pl.create_plate_series(s, world["device"]["id"], "10 20", "40 80", "1200", 5, 4, 1, **JOB)[0]
     other_plan = pl.get_plan(s, other["plan_id"])
     pid = make_pair(world, photo=png(synth.plate_photo(other_plan, CELLS)))
     report = ig.check_pair(s, pid)

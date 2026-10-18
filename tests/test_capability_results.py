@@ -2,18 +2,19 @@ import json
 
 from fastapi.testclient import TestClient
 
-from titanium_platform import analysis, capability_plates as cp, capability_results, devices, lenses, plans, profiles
+from titanium_platform import analysis, capability_plates as cp, capability_results, devices, lenses, plans
+from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 from titanium_platform.db import now
 
 
 def accepted_capability_pair(store, laser, material, test_type="calibration", made=None, with_line_metrics=False):
-    made = made or cp.create(store, laser["id"], material["id"], test_type)
+    made = made or cp.create(store, laser["id"], material["id"], test_type, {"pulse_width": 200})
     plan = plans.get_plan(store, made["plan_id"])
     pair_id = store.execute(
-        "INSERT INTO pair(status,profile_id,material_id,plate_id,plan_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
-        "VALUES ('Accepted',?,?,?,?,?,'test.lbrn2','/test.lbrn2','test.raw','/test.raw',?,?,?,?)",
-        (plan["profile_id"], material["id"], made["plate_id"], made["plan_id"], f"engraving-{made['plate_id']}",
+        "INSERT INTO pair(status,device_id,lens_id,material_id,plate_id,plan_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
+        "VALUES ('Accepted',?,?,?,?,?,?,'test.lbrn2','/test.lbrn2','test.raw','/test.raw',?,?,?,?)",
+        (plan["device_id"], plan["lens_id"], material["id"], made["plate_id"], made["plan_id"], f"engraving-{made['plate_id']}",
          json.dumps({"titanium_name": material["name"], "titanium_grade": material["grade"], "batch": material["batch"]}),
          "{}", now(), now())).lastrowid
     sample_layers = plan["layers"][:2]
@@ -23,9 +24,9 @@ def accepted_capability_pair(store, laser, material, test_type="calibration", ma
             evidence["line_metrics"] = {"line_count": 1, "visible_line_count": index,
                                         "median_continuity_percent": 100.0 if index else 0.0}
         store.execute(
-            "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) "
-            "VALUES (?,?,?,?,?,?, 'markers', '{}',1,1,'accepted capability test',?,?)",
-            (pair_id, layer["index"], plan["profile_id"], f"engraving-{made['plate_id']}", json.dumps(lab),
+            "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) "
+            "VALUES (?,?,?,?,?,?,?, 'markers', '{}',1,1,'accepted capability test',?,?)",
+            (pair_id, layer["index"], plan["device_id"], plan["lens_id"], f"engraving-{made['plate_id']}", json.dumps(lab),
              json.dumps(layer["parameters"]), json.dumps(evidence), now()))
     return made, pair_id
 
@@ -34,12 +35,12 @@ def test_accepted_test_result_is_processed_with_hardware_and_material_provenance
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="RESULT-1")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
-    material = profiles.save_material(store, "Grade 2 sheet", batch="HEAT-19", grade="Grade 2")
+    material = su.save_material(store, "Grade 2 sheet", batch="HEAT-19", grade="Grade 2")
     made, pair_id = accepted_capability_pair(store, laser, material)
     store.execute(
-        "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) "
-        "VALUES (?,?,?,?,?,?, 'markers', '{}',0,1,'cleaning witness',?,?)",
-        (pair_id, -1, plans.get_plan(store, made["plan_id"])["profile_id"], f"engraving-{made['plate_id']}",
+        "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) "
+        "VALUES (?,?,?,?,?,?,?, 'markers', '{}',0,1,'cleaning witness',?,?)",
+        (pair_id, -1, laser["id"], lens["id"], f"engraving-{made['plate_id']}",
          json.dumps([90.0, 0.0, 0.0]), json.dumps({}), json.dumps({"layer_name": "Cleaning witness", "role": "pre-test cleaning witness"}), now()))
 
     report = capability_results.report_for_pair(store, pair_id)
@@ -61,7 +62,7 @@ def test_capability_findings_are_available_in_the_pair_report_and_device_api(tmp
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         material = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "API-19"}).json()
-        made = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": material["id"], "test_type": "hatch_interval"}).json()
+        made = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": material["id"], "pulse_width": 200, "test_type": "hatch_interval"}).json()
         store = client.app.state.store
         laser_model = devices.get_device(store, laser["id"])
         stock = store.one("SELECT * FROM material_profile WHERE id=?", (material["id"],))
@@ -79,7 +80,7 @@ def test_compact_capability_reports_line_evidence_without_color_tolerance_column
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="RESULT-LINES")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
-    material = profiles.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
     _, pair_id = accepted_capability_pair(store, laser, material, "compact_capability", with_line_metrics=True)
     report = analysis.report_for_pair(store, pair_id)
     assert report["capability"]["line_response"]["visible"] == 1

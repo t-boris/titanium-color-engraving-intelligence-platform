@@ -4,16 +4,19 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from titanium_platform import application_guide, devices, lenses, lightburn, plans, profiles, research
+from titanium_platform import application_guide, devices, lenses, lightburn, plans, research
+from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 from titanium_platform.db import now
+
+JOB = {"pulse_width": 200}      # the pulse width of a test plate is always given (DEC-043)
 
 
 def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT research", serial="R-1")
     lens = lenses.create_lens(store, "F-Theta research", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
-    material = profiles.save_material(store, "Grade 2 stock", grade="Grade 2", batch="R-A")
+    material = su.save_material(store, "Grade 2 stock", grade="Grade 2", batch="R-A")
     return laser, lens, material
 
 
@@ -22,7 +25,7 @@ def test_session_plate_export_and_pending_guard(store):
     session = research.create_session(store, laser["id"], material["id"], "line", "тонкая непрерывная линия")
     assert session["lens_id"] == lens["id"]
     assert research.context(store, session["id"])["device"]["id"] == laser["id"]
-    preview = research.preview_plate(store, session["id"], "material_matrix", {
+    preview = research.preview_plate(store, session["id"], "material_matrix", {**JOB, 
         "power": 20, "frequency": 48, "speed": 900, "pulse_width": 200,
         "matrix": {"x_axis": "power", "y_axis": "speed", "geometry": "line",
                    "x_min": 10, "x_max": 30, "x_count": 3,
@@ -38,20 +41,20 @@ def test_session_plate_export_and_pending_guard(store):
     assert project.layer(0).name.startswith("CLEAN-")
     assert max(layer.index for layer in project.layers) <= 29
     with pytest.raises(research.ResearchError, match="ожидает"):
-        research.create_plate(store, session["id"], "text_readability")
+        research.create_plate(store, session["id"], "text_readability", JOB)
 
 
 def test_ai_can_replace_a_pending_plate_without_losing_history(store):
     laser, _, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "text", "найти читаемые буквы")
-    old = research.create_plate(store, session["id"], "text_readability")
+    old = research.create_plate(store, session["id"], "text_readability", JOB)
     store.execute("UPDATE plan SET status='Exported' WHERE id=?", (old["plan_id"],))
     settings = {"power": 60, "frequency": 200, "speed": 3750, "pulse_width": 200,
                 "line_interval": 0.025, "passes": 1,
                 "matrix": {"x_axis": "frequency", "y_axis": "pulse_width", "geometry": "fill",
                            "x_min": 105, "x_max": 420, "x_count": 3,
                            "y_min": 100, "y_max": 350, "y_count": 3}}
-    preview = research.preview_plate(store, session["id"], "material_matrix", settings)
+    preview = research.preview_plate(store, session["id"], "material_matrix", {**JOB, **settings})
     assert preview["summary"]["size_mm"]["width"] < 100
     replaced = research.call_tool(store, session["id"], "replace_pending_test",
                                   {"plan_id": old["plan_id"], "test_type": "material_matrix", "settings": settings})
@@ -62,24 +65,23 @@ def test_ai_can_replace_a_pending_plate_without_losing_history(store):
     assert [p["status"] for p in research.get_session(store, session["id"])["plans"]] == ["Ready to export", "Superseded"]
     assert research.context(store, session["id"])["session_plans"][0]["replaceable"] is True
     with pytest.raises(research.ResearchError, match="текущую ожидающую плату"):
-        research.create_plate(store, session["id"], "line_resolution", replace_plan_id=old["plan_id"])
+        research.create_plate(store, session["id"], "line_resolution", JOB, replace_plan_id=old["plan_id"])
 
 
 def test_replacement_refuses_linked_photos_and_invalid_new_plate_without_discarding_old(store):
-    laser, _, material = hardware(store)
+    laser, lens, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
-    old = research.create_plate(store, session["id"], "line_resolution")
+    old = research.create_plate(store, session["id"], "line_resolution", JOB)
     with pytest.raises(ValueError):
-        research.create_plate(store, session["id"], "unknown_test", replace_plan_id=old["plan_id"])
+        research.create_plate(store, session["id"], "unknown_test", JOB, replace_plan_id=old["plan_id"])
     assert plans.get_plan(store, old["plan_id"])["status"] == "Ready to export"
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=?", (laser["id"],))
     store.execute(
-        "INSERT INTO pair(status,profile_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
-        "photo_name,photo_path,context_json,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("Awaiting check", profile["id"], material["id"], old["plan_id"], "job-1",
+        "INSERT INTO pair(status,device_id,lens_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
+        "photo_name,photo_path,context_json,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("Awaiting check", laser["id"], lens["id"], material["id"], old["plan_id"], "job-1",
          "file.lbrn2", "/missing.lbrn2", "photo.dng", "/missing.dng", "{}", "{}", now()))
     with pytest.raises(research.ResearchError, match="привязано фото"):
-        research.create_plate(store, session["id"], "material_matrix", replace_plan_id=old["plan_id"])
+        research.create_plate(store, session["id"], "material_matrix", JOB, replace_plan_id=old["plan_id"])
     with pytest.raises(research.ResearchError, match="привязано фото"):
         research.cancel_pending_plate(store, session["id"], old["plan_id"], "тест больше не нужен")
     assert plans.get_plan(store, old["plan_id"])["status"] == "Ready to export"
@@ -88,28 +90,27 @@ def test_replacement_refuses_linked_photos_and_invalid_new_plate_without_discard
 def test_ai_can_cancel_only_the_current_pending_plate(store):
     laser, _, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
-    old = research.create_plate(store, session["id"], "line_resolution")
+    old = research.create_plate(store, session["id"], "line_resolution", JOB)
     cancelled = research.call_tool(store, session["id"], "cancel_pending_test",
                                    {"plan_id": old["plan_id"], "reason": "оператор попросил другой эксперимент"})
     assert cancelled["status"] == "Cancelled"
     with pytest.raises(research.ResearchError, match="не является текущей"):
         research.cancel_pending_plate(store, session["id"], old["plan_id"], "повторная отмена")
-    assert research.create_plate(store, session["id"], "material_matrix")["plan_id"] != old["plan_id"]
+    assert research.create_plate(store, session["id"], "material_matrix", JOB)["plan_id"] != old["plan_id"]
 
 
 def test_evidence_and_insight_are_scoped_to_exact_hardware_and_accepted_photo(store):
     laser, lens, material = hardware(store)
-    other = profiles.save_material(store, "Other stock", grade="Grade 5")
+    other = su.save_material(store, "Other stock", grade="Grade 5")
     session = research.create_session(store, laser["id"], material["id"], "text", "читаемый текст 1 мм")
-    research.preview_plate(store, session["id"], "text_readability")
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=? AND lens_id=?", (laser["id"], lens["id"]))
+    research.preview_plate(store, session["id"], "text_readability", JOB)
     accepted = []
     for stock in (material, other):
         accepted.append(store.execute(
-            "INSERT INTO pair(status,profile_id,material_id,engraving_id,lightburn_name,lightburn_path,"
+            "INSERT INTO pair(status,device_id,lens_id,material_id,engraving_id,lightburn_name,lightburn_path,"
             "photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
-            "VALUES ('Accepted',?,?,?,?,?,?,?,?,?,?,?)",
-            (profile["id"], stock["id"], f"job-{stock['id']}", "file.lbrn2", "/missing.lbrn2",
+            "VALUES ('Accepted',?,?,?,?,?,?,?,?,?,?,?,?)",
+            (laser["id"], lens["id"], stock["id"], f"job-{stock['id']}", "file.lbrn2", "/missing.lbrn2",
              "photo.dng", "/missing.dng", "{}", "{}", now(), now())).lastrowid)
     rows = research.evidence(store, session["id"])
     assert [r["id"] for r in rows] == [accepted[0]]
@@ -137,7 +138,7 @@ def test_ai_uses_bounded_local_tools_and_persists_evidence_trace(store):
             assert kwargs["store"] is False
             if self.calls == 1:
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="create_test",
-                    arguments=json.dumps({"test_type": "line_resolution", "settings": {}}), call_id="call-1")], output_text="")
+                    arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
             assert any(item.get("type") == "function_call_output" for item in kwargs["input"] if isinstance(item, dict))
             return SimpleNamespace(output=[], output_text="Плата создана. После гравировки добавьте RAW-фото.")
 
@@ -158,7 +159,7 @@ def test_ai_keeps_created_plate_when_followup_response_fails(store):
             self.calls += 1
             if self.calls == 1:
                 return SimpleNamespace(output=[SimpleNamespace(type="function_call", name="create_test",
-                    arguments=json.dumps({"test_type": "line_resolution", "settings": {}}), call_id="call-1")], output_text="")
+                    arguments=json.dumps({"test_type": "line_resolution", "settings": JOB}), call_id="call-1")], output_text="")
             raise RuntimeError("provider became unavailable")
 
     result = research.answer(store, session["id"], "Создай тест разрешения линий",
@@ -189,14 +190,13 @@ def test_ai_reports_invalid_tool_arguments_without_losing_the_chat(store):
 
 
 def test_session_lists_photos_uploaded_for_its_plate(store):
-    laser, _, material = hardware(store)
+    laser, lens, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "line", "найти непрерывную линию")
-    plan = research.create_plate(store, session["id"], "line_resolution")
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=?", (laser["id"],))
+    plan = research.create_plate(store, session["id"], "line_resolution", JOB)
     photo_id = store.execute(
-        "INSERT INTO pair(status,profile_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
-        "photo_name,photo_path,context_json,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("Awaiting check", profile["id"], material["id"], plan["plan_id"], "job-1",
+        "INSERT INTO pair(status,device_id,lens_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
+        "photo_name,photo_path,context_json,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("Awaiting check", laser["id"], lens["id"], material["id"], plan["plan_id"], "job-1",
          "file.lbrn2", "/missing.lbrn2", "photo.dng", "/missing.dng", "{}", "{}", now())).lastrowid
     listed = research.get_session(store, session["id"])["photos"]
     assert [item["id"] for item in listed] == [photo_id]
@@ -208,7 +208,7 @@ def test_depth_goal_does_not_export_a_surface_photo_test_as_depth_evidence(store
     session = research.create_session(store, laser["id"], material["id"], "deep", "Найти глубину 0,2 мм")
     assert research.next_test(store, session["id"])["status"] == "measurement_needed"
     with pytest.raises(research.ResearchError, match="физического измерения"):
-        research.create_plate(store, session["id"], "material_matrix")
+        research.create_plate(store, session["id"], "material_matrix", JOB)
 
 
 def test_research_routes_create_and_expose_session(tmp_path):
@@ -222,11 +222,11 @@ def test_research_routes_create_and_expose_session(tmp_path):
         assert client.get(f"/api/research/sessions/{sid}/context").json()["session"]["goal"] == "line"
         bad = client.post(f"/api/research/sessions/{sid}/preview-test", json={"test_type": "unknown"})
         assert bad.status_code == 422
-        made = client.post(f"/api/research/sessions/{sid}/tests", json={"test_type": "text_readability"})
+        made = client.post(f"/api/research/sessions/{sid}/tests", json={"test_type": "text_readability", "settings": JOB})
         assert made.status_code == 201, made.text
         assert client.get(made.json()["download_url"]).status_code == 200
         replaced = client.post(f"/api/research/sessions/{sid}/replace-test", json={
-            "plan_id": made.json()["plan_id"], "test_type": "material_matrix", "settings": {}})
+            "plan_id": made.json()["plan_id"], "test_type": "material_matrix", "settings": JOB})
         assert replaced.status_code == 201, replaced.text
         assert client.get(made.json()["download_url"]).status_code == 409
         assert client.get(f"/api/plans/{made.json()['plan_id']}").json()["status"] == "Superseded"
@@ -244,7 +244,7 @@ def test_research_delete_hides_thread_but_preserves_chat_and_experiment(tmp_path
         laser, _, material = hardware(app.state.store)
         session = research.create_session(app.state.store, laser["id"], material["id"], "line", "видимая линия")
         sid = session["id"]
-        plate = research.create_plate(app.state.store, sid, "line_resolution")
+        plate = research.create_plate(app.state.store, sid, "line_resolution", JOB)
         research._save_exchange(app.state.store, sid, "Что проверяем?", "Непрерывность линии.", [])
         assert [m["content"] for m in client.get(f"/api/research/sessions/{sid}").json()["messages"]] == [
             "Что проверяем?", "Непрерывность линии."]
@@ -290,17 +290,22 @@ def test_long_research_chat_pages_history_and_builds_durable_memory(store):
 
 
 def test_context_distinguishes_accepted_photo_from_pending_plate(store):
-    laser, _, material = hardware(store)
+    laser, lens, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "text", "чёткая надпись")
-    plan = research.create_plate(store, session["id"], "text_readability")
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=?", (laser["id"],))
+    plan = research.create_plate(store, session["id"], "text_readability", JOB)
     photo_id = store.execute(
-        "INSERT INTO pair(status,profile_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
+        "INSERT INTO pair(status,device_id,lens_id,material_id,plan_id,engraving_id,lightburn_name,lightburn_path,"
         "photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
-        "VALUES ('Accepted',?,?,?,?,?,?,?,?,?,?,?,?)",
-        (profile["id"], material["id"], plan["plan_id"], "job-1", "test.lbrn2", "/missing.lbrn2",
+        "VALUES ('Accepted',?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (laser["id"], lens["id"], material["id"], plan["plan_id"], "job-1", "test.lbrn2", "/missing.lbrn2",
          "photo.dng", "/missing.dng", "{}", "{}", now(), now())).lastrowid
     state = research.context(store, session["id"])
     assert state["current_state"]["pending_plan_id"] is None
     assert state["current_state"]["latest_photo"]["id"] == photo_id
     assert state["session_plans"][0]["lifecycle"] == "has_accepted_photo"
+
+
+def test_the_research_tools_require_the_pulse_width_of_a_plate():
+    for name in ("preview_test", "create_test", "replace_pending_test"):
+        spec = next(s for s in research.TOOL_SPECS if s["name"] == name)
+        assert spec["parameters"]["properties"]["settings"]["required"] == ["pulse_width"]

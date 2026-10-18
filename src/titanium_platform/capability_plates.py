@@ -1,8 +1,8 @@
 """Generate hardware-linked titanium test plates from a laser passport.
 
-The operator chooses the physical laser, titanium stock and a plate type. The profile row used by the
-existing learning pipeline is created or reused internally as the identity of that laser/lens pair;
-no process settings are saved on it.
+The operator chooses the physical laser, titanium stock and a plate type. The plate is made for the lens installed on
+that laser now; the plate and its plan name the laser and that lens record (DEC-063) and remember the lens with its spot
+value (REQ-019). The job settings are the plate's own.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import json
 import math
 from typing import Any
 
-from . import devices, lenses, plans, profiles as pf
+from . import devices, plans, setup as su
 from .db import Store, now
 
 PLATE_TYPES = [
@@ -73,7 +73,7 @@ CLEAN_DEFAULTS = {"power": 20.0, "frequency": 48.0, "speed": 2000.0, "pulse_widt
                   "line_interval": 0.05, "passes": 1}
 LABEL_DEFAULTS = {"power": 25.0, "frequency": 60.0, "speed": 150.0, "pulse_width": 200.0,
                   "line_interval": 0.01, "passes": 1}
-DEFAULT_TEST = {"power": 20.0, "frequency": 48.0, "speed": 900.0, "pulse_width": 200.0,
+DEFAULT_TEST = {"power": 20.0, "frequency": 48.0, "speed": 900.0,          # the pulse width is never filled in (DEC-043)
                 "line_interval": 0.025, "passes": 1, "global_passes": 1}
 SPEEDS_MM_S = (500, 1000, 1500, 2000, 3000, 5000, 7500, 10000)
 FREQUENCIES_KHZ = (1, 5, 10, 20, 30, 40, 48, 60, 80, 100, 150, 200, 300, 500, 800, 1200, 1600, 1950, 2000, 3000, 4000)
@@ -196,10 +196,8 @@ def _clamp(value: float, bounds: dict) -> float:
     return min(max(float(value), float(bounds["min"])), float(bounds["max"]))
 
 
-def _process(values: dict, profile_id: int) -> dict:
-    p = {k: values[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")}
-    p["profile_id"] = profile_id
-    return p
+def _process(values: dict) -> dict:
+    return {k: values[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")}
 
 
 def _layer(index: int, name: str, p: dict, regions: list[dict], *, mode: str = "Cut",
@@ -223,25 +221,27 @@ def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict
     steps = passport["pulse_steps"]
     selectable = [float(s["pulse_width_ns"]) for s in steps]
     values = {**DEFAULT_TEST, **supplied}
-    values["power"] = pf._finite(values["power"], "мощность")
+    values["power"] = su._finite(values["power"], "мощность")
     if not 0 < values["power"] <= 100:
-        raise pf.ValidationError("мощность должна быть больше 0 и не выше 100%")
-    values["frequency"] = pf._finite(values["frequency"], "частота", True)
+        raise su.ValidationError("мощность должна быть больше 0 и не выше 100%")
+    values["frequency"] = su._finite(values["frequency"], "частота", True)
     if not repetition["min"] <= values["frequency"] <= repetition["max"]:
-        raise pf.ValidationError(f"частота должна быть в диапазоне {repetition['min']:g}–{repetition['max']:g} кГц для выбранного лазера")
-    values["speed"] = pf._finite(values["speed"], "скорость", True)
+        raise su.ValidationError(f"частота должна быть в диапазоне {repetition['min']:g}–{repetition['max']:g} кГц для выбранного лазера")
+    values["speed"] = su._finite(values["speed"], "скорость", True)
     if values["speed"] > 10000:
-        raise pf.ValidationError("скорость теста не должна превышать 10000 мм/с")
-    values["pulse_width"] = pf._finite(values["pulse_width"], "длительность импульса", True)
+        raise su.ValidationError("скорость теста не должна превышать 10000 мм/с")
+    if values.get("pulse_width") in (None, ""):
+        raise su.ValidationError("выберите длительность импульса из ступеней лазера")
+    values["pulse_width"] = su._finite(values["pulse_width"], "длительность импульса", True)
     if values["pulse_width"] not in selectable:
-        raise pf.ValidationError("выбранной длительности импульса нет в паспорте лазера")
-    values["line_interval"] = pf._finite(values["line_interval"], "шаг линий", True)
+        raise su.ValidationError("выбранной длительности импульса нет в паспорте лазера")
+    values["line_interval"] = su._finite(values["line_interval"], "шаг линий", True)
     if values["line_interval"] > 1:
-        raise pf.ValidationError("шаг линий должен быть не больше 1 мм")
+        raise su.ValidationError("шаг линий должен быть не больше 1 мм")
     for key in ("passes", "global_passes"):
         n = values[key]
         if isinstance(n, bool) or int(n) != n or not 1 <= n <= 20:
-            raise pf.ValidationError(f"{key}: укажите целое число от 1 до 20")
+            raise su.ValidationError(f"{key}: укажите целое число от 1 до 20")
         values[key] = int(n)
     clean = dict(CLEAN_DEFAULTS)
     clean["frequency"] = _clamp(clean["frequency"], repetition)
@@ -252,7 +252,7 @@ def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict
     return values, clean, label
 
 
-def _calibration(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _calibration(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     powers = CALIBRATION_POWERS
     rate = passport["repetition_rate_khz"]
     lo, hi = max(rate["min"], values["frequency"] * 0.5), min(rate["max"], values["frequency"] * 2)
@@ -268,7 +268,7 @@ def _calibration(values: dict, profile_id: int, passport: dict) -> tuple[list[di
         for col, power in enumerate(powers):
             x, y = x0 + col * (cell + gap), y0 + row * (cell + gap)
             name = f"P{power}-F{frequency:g}"
-            layers.append(_layer(idx, name, _process(values | {"power": power, "frequency": frequency}, profile_id),
+            layers.append(_layer(idx, name, _process(values | {"power": power, "frequency": frequency}),
                                  [_rect(x, y, cell, cell)], mode="Scan", cross_hatch=False,
                                  bidirectional=True, line_interval=values["line_interval"], global_passes=values["global_passes"]))
             labels += _text(f"{power}", x + 1.3, y + 2.1, 0.13)
@@ -279,7 +279,7 @@ def _calibration(values: dict, profile_id: int, passport: dict) -> tuple[list[di
     return layers, labels, {"width": width, "height": height, "columns": len(powers), "rows": len(freqs), "cells": cells}
 
 
-def _power_speed(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict]:
+def _power_speed(values: dict) -> tuple[list[dict], list[dict], dict]:
     powers = COMPACT_POWERS
     speeds = (500, 1000, 1500, 3000, 5000, 7500, 10000)
     x1, x2, y0, row_pitch, gap = 18.0, 72.0, 12.0, 0.55, 0.8
@@ -292,13 +292,13 @@ def _power_speed(values: dict, profile_id: int) -> tuple[list[dict], list[dict],
             y = top + si * row_pitch
             labels += _text(f"{speed}", 10.5, y - 0.18, 0.075)
             name = f"P{power}-V{speed}"
-            layers.append(_layer(len(layers) + 1, name, _process(values | {"power": power, "speed": speed}, profile_id),
+            layers.append(_layer(len(layers) + 1, name, _process(values | {"power": power, "speed": speed}),
                                  [_line(x1, y, x2, y)], mode="Cut", global_passes=values["global_passes"]))
             cells.append({"name": name, "power": power, "speed": speed, "frequency": values["frequency"], "y": y})
     return layers, labels, {"width": 76.0, "height": y0 + len(powers) * (len(speeds) * row_pitch + gap), "columns": len(speeds), "rows": len(powers), "cells": cells}
 
 
-def _frequency(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _frequency(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     rate = passport["repetition_rate_khz"]
     freqs = [f for f in FREQUENCIES_KHZ if rate["min"] <= f <= rate["max"]]
     if values["frequency"] not in freqs:
@@ -311,17 +311,17 @@ def _frequency(values: dict, profile_id: int, passport: dict) -> tuple[list[dict
         y = y0 + row * row_pitch
         labels += _text(f"F{frequency:g}", 4, y - 0.3, 0.1)
         name = f"F{frequency:g}KHZ"
-        layers.append(_layer(len(layers) + 1, name, _process(values | {"frequency": frequency}, profile_id),
+        layers.append(_layer(len(layers) + 1, name, _process(values | {"frequency": frequency}),
                              [_line(x1, y, x2, y)], mode="Cut", global_passes=values["global_passes"]))
         cells.append({"name": name, "frequency": frequency, "power": values["power"], "speed": values["speed"], "y": y})
     return layers, labels, {"width": 76.0, "height": y0 + len(freqs) * row_pitch + 2, "columns": 1, "rows": len(freqs), "cells": cells}
 
 
-def _pulse_cutoff(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _pulse_cutoff(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     rate = passport["repetition_rate_khz"]
     steps = [s for s in passport["pulse_steps"] if s["cutoff_khz"] is not None]
     if not steps:
-        raise pf.ValidationError("в паспорте лазера нет таблицы частоты среза импульсов")
+        raise su.ValidationError("в паспорте лазера нет таблицы частоты среза импульсов")
     steps = _evenly_spaced(steps, 9)
     factors = (0.8, 1.0, 1.2)
     labels = _text("Q-PULSE / FREQUENCY CUTOFF", 4, 1, 0.24)
@@ -335,7 +335,7 @@ def _pulse_cutoff(values: dict, profile_id: int, passport: dict) -> tuple[list[d
             frequency = round(max(rate["min"], min(rate["max"], cutoff * factor)), 1)
             name = f"PW{pulse:g}-F{frequency:g}"
             labels += _text(f"{frequency:g}", x_positions[col] + 1, y - 0.35, 0.09)
-            params = _process(values | {"frequency": frequency, "pulse_width": pulse}, profile_id)
+            params = _process(values | {"frequency": frequency, "pulse_width": pulse})
             layers.append(_layer(len(layers) + 1, name, params, [_line(x_positions[col], y + 1, x2 + col * 0, y + 1)],
                                  mode="Cut", global_passes=values["global_passes"]))
             cells.append({"name": name, "pulse_width": pulse, "cutoff_khz": cutoff, "frequency": frequency, "factor": factor})
@@ -344,14 +344,14 @@ def _pulse_cutoff(values: dict, profile_id: int, passport: dict) -> tuple[list[d
     if cw is not None:
         y = y0 + len(steps) * pitch
         labels += _text(f"CW PW{cw:g}", 3, y + 0.4, 0.11)
-        layers.append(_layer(len(layers) + 1, f"CW-PW{cw:g}-REFERENCE", _process(values | {"pulse_width": cw}, profile_id),
+        layers.append(_layer(len(layers) + 1, f"CW-PW{cw:g}-REFERENCE", _process(values | {"pulse_width": cw}),
                              [_line(21, y + 1, 31, y + 1)], mode="Cut", global_passes=values["global_passes"]))
         cells.append({"name": f"CW-PW{cw:g}-REFERENCE", "pulse_width": cw, "frequency": values["frequency"], "reference": True})
     return layers, labels, {"width": 76.0, "height": y0 + (len(steps) + int(cw is not None)) * pitch + 2,
                             "columns": 3, "rows": len(steps), "cells": cells}
 
 
-def _line_resolution(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict]:
+def _line_resolution(values: dict) -> tuple[list[dict], list[dict], dict]:
     x1, x2, y0, group_pitch = 20.0, 47.0, 12.0, 3.8
     labels = _text("LINE SEPARATION / RESOLUTION", 4, 1, 0.22)
     layers, cells = [], []
@@ -361,14 +361,14 @@ def _line_resolution(values: dict, profile_id: int) -> tuple[list[dict], list[di
         regions = [_line(x1, center_y + (i - 2) * spacing, x2, center_y + (i - 2) * spacing) for i in range(5)]
         labels += _text(f"{spacing_um}UM", 4, center_y - 0.35, 0.11)
         name = f"GAP-{spacing_um}UM"
-        layers.append(_layer(len(layers) + 1, name, _process(values, profile_id), regions, mode="Cut",
+        layers.append(_layer(len(layers) + 1, name, _process(values), regions, mode="Cut",
                              global_passes=values["global_passes"]))
         cells.append({"name": name, "spacing_um": spacing_um, "lines": 5})
     return layers, labels, {"width": 52.0, "height": y0 + len(LINE_SPACINGS_UM) * group_pitch, "columns": 1,
                            "rows": len(LINE_SPACINGS_UM), "cells": cells}
 
 
-def _hatch_interval(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict]:
+def _hatch_interval(values: dict) -> tuple[list[dict], list[dict], dict]:
     side, gap, x0, y0 = 8.0, 3.0, 5.0, 12.0
     labels = _text("HATCH INTERVAL TEST", 4, 1, 0.22)
     layers, cells = [], []
@@ -376,7 +376,7 @@ def _hatch_interval(values: dict, profile_id: int) -> tuple[list[dict], list[dic
         x = x0 + col * (side + gap)
         name = f"HATCH-I{interval:g}"
         labels += _text(f"{interval:g}MM", x, y0 - 2, 0.10)
-        layers.append(_layer(len(layers) + 1, name, _process(values | {"line_interval": interval}, profile_id),
+        layers.append(_layer(len(layers) + 1, name, _process(values | {"line_interval": interval}),
                              [_rect(x, y0, side, side)], mode="Scan", line_interval=interval,
                              bidirectional=True, global_passes=values["global_passes"]))
         cells.append({"name": name, "line_interval": interval, "x": x, "y": y0, "width": side, "height": side})
@@ -384,7 +384,7 @@ def _hatch_interval(values: dict, profile_id: int) -> tuple[list[dict], list[dic
                             "height": y0 + side + 3, "columns": len(HATCH_INTERVALS_MM), "rows": 1, "cells": cells}
 
 
-def _offset_fill(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict]:
+def _offset_fill(values: dict) -> tuple[list[dict], list[dict], dict]:
     """Compare LightBurn's contour-following fill mode across speed and line-interval axes."""
     speeds = sorted({round(min(10000.0, max(100.0, values["speed"] * factor)), 1) for factor in (0.5, 1.0, 2.0)})
     side, x0, y0, pitch_x, pitch_y = 6.0, 13.0, 14.0, 8.0, 8.0
@@ -399,7 +399,7 @@ def _offset_fill(values: dict, profile_id: int) -> tuple[list[dict], list[dict],
         for col, interval in enumerate(OFFSET_FILL_INTERVALS_MM):
             x = x0 + col * pitch_x
             name = f"OFFSET-V{speed:g}-I{interval:g}"
-            params = _process(values | {"speed": speed, "line_interval": interval}, profile_id)
+            params = _process(values | {"speed": speed, "line_interval": interval})
             layers.append(_layer(len(layers) + 1, name, params, [_rect(x, y, side, side)], mode="OffsetFill",
                                  cross_hatch=False, bidirectional=False, line_interval=interval,
                                  global_passes=values["global_passes"]))
@@ -411,7 +411,7 @@ def _offset_fill(values: dict, profile_id: int) -> tuple[list[dict], list[dict],
                             "rows": len(speeds), "cells": cells}
 
 
-def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _compact_capability(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """Use no more than 28 test settings so clean + registration stay inside colors 00..29."""
     layers: list[dict] = []
     labels = _text("COMPACT LASER CAPABILITY", 2.0, 0.8, 0.14)
@@ -429,7 +429,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
         for col, speed in enumerate(COMPACT_SPEEDS):
             x = x0 + col * x_pitch
             name = f"LINE-P{power}-V{speed}"
-            params = _process(values | {"power": power, "speed": speed}, profile_id)
+            params = _process(values | {"power": power, "speed": speed})
             layer = _layer(index, name, params, [_line(x, y, x + line_length, y)], mode="Cut", global_passes=values["global_passes"])
             layers.append(layer)
             cells.append({"name": name, "parameters": params, "x": x, "y": y - 0.02, "width": line_length, "height": 0.04})
@@ -447,7 +447,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
         labels += _text(f"{spacing_um}UM", 1.0, center - 0.22, 0.06)
         gap_groups.append({"name": name, "region_start": start, "region_count": 5, "spacing_um": spacing_um})
     gap_name = "LINE-GAP-20-300UM"
-    gap_params = _process(values, profile_id)
+    gap_params = _process(values)
     gap_layer = _layer(index, gap_name, gap_params, gap_regions, mode="Cut", global_passes=values["global_passes"])
     gap_layer["measurement_groups"] = gap_groups
     layers.append(gap_layer)
@@ -463,7 +463,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
         x, y = wobble_x + col * wobble_pitch, wobble_y + col * wobble_pitch
         name = f"WOBBLE-S{step:g}-D{size:g}"
         labels += _text(f"S{step:g}D{size:g}", x, y - 1.15, 0.075)
-        params = _process(values, profile_id)
+        params = _process(values)
         layers.append(_layer(index, name, params, [_rect(x, y, wobble_side, wobble_side)], mode="Scan",
                              line_interval=values["line_interval"], global_passes=values["global_passes"],
                              wobble_enabled=True, wobble_step=step, wobble_size=size))
@@ -477,7 +477,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
         x = hatch_x + col * hatch_pitch
         name = f"HATCH-I{interval:g}"
         labels += _text(f"I{interval:g}", x, hatch_y - 1.15, 0.075)
-        params = _process(values | {"line_interval": interval}, profile_id)
+        params = _process(values | {"line_interval": interval})
         layers.append(_layer(index, name, params, [_rect(x, hatch_y, hatch_side, hatch_side)], mode="Scan",
                              line_interval=interval, global_passes=values["global_passes"]))
         cells.append({"name": name, "parameters": params, "x": x, "y": hatch_y, "width": hatch_side, "height": hatch_side})
@@ -513,7 +513,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
         y = frequency_y0 + row * frequency_pitch
         name = f"FREQUENCY-F{frequency:g}-CW{cw:g}"
         labels += _text(f"F{frequency:g}", 34.0, y - 0.2, 0.055)
-        params = _process(values | {"frequency": frequency, "pulse_width": cw}, profile_id)
+        params = _process(values | {"frequency": frequency, "pulse_width": cw})
         layers.append(_layer(index, name, params, [_line(frequency_x1, y, frequency_x2, y)], mode="Cut",
                              global_passes=values["global_passes"]))
         cells.append({"name": name, "parameters": params, "x": frequency_x1, "y": y - 0.02,
@@ -522,7 +522,7 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
 
     # All five glyph heights share one parameter set, so they belong to one real output layer.
     text_y, text_pitch = 37.5, 5.0
-    text_params = _process({**values, **LABEL_DEFAULTS}, profile_id)
+    text_params = _process({**values, **LABEL_DEFAULTS})
     text_regions, text_groups = [], []
     for col, glyph_height in enumerate(COMPACT_TEXT_HEIGHTS_MM):
         x = 3.0 + col * text_pitch
@@ -545,17 +545,17 @@ def _compact_capability(values: dict, profile_id: int, passport: dict) -> tuple[
                             "cells": cells, "feature_count": feature_count}
 
 
-def _text_readability(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _text_readability(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """A small, repeatable text coupon centered on an observed or user-selected setting."""
     power = float(values["power"])
     speed = float(values["speed"])
     spread = float(values.get("text_spread", 0.2))
     if not math.isfinite(spread) or not 0.04 <= spread <= 0.4:
-        raise pf.ValidationError("разброс теста надписей должен быть от 4% до 40%")
+        raise su.ValidationError("разброс теста надписей должен быть от 4% до 40%")
     powers = sorted({round(max(1.0, min(100.0, power * factor)), 2) for factor in (1 - spread, 1, 1 + spread)})
     speeds = sorted({round(max(1.0, min(10000.0, speed * factor)), 1) for factor in (1 - spread * 1.25, 1, 1 + spread * 1.25)})
     if len(powers) < 3 or len(speeds) < 3:
-        raise pf.ValidationError("для трёхточечного теста надписей задайте мощность 2–83% и скорость 2–8000 мм/с")
+        raise su.ValidationError("для трёхточечного теста надписей задайте мощность 2–83% и скорость 2–8000 мм/с")
     labels = _text("TEXT POWER X SPEED", 2.0, 1.0, 0.14)
     layers, cells = [], []
     x0, y0, pitch_x, pitch_y = 5.0, 10.0, 16.0, 12.0
@@ -567,7 +567,7 @@ def _text_readability(values: dict, profile_id: int, passport: dict) -> tuple[li
         labels += _text(f"V{setting_speed:g}", 0.5, y + 4.0, 0.055)
         for col, setting_power in enumerate(powers):
             x = x0 + col * pitch_x
-            params = _process(values | {"power": setting_power, "speed": setting_speed}, profile_id)
+            params = _process(values | {"power": setting_power, "speed": setting_speed})
             regions, groups = [], []
             for height_index, height in enumerate(heights):
                 first = len(regions)
@@ -586,7 +586,7 @@ def _text_readability(values: dict, profile_id: int, passport: dict) -> tuple[li
                             "cells": cells, "feature_count": len(cells) * len(heights)}
 
 
-def _wobble(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict]:
+def _wobble(values: dict) -> tuple[list[dict], list[dict], dict]:
     side, x0, y0, pitch = 5.0, 5.0, 12.0, 8.0
     labels = _text("WOBBLE STEP X CIRCLE DIAMETER", 3.0, 1.0, 0.18)
     layers, cells = [], []
@@ -595,7 +595,7 @@ def _wobble(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict
             x, y = x0 + col * pitch, y0 + row * pitch
             name = f"WOBBLE-S{step:g}-D{size:g}"
             labels += _text(f"S{step:g}D{size:g}", x, y - 1.8, 0.09)
-            params = _process(values, profile_id)
+            params = _process(values)
             layers.append(_layer(len(layers) + 1, name, params, [_rect(x, y, side, side)], mode="Scan",
                                  line_interval=values["line_interval"], global_passes=values["global_passes"],
                                  wobble_enabled=True, wobble_step=step, wobble_size=size))
@@ -606,22 +606,22 @@ def _wobble(values: dict, profile_id: int) -> tuple[list[dict], list[dict], dict
                             "columns": 3, "rows": 3, "cells": cells}
 
 
-def _small_patches(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _small_patches(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """A true content-sized coupon; marker/QR overhead is included by preview()."""
     try:
         side = float(values.get("patch_size_mm", 3.0))
     except (TypeError, ValueError):
-        raise pf.ValidationError("размер квадрата должен быть числом от 3 до 5 мм") from None
+        raise su.ValidationError("размер квадрата должен быть числом от 3 до 5 мм") from None
     if not math.isfinite(side) or not 3 <= side <= 5:
-        raise pf.ValidationError("размер квадрата должен быть от 3 до 5 мм")
+        raise su.ValidationError("размер квадрата должен быть от 3 до 5 мм")
     registration = values.get("registration", "full")
     if registration not in {"full", "none"}:
-        raise pf.ValidationError("регистрация малой платы должна быть full или none")
+        raise su.ValidationError("регистрация малой платы должна быть full или none")
     patch_specs = values.get("patches")
     if patch_specs is None:
         patch_specs = [{}]
     if not isinstance(patch_specs, list) or not 1 <= len(patch_specs) <= 4 or any(not isinstance(p, dict) for p in patch_specs):
-        raise pf.ValidationError("задайте от одного до четырёх квадратов с параметрами")
+        raise su.ValidationError("задайте от одного до четырёх квадратов с параметрами")
     allowed = {"power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes"}
     gap, pad = 0.8, 1.5
     max_width = float(values.get("max_width_mm", 100))
@@ -644,12 +644,12 @@ def _small_patches(values: dict, profile_id: int, passport: dict) -> tuple[list[
     for i, spec in enumerate(patch_specs):
         unknown = set(spec) - allowed
         if unknown:
-            raise pf.ValidationError(f"квадрат {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
+            raise su.ValidationError(f"квадрат {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
         selected, _, _ = _passport_defaults(passport, {**values, **spec})
         x = x0 + (i % columns) * (side + gap)
         y = y0 + (i // columns) * (side + gap)
         name = f"PATCH-{i + 1:02d}-P{selected['power']:g}-V{selected['speed']:g}"
-        params = _process(selected, profile_id)
+        params = _process(selected)
         layers.append(_layer(i + 1, name, params, [_rect(x, y, side, side)], mode="Scan",
                              line_interval=selected["line_interval"], global_passes=selected["global_passes"]))
         cells.append({"name": name, "parameters": params, "x": x, "y": y,
@@ -664,17 +664,17 @@ def _matrix_axis_values(axis: str, lower: float, upper: float, count: int, passp
         domain = sorted({float(step["pulse_width_ns"]) for step in passport["pulse_steps"]
                         if lower <= float(step["pulse_width_ns"]) <= upper})
         if len(domain) < count:
-            raise pf.ValidationError(f"для оси Q-Pulse в выбранном диапазоне доступно только {len(domain)} ступеней; уменьшите число точек или расширьте диапазон")
+            raise su.ValidationError(f"для оси Q-Pulse в выбранном диапазоне доступно только {len(domain)} ступеней; уменьшите число точек или расширьте диапазон")
         return [float(item["value"]) for item in _evenly_spaced([{"value": v} for v in domain], count)]
     if axis == "passes":
         low, high = int(lower), int(upper)
         if lower != low or upper != high or high - low + 1 < count:
-            raise pf.ValidationError("ось проходов должна использовать целые границы и содержать достаточно разных значений")
+            raise su.ValidationError("ось проходов должна использовать целые границы и содержать достаточно разных значений")
         return [float(round(low + i * (high - low) / (count - 1))) for i in range(count)]
     return [round(lower + i * (upper - lower) / (count - 1), 4) for i in range(count)]
 
 
-def _material_matrix(values: dict, profile_id: int, passport: dict) -> tuple[list[dict], list[dict], dict]:
+def _material_matrix(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """A Material-Test-style 5x5 response matrix. Every cell owns one real output layer."""
     settings = _matrix_settings(values, passport)
     x_axis, y_axis = settings["x_axis"], settings["y_axis"]
@@ -689,7 +689,7 @@ def _material_matrix(values: dict, profile_id: int, passport: dict) -> tuple[lis
     cell_w, cell_h = ((21.0, 15.5) if mark == "vector_text" else
                       (13.0, 10.5) if mark == "text" else (8.5, 7.5))
     if min(cell_w, cell_h) < 4.0:
-        raise pf.ValidationError("выберите меньше точек по каждой оси, чтобы подписи и образцы оставались различимыми")
+        raise su.ValidationError("выберите меньше точек по каждой оси, чтобы подписи и образцы оставались различимыми")
     labels = _text(f"{x_meta['short']} X {y_meta['short']} MATERIAL TEST", 2.0, 1.0, 0.18)
     layers, cells = [], []
     for col, x_value in enumerate(x_values):
@@ -702,7 +702,7 @@ def _material_matrix(values: dict, profile_id: int, passport: dict) -> tuple[lis
             x = x0 + col * (cell_w + gap)
             params = {**values, x_axis: x_value, y_axis: y_value}
             params.pop("matrix", None)
-            params = _process(params, profile_id)
+            params = _process(params)
             name = f"MATRIX-{x_meta['short']}{x_value:g}-{y_meta['short']}{y_value:g}"
             groups = []
             if mark == "vector_text":
@@ -767,14 +767,14 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     x_axis = supplied.get("x_axis", "power")
     y_axis = supplied.get("y_axis", "speed")
     if x_axis not in MATRIX_AXES or y_axis not in MATRIX_AXES or x_axis == y_axis:
-        raise pf.ValidationError("выберите две разные оси из мощности, скорости, частоты, Q-Pulse, интервала линий, проходов и wobble")
+        raise su.ValidationError("выберите две разные оси из мощности, скорости, частоты, Q-Pulse, интервала линий, проходов и wobble")
     geometry = supplied.get("geometry", "line")
     if geometry not in ("line", "fill", "text", "vector_text"):
-        raise pf.ValidationError("образец матрицы должен быть линией, заливкой, заполненным или векторным текстом")
+        raise su.ValidationError("образец матрицы должен быть линией, заливкой, заполненным или векторным текстом")
     if "line_interval" in (x_axis, y_axis) and geometry in ("line", "vector_text"):
-        raise pf.ValidationError("интервал линий проверяется только на залитых участках; выберите заливку или другую ось")
+        raise su.ValidationError("интервал линий проверяется только на залитых участках; выберите заливку или другую ось")
     if "wobble_size" in (x_axis, y_axis) and geometry not in ("line", "vector_text"):
-        raise pf.ValidationError("wobble проверяется на векторной линии или однолинейном векторном тексте")
+        raise su.ValidationError("wobble проверяется на векторной линии или однолинейном векторном тексте")
     repetition = passport["repetition_rate_khz"]
     pulse_values = [float(step["pulse_width_ns"]) for step in passport["pulse_steps"]]
     domain = {"power": (1.0, 100.0), "frequency": (float(repetition["min"]), float(repetition["max"])),
@@ -787,9 +787,9 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     try:
         wobble_step = float(supplied.get("wobble_step", 0.02))
     except (TypeError, ValueError):
-        raise pf.ValidationError("шаг wobble должен быть числом") from None
+        raise su.ValidationError("шаг wobble должен быть числом") from None
     if not math.isfinite(wobble_step) or not 0.001 <= wobble_step <= 1:
-        raise pf.ValidationError("шаг wobble должен быть от 0,001 до 1 мм")
+        raise su.ValidationError("шаг wobble должен быть от 0,001 до 1 мм")
     out = {"x_axis": x_axis, "y_axis": y_axis, "geometry": geometry, "wobble_step": wobble_step}
     for prefix, axis in (("x", x_axis), ("y", y_axis)):
         low_default, high_default = defaults[axis]
@@ -798,18 +798,18 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
             high = float(supplied.get(f"{prefix}_max", high_default))
             count = int(supplied.get(f"{prefix}_count", 5))
         except (TypeError, ValueError):
-            raise pf.ValidationError("границы и число точек матрицы должны быть числами") from None
+            raise su.ValidationError("границы и число точек матрицы должны быть числами") from None
         if not math.isfinite(low) or not math.isfinite(high) or low >= high:
-            raise pf.ValidationError("нижняя граница каждой оси должна быть строго ниже верхней")
+            raise su.ValidationError("нижняя граница каждой оси должна быть строго ниже верхней")
         if low < domain[axis][0] or high > domain[axis][1]:
-            raise pf.ValidationError(f"ось {MATRIX_AXES[axis]['label']} выходит за поддерживаемый диапазон лазера: {domain[axis][0]:g}–{domain[axis][1]:g} {MATRIX_AXES[axis]['unit']}")
+            raise su.ValidationError(f"ось {MATRIX_AXES[axis]['label']} выходит за поддерживаемый диапазон лазера: {domain[axis][0]:g}–{domain[axis][1]:g} {MATRIX_AXES[axis]['unit']}")
         if not 2 <= count <= 7:
-            raise pf.ValidationError("для каждой оси задайте от 2 до 7 точек")
+            raise su.ValidationError("для каждой оси задайте от 2 до 7 точек")
         if axis == "passes" and (low != round(low) or high != round(high)):
-            raise pf.ValidationError("границы оси проходов должны быть целыми числами")
+            raise su.ValidationError("границы оси проходов должны быть целыми числами")
         out.update({f"{prefix}_min": low, f"{prefix}_max": high, f"{prefix}_count": count})
     if out["x_count"] * out["y_count"] > 28:
-        raise pf.ValidationError("в сетке не более 28 ячеек: ещё два выходных слоя нужны для чистки и регистрации")
+        raise su.ValidationError("в сетке не более 28 ячеек: ещё два выходных слоя нужны для чистки и регистрации")
     return out
 
 
@@ -818,37 +818,28 @@ BUILDERS = {"small_patches": _small_patches, "compact_capability": _compact_capa
             "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix}
 
 
-def _identity_profile(store: Store, device: dict, lens: dict) -> dict:
-    row = store.one("SELECT id FROM laser_profile WHERE device_id=? AND lens_id=? ORDER BY id LIMIT 1", (device["id"], lens["id"]))
-    if row:
-        return pf.get_profile(store, row["id"])
-    label = f"{device['name']} · {lens['name']}"
-    return pf.create_profile(store, label, device_id=device["id"], lens_id=lens["id"])
-
-
 def preview(store: Store, device_id: int, material_id: int, test_type: str, settings: dict | None = None) -> dict:
-    """Build a test plate without saving a plate or plan (the laser/lens identity may be initialized)."""
+    """Build a test plate without saving a plate or plan."""
     if test_type not in BUILDERS:
-        raise pf.ValidationError("выберите тип экспериментальной платы")
+        raise su.ValidationError("выберите тип экспериментальной платы")
     device = devices.get_device(store, device_id)
     lens = device.get("lens")
     if not lens:
-        raise pf.ValidationError("сначала укажите линзу, установленную на этом лазере")
+        raise su.ValidationError("сначала укажите линзу, установленную на этом лазере")
     material_row = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))
     if material_row is None:
-        raise pf.ValidationError("выберите материал с фактической маркой или партией")
+        raise su.ValidationError("выберите материал с фактической маркой или партией")
     if material_row["family"] != "Titanium":
-        raise pf.ValidationError("для этого материала пока не задан рецепт очистки; титановую очистку применять нельзя")
-    profile = _identity_profile(store, device, lens)
+        raise su.ValidationError("для этого материала пока не задан рецепт очистки; титановую очистку применять нельзя")
     values, clean, labels = _passport_defaults(device["passport"], settings or {})
     limits = {}
     for axis in ("width", "height"):
         try:
             limit = float((settings or {}).get(f"max_{axis}_mm", 100))
         except (TypeError, ValueError):
-            raise pf.ValidationError("максимальные размеры платы должны быть числами от 1 до 100 мм") from None
+            raise su.ValidationError("максимальные размеры платы должны быть числами от 1 до 100 мм") from None
         if not math.isfinite(limit) or not 1 <= limit <= 100:
-            raise pf.ValidationError("максимальные размеры платы должны быть от 1 до 100 мм")
+            raise su.ValidationError("максимальные размеры платы должны быть от 1 до 100 мм")
         limits[axis] = limit
         values[f"max_{axis}_mm"] = limit
     if test_type == "frequency":
@@ -857,9 +848,9 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         if cw:
             values["pulse_width"] = float(cw["pulse_width_ns"])
     if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability"):
-        layers, label_regions, geometry = BUILDERS[test_type](values, profile["id"], device["passport"])
+        layers, label_regions, geometry = BUILDERS[test_type](values, device["passport"])
     else:
-        layers, label_regions, geometry = BUILDERS[test_type](values, profile["id"])
+        layers, label_regions, geometry = BUILDERS[test_type](values)
     if test_type == "material_matrix":
         values["matrix"] = geometry["matrix"]
     ident = plans.new_identifier("TCE")
@@ -881,13 +872,13 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
             qr = markers["qr"]
             clean_regions.append(_rect(qr["x"], qr["y"], qr["size"], qr["size"]))
     if total_w > limits["width"] + 1e-6 or total_h > limits["height"] + 1e-6:
-        raise pf.ValidationError(f"эта плата с метками занимает {total_w:.1f} × {total_h:.1f} мм; заданный предел — {limits['width']:g} × {limits['height']:g} мм")
+        raise su.ValidationError(f"эта плата с метками занимает {total_w:.1f} × {total_h:.1f} мм; заданный предел — {limits['width']:g} × {limits['height']:g} мм")
     field = lens.get("field_mm")
     if field and max(total_w, total_h) > float(field):
-        raise pf.ValidationError(f"плата {total_w:.1f} × {total_h:.1f} мм не помещается в поле линзы {field:g} мм")
+        raise su.ValidationError(f"плата {total_w:.1f} × {total_h:.1f} мм не помещается в поле линзы {field:g} мм")
     if len(layers) + 1 + int(marked) > plans.MAX_LAYERS:
-        raise pf.ValidationError("для этого теста слишком много слоёв LightBurn")
-    # The user's C01 black-on-titanium recipe, kept separate from the laser/lens identity.
+        raise su.ValidationError("для этого теста слишком много слоёв LightBurn")
+    # The user's C01 black-on-titanium recipe, a system layer of the plate.
     marker_layer = labels | {"name": "Markers and labels", "interval": labels["line_interval"], "global_passes": 1,
                             "bidirectional": False, "cross_hatch": False, "angle": 0.0, "angle_increment": 0.0}
     series = ({"identifier": values.get("series_identifier"), "part_index": values.get("part_index"),
@@ -908,7 +899,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
                               "sample_area_mm2": geometry.get("sample_area_mm2"),
                               "clean_area_mm2": round(sum(r["width"] * r["height"] for r in clean_regions), 2)
                               if clean_regions is not None else round(total_w * total_h, 2)}}
-    return {"profile": profile, "device": device, "lens": lens, "material": dict(material_row), "identifier": ident,
+    return {"device": device, "lens": lens, "material": dict(material_row), "identifier": ident,
             "layers": layers, "label_regions": label_regions, "geometry": geometry, "markers": markers,
             "clean_layer": clean | {"interval": clean["line_interval"], "global_passes": 1, "bidirectional": True,
                                     "cross_hatch": True, "angle": 0.0, "angle_increment": 0.0},
@@ -919,27 +910,27 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
 def _persist_prepared(store: Store, result: dict, device_id: int, material_id: int, test_type: str,
                       research_session_id: int | None = None, supersede_plan_id: int | None = None) -> dict:
     """Persist a prevalidated plate inside the caller's transaction."""
-    profile, device, lens = result["profile"], result["device"], result["lens"]
+    device, lens = result["device"], result["lens"]
     ident, geometry, layers = result["identifier"], result["geometry"], result["layers"]
     title = result["experiment"]["test_name"]
-    lens_snapshot = lenses.snapshot(lens, device.get("passport", {}).get("spot_diameter_um"))
+    lens_snapshot = su.lens_snapshot({"device": device, "lens": lens})
     cells = geometry["cells"]
     if supersede_plan_id is not None:
         if research_session_id is None:
-            raise pf.ValidationError("для замены платы требуется исследование")
+            raise su.ValidationError("для замены платы требуется исследование")
         changed = store.execute(
             "UPDATE plan SET status='Superseded' WHERE id=? AND research_session_id=? "
             "AND status IN ('Ready to export','Exported') "
             "AND NOT EXISTS (SELECT 1 FROM pair WHERE plan_id=? AND status!='Deleted')",
             (supersede_plan_id, research_session_id, supersede_plan_id))
         if changed.rowcount != 1:
-            raise pf.ProtectedError("плата уже изменилась или к ней привязана фотография; замена отменена")
+            raise su.ProtectedError("плата уже изменилась или к ней привязана фотография; замена отменена")
     plate_id = store.execute(
-        "INSERT INTO plate(experiment_id,profile_id,speed,geometry_json,cells_json,proposal_id,lens_json,material_id,test_type,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (ident, profile["id"], result["values"]["speed"], json.dumps(geometry), json.dumps(cells), None,
+        "INSERT INTO plate(experiment_id,device_id,lens_id,speed,geometry_json,cells_json,proposal_id,lens_json,material_id,test_type,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (ident, device["id"], lens["id"], result["values"]["speed"], json.dumps(geometry), json.dumps(cells), None,
          json.dumps(lens_snapshot) if lens_snapshot else None, material_id, test_type, now())).lastrowid
     plan_data = {"layers": layers, "markers": result["markers"], "marker_labels": result["label_regions"],
-                 "clean_regions": result["clean_regions"],
+                 "clean_regions": result["clean_regions"], "lens": lens_snapshot,
                  "marker_layer": result["marker_layer"], "clean_layer": result["clean_layer"],
                  "export_mirror_y": True,
                  "experiment": result["experiment"], "test_type": test_type,
@@ -947,8 +938,8 @@ def _persist_prepared(store: Store, result: dict, device_id: int, material_id: i
                  "lightburn_settings": {"global_passes": result["values"]["global_passes"], "bidirectional": True,
                                         "cross_hatch": False, "scan_angle": 0.0, "angle_increment": 0.0}}
     plan_id = store.execute(
-        "INSERT INTO plan(name,mode,status,profile_id,plate_id,markers,plan_identifier,band_count,data_json,created_at,research_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (f"{title} · {ident}", plans.MODE_CAPABILITY, "Ready to export", profile["id"], plate_id,
+        "INSERT INTO plan(name,mode,status,device_id,lens_id,plate_id,markers,plan_identifier,band_count,data_json,created_at,research_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (f"{title} · {ident}", plans.MODE_CAPABILITY, "Ready to export", device["id"], lens["id"], plate_id,
          int(bool(result["markers"])), ident, len(layers), json.dumps(plan_data), now(), research_session_id)).lastrowid
     if supersede_plan_id is not None:
         store.audit("research_plate_superseded", session_id=research_session_id,
@@ -973,7 +964,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
     if patches is None:
         patches = [{}]
     if not isinstance(patches, list) or not 1 <= len(patches) <= 4:
-        raise pf.ValidationError("задайте от одного до четырёх квадратов с параметрами")
+        raise su.ValidationError("задайте от одного до четырёх квадратов с параметрами")
     prepared = []
     cursor = 0
     while cursor < len(patches):
@@ -982,7 +973,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
             candidate = {**settings, "patches": patches[cursor:end]}
             try:
                 part = preview(store, device_id, material_id, "small_patches", candidate)
-            except pf.ValidationError as exc:
+            except su.ValidationError as exc:
                 if str(exc).startswith("эта плата с метками занимает"):
                     last_size_error = exc
                     continue
@@ -991,7 +982,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
             cursor = end
             break
         else:
-            raise last_size_error or pf.ValidationError("даже один квадрат не помещается в заданный размер")
+            raise last_size_error or su.ValidationError("даже один квадрат не помещается в заданный размер")
     return [{"sample_indexes": list(range(start + 1, end + 1)), "prepared": part,
              "settings": {**settings, "patches": patches[start:end]}}
             for start, end, part in prepared]

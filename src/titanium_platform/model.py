@@ -61,30 +61,13 @@ def parameters_key(p: dict) -> str:
     return f"{base}|lb:{hashlib.sha256(encoded).hexdigest()}"
 
 
-def profile_ids_for_hardware(store: Store, profile_id: int) -> list[int]:
-    """Legacy identity IDs for the same physical laser and historical lens; unlinked IDs stay isolated."""
-    row = store.one("SELECT device_id,lens_id FROM laser_profile WHERE id=?", (profile_id,))
-    if row is None:
-        raise KeyError(f"laser profile {profile_id} not found")
-    if row["device_id"] is None:
-        return [profile_id]
-    return [r["id"] for r in store.query(
-        "SELECT id FROM laser_profile WHERE device_id=? AND lens_id IS ? ORDER BY id", (row["device_id"], row["lens_id"]))]
-
-
-def canonical_profile_id(store: Store, profile_id: int) -> int:
-    """Stable owner for knowledge/maturity rows shared by a hardware pair."""
-    return min(profile_ids_for_hardware(store, profile_id))
-
-
-def eligible_observations(store: Store, profile_id: int) -> list[dict]:
-    """Chart-gated observations from every legacy identity for this same physical laser/lens pair."""
+def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    """Chart-gated observations of one laser and one lens record (DEC-063); an unknown lens (None) is a partition of its own."""
     out = []
-    ids = profile_ids_for_hardware(store, profile_id)
-    marks = ",".join("?" for _ in ids)
     rows = store.query(
-        f"SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.created_at AS pair_created_at,p.material_id "
-        f"FROM observation o JOIN pair p ON p.id=o.pair_id WHERE o.profile_id IN ({marks}) AND p.status='Accepted' AND o.model_eligible=1 ORDER BY o.id", ids)
+        "SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.created_at AS pair_created_at,p.material_id "
+        "FROM observation o JOIN pair p ON p.id=o.pair_id WHERE o.device_id=? AND o.lens_id IS ? AND p.status='Accepted' "
+        "AND o.model_eligible=1 ORDER BY o.id", (device_id, lens_id))
     for r in rows:
         out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "lab": json.loads(r["lab_json"]),
                     "parameters": json.loads(r["parameters_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
@@ -155,9 +138,10 @@ def attribution_note(groups: list[dict]) -> str | None:
     return None
 
 
-def knowledge_summaries(store: Store, profile_id: int) -> dict[str, dict]:
+def knowledge_summaries(store: Store, device_id: int, lens_id: int | None) -> dict[str, dict]:
+    """One summary per recipe key within the laser and lens: different job settings never share a summary (DEC-042)."""
     groups: dict[str, list[dict]] = {}
-    for o in eligible_observations(store, profile_id):
+    for o in eligible_observations(store, device_id, lens_id):
         groups.setdefault(observation_key(o["parameters"], o["context"]), []).append(o)
     out = {}
     for key, obs in groups.items():
@@ -234,21 +218,20 @@ def _finish_camera_relative_set(entry: dict) -> dict:
     return entry
 
 
-def camera_relative_sets(store: Store, profile_id: int) -> list[dict]:
-    """Return per-photo RAW observations for the color map without mixing them into predictions.
+def camera_relative_sets(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    """Return per-photo RAW observations of one laser and lens for the color map without mixing them into predictions.
 
     Camera-relative Lab is useful for ranking marks within the same photograph. It is not normalized
     across photos and must never enter the standard-color prediction model.
     """
-    ids = profile_ids_for_hardware(store, profile_id)
-    marks = ",".join("?" for _ in ids)
     rows = store.query(
-        f"SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.context_json,p.data_json,p.material_id,"
-        f"m.name AS material_name,m.grade AS material_grade,m.batch AS material_batch,t.test_type "
-        f"FROM observation o JOIN pair p ON p.id=o.pair_id "
-        f"LEFT JOIN material_profile m ON m.id=p.material_id "
-        f"LEFT JOIN plate t ON t.id=COALESCE(p.plate_id,(SELECT plate_id FROM plan WHERE id=p.plan_id)) "
-        f"WHERE o.profile_id IN ({marks}) AND p.status='Accepted' ORDER BY p.accepted_at DESC,p.id DESC,o.layer_index", ids)
+        "SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.context_json,p.data_json,p.material_id,"
+        "m.name AS material_name,m.grade AS material_grade,m.batch AS material_batch,t.test_type "
+        "FROM observation o JOIN pair p ON p.id=o.pair_id "
+        "LEFT JOIN material_profile m ON m.id=p.material_id "
+        "LEFT JOIN plate t ON t.id=COALESCE(p.plate_id,(SELECT plate_id FROM plan WHERE id=p.plan_id)) "
+        "WHERE o.device_id=? AND o.lens_id IS ? AND p.status='Accepted' ORDER BY p.accepted_at DESC,p.id DESC,o.layer_index",
+        (device_id, lens_id))
     grouped: dict[int, dict] = {}
     for row in rows:
         evidence = json.loads(row["evidence_json"] or "{}")
@@ -286,11 +269,12 @@ def camera_relative_sets(store: Store, profile_id: int) -> list[dict]:
     # Show them on the map as provisional evidence so one experiment is not invisible while awaiting
     # mask review; acceptance remains the only path that writes immutable observation rows.
     pending_rows = store.query(
-        f"SELECT p.id,p.profile_id,p.status,p.created_at,p.data_json,p.context_json,p.photo_name,p.lightburn_name,p.material_id,"
-        f"m.name AS material_name,m.grade AS material_grade,m.batch AS material_batch,t.test_type "
-        f"FROM pair p LEFT JOIN material_profile m ON m.id=p.material_id "
-        f"LEFT JOIN plate t ON t.id=COALESCE(p.plate_id,(SELECT plate_id FROM plan WHERE id=p.plan_id)) "
-        f"WHERE p.profile_id IN ({marks}) AND p.status NOT IN ('Accepted','Deleted') ORDER BY p.created_at DESC,p.id DESC", ids)
+        "SELECT p.id,p.status,p.created_at,p.data_json,p.context_json,p.photo_name,p.lightburn_name,p.material_id,"
+        "m.name AS material_name,m.grade AS material_grade,m.batch AS material_batch,t.test_type "
+        "FROM pair p LEFT JOIN material_profile m ON m.id=p.material_id "
+        "LEFT JOIN plate t ON t.id=COALESCE(p.plate_id,(SELECT plate_id FROM plan WHERE id=p.plan_id)) "
+        "WHERE p.device_id=? AND p.lens_id IS ? AND p.status NOT IN ('Accepted','Deleted') ORDER BY p.created_at DESC,p.id DESC",
+        (device_id, lens_id))
     for row in pending_rows:
         data = json.loads(row["data_json"] or "{}")
         check = data.get("check") or {}
@@ -314,7 +298,7 @@ def camera_relative_sets(store: Store, profile_id: int) -> list[dict]:
                 continue
             params = {"power": rep.get("power"), "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
                       "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
-                      "profile_id": row["profile_id"], "layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
+                      "layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
                       "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
                       "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
                       "source_settings": lightburn.recipe_settings(rep.get("source_settings"))}

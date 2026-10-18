@@ -1,25 +1,13 @@
-"""Profiles, materials, capture setups, rules and the marker layer (REQ-010, REQ-009, REQ-005)."""
+"""Materials, capture setups, rules per laser and lens, and the marker layer (REQ-010, REQ-009, REQ-005)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from .. import plans, profiles as pf
-from .common import store_of
+from .. import plans, setup as su
+from .common import lens_param, refresh_after_change, store_of
 
 router = APIRouter(prefix="/api")
-
-
-class ProfileIn(BaseModel):
-    name: str
-    device_id: int | None = None
-    lens_id: int | None = None
-
-
-class ProfilePatch(BaseModel):
-    name: str | None = None
-    device_id: int | None = None
-    lens_id: int | None = None
 
 
 class MaterialIn(BaseModel):
@@ -40,6 +28,8 @@ class SetupIn(BaseModel):
 
 
 class RulesIn(BaseModel):
+    device_id: int
+    lens_id: int | None            # required: null is the unknown lens, a partition of its own (DEC-063)
     repeat_threshold: int | None = None
     delta_tolerance: float | None = None
     variance_threshold: float | None = None
@@ -52,80 +42,56 @@ class MarkerLayerIn(BaseModel):
     speed: float
 
 
-@router.get("/profiles")
-def list_profiles(request: Request):
-    return pf.list_profiles(store_of(request))
-
-
-@router.post("/profiles", status_code=201)
-def create_profile(body: ProfileIn, request: Request):
-    return pf.create_profile(store_of(request), body.name, device_id=body.device_id, lens_id=body.lens_id)
-
-
-@router.get("/profiles/{profile_id}")
-def get_profile(profile_id: int, request: Request):
-    return pf.get_profile(store_of(request), profile_id)
-
-
-@router.patch("/profiles/{profile_id}")
-def update_profile(profile_id: int, body: ProfilePatch, request: Request):
-    given = body.model_dump(exclude_unset=True)   # device_id: null removes the link, an absent field leaves it
-    return pf.update_profile(store_of(request), profile_id, **given)
-
-
-@router.delete("/profiles/{profile_id}", status_code=204)
-def delete_profile(profile_id: int, request: Request):
-    pf.delete_profile(store_of(request), profile_id)
-
-
-@router.get("/profiles/{profile_id}/rules")
-def get_rules(profile_id: int, request: Request):
-    pf.get_profile(store_of(request), profile_id)
-    return pf.get_rules(store_of(request), profile_id)
-
-
-@router.put("/profiles/{profile_id}/rules")
-def save_rules(profile_id: int, body: RulesIn, request: Request):
-    from .. import knowledge
+@router.get("/rules")
+def get_rules(request: Request, device_id: int, lens_id: str):
+    """The evaluation rules of one laser and lens; ``lens_id=unknown`` for the works whose lens is not known."""
     s = store_of(request)
-    rules = pf.save_rules(s, profile_id, **body.model_dump())
-    knowledge.refresh(s, profile_id)  # new thresholds can promote (or flag) existing knowledge
+    lens = lens_param(lens_id)
+    su.resolve(s, device_id, lens)
+    return su.get_rules(s, device_id, lens)
+
+
+@router.put("/rules")
+def save_rules(body: RulesIn, request: Request):
+    s = store_of(request)
+    rules = su.save_rules(s, **body.model_dump())
+    refresh_after_change(s, body.device_id, body.lens_id)  # new thresholds can promote (or flag) existing knowledge
     return rules
 
 
 @router.get("/materials")
 def list_materials(request: Request):
-    return pf.list_materials(store_of(request))
+    return su.list_materials(store_of(request))
 
 
 @router.post("/materials", status_code=201)
 def create_material(body: MaterialIn, request: Request):
-    return pf.save_material(store_of(request), **body.model_dump())
+    return su.save_material(store_of(request), **body.model_dump())
 
 
 @router.put("/materials/{material_id}")
 def update_material(material_id: int, body: MaterialIn, request: Request):
-    return pf.save_material(store_of(request), **body.model_dump(), material_id=material_id)
+    return su.save_material(store_of(request), **body.model_dump(), material_id=material_id)
 
 
 @router.get("/setups")
 def list_setups(request: Request):
-    return pf.list_capture_setups(store_of(request))
+    return su.list_capture_setups(store_of(request))
 
 
 @router.post("/setups", status_code=201)
 def create_setup(body: SetupIn, request: Request):
-    return pf.save_capture_setup(store_of(request), **body.model_dump())
+    return su.save_capture_setup(store_of(request), **body.model_dump())
 
 
 @router.put("/setups/{setup_id}")
 def update_setup(setup_id: int, body: SetupIn, request: Request):
-    return pf.save_capture_setup(store_of(request), **body.model_dump(), setup_id=setup_id)
+    return su.save_capture_setup(store_of(request), **body.model_dump(), setup_id=setup_id)
 
 
 @router.delete("/setups/{setup_id}", status_code=204)
 def delete_setup(setup_id: int, request: Request):
-    pf.delete_capture_setup(store_of(request), setup_id)
+    su.delete_capture_setup(store_of(request), setup_id)
 
 
 @router.get("/marker-layer")

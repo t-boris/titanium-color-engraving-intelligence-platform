@@ -4,25 +4,25 @@ import numpy as np
 import pytest
 
 import synth
-from titanium_platform import experiments, ingest as ig, plans as pl, profiles as pf
+from titanium_platform import devices, experiments, ingest as ig, plans as pl, setup as su
 
 
 @pytest.fixture
 def world(store):
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
     pl.save_marker_layer_settings(store, 20, 60, 300)
-    return {"store": store, "profile": profile, "material": material}
+    return {"store": store, "laser": laser, "material": material}
 
 
 def plate(w, power="10 20", speed="900"):
-    return pl.create_plate_series(w["store"], w["profile"]["id"], power, "40 80", speed, 5, 4, 1)[0]
+    return pl.create_plate_series(w["store"], w["laser"]["id"], power, "40 80", speed, 5, 4, 1, pulse_width=200, line_interval=0.025, passes=1)[0]
 
 
 def work_pair(w, plan_id=None, seed=3, rephoto_of=None):
     data = synth.framed_work(seed=seed, blobs=8)
-    return ig.create_pair(w["store"], profile_id=w["profile"]["id"], lightburn_name="work.lbrn2", lightburn_bytes=data["lightburn"],
+    return ig.create_pair(w["store"], device_id=w["laser"]["id"], lens_id=None, lightburn_name="work.lbrn2", lightburn_bytes=data["lightburn"],
                           photo_name=f"photo{seed}.png", photo_bytes=cv2.imencode(".png", data["photo"])[1].tobytes(),
                           plan_id=plan_id, rephoto_of=rephoto_of, context={"material_id": w["material"]["id"]})
 

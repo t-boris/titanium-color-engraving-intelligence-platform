@@ -1,4 +1,4 @@
-/* Остальные сообщения сервера: решения оператора, профили, преобразования, планировщик (DEC-034). */
+/* Остальные сообщения сервера: решения оператора, правила, преобразования, планировщик (DEC-034). */
 'use strict';
 const MATRIX_PARAM = {Power: 'Мощность', Speed: 'Скорость', Frequency: 'Частота', 'Q-Pulse': 'Q-Pulse', Interval: 'Шаг строк', Passes: 'Проходы'};
 I18N.add([
@@ -58,6 +58,8 @@ I18N.add([
   [/^the photograph of this pair is no longer available$/i, 'Фотография этой пары больше недоступна'],
   [/^no (\d+) x (\d+) matrix was found in the new photograph$/i, (m) => `На новой фотографии не найдена матрица ${m[1]} × ${m[2]}`],
   [/^fewer than 6 calibrated observations: the default parameters are shown, nothing is fitted$/i, 'Калиброванных измерений меньше 6: показаны параметры по умолчанию, подгонка не выполнена'],
+  [/^choose a laser and lens: settings are computed only from the measurements of one laser and lens$/i,
+    'выберите лазер и линзу: настройки рассчитываются только по измерениям одного лазера с одной линзой'],
   [/^too few determined points for a law; photograph plates with a monotone dose ramp at one pulse regime$/i,
     'для закона мало цветов с однозначной толщиной плёнки; нужны пластины с плавным нарастанием дозы при одном режиме импульса'],
   [/^no usable law on this set: within each pulse regime the film thicknesses do not follow the areal energy closely enough$/i,
@@ -97,15 +99,12 @@ I18N.add([
     'Выравнивание: укажите четыре угла выбранной детали внутри фотографии'],
   [/^Alignment: the selected LightBurn element is invalid$/i,
     'Выравнивание: выбранная деталь LightBurn недействительна'],
-  // профили и правила
-  [/^profile name is required/i, 'Укажите название профиля'],
-  [/^changing a profile constant creates a new version; confirm to continue/i, 'Изменение константы создаёт новую версию профиля. Подтвердите, чтобы продолжить'],
-  [/^this profile version is linked to stored records/i, 'Версия профиля связана с сохранёнными записями и хранит историю измерений: '],
+  // правила и установки съёмки
   [/^this capture setup is used by (\d+) stored pairs/i, (m) => 'Установка используется в сохранённых парах: ' + m[1]],
   [/^set the repetition threshold, delta E tolerance and variance threshold before agreeing/i, 'Сначала задайте порог повторов, допуск ΔE и порог дисперсии'],
-  [/^set the marker layer power, frequency and speed/i, 'Сначала задайте мощность, частоту и скорость слоя маркеров (вкладка «Профили»)'],
+  [/^set the marker layer power, frequency and speed/i, 'Сначала задайте мощность, частоту и скорость слоя маркеров (Настройки → «Метки для фото»)'],
   // преобразования
-  [/^set the delta E threshold for this plan/i, 'Задайте порог ΔE для этого плана: допуск в профиле не сохранён'],
+  [/^set the delta E threshold for this plan/i, 'Задайте порог ΔE для этого плана: допуск для этого лазера с этой линзой не сохранён'],
   [/^enter a non-negative delta E threshold/i, 'Введите неотрицательный порог ΔE'],
   [/^(\d+) unreachable color\(s\) must be replaced or excluded/i, (m) => 'Недостижимых цветов: ' + m[1] + '. Замените или исключите каждый, прежде чем создать план'],
   [/^every color is excluded/i, 'Все цвета исключены: гравировать нечего'],

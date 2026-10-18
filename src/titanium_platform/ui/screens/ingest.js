@@ -5,7 +5,7 @@
   App.register({id: 'ingest', async render(ctx) {
     const title = (isRephoto) => isRephoto
       ? h('div', {}, h('h2', {}, 'Повторная фотография'), h('p', {class: 'sub'}, 'Тот же эксперимент и та же гравировка; требуется только новый RAW-снимок.'))
-      : h('div', {}, h('h2', {}, 'Добавить эксперимент'), h('p', {class: 'sub'}, 'Фактический файл LightBurn, фотография, связка лазер+линза и использованный титан.'));
+      : h('div', {}, h('h2', {}, 'Добавить эксперимент'), h('p', {class: 'sub'}, 'Фактический файл LightBurn, фотография, лазер, линза и использованный титан.'));
     const back = link('/experiments', 'Назад к экспериментам');
     const backTo = (pair) => link('/experiment/' + (pair.plan_id ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id), 'Назад к эксперименту');
     if (ctx.query.pair) {
@@ -22,12 +22,13 @@
         return h('div', {class: 'card empty'}, h('h3', {}, 'Исходная пара не найдена'), link('/experiments', 'Вернуться к экспериментам'));
       }
     }
-    const [profiles, materials] = await Promise.all([get('/profiles'), get('/materials')]);
-    if (!profiles.length || !materials.length) {
+    const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
+    if (!lists.devices.length || !materials.length) {
       return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back),
-        h('div', {class: 'card empty'}, h('h3', {}, !profiles.length ? 'Нужна связка лазер + линза' : 'Добавьте использованный титан'),
-          h('p', {}, 'Для каждого измеренного эксперимента необходимо сохранить аппаратную связку и конкретную заготовку титана.'), link('/profiles', 'Настройки оборудования и титана')));
+        h('div', {class: 'card empty'}, h('h3', {}, !lists.devices.length ? 'Нужен лазер' : 'Добавьте использованный титан'),
+          h('p', {}, 'Для каждого измеренного эксперимента сохраняются лазер и конкретная заготовка титана.'),
+          !lists.devices.length ? link('/devices', 'Добавить лазер') : link('/setup?tab=material', 'Добавить титан')));
     }
-    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), await IngestUpload.render(ctx, profiles, materials));
+    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), await IngestUpload.render(ctx, lists, materials));
   }});
 })();

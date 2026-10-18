@@ -2,7 +2,8 @@
 
 Shared pieces: eligible palette (validated/production knowledge with a full prediction), questioned-entry
 rules (DEC-018), image quantisation into millimetre rectangles, and plan persistence. Plan generation never
-changes a knowledge entry's stage or questioned flag (REQ-005).
+changes a knowledge entry's stage or questioned flag (REQ-005). A plan uses the knowledge of one laser and one lens record
+(DEC-063) and remembers that lens with its spot value (REQ-019).
 
 Geometry assumption (not in the requirements): the work is rendered at a fixed raster of at most
 ``MAX_RASTER_PX`` pixels on its longer side; every pixel run becomes a rectangle in the LightBurn file, so a
@@ -18,7 +19,7 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-from . import color, knowledge as kn, plans as pl, profiles as pf
+from . import color, knowledge as kn, plans as pl, setup as su
 from .db import Store, now
 
 MAX_RASTER_PX = 160
@@ -66,10 +67,10 @@ def mask_to_rects(mask: np.ndarray, px_mm: float) -> list[dict]:
     return rects
 
 
-def eligible_palette(store: Store, profile_id: int, allowed_questioned=(), include_questioned_warning=False) -> list[dict]:
-    """Validated/production knowledge with all three estimates. Questioned entries only if allowed for this plan."""
+def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_questioned=(), include_questioned_warning=False) -> list[dict]:
+    """Validated/production knowledge of one laser and lens with all three estimates. Questioned entries only if allowed for this plan."""
     out = []
-    for k in kn.list_for_profile(store, profile_id):
+    for k in kn.list_for_setup(store, device_id, lens_id):
         s = k["summary"]
         if k["stage"] not in ELIGIBLE_STAGES or not s or not s["available"]:
             continue
@@ -90,13 +91,13 @@ def layer_from_entry(index: int, name: str, entry: dict, regions: list[dict], **
             "knowledge_id": entry["id"], "stage": entry["stage"], "questioned": entry["questioned"], **extra}
 
 
-def save_plan(store: Store, plan_id: int | None, *, name: str, mode: str, status: str, profile_id: int, markers: bool,
-              identifier: str, band_count: int | None, data: dict) -> int:
-    row = (name, mode, status, profile_id, int(markers), identifier, band_count, json.dumps(data))
+def save_plan(store: Store, plan_id: int | None, *, name: str, mode: str, status: str, device_id: int, lens_id: int | None,
+              markers: bool, identifier: str, band_count: int | None, data: dict) -> int:
+    row = (name, mode, status, device_id, lens_id, int(markers), identifier, band_count, json.dumps(data))
     if plan_id is None:
-        return store.execute("INSERT INTO plan(name,mode,status,profile_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        return store.execute("INSERT INTO plan(name,mode,status,device_id,lens_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                              (*row, now())).lastrowid
-    store.execute("UPDATE plan SET name=?,mode=?,status=?,profile_id=?,markers=?,plan_identifier=?,band_count=?,data_json=? WHERE id=?", (*row, plan_id))
+    store.execute("UPDATE plan SET name=?,mode=?,status=?,device_id=?,lens_id=?,markers=?,plan_identifier=?,band_count=?,data_json=? WHERE id=?", (*row, plan_id))
     return plan_id
 
 
@@ -127,7 +128,8 @@ def set_markers(store: Store, plan_id: int, enabled: bool) -> dict:
 
 
 def _persist(store: Store, plan: dict, status: str, markers_enabled: bool) -> None:
-    data = {k: v for k, v in plan.items() if k not in ("id", "name", "mode", "status", "profile_id", "plate_id", "markers_enabled", "plan_identifier", "band_count", "created_at")}
+    data = {k: v for k, v in plan.items() if k not in ("id", "name", "mode", "status", "device_id", "lens_id", "legacy_profile_id", "plate_id",
+                                                        "markers_enabled", "plan_identifier", "band_count", "created_at", "research_session_id")}
     store.execute("UPDATE plan SET status=?, markers=?, data_json=? WHERE id=?", (status, int(markers_enabled), json.dumps(data), plan["id"]))
 
 
@@ -148,12 +150,12 @@ def _cluster(rgb: np.ndarray, max_colors: int):
     return labels, centers[order], np.bincount(labels.ravel(), minlength=k)
 
 
-def _threshold(store: Store, profile_id: int, value) -> float:
-    """The delta E threshold is always explicit: given for the plan or taken from the saved rules, never invented."""
+def _threshold(store: Store, device_id: int, lens_id: int | None, value) -> float:
+    """The delta E threshold is always explicit: given for the plan or taken from the rules of its laser and lens, never invented."""
     if value is None:
-        value = pf.get_rules(store, profile_id)["delta_tolerance"]
+        value = su.get_rules(store, device_id, lens_id)["delta_tolerance"]
     if value is None:
-        raise ConversionError("set the delta E threshold for this plan (no tolerance is saved for the laser profile)")
+        raise ConversionError("set the delta E threshold for this plan (no tolerance is saved for this laser and lens)")
     value = float(value)
     if not np.isfinite(value) or value < 0:
         raise ConversionError("enter a non-negative delta E threshold")
@@ -187,18 +189,19 @@ def compute_matches(source_colors: list[dict], palette: list[dict], threshold: f
     return out
 
 
-def _register_targets(store: Store, profile_id: int, plan_id: int, matches: list[dict]) -> None:
-    """Every unreachable color becomes an Experiment Designer target; re-matching never duplicates one (DEC-009)."""
+def _register_targets(store: Store, device_id: int, lens_id: int | None, plan_id: int, matches: list[dict]) -> None:
+    """Every unreachable color becomes an Experiment Designer target of the plan's laser and lens; re-matching never
+    duplicates one (DEC-009)."""
     for m in matches:
         if m["status"] == "unreachable":
-            store.execute("INSERT OR IGNORE INTO target_color(profile_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,?,?)",
-                          (profile_id, json.dumps(m["source_lab"]), plan_id, m["source_key"], now()))
+            store.execute("INSERT OR IGNORE INTO target_color(device_id,lens_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,?,?,?)",
+                          (device_id, lens_id, json.dumps(m["source_lab"]), plan_id, m["source_key"], now()))
 
 
-def start_discrete(store: Store, profile_id: int, image_bytes: bytes, width_mm: float, name: str, threshold=None,
-                   markers: bool = False, max_colors: int = MAX_COLORS) -> int:
-    pf.get_profile(store, profile_id)
-    thr = _threshold(store, profile_id, threshold)
+def start_discrete(store: Store, device_id: int, lens_id: int | None, image_bytes: bytes, width_mm: float, name: str,
+                   threshold=None, markers: bool = False, max_colors: int = MAX_COLORS) -> int:
+    lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
+    thr = _threshold(store, device_id, lens_id, threshold)
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
     if not 1 <= max_colors <= MAX_COLORS:
@@ -213,9 +216,9 @@ def start_discrete(store: Store, profile_id: int, image_bytes: bytes, width_mm: 
     data = {"image_path": _store_image(store, image_bytes), "labels_path": str(labels_path), "size_mm": {"width": float(width_mm), "height": h_mm},
             "px_mm": px_mm, "threshold": thr, "source_colors": source, "replacements": {}, "exclusions": [], "allowed_questioned": [],
             "matches": [], "layers": [], "markers": _plan_markers(identifier, markers, float(width_mm), h_mm, store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "lens": lens}
     with store.transaction():
-        plan_id = save_plan(store, None, name=name.strip(), mode=pl.MODE_DISCRETE, status=ST_DRAFT, profile_id=profile_id, markers=markers,
+        plan_id = save_plan(store, None, name=name.strip(), mode=pl.MODE_DISCRETE, status=ST_DRAFT, device_id=device_id, lens_id=lens_id, markers=markers,
                             identifier=identifier, band_count=None, data=data)
         return update_discrete(store, plan_id)
 
@@ -226,9 +229,9 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
     plan = pl.get_plan(store, plan_id)
     if plan["mode"] != pl.MODE_DISCRETE:
         raise ConversionError("this is not a discrete color plan")
-    pid = plan["profile_id"]
+    partition = (plan["device_id"], plan["lens_id"])
     if threshold is not None:
-        plan["threshold"] = _threshold(store, pid, threshold)
+        plan["threshold"] = _threshold(store, *partition, threshold)
     keys = {c["key"] for c in plan["source_colors"]}
     if exclusions is not None:
         if not set(exclusions) <= keys:
@@ -236,7 +239,7 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
         plan["exclusions"] = sorted(exclusions)
     if allowed_questioned is not None:
         plan["allowed_questioned"] = sorted(set(int(x) for x in allowed_questioned))
-    palette = eligible_palette(store, pid, allowed_questioned=plan["allowed_questioned"])
+    palette = eligible_palette(store, *partition, allowed_questioned=plan["allowed_questioned"])
     if replacements is not None:
         ids = {e["id"] for e in palette}
         if not set(replacements) <= keys or not set(replacements.values()) <= ids:
@@ -246,9 +249,9 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
     plan["replacements"] = {k: v for k, v in plan["replacements"].items() if v in {e["id"] for e in palette}}
     plan["matches"] = compute_matches(plan["source_colors"], palette, plan["threshold"], plan["replacements"], plan["exclusions"])
     plan["layers"] = []
-    plan["questioned_available"] = [e["id"] for e in eligible_palette(store, pid, include_questioned_warning=True) if e["questioned"]]
+    plan["questioned_available"] = [e["id"] for e in eligible_palette(store, *partition, include_questioned_warning=True) if e["questioned"]]
     _persist(store, plan, ST_DRAFT, plan["markers_enabled"])
-    _register_targets(store, pid, plan_id, plan["matches"])
+    _register_targets(store, *partition, plan_id, plan["matches"])
     return plan_id
 
 
@@ -264,7 +267,7 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
         raise ConversionError("every color is excluded: there is nothing to engrave")
     labels = np.load(plan["labels_path"])
     key_index = {c["key"]: i for i, c in enumerate(plan["source_colors"])}
-    palette = {e["id"]: e for e in eligible_palette(store, plan["profile_id"], allowed_questioned=plan["allowed_questioned"])}
+    palette = {e["id"]: e for e in eligible_palette(store, plan["device_id"], plan["lens_id"], allowed_questioned=plan["allowed_questioned"])}
     by_entry: dict[int, list[str]] = {}
     for m in active:
         by_entry.setdefault(m["knowledge_id"], []).append(m["source_key"])
@@ -346,16 +349,16 @@ def _check_bands(n) -> int:
     return int(n)
 
 
-def preview_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
+def preview_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
                        path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None) -> dict:
     """Compute the banding without saving anything. Returns the layers, warnings and per-band pixel share."""
     n = _check_bands(n_bands)
     allowed = [int(x) for x in (allowed_questioned or [])]
     if mode == "tonal":
         # Tonal may use questioned production entries with a warning and no confirmation (DEC-018)
-        entries = eligible_palette(store, profile_id, include_questioned_warning=True)
+        entries = eligible_palette(store, device_id, lens_id, include_questioned_warning=True)
     else:
-        entries = eligible_palette(store, profile_id, allowed_questioned=allowed)
+        entries = eligible_palette(store, device_id, lens_id, allowed_questioned=allowed)
     transfer = build_transfer(mode, entries, path_ids)
     rgb, px_mm = raster(decode_image_bytes(image_bytes), width_mm)
     bands = quantize_luminance(rgb, n)
@@ -376,17 +379,17 @@ def preview_continuous(store: Store, profile_id: int, mode: str, image_bytes: by
             "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum())}
 
 
-def create_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int, name: str,
-                      path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False) -> int:
+def create_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
+                      name: str, path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False) -> int:
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
-    pf.get_profile(store, profile_id)
-    p = preview_continuous(store, profile_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
+    lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
+    p = preview_continuous(store, device_id, lens_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
     identifier = pl.new_identifier("TCE-P")
     data = {"image_path": _store_image(store, image_bytes), "size_mm": p["size_mm"], "px_mm": p["px_mm"], "transfer": p["transfer"],
             "path_ids": list(path_ids or []), "allowed_questioned": sorted(int(x) for x in (allowed_questioned or [])), "warnings": p["warnings"],
             "layers": p["layers"], "markers": _plan_markers(identifier, markers, p["size_mm"]["width"], p["size_mm"]["height"], store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode, "lens": lens}
     with store.transaction():
-        return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, profile_id=profile_id, markers=markers,
+        return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, device_id=device_id, lens_id=lens_id, markers=markers,
                          identifier=identifier, band_count=p["bands"], data=data)

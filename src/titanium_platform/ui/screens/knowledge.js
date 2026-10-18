@@ -44,7 +44,7 @@ const KnowledgeView = (() => {
         ? btn('Откатить переход', () => confirmBox('Откатить переход', 'Будет добавлено новое событие; стадия не повышается.', 'Откатить',
           async () => { await post(`/knowledge/${kid}/rollback`, {event_id: e.id, confirm_production: k.stage === 'production'}); App.render(); })) : '']), 'Истории нет');
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('h2', {}, 'Знание о цвете'), h('span', {class: 'spacer'}), link('/colors?profile=' + k.profile_id, 'К карте цветов'), link('/profiles?tab=rules&profile=' + k.profile_id, 'Правила оценки')),
+      h('div', {class: 'row'}, h('h2', {}, 'Знание о цвете'), h('span', {class: 'spacer'}), link(`/colors?device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`, 'К модели цвета'), link(`/setup?tab=rules&device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`, 'Правила оценки')),
       k.questioned ? h('div', {class: 'alert bad'}, [h('strong', {}, 'Под вопросом. '), I18N.tr(k.doubt.reason)]) : null,
       h('div', {class: 'card stack'}, facts([
         ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')], ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],

@@ -2,33 +2,29 @@
 
 Measured observations are immutable (REQ-001): SQL triggers reject UPDATE and DELETE as a backstop and
 ``Store.update_observation`` rejects and logs the attempt in the audit table.
+
+Every record of work names the physical laser (``device_id``) and the lens record used for it (``lens_id``, NULL when the
+lens is unknown) (DEC-063). A database written before 0.4.0 named them through a laser profile: opening it migrates once,
+after a backup, every table that still has ``profile_id``; the old id stays as ``legacy_profile_id`` for provenance and the
+``laser_profile`` table stays as a read-only archive that nothing reads.
 """
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+SCHEMA_RELEASE = "0.4.0"
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS laser_profile (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    family TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    axes_json TEXT NOT NULL,
-    pulse_width REAL NOT NULL,
-    line_interval REAL NOT NULL,
-    passes INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    UNIQUE (family, version)
-);
 CREATE TABLE IF NOT EXISTS lens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    focal_length_mm REAL NOT NULL,
+    focal_length_mm REAL,
     field_mm REAL,
     expansion REAL NOT NULL DEFAULT 1,
     note TEXT,
@@ -82,7 +78,9 @@ CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value_json TEXT NOT NU
 CREATE TABLE IF NOT EXISTS plate (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_id TEXT NOT NULL UNIQUE,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     speed REAL NOT NULL,
     geometry_json TEXT NOT NULL,
     cells_json TEXT NOT NULL,
@@ -97,18 +95,23 @@ CREATE TABLE IF NOT EXISTS plan (
     name TEXT NOT NULL,
     mode TEXT NOT NULL,
     status TEXT NOT NULL,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     plate_id INTEGER REFERENCES plate(id),
     markers INTEGER NOT NULL DEFAULT 0,
     plan_identifier TEXT,
     band_count INTEGER,
     data_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    research_session_id INTEGER REFERENCES research_session(id)
 );
 CREATE TABLE IF NOT EXISTS pair (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     status TEXT NOT NULL,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     stand_id INTEGER REFERENCES capture_setup(id),
     material_id INTEGER REFERENCES material_profile(id),
     plate_id INTEGER REFERENCES plate(id),
@@ -129,7 +132,9 @@ CREATE TABLE IF NOT EXISTS observation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pair_id INTEGER NOT NULL REFERENCES pair(id),
     layer_index INTEGER NOT NULL,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     engraving_id TEXT NOT NULL,
     lab_json TEXT NOT NULL,
     parameters_json TEXT NOT NULL,
@@ -196,15 +201,17 @@ CREATE INDEX IF NOT EXISTS research_message_session_idx ON research_message(sess
 CREATE INDEX IF NOT EXISTS research_insight_session_idx ON research_insight(session_id,id);
 CREATE TABLE IF NOT EXISTS knowledge (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     parameters_key TEXT NOT NULL,
     parameters_json TEXT NOT NULL,
     stage TEXT NOT NULL,
     questioned INTEGER NOT NULL DEFAULT 0,
     doubt_json TEXT,
-    updated_at TEXT NOT NULL,
-    UNIQUE (profile_id, parameters_key)
+    updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_setup_recipe ON knowledge(device_id, IFNULL(lens_id, 0), parameters_key);
 CREATE TABLE IF NOT EXISTS knowledge_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     knowledge_id INTEGER NOT NULL REFERENCES knowledge(id),
@@ -217,7 +224,9 @@ CREATE TABLE IF NOT EXISTS knowledge_event (
 );
 CREATE TABLE IF NOT EXISTS target_color (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     lab_json TEXT NOT NULL,
     source_plan_id INTEGER NOT NULL,
     source_color_key TEXT NOT NULL,
@@ -227,14 +236,16 @@ CREATE TABLE IF NOT EXISTS target_color (
 );
 CREATE TABLE IF NOT EXISTS proposal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    profile_id INTEGER NOT NULL REFERENCES laser_profile(id),
+    device_id INTEGER NOT NULL REFERENCES laser_device(id),
+    lens_id INTEGER REFERENCES lens(id),
+    legacy_profile_id INTEGER,
     base_signature TEXT NOT NULL,
     seed INTEGER NOT NULL,
     data_json TEXT NOT NULL,
     explanation TEXT,
-    created_at TEXT NOT NULL,
-    UNIQUE (profile_id, base_signature, seed)
+    created_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS proposal_setup_signature ON proposal(device_id, IFNULL(lens_id, 0), base_signature, seed);
 CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at TEXT NOT NULL,
@@ -244,12 +255,53 @@ CREATE TABLE IF NOT EXISTS audit (
 """
 
 
+REBUILT = ("plate", "plan", "pair", "observation", "knowledge", "target_color", "proposal")   # had profile_id before 0.4.0
+SNAPSHOT_LENS = {      # where a record of 0.3.1 remembered the lens it was made with: its column and the JSON paths of the lens id
+    "plate": ("lens_json", ("$.id",)), "plan": ("data_json", ("$.lens.id", "$.experiment.lens.id")), "pair": ("hardware_json", ("$.lens.id",))}
+ARCHIVE_TRIGGERS = [f"CREATE TRIGGER IF NOT EXISTS laser_profile_read_only_{event.lower()} BEFORE {event} ON laser_profile "
+                    "BEGIN SELECT RAISE(ABORT, 'laser profiles are a read-only archive'); END" for event in ("INSERT", "UPDATE", "DELETE")]
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def statements(script: str) -> list[str]:
+    """The complete SQL statements of a script, trigger bodies included."""
+    out, pending = [], ""
+    for line in script.splitlines(keepends=True):
+        pending += line
+        if sqlite3.complete_statement(pending):
+            out.append(pending.strip())
+            pending = ""
+    return out
+
+
+def _schema_for(table: str) -> tuple[str, list[str]]:
+    """The CREATE TABLE statement of ``table`` in SCHEMA and the indexes and triggers SCHEMA defines on it."""
+    found = statements(SCHEMA)
+    create = next(sql for sql in found if sql.startswith(f"CREATE TABLE IF NOT EXISTS {table} ("))
+    attached = [sql for sql in found if sql.startswith(("CREATE UNIQUE INDEX", "CREATE INDEX", "CREATE TRIGGER"))
+                and re.search(rf"\bON {table}\b", sql)]
+    return create, attached
+
+
 class ImmutableError(RuntimeError):
     """An attempt to change a stored measurement was rejected (REQ-001)."""
+
+
+class MigrationError(RuntimeError):
+    """An older database cannot be migrated as it is; it was left unchanged and the message says why."""
+
+
+def open_store(data_dir: str | Path, program: str = "titanium-platform") -> "Store":
+    """The store a program starts on. A database the migration refuses stops the program with the reason, one paragraph,
+    and exit code 2, without a traceback (DEC-063)."""
+    try:
+        return Store(data_dir)
+    except MigrationError as exc:
+        print(f"{program}: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 class Store:
@@ -262,36 +314,35 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute("PRAGMA journal_mode = WAL")
+        if self._needs_rebuild():
+            try:
+                self._migrate_from_profiles()
+            except BaseException:
+                self.conn.close()
+                raise
         self.conn.executescript(SCHEMA)
         self._migrate()
+
+    def _columns(self, table: str) -> dict[str, sqlite3.Row]:
+        return {row["name"]: row for row in self.conn.execute(f"PRAGMA table_info({table})")}
+
+    def _needs_rebuild(self) -> bool:
+        """An older version's tables: a record still names a laser profile, or a lens needs a focal length (REQ-019)."""
+        focal = self._columns("lens").get("focal_length_mm")
+        return any("profile_id" in self._columns(t) for t in REBUILT) or bool(focal is not None and focal["notnull"])
 
     def _migrate(self) -> None:
         """Additive, idempotent changes to tables that an older version already created (DEC-035).
 
-        A data directory written by this version stays readable by the previous one: the new column is nullable
-        and the previous version ignores columns it does not know.
+        A new column is nullable and an older version ignores columns it does not know.
         """
         for table, column, definition in (
-                ("laser_profile", "device_id", "INTEGER REFERENCES laser_device(id)"),
-                ("laser_profile", "lens_id", "INTEGER REFERENCES lens(id)"),
                 ("laser_device", "lens_id", "INTEGER REFERENCES lens(id)"),   # DEC-041
-                ("plate", "lens_json", "TEXT"),
-                ("plate", "material_id", "INTEGER REFERENCES material_profile(id)"),
-                ("plate", "test_type", "TEXT"),
                 ("material_profile", "grade", "TEXT"),
                 ("material_profile", "thickness_mm", "REAL"),
-                ("material_profile", "surface", "TEXT"),
-                ("pair", "material_id", "INTEGER REFERENCES material_profile(id)"),
-                ("pair", "engraving_title", "TEXT"),
-                ("pair", "hardware_json", "TEXT")):
-            columns = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
-            if column not in columns:
+                ("material_profile", "surface", "TEXT")):
+            if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-        plan_columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(plan)")}
-        if "research_session_id" not in plan_columns:
-            self.conn.execute("ALTER TABLE plan ADD COLUMN research_session_id INTEGER REFERENCES research_session(id)")
-        # Existing profiles followed the currently installed lens. Freeze that pairing during migration.
-        self.conn.execute("UPDATE laser_profile SET lens_id=(SELECT lens_id FROM laser_device WHERE laser_device.id=laser_profile.device_id) WHERE lens_id IS NULL AND device_id IS NOT NULL")
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):
             known = self.conn.execute("SELECT engraving_title FROM pair WHERE engraving_id=? AND engraving_title IS NOT NULL LIMIT 1",
@@ -302,13 +353,12 @@ class Store:
             self.conn.execute("UPDATE pair SET engraving_title=? WHERE engraving_id=? AND engraving_title IS NULL",
                               (title, engraving["engraving_id"]))
         # Freeze the equipment association on older imports before any future lens edits. A plate's
-        # stored snapshot takes precedence over the linked identity's lens record.
+        # stored snapshot takes precedence over the lens record.
         for row in self.conn.execute(
-                "SELECT pa.id,pr.device_id,pr.lens_id,d.name,d.manufacturer,d.model,d.serial,d.data_json,"
+                "SELECT pa.id,pa.device_id,pa.lens_id,d.name,d.manufacturer,d.model,d.serial,d.data_json,"
                 "l.name AS lens_name,l.focal_length_mm,l.field_mm,l.expansion,t.lens_json "
-                "FROM pair pa JOIN laser_profile pr ON pr.id=pa.profile_id "
-                "LEFT JOIN laser_device d ON d.id=pr.device_id LEFT JOIN lens l ON l.id=pr.lens_id "
-                "LEFT JOIN plate t ON t.id=pa.plate_id WHERE pa.hardware_json='{}' AND d.id IS NOT NULL"):
+                "FROM pair pa JOIN laser_device d ON d.id=pa.device_id LEFT JOIN lens l ON l.id=pa.lens_id "
+                "LEFT JOIN plate t ON t.id=pa.plate_id WHERE pa.hardware_json='{}'"):
             if row["lens_json"]:
                 lens = json.loads(row["lens_json"])
             elif row["lens_id"] is not None:
@@ -319,6 +369,240 @@ class Store:
                 lens = None
             hardware = {"device": {k: row[k] for k in ("device_id", "name", "manufacturer", "model", "serial")}, "lens": lens}
             self.conn.execute("UPDATE pair SET hardware_json=? WHERE id=?", (json.dumps(hardware), row["id"]))
+
+    # -- migration of a database written before 0.4.0 (DEC-063) -------------------------------------------------
+    def _migrate_from_profiles(self) -> None:
+        """Rebuild every table that still names its laser and lens through a laser profile, the lens table, and the
+        profiles themselves as an archive.
+
+        Everything happens while this connection holds the write lock: a second process starting at the same moment
+        waits and then finds nothing to do. The mapping is worked out and checked first, and a database it cannot map is
+        refused unchanged. Then a copy of the database is saved and the tables are rebuilt in one transaction (SQLite's
+        procedure for a changed table: create, copy, drop, rename). Every row keeps its id and every stored value and
+        keeps its profile id as ``legacy_profile_id``. Its laser is the profile's; its lens is the lens its own snapshot
+        names (a plate's or plan's lens, a photograph's hardware), else the profile's, and every row where the two differ
+        is listed in the audit. Rules saved per profile move to that laser and lens.
+        """
+        self.conn.execute("PRAGMA foreign_keys = OFF")      # tables are dropped and renamed; checked before the commit
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                if self._needs_rebuild():
+                    self._rebuild_all()
+                self.conn.execute("COMMIT")
+            except BaseException:
+                if self.conn.in_transaction:
+                    self.conn.execute("ROLLBACK")
+                raise
+        finally:
+            self.conn.execute("PRAGMA foreign_keys = ON")
+
+    def _rebuild_all(self) -> None:
+        mapping = self._profile_setups()
+        self._check_mappable(mapping)
+        rules, discarded = self._rules_by_setup(mapping)
+        backup = self._backup()
+        sequences = {r["name"]: r["seq"] for r in self.conn.execute("SELECT name, seq FROM sqlite_sequence")} \
+            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='sqlite_sequence'").fetchone() else {}
+        self.conn.execute("CREATE TEMP TABLE profile_setup (profile_id INTEGER PRIMARY KEY, device_id INTEGER, lens_id INTEGER)")
+        self.conn.executemany("INSERT INTO temp.profile_setup VALUES (?,?,?)",
+                              [(pid, m["device_id"], m["lens_id"]) for pid, m in mapping.items()])
+        counts, own_lens = {}, {}
+        for table in REBUILT:
+            if "profile_id" in self._columns(table):
+                counts[table] = self._rebuild(table, sequences)
+                differing = [list(r) for r in self.conn.execute(
+                    f"SELECT t.id, m.lens_id, t.lens_id FROM {table} t JOIN temp.profile_setup m ON m.profile_id=t.legacy_profile_id "
+                    "WHERE t.lens_id IS NOT m.lens_id ORDER BY t.id")]
+                if differing:
+                    own_lens[table] = differing          # [row id, lens of its profile, lens of its own record]
+        focal = self._columns("lens").get("focal_length_mm")
+        if focal is not None and focal["notnull"]:
+            counts["lens"] = self._rebuild("lens", sequences)
+        if self._columns("laser_profile"):
+            counts["laser_profile"] = self._archive_profiles(sequences)
+        self.conn.execute("DROP TABLE temp.profile_setup")
+        for old in [r["key"] for r in self.conn.execute("SELECT key FROM setting WHERE key LIKE 'rules:%'")]:
+            if old.split(":", 1)[1].isdigit() and mapping.get(int(old.split(":", 1)[1]), {}).get("device_id") is not None:
+                self.conn.execute("DELETE FROM setting WHERE key=?", (old,))
+        for key, value in rules.items():
+            self.conn.execute("INSERT OR REPLACE INTO setting(key, value_json) VALUES (?,?)", (key, json.dumps(value["rules"])))
+        broken = [tuple(r) for r in self.conn.execute("PRAGMA foreign_key_check")
+                  if r[0] in REBUILT + ("lens",) or r[2] in REBUILT + ("lens",)]
+        if broken:
+            raise MigrationError(f"cannot migrate the database to {SCHEMA_RELEASE}: references would break {broken[:5]}; "
+                                 "the database was left unchanged")
+        self.conn.execute("INSERT INTO audit(at, action, detail_json) VALUES (?,?,?)", (now(), "schema_migrated", json.dumps({
+            "release": SCHEMA_RELEASE, "backup": str(backup), "rows": counts,
+            "profiles": {str(pid): {k: m[k] for k in ("device_id", "lens_id")} for pid, m in mapping.items()},
+            "lens_from_own_record": own_lens,
+            "rules": {key: value["from"] for key, value in rules.items()}, "rules_discarded": discarded})))
+
+    def _profile_setups(self) -> dict[int, dict]:
+        """The laser and lens of every laser profile. A profile without its own lens takes the lens installed on its
+        laser, which is what the previous version froze it to on every start."""
+        columns = self._columns("laser_profile")
+        if not columns:
+            return {}
+        device = "p.device_id" if "device_id" in columns else "NULL"
+        own = "p.lens_id" if "lens_id" in columns else "NULL"
+        installed = ("(SELECT d.lens_id FROM laser_device d WHERE d.id=p.device_id)"
+                     if "device_id" in columns and "lens_id" in self._columns("laser_device") else "NULL")
+        return {r["id"]: {"name": r["name"], "device_id": r["device_id"], "lens_id": r["lens_id"]} for r in self.conn.execute(
+            f"SELECT p.id, p.name, {device} AS device_id, COALESCE({own}, {installed}) AS lens_id FROM laser_profile p")}
+
+    def _check_mappable(self, mapping: dict[int, dict]) -> None:
+        """Refuse a database whose records cannot be given a laser, or whose knowledge would collide; say what to do."""
+        devices = {r["id"] for r in self.conn.execute("SELECT id FROM laser_device")} if self._columns("laser_device") else set()
+        lenses = {r["id"] for r in self.conn.execute("SELECT id FROM lens")} if self._columns("lens") else set()
+        refusals, without_laser = [], {}
+        for table in REBUILT:
+            if "profile_id" not in self._columns(table):
+                continue
+            for row in self.conn.execute(f"SELECT profile_id, COUNT(*) AS n FROM {table} GROUP BY profile_id"):
+                m = mapping.get(row["profile_id"])
+                if m is None:
+                    refusals.append(f"{row['n']} {table} rows name laser profile {row['profile_id']}, which does not exist")
+                elif m["device_id"] is None:
+                    without_laser[row["profile_id"]] = m["name"]
+                elif m["device_id"] not in devices or (m["lens_id"] is not None and m["lens_id"] not in lenses):
+                    refusals.append(f"laser profile {row['profile_id']} ({m['name']}) names a laser or lens that does not exist")
+        for table, columns in (("knowledge", "parameters_key"), ("proposal", "base_signature, seed")):
+            if "profile_id" not in self._columns(table):
+                continue
+            seen: dict[tuple, int] = {}
+            for row in self.conn.execute(f"SELECT id, profile_id, {columns} FROM {table}"):
+                m = mapping.get(row["profile_id"]) or {}
+                key = (m.get("device_id"), m.get("lens_id"), *tuple(row)[2:])
+                if key in seen:
+                    refusals.append(f"{table} rows {seen[key]} and {row['id']} would become one entry of the same laser and lens")
+                seen.setdefault(key, row["id"])
+        if without_laser:
+            names = ", ".join(f"{pid} ({name})" for pid, name in sorted(without_laser.items()))
+            if "device_id" not in self._columns("laser_profile"):
+                first = ("start version 0.3.1 once on this data directory: it adds the laser link to the profiles and lets you "
+                         "create the laser on its laser screen; stop it, then")
+            else:
+                first = "with the application stopped,"
+            refusals.append(
+                f"stored records use laser profiles that name no laser: {names}. Version 0.3.1 cannot link a laser to a profile "
+                f"that already has records, so {first} set the laser of each of these profiles in the database file itself, "
+                f'for example: sqlite3 "{self.path}" "UPDATE laser_profile SET device_id=<laser id> WHERE id=<profile id>" '
+                "(the laser ids are in the table laser_device), and start this version again")
+        if refusals:
+            raise MigrationError(f"cannot migrate the database to {SCHEMA_RELEASE}: " + "; ".join(dict.fromkeys(refusals))
+                                 + "; the database was left unchanged")
+
+    def _rules_by_setup(self, mapping: dict[int, dict]) -> tuple[dict[str, dict], dict[str, Any]]:
+        """Rules saved per profile, moved to the key of the profile's laser and lens: {new key: {"rules", "from"}}, and the
+        rules left out. When profiles of one laser and lens differ, the lowest profile id wins, as 0.3.1 applied the rules
+        of that profile to the shared knowledge; the others are returned for the audit. Rules of a profile that names no
+        laser stay with the archive."""
+        from .setup import setup_key
+        rows = [(int(r["key"].split(":", 1)[1]), r) for r in self.conn.execute("SELECT key, value_json FROM setting WHERE key LIKE 'rules:%'")
+                if r["key"].split(":", 1)[1].isdigit()]
+        kept, discarded = {}, {}
+        for pid, row in sorted(rows, key=lambda item: item[0]):
+            m = mapping.get(pid)
+            if m is None or m["device_id"] is None:
+                continue
+            target, value = f"rules:{setup_key(m['device_id'], m['lens_id'])}", json.loads(row["value_json"])
+            if target not in kept:
+                kept[target] = {"rules": value, "from": row["key"]}
+            elif kept[target]["rules"] != value:
+                discarded[row["key"]] = value
+        return kept, discarded
+
+    def _backup(self) -> Path:
+        """A copy of the database as it is before the migration, read through a second connection while this one holds
+        the write lock (the backup API, so the WAL is included)."""
+        folder = self.data_dir / "backups"
+        folder.mkdir(exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        target, n = folder / f"titanium-before-{SCHEMA_RELEASE}-{stamp}.sqlite", 1
+        while target.exists():
+            n += 1
+            target = folder / f"titanium-before-{SCHEMA_RELEASE}-{stamp}-{n}.sqlite"
+        source, copy = sqlite3.connect(self.path), sqlite3.connect(target)
+        try:
+            source.backup(copy)
+        finally:
+            copy.close()
+            source.close()
+        return target
+
+    def _lens_of(self, table: str, old: dict) -> str:
+        """SQL for the lens of a migrated row: the lens its own snapshot names, when that lens record exists, else the
+        lens of its profile. An observation has the lens of its photograph (``pair`` is rebuilt before it)."""
+        if table == "observation":
+            return "(SELECT p.lens_id FROM pair p WHERE p.id=t.pair_id)"
+        column, paths = SNAPSHOT_LENS.get(table, (None, ()))
+        if column not in old:
+            return "m.lens_id"
+        named = [f"json_extract(t.{column}, '{path}')" for path in paths]
+        named = named[0] if len(named) == 1 else f"COALESCE({', '.join(named)})"
+        return (f"COALESCE((SELECT l.id FROM lens l WHERE l.id = CASE WHEN json_valid(t.{column}) THEN {named} END), "
+                "m.lens_id)")
+
+    def _rebuild(self, table: str, sequences: dict[str, int]) -> int:
+        """Recreate ``table`` with its definition in SCHEMA and copy every row unchanged; returns the number of rows."""
+        create, attached = _schema_for(table)
+        old = self._columns(table)
+        self.conn.execute(create.replace(f"CREATE TABLE IF NOT EXISTS {table} (", f"CREATE TABLE {table}__new (", 1))
+        new = self._columns(f"{table}__new")
+        dropped = set(old) - set(new) - {"profile_id"}
+        if dropped:
+            raise MigrationError(f"cannot migrate the database to {SCHEMA_RELEASE}: the columns {sorted(dropped)} of {table} "
+                                 "would be lost; the database was left unchanged")
+        columns, values = [], []
+        for column in new:
+            if column == "device_id" and "profile_id" in old:
+                columns.append(column)
+                values.append("m.device_id")
+            elif column == "lens_id" and "profile_id" in old:
+                columns.append(column)
+                values.append(self._lens_of(table, old))
+            elif column == "legacy_profile_id" and "profile_id" in old:
+                columns.append(column)
+                values.append("t.profile_id")
+            elif column in old:
+                columns.append(column)
+                values.append(f"t.{column}")
+        join = " JOIN temp.profile_setup m ON m.profile_id=t.profile_id" if "profile_id" in old else ""
+        self.conn.execute(f"INSERT INTO {table}__new ({','.join(columns)}) SELECT {','.join(values)} FROM {table} t{join}")
+        copied = self._replace(table, sequences)
+        for sql in attached:
+            self.conn.execute(sql)
+        return copied
+
+    def _archive_profiles(self, sequences: dict[str, int]) -> int:
+        """Keep the laser profiles as a plain archive: the same rows and values without any reference, so an archived
+        profile never stands in the way of deleting a laser or a lens, and triggers that refuse every change."""
+        columns = self.conn.execute("PRAGMA table_info(laser_profile)").fetchall()
+        definitions = ", ".join("id INTEGER PRIMARY KEY AUTOINCREMENT" if c["pk"] else f"{c['name']} {c['type']}" for c in columns)
+        names = ",".join(c["name"] for c in columns)
+        self.conn.execute(f"CREATE TABLE laser_profile__new ({definitions})")
+        self.conn.execute(f"INSERT INTO laser_profile__new ({names}) SELECT {names} FROM laser_profile")
+        copied = self._replace("laser_profile", sequences)
+        for trigger in ARCHIVE_TRIGGERS:
+            self.conn.execute(trigger)
+        return copied
+
+    def _replace(self, table: str, sequences: dict[str, int]) -> int:
+        """Put ``<table>__new`` in the place of ``table`` once it holds every row; returns the number of rows."""
+        copied = self.conn.execute(f"SELECT COUNT(*) FROM {table}__new").fetchone()[0]
+        if copied != self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]:
+            raise MigrationError(f"cannot migrate the database to {SCHEMA_RELEASE}: not every row of {table} could be copied; "
+                                 "the database was left unchanged")
+        for trigger in self.conn.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?", (table,)).fetchall():
+            self.conn.execute(f"DROP TRIGGER {trigger['name']}")
+        self.conn.execute(f"DROP TABLE {table}")
+        self.conn.execute(f"ALTER TABLE {table}__new RENAME TO {table}")
+        if table in sequences:          # ids of deleted rows are never given out again (AUTOINCREMENT)
+            self.conn.execute("UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name=?", (sequences[table], table))
+            if self.conn.execute("SELECT 1 FROM sqlite_sequence WHERE name=?", (table,)).fetchone() is None:
+                self.conn.execute("INSERT INTO sqlite_sequence(name, seq) VALUES (?,?)", (table, sequences[table]))
+        return copied
 
     def close(self) -> None:
         self.conn.close()

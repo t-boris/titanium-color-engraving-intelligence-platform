@@ -6,7 +6,7 @@
 
   function chartsCard(d, charts) {
     const widths = charts.curves.map((c) => c.pulse_width_ns);
-    const prefer = (d.profiles[0] && d.profiles[0].pulse_width) || 200;
+    const prefer = widths.includes(200) ? 200 : widths[0];   // 200 нс — только если лазер даёт эту ступень (DEC-043)
     const pick = h('select', {'aria-label': 'Длительность импульса'}, widths.map((w) => h('option', {value: w, selected: w === prefer}, w + ' нс')));
     const power = h('div', {}), energy = h('div', {});
     let mark = null;
@@ -63,8 +63,8 @@
       body = DeviceView.documentsCard(d, refresh);
     } else {
       const capabilityResults = await get(`/devices/${id}/capability-results`);
-      body = h('div', {class: 'stack'}, DeviceProfileCard.card(d), DeviceView.capabilityResultsCard(capabilityResults, id),
-        h('div', {class: 'grid g2'}, DeviceView.passportCard(d), DeviceView.profilesCard(d)),
+      body = h('div', {class: 'stack'}, DeviceCharacterCard.card(d), DeviceView.capabilityResultsCard(capabilityResults, id),
+        DeviceView.passportCard(d),
         h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Изменить паспорт: серийный номер, диаметр пятна, ступени, открытые вопросы')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
     }
     const nav = h('div', {class: 'row', role: 'tablist'}, TABS.map(([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, role: 'tab', 'aria-selected': key === tab,
@@ -72,7 +72,7 @@
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, d.title), h('p', {class: 'sub'}, [d.manufacturer, d.model].filter(Boolean).join(' · '))), h('span', {class: 'spacer'}),
         openPill, link('/devices', 'Все лазеры'),
-        btn('Удалить лазер', () => confirmBox('Удалить лазер', 'Действие необратимо: паспорт и документы будут удалены. Лазер, привязанный к профилю, удалить нельзя.', 'Удалить',
+        btn('Удалить лазер', () => confirmBox('Удалить лазер', 'Действие необратимо: паспорт и документы будут удалены. Лазер, на котором есть платы, планы или измерения, удалить нельзя.', 'Удалить',
           async () => { await del('/devices/' + id); toast('Лазер удалён', 'ok'); reload(); }), 'danger')),
       nav, body);
   }
@@ -81,7 +81,7 @@
     const devices = await get('/devices');
     const head = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Лазеры'), h('p', {class: 'sub'}, 'Паспорт каждого лазера: длительности импульса, частоты среза, документы и графики.')));
     const rows = devices.map((d) => h('div', {class: 'card stack'}, h('h3', {}, link('/devices/' + d.id, d.title)),
-      h('p', {class: 'muted small'}, `${d.passport.rated_power_w} Вт · ступеней: ${d.passport.pulse_steps.length} · документов: ${d.documents.length} · профилей: ${d.profiles.length}`),
+      h('p', {class: 'muted small'}, `${d.passport.rated_power_w} Вт · ступеней: ${d.passport.pulse_steps.length} · документов: ${d.documents.length} · линза: ${d.lens ? App.lensLabel(d.lens) : 'не установлена'}`),
       d.open_questions.length ? pill('открытых вопросов: ' + d.open_questions.length, 'warn') : pill('вопросов нет', 'ok')));
     const templates = h('div', {class: 'card stack'}, h('h3', {}, 'Добавить лазер'), h('div', {class: 'stack'}, await DeviceForms.templateForm(reload),
       h('details', {}, h('summary', {}, 'Другая модель: ввести паспорт вручную'), DeviceForms.createForm(reload))));

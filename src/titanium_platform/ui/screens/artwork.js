@@ -8,10 +8,12 @@
   const STATUS = {matched: ['Сопоставлен', 'ok'], unreachable: ['Недостижим', 'bad'], replaced: ['Заменён вручную', 'ok'], excluded: ['Исключён', '']};
 
   App.register({id: 'artwork', async render(ctx) {
-    const profiles = await get('/profiles');
-    if (!profiles.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала настройте профиль лазера'), link('/profiles', 'Профили'));
     const id = ctx.query.plan || ctx.query.id;
-    if (!id) return h('div', {class: 'stack'}, h('h2', {}, 'Цветная гравировка'), startForm(profiles));
+    if (!id) {
+      const lists = await App.hardwareLists();
+      if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
+      return h('div', {class: 'stack'}, h('h2', {}, 'Цветная гравировка'), startForm(lists, ctx));
+    }
     const reload = () => App.render();
     const plan = await get('/plans/' + id), palette = await get(`/discrete/${id}/palette`);
     const unresolved = plan.matches.filter((m) => m.status === 'unreachable').length;
@@ -34,8 +36,8 @@
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Цветная гравировка · ' + plan.name),
         h('p', {class: 'sub'}, `Текущий порог ΔE: ${plan.threshold}. Он сравнивается с суммой расстояния до цели и ожидаемой ошибки записи (DEC-030).`)),
-      h('span', {class: 'spacer'}), link('/designer?profile=' + plan.profile_id, 'Цели экспериментов')),
-      palette.length ? null : h('div', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этой версии профиля: все цвета недостижимы.'),
+      h('span', {class: 'spacer'}), link(`/designer?device=${plan.device_id}&lens=${App.lensParam(plan.lens_id)}`, 'Цели экспериментов')),
+      palette.length ? null : h('div', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этого лазера с этой линзой: все цвета недостижимы.'),
       h('div', {class: 'card toolbar'}, field('Порог ΔE', thr),
         btn('Сопоставить цвета', async () => { try { await patch('/discrete/' + id, {threshold: +thr.value}); reload(); } catch (e) { fail(e); } }),
         btn('Включить параметры под вопросом в этот план', () => questionedDialog(plan, reload)), markerBtn),

@@ -1,17 +1,21 @@
-/* Вкладки «Правила оценки» и «Слой маркеров» (REQ-005, DEC-021, DEC-027). */
+/* Вкладки «Правила оценки» для лазера с линзой и «Слой маркеров» (REQ-005, DEC-021, DEC-027, DEC-063). */
 'use strict';
 const SetupRules = (() => {
   const {h, btn, field, link, get, put, toast, fail} = App;
   const nul = (el) => (el.value === '' ? null : +el.value);
 
-  async function rulesTab(p, reload) {
-    if (!p) return h('div', {class: 'card'}, 'Сначала настройте профиль лазера');
-    const r = await get(`/profiles/${p.id}/rules`);
+  async function rulesTab(ctx, reload) {
+    const lists = await App.hardwareLists();
+    if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
+    const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => reload('rules', pick.route())});
+    const r = await get('/rules?' + pick.query());
     const rep = h('input', {type: 'number', step: '1', min: '1', value: r.repeat_threshold ?? ''});
     const tol = h('input', {type: 'number', step: 'any', min: '0', value: r.delta_tolerance ?? ''});
     const varr = h('input', {type: 'number', step: 'any', min: '0', value: r.variance_threshold ?? ''});
     const agreed = h('input', {type: 'checkbox', checked: r.criteria_agreed});
     return h('div', {class: 'card stack'}, h('h3', {}, 'Как система оценивает повторяемость'),
+      h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap'}, field('Лазер', pick.laser)), h('div', {class: 'f-wrap'}, field('Линза', pick.lens))),
+      h('p', {class: 'muted small'}, 'Правила задаются для каждого лазера с линзой отдельно. Работы с неизвестной линзой оцениваются по своим правилам и с другими не смешиваются.'),
       r.criteria_agreed
         ? h('div', {class: 'alert ok'}, 'Автоматическое повышение до «Валидировано» включено по указанным ниже критериям.')
         : h('div', {class: 'alert warn'}, 'Пока критерии не согласованы, записи остаются измеренными/повторёнными и не повышаются автоматически.'),
@@ -25,10 +29,10 @@ const SetupRules = (() => {
       h('label', {class: 'row'}, agreed, h('span', {}, 'Включить автоматическую оценку по этим критериям')),
       h('div', {class: 'row'}, btn('Сохранить пороги', async () => {
         try {
-          await put(`/profiles/${p.id}/rules`, {repeat_threshold: nul(rep), delta_tolerance: nul(tol), variance_threshold: nul(varr), criteria_agreed: agreed.checked});
-          toast('Пороги сохранены', 'ok'); reload(p.id, 'rules');
+          await put('/rules', {device_id: pick.deviceId(), lens_id: pick.lensId(), repeat_threshold: nul(rep), delta_tolerance: nul(tol), variance_threshold: nul(varr), criteria_agreed: agreed.checked});
+          toast('Пороги сохранены', 'ok'); reload('rules', pick.route());
         } catch (e) { fail(e); }
-      }, 'primary'), link('/colors?profile=' + p.id, 'Карта цветов')));
+      }, 'primary'), link('/colors?' + pick.route(), 'Модель цвета этого лазера с линзой')));
   }
 
   async function markersTab(reload) {
@@ -41,7 +45,7 @@ const SetupRules = (() => {
       cur ? null : h('div', {class: 'alert warn'}, 'Параметры кодовых меток пока не заданы. Их нужно задать один раз и проверить на титане перед автоматическим поиском меток по фотографии.'),
       h('div', {class: 'grid g3'}, field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed)),
       btn('Сохранить параметры кодовых меток', async () => {
-        try { await put('/marker-layer', {power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value}); toast('Слой маркеров сохранён', 'ok'); reload(); } catch (e) { fail(e); }
+        try { await put('/marker-layer', {power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value}); toast('Слой маркеров сохранён', 'ok'); reload('markers'); } catch (e) { fail(e); }
       }, 'primary'));
   }
 

@@ -3,7 +3,7 @@
 EngravingPlan (REQ-012, DEC-008) is band oriented. Every layer carries its full parameter vector and, when
 it is a prediction, the three mandatory estimates (REQ-002)::
 
-    {"id", "name", "mode", "profile_id", "identifier", "markers": {enabled, geometry},
+    {"id", "name", "mode", "device_id", "lens_id", "identifier", "markers": {enabled, geometry},
      "band_count", "layers": [{"index", "name", "parameters", "regions": [{x,y,width,height}],
                               "prediction": {lab, confidence, expected_delta_e, stability} | None,
                               "knowledge_id", "stage", "questioned"}]}
@@ -22,7 +22,7 @@ from xml.sax.saxutils import quoteattr
 import cv2
 import numpy as np
 
-from . import characterization, lenses, profiles as pf
+from . import lenses, setup as su
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -54,28 +54,28 @@ def scan_settings(values: dict | None = None) -> dict:
     raw = {**SCAN_DEFAULTS, **(values or {})}
     global_passes = raw["global_passes"]
     if int(global_passes) != global_passes or not 1 <= int(global_passes) <= 100:
-        raise pf.ValidationError("global passes must be a whole number from 1 to 100")
+        raise su.ValidationError("global passes must be a whole number from 1 to 100")
     for key in ("bidirectional", "cross_hatch"):
         if not isinstance(raw[key], bool):
-            raise pf.ValidationError(f"{key} must be true or false")
+            raise su.ValidationError(f"{key} must be true or false")
     return {"global_passes": int(global_passes), "bidirectional": raw["bidirectional"],
-            "cross_hatch": raw["cross_hatch"], "scan_angle": pf._finite(raw["scan_angle"], "scan angle"),
-            "angle_increment": pf._finite(raw["angle_increment"], "angle increment")}
+            "cross_hatch": raw["cross_hatch"], "scan_angle": su._finite(raw["scan_angle"], "scan angle"),
+            "angle_increment": su._finite(raw["angle_increment"], "angle increment")}
 
 
 def parse_numbers(text: str, name: str) -> list[float]:
     """Numbers separated by spaces or semicolons; a decimal comma is accepted (prototype 2.3)."""
     parts = [p for p in re.split(r"[;\s]+", (text or "").strip()) if p]
     if not parts:
-        raise pf.ValidationError(f"{name}: enter at least one value")
+        raise su.ValidationError(f"{name}: enter at least one value")
     out: list[float] = []
     for p in parts:
         try:
             out.append(float(p.replace(",", ".")))
         except ValueError:
-            raise pf.ValidationError(f"{name}: '{p}' is not a number") from None
+            raise su.ValidationError(f"{name}: '{p}' is not a number") from None
     if len(set(out)) != len(out):
-        raise pf.ValidationError(f"{name}: values must not repeat")
+        raise su.ValidationError(f"{name}: values must not repeat")
     return out
 
 
@@ -137,8 +137,8 @@ def marker_layer_settings(store: Store) -> dict | None:
 
 
 def save_marker_layer_settings(store: Store, power: float, frequency: float, speed: float) -> dict:
-    v = {"power": pf._finite(power, "power", True), "frequency": pf._finite(frequency, "frequency", True),
-         "speed": pf._finite(speed, "speed", True)}
+    v = {"power": su._finite(power, "power", True), "frequency": su._finite(frequency, "frequency", True),
+         "speed": su._finite(speed, "speed", True)}
     store.set_setting("marker_layer", v)
     return v
 
@@ -147,72 +147,68 @@ def save_marker_layer_settings(store: Store, power: float, frequency: float, spe
 OPERATING_POINT_KEYS = ("output_power_w", "pulse_energy_mj", "power_factor", "below_cutoff", "outside_controller_range", "areal_energy_j_cm2", "pulse_pitch_um")
 
 
-def _add_operating_points(profile: dict, cells: list[dict]) -> None:
-    """Passport-model figures per cell when the profile has a laser device (REQ-017, DEC-036).
+def _add_operating_points(setup: dict, cells: list[dict]) -> None:
+    """Passport-model figures per cell for the laser and lens of the plate (REQ-017, DEC-036).
 
     They are stored next to the parameter vector, never inside it: the vector that observations store is unchanged.
     """
-    device = profile.get("device")
-    if device is None:
-        return
     from . import devices
     for cell in cells:
         p = cell["parameters"]
-        op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], p["pulse_width"], p["line_interval"], p["passes"], device.get("lens"))
+        op = devices.operating_point(setup["device"]["passport"], p["power"], p["frequency"], p["speed"], p["pulse_width"], p["line_interval"], p["passes"], setup["lens"])
         cell["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
 
 
-def check_work_field(profile: dict, width: float, height: float) -> None:
+def check_work_field(setup: dict, width: float, height: float) -> None:
     """A plate with its markers must fit the work field of the laser, when the field is printed or confirmed (REQ-018, DEC-040)."""
-    device = profile.get("device")
-    if device is None:
-        return
     from . import characterization
-    field, _ = characterization.work_field(device["passport"], device.get("lens"))
+    field, _ = characterization.work_field(setup["device"]["passport"], setup["lens"])
     if field is None:
         return
     ext = marker_geometry("TCE-00000000", width, height)["extent"]       # same identifier length as a real plate, so the same QR size
     need_w, need_h = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
     if need_w > field["width"] or need_h > field["height"]:
-        raise pf.ValidationError(f"the plate with its markers is {need_w:.0f} x {need_h:.0f} mm, larger than the work field {field['width']:g} x {field['height']:g} mm of the laser")
+        raise su.ValidationError(f"the plate with its markers is {need_w:.0f} x {need_h:.0f} mm, larger than the work field {field['width']:g} x {field['height']:g} mm of the laser")
 
 
-def build_grid(profile: dict, powers: list[float], frequencies: list[float], speed: float,
-               cell_w: float, cell_h: float, gap: float, pulse_width: float = 200.0,
-               line_interval: float = 0.025, passes: int = 1, lightburn_settings: dict | None = None) -> dict:
+def build_grid(setup: dict, powers: list[float], frequencies: list[float], speed: float,
+               cell_w: float, cell_h: float, gap: float, pulse_width: float,
+               line_interval: float, passes: int, lightburn_settings: dict | None = None) -> dict:
+    """A power x frequency grid at one speed; the job settings are the plate's own and nothing is filled in (DEC-043)."""
     for label, v in (("cell width", cell_w), ("cell height", cell_h)):
-        if pf._finite(v, label, True) <= 0:
-            raise pf.ValidationError(f"{label} must be positive")
-    if pf._finite(gap, "gap") < 0:
-        raise pf.ValidationError("gap must not be negative")
+        if su._finite(v, label, True) <= 0:
+            raise su.ValidationError(f"{label} must be positive")
+    if su._finite(gap, "gap") < 0:
+        raise su.ValidationError("gap must not be negative")
+    speed = su._finite(speed, "speed", True)
     problems = []
     for p, f in itertools.product(powers, frequencies):
-        problems += pf.check_in_range(profile, p, f, speed)
+        problems += su.check_in_range(setup["device"]["passport"], p, f)
     if problems:
-        raise pf.ValidationError("; ".join(dict.fromkeys(problems)))
+        raise su.ValidationError("; ".join(dict.fromkeys(problems)))
     cols, rows = len(powers), len(frequencies)
-    check_work_field(profile, cols * cell_w + (cols - 1) * gap, rows * cell_h + (rows - 1) * gap)
+    check_work_field(setup, cols * cell_w + (cols - 1) * gap, rows * cell_h + (rows - 1) * gap)
     # A system-generated plate reserves C00 for cleaning and C01 for registration markers.
     if cols * rows + 2 > MAX_LAYERS:
-        raise pf.ValidationError(f"{cols * rows} cells need more than the {MAX_LAYERS - 2} test layers available after cleaning and markers")
+        raise su.ValidationError(f"{cols * rows} cells need more than the {MAX_LAYERS - 2} test layers available after cleaning and markers")
     cells = []
     for r, f in enumerate(frequencies):          # power by columns, frequency by rows (prototype BP-04)
         for c, p in enumerate(powers):
             cells.append({"id": f"r{r + 1}c{c + 1}", "row": r, "column": c,
-                          "parameters": pf.parameter_vector(profile, p, f, speed, pulse_width, line_interval, passes),
+                          "parameters": su.parameter_vector(setup["device"]["passport"], p, f, speed, pulse_width, line_interval, passes),
                           "geometry": {"x": c * (cell_w + gap), "y": r * (cell_h + gap), "width": cell_w, "height": cell_h}})
-    _add_operating_points(profile, cells)
+    _add_operating_points(setup, cells)
     return {"cells": cells, "geometry": {"cell_width": cell_w, "cell_height": cell_h, "gap": gap, "columns": cols, "rows": rows,
                                          "width": cols * cell_w + (cols - 1) * gap, "height": rows * cell_h + (rows - 1) * gap},
             "lightburn_settings": scan_settings(lightburn_settings)}
 
 
-def preview_series(profile: dict, powers_text: str, frequencies_text: str, speeds_text: str,
-                   cell_w: float, cell_h: float, gap: float, pulse_width: float = 200.0,
-                   line_interval: float = 0.025, passes: int = 1,
+def preview_series(setup: dict, powers_text: str, frequencies_text: str, speeds_text: str,
+                   cell_w: float, cell_h: float, gap: float, pulse_width: float,
+                   line_interval: float, passes: int,
                    lightburn_settings: dict | None = None) -> list[dict]:
     powers, freqs = parse_numbers(powers_text, "power"), parse_numbers(frequencies_text, "frequency")
-    return [{"speed": s, **build_grid(profile, powers, freqs, s, cell_w, cell_h, gap, pulse_width, line_interval, passes, lightburn_settings)}
+    return [{"speed": s, **build_grid(setup, powers, freqs, s, cell_w, cell_h, gap, pulse_width, line_interval, passes, lightburn_settings)}
             for s in parse_numbers(speeds_text, "speed")]
 
 
@@ -226,24 +222,24 @@ def _plate_layers(grid: dict) -> list[dict]:
     return layers
 
 
-def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: float, cell_h: float, gap: float,
+def create_plates(store: Store, device_id: int, series: list[dict], cell_w: float, cell_h: float, gap: float,
                   proposal_id: int | None = None) -> list[dict]:
-    """One plate (and one EngravingPlan) per item of ``series`` = [{speed, powers, frequencies, proposed?}], atomically.
+    """One plate (and one EngravingPlan) per item of ``series`` = [{speed, powers, frequencies, pulse_width, line_interval,
+    passes, proposed?}] on the laser with the lens installed on it now, atomically.
 
     Markers are mandatory (REQ-003). ``proposed`` is an optional set of (power, frequency) pairs the Experiment
     Designer actually chose; the other cells of the Cartesian grid are marked as intersections, not
     recommendations (prototype BP-53).
     """
     if marker_layer_settings(store) is None:
-        raise pf.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
-    profile = pf.get_profile(store, profile_id)
-    lens = lenses.snapshot((profile.get("device") or {}).get("lens"), characterization.characterize((profile["device"] or {}).get("passport"), profile["device"].get("lens"))["spot_diameter_um"] if profile.get("device") else None)
+        raise su.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
+    setup = su.installed(store, device_id)
+    lens = su.lens_snapshot(setup)
     lens_json = json.dumps(lens) if lens else None   # DEC-041: the lens is remembered by the plate
     grids = []
     for item in series:
-        grid = build_grid(profile, item["powers"], item["frequencies"], item["speed"], cell_w, cell_h, gap,
-                          item.get("pulse_width", 200.0), item.get("line_interval", 0.025), item.get("passes", 1),
-                          item.get("lightburn_settings"))
+        grid = build_grid(setup, item["powers"], item["frequencies"], item["speed"], cell_w, cell_h, gap,
+                          item["pulse_width"], item["line_interval"], item["passes"], item.get("lightburn_settings"))
         chosen = item.get("proposed")  # None = every cell is wanted; else {(power, frequency): {"reason", "target_id"}}
         for cell in grid["cells"]:
             p = cell["parameters"]
@@ -258,15 +254,15 @@ def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: flo
             ident = new_identifier()
             markers = marker_geometry(ident, item["geometry"]["width"], item["geometry"]["height"])
             plate_id = store.execute(
-                "INSERT INTO plate(experiment_id,profile_id,speed,geometry_json,cells_json,proposal_id,lens_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                (ident, profile_id, speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, lens_json, now())).lastrowid
+                "INSERT INTO plate(experiment_id,device_id,lens_id,speed,geometry_json,cells_json,proposal_id,lens_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (ident, device_id, setup["lens_id"], speed, json.dumps(item["geometry"]), json.dumps(item["cells"]), proposal_id, lens_json, now())).lastrowid
             process = item["cells"][0]["parameters"]
             plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store), "lens": lens,
                          "process_settings": {k: process[k] for k in ("pulse_width", "line_interval", "passes")},
                          "lightburn_settings": item["lightburn_settings"]}
             plan_id = store.execute(
-                "INSERT INTO plan(name,mode,status,profile_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", profile_id, plate_id, 1, ident, None,
+                "INSERT INTO plan(name,mode,status,device_id,lens_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", device_id, setup["lens_id"], plate_id, 1, ident, None,
                  json.dumps(plan_data), now())).lastrowid
             out.append({"plate_id": plate_id, "plan_id": plan_id, "experiment_id": ident, "speed": speed,
                         "geometry": item["geometry"], "cells": len(item["cells"]),
@@ -274,33 +270,32 @@ def create_plates(store: Store, profile_id: int, series: list[dict], cell_w: flo
     return out
 
 
-def create_plate_series(store: Store, profile_id: int, powers_text: str, frequencies_text: str, speeds_text: str,
-                        cell_w: float, cell_h: float, gap: float, proposal_id: int | None = None,
-                        pulse_width: float = 200.0, line_interval: float = 0.025, passes: int = 1,
-                        lightburn_settings: dict | None = None) -> list[dict]:
+def create_plate_series(store: Store, device_id: int, powers_text: str, frequencies_text: str, speeds_text: str,
+                        cell_w: float, cell_h: float, gap: float, *, pulse_width: float, line_interval: float, passes: int,
+                        proposal_id: int | None = None, lightburn_settings: dict | None = None) -> list[dict]:
     """One plate per speed over the same power x frequency grid and per-run process settings."""
     powers, freqs = parse_numbers(powers_text, "power"), parse_numbers(frequencies_text, "frequency")
     series = [{"speed": s, "powers": powers, "frequencies": freqs, "pulse_width": pulse_width,
                "line_interval": line_interval, "passes": passes, "lightburn_settings": scan_settings(lightburn_settings)}
               for s in parse_numbers(speeds_text, "speed")]
-    return create_plates(store, profile_id, series, cell_w, cell_h, gap, proposal_id)
+    return create_plates(store, device_id, series, cell_w, cell_h, gap, proposal_id)
 
 
 def with_operating_points(store: Store, plan: dict) -> dict:
     """Fill in passport-model figures for layers that were stored without them (plans made before a device was linked).
 
-    Computed at read time and never stored, so they follow the device's passport (REQ-017, DEC-036).
+    Computed at read time and never stored, so they follow the device's passport and the plan's lens (REQ-017, DEC-036).
+    A layer whose settings are incomplete gets none: an unknown setting is never filled in (REQ-016).
     """
-    device = pf.get_profile(store, plan["profile_id"]).get("device")
-    if device is None:
-        return plan
+    setup = su.resolve(store, plan["device_id"], plan["lens_id"])
     from . import devices
+    keys = ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")
     for layer in plan.get("layers", []):
         p = layer.get("parameters") or {}
-        if layer.get("operating_point") is None and all(k in p for k in ("power", "frequency", "speed")):
+        if layer.get("operating_point") is None and all(p.get(k) is not None for k in keys):
             try:
-                op = devices.operating_point(device["passport"], p["power"], p["frequency"], p["speed"], p["pulse_width"], p["line_interval"], p["passes"], device.get("lens"))
-            except pf.ValidationError:
+                op = devices.operating_point(setup["device"]["passport"], *(p[k] for k in keys), setup["lens"])
+            except su.ValidationError:       # a setting the laser does not offer: no figures
                 continue
             layer["operating_point"] = {k: op[k] for k in OPERATING_POINT_KEYS} | {"basis": op["basis"]}
     return plan
@@ -385,16 +380,16 @@ def export_lbrn2(plan: dict) -> bytes:
     is_plate = plan.get("mode") in (MODE_PLATE, MODE_CAPABILITY)
     layers = plan["layers"]
     if not layers:
-        raise pf.ValidationError("the plan has no layers to export")
+        raise su.ValidationError("the plan has no layers to export")
     has_markers = bool(plan.get("markers") and plan.get("markers_enabled", True))
     reserved = (1 + int(has_markers)) if is_plate else int(has_markers)
     file_indices = [layer["index"] + (int(has_markers) if is_plate else 0) for layer in layers]
     system_indices = ([CLEAN_LAYER_INDEX] if is_plate else []) + ([PLATE_MARKER_LAYER_INDEX if is_plate else MARKER_LAYER_INDEX] if has_markers else [])
     actual_indices = system_indices + file_indices
     if len(layers) + reserved > MAX_LAYERS or any(i < 0 or i >= MAX_LAYERS for i in actual_indices):
-        raise pf.ValidationError(f"the engraving would exceed LightBurn's {MAX_LAYERS} output layers (colors 00–29); T1/T2 are not output layers")
+        raise su.ValidationError(f"the engraving would exceed LightBurn's {MAX_LAYERS} output layers (colors 00–29); T1/T2 are not output layers")
     if len(set(actual_indices)) != len(actual_indices):
-        raise pf.ValidationError("the LightBurn layer indices overlap; every output operation needs its own color layer")
+        raise su.ValidationError("the LightBurn layer indices overlap; every output operation needs its own color layer")
     # Generated capability plates use a top-down geometric layout. LightBurn's galvo canvas
     # otherwise displays their QR and vector glyphs upside down. Keep the flag on the plan so
     # historical files retain the exact orientation with which they were originally exported.
@@ -417,10 +412,10 @@ def export_lbrn2(plan: dict) -> bytes:
     for layer in layers:
         p = layer["parameters"]
         if any(k not in p or p[k] is None for k in ("power", "frequency", "speed")):
-            raise pf.ValidationError(f"layer {layer['name']} lacks power, frequency or speed")
+            raise su.ValidationError(f"layer {layer['name']} lacks power, frequency or speed")
         pred = layer.get("prediction")
         if pred is not None and any(pred.get(k) is None for k in ("confidence", "expected_delta_e", "stability")):
-            raise pf.ValidationError(f"layer {layer['name']} has an incomplete prediction (confidence, expected error and stability are required)")
+            raise su.ValidationError(f"layer {layer['name']} has an incomplete prediction (confidence, expected error and stability are required)")
         file_index = layer["index"] + (int(has_markers) if is_plate else 0)
         settings = scan_settings(layer.get("lightburn_settings") or plan.get("lightburn_settings"))
         layer_settings = layer.get("lightburn_settings") or plan.get("lightburn_settings") or {}
@@ -444,7 +439,7 @@ def export_lbrn2(plan: dict) -> bytes:
     if markers and plan.get("markers_enabled", True):
         ml = plan.get("marker_layer")
         if not ml:
-            raise pf.ValidationError("marker layer power, frequency and speed are not set (DEC-027)")
+            raise su.ValidationError("marker layer power, frequency and speed are not set (DEC-027)")
         marker_index = PLATE_MARKER_LAYER_INDEX if is_plate else MARKER_LAYER_INDEX
         marker_settings = scan_settings({"global_passes": ml.get("global_passes", 1),
                                          "bidirectional": ml.get("bidirectional", True),
@@ -488,7 +483,7 @@ def export_lbrn2(plan: dict) -> bytes:
         notes_text = "\n".join(filter(None, [f"TCE1:{ident}" if ident else None,
             f"Test: {experiment.get('test_name') or plan.get('name')}",
             f"Laser: {device.get('name') or ''} {device.get('model') or ''} · S/N {device.get('serial') or ''}".strip(" ·"),
-            f"Lens: {lens.get('name') or ''} {lens.get('focal_length_mm') or ''} mm".strip(" ·"),
+            f"Lens: {lenses.label(lens)}" if lens.get("name") else "Lens: unknown",
             f"Titanium: {material.get('name') or ''}" + (f" · {stock}" if stock else "")]))
     else:
         notes_text = f"TCE1:{ident}" if ident else ""

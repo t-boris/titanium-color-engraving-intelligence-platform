@@ -4,9 +4,9 @@ Object.assign(App, (() => {
   const {h, btn} = App;
   const screens = new Map();
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/artwork', 'Цветная гравировка'],
-    ['/photo', 'Фотогравировка'], ['/designer', 'Планировщик экспериментов'], ['/devices', 'Лазеры'], ['/profiles', 'Профили'],
+    ['/photo', 'Фотогравировка'], ['/designer', 'Планировщик экспериментов'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'],
     ['/research', 'AI-исследователь']];
-  const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', profiles: 'profiles', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
+  const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', plans: 'plan', designer: 'designer', devices: 'devices', research: 'research'};
   const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors'};
   let token = 0;

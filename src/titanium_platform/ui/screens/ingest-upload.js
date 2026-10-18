@@ -1,4 +1,5 @@
-/* Форма результата эксперимента: фактический файл, фотография, лазер+линза и использованный титан. */
+/* Форма результата эксперимента: фактический файл, фотография, лазер, линза и использованный титан.
+   Линза импортированной работы неизвестна, пока оператор её не выбрал: установленная сейчас не подставляется (REQ-016). */
 'use strict';
 const IngestUpload = (() => {
   const {h, btn, field, link, get, formProgress, post, toast, fail, go} = App;
@@ -71,11 +72,12 @@ const IngestUpload = (() => {
   }
 
   // a parameter matrix (LightBurn Material Test): the photograph is the whole input; the settings are read from it
-  async function sendMatrix(prof, mat, context, photo, progress, show, self) {
+  async function sendMatrix(pick, mat, context, photo, progress, show, self) {
     if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
     if (!mat.value) return show('Выберите использованный титан');
     const fd = new FormData();
-    fd.append('profile_id', prof.value); fd.append('context', JSON.stringify(context())); fd.append('photo', photo.files[0]);
+    fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue());
+    fd.append('context', JSON.stringify(context())); fd.append('photo', photo.files[0]);
     self.disabled = true;
     try {
       progress.uploading(0);
@@ -91,13 +93,16 @@ const IngestUpload = (() => {
     } catch (e) { progress.stop(); progress.error(I18N.tr(e.message)); show(I18N.tr(e.message)); self.disabled = false; }
   }
 
-  async function render(ctx, profiles, materials) {
+  async function render(ctx, lists, materials) {
     const matrixMode = ctx.query.kind === 'matrix';
     const kinds = h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Что добавляем:'),
       matrixMode ? link('/ingest?kind=file', 'Работа с файлом LightBurn') : h('strong', {}, 'Работа с файлом LightBurn'), ' · ',
       matrixMode ? h('strong', {}, 'Матрица параметров (Material Test)') : link('/ingest?kind=matrix', 'Матрица параметров (Material Test)'));
-    const prof = h('select', {'aria-label': 'Лазер и линза'}, profiles.map((p) => h('option', {value: p.id}, `${p.name}${p.device ? ` · ${p.device.name}` : ''}${p.lens ? ` · ${p.lens.name}` : ''}`)));
-    if (ctx.query.profile) prof.value = ctx.query.profile;
+    // a result of a plan or plate keeps the lens the plan was made for; otherwise the lens stays unknown until chosen
+    let planned = null;
+    if (ctx.query.plan) { try { planned = await get('/plans/' + ctx.query.plan); } catch (_) { planned = null; } }
+    const pick = App.laserLensPicker(lists, {device: planned ? planned.device_id : ctx.query.device,
+      lens: planned ? App.lensParam(planned.lens_id) : ctx.query.lens, defaultLens: 'unknown'});
     const lb = h('input', {type: 'file', accept: '.lbrn,.lbrn2', 'aria-label': 'Файл LightBurn'});
     const photo = h('input', {type: 'file', accept: '.raw,.nef,.nrw,.cr2,.cr3,.arw,.dng,.raf,.rw2,.orf,.pef,.srw', 'aria-label': 'Фотография RAW'});
     const materialLabel = (m) => [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} мм` : null, m.batch].filter(Boolean).join(' · ');
@@ -112,10 +117,11 @@ const IngestUpload = (() => {
 
     const same = btn('Как у предыдущей платы', async () => {
       try {
-        const prev = await get(`/profiles/${prof.value}/previous-context`);
-        if (!Object.keys(prev).length) { toast('Для этой связки ещё нет принятых экспериментов', 'warn'); return; }
+        const prev = await get(`/devices/${pick.deviceId()}/previous-context`);
+        if (!Object.keys(prev).length) { toast('Для этого лазера ещё нет принятых экспериментов', 'warn'); return; }
         mat.value = prev.material_id ?? ''; c.focus.value = prev.focus ?? ''; c.date.value = prev.engraved_at ?? ''; c.note.value = prev.note ?? '';
-        toast('Подставлены лазер и титан предыдущего эксперимента', 'ok');
+        pick.setLens(prev.lens_id);
+        toast('Подставлены линза и титан предыдущего эксперимента этого лазера', 'ok');
       } catch (e) { fail(e); }
     });
     const send = btn('Загрузить пару', async (ev) => {
@@ -125,7 +131,7 @@ const IngestUpload = (() => {
       if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
       const fd = new FormData();
       if (!mat.value) return show('Выберите использованный титан');
-      fd.append('profile_id', prof.value); fd.append('context', JSON.stringify(context()));
+      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('context', JSON.stringify(context()));
       if (ctx.query.plan) fd.append('plan_id', ctx.query.plan);
       fd.append('lightburn', lb.files[0]); fd.append('photo', photo.files[0]);
       const self = ev.currentTarget;
@@ -139,13 +145,16 @@ const IngestUpload = (() => {
       finally { self.disabled = false; }
     }, 'primary');
 
-    const conditions = h('div', {class: 'card stack'}, h('h3', {}, 'Условия'),
-      h('div', {class: 'grid g2'}, field('Лазер + установленная линза (обязательно)', prof), field('Использованный титан / лист / партия (обязательно)', mat)),
-      h('p', {class: 'small'}, 'Не нашли оборудование или титан? ', link('/profiles', 'Настроить установки и добавить титан')),
+    const hardware = () => [h('div', {class: 'grid g3'}, field('Лазер (обязательно)', pick.laser), field('Линза, которой гравировали', pick.lens),
+        field('Использованный титан / лист / партия (обязательно)', mat)),
+      h('p', {class: 'muted small'}, planned ? 'Линза взята из платы или плана, для которых сделана эта работа.'
+        : 'Линза импортированной работы остаётся неизвестной, пока вы её не выберете: установленная сейчас линза не подставляется. Данные с неизвестной линзой не смешиваются с данными известной.'),
+      h('p', {class: 'small'}, 'Не нашли лазер или титан? ', link('/devices', 'Лазеры и линзы'), ' · ', link('/setup?tab=material', 'Добавить титан'))];
+    const conditions = h('div', {class: 'card stack'}, h('h3', {}, 'Условия'), hardware(),
       h('details', {}, h('summary', {}, 'Дополнительные условия'),
         h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same));
     if (matrixMode) {
-      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(prof, mat, context, photo, progress, show, self); }, 'primary');
+      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(pick, mat, context, photo, progress, show, self); }, 'primary');
       return h('div', {class: 'stack'}, kinds,
         h('div', {class: 'card empty'}, h('h3', {}, 'Фотография матрицы параметров'),
           h('p', {}, 'Сетка квадратов, где каждый квадрат выгравирован своими настройками, а значения выгравированы рядом: по одной оси одна настройка, по другой другая, '
@@ -161,10 +170,8 @@ const IngestUpload = (() => {
       h('div', {class: 'grid g2'},
         h('div', {class: 'card stack'}, h('h3', {}, 'Файл LightBurn'), field('.lbrn или .lbrn2 · параметры читаются из фактически запущенного файла', App.filePick(lb, 'Выбрать файл LightBurn'))),
         h('div', {class: 'card stack'}, h('h3', {}, 'Фотография результата'), field('Фотография RAW; в кадре должна быть эталонная цветовая карта', App.filePick(photo, 'Выбрать фотографию')))),
-      h('div', {class: 'card stack'}, h('h3', {}, 'Условия'),
-        h('div', {class: 'grid g2'}, field('Лазер + установленная линза (обязательно)', prof), field('Использованный титан / лист / партия (обязательно)', mat)),
-          h('p', {class: 'small'}, 'Не нашли оборудование или титан? ', link('/profiles', 'Настроить установки и добавить титан')),
-        h('p', {class: 'muted small'}, 'Эти две записи будут сохранены у каждого эксперимента. Фокус, дата и примечание необязательны.'),
+      h('div', {class: 'card stack'}, h('h3', {}, 'Условия'), hardware(),
+        h('p', {class: 'muted small'}, 'Лазер, линза и титан сохраняются у каждого эксперимента. Фокус, дата и примечание необязательны.'),
         h('details', {}, h('summary', {}, 'Дополнительные условия'),
           h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same)),
       err, progress.el, h('div', {class: 'row'}, send));

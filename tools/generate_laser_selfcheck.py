@@ -3,7 +3,7 @@
 Run with the project's installed environment:
     PYTHONPATH=src ~/.titanium-platform-app/bin/python tools/generate_laser_selfcheck.py
 
-The files use the JPT MOPA M7 60 W profile and marker-layer settings saved in the local
+The files use the job settings of the JPT MOPA M7 60 W laser and the marker-layer settings saved in the local
 Titanium Platform database on 2026-10-14. This script does not change that database.
 """
 from __future__ import annotations
@@ -19,8 +19,8 @@ OUT = Path(__file__).resolve().parents[1] / "artifacts" / "laser-selfcheck"
 MARKER = (25.0, 60.0, 150.0)  # user-provided black-on-titanium recipe: power %, frequency kHz, speed mm/s
 MARKER_PULSE = 200.0
 MARKER_INTERVAL = 0.01
-PULSE = 200.0                   # profile pulse width, ns
-INTERVAL = 0.025                # profile line interval, mm
+PULSE = 200.0                   # job pulse width of the self-check, ns
+INTERVAL = 0.025                # job line interval of the self-check, mm
 CLEAN = (20.0, 48.0, 2000.0)    # cleanup: power %, frequency kHz, speed mm/s
 CLEAN_INTERVAL = 0.05            # user-specified cleaning hatch spacing, mm
 CLEAN_NAME = "CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05"

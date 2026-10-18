@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import synth
-from titanium_platform import color, ingest as ig, lightburn as lb, picturing, profiles as pf
+from titanium_platform import color, devices, ingest as ig, lightburn as lb, picturing, setup as su
 from titanium_platform.db import Store
 
 
@@ -110,9 +110,9 @@ def test_a_radially_symmetric_picture_cannot_be_oriented_and_is_refused():
 def checked(tmp_path_factory, work):
     store = Store(tmp_path_factory.mktemp("picture"))
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="portrait.lbrn2", lightburn_bytes=work["lightburn"],
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="portrait.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="portrait.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})
     yield store, pid, ig.check_pair(store, pid)

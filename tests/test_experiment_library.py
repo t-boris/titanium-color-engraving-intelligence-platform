@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from titanium_platform import devices, experiment_library, knowledge, lenses, model, profiles as pf
+from titanium_platform import devices, experiment_library, knowledge, lenses, model, setup as su
 from titanium_platform.api.app import create_app
 from titanium_platform.db import now
 import obs
@@ -25,42 +25,40 @@ def test_lookup_uses_all_six_settings_and_does_not_mix_lightburn_modes(store):
     assert model.parameters_key(wobble_a) != model.parameters_key(wobble_c)
 
 
-def test_learning_merges_legacy_profile_ids_only_for_same_laser_and_lens(store):
+def test_learning_is_kept_apart_by_lens_and_by_titanium_stock(store):
     device = devices.create_from_template(store, TEMPLATE, serial="LASER-A")
     lens = lenses.create_lens(store, "F174", 174)
     other_lens = lenses.create_lens(store, "F254", 254)
-    same_a = pf.create_profile(store, "old entry", device_id=device["id"], lens_id=lens["id"])
-    same_b = pf.create_profile(store, "another old entry", device_id=device["id"], lens_id=lens["id"])
-    different_lens = pf.create_profile(store, "new lens", device_id=device["id"], lens_id=other_lens["id"])
-    world_a = {"profile": same_a, "stand": pf.save_capture_setup(store, "Photo", "cam", "LED", "90", "ColorChecker"), "n": 0}
-    world_b = {"profile": same_b, "stand": world_a["stand"], "n": 1}
-    world_other = {"profile": different_lens, "stand": world_a["stand"], "n": 0}
-    titanium_a = pf.save_material(store, "Grade 2 batch A", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="A")
-    titanium_b = pf.save_material(store, "Grade 5 batch B", grade="Grade 5", thickness_mm=1.0, surface="mill", batch="B")
-    obs.add(store, world_a, (50, 0, 0), material_id=titanium_a["id"])
-    obs.add(store, world_b, (52, 0, 0), material_id=titanium_a["id"])
-    world_a["n"] = 2
-    obs.add(store, world_a, (75, 0, 0), material_id=titanium_b["id"])
+    stand = su.save_capture_setup(store, "Photo", "cam", "LED", "90", "ColorChecker")
+    world = {"device": device, "setup": (device["id"], lens["id"]), "stand": stand, "n": 0}
+    world_other = {"device": device, "setup": (device["id"], other_lens["id"]), "stand": stand, "n": 0}
+    titanium_a = su.save_material(store, "Grade 2 batch A", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="A")
+    titanium_b = su.save_material(store, "Grade 5 batch B", grade="Grade 5", thickness_mm=1.0, surface="mill", batch="B")
+    obs.add(store, world, (50, 0, 0), material_id=titanium_a["id"])
+    obs.add(store, world, (52, 0, 0), material_id=titanium_a["id"])
+    obs.add(store, world, (75, 0, 0), material_id=titanium_b["id"])
     obs.add(store, world_other, (80, 0, 0), material_id=titanium_b["id"])
 
-    samples = model.knowledge_summaries(store, same_a["id"])
-    key_a = model.observation_key(obs_parameters(same_a), {"material_id": titanium_a["id"]})
-    key_b = model.observation_key(obs_parameters(same_a), {"material_id": titanium_b["id"]})
+    samples = model.knowledge_summaries(store, device["id"], lens["id"])
+    key_a = model.observation_key(obs_parameters(device), {"material_id": titanium_a["id"]})
+    key_b = model.observation_key(obs_parameters(device), {"material_id": titanium_b["id"]})
     assert samples[key_a]["independent_engravings"] == 2 and samples[key_a]["available"]
     assert samples[key_b]["independent_engravings"] == 1 and not samples[key_b]["available"]
-    assert model.knowledge_summaries(store, different_lens["id"])[key_b]["independent_engravings"] == 1
-    knowledge.refresh(store, same_a["id"])
-    assert {item["parameters_key"] for item in knowledge.list_for_profile(store, same_b["id"])} == {key_a, key_b}
-    lookup = experiment_library.lookup_result(store, device["id"], lens["id"], obs_parameters(same_a))
+    assert model.knowledge_summaries(store, device["id"], other_lens["id"])[key_b]["lab"] == [80, 0, 0]
+    knowledge.refresh(store, device["id"], lens["id"])
+    assert {item["parameters_key"] for item in knowledge.list_for_setup(store, device["id"], lens["id"])} == {key_a, key_b}
+    assert knowledge.list_for_setup(store, device["id"], other_lens["id"]) == []
+    lookup = experiment_library.lookup_result(store, device["id"], lens["id"], obs_parameters(device))
     assert len(lookup["matches"]) == 2
     by_grade = {match["material_contexts"][0]["titanium_grade"]: match for match in lookup["matches"]}
     assert by_grade["Grade 2"]["available_for_prediction"]
     assert len(by_grade["Grade 2"]["source_pair_ids"]) == 2
     assert not by_grade["Grade 5"]["available_for_prediction"]
+    assert experiment_library.lookup_result(store, device["id"], None, obs_parameters(device))["matches"] == []
 
 
-def obs_parameters(profile):
-    return pf.parameter_vector(profile, 10, 40, 900)
+def obs_parameters(device):
+    return su.parameter_vector(device["passport"], 10, 40, 900, 200, 0.025, 1)
 
 
 def test_device_archive_keeps_pending_photo_lightburn_material_and_hardware_snapshot(tmp_path):
@@ -69,11 +67,19 @@ def test_device_archive_keeps_pending_photo_lightburn_material_and_hardware_snap
     device = devices.create_from_template(store, TEMPLATE, serial="ARCHIVE-1")
     lens = lenses.create_lens(store, "F174", 174)
     lenses.install(store, device["id"], lens["id"])
-    profile = pf.create_profile(store, "MOPA", device_id=device["id"], lens_id=lens["id"])
-    titanium = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="B-17")
+    titanium = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="B-17")
     store.set_setting("allow_non_raw_photos", True)
     with TestClient(app) as client:
-        pair = client.post("/api/pairs", data={"profile_id": profile["id"], "context": json.dumps({"material_id": titanium["id"]})},
+        unknown = client.post("/api/pairs", data={"device_id": device["id"], "lens_id": "unknown", "context": json.dumps({"material_id": titanium["id"]})},
+                              files={"lightburn": ("old.lbrn2", b"<LightBurnProject/>", "application/xml"),
+                                     "photo": ("old.png", b"old photo bytes", "image/png")}).json()
+        assert unknown["lens_id"] is None and unknown["hardware"]["lens"] is None      # the installed lens is not assumed (REQ-016)
+        missing = client.post("/api/pairs", data={"device_id": device["id"], "context": json.dumps({"material_id": titanium["id"]})},
+                              files={"lightburn": ("old.lbrn2", b"<LightBurnProject/>", "application/xml"),
+                                     "photo": ("old.png", b"old photo bytes", "image/png")})
+        assert missing.status_code == 422                                              # the lens is an explicit choice
+        client.delete(f"/api/pairs/{unknown['id']}")
+        pair = client.post("/api/pairs", data={"device_id": device["id"], "lens_id": str(lens["id"]), "context": json.dumps({"material_id": titanium["id"]})},
                            files={"lightburn": ("source.lbrn2", b"<LightBurnProject/>", "application/xml"),
                                   "photo": ("result.png", b"original photo bytes", "image/png")}).json()
         archive = client.get(f"/api/devices/{device['id']}/experiments").json()
@@ -85,10 +91,21 @@ def test_device_archive_keeps_pending_photo_lightburn_material_and_hardware_snap
         assert run["material"]["grade"] == "Grade 2" and run["material"]["batch"] == "B-17"
         assert client.get(run["source_photo_url"]).content == b"original photo bytes"
         assert client.get(run["lightburn_url"]).content == b"<LightBurnProject/>"
-        stand = pf.save_capture_setup(store, "Photo", "cam", "LED", "90", "ColorChecker")
-        obs.add(store, {"profile": profile, "stand": stand, "n": 0}, (48, 1, 2), material_id=titanium["id"])
+        stand = su.save_capture_setup(store, "Photo", "cam", "LED", "90", "ColorChecker")
+        obs.add(store, {"device": device, "setup": (device["id"], lens["id"]), "stand": stand, "n": 0}, (48, 1, 2), material_id=titanium["id"])
         result = client.post(f"/api/devices/{device['id']}/result-lookup", json={
             "lens_id": lens["id"], "power": 10, "frequency": 40, "speed": 900,
             "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
         assert len(result["matches"]) == 1 and result["matches"][0]["lab"] == [48.0, 1.0, 2.0]
     store.close()
+
+
+def test_the_archive_names_the_lens_of_the_work_record_not_an_older_snapshot(store):
+    """DEC-063: one source of truth for the lens of a work; a disagreeing stored snapshot does not override it."""
+    device = devices.create_from_template(store, TEMPLATE)
+    used, other = lenses.create_lens(store, "F174", 174), lenses.create_lens(store, "F254", 254)
+    stand = su.save_capture_setup(store, "Photo", "cam", "LED", "90", "ColorChecker")
+    obs.add(store, {"device": device, "setup": (device["id"], used["id"]), "stand": stand, "n": 0}, (48, 1, 2))
+    store.execute("UPDATE pair SET hardware_json=?", (json.dumps({"device": {"id": device["id"]}, "lens": {"id": other["id"], "name": "F254"}}),))
+    (item,) = experiment_library.for_device(store, device["id"])
+    assert item["lens_id"] == used["id"] and item["lens"]["name"] == "F174"

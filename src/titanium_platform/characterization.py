@@ -77,7 +77,7 @@ def spot_estimate(passport: dict, lens: dict | None, rows: dict) -> dict:
     focal = _number((lens or {}).get("focal_length_mm"))
     beam = _number((rows.get("Output beam diameter") or {}).get("result")) or _number(passport.get("beam_diameter_mm"))
     wavelength = (_number((rows.get("Central emission wavelength") or {}).get("result")) or _number(passport.get("wavelength_nm")) or 0) / 1000.0
-    missing = [k for k, ok in (("lens", focal), ("beam_diameter", beam), ("wavelength", wavelength)) if not ok]
+    missing = [k for k, ok in (("lens" if lens is None else "focal_length", focal), ("beam_diameter", beam), ("wavelength", wavelength)) if not ok]
     if missing:
         return {"value": None, "low": None, "high": None, "basis": None, "state": UNKNOWN, "missing": missing}
     per_m2 = 4 * wavelength * focal / (math.pi * beam * (_number(lens.get("expansion")) or 1.0))     # um for M2 = 1

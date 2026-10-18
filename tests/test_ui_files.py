@@ -32,11 +32,11 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/ingest-review.js", "/screens/ingest.js"), ("/screens/knowledge.js", "/screens/colors.js"), ("/screens/artwork-start.js", "/screens/artwork.js"),
                       ("/screens/photo-form.js", "/screens/photo.js"), ("/screens/device-charts.js", "/screens/device-plots.js"), ("/screens/device-plots.js", "/screens/device.js"),
                       ("/screens/device-forms.js", "/screens/device-view.js"), ("/screens/device-view.js", "/screens/device.js"), ("/screens/device-calc.js", "/screens/device.js"),
-                      ("/screens/device-forms.js", "/screens/setup.js"), ("/screens/glossary-profile.js", "/screens/profile-help.js"), ("/screens/profile-help.js", "/screens/setup.js"),
+                      ("/app.js", "/hardware.js"), ("/hardware.js", "/screens/setup-rules.js"), ("/hardware.js", "/screens/ingest-upload.js"), ("/hardware.js", "/screens/device-view.js"),
                       ("/screens/glossary-report.js", "/screens/device-report.js"), ("/screens/device-report.js", "/screens/device.js"), ("/screens/device-controller.js", "/screens/device.js"),
                       ("/screens/glossary-controller.js", "/screens/controller-rows.js"), ("/screens/controller-rows.js", "/screens/device-controller.js"),
                       ("/screens/glossary-controller.js", "/screens/device-questions.js"), ("/screens/device-questions.js", "/screens/device-view.js"),
-                      ("/screens/device-profile-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
+                      ("/screens/device-character-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
                       ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js")]:
         assert order[dep] < order[user], (dep, user)
 

@@ -4,11 +4,11 @@
 (() => {
   const FIELD = {power: 'Мощность', frequency: 'Частота', speed: 'Скорость', 'pulse width': 'Длительность импульса', 'line interval': 'Интервал линий',
     'cell width': 'Ширина ячейки', 'cell height': 'Высота ячейки', gap: 'Зазор', 'delta E tolerance': 'Допуск ΔE', 'variance threshold': 'Порог дисперсии',
-    'repeat threshold': 'Порог повторов', focus: 'Фокус', 'profile name': 'Название профиля', name: 'Название', camera: 'Камера', lighting: 'Освещение',
+    'repeat threshold': 'Порог повторов', focus: 'Фокус', name: 'Название', camera: 'Камера', lighting: 'Освещение',
     angle: 'Угол съёмки', 'reference chart': 'Эталонная карта', 'material name': 'Название материала'};
   const f = (s) => FIELD[String(s).replace(/ min$| max$/, '')] || s;
   I18N.add([
-    // профили, оси, стенд, материал
+    // числа, стенд, материал
     [/^(.+) must be a finite positive number$/i, (m) => f(m[1]) + ' — конечное положительное число'],
     [/^(.+) must be a finite number$/i, (m) => f(m[1]) + ' — конечное число'],
     [/^(.+) must be a number$/i, (m) => f(m[1]) + ' — число'],
@@ -18,11 +18,6 @@
     [/^passes must be a positive integer/i, 'Проходы — положительное целое число'],
     [/^repeat threshold must be a positive integer/i, 'Порог повторов — положительное целое число'],
     [/^material name is required/i, 'Укажите название материала'],
-    [/^a laser profile needs the power, frequency and speed axes/i, 'Профиль лазера требует осей: мощность, частота, скорость'],
-    [/^axis keys must be unique/i, 'Ключи осей не должны повторяться'],
-    [/^axis '(.+)' is required/i, (m) => 'Нужна ось: ' + f(m[1])],
-    [/^axis '(.+)': min must be below max/i, (m) => 'Ось «' + f(m[1]) + '»: минимум должен быть меньше максимума'],
-    [/^axis '(.+)' needs a unit/i, (m) => 'Для оси «' + f(m[1]) + '» нужна единица измерения'],
     // серия плат и план
     [/^(.+): enter at least one value$/i, (m) => f(m[1]) + ': введите хотя бы одно значение'],
     [/^(.+): values must not repeat$/i, (m) => f(m[1]) + ': значения не должны повторяться'],
@@ -32,7 +27,7 @@
     [/^(\d+) layers exceed the (\d+) LightBurn layers available/i, (m) => 'Слоёв больше, чем доступно в LightBurn (' + m[2] + ')'],
     [/^layer (.+) lacks power, frequency or speed/i, (m) => 'У слоя ' + m[1] + ' нет мощности, частоты или скорости'],
     [/^layer (.+) has an incomplete prediction/i, (m) => 'У слоя ' + m[1] + ' неполный прогноз: нужны уверенность, ожидаемая ошибка и стабильность'],
-    [/^marker layer power, frequency and speed are not set/i, 'Не заданы мощность, частота и скорость слоя маркеров (вкладка «Профили»)'],
+    [/^marker layer power, frequency and speed are not set/i, 'Не заданы мощность, частота и скорость слоя маркеров (Настройки → «Метки для фото»)'],
     [/^calibration plates always carry markers/i, 'Калибровочные платы всегда несут маркеры'],
     [/^LightBurn layer indexes (\d+)–(\d+) are outside the standard output color range 00–29\. Their photo regions are still measured; the file alone cannot confirm whether those operations were emitted\.$/i,
       (m) => `Индексы слоёв LightBurn ${m[1]}–${m[2]} выходят за пределы стандартной палитры 00–29. Их участки на фотографии всё равно измерены; по одному файлу нельзя подтвердить, были ли эти операции выведены на лазер.`],
@@ -47,18 +42,17 @@
     [/^the trajectory colors are identical/i, 'Цвета траектории совпадают'],
     [/^the seed must be a whole number/i, 'Зерно — целое число'],
     [/^no candidate parameter sets are available/i, 'В доступном диапазоне параметров нет подходящих кандидатов'],
+    [/^the proposal was made for another lens than the one installed on the laser now/i,
+      'Предложение сделано для другой линзы, чем установлена на лазере сейчас: поставьте ту линзу или сделайте предложение для установленной'],
     [/^the explanation must be non-empty text/i, 'Пояснение должно быть непустым текстом'],
     [/^target color is not a valid Lab value/i, 'Целевой цвет задан неверно: L от 0 до 100, a и b от −128 до 127'],
     [/^these Lab readings are camera-relative RAW measurements; they are preserved for experiment analysis but excluded from standard-color predictions$/i,
       'Эти значения Lab получены относительно камеры из RAW. Они сохранены для анализа эксперимента, но исключены из стандартных цветовых прогнозов.'],
-    [/^each of the six process settings needs at least one candidate value$/i, 'Для каждого из шести параметров обработки укажите хотя бы одно значение'],
-    [/^pass counts must be positive whole numbers$/i, 'Число проходов должно быть положительным целым числом'],
     [/^the selected capture setup was not found$/i, 'Выбранная установка съёмки не найдена'],
     [/^select the titanium stock used for this engraving$/i, 'Выберите заготовку титана, использованную для этой гравировки'],
     [/^the selected titanium stock was not found; choose it again$/i, 'Выбранная заготовка титана не найдена; выберите её ещё раз'],
     [/^the photograph has no usable color measurement basis$/i, 'Для измерения цвета на фотографии нет подходящего основания'],
     [/^select a titanium stock from the list$/i, 'Выберите заготовку титана из списка'],
-    [/^not comparable to this hardware\/search setup: a RAW photograph is required for measurement$/i, 'Несопоставимо с этими настройками оборудования и поиска: для измерения требуется фотография RAW'],
     [/^only (\d+) registration markers detected; at least three are needed$/i, (m) => `Распознано регистрационных меток: ${m[1]}; необходимо не менее трёх`],
     [/^Manual alignment was used for this plate; its QR identifier could not be verified\. Check the layer overlay before accepting measurements\.$/i,
       'Плата совмещена вручную; QR-идентификатор не удалось проверить. Перед принятием измерений проверьте наложение контуров слоёв.'],
@@ -73,7 +67,6 @@
     [/^the engraving would exceed LightBurn's (\d+) output layers \(colors 00–29\); T1\/T2 are not output layers$/i, (m) => `Гравировка превышает лимит выходных слоёв LightBurn (${m[1]}, цвета 00–29); T1/T2 не являются выходными слоями`],
     [/^the LightBurn layer indices overlap; every output operation needs its own color layer$/i, 'Индексы слоёв LightBurn пересекаются; для каждой выходной операции нужен отдельный цветовой слой'],
     [/^(\d+) must be true or false$/i, (m) => `${m[1]} должно иметь значение true или false`],
-    [/^this laser\/lens identity has experimental history; create a new profile for the other hardware pair$/i, 'У этой связки лазера и линзы уже есть история экспериментов; для другой связки оборудования создайте отдельную запись'],
-    [/^the selected lens is installed on a different laser$/i, 'Выбранная линза установлена на другом лазере'],
+    [/^choose the lens or mark it unknown$/i, 'Выберите линзу или отметьте, что она неизвестна'],
   ]);
 })();

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from . import capability_results, devices, profiles as pf
+from . import capability_results, devices, setup as su
 from .db import Store
 
 
@@ -33,11 +33,16 @@ def _bounded_center(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
 
+STARTING_PULSE_NS = 200.0       # an editable starting value, only when the laser offers it (DEC-043)
+
+
 def _settings(device: dict, params: dict | None = None) -> dict:
+    """Settings of a suggested plate: measured ones when a finding gives them, else starting values. The pulse width
+    starts at 200 ns only on a laser that offers that step; otherwise it is None and the operator chooses it."""
     passport = device["passport"]
     steps = [float(s["pulse_width_ns"]) for s in passport["pulse_steps"]]
     rate = passport["repetition_rate_khz"]
-    values = {"power": 20.0, "speed": 900.0, "frequency": 48.0, "pulse_width": 200.0,
+    values = {"power": 20.0, "speed": 900.0, "frequency": 48.0, "pulse_width": STARTING_PULSE_NS if STARTING_PULSE_NS in steps else None,
               "line_interval": 0.025, "passes": 1, "global_passes": 1}
     for key in ("power", "speed", "frequency", "pulse_width", "line_interval", "passes"):
         if params and params.get(key) is not None:
@@ -45,14 +50,15 @@ def _settings(device: dict, params: dict | None = None) -> dict:
     values["power"] = _bounded_center(float(values["power"]), 1.0, 100.0)
     values["speed"] = _bounded_center(float(values["speed"]), 1.0, 10000.0)
     values["frequency"] = _bounded_center(float(values["frequency"]), float(rate["min"]), float(rate["max"]))
-    values["pulse_width"] = min(steps, key=lambda item: abs(item - float(values["pulse_width"])))
+    if values["pulse_width"] is not None:
+        values["pulse_width"] = min(steps, key=lambda item: abs(item - float(values["pulse_width"])))
     return values
 
 
 def _accepted_runs(store: Store, device_id: int, material_id: int, lens_id: int, test_type: str) -> int:
     return store.one(
-        "SELECT COUNT(DISTINCT p.engraving_id) AS n FROM pair p JOIN laser_profile pr ON pr.id=p.profile_id "
-        "JOIN plate t ON t.id=p.plate_id WHERE p.status='Accepted' AND pr.device_id=? AND pr.lens_id=? "
+        "SELECT COUNT(DISTINCT p.engraving_id) AS n FROM pair p "
+        "JOIN plate t ON t.id=p.plate_id WHERE p.status='Accepted' AND p.device_id=? AND p.lens_id=? "
         "AND p.material_id=? AND t.test_type=?",
         (device_id, lens_id, material_id, test_type))["n"]
 
@@ -60,11 +66,10 @@ def _accepted_runs(store: Store, device_id: int, material_id: int, lens_id: int,
 def _pending_plan(store: Store, device_id: int, material_id: int, lens_id: int, goal: str) -> int | None:
     rows = store.query(
         "SELECT p.id,p.data_json FROM plan p JOIN plate t ON t.id=p.plate_id "
-        "JOIN laser_profile pr ON pr.id=p.profile_id "
         "LEFT JOIN research_session s ON s.id=p.research_session_id "
         "WHERE p.status IN ('Ready to export','Exported') "
         "AND (s.id IS NULL OR s.status!='Deleted') AND t.material_id=? "
-        "AND pr.device_id=? AND pr.lens_id=? ORDER BY p.id DESC",
+        "AND p.device_id=? AND p.lens_id=? ORDER BY p.id DESC",
         (material_id, device_id, lens_id))
     for row in rows:
         experiment = json.loads(row["data_json"]).get("experiment") or {}
@@ -78,13 +83,13 @@ def _pending_plan(store: Store, device_id: int, material_id: int, lens_id: int, 
 
 def suggest(store: Store, device_id: int, material_id: int, goal: str) -> dict:
     if goal not in GOALS:
-        raise pf.ValidationError("неизвестная задача гравировки")
+        raise su.ValidationError("неизвестная задача гравировки")
     device = devices.get_device(store, device_id)
     if not device.get("lens"):
-        raise pf.ValidationError("сначала установите линзу на выбранный лазер")
+        raise su.ValidationError("сначала установите линзу на выбранный лазер")
     material = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))
     if material is None:
-        raise pf.ValidationError("выберите материал и конкретную заготовку")
+        raise su.ValidationError("выберите материал и конкретную заготовку")
     lens_id = device["lens"]["id"]
     findings = [finding for finding in capability_results.findings_for_device(store, device_id)
                 if finding["material_id"] == material_id and finding["lens_id"] == lens_id]

@@ -19,7 +19,7 @@ const DevicePlots = (() => {
     return plot({title: 'Наибольшая энергия импульса по длительности импульса', xLabel: 'Длительность импульса, нс', yLabel: 'Энергия импульса, мДж', series, xLog: true, yLog: true});
   }
 
-  /** Мощность или энергия импульса по частоте для выбранной длительности; остальные длительности — бледно. mark — точка профиля. */
+  /** Мощность или энергия импульса по частоте для выбранной длительности; остальные длительности — бледно. mark — рассчитанная рабочая точка. */
   function byFrequency(charts, width, quantity, mark) {
     const key = quantity === 'power' ? 'power_w' : 'pulse_energy_mj';
     const series = charts.curves.map((c, i) => ({name: c.pulse_width_ns + ' нс', points: c.points.map((p) => [p.frequency_khz, p[key]]), faint: c.pulse_width_ns !== width,

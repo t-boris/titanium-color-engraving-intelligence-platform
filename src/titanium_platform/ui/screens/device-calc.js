@@ -1,5 +1,6 @@
-/* Расчёт рабочей точки по паспорту лазера для профиля, привязанного к нему (REQ-017, DEC-036).
-   Результат — паспортная модель, не измерение; точка отмечается и на графике (onResult). */
+/* Расчёт рабочей точки по паспорту лазера и установленной на нём линзе для заданных настроек работы (REQ-017, REQ-018, DEC-036).
+   Результат — паспортная модель, не измерение; точка отмечается и на графике (onResult). Значения по умолчанию не подставляются
+   сервером: 200 нс предлагается здесь, только если лазер даёт такую ступень (DEC-043). */
 'use strict';
 const DeviceCalc = (() => {
   const {h, btn, field, pill, post, fail, facts, num} = App;
@@ -16,16 +17,16 @@ const DeviceCalc = (() => {
   }
 
   function calculator(d, onResult) {
-    if (!d.profiles.length) {
-      return h('div', {class: 'card'}, h('h3', {}, 'Рабочая точка'), h('p', {class: 'muted'}, 'Привяжите профиль к лазеру, чтобы рассчитать мощность и энергию импульса.'));
-    }
-    const prof = h('select', {'aria-label': 'Лазер + линза'}, d.profiles.map((p) => h('option', {value: p.id}, `${p.name}${p.device ? ` · ${p.device.name}` : ''}${p.lens ? ` · ${p.lens.name}` : ''}`)));
+    const steps = d.passport.pulse_steps.map((s) => +s.pulse_width_ns);
+    const pulse = h('select', {'aria-label': 'Длительность импульса'}, h('option', {value: '', selected: !steps.includes(200)}, 'выберите'),
+      steps.map((w) => h('option', {value: w, selected: w === 200}, w + ' нс')));
     const f = {power: h('input', {type: 'number', step: 'any', value: 30}), frequency: h('input', {type: 'number', step: 'any', value: 80}), speed: h('input', {type: 'number', step: 'any', value: 900}),
-      pulse: h('input', {type: 'number', step: 'any', value: 200}), interval: h('input', {type: 'number', step: 'any', value: 0.025}), passes: h('input', {type: 'number', min: '1', step: '1', value: 1})};
+      pulse, interval: h('input', {type: 'number', step: 'any', value: 0.025}), passes: h('input', {type: 'number', min: '1', step: '1', value: 1})};
     const out = h('div', {class: 'stack'});
     const run = async () => {
+      if (f.pulse.value === '') return fail(new Error('Выберите длительность импульса'));
       try {
-        const o = await post('/operating-point', {profile_id: +prof.value, power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value,
+        const o = await post('/operating-point', {device_id: d.id, lens_id: d.lens ? d.lens.id : null, power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value,
           pulse_width: +f.pulse.value, line_interval: +f.interval.value, passes: +f.passes.value});
         out.replaceChildren(...result(o));
         onResult(o);
@@ -33,7 +34,9 @@ const DeviceCalc = (() => {
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Рабочая точка'),
       h('p', {class: 'muted small'}, 'Расчёт по паспортной модели: мощность растёт с частотой до частоты среза и дальше не растёт.'),
-      h('div', {class: 'grid g3'}, field('Лазер + линза', prof), field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed),
+      h('p', {class: 'muted small'}, d.lens ? `Линза: ${App.lensLabel(d.lens)} (установлена на этом лазере).`
+        : 'Линза не установлена: диаметр пятна, плотность энергии и перекрытие импульсов не рассчитываются.'),
+      h('div', {class: 'grid g3'}, field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed),
         field('Импульс, нс', f.pulse), field('Интервал линий, мм', f.interval), field('Проходы слоя', f.passes)),
       h('div', {class: 'row'}, btn('Рассчитать', run, 'primary')), out);
   }

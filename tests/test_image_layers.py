@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import synth
-from titanium_platform import color, ingest as ig, lightburn as lb, profiles as pf
+from titanium_platform import color, devices, ingest as ig, lightburn as lb, setup as su
 from titanium_platform.db import Store
 
 # Layout of LightBurn 1.7 files: <CutSetting_Img type="Image"> with dither settings, <Bitmap> with the picture in Data.
@@ -155,9 +155,9 @@ def test_a_checked_pair_with_an_image_layer_reports_its_tones(tmp_path):
     corners = [(400, 250), (800, 250), (800, 550), (400, 550)]
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="photo.lbrn2", lightburn_bytes=project(png), photo_name="p.png",
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="photo.lbrn2", lightburn_bytes=project(png), photo_name="p.png",
                          photo_bytes=cv2.imencode(".png", scene)[1].tobytes(), context={"material_id": material["id"]})
     report = ig.check_pair(store, pid, corners_fraction=[(x / 1400, y / 900) for x, y in corners])
     layer = {rep["index"]: rep for rep in report["layers"]}[0]

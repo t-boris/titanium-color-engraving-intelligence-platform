@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from titanium_platform import devices as dv
-from titanium_platform import profiles as pf
+from titanium_platform import setup as su
 from titanium_platform.db import Store
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,13 +64,13 @@ def test_handwritten_controller_values_are_flagged_and_never_certain(unit):
     {"tabs": [{"key": "a", "fields": [{"key": "k", "value": [1], "status": "printed"}]}]},
     {"tabs": [{"key": "a", "fields": [{"key": "k", "value": float("nan"), "status": "printed"}]}]}, [1]])
 def test_a_malformed_controller_section_is_refused(store, unit, bad):
-    with pytest.raises(pf.ValidationError, match="controller"):
+    with pytest.raises(su.ValidationError, match="controller"):
         dv.create_device(store, "X", passport_of(unit) | {"controller": bad})
 
 
 @pytest.mark.parametrize("bad", [[1], {"rows": "x"}, {"rows": [{"key": ""}]}, {"rows": [{"key": "a", "min": [1]}]}])
 def test_a_malformed_test_report_is_refused(store, unit, bad):
-    with pytest.raises(pf.ValidationError, match="test report"):
+    with pytest.raises(su.ValidationError, match="test report"):
         dv.create_device(store, "X", passport_of(unit) | {"test_report": bad})
 
 
@@ -78,7 +78,7 @@ def test_a_malformed_test_report_is_refused(store, unit, bad):
     [{"t_ns": [0, 1], "p_kw": [1]}], [{"t_ns": [0], "p_kw": [1]}], [{"t_ns": [1, 0], "p_kw": [1, 2]}], [{"t_ns": [0, 0], "p_kw": [1, 2]}],
     [{"t_ns": [0, 1], "p_kw": [1, float("inf")]}], [{"t_ns": [0, 1], "p_kw": [1, "x"]}], ["x"], [{"t_ns": list(range(3001)), "p_kw": list(range(3001))}]])
 def test_a_malformed_waveform_is_refused(store, unit, bad):
-    with pytest.raises(pf.ValidationError):
+    with pytest.raises(su.ValidationError):
         dv.create_device(store, "X", passport_of(unit) | {"waveforms": bad})
 
 
@@ -169,10 +169,6 @@ def test_a_missing_photograph_stops_the_import_before_anything_is_written(tmp_pa
     assert not (data / "titanium.sqlite").exists()
 
 
-def test_the_import_can_link_an_existing_profile_without_a_new_version(tmp_path, photos):
-    tool, data = load_tool(), tmp_path / "data"
-
-
 def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp_path, photos):
     """The operator's confirmed, corrected, removed and added settings survive a second import."""
     tool, data = load_tool(), tmp_path / "data"
@@ -201,27 +197,6 @@ def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp
     finally:
         store.close()
 
-    store = Store(data)
-    p = pf.create_profile(store, "JPT MOPA M7 60W", 200, 0.025, 1)
-    store.close()
-    assert run(tool, data, photos, "--link-profile", "JPT MOPA M7 60W") == 0
-    store = Store(data)
-    try:
-        profiles = pf.list_profiles(store)
-        assert [x["version"] for x in profiles] == [1] and profiles[0]["id"] == p["id"] and profiles[0]["device"]["serial"] == "MC2BDJD71684"
-        assert not {"pulse_width", "line_interval", "passes", "constants"} & profiles[0].keys()
-    finally:
-        store.close()
-
-
-def test_a_missing_profile_is_reported_and_the_device_still_exists(tmp_path, photos, capsys):
-    tool, data = load_tool(), tmp_path / "data"
-    assert run(tool, data, photos, "--link-profile", "Nope") == 3 and "Nope" in capsys.readouterr().err
-    store = Store(data)
-    try:
-        assert len(dv.list_devices(store)) == 1
-    finally:
-        store.close()
 
 def test_the_unit_file_has_no_value_the_report_does_not_give(unit):
     rows = {r["key"]: r for r in unit["passport"]["test_report"]["rows"]}

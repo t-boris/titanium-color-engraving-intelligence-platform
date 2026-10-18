@@ -16,7 +16,7 @@ import json
 
 import numpy as np
 
-from . import capability_results, color, ingest, model, plans as pl, profiles as pf
+from . import capability_results, color, ingest, model, plans as pl, setup as su
 from .db import Store
 
 
@@ -46,11 +46,11 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     if pair["status"] != ingest.ST_ACCEPTED:
         raise ingest.IngestError("the report needs an accepted pair")
     obs = _observations(store, pair_id)
-    rules = pf.get_rules(store, pair["profile_id"])
+    rules = su.get_rules(store, pair["device_id"], pair["lens_id"])
     tol = rules["delta_tolerance"]
     plan = pl.get_plan(store, pair["plan_id"]) if pair["plan_id"] else None
     mode = plan["mode"] if plan else None
-    summaries = model.knowledge_summaries(store, pair["profile_id"])
+    summaries = model.knowledge_summaries(store, pair["device_id"], pair["lens_id"])
     limitations = []
     planned = {l["index"]: l for l in plan["layers"]} if plan else {}
     # colours of a photograph without a chart, as they would look next to clean titanium (derived by get_pair, DEC-056)
@@ -90,7 +90,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")
     if tol is None and result["capability"] is None:
-        limitations.append("no delta E tolerance is saved for this laser profile: deviations are shown but not classified")
+        limitations.append("no delta E tolerance is saved for this laser and lens: deviations are shown but not classified")
     if any(o["evidence"].get("color_measurement", {}).get("mode") == "raw_camera_relative" for o in obs):
         limitations.append("these Lab readings are camera-relative RAW measurements; they are preserved for experiment analysis but excluded from standard-color predictions")
     if mode == pl.MODE_TONAL:

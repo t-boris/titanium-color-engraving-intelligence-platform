@@ -20,6 +20,12 @@ What is known and what is assumed:
   operator's metal, which is why the index scale and the absorption are fitted;
 * the reflectance of the dark oxide is taken flat and small (``DARK_REFLECTANCE``);
 * the model says nothing about how d depends on the laser settings; that is the kinetics step.
+
+The fit uses the model-eligible observations only (chart-corrected, readable, complete settings). Asked for one laser
+and lens (``partition``), it uses that partition's observations alone and keeps its parameters apart (DEC-063);
+otherwise it fits every laser and lens together, as a description of the oxide film rather than of a setup. Laws of
+thickness against dose and the settings computed from them always belong to one laser and lens: the dose of a setting
+depends on the laser and the lens.
 """
 from __future__ import annotations
 
@@ -175,12 +181,14 @@ def fit_global(labs: np.ndarray, coloured: np.ndarray) -> tuple[Params, list[dic
     return params, fits, table
 
 
-def calibrated_observations(store: Store) -> list[dict]:
-    """Every accepted observation measured through a reference chart (not the clean witness, not service layers)."""
+def calibrated_observations(store: Store, partition: tuple[int, int | None] | None = None) -> list[dict]:
+    """Every accepted model-eligible observation measured through a reference chart (not the clean witness, not service
+    layers), of one laser and lens when ``partition`` = (device_id, lens_id) is given."""
+    where, args = ("AND o.device_id = ? AND o.lens_id IS ? ", partition) if partition is not None else ("", ())
     rows = store.query(
-        "SELECT o.id, o.pair_id, o.layer_index, o.profile_id, o.lab_json, o.parameters_json, o.evidence_json, p.lightburn_name, "
+        "SELECT o.id, o.pair_id, o.layer_index, o.device_id, o.lens_id, o.lab_json, o.parameters_json, o.evidence_json, p.lightburn_name, "
         "p.engraving_title FROM observation o JOIN pair p ON p.id = o.pair_id WHERE p.status = 'Accepted' AND o.layer_index >= 0 "
-        "ORDER BY o.id")
+        "AND o.model_eligible = 1 " + where + "ORDER BY o.id", args)
     out = []
     for r in rows:
         evidence = json.loads(r["evidence_json"] or "{}")
@@ -188,21 +196,25 @@ def calibrated_observations(store: Store) -> list[dict]:
             continue
         if evidence.get("role") not in (None, "test feature"):
             continue
-        out.append({"observation_id": r["id"], "pair_id": r["pair_id"], "layer_index": r["layer_index"], "profile_id": r["profile_id"],
+        out.append({"observation_id": r["id"], "pair_id": r["pair_id"], "layer_index": r["layer_index"],
+                    "device_id": r["device_id"], "lens_id": r["lens_id"],
                     "work": r["engraving_title"] or r["lightburn_name"].rsplit(".", 1)[0], "layer": evidence.get("layer_name"),
                     "lab": json.loads(r["lab_json"]), "parameters": json.loads(r["parameters_json"])})
     return out
 
 
-def report(store: Store, refit: bool = False) -> dict:
+def report(store: Store, refit: bool = False, partition: tuple[int, int | None] | None = None) -> dict:
     """The model fitted to the calibrated observations: parameters, the spiral, every observation's thickness, dark share
-    and residual, and a summary. The global parameters are kept as a setting and refitted when the observations change."""
-    observations = calibrated_observations(store)
+    and residual, and a summary. The global parameters are kept as a setting (one per laser and lens when ``partition`` is
+    given) and refitted when the observations change."""
+    from .setup import setup_key
+    setting = SETTING_KEY if partition is None else f"{SETTING_KEY}:{setup_key(*partition)}"
+    observations = calibrated_observations(store, partition)
     labs = np.array([o["lab"] for o in observations]) if observations else np.zeros((0, 3))
     chroma = np.hypot(labs[:, 1], labs[:, 2]) if len(labs) else np.zeros(0)
     coloured = chroma >= COLOURED_CHROMA
     stamp = {"count": len(observations), "ids": [o["observation_id"] for o in observations]}
-    saved = store.get_setting(SETTING_KEY)
+    saved = store.get_setting(setting)
     if len(observations) < 6:
         params, fits, table = Params(), [], None
         note = "fewer than 6 calibrated observations: the default parameters are shown, nothing is fitted"
@@ -213,7 +225,7 @@ def report(store: Store, refit: bool = False) -> dict:
         note = f"parameters fitted on {saved['stamp']['count']} observations on {saved['fitted_at'][:10]}"
     else:
         params, fits, table = fit_global(labs, coloured)
-        store.set_setting(SETTING_KEY, {"params": params.as_dict(), "stamp": stamp, "fitted_at": now()})
+        store.set_setting(setting, {"params": params.as_dict(), "stamp": stamp, "fitted_at": now()})
         note = f"parameters fitted now on {len(observations)} observations"
     if table is None:
         table = _table(params)
@@ -257,28 +269,27 @@ USABLE_R2 = 0.5                            # a law explaining less of the varian
 THICKNESS_NEIGHBOURHOOD_NM = 15            # observations this close in fitted thickness made "the same film"
 
 
-def dose_features(store: Store, profile_id: int, parameters: dict) -> dict | None:
-    """What the settings put into the metal: areal energy (J/cm2, every pass), pulse energy, fluence, pulses per mm2,
-    pulse overlap; None when the layer's settings are incomplete for this laser."""
-    from . import devices, profiles as pf
+def dose_features(store: Store, device_id: int, lens_id: int | None, parameters: dict) -> dict | None:
+    """What the settings put into the metal on this laser and lens record: areal energy (J/cm2, every pass), pulse energy,
+    fluence, pulses per mm2, pulse overlap; None when the layer's settings are incomplete for this laser. An unknown lens
+    leaves the fluence and the overlap unavailable."""
+    from . import devices, setup as su
     required = ("power", "frequency", "speed", "line_interval")
     if any(parameters.get(k) is None for k in required):
         return None
-    profile = pf.get_profile(store, profile_id)
-    device = profile.get("device")
-    if not device or not device.get("passport"):
-        return None
+    setup = su.resolve(store, device_id, lens_id)
+    passport, lens = setup["device"]["passport"], setup["lens"]
     passes = int(parameters.get("passes") or 1)
     pulse = parameters.get("pulse_width")
     try:
         if pulse is not None:
-            op = devices.operating_point(device["passport"], parameters["power"], parameters["frequency"], parameters["speed"], pulse,
-                                         parameters["line_interval"], passes, device.get("lens"))
+            op = devices.operating_point(passport, parameters["power"], parameters["frequency"], parameters["speed"], pulse,
+                                         parameters["line_interval"], passes, lens)
             return {"areal_energy_j_cm2": op["areal_energy_j_cm2"], "pulse_energy_mj": op["pulse_energy_mj"],
                     "fluence_j_cm2": op["fluence_j_cm2"], "pulses_per_mm2": op["pulses_per_mm2"], "pulse_overlap": op["pulse_overlap"],
                     "output_power_w": op["output_power_w"], "complete": True}
         from .characterization import characterize
-        ch = characterize(device["passport"], device.get("lens"))
+        ch = characterize(passport, lens)
         output = ch["effective_power_w"] * parameters["power"] / 100
         areal = output / (parameters["speed"] * parameters["line_interval"]) * 100 * passes
         return {"areal_energy_j_cm2": round(areal, 6), "pulse_energy_mj": None, "fluence_j_cm2": None, "pulses_per_mm2": None,
@@ -327,7 +338,7 @@ def regime_of(parameters: dict) -> tuple[float, float] | None:
 
 def _attach_doses(store: Store, points: list[dict]) -> None:
     for p in points:
-        p["dose"] = dose_features(store, p["profile_id"], p["parameters"])
+        p["dose"] = dose_features(store, p["device_id"], p["lens_id"], p["parameters"])
 
 
 def _monotone_path(cost: np.ndarray) -> list[int]:
@@ -420,11 +431,11 @@ def _kinetics_note(regimes: list[dict]) -> str:
     return "a power law of thickness against areal energy for each pulse regime that has one, on this photograph set only"
 
 
-def kinetics(store: Store) -> dict:
-    """Film thickness and dark share of every calibrated observation against the dose of its settings, and for each pulse
-    regime a power law d = a * E^b on the observations whose thickness is determined (on a dose ramp the film order is
+def kinetics(store: Store, partition: tuple[int, int | None]) -> dict:
+    """Film thickness and dark share of every calibrated observation of one laser and lens against the dose of its
+    settings, and for each pulse regime a power law d = a * E^b on the observations whose thickness is determined (on a dose ramp the film order is
     chosen for the whole ramp, ``assign_ramps``). A research result: the numbers say how far the data carry it."""
-    fitted = report(store)
+    fitted = report(store, partition=partition)
     points = fitted["points"]
     with_dose = [p for p in points if p.get("dose") is not None]
     regimes = regime_laws(points)
@@ -459,9 +470,10 @@ def _power_for_dose(dose_of, target: float, low: float = 1.0, high: float = 100.
     return round((low + high) / 2, 1)
 
 
-def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness: float) -> list[dict]:
-    """For each pulse regime with a usable law: the areal energy that law gives for ``thickness``, and a setting that
-    puts it in: the measured observation of the regime nearest in dose, with the power that reaches that dose."""
+def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness: float, partition: tuple[int, int | None]) -> list[dict]:
+    """For each pulse regime with a usable law of this laser and lens: the areal energy that law gives for ``thickness``,
+    and a setting that puts it in: the measured observation of the regime nearest in dose, with the power that reaches
+    that dose on this laser and lens. Each entry names the laser and the lens."""
     out = []
     for regime in regimes:
         law = regime["law"]
@@ -476,14 +488,15 @@ def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness:
         nearest = min(members, key=lambda p: abs(np.log(p["dose"]["areal_energy_j_cm2"] / energy)))
         base = nearest["parameters"]
 
-        def dose_of(power, base=base, profile_id=nearest["profile_id"]):
-            dose = dose_features(store, profile_id, {**base, "power": power})
+        def dose_of(power, base=base):
+            dose = dose_features(store, *partition, {**base, "power": power})
             return None if dose is None else dose["areal_energy_j_cm2"]
 
         power = _power_for_dose(dose_of, energy)
         settings = None if power is None else {**{k: base.get(k) for k in ("frequency", "pulse_width", "speed", "line_interval", "passes")},
                                                 "power": power}
-        out.append({"frequency": regime["frequency"], "pulse_width": regime["pulse_width"], "areal_energy_j_cm2": round(energy, 1),
+        out.append({"device_id": partition[0], "lens_id": partition[1],
+                    "frequency": regime["frequency"], "pulse_width": regime["pulse_width"], "areal_energy_j_cm2": round(energy, 1),
                     "within_measured": bool(low <= energy <= high), "settings": settings, "law": law,
                     "nearest_measured": {"work": nearest["work"], "layer": nearest["layer"], "lab": nearest["lab"], "pair_id": nearest["pair_id"],
                                          "thickness_nm": nearest["thickness_nm"], "parameters": base,
@@ -491,18 +504,18 @@ def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness:
     return sorted(out, key=lambda r: (not r["within_measured"], abs(np.log(r["areal_energy_j_cm2"] / r["nearest_measured"]["areal_energy_j_cm2"]))))
 
 
-def settings_for_colour(store: Store, lab: list[float]) -> dict:
+def settings_for_colour(store: Store, lab: list[float], partition: tuple[int, int | None] | None = None) -> dict:
     """What the film model says about a wanted colour: the film thickness (and dark share) that would give it, in every
-    order that fits; which measured settings produced films of that thickness; and, for each pulse regime whose kinetics
-    law is usable, the dose and a setting computed from the law. Measured settings are evidence; computed ones are
-    marked so."""
-    fitted = report(store)
+    order that fits; which measured settings produced films of that thickness; and, for one laser and lens
+    (``partition``), for each of its pulse regimes whose kinetics law is usable, the dose and a setting computed from the
+    law. Without a laser and lens no setting is computed. Measured settings are evidence; computed ones are marked so."""
+    fitted = report(store, partition=partition)
     params = Params(**fitted["params"])
     fit = fit_point(lab, _table(params))
     candidates = [{"thickness_nm": fit["thickness_nm"], "dark_share": fit["dark_share"], "residual_de": round(fit["residual_de"], 2)}]
     if fit["alternative"] is not None:
         candidates.append({k: (round(v, 2) if isinstance(v, float) else v) for k, v in fit["alternative"].items()})
-    regimes = regime_laws(fitted["points"])
+    regimes = regime_laws(fitted["points"]) if partition is not None else []
     for c in candidates:
         near = [p for p in fitted["points"] if abs(p["thickness_nm"] - c["thickness_nm"]) <= THICKNESS_NEIGHBOURHOOD_NM
                 and p["thickness_determined"]]
@@ -510,11 +523,14 @@ def settings_for_colour(store: Store, lab: list[float]) -> dict:
                                     "residual_de": p["residual_de"], "parameters": p["parameters"], "pair_id": p["pair_id"],
                                     "ambiguous": p["alternative"] is not None, "from_ramp": p.get("ramp") is not None}
                                    for p in sorted(near, key=lambda q: q["residual_de"])[:8]]
-        c["by_regime"] = _by_regime(store, regimes, fitted["points"], c["thickness_nm"]) if c["dark_share"] < UNDETERMINED_DARK_SHARE else []
+        c["by_regime"] = (_by_regime(store, regimes, fitted["points"], c["thickness_nm"], partition)
+                          if partition is not None and c["dark_share"] < UNDETERMINED_DARK_SHARE else [])
     reachable = fit["residual_de"] <= 8.0
     usable = [r for r in regimes if r["usable"]]
     return {"target": [float(v) for v in lab], "params": fitted["params"], "candidates": candidates,
-            "reachable_by_a_film": bool(reachable),
-            "kinetics": {"usable": bool(usable), "regimes": len(usable), "note": _kinetics_note(regimes)},
+            "reachable_by_a_film": bool(reachable), "partition": None if partition is None else list(partition),
+            "kinetics": {"usable": bool(usable), "regimes": len(usable),
+                         "note": _kinetics_note(regimes) if partition is not None else
+                         "choose a laser and lens: settings are computed only from the measurements of one laser and lens"},
             "note": ("the colour lies on the film spiral: a film of the thickness above gives it" if reachable else
                      "the colour lies off the film spiral by more than 8 dE: no oxide film of titanium gives it under this model")}

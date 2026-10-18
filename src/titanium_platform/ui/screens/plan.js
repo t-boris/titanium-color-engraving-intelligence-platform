@@ -76,7 +76,7 @@
       ['Superseded', 'Cancelled'].includes(p.status) ? h('div', {class: 'alert warn'},
         'Эта плата больше не актуальна для гравировки. Её параметры сохранены в истории исследования.') : null, ...warnings,
       h('div', {class: 'card stack'}, facts([['Идентификатор', p.plan_identifier], ['Полос', p.band_count], ['Размер, мм', p.size_mm ? `${num(p.size_mm.width, 1)} × ${num(p.size_mm.height, 1)}` : null],
-        ['Тип платы', exp.test_name], ['Лазер', exp.device?.title || exp.device?.name], ['Линза', exp.lens ? `${exp.lens.name} · ${exp.lens.focal_length_mm} мм` : null],
+        ['Тип платы', exp.test_name], ['Лазер', exp.device?.title || exp.device?.name], ['Линза', exp.lens || p.lens ? App.lensLabel(exp.lens || p.lens) : p.lens_id == null ? 'неизвестна' : null],
         ['Титан', materialLabel], ['Чистка — первый слой C00', cleanLabel],
         ['Подписи и маркеры', markers + (['Calibration plate', 'Laser capability test'].includes(p.mode) ? ' · слой C01, ArUco + QR ID' : '')]]),
         exp.test_description ? h('p', {class: 'muted small'}, exp.test_description) : null,

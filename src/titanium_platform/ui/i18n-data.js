@@ -10,7 +10,7 @@
   I18N.add([
     // отчёт после гравировки
     [/^no original plan is linked to this pair/i, 'План к этой паре не привязан: доступны только измерения и сравнение повторов'],
-    [/^no delta E tolerance is saved for this laser profile/i, 'Допуск ΔE для профиля не сохранён: отклонения показаны, но не оцениваются'],
+    [/^no delta E tolerance is saved for this laser and lens/i, 'Допуск ΔE для этого лазера с этой линзой не сохранён: отклонения показаны, но не оцениваются'],
     [/^stability is not assessed for parameter sets with fewer than two/i, 'Стабильность не оценена для наборов параметров, у которых меньше двух независимых гравировок'],
     [/^the photograph was aligned manually by four corners/i, 'Фотография выровнена вручную по четырём углам: уверенность выравнивания ниже, чем по маркерам'],
     [/^the photograph was aligned manually or corrected by hand: review its vector overlay before using these measurements$/i, 'Фотография совмещена или поправлена вручную. Проверьте векторное наложение, прежде чем использовать эти измерения.'],
@@ -19,15 +19,15 @@
     [/^the layer is not part of the original plan/i, 'Слой не входит в исходный план'],
     [/^Context is unknown for some repeats/i, 'Контекст части повторов неизвестен: отклонение нельзя отнести к партии материала или фокусу'],
     // планировщик
+    [/^fewer than (\d+) measured parameter sets with these job settings: the model is not fitted/i,
+      (m) => 'С этими настройками работы измерено меньше ' + m[1] + ' наборов параметров: модель не обучена, наборы выбраны только по пробелам; целевые цвета пока адресовать нельзя'],
     [/^fewer than (\d+) measured parameter sets: the model is not fitted/i,
       (m) => 'Измерено меньше ' + m[1] + ' наборов параметров: модель не обучена, наборы выбраны только по пробелам; целевые цвета пока адресовать нельзя'],
     // слои файла
-    [/^not comparable to the laser profile: (.+)$/i, (m) => 'Не сопоставим с профилем лазера: ' + t(m[1])],
+    [/^not comparable within this laser and lens: (.+)$/i, (m) => 'Не сопоставим в пределах этого лазера и линзы: ' + t(m[1])],
     [/^the layer has no fill geometry/i, 'У слоя нет геометрии заливки'],
     [/^registration marker layer: not measured/i, 'Слой регистрационных маркеров: не измеряется'],
-    [/^pulse width (\S+) in file, (\S+) in profile/i, (m) => 'длительность импульса ' + m[1] + ' в файле, ' + m[2] + ' в профиле'],
-    [/^line interval (\S+) in file, (\S+) in profile/i, (m) => 'интервал линий ' + m[1] + ' в файле, ' + m[2] + ' в профиле'],
-    [/^(\w+) (\S+) (\S+) is outside (\S+)-(\S+)$/i, (m) => (TAG[m[1]] || m[1]) + ' ' + m[2] + ' ' + m[3] + ' вне диапазона профиля ' + m[4] + '–' + m[5]],
+    [/^(\w+) (\S+) (\S+) is outside (\S+)-(\S+)$/i, (m) => (TAG[m[1]] || m[1]) + ' ' + m[2] + ' ' + m[3] + ' вне диапазона лазера ' + m[4] + '–' + m[5]],
     [/^(\w+): missing$/i, (m) => (TAG[m[1]] || m[1]) + ': нет в файле'],
     [/^(\w+): not a number \((.*)\)$/i, (m) => (TAG[m[1]] || m[1]) + ': не число (' + m[2] + ')'],
     [/^(\w+): not finite$/i, (m) => (TAG[m[1]] || m[1]) + ': не конечное число'],

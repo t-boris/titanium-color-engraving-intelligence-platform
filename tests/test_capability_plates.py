@@ -1,18 +1,38 @@
+import json
 import cv2
 import numpy as np
 from fastapi.testclient import TestClient
 import pytest
 
-from titanium_platform import capability_plates as cp, devices, lenses, lightburn, plans, profiles
+from titanium_platform import capability_plates as cp, devices, lenses, lightburn, plans
+from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
+
+JOB = {"pulse_width": 200}      # the pulse width of a test plate is always given (DEC-043)
 
 
 def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="CAP-01")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
-    titanium = profiles.save_material(store, "Grade 2 sheet", batch="HEAT-17", grade="Grade 2")
+    titanium = su.save_material(store, "Grade 2 sheet", batch="HEAT-17", grade="Grade 2")
     return laser, lens, titanium
+
+
+def test_a_capability_plate_names_the_laser_and_the_installed_lens_and_snapshots_the_lens(store):
+    """DEC-063: no hidden profile; REQ-019: the plate and its plan remember the lens with its spot value and basis."""
+    laser, lens, titanium = hardware(store)
+    devices.update_device(store, laser["id"], passport=laser["passport"] | {"m2": 1.3})
+    made = cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
+    plate = store.one("SELECT device_id, lens_id, lens_json FROM plate WHERE id=?", (made["plate_id"],))
+    assert (plate["device_id"], plate["lens_id"]) == (laser["id"], lens["id"])
+    snapshot = json.loads(plate["lens_json"])
+    assert snapshot["id"] == lens["id"] and snapshot["spot_basis"] == "calculated" and snapshot["spot_diameter_um"] > 0
+    plan = plans.get_plan(store, made["plan_id"])
+    assert (plan["device_id"], plan["lens_id"]) == (laser["id"], lens["id"]) and plan["lens"] == snapshot
+    assert all(set(layer["parameters"]) == {"power", "frequency", "speed", "pulse_width", "line_interval", "passes"}
+               for layer in plan["layers"])
+    assert store.one("SELECT name FROM sqlite_master WHERE name='laser_profile'") is None
 
 
 def test_generated_test_types_are_different_and_round_trip_as_clean_first_lightburn_plates(store):
@@ -21,7 +41,7 @@ def test_generated_test_types_are_different_and_round_trip_as_clean_first_lightb
                 "pulse_cutoff": (28, "Cut"), "line_resolution": (10, "Cut"), "hatch_interval": (5, "Scan"),
                 "offset_fill": (12, "OffsetFill"), "wobble": (9, "Scan")}
     for test_type, (count, layer_type) in expected.items():
-        made = cp.create(store, laser["id"], titanium["id"], test_type)
+        made = cp.create(store, laser["id"], titanium["id"], test_type, JOB)
         plan = plans.get_plan(store, made["plan_id"])
         file = plans.export_lbrn2(plan)
         assert b'MirrorY="True"' in file
@@ -57,7 +77,7 @@ def test_every_plate_type_explains_purpose_method_and_findings():
 def test_one_small_patch_exports_a_clean_first_content_sized_lightburn_coupon(store):
     laser, _, titanium = hardware(store)
     made = cp.create(store, laser["id"], titanium["id"], "small_patches",
-                     {"patch_size_mm": 3, "max_width_mm": 20, "max_height_mm": 20})
+                     {**JOB, "patch_size_mm": 3, "max_width_mm": 20, "max_height_mm": 20})
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
     assert made["summary"]["size_mm"] == {"width": 19, "height": 19}
@@ -77,7 +97,7 @@ def test_one_small_patch_exports_a_clean_first_content_sized_lightburn_coupon(st
 def test_markerless_small_patch_can_be_only_six_millimeters_square(store):
     laser, _, titanium = hardware(store)
     made = cp.create(store, laser["id"], titanium["id"], "small_patches",
-                     {"patch_size_mm": 3, "registration": "none", "max_width_mm": 6, "max_height_mm": 6})
+                     {**JOB, "patch_size_mm": 3, "registration": "none", "max_width_mm": 6, "max_height_mm": 6})
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
     assert made["summary"]["size_mm"] == {"width": 6, "height": 6}
@@ -88,16 +108,16 @@ def test_markerless_small_patch_can_be_only_six_millimeters_square(store):
     assert len(project.layer(0).regions) == 1
     assert project.layer(0).regions[0].width == pytest.approx(3.6)
     assert project.layer(1).regions[0].width == pytest.approx(3)
-    with pytest.raises(profiles.ValidationError, match="занимает 6.0"):
+    with pytest.raises(su.ValidationError, match="занимает 6.0"):
         cp.preview(store, laser["id"], titanium["id"], "small_patches",
-                   {"patch_size_mm": 3, "registration": "none", "max_width_mm": 5.9})
+                   {**JOB, "patch_size_mm": 3, "registration": "none", "max_width_mm": 5.9})
 
 
 def test_four_small_patches_preserve_distinct_settings_and_reject_too_small_limit(store):
     laser, _, titanium = hardware(store)
     settings = {"patch_size_mm": 5, "patches": [{"power": n} for n in (10, 20, 50, 100)],
                 "max_width_mm": 25, "max_height_mm": 25}
-    made = cp.create(store, laser["id"], titanium["id"], "small_patches", settings)
+    made = cp.create(store, laser["id"], titanium["id"], "small_patches", {**JOB, **settings})
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
     assert made["summary"]["size_mm"] == {"width": 22.8, "height": 22.8}
@@ -107,14 +127,14 @@ def test_four_small_patches_preserve_distinct_settings_and_reject_too_small_limi
     assert [layer.power for layer in project.layers[2:]] == [10, 20, 50, 100]
     assert all(len(layer.regions) == 1 and layer.regions[0].width == pytest.approx(5)
                for layer in project.layers[2:])
-    with pytest.raises(profiles.ValidationError, match="занимает 22.8"):
+    with pytest.raises(su.ValidationError, match="занимает 22.8"):
         cp.preview(store, laser["id"], titanium["id"], "small_patches",
-                   {**settings, "max_width_mm": 20})
+                   {**JOB, **settings, "max_width_mm": 20})
 
 
 def test_small_patches_keep_each_complete_laser_setting_in_lightburn(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "small_patches", {
+    made = cp.create(store, laser["id"], titanium["id"], "small_patches", {**JOB, 
         "registration": "none", "patch_size_mm": 3,
         "patches": [
             {"power": 10, "frequency": 48, "speed": 500, "pulse_width": 200,
@@ -134,11 +154,11 @@ def test_small_patches_split_into_two_independent_files_when_rectangular_limit_r
     laser, _, titanium = hardware(store)
     settings = {"patch_size_mm": 5, "patches": [{"power": n} for n in (10, 20, 50, 100)],
                 "max_width_mm": 19, "max_height_mm": 23}
-    previewed = cp.preview_small_patch_parts(store, laser["id"], titanium["id"], settings)
+    previewed = cp.preview_small_patch_parts(store, laser["id"], titanium["id"], {**JOB, **settings})
     assert [p["sample_indexes"] for p in previewed] == [[1, 2], [3, 4]]
     assert all(p["prepared"]["experiment"]["summary"]["size_mm"] == {"width": 19, "height": 22.8}
                for p in previewed)
-    made = cp.create_small_patch_parts(store, laser["id"], titanium["id"], settings)
+    made = cp.create_small_patch_parts(store, laser["id"], titanium["id"], {**JOB, **settings})
     assert len(made["parts"]) == 2
     assert made["parts"][0]["identifier"] != made["parts"][1]["identifier"]
     for index, part in enumerate(made["parts"], 1):
@@ -151,14 +171,14 @@ def test_small_patches_split_into_two_independent_files_when_rectangular_limit_r
         assert len(project.layer(0).regions) == 7
         assert [layer.power for layer in project.layers[2:]] == ([10, 20] if index == 1 else [50, 100])
     before = len(store.query("SELECT id FROM plan"))
-    with pytest.raises(profiles.ValidationError, match="занимает"):
-        cp.create_small_patch_parts(store, laser["id"], titanium["id"], {**settings, "max_width_mm": 18})
+    with pytest.raises(su.ValidationError, match="занимает"):
+        cp.create_small_patch_parts(store, laser["id"], titanium["id"], {**JOB, **settings, "max_width_mm": 18})
     assert len(store.query("SELECT id FROM plan")) == before
 
 
 def test_power_speed_test_probes_distinct_power_and_speed_values_as_vector_lines(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "power_speed")
+    made = cp.create(store, laser["id"], titanium["id"], "power_speed", JOB)
     plan = plans.get_plan(store, made["plan_id"])
     exported = lightburn.parse_bytes(plans.export_lbrn2(plan))
     lines = [layer for layer in exported.layers if layer.layer_type == "Cut"]
@@ -170,7 +190,7 @@ def test_power_speed_test_probes_distinct_power_and_speed_values_as_vector_lines
 
 def test_material_test_matrix_varies_two_chosen_axes_and_keeps_other_settings_fixed(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "power": 30, "frequency": 48, "speed": 900, "pulse_width": 200,
         "line_interval": 0.025, "passes": 2, "global_passes": 1,
         "matrix": {"x_axis": "power", "y_axis": "speed", "x_min": 10, "x_max": 90, "x_count": 5,
@@ -202,7 +222,7 @@ def test_material_test_matrix_varies_two_chosen_axes_and_keeps_other_settings_fi
 
 def test_material_matrix_can_compare_speed_and_frequency_on_actual_letters(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "power": 60, "pulse_width": 200, "line_interval": 0.025,
         "matrix": {"x_axis": "speed", "y_axis": "frequency", "geometry": "text",
                    "x_min": 500, "x_max": 2333.33, "x_count": 3,
@@ -230,10 +250,10 @@ def test_vector_letter_matrix_sweeps_speed_and_wobble_with_off_control(store):
                    "x_min": 500, "x_max": 2300, "x_count": 3,
                    "y_min": 0, "y_max": 0.08, "y_count": 3, "wobble_step": 0.02},
     }
-    preview = cp.preview(store, laser["id"], titanium["id"], "material_matrix", settings)
+    preview = cp.preview(store, laser["id"], titanium["id"], "material_matrix", {**JOB, **settings})
     assert preview["experiment"]["summary"]["size_mm"]["width"] < 100
     assert preview["experiment"]["summary"]["size_mm"]["height"] < 100
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", settings)
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, **settings})
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
     layers = [layer for layer in project.layers if layer.name.startswith("TEXT-MATRIX-")]
@@ -261,7 +281,7 @@ def test_vector_letter_matrix_sweeps_speed_and_wobble_with_off_control(store):
 
 def test_material_matrix_can_use_fill_patches_for_line_interval_and_pulse_axes(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "matrix": {"x_axis": "line_interval", "y_axis": "pulse_width", "x_min": 0.01, "x_max": 0.2,
                    "x_count": 4, "y_min": 50, "y_max": 500, "y_count": 5, "geometry": "fill"},
     })
@@ -276,7 +296,7 @@ def test_material_matrix_can_use_fill_patches_for_line_interval_and_pulse_axes(s
 
 def test_material_matrix_can_sweep_frequency_and_pass_count_axes(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "matrix": {"x_axis": "frequency", "y_axis": "passes", "x_min": 24, "x_max": 96,
                    "x_count": 4, "y_min": 1, "y_max": 5, "y_count": 5, "geometry": "line"},
     })
@@ -291,7 +311,7 @@ def test_material_matrix_can_sweep_frequency_and_pass_count_axes(store):
 
 def test_new_lightburn_export_preserves_fractional_speed_precision(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "matrix": {"x_axis": "speed", "y_axis": "frequency", "x_min": 500, "x_max": 6000,
                    "x_count": 4, "y_min": 105, "y_max": 420, "y_count": 3, "geometry": "fill"}})
     file = plans.export_lbrn2(plans.get_plan(store, made["plan_id"]))
@@ -301,7 +321,7 @@ def test_new_lightburn_export_preserves_fractional_speed_precision(store):
 
 def test_compact_registration_still_decodes_all_corners_and_qr(store):
     laser, _, titanium = hardware(store)
-    preview = cp.preview(store, laser["id"], titanium["id"], "material_matrix")
+    preview = cp.preview(store, laser["id"], titanium["id"], "material_matrix", JOB)
     markers = preview["markers"]
     extent = markers["extent"]
     scale, pad = 30, 2
@@ -320,18 +340,18 @@ def test_compact_registration_still_decodes_all_corners_and_qr(store):
 
 def test_material_matrix_rejects_interval_axis_for_vector_lines_and_more_than_28_cells(store):
     laser, _, titanium = hardware(store)
-    from titanium_platform.profiles import ValidationError
+    from titanium_platform.setup import ValidationError
     with pytest.raises(ValidationError, match="только на залитых"):
-        cp.preview(store, laser["id"], titanium["id"], "material_matrix", {
+        cp.preview(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
             "matrix": {"x_axis": "line_interval", "y_axis": "speed", "geometry": "line"}})
     with pytest.raises(ValidationError, match="не более 28 ячеек"):
-        cp.preview(store, laser["id"], titanium["id"], "material_matrix", {
+        cp.preview(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
             "matrix": {"x_axis": "power", "y_axis": "speed", "x_count": 7, "y_count": 5}})
 
 
 def test_maximum_material_matrix_fits_registered_plate_within_100mm(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {
+    made = cp.create(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
         "matrix": {"x_axis": "power", "y_axis": "speed", "x_count": 7, "y_count": 4}})
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
@@ -343,7 +363,7 @@ def test_maximum_material_matrix_fits_registered_plate_within_100mm(store):
 
 def test_offset_fill_probes_speed_and_line_interval_in_offsetfill_mode(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "offset_fill")
+    made = cp.create(store, laser["id"], titanium["id"], "offset_fill", JOB)
     project = lightburn.parse_bytes(plans.export_lbrn2(plans.get_plan(store, made["plan_id"])))
     layers = [layer for layer in project.layers if layer.layer_type == "OffsetFill"]
     assert len(layers) == 12
@@ -354,7 +374,7 @@ def test_offset_fill_probes_speed_and_line_interval_in_offsetfill_mode(store):
 
 def test_compact_coupon_contains_lines_resolution_hatch_wobble_and_text_with_recorded_parameters(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "compact_capability")
+    made = cp.create(store, laser["id"], titanium["id"], "compact_capability", JOB)
     plan = plans.get_plan(store, made["plan_id"])
     project = lightburn.parse_bytes(plans.export_lbrn2(plan))
     layers = {layer.name: layer for layer in project.layers}
@@ -385,7 +405,7 @@ def test_compact_coupon_contains_lines_resolution_hatch_wobble_and_text_with_rec
 
 def test_standalone_wobble_coupon_exports_step_and_size_to_lightburn(store):
     laser, _, titanium = hardware(store)
-    made = cp.create(store, laser["id"], titanium["id"], "wobble")
+    made = cp.create(store, laser["id"], titanium["id"], "wobble", JOB)
     project = lightburn.parse_bytes(plans.export_lbrn2(plans.get_plan(store, made["plan_id"])))
     wobble = [layer for layer in project.layers if layer.name.startswith("WOBBLE-")]
     assert len(wobble) == 9
@@ -399,7 +419,7 @@ def test_api_creates_a_hardware_and_titanium_linked_plan_that_downloads_from_the
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "API-17"}).json()
-        created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"], "test_type": "pulse_cutoff"})
+        created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "pulse_cutoff"})
         assert created.status_code == 201
         plan = client.get(f"/api/plans/{created.json()['plan_id']}").json()
         assert plan["experiment"]["device"]["serial"] == "API-CAP-1"
@@ -419,7 +439,7 @@ def test_api_accepts_material_test_axis_choices_and_returns_ready_lbrn2(tmp_path
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "MATRIX-1"}).json()
-        created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"],
+        created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200,
             "test_type": "material_matrix", "matrix": {"x_axis": "power", "y_axis": "frequency", "x_min": 10,
                 "x_max": 90, "x_count": 4, "y_min": 24, "y_max": 96, "y_count": 5, "geometry": "line"}})
         assert created.status_code == 201
@@ -440,7 +460,7 @@ def test_api_previews_small_coupon_without_creating_plan_then_exports_it(tmp_pat
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "PATCH-1"}).json()
-        request = {"device_id": laser["id"], "material_id": titanium["id"], "test_type": "small_patches",
+        request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 3, "patches": [{"power": 10}, {"power": 50}],
                    "max_width_mm": 25, "max_height_mm": 25}
         before = len(client.get("/api/plans").json())
@@ -463,7 +483,7 @@ def test_api_returns_each_split_lightburn_file_and_previewed_size(tmp_path):
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "SPLIT-1"}).json()
-        request = {"device_id": laser["id"], "material_id": titanium["id"], "test_type": "small_patches",
+        request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 5, "patches": [{"power": n} for n in (10, 20, 50, 100)],
                    "max_width_mm": 19, "max_height_mm": 23}
         preview = client.post("/api/capability-plates/preview", json=request)
@@ -487,7 +507,7 @@ def test_api_exports_minimal_markerless_coupon_requested_by_ui(tmp_path):
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2"}).json()
-        request = {"device_id": laser["id"], "material_id": titanium["id"], "test_type": "small_patches",
+        request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 3, "patches": [{}], "registration": "none",
                    "max_width_mm": 6, "max_height_mm": 6}
         preview = client.post("/api/capability-plates/preview", json=request)
@@ -500,3 +520,20 @@ def test_api_exports_minimal_markerless_coupon_requested_by_ui(tmp_path):
         project = lightburn.parse_bytes(client.get(created.json()["parts"][0]["download_url"]).content)
         assert len(project.layers) == 2
         assert project.layer(0).name.startswith("CLEAN-")
+
+
+def test_a_capability_plate_has_no_default_pulse_width(store):
+    """DEC-043: the pulse width of a test plate is the operator's (or the AI's) explicit choice, never filled in."""
+    laser, _, titanium = hardware(store)
+    with pytest.raises(su.ValidationError, match="выберите длительность импульса"):
+        cp.preview(store, laser["id"], titanium["id"], "calibration")
+    assert "pulse_width" not in cp.DEFAULT_TEST
+
+
+def test_the_lightburn_notes_name_a_lens_whose_focal_length_is_unknown(store):
+    laser, _, titanium = hardware(store)
+    unmarked = lenses.create_lens(store, "Unmarked F-theta")
+    lenses.install(store, laser["id"], unmarked["id"])
+    made = cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
+    notes = plans.export_lbrn2(plans.get_plan(store, made["plan_id"])).decode("utf-8")
+    assert "Lens: Unmarked F-theta, focal length unknown" in notes and "Lens: Unmarked F-theta  mm" not in notes

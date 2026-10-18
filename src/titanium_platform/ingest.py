@@ -5,8 +5,9 @@ A *pair* goes through ``create_pair`` -> ``check_pair`` -> (``confirm_file``) ->
 
 Rules implemented here:
 
-* Power, frequency, speed, pulse width, line interval and pass count come from each paired LightBurn layer.
-  None of these changing process settings are stored on a laser/lens identity.
+* Power, frequency, speed, pulse width, line interval and pass count come from each paired LightBurn layer: they are
+  job settings (DEC-042). The operator chooses the laser and the lens of the work; the lens may be unknown, and the
+  lens installed now is never assumed for an imported work (REQ-016). A pair linked to a plate takes the plate's lens.
 * System calibration plates can be measured without a separate ColorChecker: their RAW-rendered colors are
   stored as camera-relative observations. General photographs still require a usable reference chart.
 * A calibration plate is identified by the ``TCE1:<id>`` note in its LightBurn file; its cells are matched to
@@ -38,7 +39,7 @@ from . import color
 from . import lightburn as lb
 from . import photo as ph
 from . import plans as pl
-from . import profiles as pf
+from . import setup as su
 from .db import Store, now
 
 ST_PENDING, ST_CORRECTION, ST_READY, ST_ACCEPTED, ST_DELETED = "Awaiting check", "Needs correction", "Ready to accept", "Accepted", "Deleted"
@@ -46,7 +47,7 @@ PARAM_TOLERANCE = 1e-6
 CONTEXT_KEYS = ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm", "titanium_surface",
                 "batch", "focus", "engraved_at", "note")
 DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check",
-             "matrix")
+             "matrix", "lens_choice")
 
 
 class IngestError(ValueError):
@@ -149,25 +150,25 @@ def clean_context(ctx: dict | None) -> dict:
         try:
             out["material_id"] = int(out["material_id"])
         except (TypeError, ValueError):
-            raise pf.ValidationError("select a titanium stock from the list") from None
+            raise su.ValidationError("select a titanium stock from the list") from None
         if out["material_id"] < 1:
-            raise pf.ValidationError("select a titanium stock from the list")
+            raise su.ValidationError("select a titanium stock from the list")
     if out["focus"] in ("", None):
         out["focus"] = None
     else:
         try:
             out["focus"] = float(out["focus"])
         except (TypeError, ValueError):
-            raise pf.ValidationError("focus must be a number") from None
+            raise su.ValidationError("focus must be a number") from None
         if not np.isfinite(out["focus"]):
-            raise pf.ValidationError("focus must be a finite number")
+            raise su.ValidationError("focus must be a finite number")
     if out["engraved_at"] in ("", None):
         out["engraved_at"] = None
     else:
         try:
             datetime.strptime(str(out["engraved_at"]), "%Y-%m-%d")
         except ValueError:
-            raise pf.ValidationError("date must be YYYY-MM-DD") from None
+            raise su.ValidationError("date must be YYYY-MM-DD") from None
     for k in ("titanium_name", "titanium_grade", "titanium_surface", "batch", "note"):
         out[k] = (str(out[k]).strip() or None) if out[k] is not None else None
     if out["titanium_thickness_mm"] not in (None, ""):
@@ -177,11 +178,11 @@ def clean_context(ctx: dict | None) -> dict:
     return out
 
 
-def previous_context(store: Store, profile_id: int) -> dict | None:
-    """'Same as previous': the context of the last accepted pair of this laser profile version."""
-    row = store.one("SELECT context_json FROM pair WHERE profile_id=? AND status=? ORDER BY accepted_at DESC, id DESC LIMIT 1",
-                    (profile_id, ST_ACCEPTED))
-    return None if row is None else json.loads(row["context_json"])
+def previous_context(store: Store, device_id: int) -> dict | None:
+    """'Same as previous': the context and the lens of the last accepted pair of this laser (``lens_id`` None = unknown)."""
+    row = store.one("SELECT context_json, lens_id FROM pair WHERE device_id=? AND status=? ORDER BY accepted_at DESC, id DESC LIMIT 1",
+                    (device_id, ST_ACCEPTED))
+    return None if row is None else {**json.loads(row["context_json"]), "lens_id": row["lens_id"]}
 
 
 # -- creation ------------------------------------------------------------------------------------------
@@ -203,13 +204,14 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", Path(name).name) or "file"
 
 
-def create_pair(store: Store, *, profile_id: int, stand_id: int | None = None, lightburn_name: str, lightburn_bytes: bytes,
-                photo_name: str, photo_bytes: bytes, plan_id: int | None = None, rephoto_of: int | None = None,
+def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: int | None = None, lightburn_name: str,
+                lightburn_bytes: bytes, photo_name: str, photo_bytes: bytes, plan_id: int | None = None, rephoto_of: int | None = None,
                 context: dict | None = None) -> int:
+    """A new pair of the laser and lens the operator chose (``lens_id`` None: the lens is unknown)."""
     if rephoto_of is not None:
         # Legacy callers may still supply these fields. A second view must inherit the real job.
         return create_rephoto(store, rephoto_of, photo_name=photo_name, photo_bytes=photo_bytes)
-    pf.get_profile(store, profile_id)
+    setup = su.resolve(store, device_id, lens_id)
     if stand_id is not None and store.one("SELECT id FROM capture_setup WHERE id=?", (stand_id,)) is None:
         raise IngestError("the selected capture setup was not found")
     if stand_id is None:
@@ -236,13 +238,8 @@ def create_pair(store: Store, *, profile_id: int, stand_id: int | None = None, l
     # Store a snapshot on the run so later edits to the stock card do not rewrite this experiment's context.
     ctx.update(titanium_name=material["name"], titanium_grade=material["grade"],
                titanium_thickness_mm=material["thickness_mm"], titanium_surface=material["surface"], batch=material["batch"])
-    profile = pf.get_profile(store, profile_id)
-    hardware = {"device": None, "lens": None}
-    if profile.get("device"):
-        from . import lenses
-        device = profile["device"]
-        hardware["device"] = {key: device.get(key) for key in ("id", "name", "manufacturer", "model", "serial")}
-        hardware["lens"] = lenses.snapshot(profile.get("lens"), device.get("passport", {}).get("spot_diameter_um"))
+    hardware = {"device": {key: setup["device"].get(key) for key in ("id", "name", "manufacturer", "model", "serial")},
+                "lens": su.lens_snapshot(setup)}
     engraving_id = uuid.uuid4().hex
     tag = uuid.uuid4().hex[:12]
     folder = store.data_dir / "files"
@@ -251,9 +248,9 @@ def create_pair(store: Store, *, profile_id: int, stand_id: int | None = None, l
     photo_path.write_bytes(photo_bytes)
     data = {"rephoto_of": None, "masks_reviewed": False, "file_confirmation": None, "corners": None, "check": None}
     return store.execute(
-        "INSERT INTO pair(status,profile_id,stand_id,material_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ST_PENDING, profile_id, stand_id, ctx["material_id"], plan_id, engraving_id, Path(lightburn_name).stem, lightburn_name, str(lb_path), photo_name, str(photo_path),
+        "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ST_PENDING, device_id, lens_id, stand_id, ctx["material_id"], plan_id, engraving_id, Path(lightburn_name).stem, lightburn_name, str(lb_path), photo_name, str(photo_path),
          json.dumps(ctx), json.dumps(data), json.dumps(hardware), now())).lastrowid
 
 
@@ -284,9 +281,9 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     if source_data.get("matrix"):
         data["matrix"] = _matrix_for_rephoto(store, source_data, photo_name, photo_bytes)
     pair_id = store.execute(
-        "INSERT INTO pair(status,profile_id,stand_id,material_id,plate_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ST_PENDING, source["profile_id"], source["stand_id"], source["material_id"], source["plate_id"], source["plan_id"],
+        "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plate_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ST_PENDING, source["device_id"], source["lens_id"], source["stand_id"], source["material_id"], source["plate_id"], source["plan_id"],
          source["engraving_id"], source["engraving_title"] or Path(source["lightburn_name"]).stem, source["lightburn_name"], str(lb_path), photo_name, str(photo_path), source["context_json"],
          json.dumps(data), source["hardware_json"], now())).lastrowid
     store.audit("rephoto_created", source_pair_id=source_pair_id, pair_id=pair_id, engraving_id=source["engraving_id"])
@@ -325,8 +322,9 @@ def _stored(store: Store, pair_id: int) -> dict:
     return json.loads(_pair_row(store, pair_id)["data_json"] or "{}")
 
 
-def create_matrix_pair(store: Store, *, profile_id: int, photo_name: str, photo_bytes: bytes, context: dict | None = None,
-                       stand_id: int | None = None, grid: dict | None = None, detection: dict | None = None) -> int:
+def create_matrix_pair(store: Store, *, device_id: int, lens_id: int | None, photo_name: str, photo_bytes: bytes,
+                       context: dict | None = None, stand_id: int | None = None, grid: dict | None = None,
+                       detection: dict | None = None) -> int:
     """A pair from a photograph of a parameter matrix: the matrix is found, its labels are read and a LightBurn file
     with one layer per cell is generated from what was read. The settings stay a proposal until the operator confirms
     them (``confirm_matrix``); nothing is accepted before (REQ-003)."""
@@ -345,7 +343,7 @@ def create_matrix_pair(store: Store, *, profile_id: int, photo_name: str, photo_
     record = _matrix_record(grid, detection or {"grids": [grid], "ocr": matrix.ocr_available(), "squares": None}, index)
     spec = record["spec"]
     title = matrix.title(spec, photo_name)
-    pair_id = create_pair(store, profile_id=profile_id, stand_id=stand_id, lightburn_name=f"{_safe_name(title)}.lbrn2",
+    pair_id = create_pair(store, device_id=device_id, lens_id=lens_id, stand_id=stand_id, lightburn_name=f"{_safe_name(title)}.lbrn2",
                           lightburn_bytes=matrix.lightburn_bytes(spec, record["cols"], record["rows"]),
                           photo_name=photo_name, photo_bytes=photo_bytes, context=context)
     data = _stored(store, pair_id)
@@ -372,7 +370,7 @@ def create_matrix_sibling(store: Store, pair_id: int, index: int) -> int:
         raise IngestError("the photograph of this pair is no longer available")
     grid = {k: v for k, v in other.items() if k != "created_pair_id"}
     context = json.loads(row["context_json"])
-    new_id = create_matrix_pair(store, profile_id=row["profile_id"], stand_id=row["stand_id"], photo_name=row["photo_name"],
+    new_id = create_matrix_pair(store, device_id=row["device_id"], lens_id=row["lens_id"], stand_id=row["stand_id"], photo_name=row["photo_name"],
                                 photo_bytes=photo.read_bytes(), context={k: context.get(k) for k in ("material_id", "focus", "engraved_at", "note")},
                                 grid=grid)
     record["others"][index]["created_pair_id"] = new_id
@@ -575,14 +573,14 @@ def compare_plate(plate_cells: list[dict], layers: list[lb.Layer], dx: float, dy
     return discrepancies, mapping, missing
 
 
-def layer_report(layer: lb.Layer, profile: dict) -> dict:
-    """Per-layer readability and comparability to the selected hardware/search bounds."""
+def layer_report(layer: lb.Layer, passport: dict) -> dict:
+    """Per-layer readability and comparability to the limits of the selected laser."""
     notes, compatible = [], True
     if not layer.readable:
         compatible = False
         notes += layer.unreadable
     else:
-        problems = pf.check_in_range(profile, layer.power, layer.frequency_khz, layer.speed)
+        problems = su.check_in_range(passport, layer.power, layer.frequency_khz)
         if layer.pulse_width is None:
             problems.append("pulse width is missing from this LightBurn layer")
         if layer.layer_type != "Cut" and layer.line_interval is None:
@@ -591,7 +589,7 @@ def layer_report(layer: lb.Layer, profile: dict) -> dict:
             problems.append("pass count is missing from this LightBurn layer")
         if problems:
             compatible = False
-            notes += [f"not comparable to this hardware/search setup: {m}" for m in problems]
+            notes += [f"not comparable within this laser and lens: {m}" for m in problems]
     for kind, count in sorted(layer.unsupported.items()):
         notes.append(f"{count} {kind} objects on this layer are not read: no outline geometry")
     if not layer.regions:
@@ -610,22 +608,39 @@ def layer_report(layer: lb.Layer, profile: dict) -> dict:
 
 
 # -- checking ------------------------------------------------------------------------------------------
-def lens_check(store: Store, plate: dict) -> dict:
-    """Compare the lens a plate was made for with the lens installed now (DEC-041). A difference is a warning, never a block."""
+def lens_check(store: Store, plate: dict, chosen_lens_id: int | None) -> dict:
+    """Compare the lens a plate was made for with the lens installed now and with the lens the operator chose for the
+    photograph (DEC-041, REQ-019). A difference is a warning, never a block; the plate's lens, when it is recorded, is the
+    lens of the measurements (``lens_id``), so comparability follows the historical configuration."""
+    from . import lenses
     made = json.loads(plate["lens_json"]) if plate.get("lens_json") else None
-    profile = pf.get_profile(store, plate["profile_id"])
-    now_lens = None
-    if profile.get("device"):
-        from . import lenses
-        now_lens = lenses.installed(store, profile["device"]["id"])
+    now_lens = lenses.installed(store, plate["device_id"])
     warnings = []
     if made and now_lens and (made["id"] != now_lens["id"] or made["focal_length_mm"] != now_lens["focal_length_mm"] or made["expansion"] != now_lens["expansion"]):
-        warnings.append(f"the lens installed now ({now_lens['name']}, {now_lens['focal_length_mm']:g} mm) differs from the lens of this plate ({made['name']}, {made['focal_length_mm']:g} mm)")
-    elif made and not now_lens and profile.get("device"):
-        warnings.append(f"no lens is installed on the laser now; the plate was made with {made['name']} ({made['focal_length_mm']:g} mm)")
+        warnings.append(f"the lens installed now ({lenses.label(now_lens)}) differs from the lens of this plate ({lenses.label(made)})")
+    elif made and not now_lens:
+        warnings.append(f"no lens is installed on the laser now; the plate was made with {lenses.label(made)}")
     elif now_lens and not made:
         warnings.append("this plate has no record of its lens")
-    return {"plate": made, "installed": None if not now_lens else {"id": now_lens["id"], "name": now_lens["name"], "focal_length_mm": now_lens["focal_length_mm"]}, "warnings": warnings}
+    lens_id = chosen_lens_id
+    if plate["lens_id"] is not None and plate["lens_id"] != chosen_lens_id:
+        made_label = lenses.label(made) if made else lenses.label(lenses.get_lens(store, plate["lens_id"]))
+        if chosen_lens_id is None:
+            warnings.append(f"no lens was chosen for this photograph; the plate was made with {made_label}: the measurements are kept with the plate's lens")
+        else:
+            warnings.append(f"the lens chosen for this photograph ({lenses.label(lenses.get_lens(store, chosen_lens_id))}) differs from the lens of "
+                            f"this plate ({made_label}): the measurements are kept with the plate's lens")
+        lens_id = plate["lens_id"]
+    return {"plate": made, "installed": None if not now_lens else {"id": now_lens["id"], "name": now_lens["name"], "focal_length_mm": now_lens["focal_length_mm"]},
+            "chosen_lens_id": chosen_lens_id, "lens_id": lens_id, "warnings": warnings}
+
+
+def _set_lens(store: Store, row, lens_id: int | None, snapshot: dict | None) -> None:
+    """The lens of the pair's measurements, with its snapshot: the plate's when given, else one taken of the lens now."""
+    if snapshot is None and lens_id is not None:
+        snapshot = su.lens_snapshot(su.resolve(store, row["device_id"], lens_id))
+    hardware = json.loads(row["hardware_json"] or "{}") | {"lens": snapshot}
+    store.execute("UPDATE pair SET lens_id=?, hardware_json=? WHERE id=?", (lens_id, json.dumps(hardware), row["id"]))
 
 
 def _load_plate(store: Store, identifier: str | None):
@@ -1552,7 +1567,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
             scale_factor=scale_factor, mirror_horizontal=mirror_horizontal, mirror_vertical=mirror_vertical)
     elif corners_fraction is not None or anchor is not None or corners is not None:
         pair["alignment_override"] = None
-    profile = pf.get_profile(store, row["profile_id"])
+    setup = su.resolve(store, row["device_id"], row["lens_id"])
     problems: list[str] = []
     report: dict = {"chart": {"detected": False, "reason": "", "residual": None},
                     "alignment": {"method": None, "valid": False, "error": None},
@@ -1584,7 +1599,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     report["project"] = {"app_version": project.app_version, "device": project.device_name,
                          "identifier": project.identifier, "mirror_x": project.mirror_x,
                          "mirror_y": project.mirror_y}
-    report["layers"] = [layer_report(layer, profile) for layer in project.layers]
+    report["layers"] = [layer_report(layer, setup["device"]["passport"]) for layer in project.layers]
     matrix_record = pair.get("matrix")
     overflow_indices = [layer.index for layer in project.layers if layer.index >= pl.MAX_LAYERS] if not matrix_record else []
     if matrix_record:
@@ -1608,12 +1623,18 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     plate, plan = _load_plate(store, project.identifier)
     if project.identifier and plate is None:
         problems.append(f"experiment identifier {project.identifier} is not known to this system")
+    # The operator's lens choice is kept apart from the lens of the measurements, so every re-check shows it again.
+    pair["lens_choice"] = pair.get("lens_choice") or {"lens_id": row["lens_id"]}
+    lens_id = pair["lens_choice"]["lens_id"]
     if plate is not None:
         ids["plate_id"], ids["plan_id"] = plate["id"], (plan or {}).get("id")
-        report["plate"] = {"experiment_id": plate["experiment_id"], "profile_id": plate["profile_id"]}
-        if plate["profile_id"] != row["profile_id"]:
-            problems.append("this plate was generated for a different laser profile version than the one selected")
-        report["lens"] = lens_check(store, plate)
+        report["plate"] = {"experiment_id": plate["experiment_id"], "device_id": plate["device_id"], "lens_id": plate["lens_id"]}
+        if plate["device_id"] != row["device_id"]:
+            problems.append("this plate was made for a different laser than the one selected")
+        report["lens"] = lens_check(store, plate, lens_id)
+        lens_id = report["lens"]["lens_id"]
+    if lens_id != row["lens_id"]:
+        _set_lens(store, row, lens_id, json.loads(plate["lens_json"]) if plate is not None and plate["lens_json"] and lens_id == plate["lens_id"] else None)
     # System plate exports put cleanup first and registration/labels next. They are real engraved operations,
     # so retain them as measured layers. Only the test-cell comparison excludes these two system layers.
     system_plan = plan if plate is not None else (pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None)
@@ -1635,11 +1656,11 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
         else:
             rep["role"] = "test feature"
     work_layers = [layer for layer in project.layers if layer.regions]
-    return _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
+    return _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
                     corners_fraction)
 
 
-def _measure(store, row, pair, profile, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
+def _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
              corners_fraction=None):
     """Decode, choose chart-corrected or plate-relative color, align, compare, and sample the regions."""
     try:
@@ -1911,13 +1932,14 @@ def review_masks(store: Store, pair_id: int) -> None:
 
 
 # -- acceptance ----------------------------------------------------------------------------------------
-def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], None] | None = None) -> list[int]:
-    """Write one immutable observation per measured layer, atomically. Returns the observation ids."""
+def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, int | None], None] | None = None) -> list[int]:
+    """Write one immutable observation per measured layer with the pair's laser and lens, atomically. Returns the
+    observation ids; ``on_accepted(store, device_id, lens_id)`` runs after the commit."""
     row = _pair_row(store, pair_id)
     _guard_mutable(row)
     pair = get_pair(store, pair_id)
     check = pair.get("check")
-    profile = pf.get_profile(store, row["profile_id"])
+    passport = su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"]
     plan = pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None
     if not check or row["status"] != ST_READY:
         raise IngestError("run the check first; the pair is not ready to accept")
@@ -1945,15 +1967,15 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], 
         for rep in layers:
             param_error = None
             try:
-                params = pf.parameter_vector(profile, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
+                params = su.parameter_vector(passport, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
                                              rep["line_interval"], rep["passes"])
-            except pf.ValidationError as exc:
+            except su.ValidationError as exc:
                 # Keep the real measured output and the exact values found in the LightBurn file. Missing
-                # settings stay null; no preset or profile value is substituted for what the file omitted.
+                # settings stay null; no preset or default is substituted for what the file omitted.
                 param_error = str(exc)
                 params = {"power": rep["power"], "frequency": rep["frequency_khz"], "speed": rep["speed"],
                           "pulse_width": rep["pulse_width"], "line_interval": rep["line_interval"],
-                          "passes": rep["passes"], "profile_id": profile["id"]}
+                          "passes": rep["passes"]}
             params.update({"layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
                            "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
                            "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
@@ -1980,10 +2002,10 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], 
             if not rep["compatible"] or param_error:
                 observation_reason += "; retained as physical measurement, excluded from parameter recommendations: " + "; ".join(rep["notes"] + ([param_error] if param_error else []))
             ids.append(store.execute(
-                "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,"
+                "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,"
                 "context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (pair_id, observation_index, row["profile_id"], row["engraving_id"], json.dumps(rep["measured_lab"]), json.dumps(params),
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (pair_id, observation_index, row["device_id"], row["lens_id"], row["engraving_id"], json.dumps(rep["measured_lab"]), json.dumps(params),
                  check["alignment"]["method"], row["context_json"], int(model_eligible), 0 if rephoto else 1, observation_reason, json.dumps(evidence), now())).lastrowid)
         store.execute("UPDATE pair SET status=?, accepted_at=? WHERE id=?", (ST_ACCEPTED, now(), pair_id))
         store.audit("pair_accepted", pair_id=pair_id, observations=len(ids))
@@ -1993,7 +2015,7 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int], 
         if older is not None and older["status"] == ST_ACCEPTED:
             delete_pair(store, superseded)
     if on_accepted is not None:
-        on_accepted(store, row["profile_id"])
+        on_accepted(store, row["device_id"], row["lens_id"])
     from . import capability_results
     capability_results.save_findings(store, pair_id)
     return ids

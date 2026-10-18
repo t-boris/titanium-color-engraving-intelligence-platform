@@ -6,7 +6,8 @@ import pytest
 import synth
 from titanium_platform import color
 from titanium_platform import ingest as ig
-from titanium_platform import profiles as pf
+from titanium_platform import devices
+from titanium_platform import setup as su
 from titanium_platform.db import Store
 
 from test_anchoring import circle
@@ -23,9 +24,9 @@ def world(tmp_path_factory, work):
     """One pair, checked once: the check takes a few seconds and every test below only reads its report."""
     store = Store(tmp_path_factory.mktemp("framed"))
     store.set_setting("allow_non_raw_photos", True)  # tests use PNG renders; real use requires RAW
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="framed.lbrn2", lightburn_bytes=work["lightburn"],
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="framed.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="framed.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})
     yield store, pid, ig.check_pair(store, pid)
@@ -94,9 +95,9 @@ def test_a_layer_is_not_sampled_where_a_later_layer_engraves_over_it(tmp_path):
     work = synth.framed_work(style="none", extra=extra, with_chart=True)
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="x.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})
     report = ig.check_pair(store, pid)
@@ -135,9 +136,9 @@ def chartless(tmp_path):
     work = synth.framed_work(seed=3, blobs=60, with_chart=False, inset=8.0)
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="work.lbrn2", lightburn_bytes=work["lightburn"],
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="work.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="work.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})
     yield store, pid
@@ -206,9 +207,9 @@ def test_a_cleaning_layer_engraved_over_entirely_is_not_measured_and_says_so(tmp
     work = synth.framed_work(style="none", extra=extra, with_chart=True)
     store = Store(tmp_path)
     store.set_setting("allow_non_raw_photos", True)
-    profile = pf.create_profile(store, "MOPA", 200, 0.025, 1)
-    material = pf.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
-    pid = ig.create_pair(store, profile_id=profile["id"], lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="x.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})
     report = ig.check_pair(store, pid)

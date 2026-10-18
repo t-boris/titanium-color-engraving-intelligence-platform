@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from . import analysis, application_guide, capability_plates, capability_results, devices, ingest, model, plans, profiles as pf
+from . import analysis, application_guide, capability_plates, capability_results, devices, ingest, model, plans
 from .db import Store, now
 
 DEFAULT_MODEL = "gpt-6.1-sol"
@@ -52,9 +52,6 @@ def list_messages(store: Store, session_id: int, *, before: int | None = None,
 def get_session(store: Store, session_id: int) -> dict:
     row = _session_row(store, session_id)
     out = dict(row)
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=? AND lens_id=? ORDER BY id DESC LIMIT 1",
-                        (row["device_id"], row["lens_id"]))
-    out["profile_id"] = profile["id"] if profile else None
     page = list_messages(store, session_id)
     out.update(page)
     out["message_count"] = store.one("SELECT COUNT(*) AS n FROM research_message WHERE session_id=?", (session_id,))["n"]
@@ -66,9 +63,9 @@ def get_session(store: Store, session_id: int) -> dict:
         (session_id,))]
     out["photos"] = [dict(p) for p in store.query(
         "SELECT q.id,q.plan_id,q.photo_name,q.status,q.created_at,q.accepted_at "
-        "FROM pair q JOIN plan p ON p.id=q.plan_id JOIN laser_profile pr ON pr.id=q.profile_id "
+        "FROM pair q JOIN plan p ON p.id=q.plan_id "
         "WHERE p.research_session_id=? AND q.status!='Deleted' AND q.material_id=? "
-        "AND pr.device_id=? AND pr.lens_id=? ORDER BY q.id DESC",
+        "AND q.device_id=? AND q.lens_id=? ORDER BY q.id DESC",
         (session_id, row["material_id"], row["device_id"], row["lens_id"]))]
     out["insights"] = [dict(item, evidence_pair_ids=json.loads(item["evidence_pair_ids_json"])) for item in store.query(
         "SELECT * FROM research_insight WHERE session_id=? ORDER BY id DESC", (session_id,))]
@@ -132,8 +129,8 @@ def _scope(store: Store, session_id: int) -> tuple[dict, dict, dict]:
 def _pair_in_scope(store: Store, session_id: int, pair_id: int) -> dict:
     session, _, _ = _scope(store, session_id)
     row = store.one(
-        "SELECT p.id FROM pair p JOIN laser_profile pr ON pr.id=p.profile_id "
-        "WHERE p.id=? AND p.status!='Deleted' AND pr.device_id=? AND pr.lens_id=? AND p.material_id=?",
+        "SELECT p.id FROM pair p "
+        "WHERE p.id=? AND p.status!='Deleted' AND p.device_id=? AND p.lens_id=? AND p.material_id=?",
         (pair_id, session["device_id"], session["lens_id"], session["material_id"]))
     if row is None:
         raise ResearchError("эта проверка не относится к лазеру, линзе и материалу исследования")
@@ -144,9 +141,9 @@ def evidence(store: Store, session_id: int, limit: int = 12) -> list[dict]:
     session, _, _ = _scope(store, session_id)
     rows = store.query(
         "SELECT p.id,p.engraving_title,p.photo_name,p.accepted_at,p.plan_id,t.test_type "
-        "FROM pair p JOIN laser_profile pr ON pr.id=p.profile_id "
-        "LEFT JOIN plate t ON t.id=p.plate_id WHERE p.status='Accepted' AND pr.device_id=? "
-        "AND pr.lens_id=? AND p.material_id=? ORDER BY p.accepted_at DESC,p.id DESC LIMIT ?",
+        "FROM pair p "
+        "LEFT JOIN plate t ON t.id=p.plate_id WHERE p.status='Accepted' AND p.device_id=? "
+        "AND p.lens_id=? AND p.material_id=? ORDER BY p.accepted_at DESC,p.id DESC LIMIT ?",
         (session["device_id"], session["lens_id"], session["material_id"], max(1, min(limit, 30))))
     out = []
     for row in rows:
@@ -158,22 +155,19 @@ def evidence(store: Store, session_id: int, limit: int = 12) -> list[dict]:
 def context(store: Store, session_id: int) -> dict:
     session, device, material = _scope(store, session_id)
     lens = store.one("SELECT * FROM lens WHERE id=?", (session["lens_id"],))
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=? AND lens_id=? ORDER BY id DESC LIMIT 1",
-                        (session["device_id"], session["lens_id"]))
     relative_color_photos = []
-    if profile:
-        for photo_set in reversed(model.camera_relative_sets(store, profile["id"])):
-            if photo_set.get("provisional") or photo_set["material"].get("id") != session["material_id"]:
-                continue
-            variants = photo_set.get("color_variants") or []
-            if variants:
-                relative_color_photos.append({
-                    "pair_id": photo_set["pair_id"], "photo_name": photo_set["photo_name"],
-                    "candidates": [{k: variant[k] for k in ("name", "lab", "parameters", "settings_complete")}
-                                   for variant in variants[:16]],
-                })
-            if len(relative_color_photos) >= 2:
-                break
+    for photo_set in reversed(model.camera_relative_sets(store, session["device_id"], session["lens_id"])):
+        if photo_set.get("provisional") or photo_set["material"].get("id") != session["material_id"]:
+            continue
+        variants = photo_set.get("color_variants") or []
+        if variants:
+            relative_color_photos.append({
+                "pair_id": photo_set["pair_id"], "photo_name": photo_set["photo_name"],
+                "candidates": [{k: variant[k] for k in ("name", "lab", "parameters", "settings_complete")}
+                               for variant in variants[:16]],
+            })
+        if len(relative_color_photos) >= 2:
+            break
     findings = capability_results.findings_for_device(store, session["device_id"])
     findings = [f for f in findings if f["lens_id"] == session["lens_id"] and f["material_id"] == session["material_id"]]
     session_plans = store.query(
@@ -374,20 +368,24 @@ def _api_key() -> str | None:
     return None
 
 
+# The settings of a test plate. The pulse width is required: no value is filled in for it (DEC-043); it must be one of the
+# laser's steps, which research_context lists.
+SETTINGS_SCHEMA = {"type": "object", "properties": {"pulse_width": {"type": "number", "description": "Q-Pulse width in ns: a step of this laser"}},
+                   "required": ["pulse_width"]}
 TOOL_SPECS = [
     {"type": "function", "name": "research_context", "description": "Read this laser, lens, material, goal, accepted findings and available test types.",
      "parameters": {"type": "object", "properties": {}, "additionalProperties": False}, "strict": True},
     {"type": "function", "name": "suggest_next_test", "description": "Read the deterministic, evidence-based next test suggestion without creating a plate.",
      "parameters": {"type": "object", "properties": {}, "additionalProperties": False}, "strict": True},
     {"type": "function", "name": "preview_test", "description": "Validate and preview a content-sized LightBurn plate. For one to four tiny filled samples use test_type=small_patches; settings.patch_size_mm=3..5 and settings.patches=[{}, {power:30}, ...] (one dict per square). Set settings.registration=none for the smallest footprint (3 mm patch occupies 6 x 6 mm); full adds QR and four photo-registration marks. Optional settings.max_width_mm/max_height_mm constrain the full size; 100 x 100 mm is only an upper bound. For speed x wobble on open vector letters use test_type=material_matrix; settings.matrix={x_axis:speed,y_axis:wobble_size,geometry:vector_text,x_min:500,x_max:2300,x_count:3,y_min:0,y_max:0.08,y_count:3,wobble_step:0.02}. Zero wobble size is the OFF control. Laser limits, titanium cleaning first and <=30 output layers are enforced.",
-     "parameters": {"type": "object", "properties": {"test_type": {"type": "string"}, "settings": {"type": "object"}},
+     "parameters": {"type": "object", "properties": {"test_type": {"type": "string"}, "settings": SETTINGS_SCHEMA},
                     "required": ["test_type", "settings"]}, "strict": False},
     {"type": "function", "name": "create_test", "description": "Create one validated LightBurn plate for this research session; use only when the user asks to create a test.",
-     "parameters": {"type": "object", "properties": {"test_type": {"type": "string"}, "settings": {"type": "object"}},
+     "parameters": {"type": "object", "properties": {"test_type": {"type": "string"}, "settings": SETTINGS_SCHEMA},
                     "required": ["test_type", "settings"]}, "strict": False},
     {"type": "function", "name": "replace_pending_test", "description": "When the user asks to redo an unengraved test, atomically supersede the current pending plate and create a new validated LightBurn plate. Requires its plan ID. Refuses if any photo is linked. Old plate stays in history but can no longer be exported.",
      "parameters": {"type": "object", "properties": {"plan_id": {"type": "integer"},
-                    "test_type": {"type": "string"}, "settings": {"type": "object"}},
+                    "test_type": {"type": "string"}, "settings": SETTINGS_SCHEMA},
                     "required": ["plan_id", "test_type", "settings"]}, "strict": False},
     {"type": "function", "name": "cancel_pending_test", "description": "Cancel the current pending plate without creating a new one, only when the user asks to discard it. Requires a reason. Refuses if any photo is linked; preserves history.",
      "parameters": {"type": "object", "properties": {"plan_id": {"type": "integer"}, "reason": {"type": "string"}},

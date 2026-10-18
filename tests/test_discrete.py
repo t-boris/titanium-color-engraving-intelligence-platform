@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 import obs
-from titanium_platform import color, conversion as cv, knowledge as kn, lightburn as lb, plans as pl, profiles as pf
+from titanium_platform import color, conversion as cv, knowledge as kn, lightburn as lb, plans as pl, setup as su
 
 # Two measured colours, each from two engravings 2 apart in L: expected error = sqrt(variance) = sqrt(2) ~ 1.414
 RED_LAB = (45.0, 60.0, 40.0)
@@ -25,14 +25,14 @@ def png(rgb_blocks, size=(60, 120)):
 @pytest.fixture
 def w(store):
     w = obs.setup(store)
-    pid = w["profile"]["id"]
-    pf.save_rules(store, pid, repeat_threshold=2, delta_tolerance=6.0, variance_threshold=5.0)
-    pf.save_rules(store, pid, criteria_agreed=True)
+    setup = w["setup"]
+    su.save_rules(store, *setup, repeat_threshold=2, delta_tolerance=6.0, variance_threshold=5.0)
+    su.save_rules(store, *setup, criteria_agreed=True)
     for power, base in ((10, RED_LAB), (30, BLUE_LAB)):
         for dl in (-1.0, 1.0):
             obs.add(store, w, (base[0] + dl, base[1], base[2]), power=power)
-    kn.refresh(store, pid)
-    w["ids"] = {k["parameters"]["power"]: k["id"] for k in kn.list_for_profile(store, pid)}
+    kn.refresh(store, *setup)
+    w["ids"] = {k["parameters"]["power"]: k["id"] for k in kn.list_for_setup(store, *setup)}
     return w
 
 
@@ -41,13 +41,13 @@ def rgb_of(lab):
 
 
 def test_both_colors_become_validated_with_all_three_estimates(store, w):
-    assert {k["stage"] for k in kn.list_for_profile(store, w["profile"]["id"])} == {"validated"}
-    palette = cv.eligible_palette(store, w["profile"]["id"])
+    assert {k["stage"] for k in kn.list_for_setup(store, *w["setup"])} == {"validated"}
+    palette = cv.eligible_palette(store, *w["setup"])
     assert len(palette) == 2 and all(e["confidence"] and e["expected_delta_e"] > 0 and e["stability"]["assessed"] for e in palette)
 
 
 def test_matching_within_the_threshold_shows_distance_and_error(store, w):
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB), rgb_of(BLUE_LAB)]), 40, "A", threshold=8.0)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(BLUE_LAB)]), 40, "A", threshold=8.0)
     plan = pl.get_plan(store, pid)
     assert plan["status"] == cv.ST_DRAFT and plan["threshold"] == 8.0
     assert [m["status"] for m in plan["matches"]] == ["matched", "matched"]
@@ -58,7 +58,7 @@ def test_matching_within_the_threshold_shows_distance_and_error(store, w):
 
 def test_a_color_beyond_the_threshold_is_unreachable_and_becomes_a_designer_target(store, w):
     far = (90.0, -60.0, 70.0)
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)
     plan = pl.get_plan(store, pid)
     # source colors are ordered by lightness, so look the unreachable one up by status, not by stripe position
     assert sorted(m["status"] for m in plan["matches"]) == ["matched", "unreachable"]
@@ -74,7 +74,7 @@ def test_a_color_beyond_the_threshold_is_unreachable_and_becomes_a_designer_targ
 
 def test_the_plan_can_be_finalised_after_replacing_or_excluding_each_unreachable_color(store, w):
     far = (90.0, -60.0, 70.0)
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)
     unreachable = next(m["source_key"] for m in pl.get_plan(store, pid)["matches"] if m["status"] == "unreachable")
     cv.update_discrete(store, pid, replacements={unreachable: w["ids"][30]})
     assert {m["status"] for m in pl.get_plan(store, pid)["matches"]} == {"matched", "replaced"}
@@ -86,7 +86,7 @@ def test_the_plan_can_be_finalised_after_replacing_or_excluding_each_unreachable
 
 
 def test_excluding_every_color_leaves_nothing_to_finalise(store, w):
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "A", threshold=8.0)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A", threshold=8.0)
     cv.update_discrete(store, pid, exclusions=["c0"])
     with pytest.raises(cv.ConversionError, match="nothing to engrave"):
         cv.finalize_discrete(store, pid)
@@ -94,7 +94,7 @@ def test_excluding_every_color_leaves_nothing_to_finalise(store, w):
 
 def test_one_layer_per_distinct_titanium_color_with_parameters_and_estimates_exported(store, w):
     # two source shades that both match the red entry share ONE layer
-    pid = cv.start_discrete(store, w["profile"]["id"],
+    pid = cv.start_discrete(store, *w["setup"],
                             png([rgb_of((44, 58, 38)), rgb_of((47, 62, 42)), rgb_of(BLUE_LAB)], size=(60, 90)), 30, "A", threshold=12.0, max_colors=3)
     plan = cv.finalize_discrete(store, pid)
     assert len(plan["layers"]) == 2
@@ -108,58 +108,58 @@ def test_one_layer_per_distinct_titanium_color_with_parameters_and_estimates_exp
 
 
 def test_plan_generation_leaves_stage_and_questioned_flag_unchanged(store, w):
-    before = [(k["id"], k["stage"], k["questioned"], len(k["history"])) for k in kn.list_for_profile(store, w["profile"]["id"])]
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "A", threshold=8.0)
+    before = [(k["id"], k["stage"], k["questioned"], len(k["history"])) for k in kn.list_for_setup(store, *w["setup"])]
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A", threshold=8.0)
     cv.finalize_discrete(store, pid)
-    assert before == [(k["id"], k["stage"], k["questioned"], len(k["history"])) for k in kn.list_for_profile(store, w["profile"]["id"])]
+    assert before == [(k["id"], k["stage"], k["questioned"], len(k["history"])) for k in kn.list_for_setup(store, *w["setup"])]
 
 
 def questioned_world(store, w):
     kid = w["ids"][10]
     kn.approve_for_production(store, kid, True)
     obs.add(store, w, (80, 60, 40), power=10)   # a far-off later engraving: the production entry is questioned
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     assert kn.get(store, kid)["questioned"]
     return kid
 
 
 def test_questioned_entries_are_excluded_by_default_and_allowed_per_plan(store, w):
     kid = questioned_world(store, w)
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "A", threshold=60.0)
-    assert all(e["id"] != kid for e in cv.eligible_palette(store, w["profile"]["id"]))
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A", threshold=60.0)
+    assert all(e["id"] != kid for e in cv.eligible_palette(store, *w["setup"]))
     assert pl.get_plan(store, pid)["matches"][0]["knowledge_id"] != kid
     assert kid in pl.get_plan(store, pid)["questioned_available"]
     cv.update_discrete(store, pid, allowed_questioned=[kid])
     plan = pl.get_plan(store, pid)
     assert plan["matches"][0]["knowledge_id"] == kid and plan["allowed_questioned"] == [kid]
-    other = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "B", threshold=60.0)
+    other = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "B", threshold=60.0)
     assert pl.get_plan(store, other)["allowed_questioned"] == []  # the allowance does not carry over
     assert kn.get(store, kid)["questioned"] and kn.get(store, kid)["stage"] == "production"
 
 
 def test_threshold_must_be_explicit_and_valid(store, w):
-    pf.save_rules(store, w["profile"]["id"])  # keep saved rules
+    su.save_rules(store, *w["setup"])  # keep saved rules
     with pytest.raises(cv.ConversionError, match="non-negative"):
-        cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "A", threshold=-1)
-    pid = cv.start_discrete(store, w["profile"]["id"], png([rgb_of(RED_LAB)]), 40, "A")  # falls back to the saved tolerance 6.0
+        cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A", threshold=-1)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A")  # falls back to the saved tolerance 6.0
     assert pl.get_plan(store, pid)["threshold"] == 6.0
 
 
 def test_without_a_saved_tolerance_a_threshold_is_required(store):
     w = obs.setup(store)
     with pytest.raises(cv.ConversionError, match="set the delta E threshold"):
-        cv.start_discrete(store, w["profile"]["id"], png([(200, 20, 20)]), 40, "A")
+        cv.start_discrete(store, *w["setup"], png([(200, 20, 20)]), 40, "A")
 
 
 def test_no_eligible_palette_makes_every_color_unreachable(store):
     w = obs.setup(store)
-    pid = cv.start_discrete(store, w["profile"]["id"], png([(200, 20, 20)]), 40, "A", threshold=10)
+    pid = cv.start_discrete(store, *w["setup"], png([(200, 20, 20)]), 40, "A", threshold=10)
     assert [m["status"] for m in pl.get_plan(store, pid)["matches"]] == ["unreachable"]
 
 
 @pytest.mark.parametrize("kw,msg", [(dict(width_mm=0), "positive"), (dict(name=" "), "name"), (dict(image_bytes=b"nope"), "could not be read")])
 def test_bad_inputs(store, w, kw, msg):
-    args = dict(profile_id=w["profile"]["id"], image_bytes=png([rgb_of(RED_LAB)]), width_mm=40, name="A", threshold=8.0)
+    args = dict(device_id=w["setup"][0], lens_id=w["setup"][1], image_bytes=png([rgb_of(RED_LAB)]), width_mm=40, name="A", threshold=8.0)
     args.update(kw)
     with pytest.raises(cv.ConversionError, match=msg):
         cv.start_discrete(store, **args)

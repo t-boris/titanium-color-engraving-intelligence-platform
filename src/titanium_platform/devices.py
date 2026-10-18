@@ -2,8 +2,8 @@
 
 A device describes one physical laser. Its passport holds what the manufacturer and the acceptance test say about it:
 rated average power, repetition-rate range, the selectable pulse widths with the cut-off frequency of each, and
-optional sections (test report, controller configuration, waveform key figures, open items). A laser profile version
-may link to one device (DEC-035). Editing a device never touches stored measurements.
+optional sections (test report, controller configuration, waveform key figures, open items). Every plate, plan,
+photograph and observation names its device (DEC-063). Editing a device never touches stored measurements.
 
 The model at the end turns a parameter set into the physical quantities that decide how much heat reaches the metal.
 It is a passport model, not a measurement (DEC-036): average power rises in proportion to the repetition rate up
@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from . import profiles as pf
+from . import setup as su
 from . import lenses
 from .characterization import UNREAD, characterize
 from .db import Store, now
@@ -35,16 +35,16 @@ _UNSET = object()
 
 # -- passport ------------------------------------------------------------------------------------------------
 def _optional_positive(value: Any, name: str) -> float | None:
-    return None if value in (None, "") else pf._finite(value, name, True)
+    return None if value in (None, "") else su._finite(value, name, True)
 
 
 def _section(value: Any, kinds: tuple[type, ...]) -> Any:
     if value is None:
         return None
     if not isinstance(value, kinds):
-        raise pf.ValidationError("a passport section has the wrong type")
+        raise su.ValidationError("a passport section has the wrong type")
     if len(json.dumps(value, ensure_ascii=False)) > MAX_SECTION_CHARS:
-        raise pf.ValidationError("a passport section is too large")
+        raise su.ValidationError("a passport section is too large")
     return value
 
 
@@ -63,16 +63,16 @@ def _controller(value: Any) -> dict | None:
     if value is None:
         return None
     if not isinstance(value, dict) or not isinstance(value.get("tabs"), list):
-        raise pf.ValidationError("the controller settings are not valid")
+        raise su.ValidationError("the controller settings are not valid")
     tabs = []
     for tab in value["tabs"]:
         if not isinstance(tab, dict) or not str(tab.get("key") or "").strip() or not isinstance(tab.get("fields"), list):
-            raise pf.ValidationError("the controller settings are not valid")
+            raise su.ValidationError("the controller settings are not valid")
         fields = []
         for f in tab["fields"]:
             if (not isinstance(f, dict) or not str(f.get("key") or "").strip() or not _scalar(f.get("value"))
                     or f.get("status") not in CONTROLLER_STATUSES):
-                raise pf.ValidationError("the controller settings are not valid")
+                raise su.ValidationError("the controller settings are not valid")
             fields.append({"key": f["key"].strip(), "value": f["value"], "unit": _text(f.get("unit")), "status": f["status"]})
         tabs.append({"key": tab["key"].strip(), "fields": fields})
     return {"software": _text(value.get("software")), "source": _text(value.get("source")), "tabs": tabs}
@@ -83,14 +83,14 @@ def _test_report(value: Any) -> dict | None:
     if value is None:
         return None
     if not isinstance(value, dict) or not isinstance(value.get("rows", []), list):
-        raise pf.ValidationError("the test report is not valid")
+        raise su.ValidationError("the test report is not valid")
     rows = []
     for r in value.get("rows", []):
         if not isinstance(r, dict) or not str(r.get("key") or "").strip():
-            raise pf.ValidationError("the test report is not valid")
+            raise su.ValidationError("the test report is not valid")
         cells = {k: r.get(k) for k in ("min", "typ", "max", "result")}
         if not all(c is None or _scalar(c) for c in cells.values()):
-            raise pf.ValidationError("the test report is not valid")
+            raise su.ValidationError("the test report is not valid")
         rows.append({"key": r["key"].strip(), "condition": _text(r.get("condition")), "unit": _text(r.get("unit")), **cells})
     return {"serial": _text(value.get("serial")), "part_number": _text(value.get("part_number")), "tested_on": _text(value.get("tested_on")),
             "source": _text(value.get("source")), "rows": rows}
@@ -101,14 +101,14 @@ def _waveforms(value: Any) -> list | None:
     if value is None:
         return None
     if not isinstance(value, list):
-        raise pf.ValidationError("a passport section has the wrong type")
+        raise su.ValidationError("a passport section has the wrong type")
     out = []
     for w in value:
         t, p = (w.get("t_ns"), w.get("p_kw")) if isinstance(w, dict) else (None, None)
         if (not isinstance(t, list) or not isinstance(p, list) or len(t) != len(p) or not 2 <= len(t) <= MAX_WAVEFORM_POINTS
                 or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in t + p)
                 or any(b <= a for a, b in zip(t, t[1:]))):
-            raise pf.ValidationError("a waveform is not valid")
+            raise su.ValidationError("a waveform is not valid")
         out.append({"title": _text(w.get("title")) or "waveform", "pulse_width_ns": _optional_positive(w.get("pulse_width_ns"), "pulse width"),
                     "frequency_khz": _optional_positive(w.get("frequency_khz"), "frequency"), "approximate": bool(w.get("approximate", True)),
                     "source": _text(w.get("source")), "note": _text(w.get("note")), "t_ns": [float(x) for x in t], "p_kw": [float(x) for x in p]})
@@ -118,30 +118,30 @@ def _waveforms(value: Any) -> list | None:
 def validate_passport(raw: Any) -> dict:
     """The normalised passport; raises ValidationError with a message for the operator."""
     if not isinstance(raw, dict):
-        raise pf.ValidationError("the passport must be an object")
-    rated = pf._finite(raw.get("rated_power_w"), "rated power", True)
+        raise su.ValidationError("the passport must be an object")
+    rated = su._finite(raw.get("rated_power_w"), "rated power", True)
     rate = raw.get("repetition_rate_khz")
     if not isinstance(rate, dict):
-        raise pf.ValidationError("the repetition rate range must be an object")
-    lo = pf._finite(rate.get("min"), "minimum repetition rate", True)
-    hi = pf._finite(rate.get("max"), "maximum repetition rate", True)
+        raise su.ValidationError("the repetition rate range must be an object")
+    lo = su._finite(rate.get("min"), "minimum repetition rate", True)
+    hi = su._finite(rate.get("max"), "maximum repetition rate", True)
     if not lo < hi:
-        raise pf.ValidationError("maximum repetition rate must be above the minimum")
+        raise su.ValidationError("maximum repetition rate must be above the minimum")
     raw_steps = raw.get("pulse_steps")
     if not isinstance(raw_steps, list) or not raw_steps:
-        raise pf.ValidationError("the pulse width table needs at least one step")
+        raise su.ValidationError("the pulse width table needs at least one step")
     steps = []
     for item in raw_steps:
         item = item if isinstance(item, dict) else {}
         cutoff = item.get("cutoff_khz")
-        steps.append({"pulse_width_ns": pf._finite(item.get("pulse_width_ns"), "pulse width", True),
-                      "cutoff_khz": None if cutoff in (None, "") else pf._finite(cutoff, "cut-off frequency", True)})
+        steps.append({"pulse_width_ns": su._finite(item.get("pulse_width_ns"), "pulse width", True),
+                      "cutoff_khz": None if cutoff in (None, "") else su._finite(cutoff, "cut-off frequency", True)})
     steps.sort(key=lambda s: s["pulse_width_ns"])
     if len({s["pulse_width_ns"] for s in steps}) != len(steps):
-        raise pf.ValidationError("pulse widths must not repeat")
+        raise su.ValidationError("pulse widths must not repeat")
     open_items = raw.get("open_items") or []
     if not isinstance(open_items, list) or not all(isinstance(t, str) for t in open_items):
-        raise pf.ValidationError("a passport section has the wrong type")
+        raise su.ValidationError("a passport section has the wrong type")
     return {"rated_power_w": rated, "wavelength_nm": _optional_positive(raw.get("wavelength_nm"), "wavelength"),
             "max_pulse_energy_mj": _optional_positive(raw.get("max_pulse_energy_mj"), "maximum pulse energy"),
             "spot_diameter_um": _optional_positive(raw.get("spot_diameter_um"), "spot diameter"),
@@ -164,7 +164,7 @@ def require_selectable(passport: dict, pulse_width: float) -> dict:
     step = step_for(passport, pulse_width)
     if step is None:
         steps = ", ".join(f"{s['pulse_width_ns']:g}" for s in passport["pulse_steps"])
-        raise pf.ValidationError(f"pulse width {pulse_width:g} ns is not a selectable step of this laser; the steps are {steps}")
+        raise su.ValidationError(f"pulse width {pulse_width:g} ns is not a selectable step of this laser; the steps are {steps}")
     return step
 
 
@@ -200,7 +200,7 @@ def get_passport(store: Store, device_id: int) -> dict:
 
 
 def brief(store: Store, device_id: int | None) -> dict | None:
-    """What a laser profile carries about its device: identity and passport, without documents."""
+    """What a record of work needs about its laser: identity and passport, without documents."""
     if device_id is None:
         return None
     row = _row(store, device_id)
@@ -208,9 +208,9 @@ def brief(store: Store, device_id: int | None) -> dict | None:
             "model": row["model"], "serial": row["serial"], "passport": json.loads(row["data_json"]), "lens": lenses.installed(store, device_id)}
 
 
-def linked_profiles(store: Store, device_id: int) -> list[dict]:
-    return [{"id": r["id"], "name": r["name"], "version": r["version"], "lens_id": r["lens_id"]}
-            for r in store.query("SELECT id,name,version,lens_id FROM laser_profile WHERE device_id=? ORDER BY family, version", (device_id,))]
+def record_count(store: Store, device_id: int) -> int:
+    """How many stored records of work name this laser."""
+    return sum(store.one(f"SELECT COUNT(*) AS n FROM {table} WHERE device_id=?", (device_id,))["n"] for table in su.RECORD_TABLES)
 
 
 def _document_public(row) -> dict:
@@ -226,7 +226,6 @@ def _public(store: Store, row) -> dict:
     d = dict(row)
     d["passport"] = json.loads(d.pop("data_json"))
     d["documents"] = [_document_public(r) for r in store.query("SELECT * FROM device_document WHERE device_id=? ORDER BY id", (d["id"],))]
-    d["profiles"] = linked_profiles(store, d["id"])
     d["lens"] = lenses.installed(store, d["id"])
     d["open_questions"] = open_questions(d["passport"], d.get("serial"), d["lens"])
     d["characterization"] = characterize(d["passport"], d["lens"])
@@ -255,6 +254,8 @@ def open_questions(passport: dict, serial: str | None, lens: dict | None = None)
         out.append({"kind": "unconfirmed", "count": len(unconfirmed), "items": unconfirmed})
     if lens is None and not passport.get("spot_diameter_um"):
         out.append({"kind": "lens"})
+    elif lens is not None and lens.get("focal_length_mm") is None and not passport.get("spot_diameter_um"):
+        out.append({"kind": "focal_length"})
     elif not passport.get("spot_diameter_um") and not passport.get("m2"):
         out.append({"kind": "m2"})
     if not serial:
@@ -267,7 +268,7 @@ def create_device(store: Store, name: str, passport: Any, manufacturer: str | No
                   serial: str | None = None, description: str | None = None) -> dict:
     name = (name or "").strip()
     if not name:
-        raise pf.ValidationError("device name is required")
+        raise su.ValidationError("device name is required")
     data = validate_passport(passport)
     stamp = now()
     cur = store.execute(
@@ -293,7 +294,7 @@ def update_device(store: Store, device_id: int, name: Any = _UNSET, manufacturer
         if new is not _UNSET:
             values[key] = _text(new)
     if not values["name"]:
-        raise pf.ValidationError("device name is required")
+        raise su.ValidationError("device name is required")
     if passport is not _UNSET:
         data = validate_passport(passport)
         values["data_json"] = json.dumps(data)
@@ -303,11 +304,11 @@ def update_device(store: Store, device_id: int, name: Any = _UNSET, manufacturer
 
 
 def delete_device(store: Store, device_id: int) -> None:
+    """Delete a laser that no record of work names; the refusal leaves everything as it was, its lens included."""
     _row(store, device_id)
-    store.execute("UPDATE laser_device SET lens_id=NULL WHERE id=?", (device_id,))    # the lens stays as a record
-    linked = len(linked_profiles(store, device_id))
-    if linked:
-        raise pf.ProtectedError(f"this laser is linked to {linked} laser profile versions; unlink them first")
+    used = record_count(store, device_id)
+    if used:
+        raise su.ProtectedError(f"this laser is named by {used} stored records of work and keeps their history")
     paths = [r["path"] for r in store.query("SELECT path FROM device_document WHERE device_id=?", (device_id,))]
     with store.transaction():
         store.execute("DELETE FROM device_document WHERE device_id=?", (device_id,))
@@ -324,7 +325,7 @@ def list_templates() -> list[dict]:
 def create_from_template(store: Store, key: str, name: str | None = None, serial: str | None = None) -> dict:
     template = TEMPLATES.get(key)
     if template is None:
-        raise pf.ValidationError("the laser template is not known")
+        raise su.ValidationError("the laser template is not known")
     return create_device(store, (name or "").strip() or template["name"], json.loads(json.dumps(template["passport"])), template["manufacturer"],
                          template["model"], serial, template["description"])
 
@@ -349,16 +350,16 @@ def add_document(store: Store, device_id: int, kind: str, title: str | None, fil
     """Attach a source document unchanged (DEC-037); the original bytes are what is stored."""
     _row(store, device_id)
     if kind not in DOCUMENT_KINDS:
-        raise pf.ValidationError("the document kind is not recognised")
+        raise su.ValidationError("the document kind is not recognised")
     extension = Path(filename or "").suffix.lower()
     if extension not in DOCUMENT_TYPES:
-        raise pf.ValidationError("the document must be a JPG, PNG, PDF or TXT file")
+        raise su.ValidationError("the document must be a JPG, PNG, PDF or TXT file")
     if not data:
-        raise pf.ValidationError("the document is empty")
+        raise su.ValidationError("the document is empty")
     if len(data) > MAX_DOCUMENT_BYTES:
-        raise pf.ValidationError(f"the document is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB")
+        raise su.ValidationError(f"the document is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB")
     if not _content_matches(extension, data):
-        raise pf.ValidationError("the document content does not match its file type")
+        raise su.ValidationError("the document content does not match its file type")
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename).name) or "document"
     path = store.data_dir / "files" / f"device{device_id}-{uuid.uuid4().hex[:12]}-{safe}"
     path.write_bytes(data)
@@ -393,13 +394,13 @@ def _round(value: float | None, digits: int = 6) -> float | None:
 def operating_point(passport: dict, power: float, frequency: float, speed: float, pulse_width: float, line_interval: float, passes: int = 1,
                     lens: dict | None = None) -> dict:
     """Passport-model figures for one parameter set. Nothing here is measured."""
-    power = pf._finite(power, "power", True)
+    power = su._finite(power, "power", True)
     if power > 100:
-        raise pf.ValidationError("power must not exceed 100 %")
-    freq, speed = pf._finite(frequency, "frequency", True), pf._finite(speed, "speed", True)
-    interval = pf._finite(line_interval, "line interval", True)
+        raise su.ValidationError("power must not exceed 100 %")
+    freq, speed = su._finite(frequency, "frequency", True), su._finite(speed, "speed", True)
+    interval = su._finite(line_interval, "line interval", True)
     if int(passes) != passes or passes < 1:
-        raise pf.ValidationError("passes must be a positive integer")
+        raise su.ValidationError("passes must be a positive integer")
     step = require_selectable(passport, pulse_width)
     cutoff = step["cutoff_khz"]
     cw = cutoff is None

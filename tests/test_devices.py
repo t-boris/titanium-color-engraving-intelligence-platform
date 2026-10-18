@@ -1,15 +1,13 @@
 import io
 import json
 import os
-import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
 
 from titanium_platform import devices as dv
-from titanium_platform import profiles as pf
+from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
-from titanium_platform.db import Store
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 64
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
@@ -20,8 +18,7 @@ def jpt(store, **kw):
     return dv.create_from_template(store, TEMPLATE, **kw)
 
 
-def profile(store, device_id=None, pulse_width=200, **kw):
-    return pf.create_profile(store, kw.pop("name", "MOPA"), pulse_width, 0.025, 1, device_id=device_id, **kw)
+JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 
 
 # -- passport and template -------------------------------------------------------------------------------
@@ -45,14 +42,14 @@ def test_the_cutoff_frequency_falls_as_the_pulse_gets_longer(store):
     {"open_items": "text"}, {"controller": [1]}])
 def test_the_passport_is_validated(store, change):
     passport = json.loads(json.dumps(dv.TEMPLATES[TEMPLATE]["passport"])) | change
-    with pytest.raises(pf.ValidationError):
+    with pytest.raises(su.ValidationError):
         dv.create_device(store, "X", passport)
 
 
 def test_a_device_needs_a_name_and_an_unknown_template_is_refused(store):
-    with pytest.raises(pf.ValidationError, match="name"):
+    with pytest.raises(su.ValidationError, match="name"):
         dv.create_device(store, "  ", dv.TEMPLATES[TEMPLATE]["passport"])
-    with pytest.raises(pf.ValidationError, match="template"):
+    with pytest.raises(su.ValidationError, match="template"):
         dv.create_from_template(store, "nope")
 
 
@@ -60,7 +57,7 @@ def test_editing_a_device_in_place_keeps_unchanged_fields(store):
     d = jpt(store)
     e = dv.update_device(store, d["id"], serial="S1", description=None)
     assert e["serial"] == "S1" and e["description"] is None and e["name"] == d["name"] and e["passport"] == d["passport"]
-    with pytest.raises(pf.ValidationError, match="name"):
+    with pytest.raises(su.ValidationError, match="name"):
         dv.update_device(store, d["id"], name="")
 
 
@@ -112,7 +109,7 @@ def test_cw_has_no_cutoff_pulse_energy_or_pitch(store):
 
 
 def test_a_pulse_width_that_is_not_a_step_is_refused_with_the_steps_listed(store):
-    with pytest.raises(pf.ValidationError, match=r"5 ns is not a selectable step.*1, 2, 4, 6"):
+    with pytest.raises(su.ValidationError, match=r"5 ns is not a selectable step.*1, 2, 4, 6"):
         dv.operating_point(jpt(store)["passport"], 50, 80, 900, 5, 0.025)
 
 
@@ -123,7 +120,7 @@ def test_frequency_outside_the_laser_range_is_reported(store):
 
 @pytest.mark.parametrize("args", [(0, 80, 900), (101, 80, 900), (50, 0, 900), (50, 80, -1), (50, "x", 900)])
 def test_operating_point_validates_input(store, args):
-    with pytest.raises(pf.ValidationError):
+    with pytest.raises(su.ValidationError):
         dv.operating_point(jpt(store)["passport"], *args, 200, 0.025)
 
 
@@ -143,68 +140,35 @@ def test_charts_come_from_the_passport_and_agree_with_the_model(store):
     assert freqs == sorted(freqs) and freqs[0] == 1 and freqs[-1] == 4000
 
 
-# -- link to profiles --------------------------------------------------------------------------------------
-def test_a_profile_can_be_linked_and_carries_the_device(store):
+# -- job settings and stored work ----------------------------------------------------------------------------
+def test_job_settings_are_validated_against_the_selected_laser(store):
     d = jpt(store)
-    p = profile(store, d["id"])
-    assert p["device_id"] == d["id"] and p["device"]["name"] == d["name"] and p["device"]["passport"]["rated_power_w"] == 60
-    assert profile(store, name="Free")["device"] is None
+    assert su.parameter_vector(d["passport"], 20, 48, 900, **JOB)["pulse_width"] == 200
+    with pytest.raises(su.ValidationError, match="not a selectable step"):
+        su.parameter_vector(d["passport"], 20, 48, 900, 210, 0.025, 1)
 
 
-def test_process_settings_are_validated_when_used_against_the_selected_laser(store):
+def test_a_passport_edit_does_not_depend_on_stored_job_settings(store):
     d = jpt(store)
-    p = profile(store, d["id"], pulse_width=210)
-    assert p["device"]["id"] == d["id"] and "pulse_width" not in p
-    with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        pf.parameter_vector(p, 20, 48, 900, pulse_width=210)
-
-
-def test_linking_and_unlinking_never_versions_or_saves_process_settings(store):
-    d = jpt(store)
-    p = profile(store)
-    linked = pf.update_profile(store, p["id"], device_id=d["id"])
-    assert linked["id"] == p["id"] and linked["version"] == 1 and linked["device"]["id"] == d["id"]
-    assert not {"pulse_width", "line_interval", "passes", "constants"} & linked.keys()
-    assert pf.update_profile(store, p["id"], name="Renamed")["device"]["id"] == d["id"]     # an absent field leaves the link
-    unlinked = pf.update_profile(store, p["id"], device_id=None)
-    assert unlinked["device"] is None and len(pf.list_profiles(store)) == 1
-
-
-def test_a_profile_does_not_bind_process_settings_to_its_hardware_link(store):
-    d = jpt(store)
-    p = profile(store, pulse_width=210)
-    linked = pf.update_profile(store, p["id"], device_id=d["id"])
-    assert linked["device"]["id"] == d["id"] and "pulse_width" not in linked
-    with pytest.raises(KeyError, match="not found"):
-        pf.update_profile(store, p["id"], device_id=999)
-
-
-def test_changing_process_settings_does_not_create_a_new_hardware_version(store):
-    d = jpt(store)
-    p = profile(store, d["id"])
-    v2 = pf.update_profile(store, p["id"], pulse_width=250, confirm_new_version=True)
-    assert v2["version"] == 1 and v2["device_id"] == d["id"]
-    assert pf.update_profile(store, p["id"], pulse_width=255, confirm_new_version=True)["version"] == 1
-    with pytest.raises(pf.ValidationError, match="not a selectable step"):
-        pf.parameter_vector(v2, 20, 48, 900, pulse_width=255)
-    assert [x["version"] for x in pf.list_profiles(store)] == [1]
-
-
-def test_a_passport_edit_does_not_depend_on_profile_process_settings(store):
-    d = jpt(store)
-    profile(store, d["id"], pulse_width=200)
+    _plates(store, d["id"])                                               # stored work used the 200 ns step
     trimmed = dict(d["passport"], pulse_steps=[s for s in d["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
     assert len(dv.update_device(store, d["id"], passport=trimmed)["passport"]["pulse_steps"]) == 16
 
 
-def test_a_device_linked_to_a_profile_cannot_be_deleted(store):
+def test_a_device_named_by_stored_work_cannot_be_deleted_and_the_refusal_leaves_its_lens_installed(store):
+    from titanium_platform import lenses
     d = jpt(store)
-    p = profile(store, d["id"])
-    with pytest.raises(pf.ProtectedError, match="1 laser profile"):
+    lens = lenses.create_lens(store, "F174", 174)
+    lenses.install(store, d["id"], lens["id"])
+    _plates(store, d["id"])
+    with pytest.raises(su.ProtectedError, match="stored records of work"):
         dv.delete_device(store, d["id"])
-    pf.update_profile(store, p["id"], device_id=None)
-    dv.delete_device(store, d["id"])
-    assert dv.list_devices(store) == []
+    assert dv.get_device(store, d["id"])["lens"]["id"] == lens["id"]
+    free = jpt(store, name="Unused")
+    lenses.install(store, d["id"], None)
+    lenses.install(store, free["id"], lens["id"])
+    dv.delete_device(store, free["id"])
+    assert [x["id"] for x in dv.list_devices(store)] == [d["id"]] and lenses.get_lens(store, lens["id"])["installed_on"] is None
 
 
 # -- documents ---------------------------------------------------------------------------------------------
@@ -225,7 +189,7 @@ def test_a_document_is_stored_byte_for_byte_and_removed_with_its_file(store):
     ("other", "a.txt", b"\xff\xfe\x00bad", "does not match")])
 def test_documents_are_checked(store, kind, name, data, message):
     d = jpt(store)
-    with pytest.raises(pf.ValidationError, match=message):
+    with pytest.raises(su.ValidationError, match=message):
         dv.add_document(store, d["id"], kind, "t", name, data)
     assert dv.get_device(store, d["id"])["documents"] == []
 
@@ -251,63 +215,36 @@ def test_deleting_a_device_removes_its_document_files(store):
 
 
 # -- plates carry the operating point -----------------------------------------------------------------------
-def _plates(store, profile_id):
+def _plates(store, device_id):
     from titanium_platform import plans as pl
     pl.save_marker_layer_settings(store, 20, 60, 300)
-    return pl.create_plate_series(store, profile_id, "10 50", "24 80", "900", 6, 5, 1)
+    return pl.create_plate_series(store, device_id, "10 50", "24 80", "900", 6, 5, 1, **JOB)
 
 
-def test_plate_cells_of_a_profile_with_a_device_carry_the_operating_point_outside_the_parameter_vector(store):
+def test_plate_cells_carry_the_operating_point_outside_the_parameter_vector(store):
     from titanium_platform import plans as pl
-    p = profile(store, jpt(store)["id"])
-    made = _plates(store, p["id"])
+    made = _plates(store, jpt(store)["id"])
     plate = json.loads(store.one("SELECT cells_json FROM plate WHERE id=?", (made[0]["plate_id"],))["cells_json"])
     low = next(c for c in plate if c["parameters"]["power"] == 50 and c["parameters"]["frequency"] == 24)
     assert low["operating_point"]["below_cutoff"] is True and low["operating_point"]["basis"] == "passport model"
     assert low["operating_point"]["output_power_w"] == pytest.approx(60 * 0.5 * 24 / 48)
-    assert "operating_point" not in low["parameters"] and set(low["parameters"]) == {"power", "frequency", "speed", "pulse_width", "line_interval", "passes", "profile_id"}
+    assert "operating_point" not in low["parameters"] and set(low["parameters"]) == {"power", "frequency", "speed", "pulse_width", "line_interval", "passes"}
     layer = pl.get_plan(store, made[0]["plan_id"])["layers"][0]
     assert layer["operating_point"] is not None and layer["parameters"] == plate[0]["parameters"]
 
 
 
 
-def test_a_plan_missing_process_settings_keeps_them_unknown_after_hardware_link(client):
-    prof = client.post("/api/profiles", json={"name": "Old", "pulse_width": 200, "line_interval": 0.025, "passes": 1}).json()
-    client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
-    r = client.post("/api/plates", json={"profile_id": prof["id"], "powers": "50", "frequencies": "24", "speeds": "900", "cell_width": 6, "cell_height": 5, "gap": 1})
-    plan_id = r.json()[0]["plan_id"]
-    assert client.get(f"/api/plans/{plan_id}").json()["layers"][0]["operating_point"] is None
+def test_a_layer_whose_job_settings_are_unknown_gets_no_operating_point_and_no_default(client):
+    """REQ-016: an unknown pulse width stays unknown; no 200 ns is put in its place to compute figures."""
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
-    client.patch(f"/api/profiles/{prof['id']}", json={"device_id": d["id"]})
-    op = client.get(f"/api/plans/{plan_id}").json()["layers"][0]["operating_point"]
-    assert op is None  # the hardware identity must not supply guessed process settings
-    stored = client.app.state.store.one("SELECT data_json FROM plan WHERE id=?", (plan_id,))["data_json"]
-    assert '"operating_point": null' in stored
-
-def test_plate_cells_of_a_profile_without_a_device_have_no_operating_point(store):
-    p = profile(store)
-    made = _plates(store, p["id"])
-    plate = json.loads(store.one("SELECT cells_json FROM plate WHERE id=?", (made[0]["plate_id"],))["cells_json"])
-    assert all("operating_point" not in c for c in plate)
-
-
-# -- database --------------------------------------------------------------------------------------------
-def test_the_migration_adds_the_link_column_to_a_database_written_by_the_previous_version(tmp_path):
-    folder = tmp_path / "old"
-    folder.mkdir()
-    conn = sqlite3.connect(folder / "titanium.sqlite")
-    conn.execute("CREATE TABLE laser_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, family TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL, "
-                 "axes_json TEXT NOT NULL, pulse_width REAL NOT NULL, line_interval REAL NOT NULL, passes INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE (family, version))")
-    conn.execute("INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at) VALUES ('f',1,'Old','[]',200,0.025,1,'2026-01-01')")
-    conn.commit()
-    conn.close()
-    s = Store(folder)
-    try:
-        assert s.one("SELECT device_id FROM laser_profile")["device_id"] is None and s.one("SELECT name FROM laser_profile")["name"] == "Old"
-        Store(folder).close()                                                           # running it again changes nothing
-    finally:
-        s.close()
+    layer = {"index": 1, "name": "C01", "parameters": {"power": 50, "frequency": 24, "speed": 900, "pulse_width": None,
+                                                       "line_interval": 0.025, "passes": 1}, "regions": []}
+    store = client.app.state.store
+    plan_id = store.execute("INSERT INTO plan(name,mode,status,device_id,lens_id,markers,data_json,created_at) VALUES ('Old work',?,'Ready to export',?,NULL,0,?,'t')",
+                            ("Restored from file", d["id"], json.dumps({"layers": [layer]}))).lastrowid
+    got = client.get(f"/api/plans/{plan_id}").json()["layers"][0]
+    assert got.get("operating_point") is None and got["parameters"]["pulse_width"] is None
 
 
 # -- API -------------------------------------------------------------------------------------------------
@@ -324,26 +261,22 @@ def test_api_device_flow(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE, "serial": "S"}).json()
     assert d["serial"] == "S" and client.get("/api/devices").json()[0]["id"] == d["id"]
     assert len(client.get(f"/api/devices/{d['id']}/charts").json()["curves"]) == 16
-    p = client.post("/api/profiles", json={"name": "MOPA", "pulse_width": 200, "line_interval": 0.025, "passes": 1, "device_id": d["id"]}).json()
-    assert p["device"]["id"] == d["id"]
-    op = client.post("/api/operating-point", json={"profile_id": p["id"], "power": 30, "frequency": 40, "speed": 900}).json()
+    assert "profiles" not in d
+    op = client.post("/api/operating-point", json={"device_id": d["id"], "lens_id": None, "power": 30, "frequency": 40, "speed": 900, **JOB}).json()
     assert op["below_cutoff"] is True and op["output_power_w"] == pytest.approx(60 * 0.3 * 40 / 48)
-    r = client.patch(f"/api/profiles/{p['id']}", json={"device_id": None}).json()
-    assert r["device"] is None and r["version"] == 1
-    r = client.post("/api/operating-point", json={"profile_id": p["id"], "power": 30, "frequency": 40, "speed": 900})
-    assert r.status_code == 422 and "link a laser device" in r.json()["error"]
 
 
-def test_api_profile_ignores_legacy_process_fields_and_validates_experiments(client):
+def test_api_job_settings_are_checked_and_a_device_with_stored_work_is_kept(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
-    bad = client.post("/api/profiles", json={"name": "B", "pulse_width": 210, "line_interval": 0.025, "passes": 1, "device_id": d["id"]})
-    assert bad.status_code == 201 and "pulse_width" not in bad.json()
-    invalid_point = client.post("/api/operating-point", json={"profile_id": bad.json()["id"], "power": 20, "frequency": 48,
-                                                              "speed": 900, "pulse_width": 210, "line_interval": 0.025})
+    invalid_point = client.post("/api/operating-point", json={"device_id": d["id"], "lens_id": None, "power": 20, "frequency": 48,
+                                                              "speed": 900, "pulse_width": 210, "line_interval": 0.025, "passes": 1})
     assert invalid_point.status_code == 422 and "selectable step" in invalid_point.json()["error"]
-    p = client.post("/api/profiles", json={"name": "A", "pulse_width": 200, "line_interval": 0.025, "passes": 1, "device_id": d["id"]}).json()
-    assert client.patch(f"/api/profiles/{p['id']}", json={"name": "A2"}).json()["device"]["id"] == d["id"]
-    assert client.delete(f"/api/devices/{d['id']}").status_code == 409
+    client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
+    plates = {"device_id": d["id"], "powers": "50", "frequencies": "24", "speeds": "900", "cell_width": 6, "cell_height": 5, "gap": 1}
+    assert client.post("/api/plates", json=plates).status_code == 422          # the job settings are never filled in
+    assert client.post("/api/plates", json=plates | JOB).status_code == 201
+    r = client.delete(f"/api/devices/{d['id']}")
+    assert r.status_code == 409 and "stored records of work" in r.json()["error"]
 
 
 def test_api_documents_round_trip_and_errors(client):

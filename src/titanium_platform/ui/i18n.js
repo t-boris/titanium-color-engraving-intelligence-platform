@@ -67,7 +67,7 @@ I18N.add([
   [/^The LightBurn file differs from the plate definition/i, 'Файл LightBurn отличается от определения платы: исправьте пару или подтвердите, что использовался этот файл'],
   [/^plate cells not found in the LightBurn file: (.+)$/i, (m) => 'Ячейки платы не найдены в файле LightBurn: ' + m[1]],
   [/^No readable, comparable layer could be measured/i, 'Ни один читаемый и сопоставимый слой не удалось измерить'],
-  [/^this plate was generated for a different laser profile version/i, 'Плата создана для другой версии профиля лазера'],
+  [/^this plate was made for a different laser than the one selected/i, 'Плата сделана для другого лазера, чем выбранный: выберите лазер платы'],
   [/^experiment identifier (\S+) is not known to this system/i, (m) => 'Идентификатор эксперимента ' + m[1] + ' системе неизвестен'],
   [/^LightBurn file: /i, 'Файл LightBurn не читается: '],
 ]);

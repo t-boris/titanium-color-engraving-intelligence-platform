@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from . import color, experiments, ingest, lightburn as lb, model
+from . import setup as su
 from .db import Store
 
 DEFAULT_CLEAN = [68.0, 0.0, 2.0]          # cleaned titanium when no photograph with a chart has measured it yet
@@ -27,6 +28,7 @@ def _rows(store: Store):
     return store.query(
         "SELECT o.id, o.pair_id, o.layer_index, o.lab_json, o.parameters_json, o.model_eligible, o.alignment_method, o.evidence_json, "
         "p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
+        "p.device_id, p.lens_id, "
         "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status "
         "FROM observation o JOIN pair p ON p.id=o.pair_id LEFT JOIN plan pl ON pl.id=p.plan_id "
         "WHERE p.status!='Deleted' ORDER BY o.pair_id, o.layer_index")
@@ -42,15 +44,24 @@ def _cleaning_layer(path: str, stamp: int) -> int | None:
         return None
 
 
-def _pair_info(row) -> dict:
-    hardware, context = json.loads(row["hardware_json"] or "{}"), json.loads(row["pair_context"] or "{}")
-    laser = (hardware.get("device") or {}).get("name")
-    lens = (hardware.get("lens") or {}).get("name")
+def _names(store: Store) -> tuple[dict[int, str], dict[int, str]]:
+    """The titles of the lasers and the names of the lenses, by record id."""
+    from .devices import display_title
+    lasers = {r["id"]: display_title(r["name"], r["serial"]) for r in store.query("SELECT id, name, serial FROM laser_device")}
+    return lasers, {r["id"]: r["name"] for r in store.query("SELECT id, name FROM lens")}
+
+
+def _pair_info(row, names: tuple[dict[int, str], dict[int, str]]) -> dict:
+    """Where a colour came from. The laser and lens are its records (DEC-063): ``setup`` is their key, so two units with
+    the same name stay apart, and the names are only the label."""
+    context = json.loads(row["pair_context"] or "{}")
+    laser, lens = names[0].get(row["device_id"]), names[1].get(row["lens_id"])
     material = " · ".join(x for x in (context.get("titanium_name"), context.get("titanium_grade")) if x) or None
     key = experiments.plan_key(row["plan_id"]) if row["plan_id"] and row["plan_status"] not in (None, "Deleted") else experiments.engraving_key(row["engraving_id"])
     return {"experiment": key, "title": row["engraving_title"] or row["lightburn_name"].rsplit(".", 1)[0], "photo": row["photo_name"],
             "date": row["accepted_at"] or row["pair_created"], "laser": laser, "lens": lens,
-            "setup": " · ".join(x for x in (laser, lens) if x) or "лазер не указан", "material": material}
+            "device_id": row["device_id"], "lens_id": row["lens_id"], "setup": su.setup_key(row["device_id"], row["lens_id"]),
+            "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material}
 
 
 _against_clean = color.against_clean
@@ -75,7 +86,8 @@ def _kind(evidence: dict, eligible: int) -> str:
 
 def collect(store: Store, include_unreferenced: bool = True, setup: str | None = None, material: str | None = None,
             measurement: str | None = None) -> dict:
-    """Every colour of the map. Filters narrow the points; the options and counts describe everything that exists."""
+    """Every colour of the map. Filters narrow the points (``setup`` is the key of a laser and lens, ``laser:1/lens:2``);
+    the options and counts describe everything that exists."""
     rows = list(_rows(store))
     witness: dict[int, dict] = {}
     for row in rows:
@@ -101,13 +113,13 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     calibrated_clean = [w["lab"] for w in witness.values() if w["kind"] == "calibrated"]
     nominal = [float(v) for v in np.median(np.array(calibrated_clean), axis=0)] if calibrated_clean else list(DEFAULT_CLEAN)
 
-    points, setups, materials = [], set(), set()
+    points, setups, materials, names = [], {}, set(), _names(store)
     for row in rows:
         evidence = json.loads(row["evidence_json"] or "{}")
         role = evidence.get("role")
         if role in SERVICE or role == "pre-test cleaning witness" or row["layer_index"] == -1 or derived.get(row["pair_id"]) == row["layer_index"]:
             continue
-        info = _pair_info(row)
+        info = _pair_info(row, names)
         lab = json.loads(row["lab_json"])
         kind = _kind(evidence, row["model_eligible"])
         ref = witness.get(row["pair_id"])
@@ -118,7 +130,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
             display, approximate, referenced = _against_clean(lab, ref["lab"], nominal), True, True
         else:
             display, approximate, referenced = lab, True, False
-        setups.add(info["setup"])
+        setups[info["setup"]] = info
         if info["material"]:
             materials.add(info["material"])
         params = json.loads(row["parameters_json"] or "{}")
@@ -133,7 +145,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     for row in rows:
         first_row.setdefault(row["pair_id"], row)
     for pair_id, row in first_row.items():
-        info = _pair_info(row)
+        info = _pair_info(row, names)
         check = ingest.get_pair(store, pair_id).get("check") or {}
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         ref = witness.get(pair_id)
@@ -151,7 +163,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
                     display, approximate, referenced = _against_clean(lab, ref["lab"], nominal), True, True
                 else:
                     display, approximate, referenced = lab, True, False
-                setups.add(info["setup"])
+                setups[info["setup"]] = info
                 if info["material"]:
                     materials.add(info["material"])
                 params = {"power": step["power_pct"], "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
@@ -167,7 +179,9 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     if not include_unreferenced:
         shown = [p for p in shown if p["referenced"]]
     return {"points": shown, "nominal_clean": {"lab": nominal, "source": "chart" if calibrated_clean else "default"},
-            "options": {"setups": sorted(setups), "materials": sorted(materials)},
+            "options": {"setups": sorted(({"key": key, "label": info["setup_label"], "device_id": info["device_id"], "lens_id": info["lens_id"]}
+                                          for key, info in setups.items()), key=lambda o: (o["label"], o["key"])),
+                        "materials": sorted(materials)},
             "counts": {"calibrated": sum(p["measurement"] == "calibrated" for p in shown),
                        "relative": sum(p["measurement"] == "relative" for p in shown), "unreferenced": unreferenced}}
 

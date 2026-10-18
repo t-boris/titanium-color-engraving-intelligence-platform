@@ -3,17 +3,20 @@ import json
 from fastapi.testclient import TestClient
 import pytest
 
-from titanium_platform import application_guide, capability_plates, capability_results, devices, lenses, plans, profiles
+from titanium_platform import application_guide, capability_plates, capability_results, devices, lenses, plans
+from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 from titanium_platform.db import now
+
+JOB = {"pulse_width": 200}      # the pulse width of a test plate is always given (DEC-043)
 
 
 def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="GOAL-1")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
-    material = profiles.save_material(store, "Grade 2 sheet", grade="Grade 2")
-    other = profiles.save_material(store, "Other titanium sheet", grade="Grade 5")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    other = su.save_material(store, "Other titanium sheet", grade="Grade 5")
     return laser, material, other
 
 
@@ -45,7 +48,7 @@ def test_text_goal_creates_compact_clean_first_plate_and_records_its_goal(tmp_pa
 def test_replaced_or_cancelled_plate_is_not_reported_as_awaiting_photo(store):
     laser, material, _ = hardware(store)
     plate = capability_plates.create(store, laser["id"], material["id"], "text_readability",
-                                     {"research_goal": "text"})
+                                     {**JOB, "research_goal": "text"})
     plan_id = plate["plan_id"]
     assert application_guide.suggest(store, laser["id"], material["id"], "text")["pending_plan_id"] == plan_id
     for inactive in ("Superseded", "Cancelled"):
@@ -57,15 +60,11 @@ def test_replaced_or_cancelled_plate_is_not_reported_as_awaiting_photo(store):
 
 def test_next_text_plate_uses_only_same_material_and_lens_evidence(store):
     laser, material, other = hardware(store)
-    profile = store.one("SELECT id FROM laser_profile WHERE device_id=?", (laser["id"],))
-    if not profile:
-        capability_plates.preview(store, laser["id"], material["id"], "text_readability")
-        profile = store.one("SELECT id FROM laser_profile WHERE device_id=?", (laser["id"],))
     lens_id = devices.get_device(store, laser["id"])["lens"]["id"]
     pair_id = store.execute(
-        "INSERT INTO pair(status,profile_id,material_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
-        "VALUES ('Accepted',?,?, 'goal-source','source.lbrn2','/source.lbrn2','source.dng','/source.dng','{}','{}',?,?)",
-        (profile["id"], material["id"], now(), now())).lastrowid
+        "INSERT INTO pair(status,device_id,lens_id,material_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
+        "VALUES ('Accepted',?,?,?, 'goal-source','source.lbrn2','/source.lbrn2','source.dng','/source.dng','{}','{}',?,?)",
+        (laser["id"], lens_id, material["id"], now(), now())).lastrowid
     store.execute(
         "INSERT INTO capability_finding(pair_id,purpose,status,summary,parameters_json,evidence_json,next_test,created_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
@@ -90,11 +89,11 @@ def test_depth_and_cutting_are_not_presented_as_surface_photo_recipes(store):
 
 def test_other_material_can_be_catalogued_without_using_titanium_cleaning(store):
     laser, _, _ = hardware(store)
-    steel = profiles.save_material(store, "Steel coin blank", family="Steel", grade="304", thickness_mm=1)
+    steel = su.save_material(store, "Steel coin blank", family="Steel", grade="304", thickness_mm=1)
     guide = application_guide.suggest(store, laser["id"], steel["id"], "text")
     assert guide["status"] == "cleaning_recipe_needed" and guide["plate"] is None
-    with pytest.raises(profiles.ValidationError, match="рецепт очистки"):
-        capability_plates.create(store, laser["id"], steel["id"], "text_readability")
+    with pytest.raises(su.ValidationError, match="рецепт очистки"):
+        capability_plates.create(store, laser["id"], steel["id"], "text_readability", JOB)
 
 
 def test_text_finding_ranks_contrast_but_does_not_claim_readability():
@@ -121,3 +120,14 @@ def test_text_matrix_cells_can_produce_preliminary_text_findings():
     assert finding["status"] == "contrast_candidate"
     assert finding["evidence"]["parameters"]["speed"] == 500
     assert "читаемость" in finding["summary"]
+
+
+def test_the_guide_starts_at_200_ns_only_when_the_laser_offers_it_and_otherwise_asks(store):
+    laser, material, _ = hardware(store)
+    assert application_guide.suggest(store, laser["id"], material["id"], "color")["plate"]["settings"]["pulse_width"] == 200
+    without = dict(laser["passport"], pulse_steps=[s for s in laser["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
+    devices.update_device(store, laser["id"], passport=without)
+    suggestion = application_guide.suggest(store, laser["id"], material["id"], "color")
+    assert suggestion["plate"]["settings"]["pulse_width"] is None                # the operator is asked
+    app_settings = {**suggestion["plate"]["settings"], "pulse_width": 250}
+    assert capability_plates.preview(store, laser["id"], material["id"], suggestion["plate"]["test_type"], app_settings)

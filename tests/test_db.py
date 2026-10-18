@@ -6,35 +6,32 @@ import pytest
 from titanium_platform.db import ImmutableError, now
 
 
-def _profile(store):
-    store.execute(
-        "INSERT INTO laser_profile(family,version,name,axes_json,pulse_width,line_interval,passes,created_at) VALUES (?,?,?,?,?,?,?,?)",
-        ("mopa", 1, "MOPA", "[]", 200, 0.025, 1, now()),
-    )
-    return store.one("SELECT id FROM laser_profile")["id"]
+def _device(store):
+    store.execute("INSERT INTO laser_device(name,data_json,created_at,updated_at) VALUES ('JPT','{}',?,?)", (now(), now()))
+    return store.one("SELECT id FROM laser_device")["id"]
 
 
-def _pair(store, profile_id):
+def _pair(store, device_id):
     store.execute(
         "INSERT INTO capture_setup(name,camera,lighting,angle,reference_chart,created_at) VALUES ('s','c','l','a','x',?)", (now(),))
     stand = store.one("SELECT id FROM capture_setup")["id"]
     store.execute(
-        "INSERT INTO pair(status,profile_id,stand_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at)"
-        " VALUES ('accepted',?,?,'e1','a.lbrn2','/x','p.raw','/y','{}','{}',?)", (profile_id, stand, now()))
+        "INSERT INTO pair(status,device_id,lens_id,stand_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at)"
+        " VALUES ('accepted',?,NULL,?,'e1','a.lbrn2','/x','p.raw','/y','{}','{}',?)", (device_id, stand, now()))
     return store.one("SELECT id FROM pair")["id"]
 
 
-def _observation(store, profile_id, pair_id):
+def _observation(store, device_id, pair_id):
     store.execute(
-        "INSERT INTO observation(pair_id,layer_index,profile_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
-        "model_eligible,repeat_eligible,eligibility_reason,created_at) VALUES (?,?,?,?,?,?,?,?,1,0,'ok',?)",
-        (pair_id, 0, profile_id, "e1", json.dumps([50, 1, 2]), "{}", "markers", "{}", now()))
+        "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
+        "model_eligible,repeat_eligible,eligibility_reason,created_at) VALUES (?,?,?,NULL,?,?,?,?,?,1,0,'ok',?)",
+        (pair_id, 0, device_id, "e1", json.dumps([50, 1, 2]), "{}", "markers", "{}", now()))
     return store.one("SELECT id FROM observation")["id"]
 
 
 def test_observation_update_and_delete_are_rejected_by_the_database(store):
-    pid = _profile(store)
-    oid = _observation(store, pid, _pair(store, pid))
+    device_id = _device(store)
+    oid = _observation(store, device_id, _pair(store, device_id))
     with pytest.raises(sqlite3.DatabaseError, match="immutable"):
         store.execute("UPDATE observation SET lab_json='[1,2,3]' WHERE id=?", (oid,))
     with pytest.raises(sqlite3.DatabaseError, match="immutable"):

@@ -31,7 +31,7 @@ const DeviceCharts = (() => {
 
   /**
    * График. series: [{name, points: [[x, y]], color, width, dash, markers, faint}],
-   * marks: [{x, y, label, color}] — отдельные точки (рабочая точка профиля, частота среза).
+   * marks: [{x, y, label, color}] — отдельные точки (рассчитанная рабочая точка, частота среза).
    */
   function plot({title, xLabel, yLabel, series, marks = [], xLog = false, yLog = false}) {
     const pts = series.flatMap((s) => s.points).concat(marks.map((m) => [m.x, m.y]));

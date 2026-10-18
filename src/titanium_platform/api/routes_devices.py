@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import capability_results, devices, experiment_library, lenses, profiles as pf
+from .. import capability_results, devices, experiment_library, lenses, setup as su
 from .common import content_disposition, read_upload, store_of
 
 router = APIRouter(prefix="/api")
@@ -38,13 +38,14 @@ class FromTemplateIn(BaseModel):
 
 
 class OperatingPointIn(BaseModel):
-    profile_id: int
+    device_id: int
+    lens_id: int | None            # required: null leaves the spot and what depends on it unknown
     power: float
     frequency: float
     speed: float
-    pulse_width: float = 200.0
-    line_interval: float = 0.025
-    passes: int = 1
+    pulse_width: float             # job settings are always given: nothing is filled in (DEC-043)
+    line_interval: float
+    passes: int
 
 
 class ResultLookupIn(BaseModel):
@@ -150,10 +151,7 @@ def delete_document(device_id: int, document_id: int, request: Request):
 
 @router.post("/operating-point")
 def operating_point(body: OperatingPointIn, request: Request):
-    """Passport-model figures for a parameter set of a profile that is linked to a laser device."""
-    s = store_of(request)
-    profile = pf.get_profile(s, body.profile_id)
-    if profile["device"] is None:
-        raise pf.ValidationError("link a laser device to this profile to calculate pulse energy")
-    return devices.operating_point(profile["device"]["passport"], body.power, body.frequency, body.speed,
-                                   body.pulse_width, body.line_interval, body.passes, profile["device"].get("lens"))
+    """Passport-model figures for the job settings on a laser with a lens (REQ-017, REQ-018)."""
+    setup = su.resolve(store_of(request), body.device_id, body.lens_id)
+    return devices.operating_point(setup["device"]["passport"], body.power, body.frequency, body.speed,
+                                   body.pulse_width, body.line_interval, body.passes, setup["lens"])

@@ -564,17 +564,3 @@ def parse_bytes(data: bytes) -> Project:
 def parse_file(path: str) -> Project:
     with open(path, "rb") as fh:
         return parse_bytes(fh.read())
-
-
-def compare_with_profile(layer: Layer, pulse_width: float, line_interval: float, tol: float = 1e-9) -> list[str]:
-    """Deprecated compatibility helper; process settings belong to each layer now.
-
-    Returns human-readable differences; an empty list means comparable. A value the file does not
-    record is not a difference (the profile constant is then the only source).
-    """
-    diffs: list[str] = []
-    if layer.pulse_width is not None and abs(layer.pulse_width - pulse_width) > tol:
-        diffs.append(f"pulse width {layer.pulse_width:g} in file, {pulse_width:g} in profile")
-    if layer.line_interval is not None and abs(layer.line_interval - line_interval) > tol:
-        diffs.append(f"line interval {layer.line_interval:g} in file, {line_interval:g} in profile")
-    return diffs

@@ -1,4 +1,4 @@
-/* Карточки лазера: паспорт, ступени, документы, профили (REQ-017). Расчёт рабочей точки — device-calc.js, экран — device.js. */
+/* Карточки лазера: паспорт, ступени, документы, результаты и эксперименты (REQ-017). Расчёт рабочей точки — device-calc.js, экран — device.js. */
 'use strict';
 const DeviceView = (() => {
   const {h, btn, field, link, pill, del, post, toast, fail, confirmBox, table, facts, labText, num} = App;
@@ -20,7 +20,7 @@ const DeviceView = (() => {
     const rows = d.passport.pulse_steps.map((s) => [s.pulse_width_ns + ' нс', s.cutoff_khz == null ? 'CW: без среза' : s.cutoff_khz + ' кГц',
       s.cutoff_khz == null ? '—' : g(d.passport.rated_power_w / s.cutoff_khz) + ' мДж']);
     return h('details', {class: 'card stack'}, h('summary', {}, h('strong', {}, `Ступени длительности импульса и частоты среза: ${d.passport.pulse_steps.length}`)),
-      h('p', {class: 'muted small'}, 'Лазер принимает только эти значения. Любое другое он игнорирует и оставляет прежнее, поэтому профиль с другой длительностью не создаётся. '
+      h('p', {class: 'muted small'}, 'Лазер принимает только эти значения. Любое другое он игнорирует и оставляет прежнее, поэтому плата или план с другой длительностью не создаётся. '
         + 'Ниже частоты среза мощность падает пропорционально частоте. Энергия — расчёт по паспорту, не измерение.'),
       table(['Длительность импульса', 'Частота среза', 'Наибольшая энергия импульса'], rows, undefined, true));
   }
@@ -41,16 +41,9 @@ const DeviceView = (() => {
       items.length ? h('div', {class: 'grid g3'}, items) : h('p', {class: 'muted'}, 'Документов пока нет'), DeviceForms.uploadForm(d, reload));
   }
 
-  function profilesCard(d) {
-    const rows = d.profiles.map((p) => [link('/profiles?profile=' + p.id, `${p.name} · версия ${p.version}`),
-      p.lens_id == null ? 'не указана' : p.lens_id === d.lens?.id ? d.lens.name : `Линза №${p.lens_id}`]);
-    return h('div', {class: 'card stack'}, h('h3', {}, 'Профили на этом лазере'),
-      rows.length ? table(['Профиль', 'Линза'], rows) : h('p', {class: 'muted'}, 'Профили не привязаны. Привяжите лазер на вкладке «Профили» → «Лазер».'));
-  }
-
   function capabilityResultsCard(results, deviceId) {
     const items = (results || []).map((r) => {
-      const lens = r.lens ? `${r.lens.name} · ${r.lens.focal_length_mm} мм` : 'линза не записана';
+      const lens = r.lens ? App.lensLabel(r.lens) : 'линза не записана';
       const material = [r.material?.name, r.material?.grade, r.material?.batch && `партия ${r.material.batch}`].filter(Boolean).join(' · ') || 'титан не указан';
       return h('div', {class: 'card stack'},
         h('div', {class: 'row'}, link('/analysis/' + r.pair_id, r.test_name), h('span', {class: 'spacer'}), pill(`${r.measured_features} измерено`, 'ok')),
@@ -67,12 +60,11 @@ const DeviceView = (() => {
 
   function experimentsCard(items, device) {
     const byLens = new Map();
-    for (const item of items) {
-      const lens = item.hardware?.lens;
-      const key = lens?.id == null ? '' : String(lens.id);
-      if (!byLens.has(key)) byLens.set(key, lens ? `${lens.name} · ${lens.focal_length_mm} мм` : 'Историческая линза неизвестна');
+    for (const item of items) {                // the lens of each work is its lens record (lens_id), not a stored snapshot
+      const key = item.lens_id == null ? '' : String(item.lens_id);
+      if (!byLens.has(key)) byLens.set(key, item.lens ? App.lensLabel(item.lens) : 'Историческая линза неизвестна');
     }
-    if (device.lens && !byLens.has(String(device.lens.id))) byLens.set(String(device.lens.id), `${device.lens.name} · ${device.lens.focal_length_mm} мм (установлена сейчас)`);
+    if (device.lens && !byLens.has(String(device.lens.id))) byLens.set(String(device.lens.id), `${App.lensLabel(device.lens)} (установлена сейчас)`);
     const lensPicker = h('select', {}, [...byLens].map(([id, label]) => h('option', {value: id}, label)));
     const inputs = [
       ['Мощность, %', 'power', '0.1'], ['Частота, кГц', 'frequency', '1'], ['Скорость, мм/с', 'speed', '1'],
@@ -106,8 +98,7 @@ const DeviceView = (() => {
 
     const cards = items.map((item) => {
       const accepted = item.status === 'Accepted';
-      const lens = item.hardware?.lens;
-      const lensLabel = lens ? `${lens.name} · ${lens.focal_length_mm} мм` : 'линза не записана';
+      const lensLabel = item.lens ? App.lensLabel(item.lens) : 'линза неизвестна';
       const m = item.material || {};
       const material = [m.name, m.grade, m.thickness_mm && `${m.thickness_mm} мм`, m.surface, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ') || 'титан не указан';
       const obsRows = item.observations.map((o) => {
@@ -139,5 +130,5 @@ const DeviceView = (() => {
       h('div', {class: 'card stack'}, h('h3', {}, `Эксперименты и фотографии · ${items.length}`),
         items.length ? h('div', {class: 'stack'}, cards) : h('div', {class: 'empty'}, h('p', {}, 'Экспериментов для этого лазера пока нет.'), link('/experiments', 'Создать эксперимент'))));
   }
-  return {passportCard, stepsCard, documentsCard, profilesCard, capabilityResultsCard, experimentsCard, g};
+  return {passportCard, stepsCard, documentsCard, capabilityResultsCard, experimentsCard, g};
 })();
