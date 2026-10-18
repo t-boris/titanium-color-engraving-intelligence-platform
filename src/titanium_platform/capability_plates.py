@@ -831,7 +831,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         raise su.ValidationError("выберите материал с фактической маркой или партией")
     if material_row["family"] != "Titanium":
         raise su.ValidationError("для этого материала пока не задан рецепт очистки; титановую очистку применять нельзя")
-    values, clean, labels = _passport_defaults(device["passport"], settings or {})
+    values, clean, _ = _passport_defaults(device["passport"], settings or {})
     limits = {}
     for axis in ("width", "height"):
         try:
@@ -878,9 +878,11 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         raise su.ValidationError(f"плата {total_w:.1f} × {total_h:.1f} мм не помещается в поле линзы {field:g} мм")
     if len(layers) + 1 + int(marked) > plans.MAX_LAYERS:
         raise su.ValidationError("для этого теста слишком много слоёв LightBurn")
-    # The user's C01 black-on-titanium recipe, a system layer of the plate.
-    marker_layer = labels | {"name": "Markers and labels", "interval": labels["line_interval"], "global_passes": 1,
-                            "bidirectional": False, "cross_hatch": False, "angle": 0.0, "angle_increment": 0.0}
+    # C01, the system layer of the markers and the engraved labels, burns with the operator's marker-layer settings
+    # (DEC-027); an unmarked plate has no such layer.
+    marker_layer = (plans.marker_layer_for(store, device["passport"]) | {
+        "name": "Markers and labels", "global_passes": 1, "bidirectional": False, "cross_hatch": False, "angle": 0.0,
+        "angle_increment": 0.0}) if marked else None
     series = ({"identifier": values.get("series_identifier"), "part_index": values.get("part_index"),
                "part_count": values.get("part_count")}) if values.get("series_identifier") else None
     title = TYPE_BY_ID[test_type]["name"]
@@ -890,7 +892,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
                   "device": {k: device.get(k) for k in ("id", "name", "manufacturer", "model", "serial", "title")},
                   "lens": {k: lens.get(k) for k in ("id", "name", "focal_length_mm", "field_mm", "expansion")},
                   "material": {k: material_row[k] for k in ("id", "name", "family", "grade", "batch", "thickness_mm", "surface")},
-                  "test_settings": values, "cleanup_settings": clean, "label_settings": labels, "series": series,
+                  "test_settings": values, "cleanup_settings": clean, "label_settings": marker_layer, "series": series,
                   "research_goal": values.get("research_goal"), "source_pair_id": values.get("source_pair_id"),
                   "summary": {"layers": len(layers), "test_features": len(geometry["cells"]),
                               "visual_features": geometry.get("feature_count", len(geometry["cells"])),

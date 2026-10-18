@@ -9,7 +9,9 @@ from titanium_platform.db import now
 
 
 def accepted_capability_pair(store, laser, material, test_type="calibration", made=None, with_line_metrics=False):
-    made = made or cp.create(store, laser["id"], material["id"], test_type, {"pulse_width": 200})
+    if made is None:
+        plans.save_marker_layer_settings(store, 25, 60, 150, pulse_width=200, line_interval=0.01, passes=1)   # the operator's C01 recipe (DEC-027)
+        made = cp.create(store, laser["id"], material["id"], test_type, {"pulse_width": 200})
     plan = plans.get_plan(store, made["plan_id"])
     pair_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,material_id,plate_id,plan_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at) "
@@ -61,6 +63,7 @@ def test_capability_findings_are_available_in_the_pair_report_and_device_api(tmp
         laser = client.post("/api/devices/from-template", json={"template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-RESULT"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         material = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "API-19"}).json()
         made = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": material["id"], "pulse_width": 200, "test_type": "hatch_interval"}).json()
         store = client.app.state.store

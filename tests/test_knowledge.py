@@ -160,6 +160,65 @@ def test_rolling_back_production_needs_confirmation(store, w):
     assert kn.rollback(store, kid, approved["id"], confirm_production=True)["stage"] == "validated"
 
 
+def remove(store, observation_id):
+    """Delete the pair of one observation, as the operator does (DEC-047)."""
+    from titanium_platform import ingest
+    ingest.delete_pair(store, store.one("SELECT pair_id FROM observation WHERE id=?", (observation_id,))["pair_id"])
+
+
+def test_deleting_a_pair_questions_an_entry_its_evidence_no_longer_supports_and_keeps_the_stage(store, w):
+    """DEC-066 item 3: the counts follow the deletion, the stage is never lowered, the reason is recorded."""
+    agree(store, w, repeat=2)
+    obs.add(store, w, (50, 0, 0))
+    second = obs.add(store, w, (50.2, 0, 0))
+    kn.refresh(store, *w["setup"])
+    kid = kn.list_for_setup(store, *w["setup"])[0]["id"]
+    assert kn.get(store, kid)["stage"] == "validated"
+    remove(store, second)
+    k = kn.get(store, kid)
+    assert k["stage"] == "validated" and k["questioned"]
+    assert k["summary"]["observations"] == 1 and k["summary"]["independent_engravings"] == 1
+    assert k["doubt"] == {"reason": "a removed photograph took away the evidence of this stage: what remains supports only measured: "
+                                    "single observation", "observation_ids": [second]}
+    event = k["history"][-1]
+    assert (event["type"], event["from_stage"], event["to_stage"], event["observation_ids"]) == ("questioned", "validated", "validated", [second])
+
+
+def test_deleting_the_last_evidence_of_a_production_entry_questions_it_without_demoting(store, w):
+    kid = validated(store, w)
+    kn.approve_for_production(store, kid, True)
+    for oid in kn.get(store, kid)["summary"]["observation_ids"]:
+        remove(store, oid)
+    k = kn.get(store, kid)
+    assert k["stage"] == "production" and k["questioned"] and k["summary"] is None
+    assert k["doubt"]["reason"].endswith("no eligible observation is left")
+
+
+def test_deleting_a_pair_that_leaves_enough_evidence_changes_no_stage_or_flag(store, w):
+    agree(store, w, repeat=2)
+    first = obs.add(store, w, (50, 0, 0))
+    for lab in ((50.1, 0, 0), (50.2, 0, 0)):
+        obs.add(store, w, lab)
+    kn.refresh(store, *w["setup"])
+    before = len(kn.list_for_setup(store, *w["setup"])[0]["history"])
+    remove(store, first)
+    k = kn.list_for_setup(store, *w["setup"])[0]
+    assert k["stage"] == "validated" and not k["questioned"] and k["summary"]["independent_engravings"] == 2
+    assert len(k["history"]) == before
+
+
+def test_without_agreed_criteria_a_deletion_is_judged_by_the_counts_alone(store, w):
+    agree(store, w, repeat=2)
+    ids = [obs.add(store, w, (50 + d, 0, 0)) for d in (0, .1, .2)]
+    kn.refresh(store, *w["setup"])
+    su.save_rules(store, *w["setup"], criteria_agreed=False)
+    remove(store, ids[0])
+    assert not kn.list_for_setup(store, *w["setup"])[0]["questioned"]       # two independent engravings remain
+    remove(store, ids[1])
+    k = kn.list_for_setup(store, *w["setup"])[0]
+    assert k["stage"] == "validated" and k["questioned"] and "supports only measured" in k["doubt"]["reason"]
+
+
 def test_an_unknown_lens_is_a_partition_of_its_own(store, w):
     """DEC-063: the same recipe on the same laser with the lens unknown never counts toward the known lens."""
     device_id, lens_id = w["setup"]

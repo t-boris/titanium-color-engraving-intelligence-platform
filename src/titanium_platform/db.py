@@ -340,7 +340,8 @@ class Store:
                 ("laser_device", "lens_id", "INTEGER REFERENCES lens(id)"),   # DEC-041
                 ("material_profile", "grade", "TEXT"),
                 ("material_profile", "thickness_mm", "REAL"),
-                ("material_profile", "surface", "TEXT")):
+                ("material_profile", "surface", "TEXT"),
+                ("plate", "status", "TEXT")):                       # NULL: in use; 'Deleted' with its archived plan (DEC-047)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")

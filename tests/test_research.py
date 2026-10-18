@@ -16,6 +16,7 @@ def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT research", serial="R-1")
     lens = lenses.create_lens(store, "F-Theta research", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
+    plans.save_marker_layer_settings(store, 25, 60, 150, pulse_width=200, line_interval=0.01, passes=1)   # the operator's C01 recipe (DEC-027)
     material = su.save_material(store, "Grade 2 stock", grade="Grade 2", batch="R-A")
     return laser, lens, material
 

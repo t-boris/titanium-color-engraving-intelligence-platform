@@ -40,6 +40,9 @@ class MarkerLayerIn(BaseModel):
     power: float
     frequency: float
     speed: float
+    pulse_width: float | None = None       # optional: an omitted setting is left to LightBurn, never filled in (DEC-043)
+    line_interval: float | None = None
+    passes: int | None = None
 
 
 @router.get("/rules")
@@ -101,4 +104,5 @@ def get_marker_layer(request: Request):
 
 @router.put("/marker-layer")
 def put_marker_layer(body: MarkerLayerIn, request: Request):
-    return plans.save_marker_layer_settings(store_of(request), body.power, body.frequency, body.speed)
+    return plans.save_marker_layer_settings(store_of(request), body.power, body.frequency, body.speed, body.pulse_width,
+                                            body.line_interval, body.passes)

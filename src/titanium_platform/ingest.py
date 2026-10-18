@@ -1640,7 +1640,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     plate, plan = _load_identified(store, project.identifier)
     if project.identifier and plate is None and plan is None:
         problems.append(f"experiment identifier {project.identifier} is not known to this system")
-    elif (plan or {}).get("status") == "Deleted":
+    elif "Deleted" in ((plan or {}).get("status"), (plate or {}).get("status")):
         problems.append(f"experiment identifier {project.identifier} belongs to a deleted experiment")
     if plate is None and plan is None and row["plan_id"]:
         # a file without an identifier: the plan (and its plate) the photograph is linked to
@@ -2035,8 +2035,13 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                         "role": rep.get("role"), "submeasurements": rep.get("submeasurements", []),
                         "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
                         "matrix_cell": rep.get("matrix_cell")}
-            model_eligible = color_mode == "reference_chart_corrected" and rep["compatible"] and param_error is None
+            # Cleaning, registration markers and engraved labels are kept as evidence and shown, but they are operations of
+            # the plate, not test settings: they never feed the model or knowledge (DEC-027, DEC-028, DEC-045).
+            test_feature = rep.get("role", "test feature") == "test feature"
+            model_eligible = color_mode == "reference_chart_corrected" and rep["compatible"] and param_error is None and test_feature
             observation_reason = reason
+            if not test_feature:
+                observation_reason += f"; {rep['role']} layer: kept as evidence, never used for parameter recommendations"
             if not rep["compatible"] or param_error:
                 observation_reason += "; retained as physical measurement, excluded from parameter recommendations: " + "; ".join(rep["notes"] + ([param_error] if param_error else []))
             ids.append(store.execute(
@@ -2060,17 +2065,26 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
 
 
 def delete_pair(store: Store, pair_id: int) -> None:
+    """Remove a pair from active use (DEC-047) and rebuild the knowledge its observations fed."""
+    from . import knowledge, model
     row = store.one("SELECT * FROM pair WHERE id=?", (pair_id,))
     if row is None or row["status"] == ST_DELETED:
         raise KeyError(f"pair {pair_id} not found")
-    observations = store.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair_id,))["n"]
+    observations = store.query("SELECT * FROM observation WHERE pair_id=?", (pair_id,))
     # Pair and measurement rows remain in the immutable audit history. Marking the pair Deleted
     # removes it from active lists, color learning, and reports; uploaded file copies are purged.
     with store.transaction():
         store.execute("UPDATE pair SET status=? WHERE id=?", (ST_DELETED, pair_id))
-        store.audit("pair_deleted", pair_id=pair_id, previous_status=row["status"], observations=observations)
+        store.audit("pair_deleted", pair_id=pair_id, previous_status=row["status"], observations=len(observations))
     for col in ("lightburn_path", "photo_path"):
         Path(row[col]).unlink(missing_ok=True)
+    removed: dict[tuple, dict[str, list[int]]] = {}
+    for o in observations:
+        key = model.knowledge_key_of(o)
+        if key is not None:
+            removed.setdefault((o["device_id"], o["lens_id"]), {}).setdefault(key, []).append(o["id"])
+    for (device_id, lens_id), keys in removed.items():
+        knowledge.after_removal(store, device_id, lens_id, keys)
 
 
 # -- overlay for the mask review -----------------------------------------------------------------------

@@ -211,7 +211,8 @@ def get_proposal(store: Store, proposal_id: int) -> dict:
         raise KeyError(f"proposal {proposal_id} not found")
     d = dict(row)
     d.update(json.loads(d.pop("data_json")))
-    d["boards"] = [r["id"] for r in store.query("SELECT id FROM plate WHERE proposal_id=? ORDER BY id", (proposal_id,))]
+    d["boards"] = [r["id"] for r in store.query("SELECT id FROM plate WHERE proposal_id=? AND status IS NOT 'Deleted' ORDER BY id",
+                                                (proposal_id,))]
     return d
 
 

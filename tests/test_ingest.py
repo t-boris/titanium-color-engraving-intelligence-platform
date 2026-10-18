@@ -557,6 +557,48 @@ def test_the_marker_layer_is_measured_even_when_legacy_settings_are_incomplete(w
     assert not marker["compatible"] and any("pulse width is missing" in note for note in marker["notes"])
 
 
+def test_cleaning_markers_and_labels_on_a_charted_plate_are_evidence_and_never_knowledge(world):
+    """DEC-027, DEC-028, DEC-045: even with complete settings and a reference chart, the operations of the plate are kept
+    and shown but never feed the model or knowledge."""
+    from titanium_platform import knowledge, model
+    s = world["store"]
+    pl.save_marker_layer_settings(s, 20, 60, 300, pulse_width=200, line_interval=0.025, passes=1)
+    out = pl.create_plate_series(s, world["device"]["id"], "10 20", "40 80", "900", 5, 4, 1, **JOB)[0]
+    plan = pl.get_plan(s, out["plan_id"])
+    pid = make_pair(world, lbrn=pl.export_lbrn2(plan), photo=png(synth.plate_photo(plan, CELLS)))
+    report = ig.check_pair(s, pid)
+    assert report["color_measurement"]["mode"] == "reference_chart_corrected" and report["problems"] == []
+    services = [layer for layer in report["layers"] if layer["role"] != "test feature"]
+    assert len(services) == 2 and all(layer["compatible"] and layer["measured_lab"] for layer in services)
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    rows = s.query("SELECT layer_index, model_eligible, evidence_json FROM observation WHERE pair_id=? ORDER BY layer_index", (pid,))
+    assert [(r["layer_index"], r["model_eligible"]) for r in rows] == [(-1, 0), (0, 0), (1, 1), (2, 1), (3, 1), (4, 1)]
+    knowledge.refresh(s, *world["setup"])
+    assert len(model.knowledge_summaries(s, *world["setup"])) == 4
+    assert {k["parameters"]["speed"] for k in knowledge.list_for_setup(s, *world["setup"])} == {900}
+    assert [json.loads(r["evidence_json"])["role"] for r in rows[:2]] == [       # kept as evidence of the pair
+        "pre-test cleaning witness", "registration, QR and engraved labels"]
+    from titanium_platform import analysis
+    shown = analysis.report_for_pair(s, pid)["rows"]
+    assert {row["role"] for row in shown} == {"pre-test cleaning witness", "registration, QR and engraved labels", "test feature"}
+
+
+def test_a_cleaning_layer_accepted_as_eligible_by_an_older_version_stays_out_of_knowledge(world):
+    from titanium_platform import model
+    s = world["store"]
+    pid = make_pair(world)
+    ig.check_pair(s, pid)
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    clean = s.one("SELECT * FROM observation WHERE pair_id=? AND layer_index=-1", (pid,))
+    s.execute("INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,"
+              "context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) "
+              "SELECT pair_id,-1,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,1,1,"
+              "'accepted before 0.5',evidence_json,created_at FROM observation WHERE id=?", (clean["id"],))
+    assert all(o["parameters"]["speed"] == 900 for o in model.eligible_observations(s, *world["setup"]))
+
+
 def test_a_rephotograph_shares_the_engraving_and_is_never_an_independent_repetition(world):
     s = world["store"]
     first = make_pair(world)

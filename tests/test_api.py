@@ -121,9 +121,9 @@ def test_the_whole_loop_over_http_plate_to_observation_to_report_to_proposal(cli
     accepted = client.post(f"/api/pairs/{pair['id']}/accept").json()
     assert len(accepted["observation_ids"]) == 6 and accepted["pair"]["status"] == "Accepted"
     knowledge = client.get(f"/api/knowledge?{s['setup']}").json()
-    assert len(knowledge) == 5 and {k["stage"] for k in knowledge} == {"measured"}
+    assert len(knowledge) == 4 and {k["stage"] for k in knowledge} == {"measured"}       # the four cells; cleaning and markers never (DEC-027)
     m = client.get(f"/api/color-model?{s['setup']}").json()
-    assert len(m["samples"]) == 5 and not any(s_["available"] for s_ in m["samples"])   # one engraving: no estimates yet
+    assert len(m["samples"]) == 4 and not any(s_["available"] for s_ in m["samples"])   # one engraving: no estimates yet
     assert client.post("/api/predict", json={"device_id": s["laser"]["id"], "lens_id": s["lens"]["id"], "lab": [50, 0, 0]}).json()["available"] is False
 
     report = client.get(f"/api/pairs/{pair['id']}/report").json()
@@ -308,10 +308,11 @@ def test_archiving_a_plan_with_deleted_pairs_hides_it_but_preserves_pair_history
     archived_pair = st.one("SELECT plan_id,status FROM pair WHERE id=?", (pair["id"],))
     assert archived_pair["plan_id"] == plan_id and archived_pair["status"] == "Deleted"
     assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
-    assert st.one("SELECT COUNT(*) AS n FROM plate WHERE id=?", (plate["plate_id"],))["n"] == 1
+    assert st.one("SELECT status FROM plate WHERE id=?", (plate["plate_id"],))["status"] == "Deleted"   # kept as history, archived with its plan
 
 
-def test_deleting_a_test_with_linked_checks_archives_both_in_one_action(client):
+def test_a_test_with_active_checks_is_removed_only_after_each_check_is_deleted(client):
+    """DEC-047: active pairs prevent plan removal, there is no cascade; the plate is archived with its plan."""
     s = setup(client)
     plate = client.post("/api/plates", json={"device_id": s["laser"]["id"], **JOB, "powers": "10", "frequencies": "40",
         "speeds": "900", "cell_width": 5, "cell_height": 4, "gap": 1}).json()[0]
@@ -325,14 +326,23 @@ def test_deleting_a_test_with_linked_checks_archives_both_in_one_action(client):
     assert client.post(f"/api/pairs/{pair['id']}/review-masks").status_code == 200
     assert client.post(f"/api/pairs/{pair['id']}/accept").status_code == 200
     assert client.get(f"/api/plans/{plan_id}").json()["active_pairs"] == 1
-    assert client.delete(f"/api/plans/{plan_id}?with_pairs=true").status_code == 204
+    for refused in (client.delete(f"/api/plans/{plan_id}"), client.delete(f"/api/plans/{plan_id}?with_pairs=true")):
+        assert refused.status_code == 409 and refused.json()["error"] == "active input pairs are linked to this plan; delete those pairs first"
+    assert client.get(f"/api/plans/{plan_id}").status_code == 200 and client.get("/api/pairs").json()
+    assert client.delete(f"/api/pairs/{pair['id']}").status_code == 204
+    assert client.delete(f"/api/plans/{plan_id}").status_code == 204
     assert not client.get("/api/plans").json()
     assert not client.get("/api/pairs").json()
     assert st.one("SELECT status,plan_id FROM pair WHERE id=?", (pair["id"],))["status"] == "Deleted"
     assert st.one("SELECT status FROM plan WHERE id=?", (plan_id,))["status"] == "Deleted"
-    assert st.one("SELECT COUNT(*) AS n FROM plate WHERE id=?", (plate["plate_id"],))["n"] == 1
+    assert st.one("SELECT status FROM plate WHERE id=?", (plate["plate_id"],))["status"] == "Deleted"
     assert st.one("SELECT COUNT(*) AS n FROM observation WHERE pair_id=?", (pair["id"],))["n"] > 0
     assert client.get(f"/api/color-model?{s['setup']}").json()["samples"] == []
+    # a new photograph of the archived plate is not taken into an active experiment
+    assert upload_pair(client, s, plan_xml, photo, plan_id=plan_id).status_code == 422
+    again = upload_pair(client, s, plan_xml, photo).json()
+    problems = client.post(f"/api/pairs/{again['id']}/check", json={}).json()["check"]["problems"]
+    assert f"experiment identifier {plate['experiment_id']} belongs to a deleted experiment" in problems
 
 
 def test_the_photo_preview_is_a_downscaled_png_of_the_uploaded_photo(client):

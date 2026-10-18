@@ -138,8 +138,8 @@
     const remove = btn('Удалить эксперимент', () => confirmBox('Удалить эксперимент',
       `«${exp.title}»: будут удалены ${exp.plan_id ? 'плата и ' : ''}все проверки (${pairs.length}) с загруженными копиями файлов. История измерений сохранится, но перестанет влиять на рекомендации.`,
       'Удалить', async () => {
-        if (exp.plan_id) await del(`/plans/${exp.plan_id}?with_pairs=true`);
-        else for (const p of pairs) await del('/pairs/' + p.id);
+        for (const p of pairs) await del('/pairs/' + p.id);       // each check on its own, then the plate (DEC-047)
+        if (exp.plan_id) await del(`/plans/${exp.plan_id}`);
         toast('Эксперимент удалён', 'ok'); go('/experiments');
       }), 'btn-small danger');
 

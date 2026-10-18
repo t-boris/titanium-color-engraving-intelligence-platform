@@ -88,7 +88,9 @@
         btn('Удалить тест', () => confirmBox('Удалить тест', p.active_pairs
           ? `Удалить плату вместе с проверками (${p.active_pairs})? Загруженные копии RAW и LightBurn будут удалены. История измерений останется, но перестанет влиять на рекомендации.`
           : 'Плата исчезнет из списка экспериментов. История измерений сохранится.', 'Удалить тест', async () => {
-            await del(`/plans/${p.id}${p.active_pairs ? '?with_pairs=true' : ''}`);
+            // each check leaves active use on its own (its knowledge is rebuilt); then the plan has only archived checks (DEC-047)
+            if (p.active_pairs) for (const pair of (await get('/pairs')).filter((x) => x.plan_id === p.id)) await del('/pairs/' + pair.id);
+            await del(`/plans/${p.id}`);
             toast('Тест удалён из активных экспериментов', 'ok'); go('/experiments');
           }), 'danger')),
       draft ? h('div', {class: 'alert warn'}, vector ? ['В работе есть области без достаточных данных: экспорт недоступен. ', link('/vector?plan=' + p.id, 'Открыть векторную работу')]

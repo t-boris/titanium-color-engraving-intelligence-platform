@@ -20,7 +20,7 @@ USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerErr
                "VectorizeError", "PredictionError"}
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why"}   # <name>.append(text) / <x>["name"].append(text)
-RETURN_FUNCTIONS = {"attribution_note", "automatic_stage"}                       # return "text" or return (stage, "text")
+RETURN_FUNCTIONS = {"attribution_note", "automatic_stage", "supported_stage", "removal_doubt"}   # return "text" or (stage, "text")
 NOTE_KEYS = {"note"}                                                              # row["note"] = "text" or {"note": "text"}
 EVENT_REASON_ARG = 5                                                              # _event(store, id, type, from, to, REASON, ...)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js"]

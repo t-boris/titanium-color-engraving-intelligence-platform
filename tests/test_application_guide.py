@@ -15,6 +15,8 @@ def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="GOAL-1")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
+    # the operator's marker-layer settings (DEC-027); without a pulse width, as one test takes 200 ns off the laser
+    plans.save_marker_layer_settings(store, 25, 60, 150, line_interval=0.01, passes=1)
     material = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
     other = su.save_material(store, "Other titanium sheet", grade="Grade 5")
     return laser, material, other

@@ -156,14 +156,42 @@ def marker_geometry(identifier: str, width: float, height: float, size: dict | N
 
 
 def marker_layer_settings(store: Store) -> dict | None:
+    """The operator's marker-layer settings (DEC-027): power, frequency and speed, and the pulse width, line interval and
+    passes when the operator gave them (``interval`` is the line interval, as a layer of a plan names it). None until set."""
     return store.get_setting("marker_layer")
 
 
-def save_marker_layer_settings(store: Store, power: float, frequency: float, speed: float) -> dict:
+def save_marker_layer_settings(store: Store, power: float, frequency: float, speed: float, pulse_width: float | None = None,
+                               line_interval: float | None = None, passes: int | None = None) -> dict:
     v = {"power": su._finite(power, "power", True), "frequency": su._finite(frequency, "frequency", True),
          "speed": su._finite(speed, "speed", True)}
+    if pulse_width is not None:
+        v["pulse_width"] = su._finite(pulse_width, "pulse width", True)
+    if line_interval is not None:
+        v["interval"] = su._finite(line_interval, "line interval", True)
+    if passes is not None:
+        if int(passes) != passes or passes < 1:
+            raise su.ValidationError("passes must be a positive integer")
+        v["passes"] = int(passes)
     store.set_setting("marker_layer", v)
     return v
+
+
+def marker_layer_for(store: Store, passport: dict) -> dict:
+    """The operator's marker-layer settings for a plate of this laser; refused when unset or not offered by the laser.
+
+    Registration markers and engraved labels burn with these settings, never with a default of the system (DEC-027): how a
+    mark burns into titanium is the operator's knowledge."""
+    from . import devices
+    settings = marker_layer_settings(store)
+    if settings is None:
+        raise su.ValidationError("set the marker layer power, frequency and speed before creating plates (DEC-027)")
+    problems = su.check_in_range(passport, settings["power"], settings["frequency"])
+    if problems:
+        raise su.ValidationError("the saved marker layer settings are not offered by this laser: " + "; ".join(problems))
+    if settings.get("pulse_width") is not None:
+        devices.require_selectable(passport, settings["pulse_width"])
+    return dict(settings)
 
 
 # -- calibration plate series -------------------------------------------------------------------------------

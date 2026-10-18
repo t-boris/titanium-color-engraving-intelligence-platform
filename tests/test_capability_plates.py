@@ -15,6 +15,7 @@ def hardware(store):
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="CAP-01")
     lens = lenses.create_lens(store, "F-Theta", 174, 170)
     lenses.install(store, laser["id"], lens["id"])
+    plans.save_marker_layer_settings(store, 25, 60, 150, pulse_width=200, line_interval=0.01, passes=1)   # the operator's C01 recipe (DEC-027)
     titanium = su.save_material(store, "Grade 2 sheet", batch="HEAT-17", grade="Grade 2")
     return laser, lens, titanium
 
@@ -66,6 +67,31 @@ def test_generated_test_types_are_different_and_round_trip_as_clean_first_lightb
                     "Markers and labels", 25, 60, 150, 200, 0.01, 1, 1, False)
         assert any(layer.layer_type == layer_type for layer in exported.layers[2:])
         assert exported.identifier == made["identifier"]
+
+
+def test_markers_and_labels_burn_with_the_operators_marker_layer_settings_never_a_default(store):
+    """DEC-027: no system default for the marker and label layer; an unmarked plate needs none."""
+    laser, _, titanium = hardware(store)
+    store.execute("DELETE FROM setting WHERE key='marker_layer'")
+    with pytest.raises(su.ValidationError, match="set the marker layer power, frequency and speed"):
+        cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
+    with pytest.raises(su.ValidationError, match="set the marker layer"):
+        cp.preview(store, laser["id"], titanium["id"], "text_readability", JOB)
+    unmarked = cp.create(store, laser["id"], titanium["id"], "small_patches", {**JOB, "registration": "none", "max_width_mm": 6, "max_height_mm": 6})
+    assert plans.get_plan(store, unmarked["plan_id"])["marker_layer"] is None
+    plans.save_marker_layer_settings(store, 30, 70, 400)
+    made = cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
+    plan = plans.get_plan(store, made["plan_id"])
+    labels = lightburn.parse_bytes(plans.export_lbrn2(plan)).layer(1)
+    assert (labels.name, labels.power, labels.frequency_khz, labels.speed, labels.pulse_width, labels.line_interval) == (
+        "Markers and labels", 30, 70, 400, None, None)            # what the operator left out is not filled in
+    assert plan["experiment"]["label_settings"]["power"] == 30
+    plans.save_marker_layer_settings(store, 30, 7000, 400)
+    with pytest.raises(su.ValidationError, match="not offered by this laser: frequency 7000 kHz is outside"):
+        cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
+    plans.save_marker_layer_settings(store, 30, 70, 400, pulse_width=210)
+    with pytest.raises(su.ValidationError, match="not a selectable step"):
+        cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
 
 
 def test_every_plate_type_explains_purpose_method_and_findings():
@@ -418,6 +444,7 @@ def test_api_creates_a_hardware_and_titanium_linked_plan_that_downloads_from_the
             "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-CAP-1"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "API-17"}).json()
         created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "pulse_cutoff"})
         assert created.status_code == 201
@@ -438,6 +465,7 @@ def test_api_accepts_material_test_axis_choices_and_returns_ready_lbrn2(tmp_path
             "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-MATRIX"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "MATRIX-1"}).json()
         created = client.post("/api/capability-plates", json={"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200,
             "test_type": "material_matrix", "matrix": {"x_axis": "power", "y_axis": "frequency", "x_min": 10,
@@ -459,6 +487,7 @@ def test_api_previews_small_coupon_without_creating_plan_then_exports_it(tmp_pat
             "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-PATCH"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "PATCH-1"}).json()
         request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 3, "patches": [{"power": 10}, {"power": 50}],
@@ -482,6 +511,7 @@ def test_api_returns_each_split_lightburn_file_and_previewed_size(tmp_path):
             "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-SPLIT"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "SPLIT-1"}).json()
         request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 5, "patches": [{"power": n} for n in (10, 20, 50, 100)],
@@ -506,6 +536,7 @@ def test_api_exports_minimal_markerless_coupon_requested_by_ui(tmp_path):
             "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-MINI"}).json()
         lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
         client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
         titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2"}).json()
         request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "small_patches",
                    "patch_size_mm": 3, "patches": [{}], "registration": "none",

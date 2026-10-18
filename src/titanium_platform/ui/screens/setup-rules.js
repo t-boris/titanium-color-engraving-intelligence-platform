@@ -37,15 +37,25 @@ const SetupRules = (() => {
 
   async function markersTab(reload) {
     const cur = await get('/marker-layer');
-    const f = {power: h('input', {type: 'number', step: 'any', value: cur ? cur.power : ''}), frequency: h('input', {type: 'number', step: 'any', value: cur ? cur.frequency : ''}),
-      speed: h('input', {type: 'number', step: 'any', value: cur ? cur.speed : ''})};
+    const input = (value) => h('input', {type: 'number', step: 'any', value: value ?? ''});
+    const f = {power: input(cur?.power), frequency: input(cur?.frequency), speed: input(cur?.speed),
+      pulse: input(cur?.pulse_width), interval: input(cur?.interval), passes: h('input', {type: 'number', step: '1', min: '1', value: cur?.passes ?? ''})};
     return h('div', {class: 'card stack'}, h('h3', {}, 'Кодовые метки на тестовой плате'),
       h('p', {class: 'muted'}, 'Это не тестовый рисунок и не слой чистки. Вокруг матрицы идут четыре угловые метки и QR с номером эксперимента. Они помогают программе выровнять фотографию и понять, какая пластина снята. В измерения цвета они не входят.'),
-      h('p', {class: 'muted small'}, 'В LightBurn эти фигуры находятся на отдельном слое «Markers», поэтому при желании его можно выключить. Мощность, частота и скорость ниже задают читаемость кода на титане; этот слой идёт после обязательной чистки и до тестовых ячеек.'),
+      h('p', {class: 'muted small'}, 'В LightBurn эти фигуры находятся на отдельном слое «Markers» (на платах проверки лазера — «Markers and labels», вместе с выгравированными подписями), поэтому при желании его можно выключить. '
+        + 'Параметры ниже задают, как метки и подписи прожигаются на титане; этот слой идёт после обязательной чистки и до тестовых ячеек. Пока они не заданы, платы с метками не создаются.'),
+      h('p', {class: 'muted small'}, 'Метки, подписи и чистка сохраняются как свидетельство и видны на снимке, но никогда не попадают в модель цвета и в знание.'),
       cur ? null : h('div', {class: 'alert warn'}, 'Параметры кодовых меток пока не заданы. Их нужно задать один раз и проверить на титане перед автоматическим поиском меток по фотографии.'),
       h('div', {class: 'grid g3'}, field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed)),
+      h('div', {class: 'grid g3'}, field('Q-Pulse, нс (необязательно)', f.pulse), field('Интервал линий, мм (необязательно)', f.interval), field('Проходов (необязательно)', f.passes)),
+      h('p', {class: 'muted small'}, 'Незаданный параметр не подставляется: LightBurn возьмёт своё значение по умолчанию.'),
       btn('Сохранить параметры кодовых меток', async () => {
-        try { await put('/marker-layer', {power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value}); toast('Слой маркеров сохранён', 'ok'); reload('markers'); } catch (e) { fail(e); }
+        const optional = (el) => (el.value === '' ? null : +el.value);
+        try {
+          await put('/marker-layer', {power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value,
+            pulse_width: optional(f.pulse), line_interval: optional(f.interval), passes: optional(f.passes)});
+          toast('Слой маркеров сохранён', 'ok'); reload('markers');
+        } catch (e) { fail(e); }
       }, 'primary'));
   }
 

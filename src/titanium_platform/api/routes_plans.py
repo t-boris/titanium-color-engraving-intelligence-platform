@@ -8,8 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, ingest, plans, setup as su, vector_job
-from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, refresh_after_change, store_of
+from .. import conversion, designer, plans, setup as su, vector_job
+from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of
 
 router = APIRouter(prefix="/api")
 
@@ -115,26 +115,24 @@ def set_markers(plan_id: int, body: MarkersIn, request: Request):
 
 
 @router.delete("/plans/{plan_id}", status_code=204)
-def delete_plan(plan_id: int, request: Request, with_pairs: bool = False):
+def delete_plan(plan_id: int, request: Request):
+    """Remove a plan from active experiments (DEC-047). Refused while a photograph of it is in active use: each pair is
+    removed on its own first, so the knowledge it fed is rebuilt. A plan whose pairs are all deleted is archived with its
+    plate as their history; a plan never photographed is deleted with its plate."""
     s = store_of(request)
     plan = _visible_plan(s, plan_id)
-    active_pairs = s.query("SELECT id,device_id,lens_id FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))
-    if active_pairs and not with_pairs:
+    linked = "(plan_id=? OR (plate_id IS NOT NULL AND plate_id IS ?))"
+    if s.one(f"SELECT COUNT(*) AS n FROM pair WHERE {linked} AND status!='Deleted'", (plan_id, plan["plate_id"]))["n"]:
         raise su.ProtectedError("active input pairs are linked to this plan; delete those pairs first")
-    if active_pairs:
-        # The explicit cascade is used by the experiment dashboard's delete action. It uses the same
-        # archival path as deleting photographs individually, so accepted observations remain auditable.
-        for pair in active_pairs:
-            ingest.delete_pair(s, pair["id"])
-        for device_id, lens_id in {(pair["device_id"], pair["lens_id"]) for pair in active_pairs}:
-            refresh_after_change(s, device_id, lens_id)
-    archived_pairs = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status='Deleted'", (plan_id,))["n"]
+    archived_pairs = s.one(f"SELECT COUNT(*) AS n FROM pair WHERE {linked} AND status='Deleted'", (plan_id, plan["plate_id"]))["n"]
     if archived_pairs:
         # Keep the plan and plate rows as the immutable context for archived pair measurements.
-        # The Deleted status removes the plan from active experiment lists and public routes.
+        # The Deleted status removes the plan and its plate from active experiment lists and public routes.
         with s.transaction():
             s.execute("UPDATE plan SET status='Deleted' WHERE id=?", (plan_id,))
-            s.audit("plan_archived", plan_id=plan_id, archived_pairs=archived_pairs)
+            if plan["plate_id"]:
+                s.execute("UPDATE plate SET status='Deleted' WHERE id=?", (plan["plate_id"],))
+            s.audit("plan_archived", plan_id=plan_id, plate_id=plan["plate_id"], archived_pairs=archived_pairs)
         return
     with s.transaction():
         s.execute("DELETE FROM target_color WHERE source_plan_id=? AND proposal_id IS NULL", (plan_id,))

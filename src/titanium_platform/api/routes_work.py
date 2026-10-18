@@ -395,10 +395,8 @@ def accept_pair(pair_id: int, request: Request):
 
 @router.delete("/pairs/{pair_id}", status_code=204)
 def delete_pair(pair_id: int, request: Request):
-    s = store_of(request)
-    pair = ingest.get_pair(s, pair_id)
-    ingest.delete_pair(s, pair_id)
-    refresh_after_change(s, pair["device_id"], pair["lens_id"])
+    """Remove a pair from active use; the knowledge its observations fed is rebuilt with it (DEC-047)."""
+    ingest.delete_pair(store_of(request), pair_id)
 
 
 @router.get("/pairs/{pair_id}/overlay.png")

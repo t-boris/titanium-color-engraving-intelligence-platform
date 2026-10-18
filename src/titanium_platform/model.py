@@ -61,13 +61,19 @@ def parameters_key(p: dict) -> str:
     return f"{base}|lb:{hashlib.sha256(encoded).hexdigest()}"
 
 
+TEST_FEATURE_SQL = "COALESCE(json_extract(o.evidence_json, '$.role'), 'test feature')='test feature'"
+
+
 def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
-    """Chart-gated observations of one laser and one lens record (DEC-063); an unknown lens (None) is a partition of its own."""
+    """Chart-gated observations of one laser and one lens record (DEC-063); an unknown lens (None) is a partition of its own.
+
+    Only test features: a cleaning witness or a marker and label layer accepted as eligible by an older version is still
+    left out (DEC-027, DEC-028)."""
     out = []
     rows = store.query(
         "SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.created_at AS pair_created_at,p.material_id "
         "FROM observation o JOIN pair p ON p.id=o.pair_id WHERE o.device_id=? AND o.lens_id IS ? AND p.status='Accepted' "
-        "AND o.model_eligible=1 ORDER BY o.id", (device_id, lens_id))
+        f"AND o.model_eligible=1 AND {TEST_FEATURE_SQL} ORDER BY o.id", (device_id, lens_id))
     for r in rows:
         out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "lab": json.loads(r["lab_json"]),
                     "parameters": json.loads(r["parameters_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
@@ -76,6 +82,13 @@ def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> 
                                "accepted_at": r["accepted_at"], "created_at": r["pair_created_at"],
                                "material_id": r["material_id"]}})
     return out
+
+
+def knowledge_key_of(row) -> str | None:
+    """The knowledge entry an observation row counts toward within its laser and lens, or None when it feeds no knowledge."""
+    if not row["model_eligible"] or json.loads(row["evidence_json"] or "{}").get("role", "test feature") != "test feature":
+        return None
+    return observation_key(json.loads(row["parameters_json"]), json.loads(row["context_json"]))
 
 
 def _by_engraving(obs: list[dict]) -> dict[str, list[dict]]:

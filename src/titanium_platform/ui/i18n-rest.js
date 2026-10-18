@@ -88,4 +88,21 @@
     [/^the lens chosen for this photograph \((.+)\) differs from the lens of this (plate|plan) \((.+)\): the measurements are kept with the (?:plate|plan)'s lens$/i,
       (m) => `Для фотографии выбрана линза ${lens(m[1])}, а ${made(m[2])} на ${lens(m[3])}: измерения записываются с линзой ${m[2] === 'plan' ? 'плана' : 'платы'}`],
   ]);
+
+  // удаление пары и плана: знание перестраивается, стадия не понижается (DEC-047, DEC-066)
+  const STAGE = {measured: 'Измерено', candidate: 'Кандидат', repeated: 'Повторено', validated: 'Валидировано', production: 'Производственное'};
+  I18N.add([
+    [/^a removed photograph took away the evidence of this stage: no eligible observation is left$/i,
+      'Удалённая фотография унесла основания этой стадии: подходящих наблюдений не осталось. Стадия сохранена, запись помечена «под вопросом».'],
+    [/^a removed photograph took away the evidence of this stage: what remains supports only (\w+): (.+)$/i,
+      (m) => `Удалённая фотография унесла основания этой стадии; стадия сохранена, запись помечена «под вопросом». `
+        + `Оставшиеся данные подтверждают только «${STAGE[m[1]] || m[1]}»: ${I18N.tr(m[2])}`],
+    [/^no eligible observation is left$/i, 'подходящих наблюдений не осталось'],
+  ]);
+
+  // слой меток и подписей: только сохранённые оператором параметры (DEC-027)
+  I18N.add([
+    [/^the saved marker layer settings are not offered by this laser: (.+)$/i,
+      (m) => `Сохранённые параметры слоя меток не подходят этому лазеру (Настройки → «Метки для фото»): ${I18N.tr(m[1])}`],
+  ]);
 })();
