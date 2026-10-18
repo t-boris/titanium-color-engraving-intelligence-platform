@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import conversion, designer, plans, research, setup as su, vector_job
-from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of
+from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
 
@@ -155,10 +155,10 @@ def delete_plan(plan_id: int, request: Request):
 @router.post("/discrete", status_code=201)
 async def start_discrete(request: Request, device_id: int = Form(...), lens_id: str = Form(...), name: str = Form(...), width_mm: float = Form(...),
                          threshold: float | None = Form(None), markers: bool = Form(False), max_colors: int = Form(conversion.MAX_COLORS),
-                         image: UploadFile = File(None)):
+                         task: str | None = Form(None), goals: str | None = Form(None), image: UploadFile = File(None)):
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     pid = conversion.start_discrete(store_of(request), device_id, lens_param(lens_id), data, width_mm, name, threshold=threshold,
-                                    markers=markers, max_colors=max_colors)
+                                    markers=markers, max_colors=max_colors, task=task or None, goals=task_goals(goals))
     return _plan(request, pid)
 
 
@@ -217,14 +217,14 @@ async def preview_continuous(request: Request, device_id: int = Form(...), lens_
 async def create_continuous(request: Request, device_id: int = Form(...), lens_id: str = Form(...), mode: str = Form(...), name: str = Form(...),
                             width_mm: float = Form(...), bands: int = Form(...), path_ids: str = Form("[]"),
                             allowed_questioned: str = Form("[]"), markers: bool = Form(False), revision_of: int | None = Form(None),
-                            image: UploadFile = File(None)):
+                            task: str | None = Form(None), goals: str | None = Form(None), image: UploadFile = File(None)):
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     path, allowed = _continuous_args(path_ids, allowed_questioned)
     s = store_of(request)
     if revision_of is not None:
         _visible_plan(s, revision_of)
     pid = conversion.create_continuous(s, device_id, lens_param(lens_id), mode, data, width_mm, bands, name, path, allowed, markers,
-                                       revision_of=revision_of)
+                                       revision_of=revision_of, task=task or None, goals=task_goals(goals))
     return _plan(request, pid)
 
 

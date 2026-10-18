@@ -2,12 +2,13 @@
 
 Suggestions are deterministic and auditable. They narrow measured ranges but never promote a
 photographic contrast proxy to a production recipe or infer cutting depth from a surface photo.
+A suggestion names its engraving task (REQ-020, ``tasks``) and the observed evidence it builds on.
 """
 from __future__ import annotations
 
 import json
 
-from . import capability_results, devices, setup as su
+from . import capability_results, devices, setup as su, tasks
 from .db import Store
 
 
@@ -81,9 +82,38 @@ def _pending_plan(store: Store, device_id: int, material_id: int, lens_id: int, 
     return None
 
 
-def suggest(store: Store, device_id: int, material_id: int, goal: str) -> dict:
+def _support(store: Store, finding: dict | None) -> dict | None:
+    """The evidence behind a finding the suggestion builds on (REQ-020): its observations and the photographs of its
+    engraving, how many independent engravings it has (one: its repeatability is not assessed) and the context it lacks."""
+    if finding is None:
+        return None
+    pair = store.one("SELECT engraving_id, lens_id, context_json FROM pair WHERE id=?", (finding["pair_id"],))
+    layer = (finding.get("evidence") or {}).get("layer_index")
+    rows = [r for r in store.query("SELECT id, layer_index, parameters_json, evidence_json FROM observation WHERE pair_id=? ORDER BY id",
+                                   (finding["pair_id"],)) if layer is None or r["layer_index"] == layer]
+    photographs = store.one("SELECT COUNT(*) AS n FROM pair WHERE engraving_id=? AND status='Accepted'", (pair["engraving_id"],))["n"]
+    missing = []
+    if pair["lens_id"] is None:
+        missing.append("lens_unknown")
+    if json.loads(pair["context_json"] or "{}").get("batch") is None:
+        missing.append("batch_unknown")
+    if any((json.loads(r["evidence_json"] or "{}").get("color_measurement") or {}).get("mode") == "raw_camera_relative" for r in rows):
+        missing.append("camera_relative")
+    if any(json.loads(r["parameters_json"]).get(k) is None for r in rows for k in ("power", "frequency", "speed", "pulse_width", "passes")):
+        missing.append("settings_incomplete")
+    return {"evidence": "observed", "pair_id": finding["pair_id"], "observation_ids": [r["id"] for r in rows],
+            "engravings": 1, "photographs": photographs, "repeatability": {"assessed": False, "engravings": 1},
+            "missing_context": missing}
+
+
+def suggest(store: Store, device_id: int, material_id: int, goal: str | None = None, task: str | None = None) -> dict:
+    """The next step for an engraving task on one laser, its installed lens and one titanium stock. The task is either a goal
+    of this guide or a task kind of REQ-020 (``task``), which names the goal that serves it."""
+    if goal is None and task is not None:
+        goal = tasks.TASKS[tasks.require(task)]["guide_goal"]
     if goal not in GOALS:
         raise su.ValidationError("неизвестная задача гравировки")
+    kind = tasks.require(task) if task is not None else tasks.GOAL_TASK[goal]
     device = devices.get_device(store, device_id)
     if not device.get("lens"):
         raise su.ValidationError("сначала установите линзу на выбранный лазер")
@@ -100,7 +130,8 @@ def suggest(store: Store, device_id: int, material_id: int, goal: str) -> dict:
     line = latest.get("line")
     text = latest.get("text")
     title, objective = GOALS[goal]
-    base = {"goal": goal, "goal_name": title, "objective": objective,
+    base = {"goal": goal, "goal_name": title, "objective": objective, "task": {"kind": kind, "name": tasks.TASKS[kind]["name"]},
+            "support": _support(store, source),
             "device": {"id": device_id, "name": device["name"]},
             "lens": {"id": lens_id, "name": device["lens"]["name"]},
             "material": {key: material[key] for key in ("id", "name", "family", "grade", "batch")},

@@ -56,6 +56,7 @@ class ResultLookupIn(BaseModel):
     pulse_width: float
     line_interval: float
     passes: int
+    task: str | None = None         # an engraving task (REQ-020): only its results; None: every task, each apart
 
 
 @router.get("/device-templates")
@@ -122,8 +123,8 @@ def device_experiments(device_id: int, request: Request):
 @router.post("/devices/{device_id}/result-lookup")
 def lookup_result(device_id: int, body: ResultLookupIn, request: Request):
     values = body.model_dump()
-    lens_id = values.pop("lens_id")
-    return experiment_library.lookup_result(store_of(request), device_id, lens_id, values)
+    lens_id, task = values.pop("lens_id"), values.pop("task") or None
+    return experiment_library.lookup_result(store_of(request), device_id, lens_id, values, task)
 
 
 @router.post("/devices/{device_id}/documents", status_code=201)

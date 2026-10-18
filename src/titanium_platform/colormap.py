@@ -13,9 +13,12 @@ REQ-020): only when its alignment is valid and layers were measured. Provisional
 search asks for them, and in no prediction; deleted pairs never show.
 
 The search returns one entry per recipe: the settings, the laser and lens records, the titanium stock record, how the colour was
-measured (chart, against clean titanium, as photographed) and whether it is provisional; colours of different kinds are never
-pooled into one entry. An entry counts independent engravings (re-photographs of one engraving count once, DEC-021) and
-photographs separately.
+measured (chart, against clean titanium, as photographed), whether it is provisional and its engraving task (REQ-020: a
+filled text and a filled area of the same settings are two entries); colours of different kinds are never pooled into one
+entry. An entry is observed evidence, never a prediction: it links its observations, counts independent engravings
+(re-photographs of one engraving count once, DEC-021) and photographs separately, says how far its engravings agree when
+there are several, and names the context it lacks (an unknown lens or batch, camera-relative or unreferenced colours,
+provisional checks, settings missing from the file).
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import color, experiments, ingest, lightburn as lb, model
+from . import color, experiments, ingest, lightburn as lb, model, tasks
 from . import setup as su
 from .db import Store
 
@@ -38,7 +41,7 @@ PENDING = ("Accepted", "Deleted")         # statuses that are not a check awaiti
 def _rows(store: Store):
     return store.query(
         "SELECT o.id, o.pair_id, o.layer_index, o.lab_json, o.parameters_json, o.model_eligible, o.alignment_method, o.evidence_json, "
-        "p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
+        "o.task_kind, p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
         "p.device_id, p.lens_id, p.material_id, "
         "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status "
         "FROM observation o JOIN pair p ON p.id=o.pair_id LEFT JOIN plan pl ON pl.id=p.plan_id "
@@ -85,7 +88,8 @@ def _pair_info(source: dict, names: tuple[dict[int, str], dict[int, str]], kept:
     return {"experiment": key, "title": source["engraving_title"] or source["lightburn_name"].rsplit(".", 1)[0], "photo": source["photo_name"],
             "date": source["date"], "laser": laser, "lens": lens, "engraving_id": source["engraving_id"],
             "device_id": source["device_id"], "lens_id": source["lens_id"], "setup": su.setup_key(source["device_id"], source["lens_id"]),
-            "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material, "material_id": source["material_id"]}
+            "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material, "material_id": source["material_id"],
+            "batch": context.get("batch")}
 
 
 _against_clean = color.against_clean
@@ -167,17 +171,24 @@ SHOWN_PARAMETERS = ("power", "frequency", "speed", "pulse_width", "line_interval
                     "cross_hatch", "scan_angle")
 
 
-def _group(params: dict, info: dict, kind: str, referenced: bool, provisional: bool, tonal: bool = False) -> str:
-    """One recipe of the search: the settings, the laser and lens records, the titanium stock record, how the colour was measured
-    and whether it is provisional; colours that differ in any of these are never one entry (REQ-020, REQ-029)."""
+def _group(params: dict, info: dict, kind: str, referenced: bool, provisional: bool, task: dict, tonal: bool = False) -> str:
+    """One recipe of the search: the settings, the laser and lens records, the titanium stock record, how the colour was measured,
+    whether it is provisional and its engraving task; colours that differ in any of these are never one entry (REQ-020, REQ-029)."""
     basis = "chart" if kind == "calibrated" else "clean" if referenced else "as-shot"
     return "|".join((model.parameters_key(params), "tonal" if tonal else "layer", info["setup"], f"ti:{info['material_id'] or 'unknown'}",
-                     basis, "provisional" if provisional else "accepted"))
+                     basis, "provisional" if provisional else "accepted", f"task:{task['kind']}"))
 
 
-def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nominal, provisional: bool) -> list[dict]:
+def _task(task: dict) -> dict:
+    """The task of a point: its kind and whether it was stated or derived from the layer."""
+    return {"kind": task["kind"], "basis": task.get("basis", tasks.DERIVED)}
+
+
+def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nominal, provisional: bool,
+                  observations: dict | None = None) -> list[dict]:
     """A grayscale-mode image is a continuum of recipes: the grey level sets the power and the power sets the colour. Each step of
-    its tonal profile is a colour with the settings of that power (DEC-056)."""
+    its tonal profile is a colour with the settings of that power (DEC-056); its evidence is the observation of its image layer
+    (``observations`` by layer name), none while the check is provisional."""
     out = []
     for rep in check.get("layers", []):
         tonal = rep.get("tonal")
@@ -191,24 +202,31 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
             params = {"power": step["power_pct"], "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
                       "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
                       "layer_type": "Image", "grayscale": True}
+            task = _task(rep.get("task") or tasks.derive_from_parameters(params))
             out.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],
                         "layer_name": f"{rep.get('name')} · серый {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
                         "referenced": referenced, "provisional": provisional, "lab": lab, "delta": None, "display_lab": display,
-                        "parameters": params, "source": "tonal", "group": _group(params, info, kind, referenced, provisional, tonal=True), **info})
+                        "parameters": params, "source": "tonal", "task": task,
+                        "observation_ids": [observations[rep.get("name")]] if rep.get("name") in (observations or {}) else [],
+                        "group": _group(params, info, kind, referenced, provisional, task, tonal=True), **info})
     return out
 
 
 def collect(store: Store, include_unreferenced: bool = True, setup: str | None = None, material: str | None = None,
-            measurement: str | None = None, include_provisional: bool = True) -> dict:
-    """Every colour of the map. Filters narrow the points (``setup`` is the key of a laser and lens, ``laser:1/lens:2``);
-    the options and counts describe everything that exists."""
+            measurement: str | None = None, include_provisional: bool = True, task: str | None = None) -> dict:
+    """Every colour of the map. Filters narrow the points (``setup`` is the key of a laser and lens, ``laser:1/lens:2``;
+    ``task`` an engraving task, REQ-020); the options and counts describe everything that exists."""
+    if task is not None:
+        tasks.require(task)
     refs = references(store)
     rows, witness, derived, nominal = refs["rows"], refs["witness"], refs["derived"], refs["nominal"]
     kept, names = experiments.kept_plan_ids(store), _names(store)
 
     points = []
+    observations: dict[int, dict[str, int]] = {}
     for row in rows:
         evidence = json.loads(row["evidence_json"] or "{}")
+        observations.setdefault(row["pair_id"], {}).setdefault(evidence.get("layer_name"), row["id"])
         if is_service(evidence.get("role"), row["layer_index"], derived.get(row["pair_id"])):
             continue
         info = _pair_info(_source_of_row(row), names, kept)
@@ -218,10 +236,11 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         delta = [lab[i] - ref["lab"][i] for i in range(3)] if ref else None
         display, approximate, referenced = expressed(lab, kind, ref["lab"] if ref else None, nominal)
         params = json.loads(row["parameters_json"] or "{}")
+        point_task = _task(tasks.of_observation(row))
         points.append({"id": row["id"], "pair_id": row["pair_id"], "layer_index": row["layer_index"], "layer_name": evidence.get("layer_name"),
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "provisional": False, "lab": lab, "delta": delta,
-                       "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS},
-                       "group": _group(params, info, kind, referenced, False), **info})
+                       "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
+                       "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **info})
     first_row = {}
     for row in rows:
         first_row.setdefault(row["pair_id"], row)
@@ -229,16 +248,18 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         check = ingest.get_pair(store, pair_id).get("check") or {}
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         ref = witness.get(pair_id)
-        points += _tonal_points(pair_id, check, _pair_info(_source_of_row(row), names, kept), kind, ref["lab"] if ref else None, nominal, False)
+        points += _tonal_points(pair_id, check, _pair_info(_source_of_row(row), names, kept), kind, ref["lab"] if ref else None, nominal, False,
+                                observations.get(pair_id))
     points += _provisional_points(store, names, kept, nominal)
 
-    setups, materials = {}, set()
+    setups, materials, kinds = {}, set(), set()
     for p in points:
         setups[p["setup"]] = p
+        kinds.add(p["task"]["kind"])
         if p["material"]:
             materials.add(p["material"])
     shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["material"] == material)
-             and (measurement is None or p["measurement"] == measurement)]
+             and (measurement is None or p["measurement"] == measurement) and (task is None or p["task"]["kind"] == task)]
     provisional = sum(p["provisional"] for p in shown)
     if not include_provisional:
         shown = [p for p in shown if not p["provisional"]]
@@ -248,7 +269,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     return {"points": shown, "nominal_clean": {"lab": nominal, "source": refs["nominal_source"]},
             "options": {"setups": sorted(({"key": key, "label": info["setup_label"], "device_id": info["device_id"], "lens_id": info["lens_id"]}
                                           for key, info in setups.items()), key=lambda o: (o["label"], o["key"])),
-                        "materials": sorted(materials)},
+                        "materials": sorted(materials), "tasks": [k for k in tasks.TASKS if k in kinds]},
             "counts": {"calibrated": sum(p["measurement"] == "calibrated" for p in shown),
                        "relative": sum(p["measurement"] == "relative" for p in shown), "unreferenced": unreferenced,
                        "provisional": provisional}}
@@ -273,11 +294,12 @@ def _provisional_points(store: Store, names, kept: set[int], nominal: list[float
             lab = [float(v) for v in rep["measured_lab"]]
             display, approximate, referenced = expressed(lab, kind, clean, nominal)
             params = layer_parameters(rep)
+            point_task = _task(rep.get("task") or tasks.derive_from_parameters(params, rep.get("role")))
             out.append({"id": f"provisional-{pair['id']}-{rep['index']}", "pair_id": pair["id"], "layer_index": rep["index"],
                         "layer_name": rep.get("name"), "measurement": kind, "approximate": approximate, "referenced": referenced,
                         "provisional": True, "lab": lab, "delta": [lab[i] - clean[i] for i in range(3)] if clean else None,
-                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS},
-                        "group": _group(params, info, kind, referenced, True), **info})
+                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
+                        "observation_ids": [], "group": _group(params, info, kind, referenced, True, point_task), **info})
         out += _tonal_points(pair["id"], check, info, kind, clean, nominal, True)
     return out
 
@@ -286,19 +308,52 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
            **filters) -> dict:
     """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how many independent engravings gave it, in how
     many photographs, and from which experiments. Colours without a clean reference and provisional colours are left out unless
-    asked for; their numbers are returned."""
+    asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
+    it came from, says how far its independent engravings agree when there are several, and names the context it lacks."""
     data = collect(store, include_unreferenced=include_unreferenced, include_provisional=include_provisional, **filters)
     best: dict[str, dict] = {}
     for point in data["points"]:
         distance = color.delta_e(lab, point["display_lab"])
-        entry = best.setdefault(point["group"], {"best": point, "distance": distance, "engravings": set(), "photographs": set(), "experiments": []})
-        entry["engravings"].add(point["engraving_id"])
+        entry = best.setdefault(point["group"], {"best": point, "distance": distance, "engravings": {}, "photographs": set(), "experiments": [],
+                                                 "observation_ids": [], "points": []})
+        entry["engravings"].setdefault(point["engraving_id"], []).append(point["display_lab"])
         entry["photographs"].add(point["pair_id"])
+        entry["observation_ids"] += [i for i in point["observation_ids"] if i not in entry["observation_ids"]]
+        entry["points"].append(point)
         if point["experiment"] not in entry["experiments"]:
             entry["experiments"].append(point["experiment"])
         if distance < entry["distance"]:
             entry["best"], entry["distance"] = point, distance
     ranked = sorted(best.values(), key=lambda e: e["distance"])[:limit]
-    return {"target": lab, "matches": [{**e["best"], "distance": round(float(e["distance"]), 2), "repeats": len(e["engravings"]),
-                                         "photographs": len(e["photographs"]), "experiments": e["experiments"]} for e in ranked],
+    return {"target": lab, "evidence": "observed",
+            "matches": [{**e["best"], "distance": round(float(e["distance"]), 2), "repeats": len(e["engravings"]),
+                         "photographs": len(e["photographs"]), "experiments": e["experiments"], "evidence": "observed",
+                         "observation_ids": sorted(e["observation_ids"]),
+                         "provisional_checks": sorted({p["pair_id"] for p in e["points"] if p["provisional"]}),
+                         "repeatability": _repeatability(e["engravings"]), "missing_context": missing_context(e["points"])} for e in ranked],
             "nominal_clean": data["nominal_clean"], "counts": data["counts"]}
+
+
+def _repeatability(engravings: dict[str, list]) -> dict:
+    """How far the independent engravings of one entry agree: the largest delta E of an engraving's colour from their mean.
+    One engraving cannot show it (DEC-021: its re-photographs are views, not repeats)."""
+    means = [np.mean(np.asarray(labs, float), axis=0) for labs in engravings.values()]
+    if len(means) < 2:
+        return {"assessed": False, "engravings": len(means)}
+    centre = np.mean(means, axis=0)
+    return {"assessed": True, "engravings": len(means), "max_delta_e": round(max(color.delta_e(m, centre) for m in means), 2)}
+
+
+def missing_context(points: list[dict]) -> list[str]:
+    """What an entry's evidence lacks, as codes the screen names: an unknown lens or titanium batch, colours relative to the
+    camera or without any reference, checks not accepted yet, settings the LightBurn file did not record."""
+    out = []
+    checks = (("lens_unknown", lambda p: p["lens_id"] is None), ("batch_unknown", lambda p: not p.get("batch")),
+              ("camera_relative", lambda p: p["measurement"] == "relative"), ("unreferenced", lambda p: not p["referenced"]),
+              ("provisional", lambda p: p["provisional"]),
+              ("settings_incomplete", lambda p: any(p["parameters"].get(k) is None for k in
+                                                    ("power", "frequency", "speed", "pulse_width", "passes"))))
+    for code, lacks in checks:
+        if any(lacks(p) for p in points):
+            out.append(code)
+    return out

@@ -1,6 +1,8 @@
 """Shared API plumbing: store access, error mapping, upload limits, response shaping."""
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -100,6 +102,19 @@ def content_disposition(name: str, extension: str) -> str:
 
 def refresh_after_change(store: Store, device_id: int, lens_id: int | None) -> None:
     knowledge.refresh(store, device_id, lens_id)
+
+
+def task_goals(goals: str | None) -> dict | None:
+    """The goals of a plan's engraving task from a form field: a JSON object, or nothing (REQ-020)."""
+    if goals in (None, ""):
+        return None
+    try:
+        value = json.loads(goals)
+    except json.JSONDecodeError:
+        value = None
+    if not isinstance(value, dict):
+        raise su.ValidationError("the task goals must be a JSON object")
+    return value
 
 
 def lens_param(value: str | None) -> int | None:

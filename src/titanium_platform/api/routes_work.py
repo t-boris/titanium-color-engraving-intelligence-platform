@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
-               plans, setup as su)
+               plans, setup as su, tasks)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, public_pair, public_plan, read_upload, refresh_after_change,
                      store_of)
 from .common import content_disposition
@@ -64,13 +64,21 @@ class CapabilityPlateIn(BaseModel):
     max_width_mm: float = 100.0
     max_height_mm: float = 100.0
     split_if_needed: bool = True
+    task: str | None = None               # the engraving task the plate is made for (REQ-020); None: its goal's or test type's
+    task_goals: dict | None = None
 
 
 class ApplicationGoalIn(BaseModel):
     device_id: int
     material_id: int
-    goal: str
+    goal: str | None = None
+    task: str | None = None               # a task kind of REQ-020 instead of (or with) the guide's goal
     pulse_width: float | None = None      # the operator's choice when the suggestion has no pulse width (DEC-043)
+
+
+class TaskIn(BaseModel):
+    layer_index: int | None = None        # None: the task of the whole work
+    task: str | None = None               # None clears the choice; "layer" for a layer: the task its LightBurn mode implies
 
 
 class CornersIn(BaseModel):
@@ -122,19 +130,27 @@ def application_goals():
     return application_guide.list_goals()
 
 
+@router.get("/tasks")
+def task_vocabulary():
+    """The engraving tasks (REQ-020): what each is for, what a photograph measures of it and what it cannot."""
+    return tasks.vocabulary()
+
+
 @router.get("/application-guide")
-def application_guide_for_stock(request: Request, device_id: int, material_id: int, goal: str):
-    return application_guide.suggest(store_of(request), device_id, material_id, goal)
+def application_guide_for_stock(request: Request, device_id: int, material_id: int, goal: str | None = None, task: str | None = None):
+    return application_guide.suggest(store_of(request), device_id, material_id, goal, task)
 
 
 @router.post("/application-guide/next-plate", status_code=201)
 def create_next_application_plate(body: ApplicationGoalIn, request: Request):
     s = store_of(request)
-    suggestion = application_guide.suggest(s, body.device_id, body.material_id, body.goal)
+    suggestion = application_guide.suggest(s, body.device_id, body.material_id, body.goal, body.task)
     plate = suggestion["plate"]
     if plate is None:
         raise su.ValidationError(suggestion["message"])
-    settings = {**plate["settings"], "research_goal": body.goal, "source_pair_id": plate["source_pair_id"]}
+    settings = {**plate["settings"], "research_goal": suggestion["goal"], "source_pair_id": plate["source_pair_id"]}
+    if body.task:
+        settings["task"] = body.task
     if body.pulse_width is not None:
         settings["pulse_width"] = body.pulse_width
     return capability_plates.create(s, body.device_id, body.material_id, plate["test_type"], settings)
@@ -146,6 +162,8 @@ def _capability_settings(body: CapabilityPlateIn) -> dict:
     settings["matrix"] = body.matrix or {}
     if body.patches is not None:
         settings["patches"] = body.patches
+    if body.task:
+        settings.update(task=body.task, task_goals=body.task_goals)
     return settings
 
 
@@ -188,20 +206,22 @@ def create_plates(body: PlatesIn, request: Request):
 
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
-               include_unreferenced: bool = True, include_provisional: bool = True):
+               include_unreferenced: bool = True, include_provisional: bool = True, task: str | None = None):
     """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
-    flagged, those of checks awaiting acceptance are marked provisional (DEC-045)."""
+    flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020)."""
     return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
-                            measurement=measurement, include_provisional=include_provisional)
+                            measurement=measurement, include_provisional=include_provisional, task=task or None)
 
 
 @router.get("/colors/search")
 def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
                   material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False,
-                  include_provisional: bool = False):
-    """Where did a wanted colour occur: the nearest recipes, with their settings and the experiments they came from."""
+                  include_provisional: bool = False, task: str | None = None):
+    """Where did a wanted colour occur: the nearest recipes, with their settings, task, evidence and the experiments they came
+    from. Observed evidence only; the film model's settings are a prediction and come from /colors/settings."""
     return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
-                           measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional)
+                           measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional,
+                           task=task or None)
 
 
 def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:
@@ -231,10 +251,11 @@ def oxide_kinetics(request: Request, device_id: int, lens_id: str):
 
 
 @router.get("/experiments")
-def list_experiments(request: Request, device_id: int | None = None):
+def list_experiments(request: Request, device_id: int | None = None, task: str | None = None):
     """One entry per experiment: a plate with all its checks, or a finished work with its photographs (REQ-028); of one
-    laser when ``device_id`` is given (its page shows the same list, not a list of its own)."""
-    return experiments.list_experiments(store_of(request), device_id=device_id)
+    laser when ``device_id`` is given (its page shows the same list, not a list of its own); of one engraving task when
+    ``task`` is given (REQ-020)."""
+    return experiments.list_experiments(store_of(request), device_id=device_id, task=task or None)
 
 
 @router.get("/experiments/{key}")
@@ -270,10 +291,11 @@ def rename_engraving(engraving_id: str, body: EngravingTitleIn, request: Request
 @router.post("/pairs", status_code=201)
 async def create_pair(request: Request, device_id: int = Form(...), lens_id: str = Form(...), stand_id: int | None = Form(None),
                       plan_id: int | None = Form(None), rephoto_of: int | None = Form(None), context: str = Form("{}"),
-                      lightburn: UploadFile = File(None), photo: UploadFile = File(None)):
+                      task: str | None = Form(None), lightburn: UploadFile = File(None), photo: UploadFile = File(None)):
     """A LightBurn file and its photograph, of the laser and the lens the operator chose (``lens_id=unknown`` when the lens
     of the work is not known: the lens installed now is never assumed, REQ-016), taken on the capture setup ``stand_id``
-    (the one used last when not given, REQ-009)."""
+    (the one used last when not given, REQ-009). ``task`` is the engraving task of the whole work (REQ-020); empty: every
+    layer keeps the task of its plan or of its LightBurn mode."""
     lb_name, lb_bytes = await read_upload(lightburn, MAX_LIGHTBURN_BYTES, "LightBurn")
     ph_name, ph_bytes = await read_upload(photo, MAX_PHOTO_BYTES, "photograph")
     try:
@@ -282,7 +304,8 @@ async def create_pair(request: Request, device_id: int = Form(...), lens_id: str
         raise su.ValidationError("the context is not valid JSON") from None
     pid = ingest.create_pair(store_of(request), device_id=device_id, lens_id=lens_param(lens_id), stand_id=stand_id,
                              lightburn_name=lb_name, lightburn_bytes=lb_bytes,
-                             photo_name=ph_name, photo_bytes=ph_bytes, plan_id=plan_id, rephoto_of=rephoto_of, context=ctx)
+                             photo_name=ph_name, photo_bytes=ph_bytes, plan_id=plan_id, rephoto_of=rephoto_of, context=ctx,
+                             task=task or None)
     return public_pair(ingest.get_pair(store_of(request), pid))
 
 
@@ -387,6 +410,13 @@ def confirm_file(pair_id: int, body: ConfirmIn, request: Request):
 @router.post("/pairs/{pair_id}/review-masks")
 def review_masks(pair_id: int, request: Request):
     ingest.review_masks(store_of(request), pair_id)
+    return public_pair(ingest.get_pair(store_of(request), pair_id))
+
+
+@router.put("/pairs/{pair_id}/tasks")
+def set_pair_task(pair_id: int, body: TaskIn, request: Request):
+    """The operator's engraving task of the whole work or of one layer of a pair not yet accepted (REQ-020)."""
+    ingest.set_task(store_of(request), pair_id, body.layer_index, body.task)
     return public_pair(ingest.get_pair(store_of(request), pair_id))
 
 

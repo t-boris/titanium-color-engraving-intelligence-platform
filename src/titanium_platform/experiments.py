@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from . import capability_results, designer, ingest, plans as pl
+from . import capability_results, designer, ingest, plans as pl, tasks
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
@@ -67,7 +67,34 @@ def _names(group: dict) -> dict:
                                               material.get("grade") or context.get("titanium_grade")) if x) or None}
 
 
-def _summary(key: str, group: dict, observations: dict[int, int]) -> dict:
+def _observed_tasks(store: Store) -> dict[int, set[str]]:
+    """The tasks the observations of every accepted pair were accepted with (derived for those accepted before tasks)."""
+    out: dict[int, set[str]] = {}
+    for row in store.query("SELECT pair_id, task_kind, parameters_json, evidence_json FROM observation"):
+        if json.loads(row["evidence_json"] or "{}").get("role", "test feature") == "test feature":
+            out.setdefault(row["pair_id"], set()).add(tasks.of_observation(row)["kind"])
+    return out
+
+
+def _tasks(group: dict, observed: dict[int, set[str]]) -> list[str]:
+    """The engraving tasks of an experiment (REQ-020): the one its plan or plate was made for and those of its measured layers
+    (the cleaning, markers and labels are the plate's operations, not its tasks), in the order of the task table. An accepted
+    check has the tasks of its observations, a check awaiting acceptance those of its layers as they stand."""
+    kinds = set()
+    plan_task = ((group["plan"] or {}).get("engraving_task") or {}).get("kind")
+    if plan_task:
+        kinds.add(plan_task)
+    for pair in group["pairs"]:
+        if pair["status"] == "Accepted":
+            kinds |= observed.get(pair["id"], set())
+            continue
+        for rep in (pair.get("check") or {}).get("layers") or []:
+            if rep.get("measured_lab") and rep.get("task") and rep.get("role") in (None, "test feature"):
+                kinds.add(rep["task"]["kind"])
+    return [k for k in tasks.TASKS if k in kinds]
+
+
+def _summary(key: str, group: dict, observations: dict[int, int], observed: dict[int, set[str]]) -> dict:
     plan, pairs = group["plan"], group["pairs"]
     main = pairs[-1] if pairs else None            # the latest check is shown first; the others stay one click away
     title = plan["name"] if plan else (pairs[0].get("engraving_title") or pairs[0]["lightburn_name"].rsplit(".", 1)[0])
@@ -83,19 +110,25 @@ def _summary(key: str, group: dict, observations: dict[int, int]) -> dict:
             "needs_review": sum(p["status"] in NEEDS_REVIEW for p in pairs),
             "layers_measured": sum(observations.get(p["id"], 0) for p in pairs),
             "main_pair_id": main["id"] if main else None, "created_at": min(stamps) if stamps else None,
-            "last_activity": max(stamps) if stamps else None, **_names(group)}
+            "last_activity": max(stamps) if stamps else None, "tasks": _tasks(group, observed),
+            "engraving_task": (plan or {}).get("engraving_task"), **_names(group)}
 
 
 def _observation_counts(store: Store) -> dict[int, int]:
     return {r["pair_id"]: r["n"] for r in store.query("SELECT pair_id, COUNT(*) AS n FROM observation GROUP BY pair_id")}
 
 
-def list_experiments(store: Store, device_id: int | None = None) -> list[dict]:
-    """Every experiment, the most recently active first; of one laser when ``device_id`` is given."""
-    counts = _observation_counts(store)
-    out = [_summary(key, group, counts) for key, group in _groups(store).items()]
+def list_experiments(store: Store, device_id: int | None = None, task: str | None = None) -> list[dict]:
+    """Every experiment, the most recently active first; of one laser when ``device_id`` is given, of one engraving task when
+    ``task`` is (REQ-020)."""
+    if task is not None:
+        tasks.require(task)
+    counts, observed = _observation_counts(store), _observed_tasks(store)
+    out = [_summary(key, group, counts, observed) for key, group in _groups(store).items()]
     if device_id is not None:
         out = [e for e in out if e["device_id"] == device_id]
+    if task is not None:
+        out = [e for e in out if task in e["tasks"]]
     return sorted(out, key=lambda e: (e["last_activity"] or "", e["main_pair_id"] or 0, e["key"]), reverse=True)
 
 
@@ -104,7 +137,7 @@ def get_experiment(store: Store, key: str) -> dict:
     if key not in groups:
         raise KeyError(f"experiment {key} not found")
     group = groups[key]
-    summary = _summary(key, group, _observation_counts(store))
+    summary = _summary(key, group, _observation_counts(store), _observed_tasks(store))
     plan = group["plan"]
     plate = None
     if plan:
@@ -113,7 +146,7 @@ def get_experiment(store: Store, key: str) -> dict:
                  "test_type": plan.get("test_type") or meta.get("test_type"), "test_name": meta.get("test_name"),
                  "description": meta.get("test_description"), "layers": len(plan.get("layers", [])),
                  "band_count": plan.get("band_count"), "identifier": plan.get("plan_identifier"), "created_at": plan["created_at"],
-                 "proposal": designer.proposal_of_plate(store, plan.get("plate_id"))}
+                 "proposal": designer.proposal_of_plate(store, plan.get("plate_id")), "engraving_task": plan.get("engraving_task")}
     counts = _observation_counts(store)
     pairs = []
     for p in group["pairs"]:

@@ -16,7 +16,7 @@ import json
 
 import numpy as np
 
-from . import capability_results, color, designer, ingest, model, plans as pl, setup as su
+from . import capability_results, color, designer, ingest, model, plans as pl, setup as su, tasks
 from .db import Store
 
 
@@ -38,7 +38,8 @@ def _polyline_distance(lab, vertices: list) -> float:
 def _observations(store: Store, pair_id: int) -> list[dict]:
     return [{"id": r["id"], "layer_index": r["layer_index"], "lab": json.loads(r["lab_json"]), "parameters": json.loads(r["parameters_json"]),
              "alignment": r["alignment_method"], "context": json.loads(r["context_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
-             "evidence": json.loads(r["evidence_json"])} for r in store.query("SELECT * FROM observation WHERE pair_id=? ORDER BY layer_index", (pair_id,))]
+             "evidence": json.loads(r["evidence_json"]), "task": tasks.of_observation(r)}
+            for r in store.query("SELECT * FROM observation WHERE pair_id=? ORDER BY layer_index", (pair_id,))]
 
 
 def report_for_pair(store: Store, pair_id: int) -> dict:
@@ -55,6 +56,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     planned = {l["index"]: l for l in plan["layers"]} if plan else {}
     # colours of a photograph without a chart, as they would look next to clean titanium (derived by get_pair, DEC-056)
     checked = {rep["index"]: rep for rep in (pair.get("check") or {}).get("layers", [])}
+    scale = tasks.photo_scale((pair.get("check") or {}).get("alignment"))
+    witness = next((o["lab"] for o in obs if o["evidence"].get("role") == tasks.WITNESS), None)
     rows = []
     for o in obs:
         role = o["evidence"].get("role", "test feature")
@@ -65,7 +68,13 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
                "measured_lab": o["lab"], "planned_lab": None, "delta_e": None, "within_tolerance": None, "planned_prediction": pred,
                "alignment": o["alignment"], "knowledge": None, "role": role,
                "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics"),
-               "measured_lab_against_clean": (checked.get(o["layer_index"]) or {}).get("measured_lab_against_clean")}
+               "measured_lab_against_clean": (checked.get(o["layer_index"]) or {}).get("measured_lab_against_clean"),
+               "task": o["task"]}
+        # every quality metric with its method and basis, and what the task needs that a photograph cannot give (REQ-020)
+        row["metrics"] = tasks.quality_metrics(
+            o["task"]["kind"], lab=o["lab"], against_clean=row["measured_lab_against_clean"],
+            mode=(o["evidence"].get("color_measurement") or {}).get("mode"), line_metrics=row["line_metrics"],
+            tonal=(checked.get(o["layer_index"]) or {}).get("tonal"), scale=scale, clean_lab=witness if role != tasks.WITNESS else None)
         if pred is not None:
             row["planned_lab"] = pred["lab"]
             row["delta_e"] = color.delta_e(o["lab"], pred["lab"])
@@ -77,14 +86,14 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
             row["note"] = "the layer is not part of the original plan"
         if row["delta_e"] is not None and tol is not None:
             row["within_tolerance"] = row["delta_e"] <= tol
-        s = summaries.get(model.observation_key(o["parameters"], o["context"]))
+        s = summaries.get(model.observation_key(o["parameters"], o["context"], o["task"]))
         if s:
             row["knowledge"] = {"independent_engravings": s["independent_engravings"], "stability": s["stability"], "rig_repeatability": s["rig_repeatability"],
                                 "attribution_note": s["attribution_note"]}
         rows.append(row)
     result = {"pair_id": pair_id, "engraving_id": pair["engraving_id"], "engraving_title": pair["engraving_title"],
               "plan_id": pair["plan_id"], "mode": mode, "alignment": rows[0]["alignment"] if rows else None, "rows": rows,
-              "clean_reference": (pair.get("check") or {}).get("clean_reference"),
+              "clean_reference": (pair.get("check") or {}).get("clean_reference"), "photo_scale": scale,
               "tolerance": tol, "limitations": limitations, "metrics": {}}
     result["rephoto_of"] = pair.get("rephoto_of")
     result["photos"] = [dict(row) for row in store.query(
