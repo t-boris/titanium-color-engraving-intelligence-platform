@@ -333,3 +333,17 @@ def material_test(cols: int = 6, rows: int = 5, pitch: int = 90, gap: int = 12, 
     pts = np.array([[p for p in row] for row in centres], float).reshape(-1, 2)
     turned = (np.c_[pts, np.ones(len(pts))] @ turn.T).reshape(rows, cols, 2)
     return {"photo": img, "centres": turned, "x_values": x_values, "y_values": y_values, "cols": cols, "rows": rows, "pitch": pitch}
+
+
+def two_material_tests(first: dict | None = None, second: dict | None = None, keep: int = 800) -> dict:
+    """One photograph of two Material Tests side by side, as the operator photographs several tests on one plate: the
+    first whole with its chart, the second to its right (its left ``keep`` pixels: the grid, its labels, no second chart).
+    ``first`` and ``second`` are keyword arguments of ``material_test``."""
+    a = material_test(**{"cols": 4, "rows": 3, "x_values": [20.0, 30.0, 40.0, 50.0], "y_values": [900.0, 600.0, 300.0],
+                         "size": (1300, 1300), **(first or {})})
+    b = material_test(**{"cols": 3, "rows": 3, "x_values": [0.01, 0.02, 0.03], "y_values": [40.0, 30.0, 20.0], "x_title": "Interval (mm)",
+                         "y_title": "Power (%)", "header": ("Speed: 1000 mm/s  Passes: 1", "Frequency: 60.0 KHz  Q-Pulse: 200.00 ns"),
+                         "size": (1300, 1300), "seed": 5, **(second or {})})
+    photo = np.hstack([a["photo"], b["photo"][:, :keep]])
+    shifted = b["centres"] + np.array([a["photo"].shape[1], 0.0])
+    return {"photo": photo, "first": a, "second": {**b, "centres": shifted}}
