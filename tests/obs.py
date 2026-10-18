@@ -1,7 +1,7 @@
 """Insert observations directly (bypassing photography) for model and maturity tests."""
 import json
 
-from titanium_platform import devices, lenses
+from titanium_platform import devices, lenses, tasks
 from titanium_platform import setup as su
 from titanium_platform.db import Store, now
 
@@ -22,7 +22,7 @@ def setup(store: Store, lens: bool = True) -> dict:
 
 def add(store: Store, w: dict, lab, power=10, frequency=40, speed=900, engraving=None, rephoto=False,
         batch=None, focus=None, repeat_eligible=None, model_eligible=1, material_id=None,
-        pulse_width=200, line_interval=0.025, passes=1, lens_id=_SAME, evidence=None, layer_type=None) -> int:
+        pulse_width=200, line_interval=0.025, passes=1, lens_id=_SAME, evidence=None, layer_type=None, task_kind=None) -> int:
     w["n"] += 1
     eng = engraving or f"e{w['n']}"
     device_id = w["setup"][0]
@@ -40,8 +40,11 @@ def add(store: Store, w: dict, lab, power=10, frequency=40, speed=900, engraving
         " VALUES ('Accepted',?,?,?,?,?,'a.lbrn2','/x','p.raw','/y',?,'{}',?)",
         (device_id, lens, w["stand"]["id"], material_id, eng, json.dumps(context), now())).lastrowid
     rep = (0 if rephoto else 1) if repeat_eligible is None else repeat_eligible
+    evidence = dict(evidence or {})
+    if task_kind is not None:                  # a task the operator stated for the layer, accepted with it (REQ-020)
+        evidence["task"] = {**tasks.explicit(task_kind, "operator"), "mode": layer_type}
     return store.execute(
         "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
-        "model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at,task_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (pair, 1, device_id, lens, eng, json.dumps(list(lab)), json.dumps(p), "markers", json.dumps(context),
-         model_eligible, rep, "test", json.dumps(evidence or {}), now())).lastrowid
+         model_eligible, rep, "test", json.dumps(evidence), now(), task_kind)).lastrowid

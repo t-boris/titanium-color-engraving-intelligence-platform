@@ -6,7 +6,8 @@ involved. With the same database state, seed and size the same proposal is retur
 
 A proposal belongs to one laser and lens record and to one group of equal job settings (pulse width, line interval,
 passes), which is its input (DEC-042): power, frequency and speed are modelled within that group and measurements of
-another group take no part. Model: a Gaussian process (fixed RBF kernel, no hyper-parameter fitting) over those three
+another group take no part. Its plates are LightBurn fill cells, so only the measured sets of that task count (REQ-020):
+a line, text or tonal recipe with the same settings is another task and takes no part either. Model: a Gaussian process (fixed RBF kernel, no hyper-parameter fitting) over those three
 normalised axes, fitted on the mean Lab of every measured parameter set of the group. It needs at least
 ``MIN_SETS_FOR_MODEL`` sets; with fewer the designer falls back to gap sampling and says so. Everything numeric below
 is an explicit, unvalidated engineering default (proposed DEC-033), not a requirement.
@@ -42,7 +43,7 @@ import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 
-from . import color, model, plans as pl, setup as su
+from . import color, model, plans as pl, setup as su, tasks
 from .db import Store, now
 
 MIN_SETS_FOR_MODEL = 3
@@ -62,6 +63,7 @@ GROUP_KEYS = ("pulse_width", "line_interval", "passes")
 POWER_RANGE_PCT = (1.0, 100.0)
 SPEED_RANGE_MM_S = (1.0, 10000.0)
 PLATE_LAYER_TYPE = "Scan"           # every cell of a designer plate is a LightBurn fill (plans.export_lbrn2)
+PLATE_TASK = tasks.derive(PLATE_LAYER_TYPE)["kind"]   # so the task of a designer plate, and of the recipes it models
 
 
 class DesignerError(ValueError):
@@ -184,12 +186,6 @@ def _stock(store: Store, material_id: int | None, samples: list[dict]) -> dict:
                          for (m, n, g, b), count in sorted(measured.items(), key=lambda kv: (kv[0][0] is None, kv[0][0] or 0, str(kv[0][1])))]}
 
 
-def _plate_task() -> str | None:
-    """The task of a designer plate: its cells are LightBurn fills (read by the one task helper of the analysis)."""
-    from .findings import task_of
-    return task_of({"layer_type": PLATE_LAYER_TYPE})
-
-
 def _setup_label(setup: dict) -> dict:
     lens = setup["lens"]
     return {"device_id": setup["device_id"], "device": setup["device"]["title"], "lens_id": setup["lens_id"],
@@ -245,12 +241,18 @@ def _rationale(pick: dict, variance_threshold) -> str:
     return rationale
 
 
+def _plate_sets(store: Store, device_id: int, lens_id: int | None) -> dict[str, dict]:
+    """The measured sets a designer plate can model or repeat: the knowledge summaries of its task (``PLATE_TASK``)."""
+    return {key: s for key, s in model.knowledge_summaries(store, device_id, lens_id).items() if s["task"]["kind"] == PLATE_TASK}
+
+
 def propose(store: Store, device_id: int, lens_id: int | None, pulse_width: float, line_interval: float, passes: int,
             seed: int = 1729, size: int = DEFAULT_SIZE, material_id: int | None = None) -> dict:
     """Return the stored proposal for this database state and job-settings group, creating it if it is new.
 
-    With ``material_id`` only the measured sets of that titanium stock are modelled; without it every stock measured with
-    these job settings is, as before (its signature and its sets are unchanged)."""
+    Only the measured sets of the plate's task are modelled, so a database whose sets are all fills keeps its proposals (the
+    same sets and signature). With ``material_id`` only the measured sets of that titanium stock are modelled; without it
+    every stock measured with these job settings is, as before (its signature and its sets are unchanged)."""
     if int(size) != size or not 1 <= size <= MAX_SIZE:
         raise DesignerError(f"the proposal size must be a whole number between 1 and {MAX_SIZE}")
     if int(seed) != seed:
@@ -259,7 +261,7 @@ def propose(store: Store, device_id: int, lens_id: int | None, pulse_width: floa
     group = su.job_settings(setup["device"]["passport"], pulse_width, line_interval, passes)
     axes = _axes(setup)
     domains = {"group": group, "power_frequency_speed_bounds": [{k: a[k] for k in ("key", "min", "max")} for a in axes]}
-    samples = [s for s in model.knowledge_summaries(store, device_id, lens_id).values() if in_group(s["parameters"], group)]
+    samples = [s for s in _plate_sets(store, device_id, lens_id).values() if in_group(s["parameters"], group)]
     if material_id is not None:
         if store.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
             raise KeyError(f"titanium stock {material_id} not found")
@@ -340,7 +342,7 @@ def propose(store: Store, device_id: int, lens_id: int | None, pulse_width: floa
         take(i, "uncertainty" if unc[i] >= gap[i] else "gap", max(unc[i], gap[i]))
     if not picks:
         raise DesignerError("no candidate parameter sets are available in the laser's ranges")
-    task = _plate_task()
+    task = PLATE_TASK
     params = []
     for pk in picks:
         i = pk["i"]
@@ -373,22 +375,23 @@ def propose_repeats(store: Store, device_id: int, lens_id: int | None, keys: lis
     gap of the analysis): the first ``size`` of ``keys`` in key order whose six settings are all recorded, each with its
     measured colour, so the repeat can be compared with it. Stored once per laser, lens and chosen recipes.
 
-    Its plates are designer plates: LightBurn fill cells with these six settings. A recipe whose file had other LightBurn
-    settings is repeated in those six only, and the proposal says so."""
+    Its plates are designer plates: LightBurn fill cells with these six settings, so only recipes of that task are repeated (a
+    line or text recipe is not a fill). A recipe whose file had other LightBurn settings is repeated in those six only, and the
+    proposal says so."""
     if int(size) != size or not 1 <= size <= MAX_SIZE:
         raise DesignerError(f"the proposal size must be a whole number between 1 and {MAX_SIZE}")
     setup = su.resolve(store, device_id, lens_id)
-    summaries = model.knowledge_summaries(store, device_id, lens_id)
+    summaries = _plate_sets(store, device_id, lens_id)
     chosen = [summaries[k] for k in sorted(set(keys)) if k in summaries
               and all(summaries[k]["parameters"].get(p) is not None for p in (*MODELLED_KEYS, *GROUP_KEYS))][:int(size)]
     if not chosen:
-        raise DesignerError("none of these recipes has all six settings recorded: they cannot be repeated on a plate")
+        raise DesignerError("none of these recipes is a filled region with all six settings recorded: they cannot be repeated on a plate")
     sig = "repeat:" + hashlib.sha256(json.dumps({"setup": setup["key"], "keys": [s["key"] for s in chosen],
                                                   "obs": sorted(i for s in chosen for i in s["observation_ids"])}, sort_keys=True).encode()).hexdigest()[:20]
     row = store.one("SELECT id FROM proposal WHERE device_id=? AND lens_id IS ? AND base_signature=? AND seed=0", (device_id, lens_id, sig))
     if row is not None:
         return get_proposal(store, row["id"])
-    task = _plate_task()
+    task = PLATE_TASK
     notes, params, picks = [], [], []
     for s in chosen:
         p = s["parameters"]

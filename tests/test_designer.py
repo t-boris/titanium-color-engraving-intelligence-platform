@@ -314,6 +314,28 @@ def test_the_new_fields_of_a_proposal_leave_its_chosen_sets_and_signature_as_the
     assert "material_id" not in p["domains"]                                    # a proposal of every stock keeps the old state
 
 
+def test_line_text_and_tonal_recipes_of_the_same_job_settings_never_count_for_a_fill_proposal(store, w):
+    """A designer plate is fill cells (REQ-020): only fill recipes are its measured sets. Recipes of other tasks with the same
+    pulse width, line interval and passes (a Cut line, an Image layer, a Scan recipe accepted as text), even unstable ones, leave
+    the proposal of an all-fill database exactly as it was: the same stored proposal, sets and signature."""
+    seed_unstable_and_target(store, w)
+    before = propose(store, w, seed=11, size=8)
+    for lab in ((20, 0, 0), (90, 0, 0)):
+        obs.add(store, w, lab, power=45, frequency=700, speed=3500, layer_type="Cut")
+        obs.add(store, w, lab, power=55, frequency=900, speed=1200, layer_type="Image")
+        obs.add(store, w, lab, power=25, frequency=300, speed=6000, layer_type="Scan", task_kind="text")
+    assert len(model.knowledge_summaries(store, *w["setup"])) == 8
+
+    after = propose(store, w, seed=11, size=8)
+
+    assert after["id"] == before["id"] and after["base_signature"] == before["base_signature"]
+    assert [(x["power"], x["frequency"], x["speed"], x["reason"], x["target_id"]) for x in after["parameters"]] == CHOSEN_BEFORE_REQ_022
+    assert after["model"]["measured_sets"] == 5 and after["stock"]["measured"][0]["sets"] == 5
+    with pytest.raises(ds.DesignerError, match="filled region"):
+        ds.propose_repeats(store, *w["setup"], [k for k, s in model.knowledge_summaries(store, *w["setup"]).items()
+                                                 if s["task"]["kind"] != "fill"])
+
+
 def test_a_proposal_states_its_question_its_value_and_a_reason_for_every_set(store, w):
     seed_unstable_and_target(store, w)
     p = propose(store, w, seed=11, size=8)

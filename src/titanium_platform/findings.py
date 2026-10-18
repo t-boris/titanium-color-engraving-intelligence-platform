@@ -9,7 +9,9 @@ supports it (observation, photograph, knowledge, target, plan or research ids), 
 engravings and photographs it rests on, how uncertain it is, and its basis: measured, an exploratory anomaly, or a hypothesis
 of the AI researcher, which is never shown as a measured conclusion.
 
-Kinds (each finding names one laser + lens partition, DEC-063, and, where known, its titanium stock and task):
+Kinds (each finding names one laser + lens partition, DEC-063, and, where known, its titanium stock and task; the task of a
+recipe is the task of its observations as ``tasks.of_observation`` reads it: the one stated when it was accepted, else the one
+its layer implies):
   improvement  the expected colour error of a recipe fell since the previous run; a recipe is validated or approved for
                production; a registered target colour is reached within the saved delta E tolerance
   unstable     the repeats of a recipe vary more than the saved variance threshold; a knowledge entry is questioned
@@ -32,26 +34,19 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from . import color, designer, devices, model, setup as su
+from . import color, designer, devices, model, setup as su, tasks
 from .db import Store, now
 
 KINDS = ("improvement", "unstable", "anomaly", "gap", "hypothesis")
 TRIGGERS = ("acceptance", "manual", "schedule")
-TASKS = ("line", "fill", "tonal_image")
+# the tasks a coverage gap is looked for: those a LightBurn mode implies, so a photographed layer can show each of them
+TASKS = tuple(key for key, task in tasks.TASKS.items() if task.get("lightburn_modes"))
 INTERVAL_SETTING = "analysis_interval_hours"
 MAX_INTERVAL_HOURS = 24 * 365
 POLL_SECONDS = 60.0
 ANOMALY_SD = 3.0
-_LAYER_TASK = {"Cut": "line", "Scan": "fill", "Fill": "fill", "Offset Fill": "fill", "OffsetFill": "fill", "Scan+Cut": "fill",
-               "Image": "tonal_image"}
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
-
-
-def task_of(parameters: dict | None) -> str | None:
-    """The engraving task of a measured layer, read from its LightBurn mode (Line -> line, Scan and Offset Fill -> fill,
-    Image -> tonal_image) until the task vocabulary of the platform replaces this one helper; None when no mode is recorded."""
-    return _LAYER_TASK.get((parameters or {}).get("layer_type"))
 
 
 def _lock(store: Store) -> threading.Lock:
@@ -209,7 +204,7 @@ def _recipe_findings(store: Store, partition: dict, key: str, s: dict, eid: str)
     out = []
     rules, row = partition["rules"], partition["rows"].get(key)
     material_id, stock = _stock_of_summary(s)
-    task = task_of(s["parameters"])
+    task = s["task"]["kind"]
 
     def common() -> dict:
         return {"samples": _samples(s, partition["pair_of"]), "uncertainty": _uncertainty(s), "recipe": _recipe(s),
@@ -257,7 +252,7 @@ def _questioned(partition: dict, key: str, row, s: dict | None) -> dict:
             "evidence": _evidence(s, partition["pair_of"], row["id"]) if s else {"observation_ids": [], "pair_ids": [], "knowledge_id": row["id"]},
             "compares": {"stage": row["stage"], "doubt_observation_ids": doubt.get("observation_ids", [])}}
     return _finding("unstable", f"recipe:{_entry_id(partition['device_id'], partition['lens_id'], key)}:questioned", partition, material_id,
-                    task_of(parameters), data, stock)
+                    s["task"]["kind"] if s else tasks.of_key(key, parameters), data, stock)
 
 
 def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> list[dict]:
@@ -266,7 +261,7 @@ def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> 
     tolerance = partition["rules"]["delta_tolerance"]
     groups: dict[str, list[dict]] = {}
     for o in obs:
-        groups.setdefault(model.observation_key(o["parameters"], o["context"]), []).append(o)
+        groups.setdefault(model.observation_key(o["parameters"], o["context"], o["task"]), []).append(o)
     for key, members in sorted(groups.items()):
         s = summaries[key]
         if len(members) < 2:
@@ -301,7 +296,7 @@ def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> 
                                  "knowledge_id": partition["rows"][key]["id"] if key in partition["rows"] else None},
                     "compares": {"observation_lab": o["lab"], "reference_lab": [float(v) for v in reference], "delta_e": distance,
                                  "rule": "tolerance" if tolerance is not None else "three_sd", "tolerance": tolerance, "sd": sd}}
-            out.append(_finding("anomaly", f"anomaly:observation:{o['id']}", partition, material_id, task_of(s["parameters"]), data, stock))
+            out.append(_finding("anomaly", f"anomaly:observation:{o['id']}", partition, material_id, s["task"]["kind"], data, stock))
     return out
 
 
@@ -311,12 +306,13 @@ def _single_engravings(partition: dict, summaries: dict[str, dict]) -> list[dict
     groups: dict[tuple[str, str], list[dict]] = {}
     for key, s in sorted(summaries.items()):
         if s["independent_engravings"] <= 1:
-            groups.setdefault((_stock_key(key), task_of(s["parameters"]) or "unknown"), []).append(s)
+            groups.setdefault((_stock_key(key), s["task"]["kind"]), []).append(s)
     validates = rules["criteria_agreed"] and rules["repeat_threshold"] is not None and max(2, rules["repeat_threshold"]) == 2
     out = []
     for (stock_key, task), members in sorted(groups.items()):
         material_id, stock = _stock_of_summary(members[0])
-        repeatable = [s for s in members if all(s["parameters"].get(k) is not None for k in
+        # a repeat is a designer plate, so only recipes of its task with all six settings recorded can be repeated
+        repeatable = [s for s in members if task == designer.PLATE_TASK and all(s["parameters"].get(k) is not None for k in
                                                 ("power", "frequency", "speed", "pulse_width", "line_interval", "passes"))]
         needed = None if not rules["criteria_agreed"] or rules["repeat_threshold"] is None else max(2, rules["repeat_threshold"]) - 1
         limitations: list[str] = []
@@ -337,7 +333,7 @@ def _single_engravings(partition: dict, summaries: dict[str, dict]) -> list[dict
                              "repeatable_keys": [s["key"] for s in repeatable]},
                 "proposable": bool(repeatable)}
         key = f"gap:single:{partition['device_id']}:{partition['lens_id'] or 'unknown'}:{stock_key}:{task}"
-        out.append(_finding("gap", key, partition, material_id, None if task == "unknown" else task, data, stock))
+        out.append(_finding("gap", key, partition, material_id, task, data, stock))
     return out
 
 
@@ -374,7 +370,7 @@ def _targets(store: Store, partition: dict) -> list[dict]:
                 "compares": {"target_lab": t["lab"], "closest_lab": best["measured_lab"] if best else None,
                              "delta_e": best["delta_e"] if best else None, "tolerance": tolerance},
                 "proposable": not reached}
-        out.append(_finding("improvement" if reached else "gap", f"target:{tid}", partition, None, task_of({"layer_type": designer.PLATE_LAYER_TYPE}), data))
+        out.append(_finding("improvement" if reached else "gap", f"target:{tid}", partition, None, designer.PLATE_TASK, data))
     return out
 
 
@@ -382,9 +378,10 @@ def _coverage(store: Store, names: _Names) -> list[dict]:
     """Tasks on a titanium stock with a laser and a lens record that no accepted test feature covers. The universe is what the
     operator works with: each laser with evidence, its installed lens and the lenses and stocks of its evidence."""
     covered: dict[tuple, dict] = {}
-    for r in store.query(f"SELECT o.id,o.pair_id,o.device_id,o.lens_id,o.parameters_json,o.context_json,p.material_id FROM observation o "
-                         f"JOIN pair p ON p.id=o.pair_id WHERE p.status='Accepted' AND {model.TEST_FEATURE_SQL} ORDER BY o.id"):
-        task = task_of(json.loads(r["parameters_json"]))
+    for r in store.query(f"SELECT o.id,o.pair_id,o.device_id,o.lens_id,o.parameters_json,o.context_json,o.evidence_json,o.task_kind,"
+                         f"p.material_id FROM observation o JOIN pair p ON p.id=o.pair_id WHERE p.status='Accepted' AND "
+                         f"{model.TEST_FEATURE_SQL} ORDER BY o.id"):
+        task = tasks.of_observation(r)["kind"]
         material_id = json.loads(r["context_json"] or "{}").get("material_id") or r["material_id"]
         entry = covered.setdefault((r["device_id"], r["lens_id"], material_id, task), {"observations": 0, "pairs": set()})
         entry["observations"] += 1
@@ -402,8 +399,8 @@ def _coverage(store: Store, names: _Names) -> list[dict]:
                     if (device_id, lens_id, material_id, task) in covered:
                         continue
                     limitations: list[str] = []
-                    limitations.append("coverage counts accepted test features of any measurement; the task is read from the LightBurn "
-                                       "mode of each layer")
+                    limitations.append("coverage counts accepted test features of any measurement; the task of a layer is the one "
+                                       "stated for it, else the one its LightBurn mode implies")
                     data = {"subkind": "coverage", "basis": "measured",
                             "statement": f"no accepted evidence for {task} on this titanium with this laser and lens",
                             "limitations": limitations,
@@ -414,7 +411,7 @@ def _coverage(store: Store, names: _Names) -> list[dict]:
                                          "lenses_with_this_task": sorted(l for d, l, m, t in covered if (d, m, t) == (device_id, material_id, task) and l is not None),
                                          "names": {"stocks": {str(m): names.materials.get(m) for m in stocks},
                                                    "lenses": {str(l): names.lenses.get(l) for l in lenses}}},
-                            "proposable": task == task_of({"layer_type": designer.PLATE_LAYER_TYPE})}
+                            "proposable": task == designer.PLATE_TASK}
                     key = f"gap:coverage:{device_id}:{lens_id}:{material_id}:{task}"
                     out.append(_finding("gap", key, partition, material_id, task, data))
     return out
@@ -441,7 +438,7 @@ def _hypotheses(store: Store, names: _Names) -> list[dict]:
                 "evidence": {"pair_ids": pair_ids, "session_id": r["session_id"], "insight_id": r["id"]},
                 "compares": {"purpose": r["purpose"], "ai_confidence": r["confidence"], "saved_at": r["created_at"]}}
         out.append(_finding("hypothesis", f"hypothesis:insight:{r['id']}", partition, r["material_id"],
-                            r["purpose"] if r["purpose"] in TASKS else None, data))
+                            tasks.GOAL_TASK.get(r["purpose"]), data))
     return out
 
 
@@ -500,15 +497,15 @@ def history(store: Store, finding_id: int) -> list[dict]:
 
 # -- a proposal for a gap ----------------------------------------------------------------------------------------------------
 def _measured_group(store: Store, device_id: int, lens_id: int | None) -> dict:
-    """The job settings (pulse width, line interval, passes) with the most eligible observations on this laser and lens: the
-    settings a proposal for a gap keeps, taken from the measurements, never filled in (DEC-043)."""
+    """The job settings (pulse width, line interval, passes) with the most eligible observations of the designer's task on this
+    laser and lens: the settings a proposal for a gap keeps, taken from the measurements, never filled in (DEC-043)."""
     counts: dict[tuple, int] = {}
     for s in model.knowledge_summaries(store, device_id, lens_id).values():
         group = tuple(s["parameters"].get(k) for k in designer.GROUP_KEYS)
-        if None not in group:
+        if None not in group and s["task"]["kind"] == designer.PLATE_TASK:
             counts[group] = counts.get(group, 0) + s["observations"]
     if not counts:
-        raise designer.DesignerError("no job settings are measured on this laser and lens yet: choose the pulse width, line interval "
+        raise designer.DesignerError("no filled regions are measured on this laser and lens yet: choose the pulse width, line interval "
                                      "and passes in the experiment designer")
     best = min(counts, key=lambda g: (-counts[g], g))
     return dict(zip(designer.GROUP_KEYS, best))

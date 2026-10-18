@@ -178,6 +178,52 @@ def test_gaps_name_tasks_stocks_and_single_engraving_recipes_without_evidence(st
     assert single[(grade2, "fill")]["compares"]["engravings_needed_for_validation"] is None    # criteria not agreed
 
 
+def test_a_finding_takes_the_task_stated_for_its_observations_else_the_one_their_layer_implies(store, w):
+    """REQ-020 in the analysis (tasks.of_observation): letters filled with a Scan recipe and accepted as text are a text, never
+    a fill of the same settings; a layer whose LightBurn mode was not recorded was a fill; an AI insight takes the task of the
+    guide goal it names."""
+    su.save_rules(store, *w["setup"], delta_tolerance=10.0)
+    for lab in ((50, 0, 0), (51, 0, 0), (52, 0, 0)):
+        add(store, w, lab, power=30, task_kind="text")
+    far = add(store, w, (70, 0, 0), power=30, task_kind="text")
+    add(store, w, (30, 0, 0), power=30)                                  # the same Scan settings measured as a filled region
+    add(store, w, (40, 0, 0), power=60, layer_type=None)                 # no LightBurn mode recorded
+    other = su.save_material(store, "Grade 5 sheet", grade="Grade 5")
+    add(store, w, (45, 0, 0), power=20, material_id=other["id"], task_kind="text")
+    session = store.execute("INSERT INTO research_session(device_id,lens_id,material_id,goal,target,model,status,created_at,updated_at) "
+                            "VALUES (?,?,?,?,?,?,?,?,?)", (*w["setup"], w["stock"]["id"], "color", "blue", "m", "active", now(), now())).lastrowid
+    store.execute("INSERT INTO research_insight(session_id,purpose,claim,confidence,evidence_pair_ids_json,created_at) VALUES (?,?,?,?,?,?)",
+                  (session, "color", "Синий получается при 30 %", "hypothesis", "[]", now()))
+
+    found = run(store)
+
+    anomaly = one(found, "observation")                  # judged within the text recipe only: the fill at L* 30 takes no part
+    assert anomaly["evidence"]["observation_ids"] == [far] and anomaly["task"] == "text"
+    assert anomaly["compares"]["reference_lab"] == pytest.approx([55.75, 0, 0])
+    single = {(f["material_id"], f["task"]): f["samples"]["recipes"] for f in found if f["subkind"] == "single_engraving"}
+    assert single == {(w["stock"]["id"], "fill"): 2, (other["id"], "text"): 1}
+    grade2 = {f["task"] for f in found if f["subkind"] == "coverage" and f["material_id"] == w["stock"]["id"]}
+    grade5 = {f["task"]: f for f in found if f["subkind"] == "coverage" and f["material_id"] == other["id"]}
+    assert grade2 == {"line", "tonal_image"}
+    assert set(grade5) == {"line", "fill", "tonal_image"} and grade5["fill"]["compares"]["tasks_on_this_stock"] == ["text"]
+    assert grade5["fill"]["proposable"] and one(found, "insight")["task"] == "fill"
+
+
+def test_only_fill_recipes_on_a_single_engraving_are_offered_for_a_repeat(store, w):
+    """A repeat is a designer plate of fill cells: a line recipe on a single engraving is a gap the designer does not plan."""
+    add(store, w, (40, 0, 0), power=30, layer_type="Cut")
+    add(store, w, (45, 0, 0), power=50, task_kind="text")
+    gaps = {f["task"]: f for f in run(store) if f["subkind"] == "single_engraving"}
+
+    assert set(gaps) == {"line", "text"}
+    assert all(not f["proposable"] and f["compares"]["repeatable_keys"] == [] for f in gaps.values())
+    with pytest.raises(ds.DesignerError, match="fill plates"):
+        fd.propose_for(store, gaps["line"]["id"])
+    keys = [f["compares"]["recipes"][0]["key"] for f in gaps.values()]
+    with pytest.raises(ds.DesignerError, match="filled region"):
+        ds.propose_repeats(store, *w["setup"], keys)
+
+
 def test_an_expected_error_that_fell_since_the_previous_run_is_an_improvement(store, w):
     for lab in ((50, 0, 0), (56, 0, 0)):
         add(store, w, lab, power=40)
@@ -363,8 +409,10 @@ def test_a_gap_of_fill_evidence_on_a_stock_is_proposed_for_that_stock_and_a_line
 
     proposal = fd.propose_for(store, gaps[(other["id"], "fill")]["id"])
 
-    assert proposal["stock"]["material_id"] == other["id"] and proposal["model"]["measured_sets"] == 1   # only the Grade 5 set is modelled
+    # the Grade 2 fills are another stock and the Grade 5 line is another task: a fill proposal for Grade 5 models nothing
+    assert proposal["stock"]["material_id"] == other["id"] and proposal["model"]["measured_sets"] == 0
     assert {x["reason"] for x in proposal["parameters"]} == {"gap"} and proposal["task"] == "fill"
+    assert all(x["rationale"].startswith("nothing is measured with these job settings yet") for x in proposal["parameters"])
     with pytest.raises(ds.DesignerError, match="fill plates"):
         fd.propose_for(store, gaps[(w["stock"]["id"], "line")]["id"])
 

@@ -156,6 +156,13 @@ def key_suffix(task: dict | None, parameters: dict) -> str:
     return "" if task["kind"] == derive_from_parameters(parameters)["kind"] else f"|task:{task['kind']}"
 
 
+def of_key(key: str, parameters: dict) -> str:
+    """The task of a recipe key (``model.observation_key``): the stated task the key carries (``key_suffix``), else the one its
+    LightBurn mode implies, which is the task of every observation under a key without a suffix."""
+    stated = key.split("|task:", 1)[1].split("|", 1)[0] if "|task:" in key else None
+    return stated if stated in TASKS else derive_from_parameters(parameters)["kind"]
+
+
 def _row_value(row, key: str):
     try:
         return row[key]
