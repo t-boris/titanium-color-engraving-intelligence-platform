@@ -28,7 +28,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import colormap, experiments, ingest, lightburn as lb, prediction
+from . import colormap, experiments, ingest, lightburn as lb, prediction, tasks
 from .db import Store
 from .prediction import PredictionError
 
@@ -126,6 +126,8 @@ def collect(store: Store, mode: Mode) -> dict:
         evidence = json.loads(row["evidence_json"] or "{}")
         params = json.loads(row["parameters_json"] or "{}")
         if colormap.is_service(evidence.get("role"), row["layer_index"], derived.get(row["pair_id"])) or params.get("layer_type") != "Scan":
+            continue
+        if tasks.of_observation(row)["kind"] not in tasks.AREA_TASKS:     # a filled text is not a flat fill (REQ-020)
             continue
         if params.get("power") is None or not mode.matches(params):
             continue

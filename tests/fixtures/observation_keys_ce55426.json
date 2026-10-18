@@ -1,0 +1,7315 @@
+{
+"source": "a sample of the operator's accepted observations (0.3.1 schema); keys computed by the code of ce55426",
+"observations": [
+{
+"id": 245,
+"parameters": {
+"power": 20.0,
+"frequency": 48.0,
+"speed": 2200.0,
+"pulse_width": null,
+"line_interval": 0.03,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": true,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2200"
+},
+"frequency": {
+"Value": "48000"
+},
+"crossHatch": {
+"Value": "1"
+},
+"floodFill": {
+"Value": "1"
+},
+"interval": {
+"Value": "0.03"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "20|48|2200|?|0.03|1|lb:44eef72057debf9a2b92b563359f6f4cbdbe33ae01b38b8ea31d7b36b46d956d|ti:id:1",
+"parameters_key": "20|48|2200|?|0.03|1|lb:44eef72057debf9a2b92b563359f6f4cbdbe33ae01b38b8ea31d7b36b46d956d"
+},
+{
+"id": 246,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 247,
+"parameters": {
+"power": 57.8,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "57.8"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C02"
+},
+"model_eligible": 0,
+"observation_key": "57.8|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "57.8|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 248,
+"parameters": {
+"power": 53.3,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "53.3"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C03"
+},
+"model_eligible": 0,
+"observation_key": "53.3|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "53.3|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 249,
+"parameters": {
+"power": 48.9,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "48.9"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C04"
+},
+"model_eligible": 0,
+"observation_key": "48.9|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "48.9|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 250,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 1000.0,
+"pulse_width": 10.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1000"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C05"
+},
+"model_eligible": 0,
+"observation_key": "50|300|1000|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "50|300|1000|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 251,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 1100.0,
+"pulse_width": 10.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1100"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C06"
+},
+"model_eligible": 0,
+"observation_key": "50|300|1100|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "50|300|1100|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 252,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 1200.0,
+"pulse_width": 10.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1200"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C07"
+},
+"model_eligible": 0,
+"observation_key": "50|300|1200|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "50|300|1200|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 253,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 1300.0,
+"pulse_width": 10.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1300"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C08"
+},
+"model_eligible": 0,
+"observation_key": "50|300|1300|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "50|300|1300|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 254,
+"parameters": {
+"power": 49.0,
+"frequency": 330.0,
+"speed": 967.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "49"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "967"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C09"
+},
+"model_eligible": 0,
+"observation_key": "49|330|967|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "49|330|967|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 255,
+"parameters": {
+"power": 60.0,
+"frequency": 330.0,
+"speed": 967.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "60"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "967"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C10"
+},
+"model_eligible": 0,
+"observation_key": "60|330|967|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "60|330|967|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 256,
+"parameters": {
+"power": 60.0,
+"frequency": 300.0,
+"speed": 250.0,
+"pulse_width": 2.0,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "60"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "250"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C11"
+},
+"model_eligible": 0,
+"observation_key": "60|300|250|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "60|300|250|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 257,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1000.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1000"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C12"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 258,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1100.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1100"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C13"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1100|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1100|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 259,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1200.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1200"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C14"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1200|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1200|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 260,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1300.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1300"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C15"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1300|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1300|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 261,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1400.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1400"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C16"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1400|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1400|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 262,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1500.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1500"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C17"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1500|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|1500|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 263,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 2000.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C18"
+},
+"model_eligible": 0,
+"observation_key": "75|330|2000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:1",
+"parameters_key": "75|330|2000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 264,
+"parameters": {
+"power": 16.1,
+"frequency": 60.0,
+"speed": 128.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "5"
+},
+"maxPower": {
+"Value": "16.1"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "128"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1503"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 1,
+"titanium_name": "Test Plate 1mm",
+"titanium_grade": "Garde 2",
+"titanium_thickness_mm": 1.0,
+"titanium_surface": null,
+"batch": null
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "16.1|60|128|300|0.0169|1|lb:bef8cdae11f651d13c6a1645fb0cc266d9e6f7a754053702429c40119bf72776|ti:id:1",
+"parameters_key": "16.1|60|128|300|0.0169|1|lb:bef8cdae11f651d13c6a1645fb0cc266d9e6f7a754053702429c40119bf72776"
+},
+{
+"id": 265,
+"parameters": {
+"power": 20.0,
+"frequency": 48.0,
+"speed": 2200.0,
+"pulse_width": null,
+"line_interval": 0.04,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 2,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2200"
+},
+"frequency": {
+"Value": "48000"
+},
+"floodFill": {
+"Value": "1"
+},
+"interval": {
+"Value": "0.04"
+},
+"subname": {
+"Value": "Clean"
+},
+"globalRepeat": {
+"Value": "2"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "pre-test cleaning witness",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "20|48|2200|?|0.04|1|lb:a412b4cd6ab59b962efe3316099900429ef275f947dfcedf7db317a812bc96e0|ti:id:3",
+"parameters_key": "20|48|2200|?|0.04|1|lb:a412b4cd6ab59b962efe3316099900429ef275f947dfcedf7db317a812bc96e0"
+},
+{
+"id": 266,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 267,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C02"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 268,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1500.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1500"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C03"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1500|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|300|1500|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 269,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1700.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1700"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C04"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1700|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|300|1700|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 270,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1800.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C05"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1800|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|300|1800|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 271,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1900.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1900"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C06"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1900|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|300|1900|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 272,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 2200.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2200"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C07"
+},
+"model_eligible": 0,
+"observation_key": "45|300|2200|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|300|2200|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 273,
+"parameters": {
+"power": 40.6,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40.6"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C08"
+},
+"model_eligible": 0,
+"observation_key": "40.6|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "40.6|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 274,
+"parameters": {
+"power": 42.0,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "42"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C09"
+},
+"model_eligible": 0,
+"observation_key": "42|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "42|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 275,
+"parameters": {
+"power": 43.0,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "43"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C10"
+},
+"model_eligible": 0,
+"observation_key": "43|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "43|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 276,
+"parameters": {
+"power": 45.0,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C11"
+},
+"model_eligible": 0,
+"observation_key": "45|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "45|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 277,
+"parameters": {
+"power": 46.0,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "46"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C12"
+},
+"model_eligible": 0,
+"observation_key": "46|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "46|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 278,
+"parameters": {
+"power": 60.0,
+"frequency": 300.0,
+"speed": 150.0,
+"pulse_width": 2.0,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "60"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C13"
+},
+"model_eligible": 0,
+"observation_key": "60|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "60|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 279,
+"parameters": {
+"power": 57.0,
+"frequency": 300.0,
+"speed": 150.0,
+"pulse_width": 2.0,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "57"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C14"
+},
+"model_eligible": 0,
+"observation_key": "57|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "57|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 280,
+"parameters": {
+"power": 54.0,
+"frequency": 300.0,
+"speed": 150.0,
+"pulse_width": 2.0,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "54"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C15"
+},
+"model_eligible": 0,
+"observation_key": "54|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "54|300|150|2|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 281,
+"parameters": {
+"power": 57.8,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "57.8"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C16"
+},
+"model_eligible": 0,
+"observation_key": "57.8|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "57.8|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 282,
+"parameters": {
+"power": 55.6,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "55.6"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C17"
+},
+"model_eligible": 0,
+"observation_key": "55.6|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "55.6|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 283,
+"parameters": {
+"power": 51.1,
+"frequency": 300.0,
+"speed": 1778.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "51.1"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1778"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C18"
+},
+"model_eligible": 0,
+"observation_key": "51.1|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "51.1|300|1778|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 286,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 900.0,
+"pulse_width": 10.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "900"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 3,
+"titanium_name": "Small Plate",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 2.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C02"
+},
+"model_eligible": 0,
+"observation_key": "50|300|900|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:3",
+"parameters_key": "50|300|900|10|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 296,
+"parameters": {
+"power": 20.0,
+"frequency": 48.0,
+"speed": 2200.0,
+"pulse_width": null,
+"line_interval": 0.04,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": true,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2200"
+},
+"frequency": {
+"Value": "48000"
+},
+"crossHatch": {
+"Value": "1"
+},
+"floodFill": {
+"Value": "1"
+},
+"interval": {
+"Value": "0.04"
+},
+"hide": {
+"Value": "1"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "20|48|2200|?|0.04|1|lb:a684ed814c907cb7c666875493638c740c9a458c783881157e734bd62289b2d7|ti:id:2",
+"parameters_key": "20|48|2200|?|0.04|1|lb:a684ed814c907cb7c666875493638c740c9a458c783881157e734bd62289b2d7"
+},
+{
+"id": 297,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 298,
+"parameters": {
+"power": 60.0,
+"frequency": 300.0,
+"speed": 1889.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "60"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1889"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C02"
+},
+"model_eligible": 0,
+"observation_key": "60|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "60|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 299,
+"parameters": {
+"power": 40.0,
+"frequency": 300.0,
+"speed": 1889.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1889"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C03"
+},
+"model_eligible": 0,
+"observation_key": "40|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "40|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 300,
+"parameters": {
+"power": 35.0,
+"frequency": 300.0,
+"speed": 1889.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "35"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1889"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C04"
+},
+"model_eligible": 0,
+"observation_key": "35|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "35|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 301,
+"parameters": {
+"power": 30.0,
+"frequency": 300.0,
+"speed": 1889.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1889"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C05"
+},
+"model_eligible": 0,
+"observation_key": "30|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "30|300|1889|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 302,
+"parameters": {
+"power": 53.3,
+"frequency": 300.0,
+"speed": 1333.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "53.3"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1333"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C06"
+},
+"model_eligible": 0,
+"observation_key": "53.3|300|1333|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "53.3|300|1333|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 303,
+"parameters": {
+"power": 53.3,
+"frequency": 300.0,
+"speed": 1222.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "53.3"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1222"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C07"
+},
+"model_eligible": 0,
+"observation_key": "53.3|300|1222|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "53.3|300|1222|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 304,
+"parameters": {
+"power": 53.3,
+"frequency": 300.0,
+"speed": 1111.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "53.3"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1111"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C08"
+},
+"model_eligible": 0,
+"observation_key": "53.3|300|1111|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "53.3|300|1111|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 305,
+"parameters": {
+"power": 43.3,
+"frequency": 330.0,
+"speed": 833.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "43.3"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C09"
+},
+"model_eligible": 0,
+"observation_key": "43.3|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "43.3|330|833|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 306,
+"parameters": {
+"power": 40.6,
+"frequency": 330.0,
+"speed": 700.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40.6"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "700"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.003"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C10"
+},
+"model_eligible": 0,
+"observation_key": "40.6|330|700|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "40.6|330|700|4|0.003|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 307,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1500.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1500"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C11"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1500|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|1500|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 308,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1600.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1600"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C12"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1600|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|1600|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 309,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1700.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1700"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C13"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1700|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|1700|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 310,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1800.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C14"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1800|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|1800|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 311,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 1900.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1900"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C15"
+},
+"model_eligible": 0,
+"observation_key": "45|300|1900|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|1900|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 312,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 2000.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C16"
+},
+"model_eligible": 0,
+"observation_key": "45|300|2000|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|2000|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 313,
+"parameters": {
+"power": 45.0,
+"frequency": 300.0,
+"speed": 2100.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "45"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2100"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C17"
+},
+"model_eligible": 0,
+"observation_key": "45|300|2100|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "45|300|2100|9|0.002|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 314,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1000.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1000"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C18"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 315,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1100.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1100"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C19"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1100|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1100|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 316,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1200.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1200"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C20"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1200|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1200|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 317,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1300.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1300"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C21"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1300|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1300|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 318,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1400.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1400"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C22"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1400|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1400|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 319,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1500.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1500"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C23"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1500|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1500|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 320,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 1600.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1600"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C24"
+},
+"model_eligible": 0,
+"observation_key": "75|330|1600|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|1600|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 321,
+"parameters": {
+"power": 75.0,
+"frequency": 330.0,
+"speed": 2000.0,
+"pulse_width": 4.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "75"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C25"
+},
+"model_eligible": 0,
+"observation_key": "75|330|2000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "75|330|2000|4|0.005|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 322,
+"parameters": {
+"power": 20.0,
+"frequency": 48.0,
+"speed": 2000.0,
+"pulse_width": null,
+"line_interval": 0.05,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": true,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "10"
+},
+"LaserOff_TC": {
+"Value": "10"
+},
+"End_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"crossHatch": {
+"Value": "1"
+},
+"interval": {
+"Value": "0.05"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "pre-test cleaning witness",
+"layer_name": "VirtArray"
+},
+"model_eligible": 0,
+"observation_key": "20|48|2000|?|0.05|1|lb:a5cb2ea055e2a159827b8e7d73b136a5e46181cc91cfcc1ff26df6e594a505b6|ti:id:2",
+"parameters_key": "20|48|2000|?|0.05|1|lb:a5cb2ea055e2a159827b8e7d73b136a5e46181cc91cfcc1ff26df6e594a505b6"
+},
+{
+"id": 323,
+"parameters": {
+"power": 65.0,
+"frequency": 48.0,
+"speed": 800.0,
+"pulse_width": null,
+"line_interval": 0.005,
+"passes": 2,
+"profile_id": 1,
+"layer_type": "Cut",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "65"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "800"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"numPasses": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"SubLayer": {
+"type": "Cut",
+"index": "1",
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+}
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041|ti:id:2",
+"parameters_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041"
+},
+{
+"id": 326,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C05"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 334,
+"parameters": {
+"power": 65.0,
+"frequency": 48.0,
+"speed": 800.0,
+"pulse_width": null,
+"line_interval": 0.005,
+"passes": 2,
+"profile_id": 1,
+"layer_type": "Cut",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "65"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "800"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"numPasses": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"SubLayer": {
+"type": "Cut",
+"index": "1",
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+}
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041|ti:id:2",
+"parameters_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041"
+},
+{
+"id": 344,
+"parameters": {
+"power": 20.0,
+"frequency": 48.0,
+"speed": 2200.0,
+"pulse_width": null,
+"line_interval": 0.03,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2200"
+},
+"frequency": {
+"Value": "48000"
+},
+"interval": {
+"Value": "0.03"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "pre-test cleaning witness",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "20|48|2200|?|0.03|1|lb:f05a72b25789eca00a147dc5426a4a07d1ca48b5ac11c892891337b2fa0af2a1|ti:id:2",
+"parameters_key": "20|48|2200|?|0.03|1|lb:f05a72b25789eca00a147dc5426a4a07d1ca48b5ac11c892891337b2fa0af2a1"
+},
+{
+"id": 345,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 356,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "1"
+},
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1500"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691|ti:id:2",
+"parameters_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691"
+},
+{
+"id": 359,
+"parameters": {
+"power": 25.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": null,
+"line_interval": 0.01,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.01"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C10"
+},
+"model_eligible": 0,
+"observation_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0|ti:id:2",
+"parameters_key": "25|60|150|?|0.01|1|lb:ee201c1985722d0de005a3ba9ae5eee61f16e8d93cf788cc7a89b5d3fda91fe0"
+},
+{
+"id": 367,
+"parameters": {
+"power": 26.9,
+"frequency": 250.0,
+"speed": 1056.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "26.9"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1056"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C26"
+},
+"model_eligible": 1,
+"observation_key": "26.9|250|1056|9|0.002|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "26.9|250|1056|9|0.002|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 368,
+"parameters": {
+"power": 17.1,
+"frequency": 60.0,
+"speed": 100.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "17.1"
+},
+"maxPower": {
+"Value": "17.1"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "100"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C27"
+},
+"model_eligible": 0,
+"observation_key": "17.1|60|100|300|0.0169|1|lb:f6669e624a6da04a46f74d3088441c09b178a9743b4122b0b1c552881b4d1809|ti:id:2",
+"parameters_key": "17.1|60|100|300|0.0169|1|lb:f6669e624a6da04a46f74d3088441c09b178a9743b4122b0b1c552881b4d1809"
+},
+{
+"id": 369,
+"parameters": {
+"power": 20.0,
+"frequency": 250.0,
+"speed": 833.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "833"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.002"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C29"
+},
+"model_eligible": 1,
+"observation_key": "20|250|833|9|0.002|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "20|250|833|9|0.002|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 370,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "1"
+},
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1500"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691|ti:id:2",
+"parameters_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691"
+},
+{
+"id": 371,
+"parameters": {
+"power": 68.0,
+"frequency": 48.0,
+"speed": 1000.0,
+"pulse_width": null,
+"line_interval": 0.03,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": true,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"suboutput": {
+"Value": "0"
+},
+"maxPower": {
+"Value": "68"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1000"
+},
+"frequency": {
+"Value": "48000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"crossHatch": {
+"Value": "1"
+},
+"interval": {
+"Value": "0.03"
+},
+"subname": {
+"Value": "Burn"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"SubLayer": {
+"type": "Scan",
+"index": "1",
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"interval": {
+"Value": "0.05"
+},
+"subname": {
+"Value": "Clean"
+}
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "pre-test cleaning witness",
+"layer_name": "C00"
+},
+"model_eligible": 0,
+"observation_key": "68|48|1000|?|0.03|1|lb:46432adf1b344b25023b8dc1995ce144e34b118dd52e2197ec1405c7b0409598|ti:id:2",
+"parameters_key": "68|48|1000|?|0.03|1|lb:46432adf1b344b25023b8dc1995ce144e34b118dd52e2197ec1405c7b0409598"
+},
+{
+"id": 391,
+"parameters": {
+"power": 50.0,
+"frequency": 300.0,
+"speed": 1000.0,
+"pulse_width": 9.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1000"
+},
+"frequency": {
+"Value": "300000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"hide": {
+"Value": "1"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C03"
+},
+"model_eligible": 1,
+"observation_key": "50|300|1000|9|0.005|1|lb:85884b5cc9513daa13f842da689df218a8afd69e082dede65b5ff2d7bd1e7238|ti:id:2",
+"parameters_key": "50|300|1000|9|0.005|1|lb:85884b5cc9513daa13f842da689df218a8afd69e082dede65b5ff2d7bd1e7238"
+},
+{
+"id": 414,
+"parameters": {
+"power": 40.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.005,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1950000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C12"
+},
+"model_eligible": 1,
+"observation_key": "40|1950|1800|2|0.005|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "40|1950|1800|2|0.005|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 432,
+"parameters": {
+"power": 65.0,
+"frequency": 48.0,
+"speed": 800.0,
+"pulse_width": null,
+"line_interval": 0.005,
+"passes": 2,
+"profile_id": 1,
+"layer_type": "Cut",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "65"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "800"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"numPasses": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"SubLayer": {
+"type": "Cut",
+"index": "1",
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+}
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041|ti:id:2",
+"parameters_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041"
+},
+{
+"id": 437,
+"parameters": {
+"power": 65.0,
+"frequency": 330.0,
+"speed": 944.0,
+"pulse_width": 3.0,
+"line_interval": 0.001,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "65"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "944"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "3"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.001"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C07"
+},
+"model_eligible": 0,
+"observation_key": "65|330|944|3|0.001|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "65|330|944|3|0.001|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 442,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "1"
+},
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1500"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691|ti:id:2",
+"parameters_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691"
+},
+{
+"id": 443,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "1"
+},
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1500"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691|ti:id:2",
+"parameters_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691"
+},
+{
+"id": 460,
+"parameters": {
+"power": 54.5,
+"frequency": 510.0,
+"speed": 1395.0,
+"pulse_width": 2.0,
+"line_interval": 0.004,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "54.5"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1395"
+},
+"frequency": {
+"Value": "510000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.004"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C17"
+},
+"model_eligible": 1,
+"observation_key": "54.5|510|1395|2|0.004|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "54.5|510|1395|2|0.004|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 476,
+"parameters": {
+"power": 65.0,
+"frequency": 48.0,
+"speed": 800.0,
+"pulse_width": null,
+"line_interval": 0.005,
+"passes": 2,
+"profile_id": 1,
+"layer_type": "Cut",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "65"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "800"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"numPasses": {
+"Value": "2"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"SubLayer": {
+"type": "Cut",
+"index": "1",
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "2000"
+},
+"frequency": {
+"Value": "48000"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.005"
+}
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041|ti:id:2",
+"parameters_key": "65|48|800|?|0.005|2|lb:e41c4adccccd1700479d7ad170da8e7aa988d1a4069c3c476d4a86d2e250e041"
+},
+{
+"id": 483,
+"parameters": {
+"power": 40.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.001,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": false,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1950000"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"LaserOn_TC": {
+"Value": "1"
+},
+"LaserOff_TC": {
+"Value": "1"
+},
+"End_TC": {
+"Value": "1"
+},
+"Polygon_TC": {
+"Value": "10"
+},
+"JumpSpeed": {
+"Value": "4000"
+},
+"OverrideGalvoTimings": {
+"Value": "1"
+},
+"scanOpt": {
+"Value": "individual"
+},
+"bidir": {
+"Value": "0"
+},
+"interval": {
+"Value": "0.001"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C09"
+},
+"model_eligible": 1,
+"observation_key": "40|1950|1800|2|0.001|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d|ti:id:2",
+"parameters_key": "40|1950|1800|2|0.001|1|lb:0795ceb8a04ebcd51781ec4a4b9136a8b50027d394eec0ebb730f914d599515d"
+},
+{
+"id": 486,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Image",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"minPower": {
+"Value": "1"
+},
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"tabCount": {
+"Value": "1"
+},
+"tabCountMax": {
+"Value": "1"
+},
+"ditherMode": {
+"Value": "grayscale"
+},
+"dpi": {
+"Value": "1500"
+},
+"bitmaps": [
+{
+"Gamma": "1",
+"Contrast": "0",
+"Brightness": "0",
+"EnhanceAmount": "0",
+"EnhanceRadius": "0",
+"EnhanceDenoise": "0"
+}
+]
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "C01"
+},
+"model_eligible": 0,
+"observation_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691|ti:id:2",
+"parameters_key": "30|60|150|300|0.0169|1|lb:30fb8b8b69bf474b8c997b374032fb15faab5d420e10b3d68b15111359174691"
+},
+{
+"id": 487,
+"parameters": {
+"power": 20.0,
+"frequency": 250.0,
+"speed": 1500.0,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1500"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 20.0 x Speed 1500"
+},
+"model_eligible": 1,
+"observation_key": "20|250|1500|9|0.002|1|lb:539eedfb1d96a276f92299cde17a48e9a87fed3d47728a308325da9652241fd0|ti:id:2",
+"parameters_key": "20|250|1500|9|0.002|1|lb:539eedfb1d96a276f92299cde17a48e9a87fed3d47728a308325da9652241fd0"
+},
+{
+"id": 506,
+"parameters": {
+"power": 60.0,
+"frequency": 250.0,
+"speed": 1388.89,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "60"
+},
+"maxPower2": {
+"Value": "60"
+},
+"speed": {
+"Value": "1388.89"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 60.0 x Speed 1389"
+},
+"model_eligible": 1,
+"observation_key": "60|250|1388.89|9|0.002|1|lb:c4f1ee43ee25ec0cb0ca27d147edfd87d81ad2a4485d315bba3d3fcbf43c4881|ti:id:2",
+"parameters_key": "60|250|1388.89|9|0.002|1|lb:c4f1ee43ee25ec0cb0ca27d147edfd87d81ad2a4485d315bba3d3fcbf43c4881"
+},
+{
+"id": 529,
+"parameters": {
+"power": 28.8889,
+"frequency": 250.0,
+"speed": 1055.56,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "28.8889"
+},
+"maxPower2": {
+"Value": "28.8889"
+},
+"speed": {
+"Value": "1055.56"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 28.9 x Speed 1056"
+},
+"model_eligible": 1,
+"observation_key": "28.8889|250|1055.56|9|0.002|1|lb:609e2cac8ee2a80f52d46b98d0e7aac318ab05dd114d5b8158d867ce1f856652|ti:id:2",
+"parameters_key": "28.8889|250|1055.56|9|0.002|1|lb:609e2cac8ee2a80f52d46b98d0e7aac318ab05dd114d5b8158d867ce1f856652"
+},
+{
+"id": 552,
+"parameters": {
+"power": 42.2222,
+"frequency": 250.0,
+"speed": 833.333,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "42.2222"
+},
+"maxPower2": {
+"Value": "42.2222"
+},
+"speed": {
+"Value": "833.333"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 42.2 x Speed 833"
+},
+"model_eligible": 1,
+"observation_key": "42.2222|250|833.333|9|0.002|1|lb:ea565f9f38db9e2e39ba528cf41eb7b0fb9a6cda9e38bb5ae15f1dd082f42d6e|ti:id:2",
+"parameters_key": "42.2222|250|833.333|9|0.002|1|lb:ea565f9f38db9e2e39ba528cf41eb7b0fb9a6cda9e38bb5ae15f1dd082f42d6e"
+},
+{
+"id": 575,
+"parameters": {
+"power": 55.5556,
+"frequency": 250.0,
+"speed": 611.111,
+"pulse_width": 9.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "55.5556"
+},
+"maxPower2": {
+"Value": "55.5556"
+},
+"speed": {
+"Value": "611.111"
+},
+"frequency": {
+"Value": "250000"
+},
+"QPulseWidth": {
+"Value": "9"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 55.6 x Speed 611"
+},
+"model_eligible": 1,
+"observation_key": "55.5556|250|611.111|9|0.002|1|lb:4f5c89c06a4df03d6c97b1ae691146e383a837d349d1407248ba6c8601b89b20|ti:id:2",
+"parameters_key": "55.5556|250|611.111|9|0.002|1|lb:4f5c89c06a4df03d6c97b1ae691146e383a837d349d1407248ba6c8601b89b20"
+},
+{
+"id": 598,
+"parameters": {
+"power": 27.7778,
+"frequency": 330.0,
+"speed": 1366.67,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "27.7778"
+},
+"maxPower2": {
+"Value": "27.7778"
+},
+"speed": {
+"Value": "1366.67"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"interval": {
+"Value": "0.003"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 27.8 x Speed 1367"
+},
+"model_eligible": 1,
+"observation_key": "27.7778|330|1366.67|4|0.003|1|lb:a24fa8ef958422d07ba416259a67a528f5dc7274259eb207a0855f3775cbb71f|ti:id:2",
+"parameters_key": "27.7778|330|1366.67|4|0.003|1|lb:a24fa8ef958422d07ba416259a67a528f5dc7274259eb207a0855f3775cbb71f"
+},
+{
+"id": 621,
+"parameters": {
+"power": 36.1111,
+"frequency": 330.0,
+"speed": 1100.0,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "36.1111"
+},
+"maxPower2": {
+"Value": "36.1111"
+},
+"speed": {
+"Value": "1100"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"interval": {
+"Value": "0.003"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 36.1 x Speed 1100"
+},
+"model_eligible": 1,
+"observation_key": "36.1111|330|1100|4|0.003|1|lb:4733221b48954d356f57fff5e88d2de0d4dec080372803ec31d08030fb0cc712|ti:id:2",
+"parameters_key": "36.1111|330|1100|4|0.003|1|lb:4733221b48954d356f57fff5e88d2de0d4dec080372803ec31d08030fb0cc712"
+},
+{
+"id": 644,
+"parameters": {
+"power": 44.4444,
+"frequency": 330.0,
+"speed": 833.333,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "44.4444"
+},
+"maxPower2": {
+"Value": "44.4444"
+},
+"speed": {
+"Value": "833.333"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"interval": {
+"Value": "0.003"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 44.4 x Speed 833"
+},
+"model_eligible": 1,
+"observation_key": "44.4444|330|833.333|4|0.003|1|lb:fde7046736edd38c2706840b5e93f2842ebad0ec62019ff97211c3042e8b6590|ti:id:2",
+"parameters_key": "44.4444|330|833.333|4|0.003|1|lb:fde7046736edd38c2706840b5e93f2842ebad0ec62019ff97211c3042e8b6590"
+},
+{
+"id": 667,
+"parameters": {
+"power": 25.0,
+"frequency": 330.0,
+"speed": 433.333,
+"pulse_width": 4.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "25"
+},
+"maxPower2": {
+"Value": "25"
+},
+"speed": {
+"Value": "433.333"
+},
+"frequency": {
+"Value": "330000"
+},
+"QPulseWidth": {
+"Value": "4"
+},
+"interval": {
+"Value": "0.003"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 25.0 x Speed 433"
+},
+"model_eligible": 1,
+"observation_key": "25|330|433.333|4|0.003|1|lb:aeb8275f58c01c297afdac3d3823f5d2b17431ceeec97c4a4ac44271d6dbbe89|ti:id:2",
+"parameters_key": "25|330|433.333|4|0.003|1|lb:aeb8275f58c01c297afdac3d3823f5d2b17431ceeec97c4a4ac44271d6dbbe89"
+},
+{
+"id": 690,
+"parameters": {
+"power": 13.3333,
+"frequency": 60.0,
+"speed": 150.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "13.3333"
+},
+"maxPower2": {
+"Value": "13.3333"
+},
+"speed": {
+"Value": "150"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 13.3 x Speed 150"
+},
+"model_eligible": 0,
+"observation_key": "13.3333|60|150|300|0.0169|1|lb:171bad23941212c33fa36bce816d956343930d3c1303dcaf600c19562c740a12|ti:id:2",
+"parameters_key": "13.3333|60|150|300|0.0169|1|lb:171bad23941212c33fa36bce816d956343930d3c1303dcaf600c19562c740a12"
+},
+{
+"id": 713,
+"parameters": {
+"power": 21.6667,
+"frequency": 60.0,
+"speed": 127.778,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "21.6667"
+},
+"maxPower2": {
+"Value": "21.6667"
+},
+"speed": {
+"Value": "127.778"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 21.7 x Speed 128"
+},
+"model_eligible": 0,
+"observation_key": "21.6667|60|127.778|300|0.0169|1|lb:6202951b477a0db2c84379a7b189f6f1c1cfbae69c934eec381e8a2cd49c467d|ti:id:2",
+"parameters_key": "21.6667|60|127.778|300|0.0169|1|lb:6202951b477a0db2c84379a7b189f6f1c1cfbae69c934eec381e8a2cd49c467d"
+},
+{
+"id": 736,
+"parameters": {
+"power": 30.0,
+"frequency": 60.0,
+"speed": 105.556,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "30"
+},
+"maxPower2": {
+"Value": "30"
+},
+"speed": {
+"Value": "105.556"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 30.0 x Speed 106"
+},
+"model_eligible": 0,
+"observation_key": "30|60|105.556|300|0.0169|1|lb:28e12516b5f3329403e721b0112e0313d1cbbe15aa50f377308cf6f0cad1d56a|ti:id:2",
+"parameters_key": "30|60|105.556|300|0.0169|1|lb:28e12516b5f3329403e721b0112e0313d1cbbe15aa50f377308cf6f0cad1d56a"
+},
+{
+"id": 759,
+"parameters": {
+"power": 10.5556,
+"frequency": 60.0,
+"speed": 72.2222,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "10.5556"
+},
+"maxPower2": {
+"Value": "10.5556"
+},
+"speed": {
+"Value": "72.2222"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 10.6 x Speed 72"
+},
+"model_eligible": 0,
+"observation_key": "10.5556|60|72.2222|300|0.0169|1|lb:e9475ce743bc24f7515beb655f2a597cc837b6248de9353cec734cdbf54795f4|ti:id:2",
+"parameters_key": "10.5556|60|72.2222|300|0.0169|1|lb:e9475ce743bc24f7515beb655f2a597cc837b6248de9353cec734cdbf54795f4"
+},
+{
+"id": 782,
+"parameters": {
+"power": 18.8889,
+"frequency": 60.0,
+"speed": 50.0,
+"pulse_width": 300.0,
+"line_interval": 0.0169,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "18.8889"
+},
+"maxPower2": {
+"Value": "18.8889"
+},
+"speed": {
+"Value": "50"
+},
+"frequency": {
+"Value": "60000"
+},
+"QPulseWidth": {
+"Value": "300"
+},
+"interval": {
+"Value": "0.0169"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 18.9 x Speed 50"
+},
+"model_eligible": 0,
+"observation_key": "18.8889|60|50|300|0.0169|1|lb:d412f428a6d199682a9229baa487b7b68f5bfbf08b68caad6288d61c4739a30a|ti:id:2",
+"parameters_key": "18.8889|60|50|300|0.0169|1|lb:d412f428a6d199682a9229baa487b7b68f5bfbf08b68caad6288d61c4739a30a"
+},
+{
+"id": 805,
+"parameters": {
+"power": 90.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.009,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "90"
+},
+"maxPower2": {
+"Value": "90"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1.95e+06"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"interval": {
+"Value": "0.009"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 90.0 x Interval 0.0090"
+},
+"model_eligible": 1,
+"observation_key": "90|1950|1800|2|0.009|1|lb:0c7e02d5d23e05f435f9890db6056af6b483fd5805b7eccbc38780172a63980b|ti:id:2",
+"parameters_key": "90|1950|1800|2|0.009|1|lb:0c7e02d5d23e05f435f9890db6056af6b483fd5805b7eccbc38780172a63980b"
+},
+{
+"id": 828,
+"parameters": {
+"power": 20.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.006,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "20"
+},
+"maxPower2": {
+"Value": "20"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1.95e+06"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"interval": {
+"Value": "0.006"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 20.0 x Interval 0.0060"
+},
+"model_eligible": 1,
+"observation_key": "20|1950|1800|2|0.006|1|lb:539eedfb1d96a276f92299cde17a48e9a87fed3d47728a308325da9652241fd0|ti:id:2",
+"parameters_key": "20|1950|1800|2|0.006|1|lb:539eedfb1d96a276f92299cde17a48e9a87fed3d47728a308325da9652241fd0"
+},
+{
+"id": 851,
+"parameters": {
+"power": 50.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.004,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "50"
+},
+"maxPower2": {
+"Value": "50"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1.95e+06"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"interval": {
+"Value": "0.004"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 50.0 x Interval 0.0040"
+},
+"model_eligible": 1,
+"observation_key": "50|1950|1800|2|0.004|1|lb:3cba9ec506e40b99bc5a11af74be1b839ae08a6a33f70ee4789e2d8f43e59670|ti:id:2",
+"parameters_key": "50|1950|1800|2|0.004|1|lb:3cba9ec506e40b99bc5a11af74be1b839ae08a6a33f70ee4789e2d8f43e59670"
+},
+{
+"id": 874,
+"parameters": {
+"power": 80.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 2.0,
+"line_interval": 0.002,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "80"
+},
+"maxPower2": {
+"Value": "80"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1.95e+06"
+},
+"QPulseWidth": {
+"Value": "2"
+},
+"interval": {
+"Value": "0.002"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 80.0 x Interval 0.0020"
+},
+"model_eligible": 1,
+"observation_key": "80|1950|1800|2|0.002|1|lb:0cde0e48b80b1330a55a6f3c4d2a52458d3b43fd2c59db418d35ea9dccda3b9b|ti:id:2",
+"parameters_key": "80|1950|1800|2|0.002|1|lb:0cde0e48b80b1330a55a6f3c4d2a52458d3b43fd2c59db418d35ea9dccda3b9b"
+},
+{
+"id": 897,
+"parameters": {
+"power": 40.0,
+"frequency": 1950.0,
+"speed": 1800.0,
+"pulse_width": 10.0,
+"line_interval": 0.003,
+"passes": 1,
+"profile_id": 1,
+"layer_type": "Scan",
+"global_passes": 1,
+"bidirectional": true,
+"cross_hatch": false,
+"scan_angle": 0.0,
+"angle_increment": 0.0,
+"source_settings": {
+"maxPower": {
+"Value": "40"
+},
+"maxPower2": {
+"Value": "40"
+},
+"speed": {
+"Value": "1800"
+},
+"frequency": {
+"Value": "1.95e+06"
+},
+"QPulseWidth": {
+"Value": "10"
+},
+"interval": {
+"Value": "0.003"
+},
+"numPasses": {
+"Value": "1"
+}
+}
+},
+"context": {
+"material_id": 2,
+"titanium_name": "Big Plate 150",
+"titanium_grade": "Grade 5",
+"titanium_thickness_mm": 3.0,
+"titanium_surface": null,
+"batch": "Chineese order"
+},
+"evidence": {
+"role": "test feature",
+"layer_name": "Power 40 x Q-Pulse 10.00"
+},
+"model_eligible": 0,
+"observation_key": "40|1950|1800|10|0.003|1|lb:83e51eefa707229420cb4b431141dfae7646649efeeef889a6c56a2d8cc7b0b2|ti:id:2",
+"parameters_key": "40|1950|1800|10|0.003|1|lb:83e51eefa707229420cb4b431141dfae7646649efeeef889a6c56a2d8cc7b0b2"
+}
+]
+}

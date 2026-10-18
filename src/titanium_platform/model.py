@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from . import color, lightburn
+from . import color, lightburn, tasks
 from .db import Store
 
 CONFIDENCE_K = 2.0
@@ -77,7 +77,7 @@ def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> 
     for r in rows:
         out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "lab": json.loads(r["lab_json"]),
                     "parameters": json.loads(r["parameters_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
-                    "context": json.loads(r["context_json"]), "alignment": r["alignment_method"],
+                    "context": json.loads(r["context_json"]), "alignment": r["alignment_method"], "task": tasks.of_observation(r),
                     "source": {"photo_name": r["photo_name"], "lightburn_name": r["lightburn_name"],
                                "accepted_at": r["accepted_at"], "created_at": r["pair_created_at"],
                                "material_id": r["material_id"]}})
@@ -88,7 +88,7 @@ def knowledge_key_of(row) -> str | None:
     """The knowledge entry an observation row counts toward within its laser and lens, or None when it feeds no knowledge."""
     if not row["model_eligible"] or json.loads(row["evidence_json"] or "{}").get("role", "test feature") != "test feature":
         return None
-    return observation_key(json.loads(row["parameters_json"]), json.loads(row["context_json"]))
+    return observation_key(json.loads(row["parameters_json"]), json.loads(row["context_json"]), tasks.of_observation(row))
 
 
 def _by_engraving(obs: list[dict]) -> dict[str, list[dict]]:
@@ -189,15 +189,17 @@ def attribution_note(groups: list[dict]) -> str | None:
 
 
 def knowledge_summaries(store: Store, device_id: int, lens_id: int | None) -> dict[str, dict]:
-    """One summary per recipe key within the laser and lens: different job settings never share a summary (DEC-042)."""
+    """One summary per recipe key within the laser and lens: different job settings never share a summary (DEC-042), and
+    neither do different stated tasks (REQ-020)."""
     groups: dict[str, list[dict]] = {}
     for o in eligible_observations(store, device_id, lens_id):
-        groups.setdefault(observation_key(o["parameters"], o["context"]), []).append(o)
+        groups.setdefault(observation_key(o["parameters"], o["context"], o["task"]), []).append(o)
     out = {}
     for key, obs in groups.items():
         s = summarize(obs)
         s["parameters"] = obs[0]["parameters"]
         s["key"] = key
+        s["task"] = {k: obs[0]["task"].get(k) for k in ("kind", "basis")}
         s["attribution_note"] = attribution_note(s["context_groups"])
         out[key] = s
     return out
@@ -371,9 +373,11 @@ def base_parameters_key(p: dict) -> str:
                     ("power", "frequency", "speed", "pulse_width", "line_interval", "passes"))
 
 
-def observation_key(parameters: dict, context: dict | None = None) -> str:
-    """Keep results for different titanium stocks separate; unknown stock never joins a known one."""
-    key = parameters_key(parameters)
+def observation_key(parameters: dict, context: dict | None = None, task: dict | None = None) -> str:
+    """Keep results for different titanium stocks separate; unknown stock never joins a known one. A stated task that
+    differs from the one the LightBurn mode implies keeps its results apart too (REQ-020); any other task adds nothing, so
+    the key of every record without a stated task is the key it always had."""
+    key = parameters_key(parameters) + tasks.key_suffix(task, parameters)
     context = context or {}
     stock = {k: context.get(k) for k in ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm",
                                          "titanium_surface", "batch") if context.get(k) is not None}

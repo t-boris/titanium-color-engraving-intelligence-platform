@@ -22,7 +22,7 @@ from xml.sax.saxutils import escape, quoteattr
 import cv2
 import numpy as np
 
-from . import lenses, setup as su, vectorize
+from . import lenses, setup as su, tasks, vectorize
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -311,7 +311,9 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
             process = item["cells"][0]["parameters"]
             plan_data = {"layers": _plate_layers(item), "markers": markers, "marker_layer": marker_layer_settings(store), "lens": lens,
                          "process_settings": {k: process[k] for k in ("pulse_width", "line_interval", "passes")},
-                         "lightburn_settings": item["lightburn_settings"]}
+                         "lightburn_settings": item["lightburn_settings"],
+                         # its cells are filled areas measured for their colour; Fill mode says so by itself (REQ-020)
+                         "engraving_task": tasks.plan_task("fill", basis=tasks.DERIVED)}
             plan_id = store.execute(
                 "INSERT INTO plan(name,mode,status,device_id,lens_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", device_id, setup["lens_id"], plate_id, 1, ident, None,

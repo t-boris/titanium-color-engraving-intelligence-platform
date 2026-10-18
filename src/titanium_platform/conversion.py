@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-from . import color, knowledge as kn, plans as pl, setup as su
+from . import color, knowledge as kn, plans as pl, setup as su, tasks
 from .db import Store, now
 
 MAX_RASTER_PX = 160
@@ -73,11 +73,13 @@ def mask_to_rects(mask: np.ndarray, px_mm: float) -> list[dict]:
 
 
 def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_questioned=(), include_questioned_warning=False,
-                     modes=FILL_MODES) -> list[dict]:
+                     modes=FILL_MODES, kinds=tasks.AREA_TASKS) -> list[dict]:
     """Validated/production knowledge of one laser and lens with all three estimates. Questioned entries only if allowed for this plan.
 
-    Only recipes whose LightBurn mode is in ``modes`` (all when None): a line recipe never fills the area of a conversion.
-    Each entry names its mode and the titanium stock (``material_id``) it was measured on, None when that is not one known stock.
+    Only recipes whose LightBurn mode is in ``modes`` (all when None): a line recipe never fills the area of a conversion. A
+    recipe kept apart for a stated task its mode does not imply (REQ-020) must also have a task in ``kinds`` (all when None):
+    a Fill recipe measured as text never fills an area either. Each entry names its mode, its task and the titanium stock
+    (``material_id``) it was measured on, None when that is not one known stock.
     """
     out = []
     for k in kn.list_for_setup(store, device_id, lens_id):
@@ -89,10 +91,13 @@ def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_
         mode = k["parameters"].get("layer_type")
         if modes is not None and mode not in modes:
             continue
+        task = s["task"]["kind"]
+        if kinds is not None and task not in kinds and tasks.key_suffix(s["task"], k["parameters"]):
+            continue
         stocks = {g["material_id"] for g in s["context_groups"]}
         out.append({"id": k["id"], "key": k["parameters_key"], "stage": k["stage"], "questioned": k["questioned"], "parameters": k["parameters"],
                     "lab": s["lab"], "confidence": s["confidence"], "expected_delta_e": s["expected_delta_e"], "stability": s["stability"],
-                    "observation_ids": s["observation_ids"], "doubt": k["doubt"], "mode": mode,
+                    "observation_ids": s["observation_ids"], "doubt": k["doubt"], "mode": mode, "task": task,
                     "material_id": stocks.pop() if len(stocks) == 1 else None})
     return out
 
@@ -215,8 +220,11 @@ def _register_targets(store: Store, device_id: int, lens_id: int | None, plan_id
 
 
 def start_discrete(store: Store, device_id: int, lens_id: int | None, image_bytes: bytes, width_mm: float, name: str,
-                   threshold=None, markers: bool = False, max_colors: int = MAX_COLORS) -> int:
+                   threshold=None, markers: bool = False, max_colors: int = MAX_COLORS, task: str | None = None,
+                   goals: dict | None = None) -> int:
+    """A discrete plan records its engraving task (REQ-020): a colour image unless the operator says it is flat filled areas."""
     lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
+    engraving_task = tasks.chosen_or_default(task, tasks.CONVERSION_TASK["discrete"], goals)
     thr = _threshold(store, device_id, lens_id, threshold)
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
@@ -232,7 +240,7 @@ def start_discrete(store: Store, device_id: int, lens_id: int | None, image_byte
     data = {"image_path": _store_image(store, image_bytes), "labels_path": str(labels_path), "size_mm": {"width": float(width_mm), "height": h_mm},
             "px_mm": px_mm, "threshold": thr, "source_colors": source, "replacements": {}, "exclusions": [], "allowed_questioned": [],
             "matches": [], "layers": [], "markers": _plan_markers(identifier, markers, float(width_mm), h_mm, store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None, "lens": lens}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "lens": lens, "engraving_task": engraving_task}
     with store.transaction():
         plan_id = save_plan(store, None, name=name.strip(), mode=pl.MODE_DISCRETE, status=ST_DRAFT, device_id=device_id, lens_id=lens_id, markers=markers,
                             identifier=identifier, band_count=None, data=data)
@@ -400,10 +408,14 @@ def preview_continuous(store: Store, device_id: int, lens_id: int | None, mode: 
 
 def create_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
                       name: str, path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False,
-                      revision_of: int | None = None) -> int:
-    """A new continuous plan; ``revision_of`` names the plan it revises, which stays as it was."""
+                      revision_of: int | None = None, task: str | None = None, goals: dict | None = None) -> int:
+    """A new continuous plan; ``revision_of`` names the plan it revises, which stays as it was. It records its engraving task
+    (REQ-020): a tonal image or, along a colour path, a colour image, unless the operator chose another."""
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
+    if mode not in MODE_FOR:
+        raise ConversionError("mode must be 'tonal' or 'color_path'")
+    engraving_task = tasks.chosen_or_default(task, tasks.CONVERSION_TASK[mode], goals)
     if revision_of is not None and pl.get_plan(store, revision_of)["mode"] not in MODE_FOR.values():
         raise ConversionError("only a photo engraving plan can be revised as a photo engraving")
     lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
@@ -413,7 +425,7 @@ def create_continuous(store: Store, device_id: int, lens_id: int | None, mode: s
             "path_ids": list(path_ids or []), "allowed_questioned": sorted(int(x) for x in (allowed_questioned or [])), "warnings": p["warnings"],
             "layers": p["layers"], "markers": _plan_markers(identifier, markers, p["size_mm"]["width"], p["size_mm"]["height"], store),
             "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode, "lens": lens,
-            "revision_of": revision_of}
+            "revision_of": revision_of, "engraving_task": engraving_task}
     with store.transaction():
         return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, device_id=device_id, lens_id=lens_id, markers=markers,
                          identifier=identifier, band_count=p["bands"], data=data)

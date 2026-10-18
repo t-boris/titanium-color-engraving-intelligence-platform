@@ -23,6 +23,9 @@ Rules implemented here:
   recommendations. Vector lines also receive continuity and apparent-width analysis.
 * A re-photograph of an engraving shares its ``engraving_id`` and never counts as an independent
   repetition (DEC-021).
+* Every layer has an engraving task (REQ-020, ``tasks``): the operator's choice for the layer on the review, else the task
+  given to the whole work on the upload, else that of the plan or plate layer it was made from, else the one its LightBurn
+  mode implies. Acceptance stores it with each observation; until then it is derived on every read.
 
 LightBurn coordinates remain in millimetres; the photo may be rotated or reflected.
 """
@@ -43,6 +46,7 @@ from . import lightburn as lb
 from . import photo as ph
 from . import plans as pl
 from . import setup as su
+from . import tasks
 from .db import Store, now
 
 ST_PENDING, ST_CORRECTION, ST_READY, ST_ACCEPTED, ST_DELETED = "Awaiting check", "Needs correction", "Ready to accept", "Accepted", "Deleted"
@@ -50,7 +54,7 @@ PARAM_TOLERANCE = 1e-6
 CONTEXT_KEYS = ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm", "titanium_surface",
                 "batch", "focus", "engraved_at", "note")
 DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check",
-             "matrix", "lens_choice", "linked_plan_id")
+             "matrix", "lens_choice", "linked_plan_id", "work_task", "layer_tasks")
 
 
 class IngestError(ValueError):
@@ -66,14 +70,44 @@ def _pair_row(store: Store, pair_id: int):
 
 def get_pair(store: Store, pair_id: int) -> dict:
     d = dict(_pair_row(store, pair_id))
-    plan = store.one("SELECT mode FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
+    plan = store.one("SELECT mode, data_json FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
     d["plan_mode"] = plan["mode"] if plan else None        # a plan restored from the imported file is not a plate (REQ-005)
     d["context"] = json.loads(d.pop("context_json"))
     d["hardware"] = json.loads(d.pop("hardware_json") or "{}")
     d.update(json.loads(d.pop("data_json")))
+    plan_data = {**json.loads(plan["data_json"] or "{}"), "mode": plan["mode"]} if plan else None
+    d["plan_task"] = (plan_data or {}).get("engraving_task")
     if d.get("check"):
         express_against_clean(store, d["check"])
+        _layer_tasks(store, d, plan_data)
     return d
+
+
+def layer_task(pair: dict, plan: dict | None, rep: dict) -> dict:
+    """The engraving task of one layer of a check (REQ-020); the order of precedence is in the module notes."""
+    return tasks.effective(rep.get("type"), rep.get("source_settings"), rep.get("role"),
+                           operator=(pair.get("layer_tasks") or {}).get(str(rep.get("index"))), work=pair.get("work_task"),
+                           plan=tasks.plan_layer_task(plan, rep.get("name"), rep.get("index")))
+
+
+def _layer_tasks(store: Store, pair: dict, plan: dict | None) -> None:
+    """The task of every layer of the check and the quality metrics of every measured one with their method and basis
+    (REQ-020); an accepted pair shows the task its observations were accepted with. Derived on every read, never stored."""
+    check = pair["check"]
+    layers = check.get("layers") or []
+    accepted: dict[str, dict] = {}
+    if pair["status"] == ST_ACCEPTED:
+        for row in store.query("SELECT task_kind, parameters_json, evidence_json FROM observation WHERE pair_id=?", (pair["id"],)):
+            accepted.setdefault(json.loads(row["evidence_json"] or "{}").get("layer_name"), tasks.of_observation(row))
+    witness = next((rep.get("measured_lab") for rep in layers if rep.get("role") == tasks.WITNESS), None)
+    scale, mode = tasks.photo_scale(check.get("alignment")), (check.get("color_measurement") or {}).get("mode")
+    for rep in layers:
+        rep["task"] = accepted.get(rep.get("name")) or layer_task(pair, plan, rep)
+        if rep.get("measured_lab"):
+            rep["metrics"] = tasks.quality_metrics(
+                rep["task"]["kind"], lab=rep["measured_lab"], against_clean=rep.get("measured_lab_against_clean"), mode=mode,
+                line_metrics=rep.get("line_metrics"), tonal=rep.get("tonal"), scale=scale,
+                clean_lab=witness if rep.get("role") != tasks.WITNESS else None)
 
 
 def express_against_clean(store: Store, check: dict) -> None:
@@ -111,7 +145,7 @@ def _normalize_project_to_plan(project: lb.Project, plan: dict | None) -> list[s
 
 
 DERIVED_CHECK_KEYS = ("clean_reference",)              # added by express_against_clean on every read, never stored
-DERIVED_LAYER_KEYS = ("measured_lab_against_clean",)
+DERIVED_LAYER_KEYS = ("measured_lab_against_clean", "task", "metrics")     # added by get_pair on every read
 
 
 def _without_derived(check):
@@ -211,9 +245,10 @@ def _safe_name(name: str) -> str:
 
 def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: int | None = None, lightburn_name: str,
                 lightburn_bytes: bytes, photo_name: str, photo_bytes: bytes, plan_id: int | None = None, rephoto_of: int | None = None,
-                context: dict | None = None) -> int:
+                context: dict | None = None, task: str | None = None) -> int:
     """A new pair of the laser and lens the operator chose (``lens_id`` None: the lens is unknown), photographed on the
-    capture setup ``stand_id`` (None: the one used last, REQ-009)."""
+    capture setup ``stand_id`` (None: the one used last, REQ-009). ``task`` is the engraving task the operator gives the
+    whole work; None leaves every layer the task of its plan or of its LightBurn mode (REQ-020)."""
     if rephoto_of is not None:
         # Legacy callers may still supply these fields. A second view must inherit the real job.
         return create_rephoto(store, rephoto_of, photo_name=photo_name, photo_bytes=photo_bytes, stand_id=stand_id)
@@ -228,6 +263,7 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
     if not lightburn_bytes or not photo_bytes:
         raise IngestError("both files must be non-empty")
     ctx = clean_context(context)
+    work_task = tasks.optional(task)
     if ctx["material_id"] is None:
         raise IngestError("select the titanium stock used for this engraving")
     material = store.one("SELECT * FROM material_profile WHERE id=?", (ctx["material_id"],))
@@ -250,7 +286,7 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
     photo_path.write_bytes(photo_bytes)
     # The plan or plate the operator uploaded this photograph for: the identity of the work is then the operator's
     data = {"rephoto_of": None, "masks_reviewed": False, "file_confirmation": None, "corners": None, "check": None,
-            "linked_plan_id": plan_id}
+            "linked_plan_id": plan_id, "work_task": work_task, "layer_tasks": {}}
     pair_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -312,7 +348,8 @@ def restore_plan(store: Store, pair_id: int) -> int | None:
         if not layer.regions:
             continue
         params, _ = observation_parameters(setup["device"]["passport"], layer_report(layer, setup["device"]["passport"]))
-        key = model.observation_key(params, context)
+        task = tasks.effective(layer.layer_type, layer.source_settings, None, work=json.loads(row["data_json"] or "{}").get("work_task"))
+        key = model.observation_key(params, context, task)
         entry, summary = entries.get(key), summaries.get(key)
         predicted = entry is not None and summary is not None and summary["available"]
         layers.append({"index": layer.index, "name": layer.name, "parameters": params, "cut_type": layer.layer_type,
@@ -369,7 +406,8 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     photo_path.write_bytes(photo_bytes)
     # a new view of an accepted engraving keeps the identity that engraving was accepted with
     data = {"rephoto_of": root_pair_id, "masks_reviewed": False, "file_confirmation": source_data.get("file_confirmation"),
-            "corners": None, "anchor": None, "check": None, "linked_plan_id": source["plan_id"]}
+            "corners": None, "anchor": None, "check": None, "linked_plan_id": source["plan_id"],
+            "work_task": source_data.get("work_task"), "layer_tasks": source_data.get("layer_tasks") or {}}
     if source_data.get("matrix"):
         data["matrix"] = _matrix_for_rephoto(store, source_data, photo_name, photo_bytes)
     pair_id = store.execute(
@@ -2060,6 +2098,31 @@ def review_masks(store: Store, pair_id: int) -> None:
     _save(store, pair_id, pair)
 
 
+def set_task(store: Store, pair_id: int, layer_index: int | None, kind: str | None) -> None:
+    """The operator's engraving task (REQ-020): of the whole work when ``layer_index`` is None, else of one layer of the file.
+    None clears the choice; for a layer, ``"layer"`` asks for the task its LightBurn mode implies whatever the work's task.
+    It changes no measurement, so the check stays as it is."""
+    row = _pair_row(store, pair_id)
+    _guard_mutable(row)
+    pair = _stored(store, pair_id)
+    if layer_index is None:
+        pair["work_task"] = tasks.optional(kind)
+    else:
+        if kind not in (None, "", tasks.LAYER_DEFAULT):
+            tasks.require(kind)
+        known = [rep.get("index") for rep in (pair.get("check") or {}).get("layers") or []]
+        if known and layer_index not in known:
+            raise IngestError("this layer is not in the LightBurn file of the pair")
+        chosen = dict(pair.get("layer_tasks") or {})
+        if kind in (None, ""):
+            chosen.pop(str(layer_index), None)
+        else:
+            chosen[str(layer_index)] = kind
+        pair["layer_tasks"] = chosen
+    _save(store, pair_id, pair)
+    store.audit("pair_task_set", pair_id=pair_id, layer_index=layer_index, task=kind)
+
+
 
 # -- acceptance ----------------------------------------------------------------------------------------
 def observation_parameters(passport: dict, rep: dict) -> tuple[dict, str | None]:
@@ -2136,7 +2199,7 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                         "lightburn_file": row["lightburn_name"], "color_measurement": check["color_measurement"],
                         "role": rep.get("role"), "submeasurements": rep.get("submeasurements", []),
                         "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
-                        "matrix_cell": rep.get("matrix_cell")}
+                        "matrix_cell": rep.get("matrix_cell"), "task": rep.get("task") or layer_task(pair, plan, rep)}
             # Cleaning, registration markers and engraved labels are kept as evidence and shown, but they are operations of
             # the plate, not test settings: they never feed the model or knowledge (DEC-027, DEC-028, DEC-045).
             test_feature = rep.get("role", "test feature") == "test feature"
@@ -2148,10 +2211,11 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                 observation_reason += "; retained as physical measurement, excluded from parameter recommendations: " + "; ".join(rep["notes"] + ([param_error] if param_error else []))
             ids.append(store.execute(
                 "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,"
-                "context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at,task_kind)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (pair_id, observation_index, row["device_id"], row["lens_id"], row["engraving_id"], json.dumps(rep["measured_lab"]), json.dumps(params),
-                 check["alignment"]["method"], row["context_json"], int(model_eligible), 0 if rephoto else 1, observation_reason, json.dumps(evidence), now())).lastrowid)
+                 check["alignment"]["method"], row["context_json"], int(model_eligible), 0 if rephoto else 1, observation_reason, json.dumps(evidence), now(),
+                 evidence["task"]["kind"])).lastrowid)
         store.execute("UPDATE pair SET status=?, accepted_at=? WHERE id=?", (ST_ACCEPTED, now(), pair_id))
         store.audit("pair_accepted", pair_id=pair_id, observations=len(ids))
     superseded = pair.get("correction_of")

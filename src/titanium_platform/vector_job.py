@@ -29,7 +29,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import color, conversion as cv, plans as pl, setup as su, vectorize as vz
+from . import color, conversion as cv, plans as pl, setup as su, tasks, vectorize as vz
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -47,8 +47,9 @@ def layer_cap(clean: bool) -> int:
 
 def eligible(store: Store, device_id: int, lens_id: int | None, material_id: int, allowed_questioned=()) -> list[dict]:
     """Validated and production recipes of one laser and lens measured on one titanium stock, in every LightBurn mode a
-    vector job uses; questioned ones only when allowed for this job (REQ-004)."""
-    entries = cv.eligible_palette(store, device_id, lens_id, allowed_questioned=allowed_questioned, modes=cv.FILL_MODES | cv.LINE_MODES)
+    vector job uses, of every task (each entry names its own); questioned ones only when allowed for this job (REQ-004)."""
+    entries = cv.eligible_palette(store, device_id, lens_id, allowed_questioned=allowed_questioned, modes=cv.FILL_MODES | cv.LINE_MODES,
+                                  kinds=None)
     return [{**e, "srgb": color.lab_to_srgb8(e["lab"]).tolist()} for e in entries if e["material_id"] == material_id]
 
 
@@ -104,8 +105,11 @@ def _source_rgb(image_bytes: bytes) -> np.ndarray:
 
 def start(store: Store, device_id: int, lens_id: int | None, material_id: int, image_bytes: bytes, width_mm: float, strategy: str,
           name: str, *, threshold=None, n_colors: int | None = None, palette: list | None = None, grey_threshold=None,
-          tolerance_mm: float = 0.05, min_area_mm2: float = 0.2, markers: bool = False, clean: bool = False) -> int:
-    """Trace an image into a vector job of one laser, lens and titanium stock and assess every region against the knowledge."""
+          tolerance_mm: float = 0.05, min_area_mm2: float = 0.2, markers: bool = False, clean: bool = False, task: str | None = None,
+          goals: dict | None = None) -> int:
+    """Trace an image into a vector job of one laser, lens and titanium stock and assess every region against the knowledge.
+    The job records its main engraving task (REQ-020): the operator's, else the one its tracing strategy serves; each region
+    keeps its own."""
     if not (name or "").strip():
         raise cv.ConversionError("give the plan a name")
     setup = su.resolve(store, device_id, lens_id)
@@ -122,11 +126,12 @@ def start(store: Store, device_id: int, lens_id: int | None, material_id: int, i
                         tolerance_mm=tolerance_mm, min_area_mm2=min_area_mm2)
     if not document["regions"]:
         raise cv.ConversionError("nothing was traced in the image: there is no region to engrave")
+    engraving_task = tasks.chosen_or_default(task, tasks.VECTOR_STRATEGY_TASK[strategy], goals)
     identifier = pl.new_identifier("TCE-A")      # an artwork job: ingest resolves it from the TCE1 note of the exported file
     size = document["size_mm"]
     path = _write_document(store, document)
     lens = setup["lens"] or {}
-    data = {"task": "vector", "strategy": strategy, "image_path": cv._store_image(store, image_bytes), "size_mm": size,
+    data = {"task": "vector", "engraving_task": engraving_task, "strategy": strategy, "image_path": cv._store_image(store, image_bytes), "size_mm": size,
             "trace": {"n_colors": n_colors, "palette": palette, "grey_threshold": grey_threshold, "tolerance_mm": tolerance_mm,
                       "min_area_mm2": min_area_mm2},
             "material_id": material_id, "threshold": thr, "lens": su.lens_snapshot(setup),
@@ -185,6 +190,11 @@ def assess(store: Store, plan: dict, document: dict) -> dict:
             layer["region_ids"].append(row["id"])
             if row["layer_key"] not in layer["layer_keys"]:
                 layer["layer_keys"].append(row["layer_key"])
+            layer.setdefault("region_tasks", [])
+            if row["task"] not in layer["region_tasks"]:
+                layer["region_tasks"].append(row["task"])
+    for layer in layers.values():           # the task a photograph of this layer is measured for (REQ-020); None when mixed
+        layer["task"] = tasks.layer_task_of_regions(layer["region_tasks"])
     return {"palette": palette, "groups": groups, "regions": rows, "layers": list(layers.values()),
             "weak": [row["id"] for row in rows if row["status"] == "weak"]}
 

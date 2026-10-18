@@ -343,7 +343,8 @@ class Store:
                 ("material_profile", "surface", "TEXT"),
                 ("plate", "status", "TEXT"),                        # NULL: in use; 'Deleted' with its archived plan (DEC-047)
                 ("capture_setup", "chart_reference_json", "TEXT"),   # NULL: the published chart values (DEC-025)
-                ("capability_finding", "updated_at", "TEXT")):       # NULL: never recalculated to another text (REQ-022)
+                ("capability_finding", "updated_at", "TEXT"),       # NULL: never recalculated to another text (REQ-022)
+                ("observation", "task_kind", "TEXT")):               # NULL: accepted before tasks, derived from its layer (REQ-020)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         # A target colour records every measurement of a plate cell that addressed it (REQ-006): the measured Lab, delta E

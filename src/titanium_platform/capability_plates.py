@@ -10,7 +10,7 @@ import json
 import math
 from typing import Any
 
-from . import devices, plans, setup as su
+from . import devices, plans, setup as su, tasks
 from .db import Store, now
 
 PLATE_TYPES = [
@@ -853,6 +853,13 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         layers, label_regions, geometry = BUILDERS[test_type](values)
     if test_type == "material_matrix":
         values["matrix"] = geometry["matrix"]
+    # REQ-020: every cell states its task (letters are text, the rest what their LightBurn mode implies), and the plate
+    # records the task it was made for: the operator's choice, else its research goal, else what its test type examines
+    for layer in layers:
+        layer["task"] = tasks.plate_layer_task(layer["name"], layer.get("cut_type"))
+    engraving_task = tasks.chosen_or_default(
+        values.get("task"), tasks.plate_task(test_type, values.get("research_goal"), (values.get("matrix") or {}).get("geometry")),
+        values.get("task_goals"))
     ident = plans.new_identifier("TCE")
     marked = test_type != "small_patches" or values.get("registration", "full") == "full"
     markers = plans.marker_geometry(ident, geometry["width"], geometry["height"], COMPACT_MARKER_SIZE) if marked else None
@@ -894,6 +901,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
                   "material": {k: material_row[k] for k in ("id", "name", "family", "grade", "batch", "thickness_mm", "surface")},
                   "test_settings": values, "cleanup_settings": clean, "label_settings": marker_layer, "series": series,
                   "research_goal": values.get("research_goal"), "source_pair_id": values.get("source_pair_id"),
+                  "engraving_task": engraving_task,
                   "summary": {"layers": len(layers), "test_features": len(geometry["cells"]),
                               "visual_features": geometry.get("feature_count", len(geometry["cells"])),
                               "size_mm": {"width": round(total_w, 2), "height": round(total_h, 2)},
@@ -936,6 +944,7 @@ def _persist_prepared(store: Store, result: dict, device_id: int, material_id: i
                  "marker_layer": result["marker_layer"], "clean_layer": result["clean_layer"],
                  "export_mirror_y": True,
                  "experiment": result["experiment"], "test_type": test_type,
+                 "engraving_task": result["experiment"]["engraving_task"],
                  "process_settings": {k: result["values"][k] for k in ("pulse_width", "line_interval", "passes")},
                  "lightburn_settings": {"global_passes": result["values"]["global_passes"], "bidirectional": True,
                                         "cross_hatch": False, "scan_angle": 0.0, "angle_increment": 0.0}}
