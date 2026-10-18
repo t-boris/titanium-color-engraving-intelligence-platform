@@ -160,9 +160,21 @@ def refuse_mode(mode: str | None) -> None:
     raise PredictionError(f"{mode} mode is not predicted: {why}; only grayscale mode, where the grey level sets the power, is predicted")
 
 
-def render(picture_grey, min_power: float, max_power: float, curve: Curve, adjustments: Mapping | None = None) -> dict:
+def share_outside(levels, counts, min_power: float, max_power: float, curve: Curve, adjustments: Mapping | None = None) -> float:
+    """The share of a picture, given as its grey levels and the number of pixels at each, that needs a power outside the measured
+    span at Min..Max: computed on the whole picture, where a preview scaled down averages the extreme greys away."""
+    values = adjustments_of(adjustments)["values"]
+    power = grey_to_power(adjust_grey(levels, values["Gamma"], values["Contrast"], values["Brightness"]), min_power, max_power)
+    weights = np.asarray(counts, np.float64)
+    total = float(weights.sum())
+    return float(weights[~np.isfinite(curve.lab_at(power)[..., 0])].sum() / total) if total else 0.0
+
+
+def render(picture_grey, min_power: float, max_power: float, curve: Curve, adjustments: Mapping | None = None,
+           outside_share: float | None = None) -> dict:
     """The predicted look of the picture engraved at Min..Max power: Lab and sRGB per pixel, where it is predicted, and notes that say
-    what the prediction rests on and what it leaves out. Pass the picture at the resolution it is to be shown."""
+    what the prediction rests on and what it leaves out. Pass the picture at the resolution it is to be shown; the share outside the
+    measured span is that of the picture passed unless ``outside_share`` gives the one of the whole picture (``share_outside``)."""
     grey = _picture(picture_grey)
     applied = adjustments_of(adjustments)
     values = applied["values"]
@@ -173,7 +185,7 @@ def render(picture_grey, min_power: float, max_power: float, curve: Curve, adjus
     rgb8[covered] = np.clip(color.lab_to_srgb8(lab[covered]), 0, 255).astype(np.uint8)
     hatch = _hatch(grey.shape) & ~covered
     rgb8[hatch] = np.where(grey[hatch] > 0.5, 0, 255).astype(np.uint8)[:, None]       # dark lines on light grey, light on dark
-    outside = float(np.mean(~covered))
+    outside = float(np.mean(~covered)) if outside_share is None else float(outside_share)
     lo, hi = curve.span
     notes = []
     notes.append(f"The prediction rests on {len(curve.points)} measured powers of this mode, {lo:g}..{hi:g} %, "

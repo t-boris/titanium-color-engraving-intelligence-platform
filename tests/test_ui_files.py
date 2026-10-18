@@ -37,8 +37,47 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/glossary-controller.js", "/screens/controller-rows.js"), ("/screens/controller-rows.js", "/screens/device-controller.js"),
                       ("/screens/glossary-controller.js", "/screens/device-questions.js"), ("/screens/device-questions.js", "/screens/device-view.js"),
                       ("/screens/device-character-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
-                      ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js")]:
+                      ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js"),
+                      ("/screens/experiment-cards.js", "/screens/device-view.js"), ("/screens/experiment-cards.js", "/screens/experiments.js"),
+                      ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js")]:
         assert order[dep] < order[user], (dep, user)
+
+
+def _screen(name: str) -> str:
+    return (UI_DIR / "screens" / name).read_text(encoding="utf-8")
+
+
+def test_the_laser_page_shows_the_one_experiment_list_filtered_by_it_and_no_list_of_its_own():
+    """REQ-028: no separate list of plates, engravings or photographs anywhere; the laser's tab is the experiment list."""
+    device, view = _screen("device.js"), _screen("device-view.js")
+    assert "/experiments?device_id=${id}" in device and "/devices/${id}/experiments" not in device
+    assert "ExperimentCards.list(experiments" in view and "/experiments?device=" in view
+    assert "source_photo_url" not in view and "item.observations" not in view
+    assert "ExperimentCards.list(shown" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
+
+
+def test_the_photo_preview_is_in_the_menu_right_after_photo_engraving_with_an_icon_of_its_own():
+    router = (UI_DIR / "router.js").read_text(encoding="utf-8")
+    nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
+    icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
+    assert nav[nav.index("/photo") + 1] == "/photo-preview" and len(icons) == len(nav)
+    assert "'photo-preview': 'photo-preview'" in router and "App.register({id: 'photo-preview'" in _screen("photo-preview.js")
+
+
+def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():
+    experiment = _screen("experiment.js")
+    assert "p.status === 'Accepted' && p.grayscale_image" in experiment and "/photo-preview?pair=${photoEngraving.id}" in experiment
+    assert "work.lightburn_url" in experiment
+    preview = _screen("photo-preview.js")
+    assert "ctx.query.pair" in preview and "/lightburn`" in preview      # the work's own file, fetched, not asked for again
+
+
+def test_the_photo_preview_states_camera_relative_colours_on_the_picture_itself():
+    """DEC-062: the statement is drawn over the preview, not in a note below it."""
+    preview = _screen("photo-preview.js")
+    assert "h('div', {class: 'pp-stage'}, img, banner)" in preview and "banner.hidden = info.referenced" in preview
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\.pp-stage \{[^}]*position:relative", css) and re.search(r"\.pp-banner \{[^}]*position:absolute", css)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

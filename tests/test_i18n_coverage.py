@@ -17,7 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1] / "src" / "titanium_platform"
 UI = ROOT / "ui"
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
-               "VectorizeError"}
+               "VectorizeError", "PredictionError"}
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why"}   # <name>.append(text) / <x>["name"].append(text)
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage"}                       # return "text" or return (stage, "text")

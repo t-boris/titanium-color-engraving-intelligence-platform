@@ -121,9 +121,12 @@
         h('a', {class: 'btn btn-small', href: `/api/plans/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2'),
         link('/research', 'Попросить AI-исследователя изменить плату'))) : null;
     const work = pairs[pairs.length - 1];
+    // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power
+    const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && p.grayscale_image);
     const files = !exp.plate && work ? h('div', {class: 'card stack'}, h('h3', {}, 'Готовая работа'),
       h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`),
-      h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'))) : null;
+      h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'),
+        photoEngraving ? link(`/photo-preview?pair=${photoEngraving.id}`, 'Как будет выглядеть при других Min/Max') : null)) : null;
     const findings = exp.findings.length ? h('div', {class: 'card stack'}, h('h3', {}, 'Выводы по этому эксперименту'),
       ...exp.findings.map((f) => h('div', {class: 'stack'}, h('p', {}, h('strong', {}, ({line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'})[f.purpose] || f.purpose),
         ' ', pill(f.status === 'candidate' ? 'Кандидат' : 'Нужен тест', f.status === 'candidate' ? 'ok' : 'warn')),

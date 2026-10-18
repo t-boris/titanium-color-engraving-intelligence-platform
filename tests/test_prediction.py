@@ -72,6 +72,17 @@ def test_a_power_outside_the_measured_span_is_not_predicted_and_is_hatched():
     assert set(map(tuple, inside)) == {tuple(color.lab_to_srgb8(expected_lab(np.array(10.0))))}   # no hatch where predicted
 
 
+def test_the_share_outside_the_span_can_be_counted_on_the_whole_picture_and_given_to_a_scaled_down_render():
+    picture = np.full((40, 40), 0.5)
+    picture[:, :12], picture[:, 36:] = 0.95, 0.0
+    levels, counts = np.unique(picture, return_counts=True)
+    whole = pr.share_outside(levels, counts, 2.0, 18.0, synthetic_curve())
+    assert whole == pytest.approx(pr.render(picture, 2.0, 18.0, synthetic_curve())["outside_share"], abs=1e-12)
+    preview = pr.render(np.full((4, 4), 0.5), 2.0, 18.0, synthetic_curve(), outside_share=whole)    # nothing outside in the preview
+    assert preview["outside_share"] == whole and preview["covered"].all()
+    assert any(n.startswith("40 % of the picture needs a power outside") for n in preview["notes"])
+
+
 def test_the_curve_never_extrapolates_beyond_its_measured_powers():
     c = synthetic_curve()
     assert c.span == (4.0, 16.0)

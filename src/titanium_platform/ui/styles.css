@@ -507,3 +507,10 @@ select::-ms-expand {display:none}
 .color-map-grid {display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:12px;align-items:start}
 .color-hit {padding:12px}
 @media (max-width: 1000px) {.color-map-grid {grid-template-columns:minmax(0,1fr)}}
+
+/* Предпросмотр фотогравировки (REQ-030): картинка и прогноз рядом; оговорка о цветах относительно камеры — на самой картинке (DEC-062) */
+.pp-captions {display:grid;grid-template-columns:1fr 1fr;color:var(--muted);font-size:13px;text-align:center}
+.pp-stage {position:relative;display:flex;justify-content:center;background:#0b1220;border-radius:10px;padding:8px}
+.pp-image {display:block;max-width:100%;max-height:80vh;width:auto;height:auto;border-radius:6px}
+.pp-banner {position:absolute;left:16px;right:16px;bottom:16px;padding:8px 12px;border:1px solid #6d5933;border-radius:8px;
+  background:#312a1ee8;color:var(--warning);font-size:13px}

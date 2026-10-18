@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import analysis, conversion, designer, ingest, knowledge, photo, setup as su, vectorize
+from .. import analysis, conversion, designer, ingest, knowledge, photo, prediction, setup as su, vectorize
 from ..db import ImmutableError, Store
 
 MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
@@ -12,7 +12,7 @@ MAX_PHOTO_BYTES = 600 * 1024 * 1024
 MAX_IMAGE_BYTES = 60 * 1024 * 1024
 
 USER_ERRORS = (su.ValidationError, ingest.IngestError, conversion.ConversionError, designer.DesignerError,
-               knowledge.KnowledgeError, photo.PhotoError, vectorize.VectorizeError)
+               knowledge.KnowledgeError, photo.PhotoError, vectorize.VectorizeError, prediction.PredictionError)
 IMAGE_SIGNATURES = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF8", "image/gif"), (b"BM", "image/bmp"),
                     (b"II*\x00", "image/tiff"), (b"MM\x00*", "image/tiff"))
 
