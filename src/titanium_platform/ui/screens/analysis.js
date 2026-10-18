@@ -318,6 +318,7 @@
           h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`)),
         h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
           r.plan_id ? link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата') : null,
+          r.proposal ? link(`/designer?device=${r.proposal.device_id}&lens=${App.lensParam(r.proposal.lens_id)}&proposal=${r.proposal.id}`, `Предложение № ${r.proposal.id}`) : null,
           link('/ingest?rephoto=' + id, '+ Фото'), revise, remove)),
       r.photos?.length > 1 ? h('div', {class: 'analysis-photo-strip'},
         h('span', {}, `Проверки этого запуска (${r.photos.length})`),

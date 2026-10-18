@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from . import capability_results, ingest, plans as pl
+from . import capability_results, designer, ingest, plans as pl
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
@@ -112,7 +112,8 @@ def get_experiment(store: Store, key: str) -> dict:
         plate = {"plan_id": plan["id"], "name": plan["name"], "mode": plan["mode"], "status": plan["status"],
                  "test_type": plan.get("test_type") or meta.get("test_type"), "test_name": meta.get("test_name"),
                  "description": meta.get("test_description"), "layers": len(plan.get("layers", [])),
-                 "band_count": plan.get("band_count"), "identifier": plan.get("plan_identifier"), "created_at": plan["created_at"]}
+                 "band_count": plan.get("band_count"), "identifier": plan.get("plan_identifier"), "created_at": plan["created_at"],
+                 "proposal": designer.proposal_of_plate(store, plan.get("plate_id"))}
     counts = _observation_counts(store)
     pairs = []
     for p in group["pairs"]:

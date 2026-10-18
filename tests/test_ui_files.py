@@ -99,6 +99,9 @@ def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal
         assert text in designer, text
     assert "if (!prop.explanation_available)" in designer and "get('/designer/proposals/' + chosen.id)" in designer
     assert "/designer/proposals/${prop.id}/plates" not in designer       # plates are made by accepting the proposal
+    # a photograph of a plate made for a proposal links back to it (REQ-022 AC5)
+    assert "r.proposal ? link(`/designer?device=${r.proposal.device_id}" in _screen("analysis.js")
+    assert "exp.plate.proposal ? h('p'" in _screen("experiment.js")
 
 
 def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():

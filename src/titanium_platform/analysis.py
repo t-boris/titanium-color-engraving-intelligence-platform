@@ -92,6 +92,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
         (pair["engraving_id"],))]
     result["rig_repeatability"] = model.engraving_rig_repeatability(store, pair["engraving_id"])
     result["target_checks"] = designer.target_checks(store, pair_id)
+    plate_id = pair["plate_id"] or (plan or {}).get("plate_id")
+    result["proposal"] = designer.proposal_of_plate(store, plate_id)       # a plate of the designer links back to its proposal
     result["capability"] = capability_results.report_for_pair(store, pair_id)
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")

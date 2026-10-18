@@ -117,6 +117,9 @@
       h('p', {class: 'muted small'}, [exp.plate.test_name || exp.plate.mode, `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
         exp.plate.identifier].filter(Boolean).join(' · ')),
       exp.plate.description ? h('p', {class: 'small'}, exp.plate.description) : null,
+      // a plate of the experiment designer answers its proposal (REQ-022): the proposal shows this plate's result
+      exp.plate.proposal ? h('p', {class: 'small'}, 'Сделана по ', link(`/designer?device=${exp.plate.proposal.device_id}&lens=${App.lensParam(exp.plate.proposal.lens_id)}&proposal=${exp.plate.proposal.id}`,
+        `предложению планировщика № ${exp.plate.proposal.id}`)) : null,
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
         h('a', {class: 'btn btn-small', href: `/api/plans/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2'),
         link('/research', 'Попросить AI-исследователя изменить плату'))) : null;

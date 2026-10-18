@@ -502,6 +502,14 @@ def test_an_accepted_proposal_links_to_its_plate_the_photograph_of_it_and_the_me
         assert client.post(f"/api/pairs/{pid}/accept").status_code == 200
 
         after = client.get(f"/api/designer/proposals/{p['id']}").json()
+        report = client.get(f"/api/pairs/{pid}/report").json()                # the photograph links back to the proposal
+        experiment = client.get(f"/api/experiments/plan-{plan['id']}").json()
+        assert client.delete(f"/api/pairs/{pid}").status_code == 204          # its only photograph leaves active use ...
+        reopened = client.get(f"/api/designer/proposals/{p['id']}").json()
+    assert reopened["status"] == "accepted" and reopened["status_history"][-1]["reason"] == "an accepted photograph of its plates left active use"
+    assert reopened["results"][0]["measured"] == []                            # ... and its result with it
+    assert report["proposal"] == {"id": p["id"], "device_id": w["device"]["id"], "lens_id": w["lens"]["id"], "status": "done"}
+    assert experiment["plate"]["proposal"]["id"] == p["id"]
     assert after["status"] == "done" and [e["to_status"] for e in after["status_history"]] == ["accepted", "done"]
     assert after["plates"][0]["pairs"] == [after["plates"][0]["pairs"][0]] and after["plates"][0]["pairs"][0]["status"] == "Accepted"
     result = after["results"][0]

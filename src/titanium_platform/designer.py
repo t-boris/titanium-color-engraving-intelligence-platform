@@ -515,6 +515,15 @@ def results(store: Store, proposal_id: int) -> dict:
     return {"plates": plates, "results": out}
 
 
+def proposal_of_plate(store: Store, plate_id: int | None) -> dict | None:
+    """The proposal a plate was made for, as a photograph of the plate links back to it (REQ-022 AC5); None for other plates."""
+    row = store.one("SELECT proposal_id, device_id, lens_id FROM plate WHERE id=?", (plate_id,)) if plate_id else None
+    if row is None or row["proposal_id"] is None:
+        return None
+    return {"id": row["proposal_id"], "device_id": row["device_id"], "lens_id": row["lens_id"],
+            "status": get_proposal(store, row["proposal_id"])["status"]}
+
+
 def _measured(store: Store, o, cell_id: str) -> dict:
     """One measurement of a proposed cell, with the target check recorded for it when the cell was made for a target."""
     check = store.one("SELECT * FROM target_check WHERE observation_id=? AND cell_id=?", (o["id"], cell_id))
