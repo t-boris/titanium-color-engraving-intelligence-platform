@@ -579,6 +579,49 @@ def test_a_rephotograph_shares_the_engraving_and_is_never_an_independent_repetit
         make_pair(world, rephoto_of=make_pair(world))
 
 
+def accepted(world, pid):
+    ig.check_pair(world["store"], pid)
+    ig.review_masks(world["store"], pid)
+    ig.accept_pair(world["store"], pid)
+    return pid
+
+
+def revised(world, pid):
+    """An alignment revision of the accepted pair, accepted: the original leaves active use."""
+    revision = ig.create_alignment_revision(world["store"], pid)
+    ig.review_masks(world["store"], revision)
+    ig.accept_pair(world["store"], revision)
+    return revision
+
+
+def test_an_alignment_revision_keeps_the_one_repetition_of_its_engraving(world):
+    """DEC-021: a revision is the same photograph aligned again; accepting it must not leave the engraving uncounted."""
+    from titanium_platform import model
+    s = world["store"]
+    original = accepted(world, make_pair(world))
+    revision = revised(world, original)
+    assert s.one("SELECT status FROM pair WHERE id=?", (original,))["status"] == ig.ST_DELETED
+    tests = [r for r in s.query("SELECT repeat_eligible, evidence_json FROM observation WHERE pair_id=?", (revision,))
+             if json.loads(r["evidence_json"])["role"] == "test feature"]
+    assert len(tests) == 4 and {r["repeat_eligible"] for r in tests} == {1}
+    cells = [x for x in model.knowledge_summaries(s, *world["setup"]).values() if x["parameters"]["speed"] == 900]
+    assert len(cells) == 4 and {x["independent_engravings"] for x in cells} == {1}
+    again = revised(world, revision)                 # a revision of a revision is still that one engraving
+    assert {x["independent_engravings"] for x in model.knowledge_summaries(s, *world["setup"]).values()} == {1}
+    assert {r["repeat_eligible"] for r in s.query("SELECT repeat_eligible FROM observation WHERE pair_id=?", (again,))} == {1}
+
+
+def test_an_alignment_revision_of_a_rephotograph_stays_a_rephotograph(world):
+    s = world["store"]
+    original = accepted(world, make_pair(world))
+    view = accepted(world, make_pair(world, rephoto_of=original))
+    revision = revised(world, view)
+    assert ig.get_pair(s, revision)["rephoto_of"] == original
+    assert {r["repeat_eligible"] for r in s.query("SELECT repeat_eligible FROM observation WHERE pair_id=?", (revision,))} == {0}
+    from titanium_platform import model
+    assert {x["independent_engravings"] for x in model.knowledge_summaries(s, *world["setup"]).values()} == {1}
+
+
 def test_a_marked_work_without_a_known_plate_needs_corners_and_aligns_manually(world):
     """A finished work from LightBurn: no markers, so the operator places the four corners."""
     s = world["store"]

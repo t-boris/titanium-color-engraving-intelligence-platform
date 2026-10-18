@@ -470,7 +470,9 @@ def create_alignment_revision(store: Store, source_pair_id: int) -> int:
                 image, [layer for layer in project.layers if layer.regions], alignment["image_to_mm"], system)
     new_id = create_rephoto(store, source_pair_id, photo_name=source["photo_name"], photo_bytes=source_photo.read_bytes())
     revision = get_pair(store, new_id)
-    revision.update(correction_of=source_pair_id, check=source["check"], corners=source.get("corners"),
+    # The same photograph aligned again, not a new view: it is a re-photograph only when its source is one, so the engraving
+    # keeps exactly one independent repetition whichever revision is accepted (DEC-021).
+    revision.update(correction_of=source_pair_id, rephoto_of=source.get("rephoto_of"), check=source["check"], corners=source.get("corners"),
                     prefer_corners=source.get("prefer_corners"), anchor=source.get("anchor"),
                     alignment_override=source.get("alignment_override"),
                     masks_reviewed=False)
