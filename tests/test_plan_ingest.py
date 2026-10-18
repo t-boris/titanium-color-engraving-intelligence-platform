@@ -260,6 +260,16 @@ def test_an_imported_work_is_restored_as_a_plan_and_judged_against_the_predictio
     assert pl.get_plan(s, restored["id"])["layers"] == restored["layers"]      # an older restored plan keeps its own predictions
 
 
+def test_a_layer_without_its_settings_is_restored_as_it_is_without_a_prediction(w):
+    lbrn = (b'<LightBurnProject AppVersion="2.0.04"><CutSetting type="Scan"><index Value="5"/><name Value="C05"/>'
+            b'<maxPower Value="24"/><speed Value="900"/></CutSetting>'
+            b'<Shape Type="Rect" CutIndex="5" W="40" H="20" Cr="0"><XForm>1 0 0 1 30 20</XForm></Shape></LightBurnProject>')
+    pid = ig.create_pair(w["store"], device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="old.lbrn2",
+                         lightburn_bytes=lbrn, photo_name="old.png", photo_bytes=png(synth.scene()), context={"material_id": w["material"]["id"]})
+    layer = pl.get_plan(w["store"], ig.get_pair(w["store"], pid)["plan_id"])["layers"][0]
+    assert (layer["parameters"]["power"], layer["parameters"]["frequency"], layer["prediction"]) == (24, None, None)
+
+
 def test_a_file_of_this_system_or_a_linked_plan_restores_nothing(w):
     s = w["store"]
     plan = discrete_plan(w, markers=False)

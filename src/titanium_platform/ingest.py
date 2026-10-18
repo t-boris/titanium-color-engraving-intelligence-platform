@@ -2067,6 +2067,8 @@ def observation_parameters(passport: dict, rep: dict) -> tuple[dict, str | None]
     when they are): the six settings and the LightBurn execution controls of the layer."""
     param_error = None
     try:
+        if None in (rep["power"], rep["frequency_khz"], rep["speed"]):         # an unreadable layer of a restored file
+            raise su.ValidationError("power, frequency or speed is missing from this LightBurn layer")
         params = su.parameter_vector(passport, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
                                      rep["line_interval"], rep["passes"])
     except su.ValidationError as exc:

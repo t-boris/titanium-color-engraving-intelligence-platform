@@ -118,6 +118,7 @@
       'План восстановлен из файла импортированной работы: это запись выполненного задания, её нельзя экспортировать как новое задание'],
     [/^no prediction: no knowledge entry of these settings had all three estimates when the plan was restored$/i,
       'Прогноза нет: когда план восстанавливался, для этих настроек не было записи знания со всеми тремя оценками'],
+    [/^power, frequency or speed is missing from this LightBurn layer$/i, 'В этом слое LightBurn нет мощности, частоты или скорости'],
     [/^the plan was restored from the imported LightBurn file: a planned colour is the prediction its knowledge entry gave when the plan was restored$/i,
       'План восстановлен из импортированного файла LightBurn: плановый цвет — прогноз записи знания на момент восстановления плана'],
   ]);
