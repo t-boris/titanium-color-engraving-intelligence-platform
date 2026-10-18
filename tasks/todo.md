@@ -56,8 +56,12 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
 - [ ] WP-3 Closed-loop bugs: generated plans ingestible and auto-aligned (REQ-013), full settings on export (REQ-012), revision
       keeps its repetition (DEC-021), deletion rebuild and plan protection (DEC-047), marker/label never model-eligible
       (DEC-027/028), device delete, unreadable QR (REQ-003).
-- [ ] WP-4 DEC-042: no operator-managed profiles (approach per the operator's answer), device + lens + job settings everywhere,
+- [x] WP-4 DEC-042: no operator-managed profiles (approach per the operator's answer), device + lens + job settings everywhere,
       lens may be incomplete, imports do not assert the installed lens, 200 ns only as a device-supported prefill.
+      Done 6bf303b: full schema migration (DEC-063), review found 0 critical / 5 major (all fixed); live-database copy: 662
+      observations byte-identical; 580 passed. Startup refusal names the exact SQL fix (0.3.1 cannot re-link a profile with
+      records). Next: three parallel streams in worktrees — S1 loop + ingestion (WP-3, WP-6), S2 export + conversion UI +
+      vector job (WP-5, WP-10), S3 experiments + colour map + prediction (WP-7, WP-11); then WP-8, WP-9, WP-2, WP-12, WP-13.
 - [ ] WP-5 Conversion UI: band limits and banding picture, colour-path inclusion, tonal warning with all observations, lens
       snapshot with spot basis on every plan.
 - [ ] WP-6 Ingestion completeness: capture setup on upload, chart reference in the setup, rig repeatability shown, restored
