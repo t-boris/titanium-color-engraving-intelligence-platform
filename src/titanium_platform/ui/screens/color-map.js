@@ -76,14 +76,25 @@ const ColorMap = (() => {
       m.dark_share > 0 && m.dark_share < 0.6 ? ` · тёмного оксида ${num(m.dark_share * 100, 0)} %` : '');
   }
 
+  /** Рассчитанная настройка показывается только с тремя оценками (REQ-002): уверенность, ожидаемая ошибка цвета, стабильность.
+      Без них настройки нет, и сказано почему; остаются толщина плёнки и измеренные режимы. */
+  function estimatesText(r) {
+    const e = r.estimates;
+    if (r.settings && e) {
+      return ` · уверенность ${num(e.confidence, 2)} · ожидаемая ошибка цвета ΔE ${num(e.expected_delta_e, 1)}`
+        + ` · стабильность: дисперсия ${num(e.stability.variance, 1)} по ${e.stability.cells} ближайшим ячейкам`;
+    }
+    return ` · настройка не рассчитана: ${I18N.tr(r.note || '')}`;
+  }
+
   // what the film model says about a wanted colour; settings are computed only for one laser and lens (DEC-063)
   function filmCard(r) {
     const cand = (c) => h('article', {class: 'card stack'},
       h('p', {}, h('strong', {}, `Плёнка ${num(c.thickness_nm, 0)} нм`), c.dark_share > 0 ? ` с долей тёмного оксида ${num(c.dark_share * 100, 0)} %` : '', ` · расхождение с целью ΔE ${num(c.residual_de, 1)}`),
-      (c.by_regime || []).length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'Расчёт по закону толщины от дозы, не измерение:'),
+      (c.by_regime || []).length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'Расчёт по закону толщины от дозы, не измерение; только в пределах измеренных доз режима:'),
         ...c.by_regime.map((r) => h('p', {}, h('strong', {}, `${num(r.frequency, 0)} кГц, ${num(r.pulse_width, 0)} нс`), `: около ${num(r.areal_energy_j_cm2, 0)} Дж/см²`,
-          r.settings ? ` · ${settings(r.settings)}` : ' · при скорости и шаге ближайшей ячейки мощностью не достичь',
-          r.within_measured ? '' : ' · за пределами измеренных доз',
+          r.settings ? ` · ${settings(r.settings)}` : '',
+          estimatesText(r),
           ' · ближайшая измеренная: ', swatch(r.nearest_measured.lab), ` ${r.nearest_measured.work} · ${r.nearest_measured.layer || ''}`))) : null,
       c.same_film_measured.length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'Такую плёнку давали измеренные режимы:'),
         ...c.same_film_measured.map((m) => h('p', {}, swatch(m.lab), ` ${m.work} · ${m.layer || ''} · ${settings(m.parameters)} · плёнка ${num(m.thickness_nm, 0)} нм${m.ambiguous ? ' (порядок неоднозначен)' : ''}`,

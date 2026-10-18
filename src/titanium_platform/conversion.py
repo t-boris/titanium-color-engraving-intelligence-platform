@@ -184,16 +184,18 @@ def _threshold(store: Store, device_id: int, lens_id: int | None, value) -> floa
 
 
 def compute_matches(source_colors: list[dict], palette: list[dict], threshold: float, replacements: dict, exclusions: list) -> list[dict]:
+    """Each image colour against the palette (DEC-030). A match carries the titanium colour it was tested against with that
+    entry's confidence, expected colour error and stability (REQ-002, REQ-004): the screen shows them per match."""
     by_id = {e["id"]: e for e in palette}
     out = []
     for c in source_colors:
         m = {"source_key": c["key"], "source_lab": c["lab"], "status": None, "knowledge_id": None, "distance": None, "match_error": None,
-             "candidate_id": None}
+             "candidate_id": None, "titanium": None}
         if c["key"] in exclusions:
             m["status"] = "excluded"
         elif c["key"] in replacements:
             e = by_id[replacements[c["key"]]]
-            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]))
+            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]), titanium=prediction_of(e))
             m["match_error"] = m["distance"] + e["expected_delta_e"]
         elif not palette:
             m["status"] = "unreachable"
@@ -201,7 +203,7 @@ def compute_matches(source_colors: list[dict], palette: list[dict], threshold: f
             e = min(palette, key=lambda p: (color.delta_e(p["lab"], c["lab"]), p["id"]))
             dist = color.delta_e(e["lab"], c["lab"])
             err = dist + e["expected_delta_e"]  # DEC-030: distance to the request plus the entry's own measured scatter
-            m.update(distance=dist, match_error=err, candidate_id=e["id"])
+            m.update(distance=dist, match_error=err, candidate_id=e["id"], titanium=prediction_of(e))
             if err <= threshold:
                 m.update(status="matched", knowledge_id=e["id"])
             else:

@@ -56,6 +56,22 @@ def test_matching_within_the_threshold_shows_distance_and_error(store, w):
     assert m["match_error"] == pytest.approx(m["distance"] + 2 ** 0.5, abs=1e-6)  # DEC-030: distance + entry's expected error
 
 
+def test_each_match_carries_its_titanium_colour_with_confidence_expected_error_and_stability(store, w):
+    """REQ-002, REQ-004 AC3: the screen shows these per match from the match itself, also for the nearest colour of an
+    unreachable one; DEC-030: the match error is the distance plus that entry's own expected error."""
+    far = (90.0, -60.0, 70.0)
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)
+    palette = {e["id"]: e for e in cv.eligible_palette(store, *w["setup"])}
+    for m in pl.get_plan(store, pid)["matches"]:
+        entry = palette[m["knowledge_id"] or m["candidate_id"]]
+        assert m["titanium"] == {"lab": entry["lab"], "confidence": entry["confidence"], "expected_delta_e": entry["expected_delta_e"],
+                                 "stability": entry["stability"]}
+        assert m["match_error"] == pytest.approx(m["distance"] + m["titanium"]["expected_delta_e"])
+    cv.update_discrete(store, pid, exclusions=[pl.get_plan(store, pid)["matches"][0]["source_key"]])
+    excluded = pl.get_plan(store, pid)["matches"][0]
+    assert excluded["status"] == "excluded" and excluded["titanium"] is None
+
+
 def test_a_color_beyond_the_threshold_is_unreachable_and_becomes_a_designer_target(store, w):
     far = (90.0, -60.0, 70.0)
     pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(far)]), 40, "A", threshold=8.0)

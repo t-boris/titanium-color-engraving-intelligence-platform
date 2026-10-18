@@ -83,6 +83,10 @@
     const exp = p.experiment || {};
     const mat = exp.material || {};
     const materialLabel = [mat.name, mat.grade, mat.batch && `партия ${mat.batch}`].filter(Boolean).join(' · ');
+    // REQ-018: an unknown work field leaves the placement unchecked, and the plate says so
+    const field = p.work_field || (exp.summary || {}).work_field;
+    const fieldLabel = !field ? null : field.checked ? `помещается: ${num(field.needed_mm.width, 0)} × ${num(field.needed_mm.height, 0)} мм в поле ${num(field.field_mm.width, 0)} × ${num(field.field_mm.height, 0)} мм`
+      : 'поле линзы неизвестно — размещение не проверено';
     const clean = p.clean_layer;
     const cleanLabel = clean ? `${num(clean.power, 1)} % · ${num(clean.frequency, 0)} кГц · ${num(clean.speed, 0)} мм/с · Q-Pulse ${num(clean.pulse_width, 0)} нс · шаг ${num(clean.interval ?? clean.line_interval, 3)} мм · ${clean.passes ?? 1} проход · ${clean.cross_hatch ? 'перекрестная заливка' : clean.bidirectional ? 'двунаправленная заливка' : 'однонаправленная заливка'}` : 'C00 — первый слой LightBurn';
     return h('div', {class: 'stack'},
@@ -105,7 +109,7 @@
         'Эта плата больше не актуальна для гравировки. Её параметры сохранены в истории исследования.') : null, ...warnings,
       h('div', {class: 'card stack'}, facts([['Идентификатор', p.plan_identifier], ['Полос', p.band_count], ['Размер, мм', p.size_mm ? `${num(p.size_mm.width, 1)} × ${num(p.size_mm.height, 1)}` : null],
         ['Тип платы', exp.test_name], ['Лазер', exp.device?.title || exp.device?.name], ['Линза', exp.lens || p.lens ? App.lensLabel(exp.lens || p.lens) : p.lens_id == null ? 'неизвестна' : null],
-        ['Титан', materialLabel], ['Чистка — первый слой C00', cleanLabel],
+        ['Титан', materialLabel], ['Рабочее поле', fieldLabel], ['Чистка — первый слой C00', cleanLabel],
         ['Подписи и маркеры', markers + (['Calibration plate', 'Laser capability test'].includes(p.mode) ? ' · слой C01, ArUco + QR ID' : '')]]),
         exp.test_description ? h('p', {class: 'muted small'}, exp.test_description) : null,
         h('p', {class: 'muted small'}, 'Чистка — первый слой C00. При экспорте файл LightBurn скачивается на компьютер; он не отправляется в лазер автоматически.'),

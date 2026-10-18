@@ -187,7 +187,7 @@ def calibrated_observations(store: Store, partition: tuple[int, int | None] | No
     where, args = ("AND o.device_id = ? AND o.lens_id IS ? ", partition) if partition is not None else ("", ())
     rows = store.query(
         "SELECT o.id, o.pair_id, o.layer_index, o.device_id, o.lens_id, o.lab_json, o.parameters_json, o.evidence_json, p.lightburn_name, "
-        "p.engraving_title FROM observation o JOIN pair p ON p.id = o.pair_id WHERE p.status = 'Accepted' AND o.layer_index >= 0 "
+        "p.engraving_title, o.engraving_id FROM observation o JOIN pair p ON p.id = o.pair_id WHERE p.status = 'Accepted' AND o.layer_index >= 0 "
         "AND o.model_eligible = 1 " + where + "ORDER BY o.id", args)
     out = []
     for r in rows:
@@ -197,7 +197,7 @@ def calibrated_observations(store: Store, partition: tuple[int, int | None] | No
         if evidence.get("role") not in (None, "test feature"):
             continue
         out.append({"observation_id": r["id"], "pair_id": r["pair_id"], "layer_index": r["layer_index"],
-                    "device_id": r["device_id"], "lens_id": r["lens_id"],
+                    "device_id": r["device_id"], "lens_id": r["lens_id"], "engraving_id": r["engraving_id"],
                     "work": r["engraving_title"] or r["lightburn_name"].rsplit(".", 1)[0], "layer": evidence.get("layer_name"),
                     "lab": json.loads(r["lab_json"]), "parameters": json.loads(r["parameters_json"])})
     return out
@@ -327,7 +327,7 @@ RAMP_MIN_POINTS = 4                        # coloured observations of one pair a
 RAMP_COST_CAP_DE = 15.0                    # a colour that fits nowhere on its ramp pulls the path no further than this
 RAMP_LIGHTNESS_WEIGHT = 0.35               # on a ramp the order is read mostly from hue: lightness follows the surface's roughness
                                            # and the light it mirrors, which the model does not know
-EXTRAPOLATION_FACTOR = 2.0                 # a computed dose farther than this from the measured doses is not proposed
+NEAREST_CELLS = 4                          # measured cells of a regime nearest in dose that judge a setting computed from its law
 
 
 def regime_of(parameters: dict) -> tuple[float, float] | None:
@@ -470,10 +470,51 @@ def _power_for_dose(dose_of, target: float, low: float = 1.0, high: float = 100.
     return round((low + high) / 2, 1)
 
 
-def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness: float, partition: tuple[int, int | None]) -> list[dict]:
+def _estimates(law: dict, members: list[dict], energy: float, table) -> tuple[dict | None, str | None]:
+    """Confidence, expected colour error and stability of a setting computed from a regime's law at ``energy`` (REQ-002,
+    DEC-029), from the law's fit and the measured cells of the regime nearest in dose; (None, why) when not all three can
+    be given, and then no setting is offered.
+
+    * expected colour error: the root mean square delta E between each of the nearest measured cells and the colour the
+      model gives it (the film the law predicts for the cell's dose, with the cell's own share of dark oxide): how far
+      the law and the film model miss the measured colours where the setting would be;
+    * stability: the total variance of those misses (the sum of the sample variances of L, a and b, in delta E squared,
+      as DEC-029 measures the scatter of repeats), from two cells on;
+    * confidence: the law's r2 times n / (n + 2), n the independent engravings the law rests on (DEC-029's shrinkage),
+      so a law from a single plate never claims more than a third.
+    """
+    nearest = sorted(members, key=lambda p: abs(np.log(p["dose"]["areal_energy_j_cm2"] / energy)))[:NEAREST_CELLS]
+    note = None
+    if law.get("r2") is None:
+        note = "the law of this pulse regime has no r2: the confidence of a computed setting is not known"
+    elif len(nearest) < 2:
+        note = "fewer than two measured cells near this dose: the stability of the colour there is not known"
+    if note is not None:
+        return None, note
+    thicknesses, shares, labs = table
+    misses = []
+    for p in nearest:
+        film = law["a"] * p["dose"]["areal_energy_j_cm2"] ** law["b"]
+        t = int(np.argmin(np.abs(thicknesses - film)))
+        s = int(np.argmin(np.abs(shares - p.get("dark_share", 0.0))))
+        misses.append(np.asarray(p["lab"], float) - labs[s, t])
+    misses = np.array(misses)
+    engravings = len({p.get("engraving_id") or p["pair_id"] for p in members})
+    return {"confidence": round(float(law["r2"]) * engravings / (engravings + 2), 3),
+            "expected_delta_e": round(float(np.sqrt(np.mean(np.sum(misses ** 2, axis=1)))), 2),
+            "stability": {"assessed": True, "variance": round(float(np.var(misses, axis=0, ddof=1).sum()), 2), "cells": len(nearest)},
+            "engravings": engravings}, None
+
+
+def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness: float, partition: tuple[int, int | None],
+               table) -> list[dict]:
     """For each pulse regime with a usable law of this laser and lens: the areal energy that law gives for ``thickness``,
     and a setting that puts it in: the measured observation of the regime nearest in dose, with the power that reaches
-    that dose on this laser and lens. Each entry names the laser and the lens."""
+    that dose on this laser and lens. Each entry names the laser and the lens.
+
+    Nothing is extrapolated: a dose outside the doses of the cells the law was fitted on gives no entry. A setting is
+    offered only with its confidence, expected colour error and stability (REQ-002); when those cannot all be given,
+    the entry keeps the dose and the nearest measured setting and says why no setting is computed (``note``)."""
     out = []
     for regime in regimes:
         law = regime["law"]
@@ -481,37 +522,42 @@ def _by_regime(store: Store, regimes: list[dict], points: list[dict], thickness:
             continue
         energy = float((thickness / law["a"]) ** (1 / law["b"]))
         low, high = regime["determined_dose_range"]
-        if not low / EXTRAPOLATION_FACTOR <= energy <= high * EXTRAPOLATION_FACTOR:
+        if not low <= energy <= high:              # beyond the measured doses of this regime: not computed (REQ-002)
             continue
         members = [p for p in points if p.get("dose") is not None and p["coloured"] and p["thickness_determined"]
                    and regime_of(p["parameters"]) == (regime["frequency"], regime["pulse_width"])]
         nearest = min(members, key=lambda p: abs(np.log(p["dose"]["areal_energy_j_cm2"] / energy)))
         base = nearest["parameters"]
+        estimates, why = _estimates(law, members, energy, table)
 
         def dose_of(power, base=base):
             dose = dose_features(store, *partition, {**base, "power": power})
             return None if dose is None else dose["areal_energy_j_cm2"]
 
-        power = _power_for_dose(dose_of, energy)
+        power = _power_for_dose(dose_of, energy) if estimates is not None else None
         settings = None if power is None else {**{k: base.get(k) for k in ("frequency", "pulse_width", "speed", "line_interval", "passes")},
                                                 "power": power}
         out.append({"device_id": partition[0], "lens_id": partition[1],
                     "frequency": regime["frequency"], "pulse_width": regime["pulse_width"], "areal_energy_j_cm2": round(energy, 1),
-                    "within_measured": bool(low <= energy <= high), "settings": settings, "law": law,
+                    "settings": settings, "estimates": estimates if settings is not None else None, "law": law,
+                    "note": why if estimates is None else (None if settings is not None else
+                                                           "no power up to 100 % reaches this dose at the speed and line interval of the nearest measured cell"),
                     "nearest_measured": {"work": nearest["work"], "layer": nearest["layer"], "lab": nearest["lab"], "pair_id": nearest["pair_id"],
                                          "thickness_nm": nearest["thickness_nm"], "parameters": base,
                                          "areal_energy_j_cm2": round(nearest["dose"]["areal_energy_j_cm2"], 1)}})
-    return sorted(out, key=lambda r: (not r["within_measured"], abs(np.log(r["areal_energy_j_cm2"] / r["nearest_measured"]["areal_energy_j_cm2"]))))
+    return sorted(out, key=lambda r: abs(np.log(r["areal_energy_j_cm2"] / r["nearest_measured"]["areal_energy_j_cm2"])))
 
 
 def settings_for_colour(store: Store, lab: list[float], partition: tuple[int, int | None] | None = None) -> dict:
     """What the film model says about a wanted colour: the film thickness (and dark share) that would give it, in every
     order that fits; which measured settings produced films of that thickness; and, for one laser and lens
     (``partition``), for each of its pulse regimes whose kinetics law is usable, the dose and a setting computed from the
-    law. Without a laser and lens no setting is computed. Measured settings are evidence; computed ones are marked so."""
+    law. Without a laser and lens no setting is computed. Measured settings are evidence; computed ones are marked so and
+    come only within the measured doses, each with its confidence, expected colour error and stability (REQ-002)."""
     fitted = report(store, partition=partition)
     params = Params(**fitted["params"])
-    fit = fit_point(lab, _table(params))
+    table = _table(params)
+    fit = fit_point(lab, table)
     candidates = [{"thickness_nm": fit["thickness_nm"], "dark_share": fit["dark_share"], "residual_de": round(fit["residual_de"], 2)}]
     if fit["alternative"] is not None:
         candidates.append({k: (round(v, 2) if isinstance(v, float) else v) for k, v in fit["alternative"].items()})
@@ -523,7 +569,7 @@ def settings_for_colour(store: Store, lab: list[float], partition: tuple[int, in
                                     "residual_de": p["residual_de"], "parameters": p["parameters"], "pair_id": p["pair_id"],
                                     "ambiguous": p["alternative"] is not None, "from_ramp": p.get("ramp") is not None}
                                    for p in sorted(near, key=lambda q: q["residual_de"])[:8]]
-        c["by_regime"] = (_by_regime(store, regimes, fitted["points"], c["thickness_nm"], partition)
+        c["by_regime"] = (_by_regime(store, regimes, fitted["points"], c["thickness_nm"], partition, table)
                           if partition is not None and c["dark_share"] < UNDETERMINED_DARK_SHARE else [])
     reachable = fit["residual_de"] <= 8.0
     usable = [r for r in regimes if r["usable"]]

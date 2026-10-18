@@ -154,8 +154,70 @@ def test_settings_computed_from_a_law_name_the_laser_and_lens_whose_measurements
                        "dose": {"areal_energy_j_cm2": float(e)}, "coloured": True, "thickness_determined": True,
                        "thickness_nm": float(3.0 * e ** 0.5)})
     regimes = oxide.regime_laws(points)
-    (entry,) = oxide._by_regime(store, regimes, points, 30.0, w["setup"])         # 100 J/cm2: reachable on this laser
+    (entry,) = oxide._by_regime(store, regimes, points, 30.0, w["setup"], oxide._table(oxide.Params()))   # 100 J/cm2: reachable on this laser
     assert (entry["device_id"], entry["lens_id"]) == w["setup"] and entry["settings"]["power"] is not None   # computed on this laser
+
+
+# -- REQ-002: a setting computed from a law carries its three estimates and never leaves the measured doses ----------------------
+def ramp(table, a=3.0, b=0.5, doses=np.geomspace(50, 800, 10), noise=0.0, pair_id=1, seed=0):
+    """Cells of one pulse regime whose film follows d = a E^b and whose colour is the model's colour of that film."""
+    thicknesses, shares, labs = table
+    rng = np.random.default_rng(seed)
+    out = []
+    for e in doses:
+        d = a * e ** b
+        lab = labs[0, int(np.argmin(np.abs(thicknesses - d)))] + rng.normal(0, noise, 3)
+        out.append({"pair_id": pair_id, "engraving_id": f"e{pair_id}", "work": "ramp", "layer": "C01", "lab": [float(v) for v in lab],
+                    "parameters": {"frequency": 40.0, "pulse_width": 200.0, "speed": 900.0, "line_interval": 0.025, "passes": 1, "power": 20.0},
+                    "dose": {"areal_energy_j_cm2": float(e)}, "coloured": True, "thickness_determined": True, "dark_share": 0.0,
+                    "thickness_nm": float(d * rng.uniform(0.98, 1.02))})
+    return out
+
+
+def test_a_setting_computed_from_a_law_carries_confidence_expected_colour_error_and_stability(store):
+    import obs
+    w = obs.setup(store)
+    table = oxide._table(oxide.Params())
+    points = ramp(table, noise=1.0)
+    regimes = oxide.regime_laws(points)
+    (entry,) = oxide._by_regime(store, regimes, points, 30.0, w["setup"], table)
+    e = entry["estimates"]
+    assert entry["settings"] is not None and entry["note"] is None
+    law = regimes[0]["law"]
+    assert e["confidence"] == round(law["r2"] * 1 / 3, 3) and e["engravings"] == 1         # one plate: never above a third (DEC-029)
+    assert 0 < e["expected_delta_e"] < 6 and e["stability"]["assessed"] and e["stability"]["cells"] == oxide.NEAREST_CELLS
+    assert e["stability"]["variance"] > 0
+    two = oxide.regime_laws(points + ramp(table, noise=1.0, pair_id=2, seed=1))
+    (again,) = oxide._by_regime(store, two, points + ramp(table, noise=1.0, pair_id=2, seed=1), 30.0, w["setup"], table)
+    assert again["estimates"]["engravings"] == 2 and again["estimates"]["confidence"] > e["confidence"] * 1.4   # 2/4 against 1/3
+
+
+def test_no_dose_beyond_the_measured_doses_of_a_regime_is_computed(store):
+    """The law reaches 30 nm at 100 J/cm2; the measured cells span 50-800. A film that needs 1100 J/cm2 is not extrapolated."""
+    import obs
+    w = obs.setup(store)
+    table = oxide._table(oxide.Params())
+    points = ramp(table)
+    regimes = oxide.regime_laws(points)
+    high = regimes[0]["determined_dose_range"][1]
+    beyond = 3.0 * (1.37 * high) ** 0.5                         # within the old allowance of twice the span, now refused
+    assert oxide._by_regime(store, regimes, points, beyond, w["setup"], table) == []
+    assert oxide._by_regime(store, regimes, points, 3.0 * 40 ** 0.5, w["setup"], table) == []          # below the lowest dose
+
+
+def test_without_all_three_estimates_no_setting_is_offered_and_the_entry_says_why(store):
+    import obs
+    w = obs.setup(store)
+    table = oxide._table(oxide.Params())
+    points = ramp(table)
+    regimes = oxide.regime_laws(points)
+    regimes[0]["law"] = dict(regimes[0]["law"], r2=None)
+    (entry,) = oxide._by_regime(store, regimes, points, 30.0, w["setup"], table)
+    assert entry["settings"] is None and entry["estimates"] is None
+    assert entry["note"] == "the law of this pulse regime has no r2: the confidence of a computed setting is not known"
+    assert entry["nearest_measured"]["parameters"]["power"] == 20.0                  # the measured setting is still shown
+    estimates, note = oxide._estimates(regimes[0]["law"] | {"r2": 0.9}, points[:1], 100.0, table)
+    assert estimates is None and note.startswith("fewer than two measured cells near this dose")
 
 
 def test_the_power_for_a_dose_is_found_and_none_when_no_power_reaches_it():

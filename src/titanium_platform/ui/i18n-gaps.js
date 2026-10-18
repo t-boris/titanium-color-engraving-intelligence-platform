@@ -51,6 +51,13 @@
     // край рамки по сторонам (REQ-024, REQ-027)
     [/^The edge of the frame was not found on the (left|right|top|bottom) side: a margin of (\S+)% \((\S+) mm\) is assumed there\.$/i,
       (m) => `Край рамки ${{left: 'слева', right: 'справа', top: 'сверху', bottom: 'снизу'}[m[1].toLowerCase()]} не найден: там принят скрытый край ${m[2]} % (${m[3]} мм)`],
+    // настройка по закону толщины от дозы — только с тремя оценками и в пределах измеренных доз (REQ-002)
+    [/^the law of this pulse regime has no r2: the confidence of a computed setting is not known$/i,
+      'У закона этого режима импульса нет r²: уверенность рассчитанной настройки неизвестна'],
+    [/^fewer than two measured cells near this dose: the stability of the colour there is not known$/i,
+      'Рядом с этой дозой меньше двух измеренных ячеек: стабильность цвета там неизвестна'],
+    [/^no power up to 100 % reaches this dose at the speed and line interval of the nearest measured cell$/i,
+      'Ни одна мощность до 100 % не даёт этой дозы при скорости и шаге ближайшей измеренной ячейки'],
     // поле линзы неизвестно: размещение не проверено, а не «помещается» (REQ-018)
     [/^the work field of the lens is unknown: the placement was not checked$/i, 'Поле линзы неизвестно — размещение не проверено'],
   ]);
