@@ -14,6 +14,7 @@
   const STAGE = {measured: 'измерено', candidate: 'кандидат', repeated: 'повторено', validated: 'валидировано', production: 'производственное'};
   const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
   const taskName = (t) => (t ? Tasks.name(t) : 'задача не определена');     // задачи — общий словарь (REQ-020, tasks.js)
+  let goalNames = {};                     // цели руководства (/application-goals): задача исследования AI по-русски
   const stockName = (s) => (s ? [s.name, s.grade, s.batch].filter(Boolean).join(' · ') || 'титан без названия' : 'титан не указан');
   const setupName = (c) => `${c.device || 'лазер № ' + c.device_id} · ${App.lensLabel(c.lens)}`;
   const settings = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с · ${num(p.pulse_width, 0)} нс · шаг ${num(p.line_interval, 4)} мм · ${p.passes ?? '—'} пр.`;
@@ -68,7 +69,7 @@
       }
       case 'single_engraving': return (c.engravings_needed_for_validation == null ? 'Сколько гравировок нужно для валидации, не задано: критерии не согласованы'
         : `Для валидации нужно ещё независимых гравировок: ${c.engravings_needed_for_validation}`) + ` · можно повторить на плате: ${c.repeatable_keys.length} из ${c.recipes.length}`;
-      case 'insight': return `Сохранено AI-исследователем ${when(c.saved_at)} · задача исследования: ${c.purpose}`;
+      case 'insight': return `Сохранено AI-исследователем ${when(c.saved_at)} · задача исследования: ${goalNames[c.purpose] || c.purpose}`;
       default: return null;
     }
   }
@@ -166,10 +167,11 @@
 
   App.register({id: 'findings', async render(ctx) {
     const q = ctx.query;
-    const [runs, schedule, result] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'),
+    const [runs, schedule, goals, result] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'), get('/application-goals'),
       get(`/analysis/runs/${q.run || 'latest'}?` + new URLSearchParams(Object.entries({kind: q.kind, task: q.task, setup: q.setup, material: q.material})
         .filter(([, v]) => v)).toString())]);
     const run = result.run;
+    goalNames = Object.fromEntries(goals.map((g) => [g.id, g.name]));
     const route = (change) => {
       const next = Object.fromEntries(Object.entries({...q, ...change}).filter(([, v]) => v));
       App.go('/findings?' + new URLSearchParams(next).toString());

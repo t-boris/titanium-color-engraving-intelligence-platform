@@ -4,6 +4,8 @@
   const {h, btn, field, link, pill, get, post, modal, table, num, labText, swatch, facts} = App;
   const {STAGE, stab, params} = KnowledgeView;
   const SVG = 'http://www.w3.org/2000/svg';
+  const PAIR_STATUS = {'Awaiting check': 'ожидает проверки', 'Needs correction': 'требует исправления', 'Ready to accept': 'готова к принятию',
+    Accepted: 'принята'};
 
   function mapPlot(samples) {
     if (!samples.length) return h('p', {class: 'muted'}, 'Нет измеренных цветов');
@@ -91,7 +93,7 @@
     return h('div', {class: 'card stack'},
       h('div', {class: 'row'}, h('div', {}, h('h3', {}, `${set.provisional ? 'Предварительные RAW-наблюдения' : 'RAW-наблюдения'} · пара ${set.pair_id}`),
         h('p', {class: 'muted small'}, `${set.photo_name || 'фото'} · ${set.lightburn_name || 'LightBurn'}${material ? ` · ${material}` : ''}`))),
-      set.provisional ? h('div', {class: 'alert warn'}, `Результаты уже измерены, но ещё не приняты: ${set.masks_reviewed ? 'маски проверены' : 'нужно проверить наложение масок'}; состояние пары — ${set.status}. Это предварительные данные.`) : null,
+      set.provisional ? h('div', {class: 'alert warn'}, `Результаты уже измерены, но ещё не приняты: ${set.masks_reviewed ? 'маски проверены' : 'нужно проверить наложение масок'}; состояние пары — ${PAIR_STATUS[set.status] || set.status}. Это предварительные данные.`) : null,
       ...(set.warnings || []).map((warning) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(warning))),
       h('div', {class: 'alert warn'}, 'Это оттенки и Lab, измеренные относительно данного RAW-снимка. Карта показывает их для сравнения; они не участвуют в стандартных цветовых прогнозах и не сравниваются между разными фотосессиями.'),
       variants.length ? h('section', {}, h('h4', {}, `Цветовые варианты из тестовых квадратов · ${variants.length}`),

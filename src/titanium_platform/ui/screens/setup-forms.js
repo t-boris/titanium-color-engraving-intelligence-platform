@@ -65,7 +65,7 @@ const SetupForms = (() => {
         try { if (r.id) await put('/setups/' + r.id, body()); else await post('/setups', body()); toast('Установка съёмки сохранена', 'ok'); reload('rigs'); }
         catch (e) { fail(e); }
       }, 'primary');
-      const remove = r.id ? btn('Удалить', () => confirmBox('Удалить установку', `«${r.name}». Установку, на которую сняты сохранённые фотографии, удалить нельзя.`, 'Удалить',
+      const remove = r.id ? btn('Удалить', () => confirmBox('Удалить установку', `«${I18N.name(r.name)}». Установку, на которую сняты сохранённые фотографии, удалить нельзя.`, 'Удалить',
         async () => { await del('/setups/' + r.id); toast('Установка удалена', 'ok'); reload('rigs'); }), 'danger') : null;
       return h('div', {class: 'card stack'}, h('strong', {}, r.id ? `Установка № ${r.id}${r.last_used ? ' · использовалась в прошлый раз' : ''}` : 'Добавить установку'),
         r.legacy ? h('div', {class: 'alert warn'}, 'Заглушка для пар, загруженных до того, как у каждой фотографии появилась установка съёмки. Новые фотографии на неё не загружаются.') : null,

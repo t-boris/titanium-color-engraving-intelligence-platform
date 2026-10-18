@@ -23,7 +23,7 @@ const DeviceReport = (() => {
     const photo = d.documents.find((x) => x.kind === 'waveform');
     const blocks = charts.waveforms.map((w) => {
       const s = w.stats, ok = s.ratio != null && s.ratio > 0.7 && s.ratio < 1.3;
-      return h('div', {class: 'stack'}, h('h3', {}, w.title), DevicePlots.waveform(w),
+      return h('div', {class: 'stack'}, h('h3', {}, I18N.name(w.title)), DevicePlots.waveform(w),
         h('p', {class: 'muted small'}, `Пик ${+s.peak_kw.toPrecision(3)} кВт на ${+s.peak_t_ns.toPrecision(3)} нс. Энергия по кривой ≈ ${+s.energy_mj.toPrecision(3)} мДж`
           + (s.passport_energy_mj ? `, по паспорту (60 Вт ÷ ${w.frequency_khz} кГц) ${+s.passport_energy_mj.toPrecision(3)} мДж.` : '.')),
         s.ratio != null ? pill(ok ? 'оцифровка сходится с паспортом' : 'расхождение с паспортом: ×' + s.ratio, ok ? 'ok' : 'warn') : null,

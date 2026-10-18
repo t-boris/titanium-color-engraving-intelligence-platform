@@ -21,7 +21,7 @@
     // нестабильность
     [re('repeat engravings of this recipe vary by # ΔE², above the saved variance threshold #'),
       (m) => `Повторные гравировки этого рецепта расходятся на ${m[1]} ΔE² — выше сохранённого порога дисперсии ${m[2]}`],
-    [/^this knowledge entry is questioned: (.*)$/i, (m) => 'Запись знания под вопросом: ' + m[1].split('; ').map(t).join('; ')],
+    [/^this knowledge entry is questioned: (.*)$/i, (m) => 'Запись знания под вопросом: ' + t(m[1])],
     // аномалии
     [re('observation # lies # ΔE from the mean of its recipe, beyond the saved tolerance #'),
       (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от среднего своего рецепта — дальше сохранённого допуска ${m[3]}`],

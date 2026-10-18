@@ -5,7 +5,8 @@
   const FIELD = {power: 'Мощность', frequency: 'Частота', speed: 'Скорость', 'pulse width': 'Длительность импульса', 'line interval': 'Интервал линий',
     'cell width': 'Ширина ячейки', 'cell height': 'Высота ячейки', gap: 'Зазор', 'delta E tolerance': 'Допуск ΔE', 'variance threshold': 'Порог дисперсии',
     'repeat threshold': 'Порог повторов', focus: 'Фокус', name: 'Название', camera: 'Камера', lighting: 'Освещение',
-    angle: 'Угол съёмки', 'reference chart': 'Эталонная карта', 'material name': 'Название материала'};
+    angle: 'Угол съёмки', 'reference chart': 'Эталонная карта', 'material name': 'Название материала',
+    bidirectional: 'Двунаправленная гравировка', cross_hatch: 'Перекрёстная штриховка'};
   const f = (s) => FIELD[String(s).replace(/ min$| max$/, '')] || s;
   I18N.add([
     // числа, стенд, материал
@@ -53,20 +54,19 @@
     [/^the selected titanium stock was not found; choose it again$/i, 'Выбранная заготовка титана не найдена; выберите её ещё раз'],
     [/^the photograph has no usable color measurement basis$/i, 'Для измерения цвета на фотографии нет подходящего основания'],
     [/^select a titanium stock from the list$/i, 'Выберите заготовку титана из списка'],
-    [/^only (\d+) registration markers detected; at least three are needed$/i, (m) => `Распознано регистрационных меток: ${m[1]}; необходимо не менее трёх`],
     [/^Manual alignment was used for this plate; its QR identifier could not be verified\. Check the layer overlay before accepting measurements\.$/i,
       'Плата совмещена вручную; QR-идентификатор не удалось проверить. Перед принятием измерений проверьте наложение контуров слоёв.'],
     [/^pulse width is missing from this LightBurn layer$/i, 'В этом слое LightBurn не задан Q-Pulse'],
     [/^line interval is missing from this LightBurn layer$/i, 'В этом слое LightBurn не задан интервал линий'],
     [/^pass count is missing from this LightBurn layer$/i, 'В этом слое LightBurn не задано число проходов'],
-    [/^numPasses: expected a positive integer, got (\d+)$/i, (m) => `numPasses: ожидалось положительное целое число, получено ${m[1]}`],
-    [/^globalRepeat: expected a positive integer, got (\d+)$/i, (m) => `globalRepeat: ожидалось положительное целое число, получено ${m[1]}`],
-    [/^fewer than three registration markers detected; missing (\d+)$/i, (m) => `Найдено меньше трёх регистрационных меток; отсутствует ${m[1]}`],
+    [/^numPasses: expected a positive integer, got (\S+)$/i, (m) => `numPasses: ожидалось положительное целое число, получено ${m[1]}`],
+    [/^globalRepeat: expected a positive integer, got (\S+)$/i, (m) => `globalRepeat: ожидалось положительное целое число, получено ${m[1]}`],
+    [/^fewer than three registration markers detected; missing (.+)$/i, (m) => `Найдено меньше трёх регистрационных меток; не найдены метки ${m[1]}`],
     [/^global passes must be a whole number from 1 to 100$/i, 'Общее число проходов должно быть целым от 1 до 100'],
     [/^(\d+) cells need more than the (\d+) test layers available after cleaning and markers$/i, (m) => `${m[1]} ячейкам требуется больше тестовых слоёв, чем доступно после очистки и маркеров (${m[2]})`],
     [/^the engraving would exceed LightBurn's (\d+) output layers \(colors 00–29\); T1\/T2 are not output layers$/i, (m) => `Гравировка превышает лимит выходных слоёв LightBurn (${m[1]}, цвета 00–29); T1/T2 не являются выходными слоями`],
     [/^the LightBurn layer indices overlap; every output operation needs its own color layer$/i, 'Индексы слоёв LightBurn пересекаются; для каждой выходной операции нужен отдельный цветовой слой'],
-    [/^(\d+) must be true or false$/i, (m) => `${m[1]} должно иметь значение true или false`],
+    [/^(.+) must be true or false$/i, (m) => `${f(m[1])}: допустимо только «да» или «нет»`],
     [/^choose the lens or mark it unknown$/i, 'Выберите линзу или отметьте, что она неизвестна'],
   ]);
 
@@ -133,5 +133,23 @@
   I18N.add([
     [/^the saved marker layer settings are not offered by this laser: (.+)$/i,
       (m) => `Сохранённые параметры слоя меток не подходят этому лазеру (Настройки → «Метки для фото»): ${I18N.tr(m[1])}`],
+  ]);
+
+  // запись не найдена (ответ 404) и отказы маршрутов API
+  const RECORD = {plan: ['План', 'не найден'], pair: ['Пара', 'не найдена'], proposal: ['Предложение', 'не найдено'],
+    'laser device': ['Лазер', 'не найден'], document: ['Документ', 'не найден'], experiment: ['Эксперимент', 'не найден'],
+    knowledge: ['Запись знания', 'не найдена'], lens: ['Линза', 'не найдена'], 'research session': ['Сеанс исследования', 'не найден'],
+    'capture setup': ['Установка съёмки', 'не найдена']};
+  I18N.add([
+    [new RegExp(`^(${Object.keys(RECORD).join('|')}) (\\S+) not found$`, 'i'),
+      (m) => { const [what, missing] = RECORD[m[1].toLowerCase()]; return `${what} ${/^\d+$/.test(m[2]) ? '№ ' : ''}${m[2]} ${missing}`; }],
+    [/^the stored (source photograph|LightBurn file) is missing$/i,
+      (m) => (/photograph/i.test(m[1]) ? 'Сохранённая исходная фотография' : 'Сохранённый файл LightBurn') + ' отсутствует на диске'],
+    [/^observation (\d+) is immutable; model-derived values are stored separately$/i,
+      (m) => `Наблюдение № ${m[1]} не меняется: значения, вычисленные моделью, хранятся отдельно`],
+    [/^targets of this plan are already used by an experiment proposal$/i,
+      'Целевые цвета этого плана уже используются в предложении эксперимента'],
+    [/^the trajectory and the allowed entries must be JSON lists of whole numbers$/i,
+      'Цветовой путь и разрешённые записи знаний должны быть JSON-списками целых чисел'],
   ]);
 })();

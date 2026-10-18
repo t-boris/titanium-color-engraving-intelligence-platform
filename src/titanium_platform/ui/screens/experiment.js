@@ -125,8 +125,8 @@
 
     // -- плата, выводы, действия -------------------------------------------------------------------------------------
     const plate = exp.plate ? h('div', {class: 'card stack'}, h('h3', {}, 'Плата'),
-      h('p', {}, h('strong', {}, exp.plate.name)),
-      h('p', {class: 'muted small'}, [exp.plate.test_name || exp.plate.mode, `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
+      h('p', {}, h('strong', {}, I18N.name(exp.plate.name))),
+      h('p', {class: 'muted small'}, [exp.plate.test_name || I18N.name(exp.plate.mode), `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
         exp.plate.identifier].filter(Boolean).join(' · ')),
       exp.plate.description ? h('p', {class: 'small'}, exp.plate.description) : null,
       // a plate of the experiment designer answers its proposal (REQ-022): the proposal shows this plate's result
@@ -168,7 +168,7 @@
     return h('div', {class: 'stack experiment'},
       h('div', {class: 'row exp-head'}, h('div', {}, link('/experiments', '← Эксперименты'),
         h('h2', {}, I18N.name(exp.title)),
-        h('p', {class: 'sub'}, [exp.kind, exp.laser, exp.lens, exp.material].filter(Boolean).join(' · ')
+        h('p', {class: 'sub'}, [I18N.name(exp.kind), exp.laser, exp.lens, exp.material].filter(Boolean).join(' · ')
           + (exp.created_at ? ` · ${when(exp.created_at)}` : '')),
         (exp.tasks || []).length ? h('div', {class: 'row small'}, h('span', {class: 'muted'}, 'Задачи:'), ...exp.tasks.map((k) => pill(Tasks.name(k)))) : null),
         h('span', {class: 'spacer'}), pill(exp.status_text, STATUS_KIND[exp.status] || ''), addPhoto, remove),

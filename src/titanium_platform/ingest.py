@@ -38,7 +38,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 import cv2
@@ -819,7 +819,7 @@ def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) 
 
 
 # -- checking ------------------------------------------------------------------------------------------
-def lens_check(store: Store, plate: dict, chosen_lens_id: int | None, kind: str = "plate") -> dict:
+def lens_check(store: Store, plate: dict, chosen_lens_id: int | None, kind: Literal["plate", "plan"] = "plate") -> dict:
     """Compare the lens a plate (or an engraving plan, ``kind="plan"``) was made for with the lens installed now and with the
     lens the operator chose for the photograph (DEC-041, REQ-019). A difference is a warning, never a block; the plate's or
     plan's lens, when it is recorded, is the lens of the measurements (``lens_id``), so comparability follows the historical

@@ -16,7 +16,8 @@ def source(name: str) -> str:
 
 def test_the_gap_translations_are_loaded_with_the_other_tables_and_before_the_screens():
     scripts = re.findall(r'<script src="(/[^"]+)"', source("index.html"))
-    assert scripts.index("/i18n-gaps.js") == scripts.index("/i18n-data.js") + 1 and scripts.index("/i18n-gaps.js") < scripts.index("/app.js")
+    tables = [i for i, script in enumerate(scripts) if script.startswith("/i18n")]
+    assert scripts.index("/i18n-gaps.js") == max(tables) and max(tables) < scripts.index("/app.js")   # after every other table
 
 
 # -- REQ-002, REQ-004 AC3/AC5: the discrete conversion and the plan show the three estimates of every match and layer --------

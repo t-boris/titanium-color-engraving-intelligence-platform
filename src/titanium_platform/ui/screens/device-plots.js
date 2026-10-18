@@ -37,7 +37,7 @@ const DevicePlots = (() => {
   function waveform(w) {
     const points = w.t_ns.map((t, i) => [t, w.p_kw[i]]), s = w.stats;
     const marks = [{x: s.peak_t_ns, y: s.peak_kw, label: `пик ${+s.peak_kw.toPrecision(3)} кВт`, color: '#f2ce8b'}];
-    return plot({title: 'Форма импульса: ' + w.title, xLabel: 't, нс', yLabel: 'P, кВт', series: [{name: w.title, points, width: 2}], marks});
+    return plot({title: 'Форма импульса: ' + I18N.name(w.title), xLabel: 't, нс', yLabel: 'P, кВт', series: [{name: I18N.name(w.title), points, width: 2}], marks});
   }
 
   return {cutoff, energy, byFrequency, waveform};

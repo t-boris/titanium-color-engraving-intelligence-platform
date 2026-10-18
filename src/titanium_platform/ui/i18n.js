@@ -2,24 +2,79 @@
    Известное сообщение получает русский вариант; неизвестное английское показывается с пометкой.
    Уже локализованные сервером сообщения сохраняются без пометки. Правила добавляют файлы i18n-*.js через I18N.add.
    Запись: [регулярное выражение, строка или функция(совпадение)]. Перевод, оканчивающийся на «: »,
-   получает хвост исходного сообщения после совпавшей части. */
+   получает хвост исходного сообщения после совпавшей части. Сообщение, вложенное в другое («Фотография: …»), правило
+   переводит тем же I18N.tr; несколько сообщений, соединённых «; », переводятся по одному. */
 'use strict';
 const I18N = (() => {
   const rules = [];
+  const RUSSIAN = /[\u0400-\u04ff]/i;
+  const UNTRANSLATED = ' (сообщение сервера, без перевода)';
+  const PIECE_PARTS = 3;           // одно сообщение сервера содержит не больше двух своих «; »
   function add(list) { rules.push(...list); }
-  function tr(message) {
-    const text = String(message || '');
+  /** Перевод по первому подходящему правилу: {out, exact — правило охватывает всё сообщение (его выражение кончается на $),
+      а не только начало, spans — изменяемая часть совпадения захватила «; », то есть границу между сообщениями}; null —
+      если правила нет. */
+  function rule(text) {
     for (const [re, to] of rules) {
       const m = text.match(re);
       if (m) {
         const out = typeof to === 'function' ? to(m) : to;
-        return /: $/.test(out) ? out + text.replace(re, '').trim() : out;
+        const tail = /: $/.test(out) ? text.replace(re, '').trim() : '';
+        return {out: out + tail, exact: !tail && re.source.endsWith('$'),
+          spans: [...m.slice(1), tail].some((part) => (part || '').includes('; '))};
       }
     }
-    if (/[\u0400-\u04ff]/i.test(text)) return text;
-    return text ? text + ' (сообщение сервера, без перевода)' : 'Неизвестная ошибка';
+    return null;
   }
-  return {add, tr, count: () => rules.length};
+  /** Список сообщений сервера через «; » (так сервер соединяет несколько причин): каждое сообщение переводится своим
+      правилом. Сообщение может содержать «; » и само, поэтому из всех разбиений на переводимые куски (не больше
+      PIECE_PARTS частей, переведённых целиком, вместе с вложенным сообщением) берётся то, что требует меньше всего
+      допущений. Кусок, правило которого охватывает его целиком и не захватывает «; » изменяемой частью, допущений не
+      требует; иначе — одно допущение и ещё по одному на каждую «; », которую кусок поглотил; при равенстве берётся
+      разбиение на большее число кусков. Уже русская часть остаётся как есть. null — если разбить нельзя. */
+  function list(text) {
+    const parts = text.split('; ');
+    if (parts.length < 2) return null;
+    const memo = new Map();
+    const piece = (i, j) => {             // [перевод куска, число допущений] или null
+      const s = parts.slice(i, j).join('; ');
+      const found = rule(s);
+      if (!found) return j - i === 1 && RUSSIAN.test(s) ? [s, 0] : null;      // уже русская часть — по одной
+      return found.out.includes(UNTRANSLATED) ? null : [found.out, found.exact && !found.spans ? 0 : j - i];
+    };
+    const from = (i) => {                  // лучший перевод частей с i-й до конца: {out, cost, count} или null
+      if (i === parts.length) return {out: [], cost: 0, count: 0};
+      if (!memo.has(i)) {
+        let best = null;
+        for (let j = i + 1; j <= Math.min(parts.length, i + PIECE_PARTS); j++) {
+          const done = piece(i, j);
+          const rest = done && from(j);
+          if (!rest) continue;
+          const cost = done[1] + rest.cost, count = 1 + rest.count;
+          if (!best || cost < best.cost || (cost === best.cost && count > best.count)) best = {out: [done[0], ...rest.out], cost, count};
+        }
+        memo.set(i, best);
+      }
+      return memo.get(i);
+    };
+    const best = from(0);
+    return best && best.out.join('; ');
+  }
+  /** Сначала список: правило, подошедшее к началу текста или захватившее его хвост, не должно проглотить следующие
+      сообщения. Одно сообщение с «; » внутри переводится своим правилом целиком. */
+  /** Перевод известного сообщения сервера или null: текст, который написал оператор, показывается как есть. */
+  function known(message) {
+    const text = String(message || '');
+    return list(text) ?? rule(text)?.out ?? null;
+  }
+  function tr(message) {
+    const text = String(message || '');
+    const found = known(text);
+    if (found !== null) return found;
+    if (RUSSIAN.test(text)) return text;
+    return text ? text + UNTRANSLATED : 'Неизвестная ошибка';
+  }
+  return {add, tr, known, count: () => rules.length};
 })();
 
 I18N.add([
@@ -40,8 +95,9 @@ I18N.add([
   [/^no reference chart was detected/i, 'Эталонная карта не обнаружена: наблюдения создать нельзя'],
   [/^Alignment: no registration markers were detected: place the four image corners/i, 'Маркеры не найдены: поставьте четыре угла работы на фотографии'],
   [/^Alignment: registration markers not detected/i, 'Регистрационные маркеры не распознаны. Сопоставление остановлено, без догадок'],
-  [/^Alignment: only (\d+) registration markers detected; at least three are needed$/i, (m) => `Распознано меток: ${m[1]}. Для надёжного совмещения нужны минимум три`],
-  [/^Alignment: the experiment identifier QR code could not be read in the aligned photograph$/i, 'QR-код не удалось прочитать после проверки вариантов совмещения'],
+  // сообщения совмещения приходят и сами по себе, и внутри «Alignment: …» — перевод один и тот же
+  [/^(?:Alignment: )?only (\d+) registration markers detected; at least three are needed$/i, (m) => `Распознано меток: ${m[1]}. Для надёжного совмещения нужны минимум три`],
+  [/^(?:Alignment: )?the experiment identifier QR code could not be read in the aligned photograph$/i, 'QR-код не удалось прочитать после проверки вариантов совмещения'],
   [/^Alignment: the experiment identifier QR code could not be read/i, 'Идентификатор эксперимента (QR) не прочитан. Сопоставление остановлено'],
   [/^Alignment: the photographed plate is (\S+) but the LightBurn file is (\S+)/i, (m) => 'На фотографии плата ' + m[1] + ', а в файле LightBurn — ' + m[2]],
   [/^Alignment: the four corners must lie inside the photograph/i, 'Углы должны лежать внутри фотографии'],
@@ -69,5 +125,5 @@ I18N.add([
   [/^No readable, comparable layer could be measured/i, 'Ни один читаемый и сопоставимый слой не удалось измерить'],
   [/^this plate was made for a different laser than the one selected/i, 'Плата сделана для другого лазера, чем выбранный: выберите лазер платы'],
   [/^experiment identifier (\S+) is not known to this system/i, (m) => 'Идентификатор эксперимента ' + m[1] + ' системе неизвестен'],
-  [/^LightBurn file: /i, 'Файл LightBurn не читается: '],
+  [/^LightBurn file: (.+)$/i, (m) => 'Файл LightBurn не читается: ' + I18N.tr(m[1])],
 ]);

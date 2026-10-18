@@ -9,6 +9,8 @@
   const REFERENCE = {chart: ['по эталонной карте', 'ok'], 'clean titanium': ['относительно камеры, приведены к чистому титану своего снимка', 'warn'],
     'as photographed': ['относительно камеры, как сняты', 'warn']};
   const SOURCE_REFERENCE = {chart: 'по карте', 'clean titanium': 'к чистому титану', 'as photographed': 'как снят'};
+  const DITHER = {stucki: 'Стаки', jarvis: 'Джарвис', threshold: 'порог', grayscale: 'градации серого', sketch: 'эскиз', '3dslice': '3D-слайс',
+    atkinson: 'Аткинсон', dither: 'растр', halftone: 'полутона', newsprint: 'газетный растр', passthrough: 'без растрирования'};
   const OVERRIDES = [['min_power', 'Мин. мощность, %'], ['max_power', 'Макс. мощность, %'], ['speed', 'Скорость, мм/с'], ['frequency', 'Частота, кГц'],
     ['pulse_width', 'Длительность импульса, нс'], ['line_interval', 'Шаг линий, мм'], ['passes', 'Проходы']];
   const value = (v, d = 2) => (v == null ? '—' : String(+(+v).toFixed(d)));
@@ -45,7 +47,7 @@
   }
 
   function layerCard(layer, cacheId) {
-    const head = h('div', {class: 'row'}, h('h3', {}, `Слой ${layer.name}`), pill(layer.dither || 'режим не указан'),
+    const head = h('div', {class: 'row'}, h('h3', {}, `Слой ${layer.name}`), pill(layer.dither ? DITHER[layer.dither] || layer.dither : 'режим не указан'),
       (layer.settings.overridden || []).length ? pill('настройки изменены', 'warn') : null);
     if (layer.refused) return h('section', {class: 'card stack'}, head, h('div', {class: 'alert warn', role: 'status'}, I18N.tr(layer.refused)));
     const img = h('img', {class: 'pp-image', alt: `Картинка слоя ${layer.name} и её прогноз на титане`});

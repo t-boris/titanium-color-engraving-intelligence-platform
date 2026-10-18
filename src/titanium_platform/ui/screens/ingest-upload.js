@@ -30,7 +30,7 @@ const IngestUpload = (() => {
   /** Выбор установки съёмки: по умолчанию та, что была в прошлый раз (или указанная). Эталонные значения карты берутся из неё (DEC-025). */
   function rigPicker(rigs, preferred) {
     const pick = h('select', {'aria-label': 'Установка съёмки'},
-      rigs.map((r) => h('option', {value: r.id}, r.name + (r.last_used ? ' · как в прошлый раз' : ''))));
+      rigs.map((r) => h('option', {value: r.id}, I18N.name(r.name) + (r.last_used ? ' · как в прошлый раз' : ''))));
     const chosen = rigs.find((r) => r.id === preferred) || rigs.find((r) => r.last_used) || rigs[0];
     if (chosen) pick.value = chosen.id;
     return pick;

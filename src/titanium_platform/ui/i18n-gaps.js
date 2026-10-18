@@ -9,6 +9,9 @@
   const PARAM = {power: 'Мощность', speed: 'Скорость', frequency: 'Частота', 'q-pulse': 'Q-Pulse', interval: 'Шаг строк', passes: 'Проходы'};
   const UNIT = {kHz: 'кГц', ns: 'нс', 'mm/s': 'мм/с', mm: 'мм'};
   const param = (s) => PARAM[s.toLowerCase()] || s;
+  const MODE = {'Calibration plate': 'Калибровочная матрица', 'Laser capability test': 'Тест возможностей лазера',
+    'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
+    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Восстановленный из файла', 'Vector job': 'Векторная работа'};
   const units = (s) => s.replace(/(\d)\s+(kHz|ns|mm\/s|mm)(?![\w/])/g, (_, d, u) => `${d} ${UNIT[u]}`);
   const NAMES = [
     // «Material test: Power x Speed · 330 kHz 4 ns · IMG_1234» — заголовок матрицы, прочитанной с фотографии
@@ -18,6 +21,12 @@
     [/^([A-Za-z-]+) (-?[\d.]+)(?: x ([A-Za-z-]+) (-?[\d.]+))?$/, (m) => (PARAM[m[1].toLowerCase()] && (!m[3] || PARAM[m[3].toLowerCase()])
       ? `${param(m[1])} ${m[2]}${m[3] ? ` × ${param(m[3])} ${m[4]}` : ''}` : null)],
     [/^Cell (\d+),(\d+)$/, (m) => `Ячейка ${m[1]},${m[2]}`],
+    // вид плана и название платы, которые сервер хранит по-английски: «Calibration plate», «Plate TCE-… (speed 900)»
+    [/^(Calibration plate|Laser capability test|Discrete color engraving|Tonal photo engraving|Color-path photo engraving|Restored from file|Vector job)$/,
+      (m) => MODE[m[1]]],
+    [/^Plate (\S+) \(speed (-?[\d.]+)\)$/, (m) => `Плата ${m[1]} (скорость ${m[2]} мм/с)`],
+    [/^waveform$/, () => 'Форма импульса'],                       // осциллограмма, которой не дали названия
+    [/^Photo capture \(no rig\)$/, () => 'Съёмка без установки (ранние фотографии)'],   // setup.LEGACY_SETUP_NAME
   ];
   /** Название-данные по-русски, если оно сложено сервером по известному образцу; иначе — как есть, без пометки «без перевода»:
       название работы, которое дал оператор, не переводится. */

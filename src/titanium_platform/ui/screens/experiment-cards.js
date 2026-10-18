@@ -7,13 +7,13 @@ const ExperimentCards = (() => {
 
   function card(e) {
     return h('article', {class: 'dashboard-item exp-card'},
-      h('a', {class: 'exp-thumb-link', href: '#/experiment/' + encodeURIComponent(e.key), 'aria-label': `Открыть эксперимент ${e.title}`},
+      h('a', {class: 'exp-thumb-link', href: '#/experiment/' + encodeURIComponent(e.key), 'aria-label': `Открыть эксперимент ${I18N.name(e.title)}`},
         e.main_pair_id ? h('img', {class: 'exp-thumb', loading: 'lazy', alt: '', src: `/api/pairs/${e.main_pair_id}/photo.png?visibility=lifted`})
           : h('div', {class: 'exp-thumb exp-thumb-empty'}, 'Плата')),
       h('div', {class: 'exp-card-body'},
-        h('div', {class: 'dashboard-item-top'}, link('/experiment/' + encodeURIComponent(e.key), e.title),
+        h('div', {class: 'dashboard-item-top'}, link('/experiment/' + encodeURIComponent(e.key), I18N.name(e.title)),
           pill(e.status_text, e.status === 'accepted' ? 'ok' : 'warn')),
-        h('p', {class: 'dashboard-item-type'}, e.kind),
+        h('p', {class: 'dashboard-item-type'}, I18N.name(e.kind)),
         h('p', {class: 'dashboard-meta'}, [e.laser, e.lens, e.material].filter(Boolean).join(' · ') || 'Лазер не указан'),
         (e.tasks || []).length ? h('p', {class: 'dashboard-meta'}, 'Задачи: ' + e.tasks.map((k) => Tasks.name(k)).join(', ')) : null,
         h('div', {class: 'dashboard-item-foot'},

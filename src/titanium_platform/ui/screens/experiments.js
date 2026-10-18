@@ -8,6 +8,8 @@
     'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
     'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Восстановленный из файла'};
   const PURPOSE = {line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'};
+  const PLATE_TYPE = {text_readability: 'надписи 3 × 3, три размера', material_matrix: 'матрица 3 × 3', compact_capability: 'компактная комплексная проверка',
+    calibration: 'калибровочная матрица', hatch_interval: 'шаг заливки'};
   const settingSummary = (p) => p ? [
     p.power == null ? null : `${p.power}%`, p.frequency == null ? null : `${p.frequency} кГц`,
     p.speed == null ? null : `${p.speed} мм/с`,
@@ -139,7 +141,7 @@
           pulseChoice ? field('Длительность импульса (у этого лазера нет ступени 200 нс)', pulseChoice) : null, nextPlate,
           guide?.pending_plan_id ? link('/plans/' + guide.pending_plan_id, 'Открыть созданную плату') : null)),
       guide?.plate ? h('p', {class: 'dashboard-task-foot'},
-        `Плата: ${guide.plate.test_type === 'text_readability' ? 'надписи 3 × 3, три размера' : guide.plate.test_type === 'material_matrix' ? 'матрица 3 × 3' : guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null);
+        `Плата: ${PLATE_TYPE[guide.plate.test_type] || guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null);
     return h('div', {class: 'experiment-dashboard'}, hero,
       taskPanel,
       h('div', {class: 'dashboard-columns exp-columns'},

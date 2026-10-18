@@ -43,7 +43,7 @@ const KnowledgeView = (() => {
     const k = await get('/knowledge/' + kid);
     const s = k.summary;
     const history = table(['Когда', 'Событие', 'Было', 'Стало', 'Основание', ''], k.history.map((e) => [
-      e.at.slice(0, 16).replace('T', ' '), EVENT[e.type] || e.type, e.from_stage ? STAGE[e.from_stage] : '—', e.to_stage ? STAGE[e.to_stage] : '—', e.type === 'demoted' ? e.reason : I18N.tr(e.reason),
+      e.at.slice(0, 16).replace('T', ' '), EVENT[e.type] || e.type, e.from_stage ? STAGE[e.from_stage] : '—', e.to_stage ? STAGE[e.to_stage] : '—', e.type === 'demoted' ? I18N.known(e.reason) ?? e.reason : I18N.tr(e.reason),     // своё основание оператора — как написано
       e.from_stage && e.type !== 'rollback'
         ? btn('Откатить переход', () => confirmBox('Откатить переход', 'Будет добавлено новое событие; стадия не повышается.', 'Откатить',
           async () => { await post(`/knowledge/${kid}/rollback`, {event_id: e.id, confirm_production: k.stage === 'production'}); App.render(); })) : '']), 'Истории нет');
