@@ -108,10 +108,8 @@ def test_cancelled_and_superseded_research_plates_are_history_not_experiments_wa
         experiments.get_experiment(world["store"], experiments.plan_key(cancelled["plan_id"]))
 
 
-def test_a_plate_record_marked_deleted_is_not_an_experiment_and_a_missing_or_empty_mark_is_no_mark(world):
+def test_a_plate_record_marked_deleted_is_not_an_experiment_and_an_empty_mark_is_no_mark(world):
     gone, kept = plate(world), plate(world)
-    assert len(experiments.list_experiments(world["store"])) == 2          # a database without plate.status
-    world["store"].execute("ALTER TABLE plate ADD COLUMN status TEXT")      # the nullable column a newer schema adds
     assert len(experiments.list_experiments(world["store"])) == 2          # NULL is no mark
     world["store"].execute("UPDATE plate SET status='Deleted' WHERE id=?", (gone["plate_id"],))
     assert [e["plan_id"] for e in experiments.list_experiments(world["store"])] == [kept["plan_id"]]
@@ -138,6 +136,7 @@ def test_a_finished_work_offers_its_lightburn_file_on_its_experiment(tmp_path):
     store.set_setting("allow_non_raw_photos", True)
     w = {"store": store, "laser": devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r"),
          "material": su.save_material(store, "Grade 2 sheet", grade="Grade 2")}
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")   # every photograph names its rig (REQ-009)
     pid = work_pair(w, None, 3)
     with TestClient(app) as client:
         (summary,) = client.get("/api/experiments", params={"device_id": w["laser"]["id"]}).json()

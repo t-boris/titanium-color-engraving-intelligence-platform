@@ -40,8 +40,8 @@ def _rows(store: Store):
         "SELECT o.id, o.pair_id, o.layer_index, o.lab_json, o.parameters_json, o.model_eligible, o.alignment_method, o.evidence_json, "
         "p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
         "p.device_id, p.lens_id, p.material_id, "
-        "p.hardware_json, p.context_json AS pair_context, p.lightburn_path "
-        "FROM observation o JOIN pair p ON p.id=o.pair_id "
+        "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status "
+        "FROM observation o JOIN pair p ON p.id=o.pair_id LEFT JOIN plan pl ON pl.id=p.plan_id "
         "WHERE p.status!='Deleted' ORDER BY o.pair_id, o.layer_index")
 
 
