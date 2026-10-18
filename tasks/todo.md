@@ -71,11 +71,11 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
       Proposed decisions for the operator: DEC-067 (S2), DEC-068 (S3), DEC-069 (S1). The live app on 8765 was found serving
       the new UI against the old in-memory backend (it ran from the working tree); restarted from the installed wheel of
       59c4704 after a backup (lessons.md).
-- [ ] WP-8 REQ-020 task kinds end to end.
+- [x] WP-8 REQ-020 task kinds end to end.
 - [x] WP-9 REQ-022 findings and proposals loop.
 - [x] WP-10 REQ-021 image -> vector LightBurn job (approach per the operator's answer).
 - [x] WP-11 REQ-030 predicted look of a photo engraving (after Q-025).
-- [ ] WP-12 Designer and oxide model per comparable partition; REQ-002 values on computed settings.
+- [x] WP-12 Designer and oxide model per comparable partition; REQ-002 values on computed settings.
 - [ ] WP-13 Tests for every criterion that has code but no test.
 - [ ] WP-14 Version 0.4.0, PR, CI, merge, tag, deploy (DEC-024), browser walkthrough, manual checklist.
 
