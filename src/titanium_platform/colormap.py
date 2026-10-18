@@ -53,11 +53,19 @@ def _pair_info(row) -> dict:
             "setup": " · ".join(x for x in (laser, lens) if x) or "лазер не указан", "material": material}
 
 
-def _against_clean(lab, clean, nominal) -> list[float]:
-    """The colour as it would look on nominal clean titanium: the ratio to this photograph's clean surface, per channel in linear light."""
-    ratio = np.clip(color.lab_to_linear_rgb(np.asarray(lab, float)), 0, 1) / np.maximum(color.lab_to_linear_rgb(np.asarray(clean, float)), 1e-4)
-    shown = np.clip(color.lab_to_linear_rgb(np.asarray(nominal, float)) * ratio, 0, 1)
-    return [float(v) for v in color.linear_rgb_to_lab(shown)]
+_against_clean = color.against_clean
+
+
+def nominal_clean(store: Store) -> tuple[list[float], str]:
+    """Clean titanium as a photograph with a chart measured it (median over such witnesses), else the default; and its source."""
+    calibrated = []
+    for row in _rows(store):
+        evidence = json.loads(row["evidence_json"] or "{}")
+        if (evidence.get("role") == "pre-test cleaning witness" or row["layer_index"] == -1) and _kind(evidence, row["model_eligible"]) == "calibrated":
+            calibrated.append(json.loads(row["lab_json"]))
+    if calibrated:
+        return [float(v) for v in np.median(np.array(calibrated), axis=0)], "chart"
+    return list(DEFAULT_CLEAN), "default"
 
 
 def _kind(evidence: dict, eligible: int) -> str:

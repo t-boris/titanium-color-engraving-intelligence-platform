@@ -2,7 +2,7 @@
    Нужен цвет: выбираете его, и видно, где он встречался и какими настройками получен. По экспериментам ходить не нужно. */
 'use strict';
 const ColorMap = (() => {
-  const {h, btn, link, pill, get, num, swatch, labText} = App;
+  const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
   const SVG = 'http://www.w3.org/2000/svg';
   const KIND = {calibrated: ['по эталонной карте', 'ok'], relative: ['относительно камеры', 'warn']};
 
@@ -21,32 +21,79 @@ const ColorMap = (() => {
   const colours = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'цвет' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'цвета' : 'цветов'}`;
   const times = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'раз' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'раза' : 'раз'}`;
 
-  function plot(points, onPick, target, picked) {
+  // the three planes of Lab: which coordinate goes right and which goes up
+  const PLANES = {ab: {x: 1, y: 2, right: 'a*  красный →', up: 'b*  жёлтый ↑', zero: true}, La: {x: 1, y: 0, right: 'a*  красный →', up: 'L*  светлее ↑', zero: false},
+    Lb: {x: 2, y: 0, right: 'b*  жёлтый →', up: 'L*  светлее ↑', zero: false}};
+
+  function plot(points, onPick, target, picked, plane, spiral) {
     if (!points.length) return h('p', {class: 'muted'}, 'Нет цветов под такие условия.');
+    const P = PLANES[plane] || PLANES.ab;
     const W = 640, H = 460, pad = 34;
-    const a = points.map((p) => p.display_lab[1]).concat(target ? [target[1]] : []), b = points.map((p) => p.display_lab[2]).concat(target ? [target[2]] : []);
-    const lo = [Math.min(...a, -4) - 4, Math.min(...b, -4) - 4], hi = [Math.max(...a, 4) + 4, Math.max(...b, 4) + 4];
+    const xs = points.map((p) => p.display_lab[P.x]).concat(target ? [target[P.x]] : []), ys = points.map((p) => p.display_lab[P.y]).concat(target ? [target[P.y]] : []);
+    const lo = [Math.min(...xs, P.zero ? -4 : Infinity) - 4, Math.min(...ys, P.zero ? -4 : Infinity) - 4], hi = [Math.max(...xs, P.zero ? 4 : -Infinity) + 4, Math.max(...ys, P.zero ? 4 : -Infinity) + 4];
     const x = (v) => pad + ((v - lo[0]) / (hi[0] - lo[0])) * (W - 2 * pad), y = (v) => H - pad - ((v - lo[1]) / (hi[1] - lo[1])) * (H - 2 * pad);
     const svg = document.createElementNS(SVG, 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Карта измеренных цветов в плоскости a* и b*'); svg.style.cssText = 'width:100%;max-width:820px';
+    svg.setAttribute('aria-label', `Карта измеренных цветов: ${P.right} и ${P.up}`); svg.style.cssText = 'width:100%;max-width:820px';
     const add = (tag, attrs, text) => { const el = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); if (text) el.textContent = text; svg.append(el); return el; };
-    add('line', {x1: x(lo[0]), x2: x(hi[0]), y1: y(0), y2: y(0), stroke: '#44556e', 'stroke-width': 1});
-    add('line', {x1: x(0), x2: x(0), y1: y(lo[1]), y2: y(hi[1]), stroke: '#44556e', 'stroke-width': 1});
-    add('text', {x: W - pad, y: y(0) - 6, fill: '#9fb0c8', 'font-size': 12, 'text-anchor': 'end'}, 'a*  красный →');
-    add('text', {x: x(0) + 8, y: pad - 10, fill: '#9fb0c8', 'font-size': 12}, 'b*  жёлтый ↑');
+    if (P.zero) { add('line', {x1: x(lo[0]), x2: x(hi[0]), y1: y(0), y2: y(0), stroke: '#44556e', 'stroke-width': 1});
+      add('line', {x1: x(0), x2: x(0), y1: y(lo[1]), y2: y(hi[1]), stroke: '#44556e', 'stroke-width': 1}); }
+    add('text', {x: W - pad, y: H - pad + 16, fill: '#9fb0c8', 'font-size': 12, 'text-anchor': 'end'}, P.right);
+    add('text', {x: pad, y: pad - 10, fill: '#9fb0c8', 'font-size': 12}, P.up);
+    if (spiral && spiral.length) {           // the film model: colour against the oxide thickness, drawn under the points
+      const inside = (l) => l[P.x] >= lo[0] && l[P.x] <= hi[0] && l[P.y] >= lo[1] && l[P.y] <= hi[1];
+      let d = '';
+      spiral.forEach((s, i) => { const l = s.lab; d += (i && inside(l) && inside(spiral[i - 1].lab) ? 'L' : 'M') + `${x(l[P.x]).toFixed(1)} ${y(l[P.y]).toFixed(1)} `; });
+      add('path', {d, fill: 'none', stroke: '#8fa3c4', 'stroke-width': 1.2, 'stroke-opacity': 0.7, 'stroke-dasharray': '4 3'});
+      spiral.filter((s) => s.thickness_nm % 50 === 0 && inside(s.lab)).forEach((s) => {
+        add('circle', {cx: x(s.lab[P.x]), cy: y(s.lab[P.y]), r: 2.5, fill: '#8fa3c4'});
+        add('text', {x: x(s.lab[P.x]) + 5, y: y(s.lab[P.y]) - 4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`); });
+    }
     points.slice().sort((p, q) => q.display_lab[0] - p.display_lab[0]).forEach((p) => {
-      const c = add('circle', {cx: x(p.display_lab[1]), cy: y(p.display_lab[2]), r: picked && picked.id === p.id ? 10 : 7,
+      const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: picked && picked.id === p.id ? 10 : 7,
         fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced ? 1 : 0.45,
         stroke: picked && picked.id === p.id ? '#ffffff' : !p.referenced ? '#e0b050' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
         'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer'});
       c.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: `${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}`}));
       c.addEventListener('click', () => onPick(p));
     });
-    if (target) { add('circle', {cx: x(target[1]), cy: y(target[2]), r: 13, fill: 'none', stroke: '#ffd166', 'stroke-width': 2.5});
-      add('line', {x1: x(target[1]) - 18, x2: x(target[1]) + 18, y1: y(target[2]), y2: y(target[2]), stroke: '#ffd166', 'stroke-width': 1.5});
-      add('line', {x1: x(target[1]), x2: x(target[1]), y1: y(target[2]) - 18, y2: y(target[2]) + 18, stroke: '#ffd166', 'stroke-width': 1.5}); }
+    if (target) { add('circle', {cx: x(target[P.x]), cy: y(target[P.y]), r: 13, fill: 'none', stroke: '#ffd166', 'stroke-width': 2.5});
+      add('line', {x1: x(target[P.x]) - 18, x2: x(target[P.x]) + 18, y1: y(target[P.y]), y2: y(target[P.y]), stroke: '#ffd166', 'stroke-width': 1.5});
+      add('line', {x1: x(target[P.x]), x2: x(target[P.x]), y1: y(target[P.y]) - 18, y2: y(target[P.y]) + 18, stroke: '#ffd166', 'stroke-width': 1.5}); }
     return svg;
+  }
+
+  // the film model's reading of one measured colour
+  function filmOf(p, model) {
+    if (!model) return null;
+    const m = (model.points || []).find((q) => q.pair_id === p.pair_id && q.layer_index === p.layer_index);
+    if (!m) return null;
+    const alt = m.alternative ? ` или ${num(m.alternative.thickness_nm, 0)} нм (ΔE ${num(m.alternative.residual_de, 1)})` : '';
+    return h('p', {class: 'small'}, h('strong', {}, 'Плёнка оксида по модели: '),
+      m.thickness_determined ? `${num(m.thickness_nm, 0)} нм, расхождение ΔE ${num(m.residual_de, 1)}${m.ramp ? '; порядок интерференции выбран по всей пластине' : ''}`
+        : m.dark_share >= 0.6 ? `в основном тёмный оксид (доля ${num(m.dark_share * 100, 0)} %), толщина плёнки по цвету не определяется`
+        : `${num(m.thickness_nm, 0)} нм${alt}, расхождение ΔE ${num(m.residual_de, 1)}; порядок интерференции неоднозначен`,
+      m.dark_share > 0 && m.dark_share < 0.6 ? ` · тёмного оксида ${num(m.dark_share * 100, 0)} %` : '');
+  }
+
+  // what the film model says about a wanted colour
+  function filmCard(r) {
+    const cand = (c) => h('article', {class: 'card stack'},
+      h('p', {}, h('strong', {}, `Плёнка ${num(c.thickness_nm, 0)} нм`), c.dark_share > 0 ? ` с долей тёмного оксида ${num(c.dark_share * 100, 0)} %` : '', ` · расхождение с целью ΔE ${num(c.residual_de, 1)}`),
+      (c.by_regime || []).length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'Расчёт по закону толщины от дозы, не измерение:'),
+        ...c.by_regime.map((r) => h('p', {}, h('strong', {}, `${num(r.frequency, 0)} кГц, ${num(r.pulse_width, 0)} нс`), `: около ${num(r.areal_energy_j_cm2, 0)} Дж/см²`,
+          r.settings ? ` · ${settings(r.settings)}` : ' · при скорости и шаге ближайшей ячейки мощностью не достичь',
+          r.within_measured ? '' : ' · за пределами измеренных доз',
+          ' · ближайшая измеренная: ', swatch(r.nearest_measured.lab), ` ${r.nearest_measured.work} · ${r.nearest_measured.layer || ''}`))) : null,
+      c.same_film_measured.length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'Такую плёнку давали измеренные режимы:'),
+        ...c.same_film_measured.map((m) => h('p', {}, swatch(m.lab), ` ${m.work} · ${m.layer || ''} · ${settings(m.parameters)} · плёнка ${num(m.thickness_nm, 0)} нм${m.ambiguous ? ' (порядок неоднозначен)' : ''}`,
+          ' · ', link(`/analysis/${m.pair_id}`, 'разбор'))))
+        : h('p', {class: 'muted small'}, 'Измеренных режимов с такой плёнкой пока нет.'));
+    return h('div', {class: 'stack'}, h('h3', {}, 'Что говорит модель плёнки'),
+      h('p', {class: 'small'}, r.reachable_by_a_film ? 'Цвет лежит на спирали интерференции: его даёт плёнка указанной толщины. Толщины ниже это измеренные режимы, а не расчёт.'
+        : 'Цвет лежит вне спирали интерференции больше чем на 8 ΔE: по этой модели ни одна оксидная плёнка титана его не даёт.'),
+      ...r.candidates.map(cand),
+      h('p', {class: 'muted small'}, r.kinetics.usable ? `Кинетика: закон толщины от дозы подогнан для режимов импульса: ${r.kinetics.regimes}.` : `Кинетика пока не даёт расчёта настроек: ${I18N.tr(r.kinetics.note)}.`));
   }
 
   function where(p) {
@@ -65,19 +112,22 @@ const ColorMap = (() => {
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
     if (f.hide) q.set('include_unreferenced', 'false');
-    const [data, profiles] = await Promise.all([get('/colors' + (q.toString() ? '?' + q : '')), get('/profiles')]);
-    const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, target, ...patch})); App.render({preserveScroll: true}); };
+    const [data, profiles, model] = await Promise.all([get('/colors' + (q.toString() ? '?' + q : '')), get('/profiles'), get('/oxide/model').catch(() => null)]);
+    const plane = state.plane || 'ab', band = state.band || [0, 100];
+    const shown = () => data.points.filter((p) => p.display_lab[0] >= band[0] && p.display_lab[0] <= band[1]);
+    const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, target, plane, band, ...patch})); App.render({preserveScroll: true}); };
     const select = (label, key, values, current, names) => h('label', {class: 'f'}, h('span', {}, label),
       h('select', {onChange: (e) => remember({[key]: e.target.value})}, h('option', {value: ''}, 'Все'),
         ...values.map((v) => h('option', {value: v, selected: v === current}, names ? names[v] : v))));
 
     let target = state.target || null, picked = null;
     const results = h('div', {class: 'stack'}), detail = h('div', {class: 'card stack', hidden: true}), plotBox = h('div', {});
-    const drawPlot = () => plotBox.replaceChildren(plot(data.points, (p) => { picked = p; detail.hidden = false;
+    const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
       detail.replaceChildren(h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
         h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
-        p.referenced ? null : pill('как снято, без привязки', 'warn')), where(p),
-        btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked));
+        p.referenced ? null : pill('как снято, без привязки', 'warn')), where(p), filmOf(p, model),
+        btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked, plane,
+      model ? model.spiral : null));
     async function setTarget(lab) {
       target = lab.map((v) => +(+v).toFixed(1));
       L.value = target[0]; A.value = target[1]; B.value = target[2]; chip.replaceChildren(swatch(target));
@@ -85,15 +135,16 @@ const ColorMap = (() => {
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
       for (const k of ['setup', 'material', 'measurement']) if (f[k]) p.set(k, f[k]);
       if (f.within) p.set('include_unreferenced', 'true');
-      const r = await get('/colors/search?' + p);
+      const [r, film] = await Promise.all([get('/colors/search?' + p), get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}`).catch(() => null)]);
       drawPlot();
-      results.replaceChildren(h('h3', {}, 'Где встречался такой цвет'),
+      fill(results, h('h3', {}, 'Где встречался такой цвет'),
         !r.matches.length ? h('p', {class: 'muted'}, 'Подходящих цветов пока нет.') : h('div', {class: 'stack'}, ...r.matches.map((m) => h('article', {class: 'card stack color-hit'},
           h('div', {class: 'row'}, swatch(m.display_lab), h('strong', {}, `ΔE ${num(m.distance, 1)}`), pill(...KIND[m.measurement]),
             m.approximate ? pill('условный оттенок', 'warn') : null, h('span', {class: 'muted small'}, m.repeats > 1 ? `получался ${times(m.repeats)} в ${m.experiments.length} экспериментах` : 'получен один раз')),
           where(m)))),
         r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
-          btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null);
+          btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
+        film ? filmCard(film) : null);
     }
     const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(hexToLab(e.target.value))});
     const L = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: target ? target[0] : 40, 'aria-label': 'L'});
@@ -119,7 +170,14 @@ const ColorMap = (() => {
           + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
           + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')),
       h('div', {class: 'color-map-grid'},
-        h('div', {class: 'card stack'}, h('h3', {}, 'Карта a* × b*'), plotBox, detail),
+        h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),
+            ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
+          h('div', {class: 'row small'}, h('span', {}, 'Светлота L* от'),
+            h('input', {type: 'number', min: 0, max: 100, value: band[0], style: 'width:5em', onChange: (e) => remember({band: [+e.target.value, band[1]]})}),
+            h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], style: 'width:5em', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
+            h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length}`),
+            model && model.summary && model.summary.observations ? h('span', {class: 'muted'}, ` · пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null),
+          plotBox, detail),
         h('div', {class: 'card stack'}, h('h3', {}, 'Какой цвет нужен'),
           h('div', {class: 'row'}, picker, chip), h('div', {class: 'grid g3'}, h('label', {class: 'f'}, h('span', {}, 'L (0–100)'), L), h('label', {class: 'f'}, h('span', {}, 'a'), A),
             h('label', {class: 'f'}, h('span', {}, 'b'), B)), find,
