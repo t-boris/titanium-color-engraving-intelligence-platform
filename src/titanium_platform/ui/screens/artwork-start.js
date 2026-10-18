@@ -5,6 +5,8 @@
 const ArtworkParts = (() => {
   const {h, btn, field, link, get, patch, go, modal, num, labText, swatch} = App;
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с`;
+  // the reason of a doubt joins one message per broken threshold with '; ' (knowledge.refresh): each is translated
+  const doubt = (reason) => reason.split('; ').map((part) => I18N.tr(part)).join('; ');
 
   function startForm(lists, ctx) {
     const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens});
@@ -50,7 +52,7 @@ const ArtworkParts = (() => {
     const picked = new Set(plan.allowed_questioned);
     const rows = all.map((e) => h('div', {class: 'alert warn'},
       h('label', {class: 'row'}, h('input', {type: 'checkbox', checked: picked.has(e.id), onChange: (ev) => { if (ev.target.checked) picked.add(e.id); else picked.delete(e.id); }}), swatch(e.lab), labText(e.lab)),
-      h('p', {class: 'small'}, (e.doubt && I18N.tr(e.doubt.reason)) || 'Параметры под вопросом'), link('/knowledge/' + e.id, 'Наблюдения')));
+      h('p', {class: 'small'}, (e.doubt && doubt(e.doubt.reason)) || 'Параметры под вопросом'), link('/knowledge/' + e.id, 'Наблюдения')));
     modal('Включить параметры под вопросом в этот план', h('div', {class: 'stack'},
       h('p', {}, 'Разрешение действует только для этого плана. Стадия знания и флаг не изменятся.'), ...(rows.length ? rows : [h('p', {}, 'Нет производственных параметров под вопросом')])), [
       {label: 'Отмена', run: (x) => x.close()},

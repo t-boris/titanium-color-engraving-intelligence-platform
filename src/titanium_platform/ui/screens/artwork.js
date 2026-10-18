@@ -42,6 +42,12 @@
         btn('Сопоставить цвета', async () => { try { await patch('/discrete/' + id, {threshold: +thr.value}); reload(); } catch (e) { fail(e); } }),
         btn('Включить параметры под вопросом в этот план', () => questionedDialog(plan, reload)), markerBtn),
       h('div', {class: 'card'}, h('h3', {}, 'Цвета рисунка'), table(['Исходный цвет', 'Статус', 'Цвет титана', 'ΔE до цели', 'Ожидаемая ошибка', 'Уверенность · стабильность', ''], rows)),
+      // картина плана перерисовывается после каждого сопоставления: адрес меняется вместе с решениями по цветам
+      h('div', {class: 'card stack'}, h('h3', {}, 'Рисунок в цветах титана'), h('div', {class: 'grid g2'},
+        h('figure', {}, h('img', {src: `/api/plans/${id}/source-image`, style: 'width:100%', alt: 'Исходное изображение'}), h('figcaption', {class: 'muted small'}, 'Исходное изображение')),
+        h('figure', {}, h('img', {src: `/api/plans/${id}/banding.png?v=${encodeURIComponent(plan.matches.map((m) => `${m.status}${m.knowledge_id}`).join('.'))}`,
+          style: 'width:100%;image-rendering:pixelated', alt: 'Рисунок в сопоставленных цветах титана'}),
+          h('figcaption', {class: 'muted small'}, 'Сопоставленные цвета титана; недостижимые заштрихованы красным, исключённые — белые')))),
       unresolved ? h('div', {class: 'alert bad'}, `Нерешённые цвета: ${unresolved}. Замените или исключите каждый: создание плана отключено. Они уже переданы планировщику как цели.`) : null,
       active === 0 && !unresolved ? h('div', {class: 'alert warn'}, 'Все области исключены: создание отключено.') : null,
       h('div', {class: 'row'}, btn('Создать план', async (ev) => {

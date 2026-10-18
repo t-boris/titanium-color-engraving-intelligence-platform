@@ -4,10 +4,10 @@ Object.assign(App, (() => {
   const {h, btn} = App;
   const screens = new Map();
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/artwork', 'Цветная гравировка'],
-    ['/photo', 'Фотогравировка'], ['/designer', 'Планировщик экспериментов'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'],
+    ['/photo', 'Фотогравировка'], ['/vector', 'Векторная работа'], ['/designer', 'Планировщик экспериментов'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'],
     ['/research', 'AI-исследователь']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
-    artwork: 'artwork', photo: 'photo', plans: 'plan', designer: 'designer', devices: 'devices', research: 'research'};
+    artwork: 'artwork', photo: 'photo', vector: 'vector', plans: 'plan', designer: 'designer', devices: 'devices', research: 'research'};
   const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors'};
   let token = 0;
 
@@ -26,6 +26,7 @@ Object.assign(App, (() => {
     '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M6 18L18 6"/>',
     '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m5 17 5-5 4 3 3-6 4 6"/>',
     '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 16h2M11 13h2M15 10h2"/>',
+    '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19c7 0 3-14 10-14M5 5h6M13 19h6"/>',
     '<path d="M4 19V5M4 19h16M7 15l4-5 4 2 5-7"/>',
     '<path d="M3 12h4l2-6 3 12 2-8 2 4h5"/>',
     '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
