@@ -119,6 +119,46 @@ def test_an_unreachable_target_steers_a_proposal_to_where_the_model_predicts_it(
     assert store.one("SELECT proposal_id FROM target_color WHERE id=1")["proposal_id"] == p["id"]  # the target is linked to the proposal
 
 
+def test_a_plate_made_for_a_target_colour_is_checked_against_it_after_measurement(store, w):
+    """REQ-006 AC3: the cell that addressed a target is measured, compared with it within the saved tolerance, and the
+    target records the result."""
+    import cv2
+    import synth
+    from titanium_platform import analysis, ingest as ig
+    store.set_setting("allow_non_raw_photos", True)                    # tests use PNG renders; real use requires RAW
+    su.save_rules(store, *w["setup"], repeat_threshold=2, delta_tolerance=6.0, variance_threshold=5.0)
+    seed_measurements(store, w)
+    target = (80.0, -10.0, 30.0)
+    store.execute("INSERT INTO target_color(device_id,lens_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,1,'c0',?)",
+                  (*w["setup"], json.dumps(target), now()))
+    proposal = propose(store, w, size=4)
+    chosen = next(x for x in proposal["parameters"] if x["reason"] == "target")
+    made = next(o for o in ds.create_plates(store, proposal["id"], 5, 4, 1) if o["speed"] == chosen["speed"])
+    plan = pl.get_plan(store, made["plan_id"])
+    cells = json.loads(store.one("SELECT cells_json FROM plate WHERE id=?", (made["plate_id"],))["cells_json"])
+    cell = next(c for c in cells if c["target_id"] == 1)
+    colours = {c["id"]: (110, 90, 70) for c in cells} | {cell["id"]: tuple(int(v) for v in color.lab_to_srgb8((80.0, -10.0, 33.0)))}
+    titanium = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    pid = ig.create_pair(store, device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="target.lbrn2",
+                         lightburn_bytes=pl.export_lbrn2(plan), photo_name="target.png", plan_id=plan["id"], context={"material_id": titanium["id"]},
+                         photo_bytes=cv2.imencode(".png", synth.plate_photo(plan, colours))[1].tobytes())
+    assert ig.check_pair(store, pid)["problems"] == []
+    ig.review_masks(store, pid)
+    ig.accept_pair(store, pid)
+
+    checks = analysis.report_for_pair(store, pid)["target_checks"]
+
+    assert [(c["target_id"], c["cell_id"], c["comparable"], c["tolerance"]) for c in checks] == [(1, cell["id"], True, 6.0)]
+    assert checks[0]["target_lab"] == list(target) and 1.5 < checks[0]["delta_e"] < 4.5 and checks[0]["within_tolerance"] is True
+    assert color.delta_e(checks[0]["measured_lab"], (80.0, -10.0, 33.0)) < 2.5
+    recorded = ds.open_targets(store, *w["setup"])[0]["checks"]
+    assert len(recorded) == 1 and recorded[0]["pair_id"] == pid and recorded[0]["within_tolerance"] is True
+    assert recorded[0]["delta_e"] == pytest.approx(checks[0]["delta_e"])
+    su.save_rules(store, *w["setup"], delta_tolerance=1.0)              # the report judges by the tolerance saved now ...
+    assert analysis.report_for_pair(store, pid)["target_checks"][0]["within_tolerance"] is False
+    assert ds.open_targets(store, *w["setup"])[0]["checks"][0]["tolerance"] == 6.0   # ... the record keeps the one it was judged by
+
+
 def test_targets_cannot_be_addressed_without_a_fitted_model_and_are_reported_unaddressed(store, w):
     measure(store, w, 20, 100, 800, (30, 5, 5))
     store.execute("INSERT INTO target_color(device_id,lens_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,1,'c0',?)", (*w["setup"], json.dumps([80, -10, 30]), now()))

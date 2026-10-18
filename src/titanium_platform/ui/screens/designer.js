@@ -37,7 +37,11 @@
     const pulse = pulseSelect(pick.device(), group.pulse_width);
     const interval = h('input', {type: 'number', step: 'any', min: '0', value: group.line_interval ?? 0.025, 'aria-label': 'Шаг линий'});
     const passes = h('input', {type: 'number', step: '1', min: '1', value: group.passes ?? 1, 'aria-label': 'Проходы слоя'});
-    const targets = map.targets.length ? table(['Цвет', 'Исходный план', 'Предложение'], map.targets.map((t) => [h('span', {}, swatch(t.lab), labText(t.lab)), link('/plans/' + t.source_plan_id, 'Исходная работа'), t.proposal_id ? '№ ' + t.proposal_id : 'ещё не адресована']))
+    // the latest measurement of a plate cell made for the target (REQ-006): delta E and the verdict by the saved tolerance
+    const checked = (c) => (!c ? 'ещё не измерена' : !c.comparable ? 'измерена без карты: не сравнима'
+      : `ΔE ${num(c.delta_e, 1)}${c.within_tolerance == null ? ' · допуск не задан' : c.within_tolerance ? ' · в допуске' : ' · вне допуска'}`);
+    const targets = map.targets.length ? table(['Цвет', 'Исходный план', 'Предложение', 'Проверка'], map.targets.map((t) => [h('span', {}, swatch(t.lab), labText(t.lab)), link('/plans/' + t.source_plan_id, 'Исходная работа'), t.proposal_id ? '№ ' + t.proposal_id : 'ещё не адресована',
+      t.checks?.length ? link('/analysis/' + t.checks[0].pair_id, checked(t.checks[0])) : checked(null)]))
       : h('p', {class: 'muted'}, 'Нет недостижимых цветов из работ. Подбор по пробелам остаётся доступен.');
     const propose = btn('Предложить плату', async () => {
       if (pulse.value === '' || interval.value === '' || passes.value === '') return fail(new Error('Задайте длительность импульса, шаг линий и число проходов'));

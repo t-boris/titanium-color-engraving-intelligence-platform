@@ -18,6 +18,9 @@ Utility of a candidate is the largest of four scores in 0..1; its reason is the 
   gap          distance to the nearest measured set
 Sets are picked greedily and each pick discounts its neighbours so a proposal spreads out.
 
+A plate made from a proposal keeps, per cell, the target colour it addressed; once a photograph of the plate is accepted,
+each such cell is checked against its target and the target records the result (REQ-006).
+
 Power is searched over 1-100 %, frequency over the laser's usable range (narrowed by confirmed controller limits,
 REQ-018) and speed over ``SPEED_RANGE_MM_S``: no scanner limit is stored, so it is the same ceiling as the capability
 plates. The pulse width must be a selectable step of the laser.
@@ -88,8 +91,61 @@ def signature(setup_key: str, samples: list[dict], targets: list[dict], size: in
 
 
 def open_targets(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
-    return [{"id": r["id"], "lab": json.loads(r["lab_json"]), "source_plan_id": r["source_plan_id"], "proposal_id": r["proposal_id"]}
+    """The target colours of one laser and lens, each with the measurements of plate cells that addressed it, newest first."""
+    return [{"id": r["id"], "lab": json.loads(r["lab_json"]), "source_plan_id": r["source_plan_id"], "proposal_id": r["proposal_id"],
+             "checks": recorded_checks(store, r["id"])}
             for r in store.query("SELECT * FROM target_color WHERE device_id=? AND lens_id IS ? ORDER BY id", (device_id, lens_id))]
+
+
+def target_checks(store: Store, pair_id: int) -> list[dict]:
+    """Each cell of the pair's plate that a proposal made for a registered target colour, checked against it (REQ-006): the
+    measured Lab, delta E to the target and whether it is within the delta E tolerance of the laser and lens (None while no
+    tolerance is saved). A camera-relative measurement is not comparable with a target and gets no delta E."""
+    pair = store.one("SELECT * FROM pair WHERE id=?", (pair_id,))
+    plate = store.one("SELECT cells_json FROM plate WHERE id=?", (pair["plate_id"],)) if pair and pair["plate_id"] else None
+    cells = {c.get("id"): c for c in json.loads(plate["cells_json"])} if plate else {}
+    if not any(c.get("target_id") is not None for c in cells.values()):
+        return []
+    plan = store.one("SELECT data_json FROM plan WHERE plate_id=?", (pair["plate_id"],))
+    cell_of = {layer["index"]: layer.get("cell_id") for layer in json.loads(plan["data_json"])["layers"]} if plan else {}
+    tolerance = su.get_rules(store, pair["device_id"], pair["lens_id"])["delta_tolerance"]
+    out = []
+    for o in store.query("SELECT * FROM observation WHERE pair_id=? ORDER BY layer_index", (pair_id,)):
+        evidence = json.loads(o["evidence_json"] or "{}")
+        cell = cells.get(cell_of.get(o["layer_index"])) if evidence.get("role", "test feature") == "test feature" else None
+        target = store.one("SELECT * FROM target_color WHERE id=?", (cell["target_id"],)) if cell and cell.get("target_id") is not None else None
+        if target is None:
+            continue
+        measured, wanted = json.loads(o["lab_json"]), json.loads(target["lab_json"])
+        comparable = (evidence.get("color_measurement") or {}).get("mode") == "reference_chart_corrected"
+        delta = color.delta_e(measured, wanted) if comparable else None
+        check = {"target_id": target["id"], "target_lab": wanted, "pair_id": pair_id, "observation_id": o["id"], "layer_index": o["layer_index"],
+                 "cell_id": cell["id"], "measured_lab": measured, "delta_e": delta, "tolerance": tolerance, "comparable": comparable,
+                 "within_tolerance": None if delta is None or tolerance is None else delta <= tolerance}
+        if not comparable:
+            check["note"] = "camera-relative measurement: it cannot be compared with a target colour"
+        out.append(check)
+    return out
+
+
+def record_target_checks(store: Store, pair_id: int) -> list[dict]:
+    """The targets keep the result of an accepted plate: one record per target and observation, never rewritten."""
+    checks = target_checks(store, pair_id)
+    with store.transaction():
+        for c in checks:
+            store.execute("INSERT OR IGNORE INTO target_check(target_id,pair_id,observation_id,cell_id,measured_lab_json,delta_e,tolerance,"
+                          "within_tolerance,comparable,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                          (c["target_id"], pair_id, c["observation_id"], c["cell_id"], json.dumps(c["measured_lab"]), c["delta_e"], c["tolerance"],
+                           None if c["within_tolerance"] is None else int(c["within_tolerance"]), int(c["comparable"]), now()))
+    return checks
+
+
+def recorded_checks(store: Store, target_id: int) -> list[dict]:
+    return [{"pair_id": r["pair_id"], "observation_id": r["observation_id"], "cell_id": r["cell_id"], "measured_lab": json.loads(r["measured_lab_json"]),
+             "delta_e": r["delta_e"], "tolerance": r["tolerance"], "comparable": bool(r["comparable"]),
+             "within_tolerance": None if r["within_tolerance"] is None else bool(r["within_tolerance"]), "at": r["created_at"]}
+            for r in store.query("SELECT c.* FROM target_check c JOIN pair p ON p.id=c.pair_id WHERE c.target_id=? AND p.status!='Deleted' "
+                                 "ORDER BY c.id DESC", (target_id,))]
 
 
 def _fit(samples: list[dict], axes):

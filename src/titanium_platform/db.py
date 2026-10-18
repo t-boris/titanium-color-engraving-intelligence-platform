@@ -345,6 +345,13 @@ class Store:
                 ("capture_setup", "chart_reference_json", "TEXT")):  # NULL: the published chart values (DEC-025)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        # A target colour records every measurement of a plate cell that addressed it (REQ-006): the measured Lab, delta E
+        # to the target and the tolerance it was judged by.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS target_check (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                          "target_id INTEGER NOT NULL REFERENCES target_color(id), pair_id INTEGER NOT NULL REFERENCES pair(id), "
+                          "observation_id INTEGER NOT NULL REFERENCES observation(id), cell_id TEXT NOT NULL, measured_lab_json TEXT NOT NULL, "
+                          "delta_e REAL, tolerance REAL, within_tolerance INTEGER, comparable INTEGER NOT NULL, created_at TEXT NOT NULL, "
+                          "UNIQUE(target_id, observation_id))")
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):
             known = self.conn.execute("SELECT engraving_title FROM pair WHERE engraving_id=? AND engraving_title IS NOT NULL LIMIT 1",

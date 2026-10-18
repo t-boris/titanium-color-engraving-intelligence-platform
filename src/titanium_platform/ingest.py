@@ -2159,8 +2159,9 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
             delete_pair(store, superseded)
     if on_accepted is not None:
         on_accepted(store, row["device_id"], row["lens_id"])
-    from . import capability_results
+    from . import capability_results, designer
     capability_results.save_findings(store, pair_id)
+    designer.record_target_checks(store, pair_id)          # a cell made for a target colour is checked against it (REQ-006)
     return ids
 
 

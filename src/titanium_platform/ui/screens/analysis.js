@@ -1,7 +1,7 @@
 /* Анализ принятой гравировки: обзор измерений с подробностями по требованию. */
 'use strict';
 (() => {
-  const {h, btn, link, pill, get, post, del, go, toast, fail, confirmBox, modal, num, labText, swatch} = App;
+  const {h, btn, link, pill, get, post, del, go, toast, fail, confirmBox, modal, table, num, labText, swatch} = App;
   const MODE = {'Calibration plate': 'Калибровочная плата', 'Laser capability test': 'Тест возможностей лазера',
     'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
     'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Работа, план восстановлен из файла'};
@@ -260,9 +260,21 @@
         + `${ref.nominal_source === 'chart' ? ' (по измерениям с картой)' : ' (значение по умолчанию)'}`
         + (Math.abs(ref.exposure_stops) >= 1 ? `; снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции` : '')
         + '. Отношение цвета к чистому титану в линейном свете от экспозиции не зависит; значение «как снято» сохранено как свидетельство.')] : []),
+      ...(r.target_checks?.length ? [targetCard(r.target_checks)] : []),
       card('Измеренные элементы', h('div', {class: 'analysis-modules'}, ...layers)),
       r.limitations?.length ? h('details', {class: 'analysis-footnote'}, h('summary', {}, `Ограничения измерений (${r.limitations.length})`),
         ...r.limitations.map((text) => h('p', {}, I18N.tr(text)))) : null];
+  }
+
+  /** Ячейки платы, сделанные для целевого цвета (REQ-006): измеренный цвет, ΔE до цели и вердикт по сохранённому допуску. */
+  function targetCard(checks) {
+    const verdict = (c) => (c.within_tolerance == null ? (c.comparable ? 'допуск не задан' : 'не сравнима') : c.within_tolerance ? 'в допуске' : 'вне допуска');
+    return card('Целевые цвета', h('div', {class: 'stack'},
+      h('p', {class: 'muted small'}, 'Эти ячейки предложены планировщиком для недостижимого цвета работы; результат записан у целевого цвета.'),
+      table(['Ячейка', 'Цель', 'Измерено', 'ΔE до цели', 'Допуск ΔE', 'Итог'], checks.map((c) => [c.cell_id,
+        h('span', {}, swatch(c.target_lab), labText(c.target_lab)), h('span', {}, swatch(c.measured_lab), labText(c.measured_lab)),
+        c.delta_e == null ? '—' : num(c.delta_e, 1), c.tolerance == null ? '—' : num(c.tolerance, 1),
+        h('span', {}, pill(verdict(c), c.within_tolerance ? 'ok' : 'warn'), c.note ? h('div', {class: 'muted small'}, I18N.tr(c.note)) : null)]))));
   }
 
   /** Повторяемость стенда для пересъёмок одной гравировки (REQ-009): часть данных о стабильности, не отдельная гравировка. */

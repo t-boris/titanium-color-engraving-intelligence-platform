@@ -16,7 +16,7 @@ import json
 
 import numpy as np
 
-from . import capability_results, color, ingest, model, plans as pl, setup as su
+from . import capability_results, color, designer, ingest, model, plans as pl, setup as su
 from .db import Store
 
 
@@ -91,6 +91,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
         "SELECT id,photo_name,status,created_at FROM pair WHERE engraving_id=? AND status!='Deleted' ORDER BY id",
         (pair["engraving_id"],))]
     result["rig_repeatability"] = model.engraving_rig_repeatability(store, pair["engraving_id"])
+    result["target_checks"] = designer.target_checks(store, pair_id)
     result["capability"] = capability_results.report_for_pair(store, pair_id)
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")
