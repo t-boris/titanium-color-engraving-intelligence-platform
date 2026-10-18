@@ -62,13 +62,33 @@ issues:
     title: Image-to-vector engraving workflow
     summary: Accept an image and requested engraving result, prepare an editable vector representation, classify regions and paths by the selected task, and map them to supported evidence-backed strategies. Preview geometry, assignments, confidence, out-of-coverage areas and unresolved choices before writing a standard LightBurn project. Preserve the source image, vector document, generated job and eventual result as one linked work record.
     requirements: [REQ-021]
-    decisions: []
+    decisions: [DEC-065]
   - id: I-13
     title: Periodic findings and experiment acquisition loop
     summary: Reanalyze accepted evidence after new measurements and on a configurable periodic run. Surface reproducible improvements, anomalies, unstable settings and task/material coverage gaps with source links and sample counts. Rank follow-up experiments by the question they answer and expected information gain, save each hypothesis and proposed settings, and export accepted proposals as plates with the configured cleaning operation first.
     requirements: [REQ-022]
-    decisions: [DEC-009, DEC-013]
-updated: 2026-10-14
+    decisions: [DEC-009, DEC-013, DEC-064]
+  - id: I-14
+    title: Laser and lens replace laser profiles in every table
+    summary: Carry out DEC-042 by the full schema migration of DEC-063. Plates, plans, pairs, observations, knowledge, target colours and proposals carry the physical laser and the historical lens instead of a profile; the old profile id stays only as provenance. Comparable knowledge, rules, targets and proposals are partitioned by laser and lens, with job settings in the recipe key. No screen asks for a profile; imports never assert the installed lens; 200 ns is only a device-supported prefill; a lens may be incomplete.
+    requirements: [REQ-010, REQ-015, REQ-016, REQ-017, REQ-018, REQ-019]
+    decisions: [DEC-042, DEC-043, DEC-063]
+  - id: I-15
+    title: Closed-loop and translation defects found by the 2026-10-18 audit
+    summary: Make generated plan files ingestible and auto-aligned, export the complete recipe settings, keep the repetition of an alignment revision, rebuild knowledge after a deletion without lowering stages, keep marker and label layers out of the model, translate every server message the screen shows, and close the remaining UI and ingestion gaps (band limits and banding picture, colour-path inclusion, capture setup on upload, rig repeatability, restored plans for imports, target-colour check, lens snapshots, one experiment list, honest colour-map search).
+    requirements: [REQ-001, REQ-003, REQ-004, REQ-005, REQ-006, REQ-009, REQ-012, REQ-013, REQ-019, REQ-028, REQ-029]
+    decisions: [DEC-021, DEC-025, DEC-027, DEC-028, DEC-034, DEC-047, DEC-066]
+  - id: I-16
+    title: Predicted look of a photo engraving
+    summary: Render a grayscale-mode image layer as it will look on titanium from the measured power-to-colour curve of its mode, with the provenance of every curve point, hatched areas outside the measured span, assumed picture adjustments and Min/Max re-rendering.
+    requirements: [REQ-030]
+    decisions: [DEC-057, DEC-062]
+  - id: I-17
+    title: Devices, lenses, registration, photo engravings, experiments, colour map, matrix and oxide model
+    summary: The work carried from the unmerged branch feat/laser-device-profiles and the session of 2026-10-18 - laser devices with passports and characterization, replaceable lenses, exact LightBurn geometry, element-anchor registration started from the whole drawing, image layers and photo engravings, experiments as single objects, one colour map, the 16-bit linear colour decode, the oxide film model and the parameter matrix read from a photograph - verified and merged.
+    requirements: [REQ-017, REQ-018, REQ-019, REQ-023, REQ-024, REQ-025, REQ-026, REQ-027, REQ-028, REQ-029, REQ-031]
+    decisions: [DEC-035, DEC-036, DEC-037, DEC-038, DEC-039, DEC-040, DEC-041, DEC-048, DEC-049, DEC-050, DEC-051, DEC-052, DEC-053, DEC-054, DEC-055, DEC-056, DEC-057, DEC-058, DEC-059, DEC-060, DEC-061]
+updated: 2026-10-18
 ---
 
 # Implementation plan — Titanium Color Engraving Intelligence Platform
@@ -162,9 +182,36 @@ Recompute evidence-backed findings after accepted measurements and on a configur
 
 Requirements: REQ-022
 
+## I-14: Laser and lens replace laser profiles in every table
+
+Carry out DEC-042 by the full schema migration of DEC-063: device and historical lens on every record, the profile id kept only as provenance, knowledge partitioned by laser and lens with job settings in the recipe key, no profile anywhere in the screens.
+
+Requirements: REQ-010, REQ-015, REQ-016, REQ-017, REQ-018, REQ-019
+Decisions: DEC-042, DEC-043, DEC-063
+
+## I-15: Closed-loop and translation defects found by the 2026-10-18 audit
+
+Close the defects that broke the loop or the specification: generated plan files at ingest, complete recipe export, repetition of revisions, rebuild after deletion, marker layers out of the model, translations, and the UI and ingestion gaps listed in the summary.
+
+Requirements: REQ-001, REQ-003, REQ-004, REQ-005, REQ-006, REQ-009, REQ-012, REQ-013, REQ-019, REQ-028, REQ-029
+Decisions: DEC-021, DEC-025, DEC-027, DEC-028, DEC-034, DEC-047, DEC-066
+
+## I-16: Predicted look of a photo engraving
+
+Render the predicted look of a grayscale image layer from the measured power-to-colour curve of its mode, flagged camera-relative when nothing referenced exists.
+
+Requirements: REQ-030
+Decisions: DEC-057, DEC-062
+
+## I-17: Devices, lenses, registration, photo engravings, experiments, colour map, matrix and oxide model
+
+Verify and merge the work carried from the unmerged branch feat/laser-device-profiles and the session of 2026-10-18.
+
+Requirements: REQ-017, REQ-018, REQ-019, REQ-023, REQ-024, REQ-025, REQ-026, REQ-027, REQ-028, REQ-029, REQ-031
+
 ## Implementation status
 
-Branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0. GitHub issue #n tracks plan item I-n; issues close only when the work is merged. "Implemented" means code and automated tests exist; "not verified" names what no test can show.
+I-1..I-10: branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0, merged in #11; GitHub issue #n tracks plan item I-n. I-11..I-17: branch `feat/titanium-color-engraving-intelligence-platform`, pull request #20; issue #(n+2) tracks I-n (I-11 #13 ... I-17 #19); issues close only when the work is merged. "Implemented" means code and automated tests exist; "not verified" names what no test can show.
 
 | Item | Status | Code | Not verified / open |
 |---|---|---|---|
@@ -178,9 +225,13 @@ Branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0
 | I-8 | Implemented | `conversion.py` (continuous) | Mapping without parameter interpolation proposed (DEC-032). |
 | I-9 | Implemented | `analysis.py` | Uses the shared ingestion path; real engraved results not yet measured. |
 | I-10 | Implemented | `designer.py` | Model and acquisition defaults proposed (DEC-033). No LLM adapter is wired; only the text-attachment interface exists. |
-| I-11 | Specified | REQ-020 | Current observations measure outcomes but do not yet carry a task-intent taxonomy or task-conditioned recipes. |
-| I-12 | Specified | REQ-021 | Current image conversion has plans for artwork/photo modes; end-to-end editable vectorization and evidence-aware LightBurn generation remain to be verified and completed. |
-| I-13 | Specified | REQ-022 | Current designer proposes calibration settings; periodic evidence reports and question-linked follow-up experiments are not yet complete. |
+| I-11 | In progress (#13) | REQ-020 | Task kind, task-filtered search and metric basis are being added. |
+| I-12 | In progress (#14) | REQ-021, DEC-065 | Contour vectoriser being built. |
+| I-13 | In progress (#15) | REQ-022, DEC-064 | Findings with history and question-linked proposals being built. |
+| I-14 | In progress (#16) | DEC-042, DEC-063 | Schema migration being built; tested on a copy of the operator's database before deploy. |
+| I-15 | In progress (#17) | audit 2026-10-18 | Defects listed in the issue. |
+| I-16 | In progress (#18) | REQ-030, DEC-062 | Not started. |
+| I-17 | Implemented, not merged (#19) | `devices.py`, `lenses.py`, `characterization.py`, `anchoring.py`, `picturing.py`, `experiments.py`, `colormap.py`, `oxide.py`, `matrix.py` | Real-photograph numbers in tasks/todo.md; oxide kinetics has no usable law on the matrices yet (ORDER_BY_RAMPS off). |
 
 Browser UI: Russian (DEC-034), visual system of prototype v10 (DEC-019). Walked through in a browser with synthetic files: profile, rig, marker layer, plate preview and creation, pair upload, check, mask overlay, accept, analysis, color map, knowledge, discrete conversion with an unreachable color excluded, plan export. Four defects found that way were fixed with regression tests.
 

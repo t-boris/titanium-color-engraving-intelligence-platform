@@ -47,8 +47,11 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
 ## Plan (work packages; each ends with tests green and the spec updated)
 
 - [x] WP-0 Branch from origin/main, baseline, CI installs tesseract (matrix OCR tests must not skip in CI).
-- [ ] WP-1 Spec reconciliation: answers and resolutions recorded as decisions in MarkView; plan.md status table; GitHub issues
+- [x] WP-1 Spec reconciliation: answers and resolutions recorded as decisions in MarkView; plan.md status table; GitHub issues
       for I-11..I-13 and the new work items.
+      Done 2026-10-18: DEC-058..061 accepted, REQ-030/031 approved, Q-025 answered (DEC-062), DEC-063 (full schema
+      migration), DEC-064 (AI researcher exception), DEC-065 (contour vectoriser), DEC-066 (9 reconciliations); issues #13-#19
+      (I-11..I-17), draft PR #20; plan.md items I-14..I-17 and statuses.
 - [ ] WP-2 Translations (DEC-034) and a coverage test that collects KeyError, api/ and wrapped messages.
 - [ ] WP-3 Closed-loop bugs: generated plans ingestible and auto-aligned (REQ-013), full settings on export (REQ-012), revision
       keeps its repetition (DEC-021), deletion rebuild and plan protection (DEC-047), marker/label never model-eligible
