@@ -554,3 +554,21 @@ with a filter; the working-task panel stays, compact, on top. The photograph wit
 - Heavily overlapping outlines (painted over) may be refused ("orientation ambiguous"); refusal is the safe outcome.
 - See "Still open, and why" above.
 
+## Stream S3: one experiment list, provisional colours, honest search, predicted photo engraving (I-15 part, I-16; 2026-10-18)
+
+- [x] REQ-028: cancelled, superseded and deleted plates (also `plate.status = 'Deleted'` when that column exists) are not experiments;
+  the laser page shows the one experiment list filtered by that laser; a finished work offers its LightBurn file on its experiment.
+- [x] REQ-020 AC7 / DEC-045: checked, aligned, measured pairs awaiting acceptance are on the colour map as provisional, linked to their
+  review; out of the search unless asked for, out of every prediction.
+- [x] REQ-029 / DEC-021: one search entry per recipe = settings + laser id + lens id + titanium stock id + kind of measurement
+  (chart / against clean titanium / as photographed) + provisional; it counts independent engravings and photographs apart.
+- [x] REQ-030: `prediction_store.py` (curve of a mode from tonal profiles and flat fills), `api/routes_prediction.py` (upload, re-render
+  at other Min/Max from an in-memory cache, no database), screen "Предпросмотр фотогравировки".
+
+Real check on the accepted Inna pair (pair 22, scratch copy of the live database migrated by the new Store, file copied read-only):
+its own LightBurn file through `POST /api/predictions/photo` gives a camera-relative curve "as photographed" (no clean titanium in that
+photograph) of 13 points, 6.04..14.37 % power, all from pair 22; 5.49 % of the 1024 x 1024 picture needs a power outside that span
+(the 800 px preview alone would say 3.88 %, so the share is counted on the whole picture). The predicted picture binned by grey as the
+tonal profile bins the photograph gives back every measured bin within dE 0.01..0.17 (worst at grey 0.906, the lightest bin, whose
+lighter half is outside the span). At Min 4 / Max 18 the share outside rises to 32.4 %.
+
