@@ -53,7 +53,7 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
       migration), DEC-064 (AI researcher exception), DEC-065 (contour vectoriser), DEC-066 (9 reconciliations); issues #13-#19
       (I-11..I-17), draft PR #20; plan.md items I-14..I-17 and statuses.
 - [ ] WP-2 Translations (DEC-034) and a coverage test that collects KeyError, api/ and wrapped messages.
-- [ ] WP-3 Closed-loop bugs: generated plans ingestible and auto-aligned (REQ-013), full settings on export (REQ-012), revision
+- [x] WP-3 Closed-loop bugs: generated plans ingestible and auto-aligned (REQ-013), full settings on export (REQ-012), revision
       keeps its repetition (DEC-021), deletion rebuild and plan protection (DEC-047), marker/label never model-eligible
       (DEC-027/028), device delete, unreadable QR (REQ-003).
 - [x] WP-4 DEC-042: no operator-managed profiles (approach per the operator's answer), device + lens + job settings everywhere,
@@ -62,15 +62,19 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
       observations byte-identical; 580 passed. Startup refusal names the exact SQL fix (0.3.1 cannot re-link a profile with
       records). Next: three parallel streams in worktrees — S1 loop + ingestion (WP-3, WP-6), S2 export + conversion UI +
       vector job (WP-5, WP-10), S3 experiments + colour map + prediction (WP-7, WP-11); then WP-8, WP-9, WP-2, WP-12, WP-13.
-- [ ] WP-5 Conversion UI: band limits and banding picture, colour-path inclusion, tonal warning with all observations, lens
+- [x] WP-5 Conversion UI: band limits and banding picture, colour-path inclusion, tonal warning with all observations, lens
       snapshot with spot basis on every plan.
-- [ ] WP-6 Ingestion completeness: capture setup on upload, chart reference in the setup, rig repeatability shown, restored
+- [x] WP-6 Ingestion completeness: capture setup on upload, chart reference in the setup, rig repeatability shown, restored
       EngravingPlan for imports, target-colour check after measurement.
-- [ ] WP-7 Experiments and colour map: cancelled plates, one list, provisional pairs, honest search grouping.
+- [x] WP-7 Experiments and colour map: cancelled plates, one list, provisional pairs, honest search grouping.
+      Streams merged 2026-10-18: S1 576e3c8..93d37a2, S2 f520c39..96a8ef5, S3 c177161..445df58; integration fix; 746 passed.
+      Proposed decisions for the operator: DEC-067 (S2), DEC-068 (S3), DEC-069 (S1). The live app on 8765 was found serving
+      the new UI against the old in-memory backend (it ran from the working tree); restarted from the installed wheel of
+      59c4704 after a backup (lessons.md).
 - [ ] WP-8 REQ-020 task kinds end to end.
 - [ ] WP-9 REQ-022 findings and proposals loop.
-- [ ] WP-10 REQ-021 image -> vector LightBurn job (approach per the operator's answer).
-- [ ] WP-11 REQ-030 predicted look of a photo engraving (after Q-025).
+- [x] WP-10 REQ-021 image -> vector LightBurn job (approach per the operator's answer).
+- [x] WP-11 REQ-030 predicted look of a photo engraving (after Q-025).
 - [ ] WP-12 Designer and oxide model per comparable partition; REQ-002 values on computed settings.
 - [ ] WP-13 Tests for every criterion that has code but no test.
 - [ ] WP-14 Version 0.4.0, PR, CI, merge, tag, deploy (DEC-024), browser walkthrough, manual checklist.
