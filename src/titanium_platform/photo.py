@@ -105,8 +105,9 @@ class Chart:
 
 def chart_patches_linear(chart: Chart, linear_rgb: np.ndarray, inset: float = 0.2) -> np.ndarray:
     """The 24 patch means read from the linear image: a 6 x 4 grid inside the detected outline, the central part of every
-    cell. The order follows the detected outline and is turned round like ``patches_rgb`` when the grey ramp runs the
-    wrong way."""
+    cell. The order follows the detected outline. An outline that starts at the opposite corner (a chart turned half
+    round) reads the grey ramp first: the grey ramp is the most neutral row, so when the first row is more neutral than
+    the last the order is turned round; then, like ``patches_rgb``, when the grey ramp runs the wrong way."""
     box = np.asarray(chart.box, np.float32).reshape(-1, 2)
     to_photo = cv2.getPerspectiveTransform(np.float32([[0, 0], [6, 0], [6, 4], [0, 4]]), box)
     height, width = linear_rgb.shape[:2]
@@ -118,6 +119,9 @@ def chart_patches_linear(chart: Chart, linear_rgb: np.ndarray, inset: float = 0.
         out[index] = linear_rgb[mask].reshape(-1, 3).mean(axis=0) if mask.any() else np.nan
     if not np.isfinite(out).all():
         raise PhotoError("the reference chart lies partly outside the photograph")
+    spread = lambda row: float(np.mean(np.ptp(row, axis=1) / np.maximum(row.mean(axis=1), 1e-9)))     # 0 for neutral patches
+    if spread(out[:6]) < spread(out[18:]):
+        out = out[::-1].copy()
     if out[18].sum() < out[23].sum():
         out = out[::-1].copy()
     return out
