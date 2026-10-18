@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from . import ingest, plans as pl
+from . import capability_results, ingest, plans as pl
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
@@ -131,5 +131,6 @@ def get_experiment(store: Store, key: str) -> dict:
         marks = ",".join("?" * len(ids))
         for r in store.query(f"SELECT * FROM capability_finding WHERE pair_id IN ({marks}) ORDER BY id DESC", ids):
             findings.append({"id": r["id"], "pair_id": r["pair_id"], "purpose": r["purpose"], "status": r["status"], "summary": r["summary"],
-                             "next_test": r["next_test"], "parameters": json.loads(r["parameters_json"]) if r["parameters_json"] else None})
+                             "next_test": r["next_test"], "parameters": json.loads(r["parameters_json"]) if r["parameters_json"] else None,
+                             "updated_at": r["updated_at"], "history": capability_results.finding_history(store, r["id"])})
     return {**summary, "plate": plate, "pairs": pairs, "findings": findings}

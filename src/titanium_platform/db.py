@@ -342,7 +342,8 @@ class Store:
                 ("material_profile", "thickness_mm", "REAL"),
                 ("material_profile", "surface", "TEXT"),
                 ("plate", "status", "TEXT"),                        # NULL: in use; 'Deleted' with its archived plan (DEC-047)
-                ("capture_setup", "chart_reference_json", "TEXT")):  # NULL: the published chart values (DEC-025)
+                ("capture_setup", "chart_reference_json", "TEXT"),   # NULL: the published chart values (DEC-025)
+                ("capability_finding", "updated_at", "TEXT")):       # NULL: never recalculated to another text (REQ-022)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         # A target colour records every measurement of a plate cell that addressed it (REQ-006): the measured Lab, delta E
@@ -352,6 +353,23 @@ class Store:
                           "observation_id INTEGER NOT NULL REFERENCES observation(id), cell_id TEXT NOT NULL, measured_lab_json TEXT NOT NULL, "
                           "delta_e REAL, tolerance REAL, within_tolerance INTEGER, comparable INTEGER NOT NULL, created_at TEXT NOT NULL, "
                           "UNIQUE(target_id, observation_id))")
+        # Analysis of the accumulated work (REQ-022): every run is kept with its trigger and inputs, and its findings with it; a
+        # finding's history is the findings of the same key across runs. A recalculated capability finding keeps the version
+        # it replaced, and a proposal records every change of its status. A finding names its laser, lens and stock as they were
+        # (no reference): a gap may name a lens no record of work uses, which must stay deletable.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS analysis_run (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, "
+                          "trigger TEXT NOT NULL, summary_json TEXT NOT NULL)")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS finding (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                          "run_id INTEGER NOT NULL REFERENCES analysis_run(id), key TEXT NOT NULL, kind TEXT NOT NULL, "
+                          "device_id INTEGER, lens_id INTEGER, material_id INTEGER, task TEXT, data_json TEXT NOT NULL, UNIQUE(run_id, key))")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS finding_key_run ON finding(key, run_id)")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS capability_finding_history (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                          "finding_id INTEGER NOT NULL REFERENCES capability_finding(id), status TEXT NOT NULL, summary TEXT NOT NULL, "
+                          "parameters_json TEXT, evidence_json TEXT NOT NULL, next_test TEXT NOT NULL, valid_from TEXT NOT NULL, "
+                          "replaced_at TEXT NOT NULL)")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS proposal_event (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                          "proposal_id INTEGER NOT NULL REFERENCES proposal(id), at TEXT NOT NULL, from_status TEXT, "
+                          "to_status TEXT NOT NULL, reason TEXT NOT NULL, note TEXT, finding_id INTEGER REFERENCES finding(id))")
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):
             known = self.conn.execute("SELECT engraving_title FROM pair WHERE engraving_id=? AND engraving_title IS NOT NULL LIMIT 1",

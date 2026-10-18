@@ -19,11 +19,11 @@ UI = ROOT / "ui"
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
                "VectorizeError", "PredictionError"}
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
-APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why"}   # <name>.append(text) / <x>["name"].append(text)
+APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why", "questions", "worth"}   # <name>.append(text) / <x>["name"].append(text)
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage", "supported_stage", "removal_doubt"}   # return "text" or (stage, "text")
-NOTE_KEYS = {"note"}                                                              # row["note"] = "text" or {"note": "text"}
-EVENT_REASON_ARG = 5                                                              # _event(store, id, type, from, to, REASON, ...)
-TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js"]
+NOTE_KEYS = {"note", "statement", "rationale"}                                   # row["note"] = "text" or {"note": "text"}; findings, proposals
+REASON_ARGS = {"_event": 5, "_record": 3}          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
+TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-data.js", "i18n-findings.js"]
 PLACEHOLDER = "7"
 
 
@@ -94,8 +94,8 @@ def raised_messages() -> list[tuple[str, int, str]]:
                     add(path, node, node.args[0])
                 elif node.func.attr == "_event" or getattr(node.func, "id", "") == "_event":
                     pass
-            elif isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_event" and len(node.args) > EVENT_REASON_ARG:
-                add(path, node, node.args[EVENT_REASON_ARG])
+            elif isinstance(node, ast.Call) and getattr(node.func, "id", "") in REASON_ARGS and len(node.args) > REASON_ARGS[node.func.id]:
+                add(path, node, node.args[REASON_ARGS[node.func.id]])
             elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) and isinstance(node.value, ast.ListComp):
                 add(path, node, node.value.elt)
             elif isinstance(node, ast.Assign) and len(node.targets) == 1 and _target_name(node.targets[0]) in NOTE_KEYS:
@@ -158,6 +158,27 @@ def test_every_raised_message_is_translated(tmp_path):
     assert run.returncode == 0, run.stderr[:400]
     untranslated = json.loads(run.stdout)
     assert untranslated == [], "server messages without a Russian translation:\n" + "\n".join(untranslated)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_findings_and_proposal_texts_read_in_russian_with_their_numbers_and_nested_reasons(tmp_path):
+    """REQ-022 texts are data: a finding's statement, a questioned entry's joined reasons, a proposal's reason for a set."""
+    script = tmp_path / "t.js"
+    cases = ["no accepted evidence for line on this titanium with this laser and lens",
+             "this knowledge entry is questioned: variance 3.20 exceeds 2; deviation 5.00 exceeds 4",
+             "aimed at target colour 3: the model predicts 1.9 ΔE from it at these settings",
+             "Which settings reproduce target colour 1 (L 70.0, a -5.0, b 20.0)?"]
+    script.write_text(
+        "const fs=require('fs'),vm=require('vm');\n"
+        f"const ui={json.dumps(str(UI) + '/')};\n"
+        f"const code={json.dumps(TABLES)}.map(f=>fs.readFileSync(ui+f,'utf8')).join('\\n')+';globalThis.__I=I18N;';\n"
+        "const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);\n"
+        f"console.log(JSON.stringify({json.dumps(cases)}.map((s)=>ctx.__I.tr(s))));\n", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, check=True).stdout)
+    assert out[0] == "Нет принятых данных для задачи «линии» на этой заготовке титана с этим лазером и этой линзой"
+    assert out[1] == "Запись знания под вопросом: дисперсия 3.20 превышает порог 2; отклонение 5.00 превышает допуск 4"
+    assert out[2] == "Нацелен на целевой цвет № 3: модель прогнозирует 1.9 ΔE от него при этих настройках"
+    assert out[3] == "Какие настройки воспроизводят целевой цвет № 1 (L 70.0, a -5.0, b 20.0)?"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

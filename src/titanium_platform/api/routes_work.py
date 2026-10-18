@@ -9,7 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import analysis, application_guide, capability_plates, colormap, designer, experiments, ingest, knowledge, model, oxide, plans, setup as su
+from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
+               plans, setup as su)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, public_pair, public_plan, read_upload, refresh_after_change,
                      store_of)
 from .common import content_disposition
@@ -391,14 +392,20 @@ def review_masks(pair_id: int, request: Request):
 
 @router.post("/pairs/{pair_id}/accept")
 def accept_pair(pair_id: int, request: Request):
+    """Accept the measurements; the knowledge is refreshed, then the accumulated work is analysed again (REQ-022 AC1) once the
+    target checks of the photograph are recorded."""
     ids = ingest.accept_pair(store_of(request), pair_id, on_accepted=refresh_after_change)
-    return {"pair": public_pair(ingest.get_pair(store_of(request), pair_id)), "observation_ids": ids}
+    run = findings.after_acceptance(store_of(request))
+    return {"pair": public_pair(ingest.get_pair(store_of(request), pair_id)), "observation_ids": ids,
+            "analysis_run_id": run["id"] if run else None}
 
 
 @router.delete("/pairs/{pair_id}", status_code=204)
 def delete_pair(pair_id: int, request: Request):
-    """Remove a pair from active use; the knowledge its observations fed is rebuilt with it (DEC-047)."""
+    """Remove a pair from active use; the knowledge its observations fed is rebuilt with it (DEC-047), and a proposal whose
+    plate it completed is no longer done."""
     ingest.delete_pair(store_of(request), pair_id)
+    designer.reconcile_statuses(store_of(request))
 
 
 @router.get("/pairs/{pair_id}/overlay.png")

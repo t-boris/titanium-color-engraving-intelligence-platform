@@ -142,21 +142,37 @@ def _matrix_line_case(rows: list[dict]) -> dict | None:
             "next_test": "Повторить выбранный режим линии на новом маленьком участке и сравнить кромку, контраст и непрерывность."}
 
 
+FINDING_FIELDS = ("status", "summary", "parameters_json", "evidence_json", "next_test")
+
+
 def save_findings(store: Store, pair_id: int) -> None:
-    """Keep reviewable, purpose-specific findings next to immutable observations."""
+    """Keep reviewable, purpose-specific findings next to immutable observations.
+
+    A finding recalculated to another text keeps the version it replaces in ``capability_finding_history`` with the time it
+    was in force (REQ-022): a later version never erases what an earlier one said. An unchanged finding is left as it is."""
     report = report_for_pair(store, pair_id)
     if report is None:
         return
     with store.transaction():
         for item in report["use_cases"]:
-            store.execute(
-                "INSERT INTO capability_finding(pair_id,purpose,status,summary,parameters_json,evidence_json,next_test,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(pair_id,purpose) DO UPDATE SET "
-                "status=excluded.status,summary=excluded.summary,parameters_json=excluded.parameters_json,"
-                "evidence_json=excluded.evidence_json,next_test=excluded.next_test",
-                (pair_id, item["purpose"], item["status"], item["summary"],
-                 json.dumps(item["parameters"]) if item["parameters"] else None,
-                 json.dumps(item["evidence"]), item["next_test"], now()))
+            values = (item["status"], item["summary"], json.dumps(item["parameters"]) if item["parameters"] else None,
+                      json.dumps(item["evidence"]), item["next_test"])
+            old = store.one("SELECT * FROM capability_finding WHERE pair_id=? AND purpose=?", (pair_id, item["purpose"]))
+            if old is None:
+                store.execute("INSERT INTO capability_finding(pair_id,purpose,status,summary,parameters_json,evidence_json,next_test,created_at) "
+                              "VALUES (?,?,?,?,?,?,?,?)", (pair_id, item["purpose"], *values, now()))
+            elif tuple(old[k] for k in FINDING_FIELDS) != values:
+                store.execute("INSERT INTO capability_finding_history(finding_id,status,summary,parameters_json,evidence_json,next_test,"
+                              "valid_from,replaced_at) VALUES (?,?,?,?,?,?,?,?)",
+                              (old["id"], *(old[k] for k in FINDING_FIELDS), old["updated_at"] or old["created_at"], now()))
+                store.execute("UPDATE capability_finding SET status=?,summary=?,parameters_json=?,evidence_json=?,next_test=?,updated_at=? "
+                              "WHERE id=?", (*values, now(), old["id"]))
+
+
+def finding_history(store: Store, finding_id: int) -> list[dict]:
+    """The earlier versions of one capability finding, newest first, each with the time it was in force."""
+    return [dict(r, parameters=json.loads(r["parameters_json"]) if r["parameters_json"] else None, evidence=json.loads(r["evidence_json"]))
+            for r in store.query("SELECT * FROM capability_finding_history WHERE finding_id=? ORDER BY id DESC", (finding_id,))]
 
 
 def backfill_findings(store: Store) -> None:

@@ -103,3 +103,28 @@ def test_compact_capability_reports_line_evidence_without_color_tolerance_column
     store.execute("UPDATE pair SET status='Deleted' WHERE id=?", (pair_id,))
     assert capability_results.findings_for_device(store, laser["id"], "text") == []
 
+
+def test_a_recalculated_capability_finding_keeps_the_version_it_replaced(store):
+    """REQ-022 AC6: recalculation never erases what an earlier version of a finding said; an unchanged one is left alone."""
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name="JPT M7", serial="RESULT-HISTORY")
+    lens = lenses.create_lens(store, "F-Theta", 174, 170)
+    lenses.install(store, laser["id"], lens["id"])
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    _, pair_id = accepted_capability_pair(store, laser, material, "compact_capability", with_line_metrics=True)
+    capability_results.save_findings(store, pair_id)
+    capability_results.save_findings(store, pair_id)               # the same result again: nothing to keep
+    assert store.one("SELECT COUNT(*) AS n FROM capability_finding_history")["n"] == 0
+    line = store.one("SELECT * FROM capability_finding WHERE pair_id=? AND purpose='line'", (pair_id,))
+    store.execute("UPDATE capability_finding SET summary='an earlier wording', status='insufficient' WHERE id=?", (line["id"],))   # as an older version wrote it
+
+    capability_results.save_findings(store, pair_id)
+
+    now_row = store.one("SELECT * FROM capability_finding WHERE id=?", (line["id"],))
+    assert (now_row["summary"], now_row["status"]) == (line["summary"], line["status"]) and now_row["updated_at"] is not None
+    history = capability_results.finding_history(store, line["id"])
+    assert [(h["summary"], h["status"], h["valid_from"]) for h in history] == [("an earlier wording", "insufficient", line["created_at"])]
+    with TestClient(create_app(store.data_dir)) as client:          # the experiment page shows the earlier version
+        experiment = next(e for e in client.get("/api/experiments").json() if e.get("plan_id"))
+        shown = client.get(f"/api/experiments/{experiment['key']}").json()["findings"]
+    assert next(f for f in shown if f["purpose"] == "line")["history"][0]["summary"] == "an earlier wording"
+

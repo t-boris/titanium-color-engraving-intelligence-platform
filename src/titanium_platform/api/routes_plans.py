@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, plans, setup as su, vector_job
+from .. import conversion, designer, plans, research, setup as su, vector_job
 from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of
 
 router = APIRouter(prefix="/api")
@@ -33,12 +33,17 @@ class ProposeIn(BaseModel):
     passes: int
     seed: int = 1729
     size: int = designer.DEFAULT_SIZE
+    material_id: int | None = None  # one titanium stock; none models every stock measured with these job settings
 
 
 class DesignerPlatesIn(BaseModel):
     cell_width: float
     cell_height: float
     gap: float
+
+
+class RejectIn(BaseModel):
+    note: str = ""
 
 
 def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
@@ -235,7 +240,7 @@ def palette(request: Request, device_id: int, lens_id: str, include_questioned: 
 @router.post("/designer/propose")
 def propose(body: ProposeIn, request: Request):
     return designer.propose(store_of(request), body.device_id, body.lens_id, body.pulse_width, body.line_interval, body.passes,
-                            body.seed, body.size)
+                            body.seed, body.size, material_id=body.material_id)
 
 
 @router.get("/designer/proposals")
@@ -248,9 +253,35 @@ def proposals(request: Request, device_id: int, lens_id: str):
 
 @router.get("/designer/proposals/{proposal_id}")
 def get_proposal(proposal_id: int, request: Request):
-    return designer.get_proposal(store_of(request), proposal_id)
+    """A proposal with what became of it (REQ-022 AC5): its plates, their photographs and acceptance, the measured outcome of
+    every proposed set with its target check, and whether an AI explanation can be asked for."""
+    s = store_of(request)
+    return designer.get_proposal(s, proposal_id) | designer.results(s, proposal_id) | {"explanation_available": research.ai_available()}
 
 
 @router.post("/designer/proposals/{proposal_id}/plates", status_code=201)
 def proposal_plates(proposal_id: int, body: DesignerPlatesIn, request: Request):
     return designer.create_plates(store_of(request), proposal_id, body.cell_width, body.cell_height, body.gap)
+
+
+@router.post("/designer/proposals/{proposal_id}/accept", status_code=201)
+def accept_proposal(proposal_id: int, body: DesignerPlatesIn, request: Request):
+    """Accept a proposal: its plates are made (the cleaning operation first in each file) and it waits for their photographs."""
+    s = store_of(request)
+    plates = designer.create_plates(s, proposal_id, body.cell_width, body.cell_height, body.gap)
+    return {"plates": plates, "proposal": designer.get_proposal(s, proposal_id)}
+
+
+@router.post("/designer/proposals/{proposal_id}/reject")
+def reject_proposal(proposal_id: int, body: RejectIn, request: Request):
+    return designer.reject(store_of(request), proposal_id, body.note)
+
+
+@router.post("/designer/proposals/{proposal_id}/explanation")
+def explain_proposal(proposal_id: int, request: Request):
+    """An optional plain-text explanation and hypotheses of the proposal by the language model the AI researcher uses (REQ-006,
+    DEC-013). It is stored as text only and can never change the proposal's settings or any data; without a key the proposal
+    works as before and this answers that no key is configured."""
+    s = store_of(request)
+    designer.get_proposal(s, proposal_id)
+    return designer.explain(s, proposal_id, research.proposal_explainer())

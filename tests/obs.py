@@ -22,12 +22,14 @@ def setup(store: Store, lens: bool = True) -> dict:
 
 def add(store: Store, w: dict, lab, power=10, frequency=40, speed=900, engraving=None, rephoto=False,
         batch=None, focus=None, repeat_eligible=None, model_eligible=1, material_id=None,
-        pulse_width=200, line_interval=0.025, passes=1, lens_id=_SAME, evidence=None) -> int:
+        pulse_width=200, line_interval=0.025, passes=1, lens_id=_SAME, evidence=None, layer_type=None) -> int:
     w["n"] += 1
     eng = engraving or f"e{w['n']}"
     device_id = w["setup"][0]
     lens = w["setup"][1] if lens_id is _SAME else lens_id
     p = su.parameter_vector(w["device"]["passport"], power, frequency, speed, pulse_width, line_interval, passes)
+    if layer_type is not None:                 # the LightBurn mode of the layer, as an imported file records it
+        p["layer_type"] = layer_type
     context = {"batch": batch, "focus": focus, "material_id": material_id}
     if material_id is not None:
         material = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))

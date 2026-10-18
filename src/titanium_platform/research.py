@@ -368,6 +368,47 @@ def _api_key() -> str | None:
     return None
 
 
+def ai_available() -> bool:
+    """Whether a key for the language model is configured (environment or .env.local)."""
+    return _api_key() is not None
+
+
+def openai_client():
+    """The client the researcher and the designer's explanation use, or None without a key."""
+    key = _api_key()
+    if not key:
+        return None
+    from openai import OpenAI
+    return OpenAI(api_key=key, timeout=90.0, max_retries=1)
+
+
+EXPLAIN_INSTRUCTIONS = """Ты помогаешь оператору лазерной гравировки по титану понять предложенный эксперимент.
+Предложение уже рассчитано офлайн-алгоритмом по измерениям; ты его не меняешь и не выбираешь параметры.
+Ответь по-русски обычным текстом, до 1800 знаков: что проверяет плата, почему выбран каждый набор (по полю rationale),
+какие физические гипотезы стоит проверить на результате (рост оксидной плёнки, тепловой вклад, нестабильность),
+и что будет считаться подтверждением или опровержением. Гипотезы называй гипотезами; не выдавай их за измерения.
+Не предлагай другие параметры и не пиши, что что-то уже доказано."""
+
+
+def proposal_explainer(client=None):
+    """An explainer for ``designer.attach_explanation`` (REQ-006, DEC-013): it sends a brief of the proposal to the model the
+    researcher uses and returns its plain text. None without a client and without a key: the proposal stays as it is."""
+    client = client if client is not None else openai_client()
+    if client is None:
+        return None
+
+    def explain(proposal: dict) -> str:
+        brief = {k: proposal.get(k) for k in ("id", "questions", "worth", "task", "setup", "stock", "group", "notes", "model",
+                                              "unaddressed_targets")}
+        brief["parameters"] = [{k: p.get(k) for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes", "reason",
+                                                     "rationale", "target_id", "estimated_distance_to_target")}
+                               for p in proposal.get("parameters", [])]
+        result = client.responses.create(model=DEFAULT_MODEL, reasoning={"effort": "low"}, store=False, max_output_tokens=1400,
+                                         instructions=EXPLAIN_INSTRUCTIONS, input=[{"role": "user", "content": _json(brief)}])
+        return getattr(result, "output_text", "") or ""
+    return explain
+
+
 # The settings of a test plate. The pulse width is required: no value is filled in for it (DEC-043); it must be one of the
 # laser's steps, which research_context lists.
 SETTINGS_SCHEMA = {"type": "object", "properties": {"pulse_width": {"type": "number", "description": "Q-Pulse width in ns: a step of this laser"}},
@@ -551,12 +592,9 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
     session = get_session(store, session_id)
     if session["status"] != "active":
         raise ResearchError("исследование закрыто")
-    key = _api_key()
-    if client is None and not key:
-        raise ResearchError("OPENAI_API_KEY не найден в окружении или локальном .env.local")
+    client = client if client is not None else openai_client()
     if client is None:
-        from openai import OpenAI
-        client = OpenAI(api_key=key, timeout=90.0, max_retries=1)
+        raise ResearchError("OPENAI_API_KEY не найден в окружении или локальном .env.local")
     if session["memory"] is None and session["message_count"] >= MEMORY_INTERVAL:
         try:
             _refresh_memory(store, session_id, session["model"], client)
