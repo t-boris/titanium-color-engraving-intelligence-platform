@@ -33,6 +33,10 @@
     const grey = h('input', {type: 'number', step: '1', min: '0', max: '255', placeholder: 'авто (Оцу)'});
     const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: 0.05});
     const markers = h('input', {type: 'checkbox'}), clean = h('input', {type: 'checkbox', checked: true});
+    // REQ-020: главная задача работы следует из стратегии, пока оператор не выбрал другую; у каждой области — своя задача
+    const STRATEGY_TASK = {color: 'color_image', fill: 'fill', text: 'text', line: 'line'};
+    const task = Tasks.chooser(STRATEGY_TASK[strategy.value], {hint: 'главная задача работы; задачу каждой области можно изменить после обводки'});
+    strategy.addEventListener('change', () => task.set(STRATEGY_TASK[strategy.value]));
     const info = h('div', {});
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (m) => { err.textContent = m; err.hidden = !m; };
@@ -59,6 +63,7 @@
       fd.append('markers', markers.checked); fd.append('clean', clean.checked); fd.append('image', img.files[0]);
       if (thr.value !== '') fd.append('threshold', thr.value);
       if (grey.value !== '') fd.append('grey_threshold', grey.value);
+      task.append(fd);
       if (strategy.value === 'color') {
         if (titaniumColours.checked) {
           if (!palette.length) return show('Нет цветов титана для этого лазера, линзы и титана');
@@ -80,7 +85,7 @@
         field('Стратегия', strategy, 'цветные области — по цветам изображения; заливка, текст и линии — по тёмному силуэту'),
         field('Число цветов', colours, 'только для цветных областей'), field('Порог ΔE', thr, 'пусто — допуск из правил этого лазера с линзой'),
         field('Порог серого', grey, 'для заливки, текста и линий; пусто — автоматически'), field('Точность контура, мм', tolerance, 'наибольшее отклонение упрощённого контура')),
-        h('label', {class: 'row'}, titaniumColours, h('span', {}, 'Цвета областей — из палитры титана (рецепты заливки этого лазера, линзы и титана) и белый фон; область фона затем удалите')),
+        task.el, h('label', {class: 'row'}, titaniumColours, h('span', {}, 'Цвета областей — из палитры титана (рецепты заливки этого лазера, линзы и титана) и белый фон; область фона затем удалите')),
         h('label', {class: 'row'}, clean, h('span', {}, 'Чистка первым слоем (C00)')),
         h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')),
         info, err, submit));
@@ -162,6 +167,7 @@
       h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', j.lens ? App.lensLabel(j.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Стратегия', (STRATEGIES.find(([s]) => s === j.document.strategy) || [null, j.document.strategy])[1]],
+        ['Задача работы', j.engraving_task ? Tasks.name(j.engraving_task.kind) + (j.engraving_task.basis === 'explicit' ? '' : ' · по стратегии') : '—'],
         ['Чистка', j.clean_layer ? 'первый слой C00' : 'нет'], ['Маркеры', j.markers_enabled ? 'включены' : 'выключены'],
         ['Слоёв LightBurn', `${j.layers.length} из ${j.layer_cap} доступных`]])),
       h('div', {class: 'card stack'}, h('h3', {}, 'Изображение и контуры'), h('div', {class: 'grid g2'},
@@ -179,7 +185,9 @@
         table(['Группа', 'Нужно', 'Рецепт', '', 'Областей', 'Подходящих рецептов', ''], groups)),
       h('div', {class: 'card stack'}, h('h3', {}, 'Экспорт'),
         j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
-        table(['Слой', 'Режим', 'Областей', 'Прогнозный цвет', 'Уверенность · ошибка'], j.layers.map((l) => [`C${String(l.index).padStart(2, '0')} · ${l.name}`, MODE[l.mode] || l.mode || '—',
+        // REQ-020: задача, для которой будет измерено фото слоя; слой со смешанными задачами измеряется по своему режиму LightBurn
+        table(['Слой', 'Режим', 'Задача', 'Областей', 'Прогнозный цвет', 'Уверенность · ошибка'], j.layers.map((l) => [`C${String(l.index).padStart(2, '0')} · ${l.name}`, MODE[l.mode] || l.mode || '—',
+          l.task ? Tasks.name(l.task) : h('span', {class: 'muted small'}, 'смешанная: ' + (l.region_tasks || []).map((t) => (TASKS.find(([k]) => k === t) || [t, t])[1]).join(', ') + ' — по слою LightBurn'),
           `${l.region_ids.length}`, h('span', {}, swatch(l.prediction.lab), labText(l.prediction.lab)), `${num(l.prediction.confidence)} · ΔE ${num(l.prediction.expected_delta_e)}`]), 'Слоёв нет'),
         h('div', {class: 'row'}, exportBtn),
         j.exports.length ? table(['Файл', 'Версия документа', 'Слоёв', 'Областей', 'Когда'], j.exports.map((e) => [

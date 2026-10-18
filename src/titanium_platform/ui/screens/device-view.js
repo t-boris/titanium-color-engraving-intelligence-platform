@@ -74,12 +74,15 @@ const DeviceView = (() => {
       ['Импульс, нс', 'pulse_width', '1'], ['Шаг линий, мм', 'line_interval', '0.001'], ['Проходы', 'passes', '1'],
     ].map(([label, key, step]) => [key, field(label, h('input', {type: 'number', min: key === 'passes' ? 1 : 0, step, required: true}))]);
     const result = h('div', {});
+    // REQ-020: результаты разных задач гравировки не смешиваются; можно искать только одну задачу
+    const taskPicker = Tasks.select('', {empty: 'все задачи, каждая отдельно', aria: 'Задача гравировки'});
     const form = h('form', {class: 'stack', onsubmit: async (event) => {
       event.preventDefault();
       const values = Object.fromEntries(inputs.map(([key, control]) => [key, +control.querySelector('input').value]));
       if (inputs.some(([, control]) => control.querySelector('input').value === '')) return fail('Заполните все шесть параметров.');
       try {
-        const found = await post(`/devices/${device.id}/result-lookup`, {lens_id: lensPicker.value === '' ? null : +lensPicker.value, ...values});
+        const found = await post(`/devices/${device.id}/result-lookup`, {lens_id: lensPicker.value === '' ? null : +lensPicker.value, ...values,
+          task: taskPicker.value || null});
         if (!found.matches.length) result.replaceChildren(h('div', {class: 'empty'}, h('p', {}, 'Для этой линзы и этих настроек принятых измерений пока нет.')));
         else {
           const cards = found.matches.map((m) => {
@@ -88,6 +91,8 @@ const DeviceView = (() => {
             const sources = m.source_pair_ids.map((pairId) => link('/analysis/' + pairId, `Фото/анализ пары ${pairId}`));
             return h('div', {class: 'card stack'},
               h('p', {}, `${labText(m.lab)} · ${m.available_for_prediction ? 'есть независимые повторы' : 'пока одно наблюдение; повторяемость не оценена'}`),
+              h('p', {class: 'small'}, Tasks.badge(m.task), ` Измерено (не прогноз): наблюдений ${m.sample.observations} · независимых гравировок ${m.sample.independent_engravings}`
+                + ` · фото ${m.sample.photographs}`, ...(m.missing_context.length ? [' · не хватает: ', ...Tasks.missing(m.missing_context)] : [])),
               h('p', {class: 'muted small'}, `Операция LightBurn: ${m.parameters.layer_type || 'режим не записан'} · глобальных проходов: ${m.parameters.global_passes ?? '—'} · дополнительные настройки сохранены в карточке результата.`),
               ...contexts, h('p', {class: 'muted small'}, `Уверенность: ${num(m.confidence)} · ожидаемая ошибка ΔE: ${num(m.expected_delta_e)}`),
               h('div', {class: 'row'}, ...sources));
@@ -96,7 +101,7 @@ const DeviceView = (() => {
         }
       } catch (error) { fail(error); }
     }},
-      h('div', {class: 'grid g3'}, field('Историческая линза', lensPicker), ...inputs.map(([, control]) => control)),
+      h('div', {class: 'grid g3'}, field('Историческая линза', lensPicker), ...inputs.map(([, control]) => control), field('Задача', taskPicker)),
       h('button', {type: 'submit', class: 'btn primary'}, 'Найти измеренный результат'), result);
 
     return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'База измерений: параметры → результат'),

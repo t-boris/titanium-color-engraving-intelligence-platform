@@ -191,9 +191,11 @@ const PlateDialog = (() => {
       } catch (e) { fail(e); }
     };
 
+    // REQ-020: для какой задачи гравировки делается плата; по умолчанию — что исследует её тип (буквы — надписи, линии — линии…)
+    const task = Tasks.chooser('', {empty: 'по типу платы', hint: 'каждая ячейка записывает и свою задачу: буквы — надписи, остальное — по режиму LightBurn'});
     const body = h('div', {class: 'stack'},
       h('p', {class: 'muted small'}, 'Выбери тест, лазер и заготовку. Рецепт предварительной очистки пока задан для титана.'),
-      field('Тип экспериментальной платы', type), desc,
+      field('Тип экспериментальной платы', type), desc, task.el,
       field('Лазер', device), hardware,
       field('Заготовка', material),
       h('div', {class: 'grid g2'}, field('Максимальная ширина платы, мм', maxWidth),
@@ -226,7 +228,7 @@ const PlateDialog = (() => {
         matrix: {x_axis: matrix.xAxis.value, y_axis: matrix.yAxis.value, geometry: matrix.geometry.value,
           wobble_step: +matrix.wobbleStep.value,
           x_min: +matrix.xMin.value, x_max: +matrix.xMax.value, x_count: +matrix.xCount.value,
-          y_min: +matrix.yMin.value, y_max: +matrix.yMax.value, y_count: +matrix.yCount.value}};
+          y_min: +matrix.yMin.value, y_max: +matrix.yMax.value, y_count: +matrix.yCount.value}, ...task.body()};
       if (type.value === 'small_patches') {
         const count = +patch.count.value;
         const numbers = patch.values.value.split(/[,;\s]+/).filter(Boolean).map(Number);

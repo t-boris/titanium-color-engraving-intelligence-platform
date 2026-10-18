@@ -86,12 +86,14 @@
       const check = pair.check || {};
       const layers = (check.layers || []).filter((l) => l.measured_lab);
       const ref = check.clean_reference;
+      // REQ-020: у каждого слоя — его задача; у каждой метрики — способ (подсказка) и основание измерения
       const rows = layers.map((l) => [
-        l.measured_lab_against_clean
-          ? h('span', {}, swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean),
-              h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`))
-          : h('span', {}, swatch(l.measured_lab), labText(l.measured_lab)),
-        l.name, params(l), h('span', {class: 'small'}, (l.notes || []).map((n) => I18N.tr(n)).join(' · '))]);
+        h('span', {}, l.measured_lab_against_clean
+          ? [swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean), h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`)]
+          : [swatch(l.measured_lab), labText(l.measured_lab)],
+        Tasks.colourBasis(l.metrics) ? h('div', {class: 'muted small'}, Tasks.colourBasis(l.metrics)) : null),
+        l.name, Tasks.badge(l.task), params(l),
+        h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null)]);
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
       fill(result,
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
@@ -105,7 +107,7 @@
           h('p', {class: 'muted small'}, pair.matrix.confirmed ? 'Настройки прочитаны с фотографии и подтверждены.' : 'Настройки прочитаны с фотографии и ещё не подтверждены.'),
           IngestReview.matrixGrid(pair)) : null,
         layers.length ? h('div', {class: 'card stack'}, h('h3', {}, `Измеренные слои · ${layers.length}`),
-          table([ref ? 'Цвет относительно чистого титана' : 'Цвет на фото', 'Слой', 'Параметры', 'Заметки'], rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
+          table([ref ? 'Цвет относительно чистого титана' : 'Цвет на фото', 'Слой', 'Задача', 'Параметры', 'Метрики и заметки'], rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
         ...images.map((l) => h('p', {class: 'small'}, `${l.name}: тональный профиль — связь серого уровня картинки с яркостью ${num(l.tonal.rho, 2)}, `
           + `размах L* ${num(l.tonal.range_L, 0)}. `, link(`/ingest?pair=${shown}`, 'Таблица «серый → мощность → цвет»'))));
     }
@@ -120,6 +122,9 @@
       // a plate of the experiment designer answers its proposal (REQ-022): the proposal shows this plate's result
       exp.plate.proposal ? h('p', {class: 'small'}, 'Сделана по ', link(`/designer?device=${exp.plate.proposal.device_id}&lens=${App.lensParam(exp.plate.proposal.lens_id)}&proposal=${exp.plate.proposal.id}`,
         `предложению планировщика № ${exp.plate.proposal.id}`)) : null,
+      exp.plate.engraving_task ? h('p', {class: 'small'}, h('strong', {}, 'Задача: '), Tasks.name(exp.plate.engraving_task.kind),
+        exp.plate.engraving_task.basis === 'explicit' ? '' : ' (по режиму плана)',
+        Object.keys(exp.plate.engraving_task.goals || {}).length ? ` · ${Tasks.goalsText(exp.plate.engraving_task.goals)}` : '') : null,
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
         h('a', {class: 'btn btn-small', href: `/api/plans/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2'),
         link('/research', 'Попросить AI-исследователя изменить плату'))) : null;
@@ -154,7 +159,8 @@
       h('div', {class: 'row exp-head'}, h('div', {}, link('/experiments', '← Эксперименты'),
         h('h2', {}, exp.title),
         h('p', {class: 'sub'}, [exp.kind, exp.laser, exp.lens, exp.material].filter(Boolean).join(' · ')
-          + (exp.created_at ? ` · ${when(exp.created_at)}` : ''))),
+          + (exp.created_at ? ` · ${when(exp.created_at)}` : '')),
+        (exp.tasks || []).length ? h('div', {class: 'row small'}, h('span', {class: 'muted'}, 'Задачи:'), ...exp.tasks.map((k) => pill(Tasks.name(k)))) : null),
         h('span', {class: 'spacer'}), pill(exp.status_text, STATUS_KIND[exp.status] || ''), addPhoto, remove),
       h('section', {class: 'card stack exp-photo-card'}, photoTools, stage, caption),
       checks,

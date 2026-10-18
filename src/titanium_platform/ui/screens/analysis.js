@@ -111,6 +111,9 @@
         `Цвет относительно чистого титана: ${labText(row.measured_lab_against_clean)}`, h('span', {class: 'muted small'}, ` · как снято: ${labText(row.measured_lab)}`))
       : row.measured_lab ? h('p', {class: 'analysis-lab'}, swatch(row.measured_lab),
         `${capability ? 'Отклик камеры' : 'Измеренный цвет'}: ${labText(row.measured_lab)}`) : h('p', {class: 'muted small'}, 'На фото не измерено'),
+      // REQ-020: задача слоя и каждая метрика со способом (подсказка) и основанием; недоступные — с причиной
+      row.task ? h('p', {class: 'small'}, 'Задача: ', Tasks.badge(row.task)) : null,
+      Tasks.metrics(row.metrics),
       row.planned_lab ? h('p', {class: 'small'}, 'Плановый цвет: ', swatch(row.planned_lab), labText(row.planned_lab),
         row.delta_e != null ? ` · ΔE ${num(row.delta_e, 1)}` : '') : null,
       row.note ? h('p', {class: 'muted small'}, I18N.tr(row.note)) : null,
@@ -252,6 +255,8 @@
     const layers = r.rows.map((row) => h('button', {type: 'button', class: 'analysis-module', onClick: () => showElement(row, false)},
       h('strong', {}, row.name || `Слой ${row.layer_index}`),
       h('span', {}, row.measured_lab ? [swatch(row.measured_lab_against_clean || row.measured_lab), labText(row.measured_lab_against_clean || row.measured_lab)] : 'На фото не измерено'),
+      row.measured_lab && Tasks.colourBasis(row.metrics) ? h('small', {class: 'muted'}, Tasks.colourBasis(row.metrics)) : null,
+      row.task ? h('small', {}, Tasks.label(row.task)) : null,
       h('small', {}, settingsLabel(row.parameters))));
     const ref = r.clean_reference;
     return [h('div', {class: 'analysis-kpi-grid'}, ...values.map(([value, label]) => kpi(value, label))),

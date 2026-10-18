@@ -13,6 +13,8 @@ const ArtworkParts = (() => {
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
     const name = h('input', {placeholder: 'Название плана'}), width = h('input', {type: 'number', step: 'any', value: 60});
     const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'}), markers = h('input', {type: 'checkbox'});
+    // REQ-020: цветное изображение или плоские цветные области; задача записывается в план и переходит к измерениям его фото
+    const task = Tasks.chooser('color_image', {hint: 'цветное изображение — по умолчанию; «Заливка» — если это плоские цветные области'});
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (m) => { err.textContent = m; err.hidden = !m; };
     const submit = btn('Сопоставить цвета', async (ev) => {
@@ -22,6 +24,7 @@ const ArtworkParts = (() => {
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('name', name.value); fd.append('width_mm', width.value);
       fd.append('markers', markers.checked); fd.append('image', img.files[0]);
       if (thr.value !== '') fd.append('threshold', thr.value);
+      task.append(fd);
       const self = ev.currentTarget;
       self.disabled = true;
       try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); self.disabled = false; }
@@ -29,7 +32,7 @@ const ArtworkParts = (() => {
     return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),
         field('Изображение', App.filePick(img, 'Выбрать изображение')), field('Название плана', name), field('Ширина работы, мм', width),
-        field('Порог ΔE', thr, 'пусто — взять допуск из правил этого лазера с линзой; если его нет, порог нужно задать')),
+        field('Порог ΔE', thr, 'пусто — взять допуск из правил этого лазера с линзой; если его нет, порог нужно задать')), task.el,
       h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')), err, submit));
   }
 

@@ -46,6 +46,9 @@ const PhotoForm = (() => {
     const width = h('input', {type: 'number', step: 'any', value: revising && revising.size_mm ? revising.size_mm.width : 80});
     const bands = h('input', {type: 'number', step: '1', min: '1', max: String(maxBands), value: revising ? Math.min(revising.band_count, maxBands) : maxBands, 'aria-describedby': 'bands-help'});
     const markers = h('input', {type: 'checkbox', checked: revising ? revising.markers_enabled : false});
+    // REQ-020: тоновое изображение для тонового режима, цветное — для цветового пути; задача записывается в план
+    const DEFAULT_TASK = {tonal: 'tonal_image', color_path: 'color_image'};
+    const task = Tasks.chooser((revising && revising.engraving_task && revising.engraving_task.kind) || DEFAULT_TASK[state.mode]);
     let all = [], palette = [];
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (m) => { err.textContent = m; err.hidden = !m; };
@@ -60,7 +63,7 @@ const PhotoForm = (() => {
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('mode', state.mode); fd.append('width_mm', width.value); fd.append('bands', bands.value);
       fd.append('path_ids', JSON.stringify(state.path)); fd.append('allowed_questioned', JSON.stringify(state.allowed));
       if (img.files[0]) fd.append('image', img.files[0]); else fd.append('image', state.image, 'source-image');
-      if (create) { fd.append('name', name.value); fd.append('markers', markers.checked); if (revising) fd.append('revision_of', revising.id); }
+      if (create) { fd.append('name', name.value); fd.append('markers', markers.checked); if (revising) fd.append('revision_of', revising.id); task.append(fd); }
       return fd;
     };
     const signature = () => JSON.stringify([pick.deviceId(), pick.lensValue(), state.mode, width.value, bands.value, state.path, state.allowed,
@@ -96,7 +99,7 @@ const PhotoForm = (() => {
       const p = state.preview;
       const questioned = all.filter((e) => e.questioned);
       const modeBtns = MODES.map(([id, label]) => h('button', {type: 'button', class: 'btn' + (state.mode === id ? ' primary' : ''), 'aria-pressed': state.mode === id,
-        onClick: async () => { if (state.mode === id) return; state.mode = id; state.path = []; state.allowed = []; state.preview = null; await loadPalette(); draw(); }}, label));
+        onClick: async () => { if (state.mode === id) return; state.mode = id; state.path = []; state.allowed = []; state.preview = null; task.set(DEFAULT_TASK[id]); await loadPalette(); draw(); }}, label));
       fill(host,
         h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Непрерывная фотогравировка'), h('p', {class: 'sub'}, 'Одна передаточная функция, два режима. Параметры между измеренными наборами не интерполируются.')),
           h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Подрежим фотогравировки'}, modeBtns), link('/colors', 'Карта цветов')),
@@ -105,7 +108,7 @@ const PhotoForm = (() => {
         h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),
           field('Фотография', App.filePick(img, 'Выбрать фотографию'), revising && !img.files[0] ? 'сейчас — изображение исправляемого плана' : null), field('Название плана', name), field('Ширина работы, мм', width),
           field('Число полос', bands, `целое от 1 до ${maxBands}: из 30 выходных слоёв LightBurn один остаётся для маркеров; картина полос обновляется при изменении`)),
-        h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))),
+        task.el, h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))),
         state.mode === 'color_path' ? pathPicker(palette, state, () => invalidate()) : null,
         state.mode === 'color_path' ? h('div', {class: 'card toolbar'}, btn('Включить параметры под вопросом в этот план', () => questionedDialog(questioned, state, async () => { await loadPalette(); invalidate(); }), '', !questioned.length),
           h('span', {class: 'muted small'}, state.allowed.length ? `Включено в этот план: ${state.allowed.map((id) => 'K' + id).join(', ')}` : questioned.length ? 'Записи под вопросом по умолчанию исключены' : 'Записей под вопросом нет')) : null,

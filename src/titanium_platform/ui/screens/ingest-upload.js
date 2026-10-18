@@ -123,6 +123,9 @@ const IngestUpload = (() => {
     const mat = h('select', {'aria-label': 'Использованный титан'}, [h('option', {value: ''}, 'выберите титан')].concat(materials.map((m) => h('option', {value: m.id}, materialLabel(m)))));
     if (ctx.query.material) mat.value = ctx.query.material;
     const rig = rigPicker(rigs);
+    // REQ-020: задача всей работы; по умолчанию каждый слой берёт задачу своего плана или своего режима LightBurn,
+    // а на проверке пары её можно изменить для каждого слоя
+    const task = Tasks.select('', {empty: planned ? 'по плану и слоям LightBurn' : 'по слою LightBurn', aria: 'Задача работы'});
     const c = {focus: h('input', {type: 'number', step: 'any', placeholder: 'необязательно'}),
       date: h('input', {type: 'date'}), note: h('input', {placeholder: 'необязательно'})};
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
@@ -149,6 +152,7 @@ const IngestUpload = (() => {
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('context', JSON.stringify(context()));
       fd.append('stand_id', rig.value);
       if (ctx.query.plan) fd.append('plan_id', ctx.query.plan);
+      if (task.value) fd.append('task', task.value);
       fd.append('lightburn', lb.files[0]); fd.append('photo', photo.files[0]);
       const self = ev.currentTarget;
       self.disabled = true;
@@ -188,6 +192,7 @@ const IngestUpload = (() => {
         h('div', {class: 'card stack'}, h('h3', {}, 'Файл LightBurn'), field('.lbrn или .lbrn2 · параметры читаются из фактически запущенного файла', App.filePick(lb, 'Выбрать файл LightBurn'))),
         h('div', {class: 'card stack'}, h('h3', {}, 'Фотография результата'), field('Фотография RAW; в кадре должна быть эталонная цветовая карта', App.filePick(photo, 'Выбрать фотографию')))),
       h('div', {class: 'card stack'}, h('h3', {}, 'Условия'), hardware(),
+        h('div', {class: 'grid g3'}, field('Задача гравировки', task, 'для чего делалась работа: надписи, линии, заливка, изображение…; результаты разных задач не смешиваются')),
         h('p', {class: 'muted small'}, 'Лазер, линза и титан сохраняются у каждого эксперимента. Фокус, дата и примечание необязательны.'),
         h('details', {}, h('summary', {}, 'Дополнительные условия'),
           h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same)),

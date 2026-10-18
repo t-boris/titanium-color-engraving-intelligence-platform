@@ -626,6 +626,7 @@ const IngestReview = (() => {
             btn('Подтвердить использованный файл', () => IngestDialogs.confirmFile(pair, {...check, discrepancies: realDifferences}, reload)))));
     }
     out.append(h('div', {class: 'card stack'}, h('h3', {}, 'Слои файла'), IngestDialogs.layersTable(check.layers)));
+    out.append(IngestTasks.card(pair, reload));          // REQ-020: задача каждого слоя и метрики с основанием
     return out;
   }
   return {render, matrixGrid};

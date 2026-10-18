@@ -15,6 +15,7 @@ const ExperimentCards = (() => {
           pill(e.status_text, e.status === 'accepted' ? 'ok' : 'warn')),
         h('p', {class: 'dashboard-item-type'}, e.kind),
         h('p', {class: 'dashboard-meta'}, [e.laser, e.lens, e.material].filter(Boolean).join(' · ') || 'Лазер не указан'),
+        (e.tasks || []).length ? h('p', {class: 'dashboard-meta'}, 'Задачи: ' + e.tasks.map((k) => Tasks.name(k)).join(', ')) : null,
         h('div', {class: 'dashboard-item-foot'},
           h('span', {}, e.checks ? `${e.photos} фото · измерено ${layers(e.layers_measured)}${e.needs_review ? ` · ${e.needs_review} к проверке` : ''}` : 'Фото ещё нет'),
           h('span', {class: 'spacer'}), h('span', {class: 'muted small'}, (e.last_activity || '').slice(0, 10)))));
