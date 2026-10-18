@@ -210,22 +210,15 @@ def _safe_name(name: str) -> str:
 def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: int | None = None, lightburn_name: str,
                 lightburn_bytes: bytes, photo_name: str, photo_bytes: bytes, plan_id: int | None = None, rephoto_of: int | None = None,
                 context: dict | None = None) -> int:
-    """A new pair of the laser and lens the operator chose (``lens_id`` None: the lens is unknown)."""
+    """A new pair of the laser and lens the operator chose (``lens_id`` None: the lens is unknown), photographed on the
+    capture setup ``stand_id`` (None: the one used last, REQ-009)."""
     if rephoto_of is not None:
         # Legacy callers may still supply these fields. A second view must inherit the real job.
-        return create_rephoto(store, rephoto_of, photo_name=photo_name, photo_bytes=photo_bytes)
+        return create_rephoto(store, rephoto_of, photo_name=photo_name, photo_bytes=photo_bytes, stand_id=stand_id)
     setup = su.resolve(store, device_id, lens_id)
     if stand_id is not None and store.one("SELECT id FROM capture_setup WHERE id=?", (stand_id,)) is None:
         raise IngestError("the selected capture setup was not found")
-    if stand_id is None:
-        # Kept only for compatibility with old databases where pair.stand_id is NOT NULL. The current
-        # workflow does not require or expose a rig; chart correction uses the photograph itself.
-        stand = store.one("SELECT id FROM capture_setup WHERE name='Photo capture (no rig)' ORDER BY id LIMIT 1")
-        if stand is None:
-            stand_id = store.execute("INSERT INTO capture_setup(name,camera,lighting,angle,reference_chart,created_at) VALUES (?,?,?,?,?,?)",
-                                     ("Photo capture (no rig)", "not recorded", "not recorded", "not recorded", "ColorChecker Classic", now())).lastrowid
-        else:
-            stand_id = stand["id"]
+    stand_id = su.capture_setup_for_photo(store, stand_id)
     if not re.search(r"\.(lbrn2?)$", lightburn_name, re.I):
         raise IngestError("Select a .lbrn or .lbrn2 file")
     if Path(photo_name).suffix.lower() not in ph.RAW_EXTENSIONS and not non_raw_allowed(store):
@@ -263,11 +256,19 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
          json.dumps(ctx), json.dumps(data), json.dumps(hardware), now())).lastrowid
 
 
-def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_bytes: bytes) -> int:
-    """Attach a RAW view to the same engraving with the exact accepted job and context snapshot."""
+def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_bytes: bytes, stand_id: int | None = None,
+                   same_photograph: bool = False) -> int:
+    """Attach a RAW view to the same engraving with the exact accepted job and context snapshot. The new photograph is taken
+    on ``stand_id``, by default the rig of its source (the rig used last when the source has only the placeholder of old
+    pairs); ``same_photograph`` keeps the source's record for the very same photograph aligned again."""
     source = _pair_row(store, source_pair_id)
     if source["status"] != ST_ACCEPTED:
         raise IngestError("only an accepted pair can be re-photographed")
+    if stand_id is not None and store.one("SELECT id FROM capture_setup WHERE id=?", (stand_id,)) is None:
+        raise IngestError("the selected capture setup was not found")
+    if stand_id is None and (same_photograph or not su.get_capture_setup(store, source["stand_id"])["legacy"]):
+        stand_id = source["stand_id"]
+    stand_id = su.capture_setup_for_photo(store, stand_id, keep=source["stand_id"] if same_photograph else None)
     if Path(photo_name).suffix.lower() not in ph.RAW_EXTENSIONS and not non_raw_allowed(store):
         raise IngestError("A RAW photograph is required for measurement")
     if not photo_bytes:
@@ -293,7 +294,7 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     pair_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plate_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ST_PENDING, source["device_id"], source["lens_id"], source["stand_id"], source["material_id"], source["plate_id"], source["plan_id"],
+        (ST_PENDING, source["device_id"], source["lens_id"], stand_id, source["material_id"], source["plate_id"], source["plan_id"],
          source["engraving_id"], source["engraving_title"] or Path(source["lightburn_name"]).stem, source["lightburn_name"], str(lb_path), photo_name, str(photo_path), source["context_json"],
          json.dumps(data), source["hardware_json"], now())).lastrowid
     store.audit("rephoto_created", source_pair_id=source_pair_id, pair_id=pair_id, engraving_id=source["engraving_id"])
@@ -468,7 +469,8 @@ def create_alignment_revision(store: Store, source_pair_id: int) -> int:
             image = ph.decode_image(source_photo, allow_non_raw=non_raw_allowed(store))
             alignment["snap_candidates"] = registration.snap_translations(
                 image, [layer for layer in project.layers if layer.regions], alignment["image_to_mm"], system)
-    new_id = create_rephoto(store, source_pair_id, photo_name=source["photo_name"], photo_bytes=source_photo.read_bytes())
+    new_id = create_rephoto(store, source_pair_id, photo_name=source["photo_name"], photo_bytes=source_photo.read_bytes(),
+                            same_photograph=True)
     revision = get_pair(store, new_id)
     # The same photograph aligned again, not a new view: it is a re-photograph only when its source is one, so the engraving
     # keeps exactly one independent repetition whichever revision is accepted (DEC-021).
@@ -1698,6 +1700,11 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
                     corners_fraction, linked)
 
 
+def _chart_reference(store: Store, row) -> dict:
+    """The chart values the photograph is corrected toward: those of the rig it was taken on (DEC-025)."""
+    return su.get_capture_setup(store, row["stand_id"])["chart_reference"] if row["stand_id"] is not None else ph.published_reference()
+
+
 def _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
              corners_fraction=None, linked=False):
     """Decode, choose chart-corrected or plate-relative color, align, compare, and sample the regions."""
@@ -1731,11 +1738,13 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
             return finish(False)
         corners = [(x * width, y * height) for x, y in corners_fraction]
         pair["corners"] = corners
-    corrected, chart, corr = ph.correct(img_bgr, linear=linear)
+    reference = _chart_reference(store, row)
+    corrected, chart, corr = ph.correct(img_bgr, linear=linear, reference=reference)
     report["chart"] = {"detected": chart.detected, "usable": corrected is not None, "reason": chart.reason,
                        "residual": None if corr is None else round(corr.residual, 3),
                        "max_residual": ph.MAX_CORRECTION_RESIDUAL,
-                       "grey_ramp": None if corr is None else corr.grey_ramp}
+                       "grey_ramp": None if corr is None else corr.grey_ramp,
+                       "reference": {"capture_setup_id": row["stand_id"], **{k: reference[k] for k in ("source", "white_point", "observer", "published")}}}
     plate_relative = plate is not None and plan is not None and plan.get("mode") in (pl.MODE_PLATE, pl.MODE_CAPABILITY)
     finished_relative = plate is None and relative_finished_allowed(store)
     if corrected is None and (plate_relative or finished_relative):
@@ -2030,7 +2039,8 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
             else:
                 observation_index = rep["index"]
             evidence = {"discrepancies": check["discrepancies"], "file_confirmation": pair["file_confirmation"],
-                        "pixels": rep["pixels"], "chart_residual": check["chart"]["residual"], "layer_name": rep["name"],
+                        "pixels": rep["pixels"], "chart_residual": check["chart"]["residual"],
+                        "chart_reference": check["chart"].get("reference"), "layer_name": rep["name"],
                         "lightburn_file": row["lightburn_name"], "color_measurement": check["color_measurement"],
                         "role": rep.get("role"), "submeasurements": rep.get("submeasurements", []),
                         "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
@@ -2112,7 +2122,8 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
         raise IngestError("the photograph is not aligned yet: run the check first")
     img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
     if corrected and not transparent:
-        rgb, _, _ = ph.correct(img_bgr, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)))
+        rgb, _, _ = ph.correct(img_bgr, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)),
+                               reference=_chart_reference(store, row))
         if rgb is not None:
             img_bgr = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted" and not transparent:
@@ -2211,7 +2222,8 @@ def photo_preview_png(store: Store, pair_id: int, corrected: bool = False, visib
         raise IngestError("unknown photo preview visibility mode")
     img = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
     if corrected:
-        rgb, _, _ = ph.correct(img, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)))
+        rgb, _, _ = ph.correct(img, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)),
+                               reference=_chart_reference(store, row))
         if rgb is not None:
             img = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted":

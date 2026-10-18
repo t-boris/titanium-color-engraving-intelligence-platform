@@ -12,6 +12,7 @@ def world(store):
     store.set_setting("allow_non_raw_photos", True)
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
     material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")   # every photograph names its rig (REQ-009)
     pl.save_marker_layer_settings(store, 20, 60, 300)
     return {"store": store, "laser": laser, "material": material}
 

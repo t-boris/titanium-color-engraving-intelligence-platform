@@ -341,7 +341,8 @@ class Store:
                 ("material_profile", "grade", "TEXT"),
                 ("material_profile", "thickness_mm", "REAL"),
                 ("material_profile", "surface", "TEXT"),
-                ("plate", "status", "TEXT")):                       # NULL: in use; 'Deleted' with its archived plan (DEC-047)
+                ("plate", "status", "TEXT"),                        # NULL: in use; 'Deleted' with its archived plan (DEC-047)
+                ("capture_setup", "chart_reference_json", "TEXT")):  # NULL: the published chart values (DEC-025)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")

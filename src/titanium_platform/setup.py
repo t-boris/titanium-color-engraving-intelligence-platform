@@ -7,6 +7,7 @@ older database keeps them only as a read-only archive that nothing here reads.
 """
 from __future__ import annotations
 
+import json
 import math
 from typing import Any
 
@@ -128,7 +129,29 @@ def list_materials(store: Store) -> list[dict]:
     return [dict(r) for r in store.query("SELECT * FROM material_profile ORDER BY id")]
 
 
-# -- capture setups ---------------------------------------------------------------------------------
+# -- capture setups (REQ-009, DEC-025): every photograph names the rig it was taken on ------------------------------
+LEGACY_SETUP_NAME = "Photo capture (no rig)"    # stands in for the rig of pairs uploaded before every photograph had one
+OBSERVERS = ("2°",)
+
+
+def _capture_setup(row) -> dict:
+    """A capture setup with its chart reference (the published values until the operator gives its own) and whether it
+    is the placeholder of old pairs."""
+    from . import photo
+    d = dict(row)
+    stored = d.pop("chart_reference_json", None)
+    d["chart_reference"] = {**json.loads(stored), "published": False} if stored else photo.published_reference()
+    d["legacy"] = d["name"] == LEGACY_SETUP_NAME
+    return d
+
+
+def get_capture_setup(store: Store, setup_id: int) -> dict:
+    row = store.one("SELECT * FROM capture_setup WHERE id=?", (setup_id,))
+    if row is None:
+        raise KeyError(f"capture setup {setup_id} not found")
+    return _capture_setup(row)
+
+
 def save_capture_setup(store: Store, name: str, camera: str, lighting: str, angle: str, reference_chart: str,
                        setup_id: int | None = None) -> dict:
     fields = {"name": name, "camera": camera, "lighting": lighting, "angle": str(angle), "reference_chart": reference_chart}
@@ -141,11 +164,70 @@ def save_capture_setup(store: Store, name: str, camera: str, lighting: str, angl
         setup_id = cur.lastrowid
     else:
         store.execute("UPDATE capture_setup SET name=?,camera=?,lighting=?,angle=?,reference_chart=? WHERE id=?", (*vals, setup_id))
-    return dict(store.one("SELECT * FROM capture_setup WHERE id=?", (setup_id,)))
+    return get_capture_setup(store, setup_id)
+
+
+def last_capture_setup(store: Store) -> int | None:
+    """The rig of the photograph uploaded last ('as last time'); None before the first one."""
+    row = store.one("SELECT p.stand_id FROM pair p JOIN capture_setup c ON c.id=p.stand_id WHERE c.name!=? ORDER BY p.id DESC LIMIT 1",
+                    (LEGACY_SETUP_NAME,))
+    return None if row is None else row["stand_id"]
 
 
 def list_capture_setups(store: Store) -> list[dict]:
-    return [dict(r) for r in store.query("SELECT * FROM capture_setup ORDER BY id")]
+    last = last_capture_setup(store)
+    return [_capture_setup(r) | {"last_used": r["id"] == last} for r in store.query("SELECT * FROM capture_setup ORDER BY id")]
+
+
+def capture_setup_for_photo(store: Store, setup_id: int | None, keep: int | None = None) -> int:
+    """The capture setup of a new photograph: the one chosen, else the one used last, else the only one there is. The
+    placeholder of old pairs is no rig and is refused; ``keep`` is a setup the photograph already has (the same
+    photograph aligned again)."""
+    if setup_id is not None and setup_id == keep:
+        return setup_id
+    if setup_id is None:
+        setup_id = last_capture_setup(store)
+    if setup_id is None:
+        real = store.query("SELECT id FROM capture_setup WHERE name!=? ORDER BY id", (LEGACY_SETUP_NAME,))
+        if not real:
+            raise ValidationError("add the capture setup (rig) of your photographs on the Settings screen before uploading one")
+        if len(real) > 1:
+            raise ValidationError("select a capture setup (rig) for this photograph")
+        setup_id = real[0]["id"]
+    if get_capture_setup(store, setup_id)["legacy"]:
+        raise ValidationError("the placeholder capture setup describes only pairs uploaded before every photograph had a rig; choose the rig of this photograph")
+    return setup_id
+
+
+def save_chart_reference(store: Store, setup_id: int, patches_lab, white_point: str, observer: str, source: str) -> dict:
+    """The reference values of a setup's chart (DEC-025): 24 Lab triples in chart order, their white point and observer, and
+    where the values come from."""
+    from . import color
+    get_capture_setup(store, setup_id)
+    if white_point not in color.WHITE_POINTS:
+        raise ValidationError(f"the white point must be one of {', '.join(color.WHITE_POINTS)}")
+    if observer not in OBSERVERS:
+        raise ValidationError("only the 2° standard observer is supported")
+    if not str(source or "").strip():
+        raise ValidationError("say where the reference values come from")
+    try:
+        patches = [[float(v) for v in lab] for lab in patches_lab]
+    except (TypeError, ValueError):
+        raise ValidationError("the reference values must be 24 Lab triples") from None
+    if len(patches) != 24 or any(len(lab) != 3 or not color.valid_lab(lab) for lab in patches):
+        raise ValidationError("the reference values must be 24 Lab triples (L 0-100, a and b -128 to 127)")
+    stored = {"source": str(source).strip(), "white_point": white_point, "observer": observer, "patches_lab": patches}
+    store.execute("UPDATE capture_setup SET chart_reference_json=? WHERE id=?", (json.dumps(stored), setup_id))
+    store.audit("chart_reference_saved", setup_id=setup_id, white_point=white_point, source=stored["source"])
+    return get_capture_setup(store, setup_id)
+
+
+def reset_chart_reference(store: Store, setup_id: int) -> dict:
+    """Back to the published values of the chart."""
+    get_capture_setup(store, setup_id)
+    store.execute("UPDATE capture_setup SET chart_reference_json=NULL WHERE id=?", (setup_id,))
+    store.audit("chart_reference_reset", setup_id=setup_id)
+    return get_capture_setup(store, setup_id)
 
 
 def delete_capture_setup(store: Store, setup_id: int) -> None:

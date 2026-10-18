@@ -271,7 +271,8 @@ async def create_pair(request: Request, device_id: int = Form(...), lens_id: str
                       plan_id: int | None = Form(None), rephoto_of: int | None = Form(None), context: str = Form("{}"),
                       lightburn: UploadFile = File(None), photo: UploadFile = File(None)):
     """A LightBurn file and its photograph, of the laser and the lens the operator chose (``lens_id=unknown`` when the lens
-    of the work is not known: the lens installed now is never assumed, REQ-016)."""
+    of the work is not known: the lens installed now is never assumed, REQ-016), taken on the capture setup ``stand_id``
+    (the one used last when not given, REQ-009)."""
     lb_name, lb_bytes = await read_upload(lightburn, MAX_LIGHTBURN_BYTES, "LightBurn")
     ph_name, ph_bytes = await read_upload(photo, MAX_PHOTO_BYTES, "photograph")
     try:
@@ -330,9 +331,10 @@ def create_matrix_sibling(pair_id: int, index: int, request: Request):
 
 
 @router.post("/pairs/{pair_id}/rephotos", status_code=201)
-async def create_rephoto(pair_id: int, request: Request, photo: UploadFile = File(None)):
+async def create_rephoto(pair_id: int, request: Request, stand_id: int | None = Form(None), photo: UploadFile = File(None)):
+    """A new photograph of an accepted engraving, on the capture setup chosen (that of the source photograph when none is)."""
     name, data = await read_upload(photo, MAX_PHOTO_BYTES, "photograph")
-    new_id = ingest.create_rephoto(store_of(request), pair_id, photo_name=name, photo_bytes=data)
+    new_id = ingest.create_rephoto(store_of(request), pair_id, photo_name=name, photo_bytes=data, stand_id=stand_id)
     return public_pair(ingest.get_pair(store_of(request), new_id))
 
 

@@ -97,6 +97,25 @@ def delete_setup(setup_id: int, request: Request):
     su.delete_capture_setup(store_of(request), setup_id)
 
 
+class ChartReferenceIn(BaseModel):
+    patches_lab: list[list[float]]
+    white_point: str = "D65"
+    observer: str = "2°"
+    source: str
+
+
+@router.put("/setups/{setup_id}/chart-reference")
+def save_chart_reference(setup_id: int, body: ChartReferenceIn, request: Request):
+    """The reference values of the setup's chart that its photographs are corrected toward (DEC-025)."""
+    return su.save_chart_reference(store_of(request), setup_id, body.patches_lab, body.white_point, body.observer, body.source)
+
+
+@router.delete("/setups/{setup_id}/chart-reference")
+def reset_chart_reference(setup_id: int, request: Request):
+    """Back to the published values of the chart."""
+    return su.reset_chart_reference(store_of(request), setup_id)
+
+
 @router.get("/marker-layer")
 def get_marker_layer(request: Request):
     return plans.marker_layer_settings(store_of(request))

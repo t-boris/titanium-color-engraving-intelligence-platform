@@ -52,7 +52,7 @@ def test_line_measurement_outside_a_manually_aligned_photo_is_missing_evidence()
 def make_pair(w, lbrn=None, photo=None, **kw):
     context = {"material_id": w["material"]["id"], **kw.pop("context", {})}
     return ig.create_pair(w["store"], device_id=w["device"]["id"], lens_id=kw.pop("lens_id", w["lens"]["id"]),
-                          stand_id=w["stand"]["id"], lightburn_name="plate.lbrn2",
+                          stand_id=kw.pop("stand_id", w["stand"]["id"]), lightburn_name="plate.lbrn2",
                           lightburn_bytes=lbrn or w["lbrn"], photo_name="plate.png", context=context,
                           photo_bytes=photo or png(synth.plate_photo(w["plan"], CELLS, gains=(0.9, 0.97, 1.08))), **kw)
 
@@ -220,6 +220,43 @@ def test_manual_photo_corners_use_qr_to_preserve_vertical_mirror(world):
     assert report["alignment"]["valid"] and report["alignment"]["method"] == "manual"
     assert report["alignment"]["identifier_verified"] and report["alignment"]["reflected"]
     assert report["problems"] == []
+
+
+def test_a_photograph_is_corrected_toward_the_chart_values_of_its_own_rig(world):
+    """REQ-009, DEC-025: the rig of the photograph names the chart values; the check and the observations record which."""
+    from titanium_platform import color
+    s = world["store"]
+    photo = png(synth.plate_photo(world["plan"], CELLS, gains=(0.9, 0.97, 1.08)))
+    first = ig.check_pair(s, make_pair(world, photo=photo))
+    assert first["chart"]["reference"] == {"capture_setup_id": world["stand"]["id"], "source": ig.ph.PUBLISHED_REFERENCE_SOURCE,
+                                           "white_point": "D65", "observer": "2°", "published": True}
+    rig = su.save_capture_setup(s, "Rig with a measured chart", "cam", "LED", "90", "ColorChecker Classic")
+    darker = color.linear_rgb_to_lab(color.srgb_to_linear(ig.ph.REFERENCE_SRGB / 255) * 0.8).tolist()
+    su.save_chart_reference(s, rig["id"], darker, "D65", "2°", "this chart measured with a spectrophotometer")
+    pid = make_pair(world, photo=photo, stand_id=rig["id"])
+    second = ig.check_pair(s, pid)
+    assert second["chart"]["reference"]["capture_setup_id"] == rig["id"] and second["chart"]["reference"]["published"] is False
+    lightness = lambda report: {l["name"]: l["measured_lab"][0] for l in report["layers"] if l["name"] in CELLS}
+    assert all(lightness(second)[name] < lightness(first)[name] - 2 for name in CELLS)
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    evidence = json.loads(s.one("SELECT evidence_json FROM observation WHERE pair_id=? LIMIT 1", (pid,))["evidence_json"])
+    assert evidence["chart_reference"]["source"] == "this chart measured with a spectrophotometer"
+    assert ig.get_pair(s, pid)["stand_id"] == rig["id"]
+
+
+def test_a_rephotograph_is_taken_on_its_sources_rig_unless_another_is_chosen(world):
+    s = world["store"]
+    first = make_pair(world)
+    ig.check_pair(s, first)
+    ig.review_masks(s, first)
+    ig.accept_pair(s, first)
+    photo = png(synth.plate_photo(world["plan"], CELLS))
+    assert ig.get_pair(s, ig.create_rephoto(s, first, photo_name="again.png", photo_bytes=photo))["stand_id"] == world["stand"]["id"]
+    other = su.save_capture_setup(s, "Window table", "phone", "daylight", "60", "ColorChecker Classic")["id"]
+    assert ig.get_pair(s, ig.create_rephoto(s, first, photo_name="b.png", photo_bytes=photo, stand_id=other))["stand_id"] == other
+    with pytest.raises(ig.IngestError, match="capture setup was not found"):
+        ig.create_rephoto(s, first, photo_name="c.png", photo_bytes=photo, stand_id=999)
 
 
 def test_plate_chart_candidate_with_rejected_correction_falls_back_to_raw_relative_measurement(world, monkeypatch):

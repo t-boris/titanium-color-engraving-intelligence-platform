@@ -4,7 +4,9 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 
 * The chart is a 24-patch ColorChecker Classic found with OpenCV's ``mcc`` detector (DEC-025). Detection is
   verified on OpenCV test images and synthetic renders only, never on a real rig photograph.
-* Reference patch values are approximate published sRGB (D65) values and can be replaced per capture setup.
+* Reference patch values are the published sRGB (D65) values of the chart by default; every capture setup carries its
+  own reference (24 Lab values with their white point and observer) as an explicit setting (DEC-025), and the correction
+  of a photograph aims at the reference of the setup it was taken on.
 * Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. The patches and the measured
   surface are taken from a 16-bit *linear* decode of the RAW (DEC-059): the 8-bit gamma-encoded decode read as sRGB
   under-read the dark tones up to threefold (chart black L* 13 instead of 21.7). The 8-bit decode serves detection,
@@ -35,6 +37,21 @@ REFERENCE_SRGB = np.array([
     (214, 126, 44), (80, 91, 166), (193, 90, 99), (94, 60, 108), (157, 188, 64), (224, 163, 46),
     (56, 61, 150), (70, 148, 73), (175, 54, 60), (231, 199, 31), (187, 86, 149), (8, 133, 161),
     (243, 243, 242), (200, 200, 200), (160, 160, 160), (122, 122, 121), (85, 85, 85), (52, 52, 52)], dtype=float)
+PUBLISHED_REFERENCE_SOURCE = "published ColorChecker Classic values (sRGB, D65), as CIELAB D65 / 2°"
+
+
+def published_reference() -> dict:
+    """The chart reference a capture setup has until the operator gives its own: the published patch values as Lab."""
+    return {"source": PUBLISHED_REFERENCE_SOURCE, "white_point": "D65", "observer": "2°", "published": True,
+            "patches_lab": [[round(float(v), 2) for v in lab] for lab in color.srgb8_to_lab(REFERENCE_SRGB)]}
+
+
+def reference_linear(reference: dict | None = None) -> np.ndarray:
+    """The 24 patch values a correction aims at, as linear sRGB: the published values, or a capture setup's own Lab values
+    adapted from their white point."""
+    if reference is None or reference.get("published"):
+        return color.srgb_to_linear(REFERENCE_SRGB / 255.0)
+    return color.lab_under_to_linear_rgb(np.asarray(reference["patches_lab"], float), reference["white_point"])
 
 
 class PhotoError(ValueError):
@@ -152,10 +169,12 @@ class Correction:
     grey_ramp: dict | None = None   # L* of the six grey patches: reference, corrected (how the tones come out)
 
 
-def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
-    """Least-squares 3x3 matrix from the photographed patches (linear RGB) to the reference (sRGB 0..255)."""
+def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+                          target_linear: np.ndarray | None = None) -> Correction:
+    """Least-squares 3x3 matrix from the photographed patches (linear RGB) to the reference (sRGB 0..255, or the linear
+    patch values of a capture setup's reference when ``target_linear`` is given)."""
     src = np.clip(np.asarray(patches_linear, float), 0, None)
-    dst = color.srgb_to_linear(reference_rgb / 255.0)
+    dst = color.srgb_to_linear(reference_rgb / 255.0) if target_linear is None else np.asarray(target_linear, float)
     sol, *_ = np.linalg.lstsq(src, dst, rcond=None)
     matrix = sol.T
     corrected = np.clip(src @ matrix.T, 0, 1)
@@ -166,9 +185,10 @@ def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray 
     return Correction(matrix, residual, ramp)
 
 
-def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
+def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+                   target_linear: np.ndarray | None = None) -> Correction:
     """The fit from the 8-bit decode's patches (sRGB 0..255); kept for photographs without a linear decode."""
-    return fit_correction_linear(color.srgb_to_linear(patches_rgb / 255.0), reference_rgb)
+    return fit_correction_linear(color.srgb_to_linear(patches_rgb / 255.0), reference_rgb, target_linear)
 
 
 def apply_correction(img_bgr: np.ndarray, corr: Correction, linear: np.ndarray | None = None) -> np.ndarray:
@@ -199,10 +219,11 @@ def exposed_bgr(linear: np.ndarray) -> np.ndarray:
 
 
 def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
-            linear: np.ndarray | None = None) -> tuple[np.ndarray | None, Chart, Correction | None]:
-    """Detect the chart and correct the image, from the linear decode when given. The chart is looked for on the
-    exposure-normalised rendering of the linear decode first, then on the 8-bit decode. Without a detectable chart
-    nothing is returned (REQ-009)."""
+            linear: np.ndarray | None = None, reference: dict | None = None) -> tuple[np.ndarray | None, Chart, Correction | None]:
+    """Detect the chart and correct the image, from the linear decode when given, toward ``reference`` (a capture setup's
+    chart reference; the published values when None). The chart is looked for on the exposure-normalised rendering of the
+    linear decode first, then on the 8-bit decode. Without a detectable chart nothing is returned (REQ-009)."""
+    target = None if reference is None or reference.get("published") else reference_linear(reference)
     chart = detect_chart(exposed_bgr(linear)) if linear is not None else Chart(False, reason="reference chart not detected")
     if not chart.detected:
         chart = detect_chart(img_bgr)
@@ -214,9 +235,9 @@ def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
         except PhotoError as exc:
             chart.reason = str(exc)
             return None, chart, None
-        corr = fit_correction_linear(chart.patches_linear, reference_rgb)
+        corr = fit_correction_linear(chart.patches_linear, reference_rgb, target)
     else:
-        corr = fit_correction(chart.patches_rgb, reference_rgb)
+        corr = fit_correction(chart.patches_rgb, reference_rgb, target)
     if corr.residual > MAX_CORRECTION_RESIDUAL:
         chart.reason = f"chart correction residual {corr.residual:.1f} exceeds {MAX_CORRECTION_RESIDUAL:g}"
         return None, chart, corr

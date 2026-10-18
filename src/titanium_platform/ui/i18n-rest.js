@@ -100,6 +100,18 @@
     [/^no eligible observation is left$/i, 'подходящих наблюдений не осталось'],
   ]);
 
+  // установка съёмки у каждой фотографии и эталонные значения её карты (REQ-009, DEC-025)
+  I18N.add([
+    [/^add the capture setup \(rig\) of your photographs on the Settings screen before uploading one$/i,
+      'Сначала опишите установку съёмки (стенд), на которой сделаны фотографии: Настройки → «Съёмка»'],
+    [/^the placeholder capture setup describes only pairs uploaded before every photograph had a rig/i,
+      'Установка-заглушка описывает только пары, загруженные до того, как у каждой фотографии появилась установка съёмки. Выберите стенд, на котором сделана эта фотография.'],
+    [/^the white point must be one of (.+)$/i, (m) => `Белая точка эталонных значений: ${m[1]}`],
+    [/^only the 2° standard observer is supported$/i, 'Поддерживается только стандартный наблюдатель 2°'],
+    [/^say where the reference values come from$/i, 'Укажите, откуда взяты эталонные значения'],
+    [/^the reference values must be 24 Lab triples/i, 'Эталонные значения — 24 тройки Lab (L от 0 до 100, a и b от −128 до 127)'],
+  ]);
+
   // слой меток и подписей: только сохранённые оператором параметры (DEC-027)
   I18N.add([
     [/^the saved marker layer settings are not offered by this laser: (.+)$/i,

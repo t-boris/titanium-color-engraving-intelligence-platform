@@ -78,6 +78,30 @@ def upload_pair(client, s, lbrn, photo, **form):
     return client.post("/api/pairs", data=data, files={"lightburn": ("plate.lbrn2", lbrn), "photo": ("plate.png", photo)})
 
 
+def test_every_photograph_names_its_rig_and_the_rig_names_its_chart_values(client):
+    """REQ-009 AC2, DEC-025: the upload takes the rig used last when none is chosen; the rig's chart values can be
+    replaced and reset to the published ones."""
+    s = setup(client)
+    lbrn = b'<LightBurnProject><Notes Notes=""/></LightBurnProject>'
+    window = client.post("/api/setups", json={"name": "Window", "camera": "phone", "lighting": "daylight", "angle": "60",
+                                              "reference_chart": "ColorChecker Classic"}).json()
+    chosen = upload_pair(client, s, lbrn, png(synth.scene()), stand_id=window["id"]).json()
+    assert chosen["stand_id"] == window["id"]
+    data = {"device_id": s["laser"]["id"], "lens_id": "unknown", "context": json.dumps({"material_id": s["material"]["id"]})}
+    as_last_time = client.post("/api/pairs", data=data, files={"lightburn": ("a.lbrn2", lbrn), "photo": ("p.png", png(synth.scene()))}).json()
+    assert as_last_time["stand_id"] == window["id"]
+    rigs = client.get("/api/setups").json()
+    assert [(r["id"], r["last_used"], r["legacy"], r["chart_reference"]["published"]) for r in rigs] == [
+        (s["stand"]["id"], False, False, True), (window["id"], True, False, True)]
+    values = rigs[0]["chart_reference"]["patches_lab"]
+    saved = client.put(f"/api/setups/{window['id']}/chart-reference",
+                       json={"patches_lab": values, "white_point": "D50", "source": "X-Rite, D50"}).json()
+    assert saved["chart_reference"]["white_point"] == "D50" and not saved["chart_reference"]["published"]
+    bad = client.put(f"/api/setups/{window['id']}/chart-reference", json={"patches_lab": values[:3], "source": "x"})
+    assert bad.status_code == 422 and "24 Lab triples" in bad.json()["error"]
+    assert client.delete(f"/api/setups/{window['id']}/chart-reference").json()["chart_reference"]["published"]
+
+
 def test_uploads_are_validated(client):
     s = setup(client)
     base = {"device_id": s["laser"]["id"], "lens_id": "unknown", "stand_id": s["stand"]["id"]}

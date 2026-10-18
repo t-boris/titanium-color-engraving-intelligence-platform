@@ -68,6 +68,7 @@ def test_device_archive_keeps_pending_photo_lightburn_material_and_hardware_snap
     lens = lenses.create_lens(store, "F174", 174)
     lenses.install(store, device["id"], lens["id"])
     titanium = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="B-17")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")   # every photograph names its rig (REQ-009)
     store.set_setting("allow_non_raw_photos", True)
     with TestClient(app) as client:
         unknown = client.post("/api/pairs", data={"device_id": device["id"], "lens_id": "unknown", "context": json.dumps({"material_id": titanium["id"]})},

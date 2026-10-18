@@ -112,6 +112,7 @@ def checked(tmp_path_factory, work):
     store.set_setting("allow_non_raw_photos", True)
     laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
     material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")   # every photograph names its rig (REQ-009)
     pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="portrait.lbrn2", lightburn_bytes=work["lightburn"],
                          photo_name="portrait.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
                          context={"material_id": material["id"]})

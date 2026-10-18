@@ -60,6 +60,50 @@ def test_capture_setup_requires_all_fields_and_is_protected_when_used(store):
     assert su.list_capture_setups(store) == []
 
 
+def test_a_capture_setup_carries_the_published_chart_values_until_the_operator_gives_its_own(store):
+    """DEC-025: the reference values, white point and observer are an explicit setting of the capture setup."""
+    rig = su.save_capture_setup(store, "Rig", "cam on stand", "LED 5600K", "90", "ColorChecker Classic")
+    ref = rig["chart_reference"]
+    assert ref["published"] and (ref["white_point"], ref["observer"]) == ("D65", "2°") and "published ColorChecker" in ref["source"]
+    assert len(ref["patches_lab"]) == 24 and ref["patches_lab"][18][0] > 95 and ref["patches_lab"][23][0] < 25   # white ... black
+    own = [[L + 1, a, b] for L, a, b in ref["patches_lab"]]
+    saved = su.save_chart_reference(store, rig["id"], own, "D50", "2°", " X-Rite, after November 2014 ")["chart_reference"]
+    assert saved == {"source": "X-Rite, after November 2014", "white_point": "D50", "observer": "2°", "patches_lab": own, "published": False}
+    assert su.list_capture_setups(store)[0]["chart_reference"] == saved
+    for args, message in (((own[:23], "D65", "2°", "x"), "24 Lab triples"), (([[120, 0, 0]] * 24, "D65", "2°", "x"), "24 Lab triples"),
+                          ((own, "A", "2°", "x"), "white point must be one of D65, D50"), ((own, "D65", "10°", "x"), "2° standard observer"),
+                          ((own, "D65", "2°", " "), "where the reference values come from")):
+        with pytest.raises(su.ValidationError, match=message):
+            su.save_chart_reference(store, rig["id"], *args)
+    assert su.reset_chart_reference(store, rig["id"])["chart_reference"] == ref
+
+
+def test_a_new_photograph_is_taken_on_the_rig_used_last_and_never_on_the_placeholder_of_old_pairs(store, w):
+    """REQ-009: every photograph names its rig; 'as last time' is the default."""
+    from titanium_platform.db import now
+    rig = w["stand"]["id"]
+    assert su.capture_setup_for_photo(store, None) == rig                 # the only rig there is
+    other = su.save_capture_setup(store, "Window table", "phone", "daylight", "60", "ColorChecker Classic")["id"]
+    with pytest.raises(su.ValidationError, match="select a capture setup"):
+        su.capture_setup_for_photo(store, None)                           # two rigs and none used yet: the operator chooses
+    obs.add(store, w, (50, 0, 0))                                         # a photograph on the first rig ...
+    store.execute("UPDATE pair SET stand_id=? WHERE id=(SELECT MAX(id) FROM pair)", (other,))   # ... moved to the second
+    assert su.capture_setup_for_photo(store, None) == other and su.last_capture_setup(store) == other
+    assert [s["last_used"] for s in su.list_capture_setups(store)] == [False, True]
+    legacy = store.execute("INSERT INTO capture_setup(name,camera,lighting,angle,reference_chart,created_at) VALUES (?,?,?,?,?,?)",
+                           (su.LEGACY_SETUP_NAME, "not recorded", "not recorded", "not recorded", "ColorChecker Classic", now())).lastrowid
+    store.execute("UPDATE pair SET stand_id=?", (legacy,))                # an old pair keeps its placeholder ...
+    assert su.get_capture_setup(store, legacy)["legacy"] and su.last_capture_setup(store) is None
+    with pytest.raises(su.ValidationError, match="placeholder capture setup"):
+        su.capture_setup_for_photo(store, legacy)                         # ... a new photograph never gets it
+    assert su.capture_setup_for_photo(store, legacy, keep=legacy) == legacy   # the same photograph aligned again keeps its record
+
+
+def test_without_any_rig_no_photograph_can_be_uploaded(store):
+    with pytest.raises(su.ValidationError, match="add the capture setup"):
+        su.capture_setup_for_photo(store, None)
+
+
 def test_material_batch_is_optional(store):
     m = su.save_material(store, "Ti grade 2")
     assert m["batch"] is None and m["family"] == "Titanium"

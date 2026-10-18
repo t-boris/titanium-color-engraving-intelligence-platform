@@ -14,21 +14,26 @@
       catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Пара не найдена'), h('p', {}, 'Её можно начать заново.'), link('/ingest', 'Новая пара')); }
       return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(Boolean(pair.rephoto_of)), h('span', {class: 'spacer'}), backTo(pair)), await IngestReview.render(pair, () => App.render({preserveScroll: true})));
     }
+    // every photograph names the rig it was taken on (REQ-009); the placeholder of old pairs is not offered
+    const rigsOf = async () => (await get('/setups')).filter((r) => !r.legacy);
     if (ctx.query.rephoto) {
       try {
-        const source = await get('/pairs/' + ctx.query.rephoto);
-        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), backTo(source)), IngestUpload.rephoto(source));
+        const [source, rigs] = await Promise.all([get('/pairs/' + ctx.query.rephoto), rigsOf()]);
+        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), backTo(source)), IngestUpload.rephoto(source, rigs));
       } catch (e) {
         return h('div', {class: 'card empty'}, h('h3', {}, 'Исходная пара не найдена'), link('/experiments', 'Вернуться к экспериментам'));
       }
     }
-    const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
-    if (!lists.devices.length || !materials.length) {
+    const [lists, materials, rigs] = await Promise.all([App.hardwareLists(), get('/materials'), rigsOf()]);
+    if (!lists.devices.length || !materials.length || !rigs.length) {
+      const [heading, add] = !lists.devices.length ? ['Нужен лазер', link('/devices', 'Добавить лазер')]
+        : !materials.length ? ['Добавьте использованный титан', link('/setup?tab=material', 'Добавить титан')]
+          : ['Опишите установку съёмки', link('/setup?tab=rigs', 'Добавить установку съёмки')];
       return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back),
-        h('div', {class: 'card empty'}, h('h3', {}, !lists.devices.length ? 'Нужен лазер' : 'Добавьте использованный титан'),
-          h('p', {}, 'Для каждого измеренного эксперимента сохраняются лазер и конкретная заготовка титана.'),
-          !lists.devices.length ? link('/devices', 'Добавить лазер') : link('/setup?tab=material', 'Добавить титан')));
+        h('div', {class: 'card empty'}, h('h3', {}, heading),
+          h('p', {}, 'Для каждого измеренного эксперимента сохраняются лазер, конкретная заготовка титана и установка съёмки, на которой сделана фотография.'),
+          add));
     }
-    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), await IngestUpload.render(ctx, lists, materials));
+    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), await IngestUpload.render(ctx, lists, materials, rigs));
   }});
 })();

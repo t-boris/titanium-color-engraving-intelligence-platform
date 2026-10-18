@@ -27,7 +27,18 @@ const IngestUpload = (() => {
     };
   }
 
-  function rephoto(source) {
+  /** Выбор установки съёмки: по умолчанию та, что была в прошлый раз (или указанная). Эталонные значения карты берутся из неё (DEC-025). */
+  function rigPicker(rigs, preferred) {
+    const pick = h('select', {'aria-label': 'Установка съёмки'},
+      rigs.map((r) => h('option', {value: r.id}, r.name + (r.last_used ? ' · как в прошлый раз' : ''))));
+    const chosen = rigs.find((r) => r.id === preferred) || rigs.find((r) => r.last_used) || rigs[0];
+    if (chosen) pick.value = chosen.id;
+    return pick;
+  }
+  const rigHint = () => h('p', {class: 'muted small'}, 'Установка съёмки — камера, свет, угол и эталонная карта; коррекция цвета берёт эталонные значения карты из неё. ',
+    link('/setup?tab=rigs', 'Установки съёмки'));
+
+  function rephoto(source, rigs = []) {
     if (source.status !== 'Accepted') return h('div', {class: 'card empty'},
       h('h3', {}, 'Сначала примите исходное наблюдение'),
       h('p', {}, 'Повторная фотография должна относиться к уже проверенной гравировке.'),
@@ -39,11 +50,13 @@ const IngestUpload = (() => {
     const show = (message) => { err.textContent = message; err.hidden = !message; };
     const laser = [source.hardware?.device?.name, source.hardware?.lens?.name].filter(Boolean).join(' · ') || 'связка исходной пары';
     const titanium = [source.context?.titanium_name, source.context?.titanium_grade, source.context?.batch].filter(Boolean).join(' · ') || 'титан исходной пары';
+    const rig = rigPicker(rigs, source.stand_id);
     const send = btn('Добавить фотографию и проверить', async (ev) => {
       show('');
       if (!photo.files[0]) return show('Выберите новую фотографию RAW');
       const fd = new FormData();
       fd.append('photo', photo.files[0]);
+      if (rig.value) fd.append('stand_id', rig.value);
       const self = ev.currentTarget;
       self.disabled = true;
       try {
@@ -67,16 +80,17 @@ const IngestUpload = (() => {
         h('p', {}, 'LightBurn, настройки слоёв, лазер, линза и титан будут взяты из исходной пары. Новое фото не считается отдельной гравировкой.')),
       h('div', {class: 'card stack'}, h('h3', {}, 'Только новая фотография'),
         field('RAW-фото всей гравировки', App.filePick(photo, 'Выбрать RAW-фото')),
+        rigs.length ? field('Установка съёмки (стенд)', rig) : null, rigs.length ? rigHint() : null,
         h('p', {class: 'muted small'}, 'После загрузки приложение проверит совмещение с тем же LightBurn-файлом. Перед принятием измерений вы увидите контуры на фото.'),
         err, progress.el, h('div', {class: 'row'}, send)));
   }
 
   // a parameter matrix (LightBurn Material Test): the photograph is the whole input; the settings are read from it
-  async function sendMatrix(pick, mat, context, photo, progress, show, self) {
+  async function sendMatrix(pick, mat, rig, context, photo, progress, show, self) {
     if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
     if (!mat.value) return show('Выберите использованный титан');
     const fd = new FormData();
-    fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue());
+    fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('stand_id', rig.value);
     fd.append('context', JSON.stringify(context())); fd.append('photo', photo.files[0]);
     self.disabled = true;
     try {
@@ -93,7 +107,7 @@ const IngestUpload = (() => {
     } catch (e) { progress.stop(); progress.error(I18N.tr(e.message)); show(I18N.tr(e.message)); self.disabled = false; }
   }
 
-  async function render(ctx, lists, materials) {
+  async function render(ctx, lists, materials, rigs) {
     const matrixMode = ctx.query.kind === 'matrix';
     const kinds = h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Что добавляем:'),
       matrixMode ? link('/ingest?kind=file', 'Работа с файлом LightBurn') : h('strong', {}, 'Работа с файлом LightBurn'), ' · ',
@@ -108,6 +122,7 @@ const IngestUpload = (() => {
     const materialLabel = (m) => [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} мм` : null, m.batch].filter(Boolean).join(' · ');
     const mat = h('select', {'aria-label': 'Использованный титан'}, [h('option', {value: ''}, 'выберите титан')].concat(materials.map((m) => h('option', {value: m.id}, materialLabel(m)))));
     if (ctx.query.material) mat.value = ctx.query.material;
+    const rig = rigPicker(rigs);
     const c = {focus: h('input', {type: 'number', step: 'any', placeholder: 'необязательно'}),
       date: h('input', {type: 'date'}), note: h('input', {placeholder: 'необязательно'})};
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
@@ -132,6 +147,7 @@ const IngestUpload = (() => {
       const fd = new FormData();
       if (!mat.value) return show('Выберите использованный титан');
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('context', JSON.stringify(context()));
+      fd.append('stand_id', rig.value);
       if (ctx.query.plan) fd.append('plan_id', ctx.query.plan);
       fd.append('lightburn', lb.files[0]); fd.append('photo', photo.files[0]);
       const self = ev.currentTarget;
@@ -147,6 +163,7 @@ const IngestUpload = (() => {
 
     const hardware = () => [h('div', {class: 'grid g3'}, field('Лазер (обязательно)', pick.laser), field('Линза, которой гравировали', pick.lens),
         field('Использованный титан / лист / партия (обязательно)', mat)),
+      h('div', {class: 'grid g3'}, field('Установка съёмки (стенд)', rig)), rigHint(),
       h('p', {class: 'muted small'}, planned ? 'Линза взята из платы или плана, для которых сделана эта работа.'
         : 'Линза импортированной работы остаётся неизвестной, пока вы её не выберете: установленная сейчас линза не подставляется. Данные с неизвестной линзой не смешиваются с данными известной.'),
       h('p', {class: 'small'}, 'Не нашли лазер или титан? ', link('/devices', 'Лазеры и линзы'), ' · ', link('/setup?tab=material', 'Добавить титан'))];
@@ -154,7 +171,7 @@ const IngestUpload = (() => {
       h('details', {}, h('summary', {}, 'Дополнительные условия'),
         h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same));
     if (matrixMode) {
-      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(pick, mat, context, photo, progress, show, self); }, 'primary');
+      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(pick, mat, rig, context, photo, progress, show, self); }, 'primary');
       return h('div', {class: 'stack'}, kinds,
         h('div', {class: 'card empty'}, h('h3', {}, 'Фотография матрицы параметров'),
           h('p', {}, 'Сетка квадратов, где каждый квадрат выгравирован своими настройками, а значения выгравированы рядом: по одной оси одна настройка, по другой другая, '

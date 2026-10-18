@@ -26,6 +26,32 @@ const SetupForms = (() => {
       ...items.map((m) => editor(m)), editor());
   }
 
+  /** Эталонные значения карты установки: опубликованные по умолчанию; свои можно задать списком Lab и вернуть опубликованные (DEC-025). */
+  function chartReference(r, reload) {
+    const ref = r.chart_reference;
+    const values = h('textarea', {rows: '5', 'aria-label': 'Эталонные значения Lab'}, JSON.stringify(ref.patches_lab));
+    const white = h('select', {'aria-label': 'Белая точка'}, ['D65', 'D50'].map((w) => h('option', {value: w}, w)));
+    white.value = ref.white_point;
+    const source = h('input', {value: ref.published ? '' : ref.source, placeholder: 'например, X-Rite ColorChecker Classic после 2014 г., D50'});
+    const save = btn('Сохранить эталонные значения', async () => {
+      let patches;
+      try { patches = JSON.parse(values.value); } catch (_) { fail(new Error('Эталонные значения записаны неверно: нужен список из 24 троек [L, a, b]')); return; }
+      try {
+        await put(`/setups/${r.id}/chart-reference`, {patches_lab: patches, white_point: white.value, observer: '2°', source: val(source)});
+        toast('Эталонные значения сохранены', 'ok'); reload('rigs');
+      } catch (e) { fail(e); }
+    });
+    const reset = ref.published ? null : btn('Вернуть опубликованные значения', async () => {
+      try { await del(`/setups/${r.id}/chart-reference`); toast('Возвращены опубликованные значения', 'ok'); reload('rigs'); } catch (e) { fail(e); }
+    });
+    return h('details', {}, h('summary', {}, `Эталонные значения карты: ${ref.published ? 'опубликованные' : 'свои'} · ${ref.white_point} / ${ref.observer}`),
+      h('p', {class: 'muted small'}, 'Источник: ' + (ref.published ? 'опубликованные значения ColorChecker Classic (sRGB, D65), пересчитанные в CIELAB D65 / 2°' : ref.source)
+        + '. Фотографии этой установки корректируются по этим значениям; уже принятые измерения не меняются.'),
+      field('24 значения Lab в порядке плашек карты (от коричневой до чёрной)', values),
+      h('div', {class: 'grid g2'}, field('Белая точка значений', white), field('Откуда взяты значения', source)),
+      h('div', {class: 'row'}, save, reset));
+  }
+
   /** Установки съёмки: камера, свет, угол и эталонная карта. Каждая фотография хранит свою установку (DEC-066). */
   function rigsTab(items, reload) {
     const editor = (r = {}) => {
@@ -41,11 +67,14 @@ const SetupForms = (() => {
       }, 'primary');
       const remove = r.id ? btn('Удалить', () => confirmBox('Удалить установку', `«${r.name}». Установку, на которую сняты сохранённые фотографии, удалить нельзя.`, 'Удалить',
         async () => { await del('/setups/' + r.id); toast('Установка удалена', 'ok'); reload('rigs'); }), 'danger') : null;
-      return h('div', {class: 'card stack'}, h('strong', {}, r.id ? `Установка № ${r.id}` : 'Добавить установку'),
+      return h('div', {class: 'card stack'}, h('strong', {}, r.id ? `Установка № ${r.id}${r.last_used ? ' · использовалась в прошлый раз' : ''}` : 'Добавить установку'),
+        r.legacy ? h('div', {class: 'alert warn'}, 'Заглушка для пар, загруженных до того, как у каждой фотографии появилась установка съёмки. Новые фотографии на неё не загружаются.') : null,
         h('div', {class: 'grid g2'}, field('Название', f.name), field('Камера', f.camera), field('Освещение', f.lighting), field('Угол съёмки', f.angle), field('Эталонная карта', f.chart)),
+        r.id ? chartReference(r, reload) : null,
         h('div', {class: 'row'}, save, remove));
     };
-    return h('div', {class: 'stack'}, h('div', {class: 'alert'}, 'Установка съёмки описывает, как сделана фотография: камера, свет, угол и эталонная карта. Она хранится с каждой фотографией эксперимента.'),
+    return h('div', {class: 'stack'}, h('div', {class: 'alert'}, 'Установка съёмки описывает, как сделана фотография: камера, свет, угол и эталонная карта. Она хранится с каждой фотографией эксперимента; '
+      + 'при загрузке по умолчанию выбирается установка прошлой фотографии.'),
       ...items.map((r) => editor(r)), editor());
   }
 
