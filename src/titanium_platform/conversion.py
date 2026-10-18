@@ -26,6 +26,11 @@ MAX_RASTER_PX = 160
 MAX_COLORS = 16
 ELIGIBLE_STAGES = ("validated", "production")
 ST_DRAFT, ST_READY = "Draft", "Ready to export"
+# LightBurn modes of a recipe (the layer type of the file it was measured from). A conversion fills areas, so it uses the
+# filling modes; None is an entry recorded before the mode was kept, exported as a fill as it always was.
+FILL_MODES = frozenset({None, "Scan", "Fill", "OffsetFill", "Offset Fill", "Scan+Cut"})
+LINE_MODES = frozenset({"Cut"})
+PICTURE_PX = 640           # the longer side of a banding picture: the working raster enlarged without smoothing
 
 
 class ConversionError(ValueError):
@@ -67,8 +72,13 @@ def mask_to_rects(mask: np.ndarray, px_mm: float) -> list[dict]:
     return rects
 
 
-def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_questioned=(), include_questioned_warning=False) -> list[dict]:
-    """Validated/production knowledge of one laser and lens with all three estimates. Questioned entries only if allowed for this plan."""
+def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_questioned=(), include_questioned_warning=False,
+                     modes=FILL_MODES) -> list[dict]:
+    """Validated/production knowledge of one laser and lens with all three estimates. Questioned entries only if allowed for this plan.
+
+    Only recipes whose LightBurn mode is in ``modes`` (all when None): a line recipe never fills the area of a conversion.
+    Each entry names its mode and the titanium stock (``material_id``) it was measured on, None when that is not one known stock.
+    """
     out = []
     for k in kn.list_for_setup(store, device_id, lens_id):
         s = k["summary"]
@@ -76,9 +86,14 @@ def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_
             continue
         if k["questioned"] and k["id"] not in allowed_questioned and not include_questioned_warning:
             continue
+        mode = k["parameters"].get("layer_type")
+        if modes is not None and mode not in modes:
+            continue
+        stocks = {g["material_id"] for g in s["context_groups"]}
         out.append({"id": k["id"], "key": k["parameters_key"], "stage": k["stage"], "questioned": k["questioned"], "parameters": k["parameters"],
                     "lab": s["lab"], "confidence": s["confidence"], "expected_delta_e": s["expected_delta_e"], "stability": s["stability"],
-                    "observation_ids": s["observation_ids"], "doubt": k["doubt"]})
+                    "observation_ids": s["observation_ids"], "doubt": k["doubt"], "mode": mode,
+                    "material_id": stocks.pop() if len(stocks) == 1 else None})
     return out
 
 
@@ -123,7 +138,8 @@ def set_markers(store: Store, plan_id: int, enabled: bool) -> dict:
     g = plan.get("size_mm") or {}
     plan["markers"] = _plan_markers(plan["plan_identifier"], enabled, g.get("width", 0), g.get("height", 0), store) if g else None
     plan["marker_layer"] = pl.marker_layer_settings(store) if enabled else None
-    _persist(store, plan, ST_DRAFT if plan["status"] == ST_READY else plan["status"], enabled)
+    # a vector job keeps its status: it is ready whenever every region has its evidence, which markers do not change
+    _persist(store, plan, ST_DRAFT if plan["status"] == ST_READY and plan["mode"] != pl.MODE_VECTOR else plan["status"], enabled)
     return pl.get_plan(store, plan_id)
 
 
@@ -372,24 +388,81 @@ def preview_continuous(store: Store, device_id: int, lens_id: int | None, mode: 
     if mode == "tonal":
         used = sorted({l["knowledge_id"] for l in layers if l["questioned"]})
         if used:
-            warnings.append({"type": "questioned_in_tonal", "knowledge_ids": used,
+            # every questioned entry the plan uses is listed with what put it in doubt and the observations behind it (DEC-018)
+            entries = [{"knowledge_id": k, "lab": by_id[k]["lab"], "reason": (by_id[k]["doubt"] or {}).get("reason"),
+                        "observation_ids": by_id[k]["observation_ids"]} for k in used]
+            warnings.append({"type": "questioned_in_tonal", "knowledge_ids": used, "entries": entries,
                              "message": "This Tonal plan uses production parameter sets that are questioned. No confirmation is needed; review the observations behind them.",
                              "observation_ids": sorted({o for k in used for o in by_id[k]["observation_ids"]})})
     return {"transfer": transfer, "layers": layers, "warnings": warnings, "size_mm": {"width": float(width_mm), "height": rgb.shape[0] * px_mm}, "px_mm": px_mm,
-            "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum())}
+            "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum()), "band_map": bands}
 
 
 def create_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
-                      name: str, path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False) -> int:
+                      name: str, path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False,
+                      revision_of: int | None = None) -> int:
+    """A new continuous plan; ``revision_of`` names the plan it revises, which stays as it was."""
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
+    if revision_of is not None and pl.get_plan(store, revision_of)["mode"] not in MODE_FOR.values():
+        raise ConversionError("only a photo engraving plan can be revised as a photo engraving")
     lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
     p = preview_continuous(store, device_id, lens_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
     identifier = pl.new_identifier("TCE-P")
     data = {"image_path": _store_image(store, image_bytes), "size_mm": p["size_mm"], "px_mm": p["px_mm"], "transfer": p["transfer"],
             "path_ids": list(path_ids or []), "allowed_questioned": sorted(int(x) for x in (allowed_questioned or [])), "warnings": p["warnings"],
             "layers": p["layers"], "markers": _plan_markers(identifier, markers, p["size_mm"]["width"], p["size_mm"]["height"], store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode, "lens": lens}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode, "lens": lens,
+            "revision_of": revision_of}
     with store.transaction():
         return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, device_id=device_id, lens_id=lens_id, markers=markers,
                          identifier=identifier, band_count=p["bands"], data=data)
+
+
+# ======================================================================================================
+# Banding picture (REQ-012: the operator sees the banding before export)
+# ======================================================================================================
+def picture_png(rgb: np.ndarray) -> bytes:
+    """An RGB uint8 picture enlarged without smoothing to ``PICTURE_PX`` on its longer side (never reduced), as PNG."""
+    h, w = rgb.shape[:2]
+    scale = max(1, PICTURE_PX // max(h, w))
+    big = cv2.resize(rgb, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+    return cv2.imencode(".png", cv2.cvtColor(big, cv2.COLOR_RGB2BGR))[1].tobytes()
+
+
+def band_picture(band_map: np.ndarray, labs: list) -> np.ndarray:
+    """Every pixel in the predicted colour of its band (``labs[i]`` for band i); a band without a colour stays black."""
+    lut = np.array([color.lab_to_srgb8(lab) if lab is not None else (0, 0, 0) for lab in labs], np.uint8)
+    return lut[band_map]
+
+
+def _hatched(rgb: np.ndarray, mask: np.ndarray) -> None:
+    """Red diagonal stripes over the masked pixels: a colour the plan cannot engrave yet."""
+    yy, xx = np.indices(mask.shape)
+    stripe = mask & (((xx + yy) // 3) % 2 == 0)
+    rgb[stripe] = (211, 47, 47)
+
+
+def plan_banding(store: Store, plan: dict) -> np.ndarray:
+    """The banding picture of a stored plan as RGB: a continuous plan's bands in their predicted colours, recomputed from
+    its stored image; a discrete plan's source colours in their matched titanium colours (unreachable ones hatched red,
+    excluded ones white)."""
+    if plan["mode"] in MODE_FOR.values():
+        rgb, _ = raster(decode_image_bytes(Path(plan["image_path"]).read_bytes()), plan["size_mm"]["width"])
+        by_band = {l["band"]: l["prediction"]["lab"] for l in plan["layers"]}
+        return band_picture(quantize_luminance(rgb, plan["band_count"]), [by_band.get(i) for i in range(plan["band_count"])])
+    if plan["mode"] == pl.MODE_DISCRETE:
+        labels = np.load(plan["labels_path"])
+        palette = {e["id"]: e for e in eligible_palette(store, plan["device_id"], plan["lens_id"], allowed_questioned=plan["allowed_questioned"])}
+        planned = {k: l["prediction"]["lab"] for l in plan.get("layers", []) for k in l.get("source_color_keys", [])}
+        out = np.full(labels.shape + (3,), 255, np.uint8)
+        for i, m in enumerate(plan["matches"]):
+            mask = labels == i
+            lab = planned.get(m["source_key"]) or (palette[m["knowledge_id"]]["lab"] if m["knowledge_id"] in palette else None)
+            if m["status"] in ("matched", "replaced") and lab is not None:
+                out[mask] = color.lab_to_srgb8(lab)
+            elif m["status"] == "unreachable":
+                out[mask] = color.lab_to_srgb8(m["source_lab"])
+                _hatched(out, mask)
+        return out
+    raise ConversionError("this plan has no banding picture: it is not a discrete or photo engraving")

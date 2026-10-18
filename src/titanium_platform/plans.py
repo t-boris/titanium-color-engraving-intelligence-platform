@@ -17,12 +17,12 @@ import itertools
 import json
 import re
 import uuid
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape, quoteattr
 
 import cv2
 import numpy as np
 
-from . import lenses, setup as su
+from . import lenses, setup as su, vectorize
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -31,6 +31,7 @@ MODE_DISCRETE = "Discrete color engraving"
 MODE_TONAL = "Tonal photo engraving"
 MODE_COLOR_PATH = "Color-path photo engraving"
 MODE_RESTORED = "Restored from file"
+MODE_VECTOR = "Vector job"
 MARKER_LAYER_INDEX = 0
 # LightBurn exposes 30 output colors (00..29); T1/T2 are non-output tool layers. Treat this as
 # a count, not a maximum index, and reserve system layers before building any generated plate.
@@ -43,6 +44,28 @@ CLEAN_PARAMETERS = {"power": 20.0, "frequency": 48.0, "speed": 2000.0, "pulse_wi
 CLEAN_LAYER_NAME = "CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05"
 SCAN_DEFAULTS = {"global_passes": 1, "bidirectional": True, "cross_hatch": False,
                  "scan_angle": 0.0, "angle_increment": 0.0}
+# LightBurn tags a knowledge recipe keeps as numbers and controls (model.parameters_key reads those, not the tags) and tags
+# that belong to the job, not to the recipe: where the layer sits, what it is called, when it runs (DEC-051), and the
+# picture settings of image objects that lightburn.parse_bytes files under the layer.
+RECIPE_NUMBER_TAGS = ("maxPower", "speed", "frequency", "QPulseWidth", "interval", "numPasses", "passes", "globalRepeat",
+                      "bidir", "crossHatch", "angle", "anglePerPass")
+JOB_TAGS = ("index", "name", "priority", "bitmaps")
+
+
+def clean_layer(passport: dict) -> dict:
+    """The established clean-first recipe (``CLEAN_PARAMETERS``, cross-hatch, one pass) on one laser.
+
+    As on capability plates, a frequency the laser does not reach is brought to the nearest end of its range and the pulse
+    width to the nearest step it offers; the layer name states the values that are actually written.
+    """
+    rate = passport["repetition_rate_khz"]
+    frequency = min(max(CLEAN_PARAMETERS["frequency"], float(rate["min"])), float(rate["max"]))
+    pulse = min((float(step["pulse_width_ns"]) for step in passport["pulse_steps"]),
+                key=lambda v: (abs(v - CLEAN_PARAMETERS["pulse_width"]), v))
+    p = {**CLEAN_PARAMETERS, "frequency": frequency, "pulse_width": pulse}
+    name = f"CLEAN-CROSSHATCH-P{p['power']:g}-F{frequency:g}-V{p['speed']:g}-PW{pulse:g}-I{p['line_interval']:g}"
+    return {**p, "passes": 1, "interval": p["line_interval"], "global_passes": 1, "bidirectional": True, "cross_hatch": True,
+            "angle": 0.0, "angle_increment": 0.0, "name": name}
 
 
 def scan_settings(values: dict | None = None) -> dict:
@@ -362,6 +385,46 @@ def _cut_setting(index: int, name: str, power: float, frequency_khz: float, spee
             f'        <tabCount Value="1"/>\n        <tabCountMax Value="1"/>\n    </CutSetting>\n')
 
 
+def is_recipe(parameters: dict) -> bool:
+    """Parameters of a knowledge entry measured from a LightBurn file carry its mode and preserved settings; plate cells and
+    legacy entries carry only the six numbers."""
+    return parameters.get("layer_type") is not None or bool(parameters.get("source_settings"))
+
+
+def _setting_xml(tag: str, value, indent: str) -> str:
+    """One preserved setting as lightburn.parse_bytes stores it: a dict of attributes and nested settings (a sub-layer), a
+    list of repeated elements in file order, or an element's text. Parsing the output gives the same data back."""
+    if isinstance(value, list):
+        return "".join(_setting_xml(tag, item, indent) for item in value)
+    if not isinstance(value, dict):
+        return f"{indent}<{tag}>{escape(str(value))}</{tag}>\n"
+    attributes = "".join(f" {name}={quoteattr(str(v))}" for name, v in value.items() if not isinstance(v, (dict, list)))
+    children = "".join(_setting_xml(name, v, indent + "    ") for name, v in value.items() if isinstance(v, (dict, list)))
+    return f"{indent}<{tag}{attributes}>\n{children}{indent}</{tag}>\n" if children else f"{indent}<{tag}{attributes}/>\n"
+
+
+def _recipe_setting(index: int, name: str, p: dict) -> str:
+    """A layer written with its knowledge recipe in full (REQ-012): the LightBurn mode, the six numbers, the scan controls
+    and every other setting the measured file had, sub-layers included. Only the colour index, the name and the run order
+    (priority, DEC-051) are the job's, so the layer read back has the recipe key of the entry it came from."""
+    mode = p.get("layer_type") or "Scan"
+    if mode == "Image":
+        raise su.ValidationError(f"layer {name} uses a recipe measured on an image layer: LightBurn does not engrave vector shapes with it")
+    fields = [("maxPower", f"{float(p['power']):.10g}"), ("speed", f"{float(p['speed']):.10g}"),
+              ("frequency", str(round(float(p["frequency"]) * 1000))),
+              ("QPulseWidth", None if p.get("pulse_width") is None else f"{float(p['pulse_width']):.10g}"),
+              ("interval", None if p.get("line_interval") is None else f"{float(p['line_interval']):.10g}"),
+              ("numPasses", None if p.get("passes") is None else str(int(p["passes"]))),
+              ("globalRepeat", str(int(p.get("global_passes") or 1))),
+              ("bidir", "0" if p.get("bidirectional") is False else "1"), ("crossHatch", "1" if p.get("cross_hatch") else "0"),
+              ("angle", f"{float(p.get('scan_angle') or 0.0):g}"), ("anglePerPass", f"{float(p.get('angle_increment') or 0.0):g}")]
+    body = "".join(f'        <{tag} Value="{value}"/>\n' for tag, value in fields if value is not None)
+    body += "".join(_setting_xml(tag, value, "        ") for tag, value in (p.get("source_settings") or {}).items()
+                    if tag not in RECIPE_NUMBER_TAGS and tag not in JOB_TAGS)
+    return (f'    <CutSetting type={quoteattr(mode)}>\n        <index Value="{index}"/>\n        <name Value={quoteattr(name)}/>\n'
+            f'{body}        <priority Value="{index}"/>\n    </CutSetting>\n')
+
+
 def export_offset(plan: dict) -> tuple[float, float]:
     """Shift that moves the markers (which lie at negative plan coordinates) into LightBurn's positive workspace."""
     markers = plan.get("markers")
@@ -375,6 +438,11 @@ def export_lbrn2(plan: dict) -> bytes:
 
     Refuses a plan whose layers lack parameters or, for predictions, any of the three estimates (REQ-002).
     Plan coordinates are shifted by :func:`export_offset`; the offset is the same for every shape.
+
+    A layer that carries a knowledge recipe is written with every setting of that recipe (REQ-012); plate cells keep their
+    own scan settings. A plate always cleans first on C00; another plan cleans first when it has a ``clean_layer``
+    (DEC-056): the cleaning takes C00, the markers C01, and the plan's own layers keep the indices it gave them. A plan
+    with a ``vector_document`` (REQ-021) gets its regions as Path shapes on the layer of their settings group.
     """
     x_offset, y_offset = export_offset(plan)
     is_plate = plan.get("mode") in (MODE_PLATE, MODE_CAPABILITY)
@@ -382,11 +450,12 @@ def export_lbrn2(plan: dict) -> bytes:
     if not layers:
         raise su.ValidationError("the plan has no layers to export")
     has_markers = bool(plan.get("markers") and plan.get("markers_enabled", True))
-    reserved = (1 + int(has_markers)) if is_plate else int(has_markers)
+    has_clean = is_plate or plan.get("clean_layer") is not None
+    marker_index = PLATE_MARKER_LAYER_INDEX if has_clean else MARKER_LAYER_INDEX
     file_indices = [layer["index"] + (int(has_markers) if is_plate else 0) for layer in layers]
-    system_indices = ([CLEAN_LAYER_INDEX] if is_plate else []) + ([PLATE_MARKER_LAYER_INDEX if is_plate else MARKER_LAYER_INDEX] if has_markers else [])
+    system_indices = ([CLEAN_LAYER_INDEX] if has_clean else []) + ([marker_index] if has_markers else [])
     actual_indices = system_indices + file_indices
-    if len(layers) + reserved > MAX_LAYERS or any(i < 0 or i >= MAX_LAYERS for i in actual_indices):
+    if len(layers) + len(system_indices) > MAX_LAYERS or any(i < 0 or i >= MAX_LAYERS for i in actual_indices):
         raise su.ValidationError(f"the engraving would exceed LightBurn's {MAX_LAYERS} output layers (colors 00–29); T1/T2 are not output layers")
     if len(set(actual_indices)) != len(actual_indices):
         raise su.ValidationError("the LightBurn layer indices overlap; every output operation needs its own color layer")
@@ -396,7 +465,7 @@ def export_lbrn2(plan: dict) -> bytes:
     mirror_y = "True" if plan.get("export_mirror_y", False) else "False"
     out = [f'<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="{mirror_y}">\n']
     shapes = []
-    if is_plate:
+    if has_clean:
         cleaning = plan.get("clean_layer") or {**CLEAN_PARAMETERS, "interval": CLEAN_PARAMETERS["line_interval"],
                                                 "global_passes": 1, "bidirectional": True, "cross_hatch": True,
                                                 "angle": 0, "angle_increment": 0}
@@ -409,45 +478,50 @@ def export_lbrn2(plan: dict) -> bytes:
                                 priority=0, cross_hatch=cleaning_scan["cross_hatch"], angle=cleaning_scan["scan_angle"],
                                 passes=cleaning.get("passes", 1), global_passes=cleaning_scan["global_passes"],
                                 bidirectional=cleaning_scan["bidirectional"], angle_increment=cleaning_scan["angle_increment"]))
-    for layer in layers:
+    for layer, file_index in zip(layers, file_indices):
         p = layer["parameters"]
         if any(k not in p or p[k] is None for k in ("power", "frequency", "speed")):
             raise su.ValidationError(f"layer {layer['name']} lacks power, frequency or speed")
         pred = layer.get("prediction")
         if pred is not None and any(pred.get(k) is None for k in ("confidence", "expected_delta_e", "stability")):
             raise su.ValidationError(f"layer {layer['name']} has an incomplete prediction (confidence, expected error and stability are required)")
-        file_index = layer["index"] + (int(has_markers) if is_plate else 0)
-        settings = scan_settings(layer.get("lightburn_settings") or plan.get("lightburn_settings"))
-        layer_settings = layer.get("lightburn_settings") or plan.get("lightburn_settings") or {}
-        cut_type = layer.get("cut_type", "Scan")
-        out.append(_cut_setting(file_index, layer["name"], p["power"], p["frequency"], p["speed"], p.get("pulse_width"),
-                                None if cut_type == "Cut" else p.get("line_interval"),
-                                priority=file_index if is_plate else None, passes=p.get("passes"),
-                                global_passes=settings["global_passes"], bidirectional=settings["bidirectional"],
-                                cross_hatch=settings["cross_hatch"], angle=settings["scan_angle"],
-                                angle_increment=settings["angle_increment"], cut_type=cut_type,
-                                wobble_enabled=bool(layer_settings.get("wobble_enabled", False)),
-                                wobble_step=layer_settings.get("wobble_step"),
-                                wobble_size=layer_settings.get("wobble_size")))
+        if is_recipe(p):
+            out.append(_recipe_setting(file_index, layer["name"], p))
+        else:
+            settings = scan_settings(layer.get("lightburn_settings") or plan.get("lightburn_settings"))
+            layer_settings = layer.get("lightburn_settings") or plan.get("lightburn_settings") or {}
+            cut_type = layer.get("cut_type", "Scan")
+            out.append(_cut_setting(file_index, layer["name"], p["power"], p["frequency"], p["speed"], p.get("pulse_width"),
+                                    None if cut_type == "Cut" else p.get("line_interval"),
+                                    priority=file_index, passes=p.get("passes"),
+                                    global_passes=settings["global_passes"], bidirectional=settings["bidirectional"],
+                                    cross_hatch=settings["cross_hatch"], angle=settings["scan_angle"],
+                                    angle_increment=settings["angle_increment"], cut_type=cut_type,
+                                    wobble_enabled=bool(layer_settings.get("wobble_enabled", False)),
+                                    wobble_step=layer_settings.get("wobble_step"),
+                                    wobble_size=layer_settings.get("wobble_size")))
         for r in layer["regions"]:
             if r.get("kind") == "line":
                 shapes.append(_line_path(r["x1"] + x_offset, r["y1"] + y_offset,
                                          r["x2"] + x_offset, r["y2"] + y_offset, file_index))
             else:
                 shapes.append(_rect(r["x"] + x_offset, r["y"] + y_offset, r["width"], r["height"], file_index))
+    document = plan.get("vector_document")
+    if document is not None:
+        groups = {key: file_index for layer, file_index in zip(layers, file_indices) for key in layer.get("layer_keys", [])}
+        shapes += vectorize.to_lbrn2_shapes(document, groups, offset=(x_offset, y_offset))
     markers = plan.get("markers")
-    if markers and plan.get("markers_enabled", True):
+    if has_markers:
         ml = plan.get("marker_layer")
         if not ml:
             raise su.ValidationError("marker layer power, frequency and speed are not set (DEC-027)")
-        marker_index = PLATE_MARKER_LAYER_INDEX if is_plate else MARKER_LAYER_INDEX
         marker_settings = scan_settings({"global_passes": ml.get("global_passes", 1),
                                          "bidirectional": ml.get("bidirectional", True),
                                          "cross_hatch": ml.get("cross_hatch", False), "scan_angle": ml.get("angle", 0),
                                          "angle_increment": ml.get("angle_increment", 0)})
         out.append(_cut_setting(marker_index, ml.get("name", "Markers"), ml["power"], ml["frequency"], ml["speed"],
                                 ml.get("pulse_width"), ml.get("interval"), passes=ml.get("passes"),
-                                priority=marker_index if is_plate else None,
+                                priority=marker_index,
                                 global_passes=marker_settings["global_passes"], bidirectional=marker_settings["bidirectional"],
                                 cross_hatch=marker_settings["cross_hatch"], angle=marker_settings["scan_angle"],
                                 angle_increment=marker_settings["angle_increment"]))
@@ -456,21 +530,22 @@ def export_lbrn2(plan: dict) -> bytes:
         shapes += [_rect(r["x"] + x_offset, r["y"] + y_offset, r["width"], r["height"], marker_index) for r in markers["qr"]["rects"]]
         shapes += [_rect(r["x"] + x_offset, r["y"] + y_offset, r["width"], r["height"], marker_index)
                    for r in plan.get("marker_labels", [])]
-    if is_plate:
+    if has_clean:
         if plan.get("clean_regions") is not None:
             cleaning_shapes = [_rect(r["x"] + x_offset, r["y"] + y_offset,
                                      r["width"], r["height"], CLEAN_LAYER_INDEX)
                                for r in plan["clean_regions"]]
             shapes[0:0] = cleaning_shapes
-        elif markers and plan.get("markers_enabled", True):
+        elif has_markers:
             width = markers["extent"]["max_x"] - markers["extent"]["min_x"]
             height = markers["extent"]["max_y"] - markers["extent"]["min_y"]
             shapes.insert(0, _rect(0, 0, width, height, CLEAN_LAYER_INDEX))
         else:
-            all_regions = [r for layer in layers for r in layer["regions"]]
-            x0, y0 = min(r["x"] for r in all_regions), min(r["y"] for r in all_regions)
-            x1 = max(r["x"] + r["width"] for r in all_regions)
-            y1 = max(r["y"] + r["height"] for r in all_regions)
+            boxes = [(r["x"], r["y"], r["x"] + r["width"], r["y"] + r["height"]) for layer in layers for r in layer["regions"] if "width" in r]
+            if not boxes and plan.get("size_mm"):            # a vector job: its work area
+                boxes = [(0.0, 0.0, plan["size_mm"]["width"], plan["size_mm"]["height"])]
+            x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+            x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
             shapes.insert(0, _rect(x0 + x_offset, y0 + y_offset, x1 - x0, y1 - y0, CLEAN_LAYER_INDEX))
     out += shapes
     ident = plan.get("plan_identifier") or (markers or {}).get("identifier") or ""
@@ -481,7 +556,7 @@ def export_lbrn2(plan: dict) -> bytes:
         material = experiment.get("material") or {}
         stock = " · ".join(str(material.get(k)) for k in ("grade", "batch") if material.get(k))
         notes_text = "\n".join(filter(None, [f"TCE1:{ident}" if ident else None,
-            f"Test: {experiment.get('test_name') or plan.get('name')}",
+            f"{experiment.get('label') or 'Test'}: {experiment.get('test_name') or plan.get('name')}",
             f"Laser: {device.get('name') or ''} {device.get('model') or ''} · S/N {device.get('serial') or ''}".strip(" ·"),
             f"Lens: {lenses.label(lens)}" if lens.get("name") else "Lens: unknown",
             f"Titanium: {material.get('name') or ''}" + (f" · {stock}" if stock else "")]))

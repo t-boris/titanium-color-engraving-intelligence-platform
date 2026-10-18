@@ -1,13 +1,15 @@
 """Plans, conversions (discrete and continuous), export, and the Experiment Designer."""
 from __future__ import annotations
 
+import base64
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, ingest, plans, setup as su
-from .common import MAX_IMAGE_BYTES, content_disposition, lens_param, public_plan, read_upload, refresh_after_change, store_of
+from .. import conversion, designer, ingest, plans, setup as su, vector_job
+from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, refresh_after_change, store_of
 
 router = APIRouter(prefix="/api")
 
@@ -69,10 +71,32 @@ def get_plan(plan_id: int, request: Request):
     return _plan(request, plan_id)
 
 
+@router.get("/plans/{plan_id}/banding.png")
+def plan_banding(plan_id: int, request: Request):
+    """The banding of a discrete or photo engraving plan in its predicted colours (REQ-012)."""
+    s = store_of(request)
+    plan = _visible_plan(s, plan_id)
+    return Response(conversion.picture_png(conversion.plan_banding(s, plan)), media_type="image/png")
+
+
+@router.get("/plans/{plan_id}/source-image")
+def plan_source_image(plan_id: int, request: Request):
+    """The image a conversion or a vector job was made from, as it was uploaded."""
+    plan = _visible_plan(store_of(request), plan_id)
+    path = Path(plan.get("image_path") or "")
+    if not plan.get("image_path") or not path.is_file():
+        raise KeyError("the stored source image is missing")
+    data = path.read_bytes()
+    return Response(data, media_type=image_media_type(data), headers={"X-Content-Type-Options": "nosniff"})
+
+
 @router.get("/plans/{plan_id}/export.lbrn2")
 def export_plan(plan_id: int, request: Request):
     s = store_of(request)
     plan = _visible_plan(s, plan_id)
+    if plan["mode"] == plans.MODE_VECTOR:      # a vector job checks its evidence and records the file it hands out
+        name, data = vector_job.export(s, plan_id)
+        return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(name, ".lbrn2")})
     if plan["status"] == conversion.ST_DRAFT:
         raise conversion.ConversionError("the plan is a draft: finish the conversion before exporting")
     if plan["status"] in {"Superseded", "Cancelled"}:
@@ -162,13 +186,23 @@ def _continuous_args(path_ids: str, allowed: str) -> tuple[list[int], list[int]]
         raise su.ValidationError("the trajectory and the allowed entries must be JSON lists of whole numbers") from None
 
 
+@router.get("/continuous/limits")
+def continuous_limits():
+    """How many bands a photo engraving can have: LightBurn's 30 output colours less the marker layer (DEC-044, DEC-066)."""
+    return {"max_bands": conversion.MAX_BANDS}
+
+
 @router.post("/continuous/preview")
 async def preview_continuous(request: Request, device_id: int = Form(...), lens_id: str = Form(...), mode: str = Form(...),
                              width_mm: float = Form(...), bands: int = Form(...), path_ids: str = Form("[]"),
                              allowed_questioned: str = Form("[]"), image: UploadFile = File(None)):
+    """The banding without saving anything: per band its share and measured set, and the picture of the bands in their
+    predicted colours (``banding_png``, a data URL) so N can be judged before the plan exists."""
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     path, allowed = _continuous_args(path_ids, allowed_questioned)
     p = conversion.preview_continuous(store_of(request), device_id, lens_param(lens_id), mode, data, width_mm, bands, path, allowed)
+    picture = conversion.band_picture(p.pop("band_map"), [l["prediction"]["lab"] for l in p["layers"]])
+    p["banding_png"] = "data:image/png;base64," + base64.b64encode(conversion.picture_png(picture)).decode("ascii")
     p["layers"] = [{k: v for k, v in l.items() if k != "regions"} for l in p["layers"]]
     return p
 
@@ -176,10 +210,15 @@ async def preview_continuous(request: Request, device_id: int = Form(...), lens_
 @router.post("/continuous", status_code=201)
 async def create_continuous(request: Request, device_id: int = Form(...), lens_id: str = Form(...), mode: str = Form(...), name: str = Form(...),
                             width_mm: float = Form(...), bands: int = Form(...), path_ids: str = Form("[]"),
-                            allowed_questioned: str = Form("[]"), markers: bool = Form(False), image: UploadFile = File(None)):
+                            allowed_questioned: str = Form("[]"), markers: bool = Form(False), revision_of: int | None = Form(None),
+                            image: UploadFile = File(None)):
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     path, allowed = _continuous_args(path_ids, allowed_questioned)
-    pid = conversion.create_continuous(store_of(request), device_id, lens_param(lens_id), mode, data, width_mm, bands, name, path, allowed, markers)
+    s = store_of(request)
+    if revision_of is not None:
+        _visible_plan(s, revision_of)
+    pid = conversion.create_continuous(s, device_id, lens_param(lens_id), mode, data, width_mm, bands, name, path, allowed, markers,
+                                       revision_of=revision_of)
     return _plan(request, pid)
 
 

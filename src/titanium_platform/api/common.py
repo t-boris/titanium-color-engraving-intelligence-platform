@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import analysis, conversion, designer, ingest, knowledge, photo, setup as su
+from .. import analysis, conversion, designer, ingest, knowledge, photo, setup as su, vectorize
 from ..db import ImmutableError, Store
 
 MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
@@ -12,7 +12,16 @@ MAX_PHOTO_BYTES = 600 * 1024 * 1024
 MAX_IMAGE_BYTES = 60 * 1024 * 1024
 
 USER_ERRORS = (su.ValidationError, ingest.IngestError, conversion.ConversionError, designer.DesignerError,
-               knowledge.KnowledgeError, photo.PhotoError)
+               knowledge.KnowledgeError, photo.PhotoError, vectorize.VectorizeError)
+IMAGE_SIGNATURES = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF8", "image/gif"), (b"BM", "image/bmp"),
+                    (b"II*\x00", "image/tiff"), (b"MM\x00*", "image/tiff"))
+
+
+def image_media_type(data: bytes) -> str:
+    """The media type of a stored image from its first bytes (images are stored without their name)."""
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return next((kind for magic, kind in IMAGE_SIGNATURES if data.startswith(magic)), "application/octet-stream")
 
 
 def store_of(request: Request) -> Store:
