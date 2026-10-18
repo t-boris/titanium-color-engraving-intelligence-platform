@@ -92,3 +92,16 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: before reading a fit statistic on data shaped by a constraint, check the assignment against what is physically known
   (pale cells are thin, the first order comes first). When the approved plan's premise fails on real data, switch the new
   behaviour off, keep it tested, say why with numbers, and bring a revised plan instead of tuning until a number looks good.
+
+## The operator's application never runs from the development tree
+- Remark (2026-10-18): "не работает" / "Sttus не поменялся". Port 8765 ran from the repository's editable `.venv`: its Python
+  code stayed in memory while the UI files were served from disk, so the new screens called routes the old backend lacked.
+- Rule: the operator's server always runs from the installed wheel in `~/.titanium-platform-app` (DEC-024), never from the
+  working tree; check `ps` for the 8765 process before changing files. A new version reaches it only through the deploy step,
+  after a backup of the database.
+
+## Statuses move with the code, not at the end
+- Remark (2026-10-18): the plan's status table and the requirements' acceptance criteria stayed "in progress"/unchecked while
+  work landed on the branch.
+- Rule: every commit that implements or verifies something updates, in the same push, the plan.md status row, the ticked
+  acceptance criteria (code + test seen) and the issue comment/label.
