@@ -338,6 +338,58 @@ const IngestReview = (() => {
       choose, holder, h('div', {class: 'row'}, apply));
   }
 
+  // -- settings the LightBurn file lacks, supplied by the operator with provenance (REQ-015, REQ-016) --------------------
+  const SUPPLIED = {power: ['Мощность', '%'], frequency: ['Частота', 'кГц'], speed: ['Скорость', 'мм/с'],
+    pulse_width: ['Длительность импульса (Q-Pulse)', 'нс'], line_interval: ['Шаг линий', 'мм'], passes: ['Проходы', '']};
+  const stamp = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '');
+
+  /** Слой, в файле которого нет обязательной настройки, получает поле ровно для неё. Само ничего не подставляется:
+      оператор вводит значение, сервер проверяет его (ступени длительности, диапазон частот лазера), пара проверяется
+      заново, а принятое наблюдение запоминает, какие настройки из файла и какие введены оператором. До принятия
+      введённое можно убрать. */
+  async function suppliedSettingsCard(pair, reload) {
+    const gaps = (pair.check?.layers || []).filter((l) => (l.missing_settings || []).length);
+    if (!gaps.length || pair.matrix) return null;
+    const device = gaps.some((l) => l.missing_settings.includes('pulse_width')) ? await App.get('/devices/' + pair.device_id).catch(() => null) : null;
+    const steps = device ? device.passport.pulse_steps.map((s) => s.pulse_width_ns) : [];
+    const listId = `pulse-steps-${pair.id}`;
+    const send = async (button, layer, setting, value) => {
+      button.disabled = true;
+      const status = h('span', {class: 'muted small', role: 'status'}, 'Сохраняем и перепроверяем пару…');
+      button.after(status);
+      try {
+        await post(`/pairs/${pair.id}/supplied-settings`, {layer_index: layer.index, setting, value});
+        toast(value == null ? 'Введённое значение убрано, пара перепроверена' : 'Значение сохранено как введённое оператором, пара перепроверена', 'ok');
+        await reload();
+      } catch (e) { status.remove(); button.disabled = false; fail(e); }
+    };
+    const entry = (layer, setting) => {
+      const [label, unit] = SUPPLIED[setting];
+      const given = (layer.supplied_settings || {})[setting];
+      if (given) {
+        return h('div', {class: 'row small'}, h('strong', {}, `${label}: ${given.value}${unit ? ' ' + unit : ''}`),
+          pill(`введено оператором${given.at ? ' · ' + stamp(given.at) : ''}`, 'warn'),
+          btn('Убрать', (ev) => { const self = ev.currentTarget; send(self, layer, setting, null); }, 'btn-small'));
+      }
+      const input = h('input', {type: 'number', step: 'any', min: 0, style: 'width:8em', 'aria-label': `${label}, слой ${layer.name}`,
+        list: setting === 'pulse_width' && steps.length ? listId : null});
+      return h('div', {class: 'row small'}, h('span', {}, `${label}${unit ? ', ' + unit : ''}: нет в файле`), input,
+        btn('Сохранить', (ev) => {
+          const self = ev.currentTarget;
+          if (input.value.trim() === '') { fail(new Error('Введите значение')); return; }
+          send(self, layer, setting, Number(input.value));
+        }, 'btn-small primary'));
+    };
+    return h('div', {class: 'card stack'}, h('h3', {}, 'Настройки, которых нет в файле LightBurn'),
+      h('p', {class: 'muted small'}, 'Без них слой не сопоставим и не попадает в модель: приложение ничего не подставляет само. '
+        + 'Если вы знаете, с какой настройкой гравировался слой, впишите её. Она сохранится с пометкой «введено оператором» и временем, '
+        + 'пара будет проверена заново, а принятое наблюдение запомнит, какие настройки взяты из файла, а какие введены вами. '
+        + 'Значения, прочитанные из файла, не меняются.'
+        + (steps.length ? ` Лазер принимает длительность импульса только из своих ступеней: ${steps.join(', ')} нс.` : '')),
+      steps.length ? h('datalist', {id: listId}, ...steps.map((v) => h('option', {value: v}))) : null,
+      ...gaps.map((layer) => h('div', {class: 'stack'}, h('strong', {}, layer.name), ...layer.missing_settings.map((s) => entry(layer, s)))));
+  }
+
   // -- a parameter matrix (LightBurn Material Test) read from its photograph (REQ-031) --------------------------------
   const MATRIX_PARAMS = [['power', 'Мощность, %'], ['speed', 'Скорость, мм/с'], ['frequency', 'Частота, кГц'], ['pulse_width', 'Q-Pulse, нс'],
     ['line_interval', 'Шаг строк, мм'], ['passes', 'Проходы']];
@@ -559,6 +611,8 @@ const IngestReview = (() => {
       ...((check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))),
       ...check.problems.map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
       ...((check.lens && check.lens.warnings) || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))));
+    const supplied = await suppliedSettingsCard(pair, reload);
+    if (supplied) out.append(supplied);
     const imageLayers = (check.layers || []).filter((l) => l.image);
     if (imageLayers.length) {
       const DITHER = {stucki: 'Стаки', jarvis: 'Джарвис', threshold: 'порог', grayscale: 'градации серого', sketch: 'эскиз', '3dslice': '3D-слайс',

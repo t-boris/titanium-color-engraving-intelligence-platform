@@ -23,7 +23,7 @@ APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why",
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage", "supported_stage", "removal_doubt"}   # return "text" or (stage, "text")
 NOTE_KEYS = {"note", "statement", "rationale"}                                   # row["note"] = "text" or {"note": "text"}; findings, proposals
 REASON_ARGS = {"_event": 5, "_record": 3}          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
-TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js"]
+TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js", "i18n-gaps.js"]
 PLACEHOLDER = "7"
 
 

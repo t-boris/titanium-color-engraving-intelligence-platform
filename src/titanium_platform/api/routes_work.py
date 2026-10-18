@@ -97,6 +97,12 @@ class ConfirmIn(BaseModel):
     text: str
 
 
+class SuppliedSettingIn(BaseModel):
+    layer_index: int
+    setting: str
+    value: float | None = None        # None takes the supplied value back
+
+
 class EngravingTitleIn(BaseModel):
     title: str
 
@@ -404,6 +410,14 @@ async def replace_lightburn(pair_id: int, request: Request, lightburn: UploadFil
 @router.post("/pairs/{pair_id}/confirm-file")
 def confirm_file(pair_id: int, body: ConfirmIn, request: Request):
     ingest.confirm_file(store_of(request), pair_id, body.text)
+    return public_pair(ingest.get_pair(store_of(request), pair_id))
+
+
+@router.post("/pairs/{pair_id}/supplied-settings")
+def supply_setting(pair_id: int, body: SuppliedSettingIn, request: Request):
+    """A required setting a LightBurn layer does not hold, given by the operator (REQ-015, REQ-016); the pair is checked
+    again. ``value: null`` takes it back."""
+    ingest.supply_setting(store_of(request), pair_id, body.layer_index, body.setting, body.value)
     return public_pair(ingest.get_pair(store_of(request), pair_id))
 
 

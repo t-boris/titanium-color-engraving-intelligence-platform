@@ -8,6 +8,8 @@ Rules implemented here:
 * Power, frequency, speed, pulse width, line interval and pass count come from each paired LightBurn layer: they are
   job settings (DEC-042). The operator chooses the laser and the lens of the work; the lens may be unknown, and the
   lens installed now is never assumed for an imported work (REQ-016). A pair linked to a plate takes the plate's lens.
+  A required setting that a layer does not hold stays unknown unless the operator supplies it for that layer
+  (``supply_setting``); the observation then records which settings came from the file and which from the operator.
 * System calibration plates can be measured without a separate ColorChecker: their RAW-rendered colors are
   stored as camera-relative observations. General photographs still require a usable reference chart.
 * A calibration plate is identified by the ``TCE1:<id>`` note in its LightBurn file; its cells are matched to
@@ -54,7 +56,13 @@ PARAM_TOLERANCE = 1e-6
 CONTEXT_KEYS = ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm", "titanium_surface",
                 "batch", "focus", "engraved_at", "note")
 DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check",
-             "matrix", "lens_choice", "linked_plan_id", "work_task", "layer_tasks")
+             "matrix", "lens_choice", "linked_plan_id", "work_task", "layer_tasks", "supplied_settings")
+# The six settings a comparable layer needs (REQ-015): the LightBurn tag each is read from and the field of a layer report
+# that holds the value read from the file.
+REQUIRED_SETTINGS = {"power": ("maxPower", "power"), "frequency": ("frequency", "frequency_khz"), "speed": ("speed", "speed"),
+                     "pulse_width": ("QPulseWidth", "pulse_width"), "line_interval": ("interval", "line_interval"),
+                     "passes": ("numPasses", "passes")}
+SUPPLIED_BY = "operator"
 
 
 class IngestError(ValueError):
@@ -343,11 +351,13 @@ def restore_plan(store: Store, pair_id: int) -> int | None:
     summaries = model.knowledge_summaries(store, row["device_id"], row["lens_id"])
     entries = {r["parameters_key"]: r for r in store.query("SELECT id, parameters_key, stage, questioned FROM knowledge WHERE device_id=? AND lens_id IS ?",
                                                           (row["device_id"], row["lens_id"]))}
+    supplied = json.loads(row["data_json"] or "{}").get("supplied_settings") or {}
     layers = []
     for layer in project.layers:
         if not layer.regions:
             continue
-        params, _ = observation_parameters(setup["device"]["passport"], layer_report(layer, setup["device"]["passport"]))
+        params, _ = observation_parameters(setup["device"]["passport"],
+                                           layer_report(layer, setup["device"]["passport"], supplied.get(str(layer.index))))
         task = tasks.effective(layer.layer_type, layer.source_settings, None, work=json.loads(row["data_json"] or "{}").get("work_task"))
         key = model.observation_key(params, context, task)
         entry, summary = entries.get(key), summaries.get(key)
@@ -407,7 +417,8 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     # a new view of an accepted engraving keeps the identity that engraving was accepted with
     data = {"rephoto_of": root_pair_id, "masks_reviewed": False, "file_confirmation": source_data.get("file_confirmation"),
             "corners": None, "anchor": None, "check": None, "linked_plan_id": source["plan_id"],
-            "work_task": source_data.get("work_task"), "layer_tasks": source_data.get("layer_tasks") or {}}
+            "work_task": source_data.get("work_task"), "layer_tasks": source_data.get("layer_tasks") or {},
+            "supplied_settings": source_data.get("supplied_settings")}
     if source_data.get("matrix"):
         data["matrix"] = _matrix_for_rephoto(store, source_data, photo_name, photo_bytes)
     pair_id = store.execute(
@@ -613,7 +624,9 @@ def replace_lightburn_file(store: Store, pair_id: int, name: str, data: bytes) -
     path.write_bytes(data)
     store.execute("UPDATE pair SET lightburn_name=?, lightburn_path=? WHERE id=?", (name, str(path), pair_id))
     pair = get_pair(store, pair_id)
-    pair.update(masks_reviewed=False, file_confirmation=None, alignment_override=None, prefer_corners=False, check=None)
+    # settings supplied for the layers of the previous file do not describe this one
+    pair.update(masks_reviewed=False, file_confirmation=None, alignment_override=None, prefer_corners=False, check=None,
+                supplied_settings=None)
     _save(store, pair_id, pair, ST_PENDING)
     restore_plan(store, pair_id)                     # a plan restored from the previous file follows the new one
 
@@ -708,19 +721,71 @@ def compare_plate(plate_cells: list[dict], layers: list[lb.Layer], dx: float, dy
     return discrepancies, mapping, missing
 
 
-def layer_report(layer: lb.Layer, passport: dict) -> dict:
-    """Per-layer readability and comparability to the limits of the selected laser."""
+def _file_value(layer: lb.Layer, setting: str):
+    return layer.frequency_khz if setting == "frequency" else getattr(layer, REQUIRED_SETTINGS[setting][1])
+
+
+def missing_settings(layer: lb.Layer) -> list[str]:
+    """The required settings that the LightBurn layer does not hold at all: these, and only these, the operator may
+    supply (REQ-015). A value that is present but unreadable is not missing (the file has to be corrected), and a Cut
+    layer has no fill, so it needs no line interval."""
+    out = []
+    for setting, (tag, _) in REQUIRED_SETTINGS.items():
+        if setting == "line_interval" and layer.layer_type == "Cut":
+            continue
+        unreadable = any(p.startswith(f"{tag}:") and p != f"{tag}: missing" for p in layer.unreadable)
+        if _file_value(layer, setting) is None and not unreadable:
+            out.append(setting)
+    return out
+
+
+def supplied_value(passport: dict, setting: str, value) -> float | int:
+    """A setting the operator supplies for a layer, checked as a plate's setting is: a pulse width must be a step of the
+    laser (refused with the steps listed), a frequency within the laser's repetition-rate range, a power above 0 and up
+    to 100 %, a speed and a line interval above 0, the passes a whole number from 1."""
+    from . import devices
+    if setting == "passes":
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = float("nan")
+        if not np.isfinite(number) or number < 1 or int(number) != number:
+            raise su.ValidationError("passes must be a positive integer")
+        return int(number)
+    number = su._finite(value, setting.replace("_", " "), True)
+    if setting == "power" and number > 100:
+        raise su.ValidationError("power must not exceed 100 %")
+    if setting == "frequency":
+        rate = passport["repetition_rate_khz"]
+        if not rate["min"] <= number <= rate["max"]:
+            raise su.ValidationError(f"frequency {number:g} kHz is outside the repetition rate range {rate['min']:g}-{rate['max']:g} kHz of this laser")
+    if setting == "pulse_width":
+        devices.require_selectable(passport, number)
+    return number
+
+
+def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) -> dict:
+    """Per-layer readability and comparability to the limits of the selected laser.
+
+    ``supplied`` are the settings the operator gave for this layer ({setting: {"value", "by", "at"}}, REQ-015, REQ-016).
+    They count only for settings the file does not hold; the values read from the file stay in the report unchanged, and
+    the report lists the settings missing from the file and the supplied ones apart."""
+    missing = missing_settings(layer)
+    given = {k: v for k, v in (supplied or {}).items() if k in missing}
+    value = {k: given[k]["value"] if k in given else _file_value(layer, k) for k in REQUIRED_SETTINGS}
+    resolved = {f"{REQUIRED_SETTINGS[k][0]}: missing" for k in given}
+    unreadable = [n for n in layer.unreadable if n not in resolved]
     notes, compatible = [], True
-    if not layer.readable:
+    if unreadable:
         compatible = False
-        notes += layer.unreadable
+        notes += unreadable
     else:
-        problems = su.check_in_range(passport, layer.power, layer.frequency_khz)
-        if layer.pulse_width is None:
+        problems = su.check_in_range(passport, value["power"], value["frequency"])
+        if value["pulse_width"] is None:
             problems.append("pulse width is missing from this LightBurn layer")
-        if layer.layer_type != "Cut" and layer.line_interval is None:
+        if layer.layer_type != "Cut" and value["line_interval"] is None:
             problems.append("line interval is missing from this LightBurn layer")
-        if layer.passes is None:
+        if value["passes"] is None:
             problems.append("pass count is missing from this LightBurn layer")
         if problems:
             compatible = False
@@ -736,7 +801,7 @@ def layer_report(layer: lb.Layer, passport: dict) -> dict:
             "line_interval": layer.line_interval, "passes": layer.passes, "global_passes": layer.global_passes,
             "bidirectional": layer.bidirectional, "cross_hatch": layer.cross_hatch, "scan_angle": layer.scan_angle,
             "angle_increment": layer.angle_increment, "source_settings": layer.source_settings,
-            "regions": len(layer.regions), "readable": layer.readable,
+            "regions": len(layer.regions), "readable": not unreadable, "missing_settings": missing, "supplied_settings": given,
             "compatible": compatible, "notes": notes, "measured_lab": None, "pixels": None,
             **({"image": image} if image else {})}
 
@@ -1739,7 +1804,8 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
     report["project"] = {"app_version": project.app_version, "device": project.device_name,
                          "identifier": project.identifier, "mirror_x": project.mirror_x,
                          "mirror_y": project.mirror_y}
-    report["layers"] = [layer_report(layer, setup["device"]["passport"]) for layer in project.layers]
+    supplied = pair.get("supplied_settings") or {}
+    report["layers"] = [layer_report(layer, setup["device"]["passport"], supplied.get(str(layer.index))) for layer in project.layers]
     matrix_record = pair.get("matrix")
     overflow_indices = [layer.index for layer in project.layers if layer.index >= pl.MAX_LAYERS] if not matrix_record else []
     if matrix_record:
@@ -1971,7 +2037,7 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
     qr_local = _qr_local_geometry(plan, report["alignment"])
     for rep in report["layers"]:
         layer = by_index[rep["index"]]
-        if not layer.readable or not layer.regions:
+        if not rep["readable"] or not layer.regions:
             continue
         planned_layer = next((item for item in (plan or {}).get("layers", []) if item.get("name") == rep["name"]), None)
         layer_h = _layer_image_to_mm(h, report["alignment"], layer.index)
@@ -2088,6 +2154,46 @@ def confirm_file(store: Store, pair_id: int, text: str) -> dict:
     return pair["file_confirmation"]
 
 
+def supply_setting(store: Store, pair_id: int, layer_index: int, setting: str, value) -> dict:
+    """The operator gives a required setting that a LightBurn layer does not hold (REQ-015, REQ-016): it is checked
+    against the laser, kept with the pair as supplied by the operator with the time, and the pair is checked again.
+    ``value`` None takes a supplied value back before acceptance. Nothing is filled in automatically, and a value the
+    file holds is never replaced. Returns the new check report."""
+    row = _pair_row(store, pair_id)
+    _guard_mutable(row)
+    pair = _stored(store, pair_id)
+    if pair.get("matrix"):
+        raise IngestError("the settings of a parameter matrix are corrected in the matrix itself")
+    if setting not in REQUIRED_SETTINGS:
+        raise IngestError("only power, frequency, speed, pulse width, line interval and passes can be supplied")
+    try:
+        project = lb.parse_file(row["lightburn_path"])
+    except lb.LightBurnError as exc:
+        raise IngestError(f"LightBurn file: {exc}") from exc
+    layer = next((item for item in project.layers if item.index == layer_index), None)
+    if layer is None:
+        raise IngestError(f"the LightBurn file has no layer {layer_index}")
+    if setting not in missing_settings(layer):
+        raise IngestError("the LightBurn layer holds this setting: a value read from the file is never replaced")
+    supplied = dict(pair.get("supplied_settings") or {})
+    given = dict(supplied.get(str(layer_index)) or {})
+    if value is None:
+        given.pop(setting, None)
+    else:
+        passport = su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"]
+        given[setting] = {"value": supplied_value(passport, setting, value), "by": SUPPLIED_BY, "at": now()}
+    if given:
+        supplied[str(layer_index)] = given
+    else:
+        supplied.pop(str(layer_index), None)
+    pair["supplied_settings"] = supplied or None
+    _save(store, pair_id, pair)
+    store.audit("setting_supplied", pair_id=pair_id, layer_index=layer_index, setting=setting,
+                value=(given.get(setting) or {}).get("value"))
+    restore_plan(store, pair_id)                     # a plan restored from the file records the job with these settings
+    return check_pair(store, pair_id)
+
+
 def review_masks(store: Store, pair_id: int) -> None:
     row = _pair_row(store, pair_id)
     _guard_mutable(row)
@@ -2125,22 +2231,31 @@ def set_task(store: Store, pair_id: int, layer_index: int | None, kind: str | No
 
 
 # -- acceptance ----------------------------------------------------------------------------------------
+def settings_provenance(rep: dict) -> dict:
+    """Where each required setting of a layer report comes from: "file", "operator" (supplied explicitly, REQ-016) or
+    None (unknown)."""
+    supplied = rep.get("supplied_settings") or {}
+    return {k: "file" if rep.get(field) is not None else SUPPLIED_BY if k in supplied else None
+            for k, (_, field) in REQUIRED_SETTINGS.items()}
+
+
 def observation_parameters(passport: dict, rep: dict) -> tuple[dict, str | None]:
     """The settings an observation of a layer report stores, and why they are not a parameter vector of this laser (None
-    when they are): the six settings and the LightBurn execution controls of the layer."""
+    when they are): the six settings and the LightBurn execution controls of the layer. A setting the file lacks takes
+    the value the operator supplied for it, if any (REQ-015)."""
+    supplied = rep.get("supplied_settings") or {}
+    v = {k: rep.get(field) if rep.get(field) is not None else (supplied.get(k) or {}).get("value")
+         for k, (_, field) in REQUIRED_SETTINGS.items()}
     param_error = None
     try:
-        if None in (rep["power"], rep["frequency_khz"], rep["speed"]):         # an unreadable layer of a restored file
+        if None in (v["power"], v["frequency"], v["speed"]):         # an unreadable layer of a restored file
             raise su.ValidationError("power, frequency or speed is missing from this LightBurn layer")
-        params = su.parameter_vector(passport, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
-                                     rep["line_interval"], rep["passes"])
+        params = su.parameter_vector(passport, v["power"], v["frequency"], v["speed"], v["pulse_width"], v["line_interval"], v["passes"])
     except su.ValidationError as exc:
         # Keep the real measured output and the exact values found in the LightBurn file. Missing
         # settings stay null; no preset or default is substituted for what the file omitted.
         param_error = str(exc)
-        params = {"power": rep["power"], "frequency": rep["frequency_khz"], "speed": rep["speed"],
-                  "pulse_width": rep["pulse_width"], "line_interval": rep["line_interval"],
-                  "passes": rep["passes"]}
+        params = dict(v)
     params.update({"layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
                    "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
                    "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
@@ -2199,7 +2314,9 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                         "lightburn_file": row["lightburn_name"], "color_measurement": check["color_measurement"],
                         "role": rep.get("role"), "submeasurements": rep.get("submeasurements", []),
                         "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
-                        "matrix_cell": rep.get("matrix_cell"), "task": rep.get("task") or layer_task(pair, plan, rep)}
+                        "matrix_cell": rep.get("matrix_cell"), "task": rep.get("task") or layer_task(pair, plan, rep),
+                        # which settings the file holds and which the operator supplied, with who and when (REQ-016)
+                        "settings_provenance": settings_provenance(rep), "supplied_settings": rep.get("supplied_settings") or None}
             # Cleaning, registration markers and engraved labels are kept as evidence and shown, but they are operations of
             # the plate, not test settings: they never feed the model or knowledge (DEC-027, DEC-028, DEC-045).
             test_feature = rep.get("role", "test feature") == "test feature"
