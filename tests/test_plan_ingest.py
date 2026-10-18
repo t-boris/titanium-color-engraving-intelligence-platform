@@ -210,3 +210,81 @@ def test_an_unmarked_small_patch_plate_is_never_aligned_by_markers(w, monkeypatc
     assert patch["measured_lab"] is not None
     project = lb.parse_bytes(pl.export_lbrn2(plan))
     assert project.identifier == made["identifier"]
+
+
+# -- an imported work becomes a restored plan (REQ-005, REQ-006) -----------------------------------------------------
+def imported(plan: dict) -> bytes:
+    """The file of a plan saved without its identifier: to this system it is an imported work."""
+    return pl.export_lbrn2(plan).replace(f"TCE1:{plan['plan_identifier']}".encode(), b"")
+
+
+def import_and_accept(w, plan: dict, colours: dict) -> int:
+    s = w["store"]
+    pid = ig.create_pair(s, device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="imported.lbrn2",
+                         lightburn_bytes=imported(plan), photo_name="imported.png", photo_bytes=png(synth.plate_photo(plan, colours)),
+                         context={"material_id": w["material"]["id"]})
+    report = ig.check_pair(s, pid, corners=synth.work_corners(plan))
+    assert report["problems"] == [], report["problems"]
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    kn.refresh(s, *w["setup"])
+    return pid
+
+
+def test_an_imported_work_is_restored_as_a_plan_and_judged_against_the_predictions_of_its_time(w):
+    s = w["store"]
+    plan = discrete_plan(w, markers=False)
+    colours = engraved_as_planned(plan, shift=(0.0, 0.0, 0.0))
+    first = import_and_accept(w, plan, colours)
+    pair = ig.get_pair(s, first)
+    restored = pl.get_plan(s, pair["plan_id"])
+    assert (restored["mode"], restored["status"], pair["plan_mode"]) == (pl.MODE_RESTORED, pl.ST_RESTORED, pl.MODE_RESTORED)
+    assert restored["restored"]["pair_id"] == first and restored["lens_id"] == w["setup"][1] and restored["plan_identifier"] is None
+    project = lb.parse_bytes(imported(plan))
+    assert [(l["index"], l["name"], l["parameters"]["power"], l["parameters"]["frequency"], l["parameters"]["speed"],
+             l["parameters"]["pulse_width"], l["parameters"]["line_interval"], l["parameters"]["passes"], len(l["regions"]))
+            for l in restored["layers"]] == [(l.index, l.name, l.power, l.frequency_khz, l.speed, l.pulse_width, l.line_interval,
+                                               l.passes, len(l.regions)) for l in project.layers if l.regions]
+    assert all(l["prediction"] is None for l in restored["layers"])          # nothing was known of these settings yet
+    first_report = an.report_for_pair(s, first)
+    assert first_report["mode"] == pl.MODE_RESTORED and all(r["planned_lab"] is None for r in first_report["rows"])
+    assert all(r["note"].startswith("no prediction") for r in first_report["rows"])
+    import_and_accept(w, plan, colours)                                        # a second engraving: the settings get estimates
+    third = import_and_accept(w, plan, engraved_as_planned(plan, shift=(3.0, 0.0, 0.0)))
+    later = pl.get_plan(s, ig.get_pair(s, third)["plan_id"])
+    assert later["id"] != restored["id"] and all(l["prediction"] is not None and l["knowledge_id"] for l in later["layers"])
+    report = an.report_for_pair(s, third)
+    assert report["metrics"]["kind"] == "color_deviation" and report["metrics"]["layers"] == 2
+    assert all(2.0 < r["delta_e"] < 4.5 for r in report["rows"])              # measured against the colour predicted at the time
+    assert any(t.startswith("the plan was restored from the imported LightBurn file") for t in report["limitations"])
+    assert pl.get_plan(s, restored["id"])["layers"] == restored["layers"]      # an older restored plan keeps its own predictions
+
+
+def test_a_file_of_this_system_or_a_linked_plan_restores_nothing(w):
+    s = w["store"]
+    plan = discrete_plan(w, markers=False)
+    own = upload(w, plan, png(synth.scene()))
+    assert ig.get_pair(s, own)["plan_id"] is None                             # it names its plan; the check links it
+    linked = upload(w, plan, png(synth.scene()), plan_id=plan["id"])
+    assert ig.get_pair(s, linked)["plan_id"] == plan["id"]
+    assert s.one("SELECT COUNT(*) AS n FROM plan WHERE mode=?", (pl.MODE_RESTORED,))["n"] == 0
+
+
+def test_a_restored_plan_follows_a_replaced_file_and_leaves_with_the_last_of_its_photographs(w):
+    s = w["store"]
+    plan = discrete_plan(w, markers=False)
+    pid = ig.create_pair(s, device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="a.lbrn2",
+                         lightburn_bytes=imported(plan), photo_name="a.png", photo_bytes=png(synth.scene()),
+                         context={"material_id": w["material"]["id"]})
+    restored = ig.get_pair(s, pid)["plan_id"]
+    ig.replace_lightburn_file(s, pid, "b.lbrn2", imported(plan).replace(b'<maxPower Value="10"/>', b'<maxPower Value="12"/>', 1))
+    assert ig.get_pair(s, pid)["plan_id"] == restored
+    assert pl.get_plan(s, restored)["layers"][0]["parameters"]["power"] == 12 and pl.get_plan(s, restored)["restored"]["lightburn_name"] == "b.lbrn2"
+    ig.replace_lightburn_file(s, pid, "own.lbrn2", pl.export_lbrn2(plan))      # now the file names its plan: no restored plan
+    assert ig.get_pair(s, pid)["plan_id"] is None and s.one("SELECT COUNT(*) AS n FROM plan WHERE id=?", (restored,))["n"] == 0
+    again = ig.create_pair(s, device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="c.lbrn2",
+                           lightburn_bytes=imported(plan), photo_name="c.png", photo_bytes=png(synth.scene()),
+                           context={"material_id": w["material"]["id"]})
+    record = ig.get_pair(s, again)["plan_id"]
+    ig.delete_pair(s, again)
+    assert s.one("SELECT status FROM plan WHERE id=?", (record,))["status"] == "Deleted"

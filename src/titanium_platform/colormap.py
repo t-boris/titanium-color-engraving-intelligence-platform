@@ -121,7 +121,7 @@ def references(store: Store) -> dict:
     # Works accepted before the cleaning layer was recognised have no witness observation: find the layer again in the stored file.
     derived: dict[int, int] = {}
     for row in rows:
-        if row["pair_id"] in witness or row["plan_id"] or row["pair_id"] in derived:
+        if row["pair_id"] in witness or (row["plan_id"] and row["plan_status"] != "Restored") or row["pair_id"] in derived:
             continue
         try:
             stamp = Path(row["lightburn_path"]).stat().st_mtime_ns

@@ -4,7 +4,7 @@
   const {h, btn, link, pill, get, post, del, go, toast, fail, confirmBox, modal, num, labText, swatch} = App;
   const MODE = {'Calibration plate': 'Калибровочная плата', 'Laser capability test': 'Тест возможностей лазера',
     'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
-    'Color-path photo engraving': 'Фотогравировка по цветовому пути'};
+    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Работа, план восстановлен из файла'};
   const PURPOSE = {line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'};
   const PURPOSE_STATUS = {candidate: ['Кандидат', 'ok'], incomplete_settings: ['Не хватает настроек', 'warn'],
     insufficient: ['Недостаточно данных', 'warn'], needs_text_test: ['Нужен тест', 'warn'],
@@ -281,6 +281,7 @@
     try { r = await get(`/pairs/${id}/report`); }
     catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Отчёт не найден'), h('p', {}, e.message), link('/experiments', 'К экспериментам')); }
     const c = r.capability;
+    const restored = r.mode === 'Restored from file';      // the plan of an imported work, restored from its file (REQ-005)
     const material = c ? [c.material?.name, c.material?.grade, c.material?.batch].filter(Boolean).join(' · ') : '';
     const device = c?.device?.name;
     const lens = c?.lens?.name;
@@ -303,8 +304,8 @@
         h('div', {}, h('h2', {}, r.engraving_title || 'Анализ гравировки'),
           h('p', {class: 'sub'}, [MODE[r.mode] || 'Гравировка', device, lens, material].filter(Boolean).join(' · ')),
           h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`)),
-        h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
-          r.plan_id ? link('/plans/' + r.plan_id, 'Плата') : null,
+        h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
+          r.plan_id ? link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата') : null,
           link('/ingest?rephoto=' + id, '+ Фото'), revise, remove)),
       r.photos?.length > 1 ? h('div', {class: 'analysis-photo-strip'},
         h('span', {}, `Проверки этого запуска (${r.photos.length})`),

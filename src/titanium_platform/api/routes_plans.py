@@ -94,6 +94,8 @@ def plan_source_image(plan_id: int, request: Request):
 def export_plan(plan_id: int, request: Request):
     s = store_of(request)
     plan = _visible_plan(s, plan_id)
+    if plan["mode"] == plans.MODE_RESTORED:
+        raise su.ValidationError("a plan restored from an imported file records the job that was engraved; it is not exported as a new job")
     if plan["mode"] == plans.MODE_VECTOR:      # a vector job checks its evidence and records the file it hands out
         name, data = vector_job.export(s, plan_id)
         return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(name, ".lbrn2")})
@@ -109,7 +111,8 @@ def export_plan(plan_id: int, request: Request):
 @router.put("/plans/{plan_id}/markers")
 def set_markers(plan_id: int, body: MarkersIn, request: Request):
     s = store_of(request)
-    _visible_plan(s, plan_id)
+    if _visible_plan(s, plan_id)["mode"] == plans.MODE_RESTORED:
+        raise su.ValidationError("a plan restored from an imported file records the job that was engraved; it is not exported as a new job")
     conversion.set_markers(s, plan_id, body.enabled)
     return _plan(request, plan_id)
 

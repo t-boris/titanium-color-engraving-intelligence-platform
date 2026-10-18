@@ -7,7 +7,8 @@
       ? h('div', {}, h('h2', {}, 'Повторная фотография'), h('p', {class: 'sub'}, 'Тот же эксперимент и та же гравировка; требуется только новый RAW-снимок.'))
       : h('div', {}, h('h2', {}, 'Добавить эксперимент'), h('p', {class: 'sub'}, 'Фактический файл LightBurn, фотография, лазер, линза и использованный титан.'));
     const back = link('/experiments', 'Назад к экспериментам');
-    const backTo = (pair) => link('/experiment/' + (pair.plan_id ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id), 'Назад к эксперименту');
+    const backTo = (pair) => link('/experiment/' + (pair.plan_id && pair.plan_mode !== 'Restored from file' ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id),
+      'Назад к эксперименту');
     if (ctx.query.pair) {
       let pair;
       try { pair = await get('/pairs/' + ctx.query.pair); }

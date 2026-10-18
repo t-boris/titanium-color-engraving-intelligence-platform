@@ -7,7 +7,7 @@
     'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Восстановленный из файла', 'Vector job': 'Векторная работа'};
   const PICTURED = ['Discrete color engraving', 'Tonal photo engraving', 'Color-path photo engraving'];
   const STATUS = {Draft: 'Черновик', 'Ready to export': 'Готов к экспорту', Exported: 'Экспортирован',
-    Superseded: 'Заменён новым тестом', Cancelled: 'Отменён'};
+    Superseded: 'Заменён новым тестом', Cancelled: 'Отменён', Restored: 'Запись выполненного задания'};
   const STAGE = {measured: 'Измерено', candidate: 'Кандидат', repeated: 'Повторено', validated: 'Валидировано', production: 'Производственное'};
 
   /** Расчёт по паспорту лазера (REQ-017): энергия импульса и предупреждение о частоте ниже среза. Это не измерение. */
@@ -65,6 +65,8 @@
     try { p = await get('/plans/' + ctx.arg); } catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'План гравировки не найден'), link('/experiments', 'К экспериментам')); }
     const draft = p.status === 'Draft';
     const vector = p.mode === 'Vector job';
+    // a plan restored from an imported file records the job that was engraved: never exported, nothing to add to it (REQ-005)
+    const restored = p.mode === 'Restored from file';
     const [editRoute, editLabel] = p.mode === 'Discrete color engraving' ? ['/artwork?plan=' + p.id, 'Редактировать преобразование']
       : p.mode.includes('photo engraving') ? ['/photo?plan=' + p.id, 'Исправить: новый план из этого'] : vector ? ['/vector?plan=' + p.id, 'Открыть векторную работу'] : [null, null];
     const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
@@ -72,9 +74,10 @@
       self.disabled = true;
       try { await download(p); toast('Файл подготовлен и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); App.render(); } catch (e) { fail(e); self.disabled = false; }
     }, 'primary', draft || ['Superseded', 'Cancelled'].includes(p.status) || !p.layers.length);
+    if (restored) exportBtn.hidden = true;
     const warnings = (p.warnings || []).map((w) => PhotoForm.questionedWarning(w));
     const markers = p.markers_enabled ? 'включены' : 'выключены';
-    const toggle = ['Calibration plate', 'Laser capability test'].includes(p.mode) ? null : btn(p.markers_enabled ? 'Выключить регистрационные маркеры' : 'Включить регистрационные маркеры', async () => {
+    const toggle = ['Calibration plate', 'Laser capability test', 'Restored from file'].includes(p.mode) ? null : btn(p.markers_enabled ? 'Выключить регистрационные маркеры' : 'Включить регистрационные маркеры', async () => {
       try { await put(`/plans/${p.id}/markers`, {enabled: !p.markers_enabled}); App.render(); } catch (e) { fail(e); }
     });
     const exp = p.experiment || {};
@@ -83,7 +86,7 @@
     const clean = p.clean_layer;
     const cleanLabel = clean ? `${num(clean.power, 1)} % · ${num(clean.frequency, 0)} кГц · ${num(clean.speed, 0)} мм/с · Q-Pulse ${num(clean.pulse_width, 0)} нс · шаг ${num(clean.interval ?? clean.line_interval, 3)} мм · ${clean.passes ?? 1} проход · ${clean.cross_hatch ? 'перекрестная заливка' : clean.bidirectional ? 'двунаправленная заливка' : 'однонаправленная заливка'}` : 'C00 — первый слой LightBurn';
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, p.name), h('p', {class: 'sub'}, `${MODE[p.mode] || p.mode} · ${STATUS[p.status] || p.status}`)), h('span', {class: 'spacer'}), link('/experiment/plan-' + p.id, 'К эксперименту'),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, p.name), h('p', {class: 'sub'}, `${MODE[p.mode] || p.mode} · ${STATUS[p.status] || p.status}`)), h('span', {class: 'spacer'}), restored ? link('/ingest?pair=' + p.restored.pair_id, 'К фотографии работы') : link('/experiment/plan-' + p.id, 'К эксперименту'),
         editRoute ? link(editRoute, editLabel) : null,
         btn('Удалить тест', () => confirmBox('Удалить тест', p.active_pairs
           ? `Удалить плату вместе с проверками (${p.active_pairs})? Загруженные копии RAW и LightBurn будут удалены. История измерений останется, но перестанет влиять на рекомендации.`
@@ -96,6 +99,8 @@
       draft ? h('div', {class: 'alert warn'}, vector ? ['В работе есть области без достаточных данных: экспорт недоступен. ', link('/vector?plan=' + p.id, 'Открыть векторную работу')]
         : 'План требует завершения преобразования: экспорт недоступен.') : null,
       p.revision_of ? h('div', {class: 'alert ok'}, 'Исправление плана ', link('/plans/' + p.revision_of, '№ ' + p.revision_of), '; тот план не изменён.') : null,
+      restored ? h('div', {class: 'alert'}, `План восстановлен из импортированного файла «${p.restored.lightburn_name}»: слои, их параметры и геометрия заливки взяты из файла, `
+        + 'плановый цвет слоя — прогноз записи знания на момент восстановления (если он был). Это запись выполненного задания, а не новое задание: экспорт недоступен.') : null,
       ['Superseded', 'Cancelled'].includes(p.status) ? h('div', {class: 'alert warn'},
         'Эта плата больше не актуальна для гравировки. Её параметры сохранены в истории исследования.') : null, ...warnings,
       h('div', {class: 'card stack'}, facts([['Идентификатор', p.plan_identifier], ['Полос', p.band_count], ['Размер, мм', p.size_mm ? `${num(p.size_mm.width, 1)} × ${num(p.size_mm.height, 1)}` : null],
@@ -107,7 +112,7 @@
         h('div', {class: 'row'}, toggle, exportBtn)),
       banding(p),
       h('div', {class: 'card'}, h('h3', {}, 'Слои и параметры'), p.layers.length ? table(['Слой', 'Параметры', 'Прогнозный цвет', 'Уверенность', 'Ожидаемая ошибка ΔE', 'Стабильность', 'Стадия', 'Областей'], layerRows(p)) : h('p', {class: 'muted'}, 'Слоёв нет: экспорт недоступен.')),
-      h('div', {class: 'card'}, h('h3', {}, 'Результат гравировки'), h('p', {class: 'muted small'}, 'После гравировки добавьте фактически запущенный файл LightBurn, фотографию RAW и укажите лазер+линзу вместе с использованной заготовкой титана. Маркеры на плате помогают совместить фотографию с файлом.'),
+      restored ? null : h('div', {class: 'card'}, h('h3', {}, 'Результат гравировки'), h('p', {class: 'muted small'}, 'После гравировки добавьте фактически запущенный файл LightBurn, фотографию RAW и укажите лазер+линзу вместе с использованной заготовкой титана. Маркеры на плате помогают совместить фотографию с файлом.'),
         link('/ingest?plan=' + p.id, 'Добавить результат гравировки')));
   }});
 })();

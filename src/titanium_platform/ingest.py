@@ -66,6 +66,8 @@ def _pair_row(store: Store, pair_id: int):
 
 def get_pair(store: Store, pair_id: int) -> dict:
     d = dict(_pair_row(store, pair_id))
+    plan = store.one("SELECT mode FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
+    d["plan_mode"] = plan["mode"] if plan else None        # a plan restored from the imported file is not a plate (REQ-005)
     d["context"] = json.loads(d.pop("context_json"))
     d["hardware"] = json.loads(d.pop("hardware_json") or "{}")
     d.update(json.loads(d.pop("data_json")))
@@ -249,11 +251,90 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
     # The plan or plate the operator uploaded this photograph for: the identity of the work is then the operator's
     data = {"rephoto_of": None, "masks_reviewed": False, "file_confirmation": None, "corners": None, "check": None,
             "linked_plan_id": plan_id}
-    return store.execute(
+    pair_id = store.execute(
         "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ST_PENDING, device_id, lens_id, stand_id, ctx["material_id"], plan_id, engraving_id, Path(lightburn_name).stem, lightburn_name, str(lb_path), photo_name, str(photo_path),
          json.dumps(ctx), json.dumps(data), json.dumps(hardware), now())).lastrowid
+    if plan_id is None:
+        restore_plan(store, pair_id)
+    return pair_id
+
+
+RESTORED_OUTLINE_MM = 0.01      # outlines of a restored plan keep their shape within 10 µm with far fewer flattened points
+
+
+def _restored_region(region: lb.Region) -> dict:
+    out = region.as_dict()
+    for key, loops in (("polygon", [region.polygon]), ("holes", region.holes)):
+        simplified = []
+        for loop in loops:
+            points = np.asarray(loop, np.float32).reshape(-1, 1, 2)
+            if len(points) > 8:
+                points = cv2.approxPolyDP(points, RESTORED_OUTLINE_MM, region.closed)
+            simplified.append(points.reshape(-1, 2).round(4).tolist())
+        if key == "polygon":
+            out["polygon"] = simplified[0]
+        elif simplified:
+            out["holes"] = simplified
+    return out
+
+
+def restore_plan(store: Store, pair_id: int) -> int | None:
+    """The EngravingPlan of an imported work, reconstructed from its LightBurn file (REQ-005, REQ-006): every layer with its
+    power, frequency, speed, job settings and fill geometry, and the colour that was planned for it: the prediction of
+    the knowledge entry of those settings at this moment, when one exists with all three estimates (REQ-002), else none.
+    The pair is linked to it (mode 'Restored from file', status 'Restored'). It records the job that was engraved and is
+    never exported as a new job. A file that names a plate or plan of this system restores nothing; a pair already linked
+    to its own restored plan has it rebuilt from the current file. Returns the plan id, or None."""
+    from . import model
+    row = _pair_row(store, pair_id)
+    own = pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None
+    if own is not None and not (own["mode"] == pl.MODE_RESTORED and own["restored"]["pair_id"] == pair_id):
+        return None                                  # linked to a plan of this system, or to the plan of its source photograph
+    try:
+        project = lb.parse_file(row["lightburn_path"])
+    except lb.LightBurnError:
+        project = None                               # the check says why the file cannot be read
+    if project is None or project.identifier:
+        if own is not None:
+            with store.transaction():
+                store.execute("UPDATE pair SET plan_id=NULL WHERE id=?", (pair_id,))
+                store.execute("DELETE FROM plan WHERE id=?", (own["id"],))
+        return None
+    setup = su.resolve(store, row["device_id"], row["lens_id"])
+    context = json.loads(row["context_json"])
+    summaries = model.knowledge_summaries(store, row["device_id"], row["lens_id"])
+    entries = {r["parameters_key"]: r for r in store.query("SELECT id, parameters_key, stage, questioned FROM knowledge WHERE device_id=? AND lens_id IS ?",
+                                                          (row["device_id"], row["lens_id"]))}
+    layers = []
+    for layer in project.layers:
+        if not layer.regions:
+            continue
+        params, _ = observation_parameters(setup["device"]["passport"], layer_report(layer, setup["device"]["passport"]))
+        key = model.observation_key(params, context)
+        entry, summary = entries.get(key), summaries.get(key)
+        predicted = entry is not None and summary is not None and summary["available"]
+        layers.append({"index": layer.index, "name": layer.name, "parameters": params, "cut_type": layer.layer_type,
+                       "regions": [_restored_region(region) for region in layer.regions],
+                       "prediction": {k: summary[k] for k in ("lab", "confidence", "expected_delta_e", "stability")} if predicted else None,
+                       "knowledge_id": entry["id"] if predicted else None, "stage": entry["stage"] if predicted else None,
+                       "questioned": bool(entry["questioned"]) if predicted else False})
+    data = {"layers": layers, "markers": None, "lens": su.lens_snapshot(setup),
+            "restored": {"pair_id": pair_id, "lightburn_name": row["lightburn_name"], "at": now()}}
+    name = row["engraving_title"] or Path(row["lightburn_name"]).stem
+    with store.transaction():
+        if own is not None:
+            store.execute("UPDATE plan SET name=?, lens_id=?, data_json=? WHERE id=?", (name, row["lens_id"], json.dumps(data), own["id"]))
+            plan_id = own["id"]
+        else:
+            plan_id = store.execute(
+                "INSERT INTO plan(name,mode,status,device_id,lens_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,0,NULL,NULL,?,?)",
+                (name, pl.MODE_RESTORED, pl.ST_RESTORED, row["device_id"], row["lens_id"], json.dumps(data), now())).lastrowid
+            store.execute("UPDATE pair SET plan_id=? WHERE id=?", (plan_id, pair_id))
+        store.audit("plan_restored", pair_id=pair_id, plan_id=plan_id, layers=len(layers),
+                    predicted=sum(layer["prediction"] is not None for layer in layers))
+    return plan_id
 
 
 def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_bytes: bytes, stand_id: int | None = None,
@@ -415,6 +496,7 @@ def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False)
     _save(store, pair_id, pair)
     store.execute("UPDATE pair SET engraving_title=?, lightburn_name=? WHERE id=?", (title, f"{_safe_name(title)}.lbrn2", pair_id))
     store.audit("matrix_settings_edited", pair_id=pair_id, confirmed=record["confirmed"], cols=record["cols"], rows=record["rows"])
+    restore_plan(store, pair_id)
     return check_pair(store, pair_id)
 
 
@@ -495,6 +577,7 @@ def replace_lightburn_file(store: Store, pair_id: int, name: str, data: bytes) -
     pair = get_pair(store, pair_id)
     pair.update(masks_reviewed=False, file_confirmation=None, alignment_override=None, prefer_corners=False, check=None)
     _save(store, pair_id, pair, ST_PENDING)
+    restore_plan(store, pair_id)                     # a plan restored from the previous file follows the new one
 
 
 def rename_engraving(store: Store, engraving_id: str, title: str) -> None:
@@ -1979,6 +2062,27 @@ def review_masks(store: Store, pair_id: int) -> None:
 
 
 # -- acceptance ----------------------------------------------------------------------------------------
+def observation_parameters(passport: dict, rep: dict) -> tuple[dict, str | None]:
+    """The settings an observation of a layer report stores, and why they are not a parameter vector of this laser (None
+    when they are): the six settings and the LightBurn execution controls of the layer."""
+    param_error = None
+    try:
+        params = su.parameter_vector(passport, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
+                                     rep["line_interval"], rep["passes"])
+    except su.ValidationError as exc:
+        # Keep the real measured output and the exact values found in the LightBurn file. Missing
+        # settings stay null; no preset or default is substituted for what the file omitted.
+        param_error = str(exc)
+        params = {"power": rep["power"], "frequency": rep["frequency_khz"], "speed": rep["speed"],
+                  "pulse_width": rep["pulse_width"], "line_interval": rep["line_interval"],
+                  "passes": rep["passes"]}
+    params.update({"layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
+                   "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
+                   "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
+                   "source_settings": lb.recipe_settings(rep.get("source_settings"))})
+    return params, param_error
+
+
 def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, int | None], None] | None = None) -> list[int]:
     """Write one immutable observation per measured layer with the pair's laser and lens, atomically. Returns the
     observation ids; ``on_accepted(store, device_id, lens_id)`` runs after the commit."""
@@ -2012,21 +2116,7 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
     ids: list[int] = []
     with store.transaction():
         for rep in layers:
-            param_error = None
-            try:
-                params = su.parameter_vector(passport, rep["power"], rep["frequency_khz"], rep["speed"], rep["pulse_width"],
-                                             rep["line_interval"], rep["passes"])
-            except su.ValidationError as exc:
-                # Keep the real measured output and the exact values found in the LightBurn file. Missing
-                # settings stay null; no preset or default is substituted for what the file omitted.
-                param_error = str(exc)
-                params = {"power": rep["power"], "frequency": rep["frequency_khz"], "speed": rep["speed"],
-                          "pulse_width": rep["pulse_width"], "line_interval": rep["line_interval"],
-                          "passes": rep["passes"]}
-            params.update({"layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
-                           "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
-                           "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
-                           "source_settings": lb.recipe_settings(rep.get("source_settings"))})
+            params, param_error = observation_parameters(passport, rep)
             # Reserve distinct non-test indices for the clean witness (-1) and registration/label output (0).
             # Test-feature indices remain canonical to the saved plan even though LightBurn shifts them.
             if rep.get("role") == "pre-test cleaning witness":
@@ -2086,6 +2176,9 @@ def delete_pair(store: Store, pair_id: int) -> None:
     with store.transaction():
         store.execute("UPDATE pair SET status=? WHERE id=?", (ST_DELETED, pair_id))
         store.audit("pair_deleted", pair_id=pair_id, previous_status=row["status"], observations=len(observations))
+        # a plan restored from the file of this work is its record: archived with the last of its photographs
+        store.execute("UPDATE plan SET status='Deleted' WHERE id=? AND mode=? AND NOT EXISTS "
+                      "(SELECT 1 FROM pair WHERE plan_id=plan.id AND status!=?)", (row["plan_id"], pl.MODE_RESTORED, ST_DELETED))
     for col in ("lightburn_path", "photo_path"):
         Path(row[col]).unlink(missing_ok=True)
     removed: dict[tuple, dict[str, list[int]]] = {}

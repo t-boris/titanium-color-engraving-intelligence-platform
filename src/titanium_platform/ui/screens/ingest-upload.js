@@ -76,7 +76,7 @@ const IngestUpload = (() => {
       h('div', {class: 'card stack'}, h('h3', {}, 'Новая фотография той же гравировки'),
         h('p', {}, `Исходная принятая пара №${source.id} · файл ${source.lightburn_name}`),
         h('p', {class: 'muted small'}, `${laser} · ${titanium}`),
-        source.plan_id ? link('/plans/' + source.plan_id, 'Открыть экспериментальную плату') : null,
+        source.plan_id ? link('/plans/' + source.plan_id, source.plan_mode === 'Restored from file' ? 'Открыть план, восстановленный из файла' : 'Открыть экспериментальную плату') : null,
         h('p', {}, 'LightBurn, настройки слоёв, лазер, линза и титан будут взяты из исходной пары. Новое фото не считается отдельной гравировкой.')),
       h('div', {class: 'card stack'}, h('h3', {}, 'Только новая фотография'),
         field('RAW-фото всей гравировки', App.filePick(photo, 'Выбрать RAW-фото')),

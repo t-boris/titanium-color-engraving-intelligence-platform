@@ -112,6 +112,16 @@
     [/^the reference values must be 24 Lab triples/i, 'Эталонные значения — 24 тройки Lab (L от 0 до 100, a и b от −128 до 127)'],
   ]);
 
+  // план, восстановленный из файла импортированной работы (REQ-005, REQ-006)
+  I18N.add([
+    [/^a plan restored from an imported file records the job that was engraved; it is not exported as a new job$/i,
+      'План восстановлен из файла импортированной работы: это запись выполненного задания, её нельзя экспортировать как новое задание'],
+    [/^no prediction: no knowledge entry of these settings had all three estimates when the plan was restored$/i,
+      'Прогноза нет: когда план восстанавливался, для этих настроек не было записи знания со всеми тремя оценками'],
+    [/^the plan was restored from the imported LightBurn file: a planned colour is the prediction its knowledge entry gave when the plan was restored$/i,
+      'План восстановлен из импортированного файла LightBurn: плановый цвет — прогноз записи знания на момент восстановления плана'],
+  ]);
+
   // слой меток и подписей: только сохранённые оператором параметры (DEC-027)
   I18N.add([
     [/^the saved marker layer settings are not offered by this laser: (.+)$/i,

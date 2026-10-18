@@ -71,6 +71,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
             row["delta_e"] = color.delta_e(o["lab"], pred["lab"])
         elif layer is not None and mode == pl.MODE_PLATE:
             row["note"] = "calibration plate cells have no planned color"
+        elif layer is not None and mode == pl.MODE_RESTORED:
+            row["note"] = "no prediction: no knowledge entry of these settings had all three estimates when the plan was restored"
         elif layer is None and plan is not None and role == "test feature":
             row["note"] = "the layer is not part of the original plan"
         if row["delta_e"] is not None and tol is not None:
@@ -92,6 +94,9 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     result["capability"] = capability_results.report_for_pair(store, pair_id)
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")
+    elif mode == pl.MODE_RESTORED:
+        limitations.append("the plan was restored from the imported LightBurn file: a planned colour is the prediction its knowledge entry "
+                           "gave when the plan was restored")
     if tol is None and result["capability"] is None:
         limitations.append("no delta E tolerance is saved for this laser and lens: deviations are shown but not classified")
     if any(o["evidence"].get("color_measurement", {}).get("mode") == "raw_camera_relative" for o in obs):

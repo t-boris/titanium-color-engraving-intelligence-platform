@@ -102,6 +102,24 @@ def test_every_photograph_names_its_rig_and_the_rig_names_its_chart_values(clien
     assert client.delete(f"/api/setups/{window['id']}/chart-reference").json()["chart_reference"]["published"]
 
 
+def test_an_imported_work_gets_a_restored_plan_that_is_never_exported_and_stays_a_finished_work(client):
+    """REQ-005, REQ-006: the job of an imported file is reconstructed as a plan of mode 'Restored from file'."""
+    s = setup(client)
+    lbrn = (b'<LightBurnProject AppVersion="2.0.04"><CutSetting type="Scan"><index Value="5"/><name Value="C05"/>'
+            b'<maxPower Value="24"/><speed Value="900"/><frequency Value="40000"/><QPulseWidth Value="200"/><interval Value="0.025"/></CutSetting>'
+            b'<Shape Type="Rect" CutIndex="5" W="40" H="20" Cr="0"><XForm>1 0 0 1 30 20</XForm></Shape></LightBurnProject>')
+    pair = upload_pair(client, s, lbrn, png(synth.scene())).json()
+    assert pair["plan_mode"] == "Restored from file"
+    plan = client.get(f"/api/plans/{pair['plan_id']}").json()
+    assert (plan["mode"], plan["status"], plan["restored"]["pair_id"]) == ("Restored from file", "Restored", pair["id"])
+    assert [(l["name"], l["parameters"]["power"], l["parameters"]["frequency"], l["region_count"]) for l in plan["layers"]] == [("C05", 24, 40, 1)]
+    for refused in (client.get(f"/api/plans/{plan['id']}/export.lbrn2"), client.put(f"/api/plans/{plan['id']}/markers", json={"enabled": True})):
+        assert refused.status_code == 422 and refused.json()["error"].startswith("a plan restored from an imported file records the job")
+    assert [e["key"] for e in client.get("/api/experiments").json()] == [f"eng-{pair['engraving_id']}"]
+    assert client.delete(f"/api/pairs/{pair['id']}").status_code == 204
+    assert client.app.state.store.one("SELECT status FROM plan WHERE id=?", (plan["id"],))["status"] == "Deleted"
+
+
 def test_uploads_are_validated(client):
     s = setup(client)
     base = {"device_id": s["laser"]["id"], "lens_id": "unknown", "stand_id": s["stand"]["id"]}

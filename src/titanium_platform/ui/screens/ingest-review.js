@@ -475,7 +475,7 @@ const IngestReview = (() => {
     out.append(h('div', {class: 'card'}, h('h3', {}, pair.engraving_title || (pair.rephoto_of ? 'Повторная фотография той же гравировки' : 'Гравировка')),
       h('p', {}, `LightBurn: ${pair.lightburn_name} · Фото: ${pair.photo_name}`),
       pair.rephoto_of ? h('p', {class: 'muted small'}, `Исходная пара №${pair.rephoto_of} · LightBurn, лазер, линза и титан унаследованы.`,
-        pair.plan_id ? ' ' : null, pair.plan_id ? link('/plans/' + pair.plan_id, 'Экспериментальная плата') : null) : null,
+        pair.plan_id ? ' ' : null, pair.plan_id ? link('/plans/' + pair.plan_id, pair.plan_mode === 'Restored from file' ? 'План, восстановленный из файла' : 'Экспериментальная плата') : null) : null,
       pair.correction_of ? h('p', {class: 'alert warn'}, `Исправление совмещения снимка №${pair.correction_of}. До принятия этой коррекции прежний результат активен; после принятия он уйдёт из выводов, а история останется в журнале.`) : null,
       h('div', {class: 'row'}, btn(check ? 'Повторить проверку' : 'Проверить пару', (ev) => {
         const self = ev.currentTarget;

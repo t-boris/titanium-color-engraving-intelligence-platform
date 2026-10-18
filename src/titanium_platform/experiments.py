@@ -16,7 +16,7 @@ from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
 STATUS = {"plate_ready": "Плата готова: ждёт фото", "needs_review": "Нужна проверка", "accepted": "Принят"}
-HIDDEN_PLANS = ("Deleted", "Cancelled", "Superseded")
+HIDDEN_PLANS = ("Deleted", "Cancelled", "Superseded", "Restored")   # a restored plan records a finished work, not a plate
 
 
 def plan_key(plan_id: int) -> str:
@@ -38,6 +38,7 @@ def kept_plan_ids(store: Store) -> set[int]:
 
 
 def _groups(store: Store) -> dict[str, dict]:
+    # a plan restored from an imported file is the record of a finished work, not a plate: its pairs stay a finished work
     plans = {pid: pl.get_plan(store, pid) for pid in sorted(kept_plan_ids(store))}
     groups: dict[str, dict] = {plan_key(pid): {"plan": plan, "pairs": []} for pid, plan in plans.items()}
     for row in store.query("SELECT id FROM pair WHERE status!='Deleted' ORDER BY id"):
