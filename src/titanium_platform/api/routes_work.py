@@ -187,18 +187,20 @@ def create_plates(body: PlatesIn, request: Request):
 
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
-               include_unreferenced: bool = True):
-    """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are flagged."""
+               include_unreferenced: bool = True, include_provisional: bool = True):
+    """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
+    flagged, those of checks awaiting acceptance are marked provisional (DEC-045)."""
     return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
-                            measurement=measurement)
+                            measurement=measurement, include_provisional=include_provisional)
 
 
 @router.get("/colors/search")
 def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
-                  material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False):
+                  material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False,
+                  include_provisional: bool = False):
     """Where did a wanted colour occur: the nearest recipes, with their settings and the experiments they came from."""
     return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
-                           measurement=measurement, include_unreferenced=include_unreferenced)
+                           measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional)
 
 
 def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:
@@ -228,9 +230,10 @@ def oxide_kinetics(request: Request, device_id: int, lens_id: str):
 
 
 @router.get("/experiments")
-def list_experiments(request: Request):
-    """One entry per experiment: a plate with all its checks, or a finished work with its photographs (REQ-028)."""
-    return experiments.list_experiments(store_of(request))
+def list_experiments(request: Request, device_id: int | None = None):
+    """One entry per experiment: a plate with all its checks, or a finished work with its photographs (REQ-028); of one
+    laser when ``device_id`` is given (its page shows the same list, not a list of its own)."""
+    return experiments.list_experiments(store_of(request), device_id=device_id)
 
 
 @router.get("/experiments/{key}")

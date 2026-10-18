@@ -24,13 +24,12 @@
   ].filter(Boolean).join(' · ') : null;
   const checks = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'проверка' :
     n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'проверки' : 'проверок'}`;
-  const layers = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'слой' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'слоя' : 'слоёв'}`;
   const stat = (value, label, kind = '') => h('div', {class: `dashboard-stat ${kind}`}, h('strong', {}, value), h('span', {}, label));
   const panel = (title, count, items, empty, action) => h('section', {class: 'card dashboard-panel'},
     h('div', {class: 'dashboard-panel-head'}, h('h3', {}, title), pill(count), action),
     items.length ? h('div', {class: 'dashboard-list'}, ...items) : h('p', {class: 'muted small'}, empty));
 
-  App.register({id: 'experiments', async render() {
+  App.register({id: 'experiments', async render(ctx) {
     const [experiments, devices, materials, goals] = await Promise.all([
       get('/experiments'), get('/devices'), get('/materials'), get('/application-goals')]);
     const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
@@ -64,21 +63,12 @@
 
     const query = sessionStorage.getItem('experiment-search') || '';
     const wantedStatus = sessionStorage.getItem('experiment-status') || 'all';
-    const shown = experiments.filter((e) => (wantedStatus === 'all' || e.status === wantedStatus) &&
+    // ?device=<id>: the experiments of one laser, the list its page links to (no separate list there)
+    const laser = devices.find((device) => String(device.id) === String(ctx.query.device)) || null;
+    const shown = experiments.filter((e) => (wantedStatus === 'all' || e.status === wantedStatus) && (!laser || e.device_id === laser.id) &&
       (!query || [e.title, e.kind, e.laser, e.lens, e.material].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())));
-    const experimentCards = shown.map((e) => h('article', {class: 'dashboard-item exp-card'},
-      h('a', {class: 'exp-thumb-link', href: '#/experiment/' + encodeURIComponent(e.key), 'aria-label': `Открыть эксперимент ${e.title}`},
-        e.main_pair_id ? h('img', {class: 'exp-thumb', loading: 'lazy', alt: '', src: `/api/pairs/${e.main_pair_id}/photo.png?visibility=lifted`})
-          : h('div', {class: 'exp-thumb exp-thumb-empty'}, 'Плата')),
-      h('div', {class: 'exp-card-body'},
-        h('div', {class: 'dashboard-item-top'}, link('/experiment/' + encodeURIComponent(e.key), e.title),
-          pill(e.status_text, e.status === 'accepted' ? 'ok' : 'warn')),
-        h('p', {class: 'dashboard-item-type'}, e.kind),
-        h('p', {class: 'dashboard-meta'}, [e.laser, e.lens, e.material].filter(Boolean).join(' · ') || 'Лазер не указан'),
-        h('div', {class: 'dashboard-item-foot'},
-          h('span', {}, e.checks ? `${e.photos} фото · измерено ${layers(e.layers_measured)}${e.needs_review ? ` · ${e.needs_review} к проверке` : ''}` : 'Фото ещё нет'),
-          h('span', {class: 'spacer'}), h('span', {class: 'muted small'}, (e.last_activity || '').slice(0, 10))))));
     const filters = h('div', {class: 'row exp-filters'},
+      laser ? h('span', {class: 'row'}, pill(`Лазер: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'Все лазеры')) : null,
       h('input', {type: 'search', value: query, placeholder: 'Поиск по названию, лазеру, титану', 'aria-label': 'Поиск эксперимента',
         onChange: (ev) => { sessionStorage.setItem('experiment-search', ev.target.value); reload(); }}),
       h('select', {'aria-label': 'Состояние эксперимента', onChange: (ev) => { sessionStorage.setItem('experiment-status', ev.target.value); reload(); }},
@@ -145,11 +135,10 @@
       taskPanel,
       h('div', {class: 'dashboard-columns exp-columns'},
         h('section', {class: 'card dashboard-panel'},
-          h('div', {class: 'dashboard-panel-head'}, h('h3', {}, 'Эксперименты'), pill(experiments.length),
+          h('div', {class: 'dashboard-panel-head'}, h('h3', {}, 'Эксперименты'), pill(laser ? `${shown.length} из ${experiments.length}` : experiments.length),
             pill(`${experiments.filter((e) => e.needs_review).length} к проверке`, experiments.some((e) => e.needs_review) ? 'warn' : '')),
           filters,
-          shown.length ? h('div', {class: 'dashboard-list'}, ...experimentCards)
-            : h('p', {class: 'muted small'}, experiments.length ? 'Ничего не найдено: измените поиск или состояние.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.')),
+          ExperimentCards.list(shown, experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.')),
         panel('Выводы для материала', latest.size, insightCards,
           'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',
           link(`/devices/${selectedDevice.id}`, selectedDevice.name))));

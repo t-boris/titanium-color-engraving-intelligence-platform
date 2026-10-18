@@ -58,11 +58,14 @@ const DeviceView = (() => {
       items.length ? items : h('div', {class: 'empty'}, h('p', {}, 'Принятых результатов тестовых плат пока нет.'), link('/experiments', 'Открыть экспериментальные платы')));
   }
 
-  function experimentsCard(items, device) {
+  // The experiments of this laser are the one experiment list filtered by it (REQ-028): no list of plates, engravings or
+  // photographs of its own. Beside it, the lookup of a measured result by its settings.
+  function experimentsCard(experiments, device, lenses) {
     const byLens = new Map();
-    for (const item of items) {                // the lens of each work is its lens record (lens_id), not a stored snapshot
+    for (const item of experiments) {          // the lens of each work is its lens record (lens_id), not a stored snapshot
       const key = item.lens_id == null ? '' : String(item.lens_id);
-      if (!byLens.has(key)) byLens.set(key, item.lens ? App.lensLabel(item.lens) : 'Историческая линза неизвестна');
+      const lens = lenses.find((l) => l.id === item.lens_id);
+      if (!byLens.has(key)) byLens.set(key, lens ? App.lensLabel(lens) : 'Историческая линза неизвестна');
     }
     if (device.lens && !byLens.has(String(device.lens.id))) byLens.set(String(device.lens.id), `${App.lensLabel(device.lens)} (установлена сейчас)`);
     const lensPicker = h('select', {}, [...byLens].map(([id, label]) => h('option', {value: id}, label)));
@@ -96,39 +99,13 @@ const DeviceView = (() => {
       h('div', {class: 'grid g3'}, field('Историческая линза', lensPicker), ...inputs.map(([, control]) => control)),
       h('button', {type: 'submit', class: 'btn primary'}, 'Найти измеренный результат'), result);
 
-    const cards = items.map((item) => {
-      const accepted = item.status === 'Accepted';
-      const lensLabel = item.lens ? App.lensLabel(item.lens) : 'линза неизвестна';
-      const m = item.material || {};
-      const material = [m.name, m.grade, m.thickness_mm && `${m.thickness_mm} мм`, m.surface, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ') || 'титан не указан';
-      const obsRows = item.observations.map((o) => {
-        const p = o.parameters;
-        const settings = `${num(p.power, 1)} % · ${num(p.frequency, 1)} кГц · ${num(p.speed, 0)} мм/с · ${num(p.pulse_width, 0)} нс · шаг ${num(p.line_interval, 4)} мм · ${p.passes} проход(а)`;
-        const scan = [p.layer_type, p.global_passes != null && `глобально ${p.global_passes}×`, p.bidirectional != null && `двунаправленно ${p.bidirectional ? 'да' : 'нет'}`,
-          p.cross_hatch != null && `перекрёстно ${p.cross_hatch ? 'да' : 'нет'}`, p.scan_angle != null && `угол ${p.scan_angle}°`, p.angle_increment != null && `шаг угла ${p.angle_increment}°`].filter(Boolean).join(' · ');
-        return h('div', {class: 'card stack'}, h('div', {class: 'row wrap'}, h('span', {}, `Слой ${o.layer_index}: ${settings}${scan ? ` · ${scan}` : ''}`),
-          h('span', {class: 'spacer'}), h('strong', {}, labText(o.lab)),
-          o.model_eligible ? null : pill('не участвует в прогнозе', 'warn')),
-          h('details', {}, h('summary', {class: 'small muted'}, 'Все исходные настройки слоя из LightBurn'),
-            h('pre', {class: 'small', style: 'white-space:pre-wrap;overflow-wrap:anywhere'}, JSON.stringify(p.source_settings || {}, null, 2))));
-      });
-      const href = accepted ? '/analysis/' + item.pair_id : '/ingest?pair=' + item.pair_id;
-      return h('div', {class: 'card stack'},
-        h('div', {class: 'row'}, link(href, `${item.engraving_title || item.lightburn_name} · ${item.photo_name} · ${accepted ? 'измерено' : item.status}`), h('span', {class: 'spacer'}),
-          item.accepted_at ? pill(item.accepted_at.slice(0, 10), 'ok') : pill('ожидает проверки', 'warn')),
-        h('p', {class: 'muted small'}, `${lensLabel} · ${material}`,
-          item.plan_id ? [' · ', link('/plans/' + item.plan_id, `Экспериментальная плата №${item.plan_id}`)] : null,
-          item.rephoto_of ? ' · тот же запуск лазера' : null),
-        h('div', {class: 'grid g2'}, h('div', {}, h('img', {src: '/api' + item.photo_url, alt: item.photo_name, loading: 'lazy', style: 'max-width:100%;max-height:220px;object-fit:contain'})),
-          h('div', {class: 'stack'}, h('strong', {}, item.photo_name),
-            h('div', {class: 'row'}, h('a', {href: '/api' + item.source_photo_url}, 'Скачать исходное фото'), h('a', {href: '/api' + item.lightburn_url}, 'Скачать LightBurn')),
-            accepted ? (obsRows.length ? h('div', {class: 'stack'}, obsRows) : h('p', {class: 'muted'}, 'Измерений в принятой паре нет.'))
-              : h('p', {class: 'muted small'}, 'Файлы и фотография сохранены. Результат станет частью базы после проверки выравнивания и измерений.'))));
-    });
     return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'База измерений: параметры → результат'),
-      h('p', {class: 'muted small'}, 'Каждая строка хранит шесть основных настроек, режим и дополнительные настройки LightBurn, измеренный Lab, линзу, титан и ссылки на исходные файлы. Только принятые измерения используются для подбора; непроверенные фото видны в архиве.'), form),
-      h('div', {class: 'card stack'}, h('h3', {}, `Эксперименты и фотографии · ${items.length}`),
-        items.length ? h('div', {class: 'stack'}, cards) : h('div', {class: 'empty'}, h('p', {}, 'Экспериментов для этого лазера пока нет.'), link('/experiments', 'Создать эксперимент'))));
+      h('p', {class: 'muted small'}, 'Поиск измеренного результата по шести основным настройкам. Только принятые измерения используются для подбора; каждое ведёт к своему эксперименту.'), form),
+      h('section', {class: 'card dashboard-panel'},
+        h('div', {class: 'dashboard-panel-head'}, h('h3', {}, 'Эксперименты этого лазера'), pill(experiments.length),
+          link('/experiments?device=' + device.id, 'Открыть в общем списке')),
+        experiments.length ? ExperimentCards.list(experiments, '')
+          : h('div', {class: 'empty'}, h('p', {}, 'Экспериментов для этого лазера пока нет.'), link('/experiments', 'Создать эксперимент'))));
   }
   return {passportCard, stepsCard, documentsCard, capabilityResultsCard, experimentsCard, g};
 })();

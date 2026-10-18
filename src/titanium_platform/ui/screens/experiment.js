@@ -120,8 +120,10 @@
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
         h('a', {class: 'btn btn-small', href: `/api/plans/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2'),
         link('/research', 'Попросить AI-исследователя изменить плату'))) : null;
-    const files = !exp.plate && pairs.length ? h('div', {class: 'card stack'}, h('h3', {}, 'Готовая работа'),
-      h('p', {class: 'muted small'}, `Файл LightBurn: ${pairs[pairs.length - 1].lightburn_name}`)) : null;
+    const work = pairs[pairs.length - 1];
+    const files = !exp.plate && work ? h('div', {class: 'card stack'}, h('h3', {}, 'Готовая работа'),
+      h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`),
+      h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'))) : null;
     const findings = exp.findings.length ? h('div', {class: 'card stack'}, h('h3', {}, 'Выводы по этому эксперименту'),
       ...exp.findings.map((f) => h('div', {class: 'stack'}, h('p', {}, h('strong', {}, ({line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'})[f.purpose] || f.purpose),
         ' ', pill(f.status === 'candidate' ? 'Кандидат' : 'Нужен тест', f.status === 'candidate' ? 'ok' : 'warn')),

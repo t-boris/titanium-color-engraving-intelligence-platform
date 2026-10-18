@@ -47,7 +47,8 @@
     const counts = {lens: d.lens ? 1 : 0, pulses: (d.passport.waveforms || []).length, documents: d.documents.length, controller: ((d.passport.controller || {}).tabs || []).reduce((n, t) => n + t.fields.length, 0), report: ((d.passport.test_report || {}).rows || []).length};
     let body;
     if (tab === 'experiments') {
-      body = DeviceView.experimentsCard(await get(`/devices/${id}/experiments`), d);
+      const [experiments, lenses] = await Promise.all([get(`/experiments?device_id=${id}`), get('/lenses')]);
+      body = DeviceView.experimentsCard(experiments, d, lenses);
     } else if (tab === 'charts') {
       const charts = await get(`/devices/${id}/charts`), plots = chartsCard(d, charts);
       body = h('div', {class: 'stack'}, DeviceCalc.calculator(d, plots.onPoint), plots.card);

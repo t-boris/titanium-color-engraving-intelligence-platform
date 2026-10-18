@@ -97,6 +97,57 @@ def test_the_detail_carries_the_plate_the_checks_and_the_conclusions(world):
         experiments.get_experiment(world["store"], "plan-9999")
 
 
+def test_cancelled_and_superseded_research_plates_are_history_not_experiments_waiting_for_a_photo(world):
+    cancelled, superseded, kept = plate(world), plate(world), plate(world)
+    world["store"].execute("UPDATE plan SET status='Cancelled' WHERE id=?", (cancelled["plan_id"],))
+    world["store"].execute("UPDATE plan SET status='Superseded' WHERE id=?", (superseded["plan_id"],))
+    (experiment,) = experiments.list_experiments(world["store"])
+    assert experiment["plan_id"] == kept["plan_id"] and experiment["status"] == "plate_ready"
+    with pytest.raises(KeyError):
+        experiments.get_experiment(world["store"], experiments.plan_key(cancelled["plan_id"]))
+
+
+def test_a_plate_record_marked_deleted_is_not_an_experiment_and_a_missing_or_empty_mark_is_no_mark(world):
+    gone, kept = plate(world), plate(world)
+    assert len(experiments.list_experiments(world["store"])) == 2          # a database without plate.status
+    world["store"].execute("ALTER TABLE plate ADD COLUMN status TEXT")      # the nullable column a newer schema adds
+    assert len(experiments.list_experiments(world["store"])) == 2          # NULL is no mark
+    world["store"].execute("UPDATE plate SET status='Deleted' WHERE id=?", (gone["plate_id"],))
+    assert [e["plan_id"] for e in experiments.list_experiments(world["store"])] == [kept["plan_id"]]
+
+
+def test_the_experiments_of_one_laser_are_the_one_list_filtered_by_it(world):
+    out = plate(world)
+    finished = work_pair(world, None, 3)
+    twin = devices.create_from_template(world["store"], "jpt-ydflp-e-60-m7-m-r")
+    world["store"].execute("UPDATE pair SET device_id=? WHERE id=?", (twin["id"], finished))
+    everything = experiments.list_experiments(world["store"])
+    mine = experiments.list_experiments(world["store"], device_id=world["laser"]["id"])
+    theirs = experiments.list_experiments(world["store"], device_id=twin["id"])
+    assert [e["key"] for e in mine] == [experiments.plan_key(out["plan_id"])] and mine[0]["device_id"] == world["laser"]["id"]
+    assert [e["main_pair_id"] for e in theirs] == [finished] and theirs[0]["key"].startswith("eng-")
+    assert sorted(e["key"] for e in everything) == sorted(e["key"] for e in mine + theirs)
+
+
+def test_a_finished_work_offers_its_lightburn_file_on_its_experiment(tmp_path):
+    from fastapi.testclient import TestClient
+    from titanium_platform.api.app import create_app
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    store.set_setting("allow_non_raw_photos", True)
+    w = {"store": store, "laser": devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r"),
+         "material": su.save_material(store, "Grade 2 sheet", grade="Grade 2")}
+    pid = work_pair(w, None, 3)
+    with TestClient(app) as client:
+        (summary,) = client.get("/api/experiments", params={"device_id": w["laser"]["id"]}).json()
+        assert client.get("/api/experiments", params={"device_id": w["laser"]["id"] + 1}).json() == []
+        detail = client.get("/api/experiments/" + summary["key"]).json()
+        (check,) = detail["pairs"]
+        assert check["lightburn_url"] == f"/api/pairs/{pid}/lightburn" and check["grayscale_image"] is False
+        assert client.get(check["lightburn_url"]).content == synth.framed_work(seed=3, blobs=8)["lightburn"]
+    store.close()
+
+
 def test_the_app_serves_the_experiments_and_the_experiment_screen(tmp_path):
     from fastapi.testclient import TestClient
     from titanium_platform.api.app import create_app

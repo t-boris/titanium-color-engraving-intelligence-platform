@@ -165,3 +165,82 @@ def test_two_lasers_with_the_same_name_stay_apart_on_the_map(world):
     assert len(data["options"]["setups"]) == 2 and len({p["group"] for p in data["points"]}) == 2
     only = colormap.collect(world["store"], setup=f"laser:{twin['id']}/lens:unknown")["points"]
     assert [p["pair_id"] for p in only] == [other]
+
+
+# -- checks awaiting acceptance: provisional (DEC-045, REQ-020 AC7) ------------------------------------------------------------
+def pending_check(w, layers, *, valid=True, status="Ready to accept", seed=5):
+    """A pair whose check is stored but not accepted: (index, lab, power, role) per measured layer, no observation rows."""
+    data = synth.framed_work(seed=seed, blobs=6)
+    pid = ig.create_pair(w["store"], device_id=w["laser"]["id"], lens_id=None, lightburn_name=f"work{seed}.lbrn2", lightburn_bytes=data["lightburn"],
+                         photo_name=f"photo{seed}.png", photo_bytes=cv2.imencode(".png", data["photo"])[1].tobytes(),
+                         context={"material_id": w["material"]["id"]})
+    reports = [{"index": index, "name": f"C{index:02d}", "type": "Scan", "role": role, "measured_lab": lab, "power": power, "frequency_khz": 300.0,
+                "speed": 1000.0, "pulse_width": 10.0, "line_interval": 0.005, "passes": 1} for index, lab, power, role in layers]
+    check = {"alignment": {"valid": valid, "method": "element anchors"}, "color_measurement": {"mode": "raw_camera_relative"}, "layers": reports}
+    w["store"].execute("UPDATE pair SET status=?, data_json=? WHERE id=?", (status, json.dumps({"check": check}), pid))
+    return pid
+
+
+def test_a_checked_pair_awaiting_acceptance_is_on_the_map_as_provisional_with_a_link_to_its_review(world):
+    pid = pending_check(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")])
+    data = colormap.collect(world["store"])
+    (point,) = data["points"]
+    assert point["provisional"] and point["review"] == f"/ingest?pair={pid}" and point["pair_id"] == pid
+    assert point["referenced"] and point["display_lab"] == pytest.approx(colormap._against_clean([20.0, 8.0, 21.0], WITNESS[1], colormap.DEFAULT_CLEAN))
+    assert data["counts"]["provisional"] == 1 and colormap.collect(world["store"], include_provisional=False)["points"] == []
+
+
+def test_without_a_valid_alignment_or_measured_layers_a_pending_check_stays_off_the_map_and_a_deleted_one_always(world):
+    pending_check(world, [(1, [20.0, 8.0, 21.0], 50.0, "test feature")], valid=False, seed=5)
+    pending_check(world, [], seed=6)
+    pending_check(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], status="Deleted", seed=7)
+    assert colormap.collect(world["store"])["points"] == []
+
+
+def test_provisional_colours_join_the_search_only_when_asked_and_then_say_so(world):
+    pending_check(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")])
+    wanted = colormap.collect(world["store"])["points"][0]["display_lab"]
+    plain = colormap.search(world["store"], wanted)
+    assert plain["matches"] == [] and plain["counts"]["provisional"] == 1
+    (found,) = colormap.search(world["store"], wanted, include_provisional=True)["matches"]
+    assert found["provisional"] and found["distance"] == 0.0 and found["review"].startswith("/ingest?pair=")
+
+
+def test_the_grey_steps_of_a_photo_engraving_awaiting_acceptance_are_provisional_too(world):
+    pid = pending_check(world, [(7, [3.4, 0.2, 1.4], 16.1, "test feature")])
+    check = {**TONAL, "alignment": {"valid": True, "method": "picture"}}
+    check["layers"] = [{**TONAL["layers"][0], "measured_lab": [3.4, 0.2, 1.4], "type": "Image"}]
+    world["store"].execute("UPDATE pair SET data_json=? WHERE id=?", (json.dumps({"check": check}), pid))
+    steps = [p for p in colormap.collect(world["store"])["points"] if p.get("source") == "tonal"]
+    assert [p["parameters"]["power"] for p in steps] == [12.9, 9.5, 6.0]
+    assert all(p["provisional"] and p["review"] == f"/ingest?pair={pid}" for p in steps)
+
+
+def test_a_recipe_counts_independent_engravings_and_its_photographs_apart(world):
+    """DEC-021: a re-photograph of one engraving is not a repetition; it is one more photograph."""
+    first = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
+    again = pair_with(world, [WITNESS, (1, [20.2, 8.1, 21.1], 50.0, "test feature")], seed=4)
+    pair_with(world, [WITNESS, (1, [20.4, 8.2, 21.2], 50.0, "test feature")], seed=5)
+    engraving = world["store"].one("SELECT engraving_id FROM pair WHERE id=?", (first,))["engraving_id"]
+    world["store"].execute("UPDATE pair SET engraving_id=? WHERE id=?", (engraving, again))
+    (entry,) = colormap.search(world["store"], [40.0, 10.0, 30.0])["matches"]
+    assert entry["repeats"] == 2 and entry["photographs"] == 3 and len(entry["experiments"]) == 2
+
+
+def test_chart_corrected_and_camera_relative_colours_of_one_recipe_are_separate_entries(world):
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
+    pair_with(world, [(-1, [72.0, 0.5, 3.0], 20.0, "pre-test cleaning witness"), (1, [40.0, 10.0, 30.0], 50.0, "test feature")],
+              mode="reference_chart_corrected", seed=4)
+    matches = colormap.search(world["store"], [40.0, 10.0, 30.0])["matches"]
+    assert sorted(m["measurement"] for m in matches) == ["calibrated", "relative"] and all(m["repeats"] == 1 for m in matches)
+
+
+def test_two_titanium_stocks_of_one_name_and_grade_are_separate_entries(world):
+    """The titanium is its stock record: two batches of the same grade never pool into one recipe."""
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
+    other = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=4)
+    batch = su.save_material(world["store"], "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="B-2")
+    world["store"].execute("UPDATE pair SET material_id=? WHERE id=?", (batch["id"], other))
+    matches = colormap.search(world["store"], [40.0, 10.0, 30.0])["matches"]
+    assert len(matches) == 2 and {m["material_id"] for m in matches} == {world["material"]["id"], batch["id"]}
+    assert len({m["material"] for m in matches}) == 1                     # the same label: only the record tells them apart

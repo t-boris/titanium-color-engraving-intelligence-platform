@@ -3,7 +3,9 @@ with its checks, the measured result and its conclusions.
 
 Nothing is stored for it. It is derived from what exists: a plate (``plan``) with all the checks (``pair``) made on it, or,
 for a finished work without a plate, the checks of one engraving (re-photographs share an ``engraving_id``). The key is
-``plan-<id>`` or ``eng-<engraving id>``. Deleted plates and checks are not part of any experiment.
+``plan-<id>`` or ``eng-<engraving id>``. Deleted plates and checks are not part of any experiment, and neither are research
+plates that were cancelled or replaced before anything was engraved: they are history, not experiments waiting for a photo.
+The checks of a plate that is not kept stay as a finished work.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
 STATUS = {"plate_ready": "Плата готова: ждёт фото", "needs_review": "Нужна проверка", "accepted": "Принят"}
+HIDDEN_PLANS = ("Deleted", "Cancelled", "Superseded")
 
 
 def plan_key(plan_id: int) -> str:
@@ -24,8 +27,18 @@ def engraving_key(engraving_id: str) -> str:
     return f"eng-{engraving_id}"
 
 
+def kept_plan_ids(store: Store) -> set[int]:
+    """The plates that are experiments: not deleted, cancelled or superseded, and not on a plate record marked deleted.
+    A database without ``plate.status`` (or a NULL there) has no such mark."""
+    marks = ",".join("?" * len(HIDDEN_PLANS))
+    plate_status = any(c["name"] == "status" for c in store.query("PRAGMA table_info(plate)"))
+    sql = (f"SELECT pl.id FROM plan pl LEFT JOIN plate t ON t.id=pl.plate_id WHERE pl.status NOT IN ({marks}) "
+           "AND (t.status IS NULL OR t.status!='Deleted')") if plate_status else f"SELECT pl.id FROM plan pl WHERE pl.status NOT IN ({marks})"
+    return {r["id"] for r in store.query(sql, HIDDEN_PLANS)}
+
+
 def _groups(store: Store) -> dict[str, dict]:
-    plans = {r["id"]: pl.get_plan(store, r["id"]) for r in store.query("SELECT id FROM plan WHERE status!='Deleted' ORDER BY id")}
+    plans = {pid: pl.get_plan(store, pid) for pid in sorted(kept_plan_ids(store))}
     groups: dict[str, dict] = {plan_key(pid): {"plan": plan, "pairs": []} for pid, plan in plans.items()}
     for row in store.query("SELECT id FROM pair WHERE status!='Deleted' ORDER BY id"):
         pair = ingest.get_pair(store, row["id"])
@@ -60,9 +73,11 @@ def _summary(key: str, group: dict, observations: dict[int, int]) -> dict:
     stamps = [plan["created_at"]] if plan else []
     stamps += [p["created_at"] for p in pairs] + [p["accepted_at"] for p in pairs if p.get("accepted_at")]
     meta = (plan or {}).get("experiment") or {}
+    owner = plan or main                           # the laser and lens records of the experiment (DEC-063)
     return {"key": key, "title": title, "status": _status(group), "status_text": STATUS[_status(group)],
             "kind": (meta.get("test_name") or plan["mode"]) if plan else ("Матрица параметров" if pairs and pairs[0].get("matrix") else "Готовая работа"),
             "plan_id": plan["id"] if plan else None, "engraving_id": pairs[0]["engraving_id"] if pairs and not plan else None,
+            "device_id": owner["device_id"], "lens_id": owner["lens_id"],
             "checks": len(pairs), "photos": len({p["photo_name"] for p in pairs}),
             "needs_review": sum(p["status"] in NEEDS_REVIEW for p in pairs),
             "layers_measured": sum(observations.get(p["id"], 0) for p in pairs),
@@ -74,10 +89,12 @@ def _observation_counts(store: Store) -> dict[int, int]:
     return {r["pair_id"]: r["n"] for r in store.query("SELECT pair_id, COUNT(*) AS n FROM observation GROUP BY pair_id")}
 
 
-def list_experiments(store: Store) -> list[dict]:
-    """Every experiment, the most recently active first."""
+def list_experiments(store: Store, device_id: int | None = None) -> list[dict]:
+    """Every experiment, the most recently active first; of one laser when ``device_id`` is given."""
     counts = _observation_counts(store)
     out = [_summary(key, group, counts) for key, group in _groups(store).items()]
+    if device_id is not None:
+        out = [e for e in out if e["device_id"] == device_id]
     return sorted(out, key=lambda e: (e["last_activity"] or "", e["main_pair_id"] or 0, e["key"]), reverse=True)
 
 
@@ -103,7 +120,10 @@ def get_experiment(store: Store, key: str) -> dict:
                       "created_at": p["created_at"], "accepted_at": p.get("accepted_at"),
                       "alignment": (check.get("alignment") or {}).get("method"), "problems": check.get("problems") or [],
                       "measured_layers": sum(1 for l in check.get("layers", []) if l.get("measured_lab")), "observations": counts.get(p["id"], 0),
-                      "measurement": (check.get("color_measurement") or {}).get("mode")})
+                      "measurement": (check.get("color_measurement") or {}).get("mode"),
+                      "lightburn_url": f"/api/pairs/{p['id']}/lightburn",
+                      # a photo engraving whose grey sets the power: its look at other Min and Max can be predicted (REQ-030)
+                      "grayscale_image": any((l.get("image") or {}).get("dither") == "grayscale" for l in check.get("layers", []))})
     ids = [p["id"] for p in group["pairs"]]
     findings = []
     if ids:
