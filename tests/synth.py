@@ -45,22 +45,25 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
                 origin=(520, 80), chart_at=None, gains=None, with_chart: bool = True) -> np.ndarray:
     """Render a plate from its plan: white sheet, grey cells coloured per ``cell_rgb``, ArUco markers, QR.
 
-    ``plan`` is an EngravingPlan with markers. The plan's own geometry is used, so a photo made from a plan
-    and a LightBurn file exported from the same plan agree exactly.
+    ``plan`` is an EngravingPlan, a plate or any plan with rectangular regions: ``cell_rgb`` is keyed by a layer's cell id,
+    else by its name. Without markers the sheet is the extent of the regions (cleaning areas included) and nothing else is
+    drawn. The plan's own geometry is used, so a photo made from a plan and a LightBurn file exported from the same plan
+    agree exactly.
     """
     h, w = size
     img = np.full((h, w, 3), (150, 155, 150), np.uint8)
-    ext = plan["markers"]["extent"]
+    markers = plan.get("markers")
+    ext = markers["extent"] if markers else extent(plan)
     ox, oy = origin
     px = lambda v: int(round(v))
     sx = lambda x: px((x - ext["min_x"]) * scale + ox)
     sy = lambda y: px((y - ext["min_y"]) * scale + oy)
     img[sy(ext["min_y"]) - 30:sy(ext["max_y"]) + 30, sx(ext["min_x"]) - 30:sx(ext["max_x"]) + 30] = 255
     for layer in plan["layers"]:
-        r, g, b = cell_rgb.get(layer["cell_id"], (128, 128, 128))
+        r, g, b = cell_rgb.get(layer.get("cell_id", layer["name"]), (128, 128, 128))
         for reg in layer["regions"]:
             img[sy(reg["y"]):sy(reg["y"] + reg["height"]), sx(reg["x"]):sx(reg["x"] + reg["width"])] = (b, g, r)
-    rects = [r for a in plan["markers"]["aruco"] for r in a["rects"]] + plan["markers"]["qr"]["rects"]
+    rects = [r for a in markers["aruco"] for r in a["rects"]] + markers["qr"]["rects"] if markers else []
     for r in rects:
         img[sy(r["y"]):sy(r["y"] + r["height"]), sx(r["x"]):sx(r["x"] + r["width"])] = 0
     if with_chart:
@@ -72,6 +75,21 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
         assert cx + c.shape[1] <= ox - 30, f"the chart (right edge {cx + c.shape[1]} px) would cover the plate that starts at {ox - 30} px: move the origin right"
         img[cy:cy + c.shape[0], cx:cx + c.shape[1]] = c
     return cast(img, gains) if gains else img
+
+
+def extent(plan: dict) -> dict:
+    """The extent of an unmarked plan in its own millimetres: every region and cleaning area."""
+    regions = [r for layer in plan["layers"] for r in layer["regions"]] + list(plan.get("clean_regions") or [])
+    return {"min_x": min(r["x"] for r in regions), "min_y": min(r["y"] for r in regions),
+            "max_x": max(r["x"] + r["width"] for r in regions), "max_y": max(r["y"] + r["height"] for r in regions)}
+
+
+def work_corners(plan: dict, scale: float = 20.0, origin=(520, 80)) -> list[tuple[float, float]]:
+    """The four corners (TL, TR, BR, BL) of an unmarked plan's extent in a ``plate_photo`` of it, in photo pixels."""
+    ext = extent(plan)
+    ox, oy = origin
+    width, height = (ext["max_x"] - ext["min_x"]) * scale, (ext["max_y"] - ext["min_y"]) * scale
+    return [(ox, oy), (ox + width, oy), (ox + width, oy + height), (ox, oy + height)]
 
 
 # -- a framed finished work (REQ-024, DEC-048): a LightBurn file and a photograph that disagree like a real pair ----

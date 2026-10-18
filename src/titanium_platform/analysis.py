@@ -57,11 +57,13 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     checked = {rep["index"]: rep for rep in (pair.get("check") or {}).get("layers", [])}
     rows = []
     for o in obs:
-        layer = planned.get(o["layer_index"])
+        role = o["evidence"].get("role", "test feature")
+        # the cleaning witness and the marker layer are engraved operations of the system, never a planned colour
+        layer = planned.get(o["layer_index"]) if role == "test feature" else None
         pred = (layer or {}).get("prediction")
         row = {"observation_id": o["id"], "layer_index": o["layer_index"], "name": o["evidence"].get("layer_name"), "parameters": o["parameters"],
                "measured_lab": o["lab"], "planned_lab": None, "delta_e": None, "within_tolerance": None, "planned_prediction": pred,
-               "alignment": o["alignment"], "knowledge": None, "role": o["evidence"].get("role", "test feature"),
+               "alignment": o["alignment"], "knowledge": None, "role": role,
                "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics"),
                "measured_lab_against_clean": (checked.get(o["layer_index"]) or {}).get("measured_lab_against_clean")}
         if pred is not None:
@@ -69,7 +71,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
             row["delta_e"] = color.delta_e(o["lab"], pred["lab"])
         elif layer is not None and mode == pl.MODE_PLATE:
             row["note"] = "calibration plate cells have no planned color"
-        elif layer is None and plan is not None:
+        elif layer is None and plan is not None and role == "test feature":
             row["note"] = "the layer is not part of the original plan"
         if row["delta_e"] is not None and tol is not None:
             row["within_tolerance"] = row["delta_e"] <= tol

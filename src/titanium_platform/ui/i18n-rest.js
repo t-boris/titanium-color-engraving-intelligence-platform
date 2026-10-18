@@ -69,4 +69,23 @@
     [/^(\d+) must be true or false$/i, (m) => `${m[1]} должно иметь значение true или false`],
     [/^choose the lens or mark it unknown$/i, 'Выберите линзу или отметьте, что она неизвестна'],
   ]);
+
+  // план, опознанный по файлу LightBurn, и его метки (REQ-013, REQ-003)
+  const lens = (s) => s.replace(/, focal length unknown$/, ', фокус неизвестен').replace(/ mm$/, ' мм');
+  const made = (kind) => (kind === 'plan' ? 'план делался' : 'плата делалась');
+  I18N.add([
+    [/^the plan or plate chosen for this photograph was not found$/i, 'План или плата, для которых загружается фотография, не найдены'],
+    [/^experiment identifier (\S+) belongs to a deleted experiment$/i, (m) => `Идентификатор эксперимента ${m[1]} относится к удалённому эксперименту`],
+    [/^this plan was made for a different laser than the one selected/i, 'План сделан для другого лазера, чем выбранный: выберите лазер плана'],
+    [/^four registration markers match the LightBurn geometry, but the identifier QR code cannot be read/i,
+      'Четыре метки совпадают с геометрией файла LightBurn, но QR-идентификатор не читается, поэтому не подтверждено, что на фотографии именно эта плата или работа. '
+      + 'Поставьте четыре угла работы на фотографии или загрузите фотографию со страницы её платы или плана.'],
+    [/^the lens installed now \((.+)\) differs from the lens of this plan \((.+)\)$/i, (m) => `Сейчас стоит линза ${lens(m[1])}, а план делался на ${lens(m[2])}: цвета нельзя считать сравнимыми`],
+    [/^no lens is installed on the laser now; the plan was made with (.+)$/i, (m) => `Сейчас на лазере нет линзы, а план делался на ${lens(m[1])}`],
+    [/^this plan has no record of its lens$/i, 'У этого плана нет записи о линзе'],
+    [/^no lens was chosen for this photograph; the (plate|plan) was made with (.+): the measurements are kept with the (?:plate|plan)'s lens$/i,
+      (m) => `Для фотографии линза не выбрана; ${made(m[1])} на ${lens(m[2])}: измерения записываются с этой линзой`],
+    [/^the lens chosen for this photograph \((.+)\) differs from the lens of this (plate|plan) \((.+)\): the measurements are kept with the (?:plate|plan)'s lens$/i,
+      (m) => `Для фотографии выбрана линза ${lens(m[1])}, а ${made(m[2])} на ${lens(m[3])}: измерения записываются с линзой ${m[2] === 'plan' ? 'плана' : 'платы'}`],
+  ]);
 })();

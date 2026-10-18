@@ -11,7 +11,10 @@ Rules implemented here:
 * System calibration plates can be measured without a separate ColorChecker: their RAW-rendered colors are
   stored as camera-relative observations. General photographs still require a usable reference chart.
 * A calibration plate is identified by the ``TCE1:<id>`` note in its LightBurn file; its cells are matched to
-  file layers by geometry, never guessed. Marker or identifier failures stop the mapping (REQ-003).
+  file layers by geometry, never guessed. Marker or identifier failures stop the mapping (REQ-003). An engraving plan
+  exported by this system (discrete, tonal, colour-path) is identified the same way by its plan identifier and aligned by
+  its markers when it has them (REQ-013, DEC-010). Four markers whose identifier cannot be read are accepted only for a
+  photograph the operator linked to that plate or plan.
 * A difference between file parameters and the plate definition blocks acceptance until the operator
   corrects the pair (a new file) or explicitly confirms the attached file was used (DEC-017).
 * Every readable physical layer is measured, including the clean witness and registration/label marks. A clean
@@ -47,7 +50,7 @@ PARAM_TOLERANCE = 1e-6
 CONTEXT_KEYS = ("material_id", "titanium_name", "titanium_grade", "titanium_thickness_mm", "titanium_surface",
                 "batch", "focus", "engraved_at", "note")
 DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation", "corners", "prefer_corners", "anchor", "alignment_override", "check",
-             "matrix", "lens_choice")
+             "matrix", "lens_choice", "linked_plan_id")
 
 
 class IngestError(ValueError):
@@ -235,6 +238,10 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
     material = store.one("SELECT * FROM material_profile WHERE id=?", (ctx["material_id"],))
     if material is None:
         raise IngestError("the selected titanium stock was not found; choose it again")
+    if plan_id is not None:
+        linked = store.one("SELECT status FROM plan WHERE id=?", (plan_id,))
+        if linked is None or linked["status"] == "Deleted":
+            raise IngestError("the plan or plate chosen for this photograph was not found")
     # Store a snapshot on the run so later edits to the stock card do not rewrite this experiment's context.
     ctx.update(titanium_name=material["name"], titanium_grade=material["grade"],
                titanium_thickness_mm=material["thickness_mm"], titanium_surface=material["surface"], batch=material["batch"])
@@ -246,7 +253,9 @@ def create_pair(store: Store, *, device_id: int, lens_id: int | None, stand_id: 
     lb_path, photo_path = folder / f"{tag}-{_safe_name(lightburn_name)}", folder / f"{tag}-{_safe_name(photo_name)}"
     lb_path.write_bytes(lightburn_bytes)
     photo_path.write_bytes(photo_bytes)
-    data = {"rephoto_of": None, "masks_reviewed": False, "file_confirmation": None, "corners": None, "check": None}
+    # The plan or plate the operator uploaded this photograph for: the identity of the work is then the operator's
+    data = {"rephoto_of": None, "masks_reviewed": False, "file_confirmation": None, "corners": None, "check": None,
+            "linked_plan_id": plan_id}
     return store.execute(
         "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,plan_id,engraving_id,engraving_title,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,hardware_json,created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -276,8 +285,9 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     photo_path = folder / f"{tag}-{_safe_name(photo_name)}"
     lb_path.write_bytes(original_file.read_bytes())
     photo_path.write_bytes(photo_bytes)
+    # a new view of an accepted engraving keeps the identity that engraving was accepted with
     data = {"rephoto_of": root_pair_id, "masks_reviewed": False, "file_confirmation": source_data.get("file_confirmation"),
-            "corners": None, "anchor": None, "check": None}
+            "corners": None, "anchor": None, "check": None, "linked_plan_id": source["plan_id"]}
     if source_data.get("matrix"):
         data["matrix"] = _matrix_for_rephoto(store, source_data, photo_name, photo_bytes)
     pair_id = store.execute(
@@ -608,28 +618,29 @@ def layer_report(layer: lb.Layer, passport: dict) -> dict:
 
 
 # -- checking ------------------------------------------------------------------------------------------
-def lens_check(store: Store, plate: dict, chosen_lens_id: int | None) -> dict:
-    """Compare the lens a plate was made for with the lens installed now and with the lens the operator chose for the
-    photograph (DEC-041, REQ-019). A difference is a warning, never a block; the plate's lens, when it is recorded, is the
-    lens of the measurements (``lens_id``), so comparability follows the historical configuration."""
+def lens_check(store: Store, plate: dict, chosen_lens_id: int | None, kind: str = "plate") -> dict:
+    """Compare the lens a plate (or an engraving plan, ``kind="plan"``) was made for with the lens installed now and with the
+    lens the operator chose for the photograph (DEC-041, REQ-019). A difference is a warning, never a block; the plate's or
+    plan's lens, when it is recorded, is the lens of the measurements (``lens_id``), so comparability follows the historical
+    configuration."""
     from . import lenses
     made = json.loads(plate["lens_json"]) if plate.get("lens_json") else None
     now_lens = lenses.installed(store, plate["device_id"])
     warnings = []
     if made and now_lens and (made["id"] != now_lens["id"] or made["focal_length_mm"] != now_lens["focal_length_mm"] or made["expansion"] != now_lens["expansion"]):
-        warnings.append(f"the lens installed now ({lenses.label(now_lens)}) differs from the lens of this plate ({lenses.label(made)})")
+        warnings.append(f"the lens installed now ({lenses.label(now_lens)}) differs from the lens of this {kind} ({lenses.label(made)})")
     elif made and not now_lens:
-        warnings.append(f"no lens is installed on the laser now; the plate was made with {lenses.label(made)}")
+        warnings.append(f"no lens is installed on the laser now; the {kind} was made with {lenses.label(made)}")
     elif now_lens and not made:
-        warnings.append("this plate has no record of its lens")
+        warnings.append(f"this {kind} has no record of its lens")
     lens_id = chosen_lens_id
     if plate["lens_id"] is not None and plate["lens_id"] != chosen_lens_id:
         made_label = lenses.label(made) if made else lenses.label(lenses.get_lens(store, plate["lens_id"]))
         if chosen_lens_id is None:
-            warnings.append(f"no lens was chosen for this photograph; the plate was made with {made_label}: the measurements are kept with the plate's lens")
+            warnings.append(f"no lens was chosen for this photograph; the {kind} was made with {made_label}: the measurements are kept with the {kind}'s lens")
         else:
             warnings.append(f"the lens chosen for this photograph ({lenses.label(lenses.get_lens(store, chosen_lens_id))}) differs from the lens of "
-                            f"this plate ({made_label}): the measurements are kept with the plate's lens")
+                            f"this {kind} ({made_label}): the measurements are kept with the {kind}'s lens")
         lens_id = plate["lens_id"]
     return {"plate": made, "installed": None if not now_lens else {"id": now_lens["id"], "name": now_lens["name"], "focal_length_mm": now_lens["focal_length_mm"]},
             "chosen_lens_id": chosen_lens_id, "lens_id": lens_id, "warnings": warnings}
@@ -643,17 +654,32 @@ def _set_lens(store: Store, row, lens_id: int | None, snapshot: dict | None) -> 
     store.execute("UPDATE pair SET lens_id=?, hardware_json=? WHERE id=?", (lens_id, json.dumps(hardware), row["id"]))
 
 
-def _load_plate(store: Store, identifier: str | None):
-    """(plate, plan) for a TCE1 identifier found in the LightBurn file, or (None, None)."""
+def _plate_row(store: Store, plate_id: int) -> dict:
+    plate = dict(store.one("SELECT * FROM plate WHERE id=?", (plate_id,)))
+    plate["cells"] = json.loads(plate["cells_json"])
+    return plate
+
+
+def _load_identified(store: Store, identifier: str | None):
+    """(plate, plan) named by the TCE1 identifier found in the LightBurn file, or (None, None): a calibration or capability
+    plate by its experiment identifier, or an engraving plan exported by this system (discrete, tonal, colour-path) by its
+    plan identifier, with the plate it was made from when it has one (REQ-013)."""
     if not identifier:
         return None, None
-    prow = store.one("SELECT * FROM plate WHERE experiment_id=?", (identifier,))
-    if prow is None:
+    prow = store.one("SELECT id FROM plate WHERE experiment_id=?", (identifier,))
+    if prow is not None:
+        plan_row = store.one("SELECT id FROM plan WHERE plate_id=?", (prow["id"],))
+        return _plate_row(store, prow["id"]), (pl.get_plan(store, plan_row["id"]) if plan_row else None)
+    plan_row = store.one("SELECT id, plate_id FROM plan WHERE plan_identifier=? ORDER BY id DESC LIMIT 1", (identifier,))
+    if plan_row is None:
         return None, None
-    plate = dict(prow)
-    plate["cells"] = json.loads(plate["cells_json"])
-    plan_row = store.one("SELECT id FROM plan WHERE plate_id=?", (plate["id"],))
-    return plate, (pl.get_plan(store, plan_row["id"]) if plan_row else None)
+    return (_plate_row(store, plan_row["plate_id"]) if plan_row["plate_id"] else None), pl.get_plan(store, plan_row["id"])
+
+
+def _made_for(plan: dict) -> dict:
+    """What a plan remembers of its laser and lens, in the form ``lens_check`` reads a plate."""
+    return {"device_id": plan["device_id"], "lens_id": plan["lens_id"],
+            "lens_json": json.dumps(plan["lens"]) if plan.get("lens") else None}
 
 
 def _rect_polygons(rects: list[dict], dx: float = 0.0, dy: float = 0.0) -> list[list[tuple[float, float]]]:
@@ -1250,9 +1276,71 @@ def _note_frame(rep: dict, alignment: dict) -> None:
                             f"{hidden} are entirely hidden and not measured")
 
 
+def _by_markers(img_bgr, markers: dict, expected: str | None, area, dx: float, dy: float, work_layers, report,
+                plate_named: bool, linked: bool) -> np.ndarray | None:
+    """Image -> file mm from the engraved markers once the identifier confirms them; None when no consistent set is found.
+
+    A readable identifier of another plate or work stops the check. Four markers whose identifier cannot be read fit
+    every plate or work of the same layout: they are accepted, with a warning, only for a photograph the operator linked
+    to this plate or plan, whose identity is then the operator's and not a guess (REQ-003); otherwise the alignment is
+    left to four placed corners (``identifier_unreadable``)."""
+    candidates = ph.detect_marker_candidates(img_bgr)
+    mismatch = None
+    for found in candidates:
+        try:
+            h = ph.homography_from_markers(found, markers, dx, dy)
+        except ph.PhotoError:
+            continue
+        seen = _read_aligned_identifier(img_bgr, h, markers, area, dx, dy)
+        if seen == expected:
+            report["alignment"].update(method="markers", marker_count=len(found), orientation_candidates=len(candidates),
+                                       identifier_verified=True, identifier_read=seen)
+            return h
+        if seen:
+            mismatch = seen
+    if mismatch:
+        raise ph.PhotoError(f"the photographed {'plate' if plate_named else 'work'} is {mismatch} but the LightBurn file is {expected}")
+    report["alignment"]["marker_count"] = max(map(len, candidates), default=0)
+    # Darkened titanium and a vertical mirror can defeat ArUco's square
+    # detector. Find each engraved marker independently, then require one
+    # consistent four-marker layout in the exact LightBurn millimetres.
+    from . import registration
+    matched = registration.register_markers(img_bgr, markers, dx, dy, expected, work_layers)
+    if matched is None or not (len(matched.matches) == 4 or matched.method == "two marker + QR"):
+        return None
+    seen = _read_aligned_identifier(img_bgr, matched.image_to_mm, markers, area, dx, dy)
+    if seen is None and matched.method == "two marker + QR":
+        # The identifier was decoded directly from the located QR
+        # before fitting; a full-frame rectification can make it
+        # unreadable when the QR lies close to the work-area edge.
+        seen = expected
+    if seen and seen != expected:
+        raise ph.PhotoError(f"the photographed {'plate' if plate_named else 'work'} is {seen} but the LightBurn file is {expected}")
+    report["alignment"]["marker_count"] = len(matched.matches)
+    if seen is None and not linked:
+        report["alignment"]["identifier_unreadable"] = True
+        return None
+    report["alignment"].update(method=matched.method, marker_matches=matched.matches, residual_px=matched.residual_px,
+                               reflected=matched.reflected, identifier_verified=(seen == expected), identifier_read=seen)
+    if matched.qr_offset_px is not None:
+        report["alignment"].update(qr_offset_px=list(matched.qr_offset_px),
+                                   qr_used_as_anchor=matched.qr_used_as_anchor)
+    if seen is None:
+        report["warnings"].append(
+            "Four engraved markers match the LightBurn geometry, but the QR identifier is unreadable; review the full layer overlay before accepting."
+        )
+    return matched.image_to_mm
+
+
 def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
-           prefer_corners: bool = False) -> tuple:
-    """Returns (image->mm homography, dx, dy). Raises PhotoError instead of guessing (REQ-003)."""
+           prefer_corners: bool = False, linked: bool = False) -> tuple:
+    """Returns (image->mm homography, dx, dy). Raises PhotoError instead of guessing (REQ-003).
+
+    ``plan`` is the plan of the plate, or the engraving plan the file names or the operator linked; ``linked`` says the
+    operator uploaded the photograph for it. A plate or plan with markers is aligned by its markers and identifier, one
+    path for both (DEC-010); an unmarked one, like a small-patch plate without registration (DEC-066 item 2), never looks
+    for markers and is aligned like any work: by its elements or by four placed corners.
+    """
     matrix_record = json.loads(row["data_json"] or "{}").get("matrix")
     if matrix_record and not (prefer_corners and corners):
         from . import matrix
@@ -1260,84 +1348,45 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                                    matrix={"cols": matrix_record["cols"], "rows": matrix_record["rows"],
                                            "outlined_cells": matrix_record.get("outlined_cells")})
         return matrix.image_to_mm(matrix_record), 0.0, 0.0
-    if plate is not None:
-        if plan is None or not plan.get("markers"):
-            raise ph.PhotoError("the plate has no marker definition")
-        ext = plan["markers"]["extent"]
-        dx, dy = pl.export_offset(plan)
-        clean = next((layer for layer in work_layers if layer.name.startswith("CLEAN-CROSSHATCH-") and
-                      len(layer.regions) == 1), None)
-        if clean is not None:
-            # LightBurn lets the operator move the complete job on its bed.
-            # Its cleaning rectangle has the same physical size as the plate
-            # extent, so it locates the plan's markers in the *saved file*.
-            cx, cy, cw, ch = _bbox(clean.regions)
-            ew, eh = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
-            if abs(cw - ew) > .05 or abs(ch - eh) > .05:
-                raise ph.PhotoError("the cleaning rectangle size differs from the plate definition")
-            dx, dy = cx - ext["min_x"], cy - ext["min_y"]
+    if plate is not None and plan is None:
+        raise ph.PhotoError("the plate has no marker definition")
+    dx, dy = pl.export_offset(plan) if plan is not None else (0.0, 0.0)
+    marked = plan if plan is not None and plan.get("markers") and plan.get("markers_enabled", True) else None
+    if marked is not None:
+        ext = marked["markers"]["extent"]
+        if plate is not None:
+            clean = next((layer for layer in work_layers if layer.name.startswith("CLEAN-CROSSHATCH-") and
+                          len(layer.regions) == 1), None)
+            if clean is not None:
+                # LightBurn lets the operator move the complete job on its bed.
+                # Its cleaning rectangle has the same physical size as the plate
+                # extent, so it locates the plan's markers in the *saved file*.
+                cx, cy, cw, ch = _bbox(clean.regions)
+                ew, eh = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
+                if abs(cw - ew) > .05 or abs(ch - eh) > .05:
+                    raise ph.PhotoError("the cleaning rectangle size differs from the plate definition")
+                dx, dy = cx - ext["min_x"], cy - ext["min_y"]
         report["alignment"]["file_offset_mm"] = [round(dx, 4), round(dy, 4)]
-        area = (ext["min_x"] + dx, ext["min_y"] + dy, ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"])
-        expected = plate["experiment_id"]
+        area =(ext["min_x"] + dx, ext["min_y"] + dy, ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"])
+        expected = plate["experiment_id"] if plate is not None else (marked["markers"].get("identifier") or marked.get("plan_identifier"))
         if prefer_corners and corners:
-            h, seen = _plate_corners_with_orientation(img_bgr, corners, area, expected, plan["markers"], dx, dy)
+            h, seen = _plate_corners_with_orientation(img_bgr, corners, area, expected, marked["markers"], dx, dy)
             report["alignment"].update(method="manual", marker_count=0,
                                        identifier_verified=(seen == expected), identifier_read=seen,
                                        reflected=bool(np.linalg.det(h[:2, :2]) < 0))
             report["warnings"].append("The work corners were corrected manually; review every layer outline before accepting measurements.")
             return h, dx, dy
-        candidates = ph.detect_marker_candidates(img_bgr)
-        mismatch = None
-        for found in candidates:
-            try:
-                h = ph.homography_from_markers(found, plan["markers"], dx, dy)
-            except ph.PhotoError:
-                continue
-            seen = _read_aligned_identifier(img_bgr, h, plan["markers"], area, dx, dy)
-            if seen == expected:
-                report["alignment"]["method"] = "markers"
-                report["alignment"]["marker_count"] = len(found)
-                report["alignment"]["orientation_candidates"] = len(candidates)
-                return h, dx, dy
-            if seen:
-                mismatch = seen
-        if mismatch:
-            raise ph.PhotoError(f"the photographed plate is {mismatch} but the LightBurn file is {expected}")
-        # Darkened titanium and a vertical mirror can defeat ArUco's square
-        # detector. Find each engraved marker independently, then require one
-        # consistent four-marker layout in the exact LightBurn millimetres.
-        from . import registration
-        matched = registration.register_markers(img_bgr, plan["markers"], dx, dy, expected,
-                                                work_layers)
-        if matched is not None and (len(matched.matches) == 4 or matched.method == "two marker + QR"):
-            seen = _read_aligned_identifier(img_bgr, matched.image_to_mm, plan["markers"], area, dx, dy)
-            if seen is None and matched.method == "two marker + QR":
-                # The identifier was decoded directly from the located QR
-                # before fitting; a full-frame rectification can make it
-                # unreadable when the QR lies close to the work-area edge.
-                seen = expected
-            if seen and seen != expected:
-                raise ph.PhotoError(f"the photographed plate is {seen} but the LightBurn file is {expected}")
-            report["alignment"].update(method=matched.method, marker_count=len(matched.matches),
-                                       marker_matches=matched.matches, residual_px=matched.residual_px,
-                                       reflected=matched.reflected, identifier_verified=(seen == expected),
-                                       identifier_read=seen)
-            if matched.qr_offset_px is not None:
-                report["alignment"].update(qr_offset_px=list(matched.qr_offset_px),
-                                           qr_used_as_anchor=matched.qr_used_as_anchor)
-            if seen is None:
-                report["warnings"].append(
-                    "Four engraved markers match the LightBurn geometry, but the QR identifier is unreadable; review the full layer overlay before accepting."
-                )
-            return matched.image_to_mm, dx, dy
-        count = max(map(len, candidates), default=0)
+        h = _by_markers(img_bgr, marked["markers"], expected, area, dx, dy, work_layers, report, plate is not None, linked)
+        if h is not None:
+            return h, dx, dy
+        count = report["alignment"].get("marker_count", 0)
         if anchor:
             return _element_anchor(anchor, work_layers, report), dx, dy
         if corners:
             # A known plate can still be aligned when its engraved ArUco marks are unreadable.
             # The operator supplies the four outer work corners; keep the plan's export offset so
             # its layer masks and marker submeasurements remain in the same LightBurn coordinates.
-            h, seen = _plate_corners_with_orientation(img_bgr, corners, area, expected, plan["markers"], dx, dy)
+            h, seen = _plate_corners_with_orientation(img_bgr, corners, area, expected, marked["markers"], dx, dy)
             report["alignment"].update(method="manual", marker_count=count,
                                        identifier_verified=(seen == expected), identifier_read=seen,
                                        reflected=bool(np.linalg.det(h[:2, :2]) < 0))
@@ -1346,60 +1395,26 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                     "Manual alignment was used for this plate; its QR identifier could not be verified. Check the layer overlay before accepting measurements."
                 )
             return h, dx, dy
-        if count < 3:
-            raise ph.PhotoError(f"only {count} registration markers detected; at least three are needed")
-        raise ph.PhotoError("the experiment identifier QR code could not be read in the aligned photograph")
-    marked = pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None
-    if marked is not None and marked.get("markers"):
-        dx, dy = pl.export_offset(marked)
-        ext = marked["markers"]["extent"]
-        area = (ext["min_x"] + dx, ext["min_y"] + dy, ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"])
-        expected = marked["markers"].get("identifier")
-        if prefer_corners and corners:
-            report["alignment"]["method"] = "manual"
-            if expected:
-                h, seen = _plate_corners_with_orientation(img_bgr, corners, area, expected, marked["markers"], dx, dy)
-                report["alignment"].update(identifier_verified=seen == expected, identifier_read=seen,
-                                           reflected=bool(np.linalg.det(h[:2, :2]) < 0))
-                return h, dx, dy
-            return ph.homography_from_corners([tuple(c) for c in corners], area), dx, dy
-        for found in ph.detect_marker_candidates(img_bgr):
-            try:
-                h = ph.homography_from_markers(found, marked["markers"], dx, dy)
-            except ph.PhotoError:
-                continue
-            if expected and _read_aligned_identifier(img_bgr, h, marked["markers"], area, dx, dy) != expected:
-                continue
-            report["alignment"]["method"] = "markers"
-            report["alignment"]["marker_count"] = len(found)
-            return h, dx, dy
-        from . import registration
-        matched = registration.register_markers(img_bgr, marked["markers"], dx, dy, expected,
-                                                work_layers)
-        if matched is not None and (len(matched.matches) == 4 or matched.method == "two marker + QR"):
-            seen = _read_aligned_identifier(img_bgr, matched.image_to_mm, marked["markers"], area, dx, dy)
-            if seen is None and matched.method == "two marker + QR":
-                seen = expected
-            if expected and seen and seen != expected:
-                raise ph.PhotoError(f"the photographed work is {seen} but the LightBurn file is {expected}")
-            report["alignment"].update(method=matched.method, marker_count=len(matched.matches),
-                                       marker_matches=matched.matches, residual_px=matched.residual_px,
-                                       reflected=matched.reflected, identifier_verified=(seen == expected))
-            if matched.qr_offset_px is not None:
-                report["alignment"].update(qr_offset_px=list(matched.qr_offset_px),
-                                           qr_used_as_anchor=matched.qr_used_as_anchor)
-            return matched.image_to_mm, dx, dy
+        if report["alignment"].get("identifier_unreadable"):
+            raise ph.PhotoError("four registration markers match the LightBurn geometry, but the identifier QR code cannot be read, so the "
+                                "photograph is not confirmed to show this plate or work: place the four corners of the work, or upload the "
+                                "photograph from its plate or plan")
+        if plate is not None:
+            if count < 3:
+                raise ph.PhotoError(f"only {count} registration markers detected; at least three are needed")
+            raise ph.PhotoError("the experiment identifier QR code could not be read in the aligned photograph")
+        # The markers of a finished work may be illegible: its own drawing can still be found below (DEC-010).
     if prefer_corners and corners:
         if not work_layers:
             raise ph.PhotoError("the LightBurn file has no geometry to align to")
         report["alignment"]["method"] = "manual"
-        return ph.homography_from_corners([tuple(c) for c in corners], _bbox([r for layer in work_layers for r in layer.regions])), 0.0, 0.0
+        return ph.homography_from_corners([tuple(c) for c in corners], _bbox([r for layer in work_layers for r in layer.regions])), dx, dy
     from . import anchoring, registration
     diagnostics: dict = {}
     matched = anchoring.register(img_bgr, work_layers, diagnostics)
     report["alignment"]["anchoring"] = diagnostics
     if matched is not None:
-        return _anchored(report, matched), 0.0, 0.0
+        return _anchored(report, matched), dx, dy
     if any(r.bitmap and r.bitmap.get("png") for layer in work_layers for r in layer.regions):
         from . import picturing
         picture_diagnostics: dict = {}
@@ -1416,7 +1431,7 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                 f"{hidden['left']:g} mm on the left, {hidden['right']:g} on the right, {hidden['top']:g} at the top and "
                 f"{hidden['bottom']:g} at the bottom; that part is not measured."
                 + ("" if d["window_found"] else " The edge of the frame was not found on every side, so a margin of 6% was assumed there."))
-            return matched.image_to_mm, 0.0, 0.0
+            return matched.image_to_mm, dx, dy
     matched = registration.register_geometry(img_bgr, work_layers)
     if matched is not None:
         # Three whole shapes can agree by chance in a dense drawing (a mirrored fit of a lion of parallel strokes
@@ -1425,7 +1440,7 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
         confirmed = anchoring.confirm(img_bgr, work_layers, matched.image_to_mm, confirmation)
         report["alignment"]["geometry_confirmation"] = confirmation
         if confirmed is not None:
-            return _anchored(report, confirmed), 0.0, 0.0
+            return _anchored(report, confirmed), dx, dy
         outlines = sum(1 for e in anchoring.elements_from_layers(work_layers) if not e.boundary and len(e.points) >= 25)
         if outlines < WHOLE_SHAPE_GUARD_MIN_OUTLINES:
             # A simple work: its few whole shapes are distinct, so a fit of three of them is real evidence, and
@@ -1440,15 +1455,15 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                 report["warnings"].append(
                     "The fit of whole shapes was not confirmed by element anchors; review the layer overlay before accepting."
                 )
-            return matched.image_to_mm, 0.0, 0.0
+            return matched.image_to_mm, dx, dy
     if anchor:
-        return _element_anchor(anchor, work_layers, report), 0.0, 0.0
+        return _element_anchor(anchor, work_layers, report), dx, dy
     if corners:
         if not work_layers:
             raise ph.PhotoError("the LightBurn file has no geometry to align to")
         area = _bbox([r for layer in work_layers for r in layer.regions])
         report["alignment"]["method"] = "manual"
-        return ph.homography_from_corners([tuple(c) for c in corners], area), 0.0, 0.0
+        return ph.homography_from_corners([tuple(c) for c in corners], area), dx, dy
     raise ph.PhotoError("no reliable combination of LightBurn details was found: place the four image corners of the work")
 
 
@@ -1620,24 +1635,45 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
         for item in report["layers"]:
             if item["index"] in overflow_indices:
                 item["notes"].append("This layer index is outside LightBurn's 30 standard output colors; its photo measurement is retained.")
-    plate, plan = _load_plate(store, project.identifier)
-    if project.identifier and plate is None:
+    plate, plan = _load_identified(store, project.identifier)
+    if project.identifier and plate is None and plan is None:
         problems.append(f"experiment identifier {project.identifier} is not known to this system")
+    elif (plan or {}).get("status") == "Deleted":
+        problems.append(f"experiment identifier {project.identifier} belongs to a deleted experiment")
+    if plate is None and plan is None and row["plan_id"]:
+        # a file without an identifier: the plan (and its plate) the photograph is linked to
+        plan = pl.get_plan(store, row["plan_id"])
+        plate = _plate_row(store, plan["plate_id"]) if plan.get("plate_id") else None
+    if plan is not None and plan["mode"] == pl.MODE_RESTORED:
+        plan = None          # a plan restored from this very file describes it; it is not a system plan to align with
+    linked = plan is not None and pair.get("linked_plan_id") == plan["id"]
     # The operator's lens choice is kept apart from the lens of the measurements, so every re-check shows it again.
     pair["lens_choice"] = pair.get("lens_choice") or {"lens_id": row["lens_id"]}
     lens_id = pair["lens_choice"]["lens_id"]
+    made_for = None
     if plate is not None:
         ids["plate_id"], ids["plan_id"] = plate["id"], (plan or {}).get("id")
         report["plate"] = {"experiment_id": plate["experiment_id"], "device_id": plate["device_id"], "lens_id": plate["lens_id"]}
         if plate["device_id"] != row["device_id"]:
             problems.append("this plate was made for a different laser than the one selected")
-        report["lens"] = lens_check(store, plate, lens_id)
+        made_for, kind = plate, "plate"
+    elif plan is not None:
+        # an engraving plan exported by this system: its laser and lens are compared like a plate's (REQ-013)
+        ids["plan_id"] = plan["id"]
+        report["plan"] = {"identifier": plan["plan_identifier"], "mode": plan["mode"], "device_id": plan["device_id"],
+                          "lens_id": plan["lens_id"]}
+        if plan["device_id"] != row["device_id"]:
+            problems.append("this plan was made for a different laser than the one selected")
+        made_for, kind = _made_for(plan), "plan"
+    if made_for is not None:
+        report["lens"] = lens_check(store, made_for, lens_id, kind)
         lens_id = report["lens"]["lens_id"]
     if lens_id != row["lens_id"]:
-        _set_lens(store, row, lens_id, json.loads(plate["lens_json"]) if plate is not None and plate["lens_json"] and lens_id == plate["lens_id"] else None)
+        _set_lens(store, row, lens_id, json.loads(made_for["lens_json"]) if made_for is not None and made_for["lens_json"]
+                  and lens_id == made_for["lens_id"] else None)
     # System plate exports put cleanup first and registration/labels next. They are real engraved operations,
     # so retain them as measured layers. Only the test-cell comparison excludes these two system layers.
-    system_plan = plan if plate is not None else (pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None)
+    system_plan = plan
     if system_plan is not None:
         normalized_axes = _normalize_project_to_plan(project, system_plan)
         if normalized_axes:
@@ -1657,11 +1693,11 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
             rep["role"] = "test feature"
     work_layers = [layer for layer in project.layers if layer.regions]
     return _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
-                    corners_fraction)
+                    corners_fraction, linked)
 
 
 def _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
-             corners_fraction=None):
+             corners_fraction=None, linked=False):
     """Decode, choose chart-corrected or plate-relative color, align, compare, and sample the regions."""
     try:
         img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=allow_non_raw or non_raw_allowed(store))
@@ -1736,7 +1772,7 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
             report["warnings"].append("The whole LightBurn drawing was adjusted by hand; inspect every contour before accepting measurements.")
         else:
             h, dx, dy = _align(store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
-                               prefer_corners=bool(pair.get("prefer_corners")))
+                               prefer_corners=bool(pair.get("prefer_corners")), linked=linked)
         if anchor:
             # A quadrilateral on the entire plate must never be accepted as a
             # 3 mm LightBurn detail. One anchor defines the transform, but the
