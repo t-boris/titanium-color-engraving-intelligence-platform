@@ -41,8 +41,20 @@ def test_rephotographs_average_into_one_engraving_and_feed_rig_repeatability(sto
     s = model.knowledge_summaries(store, *w["setup"])[BASE]
     assert s["engravings"] == 2 and s["independent_engravings"] == 2 and s["observations"] == 3
     assert s["lab"][0] == pytest.approx((51 + 60) / 2)
-    assert s["rig_repeatability"] == {"assessed": True, "photos": 2, "mean_delta_e": pytest.approx(1.0)}
+    assert s["rig_repeatability"] == {"assessed": True, "photos": 2, "mean_delta_e": pytest.approx(1.0), "max_delta_e": pytest.approx(1.0)}
     assert s["stability"]["variance"] == pytest.approx((60 - 51) ** 2 / 2)
+
+
+def test_two_layers_of_one_photograph_are_one_view_not_a_rig_repetition(store, w):
+    """REQ-009: rig repeatability compares photographs of one engraving, never two layers of the same photograph."""
+    first = obs.add(store, w, (50, 0, 0), engraving="A")
+    pair = store.one("SELECT pair_id FROM observation WHERE id=?", (first,))["pair_id"]
+    store.execute("INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,"
+                  "context_json,model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) SELECT pair_id,2,device_id,lens_id,"
+                  "engraving_id,'[54,0,0]',parameters_json,alignment_method,context_json,1,1,'t','{}',created_at FROM observation WHERE id=?", (first,))
+    s = model.knowledge_summaries(store, *w["setup"])[BASE]
+    assert s["observations"] == 2 and s["rig_repeatability"] == {"assessed": False, "photos": 1, "mean_delta_e": None, "max_delta_e": None}
+    assert {r["pair_id"] for r in store.query("SELECT pair_id FROM observation")} == {pair}
 
 
 def test_a_rephotograph_does_not_count_as_an_independent_engraving(store, w):

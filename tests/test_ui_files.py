@@ -199,6 +199,14 @@ def test_fields_and_buttons_in_one_line_use_the_bottom_aligned_toolbar():
     assert offenders == [], "a row starts with a labelled field; use class 'toolbar':\n" + "\n".join(offenders)
 
 
+def test_rig_repeatability_is_shown_with_the_stability_data():
+    """REQ-009: computed for every recipe and every re-photographed engraving, it must reach the screens that show stability."""
+    for screen in ("screens/knowledge.js", "screens/analysis.js"):
+        text = (UI_DIR / screen).read_text(encoding="utf-8")
+        assert "rig_repeatability" in text and "Повторяемость стенда" in text, screen
+        assert "по эталонной карте" in text, screen         # says it exists only for chart-corrected re-photographs
+
+
 def test_every_file_input_is_shown_through_the_russian_file_picker():
     """Regression: the native file input showed 'Choose File / no file selected' in English, off-centre in its box."""
     pattern = re.compile(r"field\('[^']*', (\w+)\)")

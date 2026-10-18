@@ -7,6 +7,10 @@ const KnowledgeView = (() => {
   const EVENT = {created: 'создано', promoted: 'повышено автоматически', questioned: 'помечено «под вопросом»', approved: 'утверждено в производство',
     demoted: 'понижено вручную', confirmed: 'флаг снят', rollback: 'откат'};
   const stab = (s) => (s.assessed ? `дисперсия ${num(s.variance)}` : 'не оценена');
+  /** Повторяемость стенда (REQ-009): расхождение снимков одной гравировки; есть только у пересъёмок, скорректированных по карте. */
+  const rig = (r) => (r && r.assessed
+    ? `ΔE ${num(r.mean_delta_e)} в среднем, до ${num(r.max_delta_e)} · снимков одной гравировки: ${r.photos}`
+    : 'не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте');
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с`;
 
   /** Кнопка, открывающая окно решения; после успеха экран перерисовывается. */
@@ -50,10 +54,11 @@ const KnowledgeView = (() => {
         ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')], ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
         ['Параметры', params(k.parameters) + ` · импульс ${k.parameters.pulse_width} · интервал ${k.parameters.line_interval} · проходов ${k.parameters.passes}`],
         ['Независимых гравировок', s ? s.independent_engravings : '—'], ['Уверенность', s ? num(s.confidence) : '—'],
-        ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—']]),
+        ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
+        ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']]),
       s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null, h('div', {class: 'row'}, actions(k, kid))),
       h('div', {class: 'card'}, h('h3', {}, 'История'), history),
       s ? h('div', {class: 'card'}, h('h3', {}, 'Наблюдения-основания'), h('p', {}, s.observation_ids.join(', '))) : null);
   }
-  return {render, STAGE, stab, params};
+  return {render, STAGE, stab, rig, params};
 })();

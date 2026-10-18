@@ -134,6 +134,35 @@ def test_limitations_state_when_unknown_context_blocks_attribution(store, w):
     assert "cannot be attributed to material batch or focus" in text
 
 
+def photograph(store, w, engraving: str, measured: dict, mode="reference_chart_corrected") -> int:
+    """An accepted photograph of ``engraving`` whose layers were measured as ``measured`` (layer index -> Lab)."""
+    pair = store.execute(
+        "INSERT INTO pair(status,device_id,lens_id,stand_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,context_json,data_json,created_at,accepted_at)"
+        " VALUES ('Accepted',?,?,?,?,'a.lbrn2','/x','p.raw','/y','{}','{}',?,?)", (*w["setup"], w["stand"]["id"], engraving, now(), now())).lastrowid
+    parameters = json.dumps(su.parameter_vector(w["device"]["passport"], 10, 40, 900, 200, 0.025, 1))
+    for idx, lab in measured.items():
+        store.execute(
+            "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,repeat_eligible,"
+            "eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,'markers','{}',?,0,'t',?,?)",
+            (pair, idx, *w["setup"], engraving, json.dumps(list(lab)), parameters, int(mode == "reference_chart_corrected"),
+             json.dumps({"layer_name": f"C{idx:02d}", "role": "test feature", "color_measurement": {"mode": mode}}), now()))
+    return pair
+
+
+def test_the_report_of_a_rephotographed_engraving_gives_the_repeatability_of_the_rig(store, w):
+    """REQ-009: the rig's repeatability, from chart-corrected photographs of the same engraving only."""
+    photograph(store, w, "E", {1: (50, 0, 0), 2: (30, 10, 0)})
+    again = photograph(store, w, "E", {1: (52, 0, 0), 2: (30, 10, 2)})
+    photograph(store, w, "E", {1: (90, 0, 0), 2: (10, 0, 0)}, mode="raw_camera_relative")     # a view without a chart is never compared
+    report = an.report_for_pair(store, again)
+    assert len(report["photos"]) == 3
+    assert report["rig_repeatability"] == {"assessed": True, "photos": 2, "layers": 2,
+                                           "mean_delta_e": pytest.approx(1.0), "max_delta_e": pytest.approx(1.0)}
+    single = photograph(store, w, "F", {1: (50, 0, 0)})
+    assert an.report_for_pair(store, single)["rig_repeatability"] == {"assessed": False, "photos": 1, "layers": 0,
+                                                                     "mean_delta_e": None, "max_delta_e": None}
+
+
 def test_the_report_never_changes_stored_measurements(store, w):
     plan_id = cv.create_continuous(store, *w["setup"], "tonal", ramp(), 50, 4, "T")
     pair = accepted_pair(store, w, plan_id, {1: (22, 0, 0), 2: (38, 0, 0)})

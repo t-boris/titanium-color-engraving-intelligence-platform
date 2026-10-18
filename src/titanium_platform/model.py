@@ -112,15 +112,52 @@ def summarize(obs: list[dict]) -> dict:
     else:
         variance, deviations = None, [0.0]
         stability = {"assessed": False, "variance": None, "max_deviation": None, "engravings": n}
-    repeat_devs = [color.delta_e(o["lab"], np.mean([x["lab"] for x in g], axis=0)) for g in groups.values() if len(g) > 1 for o in g]
-    rig = {"assessed": bool(repeat_devs), "photos": max(len(g) for g in groups.values()),
-           "mean_delta_e": float(np.mean(repeat_devs)) if repeat_devs else None}
+    # Rig repeatability (REQ-009): how far photographs of one engraving disagree. Every observation here is chart-corrected
+    # (eligible), and several layers of one photograph with these settings are one view of it, not several.
+    repeat_devs, photos = [], 1
+    for g in groups.values():
+        views: dict[int, list] = {}
+        for o in g:
+            views.setdefault(o.get("pair_id", o["id"]), []).append(o["lab"])
+        means = [np.mean(v, axis=0) for v in views.values()]
+        photos = max(photos, len(means))
+        if len(means) > 1:
+            centre = np.mean(means, axis=0)
+            repeat_devs += [color.delta_e(m, centre) for m in means]
+    rig = {"assessed": bool(repeat_devs), "photos": photos,
+           "mean_delta_e": float(np.mean(repeat_devs)) if repeat_devs else None,
+           "max_delta_e": float(max(repeat_devs)) if repeat_devs else None}
     expected = None if variance is None else math.sqrt(variance) + (rig["mean_delta_e"] or 0.0)
     confidence = n / (n + CONFIDENCE_K) if variance is not None else None
     return {"lab": [float(v) for v in lab], "observation_ids": [o["id"] for o in obs], "observations": len(obs),
             "independent_engravings": independent, "engravings": n, "stability": stability, "rig_repeatability": rig,
             "expected_delta_e": expected, "confidence": confidence, "available": variance is not None,
             "context_groups": context_groups(obs)}
+
+
+def engraving_rig_repeatability(store: Store, engraving_id: str) -> dict:
+    """How far the accepted photographs of one engraving disagree, layer by layer: the repeatability of the rig (REQ-009,
+    DEC-021). It exists only for re-photographs corrected by the reference chart: camera-relative views are never compared,
+    and neither are the cleaning, marker and label layers."""
+    by_layer: dict[int, dict[int, list]] = {}
+    photos = set()
+    for r in store.query("SELECT o.pair_id, o.layer_index, o.lab_json, o.evidence_json FROM observation o JOIN pair p ON p.id=o.pair_id "
+                         "WHERE o.engraving_id=? AND p.status='Accepted' ORDER BY o.id", (engraving_id,)):
+        evidence = json.loads(r["evidence_json"] or "{}")
+        if (evidence.get("color_measurement") or {}).get("mode") != "reference_chart_corrected" or \
+                evidence.get("role", "test feature") != "test feature":
+            continue
+        photos.add(r["pair_id"])
+        by_layer.setdefault(r["layer_index"], {})[r["pair_id"]] = json.loads(r["lab_json"])
+    deviations, layers = [], 0
+    for views in by_layer.values():
+        if len(views) > 1:
+            layers += 1
+            centre = np.mean(list(views.values()), axis=0)
+            deviations += [color.delta_e(lab, centre) for lab in views.values()]
+    return {"assessed": bool(deviations), "photos": len(photos), "layers": layers,
+            "mean_delta_e": float(np.mean(deviations)) if deviations else None,
+            "max_delta_e": float(max(deviations)) if deviations else None}
 
 
 def context_groups(obs: list[dict]) -> list[dict]:

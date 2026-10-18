@@ -265,6 +265,16 @@
         ...r.limitations.map((text) => h('p', {}, I18N.tr(text)))) : null];
   }
 
+  /** Повторяемость стенда для пересъёмок одной гравировки (REQ-009): часть данных о стабильности, не отдельная гравировка. */
+  function rigCard(rig) {
+    const value = rig?.assessed
+      ? `ΔE ${num(rig.mean_delta_e, 2)} в среднем, до ${num(rig.max_delta_e, 2)} · снимков с картой: ${rig.photos} · сравнено слоёв: ${rig.layers}`
+      : 'не оценена';
+    return h('div', {class: 'alert', role: 'status'}, h('strong', {}, 'Повторяемость стенда: '), value,
+      h('p', {class: 'muted small'}, 'Насколько расходятся снимки одной и той же гравировки. Она есть только у пересъёмок, скорректированных по эталонной карте; '
+        + 'снимки без карты между собой не сравниваются. Пересъёмка не считается отдельной гравировкой (DEC-021).'));
+  }
+
   App.register({id: 'analysis', async render(ctx) {
     const id = ctx.arg;
     let r;
@@ -300,6 +310,7 @@
         h('span', {}, `Проверки этого запуска (${r.photos.length})`),
         ...r.photos.map((photo) => link(photo.status === 'Accepted' ? '/analysis/' + photo.id : '/ingest?pair=' + photo.id,
           `№${photo.id} · ${photo.photo_name}${photo.id === Number(id) ? ' · сейчас' : ''}`))) : null,
+      r.photos?.length > 1 ? rigCard(r.rig_repeatability) : null,
       ...(c ? capabilityDashboard(r) : genericDashboard(r)));
   }});
 })();
