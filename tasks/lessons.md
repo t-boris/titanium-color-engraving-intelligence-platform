@@ -26,3 +26,69 @@ Rules written after the operator's remarks, to prevent a repeat.
 
 ## Do not end a turn by asking what else to fix
 - Rule: finish the listed scope, verify it, report; list open items as facts, not as a question to the operator.
+
+## An optional physical feature is never a required input of an algorithm
+- Remark: "why does the algorithm use the frame at all? find every section of the file on its own and grow from there" (2026-10-18), after three
+  new pairs were refused for "no frame window".
+- Rule: the input of a registration is the file geometry and the photograph, nothing else. A frame, a chart, a marker may *help* when present
+  and must be *derived* (the frame from the known plate size) when they matter, but a missing one must not stop the work. Before writing a
+  detector of X, ask what happens to the operator's pair when X is absent or looks different (glossy, dark work touching it).
+
+## Judge an overlay by numbers, not by eye
+- Remark: I told the operator the lion's fallback overlay was "mirrored and shifted"; measured against the anchored result it was off by 0.4 mm
+  median and up to 2 mm at the edges, not mirrored.
+- Rule: before calling a registration wrong, compute the displacement against a trusted transform on a grid in mm and quote that; a 1000-px
+  preview cannot tell 2 mm from a mirror.
+
+## A relative measurement is shown against a reference in the same photograph, never as the camera exposed it
+- Remark: "it does not find light colours" (2026-10-18): every colour of a chartless pair was near black because the photographs are
+  2.5–5 stops under and the RAW was decoded without any brightness change.
+- Rule: a value that depends on exposure or illuminant is evidence, not a colour. Before showing or comparing it, anchor it to a reference
+  inside the same photograph (clean titanium from the cleaning layer, a chart when present) and say which reference was used. If no
+  reference exists, say so on the screen instead of showing dark numbers as if they were colours.
+
+## A calibration is checked on its own reference before its result is believed
+- Remark: "why no black" (2026-10-18). The chart correction had been reporting a mean residual of 6 dE for months; nobody looked at *where*
+  the residual sat. The grey ramp showed the dark tones threefold too dark.
+- Rule: every calibration step reports its result on its own reference in a form a person can read (the grey ramp beside the reference), and
+  a mean residual is never accepted without that breakdown. When a measurement looks physically odd, check the calibration's reference first.
+
+## A fallback never widens what is measured
+- Remark: "clean titanium is visible only where there is no fill; every layer must be taken into account" (2026-10-18), after a fully
+  engraved-over first layer was reported as clean titanium at L* 50 over the whole plate.
+- Rule: when a mask comes out empty, the answer is "nothing visible", stated on the screen; a fallback for thin strokes applies to thin
+  strokes only. Coverage by later layers is computed over every layer in burn order before anything is sampled.
+
+## Recognition that reads text is tuned on every real sample at once, never one at a time
+- Situation (2026-10-18): reading the engraved labels of six Material Test photographs; every fix that made one photograph read better
+  broke another (a global threshold, a geometric crop, a strip read), because the photographs differ six-fold in label contrast.
+- Rule: keep one runner over all real samples and judge every change by the whole table; prefer local, self-calibrating measures (a
+  threshold per label from its own strokes) over global constants; let structure repair reading (an evenly spaced sequence fixes a
+  misread digit) instead of chasing a perfect reader; and leave the last word to the operator's confirmation.
+
+## A new kind of experiment is finished only when its results are on the colour map
+- Situation (2026-10-18): the matrix experiment was built and its six photographs uploaded, but every pair stopped at "settings wait
+  for confirmation"; the operator had to remind: "do not forget to add the results to the colour map".
+- Rule: the end of a data path is where the data is used (the colour map, the model), not the review screen. Take real samples all the
+  way: verify each proposed reading against the photograph, correct what is visibly wrong, accept, and check the map counts. What
+  cannot be verified (an unreadable value) is named to the operator with exactly what is missing.
+
+## A model's note that asks for data is re-read when that data arrives
+- Situation (2026-10-18): the kinetics note said "plates with a monotone dose ramp at one pulse regime are needed". The matrices
+  brought exactly those plates, the results went onto the map, and nobody looked at the kinetics again; the operator found it
+  still asking for ramps, in English, under a stray "null".
+- Rule: when new data feeds a model, run the model and read its output on the screen the operator uses, including notes. A note
+  that promises "with X it will work" is a hypothesis to test the moment X exists.
+
+## UI text: what h() forgives, the DOM does not
+- `el.replaceChildren(cond ? x : null)` prints "null"; `h()` skips null. Use `App.fill(el, ...)` (static test in test_ui_files).
+- Server text reaches the screen not only through raised errors: dict literals ({"note": ...}) and conditional messages count.
+  The translation coverage test collects them; a new kind of message site must be added to the collector, not translated ad hoc.
+
+## A constraint that forces order manufactures correlation: check the physics before trusting r2
+- Situation (2026-10-18): forcing the film thickness to grow with dose along each matrix gave "usable" kinetics laws
+  (r2 0.6-0.85), but the exponents were 2-5.6 and the palest, almost bare cells sat at 96 nm or the path skipped the whole first
+  order. Any monotone assignment correlates with dose; the r2 said nothing.
+- Rule: before reading a fit statistic on data shaped by a constraint, check the assignment against what is physically known
+  (pale cells are thin, the first order comes first). When the approved plan's premise fails on real data, switch the new
+  behaviour off, keep it tested, say why with numbers, and bring a revised plan instead of tuning until a number looks good.
