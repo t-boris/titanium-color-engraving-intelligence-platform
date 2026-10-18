@@ -20,6 +20,10 @@ JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 
 @pytest.fixture
 def world(store):
+    return make_world(store)
+
+
+def make_world(store):
     store.set_setting("allow_non_raw_photos", True)  # tests use PNG renders; real use requires RAW
     device = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
     lens = lenses.create_lens(store, "F-Theta 174", 174, 170)
@@ -203,8 +207,8 @@ def test_a_mirrored_plate_with_three_markers_aligns_only_after_its_qr_matches(wo
     assert report["problems"] == [] and report["color_measurement"]["mode"] == "raw_camera_relative"
 
 
-def test_manual_photo_corners_use_qr_to_preserve_vertical_mirror(world):
-    plan = world["plan"]
+def vertically_mirrored_with_corners(plan):
+    """The plate photographed upside down (a vertical mirror), with the four corners of its plate placed by hand."""
     img = cv2.flip(synth.plate_photo(plan, CELLS, with_chart=False), 0)
     ext = plan["markers"]["extent"]
     ox, oy, scale = 520, 80, 20.0
@@ -212,7 +216,11 @@ def test_manual_photo_corners_use_qr_to_preserve_vertical_mirror(world):
     height = (ext["max_y"] - ext["min_y"]) * scale
     top = img.shape[0] - (oy + height)
     bottom = img.shape[0] - oy
-    corners = [(ox, top), (ox + width, top), (ox + width, bottom), (ox, bottom)]
+    return img, [(ox, top), (ox + width, top), (ox + width, bottom), (ox, bottom)]
+
+
+def test_manual_photo_corners_use_qr_to_preserve_vertical_mirror(world):
+    img, corners = vertically_mirrored_with_corners(world["plan"])
     pid = make_pair(world, photo=png(img))
 
     report = ig.check_pair(world["store"], pid, corners=corners)
@@ -220,6 +228,30 @@ def test_manual_photo_corners_use_qr_to_preserve_vertical_mirror(world):
     assert report["alignment"]["valid"] and report["alignment"]["method"] == "manual"
     assert report["alignment"]["identifier_verified"] and report["alignment"]["reflected"]
     assert report["problems"] == []
+
+
+# Plates get a random identifier, so each run engraves another QR pattern. Over 1000 random identifiers, these were the
+# ones whose QR none of the views of the classic OpenCV detector could read in the synthetic photographs above (the first
+# on the markers path, upright and mirrored; the second on the manual corners of the mirrored photograph). The reader
+# tries more views and OpenCV's ArUco-based detector, so they must verify like any other.
+QR_THE_CLASSIC_DETECTOR_MISSED = ["TCE-839890CD", "TCE-66EEBC57"]
+
+
+@pytest.mark.parametrize("identifier", QR_THE_CLASSIC_DETECTOR_MISSED)
+def test_a_plate_whose_qr_pattern_the_classic_detector_misses_is_still_verified(store, monkeypatch, identifier):
+    monkeypatch.setattr(pl, "new_identifier", lambda prefix="TCE": identifier)
+    world = make_world(store)
+    plan = world["plan"]
+    assert plan["markers"]["identifier"] == identifier
+    mirrored, corners = vertically_mirrored_with_corners(plan)
+
+    upright = ig.check_pair(store, make_pair(world))
+    flipped = ig.check_pair(store, make_pair(world, photo=png(mirrored)))
+    manual = ig.check_pair(store, make_pair(world, photo=png(mirrored)), corners=corners)
+
+    for report, method in ((upright, "markers"), (flipped, "markers"), (manual, "manual")):
+        assert report["alignment"]["method"] == method and report["alignment"]["identifier_verified"], report["alignment"]
+        assert report["alignment"]["identifier_read"] == identifier and report["problems"] == []
 
 
 def test_a_photograph_is_corrected_toward_the_chart_values_of_its_own_rig(world):

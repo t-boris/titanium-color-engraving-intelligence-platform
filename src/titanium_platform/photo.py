@@ -17,6 +17,7 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -299,9 +300,53 @@ def detect_marker_candidates(img_bgr: np.ndarray) -> list[dict[int, np.ndarray]]
     return sorted(candidates, key=lambda found: -len(found))
 
 
+# What plans.marker_geometry encodes in the QR (the LightBurn notes carry the same ``TCE1:<identifier>``); a decode of any
+# other text is never taken for an identifier.
+QR_PAYLOAD = re.compile(r"TCE1:(TCE-[A-Za-z0-9_-]+)")
+QR_UPSCALE_MAX_SIDE = 600       # a view this small is also tried at twice the size: its modules may be only a few pixels
+
+
+def _qr_readers(gray: np.ndarray):
+    """The detectors and the views a QR is read with, each view with the map of its points back to ``gray``. First OpenCV's
+    classic detector on the image as given, as the reader always did; it misses a code for some module patterns (about 1 %
+    of random identifiers even on a clean render, mostly next to other dark squares such as the registration markers).
+    Then, where this OpenCV has it, the ArUco-based detector, which finds the finder patterns another way and costs a tenth
+    of the classic one on an image without a code, on every view: as photographed, mirrored, with local contrast equalised
+    (dark titanium), binarised by Otsu's threshold and, for a small view, at twice the size."""
+    same = lambda points: points
+    yield cv2.QRCodeDetector(), gray, same
+    if not hasattr(cv2, "QRCodeDetectorAruco"):
+        return
+    detector = cv2.QRCodeDetectorAruco()
+    h, w = gray.shape[:2]
+    yield detector, gray, same
+    yield detector, cv2.flip(gray, 1), lambda points: np.column_stack((w - 1 - points[:, 0], points[:, 1]))
+    yield detector, cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4)).apply(gray), same
+    yield detector, cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1], same
+    if max(h, w) <= QR_UPSCALE_MAX_SIDE:
+        yield detector, cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC), lambda points: points / 2
+
+
+def decode_identifier(img: np.ndarray) -> tuple[str | None, np.ndarray | None]:
+    """The plate or plan identifier read from a QR code in ``img`` and the code's four corners in its pixels, else
+    (None, None). The readers are tried in turn until one decodes the exporter's format, so a decode is the same as before
+    wherever the classic detector read the image as given."""
+    gray = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if gray.dtype != np.uint8:
+        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    for detector, view, to_source in _qr_readers(gray):
+        try:
+            text, points, _ = detector.detectAndDecode(view)
+        except cv2.error:              # a degenerate view (a code cut by the border) is not a reading
+            continue
+        match = QR_PAYLOAD.fullmatch(text or "")
+        if match:
+            return match.group(1), None if points is None else to_source(points.reshape(-1, 2).astype(np.float32))
+    return None, None
+
+
 def read_identifier(img_bgr: np.ndarray) -> str | None:
-    text = cv2.QRCodeDetector().detectAndDecode(img_bgr)[0]
-    return text[5:] if text.startswith("TCE1:") else None
+    return decode_identifier(img_bgr)[0]
 
 
 def read_identifier_rectified(img_bgr: np.ndarray, image_to_mm: np.ndarray, area_mm: tuple[float, float, float, float],

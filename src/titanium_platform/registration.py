@@ -586,16 +586,12 @@ def _refine_pair_with_qr(img_bgr: np.ndarray, markers: dict, left: dict, right: 
     cy1 = min(height, int(np.ceil(predicted[:, 1].max())) + pad)
     if cx1 - cx0 < 30 or cy1 - cy0 < 30:
         return None
-    crop = img_bgr[cy0:cy1, cx0:cx1]
-    decoder = cv2.QRCodeDetector()
-    decoded, points, _ = decoder.detectAndDecode(crop)
-    if decoded != f"TCE1:{expected_identifier}" or points is None:
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4)).apply(gray)
-        decoded, points, _ = decoder.detectAndDecode(enhanced)
-    if decoded != f"TCE1:{expected_identifier}" or points is None:
+    from . import photo
+
+    decoded, points = photo.decode_identifier(img_bgr[cy0:cy1, cx0:cx1])
+    if decoded != expected_identifier or points is None:
         return None
-    qr_points = points.reshape(-1, 2) + np.float32([cx0, cy0])
+    qr_points = points + np.float32([cx0, cy0])
     qr_center = qr_points.mean(axis=0)
     if np.linalg.norm(qr_center - predicted.mean(axis=0)) > side * .65:
         return None

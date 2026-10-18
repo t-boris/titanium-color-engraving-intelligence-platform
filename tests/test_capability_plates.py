@@ -4,7 +4,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 import pytest
 
-from titanium_platform import capability_plates as cp, devices, lenses, lightburn, plans
+from titanium_platform import capability_plates as cp, devices, lenses, lightburn, photo, plans
 from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 
@@ -345,7 +345,8 @@ def test_new_lightburn_export_preserves_fractional_speed_precision(store):
     assert b'<speed Value="4166.6667"/>' in file
 
 
-def test_compact_registration_still_decodes_all_corners_and_qr(store):
+def compact_registration(store) -> tuple[dict, np.ndarray]:
+    """A material matrix preview and its compact registration (four ArUco markers and the QR) drawn at 30 px/mm."""
     laser, _, titanium = hardware(store)
     preview = cp.preview(store, laser["id"], titanium["id"], "material_matrix", JOB)
     markers = preview["markers"]
@@ -358,10 +359,29 @@ def test_compact_registration_still_decodes_all_corners_and_qr(store):
         x0, y0 = round((r["x"] - extent["min_x"] + pad) * scale), round((r["y"] - extent["min_y"] + pad) * scale)
         x1, y1 = round((r["x"] + r["width"] - extent["min_x"] + pad) * scale), round((r["y"] + r["height"] - extent["min_y"] + pad) * scale)
         image[y0:y1, x0:x1] = 0
+    return preview, image
+
+
+def test_compact_registration_still_decodes_all_corners_and_qr(store):
+    preview, image = compact_registration(store)
     detector = cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), cv2.aruco.DetectorParameters())
     _, ids, _ = detector.detectMarkers(image)
     assert sorted(ids.ravel().tolist()) == [0, 1, 2, 3]
-    assert cv2.QRCodeDetector().detectAndDecode(image)[0] == f"TCE1:{preview['identifier']}"
+    assert photo.read_identifier(image) == preview["identifier"]       # read as the photograph check reads it
+
+
+# Identifiers (out of 1000 random ones) whose compact registration OpenCV's classic QR detector could not read as drawn
+# above; the reader tries further views and the ArUco-based detector.
+QR_THE_CLASSIC_DETECTOR_MISSED = ["TCE-000E05D0", "TCE-0F5E378F", "TCE-11CB4EA7", "TCE-328BF8AE", "TCE-5A091FD6",
+                                  "TCE-5FE2FE3E", "TCE-839890CD", "TCE-AEFC1636", "TCE-F5EE8C72"]
+
+
+@pytest.mark.parametrize("identifier", QR_THE_CLASSIC_DETECTOR_MISSED)
+def test_a_compact_registration_whose_qr_the_classic_detector_misses_is_still_read(store, monkeypatch, identifier):
+    monkeypatch.setattr(plans, "new_identifier", lambda prefix="TCE": identifier)
+    preview, image = compact_registration(store)
+    assert preview["identifier"] == identifier
+    assert photo.read_identifier(image) == identifier
 
 
 def test_material_matrix_rejects_interval_axis_for_vector_lines_and_more_than_28_cells(store):
