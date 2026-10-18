@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS lens (
     field_mm REAL,
     expansion REAL NOT NULL DEFAULT 1,
     note TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    spot_diameter_um REAL
 );
 CREATE TABLE IF NOT EXISTS laser_device (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -344,7 +345,8 @@ class Store:
                 ("plate", "status", "TEXT"),                        # NULL: in use; 'Deleted' with its archived plan (DEC-047)
                 ("capture_setup", "chart_reference_json", "TEXT"),   # NULL: the published chart values (DEC-025)
                 ("capability_finding", "updated_at", "TEXT"),       # NULL: never recalculated to another text (REQ-022)
-                ("observation", "task_kind", "TEXT")):               # NULL: accepted before tasks, derived from its layer (REQ-020)
+                ("observation", "task_kind", "TEXT"),               # NULL: accepted before tasks, derived from its layer (REQ-020)
+                ("lens", "spot_diameter_um", "REAL")):              # NULL: not measured with this lens (REQ-019)
             if column not in self._columns(table):
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         # A target colour records every measurement of a plate cell that addressed it (REQ-006): the measured Lab, delta E
@@ -384,7 +386,7 @@ class Store:
         # stored snapshot takes precedence over the lens record.
         for row in self.conn.execute(
                 "SELECT pa.id,pa.device_id,pa.lens_id,d.name,d.manufacturer,d.model,d.serial,d.data_json,"
-                "l.name AS lens_name,l.focal_length_mm,l.field_mm,l.expansion,t.lens_json "
+                "l.name AS lens_name,l.focal_length_mm,l.field_mm,l.expansion,l.spot_diameter_um AS lens_spot,t.lens_json "
                 "FROM pair pa JOIN laser_device d ON d.id=pa.device_id LEFT JOIN lens l ON l.id=pa.lens_id "
                 "LEFT JOIN plate t ON t.id=pa.plate_id WHERE pa.hardware_json='{}'"):
             if row["lens_json"]:
@@ -392,11 +394,34 @@ class Store:
             elif row["lens_id"] is not None:
                 lens = {"id": row["lens_id"], "name": row["lens_name"], "focal_length_mm": row["focal_length_mm"],
                         "field_mm": row["field_mm"], "expansion": row["expansion"],
-                        "spot_diameter_um": json.loads(row["data_json"]).get("spot_diameter_um")}
+                        "spot_diameter_um": row["lens_spot"] if row["lens_spot"] is not None
+                        else json.loads(row["data_json"]).get("spot_diameter_um")}
             else:
                 lens = None
             hardware = {"device": {k: row[k] for k in ("device_id", "name", "manufacturer", "model", "serial")}, "lens": lens}
             self.conn.execute("UPDATE pair SET hardware_json=? WHERE id=?", (json.dumps(hardware), row["id"]))
+        self._move_spot_to_lens()
+
+    def _move_spot_to_lens(self) -> None:
+        """A measured spot belongs to the lens it was measured with, not to the laser (REQ-019): a lens swap must not carry it
+        to another lens. A value an older version kept in the laser passport moves, once, to the lens installed on that
+        laser (a value the lens already has is kept); the move is recorded in the audit with the value. A laser without
+        an installed lens names no lens to give it to: the value then stays only in the audit."""
+        rows = self.conn.execute("SELECT id, lens_id, data_json FROM laser_device "
+                                 "WHERE json_extract(data_json, '$.spot_diameter_um') IS NOT NULL").fetchall()
+        for device in rows:
+            passport = json.loads(device["data_json"])
+            spot = passport.pop("spot_diameter_um")
+            lens = (self.conn.execute("SELECT spot_diameter_um FROM lens WHERE id=?", (device["lens_id"],)).fetchone()
+                    if device["lens_id"] is not None else None)
+            with self.transaction():
+                if lens is not None and lens["spot_diameter_um"] is None:
+                    self.conn.execute("UPDATE lens SET spot_diameter_um=? WHERE id=?", (spot, device["lens_id"]))
+                self.conn.execute("UPDATE laser_device SET data_json=? WHERE id=?", (json.dumps(passport), device["id"]))
+                self.conn.execute("INSERT INTO audit(at, action, detail_json) VALUES (?,?,?)", (
+                    now(), "spot_moved_to_lens" if lens is not None else "spot_measurement_without_lens",
+                    json.dumps({"device_id": device["id"], "lens_id": device["lens_id"], "spot_diameter_um": spot,
+                                "lens_kept_its_own": None if lens is None else lens["spot_diameter_um"]})))
 
     # -- migration of a database written before 0.4.0 (DEC-063) -------------------------------------------------
     def _migrate_from_profiles(self) -> None:

@@ -26,9 +26,8 @@ def test_a_setup_resolves_the_laser_and_the_chosen_lens(store, w):
 
 
 def test_the_lens_snapshot_keeps_the_spot_value_with_its_basis(store, w):
-    from titanium_platform import devices
-    passport = dict(w["device"]["passport"], spot_diameter_um=42.0)
-    devices.update_device(store, w["device"]["id"], passport=passport)
+    from titanium_platform import lenses
+    lenses.update_lens(store, w["setup"][1], spot_diameter_um=42.0)       # measured with the installed lens (REQ-019)
     snap = su.lens_snapshot(su.installed(store, w["device"]["id"]))
     assert snap["id"] == w["setup"][1] and snap["focal_length_mm"] == 174
     assert snap["spot_diameter_um"] == 42.0 and snap["spot_basis"] == "measured"

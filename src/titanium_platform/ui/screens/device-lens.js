@@ -1,6 +1,7 @@
 /* Вкладка «Линза»: какая линза стоит на лазере, какое пятно и поле она даёт, список линз, замена и новая линза (REQ-019, DEC-041).
    Пятно и поле считает сервер (characterization); здесь только слова и формы. Замена линзы сохраняется сразу.
-   M² и измеренное пятно вводятся на этой же вкладке: сообщение о том, чего не хватает, всегда рядом с полем для ответа. */
+   M² и измеренное пятно вводятся на этой же вкладке: сообщение о том, чего не хватает, всегда рядом с полем для ответа.
+   Измеренное пятно хранится у линзы, с которой его мерили (REQ-019); M² — у лазера. */
 'use strict';
 const DeviceLens = (() => {
   const {h, btn, field, pill, get, post, put, patch, del, toast, fail, confirmBox, modal, table, facts} = App;
@@ -9,17 +10,20 @@ const DeviceLens = (() => {
   const g = (v, d = 4) => (v == null ? '—' : String(+(+v).toPrecision(d)));
   const SOURCE = {lens: 'по линзе', 'lens and laser settings': 'меньшее из линзы и настроек лазера', 'Field Size': 'по настройкам: Field Size', 'Size Width / Size Height': 'по настройкам: размер рабочей области'};
 
-  /** M² и измеренное пятно вводятся здесь же, где о них говорится: искать их на другой вкладке не нужно. Сохраняется только то, что вы изменили. */
+  /** M² и измеренное пятно вводятся здесь же, где о них говорится: искать их на другой вкладке не нужно. M² — свойство пучка
+      лазера и хранится в паспорте; измеренное пятно — свойство линзы, с которой его мерили, и хранится в записи линзы:
+      при замене линзы оно к другой линзе не переходит (REQ-019). Сохраняется только то, что вы изменили. */
   function spotForm(d, refresh) {
-    const p = d.passport;
+    const p = d.passport, lens = d.lens;
     const f = {m2: h('input', {type: 'number', step: 'any', min: 0, value: p.m2 ?? '', placeholder: 'например, 1.3', 'aria-label': 'M² вашего лазера'}),
-      spot: h('input', {type: 'number', step: 'any', min: 0, value: p.spot_diameter_um ?? '', placeholder: 'мкм', 'aria-label': 'Измеренный диаметр пятна, мкм'})};
+      spot: h('input', {type: 'number', step: 'any', min: 0, value: lens.spot_diameter_um ?? '', placeholder: 'мкм', 'aria-label': `Диаметр пятна, измеренный с линзой «${lens.name}», мкм`})};
     return h('div', {class: 'stack'}, h('div', {class: 'grid g2'},
       field('M² вашего лазера', f.m2, 'качество пучка: из протокола испытаний или от производителя; без него пятно известно только в границах'),
-      field('Или измеренный диаметр пятна, мкм', f.spot, 'если измеряли: имеет приоритет над расчётом')),
+      field(`Или диаметр пятна, измеренный с линзой «${lens.name}», мкм`, f.spot, 'если измеряли: имеет приоритет над расчётом и хранится у этой линзы, при замене линзы не переносится')),
     btn('Сохранить', async () => {
       try {
-        await patch('/devices/' + d.id, {passport: {...p, m2: num(f.m2), spot_diameter_um: num(f.spot)}});
+        if (num(f.m2) !== (p.m2 ?? null)) await patch('/devices/' + d.id, {passport: {...p, m2: num(f.m2)}});
+        if (num(f.spot) !== (lens.spot_diameter_um ?? null)) await patch('/lenses/' + lens.id, {spot_diameter_um: num(f.spot)});
         toast('Сохранено', 'ok'); refresh(d.id);
       } catch (e) { fail(e); }
     }, 'primary'));
@@ -53,7 +57,8 @@ const DeviceLens = (() => {
       async () => { await del('/lenses/' + l.id); toast('Линза удалена', 'ok'); refresh(d.id); }), 'danger', here);
     const focal = l.focal_length_mm == null ? btn('Указать фокус', () => focalDialog(d, l, refresh), 'btn-small') : `${g(l.focal_length_mm)} мм`;
     return [h('div', {}, h('strong', {}, l.name), l.note ? h('div', {class: 'small muted'}, l.note) : null), focal, l.field_mm ? `${g(l.field_mm)} мм` : '—',
-      l.expansion === 1 ? '—' : '×' + l.expansion, here ? pill('установлена', 'ok') : elsewhere ? pill('на «' + l.installed_on.name + '»', 'warn') : '', h('span', {class: 'row'}, set, remove)];
+      l.expansion === 1 ? '—' : '×' + l.expansion, l.spot_diameter_um != null ? `${g(l.spot_diameter_um, 3)} мкм` : 'не измерено',
+      here ? pill('установлена', 'ok') : elsewhere ? pill('на «' + l.installed_on.name + '»', 'warn') : '', h('span', {class: 'row'}, set, remove)];
   }
 
   /** Фокусное расстояние линзы, записанной без него: запись дополняется, данные с этой линзой остаются её данными (DEC-063). */
@@ -83,7 +88,7 @@ const DeviceLens = (() => {
     return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'Линза на этом лазере'),
       h('p', {class: 'muted small'}, 'Линза задаёт размер пятна на металле и рабочее поле. Сменили линзу: поставьте новую здесь, и новые платы запомнят её. Старые платы сохранят прежнюю.'), summary(d, refresh)),
     h('div', {class: 'card stack'}, h('h3', {}, 'Мои линзы'),
-      table(['Линза', 'Фокус', 'Поле', 'Расширитель', 'Статус', ''], all.map((l) => lensRow(d, l, refresh)), 'Линз пока нет: добавьте первую ниже', true)),
+      table(['Линза', 'Фокус', 'Поле', 'Расширитель', 'Измеренное пятно', 'Статус', ''], all.map((l) => lensRow(d, l, refresh)), 'Линз пока нет: добавьте первую ниже', true)),
     h('div', {class: 'card stack'}, h('h3', {}, 'Новая линза'), form(d, refresh)));
   }
   return {card};

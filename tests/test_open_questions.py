@@ -59,8 +59,11 @@ def test_a_lens_then_m2_or_a_measured_spot_remove_the_spot_questions():
     assert "lens" in kinds(dv.open_questions(p, u["serial"]))
     assert "lens" not in kinds(dv.open_questions(p, u["serial"], lens)) and "m2" in kinds(dv.open_questions(p, u["serial"], lens))
     assert "m2" not in kinds(dv.open_questions(dv.validate_passport(p | {"m2": 1.3}), u["serial"], lens))
-    measured = dv.validate_passport(p | {"spot_diameter_um": 65})
-    assert not {"lens", "m2"} & set(kinds(dv.open_questions(measured, u["serial"])))
+    measured = lens | {"spot_diameter_um": 65}                     # a spot measured with the installed lens (REQ-019)
+    assert not {"lens", "m2", "focal_length"} & set(kinds(dv.open_questions(p, u["serial"], measured)))
+    no_focal = {"focal_length_mm": None, "expansion": 1}
+    assert "focal_length" in kinds(dv.open_questions(p, u["serial"], no_focal))
+    assert "focal_length" not in kinds(dv.open_questions(p, u["serial"], no_focal | {"spot_diameter_um": 65}))
     assert "serial" in kinds(dv.open_questions(p, None)) and "serial" not in kinds(dv.open_questions(p, "S1"))
 
 

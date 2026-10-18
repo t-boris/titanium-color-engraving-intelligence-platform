@@ -16,6 +16,7 @@ class LensIn(BaseModel):
     field_mm: float | None = None
     expansion: float = 1.0
     note: str | None = None
+    spot_diameter_um: float | None = None      # measured with this lens: the lens's, never the laser's (REQ-019)
 
 
 class LensPatch(BaseModel):
@@ -24,6 +25,7 @@ class LensPatch(BaseModel):
     field_mm: float | None = None
     expansion: float | None = None
     note: str | None = None
+    spot_diameter_um: float | None = None
 
 
 class InstallIn(BaseModel):
@@ -37,7 +39,8 @@ def list_lenses(request: Request):
 
 @router.post("/lenses", status_code=201)
 def create_lens(body: LensIn, request: Request):
-    return lenses.create_lens(store_of(request), body.name, body.focal_length_mm, body.field_mm, body.expansion, body.note)
+    return lenses.create_lens(store_of(request), body.name, body.focal_length_mm, body.field_mm, body.expansion, body.note,
+                              body.spot_diameter_um)
 
 
 @router.get("/lenses/{lens_id}")

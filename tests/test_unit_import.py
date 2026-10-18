@@ -182,7 +182,7 @@ def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp
                 t["fields"] = [f for f in t["fields"] if f["key"] != "Special pos. Y"]
                 next(f for f in t["fields"] if f["key"] == "Galvo 1 Scale").update(value=78.585, status="confirmed")
                 t["fields"].append({"key": "Lens focal length", "value": 160, "unit": "мм", "status": "confirmed"})
-        dv.update_device(store, d["id"], passport=d["passport"] | {"controller": controller, "spot_diameter_um": 65, "open_items": ["my note"]})
+        dv.update_device(store, d["id"], passport=d["passport"] | {"controller": controller, "m2": 1.3, "open_items": ["my note"]})
     finally:
         store.close()
     assert run(tool, data, photos) == 0
@@ -192,7 +192,7 @@ def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp
         fields = {f["key"]: f for t in d["passport"]["controller"]["tabs"] if t["key"] == "field" for f in t["fields"]}
         assert fields["Galvo 1 Scale"]["value"] == 78.585 and fields["Galvo 1 Scale"]["status"] == "confirmed"
         assert "Special pos. Y" not in fields and fields["Lens focal length"]["value"] == 160
-        assert d["passport"]["spot_diameter_um"] == 65 and d["passport"]["open_items"] == ["my note"]
+        assert d["passport"]["m2"] == 1.3 and d["passport"]["open_items"] == ["my note"]
         assert len(d["documents"]) == 5
     finally:
         store.close()

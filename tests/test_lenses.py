@@ -135,8 +135,8 @@ def test_without_m2_only_a_bound_is_shown_and_it_is_not_used():
 
 
 def test_the_operators_measured_spot_wins_over_the_calculation():
-    p = dv.TEMPLATES[TEMPLATE]["passport"] | BEAM | {"m2": 1.3, "spot_diameter_um": 55}
-    spot = ch.spot_estimate(p, {"focal_length_mm": 254, "expansion": 1}, {})
+    p = dv.TEMPLATES[TEMPLATE]["passport"] | BEAM | {"m2": 1.3}
+    spot = ch.spot_estimate(p, {"focal_length_mm": 254, "expansion": 1, "spot_diameter_um": 55}, {})    # measured with this lens
     assert spot["value"] == 55 and spot["basis"] == "measured"
 
 
@@ -317,3 +317,102 @@ def test_api_charts_and_the_operating_point_use_the_installed_lens(client):
     for missing in ("pulse_width", "line_interval", "passes", "lens_id"):   # nothing is filled in (DEC-043)
         assert client.post("/api/operating-point", json={k: v for k, v in point.items() if k != missing}).status_code == 422
     assert client.get(f"/api/devices/{d['id']}/charts").status_code == 200
+
+
+# -- the measured spot belongs to the lens (REQ-019) ----------------------------------------------------------------------
+def spot_item(device: dict) -> dict:
+    return next(i for i in device["characterization"]["items"] if i["key"] == "spot_diameter")
+
+
+def test_a_measured_spot_stays_with_its_lens_and_a_lens_swap_does_not_carry_it(store):
+    d = laser(store, m2=1.3)
+    measured = ln.create_lens(store, "F254 measured", 254, 175, spot_diameter_um=55)
+    other = ln.create_lens(store, "F160", 160, 110)
+    ln.install(store, d["id"], measured["id"])
+    with_it = dv.get_device(store, d["id"])
+    assert spot_item(with_it)["value"] == 55 and spot_item(with_it)["basis"] == "measured"
+    assert dv.operating_point(with_it["passport"], 50, 80, 900, 200, 0.025, lens=with_it["lens"])["spot_diameter_um"] == 55
+    ln.install(store, d["id"], other["id"])
+    swapped = dv.get_device(store, d["id"])
+    assert spot_item(swapped)["basis"] == "calculated"                                   # the other lens's own spot, from its focal length
+    assert spot_item(swapped)["value"] == pytest.approx(4 * 1.3 * 1.064 * 160 / (math.pi * 7.0), rel=1e-9)
+    assert ln.get_lens(store, measured["id"])["spot_diameter_um"] == 55 and ln.get_lens(store, other["id"])["spot_diameter_um"] is None
+    assert "spot_diameter_um" not in swapped["passport"]
+
+
+def test_a_spot_entered_on_the_lens_is_audited_and_can_be_cleared(store):
+    d, lens = ready(store)
+    ln.update_lens(store, lens["id"], spot_diameter_um=48)
+    assert spot_item(dv.get_device(store, d["id"]))["value"] == 48
+    ln.update_lens(store, lens["id"], spot_diameter_um=None)
+    assert spot_item(dv.get_device(store, d["id"]))["basis"] in ("bound", "calculated")
+    events = [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='lens_spot_measured' ORDER BY id")]
+    assert [(e["spot_diameter_um"], e["previous"]) for e in events] == [(48, None), (None, 48)]
+    with pytest.raises(su.ValidationError, match=r"the measured spot diameter must be between 1 and 2000 µm"):
+        ln.update_lens(store, lens["id"], spot_diameter_um=5000)
+
+
+def test_a_passport_no_longer_takes_a_spot(store):
+    d = laser(store)
+    with pytest.raises(su.ValidationError, match="belongs to the lens"):
+        dv.update_device(store, d["id"], passport=d["passport"] | {"spot_diameter_um": 50})
+    assert "spot_diameter_um" not in dv.update_device(store, d["id"], passport=d["passport"] | {"spot_diameter_um": None})["passport"]
+
+
+def _older_database(path, *, install: bool, spot: float = 61.0) -> dict:
+    """A database of the previous version: a lens table without the spot column and the spot kept in the laser passport."""
+    from titanium_platform.db import Store
+    store = Store(path)
+    d = dv.create_from_template(store, TEMPLATE)
+    lens = ln.create_lens(store, "F174", 174, 170)
+    if install:
+        ln.install(store, d["id"], lens["id"])
+    store.execute("ALTER TABLE lens DROP COLUMN spot_diameter_um")
+    store.execute("UPDATE laser_device SET data_json=json_set(data_json, '$.spot_diameter_um', ?) WHERE id=?", (spot, d["id"]))
+    store.close()
+    return {"device_id": d["id"], "lens_id": lens["id"]}
+
+
+def test_an_older_passport_spot_moves_to_the_installed_lens_once_and_the_move_is_audited(tmp_path):
+    from titanium_platform.db import Store
+    ids = _older_database(tmp_path / "data", install=True)
+    store = Store(tmp_path / "data")
+    try:
+        assert ln.get_lens(store, ids["lens_id"])["spot_diameter_um"] == 61.0
+        assert "spot_diameter_um" not in dv.get_passport(store, ids["device_id"])
+        assert spot_item(dv.get_device(store, ids["device_id"]))["value"] == 61.0     # characterization uses the installed lens's spot
+        (moved,) = [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='spot_moved_to_lens'")]
+        assert moved == {"device_id": ids["device_id"], "lens_id": ids["lens_id"], "spot_diameter_um": 61.0, "lens_kept_its_own": None}
+    finally:
+        store.close()
+    store = Store(tmp_path / "data")                    # idempotent: a second start moves nothing and records nothing
+    try:
+        assert store.one("SELECT COUNT(*) AS n FROM audit WHERE action LIKE 'spot_%'")["n"] == 1
+        assert ln.get_lens(store, ids["lens_id"])["spot_diameter_um"] == 61.0
+    finally:
+        store.close()
+
+
+def test_an_older_passport_spot_of_a_laser_without_a_lens_is_kept_in_the_audit_and_given_to_no_lens(tmp_path):
+    from titanium_platform.db import Store
+    ids = _older_database(tmp_path / "data", install=False)
+    store = Store(tmp_path / "data")
+    try:
+        assert ln.get_lens(store, ids["lens_id"])["spot_diameter_um"] is None
+        assert "spot_diameter_um" not in dv.get_passport(store, ids["device_id"])
+        (kept,) = [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='spot_measurement_without_lens'")]
+        assert kept["spot_diameter_um"] == 61.0 and kept["lens_id"] is None
+    finally:
+        store.close()
+
+
+def test_the_lens_tab_edits_the_spot_of_the_lens_over_http(client):
+    d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
+    lens = client.post("/api/lenses", json={"name": "F174", "focal_length_mm": 174, "field_mm": 170, "spot_diameter_um": 52}).json()
+    assert lens["spot_diameter_um"] == 52
+    device = client.put(f"/api/devices/{d['id']}/lens", json={"lens_id": lens["id"]}).json()
+    assert spot_item(device)["value"] == 52 and spot_item(device)["basis"] == "measured"
+    assert client.patch(f"/api/lenses/{lens['id']}", json={"spot_diameter_um": 60}).json()["spot_diameter_um"] == 60
+    assert spot_item(client.get(f"/api/devices/{d['id']}").json())["value"] == 60
+    bad = client.patch(f"/api/lenses/{lens['id']}", json={"spot_diameter_um": 0.2})
+    assert bad.status_code == 422 and "between 1 and 2000 µm" in bad.json()["error"]

@@ -142,9 +142,11 @@ def validate_passport(raw: Any) -> dict:
     open_items = raw.get("open_items") or []
     if not isinstance(open_items, list) or not all(isinstance(t, str) for t in open_items):
         raise su.ValidationError("a passport section has the wrong type")
+    if raw.get("spot_diameter_um") not in (None, ""):
+        # a spot is measured through a lens and belongs to that lens record: a passport value would follow every lens swap
+        raise su.ValidationError("a measured spot diameter belongs to the lens it was measured with: enter it on the lens")
     return {"rated_power_w": rated, "wavelength_nm": _optional_positive(raw.get("wavelength_nm"), "wavelength"),
             "max_pulse_energy_mj": _optional_positive(raw.get("max_pulse_energy_mj"), "maximum pulse energy"),
-            "spot_diameter_um": _optional_positive(raw.get("spot_diameter_um"), "spot diameter"),
             "beam_diameter_mm": _optional_positive(raw.get("beam_diameter_mm"), "beam diameter"), "m2": _optional_positive(raw.get("m2"), "M2"),
             "m2_max": _optional_positive(raw.get("m2_max"), "M2 limit"),
             "repetition_rate_khz": {"min": lo, "max": hi}, "pulse_steps": steps,
@@ -240,8 +242,8 @@ def _text(value: Any) -> str | None:
 def open_questions(passport: dict, serial: str | None, lens: dict | None = None) -> list[dict]:
     """What is still unknown about a device, derived from its data (DEC-039).
 
-    Nothing here is stored: filling a value in, confirming it or setting the spot diameter removes its question at
-    once. The only stored questions are the operator's own notes (``open_items``).
+    Nothing here is stored: filling a value in, confirming it or measuring the spot with the installed lens removes its
+    question at once. The only stored questions are the operator's own notes (``open_items``).
     """
     out, unconfirmed = [], []
     for tab in (passport.get("controller") or {}).get("tabs", []):
@@ -252,11 +254,12 @@ def open_questions(passport: dict, serial: str | None, lens: dict | None = None)
                 unconfirmed.append({"tab": tab["key"], "key": f["key"]})
     if unconfirmed:
         out.append({"kind": "unconfirmed", "count": len(unconfirmed), "items": unconfirmed})
-    if lens is None and not passport.get("spot_diameter_um"):
+    measured = (lens or {}).get("spot_diameter_um")          # a spot measured with the installed lens (REQ-019)
+    if lens is None:
         out.append({"kind": "lens"})
-    elif lens is not None and lens.get("focal_length_mm") is None and not passport.get("spot_diameter_um"):
+    elif lens.get("focal_length_mm") is None and not measured:
         out.append({"kind": "focal_length"})
-    elif not passport.get("spot_diameter_um") and not passport.get("m2"):
+    elif not measured and not passport.get("m2"):
         out.append({"kind": "m2"})
     if not serial:
         out.append({"kind": "serial"})
@@ -406,13 +409,18 @@ def operating_point(passport: dict, power: float, frequency: float, speed: float
     cw = cutoff is None
     problems, notes = [], []
     ch = characterize(passport, lens)
-    rate, ctl = passport["repetition_rate_khz"], ch["frequency_range_khz"]
+    # outside the laser's own range is a problem; outside a limit of the controller a warning, since LightBurn has its own
+    # limits (DEC-040). Only a printed or confirmed, uncontested limit is a limit: an unresolved Max PWM warns of nothing.
+    rate, ctl = passport["repetition_rate_khz"], ch["controller_limits_khz"]
     outside = False
     if not rate["min"] <= freq <= rate["max"]:
         problems.append(f"frequency {freq:g} kHz is outside the repetition rate range {rate['min']:g}-{rate['max']:g} kHz of this laser")
-    elif not ctl["min"] <= freq <= ctl["max"]:
+    elif ctl["min"] is not None and freq < ctl["min"]:
         outside = True
-        notes.append(f"frequency {freq:g} kHz is outside the controller range {ctl['min']:g}-{ctl['max']:g} kHz (Min PWM and Max PWM of the laser settings)")
+        notes.append(f"frequency {freq:g} kHz is below Min PWM {ctl['min']:g} kHz of the laser settings")
+    elif ctl["max"] is not None and freq > ctl["max"]:
+        outside = True
+        notes.append(f"frequency {freq:g} kHz is above Max PWM {ctl['max']:g} kHz of the laser settings")
     factor = 1.0 if cw or freq >= cutoff else freq / cutoff
     below = factor < 1.0
     if below:

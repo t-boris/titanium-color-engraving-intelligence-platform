@@ -4,10 +4,13 @@ A lens is its own record. At most one lens is installed on a laser and a lens si
 snapshot of the lens it was made for, so editing or replacing a lens later never changes what a stored plate means.
 Records of work name the lens by its record (DEC-063): an edit of the lens does not split their knowledge. A lens may stay
 incomplete: an unknown focal length leaves the spot and what depends on it unavailable (REQ-019).
-The spot diameter is derived from the installed lens in :mod:`characterization`; this module only keeps the records.
+A spot diameter the operator measured is a property of the lens it was measured with and is kept on the lens record, so a
+lens swap never carries it to another lens; M2 describes the laser's beam and stays in the laser passport. The spot used
+by the calculations is derived from the installed lens in :mod:`characterization`; this module only keeps the records.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import setup as su
@@ -16,6 +19,7 @@ from .db import Store, now
 FOCAL_RANGE_MM = (20.0, 1500.0)
 FIELD_RANGE_MM = (1.0, 500.0)
 EXPANSION_RANGE = (0.2, 20.0)
+SPOT_RANGE_UM = (1.0, 2000.0)
 _UNSET = object()
 
 
@@ -23,6 +27,17 @@ def _bounded(value: Any, name: str, lo: float, hi: float) -> float:
     number = su._finite(value, name, True)
     if not lo <= number <= hi:
         raise su.ValidationError(f"{name} must be between {lo:g} and {hi:g}")   # name is one of: focal length, lens field, beam expansion
+    return number
+
+
+def _spot(value: Any) -> float:
+    """A spot diameter measured with the lens, in micrometres."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = float("nan")
+    if not (math.isfinite(number) and SPOT_RANGE_UM[0] <= number <= SPOT_RANGE_UM[1]):
+        raise su.ValidationError(f"the measured spot diameter must be between {SPOT_RANGE_UM[0]:g} and {SPOT_RANGE_UM[1]:g} µm")
     return number
 
 
@@ -40,19 +55,23 @@ def _public(store: Store, row) -> dict:
     return d
 
 
-def _clean(name: Any, focal: Any, field: Any, expansion: Any, note: Any) -> tuple:
+def _clean(name: Any, focal: Any, field: Any, expansion: Any, note: Any, spot: Any = None) -> tuple:
     name = str(name or "").strip()
     if not name:
         raise su.ValidationError("lens name is required")
     focal = None if focal in (None, "") else _bounded(focal, "focal length", *FOCAL_RANGE_MM)
     field = None if field in (None, "") else _bounded(field, "lens field", *FIELD_RANGE_MM)
     expansion = 1.0 if expansion in (None, "") else _bounded(expansion, "beam expansion", *EXPANSION_RANGE)
-    return name, focal, field, expansion, (str(note).strip() or None) if note is not None else None
+    spot = None if spot in (None, "") else _spot(spot)
+    return name, focal, field, expansion, (str(note).strip() or None) if note is not None else None, spot
 
 
-def create_lens(store: Store, name: str, focal_length_mm: Any = None, field_mm: Any = None, expansion: Any = 1.0, note: str | None = None) -> dict:
-    values = _clean(name, focal_length_mm, field_mm, expansion, note)
-    cur = store.execute("INSERT INTO lens(name,focal_length_mm,field_mm,expansion,note,created_at) VALUES (?,?,?,?,?,?)", (*values, now()))
+def create_lens(store: Store, name: str, focal_length_mm: Any = None, field_mm: Any = None, expansion: Any = 1.0, note: str | None = None,
+                spot_diameter_um: Any = None) -> dict:
+    """A new lens record; ``spot_diameter_um`` is a spot the operator measured with this lens (None: not measured)."""
+    values = _clean(name, focal_length_mm, field_mm, expansion, note, spot_diameter_um)
+    cur = store.execute("INSERT INTO lens(name,focal_length_mm,field_mm,expansion,note,spot_diameter_um,created_at) VALUES (?,?,?,?,?,?,?)",
+                        (*values, now()))
     return get_lens(store, cur.lastrowid)
 
 
@@ -65,14 +84,18 @@ def list_lenses(store: Store) -> list[dict]:
 
 
 def update_lens(store: Store, lens_id: int, name: Any = _UNSET, focal_length_mm: Any = _UNSET, field_mm: Any = _UNSET,
-                expansion: Any = _UNSET, note: Any = _UNSET) -> dict:
+                expansion: Any = _UNSET, note: Any = _UNSET, spot_diameter_um: Any = _UNSET) -> dict:
     row = _row(store, lens_id)
-    cur = {"name": row["name"], "focal_length_mm": row["focal_length_mm"], "field_mm": row["field_mm"], "expansion": row["expansion"], "note": row["note"]}
-    for key, new in (("name", name), ("focal_length_mm", focal_length_mm), ("field_mm", field_mm), ("expansion", expansion), ("note", note)):
+    cur = {"name": row["name"], "focal_length_mm": row["focal_length_mm"], "field_mm": row["field_mm"], "expansion": row["expansion"],
+           "note": row["note"], "spot_diameter_um": row["spot_diameter_um"]}
+    for key, new in (("name", name), ("focal_length_mm", focal_length_mm), ("field_mm", field_mm), ("expansion", expansion), ("note", note),
+                     ("spot_diameter_um", spot_diameter_um)):
         if new is not _UNSET:
             cur[key] = new
-    values = _clean(cur["name"], cur["focal_length_mm"], cur["field_mm"], cur["expansion"], cur["note"])
-    store.execute("UPDATE lens SET name=?, focal_length_mm=?, field_mm=?, expansion=?, note=? WHERE id=?", (*values, lens_id))
+    values = _clean(cur["name"], cur["focal_length_mm"], cur["field_mm"], cur["expansion"], cur["note"], cur["spot_diameter_um"])
+    store.execute("UPDATE lens SET name=?, focal_length_mm=?, field_mm=?, expansion=?, note=?, spot_diameter_um=? WHERE id=?", (*values, lens_id))
+    if values[5] != row["spot_diameter_um"]:
+        store.audit("lens_spot_measured", lens_id=lens_id, spot_diameter_um=values[5], previous=row["spot_diameter_um"])
     return get_lens(store, lens_id)
 
 

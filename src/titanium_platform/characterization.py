@@ -66,12 +66,14 @@ def work_field(passport: dict, lens: dict | None = None) -> tuple[dict | None, l
 
 
 def spot_estimate(passport: dict, lens: dict | None, rows: dict) -> dict:
-    """The focused spot: the operator's measurement, else 4 x M2 x wavelength x focal length / (pi x beam diameter at the lens).
+    """The focused spot: the operator's measurement with this lens, else 4 x M2 x wavelength x focal length / (pi x beam
+    diameter at the lens).
 
-    Without M2 only a range is known (M2 = 1 is the physical lower bound; the manual's M2 limit is the upper one) and
-    no number is used (REQ-019). Returns {value, low, high, basis, state, missing}.
+    The measurement belongs to the lens record, never to the laser: a swapped lens brings its own (REQ-019). Without M2
+    only a range is known (M2 = 1 is the physical lower bound; the manual's M2 limit is the upper one) and no number is
+    used. Returns {value, low, high, basis, state, missing}.
     """
-    measured = _number(passport.get("spot_diameter_um"))
+    measured = _number((lens or {}).get("spot_diameter_um"))
     if measured:
         return {"value": measured, "low": None, "high": None, "basis": "measured", "state": USED, "missing": []}
     focal = _number((lens or {}).get("focal_length_mm"))
@@ -100,16 +102,33 @@ def _effective_power(passport: dict, rows: dict) -> tuple[float, str]:
     return rated, "rated"
 
 
-def _frequency_range(passport: dict) -> tuple[float, float, list[str]]:
-    """The laser's own range narrowed by Min PWM and Max PWM when those are printed or confirmed."""
+def _frequency_range(passport: dict) -> tuple[float, float, list[str], dict]:
+    """The laser's own range narrowed by Min PWM and Max PWM when those are printed or confirmed and uncontested, what it
+    waits for, and the controller limits that narrow it ({"min", "max"}: None where the laser's own limit holds,
+    "contradictory": limits that leave no range, which are then not used). A handwritten or doubted value narrows
+    nothing: an unresolved Max PWM is neither its printed nor its handwritten number as a limit (REQ-018)."""
     low, high = passport["repetition_rate_khz"]["min"], passport["repetition_rate_khz"]["max"]
     lo, hi = setting(passport, "laser_control", "Min PWM"), setting(passport, "laser_control", "Max PWM")
     waiting = [k for k, s in (("Min PWM", lo), ("Max PWM", hi)) if s and s["state"] == WAITING]
     f_low = max(low, lo["value"]) if lo and lo["state"] == USED else low
     f_high = min(high, hi["value"]) if hi and hi["state"] == USED else high
     if f_low >= f_high:                                   # contradictory settings are not used
-        return low, high, ["Min PWM", "Max PWM"]
-    return f_low, f_high, waiting
+        return low, high, ["Min PWM", "Max PWM"], {"min": None, "max": None, "contradictory": True}
+    return f_low, f_high, waiting, {"min": f_low if f_low > low else None, "max": f_high if f_high < high else None, "contradictory": False}
+
+
+def unresolved(passport: dict) -> list[dict]:
+    """Controller settings with a handwritten note beside the value that the operator has not confirmed: both values are
+    shown together and neither is used until the operator resolves them against the photograph (REQ-017)."""
+    out = []
+    for tab in (passport.get("controller") or {}).get("tabs", []):
+        fields = {f["key"]: f for f in tab["fields"]}
+        for key, f in fields.items():
+            note = fields.get(key + NOTE_SUFFIX)
+            if note is not None and f["status"] != "confirmed":
+                out.append({"tab": tab["key"], "key": key, "unit": f.get("unit"),
+                            "values": [{"value": f["value"], "status": f["status"]}, {"value": note["value"], "status": note["status"]}]})
+    return out
 
 
 def characterize(passport: dict, lens: dict | None = None) -> dict:
@@ -117,7 +136,8 @@ def characterize(passport: dict, lens: dict | None = None) -> dict:
     rows = {r["key"]: r for r in (passport.get("test_report") or {}).get("rows", [])}
     power, basis = _effective_power(passport, rows)
     own = (passport["repetition_rate_khz"]["min"], passport["repetition_rate_khz"]["max"])
-    f_low, f_high, waiting_pwm = _frequency_range(passport)
+    f_low, f_high, waiting_pwm, controller = _frequency_range(passport)
+    conflicts = unresolved(passport)
     field, waiting_field = work_field(passport, lens)
     spot = spot_estimate(passport, lens, rows)
     stated = _number(passport.get("max_pulse_energy_mj"))
@@ -126,7 +146,8 @@ def characterize(passport: dict, lens: dict | None = None) -> dict:
     peaks = [(max(w["p_kw"]), w["title"]) for w in passport.get("waveforms") or []]
     items = [
         _item("power", power, "W", basis, USED),
-        _item("frequency_range", {"min": f_low, "max": f_high}, "kHz", "controller" if (f_low, f_high) != own else "laser", USED, waiting_pwm),
+        {**_item("frequency_range", {"min": f_low, "max": f_high}, "kHz", "controller" if (f_low, f_high) != own else "laser", USED, waiting_pwm),
+         "controller": controller, "unresolved": [c for c in conflicts if c["key"] in ("Min PWM", "Max PWM")]},
         _item("work_field", field, "mm", field["source"] if field else None, USED if field else (WAITING if waiting_field else UNKNOWN), waiting_field),
         _item("pulse_widths", [s["pulse_width_ns"] for s in passport["pulse_steps"]], "ns", "laser", USED),
         _item("max_pulse_energy", stated or (max(passport["rated_power_w"] / c for c in cutoffs) if cutoffs else None), "mJ",
@@ -136,6 +157,7 @@ def characterize(passport: dict, lens: dict | None = None) -> dict:
         _item("wavelength", wavelength or passport.get("wavelength_nm"), "nm", "measured" if wavelength else "nominal", REFERENCE),
         _item("peak_power", max(peaks)[0] if peaks else None, "kW", max(peaks)[1] if peaks else None, REFERENCE if peaks else UNKNOWN)]
     return {"effective_power_w": power, "power_basis": basis, "rated_power_w": passport["rated_power_w"],
-            "frequency_range_khz": {"min": f_low, "max": f_high}, "work_field_mm": field, "max_pulse_energy_mj": stated,
+            "frequency_range_khz": {"min": f_low, "max": f_high}, "controller_limits_khz": controller, "unresolved": conflicts,
+            "work_field_mm": field, "max_pulse_energy_mj": stated,
             "spot_diameter_um": spot["value"], "spot_basis": spot["basis"], "spot_range_um": {"low": spot["low"], "high": spot["high"]}, "items": items}
 

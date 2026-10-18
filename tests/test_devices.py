@@ -97,8 +97,9 @@ def test_pulse_pitch_density_and_dose(store):
 def test_fluence_and_overlap_need_the_spot_diameter(store):
     d = jpt(store)
     assert dv.operating_point(d["passport"], 50, 80, 900, 200, 0.025)["fluence_j_cm2"] is None
-    op = dv.operating_point(dict(d["passport"], spot_diameter_um=50), 50, 80, 900, 200, 0.025)
-    assert op["fluence_j_cm2"] == pytest.approx(0.375e-3 / (3.141592653589793 * (25e-4) ** 2), rel=1e-6)
+    lens = {"name": "F-Theta", "focal_length_mm": None, "field_mm": None, "expansion": 1.0, "spot_diameter_um": 50}   # measured with this lens
+    op = dv.operating_point(d["passport"], 50, 80, 900, 200, 0.025, lens=lens)
+    assert op["spot_basis"] == "measured" and op["fluence_j_cm2"] == pytest.approx(0.375e-3 / (3.141592653589793 * (25e-4) ** 2), rel=1e-6)
     assert op["pulse_overlap"] == pytest.approx(1 - 11.25 / 50)
 
 
@@ -297,8 +298,10 @@ def test_api_documents_round_trip_and_errors(client):
 
 def test_api_patch_a_device_and_validation_errors(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
-    r = client.patch(f"/api/devices/{d['id']}", json={"serial": "S2", "passport": dict(d["passport"], spot_diameter_um=40, open_items=["scale factors"])})
-    assert r.json()["serial"] == "S2" and r.json()["passport"]["spot_diameter_um"] == 40 and r.json()["passport"]["open_items"] == ["scale factors"]
+    r = client.patch(f"/api/devices/{d['id']}", json={"serial": "S2", "passport": dict(d["passport"], open_items=["scale factors"])})
+    assert r.json()["serial"] == "S2" and "spot_diameter_um" not in r.json()["passport"] and r.json()["passport"]["open_items"] == ["scale factors"]
+    spot = client.patch(f"/api/devices/{d['id']}", json={"passport": dict(d["passport"], spot_diameter_um=40)})   # a spot is the lens's (REQ-019)
+    assert spot.status_code == 422 and "belongs to the lens" in spot.json()["error"]
     assert client.patch(f"/api/devices/{d['id']}", json={"passport": {"rated_power_w": 60}}).status_code == 422
     assert client.post("/api/devices", json={"name": "X", "passport": {}}).status_code == 422
     assert client.post("/api/devices/from-template", json={"template": "nope"}).status_code == 422

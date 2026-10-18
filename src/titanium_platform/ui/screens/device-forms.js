@@ -44,21 +44,22 @@ const DeviceForms = (() => {
     }, 'primary'));
   }
 
-  /** Правка того, что можно уточнять позже: серийный номер, описание, диаметр пятна, ступени, открытые вопросы. Измерения не затрагиваются. */
+  /** Правка того, что можно уточнять позже: серийный номер, описание, M², ступени, открытые вопросы. Измерения не затрагиваются.
+      Измеренный диаметр пятна — свойство линзы, а не лазера: он вводится на вкладке «Линза» и хранится у линзы (REQ-019). */
   function editForm(d, done) {
     const p = d.passport;
-    const f = {serial: h('input', {value: d.serial || ''}), spot: h('input', {type: 'number', step: 'any', value: p.spot_diameter_um ?? '', placeholder: 'мкм'}),
+    const f = {serial: h('input', {value: d.serial || ''}),
       m2: h('input', {type: 'number', step: 'any', value: p.m2 ?? '', placeholder: 'например, 1.3'}), m2max: h('input', {type: 'number', step: 'any', value: p.m2_max ?? '', placeholder: '1.5'}),
       beam: h('input', {type: 'number', step: 'any', value: p.beam_diameter_mm ?? '', placeholder: 'мм'}),
       desc: area(d.description || '', 4), open: area((p.open_items || []).join('\n'), 3), steps: area(stepsText(p.pulse_steps), 8)};
     return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, field('Серийный номер', f.serial),
-      field('Диаметр пятна на металле, мкм', f.spot, 'если измерили: имеет приоритет над расчётом по линзе')),
+      h('p', {class: 'muted small'}, 'Измеренный диаметр пятна вводится на вкладке «Линза»: он принадлежит линзе, с которой его мерили, и при замене линзы не переносится.')),
     h('div', {class: 'grid g3'}, field('M² вашего лазера', f.m2, 'качество пучка; без него пятно известно только в границах'), field('M² не больше (из руководства)', f.m2max, 'для вашей модели — 1.5'),
       field('Диаметр пучка на линзе, мм', f.beam, 'на выходе лазера 7 мм; умножьте на расширитель, если он есть')),
       field('Описание', f.desc), field('Ваши заметки к паспорту', f.open, 'по строке; вопросы по непрочитанным и неподтверждённым значениям, диаметру пятна и номеру считает приложение само'),
       field('Ступени длительности импульса', f.steps),
       btn('Сохранить паспорт', async () => {
-        const passport = {...p, spot_diameter_um: num(f.spot), m2: num(f.m2), m2_max: num(f.m2max), beam_diameter_mm: num(f.beam), open_items: f.open.value.split('\n').map((x) => x.trim()).filter(Boolean), pulse_steps: parseSteps(f.steps.value)};
+        const passport = {...p, m2: num(f.m2), m2_max: num(f.m2max), beam_diameter_mm: num(f.beam), open_items: f.open.value.split('\n').map((x) => x.trim()).filter(Boolean), pulse_steps: parseSteps(f.steps.value)};
         try { await patch('/devices/' + d.id, {serial: val(f.serial) || null, description: val(f.desc) || null, passport}); toast('Паспорт сохранён', 'ok'); done(d.id); } catch (e) { fail(e); }
       }, 'primary'));
   }

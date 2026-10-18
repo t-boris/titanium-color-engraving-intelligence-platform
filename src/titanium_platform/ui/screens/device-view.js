@@ -12,7 +12,10 @@ const DeviceView = (() => {
       facts([['Производитель', d.manufacturer], ['Модель', d.model], ['Серийный номер', d.serial || 'не указан'], ['Номинальная мощность', p.rated_power_w + ' Вт' + (d.characterization.power_basis === 'measured' ? ` (у вашего экземпляра измерено ${d.characterization.effective_power_w} Вт)` : '')],
         ['Длина волны', p.wavelength_nm ? p.wavelength_nm + ' нм' : null], ['Частота повторения', `${r.min}–${r.max} кГц`],
         ['Наибольшая энергия импульса', p.max_pulse_energy_mj ? p.max_pulse_energy_mj + ' мДж' : null],
-        ['Диаметр пятна на металле', p.spot_diameter_um ? p.spot_diameter_um + ' мкм' : 'не задан: плотность энергии не считается']]),
+        // the spot is the installed lens's: measured with it, or calculated from it (REQ-019)
+        ['Диаметр пятна на металле', d.characterization.spot_diameter_um != null
+          ? `${g(d.characterization.spot_diameter_um)} мкм (${d.characterization.spot_basis === 'measured' ? 'измерено с установленной линзой' : 'рассчитано по линзе'})`
+          : 'не задан: плотность энергии не считается']]),
       DeviceQuestions.card(d));
   }
 
