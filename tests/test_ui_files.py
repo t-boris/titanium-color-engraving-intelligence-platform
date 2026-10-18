@@ -64,6 +64,43 @@ def test_the_photo_preview_is_in_the_menu_right_after_photo_engraving_with_an_ic
     assert "'photo-preview': 'photo-preview'" in router and "App.register({id: 'photo-preview'" in _screen("photo-preview.js")
 
 
+def test_the_findings_screen_is_in_the_menu_right_after_the_designer_with_an_icon_of_its_own():
+    router = (UI_DIR / "router.js").read_text(encoding="utf-8")
+    nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
+    icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
+    assert nav[nav.index("/designer") + 1] == "/findings" and len(icons) == len(nav)
+    assert "['/findings', 'Выводы']" in router and "findings: 'findings'" in router
+    assert "App.register({id: 'findings'" in _screen("findings.js")
+    order = {s: i for i, s in enumerate(SCRIPTS)}
+    assert order["/i18n-data.js"] < order["/i18n-findings.js"] < order["/app.js"]
+    assert order["/screens/findings.js"] < order["/screens/designer.js"]
+
+
+def test_the_findings_screen_separates_measured_conclusions_from_hypotheses_and_offers_history_schedule_and_proposals():
+    """REQ-022: each finding is labelled measured, exploratory anomaly or AI hypothesis; its history, evidence and the
+    schedule are on the screen; a gap can be turned into a proposal."""
+    findings = _screen("findings.js")
+    for text in ("'Измерено'", "'Исследовательская аномалия, не вывод'", "'Гипотеза AI, не измерение'", "'Пересчитать сейчас'",
+                 "'Предложить эксперимент'", "'История вывода по расчётам'", "'Сохранить расписание'", "'Неопределённость'", "'Образцы'"):
+        assert text in findings, text
+    for route in ("/analysis/findings/${f.id}/history", "/analysis/findings/${f.id}/proposal", "put('/analysis/schedule'", "post('/analysis/runs')",
+                  "'/analysis/' + id", "'/knowledge/' + e.knowledge_id", "'/research/' + e.session_id"):
+        assert route in findings, route
+    assert "f.kind !== 'gap' || !f.proposable" in findings              # only gaps the designer can plan offer a proposal
+    for kind in ("improvement", "unstable", "anomaly", "gap", "hypothesis"):
+        assert f"{kind}: '" in findings, kind
+
+
+def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal_and_the_ai_explanation_only_with_a_key():
+    designer = _screen("designer.js")
+    for text in ("prop.questions", "prop.worth", "x.rationale", "'Почему выбран'", "'Результат'", "prop.status_history", "'Отклонить'",
+                 "'Принять и создать платы'", "/designer/proposals/${prop.id}/accept", "/designer/proposals/${prop.id}/reject",
+                 "/designer/proposals/${prop.id}/explanation", "'Пояснение AI — гипотезы, не измерения. '", "material_id: stock.value"):
+        assert text in designer, text
+    assert "if (!prop.explanation_available)" in designer and "get('/designer/proposals/' + chosen.id)" in designer
+    assert "/designer/proposals/${prop.id}/plates" not in designer       # plates are made by accepting the proposal
+
+
 def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():
     experiment = _screen("experiment.js")
     assert "p.status === 'Accepted' && p.grayscale_image" in experiment and "/photo-preview?pair=${photoEngraving.id}" in experiment

@@ -130,7 +130,10 @@
     const findings = exp.findings.length ? h('div', {class: 'card stack'}, h('h3', {}, 'Выводы по этому эксперименту'),
       ...exp.findings.map((f) => h('div', {class: 'stack'}, h('p', {}, h('strong', {}, ({line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'})[f.purpose] || f.purpose),
         ' ', pill(f.status === 'candidate' ? 'Кандидат' : 'Нужен тест', f.status === 'candidate' ? 'ok' : 'warn')),
-        h('p', {class: 'small'}, f.summary), f.next_test ? h('p', {class: 'muted small'}, f.next_test) : null))) : null;
+        h('p', {class: 'small'}, f.summary), f.next_test ? h('p', {class: 'muted small'}, f.next_test) : null,
+        // a recalculated conclusion keeps what it said before (REQ-022): earlier versions with the time they were in force
+        f.history?.length ? h('details', {class: 'small'}, h('summary', {}, `Прежние версии вывода: ${f.history.length}`),
+          ...f.history.map((v) => h('p', {class: 'muted'}, `${when(v.valid_from)} — ${when(v.replaced_at)}: `, v.summary))) : null))) : null;
     const acceptedPair = pairs.slice().reverse().find((p) => p.status === 'Accepted');
     const addPhoto = exp.plan_id ? link('/ingest?plan=' + exp.plan_id, 'Добавить фото')
       : acceptedPair ? link('/ingest?rephoto=' + acceptedPair.id, 'Добавить фото')
