@@ -242,3 +242,29 @@ def test_rules_belong_to_one_laser_and_lens(store, w):
     assert su.get_rules(store, device_id, lens_id)["delta_tolerance"] == 4
     assert su.get_rules(store, device_id, None)["delta_tolerance"] is None
     assert store.get_setting(f"rules:laser:{device_id}/lens:{lens_id}")["delta_tolerance"] == 4
+
+
+def test_the_list_is_each_entry_as_read_alone_and_summarises_its_setup_once(store, w, monkeypatch):
+    """BUG-001: the list reads the summaries of its laser and lens once and the events of all its entries at once; what it
+    returns is exactly what reading each entry alone returns, and no entry of another lens slips in."""
+    from titanium_platform import model
+    device_id, lens_id = w["setup"]
+    agree(store, w, repeat=2)
+    for power in (10, 20, 30):                         # three recipes promoted twice: several entries with several events
+        obs.add(store, w, (50, 0, 0), power=power)
+        kn.refresh(store, *w["setup"])
+        obs.add(store, w, (50.2, 0, 0), power=power)
+        kn.refresh(store, *w["setup"])
+    obs.add(store, w, (60, 0, 0), power=40)            # one entry with its creation event only
+    obs.add(store, w, (55, 0, 0), power=10, lens_id=None)
+    kn.refresh(store, *w["setup"])
+    kn.refresh(store, device_id, None)
+    kid = kn.list_for_setup(store, *w["setup"])[0]["id"]
+    kn.approve_for_production(store, kid, True)        # an event written after the others
+    listed = kn.list_for_setup(store, *w["setup"])
+    assert len(listed) == 4 and [len(k["history"]) for k in listed] == [3, 2, 2, 1]
+    assert listed == [kn.get(store, k["id"]) for k in listed]
+    calls = []
+    real = model.knowledge_summaries
+    monkeypatch.setattr(model, "knowledge_summaries", lambda *args: calls.append(args) or real(*args))
+    assert kn.list_for_setup(store, *w["setup"]) == listed and len(calls) == 1
