@@ -1,6 +1,6 @@
 """Vector LightBurn jobs from an image (REQ-021, DEC-065): create, review, edit, export. A photograph job (REQ-042) is split
-again and coloured through its own routes (its colour editor: paint, merge, undo and redo, and the preview of a fill); its
-geometry reaches the browser once per split version as an SVG."""
+again and coloured through its own routes (its colour editor: paint, merge, undo and redo, the preview of a fill and the
+neighbours of every region); its geometry reaches the browser once per split version as an SVG."""
 from __future__ import annotations
 
 import json
@@ -95,6 +95,13 @@ def vector_job_reach(plan_id: int, request: Request, region: str | None = None, 
     vector_job.reach), with their pixels and share; nothing is changed. Both are checked by the job, whose messages the
     screen translates."""
     return vector_job.reach(store_of(request), plan_id, region, similarity_de)
+
+
+@router.get("/vector/{plan_id}/neighbours")
+def vector_job_neighbours(plan_id: int, request: Request):
+    """Which regions of the current split border which (see vector_job.neighbours), so that the screen offers the merge of
+    regions only for a connected selection; nothing is changed. The server still checks every merge it is asked for."""
+    return vector_job.neighbours(store_of(request), plan_id)
 
 
 @router.get("/vector/{plan_id}/split.svg")

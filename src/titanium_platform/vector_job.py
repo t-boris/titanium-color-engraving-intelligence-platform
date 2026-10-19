@@ -1034,7 +1034,8 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
     """A click of the brush (editor REQ-045) with a titanium colour, or null for the automatic choice. Scope ``region``
     paints the clicked region; ``colour`` its whole source colour, the own colours of the regions inside it cleared (null:
     the colour goes back to the automatic choice); ``fill`` every region :func:`_reach` finds from it. A region or colour
-    painted with a titanium colour is included again."""
+    painted with a titanium colour is included again, and with the scope ``colour`` so is every region of the colour that
+    was excluded one by one (editor DEC-079), as the hover outlines them."""
     region = _region_id(document, op.get("region"))
     scope, entry = op.get("scope"), op.get("entry_id")
     if scope not in SCOPES:
@@ -1050,7 +1051,7 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
             return _automatic(plan, document, entries, colouring["mode"] or "closest", colouring["seed"], colouring)
         colouring["groups"][str(index)] = {"entry_id": entry, "by": "hand"}
         colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i != index]
-        painted = {region}
+        painted = inside
     else:
         painted = {region} if scope == "region" else set(_reach(document, colouring, region, _similarity(op.get("similarity_de"))))
         for r in painted:
@@ -1095,15 +1096,26 @@ def reach(store: Store, plan_id: int, region, similarity_de) -> dict:
             "share": pixels / (sum(p["pixels"] for p in document["palette"]) or 1)}
 
 
+def neighbours(store: Store, plan_id: int) -> dict:
+    """Which regions border which on the current split, as merging finds it (:func:`segment.neighbours`: across a shared
+    arc, never at a corner only), for every region in the document's order; nothing is changed. The screen asks once per
+    split version to offer the merge of regions only for a connected selection (editor DEC-080)."""
+    plan = _photo_job(store, plan_id)
+    near = seg.neighbours(_document(plan))
+    return {"version": plan["document_version"], "neighbours": {rid: sorted(others) for rid, others in near.items()}}
+
+
 def _merge_titanium(colouring: dict, by_id: dict, op: dict) -> None:
-    """Titanium colours into one (editor REQ-046): every colour and region whose titanium colour is one of ``entries``
-    (by hand or automatically) takes ``into`` by hand, so the file has one layer fewer for each; the automatic modes keep it."""
+    """Titanium colours into one (editor REQ-046, DEC-078): every colour and region whose titanium colour is one of ``entries``
+    (by hand or automatically) takes ``into`` by hand, so the file has one layer fewer for each; the automatic modes keep it.
+    ``entries`` are two or more distinct colours the colouring uses; ``into`` is any measured colour, selected or not."""
     into, entries = _entry_id(by_id, op.get("into")), op.get("entries")
     used = ({g["entry_id"] for g in colouring["groups"].values()} | set(colouring["regions"].values())
             | set(colouring["assignment"].values()))
-    away = set(entries) - {into} if isinstance(entries, list) and all(isinstance(e, str) for e in entries) else set()
-    if not away or not away <= used:
-        raise cv.ConversionError("choose one or more titanium colours of the colouring to merge into another")
+    chosen = set(entries) if isinstance(entries, list) and all(isinstance(e, str) for e in entries) else set()
+    if len(chosen) < 2 or not chosen <= used:
+        raise cv.ConversionError("choose two or more titanium colours of the colouring to merge")
+    away = chosen - {into}
     for key, entry_id in colouring["assignment"].items():
         if key not in colouring["groups"] and entry_id in away:
             colouring["groups"][key] = {"entry_id": into, "by": "hand"}

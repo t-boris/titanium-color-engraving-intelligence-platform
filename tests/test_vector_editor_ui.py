@@ -42,6 +42,7 @@ def test_the_editor_sends_every_operation_of_the_contract_and_asks_the_server_fo
     assert "{op: 'paint', region: rid, scope: state.scope, entry_id: state.active}" in EDITOR and "op.similarity_de = state.similarity" in EDITOR
     assert "get(`/vector/${id}/reach?region=${encodeURIComponent(rid)}&similarity_de=${state.similarity}`)" in EDITOR
     assert "`${rid}|${state.similarity}|${j.document.version}`" in EDITOR and "}, 120);" in EDITOR      # debounced, cached per version
+    assert "get(`/vector/${j.id}/neighbours`)" in EDITOR and "`${j.id}:${j.document.version}`" in EDITOR       # DEC-080: once per split version
     for op in ("settings", "assign", "restore", "set_colour"):
         assert f"op: '{op}'" in COLOURS, op
 
@@ -175,10 +176,15 @@ def view(version=1):
         "time": {"seconds": 400, "complete": True, "layers": [{"index": i, "seconds": 100, "note": None} for i in range(4)]}}
 
 
+# who borders whom in SVG above: r1-r2-r3-r4 side by side, r5 under all four (GET /api/vector/7/neighbours, editor DEC-080)
+NEAR = {"version": 1, "neighbours": {"r1": ["r2", "r5"], "r2": ["r1", "r3", "r5"], "r3": ["r2", "r4", "r5"], "r4": ["r3", "r5"],
+                                     "r5": ["r1", "r2", "r3", "r4"]}}
+
+
 def routes(colouring_view=None) -> dict:
     j = view()
     return {"/api/vector/7": {"status": 200, "json": j}, "/api/vector/7/split.svg": {"status": 200, "text": SVG, "type": "image/svg+xml"},
-            "/api/vector/7/palette": {"status": 200, "json": PALETTE},
+            "/api/vector/7/palette": {"status": 200, "json": PALETTE}, "/api/vector/7/neighbours": {"status": 200, "json": NEAR},
             "/api/vector/7/colouring": {"status": 200, "json": colouring_view or j},
             "/api/vector/7/reach": {"status": 200, "json": {"region": "r3", "similarity_de": 8, "version": 1, "regions": ["r3", "r4"], "pixels": 200, "share": 0.25}}}
 
@@ -323,6 +329,56 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
 
 
 @node
+def test_the_merge_of_areas_is_offered_only_for_a_connected_selection_and_says_why_not(tmp_path):
+    """Editor REQ-048, DEC-080: the button is enabled while the selected areas, two or more, are connected through shared borders."""
+    out = run_editor(tmp_path, routes(), """
+  const merge = () => byText(section('Выделение'), 'button', 'Слить в один контур');
+  const shown = () => [merge().disabled, section('Выделение').textContent];
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await path('r1').dispatch('click');
+  out.one = shown();
+  await path('r3').dispatch('click', {shiftKey: true});          // r1 and r3 do not border one another
+  out.apart = shown();
+  await path('r2').dispatch('click', {shiftKey: true});          // r2 joins them: a chain
+  out.chain = shown();
+  await path('r3').dispatch('click', {shiftKey: true});          // r3 out again: r1 and r2 border
+  out.pair = shown();
+  await path('r4').dispatch('click', {shiftKey: true});          // r4 is apart from both
+  out.stray = shown();
+  await path('r5').dispatch('click', {shiftKey: true});          // r5 borders every one
+  out.all = shown();
+  out.fetches = ctx.requests.filter((r) => r.path.endsWith('/neighbours')).length;
+  out.posted = posted();
+""")
+    why = "не связаны общими границами"
+    assert out["one"][0] is True and why not in out["one"][1] and "соседние по границе" in out["one"][1]
+    assert out["apart"][0] is True and why in out["apart"][1] and "касания углом недостаточно" in out["apart"][1]
+    assert out["chain"][0] is False and why not in out["chain"][1]
+    assert out["pair"][0] is False and why not in out["pair"][1]
+    assert out["stray"][0] is True and why in out["stray"][1]
+    assert out["all"][0] is False and why not in out["all"][1]
+    assert out["fetches"] == 1 and out["posted"] == [] and out["renders"] == 0                       # asked once for the split version
+
+
+@node
+def test_if_the_neighbours_cannot_be_read_the_merge_stays_offered_and_the_server_decides(tmp_path):
+    r = routes()
+    r["/api/vector/7/neighbours"] = {"status": 500, "json": {"error": "boom", "kind": "internal"}}
+    out = run_editor(tmp_path, r, """
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await path('r1').dispatch('click');
+  await path('r3').dispatch('click', {shiftKey: true});
+  const merge = byText(section('Выделение'), 'button', 'Слить в один контур');
+  out.disabled = merge.disabled;
+  out.selection = section('Выделение').textContent;
+  await merge.dispatch('click'); await tick();
+  out.posted = posted();
+""")
+    assert out["disabled"] is False and "Не удалось проверить, какие области соседние" in out["selection"]
+    assert out["posted"] == [{"op": "merge_regions", "regions": ["r1", "r3"]}]
+
+
+@node
 def test_a_merge_that_makes_a_new_split_version_loads_its_picture_and_keeps_the_view_and_the_selection(tmp_path):
     out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
   await byLabel(tree, 'button', 'Увеличить').dispatch('click');
@@ -336,8 +392,10 @@ def test_a_merge_that_makes_a_new_split_version_loads_its_picture_and_keeps_the_
   out.selected = classed('vw-sel');
   out.fills = svg().querySelectorAll('path').map((p) => p.getAttribute('fill'));
   out.svgFetches = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
+  out.nearFetches = ctx.requests.filter((r) => r.path.endsWith('/neighbours')).length;
 """)
     assert out["fresh"] and out["svgFetches"] == 2 and out["viewBox"] == "6.6667 3.3333 26.6667 13.3333" and out["selected"] == ["r1", "r2"]
+    assert out["nearFetches"] == 2                                                              # once per split version, as the picture
     assert "#000000" not in out["fills"] and "разбиение № 2" in out["text"] and out["renders"] == 0
 
 

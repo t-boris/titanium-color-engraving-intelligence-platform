@@ -53,8 +53,8 @@
     // редактор раскраски: кисть, слияния, отмена и повтор (REQ-045..REQ-049 редактора, DEC-075..DEC-077 редактора)
     [/^the scope must be region, colour or fill$/i, 'Кисть красит область, весь исходный цвет или заливку'],
     [/^the similarity must be a non-negative delta E$/i, 'Похожесть — неотрицательное значение ΔE'],
-    [/^choose one or more titanium colours of the colouring to merge into another$/i,
-      'Выберите один или несколько цветов титана из раскраски, чтобы слить их в другой'],
+    [/^choose two or more titanium colours of the colouring to merge$/i,
+      'Выберите два цвета титана из раскраски или больше, чтобы слить их в один'],
     [/^choose two or more source colours to merge$/i, 'Выберите два или больше исходных цвета, чтобы их объединить'],
     [/^choose two or more regions to merge$/i, 'Выберите две или больше области, чтобы их объединить'],
     [/^the regions to merge must border one another$/i,

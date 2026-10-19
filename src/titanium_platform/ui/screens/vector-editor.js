@@ -4,7 +4,9 @@
    исходный цвет раскрашен сразу; цвет дальше допуска ΔE помечается и по запросу обводится на картинке, файл он не
    блокирует. Наведение обводит ровно то, что изменит щелчок (для заливки — области, которые назвал сервер). Масштаб и сдвиг
    меняют viewBox картинки. После каждого действия сервер возвращает работу целиком, и картинка перекрашивается на месте:
-   масштаб, сдвиг, инструмент, активный цвет и выделение сохраняются; новая версия разбиения загружается заново. */
+   масштаб, сдвиг, инструмент, активный цвет и выделение сохраняются; новая версия разбиения загружается заново.
+   Слить области в один контур можно только связному выделению: кто с кем граничит, экран спрашивает у сервера один раз на
+   версию разбиения (DEC-080); сервер всё равно проверяет каждое слияние. */
 'use strict';
 const VectorEditor = (() => {
   const {h, fill, btn, get, pill, toast, num, labText} = App;
@@ -18,6 +20,7 @@ const VectorEditor = (() => {
   const SIMILARITY = 8;                       // ΔE заливки похожих по умолчанию
   const svgCache = new Map();
   const paletteCache = new Map();
+  const nearCache = new Map();
   const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
   const chip = (c, title) => h('span', {class: 'sw', style: `background:${rgb(c)}`, title: title || ''});
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 1)} кГц · ${num(p.speed, 0)} мм/с · Q-Pulse ${num(p.pulse_width, 0)} нс`
@@ -58,6 +61,13 @@ const VectorEditor = (() => {
     try { return await paletteCache.get(key); } catch (e) { paletteCache.delete(key); throw e; }
   }
 
+  /** Какие области граничат друг с другом, один раз на версию документа (DEC-080): слить можно только связанное выделение. */
+  async function neighbours(j) {
+    const key = `${j.id}:${j.document.version}`;
+    if (!nearCache.has(key)) nearCache.set(key, get(`/vector/${j.id}/neighbours`));
+    try { return await nearCache.get(key); } catch (e) { nearCache.delete(key); throw e; }
+  }
+
   /** Чем окрашена область: исключённая — ничем; свой цвет области важнее цвета её исходного цвета, даже исключённого. */
   function resolver(j) {
     const colours = new Map(j.colours.map((c) => [Number(c.index), c]));
@@ -91,6 +101,7 @@ const VectorEditor = (() => {
     let paths = new Map(), colourOf = new Map(), byColour = new Map(), byEntry = new Map();
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
+    let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
     let hover = null, hot = [], shownSelection = [], farCount = 0, pending = 0;
     const reach = new Map();
     let reachTimer = null, sortTimer = null;
@@ -500,16 +511,47 @@ const VectorEditor = (() => {
       }));
     }
 
+    /** Соседи по границе в текущей версии разбиения: один запрос на версию; пока он идёт, соседей не знаем (угол — не граница). */
+    async function loadNear() {
+      const key = `${id}:${j.document.version}`;
+      if (key === nearKey) return;
+      nearKey = key; near = null; nearFailed = false;
+      syncSelection();
+      let got = null, failed = false;
+      try { got = (await neighbours(j)).neighbours; } catch (e) { failed = true; }
+      if (key !== nearKey) return;                            // пока грузилось, версия сменилась
+      near = got; nearFailed = failed;
+      syncSelection();
+    }
+
+    /** Связно ли выделение общими границами: true или false; null, пока соседей не знаем. */
+    function connected(ids) {
+      if (!near) return null;
+      const wanted = new Set(ids), seen = new Set([ids[0]]), queue = [ids[0]];
+      while (queue.length) {
+        for (const other of near[queue.pop()] || []) {
+          if (wanted.has(other) && !seen.has(other)) { seen.add(other); queue.push(other); }
+        }
+      }
+      return seen.size === wanted.size;
+    }
+
     function syncSelection() {
       const ids = [...state.selection];
+      const link = ids.length > 1 ? connected(ids) : null;
+      const checking = ids.length > 1 && link === null && !nearFailed;      // слияние предлагается только связному выделению (DEC-080)
+      const why = link === false ? 'Слить нельзя: выбранные области не связаны общими границами (касания углом недостаточно).'
+        : checking ? 'Проверяем, какие области соседние…'
+          : ids.length > 1 && nearFailed ? 'Не удалось проверить, какие области соседние: слияние проверит сервер.' : null;
       fill(selectionBox, h('h4', {}, 'Выделение'),
         ids.length ? h('p', {class: 'small'}, `Выбрано областей: ${ids.length}`)
           : h('p', {class: 'small muted'}, 'Инструмент «Выделение»: щелчок выбирает область, Shift+щелчок добавляет или убирает, Esc снимает выделение.'),
         ids.length ? h('div', {class: 'row'},
-          btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2),
+          btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2 || link === false || checking),
           btn('Исключить', () => act({op: 'exclude_region', regions: ids})), btn('Вернуть', () => act({op: 'include_region', regions: ids})),
           btn('Снять выделение', clearSelection)) : null,
-        ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе.') : null);
+        ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе.') : null,
+        why ? h('p', {class: 'small muted'}, why) : null);
     }
 
     function syncTotals() {
@@ -616,6 +658,7 @@ const VectorEditor = (() => {
       state.layers = new Set([...state.layers].filter((e) => inUse.has(e)));
       if (loadedVersion !== j.document.version) load();
       else { paint(); refreshHover(); }
+      loadNear();
       syncPanel();
     }
 
@@ -635,6 +678,7 @@ const VectorEditor = (() => {
     setView(state.view);
     fit();
     load();
+    loadNear();
     syncPanel();
     return editor;
   }

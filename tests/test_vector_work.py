@@ -375,7 +375,8 @@ def test_the_old_tracing_strategies_still_make_jobs(work):
         assert r.status_code == 201 and r.json()["document"]["strategy"] == strategy and "svg" in r.json()
     traced = r.json()
     for bad in (work["client"].post(f"/api/vector/{traced['id']}/colouring", json={"op": "undo"}),
-                work["client"].get(f"/api/vector/{traced['id']}/reach", params={"region": "r1", "similarity_de": 3})):
+                work["client"].get(f"/api/vector/{traced['id']}/reach", params={"region": "r1", "similarity_de": 3}),
+                work["client"].get(f"/api/vector/{traced['id']}/neighbours")):
         assert bad.status_code == 422 and bad.json()["error"] == "only a photograph split into colour regions is split and coloured this way"
 
 
@@ -421,6 +422,24 @@ def test_the_brush_paints_one_region_or_its_whole_source_colour_and_includes_wha
     j = colouring(c, j, op="paint", region=a["ring"], scope="region", entry_id=None)
     assert j["colouring"]["regions"] == {} and j["undo"] == 9
     assert [h["op"]["op"] for h in pl.get_plan(c["store"], j["id"])["history"][-3:]] == ["paint"] * 3
+
+
+def test_painting_a_source_colour_includes_again_every_area_of_it_that_was_excluded(work, job):
+    """Editor REQ-045, DEC-079: every area of the colour shows the colour afterwards, as the hover outline says."""
+    c, j = work, job
+    a, paper, green_e = areas(c, j), by_rgb(job, PAPER), by_rgb(job, GREEN)["entry_id"]
+    mine = regions_in(document_of(c, j), paper["index"])
+    assert len(mine) == 2 and a["ring"] not in mine
+    j = colouring(c, j, op="exclude_region", regions=mine)                                      # both areas of the colour, one by one
+    j = colouring(c, j, op="exclude_region", region=a["ring"])                                  # an area of another colour
+    j = colouring(c, j, op="paint", region=mine[0], scope="colour", entry_id=None)              # automatic: exclusions stay as they are
+    assert sorted(j["colouring"]["excluded_regions"]) == sorted(mine + [a["ring"]])
+    j = colouring(c, j, op="paint", region=mine[0], scope="colour", entry_id=green_e)
+    assert j["colouring"]["excluded_regions"] == [a["ring"]]                                    # the colour's own areas are in again
+    stored = next(layer for layer in pl.get_plan(c["store"], j["id"])["layers"] if layer["entry_id"] == green_e)
+    assert set(mine) <= set(stored["region_ids"]) and a["ring"] not in stored["region_ids"]
+    j = colouring(c, j, op="undo")                                                              # one operation: undo brings them back out
+    assert sorted(j["colouring"]["excluded_regions"]) == sorted(mine + [a["ring"]])
 
 
 def test_a_fill_spreads_from_the_clicked_region_over_similar_neighbours_and_its_preview_is_what_it_paints(work, job):
@@ -473,13 +492,21 @@ def test_merging_titanium_colours_leaves_one_layer_fewer_and_every_automatic_mod
     for mode in ("closest", "tonality", "random", "fewer_layers"):
         j = colouring(c, j, op="assign", mode=mode)
         assert by_rgb(j, BLUE)["entry_id"] == red_e and j["colouring"]["regions"] == {a["inner"]: red_e}, mode
-    unused = next(e for e in palette_ids(c).values() if e not in {col["entry_id"] for col in j["colours"]} | {red_e})
-    for op, message in [({"entries": [red_e], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
-                        ({"entries": [], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
-                        ({"entries": red_e, "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
-                        ({"entries": [unused], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
-                        ({"entries": [red_e], "into": "nope"}, "the titanium colour must be a measured colour of this laser, lens and titanium stock")]:
+    used = {col["entry_id"] for col in j["colours"] if col["entry_id"]} | set(j["colouring"]["regions"].values())
+    other_e = next(e for e in sorted(used) if e != red_e)
+    unused = next(e for e in palette_ids(c).values() if e not in used | {red_e})
+    two = "choose two or more titanium colours of the colouring to merge"
+    for op, message in [({"entries": [red_e], "into": red_e}, two), ({"entries": [], "into": red_e}, two), ({"entries": red_e, "into": red_e}, two),
+                        ({"entries": [unused], "into": red_e}, two),
+                        ({"entries": [other_e], "into": red_e}, two),                          # DEC-078: one colour merged into another target
+                        ({"entries": [red_e, red_e], "into": red_e}, two),                      # the same colour twice is one colour
+                        ({"entries": [other_e, unused], "into": red_e}, two),                   # a selected colour the colouring does not use
+                        ({"entries": [red_e, other_e], "into": "nope"}, "the titanium colour must be a measured colour of this laser, lens and titanium stock")]:
         refused(c, j, {"op": "merge_titanium", **op}, message)
+    layers = len(j["layers"])
+    j = colouring(c, j, op="merge_titanium", entries=[red_e, other_e], into=unused)           # the target need not be one of the selected
+    assert len(j["layers"]) == layers - 1 and {layer["entry_id"] for layer in j["layers"]} >= {unused}
+    assert red_e not in {layer["entry_id"] for layer in j["layers"]} and other_e not in {layer["entry_id"] for layer in j["layers"]}
 
 
 def test_merging_source_colours_makes_a_new_version_on_which_every_mode_and_brush_works(work, job):
@@ -592,15 +619,43 @@ def test_undo_and_redo_step_through_paints_and_merges_with_their_split_versions(
     assert state_of(c, j)[6] not in {s[6] for s in states}                                     # each version's picture is its own
 
 
+def test_undo_and_redo_cover_the_titanium_merge_among_the_four_kinds_of_operation_the_requirement_names(work, job):
+    """Editor REQ-049, criterion 1: painting, merging titanium colours, merging source colours and merging areas, step by step."""
+    c, j = work, job
+    a, red, blue = areas(c, j), by_rgb(j, RED), by_rgb(j, BLUE)
+    green_e = by_rgb(j, GREEN)["entry_id"]
+    steps = ({"op": "paint", "region": a["ring"], "scope": "region", "entry_id": green_e},
+             {"op": "merge_titanium", "entries": [blue["entry_id"], green_e], "into": green_e},
+             {"op": "merge_colours", "colours": [blue["index"], red["index"]]},
+             {"op": "merge_regions", "regions": [a["ring"], a["inner"]]})
+    states, views = [state_of(c, j)], [j]
+    for step in steps:
+        j = colouring(c, j, **step)
+        states.append(state_of(c, j))
+        views.append(j)
+    assert [s[0] for s in states] == [1, 1, 1, 2, 3] and (j["undo"], j["redo"]) == (4, 0)
+    assert by_rgb(views[2], BLUE)["entry_id"] == green_e and by_rgb(views[2], BLUE)["status"] == "hand"      # the titanium merge took effect
+    assert states[2][2] != states[1][2]                                                          # the colours show it (the view's colouring holds areas only)
+    for back in range(4):
+        j = colouring(c, j, op="undo")
+        assert state_of(c, j) == states[3 - back] and (j["undo"], j["redo"]) == (3 - back, back + 1)
+    for forth in range(4):
+        j = colouring(c, j, op="redo")
+        assert state_of(c, j) == states[forth + 1] and (j["undo"], j["redo"]) == (forth + 1, 3 - forth)
+    assert [h["op"]["op"] for h in pl.get_plan(c["store"], j["id"])["history"] if h["op"]["op"] in ("paint", "merge_titanium", "merge_colours",
+            "merge_regions")] == ["paint", "merge_titanium", "merge_colours", "merge_regions"]
+
+
 def test_undo_brings_back_the_tolerance_and_the_filters_with_the_colouring(work, job):
     c, j = work, job
     first = (j["settings"], j["colours"], j["colouring"])
     j = colouring(c, j, op="settings", tolerance_de=12, max_time=50, include_as_shot=True)
-    assert j["settings"] == {"tolerance_de": 12, "max_time": 50, "include_as_shot": True}
+    changed = (j["settings"], j["colours"], j["colouring"])
+    assert j["settings"] == {"tolerance_de": 12, "max_time": 50, "include_as_shot": True} and changed != first
     j = colouring(c, j, op="undo")
     assert (j["settings"], j["colours"], j["colouring"]) == first
     j = colouring(c, j, op="redo")
-    assert j["settings"] == {"tolerance_de": 12, "max_time": 50, "include_as_shot": True}
+    assert (j["settings"], j["colours"], j["colouring"]) == changed                              # the redone colouring too, not only the settings
 
 
 def test_a_variant_is_restored_only_on_its_own_split_version(work, job):
@@ -686,6 +741,34 @@ def test_bad_editor_operations_are_refused_with_messages_the_screen_translates_a
     assert colouring(c, j, op="paint", region=a["paper"], scope="region", entry_id=blue_e)["colouring"]["regions"] == {a["paper"]: blue_e}
 
 
+def neighbours(c, j) -> dict:
+    r = c["client"].get(f"/api/vector/{j['id']}/neighbours")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_the_neighbours_of_a_split_are_the_relation_merging_uses_and_follow_its_version(work, job):
+    """Editor REQ-048, DEC-080: the screen offers a merge only for a connected selection and learns who borders whom from the server."""
+    c, j = work, job
+    a, document = areas(c, j), document_of(c, j)
+    got = neighbours(c, j)
+    near = got["neighbours"]
+    assert got["version"] == 1 and list(near) == [r["id"] for r in document["regions"]]            # every region, in the document's order
+    assert near == {rid: sorted(others) for rid, others in sg.neighbours(document).items()}
+    assert all(rid in near[other] for rid, others in near.items() for other in others)              # both ways
+    assert a["inner"] in near[a["ring"]] and a["ellipse"] not in near[a["ring"]]                    # the ring borders its hole, not the ellipse
+    before = c["client"].get(f"/api/vector/{j['id']}").json()
+    assert neighbours(c, j) == got and c["client"].get(f"/api/vector/{j['id']}").json() == before    # reading changes nothing
+    refused(c, j, {"op": "merge_regions", "regions": [a["ring"], a["ellipse"]]}, "the regions to merge must border one another")
+    j = colouring(c, j, op="merge_regions", regions=[a["ring"], a["inner"]])                       # the ring keeps its id, the hole's paper goes
+    merged = neighbours(c, j)
+    assert merged["version"] == 2 and a["inner"] not in merged["neighbours"]
+    assert merged["neighbours"][a["ring"]] == sorted((set(near[a["ring"]]) | set(near[a["inner"]])) - {a["ring"], a["inner"]})
+    assert all(a["inner"] not in others for others in merged["neighbours"].values())
+    j = colouring(c, j, op="undo")
+    assert neighbours(c, j) == got                                                                  # the earlier version brings its relation back
+
+
 # -- the screen, run in node over a small DOM with the server's real answers --------------------------------------------------
 UI = Path(__file__).resolve().parents[1] / "src" / "titanium_platform" / "ui"
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
@@ -728,6 +811,7 @@ def routes_of(c, j) -> dict:
     return {f"/api/vector/{j['id']}": {"status": 200, "json": view},
             f"/api/vector/{j['id']}/split.svg": {"status": 200, "text": c["client"].get(f"/api/vector/{j['id']}/split.svg").text, "type": "image/svg+xml"},
             f"/api/vector/{j['id']}/palette": {"status": 200, "json": c["client"].get(f"/api/vector/{j['id']}/palette").json()},
+            f"/api/vector/{j['id']}/neighbours": {"status": 200, "json": c["client"].get(f"/api/vector/{j['id']}/neighbours").json()},
             f"/api/vector/{j['id']}/colouring": {"status": 200, "json": view}, f"/api/vector/{j['id']}/split": {"status": 200, "json": view}}
 
 
