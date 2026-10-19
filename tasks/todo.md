@@ -621,7 +621,10 @@ DEC-001, DEC-075..DEC-077, issue #28); bug BUG-001 (issue #27). The platform fea
 - [x] REQ-045: paint scopes area / source colour / fill of similar neighbours, hover preview equal to the result.
 - [x] REQ-046..REQ-048: merge titanium colours, source colours, neighbouring areas into one contour (gapless).
 - [x] REQ-049: undo / redo over colouring and document versions.
-- [ ] Full-copy check (work 22: 28 colours coloured, export allowed), release 0.6.0, backup, deploy, walkthrough on work 21.
+- [x] Full-copy check (work 22: 28 colours coloured, export allowed; 17/17 experiments, 565/565 map points), release 0.6.0
+  (PR #30, tag v0.6.0), backup `titanium-before-0.6.0-20261019-085107.sqlite`, deploy (662 observations), view-only walkthrough of
+  work 22 in a MarkView tab (demo work 21 no longer exists): 986 areas, no accept button, export enabled, hover of a source colour
+  outlines its 49 areas with the tooltip; nothing sent (undo count unchanged), no console errors.
 
 Integration review (2026-10-19). Backend (`segment.neighbours`, `merge_colours`, `merge_regions`; `vector_job` paint scopes, merges,
 undo/redo with versions; `GET /reach`) and UI (`vector-editor.js`) merged on `feat/vector-colour-editor`; `set_region` dropped
