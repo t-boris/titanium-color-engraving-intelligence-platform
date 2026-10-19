@@ -1,4 +1,5 @@
 """A photograph split into gapless colour regions, faces first (REQ-033, DEC-076)."""
+import itertools
 import json
 import math
 import xml.etree.ElementTree as ET
@@ -664,10 +665,10 @@ def test_a_marked_area_smaller_than_two_superpixels_is_split_by_every_algorithm(
 
 
 def test_the_algorithm_default_is_slic_and_an_unknown_one_is_refused():
-    assert sg.DEFAULT_ALGORITHM == "slic" and sg.ALGORITHMS == ("slic", "seeds")
+    assert sg.DEFAULT_ALGORITHM == "slic" and sg.ALGORITHMS == ("slic", "tonal", "planes", "seeds")
     assert sg.segment(shapes(), 72.0, 6, use_faces=False)["algorithm"] == "slic"
     for bad in ("lsc", "SLIC", "", None):
-        with pytest.raises(sg.SegmentError, match="the algorithm must be slic or seeds"):
+        with pytest.raises(sg.SegmentError, match="the algorithm must be slic, tonal, planes or seeds"):
             sg.segment(shapes(), 72.0, 6, use_faces=False, algorithm=bad)
 
 
@@ -678,3 +679,76 @@ def test_seeds_keeps_thin_strokes_at_least_as_well_as_slic_with_far_fewer_region
     slic, seeds = (sg.segment(page, 100.0, 6, use_faces=False, min_area_mm2=0.2, superpixels=100, algorithm=a) for a in ("slic", "seeds"))
     assert ink_kept(page, seeds) >= ink_kept(page, slic) - 0.02
     assert len(seeds["regions"]) < len(slic["regions"])
+
+
+# -- four methods that differ (feature vector-detail-and-colour-control, DEC-082) -------------------------------------------------
+def region_borders(doc) -> np.ndarray:
+    """The pixels of a split that lie next to a pixel of another region."""
+    h, w = doc["image_px"]["height"], doc["image_px"]["width"]
+    ids = np.zeros((h, w), np.int32)
+    for number, r in enumerate(sg.regions_as_loops(doc), 1):
+        mask = np.zeros((h, w), np.uint8)
+        cv2.fillPoly(mask, [np.round(np.asarray(r["loops"][0]) / doc["px_mm"]).astype(np.int32)], 1)
+        for hole in r["loops"][1:]:
+            cv2.fillPoly(mask, [np.round(np.asarray(hole) / doc["px_mm"]).astype(np.int32)], 0)
+        ids[mask == 1] = number
+    border = np.zeros((h, w), bool)
+    border[:, 1:] |= ids[:, 1:] != ids[:, :-1]
+    border[1:, :] |= ids[1:, :] != ids[:-1, :]
+    return border
+
+
+def unmatched(a: np.ndarray, b: np.ndarray) -> float:
+    """The share of the borders of ``a`` with no border of ``b`` within a pixel."""
+    near = cv2.dilate(b.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    return float((a & ~near).sum() / max(1, a.sum()))
+
+
+@pytest.mark.parametrize("make, n_colors", [(photo_like, 12), (blots, 10)])
+def test_the_four_methods_give_four_different_maps_on_a_photograph(make, n_colors):
+    """A choice that changes nothing is not a feature (the operator, 0.7.0): SLIC and SEEDS gave one map, so every pair must differ."""
+    img = make()
+    docs = {a: sg.segment(img, 0.25 * img.shape[1], n_colors, use_faces=False, superpixels=40, algorithm=a) for a in sg.ALGORITHMS}
+    borders = {a: region_borders(d) for a, d in docs.items()}
+    for a, b in itertools.combinations(sg.ALGORITHMS, 2):
+        assert min(unmatched(borders[a], borders[b]), unmatched(borders[b], borders[a])) > 0.25, (a, b)
+    counts = {a: len(d["regions"]) for a, d in docs.items()}
+    assert counts["tonal"] > counts["slic"] > counts["planes"]                           # tones: many small; planes: few large
+
+
+def shaded_disc():
+    """A lit sphere on a dark ground: one smooth tone from light to dark, like a cheek."""
+    yy, xx = np.mgrid[0:200, 0:200].astype(float)
+    shade = np.clip(1 - 0.55 * (np.hypot(xx - 75, yy - 70) / 120), 0, 1)
+    img = np.empty((200, 200, 3))
+    img[:] = (40, 40, 50)
+    disc = np.hypot(xx - 100, yy - 100) < 90
+    img[disc] = np.array([235, 180, 150.0])[None, :] * shade[disc][:, None]
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def test_the_planes_method_keeps_the_tones_of_a_smooth_face_instead_of_collapsing_it_into_one_plane(monkeypatch):
+    img = shaded_disc()
+    doc = sg.segment(img, 60.0, 8, use_faces=False, superpixels=30, algorithm="planes")
+    assert len(doc["palette"]) == 8 and len(doc["regions"]) >= 8                           # every tone asked for is still there
+    assert sg.PLANES_SCALE <= 300                                                          # measured: at 2000 the disc is 3 colours
+    monkeypatch.setattr(sg, "PLANES_SCALE", 2000.0)
+    collapsed = sg.segment(img, 60.0, 8, use_faces=False, superpixels=30, algorithm="planes")
+    assert len(collapsed["palette"]) < len(doc["palette"])                                # what the bound is for
+
+
+def test_a_fine_grid_is_merged_before_it_is_clustered_and_a_coarse_one_is_left_as_it_was(monkeypatch):
+    seen = []
+    real = sg._kmeans
+    monkeypatch.setattr(sg, "_kmeans", lambda points, weights, k, seed: (seen.append(len(points)), real(points, weights, k, seed))[1])
+    img = photo_like()
+    sg.segment(img, 50.0, 8, use_faces=False, algorithm="tonal")
+    uncapped = seen[-1]
+    monkeypatch.setattr(sg, "KMEANS_POINTS", 400)
+    sg.segment(img, 50.0, 8, use_faces=False, algorithm="tonal")
+    assert seen[-1] < uncapped                                                            # a coarser colour step, not fewer superpixels
+    seen.clear()
+    monkeypatch.setattr(sg, "KMEANS_POINTS", 20000)
+    first = sg.segment(img, 50.0, 8, use_faces=False, algorithm="slic")
+    monkeypatch.setattr(sg, "KMEANS_POINTS", 10 ** 9)
+    assert sg.segment(img, 50.0, 8, use_faces=False, algorithm="slic") == first         # a few thousand points: the cap changes nothing

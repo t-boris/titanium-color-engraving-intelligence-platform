@@ -142,7 +142,7 @@ def test_the_split_settings_and_important_areas_are_used_when_the_picture_is_spl
 
 
 def test_the_splitting_algorithm_is_chosen_when_the_work_is_made_and_when_it_is_split_again(work, job):
-    """Feature vector-detail-and-colour-control, DEC-076: slic or seeds; a level of detail is not an algorithm."""
+    """Feature vector-detail-and-colour-control, DEC-076, DEC-082: slic, tonal, planes or seeds; a level of detail is not an algorithm."""
     c, j = work, job
     assert j["split"]["algorithm"] == "slic" and j["document"]["algorithm"] == "slic"                  # the default
     made = create(work, algorithm="seeds").json()
@@ -150,16 +150,22 @@ def test_the_splitting_algorithm_is_chosen_when_the_work_is_made_and_when_it_is_
     again = c["client"].post(f"/api/vector/{j['id']}/split", json={"n_colors": 5, "algorithm": "seeds"}).json()
     assert again["split"]["algorithm"] == "seeds" and again["document"]["algorithm"] == "seeds" and again["document"]["version"] == 2
     assert (again["undo"], again["redo"], len(again["variants"])) == (0, 0, 1)                         # a fresh start, as for any split
+    for name in ("tonal", "planes"):                                                                    # the two new methods travel the same way
+        got = c["client"].post(f"/api/vector/{j['id']}/split", json={"n_colors": 5, "algorithm": name}).json()
+        assert got["split"]["algorithm"] == name and got["document"]["algorithm"] == name and got["document"]["regions"] >= 6
+        assert create(work, algorithm=name).json()["document"]["algorithm"] == name
     ops = [h["op"] for h in pl.get_plan(c["store"], j["id"])["history"] if h["op"]["op"] == "split"]
-    assert [o["algorithm"] for o in ops] == ["slic", "seeds"]                                           # the history says which made each
+    assert [o["algorithm"] for o in ops] == ["slic", "seeds", "tonal", "planes"]                        # the history says which made each
     back = c["client"].post(f"/api/vector/{j['id']}/split", json={"n_colors": 5}).json()                # none given: the default
     assert back["split"]["algorithm"] == "slic" and back["document"]["algorithm"] == "slic"
+    message = "the splitting algorithm must be slic, tonal, planes or seeds"
     for body in ({"n_colors": 5, "algorithm": "lsc"}, {"n_colors": 5, "algorithm": "coarse"}):
         bad = c["client"].post(f"/api/vector/{j['id']}/split", json=body)
-        assert bad.status_code == 422 and bad.json()["error"] == "the splitting algorithm must be slic or seeds", body
+        assert bad.status_code == 422 and bad.json()["error"] == message, body
     bad = create(work, algorithm="lsc")
-    assert bad.status_code == 422 and bad.json()["error"] == "the splitting algorithm must be slic or seeds"
-    assert c["client"].get(f"/api/vector/{j['id']}").json()["document"]["version"] == 3                 # a refusal changes nothing
+    assert bad.status_code == 422 and bad.json()["error"] == message
+    assert c["client"].get(f"/api/vector/{j['id']}").json()["document"]["version"] == 5                 # a refusal changes nothing
+    assert message == "the splitting algorithm must be " + sg._listed(sg.ALGORITHMS)                      # the message names what the module offers
 
 
 def test_a_work_split_before_the_choice_reads_as_slic_and_keeps_working(work, job):
@@ -875,7 +881,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
     assert not any(old in text for old in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn"))
     assert "vw-ed-svg" in out["pictures"] and "vw-areas" in out["pictures"]
     for part in ("1. Цвета и разбиение", "2. Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",
-                 "Подробно по цветам", "самый быстрый в пределах допуска", "Алгоритм SLIC", "Важные области: лица, глаза, губы"):
+                 "Подробно по цветам", "самый быстрый в пределах допуска", "Алгоритм Мозаика", "Важные области: лица, глаза, губы"):
         assert part in text, part
     assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object", "Принять")), text[:3000]
     assert sum("vw-ed-svg" in (c or "").split() for c in out["classes"]) == 1 and "vw-areas" in out["classes"]
@@ -934,27 +940,31 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_splitting_algorithm_is_chosen_on_the_screen_with_what_each_is_for_and_travels_with_split_again(work, job, tmp_path):
-    """DEC-076 of vector-detail-and-colour-control: a choice before splitting again, each described, a level of detail not among them."""
+def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_like_and_costs_and_travel_with_split_again(work, job, tmp_path):
+    """DEC-076, DEC-082 of vector-detail-and-colour-control: a choice before splitting again, each described, a level of detail not among them."""
     out = run_screen(tmp_path, job, routes_of(work, job), """
   const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Алгоритм разбиения');
   out.options = select.options.map((o) => [o.value, o.textContent]);
   out.selected = select.value;
-  out.hintSlic = tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
-  select.value = 'seeds'; await select.dispatch('change');
-  out.hintSeeds = tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
+  const hint = () => tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
+  out.hints = {};
+  for (const [value] of out.options) { select.value = value; await select.dispatch('change'); out.hints[value] = hint(); }
   out.detail = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Детальность').options.map((o) => o.value);
+  select.value = 'planes'; await select.dispatch('change');
   await byText(tree, 'button', 'Разбить заново').dispatch('click');
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
 """)
-    assert out["options"] == [["slic", "SLIC"], ["seeds", "SEEDS"]] and out["selected"] == "slic"
-    assert out["hintSlic"].startswith("SLIC: ") and "лица" in out["hintSlic"] and out["hintSeeds"].startswith("SEEDS: ")
-    assert "быстрее" in out["hintSeeds"].lower() and "тонкие линии и текст" in out["hintSeeds"] and out["hintSlic"] != out["hintSeeds"]
+    assert out["options"] == [["slic", "Мозаика"], ["tonal", "По тонам"], ["planes", "Крупные плоскости"], ["seeds", "SEEDS"]] and out["selected"] == "slic"
+    hints = out["hints"]
+    assert len(set(hints.values())) == 4 and all(hints[k].startswith(name + ": ") for k, name in (("slic", "Мозаика"), ("tonal", "По тонам"),
+                                                                                                   ("planes", "Крупные плоскости"), ("seeds", "SEEDS")))
+    assert "лица" in hints["slic"] and "светотени" in hints["tonal"] and "дольше остальных" in hints["tonal"]                  # what it looks like, what it costs
+    assert "на 40 % меньше" in hints["planes"] and "быстрее" in hints["seeds"] and "Близок к «Мозаике»" in hints["seeds"]
     assert out["detail"] == ["coarse", "medium", "fine"]                              # detail levels are not offered as algorithms
     (path, body), = out["posted"]
-    assert path == f"/api/vector/{job['id']}/split" and body["algorithm"] == "seeds" and body["n_colors"] == 5
+    assert path == f"/api/vector/{job['id']}/split" and body["algorithm"] == "planes" and body["n_colors"] == 5
     r = work["client"].post(f"/api/vector/{job['id']}/split", json=body)               # the server takes what the screen sends
-    assert r.status_code == 200 and r.json()["document"]["algorithm"] == "seeds"
+    assert r.status_code == 200 and r.json()["document"]["algorithm"] == "planes"
 
 
 def test_the_start_form_sends_the_algorithm_with_the_other_photograph_fields():

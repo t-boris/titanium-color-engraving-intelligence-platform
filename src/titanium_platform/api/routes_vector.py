@@ -37,7 +37,7 @@ async def create_vector_job(request: Request, device_id: int = Form(...), lens_i
     """Trace an uploaded image with a strategy (color, fill, text, line) at a width in mm for one laser, lens and titanium
     stock. ``palette`` is a JSON list of sRGB colours for the colour strategy (else ``n_colors`` are found in the image).
     ``task`` and ``goals`` (a JSON object) are the job's main engraving task (REQ-020); empty: the one its strategy serves.
-    The ``photo`` strategy splits a photograph into ``n_colors`` regions by an ``algorithm`` (slic, the default, or seeds) at a
+    The ``photo`` strategy splits a photograph into ``n_colors`` regions by an ``algorithm`` (slic, the default, tonal, planes or seeds) at a
     level of ``detail`` with ``faces`` first, smoothed by ``tolerance_mm`` (``faces`` left out: searched); it always cleans first, and ``threshold``, ``max_time`` (s/cm²) and ``include_as_shot``
     rule its automatic colouring."""
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")

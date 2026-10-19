@@ -797,6 +797,6 @@ Steps (each ends with tests, a commit to main, and a look at the real screen):
   (ends pinned, corners kept) and fits cubic Béziers; base arcs stay as traced, curves are derived at read time for `plan["smoothing_mm"]`
   (new works 0.5, older 0, max 2), so the slider resets nothing and is not in undo; preview `C`, LightBurn file `B`; export entry records
   the strength. Tests: `tests/test_contour.py` (30), route/export/slider tests in `tests/test_vector_work.py`.
-- [ ] 3. Methods: "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости" and SEEDS kept (the operator's answer: "те же три и SEEDS"; DEC-082); old works keep their key; a test that the four maps differ.
+- [x] 3. Methods (tonal sped up 8.6 s to 3.3 s by merging superpixel colours on at most 20 000 points; planes scale fixed at 150; tests: four different maps, no collapse of a shaded face, cap of the clustering input): "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости" and SEEDS kept (the operator's answer: "те же три и SEEDS"; DEC-082); old works keep their key; a test that the four maps differ.
 - [ ] 4. AI colouring (REQ-050): styles, the answer checked against the measured palette, one undoable operation, a variant.
 - [ ] 5. Spec: DEC for each, REQ ticks, version 0.8.0, backup and deploy, look at the real app.

@@ -463,7 +463,7 @@ def _split_settings(params: dict, markers: bool, detected: int) -> dict:
                                  + (" and the markers another" if markers else ""))
     algorithm = params.get("algorithm") or seg.DEFAULT_ALGORITHM
     if algorithm not in seg.ALGORITHMS:
-        raise cv.ConversionError("the splitting algorithm must be slic or seeds")
+        raise cv.ConversionError("the splitting algorithm must be slic, tonal, planes or seeds")
     detail = params.get("detail") or DEFAULT_DETAIL
     if detail not in DETAIL:
         raise cv.ConversionError("the level of detail must be coarse, medium or fine")

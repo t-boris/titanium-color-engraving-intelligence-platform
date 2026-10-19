@@ -3,8 +3,11 @@
 Method (every step deterministic, so the same picture and settings give a byte-identical document):
 
 1. The picture in Lab (:func:`color.srgb8_to_lab`) is smoothed edge-preservingly (bilateral filter).
-2. SLIC superpixels (``cv2.ximgproc``) follow its edges: coarse over the picture, finer in faces and finest in eyes, lips
-   and areas the operator marks (:mod:`faces`); each finer level is a SLIC of its own inside its area.
+2. Superpixels (``cv2.ximgproc``) follow its edges: coarse over the picture, finer in faces and finest in eyes, lips
+   and areas the operator marks (:mod:`faces`); each finer level is a run of the algorithm of its own inside its area. Four
+   algorithms differ in the kind of picture they give (``ALGORITHMS``): SLIC patches of an even size (the default), a fine
+   grid of tiny cells so that the colour classes alone decide the shapes ("tonal"), graph segmentation into flat planes
+   ("planes") and SEEDS.
 3. The mean Lab of every superpixel is clustered into at most ``n_colors`` colours by a seeded k-means weighted by pixels;
    superpixels of faces and of the finest areas weigh more, so that their distinct colours keep clusters of their own.
 4. A region is a 4-connected area of one colour, so two neighbours never share a colour in a fresh split. Regions under
@@ -74,10 +77,13 @@ MIN_SUPERPIXELS_ACROSS = 10
 LEVEL_SCALE = (1.0, 0.6, 0.35)          # superpixel size of the picture, of faces, of eyes, lips and marked areas
 MIN_SUPERPIXEL_PX = 3
 SLIC_ITERATIONS = 10
-ALGORITHMS = ("slic", "seeds")        # the superpixel algorithms a split can use (feature vector-detail-and-colour-control, DEC-076)
+ALGORITHMS = ("slic", "tonal", "planes", "seeds")   # the algorithms a split can use (feature vector-detail-and-colour-control, DEC-082)
 DEFAULT_ALGORITHM = "slic"
 LEVEL_SHARE = (0.0, 0.15, 0.25)         # least share of the k-means weight of faces and of the finest areas
 KMEANS_RUNS, KMEANS_ITERATIONS = 4, 60
+KMEANS_POINTS = 20000                   # superpixel colours are merged on a grid of this many points at most: a fine grid has 100 000
+PLANES_SCALE = 150.0                    # graph segmentation: above ~500 a face collapses into one region (measured on a portrait)
+PLANES_SIGMA = 0.6
 ARC_SIGMA_PX = 1.2                      # an arc is low-passed along its length first: pixel steps are no detail
 CHAIKIN_ROUNDS = 2
 FINE_KINDS = ("eye", "lips", "manual")
@@ -124,6 +130,12 @@ def _slic(lab: np.ndarray, size: int) -> np.ndarray:
     return slic.getLabels()
 
 
+def _bgr8(lab: np.ndarray) -> np.ndarray:
+    """A Lab picture as the 8-bit BGR picture OpenCV's segmentation reads."""
+    rgb = np.clip(color.lab_to_srgb8(lab.astype(np.float64)), 0, 255).astype(np.uint8)
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+
 def _seeds(lab: np.ndarray, size: int) -> np.ndarray:
     """SEEDS superpixels: they follow thin dark lines and text more closely than SLIC and take less time, at the cost of
     rougher borders on soft gradients. OpenCV's SEEDS reads an 8-bit picture, so the Lab picture goes in as sRGB; a crop
@@ -132,13 +144,37 @@ def _seeds(lab: np.ndarray, size: int) -> np.ndarray:
     count = (h * w) // (size * size)
     if count < 2:
         return np.zeros((h, w), np.int32)
-    rgb = np.clip(color.lab_to_srgb8(lab.astype(np.float64)), 0, 255).astype(np.uint8)
     seeds = cv2.ximgproc.createSuperpixelSEEDS(w, h, 3, count, 4, 2, 5, False)
-    seeds.iterate(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), SLIC_ITERATIONS)
+    seeds.iterate(_bgr8(lab), SLIC_ITERATIONS)
     return seeds.getLabels()
 
 
-_ALGORITHM = {"slic": _slic, "seeds": _seeds}
+def _tonal(lab: np.ndarray, size: int) -> np.ndarray:
+    """A grid of cells of ``MIN_SUPERPIXEL_PX``: too small to carry a shape of their own (``size`` is not used), so the colour
+    classes alone decide the shapes, which follow the shading: brows, lips, the highlight on a nose. About a hundred thousand
+    cells to a 1200 px picture, which :func:`_classes` merges before it clusters."""
+    slic = cv2.ximgproc.createSuperpixelSLIC(lab, cv2.ximgproc.SLIC, MIN_SUPERPIXEL_PX, 10.0)
+    slic.iterate(5)
+    slic.enforceLabelConnectivity(4)
+    return slic.getLabels()
+
+
+def _planes(lab: np.ndarray, size: int) -> np.ndarray:
+    """Graph segmentation (Felzenszwalb): flat planes of one tone and ribbons along features, with no patches of an even size.
+    The scale is bounded (``PLANES_SCALE``) so that a face never collapses into one region; ``size`` only sets how small a
+    piece may be, so faces and eyes still get finer pieces than the rest."""
+    h, w = lab.shape[:2]
+    if min(h, w) < 2:
+        return np.zeros((h, w), np.int32)
+    graph = cv2.ximgproc.segmentation.createGraphSegmentation(PLANES_SIGMA, PLANES_SCALE, max(10, size * size // 6))
+    return graph.processImage(_bgr8(lab)).astype(np.int32)
+
+
+_ALGORITHM = {"slic": _slic, "tonal": _tonal, "planes": _planes, "seeds": _seeds}
+
+
+def _listed(names) -> str:
+    return ", ".join(names[:-1]) + " or " + names[-1]
 
 
 def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int], algorithm: str = DEFAULT_ALGORITHM) -> np.ndarray:
@@ -207,8 +243,14 @@ def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], n_colors:
         own, rest = weights[level == lv].sum(), weights[level < lv].sum()
         if own > 0 and LEVEL_SHARE[lv] > 0:
             weights[level == lv] *= max(1.0, LEVEL_SHARE[lv] * rest / ((1 - LEVEL_SHARE[lv]) * own))
-    # superpixels of the same colour to half a Lab unit (no visible difference) are clustered as one weighted point
-    points, same = np.unique(np.round(mean * 2) / 2, axis=0, return_inverse=True)
+    # superpixels of the same colour to half a Lab unit (no visible difference) are clustered as one weighted point; a fine grid
+    # has too many of them, and a coarser step (at most 2 units) keeps the clustering to a couple of seconds
+    step = 0.5
+    while True:
+        points, same = np.unique(np.round(mean / step) * step, axis=0, return_inverse=True)
+        if len(points) <= KMEANS_POINTS or step >= 2.0:
+            break
+        step += 0.5
     same = same.ravel()
     centres, assign = _kmeans(points, np.bincount(same, weights=weights, minlength=len(points)), n_colors, seed)
     return assign[same][sp].astype(np.int32), centres
@@ -473,7 +515,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     ``important`` lists areas the operator marked (or detected areas handed back to keep them, see
     :func:`faces.check_area`), in pixels of this picture; ``use_faces`` adds the faces, eyes and lips found in it.
     ``superpixels`` is the number of coarse superpixels along the longer side: fewer follow only the larger edges.
-    ``algorithm`` makes them: ``slic`` (the default) or ``seeds`` (``ALGORITHMS``).
+    ``algorithm`` makes them: ``slic`` (the default), ``tonal``, ``planes`` or ``seeds`` (``ALGORITHMS``).
     """
     img = np.asarray(image_rgb)
     if img.ndim != 3 or img.shape[2] != 3 or img.dtype != np.uint8 or not img.size:
@@ -482,7 +524,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     seed = _whole(seed, "the seed", 0)
     superpixels = _whole(superpixels, "the number of superpixels across the picture", MIN_SUPERPIXELS_ACROSS)
     if algorithm not in ALGORITHMS:
-        raise SegmentError("the algorithm must be " + " or ".join(ALGORITHMS))
+        raise SegmentError("the algorithm must be " + _listed(ALGORITHMS))
     h, w = img.shape[:2]
     px_mm = _number(width_mm, "the work width", positive=True) / w
     min_area, tolerance = _number(min_area_mm2, "the minimum area"), _number(tolerance_mm, "the tolerance")
