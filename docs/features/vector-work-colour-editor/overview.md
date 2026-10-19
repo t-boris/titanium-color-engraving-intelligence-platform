@@ -2,7 +2,7 @@
 type: feature
 id: vector-work-colour-editor
 title: Vector work colour editor
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-19
 provenance: Created by an AI agent through MarkView from Operator request and answers, 2026-10-19 (after testing release 0.5.1 on work 22)
