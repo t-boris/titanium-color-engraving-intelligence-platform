@@ -12,7 +12,10 @@ within tolerance), DEC-076 (proposed: superpixels + planar map of shared borders
       nearest / tonality / random (seeded, restorable) / fewer layers; fastest within tolerance; per-group and per-region change.
 - [x] V3 Vector work flow (main tree, after V1+V2): steps split -> preview -> colour -> preview -> file; important-area
       marking on the picture; variants kept; export cleaning first, <= 29 recipe layers, Paths from shared borders; job time.
-- [ ] V4 Tests green, real photograph through the flow (gaps measured on the export), PR, CI, merge, 0.5.0, deploy, walkthrough.
+- [x] V4 Tests green, real photograph through the flow (gaps measured on the export), PR, CI, merge, 0.5.0, deploy, walkthrough.
+      1051 passed; CI green; v0.5.0 (#23) deployed after a backup; walkthrough on the Inna picture (work 21): face, eyes, lips
+      found, 12 colours = 500 regions, export cleaning + 9 layers, 0 % gaps/overlaps, 3 h 54 min estimated. The walkthrough
+      found the area overlay hiding the picture (chart style of svg[role=img]): fixed in v0.5.1 (#24), deployed, verified.
 
 # Implement the whole specification (goal set 2026-10-18)
 
