@@ -1,0 +1,61 @@
+/* Сообщения о лазерах (паспорт, документы, расчёт рабочей точки) — REQ-017, DEC-034, DEC-035.
+   Загружается после i18n-more.js; более раннее правило имеет приоритет. */
+'use strict';
+// a lens as the server names it: «name, 174 mm» or «name, focal length unknown»
+const lensRu = (s) => s.replace(/, focal length unknown$/, ', фокус неизвестен').replace(/ mm$/, ' мм');
+I18N.add([
+  // паспорт
+  [/^device name is required/i, 'Укажите название лазера'],
+  [/^the passport must be an object/i, 'Паспорт лазера записан неверно'],
+  [/^the repetition rate range must be an object/i, 'Диапазон частот повторения записан неверно'],
+  [/^a passport section has the wrong type/i, 'Раздел паспорта записан неверно'],
+  [/^a passport section is too large/i, 'Раздел паспорта слишком большой'],
+  [/^maximum repetition rate must be above the minimum/i, 'Максимальная частота должна быть больше минимальной'],
+  [/^the pulse width table needs at least one step/i, 'В таблице длительностей импульса нужна хотя бы одна строка'],
+  [/^pulse widths must not repeat/i, 'Длительности импульса в таблице не должны повторяться'],
+  [/^pulse width (\S+) ns is not a selectable step of this laser; the steps are (.+)$/i,
+    (m) => 'Длительность импульса ' + m[1] + ' нс — не ступень этого лазера: лазер её проигнорирует и оставит прежнюю. Доступны (нс): ' + m[2]],
+  [/^the laser device was not found/i, 'Лазер не найден'],
+  [/^this laser is named by (\d+) stored records of work and keeps their history/i, (m) => 'Лазер указан в сохранённых записях работ (' + m[1] + ') и хранит их историю: удалить его нельзя'],
+  [/^the laser template is not known/i, 'Шаблон лазера неизвестен'],
+  [/^the controller settings are not valid/i, 'Настройки контроллера записаны неверно'],
+  [/^the test report is not valid/i, 'Протокол испытаний записан неверно'],
+  [/^a waveform is not valid/i, 'Форма импульса записана неверно: нужны время в возрастающем порядке и мощность для каждой точки'],
+  // документы
+  [/^the document kind is not recognised/i, 'Вид документа не распознан'],
+  [/^the document must be a JPG, PNG, PDF or TXT file/i, 'Документ — файл JPG, PNG, PDF или TXT'],
+  [/^the document is empty/i, 'Файл документа пуст'],
+  [/^the document is larger than (\d+) MB/i, (m) => 'Документ больше ' + m[1] + ' МБ'],
+  [/^the document content does not match its file type/i, 'Содержимое документа не соответствует типу файла'],
+  [/^the stored document file is missing/i, 'Файл документа не найден на диске'],
+  [/^choose the document file/i, 'Выберите файл документа'],
+  // расчёт рабочей точки (приходят как данные)
+  [/^power must not exceed 100 %/i, 'Мощность не может быть больше 100 %'],
+  [/^frequency (\S+) kHz is outside the repetition rate range (\S+)-(\S+) kHz of this laser/i,
+    (m) => 'Частота ' + m[1] + ' кГц вне диапазона лазера ' + m[2] + '–' + m[3] + ' кГц'],
+  [/^frequency (\S+) kHz is below the cut-off frequency (\S+) kHz of the (\S+) ns step: the output power is (\S+) % of the power set/i,
+    (m) => 'Частота ' + m[1] + ' кГц ниже частоты среза ' + m[2] + ' кГц для импульса ' + m[3] + ' нс: выходная мощность — ' + m[4] + ' % от заданной'],
+  [/^frequency (\S+) kHz is outside the controller range (\S+)-(\S+) kHz/i,
+    (m) => 'Частота ' + m[1] + ' кГц вне диапазона контроллера ' + m[2] + '–' + m[3] + ' кГц (Min PWM и Max PWM в настройках лазера): проверьте настройки LightBurn'],
+  [/^the calculated pulse energy (\S+) mJ exceeds the passport maximum (\S+) mJ: limited to the maximum/i,
+    (m) => 'Расчётная энергия импульса ' + m[1] + ' мДж больше паспортного максимума ' + m[2] + ' мДж: берётся максимум'],
+  [/^the plate with its markers is (\S+) x (\S+) mm, larger than the work field (\S+) x (\S+) mm of the laser/i,
+    (m) => 'Плата вместе с маркерами ' + m[1] + ' × ' + m[2] + ' мм больше рабочего поля лазера ' + m[3] + ' × ' + m[4] + ' мм: уменьшите ячейки или число значений'],
+  [/^CW setting: the laser does not pulse/i, 'Режим CW: лазер не импульсный, энергия и шаг импульсов не определены'],
+  [/^spot diameter is not known for this laser/i, 'Диаметр пятна не известен (нужны линза и M² или измеренное пятно): плотность энергии и перекрытие импульсов не рассчитываются'],
+  // линзы
+  [/^lens name is required/i, 'Укажите название линзы'],
+  [/^(.+) must be between (\S+) and (\S+)$/i,
+    (m) => ({'focal length': 'Фокусное расстояние', 'lens field': 'Поле линзы', 'beam expansion': 'Расширитель пучка'}[m[1].toLowerCase()] || m[1]) + ' — от ' + m[2] + ' до ' + m[3]],
+  [/^this lens is installed on a laser; remove it from the laser first/i, 'Линза установлена на лазере: сначала снимите её'],
+  [/^this lens is named by (\d+) stored records of work and keeps their history/i, (m) => 'Линза указана в сохранённых записях работ (' + m[1] + ') и хранит их историю: удалить её нельзя'],
+  [/^this lens is already installed on another laser \((.+)\); remove it there first/i, (m) => 'Эта линза уже стоит на другом лазере (' + m[1] + '): сначала снимите её там'],
+  [/^the lens installed now \((.+)\) differs from the lens of this plate \((.+)\)$/i, (m) => 'Сейчас стоит линза ' + lensRu(m[1]) + ', а плата делалась на ' + lensRu(m[2]) + ': цвета нельзя считать сравнимыми'],
+  [/^no lens is installed on the laser now; the plate was made with (.+)$/i, (m) => 'Сейчас на лазере нет линзы, а плата делалась на ' + lensRu(m[1])],
+  [/^this plate has no record of its lens/i, 'У этой платы нет записи о линзе'],
+  [/^the lens chosen for this photograph \((.+)\) differs from the lens of this plate \((.+)\): the measurements are kept with the plate's lens$/i,
+    (m) => 'Для фотографии выбрана линза ' + lensRu(m[1]) + ', а плата делалась на ' + lensRu(m[2]) + ': измерения записываются с линзой платы'],
+  [/^no lens was chosen for this photograph; the plate was made with (.+): the measurements are kept with the plate's lens$/i,
+    (m) => 'Для фотографии линза не выбрана; плата делалась на ' + lensRu(m[1]) + ': измерения записываются с линзой платы'],
+
+]);

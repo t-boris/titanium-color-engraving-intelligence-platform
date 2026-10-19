@@ -215,3 +215,27 @@ A. Russian UI, matching the prototype. I translate the server messages the UI sh
 
 Recorded DEC-031 and DEC-034 from your answers. Added DEC-032 (continuous mapping) and DEC-033 (designer model) as proposed, plus DEC-023, DEC-024, DEC-026 to DEC-030 earlier. All proposed decisions are working defaults and are listed in the pull request for you to accept or change.
 
+
+### Answer to Q-020 · 2026-10-14
+
+Which handwritten values on the controller parameter table are correct: the number written next to Max PWM (4000 against the printed 200 kHz
+
+AI: Рукописные значения оставляю неподтверждёнными: по фотографии нельзя достоверно выбрать между 4000 и 200 кГц или восстановить масштабы и серийный номер. Спорное значение Max PWM, включая печатное значение с противоречащей пометкой, не участвует в расчётах до проверки; это соответствует существующему поведению characterization.py.
+
+### Answer to Q-021 · 2026-10-14
+
+What are the focal length of the F-theta lens, the real spot diameter on the titanium and the pulse width you want as the profile constant f
+
+AI: Фокусное расстояние и реальный диаметр пятна оставляю неизвестными, пока нет документа или измерения; зависимые показатели показываются как недоступные. Для новой платы выбираю редактируемое начальное значение 200 нс, уже используемое кодом, без утверждения, что оно оптимально для цвета; постоянной профиля оно больше не является.
+
+### Answer to Q-022 · 2026-10-14
+
+Is the laser profile (pulse width, line interval, passes) needed as a separate record, or should these three values belong to each engraving
+
+B. Remove the profile as a screen: pulse width, line interval and passes become fields of each plate and of each engraving plan, with the laser device chosen there; measurements still store all three values, and 'same conditions' is decided by equality of the values.
+
+### User clarification of the platform goal · 2026-10-14
+
+The database is meant to learn task-specific settings: what to use for text, images, vector lines, desired titanium colors and other engraving tasks. The eventual workflow is to provide a photograph, prepare the artwork, convert it to vectors and generate a standard LightBurn project. The system should keep analyzing results, surface better settings and useful discoveries with evidence, and recommend additional experiments that would teach it more about the selected laser.
+
+Recorded as source SRC-002 and draft requirements REQ-020 (task-aware knowledge), REQ-021 (image-to-vector LightBurn workflow) and REQ-022 (periodic findings and experiment acquisition). These are product requirements; they are not claims that the complete workflow is already implemented.

@@ -1,0 +1,77 @@
+"""Analysis runs and their findings (REQ-022): run now, the periodic schedule, filtered findings with their history, and a
+proposal of the Experiment Designer for a gap."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+
+from .. import designer, findings
+from .common import store_of
+
+router = APIRouter(prefix="/api/analysis")
+
+
+class ScheduleIn(BaseModel):
+    interval_hours: float
+
+
+class FindingProposalIn(BaseModel):
+    seed: int = 1729
+    size: int = designer.DEFAULT_SIZE
+
+
+@router.get("/runs")
+def runs(request: Request, limit: int = 50):
+    return findings.list_runs(store_of(request), limit)
+
+
+@router.post("/runs", status_code=201)
+def run_now(request: Request):
+    """Analyse everything accepted so far now ("Пересчитать выводы"); waits for a run already in progress."""
+    return findings.run_analysis(store_of(request), "manual")
+
+
+@router.get("/runs/{run_id}")
+def run_findings(run_id: str, request: Request, kind: str | None = None, task: str | None = None, setup: str | None = None,
+                 material: str | None = None):
+    """The findings of one run (``latest`` for the newest), filtered by kind, task, laser + lens and titanium stock."""
+    s = store_of(request)
+    run = findings.get_run(s, None if run_id == "latest" else _run_id(run_id))
+    if run is None:
+        return {"run": None, "findings": [], "total": 0, "options": {"kinds": [], "tasks": [], "setups": [], "stocks": []}}
+    return findings.findings_of(s, run["id"], kind=kind or None, task=task or None, setup=setup or None, material=material or None)
+
+
+def _run_id(text: str) -> int:
+    if not text.isdigit():
+        raise KeyError(f"analysis run {text} not found")
+    return int(text)
+
+
+@router.get("/findings/{finding_id}/history")
+def finding_history(finding_id: int, request: Request):
+    return findings.history(store_of(request), finding_id)
+
+
+@router.post("/findings/{finding_id}/proposal", status_code=201)
+def propose_for_finding(finding_id: int, body: FindingProposalIn, request: Request):
+    return findings.propose_for(store_of(request), finding_id, seed=body.seed, size=body.size)
+
+
+@router.get("/schedule")
+def get_schedule(request: Request):
+    return _schedule(request)
+
+
+@router.put("/schedule")
+def put_schedule(body: ScheduleIn, request: Request):
+    findings.set_interval(store_of(request), body.interval_hours)
+    scheduler = getattr(request.app.state, "analysis_scheduler", None)
+    if scheduler is not None:
+        scheduler.start_if_enabled()          # the thread starts the moment an interval is set; with 0 it stays idle
+    return _schedule(request)
+
+
+def _schedule(request: Request) -> dict:
+    scheduler = getattr(request.app.state, "analysis_scheduler", None)
+    return findings.schedule(store_of(request)) | {"running": bool(scheduler and scheduler.running)}

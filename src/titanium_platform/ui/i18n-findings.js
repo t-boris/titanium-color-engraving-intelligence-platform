@@ -1,0 +1,115 @@
+/* Тексты анализа накопленной работы и предложений планировщика (REQ-022, DEC-034): выводы расчёта, их ограничения, вопрос и
+   ценность предложения, причина каждого набора параметров, история статуса предложения и пояснение AI. Загружается после
+   остальных таблиц; вложенные сообщения (основание «под вопросом») переводятся теми же таблицами. Числа приходят как есть. */
+'use strict';
+(() => {
+  const t = (s) => I18N.tr(s);
+  const N = '(-?[\\d.]+)';
+  const re = (source) => new RegExp('^' + source.replace(/#/g, N) + '$', 'i');
+  const TASK = {line: 'линии', fill: 'заливки', tonal_image: 'тоновые изображения'};
+  const STATUS = {proposed: 'предложено', accepted: 'принято', rejected: 'отклонено', done: 'выполнено'};
+  I18N.add([
+    // выводы расчёта: улучшения
+    [re('the expected colour error of this recipe fell from # to # ΔE since the previous analysis \\(# independent engravings\\)'),
+      (m) => `Ожидаемая ошибка цвета этого рецепта снизилась с ${m[1]} до ${m[2]} ΔE после прошлого расчёта (независимых гравировок: ${m[3]})`],
+    [re('recipe approved for production: # independent engravings, variance # ΔE², expected error # ΔE'),
+      (m) => `Рецепт утверждён в производство: независимых гравировок ${m[1]}, дисперсия ${m[2]} ΔE², ожидаемая ошибка ${m[3]} ΔE`],
+    [re('recipe validated: # independent engravings, variance # ΔE², expected error # ΔE'),
+      (m) => `Рецепт валидирован: независимых гравировок ${m[1]}, дисперсия ${m[2]} ΔE², ожидаемая ошибка ${m[3]} ΔE`],
+    [re('target colour # is reached: a plate cell measured # ΔE from it, within the tolerance #'),
+      (m) => `Целевой цвет № ${m[1]} достигнут: ячейка платы измерена в ${m[2]} ΔE от него, в пределах допуска ${m[3]}`],
+    // нестабильность
+    [re('repeat engravings of this recipe vary by # ΔE², above the saved variance threshold #'),
+      (m) => `Повторные гравировки этого рецепта расходятся на ${m[1]} ΔE² — выше сохранённого порога дисперсии ${m[2]}`],
+    [/^this knowledge entry is questioned: (.*)$/i, (m) => 'Запись знания под вопросом: ' + t(m[1])],
+    // аномалии
+    [re('observation # lies # ΔE from the mean of its recipe, beyond the saved tolerance #'),
+      (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от среднего своего рецепта — дальше сохранённого допуска ${m[3]}`],
+    [re('observation # lies # ΔE from the mean of the other engravings of its recipe, more than three standard deviations \\(# ΔE\\)'),
+      (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от среднего других гравировок своего рецепта — больше трёх стандартных отклонений (${m[3]} ΔE)`],
+    [/^an anomaly is one observation against its recipe: check its photograph and alignment before drawing a conclusion$/i,
+      'Аномалия — одно наблюдение против своего рецепта: прежде чем делать вывод, проверьте фотографию и совмещение'],
+    [/^the standard deviation comes from few engravings: it is a rough scale, not a measured spread$/i,
+      'Стандартное отклонение получено по немногим гравировкам: это грубый масштаб, а не измеренный разброс'],
+    // пробелы
+    [re('# recipes rest on a single independent engraving: a repeat would let their stability be assessed and validate them under the saved criteria'),
+      (m) => `Рецептов с одной независимой гравировкой: ${m[1]}. Повтор позволит оценить их стабильность и валидировать по сохранённым критериям`],
+    [re('# recipes rest on a single independent engraving: a repeat would let their stability be assessed'),
+      (m) => `Рецептов с одной независимой гравировкой: ${m[1]}. Повтор позволит оценить их стабильность`],
+    [/^the evaluation criteria are not agreed for this laser and lens: no recipe is validated automatically$/i,
+      'Критерии оценки для этого лазера с этой линзой не согласованы: рецепты автоматически не валидируются'],
+    [re('target colour # is not reached yet: no plate cell made for it has been measured'),
+      (m) => `Целевой цвет № ${m[1]} пока не достигнут: ни одна ячейка, сделанная для него, ещё не измерена`],
+    [re('target colour # is not reached yet: its cells were measured without a reference chart and cannot be compared with it'),
+      (m) => `Целевой цвет № ${m[1]} пока не достигнут: его ячейки сняты без эталонной карты, и сравнить их с ним нельзя`],
+    [re('target colour # cannot be judged: no ΔE tolerance is saved; the closest measurement is # ΔE away'),
+      (m) => `Целевой цвет № ${m[1]} нельзя оценить: допуск ΔE не сохранён; ближайшее измерение — в ${m[2]} ΔE`],
+    [re('target colour # is not reached: the closest measurement is # ΔE away, beyond the tolerance #'),
+      (m) => `Целевой цвет № ${m[1]} не достигнут: ближайшее измерение — в ${m[2]} ΔE, дальше допуска ${m[3]}`],
+    [/^no accepted evidence for (\S+) on this titanium with this laser and lens$/i,
+      (m) => `Нет принятых данных для задачи «${TASK[m[1]] || m[1]}» на этой заготовке титана с этим лазером и этой линзой`],
+    [/^coverage counts accepted test features of any measurement; the task of a layer is the one stated for it, else the one its LightBurn mode implies$/i,
+      'Покрытие учитывает принятые тестовые участки любого способа измерения; задача слоя — заданная для него, а если не задана — по режиму слоя LightBurn'],
+    // гипотезы AI
+    [/^an insight of the AI researcher is a hypothesis: it is not a measured conclusion until a plate tests it$/i,
+      'Вывод AI-исследователя — гипотеза: измеренным выводом он станет, только когда его проверит плата'],
+    [/^some photographs it cites are no longer in active use$/i, 'Часть фотографий, на которые он ссылается, больше не используется'],
+    // расписание и предложения из выводов
+    [re('the analysis interval must be a number of hours from 0 to #'), (m) => `Интервал пересчёта — число часов от 0 до ${m[1]}`],
+    [/^the experiment designer plans fill plates for a target colour, missing fill evidence or a repeat; this finding asks for another kind of test$/i,
+      'Планировщик делает платы-заливки для целевого цвета, недостающих данных по заливке или повтора; для этого вывода нужен другой тест (например, плата возможностей лазера)'],
+    [/^no filled regions are measured on this laser and lens yet: choose the pulse width, line interval and passes in the experiment designer$/i,
+      'Для этого лазера с этой линзой ещё не измерено ни одной заливки: задайте длительность импульса, шаг линий и проходы в планировщике'],
+    [re('finding # not found'), (m) => `Вывод № ${m[1]} не найден`],
+    [re('analysis run (\\S+) not found'), (m) => `Расчёт № ${m[1]} не найден`],
+    [re('titanium stock # not found'), (m) => `Заготовка титана № ${m[1]} не найдена`],
+    // предложение планировщика: вопрос, ценность, причины наборов
+    [re('Which settings reproduce target colour # \\(L #, a #, b #\\)\\?'),
+      (m) => `Какие настройки воспроизводят целевой цвет № ${m[1]} (L ${m[2]}, a ${m[3]}, b ${m[4]})?`],
+    [re('Do repeat engravings of the unstable sets \\(#\\) agree within the variance threshold #\\?'),
+      (m) => `Совпадут ли повторные гравировки нестабильных наборов (${m[1]}) в пределах порога дисперсии ${m[2]}?`],
+    [re('What colours do the settings give where the model is least certain \\(# sets\\)\\?'),
+      (m) => `Какие цвета дают настройки там, где модель наименее уверена (наборов: ${m[1]})?`],
+    [re('What colours do settings far from every measured set give \\(# sets\\)\\?'),
+      (m) => `Какие цвета дают настройки вдали от всех измеренных наборов (наборов: ${m[1]})?`],
+    [re('Do recipes measured on a single engraving give the same colour when engraved again \\(# sets\\)\\?'),
+      (m) => `Дадут ли рецепты, измеренные по одной гравировке, тот же цвет при повторе (наборов: ${m[1]})?`],
+    [/^a measured cell next to a target colour shows whether it can be engraved within the tolerance, and an unreachable artwork colour becomes usable$/i,
+      'Измеренная ячейка рядом с целевым цветом покажет, можно ли выгравировать его в пределах допуска, — и недостижимый цвет работы станет доступен'],
+    [/^repeats show whether these settings are reproducible or must be avoided in a work$/i,
+      'Повторы покажут, воспроизводимы ли эти настройки или их нужно избегать в работах'],
+    [/^a measurement where the model is least certain reduces the error of every prediction near it$/i,
+      'Измерение там, где модель наименее уверена, уменьшает ошибку всех прогнозов рядом'],
+    [/^a measurement far from the others extends the measured colour space$/i, 'Измерение вдали от остальных расширяет измеренное цветовое пространство'],
+    [/^a second independent engraving lets the stability of a recipe be assessed and, under agreed criteria, validated$/i,
+      'Вторая независимая гравировка позволяет оценить стабильность рецепта и при согласованных критериях валидировать его'],
+    [re('aimed at target colour #: the model predicts # ΔE from it at these settings'),
+      (m) => `Нацелен на целевой цвет № ${m[1]}: модель прогнозирует ${m[2]} ΔE от него при этих настройках`],
+    [re('re-measures settings whose repeat engravings vary by # ΔE², above the saved variance threshold #'),
+      (m) => `Перемеряет настройки, повторы которых расходятся на ${m[1]} ΔE² — выше сохранённого порога дисперсии ${m[2]}`],
+    [re('the model is least certain here: posterior standard deviation # of the standardised colour'),
+      (m) => `Здесь модель наименее уверена: апостериорное стандартное отклонение ${m[1]} нормированного цвета`],
+    [re('repeats a recipe measured on a single engraving \\(#, #, # L, a, b\\) so that its stability can be assessed'),
+      (m) => `Повторяет рецепт, измеренный по одной гравировке (L ${m[1]}, a ${m[2]}, b ${m[3]}), чтобы оценить его стабильность`],
+    [/^nothing is measured with these job settings yet: the set spreads the first plate over the laser's range$/i,
+      'С этими настройками работы ещё ничего не измерено: набор распределяет первую плату по диапазону лазера'],
+    [re("far from what is measured: # on the normalised power, frequency and speed axes to the nearest measured set"),
+      (m) => `Вдали от измеренного: ${m[1]} по нормированным осям мощности, частоты и скорости до ближайшего измеренного набора`],
+    [/^some of these recipes were engraved with other LightBurn settings than a plate cell has: the repeat keeps their power, frequency, speed, pulse width, line interval and passes only$/i,
+      'Часть рецептов гравировалась с другими настройками LightBurn, чем у ячейки платы: повтор сохраняет только мощность, частоту, скорость, длительность импульса, шаг линий и проходы'],
+    [/^none of these recipes is a filled region with all six settings recorded: they cannot be repeated on a plate$/i,
+      'Ни один из этих рецептов не является заливкой со всеми шестью записанными настройками: повторить их на плате нельзя'],
+    // статус предложения
+    [/^only a proposed experiment can be rejected \(this one is (\w+)\)$/i, (m) => `Отклонить можно только предложенный эксперимент (этот — ${STATUS[m[1]] || m[1]})`],
+    [/^this proposal was rejected: make a new proposal to engrave it$/i, 'Это предложение отклонено: чтобы гравировать, сделайте новое'],
+    [/^rejected by the operator$/i, 'отклонено оператором'],
+    [/^accepted by the operator: its plates were made$/i, 'принято оператором: платы созданы'],
+    [/^every plate of it was photographed and accepted$/i, 'все его платы сфотографированы и приняты'],
+    [/^an accepted photograph of its plates left active use$/i, 'принятая фотография его платы удалена из работы'],
+    [/^proposed for a finding of the analysis$/i, 'предложено по выводу анализа'],
+    // пояснение AI
+    [/^no AI key is configured: set OPENAI_API_KEY in the environment or in \.env\.local to get an explanation; the proposal works without it$/i,
+      'Ключ AI не настроен: задайте OPENAI_API_KEY в окружении или в .env.local, чтобы получить пояснение. Предложение работает и без него'],
+    [/^the AI service did not answer \((\w+)\): the proposal is unchanged$/i, (m) => `AI-сервис не ответил (${m[1]}): предложение не изменилось`],
+  ]);
+})();

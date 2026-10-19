@@ -2,7 +2,7 @@ import pytest
 
 import obs
 from titanium_platform import knowledge as kn
-from titanium_platform import profiles as pf
+from titanium_platform import setup as su
 
 
 @pytest.fixture
@@ -11,42 +11,42 @@ def w(store):
 
 
 def agree(store, w, repeat=3, tol=4.0, var=2.0):
-    pid = w["profile"]["id"]
-    pf.save_rules(store, pid, repeat_threshold=repeat, delta_tolerance=tol, variance_threshold=var)
-    pf.save_rules(store, pid, criteria_agreed=True)
+    setup = w["setup"]
+    su.save_rules(store, *setup, repeat_threshold=repeat, delta_tolerance=tol, variance_threshold=var)
+    su.save_rules(store, *setup, criteria_agreed=True)
 
 
 def stage(store, w):
-    return kn.list_for_profile(store, w["profile"]["id"])[0]["stage"]
+    return kn.list_for_setup(store, *w["setup"])[0]["stage"]
 
 
 def test_nothing_passes_measured_until_the_criteria_are_agreed(store, w):
-    pid = w["profile"]["id"]
+    setup = w["setup"]
     for lab in ((50, 0, 0), (50.2, 0, 0), (50.1, 0, 0)):
         obs.add(store, w, lab)
-    kn.refresh(store, pid)
+    kn.refresh(store, *setup)
     assert stage(store, w) == "measured"
-    pf.save_rules(store, pid, repeat_threshold=2, delta_tolerance=4, variance_threshold=2)  # numbers alone do not agree
-    kn.refresh(store, pid)
+    su.save_rules(store, *setup, repeat_threshold=2, delta_tolerance=4, variance_threshold=2)  # numbers alone do not agree
+    kn.refresh(store, *setup)
     assert stage(store, w) == "measured"
 
 
 def test_stages_follow_the_evidence_once_criteria_are_agreed(store, w):
-    pid = w["profile"]["id"]
+    setup = w["setup"]
     agree(store, w, repeat=3)
     obs.add(store, w, (50, 0, 0))
-    kn.refresh(store, pid)
+    kn.refresh(store, *setup)
     assert stage(store, w) == "measured"
     obs.add(store, w, (50.5, 0, 0), engraving="e1", rephoto=True)  # same engraving again: candidate, not repeated
-    kn.refresh(store, pid)
+    kn.refresh(store, *setup)
     assert stage(store, w) == "candidate"
     obs.add(store, w, (50.2, 0, 0))
-    kn.refresh(store, pid)
+    kn.refresh(store, *setup)
     assert stage(store, w) == "repeated"  # 2 independent engravings < threshold 3
     obs.add(store, w, (50.1, 0, 0))
-    kn.refresh(store, pid)
+    kn.refresh(store, *setup)
     assert stage(store, w) == "validated"  # 3 independent engravings, variance and tolerance respected
-    events = [e["to_stage"] for e in kn.list_for_profile(store, pid)[0]["history"]]
+    events = [e["to_stage"] for e in kn.list_for_setup(store, *setup)[0]["history"]]
     assert events == ["measured", "candidate", "repeated", "validated"]
 
 
@@ -55,7 +55,7 @@ def test_a_rephotograph_never_counts_toward_the_threshold(store, w):
     obs.add(store, w, (50, 0, 0), engraving="A")
     obs.add(store, w, (50.1, 0, 0), engraving="A", rephoto=True)
     obs.add(store, w, (50.2, 0, 0), engraving="A", rephoto=True)
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     assert stage(store, w) == "candidate"  # three photos of ONE engraving are one repetition, not three
 
 
@@ -63,14 +63,14 @@ def test_a_noisy_set_stops_at_repeated(store, w):
     agree(store, w, repeat=2, var=2.0)
     for lab in ((50, 0, 0), (60, 0, 0)):
         obs.add(store, w, lab)
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     assert stage(store, w) == "repeated"
 
 
 def test_the_threshold_below_two_is_treated_as_two(store, w):
     agree(store, w, repeat=1)
     obs.add(store, w, (50, 0, 0))
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     assert stage(store, w) == "measured"  # one engraving can never validate
 
 
@@ -78,8 +78,8 @@ def validated(store, w):
     agree(store, w, repeat=2)
     obs.add(store, w, (50, 0, 0))
     obs.add(store, w, (50.2, 0, 0))
-    kn.refresh(store, w["profile"]["id"])
-    return kn.list_for_profile(store, w["profile"]["id"])[0]["id"]
+    kn.refresh(store, *w["setup"])
+    return kn.list_for_setup(store, *w["setup"])[0]["id"]
 
 
 def test_production_needs_explicit_confirmation_and_a_validated_entry(store, w):
@@ -94,8 +94,8 @@ def test_production_needs_explicit_confirmation_and_a_validated_entry(store, w):
 def test_automatic_refresh_never_lowers_or_changes_production(store, w):
     kid = validated(store, w)
     kn.approve_for_production(store, kid, True)
-    pf.save_rules(store, w["profile"]["id"], criteria_agreed=False)
-    kn.refresh(store, w["profile"]["id"])
+    su.save_rules(store, *w["setup"], criteria_agreed=False)
+    kn.refresh(store, *w["setup"])
     assert kn.get(store, kid)["stage"] == "production"
 
 
@@ -104,12 +104,12 @@ def test_a_production_entry_that_degrades_is_questioned_keeps_its_stage_and_show
     kn.approve_for_production(store, kid, True)
     first = kn.get(store, kid)["summary"]["observation_ids"]
     new = obs.add(store, w, (58, 0, 0))  # a later engraving far from the earlier ones
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     k = kn.get(store, kid)
     assert k["stage"] == "production" and k["questioned"]
     assert "variance" in k["doubt"]["reason"] and new in k["doubt"]["observation_ids"] and set(first) <= set(k["doubt"]["observation_ids"])
     before = len(k["history"])
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     assert len(kn.get(store, kid)["history"]) == before  # idempotent: no duplicate flag events
 
 
@@ -117,7 +117,7 @@ def test_confirming_a_questioned_entry_clears_the_flag_and_records_it(store, w):
     kid = validated(store, w)
     kn.approve_for_production(store, kid, True)
     obs.add(store, w, (58, 0, 0))
-    kn.refresh(store, w["profile"]["id"])
+    kn.refresh(store, *w["setup"])
     k = kn.confirm_questioned(store, kid)
     assert not k["questioned"] and k["stage"] == "production" and k["history"][-1]["type"] == "confirmed"
     assert k["history"][-1]["observation_ids"]
@@ -158,3 +158,87 @@ def test_rolling_back_production_needs_confirmation(store, w):
     with pytest.raises(kn.KnowledgeError, match="explicit confirmation"):
         kn.rollback(store, kid, approved["id"])
     assert kn.rollback(store, kid, approved["id"], confirm_production=True)["stage"] == "validated"
+
+
+def remove(store, observation_id):
+    """Delete the pair of one observation, as the operator does (DEC-047)."""
+    from titanium_platform import ingest
+    ingest.delete_pair(store, store.one("SELECT pair_id FROM observation WHERE id=?", (observation_id,))["pair_id"])
+
+
+def test_deleting_a_pair_questions_an_entry_its_evidence_no_longer_supports_and_keeps_the_stage(store, w):
+    """DEC-066 item 3: the counts follow the deletion, the stage is never lowered, the reason is recorded."""
+    agree(store, w, repeat=2)
+    obs.add(store, w, (50, 0, 0))
+    second = obs.add(store, w, (50.2, 0, 0))
+    kn.refresh(store, *w["setup"])
+    kid = kn.list_for_setup(store, *w["setup"])[0]["id"]
+    assert kn.get(store, kid)["stage"] == "validated"
+    remove(store, second)
+    k = kn.get(store, kid)
+    assert k["stage"] == "validated" and k["questioned"]
+    assert k["summary"]["observations"] == 1 and k["summary"]["independent_engravings"] == 1
+    assert k["doubt"] == {"reason": "a removed photograph took away the evidence of this stage: what remains supports only measured: "
+                                    "single observation", "observation_ids": [second]}
+    event = k["history"][-1]
+    assert (event["type"], event["from_stage"], event["to_stage"], event["observation_ids"]) == ("questioned", "validated", "validated", [second])
+
+
+def test_deleting_the_last_evidence_of_a_production_entry_questions_it_without_demoting(store, w):
+    kid = validated(store, w)
+    kn.approve_for_production(store, kid, True)
+    for oid in kn.get(store, kid)["summary"]["observation_ids"]:
+        remove(store, oid)
+    k = kn.get(store, kid)
+    assert k["stage"] == "production" and k["questioned"] and k["summary"] is None
+    assert k["doubt"]["reason"].endswith("no eligible observation is left")
+
+
+def test_deleting_a_pair_that_leaves_enough_evidence_changes_no_stage_or_flag(store, w):
+    agree(store, w, repeat=2)
+    first = obs.add(store, w, (50, 0, 0))
+    for lab in ((50.1, 0, 0), (50.2, 0, 0)):
+        obs.add(store, w, lab)
+    kn.refresh(store, *w["setup"])
+    before = len(kn.list_for_setup(store, *w["setup"])[0]["history"])
+    remove(store, first)
+    k = kn.list_for_setup(store, *w["setup"])[0]
+    assert k["stage"] == "validated" and not k["questioned"] and k["summary"]["independent_engravings"] == 2
+    assert len(k["history"]) == before
+
+
+def test_without_agreed_criteria_a_deletion_is_judged_by_the_counts_alone(store, w):
+    agree(store, w, repeat=2)
+    ids = [obs.add(store, w, (50 + d, 0, 0)) for d in (0, .1, .2)]
+    kn.refresh(store, *w["setup"])
+    su.save_rules(store, *w["setup"], criteria_agreed=False)
+    remove(store, ids[0])
+    assert not kn.list_for_setup(store, *w["setup"])[0]["questioned"]       # two independent engravings remain
+    remove(store, ids[1])
+    k = kn.list_for_setup(store, *w["setup"])[0]
+    assert k["stage"] == "validated" and k["questioned"] and "supports only measured" in k["doubt"]["reason"]
+
+
+def test_an_unknown_lens_is_a_partition_of_its_own(store, w):
+    """DEC-063: the same recipe on the same laser with the lens unknown never counts toward the known lens."""
+    device_id, lens_id = w["setup"]
+    for lens in (lens_id, None):
+        su.save_rules(store, device_id, lens, repeat_threshold=2, delta_tolerance=4, variance_threshold=2)
+        su.save_rules(store, device_id, lens, criteria_agreed=True)
+    obs.add(store, w, (50, 0, 0))
+    obs.add(store, w, (50.2, 0, 0), lens_id=None)     # together these two would be "repeated"
+    kn.refresh(store, device_id, lens_id)
+    kn.refresh(store, device_id, None)
+    known, unknown = kn.list_for_setup(store, device_id, lens_id), kn.list_for_setup(store, device_id, None)
+    assert [k["stage"] for k in known] == ["measured"] and [k["stage"] for k in unknown] == ["measured"]
+    assert known[0]["parameters_key"] == unknown[0]["parameters_key"] and known[0]["id"] != unknown[0]["id"]
+    assert known[0]["summary"]["observations"] == 1 and unknown[0]["summary"]["observations"] == 1
+    assert (unknown[0]["device_id"], unknown[0]["lens_id"]) == (device_id, None)
+
+
+def test_rules_belong_to_one_laser_and_lens(store, w):
+    device_id, lens_id = w["setup"]
+    su.save_rules(store, device_id, lens_id, delta_tolerance=4)
+    assert su.get_rules(store, device_id, lens_id)["delta_tolerance"] == 4
+    assert su.get_rules(store, device_id, None)["delta_tolerance"] is None
+    assert store.get_setting(f"rules:laser:{device_id}/lens:{lens_id}")["delta_tolerance"] == 4

@@ -4,14 +4,20 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 
 * The chart is a 24-patch ColorChecker Classic found with OpenCV's ``mcc`` detector (DEC-025). Detection is
   verified on OpenCV test images and synthetic renders only, never on a real rig photograph.
-* Reference patch values are approximate published sRGB (D65) values and can be replaced per capture setup.
-* Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. White point, observing
-  conditions and the exact calibration method are not fixed by the requirements.
+* Reference patch values are the published sRGB (D65) values of the chart by default; every capture setup carries its
+  own reference (24 Lab values with their white point and observer) as an explicit setting (DEC-025), and the correction
+  of a photograph aims at the reference of the setup it was taken on.
+* Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. The patches and the measured
+  surface are taken from a 16-bit *linear* decode of the RAW (DEC-059): the 8-bit gamma-encoded decode read as sRGB
+  under-read the dark tones up to threefold (chart black L* 13 instead of 21.7). The 8-bit decode serves detection,
+  alignment and previews only. White point, observing conditions and the exact calibration method are not fixed by
+  the requirements.
 * The mask edge exclusion is a fraction of the region's smaller side (``EDGE_FRACTION``); its size is not
   specified by the requirements.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +38,21 @@ REFERENCE_SRGB = np.array([
     (214, 126, 44), (80, 91, 166), (193, 90, 99), (94, 60, 108), (157, 188, 64), (224, 163, 46),
     (56, 61, 150), (70, 148, 73), (175, 54, 60), (231, 199, 31), (187, 86, 149), (8, 133, 161),
     (243, 243, 242), (200, 200, 200), (160, 160, 160), (122, 122, 121), (85, 85, 85), (52, 52, 52)], dtype=float)
+PUBLISHED_REFERENCE_SOURCE = "published ColorChecker Classic values (sRGB, D65), as CIELAB D65 / 2°"
+
+
+def published_reference() -> dict:
+    """The chart reference a capture setup has until the operator gives its own: the published patch values as Lab."""
+    return {"source": PUBLISHED_REFERENCE_SOURCE, "white_point": "D65", "observer": "2°", "published": True,
+            "patches_lab": [[round(float(v), 2) for v in lab] for lab in color.srgb8_to_lab(REFERENCE_SRGB)]}
+
+
+def reference_linear(reference: dict | None = None) -> np.ndarray:
+    """The 24 patch values a correction aims at, as linear sRGB: the published values, or a capture setup's own Lab values
+    adapted from their white point."""
+    if reference is None or reference.get("published"):
+        return color.srgb_to_linear(REFERENCE_SRGB / 255.0)
+    return color.lab_under_to_linear_rgb(np.asarray(reference["patches_lab"], float), reference["white_point"])
 
 
 class PhotoError(ValueError):
@@ -58,12 +79,53 @@ def decode_image(path: str | Path, allow_non_raw: bool = False) -> np.ndarray:
     return img
 
 
+def decode_linear(path: str | Path, allow_non_raw: bool = False) -> np.ndarray:
+    """The photograph as float32 linear RGB (RGB order, 0..1) for colour measurement: a RAW is developed in 16 bits
+    without a tone curve (camera white balance, no brightness change); a non-RAW test image is linearised from sRGB."""
+    path = Path(path)
+    if path.suffix.lower() in RAW_EXTENSIONS:
+        import rawpy
+        try:
+            with rawpy.imread(str(path)) as raw:
+                rgb16 = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16, gamma=(1, 1),
+                                        output_color=rawpy.ColorSpace.sRGB)
+        except Exception as exc:
+            raise PhotoError(f"cannot decode RAW file: {exc}") from exc
+        return (rgb16.astype(np.float32) / 65535.0)
+    return color.srgb_to_linear(decoded_srgb(decode_image(path, allow_non_raw))).astype(np.float32)
+
+
 @dataclass
 class Chart:
     detected: bool
-    patches_rgb: np.ndarray | None = None  # (24, 3) sRGB 0..255 as photographed
+    patches_rgb: np.ndarray | None = None  # (24, 3) sRGB 0..255 as photographed (8-bit decode)
     box: list | None = None
     reason: str = ""
+    patches_linear: np.ndarray | None = None  # (24, 3) linear RGB 0..1 from the linear decode, same order
+
+
+def chart_patches_linear(chart: Chart, linear_rgb: np.ndarray, inset: float = 0.2) -> np.ndarray:
+    """The 24 patch means read from the linear image: a 6 x 4 grid inside the detected outline, the central part of every
+    cell. The order follows the detected outline. An outline that starts at the opposite corner (a chart turned half
+    round) reads the grey ramp first: the grey ramp is the most neutral row, so when the first row is more neutral than
+    the last the order is turned round; then, like ``patches_rgb``, when the grey ramp runs the wrong way."""
+    box = np.asarray(chart.box, np.float32).reshape(-1, 2)
+    to_photo = cv2.getPerspectiveTransform(np.float32([[0, 0], [6, 0], [6, 4], [0, 4]]), box)
+    height, width = linear_rgb.shape[:2]
+    out = np.zeros((24, 3), np.float64)
+    for index, (row, col) in enumerate((r, c) for r in range(4) for c in range(6)):
+        cell = np.float32([[col + inset, row + inset], [col + 1 - inset, row + inset], [col + 1 - inset, row + 1 - inset], [col + inset, row + 1 - inset]])
+        poly = cv2.perspectiveTransform(cell[None], to_photo)[0]
+        mask = cv2.fillConvexPoly(np.zeros((height, width), np.uint8), np.round(poly).astype(np.int32), 1).astype(bool)
+        out[index] = linear_rgb[mask].reshape(-1, 3).mean(axis=0) if mask.any() else np.nan
+    if not np.isfinite(out).all():
+        raise PhotoError("the reference chart lies partly outside the photograph")
+    spread = lambda row: float(np.mean(np.ptp(row, axis=1) / np.maximum(row.mean(axis=1), 1e-9)))     # 0 for neutral patches
+    if spread(out[:6]) < spread(out[18:]):
+        out = out[::-1].copy()
+    if out[18].sum() < out[23].sum():
+        out = out[::-1].copy()
+    return out
 
 
 def chart_detector():
@@ -109,37 +171,82 @@ def detect_chart(img_bgr: np.ndarray) -> Chart:
 class Correction:
     matrix: np.ndarray  # 3x3, applied to linear RGB
     residual: float     # mean patch delta E (CIE76) after correction
+    grey_ramp: dict | None = None   # L* of the six grey patches: reference, corrected (how the tones come out)
 
 
-def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> Correction:
-    src = color.srgb_to_linear(patches_rgb / 255.0)
-    dst = color.srgb_to_linear(reference_rgb / 255.0)
+def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+                          target_linear: np.ndarray | None = None) -> Correction:
+    """Least-squares 3x3 matrix from the photographed patches (linear RGB) to the reference (sRGB 0..255, or the linear
+    patch values of a capture setup's reference when ``target_linear`` is given)."""
+    src = np.clip(np.asarray(patches_linear, float), 0, None)
+    dst = color.srgb_to_linear(reference_rgb / 255.0) if target_linear is None else np.asarray(target_linear, float)
     sol, *_ = np.linalg.lstsq(src, dst, rcond=None)
     matrix = sol.T
     corrected = np.clip(src @ matrix.T, 0, 1)
     lab_c = color.linear_rgb_to_lab(corrected)
     lab_r = color.linear_rgb_to_lab(dst)
     residual = float(np.mean(np.linalg.norm(lab_c - lab_r, axis=1)))
-    return Correction(matrix, residual)
+    ramp = {"reference": [round(float(v), 1) for v in lab_r[18:24, 0]], "corrected": [round(float(v), 1) for v in lab_c[18:24, 0]]}
+    return Correction(matrix, residual, ramp)
 
 
-def apply_correction(img_bgr: np.ndarray, corr: Correction) -> np.ndarray:
-    """Corrected image as float sRGB (RGB order), values 0..1."""
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
-    lin = color.srgb_to_linear(rgb) @ corr.matrix.T
-    return color.linear_to_srgb(np.clip(lin, 0, 1))
+def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+                   target_linear: np.ndarray | None = None) -> Correction:
+    """The fit from the 8-bit decode's patches (sRGB 0..255); kept for photographs without a linear decode."""
+    return fit_correction_linear(color.srgb_to_linear(patches_rgb / 255.0), reference_rgb, target_linear)
 
 
-def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB) -> tuple[np.ndarray | None, Chart, Correction | None]:
-    """Detect the chart and correct the image. Without a detectable chart nothing is returned (REQ-009)."""
-    chart = detect_chart(img_bgr)
+def apply_correction(img_bgr: np.ndarray, corr: Correction, linear: np.ndarray | None = None) -> np.ndarray:
+    """Corrected image as float sRGB (RGB order), values 0..1, from the linear decode when given."""
+    lin = linear if linear is not None else color.srgb_to_linear(decoded_srgb(img_bgr))
+    return color.linear_to_srgb(np.clip(lin @ corr.matrix.T, 0, 1))
+
+
+def decoded_srgb(img_bgr: np.ndarray, linear: np.ndarray | None = None) -> np.ndarray:
+    """The photograph as float sRGB (RGB order) before any reference-chart correction: encoded from the linear decode
+    when given, else from the 8-bit decode."""
+    if linear is not None:
+        return color.linear_to_srgb(np.clip(linear, 0, 1))
+    return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
+
+
+EXPOSED_WHITE = 0.85            # the 99.5th percentile of luminance is brought here for detection (never for measurement)
+
+
+def exposed_bgr(linear: np.ndarray) -> np.ndarray:
+    """An 8-bit rendering of the linear decode with its exposure normalised: an under-exposed photograph (the operator's are
+    1.5–4 stops under) hides the chart's dark frame and patches from the detector and the cells from the matrix finder.
+    Geometry only: colours are always read from ``linear``."""
+    lum = np.asarray(linear, np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    gain = EXPOSED_WHITE / max(float(np.percentile(lum, 99.5)), 1e-4)
+    srgb = color.linear_to_srgb(np.clip(linear * gain, 0, 1))
+    return cv2.cvtColor((srgb * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+
+def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+            linear: np.ndarray | None = None, reference: dict | None = None) -> tuple[np.ndarray | None, Chart, Correction | None]:
+    """Detect the chart and correct the image, from the linear decode when given, toward ``reference`` (a capture setup's
+    chart reference; the published values when None). The chart is looked for on the exposure-normalised rendering of the
+    linear decode first, then on the 8-bit decode. Without a detectable chart nothing is returned (REQ-009)."""
+    target = None if reference is None or reference.get("published") else reference_linear(reference)
+    chart = detect_chart(exposed_bgr(linear)) if linear is not None else Chart(False, reason="reference chart not detected")
+    if not chart.detected:
+        chart = detect_chart(img_bgr)
     if not chart.detected:
         return None, chart, None
-    corr = fit_correction(chart.patches_rgb, reference_rgb)
+    if linear is not None:
+        try:
+            chart.patches_linear = chart_patches_linear(chart, linear)
+        except PhotoError as exc:
+            chart.reason = str(exc)
+            return None, chart, None
+        corr = fit_correction_linear(chart.patches_linear, reference_rgb, target)
+    else:
+        corr = fit_correction(chart.patches_rgb, reference_rgb, target)
     if corr.residual > MAX_CORRECTION_RESIDUAL:
         chart.reason = f"chart correction residual {corr.residual:.1f} exceeds {MAX_CORRECTION_RESIDUAL:g}"
         return None, chart, corr
-    return apply_correction(img_bgr, corr), chart, corr
+    return apply_correction(img_bgr, corr, linear), chart, corr
 
 
 # -- alignment -------------------------------------------------------------------------------------------
@@ -153,9 +260,93 @@ def detect_markers(img_bgr: np.ndarray) -> dict[int, np.ndarray]:
     return {int(i): c.reshape(4, 2) for i, c in zip(ids.ravel(), corners) if int(i) in (0, 1, 2, 3)}
 
 
+def detect_marker_candidates(img_bgr: np.ndarray) -> list[dict[int, np.ndarray]]:
+    """Detect ArUco markers in all eight image orientations and map corners back to source pixels.
+
+    Photos of engraved plates may be mirrored or rotated. The QR identifier is checked after rectification,
+    so testing these orientation candidates does not silently accept a different plate.
+    """
+    h, w = img_bgr.shape[:2]
+    transforms = [
+        ("identity", np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], np.float64), lambda: img_bgr),
+        ("flip_x", np.array([[-1, 0, w - 1], [0, 1, 0], [0, 0, 1]], np.float64), lambda: cv2.flip(img_bgr, 1)),
+        ("flip_y", np.array([[1, 0, 0], [0, -1, h - 1], [0, 0, 1]], np.float64), lambda: cv2.flip(img_bgr, 0)),
+        ("rotate_180", np.array([[-1, 0, w - 1], [0, -1, h - 1], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_180)),
+        ("rotate_90_cw", np.array([[0, -1, h - 1], [1, 0, 0], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_90_CLOCKWISE)),
+        ("rotate_90_ccw", np.array([[0, 1, 0], [-1, 0, w - 1], [0, 0, 1]], np.float64), lambda: cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)),
+        ("transpose", np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]], np.float64), lambda: cv2.transpose(img_bgr)),
+        ("anti_transpose", np.array([[0, -1, h - 1], [-1, 0, w - 1], [0, 0, 1]], np.float64), lambda: cv2.flip(cv2.transpose(img_bgr), -1)),
+    ]
+    detector = cv2.aruco.ArucoDetector(
+        cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), cv2.aruco.DetectorParameters())
+    candidates, seen = [], set()
+    for _, source_to_view, make_view in transforms:
+        view = make_view()
+        corners, ids, _ = detector.detectMarkers(cv2.cvtColor(view, cv2.COLOR_BGR2GRAY))
+        if ids is None:
+            continue
+        view_to_source = np.linalg.inv(source_to_view)
+        found = {}
+        for marker_id, corner in zip(ids.ravel(), corners):
+            marker_id = int(marker_id)
+            if marker_id not in (0, 1, 2, 3):
+                continue
+            source_corner = cv2.perspectiveTransform(corner.astype(np.float32), view_to_source.astype(np.float64))[0]
+            found[marker_id] = source_corner
+        key = tuple(sorted((marker_id, tuple(np.round(points, 1).ravel())) for marker_id, points in found.items()))
+        if found and key not in seen:
+            candidates.append(found)
+            seen.add(key)
+    return sorted(candidates, key=lambda found: -len(found))
+
+
+# What plans.marker_geometry encodes in the QR (the LightBurn notes carry the same ``TCE1:<identifier>``); a decode of any
+# other text is never taken for an identifier.
+QR_PAYLOAD = re.compile(r"TCE1:(TCE-[A-Za-z0-9_-]+)")
+QR_UPSCALE_MAX_SIDE = 600       # a view this small is also tried at twice the size: its modules may be only a few pixels
+
+
+def _qr_readers(gray: np.ndarray):
+    """The detectors and the views a QR is read with, each view with the map of its points back to ``gray``. First OpenCV's
+    classic detector on the image as given, as the reader always did; it misses a code for some module patterns (about 1 %
+    of random identifiers even on a clean render, mostly next to other dark squares such as the registration markers).
+    Then, where this OpenCV has it, the ArUco-based detector, which finds the finder patterns another way and costs a tenth
+    of the classic one on an image without a code, on every view: as photographed, mirrored, with local contrast equalised
+    (dark titanium), binarised by Otsu's threshold and, for a small view, at twice the size."""
+    same = lambda points: points
+    yield cv2.QRCodeDetector(), gray, same
+    if not hasattr(cv2, "QRCodeDetectorAruco"):
+        return
+    detector = cv2.QRCodeDetectorAruco()
+    h, w = gray.shape[:2]
+    yield detector, gray, same
+    yield detector, cv2.flip(gray, 1), lambda points: np.column_stack((w - 1 - points[:, 0], points[:, 1]))
+    yield detector, cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4)).apply(gray), same
+    yield detector, cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1], same
+    if max(h, w) <= QR_UPSCALE_MAX_SIDE:
+        yield detector, cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC), lambda points: points / 2
+
+
+def decode_identifier(img: np.ndarray) -> tuple[str | None, np.ndarray | None]:
+    """The plate or plan identifier read from a QR code in ``img`` and the code's four corners in its pixels, else
+    (None, None). The readers are tried in turn until one decodes the exporter's format, so a decode is the same as before
+    wherever the classic detector read the image as given."""
+    gray = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if gray.dtype != np.uint8:
+        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    for detector, view, to_source in _qr_readers(gray):
+        try:
+            text, points, _ = detector.detectAndDecode(view)
+        except cv2.error:              # a degenerate view (a code cut by the border) is not a reading
+            continue
+        match = QR_PAYLOAD.fullmatch(text or "")
+        if match:
+            return match.group(1), None if points is None else to_source(points.reshape(-1, 2).astype(np.float32))
+    return None, None
+
+
 def read_identifier(img_bgr: np.ndarray) -> str | None:
-    text = cv2.QRCodeDetector().detectAndDecode(img_bgr)[0]
-    return text[5:] if text.startswith("TCE1:") else None
+    return decode_identifier(img_bgr)[0]
 
 
 def read_identifier_rectified(img_bgr: np.ndarray, image_to_mm: np.ndarray, area_mm: tuple[float, float, float, float],
@@ -170,12 +361,14 @@ def read_identifier_rectified(img_bgr: np.ndarray, image_to_mm: np.ndarray, area
 
 
 def homography_from_markers(found: dict[int, np.ndarray], markers: dict, x_offset: float = 0.0, y_offset: float = 0.0) -> np.ndarray:
-    """Homography image -> file mm from the four ArUco markers. Fails rather than guessing (REQ-003)."""
-    missing = [i for i in (0, 1, 2, 3) if i not in found]
-    if missing:
-        raise PhotoError(f"registration markers not detected: {missing}")
+    """Homography image -> file mm from at least three ArUco markers, never from an underconstrained pair."""
+    marker_ids = {m["id"] for m in markers["aruco"]}
+    usable = [m for m in markers["aruco"] if m["id"] in found]
+    if len(usable) < 3:
+        missing = sorted(marker_ids - set(found))
+        raise PhotoError(f"fewer than three registration markers detected; missing {missing}")
     img_pts, plan_pts = [], []
-    for m in markers["aruco"]:
+    for m in usable:
         x, y, s = m["x"] + x_offset, m["y"] + y_offset, m["size"]
         plan_pts += [(x, y), (x + s, y), (x + s, y + s), (x, y + s)]
         img_pts += found[m["id"]].tolist()
@@ -235,27 +428,47 @@ def region_mask(polygon_mm: list[tuple[float, float]], image_to_mm: np.ndarray, 
 
 
 def layer_mask(polygons_mm: list[list[tuple[float, float]]], image_to_mm: np.ndarray, shape: tuple[int, int],
-               edge_fraction: float = EDGE_FRACTION) -> np.ndarray:
+               edge_fraction: float = EDGE_FRACTION, holes_mm: list[list[list[tuple[float, float]]]] | None = None) -> np.ndarray:
     """Mask of a whole layer: the union of its shapes with the edge of each connected area excluded (DEC-028).
 
     A layer made of many touching shapes (a conversion plan stores one as hundreds of rectangles) is one
     area. Eroding every shape on its own would also cut away the seams between neighbouring shapes, so the
     shapes are merged first and each connected area is eroded by a fraction of its own smaller side.
+    ``holes_mm[i]`` lists the loops inside ``polygons_mm[i]`` that are not filled (REQ-023); a hole never
+    removes pixels that another shape of the layer fills.
     """
     if not polygons_mm:
         return np.zeros(shape, bool)
     mm_to_image = np.linalg.inv(image_to_mm).astype(np.float32)
     union = np.zeros(shape, np.uint8)
-    for poly in polygons_mm:
-        pts = cv2.perspectiveTransform(np.array([poly], np.float32), mm_to_image)[0]
-        cv2.fillPoly(union, [np.round(pts).astype(np.int32)], 1)
-    count, labels = cv2.connectedComponents(union, connectivity=8)
+
+    def to_pixels(poly):
+        return np.round(cv2.perspectiveTransform(np.array([poly], np.float32), mm_to_image)[0]).astype(np.int32)
+
+    for k, poly in enumerate(polygons_mm):
+        pts = to_pixels(poly)
+        holes = holes_mm[k] if holes_mm is not None and holes_mm[k] else None
+        if not holes:
+            cv2.fillPoly(union, [pts], 1)
+            continue
+        x0, y0 = np.maximum(pts.min(axis=0) - 1, 0)
+        x1, y1 = np.minimum(pts.max(axis=0) + 2, (shape[1], shape[0]))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        window = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        cv2.fillPoly(window, [pts], 1, offset=(-int(x0), -int(y0)))
+        for hole in holes:
+            cv2.fillPoly(window, [to_pixels(hole)], 0, offset=(-int(x0), -int(y0)))
+        union[y0:y1, x0:x1] |= window
+    if edge_fraction <= 0:
+        return union.astype(bool)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(union, connectivity=8)
     out = np.zeros(shape, bool)
     for lab in range(1, count):
-        area = labels == lab
-        ys, xs = np.nonzero(area)
-        side = min(xs.max() - xs.min() + 1, ys.max() - ys.min() + 1)
-        out |= _erode(area.astype(np.uint8), int(round(side * edge_fraction))).astype(bool)
+        x, y, width, height, _ = stats[lab]
+        area = (labels[y:y+height, x:x+width] == lab).astype(np.uint8)
+        side = min(width, height)
+        out[y:y+height, x:x+width] |= _erode(area, int(round(side * edge_fraction))).astype(bool)
     return out
 
 

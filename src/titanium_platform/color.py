@@ -14,6 +14,8 @@ _M_RGB_TO_XYZ = np.array(
 )
 _M_XYZ_TO_RGB = np.linalg.inv(_M_RGB_TO_XYZ)
 _WHITE_D65 = np.array([0.95047, 1.0, 1.08883])
+WHITE_POINTS = {"D65": _WHITE_D65, "D50": np.array([0.96422, 1.0, 0.82521])}      # CIE 1931 2° observer
+_BRADFORD = np.array([[0.8951, 0.2664, -0.1614], [-0.7502, 1.7135, 0.0367], [0.0389, -0.0685, 1.0296]])
 
 
 def srgb_to_linear(c: np.ndarray) -> np.ndarray:
@@ -34,13 +36,26 @@ def linear_rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     return np.stack([116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]), 200 * (f[..., 1] - f[..., 2])], axis=-1)
 
 
-def lab_to_linear_rgb(lab: np.ndarray) -> np.ndarray:
+def _lab_to_xyz(lab: np.ndarray, white: np.ndarray) -> np.ndarray:
     lab = np.asarray(lab, dtype=np.float64)
     fy = (lab[..., 0] + 16) / 116
     fx, fz = fy + lab[..., 1] / 500, fy - lab[..., 2] / 200
     eps, kappa = 216 / 24389, 24389 / 27
     f = np.stack([fx, fy, fz], axis=-1)
-    xyz = np.where(f ** 3 > eps, f ** 3, (116 * f - 16) / kappa) * _WHITE_D65
+    return np.where(f ** 3 > eps, f ** 3, (116 * f - 16) / kappa) * white
+
+
+def lab_to_linear_rgb(lab: np.ndarray) -> np.ndarray:
+    return _lab_to_xyz(lab, _WHITE_D65) @ _M_XYZ_TO_RGB.T
+
+
+def lab_under_to_linear_rgb(lab: np.ndarray, white_point: str) -> np.ndarray:
+    """Lab given relative to ``white_point`` (D65 or D50, 2° observer) as linear sRGB, adapted to D65 with the Bradford
+    transform (published chart values are often given for D50)."""
+    xyz = _lab_to_xyz(lab, WHITE_POINTS[white_point])
+    if white_point != "D65":
+        gain = (_BRADFORD @ _WHITE_D65) / (_BRADFORD @ WHITE_POINTS[white_point])
+        xyz = xyz @ (np.linalg.inv(_BRADFORD) @ np.diag(gain) @ _BRADFORD).T
     return xyz @ _M_XYZ_TO_RGB.T
 
 
@@ -63,3 +78,11 @@ def valid_lab(lab) -> bool:
     except (TypeError, ValueError):
         return False
     return all(np.isfinite([L, a, b])) and 0 <= L <= 100 and -128 <= a <= 127 and -128 <= b <= 127
+
+
+def against_clean(lab, clean, nominal) -> list[float]:
+    """The colour as it would look next to nominal clean titanium: its ratio to the clean surface of the *same* photograph, per
+    channel in linear light (exposure and illuminant cancel), applied to the nominal clean titanium (DEC-056)."""
+    ratio = np.clip(lab_to_linear_rgb(np.asarray(lab, float)), 0, 1) / np.maximum(lab_to_linear_rgb(np.asarray(clean, float)), 1e-4)
+    shown = np.clip(lab_to_linear_rgb(np.asarray(nominal, float)) * ratio, 0, 1)
+    return [float(v) for v in linear_rgb_to_lab(shown)]

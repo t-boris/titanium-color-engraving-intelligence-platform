@@ -28,6 +28,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"   # the UI syntax and translation-coverage tests run the UI scripts with node
+      - name: Install tesseract   # optional OCR of the matrix reader; its tests must run, not skip
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
+          else
+            brew install tesseract
+          fi
+          tesseract --version
       - name: Install
         run: |
           python -m pip install --upgrade pip
@@ -51,7 +60,7 @@ jobs:
           with TestClient(create_app(tempfile.mkdtemp())) as c:
               assert c.get("/api/version").json()["version"] == __version__ != "0.0.0+source"
               home = c.get("/")
-              assert home.status_code == 200 and "Цвет титана" in home.text
+              assert home.status_code == 200 and "Лазерная мастерская" in home.text
               for path in ("/styles.css", "/app.js", "/screens/ingest.js"):
                   assert c.get(path).status_code == 200, path
           print("wheel OK", __version__)

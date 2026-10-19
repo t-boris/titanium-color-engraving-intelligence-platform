@@ -3,13 +3,17 @@
 Stages: measured < candidate < repeated < validated < production. Automatic promotion stops at validated
 and only runs once the operator has saved the thresholds and agreed the criteria; production needs an
 explicit action and is never lowered automatically (not even by rollback). A production entry whose later
-observations break the saved thresholds is flagged questioned and keeps its stage.
+observations break the saved thresholds is flagged questioned and keeps its stage; so is an entry of any stage whose
+evidence a deleted pair took away (DEC-066 item 3).
+
+Knowledge belongs to one laser and one lens record (DEC-063) and, within them, to one recipe key: entries of
+different lasers, lenses (an unknown lens included) or job settings never share counts, stages or approval.
 """
 from __future__ import annotations
 
 import json
 
-from . import model, profiles as pf
+from . import model, setup as su
 from .db import Store, now
 
 STAGES = ["measured", "candidate", "repeated", "validated", "production"]
@@ -44,6 +48,30 @@ def automatic_stage(summary: dict, rules: dict) -> tuple[str, str]:
     return "measured", "single observation"
 
 
+def supported_stage(summary: dict | None, rules: dict) -> tuple[str | None, str]:
+    """The highest stage the evidence of an entry still supports and why; None when no eligible observation is left.
+
+    With agreed criteria it is the stage automatic promotion would reach. Without them the thresholds of 'validated' cannot
+    be judged, so only the counts are, and two independent engravings do not contradict it."""
+    if summary is None:
+        return None, "no eligible observation is left"
+    if rules["criteria_agreed"]:
+        return automatic_stage(summary, rules)
+    n_ind, obs = summary["independent_engravings"], summary["observations"]
+    if n_ind >= 2:
+        return "validated", f"{n_ind} independent engravings"
+    if obs > 1:
+        return "candidate", "more than one observation"
+    return "measured", "single observation"
+
+
+def removal_doubt(supported: str | None, why: str) -> str:
+    """Why an entry is questioned after observations left active use (DEC-066 item 3)."""
+    if supported is None:
+        return "a removed photograph took away the evidence of this stage: no eligible observation is left"
+    return f"a removed photograph took away the evidence of this stage: what remains supports only {supported}: {why}"
+
+
 def _breaks_thresholds(summary: dict, rules: dict) -> list[str]:
     why = []
     st = summary["stability"]
@@ -54,17 +82,17 @@ def _breaks_thresholds(summary: dict, rules: dict) -> list[str]:
     return why
 
 
-def refresh(store: Store, profile_id: int) -> list[dict]:
-    """Re-derive knowledge for one laser profile version after observations changed. Idempotent."""
-    rules = pf.get_rules(store, profile_id)
+def refresh(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    """Refresh the knowledge of one laser and lens record from its eligible observations."""
+    rules = su.get_rules(store, device_id, lens_id)
     changes = []
     with store.transaction():
-        for key, s in model.knowledge_summaries(store, profile_id).items():
-            row = store.one("SELECT * FROM knowledge WHERE profile_id=? AND parameters_key=?", (profile_id, key))
+        for key, s in model.knowledge_summaries(store, device_id, lens_id).items():
+            row = store.one("SELECT * FROM knowledge WHERE device_id=? AND lens_id IS ? AND parameters_key=?", (device_id, lens_id, key))
             target, why = automatic_stage(s, rules)
             if row is None:
-                kid = store.execute("INSERT INTO knowledge(profile_id,parameters_key,parameters_json,stage,questioned,updated_at) VALUES (?,?,?,?,0,?)",
-                                    (profile_id, key, json.dumps(s["parameters"]), "measured", now())).lastrowid
+                kid = store.execute("INSERT INTO knowledge(device_id,lens_id,parameters_key,parameters_json,stage,questioned,updated_at) VALUES (?,?,?,?,?,0,?)",
+                                    (device_id, lens_id, key, json.dumps(s["parameters"]), "measured", now())).lastrowid
                 _event(store, kid, "created", None, "measured", "first eligible observation", s["observation_ids"])
                 row = store.one("SELECT * FROM knowledge WHERE id=?", (kid,))
             cur = row["stage"]
@@ -84,6 +112,33 @@ def refresh(store: Store, profile_id: int) -> list[dict]:
     return changes
 
 
+def after_removal(store: Store, device_id: int, lens_id: int | None, removed: dict[str, list[int]]) -> list[dict]:
+    """Rebuild the knowledge of one laser and lens after observations left active use with their deleted pair (DEC-047).
+
+    ``removed`` maps the key of every affected entry to the ids of its observations that left. Counts and statistics are
+    derived on every read, so they follow at once; the stages are refreshed as after any change, which never lowers one.
+    An affected entry whose remaining evidence no longer supports its stage keeps the stage and is flagged questioned with
+    that reason, whatever the stage (DEC-066 item 3); the flag names the removed observations that triggered it.
+    """
+    changes = refresh(store, device_id, lens_id)
+    rules = su.get_rules(store, device_id, lens_id)
+    summaries = model.knowledge_summaries(store, device_id, lens_id)
+    with store.transaction():
+        for key, gone in sorted(removed.items()):
+            row = store.one("SELECT * FROM knowledge WHERE device_id=? AND lens_id IS ? AND parameters_key=?", (device_id, lens_id, key))
+            if row is None:
+                continue
+            supported, why = supported_stage(summaries.get(key), rules)
+            needed = "validated" if row["stage"] == "production" else row["stage"]
+            if supported is not None and _rank(supported) >= _rank(needed):
+                continue
+            doubt = {"reason": removal_doubt(supported, why), "observation_ids": sorted(gone)}
+            store.execute("UPDATE knowledge SET questioned=1, doubt_json=?, updated_at=? WHERE id=?", (json.dumps(doubt), now(), row["id"]))
+            _event(store, row["id"], "questioned", row["stage"], row["stage"], doubt["reason"], doubt["observation_ids"])
+            changes.append({"id": row["id"], "key": key, "questioned": True})
+    return changes
+
+
 def get(store: Store, kid: int) -> dict:
     row = store.one("SELECT * FROM knowledge WHERE id=?", (kid,))
     if row is None:
@@ -95,13 +150,14 @@ def get(store: Store, kid: int) -> dict:
     d["questioned"] = bool(d["questioned"])
     d["history"] = [dict(e, observation_ids=json.loads(e.pop("observation_ids_json"))) for e in
                     (dict(r) for r in store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,)))]
-    s = model.knowledge_summaries(store, d["profile_id"]).get(d["parameters_key"])
+    s = model.knowledge_summaries(store, d["device_id"], d["lens_id"]).get(d["parameters_key"])
     d["summary"] = s
     return d
 
 
-def list_for_profile(store: Store, profile_id: int) -> list[dict]:
-    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE profile_id=? ORDER BY id", (profile_id,))]
+def list_for_setup(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE device_id=? AND lens_id IS ? ORDER BY id",
+                                                     (device_id, lens_id))]
 
 
 # -- operator decisions ---------------------------------------------------------------------------------

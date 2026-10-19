@@ -1,73 +1,55 @@
-# Titanium Color Engraving Intelligence Platform
+# Лазерная мастерская
 
-An experimental, data-driven platform that learns the relationship between laser parameters and the colors they produce on titanium from physical calibration experiments, and uses that learned model to generate engraving plans for artwork (discrete colors) and photographs (continuous luminance-driven parameters). It runs as a closed loop — experiment → engraving → photograph → measurement → comparison → model update → next experiment — with physical measurements as the source of truth, every prediction carrying confidence/error/stability, knowledge promoted to production only after repeated observations, and an AI Experiment Designer proposing the next calibration plates.
+Локальное приложение для исследования режимов лазера, создания компактных экспериментальных плат LightBurn, совмещения RAW-фотографий с векторами файла и сохранения измерений. Исследование привязано к физическому лазеру, установленной линзе и конкретному материалу. Цели включают надписи, линии, маркировку, цвет, очистку, изображения, глубокую и 3D-гравировку и резку.
 
-## Problem
+## Запуск
 
-Laser color marking on titanium is poorly reproducible: the same nominal parameters can yield different colors depending on material batch, laser, focus and environment, and colors are discovered by trial and error. Today there is no tool that systematically captures calibration results, aligns photographs of plates to the parameter grid without manual error, quantifies uncertainty and stability of each color, and turns that knowledge into engraving plans for real artwork and photos — nor one that tells the operator which experiment to run next.
-
-## Scope
-
-IN (first version, as stated by the user): material and laser profiles; calibration plate generation with registration markers and experiment identifier; photographing plates and CV-based alignment of cell ↔ parameter set; color measurement and experiment database; color-space model with confidence, expected color error and stability; parameter prediction; stability & reproducibility analysis; knowledge maturation pipeline (measured → candidate → repeated → validated → production); AI Experiment Designer; discrete-color artwork conversion; continuous photo engraving via calibrated transfer function; internal EngravingPlan format; LightBurn integration; post-engraving analysis and continuous learning. Deliverable of the first step is a full Product + System Specification in Markdown, not code.
-
-OUT (not stated / assumed out until decided): direct laser control or firmware; automatic application of model updates to production profiles after a single observation; exact color reproduction guarantees; non-titanium materials; multi-tenant cloud service; hardware (camera, colorimeter) procurement.
-
-## Running it
-
-One local process serves the API and the Russian browser UI (REQ-011, DEC-020). Python 3.11+.
+Нужен Python 3.11+; Node.js нужен для проверок интерфейса.
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/titanium-platform                    # http://127.0.0.1:8765, data in ~/.titanium-platform
-.venv/bin/titanium-platform --host 0.0.0.0     # reachable from a tablet on the same network
-.venv/bin/titanium-platform --data-dir /path/to/data --port 8765
+python -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/titanium-platform
 ```
 
-`TITANIUM_DATA_DIR` also sets the data directory. Data never leaves this machine; there is no login.
+Откройте [приложение](http://127.0.0.1:8765/#/research). Данные по умолчанию находятся в `~/.titanium-platform`; можно указать `--data-dir /path/to/data` и `--port 8765`.
 
-Before the first plate: in **Профили** create a laser profile, a capture setup (стенд) and the marker-layer power, frequency and speed. No defaults are given for these (DEC-027). Automatic promotion beyond "measured" starts only once the evaluation rules are saved and agreed (DEC-021, DEC-029).
+Рабочая установка для оператора — колесо, установленное в отдельное окружение `~/.titanium-platform-app` (DEC-024), а не редактируемая копия из репозитория:
 
-## Tests
+```bash
+python -m build --wheel
+~/.titanium-platform-app/bin/pip install --force-reinstall --no-deps dist/titanium_color_engraving_platform-<версия>-py3-none-any.whl
+~/.titanium-platform-app/bin/titanium-platform --data-dir ~/.titanium-platform --port 8765
+```
+
+### Обновление до 0.4.0
+
+Профили лазера убраны (DEC-042, DEC-063): каждая запись хранит лазер и линзу, с которой работа гравировалась (или «линза неизвестна»). При первом запуске 0.4.0 база переводится на новую схему: сначала делается копия `backups/titanium-before-0.4.0-<время>.sqlite`, затем все таблицы перестраиваются в одной транзакции; измерения не меняются. Версии до 0.4.0 открыть переведённую базу не могут — для отката остановите приложение и верните копию из `backups/`. Если базу перевести нельзя, приложение не запускается и пишет, что исправить.
+
+Новые экраны: «Настройки» (титан, стенды съёмки с эталонными значениями карты, правила оценки для лазера и линзы, слой маркеров), «Векторная работа» (изображение → редактируемые контуры → файл LightBurn), «Предпросмотр фотогравировки» (как будет выглядеть фото при заданных Min/Max и режиме), «Выводы» (анализ накопленных результатов и предложения следующих опытов).
+
+На экране «Эксперименты» кнопка «Создать плату» предлагает тип «Малые квадраты · 1–4 пробы». Размер каждого заполненного квадрата — 3 или 5 мм; один квадрат 3 мм без меток занимает 6 × 6 мм с технологическими полями. Для автоматического совмещения фото можно добавить QR и четыре метки — тогда та же плата занимает 19 × 19 мм. Начальный предел всей платы — 25 × 25 мм, его можно изменить до создания. «Показать размер» сообщает фактический габарит и площадь очистки. Если квадраты не помещаются в заданный прямоугольник, приложение создаёт отдельные LightBurn-файлы, каждый с первым слоем локальной очистки; ссылки на все части появляются сразу после создания. Предел 100 × 100 мм остаётся только верхней границей.
+
+На экране **AI-исследователь** выберите лазер с линзой, заготовку и измеримую цель. AI (`gpt-6.1-sol`) читает паспорт и накопленные результаты, предлагает следующий тест, по прямой просьбе создаёт один проверенный `.lbrn2` и даёт ссылку на скачивание. После гравировки загрузите фактически использованный файл и RAW-фото, проверьте наложение и примите измерения. Только после этого выводы о режимах получают ссылку на фото-доказательство. Проверка глубины, 3D-рельефа и сквозного реза требует дополнительных физических измерений; фото сверху их не доказывает.
+
+Для AI нужен `OPENAI_API_KEY` в окружении или в локальном `.env.local` в корне репозитория. `.env.local` исключён из Git. Паспорт, контекст исследования, история вопросов и результаты инструментов отправляются в OpenAI API при запросе AI; сами фотографии остаются локальными в текущем рабочем процессе.
+
+## MCP
+
+Те же операции доступны локальному MCP-клиенту через stdio:
+
+```bash
+.venv/bin/titanium-research-mcp --data-dir ~/.titanium-platform
+```
+
+Сервер предоставляет инструменты чтения лазеров/материалов и результатов, создания исследовательской сессии, предпросмотра и экспорта теста, совмещения загруженного фото и сохранения гипотезы. Он не управляет лазером и использует ту же SQLite-базу, что и браузерное приложение. При настройке внешнего MCP-клиента укажите приведённую команду как исполняемый stdio-сервер.
+
+## Проверка
 
 ```bash
 .venv/bin/python -m pytest -q
 ```
 
-Node.js must be on `PATH`: two tests run the UI scripts with `node` (syntax, and that every server message has a Russian translation). CI fails if any test is skipped.
+Экспорт проверяется обратным чтением `.lbrn2` собственным парсером. Перед физической гравировкой проверьте файл в установленной версии LightBurn. В приложении AI-предложения и результаты без эталонной цветовой карты остаются предварительными; стандартные цветовые рекомендации требуют принятых и скорректированных измерений.
 
-## Version and release
-
-- Versioning is SemVer; the single source is `version` in `pyproject.toml`, reported at `GET /api/version`. A merged release is tagged `v<version>` (DEC-023, proposed).
-- Release and deploy on this Mac (DEC-024, proposed):
-
-```bash
-python -m build --wheel
-python3 -m venv ~/.titanium-platform-app
-~/.titanium-platform-app/bin/pip install --force-reinstall dist/titanium_color_engraving_platform-<version>-py3-none-any.whl
-~/.titanium-platform-app/bin/titanium-platform &
-curl -s http://127.0.0.1:8765/api/version      # must show the new version
-```
-
-## Not verified yet
-
-- Exported `.lbrn2` files have not been opened in LightBurn itself; they are verified by re-reading them with this project's parser (REQ-012 asks for a check in the user's LightBurn version).
-- Reference-chart detection is verified on OpenCV's test images and synthetic renders only, not on a real RAW rig photograph (DEC-025).
-- Several values the requirements leave open are working defaults recorded as `proposed` decisions: DEC-023, DEC-024 and DEC-026 to DEC-030, DEC-032, DEC-033.
-
-## Specification
-
-The confirmed brief, decisions and requirements are in [`docs/features/titanium-color-engraving-intelligence-platform/`](docs/features/titanium-color-engraving-intelligence-platform/overview.md). Open this folder in MarkView to continue them.
-
-### Requirements
-
-- REQ-001 Closed learning loop with measurements as source of truth
-- REQ-002 Predictions carry confidence, expected color error and stability
-- REQ-003 Calibration plates with registration markers and experiment identifier
-- REQ-004 Two independent engraving workflows
-- REQ-005 Knowledge maturation before production use
-- REQ-006 AI Experiment Designer
-- REQ-009 Controlled photographic measurement setup with reference chart
-- REQ-010 Single laser profile with fixed variable axes
-- REQ-011 Single-user locally run web application with LightBurn export
-- REQ-012 EngravingPlan export to LightBurn as quantized parameter layers
-- REQ-013 Post-engraving analysis of production engravings with optional markers
+Технические решения и требования: [документация проекта](docs/features/titanium-color-engraving-intelligence-platform/overview.md).

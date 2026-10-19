@@ -13,7 +13,7 @@ SAMPLE = b"""<?xml version="1.0" encoding="UTF-8"?>
     <CutSetting type="Scan">
         <index Value="18"/><name Value="C18"/>
         <maxPower Value="48.5"/><speed Value="1100"/><frequency Value="330000"/>
-        <QPulseWidth Value="6"/><interval Value="0.003"/>
+        <QPulseWidth Value="6"/><interval Value="0.003"/><wobbleStep Value="0.0500"/>
     </CutSetting>
     <CutSetting type="Scan">
         <index Value="19"/><name Value="broken"/>
@@ -43,6 +43,7 @@ def test_reads_layer_parameters_and_units():
     assert (l0.pulse_width, l0.line_interval) == (4, 0.025)
     assert p.layer(18).power == 48.5 and p.layer(18).frequency_khz == 330.0
     assert p.layer(7).layer_type == "Image"
+    assert p.layer(18).as_dict()["source_settings"]["wobbleStep"]["Value"] == "0.0500"
 
 
 def test_unreadable_parameters_are_reported_not_guessed():
@@ -71,6 +72,7 @@ def test_rect_geometry_applies_the_transform():
 def test_path_geometry_is_a_bounding_box():
     path = lb.parse_bytes(SAMPLE).layer(0).regions[1]
     assert path.kind == "path"
+    assert path.closed is False  # three vertices alone do not make a filled vector
     assert (path.x, path.width) == (pytest.approx(10), pytest.approx(5))
     assert (path.y, path.height) == (pytest.approx(158), pytest.approx(6))
 
@@ -91,20 +93,225 @@ def test_layer_without_index_is_an_error():
         lb.parse_bytes(b'<LightBurnProject><CutSetting type="Scan"><maxPower Value="1"/></CutSetting></LightBurnProject>')
 
 
-def test_compare_with_profile_constants_dec_022():
-    l0 = lb.parse_bytes(SAMPLE).layer(0)
-    assert lb.compare_with_profile(l0, pulse_width=4, line_interval=0.025) == []
-    diffs = lb.compare_with_profile(l0, pulse_width=200, line_interval=0.025)
-    assert len(diffs) == 1 and "pulse width" in diffs[0]
-    img = lb.parse_bytes(SAMPLE).layer(7)  # file records neither constant: not a difference
-    assert lb.compare_with_profile(img, pulse_width=200, line_interval=0.025) == []
-
-
 def test_regions_expose_their_outline_and_the_notes_identifier():
     p = lb.parse_bytes(SAMPLE)
     rect = p.layer(0).regions[0]
+    assert rect.closed is True
     assert [tuple(round(v, 6) for v in pt) for pt in rect.polygon] == [(80, 83), (90, 83), (90, 87), (80, 87)]
     assert len(p.layer(0).regions[1].polygon) == 3  # the path's on-curve vertices
     assert p.identifier is None
     q = lb.parse_bytes(b'<LightBurnProject><Notes ShowOnLoad="0" Notes="TCE1:TCE-0A1B2C3D"/></LightBurnProject>')
     assert q.identifier == "TCE-0A1B2C3D"
+
+
+# -- exact path geometry (REQ-023, DEC-048) ----------------------------------------------------------------
+def _project(*shapes: str) -> lb.Project:
+    body = "".join(shapes)
+    return lb.parse_bytes(
+        ('<LightBurnProject AppVersion="2.1.04"><CutSetting type="Scan"><index Value="0"/><name Value="C00"/>'
+         '<maxPower Value="20"/><speed Value="900"/><frequency Value="48000"/></CutSetting>' + body +
+         '</LightBurnProject>').encode())
+
+
+def _path(verts: str, prims: str, xform: str = "1 0 0 1 0 0") -> str:
+    return (f'<Shape Type="Path" CutIndex="0"><XForm>{xform}</XForm><VertList>{verts}</VertList>'
+            f'<PrimList>{prims}</PrimList></Shape>')
+
+
+def _square(x: float, y: float, size: float) -> tuple[str, str]:
+    pts = [(x, y), (x + size, y), (x + size, y + size), (x, y + size)]
+    return "".join(f"V{a} {b}c0x1c1x1" for a, b in pts), "L0 1L1 2L2 3L3 0"
+
+
+def _distance_to_polyline(point, polyline) -> float:
+    import numpy as np
+    a, b = np.asarray(polyline[:-1], float), np.asarray(polyline[1:], float)
+    d = b - a
+    t = np.clip(((np.asarray(point) - a) * d).sum(axis=1) / np.maximum((d * d).sum(axis=1), 1e-12), 0, 1)
+    return float(np.linalg.norm(a + t[:, None] * d - point, axis=1).min())
+
+
+def test_bezier_edge_is_flattened_within_tolerance_and_the_loop_is_closed():
+    import numpy as np
+    verts = "V0 0c0x0c0y10c1x1V20 20c0x1c1x10c1y20"          # P0 (0,0)  P1 (0,10)  P2 (10,20)  P3 (20,20)
+    region = _project(_path(verts, "B0 1L1 0")).layer(0).regions[0]
+    assert region.closed is True and len(region.polygon) > 8
+    p0, p1, p2, p3 = map(np.array, [(0, 0), (0, 10), (10, 20), (20, 20)])
+    curve = [(1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3
+             for t in np.linspace(0, 1, 400)]
+    outline = region.polygon + region.polygon[:1]
+    assert max(_distance_to_polyline(point, outline) for point in curve) < 0.02
+    assert region.x == pytest.approx(0, abs=1e-6) and region.y == pytest.approx(0, abs=1e-6)
+
+
+def test_path_that_mixes_line_and_bezier_edges_and_returns_to_its_start_is_closed():
+    verts = "V0 0c0x1c1x1V10 0c0x1c1x1V10 10c0x10c0y12c1x1V0 10c0x1c1x1"
+    region = _project(_path(verts, "L0 1L1 2B2 3L3 0")).layer(0).regions[0]
+    assert region.closed is True
+    open_region = _project(_path(verts, "L0 1L1 2B2 3")).layer(0).regions[0]
+    assert open_region.closed is False
+
+
+def test_flattening_is_measured_in_project_millimetres_after_the_xform():
+    import numpy as np
+    verts = "V0 0c0x0c0y10c1x1V20 20c0x1c1x10c1y20"
+    small = _project(_path(verts, "B0 1L1 0", "1 0 0 1 0 0")).layer(0).regions[0]
+    large = _project(_path(verts, "B0 1L1 0", "4 0 0 4 0 0")).layer(0).regions[0]
+    assert len(large.polygon) > len(small.polygon)                 # a 4x curve needs more pieces for the same tolerance
+    assert large.x + large.width == pytest.approx(80, abs=1e-6) and large.y + large.height == pytest.approx(80, abs=1e-6)
+
+
+def test_two_disjoint_loops_in_one_path_are_two_regions():
+    a_v, a_p = _square(0, 0, 10)
+    b_v, b_p = _square(30, 0, 10)
+    verts = a_v + b_v
+    prims = a_p + "L4 5L5 6L6 7L7 4"
+    layer = _project(_path(verts, prims)).layer(0)
+    assert [(round(r.x), r.closed, r.holes) for r in layer.regions] == [(0, True, []), (30, True, [])]
+
+
+def test_loop_inside_a_loop_is_a_hole_of_the_outer_region():
+    outer_v, _ = _square(0, 0, 20)
+    inner_v, _ = _square(5, 5, 10)
+    verts = outer_v + inner_v
+    layer = _project(_path(verts, "L0 1L1 2L2 3L3 0L4 5L5 6L6 7L7 4")).layer(0)
+    assert len(layer.regions) == 1
+    region = layer.regions[0]
+    assert region.closed and len(region.holes) == 1
+    assert min(x for x, _ in region.holes[0]) == pytest.approx(5) and max(x for x, _ in region.holes[0]) == pytest.approx(15)
+    assert region.as_dict()["holes"][0][0] in ([5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0])
+
+
+def test_island_inside_a_hole_is_a_new_outer_region():
+    v1, _ = _square(0, 0, 40)
+    v2, _ = _square(5, 5, 30)
+    v3, _ = _square(10, 10, 20)
+    prims = "L0 1L1 2L2 3L3 0L4 5L5 6L6 7L7 4L8 9L9 10L10 11L11 8"
+    layer = _project(_path(v1 + v2 + v3, prims)).layer(0)
+    assert len(layer.regions) == 2
+    assert [len(r.holes) for r in layer.regions] == [1, 0]
+
+
+# -- complete capture of a file's settings (REQ-025) --------------------------------------------------------------
+SUBLAYERS = b"""<LightBurnProject AppVersion="2.1.04">
+  <CutSetting type="Scan"><index Value="0"/><name Value="Engrave"/>
+    <maxPower Value="60"/><speed Value="900"/><frequency Value="48000"/><interval Value="0.02"/>
+    <SubLayer type="Scan" index="1"><maxPower Value="20"/><speed Value="2000"/><frequency Value="48000"/><interval Value="0.04"/><subname Value="Clean"/></SubLayer>
+    <SubLayer type="Scan" index="2"><maxPower Value="10"/><speed Value="3000"/></SubLayer>
+  </CutSetting>
+  <CutSetting type="Scan"><index Value="1"/><name Value="Plain"/><maxPower Value="25"/><speed Value="150"/><frequency Value="60000"/></CutSetting>
+</LightBurnProject>"""
+
+
+def test_sub_layers_keep_every_nested_setting_in_file_order():
+    layers = lb.parse_bytes(SUBLAYERS)
+    engrave, plain = layers.layer(0), layers.layer(1)
+    subs = engrave.source_settings["SubLayer"]
+    assert [s["index"] for s in subs] == ["1", "2"]
+    assert subs[0]["maxPower"] == {"Value": "20"} and subs[0]["speed"] == {"Value": "2000"} and subs[0]["subname"] == {"Value": "Clean"}
+    assert subs[1]["speed"] == {"Value": "3000"}
+    assert "SubLayer" not in plain.source_settings and plain.source_settings["maxPower"] == {"Value": "25"}   # flat layers as before
+
+
+def test_a_single_sub_layer_is_stored_as_one_mapping_and_two_differ_in_the_recipe_key():
+    from titanium_platform import model
+    one = SUBLAYERS.replace(b'<SubLayer type="Scan" index="2"><maxPower Value="10"/><speed Value="3000"/></SubLayer>', b"")
+    a = lb.parse_bytes(one).layer(0)
+    assert a.source_settings["SubLayer"]["speed"] == {"Value": "2000"}
+    base = {"power": 60, "frequency": 48, "speed": 900, "pulse_width": 4, "line_interval": 0.02, "passes": 1}
+    clean_faster = lb.parse_bytes(one.replace(b'<speed Value="2000"/>', b'<speed Value="2500"/>')).layer(0)
+    assert (model.parameters_key({**base, "source_settings": a.source_settings}) !=
+            model.parameters_key({**base, "source_settings": clean_faster.source_settings}))
+
+
+GROUPED = b"""<LightBurnProject AppVersion="2.1.04">
+  <CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/><frequency Value="48000"/></CutSetting>
+  <Shape Type="Group"><XForm>1 0 0 1 100 50</XForm><Children>
+    <Shape Type="Rect" CutIndex="0" W="10" H="4" Cr="0"><XForm>1 0 0 1 5 2</XForm></Shape>
+    <Shape Type="Group"><XForm>2 0 0 2 0 0</XForm><Children>
+      <Shape Type="Rect" CutIndex="0" W="1" H="1" Cr="0"><XForm>1 0 0 1 3 3</XForm></Shape>
+    </Children></Shape>
+  </Children></Shape>
+</LightBurnProject>"""
+
+
+def test_group_transforms_are_applied_after_the_transform_of_the_shape_itself():
+    regions = lb.parse_bytes(GROUPED).layer(0).regions
+    assert len(regions) == 2
+    outer, inner = regions
+    assert (outer.x, outer.y, outer.width, outer.height) == pytest.approx((100, 50, 10, 4), abs=1e-9)     # centre (5,2) + (100,50), 10 x 4
+    # (3,3) scaled by the inner group to (6,6), then moved by the outer group to (106,56); the 1 x 1 rectangle becomes 2 x 2
+    assert (inner.x, inner.y, inner.width, inner.height) == pytest.approx((105, 55, 2, 2), abs=1e-9)
+
+
+def test_shapes_that_are_not_read_are_counted_per_layer_not_dropped_silently():
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/>'
+           b'<speed Value="900"/><frequency Value="48000"/></CutSetting>'
+           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="2000" H="3.5" HasBackupPath="0"><XForm>1 0 0 1 11 10</XForm></Shape>'
+           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="3000" H="3.5" HasBackupPath="0"><XForm>1 0 0 1 21 10</XForm></Shape>'
+           b'<Shape Type="Barcode" CutIndex="0" Str="1"><XForm>1 0 0 1 5 5</XForm></Shape>'
+           b'<Shape Type="Rect" CutIndex="0" W="2" H="2"><XForm>1 0 0 1 0 0</XForm></Shape></LightBurnProject>')
+    layer = lb.parse_bytes(xml).layer(0)
+    assert layer.unsupported == {"Text": 2, "Barcode": 1} and len(layer.regions) == 1
+    assert layer.as_dict()["unsupported"] == {"Text": 2, "Barcode": 1}
+
+
+def test_image_object_settings_become_part_of_the_layer_settings_without_the_pixels():
+    xml = (b'<LightBurnProject><CutSetting_Img type="Image"><index Value="3"/><name Value="img"/><maxPower Value="70"/><speed Value="800"/>'
+           b'<frequency Value="48000"/><dpi Value="318"/></CutSetting_Img>'
+           b'<Shape Type="Bitmap" CutIndex="3" W="40" H="30" Gamma="1.2" Contrast="10" Brightness="-5" Data="AAAA" File="x.png" SourceHash="1">'
+           b'<XForm>1 0 0 1 50 50</XForm></Shape></LightBurnProject>')
+    layer = lb.parse_bytes(xml).layer(3)
+    assert layer.source_settings["dpi"] == {"Value": "318"}
+    assert layer.source_settings["bitmaps"] == [{"Gamma": "1.2", "Contrast": "10", "Brightness": "-5"}]
+    assert len(layer.regions) == 1 and layer.regions[0].kind == "bitmap"
+
+
+def test_the_run_order_of_a_layer_is_not_part_of_its_recipe():
+    from titanium_platform import model
+    base = {"power": 75, "frequency": 330, "speed": 1300, "pulse_width": 4, "line_interval": 0.005, "passes": 1}
+    first = {"priority": {"Value": "3"}, "scanOpt": {"Value": "individual"}, "bidir": {"Value": "0"}}
+    second = {**first, "priority": {"Value": "15"}}
+    assert lb.recipe_settings(first) == {"scanOpt": {"Value": "individual"}, "bidir": {"Value": "0"}}
+    assert (model.parameters_key({**base, "source_settings": lb.recipe_settings(first)}) ==
+            model.parameters_key({**base, "source_settings": lb.recipe_settings(second)}))
+    assert lb.recipe_settings(None) == {}
+
+
+def test_an_ellipse_is_read_as_a_closed_outline_under_its_transform():
+    import numpy as np
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
+           b'<frequency Value="48000"/></CutSetting><Shape Type="Ellipse" CutIndex="0" Rx="6" Ry="3"><XForm>2 0 0 2 50 40</XForm></Shape>'
+           b'</LightBurnProject>')
+    layer = lb.parse_bytes(xml).layer(0)
+    (region,) = layer.regions
+    assert region.closed and not layer.unsupported
+    assert (region.x, region.y, region.width, region.height) == pytest.approx((38, 34, 24, 12), abs=0.01)
+    pts = np.array(region.polygon)
+    area = abs(np.sum(pts[:, 0] * np.roll(pts[:, 1], -1) - np.roll(pts[:, 0], -1) * pts[:, 1])) / 2
+    assert area == pytest.approx(np.pi * 12 * 6, rel=0.002)
+
+
+def test_a_text_object_with_its_converted_outline_is_read_and_one_without_is_reported():
+    # layout of LightBurn 1.7: the BackupPath carries the same XForm as the text, its vertices are local
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
+           b'<frequency Value="48000"/></CutSetting>'
+           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="A" H="3.5" HasBackupPath="1">'
+           b'<BackupPath Type="Path" CutIndex="0"><XForm>1 0 0 1 20 30</XForm><VertList>V0 0c0x1c1x1V4 0c0x1c1x1V4 6c0x1c1x1V0 6c0x1c1x1</VertList>'
+           b'<PrimList>L0 1L1 2L2 3L3 0</PrimList></BackupPath><XForm>1 0 0 1 20 30</XForm></Shape>'
+           b'<Shape Type="Text" CutIndex="0" Font="Arial" Str="B" H="3.5" HasBackupPath="0"><XForm>1 0 0 1 40 30</XForm></Shape>'
+           b'</LightBurnProject>')
+    layer = lb.parse_bytes(xml).layer(0)
+    assert len(layer.regions) == 1 and layer.unsupported == {"Text": 1}
+    region = layer.regions[0]
+    assert region.closed and (region.x, region.y, region.width, region.height) == pytest.approx((20, 30, 4, 6), abs=1e-9)
+
+
+def test_a_text_outline_inside_a_group_is_moved_by_the_group_once():
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
+           b'<frequency Value="48000"/></CutSetting><Shape Type="Group"><XForm>1 0 0 1 100 50</XForm><Children>'
+           b'<Shape Type="Text" CutIndex="0" Str="A" HasBackupPath="1"><BackupPath Type="Path" CutIndex="0"><XForm>1 0 0 1 20 30</XForm>'
+           b'<VertList>V0 0c0x1c1x1V4 0c0x1c1x1V4 6c0x1c1x1</VertList><PrimList>L0 1L1 2L2 0</PrimList></BackupPath>'
+           b'<XForm>1 0 0 1 20 30</XForm></Shape></Children></Shape></LightBurnProject>')
+    (region,) = lb.parse_bytes(xml).layer(0).regions
+    assert (region.x, region.y) == pytest.approx((120, 80), abs=1e-9)

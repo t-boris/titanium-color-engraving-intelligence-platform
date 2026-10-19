@@ -2,7 +2,8 @@
 
 Shared pieces: eligible palette (validated/production knowledge with a full prediction), questioned-entry
 rules (DEC-018), image quantisation into millimetre rectangles, and plan persistence. Plan generation never
-changes a knowledge entry's stage or questioned flag (REQ-005).
+changes a knowledge entry's stage or questioned flag (REQ-005). A plan uses the knowledge of one laser and one lens record
+(DEC-063) and remembers that lens with its spot value (REQ-019).
 
 Geometry assumption (not in the requirements): the work is rendered at a fixed raster of at most
 ``MAX_RASTER_PX`` pixels on its longer side; every pixel run becomes a rectangle in the LightBurn file, so a
@@ -18,13 +19,18 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-from . import color, knowledge as kn, plans as pl, profiles as pf
+from . import color, knowledge as kn, plans as pl, setup as su, tasks
 from .db import Store, now
 
 MAX_RASTER_PX = 160
 MAX_COLORS = 16
 ELIGIBLE_STAGES = ("validated", "production")
 ST_DRAFT, ST_READY = "Draft", "Ready to export"
+# LightBurn modes of a recipe (the layer type of the file it was measured from). A conversion fills areas, so it uses the
+# filling modes; None is an entry recorded before the mode was kept, exported as a fill as it always was.
+FILL_MODES = frozenset({None, "Scan", "Fill", "OffsetFill", "Offset Fill", "Scan+Cut"})
+LINE_MODES = frozenset({"Cut"})
+PICTURE_PX = 640           # the longer side of a banding picture: the working raster enlarged without smoothing
 
 
 class ConversionError(ValueError):
@@ -66,18 +72,33 @@ def mask_to_rects(mask: np.ndarray, px_mm: float) -> list[dict]:
     return rects
 
 
-def eligible_palette(store: Store, profile_id: int, allowed_questioned=(), include_questioned_warning=False) -> list[dict]:
-    """Validated/production knowledge with all three estimates. Questioned entries only if allowed for this plan."""
+def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_questioned=(), include_questioned_warning=False,
+                     modes=FILL_MODES, kinds=tasks.AREA_TASKS) -> list[dict]:
+    """Validated/production knowledge of one laser and lens with all three estimates. Questioned entries only if allowed for this plan.
+
+    Only recipes whose LightBurn mode is in ``modes`` (all when None): a line recipe never fills the area of a conversion. A
+    recipe kept apart for a stated task its mode does not imply (REQ-020) must also have a task in ``kinds`` (all when None):
+    a Fill recipe measured as text never fills an area either. Each entry names its mode, its task and the titanium stock
+    (``material_id``) it was measured on, None when that is not one known stock.
+    """
     out = []
-    for k in kn.list_for_profile(store, profile_id):
+    for k in kn.list_for_setup(store, device_id, lens_id):
         s = k["summary"]
         if k["stage"] not in ELIGIBLE_STAGES or not s or not s["available"]:
             continue
         if k["questioned"] and k["id"] not in allowed_questioned and not include_questioned_warning:
             continue
+        mode = k["parameters"].get("layer_type")
+        if modes is not None and mode not in modes:
+            continue
+        task = s["task"]["kind"]
+        if kinds is not None and task not in kinds and tasks.key_suffix(s["task"], k["parameters"]):
+            continue
+        stocks = {g["material_id"] for g in s["context_groups"]}
         out.append({"id": k["id"], "key": k["parameters_key"], "stage": k["stage"], "questioned": k["questioned"], "parameters": k["parameters"],
                     "lab": s["lab"], "confidence": s["confidence"], "expected_delta_e": s["expected_delta_e"], "stability": s["stability"],
-                    "observation_ids": s["observation_ids"], "doubt": k["doubt"]})
+                    "observation_ids": s["observation_ids"], "doubt": k["doubt"], "mode": mode, "task": task,
+                    "material_id": stocks.pop() if len(stocks) == 1 else None})
     return out
 
 
@@ -90,13 +111,13 @@ def layer_from_entry(index: int, name: str, entry: dict, regions: list[dict], **
             "knowledge_id": entry["id"], "stage": entry["stage"], "questioned": entry["questioned"], **extra}
 
 
-def save_plan(store: Store, plan_id: int | None, *, name: str, mode: str, status: str, profile_id: int, markers: bool,
-              identifier: str, band_count: int | None, data: dict) -> int:
-    row = (name, mode, status, profile_id, int(markers), identifier, band_count, json.dumps(data))
+def save_plan(store: Store, plan_id: int | None, *, name: str, mode: str, status: str, device_id: int, lens_id: int | None,
+              markers: bool, identifier: str, band_count: int | None, data: dict) -> int:
+    row = (name, mode, status, device_id, lens_id, int(markers), identifier, band_count, json.dumps(data))
     if plan_id is None:
-        return store.execute("INSERT INTO plan(name,mode,status,profile_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        return store.execute("INSERT INTO plan(name,mode,status,device_id,lens_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                              (*row, now())).lastrowid
-    store.execute("UPDATE plan SET name=?,mode=?,status=?,profile_id=?,markers=?,plan_identifier=?,band_count=?,data_json=? WHERE id=?", (*row, plan_id))
+    store.execute("UPDATE plan SET name=?,mode=?,status=?,device_id=?,lens_id=?,markers=?,plan_identifier=?,band_count=?,data_json=? WHERE id=?", (*row, plan_id))
     return plan_id
 
 
@@ -122,12 +143,14 @@ def set_markers(store: Store, plan_id: int, enabled: bool) -> dict:
     g = plan.get("size_mm") or {}
     plan["markers"] = _plan_markers(plan["plan_identifier"], enabled, g.get("width", 0), g.get("height", 0), store) if g else None
     plan["marker_layer"] = pl.marker_layer_settings(store) if enabled else None
-    _persist(store, plan, ST_DRAFT if plan["status"] == ST_READY else plan["status"], enabled)
+    # a vector job keeps its status: it is ready whenever every region has its evidence, which markers do not change
+    _persist(store, plan, ST_DRAFT if plan["status"] == ST_READY and plan["mode"] != pl.MODE_VECTOR else plan["status"], enabled)
     return pl.get_plan(store, plan_id)
 
 
 def _persist(store: Store, plan: dict, status: str, markers_enabled: bool) -> None:
-    data = {k: v for k, v in plan.items() if k not in ("id", "name", "mode", "status", "profile_id", "plate_id", "markers_enabled", "plan_identifier", "band_count", "created_at")}
+    data = {k: v for k, v in plan.items() if k not in ("id", "name", "mode", "status", "device_id", "lens_id", "legacy_profile_id", "plate_id",
+                                                        "markers_enabled", "plan_identifier", "band_count", "created_at", "research_session_id")}
     store.execute("UPDATE plan SET status=?, markers=?, data_json=? WHERE id=?", (status, int(markers_enabled), json.dumps(data), plan["id"]))
 
 
@@ -148,12 +171,12 @@ def _cluster(rgb: np.ndarray, max_colors: int):
     return labels, centers[order], np.bincount(labels.ravel(), minlength=k)
 
 
-def _threshold(store: Store, profile_id: int, value) -> float:
-    """The delta E threshold is always explicit: given for the plan or taken from the saved rules, never invented."""
+def _threshold(store: Store, device_id: int, lens_id: int | None, value) -> float:
+    """The delta E threshold is always explicit: given for the plan or taken from the rules of its laser and lens, never invented."""
     if value is None:
-        value = pf.get_rules(store, profile_id)["delta_tolerance"]
+        value = su.get_rules(store, device_id, lens_id)["delta_tolerance"]
     if value is None:
-        raise ConversionError("set the delta E threshold for this plan (no tolerance is saved for the laser profile)")
+        raise ConversionError("set the delta E threshold for this plan (no tolerance is saved for this laser and lens)")
     value = float(value)
     if not np.isfinite(value) or value < 0:
         raise ConversionError("enter a non-negative delta E threshold")
@@ -161,16 +184,18 @@ def _threshold(store: Store, profile_id: int, value) -> float:
 
 
 def compute_matches(source_colors: list[dict], palette: list[dict], threshold: float, replacements: dict, exclusions: list) -> list[dict]:
+    """Each image colour against the palette (DEC-030). A match carries the titanium colour it was tested against with that
+    entry's confidence, expected colour error and stability (REQ-002, REQ-004): the screen shows them per match."""
     by_id = {e["id"]: e for e in palette}
     out = []
     for c in source_colors:
         m = {"source_key": c["key"], "source_lab": c["lab"], "status": None, "knowledge_id": None, "distance": None, "match_error": None,
-             "candidate_id": None}
+             "candidate_id": None, "titanium": None}
         if c["key"] in exclusions:
             m["status"] = "excluded"
         elif c["key"] in replacements:
             e = by_id[replacements[c["key"]]]
-            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]))
+            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]), titanium=prediction_of(e))
             m["match_error"] = m["distance"] + e["expected_delta_e"]
         elif not palette:
             m["status"] = "unreachable"
@@ -178,7 +203,7 @@ def compute_matches(source_colors: list[dict], palette: list[dict], threshold: f
             e = min(palette, key=lambda p: (color.delta_e(p["lab"], c["lab"]), p["id"]))
             dist = color.delta_e(e["lab"], c["lab"])
             err = dist + e["expected_delta_e"]  # DEC-030: distance to the request plus the entry's own measured scatter
-            m.update(distance=dist, match_error=err, candidate_id=e["id"])
+            m.update(distance=dist, match_error=err, candidate_id=e["id"], titanium=prediction_of(e))
             if err <= threshold:
                 m.update(status="matched", knowledge_id=e["id"])
             else:
@@ -187,18 +212,22 @@ def compute_matches(source_colors: list[dict], palette: list[dict], threshold: f
     return out
 
 
-def _register_targets(store: Store, profile_id: int, plan_id: int, matches: list[dict]) -> None:
-    """Every unreachable color becomes an Experiment Designer target; re-matching never duplicates one (DEC-009)."""
+def _register_targets(store: Store, device_id: int, lens_id: int | None, plan_id: int, matches: list[dict]) -> None:
+    """Every unreachable color becomes an Experiment Designer target of the plan's laser and lens; re-matching never
+    duplicates one (DEC-009)."""
     for m in matches:
         if m["status"] == "unreachable":
-            store.execute("INSERT OR IGNORE INTO target_color(profile_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,?,?)",
-                          (profile_id, json.dumps(m["source_lab"]), plan_id, m["source_key"], now()))
+            store.execute("INSERT OR IGNORE INTO target_color(device_id,lens_id,lab_json,source_plan_id,source_color_key,created_at) VALUES (?,?,?,?,?,?)",
+                          (device_id, lens_id, json.dumps(m["source_lab"]), plan_id, m["source_key"], now()))
 
 
-def start_discrete(store: Store, profile_id: int, image_bytes: bytes, width_mm: float, name: str, threshold=None,
-                   markers: bool = False, max_colors: int = MAX_COLORS) -> int:
-    pf.get_profile(store, profile_id)
-    thr = _threshold(store, profile_id, threshold)
+def start_discrete(store: Store, device_id: int, lens_id: int | None, image_bytes: bytes, width_mm: float, name: str,
+                   threshold=None, markers: bool = False, max_colors: int = MAX_COLORS, task: str | None = None,
+                   goals: dict | None = None) -> int:
+    """A discrete plan records its engraving task (REQ-020): a colour image unless the operator says it is flat filled areas."""
+    lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
+    engraving_task = tasks.chosen_or_default(task, tasks.CONVERSION_TASK["discrete"], goals)
+    thr = _threshold(store, device_id, lens_id, threshold)
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
     if not 1 <= max_colors <= MAX_COLORS:
@@ -213,9 +242,9 @@ def start_discrete(store: Store, profile_id: int, image_bytes: bytes, width_mm: 
     data = {"image_path": _store_image(store, image_bytes), "labels_path": str(labels_path), "size_mm": {"width": float(width_mm), "height": h_mm},
             "px_mm": px_mm, "threshold": thr, "source_colors": source, "replacements": {}, "exclusions": [], "allowed_questioned": [],
             "matches": [], "layers": [], "markers": _plan_markers(identifier, markers, float(width_mm), h_mm, store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "lens": lens, "engraving_task": engraving_task}
     with store.transaction():
-        plan_id = save_plan(store, None, name=name.strip(), mode=pl.MODE_DISCRETE, status=ST_DRAFT, profile_id=profile_id, markers=markers,
+        plan_id = save_plan(store, None, name=name.strip(), mode=pl.MODE_DISCRETE, status=ST_DRAFT, device_id=device_id, lens_id=lens_id, markers=markers,
                             identifier=identifier, band_count=None, data=data)
         return update_discrete(store, plan_id)
 
@@ -226,9 +255,9 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
     plan = pl.get_plan(store, plan_id)
     if plan["mode"] != pl.MODE_DISCRETE:
         raise ConversionError("this is not a discrete color plan")
-    pid = plan["profile_id"]
+    partition = (plan["device_id"], plan["lens_id"])
     if threshold is not None:
-        plan["threshold"] = _threshold(store, pid, threshold)
+        plan["threshold"] = _threshold(store, *partition, threshold)
     keys = {c["key"] for c in plan["source_colors"]}
     if exclusions is not None:
         if not set(exclusions) <= keys:
@@ -236,7 +265,7 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
         plan["exclusions"] = sorted(exclusions)
     if allowed_questioned is not None:
         plan["allowed_questioned"] = sorted(set(int(x) for x in allowed_questioned))
-    palette = eligible_palette(store, pid, allowed_questioned=plan["allowed_questioned"])
+    palette = eligible_palette(store, *partition, allowed_questioned=plan["allowed_questioned"])
     if replacements is not None:
         ids = {e["id"] for e in palette}
         if not set(replacements) <= keys or not set(replacements.values()) <= ids:
@@ -246,9 +275,9 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
     plan["replacements"] = {k: v for k, v in plan["replacements"].items() if v in {e["id"] for e in palette}}
     plan["matches"] = compute_matches(plan["source_colors"], palette, plan["threshold"], plan["replacements"], plan["exclusions"])
     plan["layers"] = []
-    plan["questioned_available"] = [e["id"] for e in eligible_palette(store, pid, include_questioned_warning=True) if e["questioned"]]
+    plan["questioned_available"] = [e["id"] for e in eligible_palette(store, *partition, include_questioned_warning=True) if e["questioned"]]
     _persist(store, plan, ST_DRAFT, plan["markers_enabled"])
-    _register_targets(store, pid, plan_id, plan["matches"])
+    _register_targets(store, *partition, plan_id, plan["matches"])
     return plan_id
 
 
@@ -264,7 +293,7 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
         raise ConversionError("every color is excluded: there is nothing to engrave")
     labels = np.load(plan["labels_path"])
     key_index = {c["key"]: i for i, c in enumerate(plan["source_colors"])}
-    palette = {e["id"]: e for e in eligible_palette(store, plan["profile_id"], allowed_questioned=plan["allowed_questioned"])}
+    palette = {e["id"]: e for e in eligible_palette(store, plan["device_id"], plan["lens_id"], allowed_questioned=plan["allowed_questioned"])}
     by_entry: dict[int, list[str]] = {}
     for m in active:
         by_entry.setdefault(m["knowledge_id"], []).append(m["source_key"])
@@ -273,8 +302,9 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
         entry = palette[kid]
         mask = np.isin(labels, [key_index[k] for k in keys])
         layers.append(layer_from_entry(n, f"K{kid}", entry, mask_to_rects(mask, plan["px_mm"]), source_color_keys=keys))
-    if len(layers) > pl.MAX_LAYERS:
-        raise ConversionError(f"{len(layers)} distinct colors need more LightBurn layers than the {pl.MAX_LAYERS} available")
+    available = pl.MAX_LAYERS - 1  # color 00 remains reserved for the marker layer in engraving plans
+    if len(layers) > available:
+        raise ConversionError(f"{len(layers)} distinct colors need more LightBurn layers than the {available} available after registration")
     plan["layers"] = layers
     _persist(store, plan, ST_READY, plan["markers_enabled"])
     return pl.get_plan(store, plan_id)
@@ -284,7 +314,7 @@ def finalize_discrete(store: Store, plan_id: int) -> dict:
 # Continuous Photo Engraving: Tonal and Color-path on one transfer-function abstraction (DEC-007, proposed DEC-032)
 # ======================================================================================================
 MODE_FOR = {"tonal": pl.MODE_TONAL, "color_path": pl.MODE_COLOR_PATH}
-MAX_BANDS = pl.MAX_LAYERS
+MAX_BANDS = pl.MAX_LAYERS - 1  # one output color is reserved for registration when enabled
 
 
 def build_transfer(mode: str, entries: list[dict], path_ids: list[int] | None = None) -> dict:
@@ -345,16 +375,16 @@ def _check_bands(n) -> int:
     return int(n)
 
 
-def preview_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
+def preview_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
                        path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None) -> dict:
     """Compute the banding without saving anything. Returns the layers, warnings and per-band pixel share."""
     n = _check_bands(n_bands)
     allowed = [int(x) for x in (allowed_questioned or [])]
     if mode == "tonal":
         # Tonal may use questioned production entries with a warning and no confirmation (DEC-018)
-        entries = eligible_palette(store, profile_id, include_questioned_warning=True)
+        entries = eligible_palette(store, device_id, lens_id, include_questioned_warning=True)
     else:
-        entries = eligible_palette(store, profile_id, allowed_questioned=allowed)
+        entries = eligible_palette(store, device_id, lens_id, allowed_questioned=allowed)
     transfer = build_transfer(mode, entries, path_ids)
     rgb, px_mm = raster(decode_image_bytes(image_bytes), width_mm)
     bands = quantize_luminance(rgb, n)
@@ -368,24 +398,85 @@ def preview_continuous(store: Store, profile_id: int, mode: str, image_bytes: by
     if mode == "tonal":
         used = sorted({l["knowledge_id"] for l in layers if l["questioned"]})
         if used:
-            warnings.append({"type": "questioned_in_tonal", "knowledge_ids": used,
+            # every questioned entry the plan uses is listed with what put it in doubt and the observations behind it (DEC-018)
+            entries = [{"knowledge_id": k, "lab": by_id[k]["lab"], "reason": (by_id[k]["doubt"] or {}).get("reason"),
+                        "observation_ids": by_id[k]["observation_ids"]} for k in used]
+            warnings.append({"type": "questioned_in_tonal", "knowledge_ids": used, "entries": entries,
                              "message": "This Tonal plan uses production parameter sets that are questioned. No confirmation is needed; review the observations behind them.",
                              "observation_ids": sorted({o for k in used for o in by_id[k]["observation_ids"]})})
     return {"transfer": transfer, "layers": layers, "warnings": warnings, "size_mm": {"width": float(width_mm), "height": rgb.shape[0] * px_mm}, "px_mm": px_mm,
-            "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum())}
+            "distinct_entries": len(set(chosen)), "bands": n, "empty_bands": int((counts == 0).sum()), "band_map": bands}
 
 
-def create_continuous(store: Store, profile_id: int, mode: str, image_bytes: bytes, width_mm: float, n_bands: int, name: str,
-                      path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False) -> int:
+def create_continuous(store: Store, device_id: int, lens_id: int | None, mode: str, image_bytes: bytes, width_mm: float, n_bands: int,
+                      name: str, path_ids: list[int] | None = None, allowed_questioned: list[int] | None = None, markers: bool = False,
+                      revision_of: int | None = None, task: str | None = None, goals: dict | None = None) -> int:
+    """A new continuous plan; ``revision_of`` names the plan it revises, which stays as it was. It records its engraving task
+    (REQ-020): a tonal image or, along a colour path, a colour image, unless the operator chose another."""
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
-    pf.get_profile(store, profile_id)
-    p = preview_continuous(store, profile_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
+    if mode not in MODE_FOR:
+        raise ConversionError("mode must be 'tonal' or 'color_path'")
+    engraving_task = tasks.chosen_or_default(task, tasks.CONVERSION_TASK[mode], goals)
+    if revision_of is not None and pl.get_plan(store, revision_of)["mode"] not in MODE_FOR.values():
+        raise ConversionError("only a photo engraving plan can be revised as a photo engraving")
+    lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
+    p = preview_continuous(store, device_id, lens_id, mode, image_bytes, width_mm, n_bands, path_ids, allowed_questioned)
     identifier = pl.new_identifier("TCE-P")
     data = {"image_path": _store_image(store, image_bytes), "size_mm": p["size_mm"], "px_mm": p["px_mm"], "transfer": p["transfer"],
             "path_ids": list(path_ids or []), "allowed_questioned": sorted(int(x) for x in (allowed_questioned or [])), "warnings": p["warnings"],
             "layers": p["layers"], "markers": _plan_markers(identifier, markers, p["size_mm"]["width"], p["size_mm"]["height"], store),
-            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode}
+            "marker_layer": pl.marker_layer_settings(store) if markers else None, "continuous_mode": mode, "lens": lens,
+            "revision_of": revision_of, "engraving_task": engraving_task}
     with store.transaction():
-        return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, profile_id=profile_id, markers=markers,
+        return save_plan(store, None, name=name.strip(), mode=MODE_FOR[mode], status=ST_READY, device_id=device_id, lens_id=lens_id, markers=markers,
                          identifier=identifier, band_count=p["bands"], data=data)
+
+
+# ======================================================================================================
+# Banding picture (REQ-012: the operator sees the banding before export)
+# ======================================================================================================
+def picture_png(rgb: np.ndarray) -> bytes:
+    """An RGB uint8 picture enlarged without smoothing to ``PICTURE_PX`` on its longer side (never reduced), as PNG."""
+    h, w = rgb.shape[:2]
+    scale = max(1, PICTURE_PX // max(h, w))
+    big = cv2.resize(rgb, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+    return cv2.imencode(".png", cv2.cvtColor(big, cv2.COLOR_RGB2BGR))[1].tobytes()
+
+
+def band_picture(band_map: np.ndarray, labs: list) -> np.ndarray:
+    """Every pixel in the predicted colour of its band (``labs[i]`` for band i); a band without a colour stays black."""
+    lut = np.array([color.lab_to_srgb8(lab) if lab is not None else (0, 0, 0) for lab in labs], np.uint8)
+    return lut[band_map]
+
+
+def _hatched(rgb: np.ndarray, mask: np.ndarray) -> None:
+    """Red diagonal stripes over the masked pixels: a colour the plan cannot engrave yet."""
+    yy, xx = np.indices(mask.shape)
+    stripe = mask & (((xx + yy) // 3) % 2 == 0)
+    rgb[stripe] = (211, 47, 47)
+
+
+def plan_banding(store: Store, plan: dict) -> np.ndarray:
+    """The banding picture of a stored plan as RGB: a continuous plan's bands in their predicted colours, recomputed from
+    its stored image; a discrete plan's source colours in their matched titanium colours (unreachable ones hatched red,
+    excluded ones white)."""
+    if plan["mode"] in MODE_FOR.values():
+        rgb, _ = raster(decode_image_bytes(Path(plan["image_path"]).read_bytes()), plan["size_mm"]["width"])
+        by_band = {l["band"]: l["prediction"]["lab"] for l in plan["layers"]}
+        return band_picture(quantize_luminance(rgb, plan["band_count"]), [by_band.get(i) for i in range(plan["band_count"])])
+    if plan["mode"] == pl.MODE_DISCRETE:
+        labels = np.load(plan["labels_path"])
+        palette = {e["id"]: e for e in eligible_palette(store, plan["device_id"], plan["lens_id"], allowed_questioned=plan["allowed_questioned"])}
+        planned = {k: l["prediction"]["lab"] for l in plan.get("layers", []) for k in l.get("source_color_keys", [])}
+        out = np.full(labels.shape + (3,), 255, np.uint8)
+        for i, m in enumerate(plan["matches"]):
+            mask = labels == i
+            lab = planned.get(m["source_key"]) or (palette[m["knowledge_id"]]["lab"] if m["knowledge_id"] in palette else None)
+            if m["status"] in ("matched", "replaced") and lab is not None:
+                out[mask] = color.lab_to_srgb8(lab)
+            elif m["status"] == "unreachable":
+                out[mask] = color.lab_to_srgb8(m["source_lab"])
+                _hatched(out, mask)
+        return out
+    raise ConversionError("this plan has no banding picture: it is not a discrete or photo engraving")

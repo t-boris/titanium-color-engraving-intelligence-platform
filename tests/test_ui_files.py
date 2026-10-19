@@ -30,8 +30,94 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/setup-forms.js", "/screens/setup.js"), ("/screens/setup-rules.js", "/screens/setup.js"), ("/screens/plate-dialog.js", "/screens/experiments.js"),
                       ("/screens/corners.js", "/screens/ingest-review.js"), ("/screens/ingest-dialogs.js", "/screens/ingest-review.js"), ("/screens/ingest-upload.js", "/screens/ingest.js"),
                       ("/screens/ingest-review.js", "/screens/ingest.js"), ("/screens/knowledge.js", "/screens/colors.js"), ("/screens/artwork-start.js", "/screens/artwork.js"),
-                      ("/screens/photo-form.js", "/screens/photo.js")]:
+                      ("/screens/photo-form.js", "/screens/photo.js"), ("/screens/device-charts.js", "/screens/device-plots.js"), ("/screens/device-plots.js", "/screens/device.js"),
+                      ("/screens/device-forms.js", "/screens/device-view.js"), ("/screens/device-view.js", "/screens/device.js"), ("/screens/device-calc.js", "/screens/device.js"),
+                      ("/app.js", "/hardware.js"), ("/hardware.js", "/screens/setup-rules.js"), ("/hardware.js", "/screens/ingest-upload.js"), ("/hardware.js", "/screens/device-view.js"),
+                      ("/screens/glossary-report.js", "/screens/device-report.js"), ("/screens/device-report.js", "/screens/device.js"), ("/screens/device-controller.js", "/screens/device.js"),
+                      ("/screens/glossary-controller.js", "/screens/controller-rows.js"), ("/screens/controller-rows.js", "/screens/device-controller.js"),
+                      ("/screens/glossary-controller.js", "/screens/device-questions.js"), ("/screens/device-questions.js", "/screens/device-view.js"),
+                      ("/screens/device-character-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
+                      ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js"),
+                      ("/screens/experiment-cards.js", "/screens/device-view.js"), ("/screens/experiment-cards.js", "/screens/experiments.js"),
+                      ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js")]:
         assert order[dep] < order[user], (dep, user)
+
+
+def _screen(name: str) -> str:
+    return (UI_DIR / "screens" / name).read_text(encoding="utf-8")
+
+
+def test_the_laser_page_shows_the_one_experiment_list_filtered_by_it_and_no_list_of_its_own():
+    """REQ-028: no separate list of plates, engravings or photographs anywhere; the laser's tab is the experiment list."""
+    device, view = _screen("device.js"), _screen("device-view.js")
+    assert "/experiments?device_id=${id}" in device and "/devices/${id}/experiments" not in device
+    assert "ExperimentCards.list(experiments" in view and "/experiments?device=" in view
+    assert "source_photo_url" not in view and "item.observations" not in view
+    assert "ExperimentCards.list(shown" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
+
+
+def test_the_photo_preview_is_in_the_menu_right_after_photo_engraving_with_an_icon_of_its_own():
+    router = (UI_DIR / "router.js").read_text(encoding="utf-8")
+    nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
+    icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
+    assert nav[nav.index("/photo") + 1] == "/photo-preview" and len(icons) == len(nav)
+    assert "'photo-preview': 'photo-preview'" in router and "App.register({id: 'photo-preview'" in _screen("photo-preview.js")
+
+
+def test_the_findings_screen_is_in_the_menu_right_after_the_designer_with_an_icon_of_its_own():
+    router = (UI_DIR / "router.js").read_text(encoding="utf-8")
+    nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
+    icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
+    assert nav[nav.index("/designer") + 1] == "/findings" and len(icons) == len(nav)
+    assert "['/findings', 'Выводы']" in router and "findings: 'findings'" in router
+    assert "App.register({id: 'findings'" in _screen("findings.js")
+    order = {s: i for i, s in enumerate(SCRIPTS)}
+    assert order["/i18n-data.js"] < order["/i18n-findings.js"] < order["/app.js"]
+    assert order["/screens/findings.js"] < order["/screens/designer.js"]
+
+
+def test_the_findings_screen_separates_measured_conclusions_from_hypotheses_and_offers_history_schedule_and_proposals():
+    """REQ-022: each finding is labelled measured, exploratory anomaly or AI hypothesis; its history, evidence and the
+    schedule are on the screen; a gap can be turned into a proposal."""
+    findings = _screen("findings.js")
+    for text in ("'Измерено'", "'Исследовательская аномалия, не вывод'", "'Гипотеза AI, не измерение'", "'Пересчитать сейчас'",
+                 "'Предложить эксперимент'", "'История вывода по расчётам'", "'Сохранить расписание'", "'Неопределённость'", "'Образцы'"):
+        assert text in findings, text
+    for route in ("/analysis/findings/${f.id}/history", "/analysis/findings/${f.id}/proposal", "put('/analysis/schedule'", "post('/analysis/runs')",
+                  "'/analysis/' + id", "'/knowledge/' + e.knowledge_id", "'/research/' + e.session_id"):
+        assert route in findings, route
+    assert "f.kind !== 'gap' || !f.proposable" in findings              # only gaps the designer can plan offer a proposal
+    for kind in ("improvement", "unstable", "anomaly", "gap", "hypothesis"):
+        assert f"{kind}: '" in findings, kind
+
+
+def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal_and_the_ai_explanation_only_with_a_key():
+    designer = _screen("designer.js")
+    for text in ("prop.questions", "prop.worth", "x.rationale", "'Почему выбран'", "'Результат'", "prop.status_history", "'Отклонить'",
+                 "'Принять и создать платы'", "/designer/proposals/${prop.id}/accept", "/designer/proposals/${prop.id}/reject",
+                 "/designer/proposals/${prop.id}/explanation", "'Пояснение AI — гипотезы, не измерения. '", "material_id: stock.value"):
+        assert text in designer, text
+    assert "if (!prop.explanation_available)" in designer and "get('/designer/proposals/' + chosen.id)" in designer
+    assert "/designer/proposals/${prop.id}/plates" not in designer       # plates are made by accepting the proposal
+    # a photograph of a plate made for a proposal links back to it (REQ-022 AC5)
+    assert "r.proposal ? link(`/designer?device=${r.proposal.device_id}" in _screen("analysis.js")
+    assert "exp.plate.proposal ? h('p'" in _screen("experiment.js")
+
+
+def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():
+    experiment = _screen("experiment.js")
+    assert "p.status === 'Accepted' && p.grayscale_image" in experiment and "/photo-preview?pair=${photoEngraving.id}" in experiment
+    assert "work.lightburn_url" in experiment
+    preview = _screen("photo-preview.js")
+    assert "ctx.query.pair" in preview and "/lightburn`" in preview      # the work's own file, fetched, not asked for again
+
+
+def test_the_photo_preview_states_camera_relative_colours_on_the_picture_itself():
+    """DEC-062: the statement is drawn over the preview, not in a note below it."""
+    preview = _screen("photo-preview.js")
+    assert "h('div', {class: 'pp-stage'}, img, banner)" in preview and "banner.hidden = info.referenced" in preview
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\.pp-stage \{[^}]*position:relative", css) and re.search(r"\.pp-banner \{[^}]*position:absolute", css)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -44,7 +130,7 @@ def test_every_ui_script_parses():
 def test_the_app_serves_the_ui_and_unknown_pages_fall_back_to_it(tmp_path):
     with TestClient(create_app(tmp_path / "d")) as c:
         home = c.get("/")
-        assert home.status_code == 200 and "Цвет титана" in home.text and 'lang="ru"' in home.text
+        assert home.status_code == 200 and "Лазерная мастерская" in home.text and 'lang="ru"' in home.text
         for src in SCRIPTS + ["/styles.css"]:
             r = c.get(src)
             assert r.status_code == 200 and len(r.content) > 50, src
@@ -81,6 +167,56 @@ def test_the_currentTarget_guard_flags_the_original_bug_and_accepts_the_fix():
 
 
 
+NULLABLE = re.compile(r":\s*(null|undefined|false)\s*$")
+
+
+def nullable_children(source: str) -> list[str]:
+    """Top-level arguments of ``.replaceChildren(...)`` that can be null: the DOM inserts them as the text "null"."""
+    out = []
+    for m in re.finditer(r"\.replaceChildren\(", source):
+        i, depth, args, cur = m.end(), 1, [], ""
+        while depth and i < len(source):
+            ch = source[i]
+            i += 1
+            if ch in "'\"`":                                  # a string: its brackets and commas are text
+                end = i
+                while end < len(source) and source[end] != ch:
+                    end += 2 if source[end] == "\\" else 1
+                cur += source[i - 1:end + 1]
+                i = end + 1
+                continue
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            if depth == 1 and ch == ",":
+                args.append(cur)
+                cur = ""
+            elif depth:
+                cur += ch
+        args.append(cur)
+        out += [a.strip() for a in args if not a.strip().startswith("...")
+                and (NULLABLE.search(a.strip()) or (re.match(r"^[\w.!()]+\s*&&", a.strip()) and "?" not in a))]
+    return out
+
+
+def test_no_screen_passes_a_possibly_null_child_to_replaceChildren():
+    """Regression: the colour search printed "null" above the film card. ``h()`` skips null children, the DOM's
+    ``replaceChildren`` does not; ``App.fill(el, ...)`` replaces children the way ``h()`` appends them."""
+    offenders = []
+    for src in SCRIPTS:
+        offenders += [f"{src}: {arg[:90]}" for arg in nullable_children((UI_DIR / src.lstrip("/")).read_text(encoding="utf-8"))]
+    assert offenders == [], "use App.fill(el, ...) for children that can be null:\n" + "\n".join(offenders)
+
+
+def test_the_null_child_guard_flags_the_original_bug_and_accepts_the_fix():
+    buggy = "results.replaceChildren(h('h3', {}, 'a, (b'), r.n && !f.within ? h('div') : null, film ? card(film) : null);"
+    assert nullable_children(buggy) == ["r.n && !f.within ? h('div') : null", "film ? card(film) : null"]
+    assert nullable_children("fill(results, h('h3'), film ? card(film) : null);") == []
+    assert nullable_children("el.replaceChildren(...items.map((x) => (x ? h('p') : null)), h('p', {}, ok ? 'a' : 'b'));") == []
+    assert nullable_children("el.replaceChildren(h('p'), shown && h('div'));") == ["shown && h('div')"]
+
+
 def test_ui_files_are_revalidated_so_an_upgrade_takes_effect_on_reload(tmp_path):
     """Regression: without Cache-Control a reloaded tab kept the old screen scripts after they changed."""
     with TestClient(create_app(tmp_path / "d")) as c:
@@ -101,6 +237,14 @@ def test_fields_and_buttons_in_one_line_use_the_bottom_aligned_toolbar():
             if re.search(r"class: '(card )?row'\}, (field\(|h\('div', \{(style: 'min-width|class: 'f-wrap))", line):
                 offenders.append(f"{src}:{n}")
     assert offenders == [], "a row starts with a labelled field; use class 'toolbar':\n" + "\n".join(offenders)
+
+
+def test_rig_repeatability_is_shown_with_the_stability_data():
+    """REQ-009: computed for every recipe and every re-photographed engraving, it must reach the screens that show stability."""
+    for screen in ("screens/knowledge.js", "screens/analysis.js"):
+        text = (UI_DIR / screen).read_text(encoding="utf-8")
+        assert "rig_repeatability" in text and "Повторяемость стенда" in text, screen
+        assert "по эталонной карте" in text, screen         # says it exists only for chart-corrected re-photographs
 
 
 def test_every_file_input_is_shown_through_the_russian_file_picker():

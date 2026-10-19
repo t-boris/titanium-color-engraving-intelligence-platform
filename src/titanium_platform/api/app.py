@@ -1,15 +1,17 @@
 """The application factory: JSON API under /api and the browser UI as static files from the same process."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__
-from ..db import Store
-from . import routes_plans, routes_setup, routes_work
+from .. import __version__, capability_results, findings, research
+from ..db import open_store
+from . import (routes_devices, routes_findings, routes_lenses, routes_plans, routes_prediction, routes_research, routes_setup, routes_vector,
+               routes_work)
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -29,10 +31,28 @@ class UIFiles(StaticFiles):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """The periodic analysis (REQ-022) runs in one thread of the app: it starts when the operator has set an interval (never
+    with the default of 0) and stops with the app."""
+    scheduler = findings.Scheduler(app.state.store)
+    app.state.analysis_scheduler = scheduler
+    scheduler.start_if_enabled()
+    try:
+        yield
+    finally:
+        scheduler.stop()
+
+
 def create_app(data_dir: str | Path) -> FastAPI:
-    app = FastAPI(title="Titanium Color Engraving Intelligence Platform", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json")
-    app.state.store = Store(data_dir)
+    app = FastAPI(title="Laser Workshop", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
+    app.state.store = open_store(data_dir)          # a database the migration refuses ends the start with exit code 2
+    capability_results.backfill_findings(app.state.store)
     install_error_handlers(app)
+
+    @app.exception_handler(research.ResearchError)
+    async def research_error(_, exc):
+        return JSONResponse({"error": str(exc), "kind": "invalid"}, status_code=422)
 
     @app.get("/api/version")
     def version():
@@ -43,7 +63,8 @@ def create_app(data_dir: str | Path) -> FastAPI:
         app.state.store.one("SELECT 1")
         return {"status": "ok"}
 
-    for r in (routes_setup.router, routes_work.router, routes_plans.router):
+    for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
+              routes_vector.router, routes_research.router, routes_prediction.router, routes_findings.router):
         app.include_router(r)
 
     @app.exception_handler(404)

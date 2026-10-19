@@ -19,6 +19,34 @@ def test_chart_is_detected_and_a_colour_cast_is_corrected():
     assert np.abs(raw_med - (120, 70, 200)).max() > np.abs(got - (120, 70, 200)).max()  # the cast made it worse before correction
 
 
+def lab_d65_to_d50(lab):
+    """Lab of D65 white as the same colours given for D50 white (Bradford), the way chart values are often published."""
+    xyz = color._lab_to_xyz(np.asarray(lab, float), color.WHITE_POINTS["D65"])
+    b = color._BRADFORD
+    gain = (b @ color.WHITE_POINTS["D50"]) / (b @ color.WHITE_POINTS["D65"])
+    t = (xyz @ (np.linalg.inv(b) @ np.diag(gain) @ b).T) / color.WHITE_POINTS["D50"]
+    f = np.where(t > 216 / 24389, np.cbrt(t), (24389 / 27 * t + 16) / 116)
+    return np.stack([116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2])], axis=-1)
+
+
+def test_a_capture_setups_reference_steers_the_correction_and_its_white_point_is_honoured():
+    """DEC-025: the published values by default; the same values given for D50 correct the same; other values correct
+    toward themselves."""
+    published = ph.published_reference()
+    assert np.allclose(ph.reference_linear(published), color.srgb_to_linear(ph.REFERENCE_SRGB / 255), atol=1e-12)
+    d50 = {"patches_lab": lab_d65_to_d50(published["patches_lab"]).tolist(), "white_point": "D50", "observer": "2°", "source": "t"}
+    assert np.allclose(ph.reference_linear(d50), ph.reference_linear(published), atol=2e-4)
+    img = synth.cast(synth.scene())
+    base, _, _ = ph.correct(img)
+    same, _, _ = ph.correct(img, reference=d50)
+    assert np.abs(same - base).max() < 2e-3
+    darker = color.linear_rgb_to_lab(color.srgb_to_linear(ph.REFERENCE_SRGB / 255) * 0.8).tolist()
+    toward, _, corr = ph.correct(img, reference={"patches_lab": darker, "white_point": "D65", "observer": "2°", "source": "t"})
+    assert corr.residual < 4.0
+    work = lambda rgb: color.linear_rgb_to_lab(color.srgb_to_linear(np.median(rgb[300:600, 600:800].reshape(-1, 3), axis=0)))
+    assert work(toward)[0] < work(base)[0] - 3                # the work is measured darker, as the reference says
+
+
 def test_no_chart_means_no_corrected_image():
     img = np.full((600, 800, 3), 140, np.uint8)
     corrected, chart, corr = ph.correct(img)
