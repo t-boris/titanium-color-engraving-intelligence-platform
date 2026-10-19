@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, segment as seg, setup as su, tasks, vectorize as vz
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, research, segment as seg, setup as su, tasks, vectorize as vz
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -440,7 +440,7 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 (least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
 regions."""
 DEFAULT_DETAIL = "medium"
-COLOURING_OPS = ("assign", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
+COLOURING_OPS = ("assign", "ai_colour", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
                  "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo")
 MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
@@ -602,8 +602,11 @@ def _sources(document: dict) -> list[dict]:
 def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed: int, colouring: dict) -> dict:
     """A new colouring after an automatic mode: every colour without the operator's own choice gets the mode's entry
     (palette.assign), the operator's choices of colours (still measured, of a colour still in the split) and regions stay."""
+    if mode == "ai":                         # the model's choices stay as they were made and are never asked for again (DEC-084)
+        return copy.deepcopy(colouring)
     by_id = {e["id"]: e for e in entries}
     out = {**copy.deepcopy(colouring), "mode": mode, "seed": seed, "assignment": {}, "how": {}}
+    out.pop("ai", None)                      # what the model said belongs to the colouring it chose, not to this one
     if not entries:                          # nothing measured on this titanium: every colour stays without a titanium colour
         return out
     settings = plan["colour_settings"]
@@ -832,7 +835,7 @@ def photo_view(store: Store, plan: dict) -> dict:
     used = {c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
     layers = _export_layers(store, plan, state)
     hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
-              "unresolved")
+              "unresolved", "ai_photo")
     out = {k: v for k, v in plan.items() if k not in hidden}
     found = plan["detected"]
     out.update(
@@ -845,11 +848,14 @@ def photo_view(store: Store, plan: dict) -> dict:
         areas={"detected": [{**a, "number": i, "removed": i in plan["split"]["removed"]} for i, a in enumerate(found["areas"])],
                "faces": found["faces"], "search_failed": found["error"] is not None},
         colours=state["colours"], entries={i: _shown(by_id[i], settings) for i in sorted(used)},
-        colouring={k: colouring[k] for k in ("mode", "seed", "variant", "regions", "excluded_colours", "excluded_regions")},
+        colouring={**{k: colouring[k] for k in ("mode", "seed", "variant", "regions", "excluded_colours", "excluded_regions")},
+                   **({"ai": colouring["ai"]} if colouring.get("ai") else {})},
         settings={"tolerance_de": plan["threshold"], **settings},
         outside=state["outside"], missing={"regions": len(state["missing_regions"])}, totals=state["totals"],
-        variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"])}
-                  for v in plan["variants"]],
+        variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"]),
+                   **({"ai": v["colouring"]["ai"]} if v["colouring"].get("ai") else {})} for v in plan["variants"]],
+        ai={"available": research.ai_available(), "styles": list(ai.STYLES), "photo_allowed": bool(plan.get("ai_photo")), "photo_px": ai.PHOTO_PX,
+            "max_text": ai.MAX_TEXT},
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         time=_estimate(plan, layers), export_blocked=_blocker_photo(plan, state), layer_cap=photo_cap(plan["markers_enabled"]),
@@ -991,7 +997,8 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
     a new one clears what was undone (editor DEC-077).
 
     ``{"op": "assign", "mode"}`` recolours automatically (closest, tonality, random: a new seed each time, fewer_layers) and
-    adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
+    adds a variant; ``{"op": "ai_colour", "style", "text"?, "free_lightness"?}`` lets the language model choose the colours
+    in a style (:func:`_ai_colour`) and adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
     ``{"op": "settings", "tolerance_de", "max_time", "include_as_shot"}`` changes the choice and recolours with the current
     mode. ``{"op": "paint", "region", "scope", "entry_id", "similarity_de"}`` is a click of the brush (:func:`_paint`);
     ``{"op": "set_colour", "colour", "entry_id"}`` chooses a colour's titanium colour by hand (null returns to the automatic
@@ -1020,7 +1027,7 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
         changes = _change(store, plan, document, entries, kind, op)
         _snapshot(plan)
         plan.update(changes)
-        if kind in ("assign", "settings"):
+        if kind in ("assign", "settings", "ai_colour"):
             _add_variant(plan, document, entries)
     with store.transaction():
         if kind in MERGE_OPS:                    # the new version is the history's entry of the operation
@@ -1040,6 +1047,8 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
             raise cv.ConversionError("the recolouring mode must be closest, tonality, random or fewer_layers")
         seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == "random"), default=0) if mode == "random" else 0
         return {"colouring": _automatic(plan, document, entries, mode, seed, current)}
+    if kind == "ai_colour":
+        return {"colouring": _ai_colour(plan, document, entries, op)}
     if kind == "restore":
         variant = next((v for v in plan["variants"] if v["number"] == op.get("variant")), None)
         if variant is None:
@@ -1054,6 +1063,63 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
         return {"threshold": threshold, "colour_settings": settings,
                 "colouring": _automatic(ruled, document, entries, current["mode"] or "closest", current["seed"], current)}
     return {"colouring": _choose(copy.deepcopy(current), plan, document, entries, kind, op)}
+
+
+def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dict:
+    """The colouring after the model chose a measured colour for every source colour the operator has not decided (REQ-050, DEC-084),
+    computed without changing the job. The operator's own choices of colours stay, excluded colours are left out of what the model sees,
+    and an answer that breaks a rule of :mod:`ai_colouring` is refused here, so that nothing is left behind. The model sees numbers only;
+    a reduced photograph goes with them only when the operator allowed it for this work (:func:`allow_photo`)."""
+    style, text, free_lightness = ai.request(op)
+    if not research.ai_available():
+        raise cv.ConversionError("the AI colouring is off: no key for the language model is set (OPENAI_API_KEY)")
+    settings, current = plan["colour_settings"], plan["colouring"]
+    candidates = [e for e in entries if palette.automatic(e, settings["max_time"], settings["include_as_shot"])]
+    if not candidates:
+        raise cv.ConversionError("no measured colour of this titanium may be chosen with the present limits: widen them to colour with AI")
+    by_id = {e["id"]: e for e in candidates}
+    all_ids = {e["id"] for e in entries}
+    indexes = {str(p["index"]) for p in document["palette"]}
+    fixed = {i: g["entry_id"] for i, g in current["groups"].items() if g["entry_id"] in all_ids and i in indexes}
+    excluded = set(current["excluded_colours"])
+    free = [p for p in document["palette"] if str(p["index"]) not in fixed and p["index"] not in excluded]
+    if not free:
+        raise cv.ConversionError("every colour of the picture is chosen by hand or left out: there is nothing for the AI to colour")
+    base = _automatic(plan, document, entries, "closest", 0, current)          # what the model does not decide: left-out colours
+    total = sum(p["pixels"] for p in document["palette"]) or 1
+    sources = [{"index": p["index"], "lab": [round(v, 1) for v in p["lab"]], "share": round(p["pixels"] / total, 4)} for p in free]
+    cap = photo_cap(plan["markers_enabled"])
+    what = ai.brief(style, text, free_lightness, free=sources, fixed=fixed, touches=ai.touching(document), palette=candidates, max_recipes=cap)
+    photo = ai.photo_data_url(Path(plan["image_path"]).read_bytes()) if plan.get("ai_photo") else None
+
+    def recipes(chosen: dict) -> int:
+        trial = {**copy.deepcopy(base), "mode": "ai", "assignment": {**base["assignment"], **{str(i): e for i, e in chosen.items()}}}
+        return len(_state({**plan, "colouring": trial}, document, entries)["layers"])
+
+    def check(answer) -> dict:
+        return ai.validate(answer, free={s["index"] for s in free}, palette=by_id, lightness={s["index"]: s["lab"][0] for s in free},
+                           keep_order=not free_lightness, max_recipes=cap, recipes=recipes)
+
+    chosen, note = ai.choose(research.openai_client(), what, photo, check)
+    out = copy.deepcopy(base)
+    out.update(mode="ai", seed=0)
+    out["assignment"].update({str(i): e for i, e in chosen.items()})
+    out["how"].update({str(i): "ai" for i in chosen})
+    out["ai"] = {"style": style, "text": text, "free_lightness": free_lightness, "photo": photo is not None, "note": note}
+    return out
+
+
+def allow_photo(store: Store, plan_id: int, allowed) -> None:
+    """Allow or forbid sending a reduced copy of this work's photograph to the language model with its numbers (DEC-084). The work
+    remembers the answer; the history records it. It is not a step of undo and changes no colour."""
+    plan = _photo_job(store, plan_id)
+    if not isinstance(allowed, bool):
+        raise cv.ConversionError("the permission to send the photograph must be on or off")
+    plan["ai_photo"] = allowed
+    plan["history"].append({"version": plan["document_version"], "op": {"op": "ai_photo", "allowed": allowed}, "at": now()})
+    document = _document(plan)
+    with store.transaction():
+        _photo_refresh(store, plan, document, _palette(store, plan))
 
 
 def _choose(colouring: dict, plan: dict, document: dict, entries: list[dict], kind: str, op: dict) -> dict:

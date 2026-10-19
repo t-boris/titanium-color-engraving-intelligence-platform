@@ -170,6 +170,7 @@ def view(version=1):
         "outside": {"colours": 1, "regions": 2, "share": 0.25, "indexes": [1]}, "missing": {"regions": 0},
         "totals": totals, "layers": [layer(1, "e11", ["r1", "r2"], 200), layer(2, "e12", ["r3"], 100), layer(3, "e13", ["r4"], 100)],
         "layer_cap": 29, "palette_size": 4, "undo": 2, "redo": 0,
+        "ai": {"available": True, "styles": ["realistic", "artistic", "impressionism", "cubism"], "photo_allowed": False, "photo_px": 512, "max_text": 400},
         "variants": [{"number": 1, "mode": "closest", "seed": 0, "at": "2026-10-19T10:00:00", "totals": totals, "version": version},
                      {"number": 2, "mode": "random", "seed": 1, "at": "2026-10-19T10:05:00", "totals": totals, "version": version - 1}],
         "export_blocked": None, "exports": [],

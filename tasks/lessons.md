@@ -170,3 +170,18 @@ Rules written after the operator's remarks, to prevent a repeat.
   choice between methods, put their outputs side by side; ship only options whose outputs visibly differ, and say so when they do not.
   A control is named after the effect it has on the result (check by turning it to both ends). An open question about a feature the operator
   asked for is mine to answer with a recommended default and an approval request in the same message, not a reason to leave it unbuilt.
+
+## Build what the operator asked for most first, not what is easiest to finish
+- Remark (2026-10-19, during 0.8.0): "Я нигде не вижу, чтобы AI мне подобрал цвета по каким-то своим принципам. Почему ты это никак не добавишь?"
+  and "Что ещё кроме неё осталось? ... почему так долго?". The plan listed layout, smoothing, methods and only then the AI colouring, so
+  three commits went out before the one capability the operator had asked for twice ("доделай всё") existed.
+- Rule: order the steps of a plan by what the operator named as missing, newest capability first; a polish step never goes ahead of a
+  feature the operator asked for. When a request has several parts, say in the first message which part comes first and when the one the
+  operator cares about most will be visible. Answer "what is left" with the full list of what remains, without being asked twice.
+
+## Run the tests that touch the change while working; the whole suite once, at the end
+- Remark (2026-10-19, voice-typed): the operator asked to stop running every test after each change, run them all once at the end, save
+  time and reach production as fast as possible. The full suite takes about 12 minutes; I had been running large parts of it per step.
+- Rule: while building, run only the test files of the code just touched; run the whole suite once before the release commit (in the
+  background while the release steps that do not depend on it go on), then back up, deploy and look at the real app.
+

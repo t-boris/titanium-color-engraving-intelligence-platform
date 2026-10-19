@@ -313,11 +313,13 @@
     const run = (op) => (queue = queue.then(() => send(op)));
     /** Ползунок гладкости: в той же очереди, что и действия редактора; границы перерисовываются, цвета остаются (REQ-052). */
     const smooth = (mm) => (queue = queue.then(async () => { try { show(await post(`/vector/${j.id}/smoothing`, {mm})); } catch (e) { fail(e); } }));
+    /** Разрешение отправить уменьшенное фото AI (DEC-084): работа его помнит; в той же очереди, цвета не меняются. */
+    const permit = (allowed) => (queue = queue.then(async () => { try { show(await post(`/vector/${j.id}/ai-photo`, {allowed})); } catch (e) { fail(e); } }));
     async function refresh() {
       try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
     }
     show(j);
-    colours = VectorColours.card(j, run, split);
+    colours = VectorColours.card(j, run, split, permit);
     return h('div', {class: 'stack'}, head, about, colours.el, file);
   }
 

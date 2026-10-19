@@ -543,6 +543,13 @@ select::-ms-expand {display:none}
 .vw-split-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 18px;align-items:start}
 .vw-split-actions {display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
 .vw-colours .toolbar>label.row {min-height:44px}
+/* The AI colouring is a panel of its own inside the card: one stack, the same top line for its fields as the split's. */
+.vw-ai {padding:16px 18px;border:1px solid #3c4d69;border-radius:14px;background:#17212f;min-width:0}
+.vw-ai>p,.vw-ai>h4 {margin:0}
+.vw-ai>h4 {font-size:15px;font-weight:650;color:#e3e9f6;letter-spacing:-.1px}
+.vw-ai .vw-split-fields {grid-template-columns:minmax(200px,320px) minmax(200px,1fr)}
+.vw-ai .vw-split-actions {flex-direction:column;align-items:flex-start;gap:10px}
+.vw-ai [hidden] {display:none}
 .vw-slider {display:flex;align-items:center;gap:12px;min-height:44px}
 .vw-slider input[type=range] {flex:1 1 auto;min-width:0;height:auto;min-height:0;padding:0;border:0;background:none;box-shadow:none;accent-color:var(--accent)}
 .vw-slider-value {flex:none;min-width:84px;text-align:right;font-variant-numeric:tabular-nums;color:#e3e9f6}

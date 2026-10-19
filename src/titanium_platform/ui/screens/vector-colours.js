@@ -4,18 +4,30 @@
    дальше допуска помечен своим ΔE и обводится на картинке по запросу; файл он не блокирует. Цвета, снятые без привязки к
    эталону, автоматика не берёт, пока их не включить; вручную их выбрать можно. Раздел: настройки разбиения (блок split,
    его собирает vector.js), допуск и фильтры, автоматическая перекраска всей работы, редактор (vector-editor.js), подробная
-   таблица цветов (раскрывается и прокручивается внутри карточки) и варианты раскраски. Каждое действие возвращает работу
-   целиком; карточка обновляется на месте, редактор сохраняет масштаб, инструмент и выделение. */
+   таблица цветов (раскрывается и прокручивается внутри карточки) и варианты раскраски. Раскраска с помощью AI (REQ-050, DEC-084):
+   стиль из списка или своё описание, переключатель свободной светлоты и разрешение отправить уменьшенное фото; без них AI видит
+   только числа. Каждое действие возвращает работу целиком; карточка обновляется на месте, редактор сохраняет масштаб,
+   инструмент и выделение. */
 'use strict';
 const VectorColours = (() => {
   const {h, fill, btn, field, pill, fail, modal, table, num, labText} = App;
   const {chip, params, seconds, palette, de, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно'], ['fewer_layers', 'Меньше слоёв']];
-  const MODE = Object.fromEntries(MODES);
+  const MODE = {...Object.fromEntries(MODES), ai: 'AI'};
+  /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
+  const STYLES = [
+    ['realistic', 'Реалистично', 'Как на фото, насколько позволяет палитра: близкие цвета, соседние области остаются различимыми.'],
+    ['artistic', 'Артистично', 'Сюжет узнаётся, цвета как у художника: гармоничная гамма, тёплые света против холодных теней.'],
+    ['impressionism', 'Импрессионизм', 'Свет и цвет важнее линий: тёплые света, цветные тени, без плоского чёрного.'],
+    ['cubism', 'Кубизм', 'Плоские грани земляной гаммы, сильный контраст на каждой границе, даже если цвет уходит от натуры.'],
+    ['custom', 'Своё описание', 'Опишите словами, какой вид нужен: AI следует описанию в пределах измеренных цветов.']];
+  const STYLE = Object.fromEntries(STYLES.map(([id, name]) => [id, name]));
+  const aiName = (ai) => 'AI · ' + (ai.style === 'custom' ? `«${(ai.text || '').slice(0, 40)}»` : STYLE[ai.style] || ai.style)
+    + (ai.free_lightness ? ' · светлота свободна' : '') + (ai.photo ? ' · с фото' : '');
   const STATUS = {automatic: ['подобран автоматически', 'ok'], hand: ['выбран вручную', 'ok'], accepted: ['выбран вручную', 'ok'],
     missing: ['цвета титана больше нет среди измерений', 'bad'], excluded: ['исключён', '']};
   const HOW = {fastest_within_tolerance: 'самый быстрый в пределах допуска', nearest: 'ближайший', tonality: 'по тональности', random: 'случайно',
-    cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора'};
+    cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора', ai: 'выбор AI'};
   const stability = (e) => (e.stability && e.stability.assessed ? 'дисперсия ' + num(e.stability.variance) : 'не оценено');
 
   /** Выбор цвета титана из палитры: ближайшие к исходному цвету первыми; снятые без привязки — с пунктиром. */
@@ -60,7 +72,7 @@ const VectorColours = (() => {
   function variants(j, run) {
     const rows = [...j.variants].reverse().map((v) => {
       const elsewhere = v.version != null && v.version !== j.document.version;
-      return [`№ ${v.number}`, (MODE[v.mode] || '—') + (v.mode === 'random' ? ` (вариант ${v.seed})` : ''),
+      return [`№ ${v.number}`, v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'random' ? ` (вариант ${v.seed})` : ''),
         `${v.totals.recipes}`, num(v.totals.mean_delta_e), `${v.totals.within_tolerance} из ${v.totals.colours}`,
         v.totals.seconds == null ? 'не оценено' : Math.round(v.totals.seconds) + ' с', v.at.replace('T', ' ').slice(0, 16),
         v.number === j.colouring.variant ? pill('текущий', 'ok')
@@ -68,6 +80,51 @@ const VectorColours = (() => {
             : btn('Вернуть', () => run({op: 'restore', variant: v.number}))];
     });
     return table(['Вариант', 'Способ', 'Рецептов', 'Средний ΔE', 'Цветов в допуске', 'Время слоёв цвета', 'Когда', ''], rows, 'Вариантов пока нет');
+  }
+
+  /** Раскраска с помощью AI: стиль, своё описание, свободная светлота, разрешение на фото и кнопка. Блок собирается один раз, поля не
+      сбрасываются при обновлении карточки; update ставит то, что работа помнит (разрешение, ключ, текущая раскраска AI). */
+  function aiBlock(j, run, permit) {
+    const style = h('select', {'aria-label': 'Стиль AI-раскраски'}, STYLES.map(([v, name]) => h('option', {value: v}, name)));
+    const hint = h('span', {class: 'small muted'});
+    const text = h('input', {type: 'text', maxlength: String(j.ai.max_text), placeholder: 'например: как витраж, много синего', 'aria-label': 'Своё описание'});
+    const own = field('Своё описание', text, `до ${j.ai.max_text} знаков`);
+    const free = h('input', {type: 'checkbox'}), photo = h('input', {type: 'checkbox'});
+    const off = h('p', {class: 'alert warn', hidden: true}, 'AI-раскраска выключена: не задан ключ языковой модели (переменная OPENAI_API_KEY или файл .env.local). Остальные способы работают.');
+    const current = h('p', {class: 'small'});
+    let busy = false;
+    const go = btn('Раскрасить с помощью AI', async (ev) => {
+      const self = ev.currentTarget;
+      busy = true; self.disabled = true; self.textContent = 'AI подбирает цвета…';
+      try {
+        await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: text.value} : {}), free_lightness: free.checked});
+      } finally { busy = false; self.textContent = 'Раскрасить с помощью AI'; sync(j); }
+    }, 'primary');
+    function sync(next) {
+      j = next;
+      fill(hint, (STYLES.find(([v]) => v === style.value) || STYLES[0])[2]);
+      own.hidden = style.value !== 'custom';
+      photo.checked = j.ai.photo_allowed;
+      go.disabled = busy || !j.ai.available;
+      off.hidden = j.ai.available;
+      const now = j.colouring.mode === 'ai' && j.colouring.ai ? j.colouring.ai : null;
+      fill(current, now ? ['Сейчас раскрашено AI: ', h('strong', {}, aiName(now).slice(5)), now.note ? ` — ${now.note}` : ''] : null);
+      current.hidden = !now;
+    }
+    style.addEventListener('change', () => sync(j));
+    photo.addEventListener('change', () => permit(photo.checked));
+    sync(j);
+    const el = h('div', {class: 'stack vw-ai'}, h('h4', {}, 'Раскраска с помощью AI'),
+      h('div', {class: 'vw-split-fields'}, field('Стиль', style, null), own),
+      hint,
+      h('div', {class: 'vw-split-actions'},
+        h('label', {class: 'row'}, free, h('span', {}, 'Свободная светлота: AI может менять порядок светлого и тёмного (по умолчанию он сохраняется)')),
+        h('label', {class: 'row'}, photo, h('span', {}, `Разрешить отправить уменьшенное фото (до ${j.ai.photo_px} px) для этой работы`)), go),
+      off, current,
+      h('p', {class: 'muted small'}, 'AI подбирает измеренные цвета титана каждому цвету картинки по принципам выбранного стиля. Он получает только числа: цвета картинки (Lab) '
+        + 'и их доли, какие цвета граничат и измеренные цвета титана; фото не видит, пока вы не разрешили. Цвета, выбранные вами вручную, остаются. '
+        + 'Выбор AI сохраняется в варианте и при возврате к нему не пересчитывается.'));
+    return {el, update: sync};
   }
 
   function settingsBar(j, run) {
@@ -83,8 +140,9 @@ const VectorColours = (() => {
 
   /** Раздел «Цвета и разбиение»: блок разбиения (``split``), допуск и фильтры, автоматическая перекраска, редактор, подробная
       таблица и варианты; update — на месте. */
-  function card(j, run, split) {
+  function card(j, run, split, permit) {
     const editor = VectorEditor.create(j, run);
+    const ai = aiBlock(j, run, permit);
     const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {}), rows = h('div', {}), kept = h('div', {});
     const details = h('details', {class: 'vw-details'}, h('summary', {}, 'Подробно по цветам'), rows);
     let settings = null;
@@ -101,8 +159,8 @@ const VectorColours = (() => {
     show(j);
     const el = h('div', {class: 'card stack vw-colours'}, h('h3', {}, '1. Цвета и разбиение'), split, h('h4', {}, 'Цвета'), intro, empty, bar,
       h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'), MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode})))),
-      editor.el, details, h('h3', {}, 'Варианты раскраски'), kept);
-    return {el, update(next) { show(next); editor.update(next); }};
+      ai.el, editor.el, details, h('h3', {}, 'Варианты раскраски'), kept);
+    return {el, update(next) { show(next); ai.update(next); editor.update(next); }};
   }
 
   return {card};

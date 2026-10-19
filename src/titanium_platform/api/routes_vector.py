@@ -89,6 +89,14 @@ def smooth_vector_job(plan_id: int, body: dict, request: Request):
     return _view(request, plan_id)
 
 
+@router.post("/vector/{plan_id}/ai-photo")
+def allow_vector_photo(plan_id: int, body: dict, request: Request):
+    """Allow (``allowed`` true) or forbid sending a reduced copy of a photograph job's picture to the language model with the numbers
+    of an AI colouring (see vector_job.allow_photo). The job remembers the answer; it is off until the operator turns it on."""
+    vector_job.allow_photo(store_of(request), plan_id, body.get("allowed"))
+    return _view(request, plan_id)
+
+
 @router.post("/vector/{plan_id}/colouring")
 def colour_vector_job(plan_id: int, op: dict, request: Request):
     """One operation of a photograph job's colour editor (see vector_job.colour): an automatic mode, a variant, the

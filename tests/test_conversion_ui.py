@@ -70,7 +70,7 @@ def test_the_vector_work_steps_are_loaded_before_the_screen_that_assembles_them(
         assert order["/app.js"] < order["/dialogs.js"] < order[part] < order["/screens/vector.js"], part
     assert order["/screens/vector-editor.js"] < order["/screens/vector-colours.js"]      # the colour step embeds the editor
     screen = source("screens/vector.js")
-    assert "VectorSplit.card(next, reload, smooth)" in screen and "VectorColours.card(j, run, split)" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
+    assert "VectorSplit.card(next, reload, smooth)" in screen and "VectorColours.card(j, run, split, permit)" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
 
 
 def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_their_errors_translated():
