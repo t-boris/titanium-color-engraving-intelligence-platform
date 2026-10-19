@@ -8,7 +8,7 @@ import json
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from .. import segment, setup as su, vector_job
-from .common import MAX_IMAGE_BYTES, content_disposition, lens_param, public_plan, read_upload, store_of, task_goals
+from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
 
@@ -32,19 +32,20 @@ async def create_vector_job(request: Request, device_id: int = Form(...), lens_i
                             threshold: float | None = Form(None), n_colors: int | None = Form(None), palette: str | None = Form(None),
                             grey_threshold: float | None = Form(None), tolerance_mm: float | None = Form(None), min_area_mm2: float = Form(0.2),
                             markers: bool = Form(False), clean: bool = Form(False), task: str | None = Form(None),
-                            goals: str | None = Form(None), detail: str | None = Form(None), faces: bool = Form(True),
+                            goals: str | None = Form(None), detail: str | None = Form(None), faces: str | None = Form(None),
                             max_time: float | None = Form(None), include_as_shot: bool = Form(False), image: UploadFile = File(None)):
     """Trace an uploaded image with a strategy (color, fill, text, line) at a width in mm for one laser, lens and titanium
     stock. ``palette`` is a JSON list of sRGB colours for the colour strategy (else ``n_colors`` are found in the image).
     ``task`` and ``goals`` (a JSON object) are the job's main engraving task (REQ-020); empty: the one its strategy serves.
     The ``photo`` strategy splits a photograph into ``n_colors`` regions at a level of ``detail`` with ``faces`` first,
-    smoothed by ``tolerance_mm``; it always cleans first, and ``threshold``, ``max_time`` (s/cm²) and ``include_as_shot``
+    smoothed by ``tolerance_mm`` (``faces`` left out: searched); it always cleans first, and ``threshold``, ``max_time`` (s/cm²) and ``include_as_shot``
     rule its automatic colouring."""
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     if strategy == vector_job.PHOTO:
         pid = vector_job.start_photo(store_of(request), device_id, lens_param(lens_id), material_id, data, width_mm, name, threshold=threshold,
                                      n_colors=n_colors, detail=detail or vector_job.DEFAULT_DETAIL,
-                                     tolerance_mm=segment.TOLERANCE_MM if tolerance_mm is None else tolerance_mm, use_faces=faces,
+                                     tolerance_mm=segment.TOLERANCE_MM if tolerance_mm is None else tolerance_mm,
+                                     use_faces=form_flag(faces, True, "face search"),
                                      markers=markers, max_time=max_time, include_as_shot=include_as_shot, task=task or None,
                                      goals=task_goals(goals))
         return _view(request, pid)

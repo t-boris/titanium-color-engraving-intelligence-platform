@@ -47,6 +47,7 @@ from . import color
 from . import lightburn as lb
 from . import photo as ph
 from . import plans as pl
+from . import render_cache as rc
 from . import setup as su
 from . import tasks
 from .db import Store, now
@@ -2398,6 +2399,7 @@ def delete_pair(store: Store, pair_id: int) -> None:
                       "(SELECT 1 FROM pair WHERE plan_id=plan.id AND status!=?)", (row["plan_id"], pl.MODE_RESTORED, ST_DELETED))
     for col in ("lightburn_path", "photo_path"):
         Path(row[col]).unlink(missing_ok=True)
+    rc.remove_pair(store, pair_id)                  # the pictures drawn from the purged photograph go with it
     removed: dict[tuple, dict[str, list[int]]] = {}
     for o in observations:
         key = model.knowledge_key_of(o)
@@ -2409,31 +2411,75 @@ def delete_pair(store: Store, pair_id: int) -> None:
 
 # -- overlay for the mask review -----------------------------------------------------------------------
 MAX_OVERLAY_PX = 1400
+FULL_PREVIEW_PX = 5000      # the longest side of a full-detail picture (zooming), and the largest size a picture can be asked for
+MIN_PREVIEW_PX = 64
+
+
+def _view_limit(visibility: str, full: bool, size: int | None) -> int:
+    """The longest side of a picture in pixels (never enlarged beyond the photograph): ``size`` when asked for, else the
+    full-detail or the preview size. Refuses a view the pictures do not have."""
+    if visibility not in ("normal", "lifted"):
+        raise IngestError("unknown photo preview visibility mode")
+    if size is None:
+        return FULL_PREVIEW_PX if full else MAX_OVERLAY_PX
+    if not MIN_PREVIEW_PX <= size <= FULL_PREVIEW_PX:
+        raise IngestError(f"the picture size must be from {MIN_PREVIEW_PX} to {FULL_PREVIEW_PX} pixels")
+    return size
+
+
+def overlay_picture(store: Store, pair_id: int, corrected: bool = True, layer_index: int | None = None,
+                    visibility: str = "normal", transparent: bool = False, full: bool = False,
+                    size: int | None = None) -> rc.Picture:
+    """The overlay of ``overlay_png`` known by its cache key before it is drawn (BUG-001).
+
+    The key covers every input of the drawing: the photograph and LightBurn files (path, size, modification time), the stored
+    check (alignment, layer reports, frame window), the plan the file is normalised to, the chart reference a corrected
+    picture is corrected toward, the RAW-only switch and every view parameter. Refusals come before any drawing."""
+    limit = _view_limit(visibility, full, size)
+    row = _pair_row(store, pair_id)
+    check = json.loads(row["data_json"] or "{}").get("check") or {}
+    if not (check.get("alignment") or {}).get("image_to_mm"):
+        raise IngestError("the photograph is not aligned yet: run the check first")
+    if layer_index is not None and layer_index not in {rep["index"] for rep in check.get("layers", [])}:
+        raise IngestError("the requested LightBurn layer is not part of this pair")
+    plan_row = store.one("SELECT data_json FROM plan WHERE id=?", (row["plan_id"],)) if row["plan_id"] else None
+    allow_non_raw = non_raw_allowed(store)
+    reference = _chart_reference(store, row) if corrected and not transparent else None
+    key = rc.key_of({"picture": "overlay", "pair_id": pair_id, "photo": rc.file_stamp(row["photo_path"]),
+                     "lightburn": rc.file_stamp(row["lightburn_path"]), "check": check, "plan_id": row["plan_id"],
+                     "plan": rc.text_digest(plan_row["data_json"]) if plan_row else None, "allow_non_raw": allow_non_raw,
+                     "chart_reference": reference, "corrected": corrected, "layer_index": layer_index, "visibility": visibility,
+                     "transparent": transparent, "full": full, "size": size})
+
+    def draw() -> bytes:
+        plan = pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None
+        return _draw_overlay(row["photo_path"], row["lightburn_path"], check, plan, allow_non_raw, corrected, reference,
+                             layer_index, visibility, transparent, limit)
+    return rc.Picture(store, pair_id, key, draw)
 
 
 def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index: int | None = None,
-                visibility: str = "normal", transparent: bool = False, full: bool = False) -> bytes:
+                visibility: str = "normal", transparent: bool = False, full: bool = False, size: int | None = None) -> bytes:
     """Photo preview with the measured layer masks outlined for operator review (REQ-015).
 
     The overlay is recomputed from the stored alignment, so it shows exactly what ``check_pair`` measured.
     ``layer_index`` isolates one LightBurn layer; None shows all measured layers. ``visibility='lifted'``
     brightens only the returned preview for viewing a dark RAW exposure; it never changes measured Lab values.
+    ``size`` asks for that longest side in pixels instead of the preview or full-detail size. A drawn overlay is kept in
+    the render cache until one of its inputs changes.
     """
+    return overlay_picture(store, pair_id, corrected, layer_index, visibility, transparent, full, size).png()
+
+
+def _draw_overlay(photo_path: str, lightburn_path: str, check: dict, plan: dict | None, allow_non_raw: bool, corrected: bool,
+                  reference: dict | None, layer_index: int | None, visibility: str, transparent: bool, limit: int) -> bytes:
+    """Draw the overlay of ``overlay_png`` from exactly the inputs its cache key names."""
     import cv2
 
-    if visibility not in ("normal", "lifted"):
-        raise IngestError("unknown photo preview visibility mode")
-
-    row = _pair_row(store, pair_id)
-    pair = get_pair(store, pair_id)
-    check = pair.get("check") or {}
-    h = (check.get("alignment") or {}).get("image_to_mm")
-    if not h:
-        raise IngestError("the photograph is not aligned yet: run the check first")
-    img_bgr = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
+    h = check["alignment"]["image_to_mm"]
+    img_bgr = ph.decode_image(photo_path, allow_non_raw=allow_non_raw)
     if corrected and not transparent:
-        rgb, _, _ = ph.correct(img_bgr, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)),
-                               reference=_chart_reference(store, row))
+        rgb, _, _ = ph.correct(img_bgr, linear=ph.decode_linear(photo_path, allow_non_raw=allow_non_raw), reference=reference)
         if rgb is not None:
             img_bgr = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted" and not transparent:
@@ -2445,14 +2491,11 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
     if transparent:
         img_bgr = np.zeros((*img_bgr.shape[:2], 4), dtype=np.uint8)
     background = img_bgr.copy()
-    project = lb.parse_file(row["lightburn_path"])
+    project = lb.parse_file(lightburn_path)
     by_index = {layer.index: layer for layer in project.layers}
     reports = check.get("layers", [])
-    plan = pl.get_plan(store, pair["plan_id"]) if pair.get("plan_id") else None
     _normalize_project_to_plan(project, plan)
     qr_local = _qr_local_geometry(plan, check.get("alignment") or {})
-    if layer_index is not None and layer_index not in {rep["index"] for rep in reports}:
-        raise IngestError("the requested LightBurn layer is not part of this pair")
     palette = [(60, 60, 255), (60, 200, 60), (255, 120, 40), (30, 220, 220), (220, 60, 200), (200, 200, 60)]
     thickness = max(3, img_bgr.shape[1] // 650)
     window = None
@@ -2513,7 +2556,7 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
     visible_surface = _visible_surface_mask(img_bgr.shape[:2], check.get("alignment") or {}, include_window=False)
     if visible_surface is not None:
         img_bgr[~visible_surface] = background[~visible_surface]
-    scale = min(1.0, (5000 if full else MAX_OVERLAY_PX) / max(img_bgr.shape[:2]))
+    scale = min(1.0, limit / max(img_bgr.shape[:2]))
     if scale < 1.0:
         img_bgr = cv2.resize(img_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".png", img_bgr)
@@ -2522,24 +2565,42 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
     return buf.tobytes()
 
 
+def photo_preview_picture(store: Store, pair_id: int, corrected: bool = False, visibility: str = "normal",
+                          full: bool = False, size: int | None = None) -> rc.Picture:
+    """The photograph of ``photo_preview_png`` known by its cache key before it is drawn (BUG-001): the key covers the
+    photograph file (path, size, modification time), the chart reference a corrected picture is corrected toward, the
+    RAW-only switch and every view parameter."""
+    limit = _view_limit(visibility, full, size)
+    row = _pair_row(store, pair_id)
+    allow_non_raw = non_raw_allowed(store)
+    reference = _chart_reference(store, row) if corrected else None
+    key = rc.key_of({"picture": "photo", "pair_id": pair_id, "photo": rc.file_stamp(row["photo_path"]), "allow_non_raw": allow_non_raw,
+                     "chart_reference": reference, "corrected": corrected, "visibility": visibility, "full": full, "size": size})
+    return rc.Picture(store, pair_id, key,
+                      lambda: _draw_photo_preview(row["photo_path"], allow_non_raw, corrected, reference, visibility, limit))
+
+
 def photo_preview_png(store: Store, pair_id: int, corrected: bool = False, visibility: str = "normal",
-                      full: bool = False) -> bytes:
-    """Display-only decoded photograph; full detail is available when zooming."""
+                      full: bool = False, size: int | None = None) -> bytes:
+    """Display-only decoded photograph; full detail is available when zooming, a small one (``size``, the longest side in
+    pixels) for a list. A drawn photograph is kept in the render cache until one of its inputs changes."""
+    return photo_preview_picture(store, pair_id, corrected, visibility, full, size).png()
+
+
+def _draw_photo_preview(photo_path: str, allow_non_raw: bool, corrected: bool, reference: dict | None, visibility: str,
+                        limit: int) -> bytes:
+    """Draw the photograph of ``photo_preview_png`` from exactly the inputs its cache key names."""
     import cv2
 
-    row = _pair_row(store, pair_id)
-    if visibility not in ("normal", "lifted"):
-        raise IngestError("unknown photo preview visibility mode")
-    img = ph.decode_image(row["photo_path"], allow_non_raw=non_raw_allowed(store))
+    img = ph.decode_image(photo_path, allow_non_raw=allow_non_raw)
     if corrected:
-        rgb, _, _ = ph.correct(img, linear=ph.decode_linear(row["photo_path"], allow_non_raw=non_raw_allowed(store)),
-                               reference=_chart_reference(store, row))
+        rgb, _, _ = ph.correct(img, linear=ph.decode_linear(photo_path, allow_non_raw=allow_non_raw), reference=reference)
         if rgb is not None:
             img = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
     if visibility == "lifted":
         lut = np.round(np.power(np.arange(256, dtype=np.float32) / 255.0, .58) * 255).astype(np.uint8)
         img = cv2.LUT(img, lut)
-    scale = min(1.0, (5000 if full else MAX_OVERLAY_PX) / max(img.shape[:2]))
+    scale = min(1.0, limit / max(img.shape[:2]))
     if scale < 1.0:
         img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".png", img)

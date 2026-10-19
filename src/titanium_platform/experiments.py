@@ -168,3 +168,24 @@ def get_experiment(store: Store, key: str) -> dict:
                              "next_test": r["next_test"], "parameters": json.loads(r["parameters_json"]) if r["parameters_json"] else None,
                              "updated_at": r["updated_at"], "history": capability_results.finding_history(store, r["id"])})
     return {**summary, "plate": plate, "pairs": pairs, "findings": findings}
+
+
+# -- the pictures the experiment screens show by default ------------------------------------------------------------------
+LIST_THUMBNAIL_PX = 480     # experiment-cards.js: photo.png?visibility=lifted&size=480
+
+
+def screen_pictures(store: Store, pair_id: int) -> list:
+    """The pictures the experiment screens ask for one check when they open (BUG-001), so that ``titanium-platform
+    warm-cache`` can draw them ahead of time: the thumbnail of the list (experiment-cards.js) and the photograph of the
+    experiment page (experiment.js: chart-corrected when the colours were measured by the chart, lifted, with the LightBurn
+    outlines once the photograph is aligned, else the plain photograph the page falls back to)."""
+    check = ingest.get_pair(store, pair_id).get("check") or {}
+    corrected = (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected"
+    page = None
+    if (check.get("alignment") or {}).get("method"):
+        try:
+            page = ingest.overlay_picture(store, pair_id, corrected=corrected, visibility="lifted")
+        except ingest.IngestError:
+            page = None             # an alignment without a transform: the page shows the plain photograph instead
+    return [ingest.photo_preview_picture(store, pair_id, visibility="lifted", size=LIST_THUMBNAIL_PX),
+            page or ingest.photo_preview_picture(store, pair_id, corrected=corrected, visibility="lifted")]

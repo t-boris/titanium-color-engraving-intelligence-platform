@@ -130,3 +130,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   missing `bool` form field as false (an unticked HTML checkbox), and the route relied on `Form(True)`.
 - Rule: a form flag whose absence must mean "yes" is read as text and parsed by the application (`form_flag`). When CI
   breaks without a code change, compare the installed versions of the last green run with the failing one first.
+
+## Profile before promising what a smaller output saves
+- Situation (2026-10-19, BUG-001): the plan expected small list thumbnails to open noticeably faster cold. cProfile on the real RAW:
+  the 2 MB PNG took 33 ms to encode, the RAW decode 520 ms (92 % of the request); `size=480` saved 87 % of the bytes and 5 % of the time.
+- Rule: before choosing a fix for a slow response, split its time by stage on real data (decode, compute, encode, transfer) and state
+  which stage the fix removes. A cost that cannot be removed (an unchanged decode) is paid once and kept (cache, warm-up), not shrunk.

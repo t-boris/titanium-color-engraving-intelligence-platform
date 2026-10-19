@@ -6,7 +6,7 @@
     'cell width': 'Ширина ячейки', 'cell height': 'Высота ячейки', gap: 'Зазор', 'delta E tolerance': 'Допуск ΔE', 'variance threshold': 'Порог дисперсии',
     'repeat threshold': 'Порог повторов', focus: 'Фокус', name: 'Название', camera: 'Камера', lighting: 'Освещение',
     angle: 'Угол съёмки', 'reference chart': 'Эталонная карта', 'material name': 'Название материала',
-    bidirectional: 'Двунаправленная гравировка', cross_hatch: 'Перекрёстная штриховка'};
+    bidirectional: 'Двунаправленная гравировка', cross_hatch: 'Перекрёстная штриховка', 'face search': 'Поиск лиц'};
   const f = (s) => FIELD[String(s).replace(/ min$| max$/, '')] || s;
   I18N.add([
     // числа, стенд, материал

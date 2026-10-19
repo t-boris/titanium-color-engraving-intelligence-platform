@@ -139,7 +139,12 @@ def after_removal(store: Store, device_id: int, lens_id: int | None, removed: di
     return changes
 
 
-def get(store: Store, kid: int) -> dict:
+def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events: list | None = None) -> dict:
+    """One knowledge entry with its history and the summary of its evidence.
+
+    A caller that reads many entries of one laser and lens passes what they share, read once: ``summaries`` (the
+    ``model.knowledge_summaries`` of that laser and lens) and ``events`` (the entry's ``knowledge_event`` rows in id order).
+    Each is read here when not given; the result is the same either way."""
     row = store.one("SELECT * FROM knowledge WHERE id=?", (kid,))
     if row is None:
         raise KeyError(f"knowledge {kid} not found")
@@ -148,16 +153,25 @@ def get(store: Store, kid: int) -> dict:
     d["doubt"] = json.loads(d.pop("doubt_json")) if d.get("doubt_json") else None
     d.pop("doubt_json", None)
     d["questioned"] = bool(d["questioned"])
-    d["history"] = [dict(e, observation_ids=json.loads(e.pop("observation_ids_json"))) for e in
-                    (dict(r) for r in store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,)))]
-    s = model.knowledge_summaries(store, d["device_id"], d["lens_id"]).get(d["parameters_key"])
-    d["summary"] = s
+    if events is None:
+        events = store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,))
+    d["history"] = [dict(e, observation_ids=json.loads(e.pop("observation_ids_json"))) for e in (dict(r) for r in events)]
+    if summaries is None:
+        summaries = model.knowledge_summaries(store, d["device_id"], d["lens_id"])
+    d["summary"] = summaries.get(d["parameters_key"])
     return d
 
 
 def list_for_setup(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
-    return [get(store, r["id"]) for r in store.query("SELECT id FROM knowledge WHERE device_id=? AND lens_id IS ? ORDER BY id",
-                                                     (device_id, lens_id))]
+    """Every entry of one laser and lens, as ``get`` gives each. The summaries of the setup and the events of its entries are
+    read once for the whole list (BUG-001: reading them per entry made the list quadratic in its length)."""
+    ids = [r["id"] for r in store.query("SELECT id FROM knowledge WHERE device_id=? AND lens_id IS ? ORDER BY id", (device_id, lens_id))]
+    events: dict[int, list] = {}
+    for e in store.query("SELECT e.* FROM knowledge_event e JOIN knowledge k ON k.id=e.knowledge_id "
+                         "WHERE k.device_id=? AND k.lens_id IS ? ORDER BY e.id", (device_id, lens_id)):
+        events.setdefault(e["knowledge_id"], []).append(e)
+    summaries = model.knowledge_summaries(store, device_id, lens_id)
+    return [get(store, kid, summaries, events.get(kid, [])) for kid in ids]
 
 
 # -- operator decisions ---------------------------------------------------------------------------------
