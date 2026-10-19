@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
                plans, setup as su, tasks)
-from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, public_pair, public_plan, read_upload, refresh_after_change,
-                     store_of)
+from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, picture_response, public_pair, public_plan, read_upload,
+                     refresh_after_change, store_of)
 from .common import content_disposition
 
 router = APIRouter(prefix="/api")
@@ -459,21 +459,25 @@ def delete_pair(pair_id: int, request: Request):
 
 @router.get("/pairs/{pair_id}/overlay.png")
 def overlay(pair_id: int, request: Request, corrected: bool = True, layer_index: int | None = None,
-            visibility: str = "normal", full: bool = False):
-    return Response(ingest.overlay_png(store_of(request), pair_id, corrected=corrected, layer_index=layer_index,
-                                       visibility=visibility, full=full), media_type="image/png")
+            visibility: str = "normal", full: bool = False, size: int | None = None):
+    """The photograph with the LightBurn outlines; ``size`` is the longest side in pixels (64 to 5000), else the preview
+    or, with ``full``, the full-detail size. Drawn once and cached; revalidated by ETag."""
+    return picture_response(request, ingest.overlay_picture(store_of(request), pair_id, corrected=corrected, layer_index=layer_index,
+                                                            visibility=visibility, full=full, size=size))
 
 
 @router.get("/pairs/{pair_id}/vector-overlay.png")
 def vector_overlay(pair_id: int, request: Request, layer_index: int | None = None, full: bool = False):
-    return Response(ingest.overlay_png(store_of(request), pair_id, corrected=False, layer_index=layer_index,
-                                       transparent=True, full=full), media_type="image/png")
+    return picture_response(request, ingest.overlay_picture(store_of(request), pair_id, corrected=False, layer_index=layer_index,
+                                                            transparent=True, full=full))
 
 
 @router.get("/pairs/{pair_id}/photo.png")
-def photo_preview(pair_id: int, request: Request, corrected: bool = False, visibility: str = "normal", full: bool = False):
-    return Response(ingest.photo_preview_png(store_of(request), pair_id, corrected=corrected, visibility=visibility,
-                                             full=full), media_type="image/png")
+def photo_preview(pair_id: int, request: Request, corrected: bool = False, visibility: str = "normal", full: bool = False,
+                  size: int | None = None):
+    """The photograph as decoded for display; ``size`` as for the overlay (the experiment list asks for small ones)."""
+    return picture_response(request, ingest.photo_preview_picture(store_of(request), pair_id, corrected=corrected,
+                                                                  visibility=visibility, full=full, size=size))
 
 
 @router.get("/pairs/{pair_id}/source-photo")

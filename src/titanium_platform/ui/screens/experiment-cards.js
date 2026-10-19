@@ -8,7 +8,8 @@ const ExperimentCards = (() => {
   function card(e) {
     return h('article', {class: 'dashboard-item exp-card'},
       h('a', {class: 'exp-thumb-link', href: '#/experiment/' + encodeURIComponent(e.key), 'aria-label': `Открыть эксперимент ${I18N.name(e.title)}`},
-        e.main_pair_id ? h('img', {class: 'exp-thumb', loading: 'lazy', alt: '', src: `/api/pairs/${e.main_pair_id}/photo.png?visibility=lifted`})
+        // a list thumbnail is small (BUG-001)
+        e.main_pair_id ? h('img', {class: 'exp-thumb', loading: 'lazy', alt: '', src: `/api/pairs/${e.main_pair_id}/photo.png?visibility=lifted&size=480`})
           : h('div', {class: 'exp-thumb exp-thumb-empty'}, 'Плата')),
       h('div', {class: 'exp-card-body'},
         h('div', {class: 'dashboard-item-top'}, link('/experiment/' + encodeURIComponent(e.key), I18N.name(e.title)),

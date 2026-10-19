@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import analysis, conversion, designer, ingest, knowledge, photo, prediction, setup as su, vectorize
+from .. import analysis, conversion, designer, ingest, knowledge, photo, prediction, render_cache, setup as su, vectorize
 from ..db import ImmutableError, Store
 
 MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
@@ -59,6 +59,20 @@ async def read_upload(file: UploadFile | None, limit: int, label: str) -> tuple[
     if not data:
         raise HTTPException(422, {"error": f"the {label} file is empty", "kind": "invalid"})
     return file.filename, data
+
+
+PICTURE_CACHE_CONTROL = "private, max-age=0, must-revalidate"
+
+
+def picture_response(request: Request, picture: render_cache.Picture) -> Response:
+    """A picture drawn from a photograph, with its cache key as ETag (BUG-001). The browser keeps the picture and asks again
+    every time; when its copy is still the current one (``If-None-Match``) the answer is 304 with no body, without drawing."""
+    etag = f'"{picture.key}"'
+    headers = {"ETag": etag, "Cache-Control": PICTURE_CACHE_CONTROL}
+    sent = [tag.strip() for tag in request.headers.get("if-none-match", "").split(",")]
+    if any(tag == "*" or tag.removeprefix("W/") == etag for tag in sent):
+        return Response(status_code=304, headers=headers)
+    return Response(picture.png(), media_type="image/png", headers=headers)
 
 
 def public_pair(pair: dict) -> dict:
