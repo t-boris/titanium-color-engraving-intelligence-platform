@@ -136,3 +136,19 @@ Rules written after the operator's remarks, to prevent a repeat.
   the 2 MB PNG took 33 ms to encode, the RAW decode 520 ms (92 % of the request); `size=480` saved 87 % of the bytes and 5 % of the time.
 - Rule: before choosing a fix for a slow response, split its time by stage on real data (decode, compute, encode, transfer) and state
   which stage the fix removes. A cost that cannot be removed (an unchanged decode) is paid once and kept (cache, warm-up), not shrunk.
+
+## A decision to close a feature is not a change of its status
+- Remark (2026-10-19): "Почему titanium-color-engraving-intelligence-platform в статусе implementing? Закрой фичу". The operator had closed that
+  feature the same day; DEC-079 and PR #26 recorded it, yet `overview.md` still said `implementing`.
+- Rule: MarkView records the implementation stages (implementing, implemented, verified) itself and `markview_set_status` accepts only
+  idea..ready. After writing a decision that closes a feature, run `markview_list_features`, and if the stage did not move, say so to the
+  operator and name what moves it (the app); never claim "closed" on the strength of a decision file, and never hand-edit the stage or
+  `.dde/state.db` to make the list look right.
+
+## Committing another feature's specification is not building it
+- Remark (2026-10-19): "Пока я не вижу, чтобы ты векторную работу перенес на третье место, и не вижу, где можно выбрать алгоритмы по разбивке."
+  The specification of vector-detail-and-colour-control (issue #32) had been committed on the editor's branch at the operator's decision, and
+  the operator expected its screens to appear too.
+- Rule: when a goal names one feature folder, say in the same message that any other folder committed with it is specification only, which of
+  its criteria are not built, and which of them wait for an answer (here: the list of splitting methods is still open in its own discussion).
+  Never leave "committed" to be read as "done".

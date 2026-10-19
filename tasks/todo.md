@@ -669,3 +669,63 @@ Decode and correction were not changed. So the first opening of a picture stays 
 itself after the first view) is what makes the screens fast.
 
 Not cached: nothing that is served. The vector overlay is cached too (`transparent=true`); `size` was not added to it.
+
+
+## Vector work colour editor: verification against the rewritten REQ-049 and the operator's answers (goal 2026-10-19)
+
+Branch `feat/vector-colour-editor-req049`, created from `origin/main` (3aa4e45); local `main` was level with it. Spec read in full:
+REQ-043..REQ-049, DEC-001 and DEC-075..DEC-077, plan I-1..I-7, discussion.md; the feature has no questions or findings. I-1..I-7 were built
+in 0.6.0 (PR #30, issue #28); REQ-049 was rewritten afterwards with unticked criteria, so this goal audits the code against all of it.
+
+Audit (code read, then the tests that cover each criterion):
+- REQ-049 holds in the code: `_here` snapshots colouring, split version, tolerance and filters; `_snapshot` clears redo; `_new_version` numbers
+  after every version in the history, redo included; variants carry `version` and `restore` refuses another one with a translated message;
+  `resplit` clears undo, redo and variants; `_pin_legacy` reads old undo entries and variants as belonging to the current version.
+- Gaps found: (a) no test undoes and redoes a titanium-colour merge, (b) the settings test checks only the settings after redo, not the
+  colouring, (c) three places where the wording of a criterion and the code differ. The operator answered (c) on 2026-10-19 (DEC-078..DEC-080).
+
+Plan (I-8, steps in the order they were committed):
+- [x] Baseline on the branch before any code change: 1104 passed, 1 failed in 11 min 38 s. The failure, `test_plans.py::test_exported_markers_are_
+      detected_and_identifier_decoded_from_the_raster`, is a flake: it passes alone (30 of 30) and fails for about 0.75 % of random experiment
+      identifiers (3 of 400; `TCE-AFA45888` every time). Cause: OpenCV's classic `QRCodeDetector` misses those codes; the codes are valid
+      (`QRCodeDetectorAruco` reads all of them at 10-30 px/mm) and `photo.read_identifier` falls back to it. The test now uses the product's
+      reader, and four missed identifiers are pinned (commit 3367022).
+- [x] Spec: DEC-078 (a titanium merge needs two or more selected colours), DEC-079 (painting a source colour includes every area of it again),
+      DEC-080 (the merge-areas button only for a connected selection); REQ-045/046/048 criteria refined; plan I-8; discussion.md.
+- [x] DEC-078: `_merge_titanium` refuses fewer than two distinct selected colours that the colouring uses; one translated message; tests.
+- [x] DEC-079: `_paint` with the scope "source colour" and a colour includes every excluded area of that colour; test; the hover agreed already.
+- [x] DEC-080: `GET /api/vector/{id}/neighbours` (segment.neighbours, per split version), the screen disables "Слить в один контур" unless the
+      selection is connected and says why; the server still refuses; tests (API, screen in node, fallback when the request fails).
+- [x] REQ-049 coverage: undo/redo of a titanium merge in a sequence with the other three kinds; redo after a settings change restores the colouring.
+- [x] Criteria of REQ-045/046/048/049 ticked with the test seen (175 passed in the files they touch) and the walkthrough below.
+- [x] Walkthrough in a MarkView tab on a full copy of the live data (ports 8794 and 8795, never the operator's 8765): see "Walkthrough".
+- [ ] Full suite on the finished code, wheel build; version 0.6.1 (DEC-023, SemVer; pyproject.toml; README note); issue #28.
+- [ ] Where the commits go: the operator ruled on 2026-10-19, mid-goal, that commits go straight to `main` with no pull request and no new
+      branch until he says otherwise (CLAUDE.md). So: fast-forward `main` to this branch, delete the local branch (never pushed), push
+      `main`, watch the CI run of that push (it runs on push to main) and fix a red check with a commit on `main`.
+
+### Walkthrough (2026-10-19; MarkView tabs on a full copy of the live data, branch app on ports 8794 and 8795, the operator's app on 8765 only read)
+
+Copy: `sqlite3 -readonly ... .dump` of `titanium.sqlite` with the absolute file paths rewritten to the copy (0 left pointing at the live
+directory), `files/` copied (662 observations as in the live deploy). Work 22 "Imma + Boris": photograph, 28 colours, 986 areas, split
+version 2, tolerance 0.05, 10 undo steps.
+- Opens with all 28 colours coloured, all beyond the tolerance and flagged "вне допуска" ("Дальше допуска ΔE 0.05: цветов 28, областей 986
+  (100.0 % площади). Файл они не блокируют."), no accept button, `export_blocked` null; totals "Слоёв 7 из 29 · время слоёв цвета 3 ч 18 мин ·
+  средний ΔE 18.55 · цветов в допуске 0 из 28" (REQ-043, REQ-044).
+- DEC-080: `GET /neighbours` answers 200, 42 kB, 26 ms, 986 areas, symmetric. With `r7` selected the merge button is disabled ("...соседние по
+  границе"); with `r7` and the distant `r1` it is disabled and says "Слить нельзя: выбранные области не связаны общими границами (касания
+  углом недостаточно)"; adding the neighbour `r30` keeps it disabled while `r1` stays; without `r1` it is enabled. A real click merged them:
+  version 2 → 3, areas 986 → 985, undo steps 10 → 11, and `/neighbours` for version 3 lists 985 areas without `r30`. The "Отменить" button
+  brought version 2 and 986 areas back; Ctrl+Shift+Z redid version 3 (REQ-048, REQ-049).
+- REQ-049 numbering (second copy): merge → version 3, merge → version 4, two undos → version 2 with 2 redo steps, a new merge → version 5,
+  redo 0 and the redo button disabled.
+- DEC-079: source colour № 1 has 21 areas; `r32` and `r50` excluded one by one (grey); with the brush on "Весь исходный цвет" the hover outlined
+  all 21 areas; the click left `excluded_regions` empty and painted both with the active colour; one undo brought both exclusions back.
+- DEC-078: one ticked layer shows no merge control, two show the target list; the merge took layers 7 → 6 ("Слоёв 6 из 29"); the server
+  refused `entries=[A], into=B` and `entries=[A, A]` with 422 "choose two or more titanium colours of the colouring to merge", which the
+  screen translates ("Выберите два цвета титана из раскраски или больше, чтобы слить их в один"); the refusals changed nothing.
+- No console messages on the scripted tab.
+
+Limits: shift-click and Ctrl+Shift+Z were sent as DOM events with the right flags, because the browser tool's key press sends the literal
+key "Control+Shift+Z" with every modifier flag false. During the run someone else operated the first tab (a merge of `r232` and `r165` at
+19:04:48, a coarse re-split at 19:05:26, two paints, an automatic recolouring), so the rest ran on a second copy at 8795.
