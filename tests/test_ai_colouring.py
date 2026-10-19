@@ -251,8 +251,9 @@ def test_a_new_split_leaves_the_ai_variants_behind_with_the_rest_of_the_colourin
 def test_a_reduced_photograph_goes_with_the_numbers_only_after_the_operator_allowed_it_for_this_work(work, job, model):
     c, j = work, job
     view = c["client"].get(f"/api/vector/{j['id']}").json()
-    assert view["ai"] == {"available": True if research.ai_available() else False, "styles": list(ai.STYLES), "photo_allowed": False,
-                          "photo_px": 512, "max_text": 400} or view["ai"]["photo_allowed"] is False
+    assert view["ai"] == {"available": research.ai_available() and research.ai_library(), "missing": view["ai"]["missing"], "styles": list(ai.STYLES),
+                          "photo_allowed": False, "photo_px": 512, "max_text": 400}
+    assert view["ai"]["missing"] in (None, "key", "library") and view["ai"]["available"] is (view["ai"]["missing"] is None)
     fake = model()
     assert view["ai"]["photo_allowed"] is False and "ai_photo" not in view
     ai_op(c, j)
@@ -341,7 +342,7 @@ def test_the_screen_offers_the_styles_sends_the_choice_and_remembers_the_permiss
   const go = byText(block, 'button', 'Раскрасить с помощью AI');
   out.disabled = go.disabled;
   out.current = block.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Сейчас раскрашено AI'));
-  out.variants = tree.querySelectorAll('td').map((c) => c.textContent).filter((t) => t.startsWith('AI'));
+  out.variants = tree.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-variant')).map((d) => d.textContent);
   select.value = 'cubism'; await select.dispatch('change');
   out.hint = block.querySelectorAll('span').map((s) => s.textContent).find((t) => t.startsWith('Плоские грани'));
   boxes[0].checked = true;
@@ -356,7 +357,7 @@ def test_the_screen_offers_the_styles_sends_the_choice_and_remembers_the_permiss
     assert out["checked"] == [False, False] and out["disabled"] is False                          # free lightness off, no photograph, a key is set
     assert any("Свободная светлота" in label for label in out["labels"]) and any("до 512 px" in label for label in out["labels"])
     assert out["current"].startswith("Сейчас раскрашено AI: ") and "тёплые света, холодные тени" in out["current"] and "«как витраж»" in out["current"]
-    assert out["variants"] and out["variants"][-1].startswith("AI · «как витраж» · светлота свободна")
+    assert out["variants"] and out["variants"][0].startswith("№ 2 · AI · «как витраж» · светлота свободна")        # the newest first
     assert out["hint"].startswith("Плоские грани земляной гаммы")
     ops = [(path, body) for path, body in out["posted"]]
     assert ops[0] == (f"/api/vector/{j['id']}/colouring", {"op": "ai_colour", "style": "cubism", "free_lightness": True})   # the choice, as typed
@@ -384,6 +385,7 @@ def test_every_message_of_the_ai_colouring_has_a_russian_translation(tmp_path):
     from test_i18n_coverage import MARK, run_node
     messages = [ai.UNREADABLE, ai.NOT_MEASURED, ai.INCOMPLETE, ai.ORDER_BROKEN, "the AI chose 5 different colours but the file has 2 layers for them",
                 "the AI service did not answer: check the connection and the key, then try again", "the AI answer was cut off: try again",
+                "the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)",
                 "choose a style for the AI colouring: realistic, artistic, impressionism, cubism or your own description",
                 "describe the look you want for the AI colouring", "the description may have at most 400 characters", "free lightness must be on or off",
                 "the permission to send the photograph must be on or off", "the AI colouring is off: no key for the language model is set (OPENAI_API_KEY)",

@@ -157,5 +157,5 @@ const VectorSplit = (() => {
           h('div', {class: 'stack'}, field('Новая область', tool), list, pending))));
   }
 
-  return {card, ALGORITHMS, picker};
+  return {card, ALGORITHMS, picker, name: algorithmName};
 })();

@@ -8,13 +8,19 @@ import json
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from .. import segment, setup as su, vector_job
-from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, public_plan, read_upload, store_of, task_goals
+from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, picture_response, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
 
 
 def _view(request: Request, plan_id: int) -> dict:
     return public_plan(vector_job.view(store_of(request), plan_id))
+
+
+@router.get("/vector")
+def list_vector_jobs(request: Request):
+    """Every saved vector work, newest first, with what the list of works shows of it (see vector_job.listing)."""
+    return vector_job.listing(store_of(request))
 
 
 @router.get("/vector/palette")
@@ -64,6 +70,18 @@ async def create_vector_job(request: Request, device_id: int = Form(...), lens_i
 @router.get("/vector/{plan_id}")
 def get_vector_job(plan_id: int, request: Request):
     return _view(request, plan_id)
+
+
+@router.get("/vector/{plan_id}/thumb.png")
+def vector_thumbnail(plan_id: int, request: Request):
+    """A small picture of the work in the titanium colours of its colouring; drawn once, revalidated by ETag."""
+    return picture_response(request, vector_job.thumbnail(store_of(request), plan_id))
+
+
+@router.post("/vector/{plan_id}/copy", status_code=201)
+def copy_vector_job(plan_id: int, request: Request, body: dict | None = None):
+    """A work of its own made from this one, to try something else on (see vector_job.copy_work); ``name`` is optional."""
+    return {"id": vector_job.copy_work(store_of(request), plan_id, (body or {}).get("name"))}
 
 
 @router.post("/vector/{plan_id}/edit")

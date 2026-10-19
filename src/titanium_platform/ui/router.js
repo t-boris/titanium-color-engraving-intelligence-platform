@@ -61,6 +61,7 @@ Object.assign(App, (() => {
   async function render(options = {}) {
     const preserveScroll = options.preserveScroll === true;
     const previousY = preserveScroll ? window.scrollY : 0;
+    document.body.classList.remove('is-workspace');
     const previousMain = document.getElementById('main');
     const previousHeight = preserveScroll && previousMain ? previousMain.scrollHeight : 0;
     const ctx = parse();
@@ -77,12 +78,15 @@ Object.assign(App, (() => {
       if (!def) throw new Error('Экран не найден');
       const node = await def.render(ctx);
       if (mine !== token) return;   // пользователь уже ушёл на другой экран
-      main.replaceChildren(node, h('p', {class: 'demo'}, 'Данные хранятся на этом компьютере. RAW-результаты после проверки показываются предварительно; в стандартный прогноз входят только принятые измерения с коррекцией по эталонной карте.'));
+      const workspace = node.classList && node.classList.contains('workspace');
+      main.replaceChildren(...(workspace ? [node] : [node, h('p', {class: 'demo'}, 'Данные хранятся на этом компьютере. RAW-результаты после проверки показываются предварительно; в стандартный прогноз входят только принятые измерения с коррекцией по эталонной карте.')]));
     } catch (e) {
       if (mine !== token) return;
       main.replaceChildren(h('div', {class: 'alert bad', role: 'alert'}, h('strong', {}, 'Не удалось загрузить данные'), h('p', {}, e.message || String(e)), btn('Повторить', render)));
     }
     main.removeAttribute('aria-busy');
+    const workspace = !!main.querySelector('.workspace');       // экран на один экран: без бокового меню и прокрутки страницы (DEC-085)
+    document.body.classList.toggle('is-workspace', workspace);
     if (preserveScroll) {
       window.scrollTo(0, previousY);
       requestAnimationFrame(() => { window.scrollTo(0, previousY); main.style.minHeight = ''; });

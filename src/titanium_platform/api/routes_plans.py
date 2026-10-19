@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, plans, research, setup as su, vector_job
+from .. import conversion, designer, plans, render_cache, research, setup as su, vector_job
 from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
@@ -151,6 +151,7 @@ def delete_plan(plan_id: int, request: Request):
         if plan["plate_id"]:
             s.execute("DELETE FROM plate WHERE id=?", (plan["plate_id"],))
     s.audit("plan_deleted", plan_id=plan_id)
+    render_cache.remove_pair(s, f"vector-{plan_id}")        # the thumbnails of a vector work
 
 
 @router.post("/discrete", status_code=201)

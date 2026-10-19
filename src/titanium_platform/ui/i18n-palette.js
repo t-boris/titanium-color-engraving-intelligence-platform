@@ -51,6 +51,8 @@
       'При нынешних ограничениях ни один измеренный цвет титана выбрать нельзя: расширьте их, чтобы раскрасить с помощью AI'],
     [/^every colour of the picture is chosen by hand or left out: there is nothing for the AI to colour$/i,
       'Все цвета картинки выбраны вами или исключены: AI нечего раскрашивать'],
+    [/^the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies \(see README\)$/i,
+      'AI не удалось запустить на этом компьютере: не хватает библиотеки или она повреждена. Установите зависимости приложения (команда в README)'],
     [/^the AI service did not answer: check the connection and the key, then try again$/i,
       'Сервис AI не ответил: проверьте соединение и ключ и попробуйте ещё раз'],
     [/^the AI answer was cut off: try again$/i, 'Ответ AI оборвался: попробуйте ещё раз'],

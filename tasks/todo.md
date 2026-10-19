@@ -830,11 +830,20 @@ message and the README dependency step go into the same release. SemVer: a new c
 
 - [x] 1. Work 22 restored from `titanium-before-0.8.0-20261019T210411Z.sqlite` (one plan row; fresh backup
       `titanium-before-restore-of-work-22-20261019T221230Z.sqlite` first; audit row `plan_restored`; GET /api/vector/22 -> 200, version 7).
-- [ ] 2. Backend: `GET /api/vector` (list with facts), `GET /api/vector/{id}/thumb.png`, `POST /api/vector/{id}/copy`; a missing AI library is
+- [x] 2. Backend (done by a fork, tests `tests/test_vector_list.py`, 26): `GET /api/vector` (list with facts), `GET /api/vector/{id}/thumb.png`, `POST /api/vector/{id}/copy`; a missing AI library is
       a message, not a 500, and `ai.missing` tells the screen why the button is off. Tests: `tests/test_vector_list.py`.
-- [ ] 3. UI: "Мои работы" (cards: thumbnail, name, date, algorithm, colours, layers, AI style; Open, Copy, Delete with confirmation); the work
+- [x] 3. UI (`vector-workspace.js`, `App.tabs` in `dialogs.js`, router workspace mode, CSS; tests `tests/test_vector_workspace_ui.py`): "Мои работы" (cards: thumbnail, name, date, algorithm, colours, layers, AI style; Open, Copy, Delete with confirmation); the work
       screen as one viewport (header with undo/redo and file, tabs Разбиение/Цвета/AI/Файл on the left, picture in the middle, layers and
       variants on the right, only long lists scroll inside their panel). Check on screen at 1421x951 and a smaller window.
-- [ ] 4. Spec (REQ/DEC), README (0.9.0 section, dependency step of the deploy recipe), version 0.9.0, tag.
+- [x] 4. Spec (DEC-085, REQ-053, REQ-054), README (0.9.0 section, dependency step of the deploy recipe), version 0.9.0, tag.
 - [ ] 5. Full suite once, backup, wheel, install, import every declared dependency from the app environment, one AI call from it on a copy,
       deploy, look at the real app.
+
+### Measured on screen (copy of the data on 8796, window 1421 x 951, work 22: 28 colours, 16 layers)
+- The page does not scroll (document height = window height) on any tab; the tabs Разбиение, Цвета, AI, Варианты, Файл and the editor tabs
+  Кисть and Слои need no inner scroll. Only the editor tab "Цвета" (28 source colours, 1661 px in a 746 px panel) scrolls inside its panel.
+- List: thumbnail 360 px, one card; "Сделать копию" made work 23 "Imma + Boris (копия)" and opened it, both thumbnails loaded.
+- The side menu folds away on the work screen and "Меню" opens it.
+- Not changed: works made by the fill, text and line strategies keep their long page (`jobView`); the thumbnails share the geometry memo
+  (6 entries) with the editor, so a long list can evict the geometry of the work being edited (recomputed in about 0.5 s).
+

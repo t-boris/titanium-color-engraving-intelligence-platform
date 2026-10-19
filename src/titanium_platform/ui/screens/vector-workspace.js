@@ -1,0 +1,90 @@
+/* Векторная работа: список сохранённых работ и рамка одной работы на один экран (REQ-053, REQ-054, DEC-085).
+   Список (экран «Векторная работа» без работы): у каждой сохранённой работы миниатюра раскрашенной картинки, название, дата,
+   размер, алгоритм, число цветов и слоёв, способ раскраски; кнопки «Открыть», «Сделать копию» (новая работа с тем же состоянием,
+   старая остаётся) и «Удалить» с подтверждением. Рамка работы: шапка с названием и действиями, слева вкладки настроек, посередине
+   картинка редактора, справа его панель; страница не прокручивается, прокручиваются только длинные списки внутри своей панели.
+   Какая вкладка открыта, браузер помнит (удобство одного зрителя; App.tabs): после «Разбить заново» экран строится заново на той же вкладке. */
+'use strict';
+const VectorWorkspace = (() => {
+  const {h, fill, btn, num, get, post, del, go, toast, fail, confirmBox} = App;
+  const MODE_NAME = {closest: 'Ближе к оригиналу', tonality: 'Сохранить тональность', random: 'Случайно', fewer_layers: 'Меньше слоёв'};
+  const STRATEGY_NAME = {photo: 'Фото: цветные области', fill: 'Заливка силуэта', text: 'Текст', line: 'Линии (центральные)', color: 'Цветные области (обводка)'};
+  const TAB_KEY = 'vw.tab';
+  const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
+
+
+  // ---- список сохранённых работ --------------------------------------------------------------------------------------------------
+
+  /** Способ раскраски одной строкой: ручной выбор и автоматические режимы названы так же, как в самой работе. */
+  function colouringName(w) {
+    if (w.mode === 'ai') return 'AI · ' + (w.ai_style === 'custom' ? `«${(w.ai_text || '').slice(0, 40)}»` : VectorColours.styleName(w.ai_style));
+    return MODE_NAME[w.mode] || null;
+  }
+
+  function workCard(w) {
+    const open = () => go('/vector?plan=' + w.id);
+    const photo = w.strategy === 'photo';
+    const how = colouringName(w);
+    const copy = btn('Сделать копию', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const made = await post(`/vector/${w.id}/copy`, {}); toast('Копия создана и открыта: старая работа осталась как была', 'ok'); go('/vector?plan=' + made.id); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
+    const remove = btn('Удалить', () => confirmBox(`Удалить работу «${w.name}»?`,
+      'Исчезнут исходная картинка, разбиение и все варианты раскраски; вернуть работу будет нельзя. Чтобы сохранить её, сначала нажмите «Сделать копию».',
+      'Удалить', async () => { await del('/plans/' + w.id); toast('Работа удалена', 'ok'); App.render(); }), 'danger btn-small');
+    return h('article', {class: 'card vw-work-card'},
+      h('a', {class: 'vw-thumb', href: '#/vector?plan=' + w.id, 'aria-label': 'Открыть работу ' + w.name},
+        h('img', {src: `/api/vector/${w.id}/thumb.png?v=${encodeURIComponent(w.version + '-' + w.updated_at)}`, alt: '', loading: 'lazy'})),
+      h('div', {class: 'stack vw-work-info'}, h('h3', {}, w.name),
+        h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
+        photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}`) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
+        h('p', {class: 'small'}, how ? `Раскраска: ${how}` : 'Ещё не раскрашена', w.variants ? ` · вариантов ${w.variants}` : ''),
+        h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
+        h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
+  }
+
+  /** Экран «Векторная работа» без работы: сохранённые работы и кнопка новой. */
+  async function list() {
+    const works = await get('/vector');
+    const create = btn('Новая работа', () => go('/vector?new=1'), 'primary');
+    return h('div', {class: 'stack'},
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Векторная работа'),
+        h('p', {class: 'sub'}, 'Сохранённые работы: что выбрано и как выглядит, хранится на этом компьютере. Откройте работу, чтобы продолжить, или сделайте копию, чтобы переделать, не потеряв прежнюю.')),
+        h('span', {class: 'spacer'}), create),
+      works.length ? h('div', {class: 'vw-works'}, works.map(workCard))
+        : h('div', {class: 'card empty'}, h('h3', {}, 'Работ пока нет'), h('p', {class: 'muted'}, 'Загрузите картинку: она разобьётся на цветные области, их можно раскрасить и выгрузить в LightBurn.'), create));
+  }
+
+  // ---- рамка одной работы --------------------------------------------------------------------------------------------------------
+
+  /** Шапка работы: название и сводка, «Сделать копию», план гравировки и «Файл LightBurn» (открывает вкладку «Файл»). */
+  function header(j, actions) {
+    const title = h('div', {class: 'vw-work-title'});
+    const copy = btn('Сделать копию', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const made = await post(`/vector/${j.id}/copy`, {}); toast('Копия создана и открыта: эта работа осталась как была', 'ok'); go('/vector?plan=' + made.id); }
+      catch (e) { fail(e); self.disabled = false; }
+    });
+    const el = h('header', {class: 'vw-work-head'}, h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы'), title, h('span', {class: 'spacer'}),
+      h('a', {class: 'btn btn-small', href: '#/plans/' + j.id}, 'План гравировки'), copy, btn('Файл LightBurn', actions.file, 'primary'));
+    function update(next) {
+      const size = next.document.size_mm;
+      fill(title, h('h2', {}, next.name), h('p', {class: 'sub'}, `${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version} · слоёв ${next.layers.length} из ${next.layer_cap}`));
+    }
+    update(j);
+    return {el, update};
+  }
+
+  /** Три колонки в один экран: вкладки слева, картинка редактора посередине, его панель справа (``editor.el`` ложится в сетку
+      обеими частями). */
+  function frame({head, items, editor, initial}) {
+    const box = App.tabs(items, {initial, remember: TAB_KEY, label: 'Разделы работы', prefix: 'vw-tab'});
+    const left = h('aside', {class: 'vw-left', 'aria-label': 'Настройки работы'}, box.list, h('div', {class: 'vw-panels'}, box.panels));
+    return {el: h('div', {class: 'vw-work workspace'}, head, h('div', {class: 'vw-work-body'}, left, editor.el)), select: box.select};
+  }
+
+  return {list, header, frame};
+})();

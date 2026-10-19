@@ -1,17 +1,15 @@
-/* Векторная работа из фотографии, раздел «Цвета и разбиение» (REQ-042..REQ-049, DEC-001, DEC-075..DEC-077; разбиение входит в
-   него, а не стоит отдельной карточкой — vector-detail-and-colour-control): каждому исходному цвету сразу
-   дан измеренный цвет титана этого лазера, линзы и заготовки — самый быстрый в пределах допуска ΔE, иначе ближайший. Цвет
-   дальше допуска помечен своим ΔE и обводится на картинке по запросу; файл он не блокирует. Цвета, снятые без привязки к
-   эталону, автоматика не берёт, пока их не включить; вручную их выбрать можно. Раздел: настройки разбиения (блок split,
-   его собирает vector.js), допуск и фильтры, автоматическая перекраска всей работы, редактор (vector-editor.js), подробная
-   таблица цветов (раскрывается и прокручивается внутри карточки) и варианты раскраски. Раскраска с помощью AI (REQ-050, DEC-084):
-   стиль из списка или своё описание, переключатель свободной светлоты и разрешение отправить уменьшенное фото; без них AI видит
-   только числа. Каждое действие возвращает работу целиком; карточка обновляется на месте, редактор сохраняет масштаб,
-   инструмент и выделение. */
+/* Векторная работа из фотографии, вкладки «Цвета» и «AI» рабочего стола (REQ-042..REQ-049, REQ-050, DEC-001, DEC-075..DEC-077,
+   DEC-084, DEC-085): каждому исходному цвету сразу дан измеренный цвет титана этого лазера, линзы и заготовки — самый быстрый
+   в пределах допуска ΔE, иначе ближайший. Цвет дальше допуска помечен своим ΔE и обводится на картинке по запросу; файл он не
+   блокирует. Цвета, снятые без привязки к эталону, автоматика не берёт, пока их не включить; вручную их выбрать можно.
+   Вкладка «Цвета»: допуск и фильтры, автоматическая перекраска всей работы, варианты раскраски и подробная таблица цветов (в
+   окне). Вкладка «AI»: стиль из списка или своё описание, переключатель свободной светлоты и разрешение отправить уменьшенное
+   фото; без него AI видит только числа. Редактор (vector-editor.js) стоит в середине и справа, его собирает vector-workspace.js.
+   Каждое действие возвращает работу целиком; вкладки обновляются на месте, редактор сохраняет масштаб, инструмент и выделение. */
 'use strict';
 const VectorColours = (() => {
   const {h, fill, btn, field, pill, fail, modal, table, num, labText} = App;
-  const {chip, params, seconds, palette, de, BASIS} = VectorEditor;
+  const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно'], ['fewer_layers', 'Меньше слоёв']];
   const MODE = {...Object.fromEntries(MODES), ai: 'AI'};
   /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
@@ -68,18 +66,20 @@ const VectorColours = (() => {
     });
   }
 
-  /** Варианты раскраски; вариант другой версии разбиения сервер не вернёт, пока отмена не вернёт ту версию. */
+  /** Варианты раскраски списком (вкладка узкая); вариант другой версии разбиения сервер не вернёт, пока отмена не вернёт ту версию. */
   function variants(j, run) {
-    const rows = [...j.variants].reverse().map((v) => {
-      const elsewhere = v.version != null && v.version !== j.document.version;
-      return [`№ ${v.number}`, v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'random' ? ` (вариант ${v.seed})` : ''),
-        `${v.totals.recipes}`, num(v.totals.mean_delta_e), `${v.totals.within_tolerance} из ${v.totals.colours}`,
-        v.totals.seconds == null ? 'не оценено' : Math.round(v.totals.seconds) + ' с', v.at.replace('T', ' ').slice(0, 16),
-        v.number === j.colouring.variant ? pill('текущий', 'ok')
-          : elsewhere ? h('span', {class: 'muted small'}, `сделан на разбиении № ${v.version}: вернуть его можно отменой`)
-            : btn('Вернуть', () => run({op: 'restore', variant: v.number}))];
-    });
-    return table(['Вариант', 'Способ', 'Рецептов', 'Средний ΔE', 'Цветов в допуске', 'Время слоёв цвета', 'Когда', ''], rows, 'Вариантов пока нет');
+    if (!j.variants.length) return h('p', {class: 'muted small'}, 'Вариантов пока нет');
+    return h('div', {class: 'vw-variants'}, [...j.variants].reverse().map((v) => {
+      const elsewhere = v.version != null && v.version !== j.document.version, current = v.number === j.colouring.variant;
+      const way = v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'random' ? ` (вариант ${v.seed})` : '');
+      return h('div', {class: 'vw-variant' + (current ? ' current' : '')},
+        h('div', {class: 'vw-variant-main'}, h('strong', {}, `№ ${v.number} · ${way}`),
+          h('span', {class: 'small muted'}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
+            + (v.totals.seconds == null ? 'время не оценено' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`)),
+        current ? pill('текущий', 'ok')
+          : elsewhere ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}: вернуть можно отменой`)
+            : btn('Вернуть', () => run({op: 'restore', variant: v.number})));
+    }));
   }
 
   /** Раскраска с помощью AI: стиль, своё описание, свободная светлота, разрешение на фото и кнопка. Блок собирается один раз, поля не
@@ -90,7 +90,9 @@ const VectorColours = (() => {
     const text = h('input', {type: 'text', maxlength: String(j.ai.max_text), placeholder: 'например: как витраж, много синего', 'aria-label': 'Своё описание'});
     const own = field('Своё описание', text, `до ${j.ai.max_text} знаков`);
     const free = h('input', {type: 'checkbox'}), photo = h('input', {type: 'checkbox'});
-    const off = h('p', {class: 'alert warn', hidden: true}, 'AI-раскраска выключена: не задан ключ языковой модели (переменная OPENAI_API_KEY или файл .env.local). Остальные способы работают.');
+    const off = h('p', {class: 'alert warn', hidden: true});
+    const WHY = {key: 'AI-раскраска выключена: не задан ключ языковой модели (переменная OPENAI_API_KEY или файл .env.local). Остальные способы работают.',
+      library: 'AI-раскраска выключена: на этом компьютере не установлена библиотека языковой модели. Установите зависимости приложения (команда в README), остальные способы работают.'};
     const current = h('p', {class: 'small'});
     let busy = false;
     const go = btn('Раскрасить с помощью AI', async (ev) => {
@@ -107,6 +109,7 @@ const VectorColours = (() => {
       photo.checked = j.ai.photo_allowed;
       go.disabled = busy || !j.ai.available;
       off.hidden = j.ai.available;
+      fill(off, WHY[j.ai.missing] || WHY.key);
       const now = j.colouring.mode === 'ai' && j.colouring.ai ? j.colouring.ai : null;
       fill(current, now ? ['Сейчас раскрашено AI: ', h('strong', {}, aiName(now).slice(5)), now.note ? ` — ${now.note}` : ''] : null);
       current.hidden = !now;
@@ -138,18 +141,17 @@ const VectorColours = (() => {
         include_as_shot: asShot.checked})));
   }
 
-  /** Раздел «Цвета и разбиение»: блок разбиения (``split``), допуск и фильтры, автоматическая перекраска, редактор, подробная
-      таблица и варианты; update — на месте. */
-  function card(j, run, split, permit) {
+  /** Части рабочего стола: вкладка «Цвета» (``colours``), вкладка «AI» (``ai``) и редактор (``editor``; его картинка и панель
+      встают в рамку vector-workspace.js отдельно); update — на месте. */
+  function parts(j, run, permit) {
     const editor = VectorEditor.create(j, run);
     const ai = aiBlock(j, run, permit);
-    const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {}), rows = h('div', {}), kept = h('div', {});
-    const details = h('details', {class: 'vw-details'}, h('summary', {}, 'Подробно по цветам'), rows);
+    const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {}), rows = h('div', {class: 'vw-wide'}), kept = h('div', {});
     let settings = null;
     function show(next) {
       j = next;
-      fill(intro, `Палитра — все измеренные цвета этого лазера, линзы и титана (${j.palette_size}). Каждому исходному цвету сразу дан самый быстрый `
-        + 'цвет в пределах допуска ΔE, а если такого нет — ближайший; его ΔE показан, далёкие от оригинала можно обвести на картинке. Файл они не блокируют.');
+      fill(intro, `Палитра: измеренных цветов ${j.palette_size}. Каждому исходному цвету дан самый быстрый цвет в пределах допуска ΔE, иначе ближайший; `
+        + 'далёкие от оригинала можно обвести на картинке, файл они не блокируют.');
       fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана нет измеренных цветов заливки: раскрасить нечем.'));
       const key = JSON.stringify(j.settings);
       if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // поля не сбрасываются, пока настройки те же
@@ -157,11 +159,14 @@ const VectorColours = (() => {
       fill(kept, variants(j, run));
     }
     show(j);
-    const el = h('div', {class: 'card stack vw-colours'}, h('h3', {}, '1. Цвета и разбиение'), split, h('h4', {}, 'Цвета'), intro, empty, bar,
-      h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'), MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode})))),
-      ai.el, editor.el, details, h('h3', {}, 'Варианты раскраски'), kept);
-    return {el, update(next) { show(next); ai.update(next); editor.update(next); }};
+    const colours = h('div', {class: 'stack vw-colours'}, intro, empty, bar,
+      h('div', {class: 'vw-modes'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'),
+        h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}), 'btn-small')))),
+      h('div', {class: 'row'}, btn('Подробно по цветам…', () => modal('Подробно по цветам', rows, [{label: 'Закрыть', run: (m) => m.close()}]))));
+    const saved = h('div', {class: 'stack'}, h('h4', {}, 'Варианты раскраски'),
+      h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept);
+    return {colours, variants: saved, ai: ai.el, editor, update(next) { show(next); ai.update(next); editor.update(next); }};
   }
 
-  return {card};
+  return {parts, styleName: (style) => STYLE[style] || style};
 })();

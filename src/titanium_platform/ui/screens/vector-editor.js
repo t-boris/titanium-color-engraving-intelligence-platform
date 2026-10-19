@@ -143,20 +143,24 @@ const VectorEditor = (() => {
     const activeBox = h('div', {class: 'vw-ed-active'});
     const paletteHead = h('h4', {}, 'Палитра'), paletteNote = h('p', {class: 'small muted'});
     const grid = h('div', {class: 'vw-swatches vw-ed-palette', role: 'group', 'aria-label': 'Измеренные цвета титана'});
-    const layersBox = h('div', {class: 'vw-ed-list'}), layerMerge = h('div', {});
+    const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}), layerMerge = h('div', {});
     const farBox = h('input', {type: 'checkbox', onChange: (ev) => { state.far = ev.target.checked; syncSvgClass(); }});
     const farNote = h('p', {class: 'small muted'});
     const coloursBox = h('div', {class: 'vw-ed-list'}), colourMerge = h('div', {});
-    const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'},
-      h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Инструмент'),
-        h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Инструмент'}, toolButtons),
-        h('p', {class: 'small muted'}, 'Alt+щелчок кистью — пипетка.'), scopeBox),
-      selectionBox,
-      h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
-      h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid),
-      h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersBox, layerMerge),
-      h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
-        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge));
+    // панель на три вкладки, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085)
+    const sideTabs = App.tabs([
+      ['brush', 'Кисть', h('div', {class: 'vw-ed-pane'},
+        h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Инструмент'),
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Инструмент'}, toolButtons),
+          h('p', {class: 'small muted'}, 'Alt+щелчок кистью — пипетка.'), scopeBox),
+        selectionBox,
+        h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
+        h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid))],
+      ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersBox, layerMerge))],
+      ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
+        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))]],
+      {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab'});
+    const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'}, sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
     const el = h('div', {class: 'vw-editor'},
       h('div', {class: 'vw-ed-main'}, bar, totals, stage,
         h('p', {class: 'small muted'}, 'Колесо мыши — масштаб у курсора, перетаскивание — сдвиг, «Вписать» — вся картинка. ',

@@ -607,3 +607,78 @@ select::-ms-expand {display:none}
   .vw-ed-panel {max-height:none;overflow:visible;padding-right:0}
   .vw-ed-stage {height:62vh}
 }
+
+/* 14) векторная работа: сохранённые работы и рабочий стол на один экран (DEC-085) ---------------------------------------- */
+.vw-works {display:grid;grid-template-columns:repeat(auto-fill,minmax(500px,1fr));gap:16px}
+.vw-work-card {display:grid;grid-template-columns:170px minmax(0,1fr);gap:18px;align-items:start;padding:14px}
+.vw-thumb {display:grid;place-items:center;aspect-ratio:1/1;overflow:hidden;border:1px solid var(--line-2);border-radius:12px;background:#0d131d}
+.vw-thumb img {display:block;max-width:100%;max-height:100%;object-fit:contain}
+.vw-work-info {gap:6px;min-width:0}
+.vw-work-info>h3,.vw-work-info>p {margin:0;overflow-wrap:anywhere}
+.vw-work-info>h3 {border:0;padding:0;font-size:17px}
+
+body.is-workspace .app-layout {grid-template-columns:minmax(0,1fr)}
+body.is-workspace .sidebar {display:none;position:fixed;top:76px;left:0;bottom:0;z-index:30;width:min(290px,86vw);height:auto;overflow:auto;box-shadow:20px 0 60px #000a}
+body.is-workspace .sidebar.is-open {display:flex}
+body.is-workspace .mobile-menu {display:inline-flex}
+body.is-workspace .main {max-width:none;padding:10px 16px}
+.vw-work {display:flex;flex-direction:column;gap:10px;height:calc(100vh - 76px - 20px);min-height:560px;min-width:0}
+.vw-work-head {display:flex;align-items:center;gap:8px;min-width:0}
+.vw-work-title {min-width:0}
+.vw-work-title h2 {margin:0;font-size:19px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vw-work-title .sub {margin:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vw-work-head .btn {flex:none;white-space:nowrap}
+.vw-work-body {flex:1;min-height:0;display:grid;grid-template-columns:minmax(290px,330px) minmax(0,1fr) minmax(260px,320px);gap:12px}
+.vw-left {display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--line-2);border-radius:14px;background:#111826}
+.vw-tabs {display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--line)}
+.vw-tab {flex:1;min-height:34px;padding:6px 4px;border:1px solid transparent;border-radius:9px;background:transparent;color:#aab6cc;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.vw-tab:hover {background:#1a2435;color:#edf2ff}
+.vw-tab.active {background:linear-gradient(110deg,#35446580,#232e474d);border-color:#53658b80;color:#f0f3ff}
+.vw-panels {flex:1;min-height:0;overflow:auto;padding:10px 14px}
+.vw-tabpanel[hidden] {display:none}
+.vw-tabpanel>.stack>h4,.vw-tabpanel .stack>h4 {margin:0}
+.vw-work .vw-editor {display:contents}
+.vw-work .vw-ed-main {min-height:0}
+.vw-work .vw-ed-stage {flex:1;height:auto;min-height:0}
+.vw-work .vw-ed-panel {display:flex;flex-direction:column;gap:8px;max-height:none;min-height:0;overflow:hidden;padding:0;border:1px solid var(--line-2);border-radius:14px;background:#111826}
+.vw-work .vw-ed-panel>.vw-tabs {flex:none}
+.vw-ed-panes {flex:1;min-height:0;overflow:auto;padding:4px 12px 12px}
+.vw-ed-pane {display:flex;flex-direction:column;gap:12px}
+.vw-work .vw-ed-list {max-height:none;gap:0}
+.vw-work .vw-ed-palette {max-height:none}
+.vw-work .vw-ed-item {padding:2px 6px}
+.vw-work .vw-ed-layers .vw-ed-item {flex-wrap:nowrap;white-space:nowrap;font-size:11.5px}
+.vw-work .vw-ed-layers .vw-ed-item .muted {overflow:hidden;text-overflow:ellipsis}
+.vw-work .vw-ed-item .btn {min-height:24px;padding:1px 8px;font-size:11px}
+.vw-work .vw-ed-item {row-gap:0}
+.vw-work .vw-modes .row {gap:6px}
+.vw-tabpanel>.stack>.vw-details,.vw-panels .vw-details {margin:0}
+.vw-panels .stack {gap:12px}
+.vw-panels label.row {flex-wrap:nowrap;align-items:flex-start;gap:10px}
+.vw-panels label.row input[type=checkbox] {flex:none;margin-top:3px}
+.vw-work .vw-ed-bar {gap:6px 8px}
+.vw-work .vw-split>h4,.vw-work .vw-ai>h4 {display:none}
+.vw-work .vw-split-fields {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.vw-work .vw-split-fields>label.f:first-child,.vw-work .vw-split-fields>label.f:last-child {grid-column:1 / -1}
+.vw-work .vw-ai {padding:0;border:0;background:none}
+.vw-work .vw-ai .vw-split-fields {grid-template-columns:minmax(0,1fr)}
+.vw-work .vw-colours .toolbar {gap:8px 10px}
+.vw-work .vw-colours .toolbar>label.f {flex:1 1 120px;min-width:110px}
+.vw-work .vw-colours .toolbar>label.row {flex-basis:100%;min-height:0;font-size:13px}
+.vw-modes {display:flex;flex-direction:column;gap:6px}
+.vw-variants,.vw-lines {display:flex;flex-direction:column;gap:6px}
+.vw-variant {display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.vw-variant.current {border-color:#6f86c4;background:#17223a}
+.vw-variant-main {display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.vw-line {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:2px 8px;padding:6px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.vw-line .sw {display:inline-block;width:14px;height:14px;margin:0 4px;vertical-align:-2px;border-radius:4px}
+.modal:has(.vw-wide) {width:min(1180px,100%)}
+@media (max-width:1100px) {
+  .vw-work {height:auto;min-height:0}
+  .vw-work-head {flex-wrap:wrap}
+  .vw-work-body {grid-template-columns:minmax(0,1fr)}
+  .vw-panels {overflow:visible}
+  .vw-work .vw-ed-stage {flex:none;height:62vh}
+  .vw-work .vw-ed-panel {overflow:visible}
+  .vw-work-card {grid-template-columns:110px minmax(0,1fr)}
+}

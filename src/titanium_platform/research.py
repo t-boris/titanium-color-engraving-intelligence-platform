@@ -6,6 +6,7 @@ Photographic measurements remain in the ingestion pipeline and are never invente
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -371,6 +372,11 @@ def _api_key() -> str | None:
 def ai_available() -> bool:
     """Whether a key for the language model is configured (environment or .env.local)."""
     return _api_key() is not None
+
+
+def ai_library() -> bool:
+    """Whether the language model's client library is installed in this environment (a wheel installed without its dependencies lacks it)."""
+    return importlib.util.find_spec("openai") is not None
 
 
 def openai_client():

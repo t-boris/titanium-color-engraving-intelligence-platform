@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, research, segment as seg, setup as su, tasks, vectorize as vz
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, segment as seg, setup as su, tasks, vectorize as vz
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -729,6 +729,7 @@ def _photo_refresh(store: Store, plan: dict, document: dict, entries: list[dict]
     state = _state(plan, document, entries)
     plan["layers"] = _export_layers(store, plan, state)
     plan["regions"], plan["weak"] = [], []
+    plan["counts"] = {"colours": len(document["palette"]), "regions": len(document["regions"])}    # for the list of works (:func:`listing`)
     plan.pop("unresolved", None)                 # kept by works made before the editor
     cv._persist(store, plan, cv.ST_READY if _blocker_photo(plan, state) is None else cv.ST_DRAFT, plan["markers_enabled"])
     return state
@@ -835,7 +836,7 @@ def photo_view(store: Store, plan: dict) -> dict:
     used = {c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
     layers = _export_layers(store, plan, state)
     hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
-              "unresolved", "ai_photo")
+              "unresolved", "ai_photo", "counts")
     out = {k: v for k, v in plan.items() if k not in hidden}
     found = plan["detected"]
     out.update(
@@ -854,8 +855,8 @@ def photo_view(store: Store, plan: dict) -> dict:
         outside=state["outside"], missing={"regions": len(state["missing_regions"])}, totals=state["totals"],
         variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"]),
                    **({"ai": v["colouring"]["ai"]} if v["colouring"].get("ai") else {})} for v in plan["variants"]],
-        ai={"available": research.ai_available(), "styles": list(ai.STYLES), "photo_allowed": bool(plan.get("ai_photo")), "photo_px": ai.PHOTO_PX,
-            "max_text": ai.MAX_TEXT},
+        ai={"available": _ai_missing() is None, "missing": _ai_missing(), "styles": list(ai.STYLES), "photo_allowed": bool(plan.get("ai_photo")),
+            "photo_px": ai.PHOTO_PX, "max_text": ai.MAX_TEXT},
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         time=_estimate(plan, layers), export_blocked=_blocker_photo(plan, state), layer_cap=photo_cap(plan["markers_enabled"]),
@@ -1073,6 +1074,10 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
     style, text, free_lightness = ai.request(op)
     if not research.ai_available():
         raise cv.ConversionError("the AI colouring is off: no key for the language model is set (OPENAI_API_KEY)")
+    try:
+        client = research.openai_client()
+    except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
+        raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
     settings, current = plan["colour_settings"], plan["colouring"]
     candidates = [e for e in entries if palette.automatic(e, settings["max_time"], settings["include_as_shot"])]
     if not candidates:
@@ -1100,13 +1105,20 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
         return ai.validate(answer, free={s["index"] for s in free}, palette=by_id, lightness={s["index"]: s["lab"][0] for s in free},
                            keep_order=not free_lightness, max_recipes=cap, recipes=recipes)
 
-    chosen, note = ai.choose(research.openai_client(), what, photo, check)
+    chosen, note = ai.choose(client, what, photo, check)
     out = copy.deepcopy(base)
     out.update(mode="ai", seed=0)
     out["assignment"].update({str(i): e for i, e in chosen.items()})
     out["how"].update({str(i): "ai" for i in chosen})
     out["ai"] = {"style": style, "text": text, "free_lightness": free_lightness, "photo": photo is not None, "note": note}
     return out
+
+
+def _ai_missing() -> str | None:
+    """Why the AI colouring cannot run on this computer: ``library`` (the client library is not installed), ``key`` (no key is set) or None."""
+    if not research.ai_library():
+        return "library"
+    return None if research.ai_available() else "key"
 
 
 def allow_photo(store: Store, plan_id: int, allowed) -> None:
@@ -1268,3 +1280,137 @@ def _merge(plan: dict, document: dict, entries: list[dict], kind: str, op: dict)
         colouring[part] = {k: v for k, v in colouring[part].items() if int(k) in left}
     colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i in left]
     return merged, colouring, keeper
+
+
+# ======================================================================================================================
+# Saved works: the list of them, a thumbnail of each and the copy of one (feature vector-detail-and-colour-control, 0.9.0)
+# ======================================================================================================================
+# A work is saved by every operation (the plan row holds its settings, its colouring and variants, the history of its splits, the
+# files hold its picture and its documents), so nothing here changes the record except the copy, which is a work of its own.
+THUMB_PX = 360                              # the longer side of a thumbnail
+THUMB_SUPERSAMPLE = 2                       # drawn twice as large and reduced: smooth edges and no seam between two neighbours
+THUMB_BACKGROUND = (58, 60, 66)             # what no colour covers: a region left out of the file, or a work not coloured yet
+COPY_SUFFIX = " (копия)"
+PLAN_COLUMNS = ("id", "name", "mode", "status", "device_id", "lens_id", "legacy_profile_id", "plate_id", "markers_enabled", "plan_identifier",
+                "band_count", "created_at", "research_session_id")        # what the plan row holds; the rest of a plan is its data
+
+
+def _counts_of(data: dict) -> dict:
+    """The colours and regions of a photograph work saved before its plan kept them, read from its document (remembered for the list)."""
+    def read() -> dict:
+        try:
+            document = _document(data)
+        except (OSError, ValueError):
+            return {"colours": None, "regions": None}
+        return {"colours": len(document["palette"]), "regions": len(document["regions"])}
+    return _memo(("counts", data["document_path"]), read)
+
+
+def _summary(row, data: dict) -> dict:
+    """One work as the list shows it, from what its plan keeps; no document is opened (a work saved before the plan kept its counts: once)."""
+    photo = is_photo(data)
+    size, colouring, history = data["size_mm"], data.get("colouring") or {}, data.get("history") or []
+    said = colouring.get("ai") or {}
+    if photo:
+        counts = data.get("counts") or _counts_of(data)
+        colours, regions = counts["colours"], counts["regions"]
+    else:
+        colours, regions = len({r["layer_key"] for r in data["regions"]}), len(data["regions"])
+    return {"id": row["id"], "name": row["name"], "status": row["status"], "created_at": row["created_at"],
+            "updated_at": history[-1]["at"] if history else row["created_at"], "strategy": PHOTO if photo else "trace",
+            "width_mm": round(size["width"], 2), "height_mm": round(size["height"], 2),
+            "algorithm": data.get("split", {}).get("algorithm", seg.DEFAULT_ALGORITHM) if photo else None,
+            "n_colours": colours, "regions": regions, "layers": len(data.get("layers") or []), "mode": colouring.get("mode"),
+            "ai_style": said.get("style"), "ai_text": said.get("text"), "variants": len(data.get("variants") or []),
+            "smoothing_mm": data.get("smoothing_mm", 0.0) if photo else None, "version": data["document_version"]}
+
+
+def listing(store: Store) -> list[dict]:
+    """Every saved vector work, the newest first: what it is, how it was split and coloured and when it last changed."""
+    rows = store.query("SELECT id, name, status, created_at, data_json FROM plan WHERE mode=? AND status!='Deleted' ORDER BY id DESC", (pl.MODE_VECTOR,))
+    return [_summary(row, json.loads(row["data_json"])) for row in rows]
+
+
+def _painted(plan: dict) -> dict[str, list[int]] | None:
+    """The titanium colour of every region the file engraves, as the last colouring left it in the plan's layers; None while a work has no
+    colouring (its regions are then drawn in their source colours)."""
+    layers = plan.get("layers") or []
+    if not is_photo(plan) or plan.get("colouring") is None or any("region_ids" not in layer for layer in layers):
+        return None
+    return {region: layer["srgb"] for layer in layers for region in layer["region_ids"]}
+
+
+def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None) -> bytes:
+    photo = is_photo(plan)
+    document = _geometry(plan) if photo else _document(plan)
+    size = document["size_mm"]
+    scale = THUMB_PX / max(size["width"], size["height"])
+    cols, rows = max(1, round(size["width"] * scale)), max(1, round(size["height"] * scale))
+    big = scale * THUMB_SUPERSAMPLE
+    canvas = np.empty((rows * THUMB_SUPERSAMPLE, cols * THUMB_SUPERSAMPLE, 3), np.uint8)
+    canvas[:] = THUMB_BACKGROUND
+    width = max(1, round(max(document["px_mm"], 0.05) * big))
+    for region in seg.regions_as_loops(document) if photo else document["regions"]:
+        rgb = region["srgb"] if painted is None else painted.get(region["id"])
+        if rgb is None:                                   # left out of the file: nothing is engraved there
+            continue
+        colour = tuple(int(v) for v in rgb)
+        if region["loops"]:                               # outer boundary and holes in one call: the holes stay open
+            cv2.fillPoly(canvas, [np.round(np.asarray(loop) * big).astype(np.int32) for loop in region["loops"] if len(loop) >= 3], colour)
+        else:                                             # a line of a traced work
+            for stroke in region["strokes"]:
+                cv2.polylines(canvas, [np.round(np.asarray(stroke) * big).astype(np.int32)], False, colour, width)
+    small = cv2.resize(canvas, (cols, rows), interpolation=cv2.INTER_AREA)
+    return cv2.imencode(".png", cv2.cvtColor(small, cv2.COLOR_RGB2BGR))[1].tobytes()
+
+
+def thumbnail(store: Store, plan_id: int) -> rc.Picture:
+    """A work's picture for the list: its regions in the titanium colours of its current colouring (in their source colours before it has
+    one, and for a traced work). Known by a key of everything it is drawn from, so a recolouring, a new split or another smoothing gives
+    another picture and an unchanged one is neither drawn nor sent again; it lives in the render cache (``vector-<id>``)."""
+    plan = _job(store, plan_id)
+    painted = _painted(plan)
+    key = rc.key_of({"kind": "vector-thumbnail", "plan": plan["id"], "px": THUMB_PX, "version": plan["document_version"],
+                     "document": rc.file_stamp(plan["document_path"]), "smoothing_mm": plan.get("smoothing_mm", 0.0),
+                     "painted": None if painted is None else rc.text_digest(json.dumps(painted, sort_keys=True))})
+    return rc.Picture(store, f"vector-{plan['id']}", key, lambda: _draw_thumbnail(plan, painted))
+
+
+def copy_work(store: Store, plan_id: int, name=None) -> int:
+    """A work of its own made from this one: the same picture, split, colouring, variants, settings and task, to try something else
+    on while the first stays as it is. It has its own copies of the image and the document (deleting one never breaks the other),
+    its own identifier (the photograph of an engraving finds its work by it), no undo, redo, exported files or targets sent to the
+    designer, and one entry in its history saying whose copy it is. The permission to send the photograph to the language model is
+    per work and is not carried over."""
+    plan = _job(store, plan_id)
+    if name is None:
+        title = plan["name"] + COPY_SUFFIX
+    elif isinstance(name, str) and name.strip():
+        title = name.strip()
+    else:
+        raise cv.ConversionError("give the plan a name")
+    image = Path(plan["image_path"])
+    if not image.is_file():
+        raise KeyError("the stored source image is missing")
+    document = _document(plan)
+    data = {k: copy.deepcopy(v) for k, v in plan.items() if k not in PLAN_COLUMNS}
+    identifier = pl.new_identifier("TCE-A")
+    enabled, size = plan["markers_enabled"], plan["size_mm"]
+    data.update(image_path=cv._store_image(store, image.read_bytes()), document_path=_write_document(store, document), exports=[],
+                markers=cv._plan_markers(identifier, enabled, size["width"], size["height"], store),
+                marker_layer=pl.marker_layer_settings(store) if enabled else None)
+    data["history"] = [{"version": plan["document_version"], "op": {"op": "copy", "from": plan["id"]}, "at": now(), "path": data["document_path"]}]
+    for part, empty in (("undo", []), ("redo", []), ("targets", [])):
+        if part in data:
+            data[part] = empty
+    data.pop("ai_photo", None)
+    with store.transaction():
+        new_id = cv.save_plan(store, None, name=title, mode=pl.MODE_VECTOR, status=cv.ST_DRAFT, device_id=plan["device_id"], lens_id=plan["lens_id"],
+                              markers=enabled, identifier=identifier, band_count=None, data=data)
+        fresh = pl.get_plan(store, new_id)
+        if is_photo(fresh):
+            _photo_refresh(store, fresh, document, _palette(store, fresh))
+        else:
+            _refresh(store, fresh)
+        store.audit("vector_work_copied", plan_id=new_id, source_plan_id=plan["id"])
+    return new_id

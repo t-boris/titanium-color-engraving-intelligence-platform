@@ -30,8 +30,9 @@ def root(store: Store) -> Path:
     return Path(store.data_dir) / "cache" / "renders"
 
 
-def pair_dir(store: Store, pair_id: int) -> Path:
-    return root(store) / str(int(pair_id))
+def pair_dir(store: Store, pair_id: int | str) -> Path:
+    """The folder of a pair's pictures; a vector work's thumbnails use a folder of their own, ``vector-<plan id>``, the same way."""
+    return root(store) / (pair_id if isinstance(pair_id, str) else str(int(pair_id)))
 
 
 def file_stamp(path: str | Path | None) -> dict:

@@ -17,7 +17,7 @@
   const OPS = {trace: 'обводка изображения', set_task: 'задача области', set_layer: 'группа настроек области', delete: 'удаление области',
     merge: 'объединение областей', set_tolerance: 'точность контура', revert: 'возврат к версии', set_settings: 'настройки группы',
     exclude: 'исключение области', include: 'возврат исключённой области', set_threshold: 'порог ΔE', allow_questioned: 'параметры под вопросом',
-    to_designer: 'цвет передан планировщику'};
+    to_designer: 'цвет передан планировщику', copy: 'копия другой работы'};
   const DOCUMENT_OPS = ['trace', 'set_task', 'set_layer', 'delete', 'merge', 'set_tolerance', 'revert'];
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 1)} кГц · ${num(p.speed, 0)} мм/с · Q-Pulse ${num(p.pulse_width, 0)} нс`
     + (p.line_interval == null ? '' : ` · шаг ${num(p.line_interval, 3)} мм`) + ` · ${p.passes ?? 1} проход(а)`;
@@ -113,7 +113,7 @@
     }, 'primary');
     switchFields();
     return h('div', {class: 'stack'},
-      h('div', {}, h('h2', {}, 'Векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Новая векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')), h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
         field('Лазер', pick.laser), field('Линза', pick.lens, 'цвета и рецепты — измерения этого лазера с этой линзой'),
         field('Титан', stock, 'цвета, измеренные на другой заготовке, не используются'), field('Изображение', App.filePick(img, 'Выбрать изображение')),
@@ -253,15 +253,16 @@
   const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
     : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
 
-  /** Шаг «Файл LightBurn»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043).
-      Почему файл пока не создаётся, сказано здесь же, рядом с кнопкой. */
+  /** Вкладка «Файл»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043).
+      Почему файл пока не создаётся, сказано здесь же, рядом с кнопкой. Слои и файлы идут строками: вкладка узкая. */
   function photoExport(j, refresh) {
     const t = j.time;
-    const rows = t.layers.map((row) => {
+    const layers = t.layers.map((row) => {
       const layer = j.layers.find((l) => l.index === row.index);
-      return [`C${String(row.index).padStart(2, '0')}`, layer ? h('span', {}, h('span', {class: 'sw', style: `background:rgb(${layer.srgb.join(',')})`}), layer.name) : 'Чистка (перекрёстная заливка)',
-        layer ? `${layer.region_count}` : 'вся работа', layer ? `${num(layer.area_mm2 / 100, 2)} см²` : '—',
-        row.seconds == null ? h('span', {class: 'muted small'}, I18N.tr(row.note)) : duration(row.seconds)];
+      return h('div', {class: 'vw-line'}, h('span', {}, `C${String(row.index).padStart(2, '0')} `, layer ? h('span', {class: 'sw', style: `background:rgb(${layer.srgb.join(',')})`}) : null,
+        layer ? layer.name : 'Чистка (перекрёстная заливка)'),
+        h('span', {class: 'muted small'}, [layer ? `областей ${layer.region_count}` : 'вся работа', layer ? `${num(layer.area_mm2 / 100, 2)} см²` : null,
+          row.seconds == null ? I18N.tr(row.note) : duration(row.seconds)].filter(Boolean).join(' · ')));
     });
     const exportBtn = btn('Создать файл LightBurn', async (ev) => {
       const self = ev.currentTarget;
@@ -269,43 +270,44 @@
       try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); await refresh(); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !!j.export_blocked);
-    return h('div', {class: 'card stack'}, h('h3', {}, '2. Файл LightBurn'),
+    return h('div', {class: 'stack'}, h('h4', {}, 'Файл LightBurn'),
       h('p', {}, h('strong', {}, `Оценка времени всей работы: ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
         h('span', {class: 'muted small'}, ' — оценка по скорости, шагу строк, проходам и перекрёстной заливке каждого рецепта; переходы между областями не учтены.')),
-      table(['Слой', 'Рецепт', 'Областей', 'Площадь', 'Время'], rows),
-      h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length} из ${j.layer_cap}: C00 — чистка` + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками.'),
       j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе вместе с раскраской: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
       h('div', {class: 'row'}, exportBtn),
-      j.exports.length ? table(['Файл', 'Вариант раскраски', 'Слоёв', 'Областей', 'Время', 'Когда', ''], j.exports.map((e) => [`№ ${e.number} · ${e.name}`,
-        e.variant ? `№ ${e.variant}` : '—', `${e.layers}`, `${e.regions}`, duration(e.seconds), e.at.replace('T', ' ').slice(0, 16),
-        saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name)])) : null);
+      h('details', {class: 'vw-details'}, h('summary', {}, `Слои и время по слоям (${t.layers.length})`), h('div', {class: 'vw-lines'}, layers),
+        h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length} из ${j.layer_cap}: C00 — чистка` + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками.')),
+      j.exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Сохранённые файлы'), h('div', {class: 'vw-lines'}, j.exports.map((e) => h('div', {class: 'vw-line'},
+        h('span', {}, `№ ${e.number} · ${e.name}`, h('div', {class: 'muted small'}, [e.variant ? `вариант раскраски № ${e.variant}` : null, `слоёв ${e.layers}`, `областей ${e.regions}`,
+          duration(e.seconds), when(e.at)].filter(Boolean).join(' · '))),
+        saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name))))) : null);
   }
+  const when = (iso) => iso.replace('T', ' ').slice(0, 16);
 
-  /** Работа из фотографии: цвета и разбиение, файл (REQ-042, REQ-044). Действие с раскраской возвращает работу целиком, и
-      экран обновляется на месте, без перерисовки: редактор сохраняет масштаб, инструмент и выделение. Действия уходят на
-      сервер по одному, в том порядке, в каком их сделал оператор. */
+  /** Работа из фотографии на один экран (REQ-042, REQ-044, REQ-054): слева вкладки «Разбиение», «Цвета», «AI» и «Файл», посередине
+      картинка редактора, справа его панель. Действие с раскраской возвращает работу целиком, и экран обновляется на месте, без
+      перерисовки: редактор сохраняет масштаб, инструмент и выделение. Действия уходят на сервер по одному, в том порядке, в
+      каком их сделал оператор. */
   function photoView(j) {
     const reload = () => App.render({preserveScroll: true});
     const exp = j.experiment || {};
-    const head = h('div', {class: 'row'}), about = h('div', {class: 'card stack'}), split = h('div', {}), file = h('div', {});
-    let shown = null, queue = Promise.resolve(), colours = null;
+    const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {});
+    let shown = null, queue = Promise.resolve(), parts = null, frame = null;
+    const head = VectorWorkspace.header(j, {file: () => frame.select('file')});
     function show(next) {
       const resplit = !shown || next.document.version !== shown.document.version;
       shown = next;
-      const size = next.document.size_mm;
-      fill(head, h('div', {}, h('h2', {}, 'Векторная работа · ' + next.name),
-        h('p', {class: 'sub'}, `Фото: цветные области · ${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version}`)),
-        h('span', {class: 'spacer'}), link('/plans/' + next.id, 'План гравировки'));
-      fill(about, facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
+      head.update(next);
+      fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
         ['Слоёв цвета', `${next.layers.length} из ${next.layer_cap} доступных`]]),
         h('div', {class: 'row'}, btn(next.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
           try { await put(`/plans/${next.id}/markers`, {enabled: !next.markers_enabled}); await refresh(); } catch (e) { fail(e); }
-        })));
+        }))));
       if (resplit) fill(split, VectorSplit.card(next, reload, smooth));     // счётчики разбиения меняются только с его версией
       fill(file, photoExport(next, refresh));
-      if (colours) colours.update(next);
+      if (parts) parts.update(next);
     }
     async function send(op) {
       try { show(await post(`/vector/${j.id}/colouring`, op)); return true; } catch (e) { fail(e); return false; }
@@ -319,8 +321,11 @@
       try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
     }
     show(j);
-    colours = VectorColours.card(j, run, split, permit);
-    return h('div', {class: 'stack'}, head, about, colours.el, file);
+    parts = VectorColours.parts(j, run, permit);
+    frame = VectorWorkspace.frame({head: head.el, editor: parts.editor, initial: 'colours', items: [
+      ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
+      ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
+    return frame.el;
   }
 
   App.register({id: 'vector', async render(ctx) {
@@ -328,6 +333,7 @@
       const j = await get('/vector/' + ctx.query.plan);
       return j.strategy === 'photo' ? photoView(j) : jobView(j);
     }
+    if (!ctx.query.new) return VectorWorkspace.list();
     const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
     if (!materials.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте заготовку титана'), link('/setup', 'Настройки'));

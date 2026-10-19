@@ -22,7 +22,7 @@ CSS = (UI_DIR / "styles.css").read_text(encoding="utf-8")
 def test_the_editor_is_loaded_after_the_helpers_and_before_the_colour_step_that_embeds_it():
     order = {s: i for i, s in enumerate(SCRIPTS)}
     assert order["/app.js"] < order["/dialogs.js"] < order["/screens/vector-editor.js"] < order["/screens/vector-colours.js"] < order["/screens/vector.js"]
-    assert "const {chip, params, seconds, palette, de, BASIS} = VectorEditor;" in COLOURS and "VectorEditor.create(j, run)" in COLOURS
+    assert "const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;" in COLOURS and "VectorEditor.create(j, run)" in COLOURS
 
 
 def test_no_colour_is_accepted_anywhere_any_more():
@@ -68,7 +68,7 @@ def test_every_label_of_the_editor_is_russian_and_present():
         assert label in EDITOR, label
     assert "`Область ${rid} · исходный цвет № ${k + 1} · титан: `" in EDITOR and "`рецепт: ${params(e.parameters)}" in EDITOR
     assert "`Слоёв ${t.recipes ?? (j.layers || []).length} из ${j.layer_cap} · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`" in EDITOR
-    assert "h('summary', {}, 'Подробно по цветам')" in COLOURS
+    assert "btn('Подробно по цветам…', () => modal('Подробно по цветам', rows," in COLOURS      # the wide table opens in a window
 
 
 def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it_on_a_narrow_screen():
@@ -82,7 +82,7 @@ def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it
 
 def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one_after_another():
     assert "const run = (op) => (queue = queue.then(() => send(op)));" in VECTOR
-    assert "show(await post(`/vector/${j.id}/colouring`, op))" in VECTOR and "if (colours) colours.update(next);" in VECTOR
+    assert "show(await post(`/vector/${j.id}/colouring`, op))" in VECTOR and "if (parts) parts.update(next);" in VECTOR
     assert "if (resplit) fill(split, VectorSplit.card(next, reload, smooth));" in VECTOR
     assert "j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked))" in VECTOR      # the reason stays beside the export
 
@@ -98,7 +98,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector.js']);
+  'screens/vector-colours.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -222,11 +222,12 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
     assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ с/см²|не оценено)", title) for _, _, title in out["palette"])
     text = out["text"]
-    for part in ("1. Цвета и разбиение", "2. Файл LightBurn", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
+    for part in ("Разбиение", "Цвета", "AI", "Файл", "Файл LightBurn", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
                  "Исходные цвета", "вне допуска", "Показать далёкие от оригинала", "C01", "2.00 см² · областей 2 · 1 с", "№ 2", "ΔE 17.70",
-                 "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "сделан на разбиении № 0", "Авто"):
+                 "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "на разбиении № 0", "Авто"):
         assert part in text, part
-    assert len(out["details"]) == 2 and out["details"][0].startswith("Важные области: лица, глаза, губы") and out["details"][1] == "Подробно по цветам"
+    assert out["details"][0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text           # the wide table is a window
+    assert [d for d in out["details"][1:]] == ["Слои и время по слоям (4)", "Параметры работы"]                       # the file tab folds its long parts
     assert out["renders"] == 0
 
 
