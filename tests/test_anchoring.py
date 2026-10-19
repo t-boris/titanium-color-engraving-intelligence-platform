@@ -246,6 +246,13 @@ def test_too_few_anchors_refuse_the_registration_although_the_drawing_and_its_or
     assert diagnostics["orientation"]["margin"] < anchoring.ORIENTATION_MARGIN       # the orientation was clear: not that gate
 
 
+def test_when_no_pass_keeps_four_anchors_the_refusal_says_fewer_than_four_instead_of_zero(monkeypatch):
+    # a pass needs four anchors to fit; below that no count is kept, and "only 0 elements" would understate it
+    monkeypatch.setattr(anchoring, "_refine", lambda h, elements, dist, cap: (h, []))
+    result, diagnostics = refusal(few_anchor_work())
+    assert result is None and diagnostics["refused"] == "fewer than four elements matched the photograph", diagnostics.get("refused")
+
+
 def test_anchors_concentrated_in_one_part_of_the_work_refuse_the_registration():
     result, diagnostics = refusal(clustered_work())
     assert result is None and diagnostics["refused"] == "the matched elements are concentrated in one part of the work"

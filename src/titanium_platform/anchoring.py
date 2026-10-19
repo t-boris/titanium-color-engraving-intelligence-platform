@@ -628,6 +628,8 @@ def _finish(img_bgr, elements, movable, plate, px_per_mm_full, starts, orientati
         if len(starts) > 1 and margin is not None and margin >= ORIENTATION_MARGIN:
             # every orientation looked alike and none could be anchored: the drawing itself does not tell
             return refuse("the orientation of the work is ambiguous: the best and the second best differ too little")
+        if not n_anchors:      # no pass reached the four anchors a fit needs, so no count is kept
+            return refuse("fewer than four elements matched the photograph")
         return refuse(f"only {n_anchors} elements matched the photograph")
     hn, good, src, dst, owner = _fit(h, elements, anchors, scale, 0.2)
     if hn is None or good is None or good.mean() < MIN_INLIER_FRACTION:
