@@ -246,5 +246,7 @@ I-1..I-10: branch `feature/titanium-color-engraving-platform-implementation`, ve
 | I-17 | Merged in #20, released 0.4.0 (#19) | `devices.py`, `lenses.py`, `characterization.py`, `anchoring.py`, `picturing.py`, `experiments.py`, `colormap.py`, `oxide.py`, `matrix.py` | CI green on Linux and macOS; oxide kinetics has no usable law on the matrices yet (ORDER_BY_RAMPS off). |
 | I-18 | Merged in #23 and #24, released 0.5.0 / 0.5.1 (#22) | `segment.py`, `faces.py` (YuNet, MIT), `palette.py`, `engraving_time.py`, `vector_job.py`, `api/routes_vector.py`, `api/routes_palette.py`, `ui/screens/vector.js` | Inna picture: face, eyes and lips found; 12 colours medium detail = 489 regions; export 0.000 % gaps/overlaps; job time shown. Opening the exported file in LightBurn is a check by hand. Choices: DEC-073..DEC-078. |
 
+Closed by the operator on 2026-10-19 (DEC-079): every item is merged and its issue closed; DEC-078 accepted as built. Not seen working and left so: exported files opened in LightBurn, access from a tablet (REQ-043, criteria 2 and 3). The colour editor of a vector work asked for the same day is a separate feature.
+
 Browser UI: Russian (DEC-034), visual system of prototype v10 (DEC-019). Walked through in a browser with synthetic files: profile, rig, marker layer, plate preview and creation, pair upload, check, mask overlay, accept, analysis, color map, knowledge, discrete conversion with an unreachable color excluded, plan export. Four defects found that way were fixed with regression tests.
 
