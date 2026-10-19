@@ -61,15 +61,16 @@ def test_the_vector_screen_disables_export_while_regions_lack_evidence_and_offer
     assert "App.laserLensPicker(" in screen and "/vector/palette?" in screen and "/exports/${e.number}" in screen
 
 
-VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-colours.js")
+VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-editor.js", "screens/vector-colours.js")
 
 
 def test_the_vector_work_steps_are_loaded_before_the_screen_that_assembles_them():
     order = {s: i for i, s in enumerate(SCRIPTS)}
-    for part in ("/screens/vector-split.js", "/screens/vector-colours.js"):
+    for part in ("/screens/vector-split.js", "/screens/vector-editor.js", "/screens/vector-colours.js"):
         assert order["/app.js"] < order["/dialogs.js"] < order[part] < order["/screens/vector.js"], part
+    assert order["/screens/vector-editor.js"] < order["/screens/vector-colours.js"]      # the colour step embeds the editor
     screen = source("screens/vector.js")
-    assert "VectorSplit.card(j, reload)" in screen and "VectorColours.card(j, run)" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
+    assert "VectorSplit.card(next, reload)" in screen and "VectorColours.card(j, run)" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
 
 
 def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_their_errors_translated():
@@ -84,11 +85,12 @@ def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_the
 
 def test_the_colouring_step_offers_every_operation_the_server_knows():
     from titanium_platform import vector_job
-    colours = source("screens/vector-colours.js")
+    colours = source("screens/vector-colours.js") + source("screens/vector-editor.js")
     for op in vector_job.COLOURING_OPS:
         assert f"'{op}'" in colours, op
-    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Меньше слоёв", "Принять все предложенные", "Включить цвета без привязки"):
+    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Меньше слоёв", "Включить цвета без привязки"):
         assert label in colours, label
+    assert "Принять" not in colours                                                    # DEC-001: nothing waits for acceptance
     split = source("screens/vector-split.js")
     assert "post(`/vector/${j.id}/split`" in split and "'Разбить заново'" in split and "лицо не найдено" in split
 
