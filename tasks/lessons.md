@@ -111,3 +111,16 @@ Rules written after the operator's remarks, to prevent a repeat.
   (port 8791, a database copy without the photo files) in the operator's MarkView window; the operator took it for the real app.
 - Rule: workers never use the MarkView browser tools; UI is checked by static tests and API calls. The lead checks a new version
   on a full copy (database and files) before the deploy, and says in every message which port is the operator's (8765).
+
+## A confirmation that adds no information is a defect
+- Remark (2026-10-19): "Мне нужно каждый принять, принять. Очень неудобно … все должно быть принято в самом начале." Every colour
+  outside a ΔE tolerance of 0.05 waited for its own "accept" click (28 on one work); the nearest colour and its ΔE were already shown.
+- Rule: before adding an approval step, name what the operator learns at that step that the screen does not already show. If
+  nothing, apply the choice and show the warning (a ΔE badge, an outline) instead. A tolerance chooses between candidates; it does
+  not stop the work.
+
+## A local screen that takes seconds is a bug: measure every screen on the real data
+- Remark (2026-10-19): "Почему тэбы грузятся долго? Это ведь локальный вызов." Knowledge took 6.8 s (summaries recomputed per
+  entry, O(N²)); every photograph was decoded from RAW on every request (0.6-3.3 s, 2 MB PNG per thumbnail).
+- Rule: after a release, time every screen's requests on the live data (curl, GET only) and treat anything over 0.5 s as a
+  defect. Derived pictures are cached by a key of all their inputs; a list computes shared data once, never per item.

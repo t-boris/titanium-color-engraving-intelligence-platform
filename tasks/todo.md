@@ -608,3 +608,17 @@ photograph) of 13 points, 6.04..14.37 % power, all from pair 22; 5.49 % of the 1
 tonal profile bins the photograph gives back every measured bin within dE 0.01..0.17 (worst at grey 0.906, the lightest bin, whose
 lighter half is outside the span). At Min 4 / Max 18 the share outside rises to 32.4 %.
 
+
+## Vector work colour editor and slow screens (operator, 2026-10-19)
+
+Plan approved 2026-10-19 (`~/.claude/plans/scalable-bubbling-dove.md`). Feature `vector-work-colour-editor` (REQ-043..REQ-049,
+DEC-001, DEC-075..DEC-077, issue #28); bug BUG-001 (issue #27). The platform feature was closed before (DEC-079, #26).
+
+- [ ] BUG-001: knowledge list once per list (6.8 s on 343 entries); on-disk render cache for photographs and overlays (0.6-3.3 s
+  per picture, RAW decoded on every request); 480 px list thumbnails; ETag/304; `warm-cache` command. Release 0.5.2.
+- [ ] REQ-043 / DEC-001: every source colour coloured from the start, outside-tolerance flagged, never blocking.
+- [ ] REQ-044: editor with a large picture, zoom/pan, brush / pipette / select, palette, layers, source colours, totals.
+- [ ] REQ-045: paint scopes area / source colour / fill of similar neighbours, hover preview equal to the result.
+- [ ] REQ-046..REQ-048: merge titanium colours, source colours, neighbouring areas into one contour (gapless).
+- [ ] REQ-049: undo / redo over colouring and document versions.
+- [ ] Full-copy check (work 22: 28 colours coloured, export allowed), release 0.6.0, backup, deploy, walkthrough on work 21.
