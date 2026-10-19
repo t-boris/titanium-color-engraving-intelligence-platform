@@ -927,3 +927,16 @@ AI colouring works in production and the older state of 21:35 in the snapshot is
    experiment, and deleting that experiment deletes its checks and archives the plan (the work leaves the work list; rows and files stay).
    Until 0.10.0 is deployed the real app (0.9.0) still lists work 22 as an experiment: do not use "Удалить эксперимент" on it.
 
+### Release 0.10.0 (done 2026-10-19, commit 771ef04, tag v0.10.0)
+- Full suite once at the end: 1312 passed, 0 skipped (11 min 50 s). Targeted runs before it: UI files 80, experiments 21.
+- Backup before the deploy: `~/.titanium-platform/backups/titanium-before-0.10.0-20261019T235536Z.sqlite` (integrity ok; plans 6 and 22; audit 191).
+- Wheel built with the app environment's pip, installed with `--force-reinstall --no-deps` and then with its dependencies; all ten declared
+  dependencies import from `~/.titanium-platform-app` (`scikit-learn` under the name `sklearn`; `mcp` 1.30.0 is installed now).
+- First feature check from the app environment on a data copy (port 8798, stopped after): list, rename (version stays 10), blank name 422, the
+  experiments list without work 22 (16 entries), `/api/experiments/plan-22` 404, the rail in router.js and styles.css.
+- Real app restarted on 8765 from the repo directory: 0.10.0, work 22 (Imma + Boris, v10, 12 layers) intact, audit still 191, integrity ok.
+  Viewed read-only at 1421 x 951: vector list, experiments, colour map, an experiment page, work 22: scrollHeight = innerHeight = 951,
+  rail 56 px, no horizontal overflow; the plan page of work 22 has no "Удалить тест" and no "К эксперименту".
+- Open: the test copy on 8796 (`scratchpad/live-copy-4`) holds the operator's own edits (renamed "Inna + Boris", split 23, SEEDS) and is NOT the real
+  app; moving them to the real app needs the operator's word. A vector work WITH photographs is still an experiment (see DEC-082).
+
