@@ -765,4 +765,18 @@ Asked for twice by the operator ("не вижу ... на третье место
   noise and shading settings, SEEDS keeps 87-93 % against SLIC's 83-88 % with a third of the regions: that is what the test and the hint say.
 - [x] Real flow, on a copy (port 8796, stopped afterwards): SEEDS chosen in the browser on work 22: split version 5 → 6, 985 → 879 areas, 28
       colours, export unblocked, undo and redo reset, the select and the summary line show SEEDS.
-- [ ] Full suite, release 0.7.0 (SemVer: a new capability), push to `main`, tag, deploy to 8765 (backup first), view-only look at the real app.
+- [x] Full suite on the finished code: 1125 passed, none skipped (10 min 43 s; 1114 before plus 11 new). Release 0.7.0 (SemVer: a new capability):
+      wheel built and served by an installed copy (menu order and the merged section in its files), pushed to `main` (9d50df7..7ed6215),
+      tag v0.7.0 (v0.6.1 on dd0aceb was tagged earlier).
+- [x] Deployed to the operator's app on 8765, as 0.6.1 had been: `titanium-before-0.6.1-20261019T192055Z.sqlite` and
+      `titanium-before-0.7.0-20261019T195208Z.sqlite` (integrity ok, 662 observations each), app stopped, wheel installed into
+      `~/.titanium-platform-app`, started again detached; GET checks on work 22: `/`, the new scripts, the view (1.6 s on the first request after a
+      restart, 0.10 s after), `/neighbours`, `/palette` all 200. Between the two deploys the operator worked in the real app (a medium split
+      at 19:27 and a coarse one at 19:30 UTC with faces off, paints, random recolourings): work 22 is now version 4, 335 areas, 12 undo steps,
+      and the second backup holds exactly that state.
+- [x] View-only look at the real app on 0.7.0 (reloaded tab, nothing sent, server state compared before and after): Vector Work third in the
+      menu; "1. Цвета и разбиение" with the algorithm select (SLIC selected, SEEDS), its description, the summary line "Алгоритм SLIC · цветов: 28
+      · областей: 335", the folded important areas, then colours, variants and "2. Файл LightBurn".
+- Left open on purpose: REQ-050 (AI colouring in a chosen style) is a draft with three questions (Q-005 what the AI receives, Q-006 lightness
+  order, Q-007 styles); the rest of vector-detail-and-colour-control (density, eyes, smoothing, Contrast and Artistic, automatic merging of
+  same-recipe regions) is not built. CI stays switched off (CLAUDE.md); the run of dd0aceb finished on GitHub on its own.
