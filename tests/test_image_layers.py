@@ -190,3 +190,50 @@ def test_a_local_filter_is_not_called_order_preserving():
 
 def test_default_processing_lists_no_adjustments():
     assert lb.parse_bytes(project(ramp_png())).layer(0).image_summary()["adjusted"] == {}
+
+
+# -- REQ-038 AC11: an aligned picture of which too little is visible gives no profile, never an invented one ---------------
+@pytest.mark.parametrize("visible", ["a small patch", "one grey level"])
+def test_too_few_visible_pixels_of_an_aligned_picture_give_no_tonal_profile(visible):
+    png = ramp_png()                                   # the grey level runs along x; the picture covers px x 100..500, y 50..350
+    layer = lb.parse_bytes(project(png)).layer(0)
+    rgb = photographed(png, lambda g: 15 + 70 * g)
+    assert ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], None) is not None      # all of it visible: a profile
+    allowed = np.zeros(rgb.shape[:2], bool)            # what the frame and the later layers leave visible
+    if visible == "a small patch":
+        allowed[190:208, 290:308] = True               # 18 x 18 px of the 400 x 300 px picture
+    else:
+        allowed[60:340, 300:305] = True                # a strip 0.5 mm wide across the ramp: 1400 px, but of one grey level
+    assert ig._tonal_profile(rgb, IMAGE_TO_MM, layer, rgb.shape[:2], allowed) is None
+
+
+def test_a_checked_picture_engraved_over_by_a_later_layer_but_for_a_slot_reports_its_colour_and_no_tones(tmp_path):
+    """The check passes on the part of the picture that no later layer engraves over: a slot 2.5 x 10 mm in the middle
+    still has a median colour, but too few grey levels for a profile."""
+    png = ramp_png()
+    rgb = photographed(png, lambda g: 15 + 70 * g, size=(700, 700))
+    scene = np.full((900, 1400, 3), (150, 155, 150), np.uint8)
+    scene[200:900, 300:1000] = cv2.cvtColor((rgb * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    chart = synth.chart_image()
+    scene[20:20 + chart.shape[0], 20:20 + chart.shape[1]] = chart
+    corners = [(400, 250), (800, 250), (800, 550), (400, 550)]
+    slot = [(10, 5), (50, 5), (50, 35), (10, 35), (28.75, 15), (31.25, 15), (31.25, 25), (28.75, 25)]   # the picture, a hole in it
+    cover = (b'<CutSetting type="Scan"><index Value="1"/><name Value="C01"/><maxPower Value="30"/><speed Value="900"/>'
+             b'<frequency Value="60000"/><QPulseWidth Value="4"/><interval Value="0.01"/></CutSetting>'
+             b'<Shape Type="Path" CutIndex="1"><XForm>1 0 0 1 0 0</XForm><VertList>' +
+             "".join(f"V{x} {y}c0x1c1x1" for x, y in slot).encode() +
+             b'</VertList><PrimList>L0 1L1 2L2 3L3 0L4 5L5 6L6 7L7 4</PrimList></Shape>')
+    data = project(png).replace(b"</LightBurnProject>", cover + b"</LightBurnProject>")
+    store = Store(tmp_path)
+    store.set_setting("allow_non_raw_photos", True)
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="photo.lbrn2", lightburn_bytes=data, photo_name="p.png",
+                         photo_bytes=cv2.imencode(".png", scene)[1].tobytes(), context={"material_id": material["id"]})
+    report = ig.check_pair(store, pid, corners_fraction=[(x / 1400, y / 900) for x, y in corners])
+    picture = {rep["index"]: rep for rep in report["layers"]}[0]
+    assert picture["image"]["dither"] == "stucki" and picture.get("covered_by_later_layers_percent", 0) > 90, picture
+    assert picture["measured_lab"][0] == pytest.approx(50, abs=5)        # the middle grey of the slot, measured as a colour
+    assert "tonal" not in picture
+    store.close()
