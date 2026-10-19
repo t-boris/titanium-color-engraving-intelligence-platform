@@ -67,6 +67,10 @@
     const vector = p.mode === 'Vector job';
     // a plan restored from an imported file records the job that was engraved: never exported, nothing to add to it (REQ-005)
     const restored = p.mode === 'Restored from file';
+    // ... it is the record of a finished work, so its experiment is that of the work's engraving (REQ-041)
+    const work = restored ? await get('/pairs/' + p.restored.pair_id).catch(() => null) : null;
+    const toExperiment = !restored ? link('/experiment/plan-' + p.id, 'К эксперименту')
+      : work && work.status !== 'Deleted' ? link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту') : null;
     const [editRoute, editLabel] = p.mode === 'Discrete color engraving' ? ['/artwork?plan=' + p.id, 'Редактировать преобразование']
       : p.mode.includes('photo engraving') ? ['/photo?plan=' + p.id, 'Исправить: новый план из этого'] : vector ? ['/vector?plan=' + p.id, 'Открыть векторную работу'] : [null, null];
     const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
@@ -90,7 +94,7 @@
     const clean = p.clean_layer;
     const cleanLabel = clean ? `${num(clean.power, 1)} % · ${num(clean.frequency, 0)} кГц · ${num(clean.speed, 0)} мм/с · Q-Pulse ${num(clean.pulse_width, 0)} нс · шаг ${num(clean.interval ?? clean.line_interval, 3)} мм · ${clean.passes ?? 1} проход · ${clean.cross_hatch ? 'перекрестная заливка' : clean.bidirectional ? 'двунаправленная заливка' : 'однонаправленная заливка'}` : 'C00 — первый слой LightBurn';
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, I18N.name(p.name)), h('p', {class: 'sub'}, `${MODE[p.mode] || p.mode} · ${STATUS[p.status] || p.status}`)), h('span', {class: 'spacer'}), restored ? link('/ingest?pair=' + p.restored.pair_id, 'К фотографии работы') : link('/experiment/plan-' + p.id, 'К эксперименту'),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, I18N.name(p.name)), h('p', {class: 'sub'}, `${MODE[p.mode] || p.mode} · ${STATUS[p.status] || p.status}`)), h('span', {class: 'spacer'}), toExperiment, restored ? link('/ingest?pair=' + p.restored.pair_id, 'К фотографии работы') : null,
         editRoute ? link(editRoute, editLabel) : null,
         btn('Удалить тест', () => confirmBox('Удалить тест', p.active_pairs
           ? `Удалить плату вместе с проверками (${p.active_pairs})? Загруженные копии RAW и LightBurn будут удалены. История измерений останется, но перестанет влиять на рекомендации.`
