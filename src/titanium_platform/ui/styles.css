@@ -518,6 +518,8 @@ select::-ms-expand {display:none}
 .vw-stage {position:relative;line-height:0}
 .vw-stage>img, .vw-image {display:block;width:100%;height:auto;border-radius:6px}
 .vw-areas {position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+/* the areas are drawn over the picture: the plot background of svg[role=img] (higher specificity) must not cover it */
+.vw-stage>svg.vw-areas {background:none;border:0;border-radius:6px;box-shadow:none}
 .vw-area {fill:none;stroke-width:3;vector-effect:non-scaling-stroke}
 .vw-area.face {stroke:#7bbfe6}
 .vw-area.eye, .vw-area.lips {stroke:#f2ce8b}
