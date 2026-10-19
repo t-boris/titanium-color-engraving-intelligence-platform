@@ -1,6 +1,7 @@
-"""BUG-001: the pictures drawn from a photograph are cached on disk by a key of all their inputs, revalidated by ETag, and can
-be asked for small."""
+"""BUG-001: the pictures drawn from a photograph are cached on disk by a key of all their inputs, revalidated by ETag, can be
+asked for small, and can be drawn ahead of time by ``titanium-platform warm-cache``."""
 import os
+import sqlite3
 
 import cv2
 import numpy as np
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import synth
 from test_ingest import make_pair, make_world, png
+from titanium_platform import cli, experiments
 from titanium_platform import ingest as ig
 from titanium_platform import photo as ph
 from titanium_platform import render_cache as rc
@@ -163,3 +165,31 @@ def test_a_picture_carries_its_key_as_etag_and_an_unchanged_one_is_not_sent_agai
     assert refused.status_code == 422 and refused.json()["error"] == "the picture size must be from 64 to 5000 pixels"
     assert client.get(f"/api/pairs/{pid}/overlay.png?size=9000").status_code == 422
     assert client.get("/api/pairs/999/photo.png", headers={"If-None-Match": "*"}).status_code == 404   # no 304 for nothing
+
+
+def test_warm_cache_draws_what_the_experiment_screens_ask_for_and_only_reads_the_database(world, client, decodes, monkeypatch, capsys):
+    s = world["store"]
+    aligned, plain = checked_pair(world), make_pair(world)           # one check with outlines, one without an alignment
+    broken = make_pair(world)
+    os.unlink(ig.get_pair(s, broken)["photo_path"])                 # a photograph that cannot be read is reported, not fatal
+    dump = list(sqlite3.connect(s.path).iterdump())
+    assert cli.main(["warm-cache", "--data-dir", str(s.data_dir)]) == 1
+    out, err = capsys.readouterr()
+    assert out.startswith("4 pictures drawn, 0 already cached, 1 checks failed") and f"check {broken}:" in err
+    assert list(sqlite3.connect(s.path).iterdump()) == dump
+    assert all(p.cached() for pid in (aligned, plain) for p in experiments.screen_pictures(s, pid))
+    assert cli.main(["warm-cache", "--data-dir", str(s.data_dir)]) == 1
+    assert capsys.readouterr().out.startswith("0 pictures drawn, 4 already cached")
+
+    def no_decoding(*_, **__):
+        raise AssertionError("a warmed picture was drawn again")
+    monkeypatch.setattr(ph, "decode_image", no_decoding)
+    shown = {p["id"]: p for e in client.get("/api/experiments").json() for p in client.get("/api/experiments/" + e["key"]).json()["pairs"]}
+    pages = {}
+    for pid in (aligned, plain):                                    # the URLs exactly as experiment-cards.js and experiment.js build them
+        pair = shown[pid]
+        view = f"corrected={'true' if pair['measurement'] == 'reference_chart_corrected' else 'false'}&visibility=lifted&full=false&t=x"
+        pages[pid] = f"/api/pairs/{pid}/overlay.png?{view}" if pair["alignment"] else f"/api/pairs/{pid}/photo.png?{view}"
+        for url in (f"/api/pairs/{pid}/photo.png?visibility=lifted&size=480", pages[pid]):
+            assert client.get(url).status_code == 200, url
+    assert "/overlay.png?corrected=true" in pages[aligned] and "/photo.png?corrected=false" in pages[plain]
