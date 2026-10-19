@@ -88,7 +88,12 @@ issues:
     summary: The work carried from the unmerged branch feat/laser-device-profiles and the session of 2026-10-18 - laser devices with passports and characterization, replaceable lenses, exact LightBurn geometry, element-anchor registration started from the whole drawing, image layers and photo engravings, experiments as single objects, one colour map, the 16-bit linear colour decode, the oxide film model and the parameter matrix read from a photograph - verified and merged.
     requirements: [REQ-017, REQ-018, REQ-019, REQ-023, REQ-024, REQ-025, REQ-026, REQ-027, REQ-028, REQ-029, REQ-031]
     decisions: [DEC-035, DEC-036, DEC-037, DEC-038, DEC-039, DEC-040, DEC-041, DEC-048, DEC-049, DEC-050, DEC-051, DEC-052, DEC-053, DEC-054, DEC-055, DEC-056, DEC-057, DEC-058, DEC-059, DEC-060, DEC-061]
-updated: 2026-10-18
+  - id: I-18
+    title: Vector work with gapless colour regions, titanium recolouring and engraving time
+    summary: Split a photograph into up to 29 gapless colour regions with eyes and lips first, colour them with every measured titanium colour of the laser, lens and titanium, recolour by hand or automatically (closest, tonality, random, fewer layers), prefer faster recipes, then generate the LightBurn file.
+    requirements: [REQ-033, REQ-034, REQ-035]
+    decisions: [DEC-073, DEC-074, DEC-075, DEC-076]
+updated: 2026-10-19
 ---
 
 # Implementation plan — Titanium Color Engraving Intelligence Platform
@@ -209,6 +214,13 @@ Verify and merge the work carried from the unmerged branch feat/laser-device-pro
 
 Requirements: REQ-017, REQ-018, REQ-019, REQ-023, REQ-024, REQ-025, REQ-026, REQ-027, REQ-028, REQ-029, REQ-031
 
+## I-18: Vector work with gapless colour regions, titanium recolouring and engraving time
+
+Split a photograph into up to 29 gapless colour regions (eyes and lips first), colour them with measured titanium colours, recolour by hand or automatically, prefer faster recipes, then generate the LightBurn file.
+
+Requirements: REQ-033, REQ-034, REQ-035
+Decisions: DEC-073, DEC-074, DEC-075, DEC-076
+
 ## Implementation status
 
 I-1..I-10: branch `feature/titanium-color-engraving-platform-implementation`, version 0.1.0, merged in #11; GitHub issue #n tracks plan item I-n. I-11..I-17: merged in pull request #20 (5c5208f), tag v0.4.0, deployed 2026-10-19; issue #(n+2) tracks I-n (I-11 #13 ... I-17 #19); issues close only when the work is merged. "Implemented" means code and automated tests exist; "not verified" names what no test can show.
@@ -232,6 +244,7 @@ I-1..I-10: branch `feature/titanium-color-engraving-platform-implementation`, ve
 | I-15 | Merged in #20, released 0.4.0 (#17) | S1 576e3c8..93d37a2; S2 cbe984d, 96a8ef5; S3 cd6a130; S6 d2cdd8d..7a78a28 | All audit gaps closed with tests, including operator-supplied missing settings, spot per lens, steps listed, unknown field labelled, margins per side, exactly 6 % when no frame edge, REQ-002 values on computed settings. Final integration: QR read with every identifier (0 of 1000 fail, 32cc1b2), designer models only fill recipes (28be36f), every server message translated (b758973). Manual: LightBurn opening of exported files, tablet access. Choices recorded as proposed DEC-067, DEC-069, DEC-072. |
 | I-16 | Merged in #20, released 0.4.0 (#18) | `prediction.py`, `prediction_store.py`, `api/routes_prediction.py`, `ui/screens/photo-preview.js` (c177161, 7f8a597) | Real check on the accepted Inna pair: 13 bins reproduced within 0.17 dE, 5.49 % of the picture outside the measured span, camera-relative. Choices recorded as proposed DEC-068. |
 | I-17 | Merged in #20, released 0.4.0 (#19) | `devices.py`, `lenses.py`, `characterization.py`, `anchoring.py`, `picturing.py`, `experiments.py`, `colormap.py`, `oxide.py`, `matrix.py` | CI green on Linux and macOS; oxide kinetics has no usable law on the matrices yet (ORDER_BY_RAMPS off). |
+| I-18 | In progress (#22) | REQ-033, REQ-034, REQ-035 | Segmentation core and time/colouring in parallel, then the flow on the vector work screen. |
 
 Browser UI: Russian (DEC-034), visual system of prototype v10 (DEC-019). Walked through in a browser with synthetic files: profile, rig, marker layer, plate preview and creation, pair upload, check, mask overlay, accept, analysis, color map, knowledge, discrete conversion with an unreachable color excluded, plan export. Four defects found that way were fixed with regression tests.
 
