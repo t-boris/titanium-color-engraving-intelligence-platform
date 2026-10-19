@@ -471,3 +471,12 @@ def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fet
     assert out["disabled"] is False and out["reenabled"]
     assert any("Все области исключены: гравировать нечего" in t for t in out["toast"]) and not any("every region" in t for t in out["toast"])
     assert f"GET /api/vector/{j['id']}/export.lbrn2" in out["requests"]
+
+
+def test_the_area_overlay_does_not_paint_the_chart_background_over_the_picture():
+    """Regression (walkthrough of 0.5.0): ``svg[role=img]`` gives charts an opaque plot background; the area overlay is such
+    an svg and hid the picture it is drawn on. A rule as specific as the chart rule and later in the file must clear it."""
+    css = (UI / "styles.css").read_text(encoding="utf-8")
+    chart, overlay = css.index("svg[role=img] {"), css.index(".vw-stage>svg.vw-areas {")
+    rule = css[overlay:css.index("}", overlay)]
+    assert overlay > chart and "background:none" in rule and "box-shadow:none" in rule
