@@ -197,7 +197,7 @@ def test_the_file_is_blocked_only_by_a_colour_no_longer_measured_or_an_empty_pal
     blue, region = by_rgb(j, BLUE), regions_in(document_of(c, j), by_rgb(j, RED)["index"])[0]
     gone = by_rgb(j, GREEN)["entry_id"]
     j = colouring(c, j, op="set_colour", colour=blue["index"], entry_id=gone)
-    j = colouring(c, j, op="set_region", region=region, entry_id=gone)
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=gone)
     measured = vector_job._palette
     monkeypatch.setattr(vector_job, "_palette", lambda store, plan: [e for e in measured(store, plan) if e["id"] != gone])
     j = c["client"].get(f"/api/vector/{j['id']}").json()                               # the green recipe is no longer measured
@@ -265,14 +265,14 @@ def test_a_whole_colour_or_one_region_can_be_given_another_titanium_colour_by_ha
     svg = ET.fromstring(c["client"].get(f"/api/vector/{j['id']}/split.svg").text)
     region = next(p.get("data-region") for p in svg.findall(f"{SVG}path") if p.get("data-color") == str(by_rgb(j, RED)["index"]))
     yellow_as_shot = ids[(round(lab(YELLOW)[0]), 2000)]
-    j = colouring(c, j, op="set_region", region=region, entry_id=yellow_as_shot)       # a colour measured as photographed, by hand
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=yellow_as_shot)  # measured as photographed, by hand
     assert j["colouring"]["regions"] == {region: yellow_as_shot} and j["entries"][yellow_as_shot]["automatic"] is False
     j = colouring(c, j, op="exclude_region", region=region)
     assert j["colouring"]["excluded_regions"] == [region]
     j = colouring(c, j, op="include_region", region=region)
-    j = colouring(c, j, op="set_region", region=region, entry_id=None)
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=None)
     assert j["colouring"]["regions"] == {}
-    for op, message in [({"op": "set_region", "region": "r999", "entry_id": green_entry}, "there is no region"),
+    for op, message in [({"op": "paint", "scope": "region", "region": "r999", "entry_id": green_entry}, "there is no region"),
                         ({"op": "set_colour", "colour": 99, "entry_id": green_entry}, "no such source colour"),
                         ({"op": "set_colour", "colour": 0, "entry_id": "nope"}, "must be a measured colour")]:
         bad = c["client"].post(f"/api/vector/{j['id']}/colouring", json=op)

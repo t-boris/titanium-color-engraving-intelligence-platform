@@ -412,7 +412,7 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 (least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
 regions."""
 DEFAULT_DETAIL = "medium"
-COLOURING_OPS = ("assign", "restore", "settings", "set_colour", "set_region", "paint", "exclude_colour", "include_colour",
+COLOURING_OPS = ("assign", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
                  "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo")
 MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
@@ -941,8 +941,8 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
     adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
     ``{"op": "settings", "tolerance_de", "max_time", "include_as_shot"}`` changes the choice and recolours with the current
     mode. ``{"op": "paint", "region", "scope", "entry_id", "similarity_de"}`` is a click of the brush (:func:`_paint`);
-    ``{"op": "set_colour", "colour", "entry_id"}`` and ``{"op": "set_region", "region", "entry_id"}`` choose by hand (null
-    returns to the automatic choice); ``exclude_colour``, ``include_colour`` and ``exclude_region``, ``include_region`` (one
+    ``{"op": "set_colour", "colour", "entry_id"}`` chooses a colour's titanium colour by hand (null returns to the automatic
+    choice; one area is painted with ``paint``); ``exclude_colour``, ``include_colour`` and ``exclude_region``, ``include_region`` (one
     ``region`` or several ``regions``) leave them out of the file or bring them back. ``{"op": "merge_titanium", "entries",
     "into"}`` makes titanium colours one (:func:`_merge_titanium`); ``{"op": "merge_colours", "colours", "entry_id"?}`` and
     ``{"op": "merge_regions", "regions"}`` make a new version of the split (:func:`_merge`). ``undo`` and ``redo`` step
@@ -1014,12 +1014,6 @@ def _choose(colouring: dict, plan: dict, document: dict, entries: list[dict], ki
             colouring["groups"].pop(key, None)
             return _automatic(plan, document, entries, colouring["mode"] or "closest", colouring["seed"], colouring)
         colouring["groups"][key] = {"entry_id": _entry_id(by_id, op["entry_id"]), "by": "hand"}
-    elif kind == "set_region":
-        region = _region_id(document, op.get("region"))
-        if op.get("entry_id") is None:
-            colouring["regions"].pop(region, None)
-        else:
-            colouring["regions"][region] = _entry_id(by_id, op["entry_id"])
     elif kind == "paint":
         return _paint(colouring, plan, document, entries, op)
     elif kind == "merge_titanium":
