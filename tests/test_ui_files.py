@@ -64,6 +64,24 @@ def test_the_photo_preview_is_in_the_menu_right_after_photo_engraving_with_an_ic
     assert "'photo-preview': 'photo-preview'" in router and "App.register({id: 'photo-preview'" in _screen("photo-preview.js")
 
 
+def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_every_route_still_opens():
+    """vector-detail-and-colour-control, criterion 1: Vector Work is third; its addresses (#/vector, #/vector?plan=N) are unchanged."""
+    router = (UI_DIR / "router.js").read_text(encoding="utf-8")
+    nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
+    icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
+    assert nav[:3] == ["/experiments", "/colors", "/vector"] and len(icons) == len(nav) == len(set(nav))
+    assert nav[3:] == ["/artwork", "/photo", "/photo-preview", "/designer", "/findings", "/devices", "/setup", "/research"]      # the rest as it was
+    assert "vector: 'vector'" in router and "App.register({id: 'vector'" in _screen("vector.js")
+    vector_icon = '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>'
+    assert vector_icon in icons_block(router, 2)                                                           # the vector icon moved with its entry
+
+
+def icons_block(router: str, index: int) -> str:
+    """The ``index``-th icon of the ICONS list in router.js."""
+    block = router[router.index("const ICONS"):router.index("function icon")]
+    return re.findall(r"^\s+('<.*>')[,\]]?\s*$", block, re.M)[index]
+
+
 def test_the_findings_screen_is_in_the_menu_right_after_the_designer_with_an_icon_of_its_own():
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])

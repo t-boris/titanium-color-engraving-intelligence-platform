@@ -3,8 +3,8 @@
 Object.assign(App, (() => {
   const {h, btn} = App;
   const screens = new Map();
-  const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/artwork', 'Цветная гравировка'],
-    ['/photo', 'Фотогравировка'], ['/photo-preview', 'Предпросмотр фотогравировки'], ['/vector', 'Векторная работа'],
+  const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/artwork', 'Цветная гравировка'],
+    ['/photo', 'Фотогравировка'], ['/photo-preview', 'Предпросмотр фотогравировки'],
     ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', vector: 'vector', plans: 'plan', designer: 'designer', findings: 'findings', devices: 'devices', research: 'research'};
@@ -20,14 +20,14 @@ Object.assign(App, (() => {
     return {id: parts[0] || 'experiments', arg: parts[1], query: Object.fromEntries(new URLSearchParams(qs || '')), path: '/' + parts.join('/')};
   }
 
-  // Иконки разделов из утверждённого прототипа v10 (DEC-019), в порядке NAV.
+  // Иконки разделов из утверждённого прототипа v10 (DEC-019), в порядке NAV; векторная работа третья (критерий 1 фичи vector-detail-and-colour-control).
   const ICONS = [
     '<path d="M9 3v6L4 18a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8M7 15h10"/>',
     '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M6 18L18 6"/>',
+    '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19c7 0 3-14 10-14M5 5h6M13 19h6"/>',
     '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m5 17 5-5 4 3 3-6 4 6"/>',
     '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 16h2M11 13h2M15 10h2"/>',
     '<rect x="2" y="5" width="9" height="14" rx="2"/><rect x="13" y="5" width="9" height="14" rx="2"/><path d="m2 15 4-4 5 5M13 15l4-4 5 5"/>',
-    '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19c7 0 3-14 10-14M5 5h6M13 19h6"/>',
     '<path d="M4 19V5M4 19h16M7 15l4-5 4 2 5-7"/>',
     '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/>',
     '<path d="M3 12h4l2-6 3 12 2-8 2 4h5"/>',
