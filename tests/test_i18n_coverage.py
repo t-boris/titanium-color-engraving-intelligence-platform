@@ -33,7 +33,7 @@ HTTP_ERRORS = {"HTTPException"}                        # HTTPException(status, {
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why", "questions", "worth",
                   "warnings"}                                                    # <name>.append(text) / <x>["name"].append(text)
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage", "supported_stage", "removal_doubt",
-                    "_kinetics_note"}                                            # return "text" or (stage, "text")
+                    "_kinetics_note", "_blocker_photo"}                          # return "text" or (stage, "text")
 NOTE_KEYS = {"note", "statement", "rationale",                                   # row["note"] = "text" or {"note": "text"}; findings, proposals
              "measurement", "refused"}                                           # how a layer was sampled; why an anchoring was refused
 REASON_ARGS = {"_event": 5, "_record": 3,          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
