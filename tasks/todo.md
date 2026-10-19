@@ -847,3 +847,21 @@ message and the README dependency step go into the same release. SemVer: a new c
 - Not changed: works made by the fill, text and line strategies keep their long page (`jobView`); the thumbnails share the geometry memo
   (6 entries) with the editor, so a long list can evict the geometry of the work being edited (recomputed in about 0.5 s).
 
+### Release 0.9.0 (2026-10-19)
+- Full suite once: 1246 passed, none skipped (666 s). Commit `fdaa132`, tag `v0.9.0`, pushed to main.
+- Backup `titanium-before-0.9.0-20261019T224230Z.sqlite` (integrity ok, plans 6 and 22) taken before the real app was stopped.
+- Wheel 0.9.0 installed into `~/.titanium-platform-app` (`--force-reinstall --no-deps`, then `pip install <wheel>`); every declared dependency
+  imports from that environment; the real app runs 0.9.0 on 8765 (data `~/.titanium-platform`).
+- First feature check from the app environment on the data copy (port 8796, stopped after use): list, copy (201) and an AI colouring call
+  ("cubism", 41 s, 18 recipes).
+- Real app, view only, 1421 x 951: the list shows work 22 with its thumbnail; the work screen has no page scroll (951 = 951); only the editor
+  tab "Цвета" scrolls inside its panel.
+- Found while looking: work 22 as restored (from the 21:04Z backup) is the older state: document version 7, SEEDS, 308 regions, 6 layers,
+  colouring "Ближе к оригиналу", 1 variant. At deletion it was one step further (document version 8, file `vector-075cbfd7c547.json`, written
+  21:35:15Z): re-split "По тонам" (medium, 538 regions, the 4 manual edits kept), photo permission on and off, settings tolerance 0.05 with
+  "include as shot", colouring "Случайно" then "Сохранить тональность". The deleted row is still readable in the snapshot
+  `titanium-before-restore-of-work-22-20261019T221230Z.sqlite` (freed pages). Nothing was written to the real data for this; the operator decides:
+  redo the split and the colouring by hand (two clicks), or have the missing step applied (needs approval).
+- Not done: `mcp` library is still missing in the app environment (only `titanium-research-mcp` needs it); the old `tolerance_mm` split field is
+  still an API parameter; commit `cf83634` mixes spec changes with the layout (history not rewritten).
+

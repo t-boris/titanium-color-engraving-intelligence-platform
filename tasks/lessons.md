@@ -195,3 +195,16 @@ Rules written after the operator's remarks, to prevent a repeat.
   (`~/.titanium-platform-app/bin/python -c "import openai, ..."`), and make the first feature check of a release from that environment, on a
   copy of the data, not from `.venv`. The deploy recipe in README gets a second step that installs the missing dependencies.
 - Open: a failure to build the AI client should reach the operator as a message, not as "Ошибка сервера (500)" (needs approval, see todo).
+
+## A restore from a backup brings back the state of the backup, not the state before the deletion: compare and say so
+- Mistake (2026-10-19): work 22 was deleted at 21:37:34Z; I restored it from the 21:04Z deploy backup and reported "restored". The work had
+  been changed after that backup (21:35:15 a new split "По тонам", then the photo permission, settings and the colouring "Сохранить тональность"
+  until 21:36:39), so the restored work was the older one (document version 7, SEEDS, 6 layers) and I did not know it. I only found it after the
+  next release when the list screen showed the real numbers, and my report also quoted figures (16 layers) that came from the test copy,
+  not from the real data.
+- Rule: before calling a restore done, compare the restored row's last change with the time of the deletion (audit), look for newer files of
+  the same work in the store (`files/` modification times in UTC; here `vector-075cbfd7c547.json` was newer than the restored document), and
+  look in the snapshot taken just before the restore: freed pages keep the deleted row's text (history with times, document path). Tell the
+  operator which state came back and what, if anything, is newer and missing.
+- Rule: figures in a report about the operator's data come from the operator's data (the real app's API), never from a test copy.
+
