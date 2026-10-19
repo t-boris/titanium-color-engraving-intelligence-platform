@@ -112,7 +112,8 @@ function parseXml(text) {
   return {documentElement: root.children[0]};
 }
 
-/** A context with the DOM, fetch answered by ``routes`` (path -> {status, json} | {status, text, type}) and every request recorded. */
+/** A context with the DOM, fetch answered by ``routes`` (path -> {status, json} | {status, text, type}) and every request recorded
+    (its path, its whole url with the query, method and body). */
 function context(routes) {
   const body = new El('body');
   const requests = [];
@@ -121,7 +122,7 @@ function context(routes) {
     querySelector: (s) => body.querySelector(s)};
   async function fetch(url, opts = {}) {
     const path = String(url).split('?')[0];
-    requests.push({path, method: opts.method || 'GET', body: opts.body});
+    requests.push({path, url: String(url), method: opts.method || 'GET', body: opts.body});
     const r = routes[path] || {status: 404, json: {error: `${path} not found`, kind: 'not_found'}};
     const type = r.json !== undefined ? 'application/json' : (r.type || 'text/plain');
     return {ok: r.status < 300, status: r.status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? type : r.headers?.[k.toLowerCase()] ?? null)},

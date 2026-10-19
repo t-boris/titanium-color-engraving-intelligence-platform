@@ -685,7 +685,8 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-colours.js', 'screens/vector.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
+  'screens/vector-colours.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 (async () => {
@@ -719,64 +720,56 @@ def routes_of(c, j) -> dict:
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_screen_shows_the_three_steps_the_previews_side_by_side_and_a_short_unresolved_summary(work, job, tmp_path):
-    out = run_screen(tmp_path, job, routes_of(work, job), """
+def test_the_screen_shows_the_three_steps_and_one_large_picture_painted_in_titanium_colours(work, job, tmp_path):
+    """REQ-043, REQ-044: every colour is painted from the start (no acceptance step), on one large picture beside the editor's panel."""
+    routes = routes_of(work, job)
+    out = run_screen(tmp_path, job, routes, """
   out.text = tree.textContent;
   const svgs = tree.querySelectorAll('svg');
   out.classes = svgs.map((s) => s.getAttribute('class'));
-  const [split, titanium] = svgs.filter((s) => s.getAttribute('class') === 'vw-preview');
-  out.split = split.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill')]);
-  out.titanium = titanium.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
+  const picture = svgs.find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
+  out.titanium = picture.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
   out.exportDisabled = byText(tree, 'button', 'Создать файл LightBurn').disabled;
-  const toggle = byText(tree, 'button', 'показать');
-  out.listHidden = toggle.parentNode.parentNode.querySelectorAll('div').find((d) => d.className === 'stack').hidden;
-  await toggle.dispatch('click');
-  out.listShown = !toggle.parentNode.parentNode.querySelectorAll('div').find((d) => d.className === 'stack').hidden && toggle.textContent === 'скрыть';
   out.links = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
 """)
     text = out["text"]
-    for part in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn", "Оценка времени всей работы", "лицо не найдено",
-                 "Не решено: цветов 1, областей 1", "Цветов без цвета титана в пределах допуска ΔE: 1 (областей: 1)", "самый быстрый в пределах допуска"):
+    for part in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",
+                 "Подробно по цветам", "самый быстрый в пределах допуска"):
         assert part in text, part
-    assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object")), text[:3000]
-    assert out["classes"].count("vw-preview") == 2 and "vw-areas" in out["classes"]
-    j = job
-    yellow, paper = by_rgb(j, YELLOW)["index"], by_rgb(j, PAPER)["index"]
-    assert {fill for colour, fill in out["split"] if colour == str(yellow)} == {"#{:02x}{:02x}{:02x}".format(*YELLOW)}
-    assert all(fill.startswith("url(#vw-open-") and stroke == "#d32f2f" for colour, fill, stroke in out["titanium"] if colour == str(yellow))
-    paper_rgb = "rgb({},{},{})".format(*j["entries"][by_rgb(j, PAPER)["entry_id"]]["srgb"])
-    assert all(fill == paper_rgb for colour, fill, _ in out["titanium"] if colour == str(paper))
-    assert out["exportDisabled"] and out["listHidden"] and out["listShown"]
+    assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object", "Принять")), text[:3000]
+    assert sum("vw-ed-svg" in (c or "").split() for c in out["classes"]) == 1 and "vw-areas" in out["classes"]
+    view = routes[f"/api/vector/{job['id']}"]["json"]
+    for rgb in (YELLOW, PAPER):                                                          # the far yellow is painted too, not hatched
+        colour = by_rgb(view, rgb)
+        painted = "rgb({},{},{})".format(*view["entries"][str(colour["entry_id"])]["srgb"])
+        assert all(fill == stroke == painted for index, fill, stroke in out["titanium"] if index == str(colour["index"])), rgb
+    assert out["exportDisabled"] is bool(view["export_blocked"])
     assert not any((href or "").startswith("/api") for href in out["links"])        # nothing on this screen navigates to the API
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_a_region_clicked_in_the_titanium_preview_gets_a_colour_picked_from_the_palette(work, job, tmp_path):
+def test_a_region_clicked_with_the_brush_is_painted_with_the_colour_picked_from_the_palette(work, job, tmp_path):
     out = run_screen(tmp_path, job, routes_of(work, job), """
-  const titanium = tree.querySelectorAll('svg').filter((s) => s.getAttribute('class') === 'vw-preview')[1];
-  const path = titanium.querySelectorAll('path')[0];
-  out.region = path.getAttribute('data-region');
-  await path.dispatch('click');
-  const dialog = ctx.document.body.querySelectorAll('div').find((d) => d.className === 'modal');
-  out.title = dialog.querySelector('h3').textContent;
-  out.buttons = dialog.querySelectorAll('button').map((b) => b.textContent);
-  await byText(dialog, 'button', 'Цвет этой области').dispatch('click');
-  await tick();
-  const picker = ctx.document.body.querySelectorAll('div').find((d) => d.className === 'modal');
-  const swatches = picker.querySelectorAll('button').filter((b) => b.className.startsWith('vw-swatch'));
+  const picture = tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
+  const swatches = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry'));
   out.swatches = swatches.length;
   out.asShot = swatches.filter((b) => b.className.includes('as-shot')).length;
   await swatches[1].dispatch('click');
-  await byText(picker, 'button', 'Применить').dispatch('click');
+  out.entry = swatches[1].getAttribute('data-entry');
+  const path = picture.querySelectorAll('path')[0];
+  out.region = path.getAttribute('data-region');
+  await path.dispatch('click');
+  await tick(); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
   out.renders = ctx.__renders.length;
 """)
-    assert out["title"] == f"Область {out['region']}" and {"Цвет этой области", "Цвет всей группы", "Исключить область"} <= set(out["buttons"])
     palette = work["client"].get(f"/api/vector/{job['id']}/palette").json()
     assert out["swatches"] == len(palette) and out["asShot"] == 1
     (path, body), = out["posted"]
-    assert path == f"/api/vector/{job['id']}/colouring" and body["op"] == "set_region" and body["region"] == out["region"]
-    assert body["entry_id"] in {e["id"] for e in palette} and out["renders"] == 1
+    assert path == f"/api/vector/{job['id']}/colouring"
+    assert body == {"op": "paint", "region": out["region"], "scope": "region", "entry_id": body["entry_id"]} and str(body["entry_id"]) == out["entry"]
+    assert body["entry_id"] in {e["id"] for e in palette}                              # the palette's own id, sent as the server gave it
+    assert out["renders"] == 0                                                           # the picture is recoloured in place
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
