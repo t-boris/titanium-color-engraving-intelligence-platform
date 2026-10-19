@@ -516,7 +516,7 @@ select::-ms-expand {display:none}
   background:#312a1ee8;color:var(--warning);font-size:13px}
 /* Векторная работа из фотографии: картинка с важными областями, разбиение и цвета титана рядом, выбор цвета из палитры */
 .vw-stage {position:relative;line-height:0}
-.vw-stage>img, .vw-image {display:block;width:100%;height:auto;border-radius:6px}
+.vw-stage>img {display:block;width:100%;height:auto;border-radius:6px}
 .vw-areas {position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
 /* the areas are drawn over the picture: the plot background of svg[role=img] (higher specificity) must not cover it */
 .vw-stage>svg.vw-areas {background:none;border:0;border-radius:6px;box-shadow:none}
@@ -525,9 +525,66 @@ select::-ms-expand {display:none}
 .vw-area.eye, .vw-area.lips {stroke:#f2ce8b}
 .vw-area.manual {stroke:#7de0ba}
 .vw-area.removed {stroke:#a0acc0;stroke-dasharray:6 4}
-.vw-previews figure {margin:0}
-.vw-preview {display:block;width:100%;height:auto;background:#fff;border-radius:6px;cursor:pointer}
 .vw-swatches {display:flex;flex-wrap:wrap;gap:4px;max-height:48vh;overflow:auto}
-.vw-swatch {width:24px;height:24px;padding:0;border:1px solid #ffffff38;border-radius:5px;cursor:pointer}
-.vw-swatch.as-shot {opacity:.55;border:2px dotted #ffffffb0}
+.vw-swatch {position:relative;flex:none;width:24px;height:24px;padding:0;border:1px solid #ffffff38;border-radius:5px;cursor:pointer}
+.vw-swatch.as-shot {opacity:.6;border:2px dashed #ffffffc0}
+.vw-swatch.not-auto::after {content:"";position:absolute;right:1px;top:1px;width:6px;height:6px;border-radius:50%;background:#0b0f16;box-shadow:0 0 0 1px #fff}
 .vw-swatch.picked {outline:3px solid var(--accent);outline-offset:1px}
+
+/* редактор цветов векторной работы (REQ-044..REQ-049): большая картинка, панель справа, под картинкой на узком экране;
+   обводки — классы путей (областей до тысячи), толщина не зависит от масштаба */
+.vw-colours {min-width:0}
+.vw-editor {display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,320px);gap:18px;align-items:start;min-width:0}
+.vw-ed-main {display:flex;flex-direction:column;gap:10px;min-width:0}
+.vw-ed-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.vw-ed-group {display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px}
+.vw-ed-bar .btn,.vw-ed-panel .btn {min-height:32px;padding:5px 10px;font-size:12px}
+.vw-ed-zoom {min-width:48px;text-align:center}
+.vw-ed-totals {margin:0}
+.vw-ed-stage {position:relative;height:min(74vh,820px);min-height:300px;overflow:hidden;border:1px solid var(--line-2);border-radius:12px;
+  background:#0e141e;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none}
+.vw-ed-stage.tool-pipette {cursor:copy}
+.vw-ed-stage.tool-select {cursor:pointer}
+.vw-ed-stage.panning {cursor:grabbing}
+.vw-editor.busy .vw-ed-stage {cursor:progress}
+.vw-ed-loading {position:absolute;left:12px;top:12px;margin:0}
+.vw-ed-svg {display:block;width:100%;height:100%}
+.vw-ed-svg image {display:none}
+.vw-ed-svg.view-original image {display:inline}
+.vw-ed-svg.view-original path {fill-opacity:0;stroke-opacity:0}
+.show-far path.vw-far {stroke:#ff4d6d;stroke-opacity:1;stroke-width:1.5px;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+.vw-ed-svg path.vw-sel {stroke:#ffd54a;stroke-opacity:1;stroke-width:2.5px;stroke-dasharray:none;vector-effect:non-scaling-stroke}
+.vw-ed-svg path.vw-hot {stroke:#ffffff;stroke-opacity:1;stroke-width:2px;stroke-dasharray:none;vector-effect:non-scaling-stroke}
+.vw-ed-tip {position:absolute;z-index:2;max-width:300px;padding:8px 10px;border:1px solid #46536b;border-radius:10px;background:#101722f0;
+  color:var(--text);font-size:12px;line-height:1.45;pointer-events:none;box-shadow:0 8px 24px #0008}
+.vw-ed-tip .sw {width:14px;height:14px;margin:0 4px;border-radius:4px}
+.vw-ed-tip-do {margin-top:4px;color:#cbd5e8}
+.vw-ed-panel {display:flex;flex-direction:column;gap:12px;min-width:0;max-height:calc(min(74vh,820px) + 96px);overflow:auto;padding-right:4px;overflow-wrap:anywhere}
+.vw-ed-section {display:flex;flex-direction:column;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.vw-ed-section:last-child {border-bottom:0}
+.vw-ed-section h4 {margin:0;font-size:13px;font-weight:650;color:#cbd5e8}
+.vw-ed-section p {margin:0}
+.vw-ed-scope {display:flex;flex-direction:column;gap:8px}
+.vw-ed-sim {display:flex;flex-direction:column;gap:4px}
+.vw-ed-sim input[type=range] {flex:1 1 120px;min-width:0;accent-color:var(--accent)}
+.vw-ed-sim input[type=number] {width:80px}
+.vw-ed-active {display:flex;gap:10px;align-items:flex-start}
+.vw-ed-big {flex:none;width:56px;height:56px;border-radius:12px;border:1px solid #ffffff40}
+.vw-ed-big.auto {display:grid;place-items:center;font-weight:700;color:#cbd5e8;background:repeating-linear-gradient(45deg,#2a3547,#2a3547 6px,#1b2638 6px,#1b2638 12px)}
+.vw-ed-palette {max-height:240px}
+.vw-ed-list {display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
+.vw-ed-item {display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:4px 6px;border-radius:8px;font-size:12px}
+.vw-ed-item:hover {background:#1b2638}
+.vw-ed-item.excluded {opacity:.65}
+.vw-ed-item .sw,.vw-ed-item .vw-swatch {width:18px;height:18px;margin:0;border-radius:5px}
+.vw-ed-merge {display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.vw-ed-merge select {min-width:0;max-width:100%}
+.vw-details {min-width:0;max-width:100%}
+.vw-details>summary {cursor:pointer;font-weight:650}
+.vw-details>div {margin-top:10px;min-width:0}
+.vw-details .tw {max-width:100%;overflow-x:auto}
+@media (max-width:900px) {
+  .vw-editor {grid-template-columns:minmax(0,1fr)}
+  .vw-ed-panel {max-height:none;overflow:visible;padding-right:0}
+  .vw-ed-stage {height:62vh}
+}

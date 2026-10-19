@@ -251,8 +251,9 @@
   const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
     : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
 
-  /** Шаг «Файл LightBurn»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043). */
-  function photoExport(j, reload) {
+  /** Шаг «Файл LightBurn»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043).
+      Почему файл пока не создаётся, сказано здесь же, рядом с кнопкой. */
+  function photoExport(j, refresh) {
     const t = j.time;
     const rows = t.layers.map((row) => {
       const layer = j.layers.find((l) => l.index === row.index);
@@ -263,7 +264,7 @@
     const exportBtn = btn('Создать файл LightBurn', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); }
+      try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); await refresh(); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !!j.export_blocked);
     return h('div', {class: 'card stack'}, h('h3', {}, '3. Файл LightBurn'),
@@ -278,24 +279,42 @@
         saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name)])) : null);
   }
 
-  /** Работа из фотографии: разбиение, цвета, файл (REQ-042). */
+  /** Работа из фотографии: разбиение, цвета, файл (REQ-042, REQ-044). Действие с раскраской возвращает работу целиком, и
+      экран обновляется на месте, без перерисовки: редактор сохраняет масштаб, инструмент и выделение. Действия уходят на
+      сервер по одному, в том порядке, в каком их сделал оператор. */
   function photoView(j) {
     const reload = () => App.render({preserveScroll: true});
-    const run = async (op) => { try { await post(`/vector/${j.id}/colouring`, op); reload(); } catch (e) { fail(e); } };
     const exp = j.experiment || {};
-    const size = j.document.size_mm;
-    return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Векторная работа · ' + j.name),
-        h('p', {class: 'sub'}, `Фото: цветные области · ${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${j.document.version}`)),
-        h('span', {class: 'spacer'}), link('/plans/' + j.id, 'План гравировки')),
-      h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
-        ['Линза', j.lens ? App.lensLabel(j.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
-        ['Чистка', 'первый слой C00'], ['Маркеры', j.markers_enabled ? 'включены (C01)' : 'выключены'],
-        ['Слоёв цвета', `${j.layers.length} из ${j.layer_cap} доступных`]]),
-        h('div', {class: 'row'}, btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
-          try { await put(`/plans/${j.id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); }
-        }))),
-      VectorSplit.card(j, reload), VectorColours.card(j, run), photoExport(j, reload));
+    const head = h('div', {class: 'row'}), about = h('div', {class: 'card stack'}), split = h('div', {}), file = h('div', {});
+    let shown = null, queue = Promise.resolve(), colours = null;
+    function show(next) {
+      const resplit = !shown || next.document.version !== shown.document.version;
+      shown = next;
+      const size = next.document.size_mm;
+      fill(head, h('div', {}, h('h2', {}, 'Векторная работа · ' + next.name),
+        h('p', {class: 'sub'}, `Фото: цветные области · ${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version}`)),
+        h('span', {class: 'spacer'}), link('/plans/' + next.id, 'План гравировки'));
+      fill(about, facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
+        ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
+        ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
+        ['Слоёв цвета', `${next.layers.length} из ${next.layer_cap} доступных`]]),
+        h('div', {class: 'row'}, btn(next.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
+          try { await put(`/plans/${next.id}/markers`, {enabled: !next.markers_enabled}); await refresh(); } catch (e) { fail(e); }
+        })));
+      if (resplit) fill(split, VectorSplit.card(next, reload));     // счётчики разбиения меняются только с его версией
+      fill(file, photoExport(next, refresh));
+      if (colours) colours.update(next);
+    }
+    async function send(op) {
+      try { show(await post(`/vector/${j.id}/colouring`, op)); return true; } catch (e) { fail(e); return false; }
+    }
+    const run = (op) => (queue = queue.then(() => send(op)));
+    async function refresh() {
+      try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
+    }
+    show(j);
+    colours = VectorColours.card(j, run);
+    return h('div', {class: 'stack'}, head, about, split, colours.el, file);
   }
 
   App.register({id: 'vector', async render(ctx) {
