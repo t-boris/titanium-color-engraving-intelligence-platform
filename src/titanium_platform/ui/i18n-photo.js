@@ -16,6 +16,7 @@ I18N.add([
   [/^cannot decode the image/i, 'Не удалось прочитать изображение'],
   [/^could not render the overlay/i, 'Не удалось построить наложение масок'],
   [/^could not render the photograph/i, 'Не удалось подготовить фотографию'],
+  [/^the picture size must be from (\d+) to (\d+) pixels$/i, (m) => `Размер изображения — от ${m[1]} до ${m[2]} пикселей по длинной стороне`],
   [/^focus must be a (finite )?number/i, 'Фокус — конечное число'],
   [/^date must be YYYY-MM-DD/i, 'Дата — в формате ГГГГ-ММ-ДД'],
   [/^not a LightBurn project/i, 'Это не проект LightBurn: файл не читается'],

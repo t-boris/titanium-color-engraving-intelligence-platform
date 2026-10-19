@@ -608,3 +608,37 @@ photograph) of 13 points, 6.04..14.37 % power, all from pair 22; 5.49 % of the 1
 tonal profile bins the photograph gives back every measured bin within dE 0.01..0.17 (worst at grey 0.906, the lightest bin, whose
 lighter half is outside the span). At Min 4 / Max 18 the share outside rises to 32.4 %.
 
+
+## BUG-001 slow screens (issue #27, branch fix/BUG-001-slow-screens; 2026-10-19)
+
+- [x] Knowledge list O(N): `knowledge.get()` takes the setup's summaries and the entry's events; `list_for_setup` reads them once.
+  Test: the list equals `get()` of each entry; `model.knowledge_summaries` runs once per list.
+- [x] `render_cache.py`: `<data dir>/cache/renders/<pair id>/<sha256>.png`, atomic write, damaged or missing file redrawn, LRU limit
+  500 MB, removed with the pair. Key = canonical JSON of photo and LightBurn file stamps (path, size, mtime_ns), the stored check, the
+  plan's JSON digest, the chart reference (corrected only), `allow_non_raw_photos`, every view parameter and `RENDER_VERSION = 1`.
+- [x] `size` (64..5000, longest side) on `photo.png` and `overlay.png`; the experiment list asks `size=480`.
+- [x] ETag = key, `Cache-Control: private, max-age=0, must-revalidate`; matching `If-None-Match` -> 304 without drawing.
+- [x] `titanium-platform warm-cache --data-dir DIR`: the list thumbnail and the experiment page picture of every check in active use.
+- [x] Tests: `tests/test_render_cache.py` (7), `tests/test_knowledge.py` (+1).
+
+### Review (copy of the live data, sqlite backup API + copied files, server on port 8793, GET only)
+
+| Request | 0.5.1 | after |
+|---|---|---|
+| `GET /api/knowledge?device_id=1&lens_id=2` (343 entries) | 6.53 s | 0.07 s (output byte-identical) |
+| experiment list, 16 thumbnails one after another, cold | 11.6 s, 35.9 MB (0.65 s median) | 11.3 s, 4.7 MB (0.62 s median) |
+| same, 6 at a time as a browser, cold | ~2.7 s, 35.9 MB | 2.4 s, 4.7 MB |
+| same, cached / after `warm-cache` | 11.6 s (no cache) | 0.02 s (1-2 ms each); revalidation 304 in 1 ms |
+| experiment page `overlay.png?corrected=true&visibility=lifted` | 3.3-3.4 s every time | 3.3 s once, then 3-4 ms; 304 in 1-2 ms |
+| `warm-cache` on the copy | - | 32 pictures (16 checks) in 67 s, 39 MB |
+
+Pictures at the default sizes are byte-identical to 0.5.1. The cache key costs 0.1 ms (photo) and up to 9.6 ms (overlay of the pair with
+the largest stored check, 529 kB) per request.
+
+Cold time (cProfile, pair 59): the list thumbnail is 0.55 s, of which the RAW decode is 0.52 s (94 %); `size=480` only removes PNG
+encode (33 -> 4 ms) and 87 % of the bytes. A corrected picture is 3.2-3.4 s: 8-bit RAW decode 0.51 s, linear RAW decode 0.52 s, chart
+correction 2.0-2.2 s (exposure-normalised render 0.65 s, chart detection 0.18-0.27 s, applying the matrix 0.6 s), PNG encode 0.03 s.
+Decode and correction were not changed. So the first opening of a picture stays RAW-bound; `warm-cache` after a deploy (and the cache
+itself after the first view) is what makes the screens fast.
+
+Not cached: nothing that is served. The vector overlay is cached too (`transparent=true`); `size` was not added to it.

@@ -133,6 +133,18 @@ def test_faces_found_once_can_be_removed_and_the_picture_split_without_them(work
     assert [a["removed"] for a in r["areas"]["detected"]] == [False, True, True, True] and r["document"]["important_regions"] <= fine
 
 
+def test_the_face_search_is_on_unless_the_form_says_no_whatever_fastapi_does_with_a_missing_flag(work):
+    # FastAPI 0.148 reads a missing bool form field as false; the route reads the flag itself (left out: searched)
+    c = work
+    assert create(c).json()["document"]["faces"]["searched"] is True
+    for value, searched in [("false", False), ("off", False), ("true", True), ("", True)]:
+        r = create(c, faces=value)
+        assert r.status_code == 201, r.text
+        assert r.json()["document"]["faces"]["searched"] is searched, value
+    bad = create(c, faces="maybe")
+    assert bad.status_code == 422 and bad.json()["error"] == "face search must be true or false"
+
+
 def test_a_job_with_markers_holds_28_colours_and_cleans_first(work):
     r = create(work, n_colors=29, markers="true")
     assert r.status_code == 422 and r.json()["error"] == "choose from 2 to 28 colours: the cleaning takes one LightBurn layer and the markers another"
