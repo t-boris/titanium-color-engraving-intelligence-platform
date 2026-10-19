@@ -112,6 +112,12 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: workers never use the MarkView browser tools; UI is checked by static tests and API calls. The lead checks a new version
   on a full copy (database and files) before the deploy, and says in every message which port is the operator's (8765).
 
+- Again (2026-10-19): "Ты запустил, собственно говоря, аппликацию локально, как раньше. В чем дело?" A copy of the data served on 8794 was
+  opened in the operator's window as "Editor 8794 (copy)" and the operator worked in it, so a re-split and paints went to a copy.
+- Rule added: a goal that says "open the running app in a tab" means the operator's app on 8765 (after the deploy, view only: select,
+  hover, read; never an operation that changes the work). A copy is only for a flow that changes data; its tab is named "ТЕСТ: копия
+  данных, порт N (не настоящее приложение)" from the first moment, and its server is stopped as soon as the check is done.
+
 ## A confirmation that adds no information is a defect
 - Remark (2026-10-19): "Мне нужно каждый принять, принять. Очень неудобно … все должно быть принято в самом начале." Every colour
   outside a ΔE tolerance of 0.05 waited for its own "accept" click (28 on one work); the nearest colour and its ΔE were already shown.

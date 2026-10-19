@@ -733,3 +733,36 @@ version 2, tolerance 0.05, 10 undo steps.
 Limits: shift-click and Ctrl+Shift+Z were sent as DOM events with the right flags, because the browser tool's key press sends the literal
 key "Control+Shift+Z" with every modifier flag false. During the run someone else operated the first tab (a merge of `r232` and `r165` at
 19:04:48, a coarse re-split at 19:05:26, two paints, an automatic recolouring), so the rest ran on a second copy at 8795.
+
+
+## Splitting algorithms, one section for colours and split, Vector Work third (operator, 2026-10-19; feature vector-detail-and-colour-control)
+
+Asked for twice by the operator ("не вижу ... на третье место, и не вижу, где можно выбрать алгоритмы по разбивке"), then "соедини первое и
+второе в одну секцию". REQ-051, DEC-080 (the algorithms), DEC-081 (one section) of that feature; criterion 1 of its overview (menu) ticked.
+- [x] Menu: `/vector` third (router.js NAV and ICONS together); test for the new start of the menu and for the unchanged addresses.
+- [x] Seam: `segment._slic` was the only place superpixels are made. `ALGORITHMS = ("slic", "seeds")`, `_seeds` beside it (OpenCV SEEDS reads an
+      8-bit picture; a crop smaller than two superpixels is one), `segment(..., algorithm=)`, recorded in the document; `vector_job` validates
+      it (`the splitting algorithm must be slic or seeds`, translated), keeps it in `split`, writes it into the history, reads a work made
+      before as slic; `POST /api/vector` takes `algorithm`, `POST .../split` takes it in the body.
+- [x] Screen: the split block (algorithm first, with what each is for, number of colours, detail, smoothing, faces, "Разбить заново", counts;
+      the picture for marking important areas folded) is a slot of the colours card "1. Цвета и разбиение"; the file card is "2.". The start
+      form has the same select.
+- [x] Candidates tried through the real pipeline (job's own settings: 12 colours, medium detail), `scratchpad/algo_eval.py`:
+
+  | picture | algorithm | regions | seconds | mean ΔE | p95 ΔE | gap / overlap |
+  |---|---|---|---|---|---|---|
+  | portrait (work 22) | SLIC | 323 | 2.42 | 7.35 | 17.4 | 0 / 0 |
+  | | SLICO | 344 | 3.19 | 7.48 | 18.2 | 0 / 0 |
+  | | MSLIC | 342 | 3.60 | 7.48 | 17.5 | 0 / 0 |
+  | | LSC | 280 | 3.21 | 7.64 | 19.5 | 0 / 0 (faces smeared) |
+  | | SEEDS | 316 | 1.80 | 7.47 | 17.9 | 0 / 0 |
+  | sheet photograph | SLIC / SLICO / MSLIC / LSC / SEEDS | 120 / 105 / 136 / 116 / 104 | 0.93 / 1.17 / 1.40 / 1.17 / 0.77 | 3.93 / 3.96 / 4.01 / 3.76 / 3.79 | 11.4 / 10.3 / 11.8 / 10.2 / 9.8 | 0 / 0 |
+  | flat shapes | SLIC / SLICO / MSLIC / LSC / SEEDS | 6 / 6 / 6 / **1** / 6 | | 0.81 / 2.30 / 0.83 / 46.2 / 0.82 | | 0 / 0 |
+
+  Offered: SLIC (default) and SEEDS. Rejected with reasons in DEC-080: LSC (faces smeared, one region on a small picture), SLICO (ragged
+  borders on flat shapes, no gain), MSLIC (never better than SLIC). A first reading of thin strokes (absolute darkness threshold, 4 colours)
+  said SLIC kept 91 % and SEEDS 48 %; it was an artefact of the threshold. Measured as ink against its own surroundings at 6 colours, over six
+  noise and shading settings, SEEDS keeps 87-93 % against SLIC's 83-88 % with a third of the regions: that is what the test and the hint say.
+- [x] Real flow, on a copy (port 8796, stopped afterwards): SEEDS chosen in the browser on work 22: split version 5 → 6, 985 → 879 areas, 28
+      colours, export unblocked, undo and redo reset, the select and the summary line show SEEDS.
+- [ ] Full suite, release 0.7.0 (SemVer: a new capability), push to `main`, tag, deploy to 8765 (backup first), view-only look at the real app.
