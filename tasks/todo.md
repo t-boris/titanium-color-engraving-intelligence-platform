@@ -799,4 +799,19 @@ Steps (each ends with tests, a commit to main, and a look at the real screen):
   the strength. Tests: `tests/test_contour.py` (30), route/export/slider tests in `tests/test_vector_work.py`.
 - [x] 3. Methods (tonal sped up 8.6 s to 3.3 s by merging superpixel colours on at most 20 000 points; planes scale fixed at 150; tests: four different maps, no collapse of a shaded face, cap of the clustering input): "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости" and SEEDS kept (the operator's answer: "те же три и SEEDS"; DEC-082); old works keep their key; a test that the four maps differ.
 - [x] 4. AI colouring (REQ-050): `ai_colouring.py`, operation `ai_colour`, permission route; styles + own text + free lightness + photo permission; answer checked (measured, complete, layers, lightness), one retry with the reason; a variant that is never asked again. One real call on the test copy: 32 s, 16 recipes. Tests: `tests/test_ai_colouring.py` (fake client).
-- [ ] 5. Spec: DEC for each, REQ ticks, version 0.8.0, backup and deploy, look at the real app.
+- [x] 5. Spec: DEC amendments (DEC-082 result, DEC-083 live slider, DEC-084 result), REQ-050..052 ticked, version 0.8.0 (tag v0.8.0, commit 4b43135).
+
+### Review of 0.8.0 (2026-10-19)
+- [x] Full suite once, before the release commit: 1215 passed, none skipped (10 min 43 s). Targeted files only during the steps (operator's
+      remark about test time).
+- [x] Backup `titanium-before-0.8.0-20261019T210411Z.sqlite` (integrity ok, 662 observations), real app stopped, wheel 0.8.0 installed into
+      `~/.titanium-platform-app`, started again from the repository directory (key found); GET checks of work 22 (view 1.5 s on the first
+      request, palette, neighbours, split.svg, scripts) all 200.
+- [x] View-only look at the real app: four algorithms (SEEDS selected on work 22), all fields of the split on one line, the slider reads "как
+      найдены" (work 22 was made before the slider), the "Раскраска с помощью AI" panel is there and its button is enabled (a key is set).
+      Nothing was sent to the AI from the real app; the one real call was made on a copy of the data (numbers only).
+- Test copy on port 8796 stopped. Old test tabs (8794, 8795, 8796) in the MarkView window are dead and can be closed.
+- Known and left as it is: `git add -A` put specification changes into the layout commit cf83634; the history was not rewritten.
+- Not built (still in vector-detail-and-colour-control): density and eyes controls, Contrast and Artistic modes, automatic merging of
+  same-recipe regions.
+
