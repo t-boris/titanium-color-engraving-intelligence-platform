@@ -91,3 +91,10 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
         assert label in colours, label
     split = source("screens/vector-split.js")
     assert "post(`/vector/${j.id}/split`" in split and "'Разбить заново'" in split and "лицо не найдено" in split
+
+
+def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour_within_the_threshold_is_chosen():
+    start, plan = source("screens/artwork-start.js"), source("screens/artwork.js")
+    assert "fd.append('max_time', maxTime.value)" in start and "Наибольшее время гравировки, с/см²" in start
+    assert "выбирается самый быстрый" in start and "выбирается самый быстрый" in plan and "'Время на см²'" in plan
+    assert "max_time: maxTime.value === '' ? null : +maxTime.value" in plan and "seconds(e.time_s_per_cm2)" in start
