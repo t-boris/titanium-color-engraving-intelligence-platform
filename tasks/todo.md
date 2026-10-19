@@ -79,7 +79,18 @@ DEC-044 cap; DEC-029/033/041/056 still speak of profile versions after DEC-042.
 - [x] WP-13 Tests for every criterion that has code but no test.
       Final: 909 passed (0 skipped); QR 0/1000 failures; pre-deploy check on an isolated full copy (database + files):
       16/16 experiments accepted as in the running app, every photo and overlay served, 565/565 colour-map points.
-- [ ] WP-14 Version 0.4.0, PR, CI, merge, tag, deploy (DEC-024), browser walkthrough, manual checklist.
+- [x] WP-14 Version 0.4.0, PR, CI, merge, tag, deploy (DEC-024), browser walkthrough, manual checklist.
+
+## Review (2026-10-19)
+
+- PR #20 merged (5c5208f), CI green on Linux 3.11/3.12 and macOS 3.12; tag v0.4.0; issues #13-#19 closed by the merge.
+- Tests: 909 passed, 0 skipped. QR identifier read for 1000 of 1000 synthetic codes (classic detector alone: 991).
+- Deploy (DEC-024): backup titanium-before-deploy-0.4.0-20261019T001137Z.sqlite, wheel from the tag installed in
+  ~/.titanium-platform-app, port 8765 answers 0.4.0; the migration made titanium-before-0.4.0-20261019T001151Z.sqlite.
+  Live data after the migration: 662 observations byte-identical to the backup, 16 experiments accepted, every photo
+  and overlay served, 565 colour-map points, all 39 pairs on laser 1 with lens 2.
+- Walkthrough in the operator's tab: a tab opened before the upgrade showed the old page ("Не найдено") until reloaded.
+- Open for the operator: proposed DEC-067..DEC-072; LightBurn opening of exported files; tablet access; a .lbrn sample.
 
 # New experiment kind: a parameter matrix (LightBurn Material Test) read from its photograph — goal set 2026-10-18
 
