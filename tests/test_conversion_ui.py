@@ -98,3 +98,9 @@ def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour
     assert "fd.append('max_time', maxTime.value)" in start and "Наибольшее время гравировки, с/см²" in start
     assert "выбирается самый быстрый" in start and "выбирается самый быстрый" in plan and "'Время на см²'" in plan
     assert "max_time: maxTime.value === '' ? null : +maxTime.value" in plan and "seconds(e.time_s_per_cm2)" in start
+
+
+def test_regions_without_evidence_are_counted_in_one_short_message_and_their_ids_shown_only_on_request():
+    screen = source("screens/vector.js")
+    assert "(${j.weak.join(', ')})" not in screen and "weakSummary(j.weak)" in screen
+    assert "h('p', {class: 'small', hidden: true}, weak.join(', '))" in screen and "btn('показать'" in screen

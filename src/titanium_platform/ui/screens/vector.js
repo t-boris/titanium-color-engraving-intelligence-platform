@@ -160,6 +160,14 @@
       {label: 'Применить', cls: 'primary', run: async (x) => { x.close(); await run({op: 'set_settings', group: group.key, knowledge_id: chosen}); }}]);
   }
 
+  /** Сколько областей без данных — коротко; их номера — по «показать», а не сотнями в одном сообщении. */
+  function weakSummary(weak) {
+    const ids = h('p', {class: 'small', hidden: true}, weak.join(', '));
+    const toggle = btn('показать', () => { ids.hidden = !ids.hidden; toggle.textContent = ids.hidden ? 'показать' : 'скрыть'; });
+    return h('div', {class: 'alert bad stack'}, h('div', {class: 'row'}, h('span', {}, `Областей без достаточных данных: ${weak.length}. Рецепт не придумывается: `
+      + 'удалите или исключите область, выберите настройки её группы или передайте её цвет планировщику. Такие области заштрихованы на картинке.'), toggle), ids);
+  }
+
   function jobView(j) {
     const id = j.id;
     const reload = () => App.render({preserveScroll: true});
@@ -222,7 +230,7 @@
         field('Порог ΔE', thr), btn('Применить порог', () => run({op: 'set_threshold', threshold: +thr.value})),
         btn('Объединить выбранные', () => (selected.size === 2 ? run({op: 'merge', regions: [...selected]}) : fail(new Error('Выберите ровно две области')))),
         btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => { try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); } })),
-      j.weak.length ? h('div', {class: 'alert bad'}, `Областей без достаточных данных: ${j.weak.length} (${j.weak.join(', ')}). Рецепт не придумывается: удалите или исключите область, выберите настройки её группы или передайте её цвет планировщику.`) : null,
+      j.weak.length ? weakSummary(j.weak) : null,
       h('div', {class: 'card'}, h('h3', {}, `Области: ${j.regions.length}`),
         table(['', 'Область', 'Задача', 'Группа настроек', 'Рецепт', 'Прогноз (REQ-002)', 'Данные', ''], rows)),
       h('div', {class: 'card'}, h('h3', {}, 'Группы настроек'), h('p', {class: 'muted small'}, 'Одна группа — один рецепт; одинаковые рецепты разных групп выводятся в один слой LightBurn.'),

@@ -400,8 +400,9 @@ def stored_export(store: Store, plan_id: int, number: int) -> tuple[str, bytes]:
 PHOTO = "photo"
 DETAIL = {"coarse": (70, 1 / 1500), "medium": (100, 1 / 3000), "fine": (150, 1 / 7500)}
 """Levels of detail of a split: the coarse superpixels along the picture's longer side and the least region as a share
-of the picture's area. On the operator's 150 mm portrait (12 colours) they gave about 300, 450 and 900 regions; the
-medium level keeps flat areas calm while faces, eyes and lips keep their finer regions."""
+of the picture's area. On the operator's 150 mm portrait (12 colours, one face found) they gave 298, 489 and 891 regions
+(least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
+regions."""
 DEFAULT_DETAIL = "medium"
 COLOURING_OPS = ("assign", "set_colour", "set_region", "accept", "accept_all", "exclude_colour", "include_colour", "exclude_region",
                  "include_region", "restore", "undo", "settings")

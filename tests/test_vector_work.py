@@ -298,6 +298,14 @@ def test_a_file_with_markers_puts_them_on_c01_and_the_colours_after(work, job):
     assert cov["uncovered"] == pytest.approx(yellow_px, abs=0.005) and cov["overlap"] < 0.005   # only the excluded disc is left
 
 
+@pytest.mark.parametrize("markers, cap", [(False, 29), (True, 28)])
+def test_more_recipes_than_the_output_layers_left_after_cleaning_and_markers_are_refused(markers, cap):
+    state = {"unresolved": {"colours": 0, "regions": 0}, "missing_regions": [], "layers": [{}] * cap}
+    assert vector_job._blocker_photo({"markers_enabled": markers}, state) is None
+    state["layers"] = [{}] * (cap + 1)
+    assert vector_job._blocker_photo({"markers_enabled": markers}, state) == f"{cap + 1} different recipes need more LightBurn layers than the {cap} available"
+
+
 def test_a_full_recipe_with_its_lightburn_tags_is_written_from_the_observation(work):
     import recipes
     store, w, ti = work["store"], work["w"], work["ti"]

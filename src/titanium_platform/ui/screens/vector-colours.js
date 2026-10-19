@@ -141,7 +141,8 @@ const VectorColours = (() => {
         h('span', {}, e ? chip(e.srgb, labText(e.lab)) : '—', pill(label, kind), c.how && HOW[c.how] ? h('div', {class: 'muted small'}, HOW[c.how]) : null),
         e ? h('span', {class: 'small'}, params(e.parameters)) : '—', e ? BASIS[e.basis] : '—',
         e ? `${e.engravings} / ${e.photographs}` : '—', c.delta_e == null ? '—' : num(c.delta_e),
-        e ? num(e.confidence) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—', h('span', {class: 'row'}, actions)];
+        e ? (e.confidence == null ? 'не оценено' : num(e.confidence)) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—',
+        h('span', {class: 'row'}, actions)];
     });
   }
 
