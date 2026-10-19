@@ -1,6 +1,6 @@
 /* Векторная работа (REQ-021, REQ-042, DEC-065, DEC-073): изображение → редактируемые контуры → обычный файл LightBurn, одна
-   связанная запись. Фотография («Фото: цветные области») идёт тремя шагами: разбиение (vector-split.js), цвета титана
-   (vector-colours.js) и файл LightBurn с оценкой времени всей работы. Заливка, текст и линии обводятся как раньше: каждая
+   связанная запись. Фотография («Фото: цветные области») идёт двумя разделами: цвета и разбиение (vector-colours.js со
+   своим блоком vector-split.js) и файл LightBurn с оценкой времени всей работы. Заливка, текст и линии обводятся как раньше: каждая
    группа настроек получает валидированный или производственный рецепт этого лазера, линзы и титана, режим LightBurn
    которого подходит задаче её областей; рецепт никогда не придумывается. Область без достаточных данных заштрихована на
    предпросмотре; пока такие области есть, экспорт недоступен. Файлы скачиваются через fetch: ошибка показывается на экране
@@ -33,6 +33,8 @@
     const strategy = h('select', {'aria-label': 'Стратегия'}, STRATEGIES.map(([id, label]) => h('option', {value: id}, label)));
     const colours = h('input', {type: 'number', step: '1', min: '2', max: '29', value: 12});
     const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l)));
+    const algorithm = VectorSplit.picker('slic');
+    algorithm.hint.setAttribute('style', 'grid-column:1 / -1');
     const faces = h('input', {type: 'checkbox', checked: true});
     const maxTime = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'});
     const asShot = h('input', {type: 'checkbox'});
@@ -47,8 +49,8 @@
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (m) => { err.textContent = m; err.hidden = !m; };
     // поля фотографии и поля обводки показываются по стратегии; чистка у фотографии всегда первая (DEC-073)
-    const photoFields = h('div', {class: 'grid g2'}, field('Число цветов', colours, '2–29, с маркерами 2–28: чистка — первый слой'),
-      field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'),
+    const photoFields = h('div', {class: 'grid g2'}, field('Алгоритм разбиения', algorithm.select), field('Число цветов', colours, '2–29, с маркерами 2–28: чистка — первый слой'),
+      algorithm.hint, field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'),
       field('Наибольшее время гравировки, с/см²', maxTime, 'пусто — без предела; медленные цвета автоматика не берёт'),
       h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица: глаза и губы делятся подробнее')),
       h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона и без чистого титана)')));
@@ -99,7 +101,7 @@
       if (thr.value !== '') fd.append('threshold', thr.value);
       task.append(fd);
       if (photo()) {
-        fd.append('n_colors', colours.value); fd.append('detail', detail.value); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
+        fd.append('n_colors', colours.value); fd.append('algorithm', algorithm.select.value); fd.append('detail', detail.value); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
         if (maxTime.value !== '') fd.append('max_time', maxTime.value);
       } else {
         fd.append('clean', clean.checked);
@@ -267,7 +269,7 @@
       try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); await refresh(); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !!j.export_blocked);
-    return h('div', {class: 'card stack'}, h('h3', {}, '3. Файл LightBurn'),
+    return h('div', {class: 'card stack'}, h('h3', {}, '2. Файл LightBurn'),
       h('p', {}, h('strong', {}, `Оценка времени всей работы: ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
         h('span', {class: 'muted small'}, ' — оценка по скорости, шагу строк, проходам и перекрёстной заливке каждого рецепта; переходы между областями не учтены.')),
       table(['Слой', 'Рецепт', 'Областей', 'Площадь', 'Время'], rows),
@@ -279,7 +281,7 @@
         saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name)])) : null);
   }
 
-  /** Работа из фотографии: разбиение, цвета, файл (REQ-042, REQ-044). Действие с раскраской возвращает работу целиком, и
+  /** Работа из фотографии: цвета и разбиение, файл (REQ-042, REQ-044). Действие с раскраской возвращает работу целиком, и
       экран обновляется на месте, без перерисовки: редактор сохраняет масштаб, инструмент и выделение. Действия уходят на
       сервер по одному, в том порядке, в каком их сделал оператор. */
   function photoView(j) {
@@ -313,8 +315,8 @@
       try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
     }
     show(j);
-    colours = VectorColours.card(j, run);
-    return h('div', {class: 'stack'}, head, about, split, colours.el, file);
+    colours = VectorColours.card(j, run, split);
+    return h('div', {class: 'stack'}, head, about, colours.el, file);
   }
 
   App.register({id: 'vector', async render(ctx) {

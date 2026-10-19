@@ -36,6 +36,7 @@
     [/^choose from (\d+) to (\d+) colours: the cleaning takes one LightBurn layer( and the markers another)?$/i,
       (m) => `Выберите от ${m[1]} до ${m[2]} цветов: один слой LightBurn занимает чистка` + (m[3] ? ', ещё один — маркеры' : '')],
     [/^the level of detail must be coarse, medium or fine$/i, 'Детальность: крупно, средне или детально'],
+    [/^the splitting algorithm must be slic or seeds$/i, 'Алгоритм разбиения: SLIC или SEEDS'],
     [/^the smoothing must be a non-negative number of millimetres$/i, 'Сглаживание — неотрицательное число миллиметров'],
     [/^an important area must be an ellipse or a polygon of finite numbers in picture pixels$/i,
       'Важная область — эллипс или многоугольник в пикселях картинки'],

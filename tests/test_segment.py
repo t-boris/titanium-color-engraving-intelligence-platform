@@ -604,3 +604,77 @@ def test_neighbours_are_the_regions_across_an_arc_both_ways_and_never_the_pictur
     assert all(colour[a] != colour[b] for a, others in near.items() for b in others)    # a fresh split: never one colour
     corner = pixel_document(*sg._components(np.array([[0, 1], [1, 0]], np.int32), 2))       # a touch at a corner is no border
     assert sg.neighbours(corner) == {"r1": {"r2", "r3"}, "r2": {"r1", "r4"}, "r3": {"r1", "r4"}, "r4": {"r2", "r3"}}
+
+
+# -- the choice of the splitting algorithm (feature vector-detail-and-colour-control, DEC-076) -----------------------------------
+def inked_page(noise=6.0, shade=0.45, w=640, h=420, seed=3):
+    """A lit sheet with a headline, a table of thin ruled lines and a line of small text, with sensor-like noise and a dark band."""
+    gx, gy = np.linspace(0, 1, w)[None, :], np.linspace(0, 1, h)[:, None]
+    img = np.repeat(np.clip(205 + 40 * gx + 25 * gy, 0, 255)[..., None], 3, axis=2).astype(np.uint8)
+    cv2.putText(img, "Product List", (40, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (20, 20, 20), 2, cv2.LINE_AA)
+    for y in (140, 220, 300, 380):
+        cv2.line(img, (30, y), (610, y), (25, 25, 25), 1, cv2.LINE_AA)
+    for x in (30, 250, 610):
+        cv2.line(img, (x, 140), (x, 380), (25, 25, 25), 1, cv2.LINE_AA)
+    cv2.putText(img, "Checked by:", (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 1, cv2.LINE_AA)
+    img = img.astype(np.float32) * (1 - shade * np.exp(-((gy - 0.8) ** 2) / 0.02))[..., None]
+    return np.clip(img + np.random.default_rng(seed).normal(0, noise, img.shape), 0, 255).astype(np.uint8)
+
+
+def painted(doc, shape):
+    """The Lab picture the regions of a split paint (even-odd, so holes stay holes)."""
+    h, w = shape
+    out = np.zeros((h, w, 3), np.float32)
+    for r in sg.regions_as_loops(doc):
+        mask = np.zeros((h, w), np.uint8)
+        cv2.fillPoly(mask, [np.round(np.asarray(loop) / doc["px_mm"]).astype(np.int32) for loop in r["loops"]], 1)
+        out[mask > 0] = r["lab"]
+    return out
+
+
+def ink_kept(img, doc) -> float:
+    """The share of the strokes (clearly darker than their surroundings) that the split still paints clearly darker than theirs."""
+    from titanium_platform import color
+    lab, out = color.srgb8_to_lab(img), painted(doc, img.shape[:2])
+    ink = (cv2.GaussianBlur(lab[..., 0], (0, 0), 9) - lab[..., 0]) > 25
+    kept = (cv2.GaussianBlur(out[..., 0], (0, 0), 9) - out[..., 0]) > 12
+    return float((ink & kept).sum() / ink.sum())
+
+
+@pytest.mark.parametrize("algorithm", sg.ALGORITHMS)
+def test_every_algorithm_splits_gaplessly_the_same_way_every_time_and_says_which_it_was(algorithm):
+    img = shapes()
+    docs = [sg.segment(img, 72.0, 6, use_faces=False, min_area_mm2=0.5, algorithm=algorithm) for _ in range(2)]
+    assert docs[0] == docs[1] and docs[0]["algorithm"] == algorithm                       # deterministic, and recorded in the document
+    cov = sg.coverage([r["loops"] for r in sg.regions_as_loops(docs[0])], docs[0]["size_mm"]["width"], docs[0]["size_mm"]["height"], 8)
+    assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
+    assert sum(r["pixels"] for r in docs[0]["regions"]) == img.shape[0] * img.shape[1]
+    photo = sg.segment(photo_like(), 60.0, 8, use_faces=False, algorithm=algorithm)
+    cov = sg.coverage([r["loops"] for r in sg.regions_as_loops(photo)], photo["size_mm"]["width"], photo["size_mm"]["height"], 8)
+    assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
+
+
+@pytest.mark.parametrize("algorithm", sg.ALGORITHMS)
+def test_a_marked_area_smaller_than_two_superpixels_is_split_by_every_algorithm(algorithm):
+    """Finer superpixels inside faces, eyes and marked areas: a crop of a few pixels must not break SEEDS, which cannot make one."""
+    img = shapes()
+    marked = faces.check_area({"polygon": [[100, 20], [106, 20], [106, 25], [100, 25]], "kind": "manual", "source": "manual", "score": None})
+    doc = sg.segment(img, 72.0, 6, important=[marked], use_faces=False, min_area_mm2=0.5, algorithm=algorithm)
+    assert doc["algorithm"] == algorithm and len(doc["regions"]) >= 6
+
+
+def test_the_algorithm_default_is_slic_and_an_unknown_one_is_refused():
+    assert sg.DEFAULT_ALGORITHM == "slic" and sg.ALGORITHMS == ("slic", "seeds")
+    assert sg.segment(shapes(), 72.0, 6, use_faces=False)["algorithm"] == "slic"
+    for bad in ("lsc", "SLIC", "", None):
+        with pytest.raises(sg.SegmentError, match="the algorithm must be slic or seeds"):
+            sg.segment(shapes(), 72.0, 6, use_faces=False, algorithm=bad)
+
+
+def test_seeds_keeps_thin_strokes_at_least_as_well_as_slic_with_far_fewer_regions_on_a_noisy_unevenly_lit_page():
+    """What the screen says of the two: measured on a lit sheet with noise and a dark band (6 colours, medium detail; 87-93 % of the
+    strokes kept by SEEDS against 83-88 % by SLIC, and 81-114 regions against 276-442, over six noise and shading settings)."""
+    page = inked_page()
+    slic, seeds = (sg.segment(page, 100.0, 6, use_faces=False, min_area_mm2=0.2, superpixels=100, algorithm=a) for a in ("slic", "seeds"))
+    assert ink_kept(page, seeds) >= ink_kept(page, slic) - 0.02
+    assert len(seeds["regions"]) < len(slic["regions"])

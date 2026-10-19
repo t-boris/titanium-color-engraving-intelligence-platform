@@ -425,13 +425,17 @@ def photo_cap(markers: bool) -> int:
 
 
 def _split_settings(params: dict, markers: bool, detected: int) -> dict:
-    """The split settings checked: colours within the job's layers, a level of detail, a smoothing in mm, faces on or off,
-    areas marked by hand (in pixels of the working picture) and detected areas removed (by their number)."""
+    """The split settings checked: colours within the job's layers, the splitting algorithm (``segment.ALGORITHMS``, a level
+    of detail is not one), a level of detail, a smoothing in mm, faces on or off, areas marked by hand (in pixels of the working
+    picture) and detected areas removed (by their number)."""
     cap = photo_cap(markers)
     n = params.get("n_colors")
     if isinstance(n, bool) or not isinstance(n, int) or not seg.MIN_COLORS <= n <= cap:
         raise cv.ConversionError(f"choose from {seg.MIN_COLORS} to {cap} colours: the cleaning takes one LightBurn layer"
                                  + (" and the markers another" if markers else ""))
+    algorithm = params.get("algorithm") or seg.DEFAULT_ALGORITHM
+    if algorithm not in seg.ALGORITHMS:
+        raise cv.ConversionError("the splitting algorithm must be slic or seeds")
     detail = params.get("detail") or DEFAULT_DETAIL
     if detail not in DETAIL:
         raise cv.ConversionError("the level of detail must be coarse, medium or fine")
@@ -450,8 +454,8 @@ def _split_settings(params: dict, markers: bool, detected: int) -> dict:
     removed = params.get("removed") or []
     if not isinstance(removed, list) or any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < detected for i in removed):
         raise cv.ConversionError("a removed area must be one of the areas found in the picture")
-    return {"n_colors": n, "detail": detail, "tolerance_mm": smoothing, "faces": bool(params.get("faces", True)), "manual": manual,
-            "removed": sorted(set(removed))}
+    return {"n_colors": n, "algorithm": algorithm, "detail": detail, "tolerance_mm": smoothing, "faces": bool(params.get("faces", True)),
+            "manual": manual, "removed": sorted(set(removed))}
 
 
 def _segment(plan: dict, picture: np.ndarray) -> dict:
@@ -461,14 +465,15 @@ def _segment(plan: dict, picture: np.ndarray) -> dict:
     size = plan["size_mm"]
     areas = [a for i, a in enumerate(found["areas"]) if i not in s["removed"]] if s["faces"] else []
     document = seg.segment(picture, size["width"], s["n_colors"], important=areas + s["manual"], use_faces=False,
-                           min_area_mm2=share * size["width"] * size["height"], tolerance_mm=s["tolerance_mm"], superpixels=across)
+                           min_area_mm2=share * size["width"] * size["height"], tolerance_mm=s["tolerance_mm"], superpixels=across,
+                           algorithm=s.get("algorithm", seg.DEFAULT_ALGORITHM))
     document["faces"] = {"searched": s["faces"], "found": found["faces"] if s["faces"] else 0, "error": found["error"] if s["faces"] else None}
     return document
 
 
 def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: int, image_bytes: bytes, width_mm: float, name: str, *,
                 threshold=None, n_colors: int = 12, detail: str = DEFAULT_DETAIL, tolerance_mm: float = seg.TOLERANCE_MM,
-                use_faces: bool = True, markers: bool = False, max_time: float | None = None, include_as_shot: bool = False,
+                algorithm: str = seg.DEFAULT_ALGORITHM, use_faces: bool = True, markers: bool = False, max_time: float | None = None, include_as_shot: bool = False,
                 task: str | None = None, goals: dict | None = None) -> int:
     """Split a photograph into colour regions for one laser, lens and titanium stock and colour every source colour
     automatically: the fastest measured colour within the delta E tolerance (DEC-075), else the nearest (editor DEC-001)."""
@@ -486,7 +491,8 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
     if not math.isfinite(width) or width <= 0:
         raise cv.ConversionError("the work width must be a positive number of millimetres")
     picture = _source_rgb(image_bytes)
-    split = _split_settings({"n_colors": n_colors, "detail": detail, "tolerance_mm": tolerance_mm, "faces": use_faces}, markers, 0)
+    split = _split_settings({"n_colors": n_colors, "algorithm": algorithm, "detail": detail, "tolerance_mm": tolerance_mm, "faces": use_faces},
+                            markers, 0)
     search = faces.important_areas(picture)
     identifier = pl.new_identifier("TCE-A")
     h, w = picture.shape[:2]
@@ -518,7 +524,8 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
 
 def _split_op(split: dict) -> dict:
     """What the history records of a split: its settings and how many areas were marked or removed."""
-    return {**{k: split[k] for k in ("n_colors", "detail", "tolerance_mm", "faces")}, "manual": len(split["manual"]), "removed": len(split["removed"])}
+    return {**{k: split[k] for k in ("n_colors", "algorithm", "detail", "tolerance_mm", "faces")}, "manual": len(split["manual"]),
+            "removed": len(split["removed"])}
 
 
 def is_photo(plan: dict) -> bool:
@@ -785,9 +792,10 @@ def photo_view(store: Store, plan: dict) -> dict:
     found = plan["detected"]
     out.update(
         strategy=PHOTO,
+        split={**plan["split"], "algorithm": plan["split"].get("algorithm", seg.DEFAULT_ALGORITHM)},   # made before the choice: slic
         document={**{k: document[k] for k in ("size_mm", "px_mm", "image_px", "n_colors", "min_area_mm2", "tolerance_mm", "superpixels",
                                                "faces")},
-                  "version": plan["document_version"], "colours": len(document["palette"]), "regions": len(document["regions"]),
+                  "algorithm": document.get("algorithm", seg.DEFAULT_ALGORITHM), "version": plan["document_version"], "colours": len(document["palette"]), "regions": len(document["regions"]),
                   "important_regions": sum(r["important"] for r in document["regions"])},
         areas={"detected": [{**a, "number": i, "removed": i in plan["split"]["removed"]} for i, a in enumerate(found["areas"])],
                "faces": found["faces"], "search_failed": found["error"] is not None},

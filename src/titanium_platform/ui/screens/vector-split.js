@@ -1,13 +1,31 @@
-/* Векторная работа из фотографии, шаг «Разбиение» (REQ-042, DEC-074, DEC-076): число цветов, детальность, сглаживание,
-   лица; найденные важные области (лицо, глаза, губы) нарисованы поверх картинки. Оператор убирает найденную область или
-   добавляет свою — тянет прямоугольник или эллипс по картинке (координаты — пиксели рабочей картинки). Изменения областей
-   и настроек применяются кнопкой «Разбить заново»: разбиение пересчитывается, раскраска начинается заново. */
+/* Векторная работа из фотографии, разбиение (REQ-042, DEC-074, DEC-076; выбор алгоритма и общий раздел с цветами — фича
+   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, детальность, сглаживание, лица — всё на виду, как
+   часть раздела «Цвета и разбиение» (vector-colours.js). Найденные важные области (лицо, глаза, губы) нарисованы поверх
+   картинки в сворачиваемом блоке: оператор убирает найденную область или добавляет свою — тянет прямоугольник или эллипс
+   по картинке (координаты — пиксели рабочей картинки). Изменения областей и настроек применяются кнопкой «Разбить заново»:
+   разбиение пересчитывается, раскраска начинается заново. */
 'use strict';
 const VectorSplit = (() => {
   const {h, fill, btn, field, post, fail, toast} = App;
   const NS = 'http://www.w3.org/2000/svg';
   const DETAIL = [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']];
   const KIND = {face: 'Лицо', eye: 'Глаз', lips: 'Губы', manual: 'Отмечено вручную'};
+  /** Алгоритмы разбиения и чем они отличаются: по измерениям на портрете, фотографии документа и чистой графике (DEC-076 фичи
+      vector-detail-and-colour-control). Детальность — не алгоритм: она есть у каждого. */
+  const ALGORITHMS = [
+    ['slic', 'SLIC', 'Универсальный, по умолчанию. Лучше всего держит лица и мягкие переходы: на портрете самая малая ошибка цвета. Областей больше, границы ровные.'],
+    ['seeds', 'SEEDS', 'Быстрее и проще: областей заметно меньше (на чертежах и документах в разы), тонкие линии и текст держит не хуже, особенно на шумных и неровно освещённых снимках. На портретах границы чуть грубее, а ошибка цвета чуть больше.']];
+  const algorithmName = (v) => (ALGORITHMS.find(([id]) => id === v) || ALGORITHMS[0])[1];
+
+  /** Выбор алгоритма с пояснением, для каким картинкам он подходит; пояснение меняется вместе с выбором. */
+  function picker(current) {
+    const select = h('select', {'aria-label': 'Алгоритм разбиения'}, ALGORITHMS.map(([v, name]) => h('option', {value: v, selected: v === current}, name)));
+    const hint = h('p', {class: 'toolbar-hint'});
+    const explain = () => fill(hint, h('strong', {}, algorithmName(select.value) + ': '), (ALGORITHMS.find(([id]) => id === select.value) || ALGORITHMS[0])[2]);
+    select.addEventListener('change', explain);
+    explain();
+    return {select, hint};
+  }
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -23,13 +41,15 @@ const VectorSplit = (() => {
     return svgEl('polygon', {points: area.polygon.map((p) => p.join(',')).join(' '), class: cls});
   }
 
-  /** Карточка шага: настройки, картинка с важными областями, счётчики и «Разбить заново». */
+  /** Блок разбиения в разделе «Цвета и разбиение»: настройки с выбором алгоритма, счётчики, «Разбить заново» и, в
+      сворачиваемом блоке, картинка с важными областями. */
   function card(j, reload) {
     const doc = j.document, s = j.split;
     const W = doc.image_px.width, H = doc.image_px.height;
     const manual = s.manual.map((a) => ({...a}));
     const removed = new Set(s.removed);
     const colours = h('input', {type: 'number', step: '1', min: '2', max: String(j.layer_cap), value: s.n_colors, 'aria-label': 'Число цветов'});
+    const algorithm = picker(s.algorithm || 'slic');
     const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === s.detail}, l)));
     const smoothing = h('input', {type: 'number', step: 'any', min: '0', value: s.tolerance_mm, 'aria-label': 'Сглаживание, мм'});
     const faces = h('input', {type: 'checkbox', checked: s.faces});
@@ -38,6 +58,7 @@ const VectorSplit = (() => {
       'aria-label': 'Важные области поверх картинки; тяните, чтобы отметить свою'});
     const list = h('div', {class: 'stack'});
     const pending = h('p', {class: 'muted small', hidden: true}, 'Изменения областей применятся после «Разбить заново».');
+    const areasTitle = h('summary', {});
 
     function draw() {
       overlay.replaceChildren();
@@ -48,6 +69,7 @@ const VectorSplit = (() => {
       manual.forEach((a) => overlay.append(shape(a, 'vw-area manual')));
       const changed = manual.length !== s.manual.length || removed.size !== s.removed.length || [...removed].some((n) => !s.removed.includes(n));
       pending.hidden = !changed;
+      fill(areasTitle, `Важные области: лица, глаза, губы и отмеченные вручную (найдено ${faces.checked ? j.areas.detected.length : 0}, отмечено ${manual.length}, убрано ${removed.size})`);
       const rows = (faces.checked ? j.areas.detected : []).map((a) => h('div', {class: 'row'},
         h('span', {}, `${KIND[a.kind]} · найдено`, a.score == null ? '' : ` (оценка ${App.num(a.score)})`, removed.has(a.number) ? ' · убрано' : ''),
         removed.has(a.number) ? btn('Вернуть', () => { removed.delete(a.number); draw(); }) : btn('Убрать', () => { removed.add(a.number); draw(); })));
@@ -90,27 +112,28 @@ const VectorSplit = (() => {
       const self = ev.currentTarget;
       self.disabled = true;
       try {
-        await post(`/vector/${j.id}/split`, {n_colors: +colours.value, detail: detail.value, tolerance_mm: +smoothing.value, faces: faces.checked,
-          manual, removed: [...removed]});
+        await post(`/vector/${j.id}/split`, {n_colors: +colours.value, algorithm: algorithm.select.value, detail: detail.value, tolerance_mm: +smoothing.value,
+          faces: faces.checked, manual, removed: [...removed]});
         toast('Картинка разбита заново; цвета подобраны заново', 'ok');
         reload();
       } catch (e) { fail(e); self.disabled = false; }
     }, 'primary');
     const found = !doc.faces.searched ? 'поиск лиц выключен' : j.areas.search_failed ? 'поиск лиц не удался — отметьте важные области вручную'
       : doc.faces.found ? `лиц найдено: ${doc.faces.found}` : 'лицо не найдено';
-    return h('div', {class: 'card stack'}, h('h3', {}, '1. Разбиение'),
-      h('p', {class: 'muted small'}, 'Картинка делится на цветные области без зазоров: общая граница двух областей — одна линия. Лица, глаза, губы и отмеченные области делятся мельче.'),
-      h('div', {class: 'toolbar'}, field('Число цветов', colours, `2–${j.layer_cap}: чистка — первый слой` + (j.markers_enabled ? ', ещё один — маркеры' : '')),
+    return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Разбиение'),
+      h('div', {class: 'toolbar'}, field('Алгоритм разбиения', algorithm.select),
+        field('Число цветов', colours, `2–${j.layer_cap}: чистка — первый слой` + (j.markers_enabled ? ', ещё один — маркеры' : '')),
         field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Сглаживание границ, мм', smoothing),
-        h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run),
-      h('p', {class: 'small'}, `Цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')
+        h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run, algorithm.hint),
+      h('p', {class: 'small'}, `Алгоритм ${algorithmName(doc.algorithm)} · цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')
         + ` · наименьшая область ${App.num(doc.min_area_mm2, 2)} мм²`),
-      h('div', {class: 'grid g2'},
-        h('figure', {}, h('div', {class: 'vw-stage'}, h('img', {src: `/api/plans/${j.id}/source-image`, alt: 'Исходная картинка'}), overlay),
-          h('figcaption', {class: 'muted small'}, 'Важные области: лицо — голубое, глаза и губы — жёлтые, отмеченные вручную — зелёные, убранные — пунктир. ',
-            'Потяните по картинке, чтобы отметить свою область.')),
-        h('div', {class: 'stack'}, field('Новая область', tool), list, pending)));
+      h('details', {class: 'vw-details vw-areas-box'}, areasTitle,
+        h('div', {class: 'grid g2'},
+          h('figure', {}, h('div', {class: 'vw-stage'}, h('img', {src: `/api/plans/${j.id}/source-image`, alt: 'Исходная картинка'}), overlay),
+            h('figcaption', {class: 'muted small'}, 'Картинка делится на цветные области без зазоров: общая граница двух областей — одна линия; лица, глаза, губы и отмеченные области делятся мельче. ',
+              'Лицо — голубое, глаза и губы — жёлтые, отмеченные вручную — зелёные, убранные — пунктир. Потяните по картинке, чтобы отметить свою область.')),
+          h('div', {class: 'stack'}, field('Новая область', tool), list, pending))));
   }
 
-  return {card};
+  return {card, ALGORITHMS, picker};
 })();

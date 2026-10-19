@@ -68,6 +68,8 @@ MIN_SUPERPIXELS_ACROSS = 10
 LEVEL_SCALE = (1.0, 0.6, 0.35)          # superpixel size of the picture, of faces, of eyes, lips and marked areas
 MIN_SUPERPIXEL_PX = 3
 SLIC_ITERATIONS = 10
+ALGORITHMS = ("slic", "seeds")        # the superpixel algorithms a split can use (feature vector-detail-and-colour-control, DEC-076)
+DEFAULT_ALGORITHM = "slic"
 LEVEL_SHARE = (0.0, 0.15, 0.25)         # least share of the k-means weight of faces and of the finest areas
 KMEANS_RUNS, KMEANS_ITERATIONS = 4, 60
 ARC_SIGMA_PX = 1.2                      # an arc is low-passed along its length first: pixel steps are no detail
@@ -116,9 +118,28 @@ def _slic(lab: np.ndarray, size: int) -> np.ndarray:
     return slic.getLabels()
 
 
-def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int]) -> np.ndarray:
-    """Superpixel numbers 0..n-1: a SLIC of the whole picture, then of each finer level inside its own area."""
-    labels = _slic(lab, sizes[0]).astype(np.int64)
+def _seeds(lab: np.ndarray, size: int) -> np.ndarray:
+    """SEEDS superpixels: they follow thin dark lines and text more closely than SLIC and take less time, at the cost of
+    rougher borders on soft gradients. OpenCV's SEEDS reads an 8-bit picture, so the Lab picture goes in as sRGB; a crop
+    smaller than two superpixels is one."""
+    h, w = lab.shape[:2]
+    count = (h * w) // (size * size)
+    if count < 2:
+        return np.zeros((h, w), np.int32)
+    rgb = np.clip(color.lab_to_srgb8(lab.astype(np.float64)), 0, 255).astype(np.uint8)
+    seeds = cv2.ximgproc.createSuperpixelSEEDS(w, h, 3, count, 4, 2, 5, False)
+    seeds.iterate(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), SLIC_ITERATIONS)
+    return seeds.getLabels()
+
+
+_ALGORITHM = {"slic": _slic, "seeds": _seeds}
+
+
+def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int], algorithm: str = DEFAULT_ALGORITHM) -> np.ndarray:
+    """Superpixel numbers 0..n-1: superpixels of the whole picture, then of each finer level inside its own area, by the
+    chosen algorithm (``ALGORITHMS``)."""
+    make = _ALGORITHM[algorithm]
+    labels = make(lab, sizes[0]).astype(np.int64)
     h, w = levels.shape
     for level in (1, 2):
         mask = levels == level
@@ -129,7 +150,7 @@ def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int]) -> np.nd
         y0, y1 = max(0, ys.min() - pad), min(h, ys.max() + 1 + pad)
         x0, x1 = max(0, xs.min() - pad), min(w, xs.max() + 1 + pad)
         inside = mask[y0:y1, x0:x1]
-        sub = _slic(np.ascontiguousarray(lab[y0:y1, x0:x1]), sizes[level]) + labels.max() + 1
+        sub = make(np.ascontiguousarray(lab[y0:y1, x0:x1]), sizes[level]).astype(np.int64) + labels.max() + 1
         labels[y0:y1, x0:x1][inside] = sub[inside]
     _, numbers = np.unique(labels, return_inverse=True)
     return numbers.reshape(levels.shape)
@@ -166,9 +187,9 @@ def _kmeans(points: np.ndarray, weights: np.ndarray, k: int, seed: int) -> tuple
     return best[1], best[2]
 
 
-def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], n_colors: int, seed: int):
+def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], n_colors: int, seed: int, algorithm: str = DEFAULT_ALGORITHM):
     """Colour class of every pixel and the Lab of every class, from the clustered superpixels."""
-    sp = _superpixels(smooth, levels, sizes)
+    sp = _superpixels(smooth, levels, sizes, algorithm)
     n = int(sp.max()) + 1
     flat = sp.ravel()
     pixels = np.bincount(flat, minlength=n).astype(float)
@@ -440,12 +461,13 @@ def _palette(classes: np.ndarray, lab: np.ndarray, k: int) -> tuple[np.ndarray, 
 
 def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = (), use_faces: bool = True,
             min_area_mm2: float = MIN_AREA_MM2, tolerance_mm: float = TOLERANCE_MM, seed: int = 0,
-            superpixels: int = SUPERPIXELS_ACROSS) -> dict:
+            superpixels: int = SUPERPIXELS_ACROSS, algorithm: str = DEFAULT_ALGORITHM) -> dict:
     """Split an RGB uint8 picture ``width_mm`` wide into at most ``n_colors`` gapless colour regions (module docstring).
 
     ``important`` lists areas the operator marked (or detected areas handed back to keep them, see
     :func:`faces.check_area`), in pixels of this picture; ``use_faces`` adds the faces, eyes and lips found in it.
     ``superpixels`` is the number of coarse superpixels along the longer side: fewer follow only the larger edges.
+    ``algorithm`` makes them: ``slic`` (the default) or ``seeds`` (``ALGORITHMS``).
     """
     img = np.asarray(image_rgb)
     if img.ndim != 3 or img.shape[2] != 3 or img.dtype != np.uint8 or not img.size:
@@ -453,6 +475,8 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     n_colors = _whole(n_colors, "the number of colours", MIN_COLORS, MAX_COLORS)
     seed = _whole(seed, "the seed", 0)
     superpixels = _whole(superpixels, "the number of superpixels across the picture", MIN_SUPERPIXELS_ACROSS)
+    if algorithm not in ALGORITHMS:
+        raise SegmentError("the algorithm must be " + " or ".join(ALGORITHMS))
     h, w = img.shape[:2]
     px_mm = _number(width_mm, "the work width", positive=True) / w
     min_area, tolerance = _number(min_area_mm2, "the minimum area"), _number(tolerance_mm, "the tolerance")
@@ -468,7 +492,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
 
     lab = color.srgb8_to_lab(img).astype(np.float32)
     smooth = cv2.bilateralFilter(lab, 0, SMOOTH_COLOR, SMOOTH_SPACE)
-    classes, class_lab = _classes(smooth, levels, sizes, n_colors, seed)
+    classes, class_lab = _classes(smooth, levels, sizes, n_colors, seed, algorithm)
     region, of_class = _components(classes, len(class_lab))
     fine = (levels == 2).ravel()
     area = np.bincount(region.ravel(), minlength=len(of_class))
@@ -489,7 +513,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
                 for i, (vertices, left, right, _, _, closed) in enumerate(arcs)]
     return {"version": VERSION, "kind": "segments", "size_mm": {"width": float(width_mm), "height": h * px_mm}, "px_mm": px_mm,
             "image_px": {"width": w, "height": h}, "n_colors": n_colors, "min_area_mm2": min_area, "tolerance_mm": tolerance,
-            "seed": seed, "superpixels": superpixels, "superpixel_px": dict(zip(("coarse", "face", "fine"), sizes)),
+            "seed": seed, "superpixels": superpixels, "algorithm": algorithm, "superpixel_px": dict(zip(("coarse", "face", "fine"), sizes)),
             "faces": {"searched": bool(use_faces), "found": search.faces, "error": search.error},
             "important": areas, "palette": palette, "regions": regions, "arcs": arc_list}
 
