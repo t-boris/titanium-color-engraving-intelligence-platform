@@ -1101,5 +1101,5 @@ def apply_edit(matrix: dict, edit: dict) -> dict:
         spec["pitch_mm"] = float(edit["pitch_mm"])
     spec["missing"] = missing(spec, cols, rows)
     spec["unusual"] = unusual(spec)
-    out.update(spec=spec, cols=cols, rows=rows, H=H.round(6).tolist(), confirmed=False)
+    out.update(spec=spec, cols=cols, rows=rows, H=H.round(6).tolist(), confirmed=False, confirmed_at=None)
     return _plain(out)

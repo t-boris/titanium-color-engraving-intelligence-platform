@@ -130,6 +130,20 @@ def test_the_review_screen_prints_every_note_of_a_layer_whether_it_was_measured_
     assert "IngestDialogs.layersTable(check.layers)" in review and "h('h3', {}, 'Слои файла')" in review
 
 
+def test_the_matrix_review_shows_the_recognised_labels_the_uncertain_values_and_whose_reconstruction_the_settings_are():
+    """REQ-036 AC8: what was read from the photograph, what is missing, unusual or disagrees, and that the settings are the
+    operator's confirmed reconstruction (with when), not an original LightBurn file."""
+    review = source("screens/ingest-review.js")
+    card = review[review.index("function matrixCard(pair, reload)"):review.index("async function render(pair, reload)")]
+    for label in ("labels.header", "labels.x_title", "labels.y_title", "readings(labels.rows)", "readings(labels.cols)"):
+        assert label in card, label                                     # every label recognised on the photograph
+    for uncertain in ("fit.y.read", "fit.y.agreeing", "fit.x.read", "fit.x.agreeing", "s.missing.map((x) => I18N.tr(x))",
+                      "s.unusual.map(paramName)"):
+        assert uncertain in card, uncertain                             # read against agreeing labels, missing and unusual values
+    assert "`параметры подтверждены ${stamp(m.confirmed_at)}`" in card and "pill('параметры ждут подтверждения', 'warn')" in card
+    assert "восстановлены по фотографии матрицы и подтверждаются оператором" in card and "не является исходным файлом" in card
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_russian(tmp_path):
     out = run_translations(tmp_path, ["2 Ellipse objects on this layer are not read: no outline geometry",

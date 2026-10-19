@@ -99,7 +99,7 @@ def test_a_rephotograph_of_an_accepted_matrix_keeps_the_confirmed_settings(app):
     again = synth.material_test(cols=4, rows=3, x_values=[20.0, 30.0, 40.0, 50.0], y_values=[900.0, 600.0, 300.0], rotate_deg=-0.6, seed=9)
     rid = ig.create_rephoto(store, pid, photo_name="again.png", photo_bytes=png(again["photo"]))
     matrix = ig.get_pair(store, rid)["matrix"]
-    assert matrix["confirmed"] is True
+    assert matrix["confirmed"] is True and matrix["confirmed_at"] == source["confirmed_at"] is not None   # the same confirmation
     for key in ("x", "y"):
         assert (matrix["spec"][key]["param"], matrix["spec"][key]["values"]) == (source["spec"][key]["param"], source["spec"][key]["values"])
     assert matrix["spec"]["fixed"] == source["spec"]["fixed"]
