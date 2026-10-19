@@ -815,3 +815,26 @@ Steps (each ends with tests, a commit to main, and a look at the real screen):
 - Not built (still in vector-detail-and-colour-control): density and eyes controls, Contrast and Artistic modes, automatic merging of
   same-recipe regions.
 
+
+## 0.9.0: saved works, copy, one-screen workspace (operator, 2026-10-19, after 0.8.0 went live)
+
+Operator's words: "Векторная работа должна где-то как-то сохраняться. То есть, что мы выбрали, как она выглядит. ... И возможность
+переделать. И, пожалуйста, переделай UI намного-намного более удобным, чтобы не надо было вообще скроллить."
+
+Findings: a work is stored (plan row + document file + source image), but the screen has only a creation form, no list, so a work can only be
+reached by its address `#/vector?plan=22`; the work page is several screens tall. Work 22 was deleted from the UI at 21:37Z (audit 190).
+
+Answers (AskUserQuestion): restore 22 (yes); list with thumbnails + "Сделать копию" (new work from the same state, the old one stays);
+layout "one screen, three columns" (tabs of settings left, big picture centre, layers and variants right); the 500-for-missing-library
+message and the README dependency step go into the same release. SemVer: a new capability, so 0.9.0 (not 0.8.1).
+
+- [x] 1. Work 22 restored from `titanium-before-0.8.0-20261019T210411Z.sqlite` (one plan row; fresh backup
+      `titanium-before-restore-of-work-22-20261019T221230Z.sqlite` first; audit row `plan_restored`; GET /api/vector/22 -> 200, version 7).
+- [ ] 2. Backend: `GET /api/vector` (list with facts), `GET /api/vector/{id}/thumb.png`, `POST /api/vector/{id}/copy`; a missing AI library is
+      a message, not a 500, and `ai.missing` tells the screen why the button is off. Tests: `tests/test_vector_list.py`.
+- [ ] 3. UI: "Мои работы" (cards: thumbnail, name, date, algorithm, colours, layers, AI style; Open, Copy, Delete with confirmation); the work
+      screen as one viewport (header with undo/redo and file, tabs Разбиение/Цвета/AI/Файл on the left, picture in the middle, layers and
+      variants on the right, only long lists scroll inside their panel). Check on screen at 1421x951 and a smaller window.
+- [ ] 4. Spec (REQ/DEC), README (0.9.0 section, dependency step of the deploy recipe), version 0.9.0, tag.
+- [ ] 5. Full suite once, backup, wheel, install, import every declared dependency from the app environment, one AI call from it on a copy,
+      deploy, look at the real app.
