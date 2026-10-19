@@ -534,6 +534,15 @@ select::-ms-expand {display:none}
 /* редактор цветов векторной работы (REQ-044..REQ-049): большая картинка, панель справа, под картинкой на узком экране;
    обводки — классы путей (областей до тысячи), толщина не зависит от масштаба */
 .vw-colours {min-width:0}
+/* The card's blocks keep one rhythm: the spacing between them is the stack's gap alone (no paragraph or heading margin on top of it). */
+.vw-colours>p,.vw-colours>h4,.vw-split>p,.vw-split>h4,.vw-split>details {margin:0}
+.vw-colours>h3 {margin-bottom:0}
+.vw-colours>div:empty {display:none}
+.vw-colours>h4,.vw-split>h4 {font-size:15px;font-weight:650;color:#e3e9f6;letter-spacing:-.1px}
+/* The split settings: the fields share one top line whatever hints hang under them; the actions are one centred line. */
+.vw-split-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 18px;align-items:start}
+.vw-split-actions {display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
+.vw-colours .toolbar>label.row {min-height:44px}
 .vw-editor {display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,320px);gap:18px;align-items:start;min-width:0}
 .vw-ed-main {display:flex;flex-direction:column;gap:10px;min-width:0}
 .vw-ed-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}

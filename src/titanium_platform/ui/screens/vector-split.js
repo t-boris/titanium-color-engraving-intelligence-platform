@@ -121,10 +121,11 @@ const VectorSplit = (() => {
     const found = !doc.faces.searched ? 'поиск лиц выключен' : j.areas.search_failed ? 'поиск лиц не удался — отметьте важные области вручную'
       : doc.faces.found ? `лиц найдено: ${doc.faces.found}` : 'лицо не найдено';
     return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Разбиение'),
-      h('div', {class: 'toolbar'}, field('Алгоритм разбиения', algorithm.select),
+      h('div', {class: 'vw-split-fields'}, field('Алгоритм разбиения', algorithm.select),
         field('Число цветов', colours, `2–${j.layer_cap}: чистка — первый слой` + (j.markers_enabled ? ', ещё один — маркеры' : '')),
-        field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Сглаживание границ, мм', smoothing),
-        h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run, algorithm.hint),
+        field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Сглаживание границ, мм', smoothing)),
+      h('div', {class: 'vw-split-actions'}, h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run),
+      algorithm.hint,
       h('p', {class: 'small'}, `Алгоритм ${algorithmName(doc.algorithm)} · цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')
         + ` · наименьшая область ${App.num(doc.min_area_mm2, 2)} мм²`),
       h('details', {class: 'vw-details vw-areas-box'}, areasTitle,

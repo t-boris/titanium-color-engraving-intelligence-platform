@@ -257,6 +257,18 @@ def test_fields_and_buttons_in_one_line_use_the_bottom_aligned_toolbar():
     assert offenders == [], "a row starts with a labelled field; use class 'toolbar':\n" + "\n".join(offenders)
 
 
+def test_the_split_settings_share_one_top_line_and_the_card_has_no_empty_bands():
+    """Regression (0.7.0 screenshot): the bottom-aligned toolbar put four labels at four heights because only some fields have a hint, and the
+    empty warning block and the paragraph margins added bands of 30-60 px between the blocks of the colours card."""
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\.vw-split-fields \{[^}]*align-items:start", css)
+    assert re.search(r"\.vw-split-actions \{[^}]*align-items:center", css)
+    assert re.search(r"\.vw-colours>div:empty \{display:none\}", css)
+    assert re.search(r"\.vw-colours>p,[^{]*\.vw-split>h4[^{]*\{margin:0\}", css)
+    source = (UI_DIR / "screens" / "vector-split.js").read_text(encoding="utf-8")
+    assert "vw-split-fields" in source and "vw-split-actions" in source and "class: 'toolbar'" not in source
+
+
 def test_rig_repeatability_is_shown_with_the_stability_data():
     """REQ-009: computed for every recipe and every re-photographed engraving, it must reach the screens that show stability."""
     for screen in ("screens/knowledge.js", "screens/analysis.js"):
