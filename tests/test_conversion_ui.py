@@ -59,3 +59,35 @@ def test_the_vector_screen_disables_export_while_regions_lack_evidence_and_offer
     for op in ("set_task", "set_layer", "delete", "merge", "set_tolerance", "exclude", "include", "set_settings", "to_designer", "revert", "set_threshold"):
         assert f"op: '{op}'" in screen, op
     assert "App.laserLensPicker(" in screen and "/vector/palette?" in screen and "/exports/${e.number}" in screen
+
+
+VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-colours.js")
+
+
+def test_the_vector_work_steps_are_loaded_before_the_screen_that_assembles_them():
+    order = {s: i for i, s in enumerate(SCRIPTS)}
+    for part in ("/screens/vector-split.js", "/screens/vector-colours.js"):
+        assert order["/app.js"] < order["/dialogs.js"] < order[part] < order["/screens/vector.js"], part
+    screen = source("screens/vector.js")
+    assert "VectorSplit.card(j, reload)" in screen and "VectorColours.card(j, run)" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
+
+
+def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_their_errors_translated():
+    for name in VECTOR_SCREENS:
+        text = source(name)
+        assert not re.search(r"href:\s*[`'\"]/api", text), name                  # the raw API (and its English JSON) is never opened
+        assert "window.open(" not in text and "location.href" not in text, name
+    screen = source("screens/vector.js")
+    assert "await fetch('/api' + path)" in screen and "I18N.tr(raw)" in screen and "URL.createObjectURL(await res.blob())" in screen
+    assert "saveButton(`/vector/${id}/exports/${e.number}`" in screen and "saveButton(`/vector/${j.id}/exports/${e.number}`" in screen
+
+
+def test_the_colouring_step_offers_every_operation_the_server_knows():
+    from titanium_platform import vector_job
+    colours = source("screens/vector-colours.js")
+    for op in vector_job.COLOURING_OPS:
+        assert f"'{op}'" in colours, op
+    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Меньше слоёв", "Принять все предложенные", "Включить цвета без привязки"):
+        assert label in colours, label
+    split = source("screens/vector-split.js")
+    assert "post(`/vector/${j.id}/split`" in split and "'Разбить заново'" in split and "лицо не найдено" in split
