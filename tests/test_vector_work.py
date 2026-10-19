@@ -1,5 +1,8 @@
 """REQ-042, REQ-043 (DEC-073..DEC-077): a photograph becomes a vector work - split into gapless colour regions, coloured
-with measured titanium colours (automatic modes, hand choices, unresolved colours), then one LightBurn file."""
+with measured titanium colours (automatic modes, hand choices, colours beyond the tolerance), then one LightBurn file; its
+colour editor (feature vector-work-colour-editor: REQ-043..REQ-049, DEC-001, DEC-075..DEC-077): the brush, merges, undo
+and redo."""
+import copy
 import json
 import shutil
 import subprocess
@@ -12,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import obs
-from titanium_platform import color, engraving_time, faces, lightburn as lb, model, plans as pl, segment as sg, setup as su, vector_job
+from titanium_platform import color, conversion as cv, engraving_time, faces, lightburn as lb, model, plans as pl, segment as sg, setup as su, vector_job
 from titanium_platform.api.app import create_app
 
 SVG = "{http://www.w3.org/2000/svg}"
@@ -83,6 +86,21 @@ def by_rgb(job, rgb):
 def palette_ids(c):
     entries = c["client"].get(f"/api/vector-palette?device_id={c['w']['setup'][0]}&lens_id={c['w']['setup'][1]}&material_id={c['ti']}").json()["entries"]
     return {(round(e["lab"][0]), e["parameters"]["speed"]): e["id"] for e in entries}
+
+
+def document_of(c, j) -> dict:
+    """The job's current split as stored."""
+    return json.loads(Path(pl.get_plan(c["store"], j["id"])["document_path"]).read_text(encoding="utf-8"))
+
+
+def regions_in(document, index) -> list[str]:
+    """The regions of one source colour, in the document's order."""
+    return [r["id"] for r in document["regions"] if r["color"] == index]
+
+
+def refused(c, j, op, message):
+    r = c["client"].post(f"/api/vector/{j['id']}/colouring", json=op)
+    assert r.status_code == 422 and r.json()["error"] == message, (op, r.text)
 
 
 # -- split ---------------------------------------------------------------------------------------------------------------------
@@ -167,28 +185,44 @@ def test_each_colour_takes_the_fastest_measured_colour_within_the_tolerance_and_
     assert all(e["id"] != ids.get((round(lab(RED)[0]), 4000)) for e in j["entries"].values())   # another titanium is not this palette
 
 
-def test_a_colour_without_a_measured_colour_in_tolerance_is_proposed_and_blocks_the_file_until_accepted(work, job):
+def test_every_colour_is_coloured_from_the_start_and_one_beyond_the_tolerance_is_flagged_without_blocking_the_file(work, job):
+    """Editor REQ-043, DEC-001: no acceptance step; the colour far from every measured one takes the nearest."""
     c, j = work, job
     yellow = by_rgb(j, YELLOW)
-    assert yellow["status"] == "proposed" and yellow["how"] == "nearest" and yellow["delta_e"] > 6
+    assert yellow["status"] == "automatic" and yellow["how"] == "nearest" and yellow["delta_e"] > 6 and yellow["outside_tolerance"]
     assert j["entries"][yellow["entry_id"]]["basis"] != "as-shot"          # measured as photographed: out of the automatic choice
-    assert j["unresolved"] == {"colours": 1, "regions": 1, "share": pytest.approx(yellow["pixels"] / (60 * 45 / 0.0625)), "indexes": [yellow["index"]],
-                               "missing_regions": 0}
-    assert j["export_blocked"] == ("1 colour(s) in 1 region(s) have no titanium colour within the delta E tolerance: accept the proposed "
-                                   "colour, choose another or exclude it before export") and j["status"] == "Draft"
+    assert all(col["status"] == "automatic" and col["entry_id"] for col in j["colours"])
+    assert [col["index"] for col in j["colours"] if col["outside_tolerance"]] == [yellow["index"]]
+    assert j["outside"] == {"colours": 1, "regions": 1, "share": pytest.approx(yellow["pixels"] / (60 * 45 / 0.0625)), "indexes": [yellow["index"]]}
+    assert j["missing"] == {"regions": 0} and "unresolved" not in j and j["undo"] == 0 and j["redo"] == 0
+    assert j["export_blocked"] is None and j["status"] == "Ready to export"
+    assert c["client"].get(f"/api/vector/{j['id']}/export.lbrn2").status_code == 200
+    j = colouring(c, j, op="exclude_colour", colour=yellow["index"])
+    assert by_rgb(j, YELLOW)["status"] == "excluded" and j["outside"]["colours"] == 0 and j["export_blocked"] is None
+    for op in ({"op": "accept", "colour": yellow["index"]}, {"op": "accept_all"}):      # the acceptance step is gone
+        bad = c["client"].post(f"/api/vector/{j['id']}/colouring", json=op)
+        assert bad.status_code == 422 and bad.json()["error"] == f"unknown edit operation {op['op']!r}"
+
+
+def test_the_file_is_blocked_only_by_a_colour_no_longer_measured_or_an_empty_palette(work, job, monkeypatch):
+    c, j = work, job
+    blue, region = by_rgb(j, BLUE), regions_in(document_of(c, j), by_rgb(j, RED)["index"])[0]
+    gone = by_rgb(j, GREEN)["entry_id"]
+    j = colouring(c, j, op="set_colour", colour=blue["index"], entry_id=gone)
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=gone)
+    measured = vector_job._palette
+    monkeypatch.setattr(vector_job, "_palette", lambda store, plan: [e for e in measured(store, plan) if e["id"] != gone])
+    j = c["client"].get(f"/api/vector/{j['id']}").json()                               # the green recipe is no longer measured
+    assert by_rgb(j, BLUE)["status"] == "missing" and by_rgb(j, GREEN)["status"] == "missing" and by_rgb(j, BLUE)["entry_id"] is None
+    expected = by_rgb(j, BLUE)["open_regions"] + by_rgb(j, GREEN)["open_regions"] + 1
+    assert j["missing"] == {"regions": expected} and j["export_blocked"] == (
+        f"{expected} region(s) have a titanium colour that is no longer measured on this laser, lens and titanium stock: choose another before export")
     refused = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
     assert refused.status_code == 422 and refused.json() == {"error": j["export_blocked"], "kind": "invalid"}
-    j = colouring(c, j, op="accept", colour=yellow["index"])
-    assert by_rgb(j, YELLOW)["status"] == "accepted" and j["export_blocked"] is None and j["status"] == "Ready to export"
-    j = colouring(c, j, op="undo")
-    assert by_rgb(j, YELLOW)["status"] == "proposed"
-    j = colouring(c, j, op="exclude_colour", colour=yellow["index"])
-    assert by_rgb(j, YELLOW)["status"] == "excluded" and j["export_blocked"] is None
-    j = colouring(c, j, op="include_colour", colour=yellow["index"])
-    j = colouring(c, j, op="accept_all")
-    assert j["unresolved"]["colours"] == 0
-    bad = c["client"].post(f"/api/vector/{j['id']}/colouring", json={"op": "accept_all"})
-    assert bad.status_code == 422 and bad.json()["error"] == "there is no proposed titanium colour to accept"
+    bare = su.save_material(c["store"], "Bare sheet", grade="Grade 2", thickness_mm=1, surface="polished")["id"]
+    empty = create(work, material_id=bare).json()                                      # nothing measured on this titanium
+    assert empty["export_blocked"] == "no measured colour of this laser, lens and titanium stock fills an area" and empty["status"] == "Draft"
+    assert {col["status"] for col in empty["colours"]} == {"missing"} and empty["palette_size"] == 0
 
 
 def test_including_colours_measured_as_photographed_lets_the_automatic_choice_reach_them(work, job):
@@ -196,7 +230,8 @@ def test_including_colours_measured_as_photographed_lets_the_automatic_choice_re
     yellow = by_rgb(j, YELLOW)
     assert yellow["status"] == "automatic" and j["entries"][yellow["entry_id"]]["basis"] == "as-shot" and j["settings"]["include_as_shot"]
     j = colouring(work, j, op="settings", tolerance_de=6, max_time=5, include_as_shot=True)   # only the fast paper and the yellow
-    assert j["settings"]["max_time"] == 5 and by_rgb(j, RED)["status"] == "proposed" and by_rgb(j, PAPER)["status"] == "automatic"
+    assert j["settings"]["max_time"] == 5 and by_rgb(j, PAPER)["status"] == "automatic" and not by_rgb(j, PAPER)["outside_tolerance"]
+    assert by_rgb(j, RED)["status"] == "automatic" and by_rgb(j, RED)["outside_tolerance"] and by_rgb(j, RED)["how"] == "nearest"
     assert all(j["entries"][col["entry_id"]]["time_s_per_cm2"] <= 5 for col in j["colours"])
     slow = work["client"].post(f"/api/vector/{j['id']}/colouring", json={"op": "settings", "tolerance_de": 6, "max_time": 0.001})
     assert slow.status_code == 422 and slow.json()["error"] == "no colour of the palette engraves within 0.001 s per square centimetre"
@@ -238,18 +273,18 @@ def test_a_whole_colour_or_one_region_can_be_given_another_titanium_colour_by_ha
     j = colouring(c, j, op="assign", mode="random")
     assert by_rgb(j, BLUE)["entry_id"] == green_entry                                   # every mode keeps the operator's choice
     j = colouring(c, j, op="set_colour", colour=blue["index"], entry_id=None)
-    assert by_rgb(j, BLUE)["status"] in ("automatic", "proposed")
+    assert by_rgb(j, BLUE)["status"] == "automatic"
     svg = ET.fromstring(c["client"].get(f"/api/vector/{j['id']}/split.svg").text)
     region = next(p.get("data-region") for p in svg.findall(f"{SVG}path") if p.get("data-color") == str(by_rgb(j, RED)["index"]))
     yellow_as_shot = ids[(round(lab(YELLOW)[0]), 2000)]
-    j = colouring(c, j, op="set_region", region=region, entry_id=yellow_as_shot)       # a colour measured as photographed, by hand
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=yellow_as_shot)  # measured as photographed, by hand
     assert j["colouring"]["regions"] == {region: yellow_as_shot} and j["entries"][yellow_as_shot]["automatic"] is False
     j = colouring(c, j, op="exclude_region", region=region)
     assert j["colouring"]["excluded_regions"] == [region]
     j = colouring(c, j, op="include_region", region=region)
-    j = colouring(c, j, op="set_region", region=region, entry_id=None)
+    j = colouring(c, j, op="paint", scope="region", region=region, entry_id=None)
     assert j["colouring"]["regions"] == {}
-    for op, message in [({"op": "set_region", "region": "r999", "entry_id": green_entry}, "there is no region"),
+    for op, message in [({"op": "paint", "scope": "region", "region": "r999", "entry_id": green_entry}, "there is no region"),
                         ({"op": "set_colour", "colour": 99, "entry_id": green_entry}, "no such source colour"),
                         ({"op": "set_colour", "colour": 0, "entry_id": "nope"}, "must be a measured colour")]:
         bad = c["client"].post(f"/api/vector/{j['id']}/colouring", json=op)
@@ -265,7 +300,6 @@ def regions_of(project) -> list[list]:
 
 def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_and_gapless_closed_regions(work, job):
     c, j = work, job
-    j = colouring(c, j, op="accept_all")
     assert j["time"]["estimate"] and j["time"]["complete"] and j["time"]["layers"][0]["index"] == 0
     assert j["time"]["seconds"] == pytest.approx(sum(row["seconds"] for row in j["time"]["layers"]))
     r = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
@@ -275,7 +309,7 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert layers[0].index == 0 and layers[0].name.startswith("CLEAN-CROSSHATCH-") and layers[0].cross_hatch
     colour_layers = layers[1:]
     assert [layer.index for layer in colour_layers] == list(range(1, len(colour_layers) + 1)) and len(colour_layers) <= 29
-    assert len(colour_layers) == len(j["layers"]) == 4                                   # paper (and accepted yellow), red, blue, green
+    assert len(colour_layers) == len(j["layers"]) == 4                                   # paper (and the yellow, nearest), red, blue, green
     for layer, planned in zip(colour_layers, j["layers"]):
         assert (layer.name, layer.power, layer.speed, layer.layer_type) == (planned["name"], planned["parameters"]["power"],
                                                                             planned["parameters"]["speed"], "Scan")
@@ -289,7 +323,7 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert after["status"] == "Exported" and after["exports"][0]["variant"] == 1 and after["exports"][0]["layers"] == 4
     assert after["exports"][0]["seconds"] == pytest.approx(j["time"]["seconds"]) and "path" not in after["exports"][0]
     plan = pl.get_plan(c["store"], j["id"])
-    assert plan["exports"][0]["colouring"]["groups"] and "path" in plan["exports"][0]           # kept with the colouring it came from
+    assert plan["exports"][0]["colouring"]["assignment"] and "path" in plan["exports"][0]       # kept with the colouring it came from
     stored = c["client"].get(f"/api/vector/{j['id']}/exports/1")
     assert stored.status_code == 200 and stored.content == r.content
     assert c["client"].get(f"/api/plans/{j['id']}/export.lbrn2").status_code == 200          # the plan screen exports it the same way
@@ -312,10 +346,12 @@ def test_a_file_with_markers_puts_them_on_c01_and_the_colours_after(work, job):
 
 @pytest.mark.parametrize("markers, cap", [(False, 29), (True, 28)])
 def test_more_recipes_than_the_output_layers_left_after_cleaning_and_markers_are_refused(markers, cap):
-    state = {"unresolved": {"colours": 0, "regions": 0}, "missing_regions": [], "layers": [{}] * cap}
+    state = {"by_id": {"e1": {}}, "missing_regions": [], "layers": [{}] * cap}
     assert vector_job._blocker_photo({"markers_enabled": markers}, state) is None
     state["layers"] = [{}] * (cap + 1)
     assert vector_job._blocker_photo({"markers_enabled": markers}, state) == f"{cap + 1} different recipes need more LightBurn layers than the {cap} available"
+    state["by_id"] = {}
+    assert vector_job._blocker_photo({"markers_enabled": markers}, state) == "no measured colour of this laser, lens and titanium stock fills an area"
 
 
 def test_a_full_recipe_with_its_lightburn_tags_is_written_from_the_observation(work):
@@ -338,8 +374,316 @@ def test_the_old_tracing_strategies_still_make_jobs(work):
                                 files={"image": ("a.png", picture(), "image/png")})
         assert r.status_code == 201 and r.json()["document"]["strategy"] == strategy and "svg" in r.json()
     traced = r.json()
-    bad = work["client"].post(f"/api/vector/{traced['id']}/colouring", json={"op": "undo"})
-    assert bad.status_code == 422 and bad.json()["error"] == "only a photograph split into colour regions is split and coloured this way"
+    for bad in (work["client"].post(f"/api/vector/{traced['id']}/colouring", json={"op": "undo"}),
+                work["client"].get(f"/api/vector/{traced['id']}/reach", params={"region": "r1", "similarity_de": 3})):
+        assert bad.status_code == 422 and bad.json()["error"] == "only a photograph split into colour regions is split and coloured this way"
+
+
+# -- the colour editor (feature vector-work-colour-editor) ----------------------------------------------------------------------
+def areas(c, j) -> dict[str, str]:
+    """The regions of the test picture by what they show: the paper around everything and inside the ring, the ring, the
+    ellipse, the band and the disc."""
+    doc = document_of(c, j)
+    pixels = {r["id"]: r["pixels"] for r in doc["regions"]}
+    of = lambda rgb: regions_in(doc, by_rgb(j, rgb)["index"])          # noqa: E731
+    paper, inner = sorted(of(PAPER), key=lambda r: -pixels[r])
+    (ring,), (ellipse,), (band,), (disc,) = of(RED), of(BLUE), of(GREEN), of(YELLOW)
+    return {"paper": paper, "inner": inner, "ring": ring, "ellipse": ellipse, "band": band, "disc": disc}
+
+
+def reach(c, j, **params) -> dict:
+    r = c["client"].get(f"/api/vector/{j['id']}/reach", params=params)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_the_brush_paints_one_region_or_its_whole_source_colour_and_includes_what_it_paints(work, job):
+    """Editor REQ-045: scopes region and colour, painting an excluded area includes it, null is the automatic choice."""
+    c, j = work, job
+    a, paper = areas(c, j), by_rgb(j, PAPER)
+    blue_e, green_e = by_rgb(j, BLUE)["entry_id"], by_rgb(j, GREEN)["entry_id"]
+    j = colouring(c, j, op="exclude_region", region=a["inner"])
+    j = colouring(c, j, op="paint", region=a["inner"], scope="region", entry_id=blue_e)
+    assert j["colouring"]["regions"] == {a["inner"]: blue_e} and j["colouring"]["excluded_regions"] == []
+    assert by_rgb(j, PAPER)["entry_id"] == paper["entry_id"] and by_rgb(j, PAPER)["status"] == "automatic"   # the rest of its colour keeps it
+    j = colouring(c, j, op="exclude_colour", colour=paper["index"])
+    j = colouring(c, j, op="exclude_region", region=a["paper"])
+    j = colouring(c, j, op="paint", region=a["paper"], scope="colour", entry_id=green_e)
+    assert by_rgb(j, PAPER)["status"] == "hand" and by_rgb(j, PAPER)["entry_id"] == green_e
+    assert j["colouring"]["regions"] == {} and j["colouring"]["excluded_colours"] == [] and j["colouring"]["excluded_regions"] == []
+    stored = next(layer for layer in pl.get_plan(c["store"], j["id"])["layers"] if layer["entry_id"] == green_e)
+    assert {a["paper"], a["inner"], a["band"]} <= set(stored["region_ids"])                       # every area of the colour shows it
+    j = colouring(c, j, op="paint", region=a["ring"], scope="region", entry_id=blue_e)
+    j = colouring(c, j, op="paint", region=a["inner"], scope="region", entry_id=blue_e)
+    j = colouring(c, j, op="paint", region=a["paper"], scope="colour", entry_id=None)            # the colour back to the automatic choice
+    assert by_rgb(j, PAPER)["status"] == "automatic" and by_rgb(j, PAPER)["entry_id"] == paper["entry_id"]
+    assert j["colouring"]["regions"] == {a["ring"]: blue_e}                                      # the own colours inside it cleared first
+    j = colouring(c, j, op="paint", region=a["ring"], scope="region", entry_id=None)
+    assert j["colouring"]["regions"] == {} and j["undo"] == 9
+    assert [h["op"]["op"] for h in pl.get_plan(c["store"], j["id"])["history"][-3:]] == ["paint"] * 3
+
+
+def test_a_fill_spreads_from_the_clicked_region_over_similar_neighbours_and_its_preview_is_what_it_paints(work, job):
+    """Editor REQ-045: similarity to the clicked region's colour, never through excluded areas; the preview changes nothing."""
+    c, j = work, job
+    a, order = areas(c, j), [r["id"] for r in document_of(c, j)["regions"]]
+    disc, paper, band = (by_rgb(j, rgb)["lab"] for rgb in (YELLOW, PAPER, GREEN))
+    near = color.delta_e(disc, paper)
+    assert color.delta_e(disc, band) > near + 0.5 and color.delta_e(paper, band) < near      # the band is like the paper, not the disc
+    before = c["client"].get(f"/api/vector/{j['id']}").json()
+    one = reach(c, j, region=a["disc"], similarity_de=0)
+    assert one == {"region": a["disc"], "similarity_de": 0, "version": 1, "regions": [a["disc"]], "pixels": by_rgb(j, YELLOW)["pixels"],
+                   "share": pytest.approx(by_rgb(j, YELLOW)["pixels"] / (60 * 45 / 0.0625))}
+    assert reach(c, j, region=a["disc"], similarity_de=near + 0.25)["regions"] == sorted([a["paper"], a["disc"]], key=order.index)
+    everything = reach(c, j, region=a["paper"], similarity_de="500")
+    assert everything["regions"] == order and everything["share"] == pytest.approx(1.0)
+    assert c["client"].get(f"/api/vector/{j['id']}").json() == before                           # a preview changes nothing
+    j = colouring(c, j, op="exclude_region", region=a["ring"])
+    walled = reach(c, j, region=a["paper"], similarity_de=500)["regions"]
+    assert walled == [r for r in order if r not in (a["ring"], a["inner"])]                       # the inner paper lies behind the ring
+    j = colouring(c, j, op="include_region", region=a["ring"])
+    j = colouring(c, j, op="exclude_colour", colour=by_rgb(j, RED)["index"])
+    assert reach(c, j, region=a["paper"], similarity_de=500)["regions"] == walled              # an area of an excluded colour is a wall
+    j = colouring(c, j, op="exclude_region", region=a["band"])
+    blue_e = by_rgb(j, BLUE)["entry_id"]
+    preview = reach(c, j, region=a["paper"], similarity_de=500)["regions"]
+    j = colouring(c, j, op="paint", region=a["paper"], scope="fill", entry_id=blue_e, similarity_de=500)
+    assert sorted(j["colouring"]["regions"]) == sorted(preview) and set(j["colouring"]["regions"].values()) == {blue_e}
+    assert j["colouring"]["excluded_regions"] == [a["band"]] and a["band"] not in preview
+    assert reach(c, j, region=a["ring"], similarity_de=500)["regions"] == [r for r in order if r != a["band"]]   # the clicked one is no wall
+    j = colouring(c, j, op="paint", region=a["band"], scope="fill", entry_id=blue_e, similarity_de=0)   # an excluded area painted is included
+    assert j["colouring"]["excluded_regions"] == [] and j["colouring"]["regions"][a["band"]] == blue_e
+    assert sorted(j["colouring"]["regions"]) == sorted(preview + [a["band"]])
+    j = colouring(c, j, op="paint", region=a["paper"], scope="fill", entry_id=None, similarity_de=500)    # null: the fill's own colours go
+    assert j["colouring"]["regions"] == {} and reach(c, j, region=a["paper"], similarity_de=500)["regions"] == sorted(
+        preview + [a["band"]], key=order.index)
+
+
+def test_merging_titanium_colours_leaves_one_layer_fewer_and_every_automatic_mode_keeps_it(work, job):
+    """Editor REQ-046."""
+    c, j = work, job
+    a = areas(c, j)
+    red_e, blue_e = by_rgb(j, RED)["entry_id"], by_rgb(j, BLUE)["entry_id"]
+    j = colouring(c, j, op="paint", region=a["inner"], scope="region", entry_id=blue_e)
+    layers = len(j["layers"])
+    j = colouring(c, j, op="merge_titanium", entries=[red_e, blue_e], into=red_e)
+    assert len(j["layers"]) == j["totals"]["recipes"] == layers - 1 and blue_e not in {layer["entry_id"] for layer in j["layers"]}
+    assert by_rgb(j, BLUE)["entry_id"] == red_e and by_rgb(j, BLUE)["status"] == "hand" and j["colouring"]["regions"] == {a["inner"]: red_e}
+    assert by_rgb(j, RED)["status"] == "automatic" and j["document"]["version"] == 1
+    for mode in ("closest", "tonality", "random", "fewer_layers"):
+        j = colouring(c, j, op="assign", mode=mode)
+        assert by_rgb(j, BLUE)["entry_id"] == red_e and j["colouring"]["regions"] == {a["inner"]: red_e}, mode
+    unused = next(e for e in palette_ids(c).values() if e not in {col["entry_id"] for col in j["colours"]} | {red_e})
+    for op, message in [({"entries": [red_e], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
+                        ({"entries": [], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
+                        ({"entries": red_e, "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
+                        ({"entries": [unused], "into": red_e}, "choose one or more titanium colours of the colouring to merge into another"),
+                        ({"entries": [red_e], "into": "nope"}, "the titanium colour must be a measured colour of this laser, lens and titanium stock")]:
+        refused(c, j, {"op": "merge_titanium", **op}, message)
+
+
+def test_merging_source_colours_makes_a_new_version_on_which_every_mode_and_brush_works(work, job):
+    """Editor REQ-047: one colour under the number of the larger, the mean Lab, the other numbers kept, its choices kept."""
+    c, j = work, job
+    a, red, blue, paper = areas(c, j), by_rgb(j, RED), by_rgb(j, BLUE), by_rgb(j, PAPER)
+    green_e = by_rgb(j, GREEN)["entry_id"]
+    assert red["pixels"] > blue["pixels"]
+    j = colouring(c, j, op="set_colour", colour=red["index"], entry_id=green_e)
+    j = colouring(c, j, op="set_colour", colour=blue["index"], entry_id=paper["entry_id"])
+    j = colouring(c, j, op="exclude_colour", colour=blue["index"])
+    j = colouring(c, j, op="paint", region=a["ellipse"], scope="region", entry_id=green_e)
+    j = colouring(c, j, op="merge_colours", colours=[blue["index"], red["index"]])
+    assert j["document"]["version"] == 2 and j["document"]["colours"] == 4 and j["document"]["regions"] == job["document"]["regions"]
+    merged = next(col for col in j["colours"] if col["index"] == red["index"])
+    mean = np.average([red["lab"], blue["lab"]], axis=0, weights=[red["pixels"], blue["pixels"]])
+    assert merged["lab"] == [round(float(v), 3) for v in mean] and merged["pixels"] == red["pixels"] + blue["pixels"]
+    assert sorted(col["index"] for col in j["colours"]) == sorted({col["index"] for col in job["colours"]} - {blue["index"]})   # numbers stay
+    assert merged["status"] == "hand" and merged["entry_id"] == green_e                                # the colour left keeps its choice
+    assert j["colouring"]["excluded_colours"] == [] and j["colouring"]["regions"] == {a["ellipse"]: green_e}   # the other's dropped, areas kept
+    svg = ET.fromstring(c["client"].get(f"/api/vector/{j['id']}/split.svg").text)
+    assert {p.get("data-region") for p in svg.findall(f"{SVG}path") if p.get("data-color") == str(red["index"])} == {a["ring"], a["ellipse"]}
+    last = pl.get_plan(c["store"], j["id"])["history"][-1]
+    assert last["op"] == {"op": "merge_colours", "colours": [blue["index"], red["index"]], "keeper": red["index"]} and last["version"] == 2
+    for mode in ("closest", "tonality", "random", "fewer_layers"):
+        j = colouring(c, j, op="assign", mode=mode)
+        assert next(col for col in j["colours"] if col["index"] == red["index"])["entry_id"] == green_e
+    for scope in ("region", "fill", "colour"):
+        j = colouring(c, j, op="paint", region=a["ellipse"], scope=scope, entry_id=paper["entry_id"], similarity_de=0)
+    assert next(col for col in j["colours"] if col["index"] == red["index"])["entry_id"] == paper["entry_id"] and j["colouring"]["regions"] == {}
+    j = colouring(c, j, op="merge_colours", colours=[by_rgb(j, YELLOW)["index"], paper["index"]], entry_id=green_e)
+    kept = next(col for col in j["colours"] if col["index"] == paper["index"])
+    assert j["document"]["version"] == 3 and kept["status"] == "hand" and kept["entry_id"] == green_e
+    for op, message in [({"colours": [red["index"]]}, "choose two or more source colours to merge"),
+                        ({"colours": [red["index"], red["index"]]}, "choose two or more source colours to merge"),
+                        ({"colours": "all"}, "choose two or more source colours to merge"),
+                        ({"colours": [red["index"], blue["index"]]}, "there is no such source colour"),
+                        ({"colours": [red["index"], paper["index"]], "entry_id": "nope"},
+                         "the titanium colour must be a measured colour of this laser, lens and titanium stock")]:
+        refused(c, j, {"op": "merge_colours", **op}, message)
+
+
+def test_merging_regions_makes_a_new_version_whose_lightburn_file_holds_the_merged_outline_without_gaps(work, job):
+    """Editor REQ-048: the merged area keeps the id and choices of its largest member; the file reads back gapless."""
+    c, j = work, job
+    a = areas(c, j)
+    green_e, blue_e = by_rgb(j, GREEN)["entry_id"], by_rgb(j, BLUE)["entry_id"]
+    j = colouring(c, j, op="paint", region=a["inner"], scope="region", entry_id=blue_e)
+    j = colouring(c, j, op="paint", region=a["ring"], scope="region", entry_id=green_e)
+    j = colouring(c, j, op="exclude_region", region=a["inner"])
+    before = document_of(c, j)
+    j = colouring(c, j, op="merge_regions", regions=[a["inner"], a["ring"]])
+    assert j["document"]["version"] == 2 and j["document"]["regions"] == job["document"]["regions"] - 1
+    assert j["colouring"]["regions"] == {a["ring"]: green_e} and j["colouring"]["excluded_regions"] == []
+    assert pl.get_plan(c["store"], j["id"])["history"][-1]["op"]["keeper"] == a["ring"]
+    ring = next(r for r in document_of(c, j)["regions"] if r["id"] == a["ring"])
+    assert len(ring["loops"]) == 1 and ring["pixels"] == sum(r["pixels"] for r in before["regions"] if r["id"] in (a["ring"], a["inner"]))
+    j = colouring(c, j, op="merge_regions", regions=[a["paper"], a["band"], a["disc"]])
+    assert j["document"]["version"] == 3 and j["export_blocked"] is None
+    project = lb.parse_bytes(c["client"].get(f"/api/vector/{j['id']}/export.lbrn2").content)
+    shapes = [p for layer in project.layers if layer.index > 0 for p in layer.regions]
+    assert len(shapes) == j["document"]["regions"] == job["document"]["regions"] - 3 and all(p.closed for p in shapes)
+    assert sorted(len(p.holes) for p in shapes) == sorted(len(r["loops"]) - 1 for r in document_of(c, j)["regions"])   # holes in place
+    cov = sg.coverage(regions_of(project), 60, 45, 16)
+    assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
+    for op, message in [({"regions": [a["ring"]]}, "choose two or more regions to merge"), ({"regions": a["ring"]}, "choose two or more regions to merge"),
+                        ({"regions": [a["ring"], a["ellipse"]]}, "the regions to merge must border one another"),
+                        ({"regions": [a["ring"], "r999"]}, "there is no region 'r999'")]:
+        refused(c, j, {"op": "merge_regions", **op}, message)
+
+
+def state_of(c, j) -> tuple:
+    """What undo and redo bring back: the split version and its picture, the colours, the colouring, the totals, the settings."""
+    v = c["client"].get(f"/api/vector/{j['id']}").json()
+    return (v["document"]["version"], v["document"]["regions"], v["colours"], v["colouring"], v["totals"], v["settings"],
+            c["client"].get(f"/api/vector/{j['id']}/split.svg").text)
+
+
+def test_undo_and_redo_step_through_paints_and_merges_with_their_split_versions(work, job):
+    """Editor REQ-049, DEC-077."""
+    c, j = work, job
+    a, blue_e, paper_e = areas(c, j), by_rgb(j, BLUE)["entry_id"], by_rgb(j, PAPER)["entry_id"]
+    states = [state_of(c, j)]
+    for step in ({"op": "paint", "region": a["paper"], "scope": "region", "entry_id": blue_e},
+                 {"op": "merge_colours", "colours": [by_rgb(j, BLUE)["index"], by_rgb(j, RED)["index"]]},
+                 {"op": "merge_regions", "regions": [a["ring"], a["inner"]]},
+                 {"op": "paint", "region": a["ring"], "scope": "colour", "entry_id": paper_e}):
+        j = colouring(c, j, **step)
+        states.append(state_of(c, j))
+    assert [s[0] for s in states] == [1, 1, 2, 3, 3] and len({s[6] for s in states}) == 3 and (j["undo"], j["redo"]) == (4, 0)
+    for back in range(4):
+        j = colouring(c, j, op="undo")
+        assert state_of(c, j) == states[3 - back] and (j["undo"], j["redo"]) == (3 - back, back + 1)
+    refused(c, j, {"op": "undo"}, "there is no earlier colouring to go back to")
+    for forth in range(4):
+        j = colouring(c, j, op="redo")
+        assert state_of(c, j) == states[forth + 1]
+    refused(c, j, {"op": "redo"}, "there is no undone change to redo")
+    j = colouring(c, j, op="undo")
+    j = colouring(c, j, op="paint", region=a["band"], scope="region", entry_id=paper_e)          # a new operation: nothing to redo
+    assert (j["undo"], j["redo"]) == (4, 0)
+    refused(c, j, {"op": "redo"}, "there is no undone change to redo")
+    for _ in range(3):
+        j = colouring(c, j, op="undo")
+    assert state_of(c, j) == states[1]
+    j = colouring(c, j, op="merge_regions", regions=[a["ring"], a["inner"]])
+    assert j["document"]["version"] == 4                                                      # never a number used before
+    plan = pl.get_plan(c["store"], j["id"])
+    assert [h["version"] for h in plan["history"] if h.get("path")] == [1, 2, 3, 4]
+    assert state_of(c, j)[6] not in {s[6] for s in states}                                     # each version's picture is its own
+
+
+def test_undo_brings_back_the_tolerance_and_the_filters_with_the_colouring(work, job):
+    c, j = work, job
+    first = (j["settings"], j["colours"], j["colouring"])
+    j = colouring(c, j, op="settings", tolerance_de=12, max_time=50, include_as_shot=True)
+    assert j["settings"] == {"tolerance_de": 12, "max_time": 50, "include_as_shot": True}
+    j = colouring(c, j, op="undo")
+    assert (j["settings"], j["colours"], j["colouring"]) == first
+    j = colouring(c, j, op="redo")
+    assert j["settings"] == {"tolerance_de": 12, "max_time": 50, "include_as_shot": True}
+
+
+def test_a_variant_is_restored_only_on_its_own_split_version(work, job):
+    c, j = work, job
+    j = colouring(c, j, op="assign", mode="tonality")
+    assert [v["version"] for v in j["variants"]] == [1, 1]
+    j = colouring(c, j, op="merge_colours", colours=[by_rgb(j, BLUE)["index"], by_rgb(j, RED)["index"]])
+    refused(c, j, {"op": "restore", "variant": 1}, "this variant of the colouring belongs to another version of the split")
+    j = colouring(c, j, op="assign", mode="closest")
+    assert [v["version"] for v in j["variants"]] == [1, 1, 2] and j["colouring"]["variant"] == 3
+    j = colouring(c, j, op="undo")
+    j = colouring(c, j, op="undo")
+    assert j["document"]["version"] == 1
+    j = colouring(c, j, op="restore", variant=1)
+    assert j["colouring"]["variant"] == 1 and j["redo"] == 0
+    refused(c, j, {"op": "restore", "variant": 3}, "this variant of the colouring belongs to another version of the split")
+
+
+def test_undo_steps_variants_and_accepted_colours_of_works_made_before_the_editor_still_work(work, job):
+    """Editor REQ-043 (choices accepted earlier stay the operator's), REQ-049 (older undo entries still undo)."""
+    c, j, store = work, job, work["store"]
+    first = copy.deepcopy(pl.get_plan(store, j["id"])["colouring"])
+    yellow, red_e = by_rgb(j, YELLOW), by_rgb(j, RED)["entry_id"]
+    j = colouring(c, j, op="paint", region=areas(c, j)["paper"], scope="region", entry_id=by_rgb(j, BLUE)["entry_id"])
+    plan = pl.get_plan(store, j["id"])                                                   # as release 0.5.1 stored a work
+    plan["undo"], plan["unresolved"] = [first], {"colours": 0, "regions": 0, "share": 0.0, "indexes": []}
+    plan["colouring"]["groups"][str(yellow["index"])] = {"entry_id": red_e, "by": "accepted"}
+    del plan["redo"]
+    for variant in plan["variants"]:
+        del variant["version"]
+    cv._persist(store, plan, plan["status"], plan["markers_enabled"])
+    view = c["client"].get(f"/api/vector/{j['id']}").json()
+    assert (view["undo"], view["redo"]) == (1, 0) and [v["version"] for v in view["variants"]] == [1] and "unresolved" not in view
+    assert by_rgb(view, YELLOW)["status"] == "accepted" and by_rgb(view, YELLOW)["how"] == "hand" and by_rgb(view, YELLOW)["entry_id"] == red_e
+    j = colouring(c, view, op="assign", mode="random")
+    assert by_rgb(j, YELLOW)["entry_id"] == red_e and by_rgb(j, YELLOW)["status"] == "accepted"
+    j = colouring(c, j, op="undo")
+    j = colouring(c, j, op="undo")
+    assert j["colouring"]["regions"] == {} and j["redo"] == 2 and by_rgb(j, YELLOW)["status"] == "automatic"   # the bare colouring
+    j = colouring(c, j, op="redo")
+    assert j["colouring"]["regions"] != {} and by_rgb(j, YELLOW)["status"] == "accepted"
+    j = colouring(c, j, op="restore", variant=1)
+    stored = pl.get_plan(store, j["id"])
+    assert "unresolved" not in stored and all(set(step) == {"colouring", "version", "threshold", "colour_settings"} for step in stored["undo"])
+
+
+def test_splitting_again_is_a_fresh_start_without_undo_redo_or_variants(work, job):
+    c, j = work, job
+    a = areas(c, j)
+    j = colouring(c, j, op="merge_regions", regions=[a["ring"], a["inner"]])
+    j = colouring(c, j, op="assign", mode="random")
+    j = colouring(c, j, op="undo")
+    assert (j["undo"], j["redo"], len(j["variants"])) == (1, 1, 2)
+    again = c["client"].post(f"/api/vector/{j['id']}/split", json={"n_colors": 5}).json()
+    assert (again["undo"], again["redo"]) == (0, 0) and [(v["number"], v["version"]) for v in again["variants"]] == [(1, 3)]
+    assert again["document"]["version"] == 3
+
+
+def test_bad_editor_operations_are_refused_with_messages_the_screen_translates_and_change_nothing(work, job):
+    c, j = work, job
+    a, blue_e = areas(c, j), by_rgb(j, BLUE)["entry_id"]
+    similarity, measured = "the similarity must be a non-negative delta E", "the titanium colour must be a measured colour of this laser, lens and titanium stock"
+    paint = {"op": "paint", "region": a["paper"], "entry_id": None}
+    for op, message in [({**paint, "scope": "lasso"}, "the scope must be region, colour or fill"), ({**paint, "scope": "fill"}, similarity),
+                        ({**paint, "scope": "fill", "similarity_de": -1}, similarity), ({**paint, "scope": "fill", "similarity_de": True}, similarity),
+                        ({**paint, "scope": "fill", "similarity_de": "a lot"}, similarity),
+                        ({**paint, "scope": "region", "region": "r999"}, "there is no region 'r999'"),
+                        ({**paint, "scope": "region", "entry_id": "nope"}, measured), ({**paint, "scope": "colour", "entry_id": ["x"]}, measured),
+                        ({"op": "exclude_region", "regions": []}, "there is no region []"),
+                        ({"op": "include_region", "regions": [a["paper"], "r999"]}, "there is no region 'r999'"),
+                        ({"op": "redo"}, "there is no undone change to redo")]:
+        refused(c, j, op, message)
+    for params, message in [({"region": a["paper"], "similarity_de": "much"}, similarity), ({"region": a["paper"]}, similarity),
+                            ({"region": a["paper"], "similarity_de": "-0.5"}, similarity), ({"similarity_de": 3}, "there is no region None"),
+                            ({"region": "r999", "similarity_de": 3}, "there is no region 'r999'")]:
+        r = c["client"].get(f"/api/vector/{j['id']}/reach", params=params)
+        assert r.status_code == 422 and r.json() == {"error": message, "kind": "invalid"}, params
+    assert c["client"].get(f"/api/vector/{j['id']}").json() == j                                  # nothing was recorded
+    j = colouring(c, j, op="exclude_region", regions=[a["paper"], a["band"]])
+    assert j["colouring"]["excluded_regions"] == sorted([a["paper"], a["band"]])
+    j = colouring(c, j, op="include_region", regions=[a["band"], a["paper"]])
+    assert j["colouring"]["excluded_regions"] == [] and j["undo"] == 2
+    assert colouring(c, j, op="paint", region=a["paper"], scope="region", entry_id=blue_e)["colouring"]["regions"] == {a["paper"]: blue_e}
 
 
 # -- the screen, run in node over a small DOM with the server's real answers --------------------------------------------------
@@ -353,7 +697,8 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-colours.js', 'screens/vector.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
+  'screens/vector-colours.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 (async () => {
@@ -387,64 +732,56 @@ def routes_of(c, j) -> dict:
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_the_screen_shows_the_three_steps_the_previews_side_by_side_and_a_short_unresolved_summary(work, job, tmp_path):
-    out = run_screen(tmp_path, job, routes_of(work, job), """
+def test_the_screen_shows_the_three_steps_and_one_large_picture_painted_in_titanium_colours(work, job, tmp_path):
+    """REQ-043, REQ-044: every colour is painted from the start (no acceptance step), on one large picture beside the editor's panel."""
+    routes = routes_of(work, job)
+    out = run_screen(tmp_path, job, routes, """
   out.text = tree.textContent;
   const svgs = tree.querySelectorAll('svg');
   out.classes = svgs.map((s) => s.getAttribute('class'));
-  const [split, titanium] = svgs.filter((s) => s.getAttribute('class') === 'vw-preview');
-  out.split = split.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill')]);
-  out.titanium = titanium.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
+  const picture = svgs.find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
+  out.titanium = picture.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
   out.exportDisabled = byText(tree, 'button', 'Создать файл LightBurn').disabled;
-  const toggle = byText(tree, 'button', 'показать');
-  out.listHidden = toggle.parentNode.parentNode.querySelectorAll('div').find((d) => d.className === 'stack').hidden;
-  await toggle.dispatch('click');
-  out.listShown = !toggle.parentNode.parentNode.querySelectorAll('div').find((d) => d.className === 'stack').hidden && toggle.textContent === 'скрыть';
   out.links = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
 """)
     text = out["text"]
-    for part in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn", "Оценка времени всей работы", "лицо не найдено",
-                 "Не решено: цветов 1, областей 1", "Цветов без цвета титана в пределах допуска ΔE: 1 (областей: 1)", "самый быстрый в пределах допуска"):
+    for part in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",
+                 "Подробно по цветам", "самый быстрый в пределах допуска"):
         assert part in text, part
-    assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object")), text[:3000]
-    assert out["classes"].count("vw-preview") == 2 and "vw-areas" in out["classes"]
-    j = job
-    yellow, paper = by_rgb(j, YELLOW)["index"], by_rgb(j, PAPER)["index"]
-    assert {fill for colour, fill in out["split"] if colour == str(yellow)} == {"#{:02x}{:02x}{:02x}".format(*YELLOW)}
-    assert all(fill.startswith("url(#vw-open-") and stroke == "#d32f2f" for colour, fill, stroke in out["titanium"] if colour == str(yellow))
-    paper_rgb = "rgb({},{},{})".format(*j["entries"][by_rgb(j, PAPER)["entry_id"]]["srgb"])
-    assert all(fill == paper_rgb for colour, fill, _ in out["titanium"] if colour == str(paper))
-    assert out["exportDisabled"] and out["listHidden"] and out["listShown"]
+    assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object", "Принять")), text[:3000]
+    assert sum("vw-ed-svg" in (c or "").split() for c in out["classes"]) == 1 and "vw-areas" in out["classes"]
+    view = routes[f"/api/vector/{job['id']}"]["json"]
+    for rgb in (YELLOW, PAPER):                                                          # the far yellow is painted too, not hatched
+        colour = by_rgb(view, rgb)
+        painted = "rgb({},{},{})".format(*view["entries"][str(colour["entry_id"])]["srgb"])
+        assert all(fill == stroke == painted for index, fill, stroke in out["titanium"] if index == str(colour["index"])), rgb
+    assert out["exportDisabled"] is bool(view["export_blocked"])
     assert not any((href or "").startswith("/api") for href in out["links"])        # nothing on this screen navigates to the API
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_a_region_clicked_in_the_titanium_preview_gets_a_colour_picked_from_the_palette(work, job, tmp_path):
+def test_a_region_clicked_with_the_brush_is_painted_with_the_colour_picked_from_the_palette(work, job, tmp_path):
     out = run_screen(tmp_path, job, routes_of(work, job), """
-  const titanium = tree.querySelectorAll('svg').filter((s) => s.getAttribute('class') === 'vw-preview')[1];
-  const path = titanium.querySelectorAll('path')[0];
-  out.region = path.getAttribute('data-region');
-  await path.dispatch('click');
-  const dialog = ctx.document.body.querySelectorAll('div').find((d) => d.className === 'modal');
-  out.title = dialog.querySelector('h3').textContent;
-  out.buttons = dialog.querySelectorAll('button').map((b) => b.textContent);
-  await byText(dialog, 'button', 'Цвет этой области').dispatch('click');
-  await tick();
-  const picker = ctx.document.body.querySelectorAll('div').find((d) => d.className === 'modal');
-  const swatches = picker.querySelectorAll('button').filter((b) => b.className.startsWith('vw-swatch'));
+  const picture = tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
+  const swatches = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry'));
   out.swatches = swatches.length;
   out.asShot = swatches.filter((b) => b.className.includes('as-shot')).length;
   await swatches[1].dispatch('click');
-  await byText(picker, 'button', 'Применить').dispatch('click');
+  out.entry = swatches[1].getAttribute('data-entry');
+  const path = picture.querySelectorAll('path')[0];
+  out.region = path.getAttribute('data-region');
+  await path.dispatch('click');
+  await tick(); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
   out.renders = ctx.__renders.length;
 """)
-    assert out["title"] == f"Область {out['region']}" and {"Цвет этой области", "Цвет всей группы", "Исключить область"} <= set(out["buttons"])
     palette = work["client"].get(f"/api/vector/{job['id']}/palette").json()
     assert out["swatches"] == len(palette) and out["asShot"] == 1
     (path, body), = out["posted"]
-    assert path == f"/api/vector/{job['id']}/colouring" and body["op"] == "set_region" and body["region"] == out["region"]
-    assert body["entry_id"] in {e["id"] for e in palette} and out["renders"] == 1
+    assert path == f"/api/vector/{job['id']}/colouring"
+    assert body == {"op": "paint", "region": out["region"], "scope": "region", "entry_id": body["entry_id"]} and str(body["entry_id"]) == out["entry"]
+    assert body["entry_id"] in {e["id"] for e in palette}                              # the palette's own id, sent as the server gave it
+    assert out["renders"] == 0                                                           # the picture is recoloured in place
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -469,7 +806,7 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fetched_not_opened(work, job, tmp_path):
-    j = colouring(work, job, op="accept_all")
+    j = job
     routes = routes_of(work, j)
     routes[f"/api/vector/{j['id']}/export.lbrn2"] = {"status": 422, "json": {"error": "every region is excluded: there is nothing to engrave", "kind": "invalid"}}
     out = run_screen(tmp_path, j, routes, """

@@ -1,7 +1,7 @@
 /* Переводы сообщений о времени гравировки и о цветах векторной работы (REQ-034, REQ-035, REQ-042, DEC-073..DEC-077, DEC-034):
    почему время рецепта не оценить, фильтр по времени и допуск ΔE карты цветов, палитра лазера, линзы и заготовки,
-   перекраска исходных цветов, разбиение фотографии и файл LightBurn. Загружается после остальных таблиц, но до
-   i18n-gaps.js. Числа приходят как есть. */
+   перекраска исходных цветов, разбиение фотографии, редактор раскраски и файл LightBurn. Загружается после остальных
+   таблиц, но до i18n-gaps.js. Числа приходят как есть. */
 'use strict';
 (() => {
   I18N.add([
@@ -50,9 +50,18 @@
       'Цвет титана — один из измеренных цветов этого лазера, линзы и заготовки титана'],
     [/^there is no earlier colouring to go back to$/i, 'Нет более ранней раскраски, к которой можно вернуться'],
     [/^there is no such variant of the colouring$/i, 'Такого варианта раскраски нет'],
-    [/^there is no proposed titanium colour to accept$/i, 'Нет предложенного цвета титана, который можно принять'],
-    [/^(\d+) colour\(s\) in (\d+) region\(s\) have no titanium colour within the delta E tolerance: accept the proposed colour, choose another or exclude it before export$/i,
-      (m) => `Цветов без цвета титана в пределах допуска ΔE: ${m[1]} (областей: ${m[2]}). Примите предложенный цвет, выберите другой или исключите цвет — тогда экспорт станет доступен`],
+    // редактор раскраски: кисть, слияния, отмена и повтор (REQ-045..REQ-049 редактора, DEC-075..DEC-077 редактора)
+    [/^the scope must be region, colour or fill$/i, 'Кисть красит область, весь исходный цвет или заливку'],
+    [/^the similarity must be a non-negative delta E$/i, 'Похожесть — неотрицательное значение ΔE'],
+    [/^choose one or more titanium colours of the colouring to merge into another$/i,
+      'Выберите один или несколько цветов титана из раскраски, чтобы слить их в другой'],
+    [/^choose two or more source colours to merge$/i, 'Выберите два или больше исходных цвета, чтобы их объединить'],
+    [/^choose two or more regions to merge$/i, 'Выберите две или больше области, чтобы их объединить'],
+    [/^the regions to merge must border one another$/i,
+      'Объединить можно только области, связанные общими границами (касания углом недостаточно)'],
+    [/^there is no undone change to redo$/i, 'Нет отменённого действия, которое можно повторить'],
+    [/^this variant of the colouring belongs to another version of the split$/i,
+      'Этот вариант раскраски сделан для другой версии разбиения: сначала верните ту версию отменой'],
     [/^(\d+) region\(s\) have a titanium colour that is no longer measured on this laser, lens and titanium stock: choose another before export$/i,
       (m) => `Областей с цветом титана, которого больше нет среди измерений этого лазера, линзы и заготовки: ${m[1]}. Выберите для них другой цвет перед экспортом`],
   ]);

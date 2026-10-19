@@ -609,6 +609,30 @@ tonal profile bins the photograph gives back every measured bin within dE 0.01..
 lighter half is outside the span). At Min 4 / Max 18 the share outside rises to 32.4 %.
 
 
+## Vector work colour editor and slow screens (operator, 2026-10-19)
+
+Plan approved 2026-10-19 (`~/.claude/plans/scalable-bubbling-dove.md`). Feature `vector-work-colour-editor` (REQ-043..REQ-049,
+DEC-001, DEC-075..DEC-077, issue #28); bug BUG-001 (issue #27). The platform feature was closed before (DEC-079, #26).
+
+- [x] BUG-001 (0.5.2, PR #29, deployed; on 8765: knowledge 6.8 s → 0.12 s, 16 list thumbnails 0.36 s, experiment picture 4 ms): knowledge list once per list (6.8 s on 343 entries); on-disk render cache for photographs and overlays (0.6-3.3 s
+  per picture, RAW decoded on every request); 480 px list thumbnails; ETag/304; `warm-cache` command. Release 0.5.2.
+- [x] REQ-043 / DEC-001: every source colour coloured from the start, outside-tolerance flagged, never blocking.
+- [x] REQ-044: editor with a large picture, zoom/pan, brush / pipette / select, palette, layers, source colours, totals.
+- [x] REQ-045: paint scopes area / source colour / fill of similar neighbours, hover preview equal to the result.
+- [x] REQ-046..REQ-048: merge titanium colours, source colours, neighbouring areas into one contour (gapless).
+- [x] REQ-049: undo / redo over colouring and document versions.
+- [ ] Full-copy check (work 22: 28 colours coloured, export allowed), release 0.6.0, backup, deploy, walkthrough on work 21.
+
+Integration review (2026-10-19). Backend (`segment.neighbours`, `merge_colours`, `merge_regions`; `vector_job` paint scopes, merges,
+undo/redo with versions; `GET /reach`) and UI (`vector-editor.js`) merged on `feat/vector-colour-editor`; `set_region` dropped
+in favour of `paint` with the area scope. Full suite 1096 passed. Real data (copy of work 22, 986 regions): 30 chained region
+merges + 3 colour merges, coverage 0.0/0.0 after every step, LightBurn round trip 902/902 shapes and 55/55 holes; 38 undos back to
+version 1, 38 redos identical. Walkthrough in headless Chrome on a full copy (port 8794, never the operator's browser): 28/28
+colours coloured, export enabled, no accept button; hover outlines 1 area / 10 areas of a colour / 63 areas of a fill equal to
+`/reach`; paint, Ctrl+Z / Ctrl+Shift+Z, Alt+click pipette, Shift+click selection, merge 986 → 985 areas, layers 9 → 8, colours
+28 → 27, wheel zoom, drag pan without painting, original view; 6 undos back to the start; at 820 px the panel goes below the
+picture, no page scroll; no console errors.
+
 ## BUG-001 slow screens (issue #27, branch fix/BUG-001-slow-screens; 2026-10-19)
 
 - [x] Knowledge list O(N): `knowledge.get()` takes the setup's summaries and the entry's events; `list_for_setup` reads them once.

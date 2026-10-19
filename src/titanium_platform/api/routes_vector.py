@@ -1,5 +1,6 @@
 """Vector LightBurn jobs from an image (REQ-021, DEC-065): create, review, edit, export. A photograph job (REQ-042) is split
-again and coloured through its own routes; its geometry reaches the browser once per split as an SVG."""
+again and coloured through its own routes (its colour editor: paint, merge, undo and redo, and the preview of a fill); its
+geometry reaches the browser once per split version as an SVG."""
 from __future__ import annotations
 
 import json
@@ -81,9 +82,19 @@ def split_vector_job(plan_id: int, body: dict, request: Request):
 
 @router.post("/vector/{plan_id}/colouring")
 def colour_vector_job(plan_id: int, op: dict, request: Request):
-    """One colouring operation of a photograph job (see vector_job.colour); the job is returned as it is afterwards."""
+    """One operation of a photograph job's colour editor (see vector_job.colour): an automatic mode, a variant, the
+    settings, a click of the brush, a choice by hand, an exclusion, a merge of titanium colours, source colours or regions,
+    undo and redo; the job is returned as it is afterwards."""
     vector_job.colour(store_of(request), plan_id, op)
     return _view(request, plan_id)
+
+
+@router.get("/vector/{plan_id}/reach")
+def vector_job_reach(plan_id: int, request: Request, region: str | None = None, similarity_de: str | None = None):
+    """The regions a click of the brush with the fill scope on ``region`` would paint at ``similarity_de`` (see
+    vector_job.reach), with their pixels and share; nothing is changed. Both are checked by the job, whose messages the
+    screen translates."""
+    return vector_job.reach(store_of(request), plan_id, region, similarity_de)
 
 
 @router.get("/vector/{plan_id}/split.svg")
