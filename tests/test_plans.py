@@ -4,6 +4,7 @@ import pytest
 
 from titanium_platform import devices
 from titanium_platform import lightburn as lb
+from titanium_platform import photo
 from titanium_platform import plans as pl
 from titanium_platform import setup as su
 
@@ -117,7 +118,15 @@ def test_exported_markers_are_detected_and_identifier_decoded_from_the_raster(st
     det = cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), cv2.aruco.DetectorParameters())
     _, ids, _ = det.detectMarkers(img)
     assert sorted(ids.ravel().tolist()) == [0, 1, 2, 3]
-    assert cv2.QRCodeDetector().detectAndDecode(img)[0] == f"TCE1:{out['experiment_id']}"
+    assert photo.read_identifier(img) == out["experiment_id"]       # the product's reader: OpenCV's classic detector alone misses ~1 % of identifiers
+
+
+@pytest.mark.parametrize("identifier", ["TCE-AFA45888", "TCE-BC594484", "TCE-18B867C4", "TCE-C3C69AE5"])
+def test_an_identifier_the_classic_qr_detector_misses_is_still_read_from_the_exported_raster(identifier):
+    """Found by a failing run of the test above (random identifier TCE-AFA45888): the code is valid and the ArUco-based detector reads it at
+    every scale, so the product's reader, which falls back to it, must give the identifier back."""
+    img = _raster({"markers": pl.marker_geometry(identifier, 11, 9)})
+    assert photo.read_identifier(img) == identifier
 
 
 def test_markers_lie_outside_the_grid(store, ready):
