@@ -699,10 +699,14 @@ Plan (I-8, steps in the order they were committed):
 - [x] REQ-049 coverage: undo/redo of a titanium merge in a sequence with the other three kinds; redo after a settings change restores the colouring.
 - [x] Criteria of REQ-045/046/048/049 ticked with the test seen (175 passed in the files they touch) and the walkthrough below.
 - [x] Walkthrough in a MarkView tab on a full copy of the live data (ports 8794 and 8795, never the operator's 8765): see "Walkthrough".
-- [ ] Full suite on the finished code, wheel build; version 0.6.1 (DEC-023, SemVer; pyproject.toml; README note); issue #28.
-- [ ] Where the commits go: the operator ruled on 2026-10-19, mid-goal, that commits go straight to `main` with no pull request and no new
-      branch until he says otherwise (CLAUDE.md). So: fast-forward `main` to this branch, delete the local branch (never pushed), push
-      `main`, watch the CI run of that push (it runs on push to main) and fix a red check with a commit on `main`.
+- [x] Full suite on the finished code: 1114 passed, none skipped (10 min 42 s; 1105 tests of the baseline plus 9 new); wheel 0.6.1 built and
+      served by an installed copy (CI's check, run locally); version 0.6.1 (DEC-023, SemVer; pyproject.toml; README note).
+- [x] Where the commits go: the operator ruled on 2026-10-19, mid-goal, that commits go straight to `main` with no pull request and no new
+      branch until he says otherwise (CLAUDE.md). `main` was fast-forwarded to this branch (7 commits), the local branch deleted, and
+      `main` pushed (3aa4e45..dd0aceb). He then said not to wait for CI and to switch it off for now: `gh workflow disable CI` (the run
+      of dd0aceb, 39309256823, was still in progress and is left to finish); recorded in CLAUDE.md. Not done, as the goal excludes it:
+      build and deploy of 0.6.1 to the operator's app on 8765 (backup of the database, install of the wheel, restart).
+- [ ] Issue #28 closed with a comment now that the work is in `main`; a note on #32 that its specification landed and nothing of it is built.
 
 ### Walkthrough (2026-10-19; MarkView tabs on a full copy of the live data, branch app on ports 8794 and 8795, the operator's app on 8765 only read)
 

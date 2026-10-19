@@ -10,3 +10,12 @@ branches, no review step.
 - It is about where commits go. Tests, versioning (SemVer in `pyproject.toml`, DEC-023), the statuses of the specification and
   `tasks/` notes are unchanged.
 - When the operator withdraws the rule (for example "branches and pull requests again"), delete this section.
+
+## CI is switched off (operator, 2026-10-19)
+
+Until the operator says otherwise, do not wait for CI or fix its checks. The `CI` workflow was disabled on GitHub with
+`gh workflow disable CI`; nothing in the repository changed, so the file `.github/workflows/ci.yml` is as it was. The workflow
+`diag-linux-chart` was left as it is.
+
+- Run the tests locally before pushing (`.venv/bin/python -m pytest -q -rs`, no test may be skipped) and keep `main` working.
+- To switch CI on again: `gh workflow enable CI`, and delete this section.
