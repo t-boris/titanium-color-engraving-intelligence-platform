@@ -185,3 +185,13 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: while building, run only the test files of the code just touched; run the whole suite once before the release commit (in the
   background while the release steps that do not depend on it go on), then back up, deploy and look at the real app.
 
+
+## Install the declared dependencies when deploying a wheel; a missing one must not end as a bare 500
+- Remark (2026-10-19, after 0.8.0 went to production): "не могу раскрасить с помощью AI - Ошибка сервера (500)". The deploy recipe
+  `pip install --force-reinstall --no-deps <wheel>` never installed `openai` (declared in pyproject.toml) into `~/.titanium-platform-app`, so the
+  first real AI call there raised ModuleNotFoundError. My own real call had run in the repository's `.venv`, which has it, so the check
+  passed and the deployed environment was never exercised.
+- Rule: after installing a wheel into the app environment, import every declared dependency from that environment
+  (`~/.titanium-platform-app/bin/python -c "import openai, ..."`), and make the first feature check of a release from that environment, on a
+  copy of the data, not from `.venv`. The deploy recipe in README gets a second step that installs the missing dependencies.
+- Open: a failure to build the AI client should reach the operator as a message, not as "Ошибка сервера (500)" (needs approval, see todo).
