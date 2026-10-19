@@ -124,3 +124,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   entry, O(N²)); every photograph was decoded from RAW on every request (0.6-3.3 s, 2 MB PNG per thumbnail).
 - Rule: after a release, time every screen's requests on the live data (curl, GET only) and treat anything over 0.5 s as a
   defect. Derived pictures are cached by a key of all their inputs; a list computes shared data once, never per item.
+
+## A framework default is not a contract
+- Situation (2026-10-19): CI failed on all three jobs between two runs of the same tests: FastAPI 0.148 began reading a
+  missing `bool` form field as false (an unticked HTML checkbox), and the route relied on `Form(True)`.
+- Rule: a form flag whose absence must mean "yes" is read as text and parsed by the application (`form_flag`). When CI
+  breaks without a code change, compare the installed versions of the last green run with the failing one first.
