@@ -334,3 +334,273 @@ def test_the_svg_preview_fills_every_region_with_its_colour_or_the_assigned_one(
     assert all(p.get("fill") == q.get("fill") for p, q, r in zip(titanium, paths, doc["regions"]) if r["color"] != first["color"])
     with pytest.raises(ValueError):
         sg.to_svg(doc, {0: [300, 0, 0]})
+
+
+# -- merging (the colour editor: REQ-047, REQ-048, DEC-076) ------------------------------------------------------------------
+def pixel_document(region, of_class):
+    """A segment document of a region map whose arcs keep their pixel corners as points (1 mm a pixel, no smoothing), so
+    that every outline runs exactly along its pixels."""
+    arcs, loops = sg._planar_map(region)
+    h, w = region.shape
+    name = [f"r{i + 1}" for i in range(len(of_class))]
+    pixels = np.bincount(region.ravel(), minlength=len(of_class))
+    labs = {c: [90.0 - 15 * c, 4.0 * c, -3.0 * c] for c in sorted(set(of_class.tolist()))}
+    palette = [{"index": c, "lab": lab, "srgb": sg.color.lab_to_srgb8(np.asarray(lab)).tolist(), "pixels": int(pixels[of_class == c].sum())}
+               for c, lab in labs.items()]
+    regions = [{"id": name[i], "color": int(c), "lab": labs[c], "srgb": palette[[p["index"] for p in palette].index(c)]["srgb"],
+                "pixels": int(pixels[i]), "important": False, "loops": loops[i]} for i, c in enumerate(of_class.tolist())]
+    arc_list = [{"id": i, "left": name[left] if left >= 0 else None, "right": name[right] if right >= 0 else None, "closed": closed,
+                 "points": [[v % (w + 1), v // (w + 1)] for v in vertices]} for i, (vertices, left, right, _, _, closed) in enumerate(arcs)]
+    return {"size_mm": {"width": float(w), "height": float(h)}, "px_mm": 1.0, "image_px": {"width": w, "height": h},
+            "palette": palette, "regions": regions, "arcs": arc_list}
+
+
+def even_odd(loops, shape) -> np.ndarray:
+    """The pixel centres inside a region's closed loops by the even-odd rule."""
+    ys, xs = np.mgrid[0:shape[0], 0:shape[1]] + 0.5
+    inside = np.zeros(shape, bool)
+    for loop in loops:
+        for (x0, y0), (x1, y1) in zip(loop, loop[1:] + loop[:1]):
+            if y0 != y1:
+                inside ^= ((y0 > ys) != (y1 > ys)) & (xs < x0 + (ys - y0) * (x1 - x0) / (y1 - y0))
+    return inside
+
+
+def planar(doc) -> None:
+    """The invariants of a planar map: an arc's id is its place, it separates two different regions (or one and the
+    picture's edge), and every region walks it once, forward on its left and backward on its right; loops chain end to
+    start and close; one outer boundary (area < 0, y down), then holes."""
+    ids = {r["id"] for r in doc["regions"]}
+    uses = {}
+    for r in doc["regions"]:
+        for loop in r["loops"]:
+            ends = []
+            for ref in loop:
+                uses.setdefault(ref if ref >= 0 else ~ref, []).append((r["id"], ref >= 0))
+                points = doc["arcs"][ref if ref >= 0 else ~ref]["points"]
+                ends.append((points if ref >= 0 else points[::-1])[0::len(points) - 1])
+            assert all(ends[k][1] == ends[(k + 1) % len(ends)][0] for k in range(len(ends)))     # end to start, closed
+        areas = [sum(sg._doubled_area(doc["arcs"][ref if ref >= 0 else ~ref]["points"]) * (1 if ref >= 0 else -1) for ref in loop)
+                 for loop in r["loops"]]
+        assert areas[0] < 0 and all(a > 0 for a in areas[1:]), r["id"]
+    for i, arc in enumerate(doc["arcs"]):
+        assert arc["id"] == i and arc["left"] != arc["right"] and {arc["left"], arc["right"]} - {None} <= ids
+        expected = ([(arc["left"], True)] if arc["left"] else []) + ([(arc["right"], False)] if arc["right"] else [])
+        assert sorted(uses.pop(i), key=lambda u: not u[1]) == expected
+    assert not uses                                                                          # no reference to a dropped arc
+
+
+def connected_set(doc, rng, size) -> list[str]:
+    near = sg.neighbours(doc)
+    chosen = [sorted(near)[int(rng.integers(len(near)))]]
+    frontier = sorted(near[chosen[0]])
+    while len(chosen) < size and frontier:
+        pick = frontier.pop(int(rng.integers(len(frontier))))
+        if pick not in chosen:
+            chosen.append(pick)
+            frontier += sorted(near[pick] - set(chosen))
+    return chosen
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_merged_regions_enclose_exactly_their_pixels_also_where_they_touch_at_a_corner(seed):
+    rng = np.random.default_rng(seed)
+    region, of_class = sg._components(rng.integers(0, 3, (14, 17)).astype(np.int32), 3)       # many diagonal touches
+    doc = pixel_document(region, of_class)
+    masks = {f"r{i + 1}": region == i for i in range(len(of_class))}
+    for _ in range(5):                                                                       # merges of merged regions too
+        chosen = connected_set(doc, rng, int(rng.integers(2, 7)))
+        doc, keeper = sg.merge_regions(doc, chosen)
+        masks[keeper] = np.logical_or.reduce([masks.pop(r) for r in chosen])
+        planar(doc)
+        assert {r["id"] for r in doc["regions"]} == set(masks)
+        for r in sg.regions_as_loops(doc):                                                   # the others are unchanged
+            assert (even_odd(r["loops"], region.shape) == masks[r["id"]]).all(), r["id"]
+            assert r["pixels"] == masks[r["id"]].sum()
+
+
+def ring_document():
+    """Paper (r1) around a ring (r2) around inner paper (r3), none touching the picture's edge but the outer paper."""
+    yy, xx = np.mgrid[0:16, 0:16]
+    d = np.maximum(abs(xx - 7.5), abs(yy - 7.5))
+    region = np.where(d > 6, 0, np.where(d > 3, 1, 2)).astype(np.int64)
+    return pixel_document(region, np.array([0, 1, 0])), region
+
+
+def test_a_ring_merged_with_the_paper_inside_it_drops_their_closed_border():
+    doc, region = ring_document()
+    inner_border = next(a for a in doc["arcs"] if {a["left"], a["right"]} == {"r2", "r3"})
+    assert inner_border["closed"]
+    merged, keeper = sg.merge_regions(doc, ["r3", "r2"])
+    assert keeper == "r2" and [r["id"] for r in merged["regions"]] == ["r1", "r2"] and len(merged["arcs"]) == len(doc["arcs"]) - 1
+    ring = merged["regions"][1]
+    assert len(ring["loops"]) == 1 and ring["pixels"] == (region > 0).sum() and ring["color"] == 1
+    assert [(p["index"], p["pixels"]) for p in merged["palette"]] == [(0, (region == 0).sum()), (1, (region > 0).sum())]
+    planar(merged)
+    assert (even_odd(sg.regions_as_loops(merged)[1]["loops"], region.shape) == (region > 0)).all()
+
+
+def test_paper_merged_with_the_ring_inside_it_keeps_the_inner_paper_as_a_hole():
+    doc, region = ring_document()
+    merged, keeper = sg.merge_regions(doc, ["r1", "r2"])
+    assert keeper == "r1" and [r["id"] for r in merged["regions"]] == ["r1", "r3"]
+    (hole,) = merged["regions"][0]["loops"][1:]
+    assert [merged["arcs"][ref if ref >= 0 else ~ref]["closed"] for ref in hole] == [True]       # the inner paper's border
+    planar(merged)
+    loops = sg.regions_as_loops(merged)
+    assert (even_odd(loops[0]["loops"], region.shape) == (region < 2)).all() and (even_odd(loops[1]["loops"], region.shape) == (region == 2)).all()
+    assert [(p["index"], p["pixels"]) for p in merged["palette"]] == [(0, region.size)]               # the ring's colour has no region left
+
+
+def test_a_union_around_a_pocket_has_the_pocket_as_a_hole_and_keeps_its_two_arc_junctions():
+    region = np.zeros((9, 9), np.int64)                         # A above, B and C below, the pocket P in the middle
+    region[4:, :4], region[4:, 4:], region[3:6, 3:6] = 1, 2, 3
+    doc = pixel_document(region, np.array([0, 1, 2, 3]))
+    pocket = doc["regions"][3]["loops"]
+    merged, keeper = sg.merge_regions(doc, ["r1", "r2", "r3"])
+    union = next(r for r in merged["regions"] if r["id"] == keeper)
+    assert len(union["loops"]) == 2 and len(union["loops"][1]) == len(pocket[0]) == 3                 # P's three arcs stay
+    assert [r["id"] for r in merged["regions"]] == [keeper, "r4"]
+    planar(merged)
+    loops = {r["id"]: r["loops"] for r in sg.regions_as_loops(merged)}
+    assert (even_odd(loops[keeper], region.shape) == (region < 3)).all() and (even_odd(loops["r4"], region.shape) == (region == 3)).all()
+
+
+def test_a_union_touching_itself_at_a_corner_encloses_exactly_its_pixels():
+    region = np.array([[0, 0, 0, 0],                         # A and B touch at a corner around two holes that do too
+                       [0, 2, 1, 1],
+                       [0, 0, 3, 1],
+                       [0, 0, 1, 1]], np.int64)
+    doc = pixel_document(region, np.array([0, 1, 2, 2]))
+    merged, keeper = sg.merge_regions(doc, ["r1", "r2"])
+    assert keeper == "r1" and [r["id"] for r in merged["regions"]] == ["r1", "r3", "r4"]
+    planar(merged)
+    for r in sg.regions_as_loops(merged):
+        assert (even_odd(r["loops"], region.shape) == np.isin(region, [0, 1] if r["id"] == "r1" else [int(r["id"][1:]) - 1])).all()
+
+
+@pytest.mark.parametrize("make, n_colors, seed, merges", [(shapes, 7, 0, 3), (photo_like, 12, 1, 8), (photo_like, 12, 2, 8)])
+def test_merged_regions_keep_the_picture_covered_and_its_area(make, n_colors, seed, merges):
+    img = make()
+    doc = sg.segment(img, 0.25 * img.shape[1], n_colors, use_faces=False)
+    size = doc["size_mm"]
+
+    def measure(d):
+        loops = [r["loops"] for r in sg.regions_as_loops(d)]
+        return sg.coverage(loops, size["width"], size["height"], 16), sum(vz._signed_area(loop) for r in loops for loop in r)
+
+    before, area = measure(doc)
+    rng = np.random.default_rng(seed)
+    for _ in range(merges):
+        doc, keeper = sg.merge_regions(doc, connected_set(doc, rng, int(rng.integers(2, 4 if merges < 5 else 6))))
+    after, area_after = measure(doc)
+    planar(doc)
+    assert after["overlap"] <= before["overlap"] and after["uncovered"] <= before["uncovered"] + before["overlap"]
+    assert after["overlap"] < 0.005 and after["uncovered"] < 0.005
+    assert area_after == pytest.approx(area, rel=1e-9) and area == pytest.approx(-size["width"] * size["height"], rel=0.005)
+    assert sum(r["pixels"] for r in doc["regions"]) == sum(p["pixels"] for p in doc["palette"]) == img.shape[0] * img.shape[1]
+    for p in doc["palette"]:                                                         # each colour holds its regions' pixels
+        assert p["pixels"] == sum(r["pixels"] for r in doc["regions"] if r["color"] == p["index"])
+
+
+def test_merged_regions_export_to_lightburn_closed_with_their_holes():
+    doc = sg.segment(shapes(), 60.0, 7, use_faces=False)
+    ring = next(r for r in doc["regions"] if r["color"] == colour_index(doc, RED) and len(r["loops"]) == 2)
+    paper = doc["regions"][0]
+    assert ring["id"] in sg.neighbours(doc)[paper["id"]] and len(paper["loops"]) == 3
+    merged, keeper = sg.merge_regions(doc, [ring["id"], paper["id"]])               # the ring's hole in the paper gives way to its own
+    assert keeper == paper["id"] and len(merged["regions"][0]["loops"]) == 3
+    lightburn_round_trip(merged)
+    many = sg.segment(photo_like(), 50.0, 12, use_faces=False)
+    rng = np.random.default_rng(4)
+    for _ in range(10):
+        many, _ = sg.merge_regions(many, connected_set(many, rng, int(rng.integers(2, 6))))
+    lightburn_round_trip(many)
+
+
+def lightburn_round_trip(doc) -> None:
+    """The regions written as LightBurn paths read back closed, with every hole as a hole, the same areas, gapless."""
+    regions = sg.regions_as_loops(doc)
+    layers = {f"c{p['index']}": n for n, p in enumerate(doc["palette"])}
+    settings = "".join(f'<CutSetting type="Scan"><index Value="{i}"/><name Value="C{i:02d}"/><maxPower Value="40"/>'
+                       f'<speed Value="1000"/><frequency Value="40000"/></CutSetting>' for i in layers.values())
+    xml = ('<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="2.0.04" FormatVersion="1">' + settings
+           + "".join(vz.to_lbrn2_shapes({"regions": regions}, layers)) + "</LightBurnProject>")
+    back = [p for layer in lb.parse_bytes(xml.encode("utf-8")).layers for p in layer.regions]
+    assert len(back) == len(regions) and all(p.closed and p.kind == "path" for p in back)
+    mine = sorted((round(outline_area(r["loops"]), 3), len(r["loops"]) - 1) for r in regions)
+    read = sorted((round(outline_area([p.polygon] + p.holes), 3), len(p.holes)) for p in back)
+    assert [holes for _, holes in read] == [holes for _, holes in mine] and sum(h for _, h in mine) >= 1   # every hole read as a hole
+    assert [a for a, _ in read] == pytest.approx([a for a, _ in mine], rel=0.01)
+    cov = sg.coverage([[p.polygon] + p.holes for p in back], doc["size_mm"]["width"], doc["size_mm"]["height"], 16)
+    assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
+
+
+def test_a_merge_is_deterministic_and_leaves_its_input_unchanged():
+    doc = sg.segment(photo_like(), 50.0, 9, use_faces=False)
+    before = json.dumps(doc)
+    ids = connected_set(doc, np.random.default_rng(7), 5)
+    first, second = sg.merge_regions(doc, ids), sg.merge_regions(doc, list(reversed(ids)))
+    assert json.dumps(first) == json.dumps(second) and json.dumps(doc) == before
+    colours = [p["index"] for p in doc["palette"][2:5]]
+    assert json.dumps(sg.merge_colours(doc, colours)) == json.dumps(sg.merge_colours(doc, colours[::-1])) and json.dumps(doc) == before
+    with pytest.raises(RuntimeError):
+        sg.merge_regions(doc, ids[:1])
+    with pytest.raises(RuntimeError):
+        sg.merge_colours(doc, [colours[0], 99])
+
+
+def test_the_merged_region_keeps_its_largest_member_and_takes_over_the_pixels_of_the_others():
+    doc = sg.segment(shapes(), 60.0, 7, use_faces=False)
+    ids = connected_set(doc, np.random.default_rng(3), 4)
+    members = [r for r in doc["regions"] if r["id"] in ids]
+    largest = max(members, key=lambda r: r["pixels"])
+    for r in doc["regions"]:                                         # an important member holding half the pixels makes it important
+        r["important"] = r["id"] == largest["id"]
+    merged, keeper = sg.merge_regions(doc, ids)
+    region = next(r for r in merged["regions"] if r["id"] == keeper)
+    total = sum(m["pixels"] for m in members)
+    assert keeper == largest["id"] and [r["id"] for r in merged["regions"]] == [r["id"] for r in doc["regions"] if r["id"] == keeper or r["id"] not in ids]
+    assert {k: region[k] for k in ("color", "lab", "srgb")} == {k: largest[k] for k in ("color", "lab", "srgb")} and region["pixels"] == total
+    assert region["important"] == (2 * largest["pixels"] >= total)
+    gone = {m["color"] for m in members} - {r["color"] for r in merged["regions"]}
+    assert {p["index"] for p in merged["palette"]} == {p["index"] for p in doc["palette"]} - gone
+    for p in merged["palette"]:
+        old = next(q for q in doc["palette"] if q["index"] == p["index"])
+        moved = sum(m["pixels"] for m in members if m["id"] != keeper and m["color"] == p["index"])
+        assert p["pixels"] == old["pixels"] - moved + (total - largest["pixels"] if p["index"] == largest["color"] else 0)
+        assert p["lab"] == old["lab"]
+
+
+def test_merged_colours_take_the_pixel_weighted_mean_under_the_number_of_the_largest_and_the_others_keep_theirs():
+    doc = sg.segment(photo_like(), 50.0, 9, use_faces=False)
+    chosen = [doc["palette"][1]["index"], doc["palette"][4]["index"], doc["palette"][6]["index"]]
+    members = [p for p in doc["palette"] if p["index"] in chosen]
+    merged, keeper = sg.merge_colours(doc, chosen)
+    assert keeper == max(members, key=lambda p: (p["pixels"], -p["index"]))["index"]
+    weights = [p["pixels"] for p in members]
+    mean = [round(float(v), 3) for v in np.average([p["lab"] for p in members], axis=0, weights=weights)]
+    entry = next(p for p in merged["palette"] if p["index"] == keeper)
+    assert entry["lab"] == mean and entry["srgb"] == sg.color.lab_to_srgb8(np.asarray(mean)).tolist() and entry["pixels"] == sum(weights)
+    assert sorted(p["index"] for p in merged["palette"]) == sorted(set(p["index"] for p in doc["palette"]) - set(chosen) | {keeper})
+    assert [p["lab"][0] for p in merged["palette"]] == sorted((p["lab"][0] for p in merged["palette"]), reverse=True)
+    for old, new in zip(doc["regions"], merged["regions"]):
+        assert (old["id"], old["loops"], old["pixels"]) == (new["id"], new["loops"], new["pixels"])
+        if old["color"] in chosen:
+            assert (new["color"], new["lab"], new["srgb"]) == (keeper, mean, entry["srgb"])
+        else:
+            assert (new["color"], new["lab"]) == (old["color"], old["lab"])
+    assert merged["arcs"] == doc["arcs"]
+    again, _ = sg.merge_colours(merged, [keeper, merged["palette"][0]["index"]])       # a palette with gaps merges on
+    assert len(again["palette"]) == len(doc["palette"]) - 3
+
+
+def test_neighbours_are_the_regions_across_an_arc_both_ways_and_never_the_picture_edge():
+    doc = sg.segment(shapes(), 60.0, 7, use_faces=False)
+    near = sg.neighbours(doc)
+    assert set(near) == {r["id"] for r in doc["regions"]} and all(near.values())
+    assert all(a in near[b] and a != b and b is not None for a, others in near.items() for b in others)
+    colour = {r["id"]: r["color"] for r in doc["regions"]}
+    assert all(colour[a] != colour[b] for a, others in near.items() for b in others)    # a fresh split: never one colour
+    corner = pixel_document(*sg._components(np.array([[0, 1], [1, 0]], np.int32), 2))       # a touch at a corner is no border
+    assert sg.neighbours(corner) == {"r1": {"r2", "r3"}, "r2": {"r1", "r4"}, "r3": {"r1", "r4"}, "r4": {"r2", "r3"}}

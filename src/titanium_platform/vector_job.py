@@ -26,6 +26,7 @@ colour regions (:mod:`segment`) and coloured with every measured colour of the j
 """
 from __future__ import annotations
 
+import collections
 import copy
 import json
 import math
@@ -94,8 +95,9 @@ def _write_document(store: Store, document: dict) -> str:
 
 
 def _new_version(store: Store, plan: dict, document: dict, op: dict) -> None:
-    """The edited document becomes the next version; the earlier ones stay on disk and in the history."""
-    plan["document_version"] += 1
+    """The edited document becomes the next version, numbered after every one in the history (a version left by an undo
+    never gives its number again); the earlier ones stay on disk and in the history."""
+    plan["document_version"] = 1 + max((h["version"] for h in plan["history"]), default=plan["document_version"])
     plan["document_path"] = _write_document(store, document)
     plan["history"].append({"version": plan["document_version"], "op": op, "at": now(), "path": plan["document_path"]})
 
@@ -383,20 +385,26 @@ def stored_export(store: Store, plan_id: int, number: int) -> tuple[str, bytes]:
 
 # ======================================================================================================================
 # A photograph split into gapless colour regions and coloured with measured titanium colours (REQ-042, REQ-043,
-# DEC-073..DEC-077)
+# DEC-073..DEC-077; its colour editor: the feature vector-work-colour-editor, REQ-043..REQ-049, DEC-001, DEC-075..DEC-077)
 # ======================================================================================================================
 # The job keeps the split's settings (``split``), the important areas found in its picture once (``detected``), the
 # segment document (one JSON file per version, as above), the current colouring with the operator's choices, every
-# automatic variant and the colourings to go back to (``undo``). Its palette is every measured colour of its laser, lens
-# and titanium (palette.vector_palette, DEC-073); cleaning is always its first layer, so it holds at most 29 recipes, 28
-# with registration markers.
+# automatic variant with the split version it was made on, and the steps to go back and forth (``undo``, ``redo``): each
+# step holds a colouring with its split version, delta E tolerance and filters (editor DEC-077). Its palette is every
+# measured colour of its laser, lens and titanium (palette.vector_palette, DEC-073); cleaning is always its first layer,
+# so it holds at most 29 recipes, 28 with registration markers.
 #
 # A colouring: ``assignment`` (source colour index -> palette entry) and ``how`` from the last automatic mode, ``groups``
-# (a colour the operator chose by hand or whose proposed substitute he accepted; every automatic mode keeps them),
-# ``regions`` (a region given its own colour), ``excluded_colours`` and ``excluded_regions`` (left out of the file).
-# A source colour is unresolved while no colour the automatic modes may use lies within the delta E tolerance and the
-# operator has neither accepted the proposed one (the current automatic choice), chosen another nor excluded it; the
-# file is refused while any region of such a colour remains (REQ-042).
+# (a colour the operator chose by hand, ``by`` "hand", or accepted before the editor, ``by`` "accepted"; every automatic
+# mode keeps them), ``regions`` (a region given its own colour), ``excluded_colours`` and ``excluded_regions`` (left out of
+# the file). Every source colour is coloured from the start: the fastest colour the automatic modes may use within the
+# delta E tolerance, else the nearest (editor DEC-001). A colour beyond the tolerance is flagged with its delta E and
+# never blocks the file; the file is refused only while the palette is empty, a chosen colour is no longer measured,
+# nothing is left to engrave or the recipes outnumber the layers.
+#
+# The editor paints a region, a source colour or a fill over similar neighbours (editor DEC-075), merges titanium colours
+# (hand choices), source colours and neighbouring regions (both a new version of the split, :mod:`segment`, editor
+# DEC-076), and undoes and redoes all of it.
 PHOTO = "photo"
 DETAIL = {"coarse": (70, 1 / 1500), "medium": (100, 1 / 3000), "fine": (150, 1 / 7500)}
 """Levels of detail of a split: the coarse superpixels along the picture's longer side and the least region as a share
@@ -404,10 +412,11 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 (least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
 regions."""
 DEFAULT_DETAIL = "medium"
-COLOURING_OPS = ("assign", "set_colour", "set_region", "accept", "accept_all", "exclude_colour", "include_colour", "exclude_region",
-                 "include_region", "restore", "undo", "settings")
-UNDO_DEPTH = 50
-RESOLVED = ("automatic", "hand", "accepted", "excluded")
+COLOURING_OPS = ("assign", "restore", "settings", "set_colour", "set_region", "paint", "exclude_colour", "include_colour",
+                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo")
+MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
+SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
+UNDO_DEPTH = 50                                      # steps kept to undo and redo together
 
 
 def photo_cap(markers: bool) -> int:
@@ -461,8 +470,8 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
                 threshold=None, n_colors: int = 12, detail: str = DEFAULT_DETAIL, tolerance_mm: float = seg.TOLERANCE_MM,
                 use_faces: bool = True, markers: bool = False, max_time: float | None = None, include_as_shot: bool = False,
                 task: str | None = None, goals: dict | None = None) -> int:
-    """Split a photograph into colour regions for one laser, lens and titanium stock and colour it automatically: the
-    fastest measured colour within the delta E tolerance (DEC-075), else the nearest as a proposal."""
+    """Split a photograph into colour regions for one laser, lens and titanium stock and colour every source colour
+    automatically: the fastest measured colour within the delta E tolerance (DEC-075), else the nearest (editor DEC-001)."""
     if not (name or "").strip():
         raise cv.ConversionError("give the plan a name")
     setup = su.resolve(store, device_id, lens_id)
@@ -493,7 +502,7 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
                            "material": {k: material[k] for k in ("id", "name", "family", "grade", "batch", "thickness_mm", "surface")}},
             "markers": cv._plan_markers(identifier, markers, size["width"], size["height"], store),
             "marker_layer": pl.marker_layer_settings(store) if markers else None, "clean_layer": pl.clean_layer(setup["device"]["passport"]),
-            "colouring": None, "variants": [], "undo": [], "exports": [], "regions": [], "layers": [], "weak": [], "unresolved": None}
+            "colouring": None, "variants": [], "undo": [], "redo": [], "exports": [], "regions": [], "layers": [], "weak": []}
     document = _segment(plan, picture)
     plan["document_path"], plan["document_version"] = _write_document(store, document), 1
     plan["history"] = [{"version": 1, "op": {"op": "split", **_split_op(split)}, "at": now(), "path": plan["document_path"]}]
@@ -525,7 +534,7 @@ def _photo_job(store: Store, plan_id: int) -> dict:
 
 def resplit(store: Store, plan_id: int, params: dict) -> None:
     """Split the picture again with new settings and important areas: a new document version, coloured anew (closest);
-    the variants and the colourings of the earlier split are left behind with it."""
+    a fresh start, the variants and the steps to undo and redo of the earlier split are left behind with it."""
     plan = _photo_job(store, plan_id)
     if not isinstance(params, dict):
         raise cv.ConversionError("the split settings must be an object")
@@ -534,7 +543,8 @@ def resplit(store: Store, plan_id: int, params: dict) -> None:
     entries = _palette(store, plan)
     with store.transaction():
         _new_version(store, plan, document, {"op": "split", **_split_op(plan["split"])})
-        plan["colouring"], plan["variants"], plan["undo"] = _automatic(plan, document, entries, "closest", 0, _empty_colouring()), [], []
+        plan["colouring"] = _automatic(plan, document, entries, "closest", 0, _empty_colouring())
+        plan["variants"], plan["undo"], plan["redo"] = [], [], []
         _add_variant(plan, document, entries)
         _photo_refresh(store, plan, document, entries)
 
@@ -555,14 +565,15 @@ def _sources(document: dict) -> list[dict]:
 
 
 def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed: int, colouring: dict) -> dict:
-    """The colouring after an automatic mode: every colour without the operator's own choice gets the mode's entry
-    (palette.assign), the operator's choices of colours and regions stay."""
+    """A new colouring after an automatic mode: every colour without the operator's own choice gets the mode's entry
+    (palette.assign), the operator's choices of colours (still measured, of a colour still in the split) and regions stay."""
     by_id = {e["id"]: e for e in entries}
     out = {**copy.deepcopy(colouring), "mode": mode, "seed": seed, "assignment": {}, "how": {}}
     if not entries:                          # nothing measured on this titanium: every colour stays without a titanium colour
         return out
     settings = plan["colour_settings"]
-    keep = {i: g["entry_id"] for i, g in colouring["groups"].items() if g["entry_id"] in by_id}
+    indexes = {str(p["index"]) for p in document["palette"]}
+    keep = {i: g["entry_id"] for i, g in colouring["groups"].items() if g["entry_id"] in by_id and i in indexes}
     result = palette.assign(_sources(document), entries, mode, tolerance_de=plan["threshold"], seed=seed, max_time=settings["max_time"],
                             keep=keep, include_as_shot=settings["include_as_shot"])
     out["assignment"] = {str(c["index"]): c["entry_id"] for c in result["colours"]}
@@ -571,17 +582,22 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
 
 
 def _add_variant(plan: dict, document: dict, entries: list[dict]) -> None:
-    """The current colouring, just made by an automatic mode, becomes a numbered variant that can be restored."""
+    """The current colouring, just made by an automatic mode, becomes a numbered variant that can be restored on the
+    version of the split it was made on."""
     number = 1 + max((v["number"] for v in plan["variants"]), default=0)
     plan["colouring"]["variant"] = number
     state = _state(plan, document, entries)
     plan["variants"].append({"number": number, "mode": plan["colouring"]["mode"], "seed": plan["colouring"]["seed"], "at": now(),
-                             "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
+                             "version": plan["document_version"], "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
 
 
 def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
-    """Every source colour and region with its titanium colour and status, the unresolved ones, the layers of the file
-    and the totals of the current colouring."""
+    """Every source colour and region with its titanium colour and status, the colours beyond the delta E tolerance, the
+    regions whose titanium colour is no longer measured, the layers of the file and the totals of the current colouring.
+
+    A colour's status: ``excluded``, ``missing`` (its titanium colour is not measured, or not any more), ``hand`` or
+    ``accepted`` (the operator's choice; accepted before the editor) or ``automatic``. ``outside_tolerance`` flags a
+    titanium colour farther than the delta E tolerance; it never blocks the file (editor DEC-001)."""
     by_id = {e["id"]: e for e in entries}
     colouring, settings, tolerance = plan["colouring"], plan["colour_settings"], plan["threshold"]
     candidates = [e for e in entries if palette.automatic(e, settings["max_time"], settings["include_as_shot"])]
@@ -590,25 +606,23 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     for source in document["palette"]:
         key = str(source["index"])
         group = colouring["groups"].get(key)
-        entry_id = group["entry_id"] if group else colouring["assignment"].get(key)
+        entry = by_id.get(group["entry_id"] if group else colouring["assignment"].get(key))
         nearest = min((color.delta_e(source["lab"], e["lab"]) for e in candidates), default=None)
         if source["index"] in excluded_colours:
             status = "excluded"
-        elif entry_id not in by_id:
+        elif entry is None:
             status = "missing"
-        elif group:
-            status = group["by"]
         else:
-            status = "automatic" if nearest is not None and nearest <= tolerance else "proposed"
-        entry = by_id.get(entry_id)
+            status = group["by"] if group else "automatic"
+        delta = None if entry is None else color.delta_e(source["lab"], entry["lab"])
         colours.append({"index": source["index"], "lab": source["lab"], "srgb": source["srgb"], "pixels": source["pixels"], "status": status,
-                        "entry_id": entry_id if entry else None, "how": "hand" if group else colouring["how"].get(key),
-                        "delta_e": None if entry is None else round(color.delta_e(source["lab"], entry["lab"]), 2),
+                        "entry_id": entry["id"] if entry else None, "how": "hand" if group else colouring["how"].get(key),
+                        "delta_e": None if delta is None else round(delta, 2), "outside_tolerance": delta is not None and delta > tolerance,
                         "nearest_delta_e": None if nearest is None else round(nearest, 2), "regions": 0, "open_regions": 0})
     by_index = {c["index"]: c for c in colours}
     px_area = document["px_mm"] ** 2
     used: dict[str, dict] = {}
-    unresolved_regions, missing_regions, weighted, weight = [], [], 0.0, 0.0
+    missing_regions, open_pixels, weighted, weight = [], {}, 0.0, 0.0
     for region in document["regions"]:
         c = by_index[region["color"]]
         c["regions"] += 1
@@ -624,8 +638,9 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
             continue
         else:
             c["open_regions"] += 1
-            if c["status"] not in RESOLVED:
-                unresolved_regions.append(region["id"])
+            open_pixels[c["index"]] = open_pixels.get(c["index"], 0) + region["pixels"]
+            if c["status"] == "missing":
+                missing_regions.append(region["id"])
                 continue
             entry_id = c["entry_id"]
         layer = used.setdefault(entry_id, {"entry_id": entry_id, "region_ids": [], "pixels": 0})
@@ -633,14 +648,14 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
         layer["pixels"] += region["pixels"]
         weighted += region["pixels"] * color.delta_e(region["lab"], by_id[entry_id]["lab"])
         weight += region["pixels"]
-    unresolved = [c for c in colours if c["status"] not in RESOLVED and c["open_regions"]]
+    outside = [c for c in colours if c["outside_tolerance"] and c["status"] != "excluded" and c["open_regions"]]
     total = sum(p["pixels"] for p in document["palette"]) or 1
     layers = sorted(used.values(), key=lambda layer: (-by_id[layer["entry_id"]]["lab"][0], layer["entry_id"]))
     for layer in layers:
         layer["area_mm2"] = layer["pixels"] * px_area
     return {"colours": colours, "layers": layers, "by_id": by_id, "missing_regions": missing_regions,
-            "unresolved": {"colours": len(unresolved), "regions": len(unresolved_regions),
-                           "share": sum(c["pixels"] for c in unresolved) / total, "indexes": [c["index"] for c in unresolved]},
+            "outside": {"colours": len(outside), "regions": sum(c["open_regions"] for c in outside),
+                        "share": sum(open_pixels[c["index"]] for c in outside) / total, "indexes": [c["index"] for c in outside]},
             "totals": {"recipes": len(layers), "regions": sum(len(layer["region_ids"]) for layer in layers),
                        "mean_delta_e": round(weighted / weight, 2) if weight else None,
                        "within_tolerance": sum(1 for c in colours if c["delta_e"] is not None and c["delta_e"] <= tolerance),
@@ -657,11 +672,9 @@ def _seconds(plan: dict, layers: list[dict], by_id: dict) -> float | None:
 
 
 def _blocker_photo(plan: dict, state: dict) -> str | None:
-    """Why the file cannot be written yet, or None."""
-    open_ = state["unresolved"]
-    if open_["colours"]:
-        return (f"{open_['colours']} colour(s) in {open_['regions']} region(s) have no titanium colour within the delta E tolerance: "
-                "accept the proposed colour, choose another or exclude it before export")
+    """Why the file cannot be written yet, or None; a colour beyond the delta E tolerance never is a reason (editor DEC-001)."""
+    if not state["by_id"]:
+        return "no measured colour of this laser, lens and titanium stock fills an area"
     if state["missing_regions"]:
         return (f"{len(state['missing_regions'])} region(s) have a titanium colour that is no longer measured on this laser, lens and "
                 "titanium stock: choose another before export")
@@ -674,10 +687,11 @@ def _blocker_photo(plan: dict, state: dict) -> str | None:
 
 
 def _photo_refresh(store: Store, plan: dict, document: dict, entries: list[dict]) -> dict:
-    """Store the layers and the unresolved summary of the current colouring and set the status: ready when it can be exported."""
+    """Store the layers of the current colouring and set the status: ready when it can be exported."""
     state = _state(plan, document, entries)
     plan["layers"] = _export_layers(store, plan, state)
-    plan["unresolved"], plan["regions"], plan["weak"] = state["unresolved"], [], []
+    plan["regions"], plan["weak"] = [], []
+    plan.pop("unresolved", None)                 # kept by works made before the editor
     cv._persist(store, plan, cv.ST_READY if _blocker_photo(plan, state) is None else cv.ST_DRAFT, plan["markers_enabled"])
     return state
 
@@ -756,15 +770,17 @@ def split_svg(store: Store, plan_id: int) -> str:
 
 def photo_view(store: Store, plan: dict) -> dict:
     """A photograph job as its screen shows it: the split's settings, counts and important areas, every source colour
-    with its titanium colour and status, the unresolved summary, the variants, the layers of the file with the estimated
-    time of the whole job, and the exported files. The geometry itself is in :func:`split_svg`."""
+    with its titanium colour and status, the colours beyond the tolerance (``outside``) and the regions whose colour is no
+    longer measured (``missing``), the variants with the split version of each, the steps to undo and redo, the layers of
+    the file with the estimated time of the whole job, and the exported files. The geometry itself is in :func:`split_svg`."""
     document = _document(plan)
     entries = _palette(store, plan)
     state = _state(plan, document, entries)
     by_id, colouring, settings = state["by_id"], plan["colouring"], plan["colour_settings"]
     used = {c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
     layers = _export_layers(store, plan, state)
-    hidden = ("document_path", "history", "exports", "undo", "variants", "colouring", "detected", "regions", "weak", "layers")
+    hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
+              "unresolved")
     out = {k: v for k, v in plan.items() if k not in hidden}
     found = plan["detected"]
     out.update(
@@ -778,8 +794,10 @@ def photo_view(store: Store, plan: dict) -> dict:
         colours=state["colours"], entries={i: _shown(by_id[i], settings) for i in sorted(used)},
         colouring={k: colouring[k] for k in ("mode", "seed", "variant", "regions", "excluded_colours", "excluded_regions")},
         settings={"tolerance_de": plan["threshold"], **settings},
-        unresolved={**state["unresolved"], "missing_regions": len(state["missing_regions"])}, totals=state["totals"],
-        variants=[{k: v[k] for k in ("number", "mode", "seed", "at", "totals")} for v in plan["variants"]], undo=len(plan["undo"]),
+        outside=state["outside"], missing={"regions": len(state["missing_regions"])}, totals=state["totals"],
+        variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"])}
+                  for v in plan["variants"]],
+        undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         time=_estimate(plan, layers), export_blocked=_blocker_photo(plan, state), layer_cap=photo_cap(plan["markers_enabled"]),
         palette_size=len(entries),
@@ -804,7 +822,8 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     data = pl.export_lbrn2({**plan, "layers": layers, "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
-    plan["layers"], plan["unresolved"] = layers, state["unresolved"]
+    plan["layers"] = layers
+    plan.pop("unresolved", None)
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
                             "document_version": plan["document_version"], "layers": len(layers), "regions": len(regions),
                             "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
@@ -813,10 +832,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     return plan["name"], data
 
 
-def _snapshot(plan: dict) -> None:
-    plan["undo"] = (plan["undo"] + [copy.deepcopy(plan["colouring"])])[-UNDO_DEPTH:]
-
-
+# -- the colour editor: checks ---------------------------------------------------------------------------------------------
 def _colour_index(document: dict, value) -> str:
     if isinstance(value, bool) or not isinstance(value, int) or not any(p["index"] == value for p in document["palette"]):
         raise cv.ConversionError("there is no such source colour")
@@ -830,89 +846,300 @@ def _region_id(document: dict, value) -> str:
 
 
 def _entry_id(by_id: dict, value) -> str:
-    if value not in by_id:
+    if not isinstance(value, str) or value not in by_id:
         raise cv.ConversionError("the titanium colour must be a measured colour of this laser, lens and titanium stock")
     return value
 
 
+def _similarity(value) -> float:
+    """The similarity of a fill: a delta E between source colours, given as a number or as text (a query parameter)."""
+    try:
+        number = math.nan if isinstance(value, bool) else float(value)
+    except (TypeError, ValueError):
+        number = math.nan
+    if not math.isfinite(number) or number < 0:
+        raise cv.ConversionError("the similarity must be a non-negative delta E")
+    return number
+
+
+def _colour_set(document: dict, value) -> list[int]:
+    """Source colours to merge: two or more of the split."""
+    if not isinstance(value, list):
+        raise cv.ConversionError("choose two or more source colours to merge")
+    indexes = list(dict.fromkeys(int(_colour_index(document, v)) for v in value))
+    if len(indexes) < 2:
+        raise cv.ConversionError("choose two or more source colours to merge")
+    return indexes
+
+
+def _merge_set(document: dict, value) -> list[str]:
+    """Regions to merge: two or more of the split, connected through shared borders (a touch at a corner is none)."""
+    if not isinstance(value, list):
+        raise cv.ConversionError("choose two or more regions to merge")
+    ids = list(dict.fromkeys(_region_id(document, v) for v in value))
+    if len(ids) < 2:
+        raise cv.ConversionError("choose two or more regions to merge")
+    near, wanted = seg.neighbours(document), set(ids)
+    reached, queue = {ids[0]}, [ids[0]]
+    while queue:
+        found = (near[queue.pop()] & wanted) - reached
+        reached |= found
+        queue += sorted(found)
+    if reached != wanted:
+        raise cv.ConversionError("the regions to merge must border one another")
+    return ids
+
+
+# -- the colour editor: undo and redo (editor DEC-077) ----------------------------------------------------------------------
+def _here(plan: dict) -> dict:
+    """What a step of undo or redo brings back: the colouring with its split version, delta E tolerance and filters."""
+    return {"colouring": copy.deepcopy(plan["colouring"]), "version": plan["document_version"], "threshold": plan["threshold"],
+            "colour_settings": copy.deepcopy(plan["colour_settings"])}
+
+
+def _snapshot(plan: dict) -> None:
+    """Before an operation: the job as it is can be undone (the last UNDO_DEPTH steps), what was undone is not redone any more."""
+    plan["undo"], plan["redo"] = (plan["undo"] + [_here(plan)])[-UNDO_DEPTH:], []
+
+
+def _step(plan: dict, direction: str) -> None:
+    """Undo or redo one operation: the state on top of that stack comes back and the present one goes onto the other."""
+    if not plan[direction]:
+        raise cv.ConversionError("there is no earlier colouring to go back to" if direction == "undo" else "there is no undone change to redo")
+    there = plan[direction].pop()
+    plan["redo" if direction == "undo" else "undo"].append(_here(plan))
+    _go(plan, there)
+
+
+def _go(plan: dict, there: dict) -> None:
+    """Bring a state back; one of another split version brings that version's document back from the history."""
+    if there["version"] != plan["document_version"]:
+        entry = next((h for h in plan["history"] if h.get("path") and h["version"] == there["version"]), None)
+        if entry is None or not Path(entry["path"]).is_file():
+            raise cv.ConversionError("there is no such version of the vector document")
+        plan["document_version"], plan["document_path"] = entry["version"], entry["path"]
+    plan["colouring"], plan["threshold"] = copy.deepcopy(there["colouring"]), there["threshold"]
+    plan["colour_settings"] = copy.deepcopy(there["colour_settings"])
+
+
+def _pin_legacy(plan: dict) -> None:
+    """Works made before the editor kept bare colourings to undo and variants without a split version: both belong to the
+    current version (editor DEC-077), with the tolerance and filters in force now."""
+    here = {"version": plan["document_version"], "threshold": plan["threshold"], "colour_settings": plan["colour_settings"]}
+    plan["undo"] = [e if "colouring" in e else {"colouring": e, **copy.deepcopy(here)} for e in plan.get("undo", [])]
+    plan.setdefault("redo", [])
+    for v in plan["variants"]:
+        v.setdefault("version", plan["document_version"])
+
+
+# -- the colour editor: operations ---------------------------------------------------------------------------------------------
 def colour(store: Store, plan_id: int, op: dict) -> None:
-    """One colouring operation, recorded in the history; every one but ``undo`` can itself be undone.
+    """One operation of the colour editor, recorded in the history; every one but ``undo`` and ``redo`` can be undone, and
+    a new one clears what was undone (editor DEC-077).
 
     ``{"op": "assign", "mode"}`` recolours automatically (closest, tonality, random: a new seed each time, fewer_layers) and
-    adds a variant; ``{"op": "restore", "variant"}`` brings one back; ``{"op": "settings", "tolerance_de", "max_time",
-    "include_as_shot"}`` changes the choice and recolours with the current mode. ``{"op": "set_colour", "colour",
-    "entry_id"}`` and ``{"op": "set_region", "region", "entry_id"}`` choose by hand (null returns to the automatic choice);
-    ``{"op": "accept", "colour"}`` and ``{"op": "accept_all"}`` accept proposed substitutes; ``exclude_colour``,
-    ``include_colour``, ``exclude_region`` and ``include_region`` leave colours and regions out of the file or bring them back.
+    adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
+    ``{"op": "settings", "tolerance_de", "max_time", "include_as_shot"}`` changes the choice and recolours with the current
+    mode. ``{"op": "paint", "region", "scope", "entry_id", "similarity_de"}`` is a click of the brush (:func:`_paint`);
+    ``{"op": "set_colour", "colour", "entry_id"}`` and ``{"op": "set_region", "region", "entry_id"}`` choose by hand (null
+    returns to the automatic choice); ``exclude_colour``, ``include_colour`` and ``exclude_region``, ``include_region`` (one
+    ``region`` or several ``regions``) leave them out of the file or bring them back. ``{"op": "merge_titanium", "entries",
+    "into"}`` makes titanium colours one (:func:`_merge_titanium`); ``{"op": "merge_colours", "colours", "entry_id"?}`` and
+    ``{"op": "merge_regions", "regions"}`` make a new version of the split (:func:`_merge`). ``undo`` and ``redo`` step
+    back and forth through all of them, the split version, the tolerance and the filters included.
     """
     if not isinstance(op, dict):
         raise cv.ConversionError("an edit must name its operation")
     plan, kind = _photo_job(store, plan_id), op.get("op")
     if kind not in COLOURING_OPS:
         raise cv.ConversionError(f"unknown edit operation {kind!r}")
+    _pin_legacy(plan)
     document = _document(plan)
     entries = _palette(store, plan)
-    by_id = {e["id"]: e for e in entries}
+    if kind in ("undo", "redo"):
+        _step(plan, kind)
+        document = _document(plan)
+    elif kind in MERGE_OPS:
+        merged, colouring, keeper = _merge(plan, document, entries, kind, op)
+        _snapshot(plan)
+        plan["colouring"], document = colouring, merged
+    else:
+        changes = _change(store, plan, document, entries, kind, op)
+        _snapshot(plan)
+        plan.update(changes)
+        if kind in ("assign", "settings"):
+            _add_variant(plan, document, entries)
+    with store.transaction():
+        if kind in MERGE_OPS:                    # the new version is the history's entry of the operation
+            _new_version(store, plan, document, {**op, "keeper": keeper})
+        else:
+            plan["history"].append({"version": plan["document_version"], "op": op, "at": now()})
+        _photo_refresh(store, plan, document, entries)
+
+
+def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind: str, op: dict) -> dict:
+    """The job's colouring (and for ``settings`` its tolerance and filters) after an operation that keeps the split,
+    computed without changing the job, so that a refused operation leaves nothing behind."""
     current = plan["colouring"]
-    if kind == "undo":
-        if not plan["undo"]:
-            raise cv.ConversionError("there is no earlier colouring to go back to")
-        plan["colouring"] = plan["undo"].pop()
-    elif kind == "assign":
+    if kind == "assign":
         mode = op.get("mode")
         if mode not in palette.MODES:
             raise cv.ConversionError("the recolouring mode must be closest, tonality, random or fewer_layers")
         seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == "random"), default=0) if mode == "random" else 0
-        _snapshot(plan)
-        plan["colouring"] = _automatic(plan, document, entries, mode, seed, current)
-        _add_variant(plan, document, entries)
-    elif kind == "restore":
+        return {"colouring": _automatic(plan, document, entries, mode, seed, current)}
+    if kind == "restore":
         variant = next((v for v in plan["variants"] if v["number"] == op.get("variant")), None)
         if variant is None:
             raise cv.ConversionError("there is no such variant of the colouring")
-        _snapshot(plan)
-        plan["colouring"] = copy.deepcopy(variant["colouring"])
-    elif kind == "settings":
+        if variant["version"] != plan["document_version"]:
+            raise cv.ConversionError("this variant of the colouring belongs to another version of the split")
+        return {"colouring": copy.deepcopy(variant["colouring"])}
+    if kind == "settings":
         settings = {"max_time": colormap.time_limit(op.get("max_time")), "include_as_shot": bool(op.get("include_as_shot"))}
         threshold = cv._threshold(store, plan["device_id"], plan["lens_id"], op.get("tolerance_de", plan["threshold"]))
-        _snapshot(plan)
-        plan["threshold"], plan["colour_settings"] = threshold, settings
-        plan["colouring"] = _automatic(plan, document, entries, current["mode"] or "closest", current["seed"], current)
-        _add_variant(plan, document, entries)
-    else:
-        _snapshot(plan)
-        _choose(plan["colouring"], plan, document, entries, by_id, kind, op)
-    with store.transaction():
-        plan["history"].append({"version": plan["document_version"], "op": op, "at": now()})
-        _photo_refresh(store, plan, document, entries)
+        ruled = {**plan, "threshold": threshold, "colour_settings": settings}
+        return {"threshold": threshold, "colour_settings": settings,
+                "colouring": _automatic(ruled, document, entries, current["mode"] or "closest", current["seed"], current)}
+    return {"colouring": _choose(copy.deepcopy(current), plan, document, entries, kind, op)}
 
 
-def _choose(colouring: dict, plan: dict, document: dict, entries: list[dict], by_id: dict, kind: str, op: dict) -> None:
-    """The operator's own choices: a colour or region by hand, accepted proposals, exclusions."""
+def _choose(colouring: dict, plan: dict, document: dict, entries: list[dict], kind: str, op: dict) -> dict:
+    """The operator's own choices on a copy of the colouring, which is returned (or the colouring an automatic mode makes of
+    it when a choice goes back to the automatic one): a colour or a region by hand, a click of the brush, titanium colours
+    merged, exclusions."""
+    by_id = {e["id"]: e for e in entries}
     if kind == "set_colour":
         key = _colour_index(document, op.get("colour"))
         if op.get("entry_id") is None:
             colouring["groups"].pop(key, None)
-            plan["colouring"] = _automatic(plan, document, entries, colouring["mode"] or "closest", colouring["seed"], colouring)
-        else:
-            colouring["groups"][key] = {"entry_id": _entry_id(by_id, op["entry_id"]), "by": "hand"}
+            return _automatic(plan, document, entries, colouring["mode"] or "closest", colouring["seed"], colouring)
+        colouring["groups"][key] = {"entry_id": _entry_id(by_id, op["entry_id"]), "by": "hand"}
     elif kind == "set_region":
         region = _region_id(document, op.get("region"))
         if op.get("entry_id") is None:
             colouring["regions"].pop(region, None)
         else:
             colouring["regions"][region] = _entry_id(by_id, op["entry_id"])
-    elif kind in ("accept", "accept_all"):
-        state = _state(plan, document, entries)
-        wanted = None if kind == "accept_all" else int(_colour_index(document, op.get("colour")))
-        proposed = [c for c in state["colours"] if c["status"] == "proposed" and wanted in (None, c["index"])]
-        if not proposed:
-            raise cv.ConversionError("there is no proposed titanium colour to accept")
-        for c in proposed:
-            colouring["groups"][str(c["index"])] = {"entry_id": c["entry_id"], "by": "accepted"}
+    elif kind == "paint":
+        return _paint(colouring, plan, document, entries, op)
+    elif kind == "merge_titanium":
+        _merge_titanium(colouring, by_id, op)
     elif kind in ("exclude_colour", "include_colour"):
         index = int(_colour_index(document, op.get("colour")))
         colouring["excluded_colours"] = sorted(set(colouring["excluded_colours"]) - {index} | ({index} if kind == "exclude_colour" else set()))
     else:
-        region = _region_id(document, op.get("region"))
-        colouring["excluded_regions"] = sorted(set(colouring["excluded_regions"]) - {region} | ({region} if kind == "exclude_region" else set()))
+        ids = op["regions"] if "regions" in op else [op.get("region")]
+        if not isinstance(ids, list) or not ids:
+            raise cv.ConversionError(f"there is no region {ids!r}")
+        chosen = {_region_id(document, region) for region in ids}
+        colouring["excluded_regions"] = sorted(set(colouring["excluded_regions"]) - chosen | (chosen if kind == "exclude_region" else set()))
+    return colouring
+
+
+def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op: dict) -> dict:
+    """A click of the brush (editor REQ-045) with a titanium colour, or null for the automatic choice. Scope ``region``
+    paints the clicked region; ``colour`` its whole source colour, the own colours of the regions inside it cleared (null:
+    the colour goes back to the automatic choice); ``fill`` every region :func:`_reach` finds from it. A region or colour
+    painted with a titanium colour is included again."""
+    region = _region_id(document, op.get("region"))
+    scope, entry = op.get("scope"), op.get("entry_id")
+    if scope not in SCOPES:
+        raise cv.ConversionError("the scope must be region, colour or fill")
+    if entry is not None:
+        _entry_id({e["id"]: e for e in entries}, entry)
+    if scope == "colour":
+        index = next(r["color"] for r in document["regions"] if r["id"] == region)
+        inside = {r["id"] for r in document["regions"] if r["color"] == index}
+        colouring["regions"] = {k: v for k, v in colouring["regions"].items() if k not in inside}
+        if entry is None:
+            colouring["groups"].pop(str(index), None)
+            return _automatic(plan, document, entries, colouring["mode"] or "closest", colouring["seed"], colouring)
+        colouring["groups"][str(index)] = {"entry_id": entry, "by": "hand"}
+        colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i != index]
+        painted = {region}
+    else:
+        painted = {region} if scope == "region" else set(_reach(document, colouring, region, _similarity(op.get("similarity_de"))))
+        for r in painted:
+            if entry is None:
+                colouring["regions"].pop(r, None)
+            else:
+                colouring["regions"][r] = entry
+    if entry is not None:
+        colouring["excluded_regions"] = [r for r in colouring["excluded_regions"] if r not in painted]
+    return colouring
+
+
+def _reach(document: dict, colouring: dict, region: str, similarity: float) -> list[str]:
+    """The regions a fill from ``region`` paints, in the document's order (editor REQ-045): breadth first over shared
+    borders, a neighbour joins when its source colour lies within ``similarity`` delta E of the clicked region's (never
+    of the region it was reached from); excluded regions and regions of excluded colours stop it, the clicked one aside."""
+    excluded_colours = set(colouring["excluded_colours"])
+    walls = set(colouring["excluded_regions"]) | {r["id"] for r in document["regions"] if r["color"] in excluded_colours}
+    walls.discard(region)
+    lab = {r["id"]: r["lab"] for r in document["regions"]}
+    near, seen, queue = seg.neighbours(document), {region}, collections.deque([region])
+    reached = {region}
+    while queue:
+        for other in sorted(near[queue.popleft()] - seen - walls):
+            seen.add(other)
+            if color.delta_e(lab[other], lab[region]) <= similarity:
+                reached.add(other)
+                queue.append(other)
+    return [r["id"] for r in document["regions"] if r["id"] in reached]
+
+
+def reach(store: Store, plan_id: int, region, similarity_de) -> dict:
+    """What a click of the brush with the fill scope would paint on the current split, found as the paint finds it
+    (:func:`_reach`); nothing is changed. ``similarity_de`` may come as text, as a query parameter does."""
+    plan = _photo_job(store, plan_id)
+    document = _document(plan)
+    start, similarity = _region_id(document, region), _similarity(similarity_de)
+    ids = _reach(document, plan["colouring"], start, similarity)
+    inside = set(ids)
+    pixels = sum(r["pixels"] for r in document["regions"] if r["id"] in inside)
+    return {"region": start, "similarity_de": similarity, "version": plan["document_version"], "regions": ids, "pixels": pixels,
+            "share": pixels / (sum(p["pixels"] for p in document["palette"]) or 1)}
+
+
+def _merge_titanium(colouring: dict, by_id: dict, op: dict) -> None:
+    """Titanium colours into one (editor REQ-046): every colour and region whose titanium colour is one of ``entries``
+    (by hand or automatically) takes ``into`` by hand, so the file has one layer fewer for each; the automatic modes keep it."""
+    into, entries = _entry_id(by_id, op.get("into")), op.get("entries")
+    used = ({g["entry_id"] for g in colouring["groups"].values()} | set(colouring["regions"].values())
+            | set(colouring["assignment"].values()))
+    away = set(entries) - {into} if isinstance(entries, list) and all(isinstance(e, str) for e in entries) else set()
+    if not away or not away <= used:
+        raise cv.ConversionError("choose one or more titanium colours of the colouring to merge into another")
+    for key, entry_id in colouring["assignment"].items():
+        if key not in colouring["groups"] and entry_id in away:
+            colouring["groups"][key] = {"entry_id": into, "by": "hand"}
+    for key, group in list(colouring["groups"].items()):
+        if group["entry_id"] in away:
+            colouring["groups"][key] = {"entry_id": into, "by": "hand"}
+    colouring["regions"] = {region: into if entry_id in away else entry_id for region, entry_id in colouring["regions"].items()}
+
+
+def _merge(plan: dict, document: dict, entries: list[dict], kind: str, op: dict) -> tuple[dict, dict, int | str]:
+    """Source colours or neighbouring regions merged into a new split (editor REQ-047, REQ-048), computed without changing
+    the job: the new document, the colouring carried over to it and the colour index or region id that is left. The
+    choices and exclusions of a merged-away colour or region are dropped, the one left keeps its own; ``entry_id`` gives
+    merged colours a titanium colour by hand."""
+    colouring = copy.deepcopy(plan["colouring"])
+    if kind == "merge_colours":
+        indexes, entry = _colour_set(document, op.get("colours")), op.get("entry_id")
+        if entry is not None:
+            _entry_id({e["id"]: e for e in entries}, entry)
+        merged, keeper = seg.merge_colours(document, indexes)
+        if entry is not None:
+            colouring["groups"][str(keeper)] = {"entry_id": entry, "by": "hand"}
+    else:
+        ids = _merge_set(document, op.get("regions"))
+        merged, keeper = seg.merge_regions(document, ids)
+        away = set(ids) - {keeper}
+        colouring["regions"] = {k: v for k, v in colouring["regions"].items() if k not in away}
+        colouring["excluded_regions"] = [r for r in colouring["excluded_regions"] if r not in away]
+    left = {p["index"] for p in merged["palette"]}           # a colour merged away, or left without a region
+    for part in ("groups", "assignment", "how"):
+        colouring[part] = {k: v for k, v in colouring[part].items() if int(k) in left}
+    colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i in left]
+    return merged, colouring, keeper

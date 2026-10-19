@@ -7,9 +7,9 @@ Method (every step deterministic, so the same picture and settings give a byte-i
    and areas the operator marks (:mod:`faces`); each finer level is a SLIC of its own inside its area.
 3. The mean Lab of every superpixel is clustered into at most ``n_colors`` colours by a seeded k-means weighted by pixels;
    superpixels of faces and of the finest areas weigh more, so that their distinct colours keep clusters of their own.
-4. A region is a 4-connected area of one colour. Regions under the minimum area merge into the neighbour of the nearest
-   colour (smallest first); inside important areas (eyes, lips, marked areas) only specks smaller than a finest
-   superpixel do.
+4. A region is a 4-connected area of one colour, so two neighbours never share a colour in a fresh split. Regions under
+   the minimum area merge into the neighbour of the nearest colour (smallest first); inside important areas (eyes,
+   lips, marked areas) only specks smaller than a finest superpixel do.
 5. The region map becomes a planar map: the pixel edges between two regions (or a region and the picture's edge) form
    arcs between junctions, the points where three or more regions meet, the picture's edge counting as one, and the
    picture's corners. Every arc is smoothed and simplified once with its ends fixed (a Gaussian along its length takes
@@ -17,6 +17,12 @@ Method (every step deterministic, so the same picture and settings give a byte-i
    regions it separates, so the regions cover the picture without gaps or overlaps. A closed border without junctions
    is one closed arc.
 6. Every region's boundary is its loops of arcs: the outer boundary first, then its holes.
+
+The colour editor changes a split only by merging, each time into a new document (DEC-076 of the vector work colour
+editor): :func:`merge_colours` makes palette colours one, :func:`merge_regions` makes a connected set of regions one region
+by dropping the arcs between them and chaining their loops anew, so the picture stays covered without gaps. After a merge
+two neighbours may share a colour, a junction may be left with two arcs, and the palette's indexes and the region ids
+may have gaps: they never shift, so the operator's choices keep naming the same colours and regions.
 
 The document is a JSON-serialisable dict; coordinates are millimetres from the picture's top-left corner, y down::
 
@@ -26,7 +32,7 @@ The document is a JSON-serialisable dict; coordinates are millimetres from the p
      "superpixel_px": {"coarse", "face", "fine"},
      "faces": {"searched", "found", "error"},             # found == 0: no face in the picture (or not searched)
      "important": [area, ...],                            # detected and manual areas used, in pixels (see faces)
-     "palette": [{"index", "lab": [L, a, b], "srgb": [r, g, b], "pixels"}],   # lightest first
+     "palette": [{"index", "lab": [L, a, b], "srgb": [r, g, b], "pixels"}],   # lightest first; indexes may have gaps
      "regions": [{"id": "r1", "color", "lab", "srgb", "pixels", "important",
                   "loops": [[arc reference, ...], ...]}], # outer boundary first, then the holes
      "arcs": [{"id", "left", "right",                     # region ids on either side; None outside the picture
@@ -34,12 +40,14 @@ The document is a JSON-serialisable dict; coordinates are millimetres from the p
                "points": [[x, y], ...]}]}
 
 An arc reference ``i`` walks arc ``i`` from its first point to its last with the region on its left (screen left, y
-down); ``~i`` (``-i - 1``, as in TopoJSON) walks it backwards. Regions are numbered in raster order of their first
-pixel. :func:`regions_as_loops` turns the arcs back into closed outlines per region for :mod:`vectorize`'s LightBurn and
+down); ``~i`` (``-i - 1``, as in TopoJSON) walks it backwards; an arc's ``id`` is its place in ``arcs``. Regions are
+numbered in raster order of their first pixel; a region's ``lab`` and ``srgb`` are its colour's. :func:`neighbours` gives
+the regions bordering each region. :func:`regions_as_loops` turns the arcs back into closed outlines per region for :mod:`vectorize`'s LightBurn and
 SVG writers; :func:`coverage` measures gaps and overlaps of such outlines by rasterising them.
 """
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Iterable, Mapping
 from xml.sax.saxutils import quoteattr
@@ -574,4 +582,136 @@ def coverage(regions: Iterable[list], width_mm: float, height_mm: float, samples
         toggles = np.bincount((row - r0) * (cols + 1) + col, minlength=(r1 - r0) * (cols + 1)).reshape(r1 - r0, cols + 1)
         count[r0:r1] += (np.cumsum(toggles, axis=1)[:, :cols] % 2).astype(np.int32)
     return {"uncovered": float((count == 0).mean()), "overlap": float((count >= 2).mean())}
+
+
+# -- merging (the colour editor, DEC-076) ----------------------------------------------------------------------------------
+def neighbours(document: dict) -> dict[str, set[str]]:
+    """The regions each region borders along an arc; a touch at a corner only is no border, the picture's edge no region."""
+    out: dict[str, set[str]] = {r["id"]: set() for r in document["regions"]}
+    for arc in document["arcs"]:
+        left, right = arc["left"], arc["right"]
+        if left is not None and right is not None and left != right:
+            out[left].add(right)
+            out[right].add(left)
+    return out
+
+
+def merge_colours(document: dict, indexes: Iterable[int]) -> tuple[dict, int]:
+    """A new document in which two or more palette colours are one, and its index; the input is not changed.
+
+    The colour keeps the index of its member with most pixels (the lower index on a tie), so the other indexes stay as
+    they were and the palette has a gap; its Lab is the pixel-weighted mean of the members', its pixels their sum. The
+    palette stays lightest first; every region of a member takes the colour. Region ids and geometry are unchanged.
+    """
+    chosen = set(indexes)
+    members = [p for p in document["palette"] if p["index"] in chosen]
+    if len(chosen) < 2 or len(members) != len(chosen):
+        raise RuntimeError("a merge of colours needs two or more colours of the palette")
+    keeper = max(members, key=lambda p: (p["pixels"], -p["index"]))["index"]
+    mean = np.average([p["lab"] for p in members], axis=0, weights=[max(p["pixels"], 1) for p in members])
+    lab = [round(float(v), 3) for v in mean]
+    srgb = color.lab_to_srgb8(np.asarray(lab)).tolist()
+    doc = copy.deepcopy(document)
+    doc["palette"] = [p for p in doc["palette"] if p["index"] not in chosen or p["index"] == keeper]
+    for p in doc["palette"]:
+        if p["index"] == keeper:
+            p.update(lab=lab, srgb=srgb, pixels=sum(m["pixels"] for m in members))
+    doc["palette"].sort(key=lambda p: (-p["lab"][0], p["lab"][1], p["lab"][2]))      # lightest first, as :func:`_palette`
+    for r in doc["regions"]:
+        if r["color"] in chosen:
+            r.update(color=keeper, lab=lab, srgb=srgb)
+    return doc, keeper
+
+
+def merge_regions(document: dict, ids: Iterable[str]) -> tuple[dict, str]:
+    """A new document in which a connected set of regions is one region, and its id; the input is not changed.
+
+    The arcs between two members are dropped. The boundary is chained again from the members' own loops: after an arc
+    comes the next arc of its loop, and while that one lies between two members the walk crosses it into the other
+    member's loop at the same point, so pinch points and holes come out exactly as the members had them. The loops are
+    ordered outer boundary first by their signed area (outer < 0, y down; exactly one), the arcs left keep their order
+    and are numbered again (an arc's id is its place), every region's references follow, and a side that named a member
+    names the region. A junction left with two arcs stays. The region keeps the id, place, colour, Lab and sRGB of its
+    member with most pixels (the first in the document on a tie); its pixels are the members' sum, it is important when
+    the important members hold half of them or more, and its palette colour takes over the other members' pixels; a
+    colour left without a region leaves the palette.
+    """
+    chosen = set(ids)
+    members = [r for r in document["regions"] if r["id"] in chosen]
+    if len(chosen) < 2 or len(members) != len(chosen):
+        raise RuntimeError("a merge of regions needs two or more regions of the document")
+    keeper = max(members, key=lambda r: r["pixels"])               # max keeps the first of the largest
+    interior = {i for i, arc in enumerate(document["arcs"]) if arc["left"] in chosen and arc["right"] in chosen}
+    loops = _merged_loops(document, members, interior)
+    doc = copy.deepcopy(document)
+    renumber, arcs = {}, []
+    for i, arc in enumerate(doc["arcs"]):
+        if i in interior:
+            continue
+        renumber[i] = len(arcs)
+        arc["id"] = len(arcs)
+        arc["left"], arc["right"] = (keeper["id"] if side in chosen else side for side in (arc["left"], arc["right"]))
+        arcs.append(arc)
+    doc["arcs"] = arcs
+    total = sum(m["pixels"] for m in members)
+    palette = {p["index"]: p for p in doc["palette"]}
+    kept = []
+    for r in doc["regions"]:
+        if r["id"] in chosen and r["id"] != keeper["id"]:
+            palette[r["color"]]["pixels"] -= r["pixels"]
+            palette[keeper["color"]]["pixels"] += r["pixels"]
+            continue
+        if r["id"] == keeper["id"]:
+            r.update(pixels=total, important=2 * sum(m["pixels"] for m in members if m["important"]) >= total, loops=loops)
+        r["loops"] = [[renumber[ref] if ref >= 0 else ~renumber[~ref] for ref in loop] for loop in r["loops"]]
+        kept.append(r)
+    doc["regions"] = kept
+    used = {r["color"] for r in kept}
+    doc["palette"] = [p for p in doc["palette"] if p["index"] in used]
+    return doc, keeper["id"]
+
+
+def _arc_of(ref: int) -> int:
+    return ref if ref >= 0 else ~ref
+
+
+def _merged_loops(document: dict, members: list[dict], interior: set[int]) -> list[list[int]]:
+    """The loops of a merged region in the document's arc references, outer boundary first (see :func:`merge_regions`)."""
+    succ = {}
+    for r in members:
+        for loop in r["loops"]:
+            succ.update({ref: loop[(k + 1) % len(loop)] for k, ref in enumerate(loop)})
+
+    def after(ref: int) -> int:
+        n = succ[ref]
+        for _ in range(len(succ) + 1):
+            if _arc_of(n) not in interior:
+                return n
+            if ~n not in succ:
+                break
+            n = succ[~n]                    # across the dropped arc: on in the other member's loop, at the same point
+        raise RuntimeError("the loops of the regions to merge do not chain")
+
+    used, found = set(), []
+    for first in sorted((ref for ref in succ if _arc_of(ref) not in interior), key=_arc_of):
+        if first in used:
+            continue
+        loop, ref = [first], first
+        used.add(first)
+        while (ref := after(ref)) != first:
+            if ref in used:
+                raise RuntimeError("the loops of the regions to merge do not chain")
+            loop.append(ref)
+            used.add(ref)
+        found.append(loop)
+    arcs = document["arcs"]
+    doubled = [sum(_doubled_area(arcs[_arc_of(ref)]["points"]) * (1 if ref >= 0 else -1) for ref in loop) for loop in found]
+    if sum(area < 0 for area in doubled) != 1:
+        raise RuntimeError("the merged region does not have exactly one outer boundary")
+    return [loop for area, loop in sorted(zip(doubled, found), key=lambda f: f[0] >= 0)]     # stable: the outer boundary first
+
+
+def _doubled_area(points: list) -> float:
+    """Twice the signed area an arc adds to a loop walked forward: the shoelace over its points (y down)."""
+    return sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:]))
 
