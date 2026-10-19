@@ -158,3 +158,15 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: when a goal names one feature folder, say in the same message that any other folder committed with it is specification only, which of
   its criteria are not built, and which of them wait for an answer (here: the list of splitting methods is still open in its own discussion).
   Never leave "committed" to be read as "done".
+
+## A choice that does not change the picture is not a feature, and a knob must do what its label says
+- Remark (2026-10-19, with a screenshot of 0.7.0): "1 - Всё криво, 2 - Алгоритмы не делают разницу, 3 - нет возможности гладких линий,
+  4 - нет возможности окрасить при помощи AI". I had reported 0.7.0 as done after checking the DOM and the tests, not the picture.
+- What was true: (1) `.toolbar{align-items:flex-end}` with hints under only some fields put four labels at four heights; (2) SLIC and SEEDS
+  give the same map (my own table said ΔE 7.35 vs 7.47) and I shipped the pair anyway; (3) "Сглаживание границ, мм" is the Douglas-Peucker
+  tolerance, so a larger value makes lines MORE angular, while the real low-pass is a fixed 1.2 px (0.15 mm); (4) the AI idea was only a
+  draft with open questions, although the operator had said "доделай всё".
+- Rules: before reporting a visual change, look at the real screen and at a zoomed crop of the output, and say what I saw. Before offering a
+  choice between methods, put their outputs side by side; ship only options whose outputs visibly differ, and say so when they do not.
+  A control is named after the effect it has on the result (check by turning it to both ends). An open question about a feature the operator
+  asked for is mine to answer with a recommended default and an approval request in the same message, not a reason to leave it unbuilt.

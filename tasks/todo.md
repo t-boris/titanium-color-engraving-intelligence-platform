@@ -780,3 +780,21 @@ Asked for twice by the operator ("не вижу ... на третье место
 - Left open on purpose: REQ-050 (AI colouring in a chosen style) is a draft with three questions (Q-005 what the AI receives, Q-006 lightness
   order, Q-007 styles); the rest of vector-detail-and-colour-control (density, eyes, smoothing, Contrast and Artistic, automatic merging of
   same-recipe regions) is not built. CI stays switched off (CLAUDE.md); the run of dd0aceb finished on GitHub on its own.
+
+## 0.8.0 plan: a straight layout, methods that differ, smooth contours, colouring by AI (awaiting approval)
+Evidence (portrait of work 22, 28 colours, coarse detail, scratchpad `look*.py` and `look*.png`):
+- Layout: toolbar labels at y = 748/723/705/748 (flex-end alignment, hints under some fields only); `h4` margin 20 + stack gap 18.
+- Methods: SLIC 290 regions vs SEEDS 267 regions, same patches. Different in kind: tonal grid (275 regions, follows the shading:
+  brows, lips, nose highlight; 8 s, to be sped up) and graph/Felzenszwalb (173 regions at scale 150: flat planes and ribbons along
+  features, 1.6 s). Felzenszwalb at 500+ collapses a face into one region, so the scale is bounded.
+- Smoothing: low-pass sigma 0.15 mm today. Prototype on the same arcs, ends pinned: sigma 0.4 and 0.8 mm give visibly smooth contours with
+  uncovered 0.00 % and overlap 0.00 %. The format already carries curves: `lightburn.py` reads `B` primitives and the operator's own
+  files use them; `vectorize.py` writes `L` only.
+- AI: `research.openai_client()` and `.env.local` exist; the real app runs from the repository directory and finds the key. No new library.
+Steps (each ends with tests, a commit to main, and a look at the real screen):
+- [ ] 1. Layout: fields in a grid aligned at the top, hints in the same row height, checkbox and button on one baseline, no empty bands.
+- [ ] 2. Smoothing: "Сглаживание, мм" = the low-pass sigma along each shared arc (ends pinned, gapless by construction); the simplification
+  tolerance stops being a user knob. Then curve fitting: arcs stored as cubic Béziers, preview as `C`, LightBurn file as `B` primitives.
+- [ ] 3. Methods: "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости"; SEEDS leaves the list (DEC-080 amended, old works keep working).
+- [ ] 4. AI colouring (REQ-050): styles, the answer checked against the measured palette, one undoable operation, a variant.
+- [ ] 5. Spec: DEC for each, REQ ticks, version 0.8.0, backup and deploy, look at the real app.
