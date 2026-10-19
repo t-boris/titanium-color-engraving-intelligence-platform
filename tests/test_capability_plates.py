@@ -67,6 +67,8 @@ def test_generated_test_types_are_different_and_round_trip_as_clean_first_lightb
                     "Markers and labels", 25, 60, 150, 200, 0.01, 1, 1, False)
         assert any(layer.layer_type == layer_type for layer in exported.layers[2:])
         assert exported.identifier == made["identifier"]
+        # the reader knows every setting and shape this system writes: nothing to report on its own plates (REQ-036 AC3)
+        assert all(layer.unknown_settings == [] and not layer.unsupported for layer in exported.layers), test_type
 
 
 def test_markers_and_labels_burn_with_the_operators_marker_layer_settings_never_a_default(store):

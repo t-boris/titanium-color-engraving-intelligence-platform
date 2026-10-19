@@ -131,6 +131,7 @@ def test_the_generated_lightburn_file_holds_one_layer_per_cell_with_its_full_set
     assert cell.power == pytest.approx(work["x_values"][4]) and cell.speed == pytest.approx(work["y_values"][2])
     assert cell.frequency_khz == pytest.approx(330.0) and cell.pulse_width == 4.0 and cell.line_interval == 0.003 and cell.passes == 1
     assert len(cell.regions) == 1 and cell.regions[0].kind == "rect"
+    assert all(layer.unknown_settings == [] and not layer.unsupported for layer in project.layers)   # nothing to report (REQ-036 AC3)
     x, y = mx.cell_centre_mm(spec, 5, 4, 2)
     assert cell.regions[0].x + cell.regions[0].width / 2 == pytest.approx(x, abs=1e-3)
     assert cell.regions[0].y + cell.regions[0].height / 2 == pytest.approx(y, abs=1e-3)

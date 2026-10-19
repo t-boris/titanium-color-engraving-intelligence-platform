@@ -315,3 +315,21 @@ def test_a_text_outline_inside_a_group_is_moved_by_the_group_once():
            b'<XForm>1 0 0 1 20 30</XForm></Shape></Children></Shape></LightBurnProject>')
     (region,) = lb.parse_bytes(xml).layer(0).regions
     assert (region.x, region.y) == pytest.approx((120, 80), abs=1e-9)
+
+
+def test_every_shape_without_an_outline_and_every_setting_unknown_to_the_reader_is_reported_on_its_layer():
+    """REQ-036 AC3: a flat ellipse, an empty path, a rectangle without a size and a shape type the reader does not know have
+    no outline to measure, so each is counted on its layer; a setting the reader does not know is kept with the recipe and named."""
+    xml = (b'<LightBurnProject><CutSetting type="Scan"><index Value="0"/><name Value="C00"/><maxPower Value="20"/><speed Value="900"/>'
+           b'<frequency Value="48000"/><tabCount Value="1"/><rampLength Value="2"/><perfMode Value="1"/></CutSetting>'
+           b'<Shape Type="Ellipse" CutIndex="0" Rx="0" Ry="3"><XForm>1 0 0 1 10 10</XForm></Shape>'
+           b'<Shape Type="Path" CutIndex="0"><XForm>1 0 0 1 0 0</XForm><VertList></VertList><PrimList></PrimList></Shape>'
+           b'<Shape Type="Rect" CutIndex="0" H="2"><XForm>1 0 0 1 0 0</XForm></Shape>'
+           b'<Shape Type="Polygon" CutIndex="0" N="6"><XForm>1 0 0 1 5 5</XForm></Shape>'
+           b'<Shape Type="Rect" CutIndex="0" W="2" H="2"><XForm>1 0 0 1 0 0</XForm></Shape></LightBurnProject>')
+    layer = lb.parse_bytes(xml).layer(0)
+    assert len(layer.regions) == 1
+    assert layer.unsupported == {"Ellipse": 1, "Path": 1, "Rect": 1, "Polygon": 1}
+    assert layer.unknown_settings == ["perfMode", "rampLength"]
+    assert layer.source_settings["rampLength"] == {"Value": "2"}            # kept, so it still separates recipes
+    assert layer.as_dict()["unknown_settings"] == ["perfMode", "rampLength"]

@@ -57,6 +57,7 @@ DATA_TAILS = {
     "plate cells not found in the LightBurn file: ": "the names of the plate cells",
     "cannot decode RAW file: ": "the RAW library's own error text",
     "unknown engraving task: ": "the task key that was sent",
+    "settings unknown to this version are kept with the recipe but not interpreted: ": "the LightBurn setting tags of the layer",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.

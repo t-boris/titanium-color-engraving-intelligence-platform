@@ -803,6 +803,8 @@ def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) 
             notes += [f"not comparable within this laser and lens: {m}" for m in problems]
     for kind, count in sorted(layer.unsupported.items()):
         notes.append(f"{count} {kind} objects on this layer are not read: no outline geometry")
+    if layer.unknown_settings:      # kept with the recipe, so they still separate recipes, but nothing here interprets them
+        notes.append(f"settings unknown to this version are kept with the recipe but not interpreted: {', '.join(layer.unknown_settings)}")
     if not layer.regions:
         compatible = False
         notes.append("the layer has no fill geometry")

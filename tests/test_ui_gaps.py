@@ -105,3 +105,34 @@ def test_the_server_names_of_a_matrix_read_in_russian_and_an_operators_title_is_
     assert out == ["Тест материала: Мощность × Скорость · 330 кГц 4 нс · IMG_3290", "Тест материала: Шаг строк · 1950 кГц 2 нс · IMG_3291",
                    "Тест материала: матрица · IMG_3292", "Мощность 20.0 × Скорость 900", "Q-Pulse 4", "Шаг строк 0.0030 × Мощность 35",
                    "Ячейка 2,3", "Inna portrait", "C01", "Speed 900 x Colour 3"]
+
+
+def run_translations(tmp_path, messages: list[str]) -> list[str]:
+    """The messages through I18N.tr with every translation table, as the screens show them."""
+    script = tmp_path / "tr.js"
+    tables = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js",
+              "i18n-findings.js", "i18n-palette.js", "i18n-gaps.js"]
+    script.write_text(
+        "const fs=require('fs'),vm=require('vm');\n"
+        f"const ui={json.dumps(str(UI_DIR) + '/')};\n"
+        f"const code={json.dumps(tables)}.map(f=>fs.readFileSync(ui+f,'utf8')).join('\\n')+';globalThis.__I=I18N;';\n"
+        "const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);\n"
+        f"console.log(JSON.stringify({json.dumps(messages)}.map((n)=>ctx.__I.tr(n))));\n", encoding="utf-8")
+    return json.loads(subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, check=True).stdout)
+
+
+# -- REQ-036 AC3: shapes and settings the importer does not read are shown on their layer -----------------------------------------
+def test_the_review_screen_prints_every_note_of_a_layer_whether_it_was_measured_or_skipped():
+    dialogs, review = source("screens/ingest-dialogs.js"), source("screens/ingest-review.js")
+    # skipped layer: its notes beside the status; measured layer: its notes under the colour
+    assert "pill(l.readable ? 'пропущен' : 'нечитаем', 'warn'), ' ', l.notes.map((n) => I18N.tr(n)).join('; ')" in dialogs
+    assert "if (l.notes?.length) details.push(h('div', {class: 'muted small'}, l.notes.map((n) => I18N.tr(n)).join('; ')));" in dialogs
+    assert "IngestDialogs.layersTable(check.layers)" in review and "h('h3', {}, 'Слои файла')" in review
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_russian(tmp_path):
+    out = run_translations(tmp_path, ["2 Ellipse objects on this layer are not read: no outline geometry",
+                                      "settings unknown to this version are kept with the recipe but not interpreted: perfMode, rampLength"])
+    assert out == ["Объектов «Ellipse» на этом слое: 2. Они не читаются: у них нет контура в файле.",
+                   "Настройки, неизвестные этой версии, сохранены в рецепте, но не учитываются: perfMode, rampLength"]
