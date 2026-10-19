@@ -18,8 +18,9 @@ def world(store):
     return {"store": store, "laser": laser, "material": material}
 
 
-def pair_with(w, observations, *, mode="raw_camera_relative", seed=3, status="Accepted"):
-    """A pair row with observation rows written directly: (layer_index, lab, power, role)."""
+def pair_with(w, observations, *, mode="raw_camera_relative", seed=3, status="Accepted", settings=None):
+    """A pair row with observation rows written directly: (layer_index, lab, power, role); ``settings`` replace those of the
+    recipe (speed, line interval, ...)."""
     data = synth.framed_work(seed=seed, blobs=6)
     pid = ig.create_pair(w["store"], device_id=w["laser"]["id"], lens_id=None, lightburn_name=f"work{seed}.lbrn2", lightburn_bytes=data["lightburn"],
                          photo_name=f"photo{seed}.png", photo_bytes=cv2.imencode(".png", data["photo"])[1].tobytes(),
@@ -33,7 +34,8 @@ def pair_with(w, observations, *, mode="raw_camera_relative", seed=3, status="Ac
             "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,model_eligible,"
             "repeat_eligible,eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (pid, index, w["laser"]["id"], None, engraving, json.dumps(lab),
-             json.dumps({"power": power, "frequency": 300.0, "speed": 1000.0, "pulse_width": 10.0, "line_interval": 0.005, "passes": 1, "layer_type": "Scan"}),
+             json.dumps({"power": power, "frequency": 300.0, "speed": 1000.0, "pulse_width": 10.0, "line_interval": 0.005, "passes": 1, "layer_type": "Scan",
+                         **(settings or {})}),
              "element anchors", "{}", int(mode == "reference_chart_corrected"), 1, "x", json.dumps(evidence), "2026-10-16T12:00:00+00:00"))
     return pid
 
@@ -245,3 +247,75 @@ def test_two_titanium_stocks_of_one_name_and_grade_are_separate_entries(world):
     matches = colormap.search(world["store"], [40.0, 10.0, 30.0])["matches"]
     assert len(matches) == 2 and {m["material_id"] for m in matches} == {world["material"]["id"], batch["id"]}
     assert len({m["material"] for m in matches}) == 1                     # the same label: only the record tells them apart
+
+
+# -- engraving time: every colour carries it, the map filters by it, the search prefers the faster (REQ-035, DEC-075) -----------
+def test_every_colour_and_every_search_entry_carries_the_estimated_time_of_its_recipe(world):
+    from titanium_platform import engraving_time
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")])
+    (point,) = colormap.collect(world["store"])["points"]
+    # 1000 mm/s, 0.005 mm, one pass: 100 / (1000 x 0.005) = 20 s plus a turnaround on each of its 2000 lines
+    assert point["time_s_per_cm2"] == pytest.approx(20.0 + 2000 * engraving_time.TURNAROUND_S) and point["time_s_per_cm"] is None
+    assert point["time"]["estimate"] is True and point["time"]["kind"] == "area"
+    (entry,) = colormap.search(world["store"], point["display_lab"])["matches"]
+    assert entry["time_s_per_cm2"] == point["time_s_per_cm2"] and entry["time"]["estimate"] is True
+
+
+def test_the_map_filters_by_a_longest_time_per_square_centimetre(world):
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)                 # about 20 s per cm²
+    fast = pair_with(world, [WITNESS, (1, [24.0, 0.0, 6.0], 40.0, "test feature")], seed=4, settings={"speed": 4000.0})   # about 5 s
+    shown = colormap.collect(world["store"], max_time_s_per_cm2=10)
+    assert [p["pair_id"] for p in shown["points"]] == [fast] and shown["counts"]["slower"] == 1
+    everything = colormap.collect(world["store"])
+    assert len(everything["points"]) == 2 and everything["counts"]["slower"] == 0
+    assert colormap.search(world["store"], [20.0, 8.0, 21.0], max_time_s_per_cm2=10)["counts"]["slower"] == 1
+    with pytest.raises(su.ValidationError):
+        colormap.collect(world["store"], max_time_s_per_cm2=0)
+
+
+def test_within_the_tolerance_the_search_puts_the_fastest_recipe_first_and_says_so(world):
+    from titanium_platform import color
+    near = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
+    quick = pair_with(world, [WITNESS, (1, [20.5, 8.0, 21.0], 40.0, "test feature")], seed=4, settings={"speed": 3000.0})
+    far = pair_with(world, [WITNESS, (1, [26.0, 2.0, 10.0], 30.0, "test feature")], seed=5, settings={"speed": 8000.0})   # fastest, far
+    labs = {p["pair_id"]: p["display_lab"] for p in colormap.collect(world["store"])["points"]}
+    wanted = labs[near]
+    assert 0 < color.delta_e(wanted, labs[quick]) < 3 < color.delta_e(wanted, labs[far])
+    by_distance = colormap.search(world["store"], wanted)
+    assert [m["pair_id"] for m in by_distance["matches"]] == [near, quick, far]
+    assert by_distance["order"] == {"by": "distance", "tolerance_de": None, "tolerance_source": None, "within_tolerance": None}
+    fastest = colormap.search(world["store"], wanted, tolerance_de=3)
+    assert [m["pair_id"] for m in fastest["matches"]] == [quick, near, far]
+    assert fastest["order"] == {"by": "time_within_tolerance", "tolerance_de": 3.0, "tolerance_source": "request", "within_tolerance": 2}
+    assert [m["within_tolerance"] for m in fastest["matches"]] == [True, True, False]
+
+
+def test_the_search_takes_the_saved_tolerance_of_the_laser_and_lens_it_is_narrowed_to(world):
+    pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")])
+    setup = f"laser:{world['laser']['id']}/lens:unknown"
+    assert colormap.search(world["store"], [20.0, 8.0, 21.0], setup=setup)["order"]["by"] == "distance"     # none saved: never invented
+    su.save_rules(world["store"], world["laser"]["id"], None, delta_tolerance=4.0)
+    order = colormap.search(world["store"], [20.0, 8.0, 21.0], setup=setup)["order"]
+    assert order["tolerance_de"] == 4.0 and order["tolerance_source"] == "rules"
+    assert colormap.search(world["store"], [20.0, 8.0, 21.0])["order"]["by"] == "distance"                  # not narrowed to one laser
+
+
+def test_the_api_passes_the_time_filter_and_the_tolerance(tmp_path):
+    from fastapi.testclient import TestClient
+    from titanium_platform.api.app import create_app
+    client = TestClient(create_app(tmp_path / "data"))
+    assert client.get("/api/colors", params={"max_time_s_per_cm2": 30}).json()["counts"]["slower"] == 0
+    found = client.get("/api/colors/search", params={"L": 50, "a": 0, "b": 0, "tolerance_de": 2.5, "max_time_s_per_cm2": 30}).json()
+    assert found["order"]["by"] == "time_within_tolerance" and found["order"]["tolerance_de"] == 2.5
+    bad = client.get("/api/colors", params={"max_time_s_per_cm2": -1})
+    assert bad.status_code == 422 and bad.json()["error"] == "the longest engraving time per square centimetre must be a positive number of seconds"
+
+
+def test_the_screen_shows_the_time_of_every_colour_filters_by_it_and_says_how_the_search_is_ordered():
+    from pathlib import Path
+    screen = (Path(colormap.__file__).parent / "ui" / "screens" / "color-map.js").read_text(encoding="utf-8")
+    assert "h('p', {class: 'muted'}, timeText(p))" in screen and "(оценка)" in screen          # every colour and every entry, an estimate
+    assert "'Не дольше, мин/см²'" in screen and "q.set('max_time_s_per_cm2', f.maxTime)" in screen   # stored in seconds
+    assert "placeholder: 'м:сс'" in screen and "value: f.maxTime ? mmss(f.maxTime) : ''" in screen   # shown as minutes:seconds
+    assert "p.set('tolerance_de', f.tolerance)" in screen and "o.by === 'time_within_tolerance'" in screen
+    assert "первыми идут самые быстрые" in screen
