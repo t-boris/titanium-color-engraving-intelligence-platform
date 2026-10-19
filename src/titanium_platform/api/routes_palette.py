@@ -20,6 +20,7 @@ class AssignIn(BaseModel):
     seed: int = 0
     max_time: float | None = None         # seconds per square centimetre
     keep: dict[str, str] | None = None    # source colour index -> palette entry id
+    include_as_shot: bool = False         # colours measured as photographed take part in the choice (DEC-077)
 
 
 @router.get("/vector-palette")
@@ -34,4 +35,5 @@ def assign_palette(body: AssignIn, request: Request):
     """Give each source colour a colour of the palette by a recolouring mode (closest, tonality, random, fewer_layers),
     keeping the operator's own choices."""
     return palette.assign_for(store_of(request), body.device_id, body.lens_id, body.material_id, body.source_colours, body.mode,
-                              tolerance_de=body.tolerance_de, seed=body.seed, max_time=body.max_time, keep=body.keep)
+                              tolerance_de=body.tolerance_de, seed=body.seed, max_time=body.max_time, keep=body.keep,
+                              include_as_shot=body.include_as_shot)

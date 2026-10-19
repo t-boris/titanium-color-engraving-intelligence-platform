@@ -22,7 +22,8 @@ The document is a JSON-serialisable dict; coordinates are millimetres from the p
 
     {"version": 1, "kind": "segments", "size_mm": {"width", "height"}, "px_mm", "image_px": {"width", "height"},
      "n_colors",                                          # colours asked for; the palette never has more
-     "min_area_mm2", "tolerance_mm", "seed", "superpixel_px": {"coarse", "face", "fine"},
+     "min_area_mm2", "tolerance_mm", "seed", "superpixels",  # coarse superpixels along the longer side
+     "superpixel_px": {"coarse", "face", "fine"},
      "faces": {"searched", "found", "error"},             # found == 0: no face in the picture (or not searched)
      "important": [area, ...],                            # detected and manual areas used, in pixels (see faces)
      "palette": [{"index", "lab": [L, a, b], "srgb": [r, g, b], "pixels"}],   # lightest first
@@ -54,7 +55,8 @@ MIN_COLORS, MAX_COLORS = 2, 29          # LightBurn's 30 output colours less the
 MIN_AREA_MM2 = 0.5
 TOLERANCE_MM = 0.08
 SMOOTH_COLOR, SMOOTH_SPACE = 6.0, 2.0   # bilateral filter: Lab difference and pixel distance
-SUPERPIXELS_ACROSS = 150                # coarse superpixels along the longer side of the picture
+SUPERPIXELS_ACROSS = 150                # coarse superpixels along the longer side of the picture, unless asked otherwise
+MIN_SUPERPIXELS_ACROSS = 10
 LEVEL_SCALE = (1.0, 0.6, 0.35)          # superpixel size of the picture, of faces, of eyes, lips and marked areas
 MIN_SUPERPIXEL_PX = 3
 SLIC_ITERATIONS = 10
@@ -429,17 +431,20 @@ def _palette(classes: np.ndarray, lab: np.ndarray, k: int) -> tuple[np.ndarray, 
 
 
 def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = (), use_faces: bool = True,
-            min_area_mm2: float = MIN_AREA_MM2, tolerance_mm: float = TOLERANCE_MM, seed: int = 0) -> dict:
+            min_area_mm2: float = MIN_AREA_MM2, tolerance_mm: float = TOLERANCE_MM, seed: int = 0,
+            superpixels: int = SUPERPIXELS_ACROSS) -> dict:
     """Split an RGB uint8 picture ``width_mm`` wide into at most ``n_colors`` gapless colour regions (module docstring).
 
     ``important`` lists areas the operator marked (or detected areas handed back to keep them, see
     :func:`faces.check_area`), in pixels of this picture; ``use_faces`` adds the faces, eyes and lips found in it.
+    ``superpixels`` is the number of coarse superpixels along the longer side: fewer follow only the larger edges.
     """
     img = np.asarray(image_rgb)
     if img.ndim != 3 or img.shape[2] != 3 or img.dtype != np.uint8 or not img.size:
         raise SegmentError("the picture must be an RGB array of 8-bit channels")
     n_colors = _whole(n_colors, "the number of colours", MIN_COLORS, MAX_COLORS)
     seed = _whole(seed, "the seed", 0)
+    superpixels = _whole(superpixels, "the number of superpixels across the picture", MIN_SUPERPIXELS_ACROSS)
     h, w = img.shape[:2]
     px_mm = _number(width_mm, "the work width", positive=True) / w
     min_area, tolerance = _number(min_area_mm2, "the minimum area"), _number(tolerance_mm, "the tolerance")
@@ -450,7 +455,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     search = faces.important_areas(img) if use_faces else faces.FaceSearch([], 0)
     areas = search.areas + manual
     levels = _levels(areas, (h, w))
-    coarse = max(MIN_SUPERPIXEL_PX, round(max(h, w) / SUPERPIXELS_ACROSS))
+    coarse = max(MIN_SUPERPIXEL_PX, round(max(h, w) / superpixels))
     sizes = [max(MIN_SUPERPIXEL_PX, round(coarse * scale)) for scale in LEVEL_SCALE]
 
     lab = color.srgb8_to_lab(img).astype(np.float32)
@@ -476,7 +481,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
                 for i, (vertices, left, right, _, _, closed) in enumerate(arcs)]
     return {"version": VERSION, "kind": "segments", "size_mm": {"width": float(width_mm), "height": h * px_mm}, "px_mm": px_mm,
             "image_px": {"width": w, "height": h}, "n_colors": n_colors, "min_area_mm2": min_area, "tolerance_mm": tolerance,
-            "seed": seed, "superpixel_px": dict(zip(("coarse", "face", "fine"), sizes)),
+            "seed": seed, "superpixels": superpixels, "superpixel_px": dict(zip(("coarse", "face", "fine"), sizes)),
             "faces": {"searched": bool(use_faces), "found": search.faces, "error": search.error},
             "important": areas, "palette": palette, "regions": regions, "arcs": arc_list}
 

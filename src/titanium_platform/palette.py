@@ -5,7 +5,9 @@ one entry per recipe: the mean of its independent engravings (a re-photograph co
 (against a reference chart, against the clean titanium of its photograph, or as photographed), how many independent
 engravings and photographs gave it, its complete settings with the LightBurn mode, its engraving task and its estimated
 engraving time per square centimetre. It is the exception of DEC-073 to the validated/production rule of REQ-004: a
-measured colour that was never repeated is in it, and says so through its counts.
+measured colour that was never repeated is in it, and says so through its counts. Its stability, confidence and expected
+colour error (REQ-002) come from the spread of its independent engravings as :func:`model.summarize` computes them for a
+knowledge entry (the rig's re-photograph term is not part of them); with one engraving they are not assessed.
 
 The regions of a vector work are areas, so only recipes that fill an area are colours of the palette. A Line-mode recipe
 traces a path, the grey steps of an image layer belong to their picture and a recipe kept apart as text or line
@@ -24,8 +26,10 @@ A source colour (index, Lab, pixel count) is given a palette entry by one of fou
   then the nearer), with entries that became redundant dropped; each source colour then takes the nearest chosen entry. A
   colour that no entry reaches within the tolerance takes its nearest entry and is flagged.
 
-``keep`` holds the operator's own choices (source colour index -> entry id); every mode keeps them. The work's cleaning
-layer comes first, so a work holds at most 29 colours (DEC-073); with registration markers the vector job allows 28.
+``keep`` holds the operator's own choices (source colour index -> entry id); every mode keeps them. Colours measured as
+photographed (no chart, no clean titanium in their photograph) take part in the automatic modes only when asked
+(``include_as_shot``, DEC-057, DEC-077); the operator may still keep one by hand. The work's cleaning layer comes first,
+so a work holds at most 29 colours (DEC-073); with registration markers the vector job allows 28.
 """
 from __future__ import annotations
 
@@ -35,7 +39,7 @@ import random
 
 import numpy as np
 
-from . import color, colormap, setup as su, tasks
+from . import color, colormap, model, setup as su, tasks
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
@@ -51,13 +55,26 @@ def _basis(point: dict) -> str:
     return "clean" if point["referenced"] else "as-shot"
 
 
+def _evidence(means: list, lab: list[float]) -> dict:
+    """Stability, confidence and expected colour error of the mean colours of independent engravings (REQ-002), as
+    :func:`model.summarize` gives them; not assessed with one engraving."""
+    n = len(means)
+    if n < 2:
+        return {"stability": {"assessed": False, "variance": None, "max_deviation": None, "engravings": n},
+                "confidence": None, "expected_delta_e": None}
+    variance = float(np.var(np.asarray(means), axis=0, ddof=1).sum())
+    return {"stability": {"assessed": True, "variance": variance, "max_deviation": max(color.delta_e(m, lab) for m in means),
+                          "engravings": n},
+            "confidence": n / (n + model.CONFIDENCE_K), "expected_delta_e": math.sqrt(variance)}
+
+
 def _entry(group: str, recipe: dict) -> dict:
     """One palette entry: the mean colour of a recipe's independent engravings and everything the screen shows about it."""
     first = recipe["points"][0]
     means = [np.mean(np.asarray(labs, float), axis=0) for labs in recipe["engravings"].values()]
     lab = [float(v) for v in np.mean(means, axis=0)]
     return {"id": hashlib.sha256(group.encode("utf-8")).hexdigest()[:12], "lab": lab, "srgb": color.lab_to_srgb8(lab).tolist(),
-            "basis": _basis(first), "measurement": first["measurement"], "approximate": first["approximate"],
+            **_evidence(means, lab), "basis": _basis(first), "measurement": first["measurement"], "approximate": first["approximate"],
             "referenced": first["referenced"], "engravings": len(recipe["engravings"]), "photographs": len(recipe["photographs"]),
             "experiments": recipe["experiments"], "observation_ids": sorted(recipe["observation_ids"]),
             "parameters": first["parameters"], "mode": first["parameters"].get("layer_type"), "task": first["task"],
@@ -251,10 +268,19 @@ def _fewer_layers(free: list[dict], kept: dict[int, str], by_id: dict, candidate
     return out
 
 
+def automatic(entry: dict, limit: float | None, include_as_shot: bool) -> bool:
+    """Whether the automatic modes may choose an entry: no slower than ``limit`` seconds per square centimetre (an unknown
+    time is slower than any limit) and, unless included, not measured as photographed (DEC-077)."""
+    if limit is not None and (entry.get("time_s_per_cm2") is None or entry["time_s_per_cm2"] > limit):
+        return False
+    return include_as_shot or entry.get("basis") != "as-shot"
+
+
 def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: float, seed: int = 0, max_time: float | None = None,
-           keep: dict | None = None) -> dict:
+           keep: dict | None = None, include_as_shot: bool = False) -> dict:
     """Give each source colour an entry of ``palette`` by ``mode`` (see the module). ``max_time`` leaves slower entries (and
-    those with no time per area) out of the automatic choice; ``keep`` holds the operator's choices, which every mode keeps.
+    those with no time per area) out of the automatic choice, and so do colours measured as photographed unless
+    ``include_as_shot``; ``keep`` holds the operator's choices, which every mode keeps.
     Each colour lists its entry, its delta E to the source, whether that is within the tolerance and the entry's time per
     square centimetre; the totals give the number of distinct recipes and the pixel-weighted mean delta E."""
     if mode not in MODES:
@@ -272,10 +298,12 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
     if not by_id:
         raise su.ValidationError("no measured colour of this laser, lens and titanium stock fills an area")
     kept = _kept(keep, {s["index"] for s in sources}, by_id)
-    candidates = [e for e in by_id.values() if limit is None or (e.get("time_s_per_cm2") is not None and e["time_s_per_cm2"] <= limit)]
+    candidates = [e for e in by_id.values() if automatic(e, limit, include_as_shot)]
     free = [s for s in sources if s["index"] not in kept]
     if free and not candidates:
-        raise su.ValidationError(f"no colour of the palette engraves within {limit:g} s per square centimetre")
+        if limit is not None and any(automatic(e, None, include_as_shot) for e in by_id.values()):
+            raise su.ValidationError(f"no colour of the palette engraves within {limit:g} s per square centimetre")
+        raise su.ValidationError("every colour of the palette was measured as photographed: include such colours to colour automatically")
     cache: dict[tuple[int, str], float] = {}
 
     def distance(s, e):
@@ -310,8 +338,8 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
               "within_tolerance": sum(c["within_tolerance"] for c in colours),
               "mean_delta_e": round(float(np.average(distances, weights=weights)), 2),
               "mean_time_s_per_cm2": None if None in times else float(np.average(times, weights=weights))}
-    out = {"mode": mode, "tolerance_de": tolerance, "max_time_s_per_cm2": limit, "keep": {str(k): v for k, v in kept.items()},
-           "colours": colours, "totals": totals}
+    out = {"mode": mode, "tolerance_de": tolerance, "max_time_s_per_cm2": limit, "include_as_shot": include_as_shot,
+           "keep": {str(k): v for k, v in kept.items()}, "colours": colours, "totals": totals}
     if mode == "random":
         out["seed"] = seed
     if mode == "tonality":
@@ -329,8 +357,9 @@ def tolerance_for(store: Store, device_id: int, lens_id: int | None, value) -> f
 
 
 def assign_for(store: Store, device_id: int, lens_id: int | None, material_id: int, source_colours, mode: str, *,
-               tolerance_de=None, seed: int = 0, max_time: float | None = None, keep: dict | None = None) -> dict:
+               tolerance_de=None, seed: int = 0, max_time: float | None = None, keep: dict | None = None,
+               include_as_shot: bool = False) -> dict:
     """An assignment against the palette of one laser, lens and titanium stock (see :func:`assign`)."""
     palette = vector_palette(store, device_id, lens_id, material_id)
     return assign(source_colours, palette["entries"], mode, tolerance_de=tolerance_for(store, device_id, lens_id, tolerance_de),
-                  seed=seed, max_time=max_time, keep=keep)
+                  seed=seed, max_time=max_time, keep=keep, include_as_shot=include_as_shot)

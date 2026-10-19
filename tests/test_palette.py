@@ -41,6 +41,27 @@ def test_the_palette_holds_every_measured_fill_colour_of_its_laser_lens_and_tita
     assert len({e["id"] for e in p["entries"]}) == 2 and partition(store, world)["entries"][0]["id"] == first["id"]   # stable ids
 
 
+def test_a_colour_repeated_on_independent_engravings_has_its_stability_confidence_and_expected_error(store, world):
+    for engraving, lab in (("e1", [60.0, 5.0, 20.0]), ("e2", [62.0, 5.0, 20.0]), ("e3", [61.0, 5.0, 23.0])):
+        obs.add(store, world, lab, material_id=world["ti"], engraving=engraving, layer_type="Scan")
+    obs.add(store, world, [40.0, 0.0, 0.0], speed=2000, material_id=world["ti"], layer_type="Scan")
+    repeated, once = partition(store, world)["entries"]
+    variance = 1.0 + 0.0 + 3.0        # per-axis sample variances of the three engravings (L 1, a 0, b 3)
+    assert repeated["stability"] == {"assessed": True, "variance": pytest.approx(variance), "engravings": 3,
+                                     "max_deviation": pytest.approx(color.delta_e([61.0, 5.0, 23.0], [61.0, 5.0, 21.0]))}
+    assert repeated["confidence"] == pytest.approx(3 / 5) and repeated["expected_delta_e"] == pytest.approx(variance ** 0.5)
+    assert once["stability"]["assessed"] is False and once["confidence"] is None and once["expected_delta_e"] is None
+
+
+def test_colours_measured_as_photographed_are_left_to_the_operator_unless_included():
+    pal = [entry("chart", [60, 0, 0], 9.0), {**entry("as-shot", [50, 0, 0], 1.0), "basis": "as-shot"}]
+    assert chosen(palette.assign(sources([50, 0, 0]), pal, "closest", tolerance_de=3)) == {0: "chart"}
+    assert chosen(palette.assign(sources([50, 0, 0]), pal, "closest", tolerance_de=3, include_as_shot=True)) == {0: "as-shot"}
+    assert chosen(palette.assign(sources([50, 0, 0]), pal, "fewer_layers", tolerance_de=3, keep={0: "as-shot"})) == {0: "as-shot"}
+    with pytest.raises(su.ValidationError, match="measured as photographed: include such colours"):
+        palette.assign(sources([50, 0, 0]), pal[1:], "random", tolerance_de=3)
+
+
 def test_only_recipes_that_fill_an_area_are_colours_and_the_others_are_counted(store, world):
     ti = world["ti"]
     obs.add(store, world, [60.0, 5.0, 20.0], material_id=ti, layer_type="Scan")

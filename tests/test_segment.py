@@ -197,11 +197,21 @@ def test_the_number_of_colours_must_be_from_2_to_29(n_colors):
 
 
 @pytest.mark.parametrize("kwargs", [{"width_mm": 0}, {"width_mm": "wide"}, {"min_area_mm2": -1}, {"tolerance_mm": float("nan")},
-                                    {"seed": -1}, {"important": [{"polygon": [[0, 0], [1, 1]]}]}, {"image": np.zeros((10, 10))}])
+                                    {"seed": -1}, {"important": [{"polygon": [[0, 0], [1, 1]]}]}, {"image": np.zeros((10, 10))},
+                                    {"superpixels": 5}, {"superpixels": 80.5}])
 def test_invalid_settings_are_refused(kwargs):
     args = {"image": shapes(), "width_mm": 60.0, **kwargs}
     with pytest.raises(ValueError):
         sg.segment(args.pop("image"), args.pop("width_mm"), 5, use_faces=False, **args)
+
+
+def test_fewer_superpixels_across_the_picture_make_larger_superpixels_and_follow_only_the_larger_edges():
+    img = photo_like()
+    fine = sg.segment(img, 60.0, 8, use_faces=False, min_area_mm2=0)
+    coarse = sg.segment(img, 60.0, 8, use_faces=False, min_area_mm2=0, superpixels=20)
+    assert fine["superpixels"] == sg.SUPERPIXELS_ACROSS and coarse["superpixels"] == 20
+    assert coarse["superpixel_px"]["coarse"] == round(200 / 20) > fine["superpixel_px"]["coarse"]
+    assert len(coarse["regions"]) < len(fine["regions"])
 
 
 # -- important areas ------------------------------------------------------------------------------------------------------
