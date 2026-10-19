@@ -111,3 +111,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   (port 8791, a database copy without the photo files) in the operator's MarkView window; the operator took it for the real app.
 - Rule: workers never use the MarkView browser tools; UI is checked by static tests and API calls. The lead checks a new version
   on a full copy (database and files) before the deploy, and says in every message which port is the operator's (8765).
+
+## Profile before promising what a smaller output saves
+- Situation (2026-10-19, BUG-001): the plan expected small list thumbnails to open noticeably faster cold. cProfile on the real RAW:
+  the 2 MB PNG took 33 ms to encode, the RAW decode 520 ms (92 % of the request); `size=480` saved 87 % of the bytes and 5 % of the time.
+- Rule: before choosing a fix for a slow response, split its time by stage on real data (decode, compute, encode, transfer) and state
+  which stage the fix removes. A cost that cannot be removed (an unchanged decode) is paid once and kept (cache, warm-up), not shrunk.
