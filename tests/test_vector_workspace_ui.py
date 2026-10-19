@@ -90,7 +90,7 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
     for entry in listed:
         card = next(card for name, card in by_name.items() if name.startswith(entry["name"]))
         assert card["img"].startswith(f"/api/vector/{entry['id']}/thumb.png?v=") and card["link"] == f"#/vector?plan={entry['id']}"
-        assert card["buttons"] == ["Открыть", "Сделать копию", "Удалить"]
+        assert card["buttons"] == ["✎", "Открыть", "Сделать копию", "Удалить"]
         assert f"цветов {entry['n_colours']} · областей {entry['regions']} · слоёв {entry['layers']}" in card["text"]
     assert any("Раскраска: AI · Кубизм" in card["text"] for card in out["cards"])
     assert any("Раскраска: Ближе к оригиналу" in card["text"] or "Раскраска: Сохранить тональность" in card["text"] for card in out["cards"])
@@ -173,11 +173,10 @@ def test_the_colour_table_opens_in_a_window_and_the_ai_tab_says_when_the_library
 
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
-def test_the_workspace_takes_the_screen_without_a_scrolling_page_and_the_router_switches_the_side_menu_off_for_it():
+def test_the_workspace_takes_the_screen_without_a_scrolling_page_and_the_section_rail_stays():
     assert "main.querySelector('.workspace')" in ROUTER and "document.body.classList.toggle('is-workspace', workspace)" in ROUTER
     assert "document.body.classList.remove('is-workspace')" in ROUTER and "node.classList.contains('workspace')" in ROUTER
-    assert re.search(r"body\.is-workspace \.app-layout \{grid-template-columns:minmax\(0,1fr\)\}", CSS)
-    assert re.search(r"body\.is-workspace \.sidebar \{display:none;position:fixed", CSS) and re.search(r"body\.is-workspace \.mobile-menu \{display:inline-flex\}", CSS)
+    assert re.search(r"body\.is-workspace \.main \{max-width:none", CSS) and "body.is-workspace .sidebar" not in CSS      # the rail stays (DEC-081)
     assert re.search(r"\.vw-work \{[^}]*height:calc\(100vh - 76px - 20px\)", CSS)                        # one screen high
     assert re.search(r"\.vw-work-body \{[^}]*grid-template-columns:minmax\(290px,330px\) minmax\(0,1fr\) minmax\(260px,320px\)", CSS)       # three columns
     assert re.search(r"\.vw-work \.vw-editor \{display:contents\}", CSS)                                  # the editor's picture and panel are columns of the frame
@@ -185,3 +184,146 @@ def test_the_workspace_takes_the_screen_without_a_scrolling_page_and_the_router_
     assert re.search(r"\.vw-panels \{flex:1;min-height:0;overflow:auto", CSS) and re.search(r"\.vw-ed-panes \{flex:1;min-height:0;overflow:auto", CSS)   # only a long list scrolls
     narrow = re.search(r"@media \(max-width:1100px\) \{(.*?)\n\}", CSS[CSS.index("14) векторная работа"):], re.S)
     assert narrow and ".vw-work-body {grid-template-columns:minmax(0,1fr)}" in narrow.group(1) and ".vw-work {height:auto" in narrow.group(1)   # a phone scrolls as before
+
+
+# -- renaming (REQ-055, DEC-086) ---------------------------------------------------------------------------------------------------------
+VECTOR_JS = (UI / "screens" / "vector.js").read_text(encoding="utf-8")
+def body(name: str) -> str:
+    """The body the screen sends: compact JSON as the browser writes it."""
+    return json.dumps({"name": name}, separators=(",", ":"), ensure_ascii=False)
+
+
+PENCIL = "b.getAttribute('aria-label') && b.getAttribute('aria-label').startsWith('Переименовать работу')"
+DIALOG = "const dialog = () => ctx.document.body.querySelector('.modal');"
+POSTS = "const posts = () => ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, r.body]);"
+TOASTS = "const toasts = () => ctx.document.body.querySelectorAll('.toast').map((t) => [t.className, t.textContent]);"
+
+
+@node
+def test_the_pencil_on_a_card_opens_a_dialog_with_the_name_and_renames_in_place_with_one_request(work, job, tmp_path):
+    c, j = work, job
+    routes = works_routes(c, {f"/api/vector/{j['id']}/rename": {"status": 200, "json": {"id": j["id"], "name": "Imma + Boris"}}})
+    out = run(tmp_path, routes, {}, f"""
+  {DIALOG} {POSTS} {TOASTS}
+  const card = tree.querySelectorAll('article')[0];
+  const pencil = card.querySelectorAll('button').find((b) => {PENCIL});
+  out.pencil = [pencil.textContent, pencil.getAttribute('title'), pencil.getAttribute('aria-label'), has(pencil, 'vw-rename')];
+  out.beforeTitle = card.querySelector('h3').textContent;
+  await pencil.dispatch('click');
+  const first = dialog();
+  out.dialog = [first.querySelector('h3').textContent, first.querySelector('input').value, first.querySelectorAll('button').map((b) => b.textContent)];
+  out.fieldLabel = first.querySelector('label').textContent;
+  first.querySelector('input').value = '  Imma + Boris  ';
+  await byText(first, 'button', 'Сохранить').dispatch('click'); await tick();
+  out.posts = posts();
+  out.title = card.querySelector('h3').textContent;
+  out.labels = [pencil.getAttribute('aria-label'), card.querySelector('a').getAttribute('aria-label')];
+  out.closed = dialog() == null;
+  out.toasts = toasts();
+  await pencil.dispatch('click');                                     // the next rename starts from the name it has now
+  out.again = dialog().querySelector('input').value;
+""")
+    assert out["pencil"] == ["✎", "Переименовать", f"Переименовать работу «{j['name']}»", True] and out["beforeTitle"] == j["name"]
+    assert out["dialog"] == ["Переименовать работу", j["name"], ["×", "Отмена", "Сохранить"]] and "Название" in out["fieldLabel"]
+    assert out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Imma + Boris")]]                  # trimmed, one request
+    assert out["title"] == "Imma + Boris" and out["labels"] == ["Переименовать работу «Imma + Boris»", "Открыть работу Imma + Boris"] and out["closed"] is True
+    assert out["toasts"] == [["toast ok", "Работа переименована ×"]] and out["again"] == "Imma + Boris"
+
+
+@node
+def test_a_blank_name_is_refused_before_any_request_and_the_name_as_it_is_or_cancel_close_the_dialog_without_one(work, job, tmp_path):
+    c, j = work, job
+    routes = works_routes(c, {f"/api/vector/{j['id']}/rename": {"status": 200, "json": {"id": j["id"], "name": "x"}}})
+    out = run(tmp_path, routes, {}, f"""
+  {DIALOG} {POSTS} {TOASTS}
+  const card = tree.querySelectorAll('article')[0];
+  const open = async () => {{ await card.querySelectorAll('button').find((b) => {PENCIL}).dispatch('click'); return dialog(); }};
+  let d = await open();
+  d.querySelector('input').value = '    ';
+  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
+  out.blank = [posts().length, dialog() != null, toasts().map((t) => t[0] + ' ' + t[1])];
+  d.querySelector('input').value = ' ' + card.querySelector('h3').textContent + ' ';
+  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
+  out.same = [posts().length, dialog() == null];
+  d = await open();
+  d.querySelector('input').value = 'Something else';
+  await byText(d, 'button', 'Отмена').dispatch('click'); await tick();
+  out.cancel = [posts().length, dialog() == null, card.querySelector('h3').textContent];
+""")
+    assert out["blank"] == [0, True, ["toast bad Впишите название работы ×"]]                     # refused, the dialog stays for another try
+    assert out["same"] == [0, True] and out["cancel"] == [0, True, j["name"]]
+
+
+@node
+def test_enter_saves_once_even_when_pressed_twice_and_an_input_method_composing_does_not_save(work, job, tmp_path):
+    c, j = work, job
+    routes = works_routes(c, {f"/api/vector/{j['id']}/rename": {"status": 200, "json": {"id": j["id"], "name": "Via Enter"}}})
+    out = run(tmp_path, routes, {}, f"""
+  {DIALOG} {POSTS}
+  const card = tree.querySelectorAll('article')[0];
+  await card.querySelectorAll('button').find((b) => {PENCIL}).dispatch('click');
+  const input = dialog().querySelector('input');
+  input.value = 'Via Enter';
+  await input.dispatch('keydown', {{key: 'Enter', isComposing: true}}); await tick();
+  out.composing = posts().length;
+  await input.dispatch('keydown', {{key: 'a'}}); await tick();
+  out.otherKey = posts().length;
+  await Promise.all([input.dispatch('keydown', {{key: 'Enter'}}), input.dispatch('keydown', {{key: 'Enter'}})]); await tick(); await tick();
+  out.posts = posts();
+  out.title = card.querySelector('h3').textContent;
+""")
+    assert out["composing"] == 0 and out["otherKey"] == 0
+    assert out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Via Enter")]] and out["title"] == "Via Enter"
+
+
+@node
+def test_a_refused_rename_keeps_the_dialog_open_and_can_be_tried_again(work, job, tmp_path):
+    c, j = work, job
+    routes = works_routes(c, {f"/api/vector/{j['id']}/rename": {"status": 422, "json": {"error": "give the plan a name", "kind": "validation"}}})
+    out = run(tmp_path, routes, {}, f"""
+  {DIALOG} {POSTS} {TOASTS}
+  const card = tree.querySelectorAll('article')[0];
+  await card.querySelectorAll('button').find((b) => {PENCIL}).dispatch('click');
+  const d = dialog();
+  d.querySelector('input').value = 'Another';
+  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();        // the failure did not lock the dialog
+  out.posts = posts().length;
+  out.open = dialog() != null;
+  out.title = card.querySelector('h3').textContent;
+  out.toasts = toasts().map((t) => t[0]);
+""")
+    assert out["posts"] == 2 and out["open"] is True and out["title"] == j["name"] and out["toasts"] == ["toast bad", "toast bad"]
+
+
+@node
+def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is_refreshed(work, job, tmp_path):
+    c, j = work, job
+    routes = routes_of(c, j)
+    routes[f"/api/vector/{j['id']}/rename"] = {"status": 200, "json": {"id": j["id"], "name": "Новое имя"}}
+    routes[f"/api/vector/{j['id']}/colouring"] = {"status": 200, "json": {**routes[f"/api/vector/{j['id']}"]["json"], "name": "Новое имя"}}    # the server's answer after the rename
+    out = run(tmp_path, routes, {"plan": str(j["id"])}, f"""
+  {DIALOG} {POSTS}
+  const head = () => tree.querySelectorAll('header')[0];
+  const pencils = () => head().querySelectorAll('button').filter((b) => {PENCIL});
+  out.before = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label')];
+  await pencils()[0].dispatch('click');
+  const d = dialog();
+  out.prefill = d.querySelector('input').value;
+  d.querySelector('input').value = 'Новое имя';
+  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick(); await tick();
+  out.after = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label')];
+  out.posts = posts();
+  await byText(tree, 'button', 'Случайно').dispatch('click'); await tick(); await tick();       // an operation: the screen shows the server's view again
+  out.refreshed = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label'), head().querySelector('.sub').textContent.includes('разбиение №')];
+""")
+    assert out["before"] == [j["name"], 1, f"Переименовать работу «{j['name']}»"] and out["prefill"] == j["name"]
+    assert out["after"] == ["Новое имя", 1, "Переименовать работу «Новое имя»"] and out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Новое имя")]]
+    assert out["refreshed"] == ["Новое имя", 1, "Переименовать работу «Новое имя»", True]
+
+
+def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_title_follows_the_new_name():
+    assert "VectorWorkspace.renameButton(j.id, j.name," in VECTOR_JS and "fill(heading, 'Векторная работа · ' + stored)" in VECTOR_JS
+    assert "renamed: (name) => { shown = {...shown, name}; head.update(shown); }" in VECTOR_JS                          # the photo header keeps the stored name
+    assert "return {list, header, frame, renameButton};" in (UI / "screens" / "vector-workspace.js").read_text(encoding="utf-8")
+    assert re.search(r"\.vw-rename \{[^}]*flex:none", CSS) and re.search(r"\.vw-name-row \{[^}]*display:flex", CSS)

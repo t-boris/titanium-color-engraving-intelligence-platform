@@ -865,3 +865,65 @@ message and the README dependency step go into the same release. SemVer: a new c
 - Not done: `mcp` library is still missing in the app environment (only `titanium-research-mcp` needs it); the old `tolerance_mm` split field is
   still an API parameter; commit `cf83634` mixes spec changes with the layout (history not rewritten).
 
+# 0.10.0 - rename a work, one screen without scrolling for "Эксперименты" and "Карта цветов" (operator, 2026-10-19)
+
+Requests (verbatim): "Сделай возможность переименовать работу"; "Поменяй UI на 1 screen without scroll for карта цветов и для экспериментов".
+Answers to my questions: scope = "Пункты меню и вложенные страницы"; experiments = list on the left, working task and findings on the right;
+colour map = filters on the left, the map in the centre, the colour search on the right. Measured before (1421 x 951, copy of the data):
+experiments list 3725 px, experiment page 4403 px (plate-only experiment 1295 px), colour map 1473 px, model of one laser and lens 30396 px.
+
+Shared frame (done by me first): `.os`, `.os-head`, `.os-body`, `.os-col`, `.os-col-head`, `.os-scroll` in styles.css (section 15), router leaves the
+footer out of an `.os` page; `.workspace` next to it also folds the side menu away; `App.tabs` for tabs; below 1100 px the page stacks and scrolls.
+
+- [x] A. Rename a vector work: `POST /api/vector/{id}/rename` (name only, no history entry, no document version, audit `vector_work_renamed`), pencil
+      next to the name on the list card, in the work header and on the long page of other strategies, dialog with the field, tests, REQ-055, DEC-086.
+- [x] B. "Эксперименты": list (search + two filters, scrolls inside) | working task over findings; keeps the side menu; `ExperimentCards.list` stays usable on the laser page.
+- [x] C. "Карта цветов" (general map): filters | big map with projection switch and lightness range | colour search with its results; `.workspace` (menu folds).
+- [x] D. Experiment page (`experiment.js`): one screen, tabs/columns by its content, the overlay photo large.
+- [x] E. Model of one laser and lens (`colors.js`) and the knowledge page (`knowledge.js`): one screen, a list of sets, the selected set's plot and tables in panels.
+- [ ] F. Integration (me): targeted tests of every touched file, REQ-044 / DEC-080 in the spec (done), README 0.10.0 section, version 0.10.0, full suite once, backup, deploy
+      (wheel + dependency imports from the app environment + first check from it on a data copy), look at the real app, report with measured page heights.
+
+### Review 0.10.0 (five parallel forks on disjoint files, then integration)
+Measured at 1421 x 951 on a copy of the data (`document.documentElement.scrollHeight == innerHeight` everywhere below; GET only):
+- "Эксперименты": 3725 -> 951 px; with `?device=`, with a filter that empties the list: 951. The list scrolls inside its panel (2451 px in 587).
+- "Карта цветов": 1473 -> 951 px; default, after a search (12 results), after a click on a point (the chart shrinks 684 -> 458 px, the detail strip
+  fits), with 76 or 0 colours: 951. Inside: the results list and the unfolded "Как это считается".
+- Experiment page: matrix test 4402 -> 951, finished work 1401 -> 951, a second finished work 951, plate-only 1295 -> 951 (measured on its "Плата" tab
+  only before the copy lost those plans). Inside: the "Результат" tab with many layers (1951 px in 750 for 10 layers).
+- Colour model of one laser and lens: about 30 396 -> 951 for all five sets and every tab, the unknown lens too; knowledge 1, 120, 343: 951.
+  Inside: the model list (343 rows, about 23 900 px in 750) and the long "Варианты" / "Все слои" tabs.
+
+Where the old parts went (experiment page): title, status, tasks, add photo, delete -> header; photo, contour and brightness buttons, legend (now a
+fold-out "Что означают линии"), caption -> left column; checks -> tab "Проверки (n)"; alerts, margins, measured layers (cards instead of the 5-column
+table, same data), tonal tables and images -> tab "Результат"; parameter matrix -> tab "Матрица" (only if the check has one); plate and links -> tab
+"Плата"; LightBurn file and photo-preview link -> tab "Работа"; conclusions -> tab "Выводы (n)".
+Colour model: calibrated observations -> first item of the list "Наборы"; their map -> centre; table "Модель цветовых параметров" (343 rows, all 8
+values and the links to the knowledge pages) -> right column; each RAW pair -> a list item and the centre; "Что видно", "Цветовые варианты", "Все
+измеренные слои" -> tabs; warnings, the note about relative Lab and "принять пару" -> under the map; "Нестабильные наборы" -> under the header.
+Knowledge: details and the decision buttons on the left; history and evidence on the right.
+
+Shared edits outside the pages: `App.tabs` skips hidden tabs on the arrow keys (dialogs.js); the router leaves the footer out of `.os` pages;
+`mapPlot` got an optional `{fit}`. Old `.exp-*` layout rules of the experiment page were removed (nothing else used them).
+Caveats: below 1100 px the pages scroll as before (checked by CSS and tests, not in a narrow browser); the copy of the data has no findings for the
+material, so the findings panel was checked on injected markup; the knowledge states "под вопросом", "утверждено", "производство" are covered by
+mock tests only. During this work three plans of the shared test copy (22, 23, 24) were deleted from it (not by me, a fork used the shared server
+beyond GET; see the correction below); the operator's real data was checked afterwards: plans 6 and 22 intact.
+Real work 22 meanwhile: the operator re-split it (SLIC, document version 10) and coloured it with the AI at 22:48 and 22:52 (variants 8), so the
+AI colouring works in production and the older state of 21:35 in the snapshot is no longer needed.
+
+### Changes during the integration (operator's messages while the full suite was about to run)
+1. Menu (DEC-081): "Когда открываю карту цветов - меню исчезает" -> "Пусть вообще оно будет висеть слева и открывается в попапе" -> "короче пусть везде
+   будет так". The folded menu is gone everywhere (also from the vector work screen of 0.9.0): a fixed 56 px rail of icons, the button at its top
+   (and "Меню" in the header) opens the names as a popup; a click outside, Esc and a choice close it; below 1000 px only "Меню". The five pages of
+   0.10.0 lost the `workspace` class (it only removes the width limit now). Measured at 1421 x 951 after the change: experiments, colour map,
+   experiment page, vector list, work 22, devices: scrollHeight = innerHeight = 951, no horizontal overflow; settings 1843 (long, as before).
+2. Lost work (DEC-082): "Я удалил эксперимент и удалилась моя работа... Почему?" Cause: the experiments list showed vector works and "Удалить
+   эксперимент" deletes the plan, which for an unphotographed work is the work. It happened on the test copy (port 8796, audit 192 `plan_deleted` 22
+   at 23:18:33Z); the real data was intact (work 22, version 10, audit up to 191). The explanation I had for the earlier missing plans 22-24 on the
+   first copy ("a fork") was wrong: it was the same click path. Fix (operator's choice): a vector work without a photograph is not an
+   experiment (list and key), and the plan page of a vector work has no "Удалить тест" button nor, before a photograph, "К эксперименту".
+   Tests: `tests/test_vector_work_is_not_an_experiment.py` (5; three fail without the change). Still open: a vector work WITH photographs is an
+   experiment, and deleting that experiment deletes its checks and archives the plan (the work leaves the work list; rows and files stay).
+   Until 0.10.0 is deployed the real app (0.9.0) still lists work 22 as an experiment: do not use "Удалить эксперимент" on it.
+

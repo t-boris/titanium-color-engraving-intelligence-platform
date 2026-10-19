@@ -69,7 +69,8 @@
     const restored = p.mode === 'Restored from file';
     // ... it is the record of a finished work, so its experiment is that of the work's engraving (REQ-041)
     const work = restored ? await get('/pairs/' + p.restored.pair_id).catch(() => null) : null;
-    const toExperiment = !restored ? link('/experiment/plan-' + p.id, 'К эксперименту')
+    // a vector work nobody has photographed is not an experiment yet (REQ-044, DEC-082)
+    const toExperiment = !restored ? (vector && !p.active_pairs ? null : link('/experiment/plan-' + p.id, 'К эксперименту'))
       : work && work.status !== 'Deleted' ? link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту') : null;
     const [editRoute, editLabel] = p.mode === 'Discrete color engraving' ? ['/artwork?plan=' + p.id, 'Редактировать преобразование']
       : p.mode.includes('photo engraving') ? ['/photo?plan=' + p.id, 'Исправить: новый план из этого'] : vector ? ['/vector?plan=' + p.id, 'Открыть векторную работу'] : [null, null];
@@ -96,7 +97,8 @@
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, I18N.name(p.name)), h('p', {class: 'sub'}, `${MODE[p.mode] || p.mode} · ${STATUS[p.status] || p.status}`)), h('span', {class: 'spacer'}), toExperiment, restored ? link('/ingest?pair=' + p.restored.pair_id, 'К фотографии работы') : null,
         editRoute ? link(editRoute, editLabel) : null,
-        btn('Удалить тест', () => confirmBox('Удалить тест', p.active_pairs
+        // the plan of a vector work is the work itself: it is deleted only in «Векторная работа», with its own confirmation (DEC-082)
+        vector ? null : btn('Удалить тест', () => confirmBox('Удалить тест', p.active_pairs
           ? `Удалить плату вместе с проверками (${p.active_pairs})? Загруженные копии RAW и LightBurn будут удалены. История измерений останется, но перестанет влиять на рекомендации.`
           : 'Плата исчезнет из списка экспериментов. История измерений сохранится.', 'Удалить тест', async () => {
             // each check leaves active use on its own (its knowledge is rebuilt); then the plan has only archived checks (DEC-047)

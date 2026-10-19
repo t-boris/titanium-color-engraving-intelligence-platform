@@ -214,8 +214,10 @@
     const history = [...j.history].reverse().map((e) => [`v${e.version}`, OPS[e.op.op] || e.op.op, e.at.replace('T', ' ').slice(0, 16),
       DOCUMENT_OPS.includes(e.op.op) && e.version !== j.document.version ? btn('Вернуть эту версию', () => run({op: 'revert', version: e.version})) : '']);
 
+    const heading = h('h2', {}, 'Векторная работа · ' + j.name);
+    const pencil = VectorWorkspace.renameButton(j.id, j.name, (stored) => { j.name = stored; fill(heading, 'Векторная работа · ' + stored); });
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Векторная работа · ' + j.name),
+      h('div', {class: 'row'}, h('div', {}, h('div', {class: 'vw-name-row'}, heading, pencil),
         h('p', {class: 'sub'}, `Версия документа ${j.document.version} · ${num(size.width, 1)} × ${num(size.height, 1)} мм · порог ΔE ${j.threshold}`)),
         h('span', {class: 'spacer'}), link('/plans/' + id, 'План гравировки'), link(`/designer?device=${j.device_id}&lens=${App.lensParam(j.lens_id)}`, 'Цели экспериментов')),
       h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
@@ -293,7 +295,7 @@
     const exp = j.experiment || {};
     const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {});
     let shown = null, queue = Promise.resolve(), parts = null, frame = null;
-    const head = VectorWorkspace.header(j, {file: () => frame.select('file')});
+    const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }});
     function show(next) {
       const resplit = !shown || next.document.version !== shown.document.version;
       shown = next;

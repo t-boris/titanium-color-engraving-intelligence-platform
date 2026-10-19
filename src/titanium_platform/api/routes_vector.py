@@ -84,6 +84,12 @@ def copy_vector_job(plan_id: int, request: Request, body: dict | None = None):
     return {"id": vector_job.copy_work(store_of(request), plan_id, (body or {}).get("name"))}
 
 
+@router.post("/vector/{plan_id}/rename")
+def rename_vector_job(plan_id: int, request: Request, body: dict | None = None):
+    """Another name for a work (see vector_job.rename_work); nothing else about it changes."""
+    return {"id": plan_id, "name": vector_job.rename_work(store_of(request), plan_id, (body or {}).get("name"))}
+
+
 @router.post("/vector/{plan_id}/edit")
 def edit_vector_job(plan_id: int, op: dict, request: Request):
     """One review operation (see vector_job.edit); the job is returned as it is afterwards."""

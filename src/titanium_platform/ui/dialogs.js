@@ -66,7 +66,8 @@ Object.assign(App, (() => {
     list.addEventListener('keydown', (ev) => {
       const step = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
       if (!step) return;
-      const next = ids[(ids.indexOf(current) + step + ids.length) % ids.length];
+      const shown = ids.filter((_, i) => !buttons[i].hidden);         // a tab a screen hides is skipped
+      const next = shown[(shown.indexOf(current) + step + shown.length) % shown.length];
       select(next);
       buttons[ids.indexOf(next)].focus();
       ev.preventDefault();

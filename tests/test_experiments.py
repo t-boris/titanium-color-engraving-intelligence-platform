@@ -166,11 +166,15 @@ def screen(name: str) -> str:
 
 def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_without_any_action():
     page = screen("experiment.js")
-    layout = page[page.index("refreshAll();\n    return h('div', {class: 'stack experiment'}"):]
-    # rendered before the page is returned, the photograph card first after the title, then the checks, the result, the files
-    order = [layout.index(part) for part in ("h('section', {class: 'card stack exp-photo-card'}, photoTools, stage, caption)",
-                                             "checks,", "result,", "plate, files, findings")]
+    layout = page[page.index("refreshAll();\n    const sub = "):]
+    # rendered before the page is returned: the photograph column first (beside the title row), then the tabs with the result, the checks, the files
+    order = [layout.index(part) for part in ("h('header', {class: 'os-head ep-head'}", "h('section', {class: 'os-col ep-photo-col', 'aria-label': 'Фото с наложением'}, photoTools, stage, caption)",
+                                             "h('aside', {class: 'os-col ep-side'")]
     assert order == sorted(order)
+    tabs = page[page.index("const items = ["):page.index("const box = App.tabs(")]
+    parts = ("['result', 'Результат', result]", "['matrix', 'Матрица', matrixBox]", "['checks', `Проверки (${pairs.length})`, checks]",
+             "['plate', 'Плата', plate]", "['work', 'Работа', files]", "['findings', `Выводы (${exp.findings.length})`, findings]")
+    assert [tabs.index(part) for part in parts] == sorted(tabs.index(part) for part in parts)
     assert "function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }" in page
     # the overlay and the lifted brightness are on unless the operator switched them off; contours draw the overlay
     assert "let contours = sessionStorage.getItem('experiment-contours') !== '0';" in page

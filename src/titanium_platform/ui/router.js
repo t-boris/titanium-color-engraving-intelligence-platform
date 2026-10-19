@@ -39,18 +39,31 @@ Object.assign(App, (() => {
     return el;
   }
 
-  let sidebar = null, menuButton = null;
+  // Разделы висят слева узкой полосой со значками на каждой странице; кнопка ☰ вверху полосы (на узком экране «Меню» в шапке) открывает
+  // поверх страницы окно с названиями: оно закрывается кликом вне его, Esc и переходом в раздел (DEC-081).
+  const MENU_ICON = '<path d="M4 6h16M4 12h16M4 18h16"/>';
+  let sidebar = null, menuButton = null, railButton = null;
+  function setMenu(open) {
+    if (!sidebar) return;
+    if (open) sidebar.classList.add('is-open'); else sidebar.classList.remove('is-open');
+    for (const b of [menuButton, railButton]) if (b) b.setAttribute('aria-expanded', String(open));
+  }
+  const menuOpen = () => !!sidebar && sidebar.classList.contains('is-open');
+  function toggleMenu() {
+    setMenu(!menuOpen());
+    if (menuOpen()) sidebar.querySelector('a').focus();
+  }
   function shell(active, main) {
-    sidebar = h('aside', {class: 'sidebar', id: 'app-navigation', 'aria-label': 'Разделы приложения'},
+    const toggleIcon = h('span', {class: 'nav-icon', 'aria-hidden': 'true'});
+    toggleIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON + '</svg>';
+    railButton = h('button', {type: 'button', class: 'rail-toggle', title: 'Разделы', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu},
+      toggleIcon, h('span', {class: 'nav-text'}, 'Разделы'));
+    sidebar = h('aside', {class: 'sidebar', id: 'app-navigation', 'aria-label': 'Разделы приложения'}, railButton,
       h('nav', {class: 'nav', 'aria-label': 'Основная навигация'},
-        NAV.map(([r, l], i) => h('a', {class: 'nav-link', href: '#' + r, 'aria-current': r === active ? 'page' : null,
-          onClick: () => { sidebar.classList.remove('is-open'); }}, icon(i), l))),
+        NAV.map(([r, l], i) => h('a', {class: 'nav-link', href: '#' + r, title: l, 'aria-current': r === active ? 'page' : null,
+          onClick: () => setMenu(false)}, icon(i), h('span', {class: 'nav-text'}, l)))),
       h('p', {class: 'sidebar-note'}, 'Единственный пользователь. Все действия доступны; вход не требуется.'));
-    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: () => {
-      const open = sidebar.classList.toggle('is-open');
-      menuButton.setAttribute('aria-expanded', String(open));
-      if (open) sidebar.querySelector('a').focus();
-    }}, 'Меню');
+    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Меню');
     return [
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Лазерная мастерская', h('small', {}, 'Материалы · Режимы · Работы')),
@@ -79,7 +92,8 @@ Object.assign(App, (() => {
       const node = await def.render(ctx);
       if (mine !== token) return;   // пользователь уже ушёл на другой экран
       const workspace = node.classList && node.classList.contains('workspace');
-      main.replaceChildren(...(workspace ? [node] : [node, h('p', {class: 'demo'}, 'Данные хранятся на этом компьютере. RAW-результаты после проверки показываются предварительно; в стандартный прогноз входят только принятые измерения с коррекцией по эталонной карте.')]));
+      const bare = workspace || (node.classList && node.classList.contains('os'));      // экран на один экран: без подвала (REQ-044)
+      main.replaceChildren(...(bare ? [node] : [node, h('p', {class: 'demo'}, 'Данные хранятся на этом компьютере. RAW-результаты после проверки показываются предварительно; в стандартный прогноз входят только принятые измерения с коррекцией по эталонной карте.')]));
     } catch (e) {
       if (mine !== token) return;
       main.replaceChildren(h('div', {class: 'alert bad', role: 'alert'}, h('strong', {}, 'Не удалось загрузить данные'), h('p', {}, e.message || String(e)), btn('Повторить', render)));
@@ -95,6 +109,12 @@ Object.assign(App, (() => {
 
   let nextNavigationOptions = null;
   const start = () => {
+    document.addEventListener('click', (ev) => {
+      if (menuOpen() && !sidebar.contains(ev.target) && !(menuButton && menuButton.contains(ev.target))) setMenu(false);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && menuOpen()) { setMenu(false); (window.innerWidth > 1000 ? railButton : menuButton).focus(); }
+    });
     addEventListener('hashchange', () => { const options = nextNavigationOptions || {}; nextNavigationOptions = null; render(options); });
     render();
   };

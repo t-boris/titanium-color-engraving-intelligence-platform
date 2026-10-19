@@ -208,3 +208,16 @@ Rules written after the operator's remarks, to prevent a repeat.
   operator which state came back and what, if anything, is newer and missing.
 - Rule: figures in a report about the operator's data come from the operator's data (the real app's API), never from a test copy.
 
+## Two screens that reach one delete must each say what it deletes; and an "unknown actor" is first the operator's own click
+- Mistake (2026-10-19): the operator deleted an "experiment" and their vector work was gone. The list of experiments showed every plan, a vector
+  work included, and "Удалить эксперимент" deletes the plan; for a work nobody had photographed the plan is the work (picture, split, all
+  variants, `plan_deleted`), while the confirmation spoke of "плата и все проверки (0)". The plan page of a vector work had the same button.
+  Twice before I had found plans missing from my test copy (22 to 24, then 22 again) and wrote "an unknown actor / a fork": it was the operator
+  clicking in the tab I had opened on the copy, through this very path.
+- Rule: when one destructive endpoint (here `DELETE /plans/{id}`) is reachable from several screens, list every caller and check that each
+  names the object it really deletes; derived objects (an experiment derived from a plan) must not offer the delete of the thing they are
+  derived from unless the confirmation says so.
+- Rule: a test copy open in the operator's browser will be used as the real app. Say in the same message which port is the copy, keep it as
+  near the real data as the task needs, and treat "something vanished from the copy" as a user action until the audit table and the UI paths to
+  that delete show otherwise. The first move on "my data is gone" is: which instance, the audit of each, then the code path.
+

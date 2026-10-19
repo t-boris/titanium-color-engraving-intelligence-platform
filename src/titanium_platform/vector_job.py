@@ -1414,3 +1414,18 @@ def copy_work(store: Store, plan_id: int, name=None) -> int:
             _refresh(store, fresh)
         store.audit("vector_work_copied", plan_id=new_id, source_plan_id=plan["id"])
     return new_id
+
+
+def rename_work(store: Store, plan_id: int, name) -> str:
+    """Give a work another name and return it as stored. Only the name changes: a rename is not an edit of the document, so it has no
+    history entry, no document version, nothing to undo, and the files exported earlier keep the name they were saved under. Naming it
+    as it is already named writes nothing."""
+    plan = _job(store, plan_id)
+    if not isinstance(name, str) or not name.strip():
+        raise cv.ConversionError("give the plan a name")
+    title = name.strip()
+    if title != plan["name"]:
+        with store.transaction():
+            store.execute("UPDATE plan SET name=? WHERE id=?", (title, plan_id))
+            store.audit("vector_work_renamed", plan_id=plan_id, old_name=plan["name"], new_name=title)
+    return title

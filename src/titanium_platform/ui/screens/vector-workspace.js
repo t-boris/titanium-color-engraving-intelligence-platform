@@ -3,15 +3,53 @@
    размер, алгоритм, число цветов и слоёв, способ раскраски; кнопки «Открыть», «Сделать копию» (новая работа с тем же состоянием,
    старая остаётся) и «Удалить» с подтверждением. Рамка работы: шапка с названием и действиями, слева вкладки настроек, посередине
    картинка редактора, справа его панель; страница не прокручивается, прокручиваются только длинные списки внутри своей панели.
-   Какая вкладка открыта, браузер помнит (удобство одного зрителя; App.tabs): после «Разбить заново» экран строится заново на той же вкладке. */
+   Какая вкладка открыта, браузер помнит (удобство одного зрителя; App.tabs): после «Разбить заново» экран строится заново на той же вкладке.
+   Карандаш рядом с названием (в списке, в шапке работы и на длинной странице других способов) открывает окно «Переименовать работу»: меняется
+   только название, это не правка документа (REQ-055, DEC-086). */
 'use strict';
 const VectorWorkspace = (() => {
-  const {h, fill, btn, num, get, post, del, go, toast, fail, confirmBox} = App;
+  const {h, fill, btn, num, field, get, post, del, go, toast, fail, modal, confirmBox} = App;
   const MODE_NAME = {closest: 'Ближе к оригиналу', tonality: 'Сохранить тональность', random: 'Случайно', fewer_layers: 'Меньше слоёв'};
   const STRATEGY_NAME = {photo: 'Фото: цветные области', fill: 'Заливка силуэта', text: 'Текст', line: 'Линии (центральные)', color: 'Цветные области (обводка)'};
   const TAB_KEY = 'vw.tab';
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
 
+
+  // ---- переименование ------------------------------------------------------------------------------------------------------------
+
+  /** The dialog with the name in a field. A blank name is refused before any request, the name as it is closes the dialog without one,
+      Enter saves (not while an input method is composing), and a second press while the first is being saved does nothing. */
+  function renameDialog(id, current, done) {
+    let saving = false, box = null;
+    const input = h('input', {value: current, autocomplete: 'off', 'aria-label': 'Название работы',
+      onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
+    async function save(close) {
+      if (saving) return;
+      const title = input.value.trim();
+      if (!title) throw new Error('Впишите название работы');
+      if (title === current) { close(); return; }
+      saving = true;
+      try {
+        const made = await post(`/vector/${id}/rename`, {name: title});
+        toast('Работа переименована', 'ok');
+        close();
+        done(made.name);
+      } catch (e) { saving = false; throw e; }
+    }
+    box = modal('Переименовать работу', h('div', {class: 'stack'}, field('Название', input)), [
+      {label: 'Отмена', run: (m) => m.close()}, {label: 'Сохранить', cls: 'primary', run: (m) => save(m.close)}]);
+    if (input.select) input.select();
+  }
+
+  /** The pencil beside a work's name. ``renamed(name)`` is told the stored name once it is saved; the button keeps the name it shows,
+      so its label and the dialog's field are right for the next rename too. */
+  function renameButton(id, name, renamed) {
+    let shown = name;
+    const label = () => `Переименовать работу «${shown}»`;
+    const el = h('button', {type: 'button', class: 'btn btn-small vw-rename', title: 'Переименовать', 'aria-label': label(),
+      onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); })}, '✎');
+    return el;
+  }
 
   // ---- список сохранённых работ --------------------------------------------------------------------------------------------------
 
@@ -34,10 +72,12 @@ const VectorWorkspace = (() => {
     const remove = btn('Удалить', () => confirmBox(`Удалить работу «${w.name}»?`,
       'Исчезнут исходная картинка, разбиение и все варианты раскраски; вернуть работу будет нельзя. Чтобы сохранить её, сначала нажмите «Сделать копию».',
       'Удалить', async () => { await del('/plans/' + w.id); toast('Работа удалена', 'ok'); App.render(); }), 'danger btn-small');
-    return h('article', {class: 'card vw-work-card'},
-      h('a', {class: 'vw-thumb', href: '#/vector?plan=' + w.id, 'aria-label': 'Открыть работу ' + w.name},
-        h('img', {src: `/api/vector/${w.id}/thumb.png?v=${encodeURIComponent(w.version + '-' + w.updated_at)}`, alt: '', loading: 'lazy'})),
-      h('div', {class: 'stack vw-work-info'}, h('h3', {}, w.name),
+    const thumb = h('a', {class: 'vw-thumb', href: '#/vector?plan=' + w.id, 'aria-label': 'Открыть работу ' + w.name},
+      h('img', {src: `/api/vector/${w.id}/thumb.png?v=${encodeURIComponent(w.version + '-' + w.updated_at)}`, alt: '', loading: 'lazy'}));
+    const title = h('h3', {}, w.name);
+    const pencil = renameButton(w.id, w.name, (stored) => { w.name = stored; fill(title, stored); thumb.setAttribute('aria-label', 'Открыть работу ' + stored); });
+    return h('article', {class: 'card vw-work-card'}, thumb,
+      h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
         photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}`) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
         h('p', {class: 'small'}, how ? `Раскраска: ${how}` : 'Ещё не раскрашена', w.variants ? ` · вариантов ${w.variants}` : ''),
@@ -72,7 +112,9 @@ const VectorWorkspace = (() => {
       h('a', {class: 'btn btn-small', href: '#/plans/' + j.id}, 'План гравировки'), copy, btn('Файл LightBurn', actions.file, 'primary'));
     function update(next) {
       const size = next.document.size_mm;
-      fill(title, h('h2', {}, next.name), h('p', {class: 'sub'}, `${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version} · слоёв ${next.layers.length} из ${next.layer_cap}`));
+      const pencil = renameButton(next.id, next.name, (stored) => (actions.renamed ? actions.renamed(stored) : update({...next, name: stored})));
+      fill(title, h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
+        h('p', {class: 'sub'}, `${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version} · слоёв ${next.layers.length} из ${next.layer_cap}`));
     }
     update(j);
     return {el, update};
@@ -86,5 +128,5 @@ const VectorWorkspace = (() => {
     return {el: h('div', {class: 'vw-work workspace'}, head, h('div', {class: 'vw-work-body'}, left, editor.el)), select: box.select};
   }
 
-  return {list, header, frame};
+  return {list, header, frame, renameButton};
 })();

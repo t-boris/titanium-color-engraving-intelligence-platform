@@ -1,5 +1,6 @@
 /* Знание о цвете: стадия, доказательства, история и решения оператора (REQ-005, DEC-006, DEC-011).
-   В производство — только явное действие; автоматически стадия не понижается; «под вопросом» можно подтвердить или понизить вручную. */
+   В производство — только явное действие; автоматически стадия не понижается; «под вопросом» можно подтвердить или понизить вручную.
+   Страница на один экран (REQ-044, DEC-080): слева сведения и решения, справа история и наблюдения-основания; длинное прокручивается в своей панели. */
 'use strict';
 const KnowledgeView = (() => {
   const {h, btn, field, link, pill, get, post, confirmBox, modal, table, num, labText, swatch, facts} = App;
@@ -47,18 +48,25 @@ const KnowledgeView = (() => {
       e.from_stage && e.type !== 'rollback'
         ? btn('Откатить переход', () => confirmBox('Откатить переход', 'Будет добавлено новое событие; стадия не повышается.', 'Откатить',
           async () => { await post(`/knowledge/${kid}/rollback`, {event_id: e.id, confirm_production: k.stage === 'production'}); App.render(); })) : '']), 'Истории нет');
-    return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('h2', {}, 'Знание о цвете'), h('span', {class: 'spacer'}), link(`/colors?device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`, 'К модели цвета'), link(`/setup?tab=rules&device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`, 'Правила оценки')),
-      k.questioned ? h('div', {class: 'alert bad'}, [h('strong', {}, 'Под вопросом. '), I18N.tr(k.doubt.reason)]) : null,
-      h('div', {class: 'card stack'}, facts([
-        ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')], ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
-        ['Параметры', params(k.parameters) + ` · импульс ${k.parameters.pulse_width} · интервал ${k.parameters.line_interval} · проходов ${k.parameters.passes}`],
-        ['Независимых гравировок', s ? s.independent_engravings : '—'], ['Уверенность', s ? num(s.confidence) : '—'],
-        ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
-        ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']]),
-      s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null, h('div', {class: 'row'}, actions(k, kid))),
-      h('div', {class: 'card'}, h('h3', {}, 'История'), history),
-      s ? h('div', {class: 'card'}, h('h3', {}, 'Наблюдения-основания'), h('p', {}, s.observation_ids.join(', '))) : null);
+    const back = `/colors?device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`;
+    const ids = s ? s.observation_ids : [];
+    return h('div', {class: 'os kn'},
+      h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#' + back}, '← К модели цвета'), h('h2', {}, 'Знание о цвете'), pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''),
+        h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: `#/setup?tab=rules&device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`}, 'Правила оценки')),
+      k.questioned ? h('div', {class: 'alert bad kn-alert'}, [h('strong', {}, 'Под вопросом. '), I18N.tr(k.doubt.reason)]) : null,
+      h('div', {class: 'os-body kn-body'},
+        h('section', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Сведения')),
+          h('div', {class: 'os-scroll stack'}, facts([
+            ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')], ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
+            ['Параметры', params(k.parameters) + ` · импульс ${k.parameters.pulse_width} · интервал ${k.parameters.line_interval} · проходов ${k.parameters.passes}`],
+            ['Независимых гравировок', s ? s.independent_engravings : '—'], ['Уверенность', s ? num(s.confidence) : '—'],
+            ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
+            ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']]),
+          s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null, h('div', {class: 'row'}, actions(k, kid)))),
+        h('div', {class: 'kn-right'},
+          h('section', {class: 'os-col kn-history'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'История'), pill(k.history.length)), h('div', {class: 'os-scroll'}, history)),
+          s ? h('section', {class: 'os-col kn-evidence'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наблюдения-основания'), pill(ids.length)),
+            h('div', {class: 'os-scroll'}, h('p', {}, ids.join(', ')))) : null)));
   }
   return {render, STAGE, stab, rig, params};
 })();

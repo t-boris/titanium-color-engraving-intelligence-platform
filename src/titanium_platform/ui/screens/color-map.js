@@ -1,5 +1,7 @@
 /* Общая карта цветов (REQ-029, DEC-056): все измеренные цвета всех экспериментов на одном экране.
-   Нужен цвет: выбираете его, и видно, где он встречался и какими настройками получен. По экспериментам ходить не нужно. */
+   Нужен цвет: выбираете его, и видно, где он встречался и какими настройками получен. По экспериментам ходить не нужно.
+   Один экран без прокрутки страницы (REQ-044, DEC-080): слева фильтры и пояснение в складке, посередине большая карта (выбранный цвет под ней),
+   справа подбор цвета; прокручивается только список найденных рецептов внутри своей панели. Боковое меню остаётся. */
 'use strict';
 const ColorMap = (() => {
   const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
@@ -51,7 +53,7 @@ const ColorMap = (() => {
     const x = (v) => pad + ((v - lo[0]) / (hi[0] - lo[0])) * (W - 2 * pad), y = (v) => H - pad - ((v - lo[1]) / (hi[1] - lo[1])) * (H - 2 * pad);
     const svg = document.createElementNS(SVG, 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', `Карта измеренных цветов: ${P.right} и ${P.up}`); svg.style.cssText = 'width:100%;max-width:820px';
+    svg.setAttribute('aria-label', `Карта измеренных цветов: ${P.right} и ${P.up}`); svg.style.cssText = 'width:100%;height:100%';       // the box around it sets the size; the viewBox keeps the proportions
     const add = (tag, attrs, text) => { const el = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); if (text) el.textContent = text; svg.append(el); return el; };
     if (P.zero) { add('line', {x1: x(lo[0]), x2: x(hi[0]), y1: y(0), y2: y(0), stroke: '#44556e', 'stroke-width': 1});
       add('line', {x1: x(0), x2: x(0), y1: y(lo[1]), y2: y(hi[1]), stroke: '#44556e', 'stroke-width': 1}); }
@@ -165,7 +167,7 @@ const ColorMap = (() => {
         ...values.map((v) => h('option', {value: v, selected: v === current}, names ? names[v] : v))));
 
     let target = state.target || null, picked = null;
-    const results = h('div', {class: 'stack'}), detail = h('div', {class: 'card stack', hidden: true}), plotBox = h('div', {});
+    const results = h('div', {class: 'stack'}), detail = h('div', {class: 'cm-detail stack', hidden: true}), plotBox = h('div', {class: 'cm-plot'});
     const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
       fill(detail, h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
         h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
@@ -238,41 +240,48 @@ const ColorMap = (() => {
     if (target) setTarget(target);
 
     const total = data.points.length;
-    return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов'),
-        h('p', {class: 'sub'}, 'Все измеренные цвета всех экспериментов. Выберите нужный цвет и увидите, где он встречался и какими настройками получен.')), h('span', {class: 'spacer'}),
-        chosen ? link(`/colors?device=${chosen.device_id}&lens=${App.lensParam(chosen.lens_id)}`, 'Модель и прогноз параметров для этого лазера с линзой')
-          : h('span', {class: 'muted small'}, 'Выберите лазер и линзу, чтобы открыть их модель и прогноз')),
-      h('div', {class: 'card stack'}, h('div', {class: 'toolbar'},
+    const counts = `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}`
+      + (data.counts.unreferenced && !f.hide ? ` · из них без привязки к чистому титану ${data.counts.unreferenced}` : '')
+      + (data.counts.provisional ? ` · предварительных (проверка ещё не принята) ${data.counts.provisional}` : '')
+      + (data.counts.slower ? ` · скрыто как более долгие (или без оценки времени на площадь) ${data.counts.slower}` : '');
+    const head = h('div', {class: 'os-head'}, h('div', {class: 'cm-title'}, h('h2', {}, 'Карта цветов'), h('p', {class: 'sub', title: counts}, counts)), h('span', {class: 'spacer'}),
+      chosen ? link(`/colors?device=${chosen.device_id}&lens=${App.lensParam(chosen.lens_id)}`, 'Модель и прогноз параметров для этого лазера с линзой')
+        : h('span', {class: 'muted small'}, 'Выберите лазер и линзу, чтобы открыть их модель и прогноз'));
+    // the filters in one narrow column; the long explanation is folded away
+    const filters = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Фильтры')),
+      h('div', {class: 'os-scroll'}, h('div', {class: 'cm-filters'},
         select('Лазер и линза', 'setup', data.options.setups.map((o) => o.key), f.setup, Object.fromEntries(data.options.setups.map((o) => [o.key, o.label]))),
         select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         select('Задача', 'task', data.options.tasks || [], f.task, Object.fromEntries((data.options.tasks || []).map((k) => [k, Tasks.name(k)]))),
         h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime),
         h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
-          'Скрыть цвета без чистого титана на снимке')),
-        h('p', {class: 'muted small'}, `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}`
-          + (data.counts.unreferenced && !f.hide ? ` · из них без привязки к чистому титану ${data.counts.unreferenced}` : '')
-          + (data.counts.provisional ? ` · предварительных (проверка ещё не принята) ${data.counts.provisional}` : '')
-          + (data.counts.slower ? ` · скрыто как более долгие (или без оценки времени на площадь) ${data.counts.slower}` : '') + '. '
-          + 'Время гравировки — оценка по настройкам рецепта: 100 / (скорость × шаг строк) с на см² за проход и разворот на каждой строке, '
-          + 'умноженные на проходы, повторы и на 2 при перекрёстной штриховке; частота и длительность импульса на время не влияют. '
-          + (data.counts.provisional ? 'Предварительные цвета обведены сиреневым штрихом и ведут к проверке пары; в прогнозы они не входят, а в поиск — только по отдельной просьбе, пока проверка не принята. ' : '')
-          + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
-          + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')),
-      h('div', {class: 'color-map-grid'},
-        h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),
-            ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
-          h('div', {class: 'row small'}, h('span', {}, 'Светлота L* от'),
-            h('input', {type: 'number', min: 0, max: 100, value: band[0], style: 'width:5em', onChange: (e) => remember({band: [+e.target.value, band[1]]})}),
-            h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], style: 'width:5em', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
-            h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length}`),
-            model && model.summary && model.summary.observations ? h('span', {class: 'muted'}, ` · пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null),
-          plotBox, detail),
-        h('div', {class: 'card stack'}, h('h3', {}, 'Какой цвет нужен'),
-          h('div', {class: 'row'}, picker, chip), h('div', {class: 'grid g3'}, h('label', {class: 'f'}, h('span', {}, 'L (0–100)'), L), h('label', {class: 'f'}, h('span', {}, 'a'), A),
-            h('label', {class: 'f'}, h('span', {}, 'b'), B)), h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance), find,
-          h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».'), results)));
+          'Скрыть цвета без чистого титана на снимке'),
+        h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается'),
+          h('p', {class: 'muted small'}, 'Все измеренные цвета всех экспериментов. Выберите нужный цвет и увидите, где он встречался и какими настройками получен. '
+            + 'Время гравировки — оценка по настройкам рецепта: 100 / (скорость × шаг строк) с на см² за проход и разворот на каждой строке, '
+            + 'умноженные на проходы, повторы и на 2 при перекрёстной штриховке; частота и длительность импульса на время не влияют. '
+            + (data.counts.provisional ? 'Предварительные цвета обведены сиреневым штрихом и ведут к проверке пары; в прогнозы они не входят, а в поиск — только по отдельной просьбе, пока проверка не принята. ' : '')
+            + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
+            + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')))));
+    // the map fills the middle; the colour picked on it is described in a strip under it
+    const mapCol = h('div', {class: 'os-col'},
+      h('div', {class: 'os-col-head'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),
+        ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
+      h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'),
+        h('input', {type: 'number', min: 0, max: 100, value: band[0], 'aria-label': 'Светлота от', onChange: (e) => remember({band: [+e.target.value, band[1]]})}),
+        h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
+        h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length}`)),
+      model && model.summary && model.summary.observations ? h('p', {class: 'cm-caption muted small'}, `Пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null,
+      plotBox, detail);
+    // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
+    const search = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Какой цвет нужен')),
+      h('div', {class: 'cm-target'}, h('div', {class: 'row'}, picker, chip),
+        h('div', {class: 'cm-lab'}, h('label', {class: 'f'}, h('span', {}, 'L (0–100)'), L), h('label', {class: 'f'}, h('span', {}, 'a'), A), h('label', {class: 'f'}, h('span', {}, 'b'), B)),
+        h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance), find),
+        h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».')),
+      h('div', {class: 'os-scroll'}, results));
+    return h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));
   }
   return {render, hexToLab};
 })();

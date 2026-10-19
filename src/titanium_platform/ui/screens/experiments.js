@@ -1,4 +1,6 @@
-/* Эксперименты одним списком: каждый открывается целиком (плата, фото с наложением, результат); рядом выводы для материала (REQ-028). */
+/* Эксперименты одним списком: каждый открывается целиком (плата, фото с наложением, результат); рядом выводы для материала (REQ-028).
+   Один экран без прокрутки страницы (REQ-044, DEC-080): слева список с фильтрами (прокручивается только он), справа рабочая задача
+   и под ней выводы для материала. Боковое меню остаётся. */
 'use strict';
 (() => {
   const {h, btn, field, link, pill, get, toast} = App;
@@ -27,9 +29,10 @@
   const checks = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'проверка' :
     n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'проверки' : 'проверок'}`;
   const stat = (value, label, kind = '') => h('div', {class: `dashboard-stat ${kind}`}, h('strong', {}, value), h('span', {}, label));
-  const panel = (title, count, items, empty, action) => h('section', {class: 'card dashboard-panel'},
-    h('div', {class: 'dashboard-panel-head'}, h('h3', {}, title), pill(count), action),
-    items.length ? h('div', {class: 'dashboard-list'}, ...items) : h('p', {class: 'muted small'}, empty));
+  const panel = (title, count, items, empty, action) => h('section', {class: 'os-col ex-find'},
+    h('div', {class: 'os-col-head'}, h('h3', {}, title), pill(count), h('span', {class: 'spacer'}), action),
+    h('div', {class: 'os-scroll'}, items.length ? h('div', {class: 'ex-insights'}, ...items) : h('p', {class: 'muted small'}, empty)));
+  const action = (route, label, primary) => h('a', {class: 'btn btn-small' + (primary ? ' primary' : ''), href: '#' + route}, label);
 
   App.register({id: 'experiments', async render(ctx) {
     const [experiments, devices, materials, goals] = await Promise.all([
@@ -53,14 +56,15 @@
     const latest = new Map();
     for (const finding of findings) if (!latest.has(finding.purpose)) latest.set(finding.purpose, finding);
     const reload = () => App.render({preserveScroll: true});
-    const hero = h('div', {class: 'dashboard-hero'},
-      h('div', {}, h('h2', {}, 'Эксперименты'), h('p', {class: 'sub'}, 'Каждый эксперимент открывается целиком: плата, фото с наложением, результат')),
-      h('div', {class: 'dashboard-actions'},
-        link('/research', 'AI-исследователь'),
-        link('/colors', 'Карта цветов'),
-        btn('Создать плату', () => PlateDialog.open(devices, materials, reload), 'primary', !devices.length),
-        link('/ingest', 'Добавить работу и фото')));
-    if (!devices.length) return h('div', {class: 'stack'}, hero,
+    const hero = h('div', {class: 'os-head ex-head'},
+      h('div', {class: 'ex-title'}, h('h2', {}, 'Эксперименты'), h('p', {class: 'sub'}, 'Каждый эксперимент открывается целиком: плата, фото с наложением, результат')),
+      h('span', {class: 'spacer'}),
+      h('div', {class: 'ex-actions'},
+        action('/research', 'AI-исследователь'),
+        action('/colors', 'Карта цветов'),
+        btn('Создать плату', () => PlateDialog.open(devices, materials, reload), 'primary btn-small', !devices.length),
+        action('/ingest', 'Добавить работу и фото')));
+    if (!devices.length) return h('div', {class: 'os'}, hero,
       h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер и установите линзу'), link('/devices', 'Лазеры')));
 
     const query = sessionStorage.getItem('experiment-search') || '';
@@ -71,7 +75,7 @@
     const shown = experiments.filter((e) => (wantedStatus === 'all' || e.status === wantedStatus) && (!laser || e.device_id === laser.id) &&
       (!wantedTask || (e.tasks || []).includes(wantedTask)) &&
       (!query || [e.title, e.kind, e.laser, e.lens, e.material].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())));
-    const filters = h('div', {class: 'row exp-filters'},
+    const filters = h('div', {class: 'ex-filters'},
       laser ? h('span', {class: 'row'}, pill(`Лазер: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'Все лазеры')) : null,
       h('input', {type: 'search', value: query, placeholder: 'Поиск по названию, лазеру, титану', 'aria-label': 'Поиск эксперимента',
         onChange: (ev) => { sessionStorage.setItem('experiment-search', ev.target.value); reload(); }}),
@@ -115,11 +119,20 @@
         toast(`Создана плата ${made.name}`, 'ok'); App.go('/experiment/plan-' + made.plan_id);
       } catch (error) { self.disabled = false; self.textContent = 'Создать следующий тест'; App.fail(error); }
     }, 'primary') : null;
-    const taskPanel = h('section', {class: 'card dashboard-task'},
-      h('div', {class: 'dashboard-task-head'}, h('div', {}, h('h3', {}, 'Рабочая задача'),
-        h('p', {class: 'muted small'}, 'Один материал и одна цель: тест → RAW-фото → вывод → следующий тест.')),
+    // REQ-020: на чём основан вывод — наблюдения, сколько гравировок и фото, чего не хватает в контексте
+    const evidence = [
+      guide?.support ? h('p', {class: 'muted small'}, `Задача: ${Tasks.name(guide.task.kind)} · основание — проверка №${guide.support.pair_id}`,
+        guide.support.observation_ids.length ? `, наблюдения №${guide.support.observation_ids.join(', №')}` : '',
+        ` · гравировок: ${guide.support.engravings}, фото: ${guide.support.photographs} · повторяемость не оценена`,
+        ...(guide.support.missing_context.length ? [' · не хватает: ', ...Tasks.missing(guide.support.missing_context)] : [])) : null,
+      settingSummary(guide?.finding?.parameters || guide?.finding?.evidence?.parameters)
+        ? h('p', {class: 'muted small'}, 'Параметры наблюдения: ' + settingSummary(guide.finding.parameters || guide.finding.evidence.parameters)) : null].filter(Boolean);
+    const taskNote = 'Один материал и одна цель: тест → RAW-фото → вывод → следующий тест.';
+    const taskPanel = h('section', {class: 'os-col ex-task'},
+      h('div', {class: 'os-col-head'}, h('h3', {title: taskNote}, 'Рабочая задача'), h('span', {class: 'muted small ex-note', title: taskNote}, taskNote), h('span', {class: 'spacer'}),
       guide?.finding ? pill(guide.finding.status === 'candidate' ? 'Кандидат' : 'Нужна проверка',
         guide.finding.status === 'candidate' ? 'ok' : 'warn') : pill('Нет готового режима', 'warn')),
+      h('div', {class: 'os-scroll ex-task-body'},
       h('div', {class: 'dashboard-task-selectors'},
         field('Что хотим сделать', goalPicker),
         field('На каком материале', materialPicker),
@@ -128,30 +141,24 @@
       h('div', {class: 'dashboard-task-result'},
         h('div', {}, h('strong', {}, selectedGoal?.objective || 'Выберите цель и материал'),
           h('p', {}, guide?.message || 'Добавьте конкретную заготовку, чтобы получить следующий тест.'),
-          guide?.finding ? h('p', {class: 'muted small'}, `Последний вывод: ${guide.finding.summary}`) : null,
-          // REQ-020: на чём основан вывод — наблюдения, сколько гравировок и фото, чего не хватает в контексте
-          guide?.support ? h('p', {class: 'muted small'}, `Задача: ${Tasks.name(guide.task.kind)} · основание — проверка №${guide.support.pair_id}`,
-            guide.support.observation_ids.length ? `, наблюдения №${guide.support.observation_ids.join(', №')}` : '',
-            ` · гравировок: ${guide.support.engravings}, фото: ${guide.support.photographs} · повторяемость не оценена`,
-            ...(guide.support.missing_context.length ? [' · не хватает: ', ...Tasks.missing(guide.support.missing_context)] : [])) : null,
-          settingSummary(guide?.finding?.parameters || guide?.finding?.evidence?.parameters)
-            ? h('p', {class: 'muted small'}, 'Параметры наблюдения: ' + settingSummary(guide.finding.parameters || guide.finding.evidence.parameters)) : null),
+          guide?.finding ? h('p', {class: 'muted small ex-last'}, `Последний вывод: ${guide.finding.summary}`) : null,
+          evidence.length ? h('details', {class: 'dashboard-details ex-evidence'}, h('summary', {}, 'Основание вывода и параметры'), ...evidence) : null),
         h('div', {class: 'dashboard-task-next'}, h('small', {}, 'Следующий шаг'),
           h('p', {}, guide?.next_step || 'Создайте материал и первую плату.'),
           pulseChoice ? field('Длительность импульса (у этого лазера нет ступени 200 нс)', pulseChoice) : null, nextPlate,
           guide?.pending_plan_id ? link('/plans/' + guide.pending_plan_id, 'Открыть созданную плату') : null)),
       guide?.plate ? h('p', {class: 'dashboard-task-foot'},
-        `Плата: ${PLATE_TYPE[guide.plate.test_type] || guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null);
-    return h('div', {class: 'experiment-dashboard'}, hero,
-      taskPanel,
-      h('div', {class: 'dashboard-columns exp-columns'},
-        h('section', {class: 'card dashboard-panel'},
-          h('div', {class: 'dashboard-panel-head'}, h('h3', {}, 'Эксперименты'), pill(laser ? `${shown.length} из ${experiments.length}` : experiments.length),
+        `Плата: ${PLATE_TYPE[guide.plate.test_type] || guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null));
+    return h('div', {class: 'os ex'}, hero,
+      h('div', {class: 'os-body ex-body'},
+        h('section', {class: 'os-col ex-list'},
+          h('div', {class: 'os-col-head'}, h('h3', {}, 'Эксперименты'), pill(laser ? `${shown.length} из ${experiments.length}` : experiments.length),
             pill(`${experiments.filter((e) => e.needs_review).length} к проверке`, experiments.some((e) => e.needs_review) ? 'warn' : '')),
           filters,
-          ExperimentCards.list(shown, experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.')),
-        panel('Выводы для материала', latest.size, insightCards,
-          'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',
-          link(`/devices/${selectedDevice.id}`, selectedDevice.name))));
+          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.'))),
+        h('div', {class: 'ex-right'}, taskPanel,
+          panel('Выводы для материала', latest.size, insightCards,
+            'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',
+            link(`/devices/${selectedDevice.id}`, selectedDevice.name)))));
   }});
 })();

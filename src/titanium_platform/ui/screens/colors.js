@@ -1,21 +1,29 @@
-/* Карта цветов и подбор параметров (REQ-002); маршрут /knowledge/:id открывает знание о цвете (knowledge.js). */
+/* Карта цветов одного лазера с линзой и подбор параметров (REQ-002, REQ-044, DEC-080); маршрут /knowledge/:id открывает знание о цвете (knowledge.js).
+   Страница на один экран: слева наборы (калиброванные наблюдения и RAW-пары), посередине карта выбранного набора с оговорками,
+   справа его таблицы во вкладках; прокручиваются только длинные списки внутри своих панелей. Выбранные набор и вкладку браузер помнит
+   (удобство одного зрителя: без хранилища экран открывается на первом наборе). */
 'use strict';
 (() => {
-  const {h, btn, field, link, pill, get, post, modal, table, num, labText, swatch, facts} = App;
+  const {h, fill, btn, field, link, pill, get, post, modal, num, labText, swatch, facts} = App;
   const {STAGE, stab, params} = KnowledgeView;
   const SVG = 'http://www.w3.org/2000/svg';
   const PAIR_STATUS = {'Awaiting check': 'ожидает проверки', 'Needs correction': 'требует исправления', 'Ready to accept': 'готова к принятию',
     Accepted: 'принята'};
 
-  function mapPlot(samples) {
+  const SET_KEY = 'lm.set', TAB_KEY = 'lm.tab';
+  const stored = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  const keep = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* a viewer without storage starts on the first set */ } };
+
+  /** ``fit`` draws a square map that fills its box (the one-screen page); otherwise the map keeps its fixed proportions. */
+  function mapPlot(samples, {fit = false} = {}) {
     if (!samples.length) return h('p', {class: 'muted'}, 'Нет измеренных цветов');
-    const W = 520, H = 360, a = samples.map((s) => s.lab[1]), b = samples.map((s) => s.lab[2]);
+    const W = 520, H = fit ? 520 : 360, a = samples.map((s) => s.lab[1]), b = samples.map((s) => s.lab[2]);
     const lo = [Math.min(...a) - 8, Math.min(...b) - 8], hi = [Math.max(...a) + 8, Math.max(...b) + 8];
     const svg = document.createElementNS(SVG, 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', 'Карта измеренных цветов в плоскости a и b');
-    svg.style.cssText = 'width:100%;max-width:720px';   // look comes from styles.css (svg[role=img])
+    svg.style.cssText = fit ? 'width:100%;height:100%' : 'width:100%;max-width:720px';   // look comes from styles.css (svg[role=img])
     samples.forEach((s) => {
       const c = document.createElementNS(SVG, 'circle');
       c.setAttribute('cx', 20 + ((s.lab[1] - lo[0]) / (hi[0] - lo[0])) * (W - 40));
@@ -66,45 +74,62 @@
     ].filter(Boolean).join(' · ');
   }
 
-  function relativeCard(set) {
+  /** One line of a compact list: the main part (swatch, name, pills) and, under it, the figures that used to be table columns. */
+  const item = (top, sub, cls = '') => h('div', {class: 'lm-item ' + cls}, h('div', {class: 'lm-item-top'}, ...top),
+    sub && sub.length ? h('div', {class: 'lm-item-sub'}, ...sub) : null);
+  const dot = (parts) => parts.filter((x) => x != null && x !== '').join(' · ');
+
+  /** What the page shows of one set of camera-relative (RAW) observations: its heading, the map, the cautions and the tabs. */
+  function relativeView(set) {
     const samples = set.samples || [];
     const variants = set.color_variants || [];
     const plotSamples = samples.map((s) => ({...s, engravings: 1, available: false}));
-    const findingRows = (set.findings || []).map((f) => [f.label, f.name,
-      h('span', {}, swatch(f.lab), labText(f.lab)), params(f.parameters), f.delta_e == null ? '—' : num(f.delta_e)]);
-    const sampleRows = samples.flatMap((s) => {
-      const main = [h('span', {}, swatch(s.lab), `${s.relative_appearance} · ${labText(s.lab)}`), s.name,
-        h('div', {}, s.role === 'pre-test cleaning witness' ? 'Свидетель чистки' : s.role === 'registration, QR and engraved labels' ? 'Метки и подписи' : 'Тестовый участок',
-          ...(s.notes || []).map((note) => h('div', {class: 'muted small'}, I18N.tr(note)))),
-        params(s.parameters), num(s.delta_e_from_clean_witness), s.pixels == null ? '—' : num(s.pixels, 0)];
-      const subs = (s.submeasurements || []).filter((sub) => sub.measured_lab).map((sub) => [
-        h('span', {}, swatch(sub.measured_lab), labText(sub.measured_lab)), `${s.name} / ${sub.name}`, 'Часть слоя',
-        params(s.parameters), num(sub.delta_e_from_clean_witness), sub.pixels == null ? '—' : num(sub.pixels, 0)]);
+    const findingRows = (set.findings || []).map((f) => item([swatch(f.lab), h('strong', {}, `${f.label} · ${f.name}`), h('span', {class: 'muted small'}, labText(f.lab))],
+      [dot([params(f.parameters), `ΔE от чистой поверхности ${f.delta_e == null ? '—' : num(f.delta_e)}`])]));
+    const layerRows = samples.flatMap((s) => {
+      const role = s.role === 'pre-test cleaning witness' ? 'Свидетель чистки' : s.role === 'registration, QR and engraved labels' ? 'Метки и подписи' : 'Тестовый участок';
+      const main = item([swatch(s.lab), h('strong', {}, s.name), h('span', {class: 'muted small'}, `${s.relative_appearance} · ${labText(s.lab)}`)],
+        [dot([role, params(s.parameters), `ΔE от чистой поверхности ${num(s.delta_e_from_clean_witness)}`, `пикселей ${s.pixels == null ? '—' : num(s.pixels, 0)}`]),
+          ...(s.notes || []).map((note) => h('div', {}, I18N.tr(note)))]);
+      const subs = (s.submeasurements || []).filter((sub) => sub.measured_lab).map((sub) => item([swatch(sub.measured_lab), h('strong', {}, `${s.name} / ${sub.name}`),
+        h('span', {class: 'muted small'}, labText(sub.measured_lab))],
+      [dot(['Часть слоя', params(s.parameters), `ΔE от чистой поверхности ${num(sub.delta_e_from_clean_witness)}`, `пикселей ${sub.pixels == null ? '—' : num(sub.pixels, 0)}`])], 'lm-sub'));
       return [main, ...subs];
     });
     const material = [set.material?.name, set.material?.grade, set.material?.batch && `партия ${set.material.batch}`].filter(Boolean).join(' · ');
     const variantCards = variants.map((v) => h('article', {class: 'color-variant'},
-      h('div', {class: 'color-variant-head'}, swatch(v.lab), h('div', {}, h('strong', {}, v.name),
-        h('span', {class: 'muted small'}, labText(v.lab)))),
+      h('div', {class: 'color-variant-head'}, swatch(v.lab), h('div', {}, h('strong', {}, v.name), h('span', {class: 'muted small'}, labText(v.lab)))),
       h('p', {class: 'small'}, variantSettings(v.parameters)),
-      h('p', {class: 'muted small'}, `Отличие от очищенного фона на этом снимке: ΔE ${num(v.delta_e_from_clean_witness, 1)}`,
-        v.settings_complete ? '' : ' · настройки неполные'),
+      h('p', {class: 'muted small'}, `Отличие от очищенного фона на этом снимке: ΔE ${num(v.delta_e_from_clean_witness, 1)}`, v.settings_complete ? '' : ' · настройки неполные'),
       link('/analysis/' + set.pair_id, 'Фото и измерения')));
-    return h('div', {class: 'card stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h3', {}, `${set.provisional ? 'Предварительные RAW-наблюдения' : 'RAW-наблюдения'} · пара ${set.pair_id}`),
-        h('p', {class: 'muted small'}, `${set.photo_name || 'фото'} · ${set.lightburn_name || 'LightBurn'}${material ? ` · ${material}` : ''}`))),
+    const alerts = [
       set.provisional ? h('div', {class: 'alert warn'}, `Результаты уже измерены, но ещё не приняты: ${set.masks_reviewed ? 'маски проверены' : 'нужно проверить наложение масок'}; состояние пары — ${PAIR_STATUS[set.status] || set.status}. Это предварительные данные.`) : null,
       ...(set.warnings || []).map((warning) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(warning))),
       h('div', {class: 'alert warn'}, 'Это оттенки и Lab, измеренные относительно данного RAW-снимка. Карта показывает их для сравнения; они не участвуют в стандартных цветовых прогнозах и не сравниваются между разными фотосессиями.'),
-      variants.length ? h('section', {}, h('h4', {}, `Цветовые варианты из тестовых квадратов · ${variants.length}`),
-        h('p', {class: 'muted small'}, 'Каждый вариант связан с конкретным участком, настройками LightBurn и этим фото. Цвет плашки на экране условный; для рабочего рецепта нужен повтор с эталонной картой.'),
-        h('div', {class: 'color-variant-grid'}, ...variantCards)) : null,
-      h('h4', {}, 'Относительная карта a* × b*'), mapPlot(plotSamples),
-      findingRows.length ? h('div', {}, h('h4', {}, 'Что видно в этой паре'),
-        table(['Наблюдение', 'Слой', 'Оттенок на снимке', 'Параметры', 'ΔE от чистой поверхности'], findingRows)) : null,
-      h('details', {}, h('summary', {}, `Все измеренные слои (${samples.length})`),
-        table(['Оттенок на снимке', 'Слой', 'Роль', 'Параметры', 'ΔE от чистой поверхности', 'Пиксели'], sampleRows)),
-      set.provisional ? link('/ingest?pair=' + set.pair_id, 'Открыть проверку слоёв и принять пару') : null);
+      set.provisional ? link('/ingest?pair=' + set.pair_id, 'Открыть проверку слоёв и принять пару') : null];
+    const list = (rows, empty) => (rows.length ? h('div', {class: 'lm-list'}, ...rows) : h('p', {class: 'muted'}, empty));
+    return {
+      title: `${set.provisional ? 'Предварительные RAW-наблюдения' : 'RAW-наблюдения'} · пара ${set.pair_id}`,
+      sub: `${set.photo_name || 'фото'} · ${set.lightburn_name || 'LightBurn'}${material ? ` · ${material}` : ''}`,
+      plot: mapPlot(plotSamples, {fit: true}), plotTitle: 'Относительная карта a* × b*', alerts,
+      tabs: [['seen', `Что видно (${findingRows.length})`, h('div', {class: 'stack'}, h('h4', {}, 'Что видно в этой паре'), list(findingRows, 'Нет данных'))],
+        ['variants', `Варианты (${variants.length})`, h('div', {class: 'stack'}, h('h4', {}, `Цветовые варианты из тестовых квадратов · ${variants.length}`),
+          variants.length ? h('p', {class: 'muted small'}, 'Каждый вариант связан с конкретным участком, настройками LightBurn и этим фото. Цвет плашки на экране условный; для рабочего рецепта нужен повтор с эталонной картой.') : null,
+          variants.length ? h('div', {class: 'color-variant-grid'}, ...variantCards) : h('p', {class: 'muted'}, 'Нет данных'))],
+        ['layers', `Все слои (${samples.length})`, h('div', {class: 'stack'}, h('h4', {}, `Все измеренные слои (${samples.length})`), list(layerRows, 'Нет данных'))]]};
+  }
+
+  /** The calibrated observations the forecast is made from: the map of every sample and the model of colour parameters beside it. */
+  function calibratedView(map, know) {
+    const rows = know.map((k) => {
+      const s = k.summary;
+      return item([link('/knowledge/' + k.id, labText(s && s.lab)), pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''), k.questioned ? pill('под вопросом', 'bad') : null],
+        [dot([`мощность / частота / скорость ${num(k.parameters.power, 1)} / ${num(k.parameters.frequency, 0)} / ${num(k.parameters.speed, 0)}`, `независимых ${s ? s.independent_engravings : 0}`,
+          `уверенность ${s && s.available ? num(s.confidence) : '—'}`, `ошибка ΔE ${s && s.available ? num(s.expected_delta_e) : '—'}`, `стабильность ${s ? stab(s.stability) : '—'}`])]);
+    });
+    return {title: 'Калиброванные наблюдения для прогноза', sub: `${map.samples.length} измеренных цветов`, plot: mapPlot(map.samples, {fit: true}), plotTitle: null,
+      alerts: [h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок повторяемости. Цвета показаны как экранное представление Lab.')],
+      model: {count: rows.length, body: rows.length ? h('div', {class: 'lm-list'}, ...rows) : h('p', {class: 'muted'}, 'Нет данных')}};
   }
 
   App.register({id: 'colors', async render(ctx) {
@@ -114,23 +139,43 @@
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Нет измеренных цветов'), link('/devices', 'Лазеры'), ' ', link('/ingest', 'Добавить наблюдение'));
     const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { location.hash = '#/colors?' + pick.route(); }});
     const [map, know] = await Promise.all([get('/color-model?' + pick.query()), get('/knowledge?' + pick.query())]);
-    const rows = know.map((k) => {
-      const s = k.summary;
-      return [link('/knowledge/' + k.id, labText(s && s.lab)), `${num(k.parameters.power, 1)} / ${num(k.parameters.frequency, 0)} / ${num(k.parameters.speed, 0)}`,
-        pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''), k.questioned ? pill('под вопросом', 'bad') : '', s ? s.independent_engravings : 0,
-        s && s.available ? num(s.confidence) : '—', s && s.available ? num(s.expected_delta_e) : '—', s ? stab(s.stability) : '—'];
-    });
-    const header = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных лазеров и линз (в том числе неизвестной) не объединяются.')),
-      h('span', {class: 'spacer'}));
-    const controls = h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap'}, field('Лазер', pick.laser)), h('div', {class: 'f-wrap'}, field('Линза', pick.lens)),
-      btn('Целевой цвет', () => predictDialog(pick), 'primary'), link('/designer?' + pick.route(), 'Спланировать эксперимент'));
+    const head = h('div', {class: 'os-head lm-head'}, h('a', {class: 'btn btn-small', href: '#/colors'}, '← Карта цветов'),
+      h('div', {class: 'lm-title'}, h('h2', {}, 'Карта цветов и подбор параметров'), h('p', {class: 'sub'}, 'Данные разных лазеров и линз (в том числе неизвестной) не объединяются.')),
+      h('span', {class: 'spacer'}), h('div', {class: 'lm-pick'}, field('Лазер', pick.laser), field('Линза', pick.lens)),
+      btn('Целевой цвет', () => predictDialog(pick), 'primary'), h('a', {class: 'btn btn-small', href: '#/designer?' + pick.route()}, 'Спланировать эксперимент'));
     const relativeSets = map.camera_relative_sets || [];
-    if (!map.samples.length && !relativeSets.length) return h('div', {class: 'stack'}, header, controls, h('div', {class: 'card empty'}, h('h3', {}, 'Для этого лазера с этой линзой пока нет проверенных измерений'), link('/ingest', 'Добавить фото эксперимента')));
-    return h('div', {class: 'stack'}, header, controls,
-      map.samples.length ? h('div', {class: 'card'}, h('h3', {}, 'Калиброванные наблюдения для прогноза'), mapPlot(map.samples),
-        h('p', {class: 'muted small'}, 'Пунктир — наборы без оценок повторяемости. Цвета показаны как экранное представление Lab.')) : null,
-      relativeSets.map(relativeCard),
-      map.unstable.length ? h('div', {class: 'alert warn'}, 'Нестабильные наборы: ' + map.unstable.map((u) => `${u.parameters.power}/${u.parameters.frequency}/${u.parameters.speed}`).join(', ')) : null,
-      rows.length ? h('div', {class: 'card'}, h('h3', {}, 'Модель цветовых параметров'), table(['Цвет', 'Мощность / частота / скорость', 'Стадия', 'Флаг', 'Независимых', 'Уверенность', 'Ошибка ΔE', 'Стабильность'], rows)) : null);
+    if (!map.samples.length && !relativeSets.length) return h('div', {class: 'os lm'}, head,
+      h('div', {class: 'card empty'}, h('h3', {}, 'Для этого лазера с этой линзой пока нет проверенных измерений'), link('/ingest', 'Добавить фото эксперимента')));
+
+    // the sets in the order of the old page: the calibrated observations, then every RAW pair
+    const sets = [...(map.samples.length ? [{id: 'calibrated', title: 'Калиброванные наблюдения', note: `измеренных цветов ${map.samples.length}${know.length ? ` · в модели ${know.length}` : ''}`, view: () => calibratedView(map, know)}] : []),
+      ...relativeSets.map((set) => ({id: 'pair-' + set.pair_id, title: `${set.provisional ? 'Предварительно · ' : ''}пара ${set.pair_id}`,
+        note: `${set.photo_name || 'фото'} · слоёв ${(set.samples || []).length} · вариантов ${(set.color_variants || []).length}`, view: () => relativeView(set)}))];
+    const left = h('section', {class: 'os-col lm-left', 'aria-label': 'Наборы наблюдений'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наборы'), pill(sets.length)), h('div', {class: 'os-scroll'}, h('div', {class: 'lm-sets'})));
+    const centre = h('section', {class: 'os-col lm-centre'}), right = h('section', {class: 'os-col lm-right'});
+    const buttons = new Map(sets.map((s) => [s.id, h('button', {type: 'button', class: 'lm-set', 'aria-pressed': 'false', onClick: () => select(s.id)}, h('strong', {}, s.title), h('span', {class: 'muted small'}, s.note))]));
+    left.querySelector('.lm-sets').append(...buttons.values());
+
+    function select(id) {
+      const set = sets.find((s) => s.id === id) || sets[0];
+      for (const [key, node] of buttons) {
+        node.setAttribute('aria-pressed', String(key === set.id));
+        if (key === set.id) node.classList.add('active'); else node.classList.remove('active');
+      }
+      keep(SET_KEY, set.id);
+      const view = set.view();
+      fill(centre, h('div', {class: 'os-col-head'}, h('div', {class: 'lm-set-title'}, h('h3', {}, view.title), h('p', {class: 'muted small'}, view.sub)), view.plotTitle ? pill(view.plotTitle) : null),
+        h('div', {class: 'lm-stage'}, h('div', {class: 'lm-plot'}, view.plot), h('div', {class: 'lm-alerts'}, ...view.alerts)));
+      if (view.model) {
+        fill(right, h('div', {class: 'os-col-head'}, h('h3', {}, 'Модель цветовых параметров'), pill(view.model.count)), h('div', {class: 'os-scroll'}, view.model.body));
+      } else {
+        const tabs = App.tabs(view.tabs, {initial: view.tabs[0][0], remember: TAB_KEY, label: 'Таблицы набора', prefix: 'lm-tab'});
+        fill(right, tabs.list, h('div', {class: 'os-scroll'}, ...tabs.panels));
+      }
+    }
+    select(sets.some((s) => s.id === stored(SET_KEY)) ? stored(SET_KEY) : sets[0].id);
+    return h('div', {class: 'os lm'}, head,
+      map.unstable.length ? h('div', {class: 'alert warn lm-unstable'}, 'Нестабильные наборы: ' + map.unstable.map((u) => `${u.parameters.power}/${u.parameters.frequency}/${u.parameters.speed}`).join(', ')) : null,
+      h('div', {class: 'os-body lm-body'}, left, centre, right));
   }});
 })();
