@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-from . import color, knowledge as kn, plans as pl, setup as su, tasks
+from . import color, colormap, engraving_time, knowledge as kn, plans as pl, setup as su, tasks
 from .db import Store, now
 
 MAX_RASTER_PX = 160
@@ -95,10 +95,11 @@ def eligible_palette(store: Store, device_id: int, lens_id: int | None, allowed_
         if kinds is not None and task not in kinds and tasks.key_suffix(s["task"], k["parameters"]):
             continue
         stocks = {g["material_id"] for g in s["context_groups"]}
+        time = engraving_time.of_recipe(k["parameters"])
         out.append({"id": k["id"], "key": k["parameters_key"], "stage": k["stage"], "questioned": k["questioned"], "parameters": k["parameters"],
                     "lab": s["lab"], "confidence": s["confidence"], "expected_delta_e": s["expected_delta_e"], "stability": s["stability"],
                     "observation_ids": s["observation_ids"], "doubt": k["doubt"], "mode": mode, "task": task,
-                    "material_id": stocks.pop() if len(stocks) == 1 else None})
+                    "material_id": stocks.pop() if len(stocks) == 1 else None, "time": time, "time_s_per_cm2": time["s_per_cm2"]})
     return out
 
 
@@ -183,31 +184,45 @@ def _threshold(store: Store, device_id: int, lens_id: int | None, value) -> floa
     return value
 
 
-def compute_matches(source_colors: list[dict], palette: list[dict], threshold: float, replacements: dict, exclusions: list) -> list[dict]:
-    """Each image colour against the palette (DEC-030). A match carries the titanium colour it was tested against with that
-    entry's confidence, expected colour error and stability (REQ-002, REQ-004): the screen shows them per match."""
+def _seconds(entry: dict) -> float:
+    """An entry's time per square centimetre for ordering: an unknown time counts as the slowest."""
+    return np.inf if entry.get("time_s_per_cm2") is None else entry["time_s_per_cm2"]
+
+
+def compute_matches(source_colors: list[dict], palette: list[dict], threshold: float, replacements: dict, exclusions: list,
+                    max_time: float | None = None) -> list[dict]:
+    """Each image colour against the palette (DEC-030, DEC-075). Among the entries whose expected colour error (distance to
+    the request plus the entry's own measured scatter) is within the threshold the fastest is chosen, the nearer of equally
+    fast ones; with none, the colour is unreachable and the nearest entry is the one tested and shown. ``max_time`` (seconds
+    per square centimetre) leaves slower entries, and those with no time per area, out of the automatic choice; the
+    operator's replacements may still name one. A match carries the titanium colour it was tested against with that
+    entry's confidence, expected colour error, stability (REQ-002, REQ-004) and time per square centimetre."""
     by_id = {e["id"]: e for e in palette}
+    candidates = [e for e in palette if max_time is None or (e.get("time_s_per_cm2") is not None and e["time_s_per_cm2"] <= max_time)]
     out = []
     for c in source_colors:
         m = {"source_key": c["key"], "source_lab": c["lab"], "status": None, "knowledge_id": None, "distance": None, "match_error": None,
-             "candidate_id": None, "titanium": None}
+             "candidate_id": None, "titanium": None, "time_s_per_cm2": None, "how": None}
         if c["key"] in exclusions:
             m["status"] = "excluded"
         elif c["key"] in replacements:
             e = by_id[replacements[c["key"]]]
-            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]), titanium=prediction_of(e))
+            m.update(status="replaced", knowledge_id=e["id"], distance=color.delta_e(e["lab"], c["lab"]), titanium=prediction_of(e),
+                     time_s_per_cm2=e.get("time_s_per_cm2"), how="replaced")
             m["match_error"] = m["distance"] + e["expected_delta_e"]
-        elif not palette:
+        elif not candidates:
             m["status"] = "unreachable"
         else:
-            e = min(palette, key=lambda p: (color.delta_e(p["lab"], c["lab"]), p["id"]))
-            dist = color.delta_e(e["lab"], c["lab"])
-            err = dist + e["expected_delta_e"]  # DEC-030: distance to the request plus the entry's own measured scatter
-            m.update(distance=dist, match_error=err, candidate_id=e["id"], titanium=prediction_of(e))
-            if err <= threshold:
-                m.update(status="matched", knowledge_id=e["id"])
+            scored = [(e, color.delta_e(e["lab"], c["lab"])) for e in candidates]
+            within = [(e, d) for e, d in scored if d + e["expected_delta_e"] <= threshold]
+            if within:
+                e, dist = min(within, key=lambda pair: (_seconds(pair[0]), pair[1], pair[0]["id"]))
+                m.update(status="matched", knowledge_id=e["id"], how="fastest_within_threshold")
             else:
-                m["status"] = "unreachable"
+                e, dist = min(scored, key=lambda pair: (pair[1], pair[0]["id"]))
+                m.update(status="unreachable", how="nearest")
+            m.update(distance=dist, match_error=dist + e["expected_delta_e"], candidate_id=e["id"], titanium=prediction_of(e),
+                     time_s_per_cm2=e.get("time_s_per_cm2"))
         out.append(m)
     return out
 
@@ -223,11 +238,13 @@ def _register_targets(store: Store, device_id: int, lens_id: int | None, plan_id
 
 def start_discrete(store: Store, device_id: int, lens_id: int | None, image_bytes: bytes, width_mm: float, name: str,
                    threshold=None, markers: bool = False, max_colors: int = MAX_COLORS, task: str | None = None,
-                   goals: dict | None = None) -> int:
-    """A discrete plan records its engraving task (REQ-020): a colour image unless the operator says it is flat filled areas."""
+                   goals: dict | None = None, max_time: float | None = None) -> int:
+    """A discrete plan records its engraving task (REQ-020): a colour image unless the operator says it is flat filled areas.
+    ``max_time`` is the longest engraving time per square centimetre its automatic matching may choose (DEC-075)."""
     lens = su.lens_snapshot(su.resolve(store, device_id, lens_id))
     engraving_task = tasks.chosen_or_default(task, tasks.CONVERSION_TASK["discrete"], goals)
     thr = _threshold(store, device_id, lens_id, threshold)
+    limit = colormap.time_limit(max_time)
     if not (name or "").strip():
         raise ConversionError("give the plan a name")
     if not 1 <= max_colors <= MAX_COLORS:
@@ -240,7 +257,7 @@ def start_discrete(store: Store, device_id: int, lens_id: int | None, image_byte
     labels_path = store.data_dir / "files" / f"labels-{uuid.uuid4().hex[:12]}.npy"
     np.save(labels_path, labels.astype(np.int16))
     data = {"image_path": _store_image(store, image_bytes), "labels_path": str(labels_path), "size_mm": {"width": float(width_mm), "height": h_mm},
-            "px_mm": px_mm, "threshold": thr, "source_colors": source, "replacements": {}, "exclusions": [], "allowed_questioned": [],
+            "px_mm": px_mm, "threshold": thr, "max_time": limit, "source_colors": source, "replacements": {}, "exclusions": [], "allowed_questioned": [],
             "matches": [], "layers": [], "markers": _plan_markers(identifier, markers, float(width_mm), h_mm, store),
             "marker_layer": pl.marker_layer_settings(store) if markers else None, "lens": lens, "engraving_task": engraving_task}
     with store.transaction():
@@ -249,15 +266,21 @@ def start_discrete(store: Store, device_id: int, lens_id: int | None, image_byte
         return update_discrete(store, plan_id)
 
 
+UNCHANGED = object()
+
+
 def update_discrete(store: Store, plan_id: int, threshold=None, replacements: dict | None = None, exclusions: list | None = None,
-                    allowed_questioned: list | None = None) -> int:
-    """Re-match after a change. Any change returns the plan to Draft: it must be finalised again."""
+                    allowed_questioned: list | None = None, max_time=UNCHANGED) -> int:
+    """Re-match after a change. Any change returns the plan to Draft: it must be finalised again. ``max_time`` None removes
+    the time limit of the automatic matching; left out, the plan keeps its own."""
     plan = pl.get_plan(store, plan_id)
     if plan["mode"] != pl.MODE_DISCRETE:
         raise ConversionError("this is not a discrete color plan")
     partition = (plan["device_id"], plan["lens_id"])
     if threshold is not None:
         plan["threshold"] = _threshold(store, *partition, threshold)
+    if max_time is not UNCHANGED:
+        plan["max_time"] = colormap.time_limit(max_time)
     keys = {c["key"] for c in plan["source_colors"]}
     if exclusions is not None:
         if not set(exclusions) <= keys:
@@ -273,7 +296,8 @@ def update_discrete(store: Store, plan_id: int, threshold=None, replacements: di
         plan["replacements"] = {k: int(v) for k, v in replacements.items()}
     # a replacement or allowance that is no longer eligible falls back to automatic matching
     plan["replacements"] = {k: v for k, v in plan["replacements"].items() if v in {e["id"] for e in palette}}
-    plan["matches"] = compute_matches(plan["source_colors"], palette, plan["threshold"], plan["replacements"], plan["exclusions"])
+    plan["matches"] = compute_matches(plan["source_colors"], palette, plan["threshold"], plan["replacements"], plan["exclusions"],
+                                      plan.get("max_time"))
     plan["layers"] = []
     plan["questioned_available"] = [e["id"] for e in eligible_palette(store, *partition, include_questioned_warning=True) if e["questioned"]]
     _persist(store, plan, ST_DRAFT, plan["markers_enabled"])

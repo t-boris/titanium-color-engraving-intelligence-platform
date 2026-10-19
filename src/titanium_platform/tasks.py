@@ -76,7 +76,7 @@ TEST_TYPE_TASK = {"small_patches": "fill", "calibration": "fill", "hatch_interva
 MATRIX_GEOMETRY_TASK = {"line": "line", "fill": "fill", "text": "text", "vector_text": "text"}
 # the main task of a vector job by its tracing strategy, and the task of a traced region by its own (vectorize.TASKS): a colour,
 # fill or tonal region is a filled area judged by its colour or lightness
-VECTOR_STRATEGY_TASK = {"color": "color_image", "fill": "fill", "text": "text", "line": "line"}
+VECTOR_STRATEGY_TASK = {"photo": "color_image", "color": "color_image", "fill": "fill", "text": "text", "line": "line"}
 VECTOR_REGION_TASK = {"color": "fill", "fill": "fill", "tonal": "fill", "text": "text", "line": "line"}
 CONVERSION_TASK = {"discrete": "color_image", "tonal": "tonal_image", "color_path": "color_image"}
 # recipes an area conversion may fill with: measured as areas, never as text or lines

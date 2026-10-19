@@ -473,7 +473,10 @@ const IngestReview = (() => {
     const readings = (obj) => Object.entries(obj || {}).map(([k, v]) => `${+k + 1}: ${(v || []).join(' / ') || '—'}`).join(' · ');
     const others = (m.others || []);
     return h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Матрица параметров'), h('span', {class: 'spacer'}),
-        m.confirmed ? pill('параметры подтверждены', 'ok') : pill('параметры ждут подтверждения', 'warn')),
+        m.confirmed ? pill(m.confirmed_at ? `параметры подтверждены ${stamp(m.confirmed_at)}` : 'параметры подтверждены', 'ok') : pill('параметры ждут подтверждения', 'warn')),
+      // the generated file is a record of what the photograph and the operator said, never evidence of its own (REQ-036)
+      h('p', {class: 'muted small'}, 'Настройки ячеек восстановлены по фотографии матрицы и подтверждаются оператором; файл LightBurn этой пары создан из них '
+        + 'и не является исходным файлом. В наблюдениях они записываются как восстановление, подтверждённое оператором.'),
       h('p', {class: 'small'}, `Сетка ${m.cols} × ${m.rows}; очертания найдены у ${m.outlined_cells} ячеек, остальные достроены по решётке. `
         + `Подписи строк: прочитано ${fit.y.read ?? 0}, согласуются ${fit.y.agreeing ?? 0}; подписи столбцов: прочитано ${fit.x.read ?? 0}, согласуются ${fit.x.agreeing ?? 0}. `
         + 'Значения по осям LightBurn делит равномерно между первым и последним, поэтому неверно прочитанная подпись восстанавливается по остальным.'

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "titanium-color-engraving-platform"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local closed-loop platform that learns laser parameter to titanium color relations and produces LightBurn engraving plans."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,7 +32,7 @@ titanium-research-mcp = "titanium_platform.mcp_server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-titanium_platform = ["ui/*", "ui/screens/*"]
+titanium_platform = ["ui/*", "ui/screens/*", "models/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

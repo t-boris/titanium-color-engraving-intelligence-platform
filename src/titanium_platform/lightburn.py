@@ -14,9 +14,12 @@ Both are XML. The structure used here was observed in a real LightBurn 2.0 .lbrn
 * A ``SubLayer`` inside a layer is a further pass with its own settings; every nested setting is kept in
   ``source_settings``. A ``Group`` lists its shapes under ``Children``; a shape's own XForm is applied first, then that
   of every group above it. An ``Ellipse`` has ``Rx``/``Ry``; a ``Text`` with a ``BackupPath`` child is read as that path.
-  Shape types that are not read (a ``Text`` without outline, ...) are counted per layer in ``unsupported`` and
-  reported, never dropped silently (REQ-025). ``Ellipse`` follows the public description of the format
-  (lbrn2-to-svg); the ``BackupPath`` layout was checked on LightBurn 1.7 files.
+  A shape that yields no outline (a ``Text`` without outline, a flat ``Ellipse``, an empty ``Path``, a shape type the
+  reader does not know, ...) is counted per layer in ``unsupported`` and reported, never dropped silently (REQ-025,
+  REQ-036). ``Ellipse`` follows the public description of the format (lbrn2-to-svg); the ``BackupPath`` layout was
+  checked on LightBurn 1.7 files.
+* Every setting tag is kept in ``source_settings`` and takes part in the recipe; a tag outside ``KNOWN_SETTINGS`` is
+  also listed per layer in ``unknown_settings``, so the operator sees that this version keeps it without interpreting it.
 
 The file does not record focus or material batch. A missing pass-count tag means LightBurn's default of one pass.
 Unreadable layer parameters are reported, never replaced by guesses (REQ-015).
@@ -33,6 +36,15 @@ _HANDLE_TAG = re.compile(r"(c0x|c0y|c1x|c1y)")
 _PRIMITIVE = re.compile(r"([LB])(\d+) (\d+)")
 _BITMAP_NOT_A_SETTING = ("Type", "CutIndex", "CutOrder", "W", "H", "Data", "File", "SourceHash")
 FLATNESS_MM = 0.01   # a flattened Bezier deviates from its curve by less than this (REQ-023)
+# Layer setting tags this reader knows: the ones it reads into named settings or into the description of an image layer,
+# the run order, sub-layers, wobble, the picture processing gathered from image objects, and the further LightBurn tags found
+# in the operator's files and in the files this system writes, which are kept with the recipe as they are (DEC-051).
+KNOWN_SETTINGS = frozenset((
+    "index", "name", "maxPower", "minPower", "speed", "frequency", "QPulseWidth", "interval", "numPasses", "passes",
+    "globalRepeat", "bidir", "crossHatch", "angle", "anglePerPass", "priority", "SubLayer", "bitmaps",
+    "ditherMode", "dpi", "dotWidth", "useDotCorrection", "cleanupPass", "wobbleEnable", "wobbleStep", "wobbleSize",
+    "maxPower2", "tabCount", "tabCountMax", "scanOpt", "floodFill", "hide", "subname", "suboutput",
+    "OverrideGalvoTimings", "LaserOn_TC", "LaserOff_TC", "End_TC", "Polygon_TC", "JumpSpeed"))
 
 
 class LightBurnError(ValueError):
@@ -84,6 +96,7 @@ class Layer:
     regions: list[Region] = field(default_factory=list)
     unreadable: list[str] = field(default_factory=list)
     unsupported: dict = field(default_factory=dict)      # shape type -> how many objects of it are not read
+    unknown_settings: list[str] = field(default_factory=list)   # setting tags outside KNOWN_SETTINGS, kept but not interpreted
 
     @property
     def readable(self) -> bool:
@@ -135,6 +148,7 @@ class Layer:
             "readable": self.readable, "unreadable": list(self.unreadable),
             "regions": [r.as_dict() for r in self.regions],
             **({"unsupported": dict(self.unsupported)} if self.unsupported else {}),
+            **({"unknown_settings": list(self.unknown_settings)} if self.unknown_settings else {}),
         }
 
 
@@ -505,6 +519,7 @@ def parse_bytes(data: bytes) -> Project:
         global_passes = _number(el, "globalRepeat", problems, False)
         if global_passes is not None and (int(global_passes) != global_passes or global_passes < 1):
             problems.append(f"globalRepeat: expected a positive integer, got {global_passes:g}")
+        settings = _settings(el, skip=("index", "name"))
         layers[index] = Layer(
             index=index,
             name=_value(el, "name") or f"C{index:02d}",
@@ -519,8 +534,9 @@ def parse_bytes(data: bytes) -> Project:
             bidirectional=_flag(el, "bidir", True), cross_hatch=_flag(el, "crossHatch", False),
             scan_angle=_number(el, "angle", problems, False) or 0.0,
             angle_increment=_number(el, "anglePerPass", problems, False) or 0.0,
-            source_settings=_settings(el, skip=("index", "name")),
+            source_settings=settings,
             unreadable=problems,
+            unknown_settings=sorted(tag for tag in settings if tag not in KNOWN_SETTINGS),
         )
 
     bitmaps: dict[int, list[dict]] = {}
@@ -536,7 +552,7 @@ def parse_bytes(data: bytes) -> Project:
         found = _regions(shape, parent)
         layer.regions.extend(found)
         kind = shape.get("Type", "")
-        if not found and kind not in ("Rect", "Bitmap", "Path"):
+        if not found:           # no outline to measure, whatever the type: counted, never dropped silently
             layer.unsupported[kind] = layer.unsupported.get(kind, 0) + 1
         if kind == "Bitmap":     # image processing settings of an image object are part of its layer's recipe
             attrs = {k: v for k, v in shape.attrib.items() if k not in _BITMAP_NOT_A_SETTING}

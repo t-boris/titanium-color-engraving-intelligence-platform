@@ -63,6 +63,10 @@ REQUIRED_SETTINGS = {"power": ("maxPower", "power"), "frequency": ("frequency", 
                      "pulse_width": ("QPulseWidth", "pulse_width"), "line_interval": ("interval", "line_interval"),
                      "passes": ("numPasses", "passes")}
 SUPPLIED_BY = "operator"
+# The settings of a cell of a photographed parameter matrix: read from the photograph and confirmed by the operator; the
+# LightBurn file of such a pair is generated from them, so it is never evidence of its own (REQ-036, DEC-061, DEC-072).
+RECONSTRUCTED = "reconstruction"
+RECONSTRUCTED_FROM = "photographed parameter matrix"
 
 
 class IngestError(ValueError):
@@ -454,7 +458,7 @@ def _detect_matrices(store: Store, photo_name: str, photo_bytes: bytes) -> dict:
 
 def _matrix_record(grid: dict, detection: dict, index: int) -> dict:
     others = [g for k, g in enumerate(detection["grids"]) if k != index]
-    return {**grid, "confirmed": False, "grid_index": index, "grids_in_photo": len(detection["grids"]),
+    return {**grid, "confirmed": False, "confirmed_at": None, "grid_index": index, "grids_in_photo": len(detection["grids"]),
             "ocr": detection["ocr"], "squares": detection["squares"], "others": [{**g, "created_pair_id": None} for g in others]}
 
 
@@ -539,7 +543,7 @@ def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False)
         if spec["missing"]:
             raise IngestError("the matrix settings are incomplete: " + "; ".join(spec["missing"]))
         require_matrix_steps(su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"], record)
-        record["confirmed"] = True
+        record.update(confirmed=True, confirmed_at=now())
     title = matrix.title(spec, row["photo_name"])
     Path(row["lightburn_path"]).write_bytes(matrix.lightburn_bytes(spec, record["cols"], record["rows"]))
     pair["matrix"] = record
@@ -570,7 +574,7 @@ def confirm_matrix(store: Store, pair_id: int) -> None:
     if record["spec"]["missing"]:
         raise IngestError("the matrix settings are incomplete: " + "; ".join(record["spec"]["missing"]))
     require_matrix_steps(su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"], record)
-    record["confirmed"] = True
+    record.update(confirmed=True, confirmed_at=now())
     pair["matrix"] = record
     _save(store, pair_id, pair)
     store.audit("matrix_settings_confirmed", pair_id=pair_id)
@@ -585,7 +589,8 @@ def _matrix_for_rephoto(store: Store, source: dict, photo_name: str, photo_bytes
     if not same:
         raise IngestError(f"no {old['cols']} x {old['rows']} matrix was found in the new photograph")
     grid = {**same[0], "spec": {**old["spec"], "cell_fraction": same[0]["spec"].get("cell_fraction", old["spec"].get("cell_fraction"))}}
-    return {**_matrix_record(grid, detection, detection["grids"].index(same[0])), "confirmed": old.get("confirmed", False)}
+    return {**_matrix_record(grid, detection, detection["grids"].index(same[0])), "confirmed": old.get("confirmed", False),
+            "confirmed_at": old.get("confirmed_at")}
 
 
 def create_alignment_revision(store: Store, source_pair_id: int) -> int:
@@ -803,6 +808,8 @@ def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) 
             notes += [f"not comparable within this laser and lens: {m}" for m in problems]
     for kind, count in sorted(layer.unsupported.items()):
         notes.append(f"{count} {kind} objects on this layer are not read: no outline geometry")
+    if layer.unknown_settings:      # kept with the recipe, so they still separate recipes, but nothing here interprets them
+        notes.append(f"settings unknown to this version are kept with the recipe but not interpreted: {', '.join(layer.unknown_settings)}")
     if not layer.regions:
         compatible = False
         notes.append("the layer has no fill geometry")
@@ -2252,8 +2259,11 @@ def set_task(store: Store, pair_id: int, layer_index: int | None, kind: str | No
 
 # -- acceptance ----------------------------------------------------------------------------------------
 def settings_provenance(rep: dict) -> dict:
-    """Where each required setting of a layer report comes from: "file", "operator" (supplied explicitly, REQ-016) or
+    """Where each required setting of a layer report comes from: "file", "operator" (supplied explicitly, REQ-016),
+    "reconstruction" (a cell of a photographed parameter matrix: its generated file holds what the operator confirmed) or
     None (unknown)."""
+    if rep.get("matrix_cell") is not None:
+        return {k: RECONSTRUCTED if rep.get(field) is not None else None for k, (_, field) in REQUIRED_SETTINGS.items()}
     supplied = rep.get("supplied_settings") or {}
     return {k: "file" if rep.get(field) is not None else SUPPLIED_BY if k in supplied else None
             for k, (_, field) in REQUIRED_SETTINGS.items()}
@@ -2336,7 +2346,10 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                         "line_metrics": rep.get("line_metrics"), "parameter_error": param_error,
                         "matrix_cell": rep.get("matrix_cell"), "task": rep.get("task") or layer_task(pair, plan, rep),
                         # which settings the file holds and which the operator supplied, with who and when (REQ-016)
-                        "settings_provenance": settings_provenance(rep), "supplied_settings": rep.get("supplied_settings") or None}
+                        "settings_provenance": settings_provenance(rep), "supplied_settings": rep.get("supplied_settings") or None,
+                        # a matrix cell: who confirmed the reconstructed settings and when (REQ-036, DEC-061)
+                        "reconstruction": {"from": RECONSTRUCTED_FROM, "confirmed_by": SUPPLIED_BY,
+                                           "confirmed_at": pair["matrix"].get("confirmed_at")} if rep.get("matrix_cell") else None}
             # Cleaning, registration markers and engraved labels are kept as evidence and shown, but they are operations of
             # the plate, not test settings: they never feed the model or knowledge (DEC-027, DEC-028, DEC-045).
             test_feature = rep.get("role", "test feature") == "test feature"

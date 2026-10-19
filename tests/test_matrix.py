@@ -131,6 +131,7 @@ def test_the_generated_lightburn_file_holds_one_layer_per_cell_with_its_full_set
     assert cell.power == pytest.approx(work["x_values"][4]) and cell.speed == pytest.approx(work["y_values"][2])
     assert cell.frequency_khz == pytest.approx(330.0) and cell.pulse_width == 4.0 and cell.line_interval == 0.003 and cell.passes == 1
     assert len(cell.regions) == 1 and cell.regions[0].kind == "rect"
+    assert all(layer.unknown_settings == [] and not layer.unsupported for layer in project.layers)   # nothing to report (REQ-036 AC3)
     x, y = mx.cell_centre_mm(spec, 5, 4, 2)
     assert cell.regions[0].x + cell.regions[0].width / 2 == pytest.approx(x, abs=1e-3)
     assert cell.regions[0].y + cell.regions[0].height / 2 == pytest.approx(y, abs=1e-3)
@@ -193,6 +194,35 @@ def test_a_photographed_matrix_becomes_one_confirmed_observation_per_cell(world)
     params, evidence = json.loads(obs["parameters_json"]), json.loads(obs["evidence_json"])
     assert params["power"] == pytest.approx(40.0) and params["speed"] == pytest.approx(600.0) and params["pulse_width"] == 4.0
     assert evidence["matrix_cell"]["col"] == 2 and evidence["matrix_cell"]["row"] == 1 and obs["model_eligible"] == 1
+
+
+def test_the_settings_of_a_matrix_cell_are_an_operator_confirmed_reconstruction_never_file_evidence(world):
+    """REQ-036 AC8, DEC-072: the generated LightBurn file only records what the photograph and the operator said, so the
+    observation names its settings a reconstruction confirmed by the operator, with when, and never "file"."""
+    store, laser, material = world
+    work = synth.material_test(cols=3, rows=2, x_values=[20.0, 30.0, 40.0], y_values=[900.0, 300.0])
+    pid = ig.create_matrix_pair(store, device_id=laser["id"], lens_id=None, photo_name="m.png",
+                                photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(), context={"material_id": material["id"]})
+    complete = {"x": {"param": "power", "first": 20, "last": 40}, "y": {"param": "speed", "first": 900, "last": 300},
+                "fixed": {"frequency": 330, "pulse_width": 4, "line_interval": 0.003, "passes": 1}}
+    ig.update_matrix(store, pid, complete)
+    assert ig.get_pair(store, pid)["matrix"].get("confirmed_at") is None
+    ig.confirm_matrix(store, pid)
+    confirmed_at = ig.get_pair(store, pid)["matrix"]["confirmed_at"]
+    assert confirmed_at
+    ig.update_matrix(store, pid, complete)                     # a correction withdraws the confirmation and its time
+    assert ig.get_pair(store, pid)["matrix"]["confirmed_at"] is None
+    ig.update_matrix(store, pid, complete, confirm=True)
+    confirmed_at = ig.get_pair(store, pid)["matrix"]["confirmed_at"]
+    assert confirmed_at
+    ig.review_masks(store, pid)
+    ig.accept_pair(store, pid)
+    rows = store.query("SELECT evidence_json FROM observation WHERE pair_id=?", (pid,))
+    assert len(rows) == 6
+    for row in rows:
+        evidence = json.loads(row["evidence_json"])
+        assert set(evidence["settings_provenance"].values()) == {"reconstruction"}, evidence["settings_provenance"]
+        assert evidence["reconstruction"] == {"from": "photographed parameter matrix", "confirmed_by": "operator", "confirmed_at": confirmed_at}
 
 
 def test_an_unconfirmed_or_incomplete_matrix_is_never_accepted(world):

@@ -18,6 +18,23 @@ const ColorMap = (() => {
     p.speed == null ? null : `${num(p.speed, 0)} мм/с`, p.pulse_width == null ? 'Q-Pulse нет в файле' : `${num(p.pulse_width, 0)} нс`,
     p.line_interval == null ? null : `шаг ${num(p.line_interval, 4)} мм`, p.passes == null ? null : `${p.passes} проход(а)`].filter(Boolean).join(' · ');
   const when = (iso) => (iso || '').slice(0, 10);
+  // REQ-035, DEC-075: время гравировки рецепта — оценка по его настройкам; фильтр хранит секунды, показывает минуты:секунды
+  const mmss = (seconds) => { const t = Math.round(seconds); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+  const perArea = (s) => (s < 60 ? `${num(s, 1)} с` : `${mmss(s)} мин`);
+  function timeText(p) {
+    const note = p.time && p.time.note ? ` · ${I18N.tr(p.time.note)}` : '';
+    if (p.time_s_per_cm2 != null) return `время ≈ ${perArea(p.time_s_per_cm2)} на см² (оценка)${note}`;
+    if (p.time_s_per_cm != null) return `время ≈ ${num(p.time_s_per_cm, 2)} с на см линии (оценка)${note}`;
+    return `время не оценить: ${I18N.tr((p.time && p.time.note) || '')}`;
+  }
+  /** «Не дольше … мин/см²»: минуты:секунды («1:30») или минуты числом («0.5»); пусто — без ограничения (null), ошибка — NaN. */
+  function parseLimit(text) {
+    const s = String(text || '').trim().replace(',', '.');
+    if (!s) return null;
+    const m = s.match(/^(\d+):([0-5]?\d)$/);
+    const seconds = m ? +m[1] * 60 + +m[2] : /^\d*\.?\d+$/.test(s) ? +s * 60 : NaN;
+    return seconds > 0 ? seconds : NaN;
+  }
   const colours = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'цвет' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'цвета' : 'цветов'}`;
   const times = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'раз' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'раза' : 'раз'}`;
 
@@ -117,18 +134,19 @@ const ColorMap = (() => {
         ' · ', link('/experiment/' + encodeURIComponent(p.experiment), p.title),
         ' · ', p.provisional ? link(p.review, 'проверка пары: принять или исправить') : link(`/analysis/${p.pair_id}`, 'разбор измерений')),
       h('p', {class: 'muted'}, [p.setup_label, p.material, `фото ${p.photo}`, when(p.date)].filter(Boolean).join(' · ')),
-      h('p', {}, settings(p.parameters)));
+      h('p', {}, settings(p.parameters)), h('p', {class: 'muted'}, timeText(p)));
   }
 
   async function render(ctx) {
     const state = JSON.parse(sessionStorage.getItem('color-map') || '{}');
     const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', task: state.task || '', hide: !!state.hide,
-      within: !!state.within, provisional: !!state.provisional};
+      within: !!state.within, provisional: !!state.provisional, maxTime: state.maxTime || null, tolerance: state.tolerance ?? ''};
     const q = new URLSearchParams();
     if (f.setup) q.set('setup', f.setup);
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
     if (f.task) q.set('task', f.task);                 // REQ-020: цвета одной задачи гравировки
+    if (f.maxTime) q.set('max_time_s_per_cm2', f.maxTime);   // REQ-035: не дольше заданного времени на см², в секундах
     if (f.hide) q.set('include_unreferenced', 'false');
     const data = await get('/colors' + (q.toString() ? '?' + q : ''));
     // the laser and lens chosen in the filter: the film model, its laws and computed settings are theirs alone
@@ -149,7 +167,7 @@ const ColorMap = (() => {
     let target = state.target || null, picked = null;
     const results = h('div', {class: 'stack'}), detail = h('div', {class: 'card stack', hidden: true}), plotBox = h('div', {});
     const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
-      detail.replaceChildren(h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
+      fill(detail, h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
         h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
         p.referenced ? null : pill('как снято, без привязки', 'warn')), where(p), filmOf(p, model),
         btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked, plane,
@@ -160,6 +178,8 @@ const ColorMap = (() => {
       sessionStorage.setItem('color-map', JSON.stringify({...f, target}));
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
       for (const k of ['setup', 'material', 'measurement', 'task']) if (f[k]) p.set(k, f[k]);
+      if (f.maxTime) p.set('max_time_s_per_cm2', f.maxTime);
+      if (f.tolerance !== '') p.set('tolerance_de', f.tolerance);
       if (f.within) p.set('include_unreferenced', 'true');
       if (f.provisional) p.set('include_provisional', 'true');
       const [r, film] = await Promise.all([get('/colors/search?' + p),
@@ -176,9 +196,17 @@ const ColorMap = (() => {
         (m.observation_ids || []).length ? ` · наблюдения №${m.observation_ids.join(', №')}` : '',
         (m.provisional_checks || []).length ? ` · проверки на рассмотрении №${m.provisional_checks.join(', №')}` : '',
         ...(m.missing_context || []).length ? [' · не хватает: ', ...Tasks.missing(m.missing_context)] : []);
+      // DEC-075: внутри допуска ΔE первыми идут самые быстрые рецепты; сервер говорит, как упорядочен ответ
+      const o = r.order || {};
+      const order = o.by === 'time_within_tolerance'
+        ? `Внутри допуска ΔE ${num(o.tolerance_de, 1)}${o.tolerance_source === 'rules' ? ' (из правил лазера и линзы)' : ''} рецептов: ${o.within_tolerance}; `
+          + 'среди них первыми идут самые быстрые по оценке времени, остальные — по расстоянию.'
+        : 'Допуск ΔE не задан: записи идут по расстоянию. Задайте допуск, и среди близких цветов первыми пойдут самые быстрые.';
       fill(results, h('h3', {}, 'Где встречался такой цвет'), h('p', {class: 'muted small'}, 'Измерения, не прогноз: каждая запись — один рецепт одной задачи гравировки.'),
+        h('p', {class: 'small'}, order),
         !r.matches.length ? h('p', {class: 'muted'}, 'Подходящих цветов пока нет.') : h('div', {class: 'stack'}, ...r.matches.map((m) => h('article', {class: 'card stack color-hit'},
           h('div', {class: 'row'}, swatch(m.display_lab), h('strong', {}, `ΔE ${num(m.distance, 1)}`), pill(...KIND[m.measurement]),
+            m.within_tolerance ? pill('в допуске', 'ok') : null,
             m.approximate ? pill(m.referenced ? 'к чистому титану, условный оттенок' : 'как снят, без привязки', 'warn') : null,
             m.provisional ? pill('предварительно', 'warn') : null,
             h('span', {class: 'muted small'}, often(m))),
@@ -187,6 +215,8 @@ const ColorMap = (() => {
           btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
         r.counts.provisional && !f.provisional ? h('div', {class: 'alert warn'}, `${colours(r.counts.provisional)} из проверок, которые ещё не приняты, в поиске не участвуют: они предварительные. `,
           btn('Искать и среди предварительных', () => remember({provisional: true}), 'btn-small')) : null,
+        r.counts.slower && f.maxTime ? h('div', {class: 'alert warn'}, `${colours(r.counts.slower)} дольше ${mmss(f.maxTime)} мин на см² или без оценки времени на площадь в поиске не участвуют. `,
+          btn('Снять ограничение времени', () => remember({maxTime: null}), 'btn-small')) : null,
         film ? h('div', {class: 'stack'}, pill('Прогноз модели, не измерение', 'warn'), filmCard(film)) : null);
     }
     const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(hexToLab(e.target.value))});
@@ -194,6 +224,15 @@ const ColorMap = (() => {
     const A = h('input', {type: 'number', step: 'any', value: target ? target[1] : 5, 'aria-label': 'a'});
     const B = h('input', {type: 'number', step: 'any', value: target ? target[2] : 15, 'aria-label': 'b'});
     const chip = h('span', {});
+    // DEC-075: внутри допуска ΔE поиск ставит первыми самые быстрые рецепты; пусто — допуск из правил выбранного лазера и линзы
+    const tolerance = h('input', {type: 'number', step: 'any', min: 0, value: f.tolerance, placeholder: 'из правил', 'aria-label': 'Допуск ΔE',
+      onChange: (e) => { f.tolerance = e.target.value.trim(); if (target) setTarget(target); }});
+    const maxTime = h('input', {type: 'text', inputmode: 'decimal', placeholder: 'м:сс', value: f.maxTime ? mmss(f.maxTime) : '',
+      'aria-label': 'Не дольше, минут:секунд на квадратный сантиметр', onChange: (e) => {
+        const seconds = parseLimit(e.target.value);
+        if (Number.isNaN(seconds)) App.toast('Введите время как минуты:секунды (например 0:30) или минуты числом', 'bad');
+        else remember({maxTime: seconds});
+      }});
     const find = btn('Найти', () => setTarget([+L.value, +A.value, +B.value]), 'primary');
     drawPlot();
     if (target) setTarget(target);
@@ -209,11 +248,15 @@ const ColorMap = (() => {
         select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         select('Задача', 'task', data.options.tasks || [], f.task, Object.fromEntries((data.options.tasks || []).map((k) => [k, Tasks.name(k)]))),
+        h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime),
         h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
           'Скрыть цвета без чистого титана на снимке')),
         h('p', {class: 'muted small'}, `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}`
           + (data.counts.unreferenced && !f.hide ? ` · из них без привязки к чистому титану ${data.counts.unreferenced}` : '')
-          + (data.counts.provisional ? ` · предварительных (проверка ещё не принята) ${data.counts.provisional}` : '') + '. '
+          + (data.counts.provisional ? ` · предварительных (проверка ещё не принята) ${data.counts.provisional}` : '')
+          + (data.counts.slower ? ` · скрыто как более долгие (или без оценки времени на площадь) ${data.counts.slower}` : '') + '. '
+          + 'Время гравировки — оценка по настройкам рецепта: 100 / (скорость × шаг строк) с на см² за проход и разворот на каждой строке, '
+          + 'умноженные на проходы, повторы и на 2 при перекрёстной штриховке; частота и длительность импульса на время не влияют. '
           + (data.counts.provisional ? 'Предварительные цвета обведены сиреневым штрихом и ведут к проверке пары; в прогнозы они не входят, а в поиск — только по отдельной просьбе, пока проверка не принята. ' : '')
           + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
           + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')),
@@ -228,7 +271,7 @@ const ColorMap = (() => {
           plotBox, detail),
         h('div', {class: 'card stack'}, h('h3', {}, 'Какой цвет нужен'),
           h('div', {class: 'row'}, picker, chip), h('div', {class: 'grid g3'}, h('label', {class: 'f'}, h('span', {}, 'L (0–100)'), L), h('label', {class: 'f'}, h('span', {}, 'a'), A),
-            h('label', {class: 'f'}, h('span', {}, 'b'), B)), find,
+            h('label', {class: 'f'}, h('span', {}, 'b'), B)), h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance), find,
           h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».'), results)));
   }
   return {render, hexToLab};

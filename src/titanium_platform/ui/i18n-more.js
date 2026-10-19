@@ -79,6 +79,7 @@ I18N.add([
   [/^the orientation of the work is ambiguous: the best and the second best differ too little$/i,
     'Ориентация работы неоднозначна: лучший и следующий варианты почти не отличаются'],
   [/^only (\d+) elements matched the photograph$/i, (m) => `С фотографией совпали только ${m[1]} элементов`],
+  [/^fewer than four elements matched the photograph$/i, 'С фотографией совпали меньше четырёх элементов'],
   [/^the matched elements disagree about the position of the work$/i, 'Совпавшие элементы расходятся в оценке положения работы'],
   [/^the outlines do not fit closely enough \((.+) mm median\)$/i, (m) => `Контуры совпадают недостаточно точно (медиана ${m[1]} мм)`],
   [/^the matched elements are concentrated in one part of the work$/i, 'Совпавшие элементы сосредоточены в одной части работы'],

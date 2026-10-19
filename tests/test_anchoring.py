@@ -205,3 +205,76 @@ def test_overlapping_outlines_that_are_painted_over_are_still_registered_or_refu
     px = cv2.perspectiveTransform(grid[None], clouds["mm_to_px"])[0]
     back = cv2.perspectiveTransform(px[None], result.image_to_mm.astype(np.float32))[0]
     assert np.linalg.norm(back - grid, axis=1).max() < 0.5
+
+
+# -- REQ-038 AC4: every gate refuses on its own (the ambiguous orientation: test_a_drawing_whose_orientation_cannot_be_told_is_refused)
+def few_anchor_work() -> dict:
+    """Six distinctive shapes are seen; 62 small ones of the file left no visible mark. The photograph supports the
+    drawing well enough to find it, but only six of its 68 elements can be anchors, fewer than the seven (a tenth) needed."""
+    rng = np.random.default_rng(21)
+    spots = [(35, 40), (90, 30), (140, 45), (40, 135), (95, 140), (135, 120)]
+    seen = [(1 + i % 4, synth.cloud(x, y, 14, 30 + i, 160)) for i, (x, y) in enumerate(spots)]
+    unseen = [(5, synth.cloud(rng.uniform(20, 150), rng.uniform(60, 110), 2.7, 200 + i, 40)) for i in range(62)]
+    return synth.framed_work(style="none", extra=seen + unseen, unseen_layers=(5,))
+
+
+def clustered_work() -> dict:
+    """Sixteen small shapes in one corner are seen; four shapes spread over the rest of the plate left no visible mark."""
+    rng = np.random.default_rng(11)
+    seen = [(1 + i % 4, synth.cloud(22 + 9 * (i % 4) + rng.uniform(-1.5, 1.5), 22 + 9 * (i // 4) + rng.uniform(-1.5, 1.5),
+                                    rng.uniform(2.8, 3.6), 100 + i, 60)) for i in range(16)]
+    unseen = [(5, synth.cloud(x, y, 5, seed, 60)) for x, y, seed in ((135, 135, 7), (135, 35, 8), (35, 135, 9), (95, 95, 10))]
+    return synth.framed_work(style="none", extra=seen + unseen, unseen_layers=(5,))
+
+
+def bent_work(amplitude_mm: float) -> dict:
+    """The usual framed work on a plate that is not flat: a smooth displacement of ``amplitude_mm`` every 60 mm."""
+    work = synth.framed_work(seed=3, blobs=60)
+    return dict(work, photo=synth.warped(work["photo"], amplitude_mm * 9.5, 60 * 9.5))     # framed_work: 9.5 px/mm
+
+
+def refusal(work: dict) -> tuple[object, dict]:
+    layers = [layer for layer in lb.parse_bytes(work["lightburn"]).layers if layer.regions]
+    diagnostics = {}
+    return anchoring.register(work["photo"], layers, diagnostics), diagnostics
+
+
+def test_too_few_anchors_refuse_the_registration_although_the_drawing_and_its_orientation_are_found():
+    result, diagnostics = refusal(few_anchor_work())
+    assert result is None and diagnostics["refused"] == "only 6 elements matched the photograph", diagnostics.get("refused")
+    assert diagnostics["anchors"] == 6
+    assert diagnostics["orientation"]["margin"] < anchoring.ORIENTATION_MARGIN       # the orientation was clear: not that gate
+
+
+def test_when_no_pass_keeps_four_anchors_the_refusal_says_fewer_than_four_instead_of_zero(monkeypatch):
+    # a pass needs four anchors to fit; below that no count is kept, and "only 0 elements" would understate it
+    monkeypatch.setattr(anchoring, "_refine", lambda h, elements, dist, cap: (h, []))
+    result, diagnostics = refusal(few_anchor_work())
+    assert result is None and diagnostics["refused"] == "fewer than four elements matched the photograph", diagnostics.get("refused")
+
+
+def test_anchors_concentrated_in_one_part_of_the_work_refuse_the_registration():
+    result, diagnostics = refusal(clustered_work())
+    assert result is None and diagnostics["refused"] == "the matched elements are concentrated in one part of the work"
+    assert diagnostics["spread"] < anchoring.MIN_SPREAD
+    # enough anchors that agree closely: only their distribution failed
+    assert diagnostics["anchors"] >= 5 and diagnostics["inlier_fraction"] == 1.0
+    assert diagnostics["residual_median_mm"] <= anchoring.MAX_RESIDUAL_MM[0]
+
+
+def test_anchors_that_no_single_transform_fits_closely_refuse_the_registration():
+    """A residual over 0.2 mm between the anchors and one transform: RANSAC keeps as inliers only the anchors within
+    0.2 mm (the bound of the median residual), so on a bent plate the inlier gate is the one that refuses."""
+    result, diagnostics = refusal(bent_work(0.4))
+    assert result is None and diagnostics["refused"] == "the matched elements disagree about the position of the work"
+    assert diagnostics["anchors"] >= 5
+
+
+def test_the_residual_gate_refuses_anchors_that_fit_less_closely_than_its_bound(monkeypatch):
+    """The median residual of the inliers cannot exceed the RANSAC bound of 0.2 mm, which equals the gate, so the gate
+    itself is reached here only by lowering it (monkeypatched) under the 0.1 mm a slightly bent plate fits to."""
+    accepted, diagnostics = refusal(bent_work(0.15))
+    assert accepted is not None and 0.08 < diagnostics["residual_median_mm"] <= anchoring.MAX_RESIDUAL_MM[0], diagnostics
+    monkeypatch.setattr(anchoring, "MAX_RESIDUAL_MM", (0.08, 0.6))
+    result, diagnostics = refusal(bent_work(0.15))
+    assert result is None and diagnostics["refused"].startswith("the outlines do not fit closely enough")

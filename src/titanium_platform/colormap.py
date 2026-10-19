@@ -19,16 +19,21 @@ entry. An entry is observed evidence, never a prediction: it links its observati
 (re-photographs of one engraving count once, DEC-021) and photographs separately, says how far its engravings agree when
 there are several, and names the context it lacks (an unknown lens or batch, camera-relative or unreferenced colours,
 provisional checks, settings missing from the file).
+
+Every colour and every entry carries the estimated engraving time of its recipe (REQ-035, DEC-075): seconds per square
+centimetre, or per centimetre of path for a Line-mode recipe, labelled an estimate. The map can be narrowed to recipes no
+slower than a time per square centimetre, and within the delta E tolerance the search puts the fastest recipe first.
 """
 from __future__ import annotations
 
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 
-from . import color, experiments, ingest, lightburn as lb, model, tasks
+from . import color, engraving_time, experiments, ingest, lightburn as lb, model, tasks
 from . import setup as su
 from .db import Store
 
@@ -179,6 +184,25 @@ def _group(params: dict, info: dict, kind: str, referenced: bool, provisional: b
                      basis, "provisional" if provisional else "accepted", f"task:{task['kind']}"))
 
 
+def _time(params: dict) -> dict:
+    """The estimated engraving time of a point's recipe from its full settings (DEC-075)."""
+    time = engraving_time.of_recipe(params)
+    return {"time": time, "time_s_per_cm2": time["s_per_cm2"], "time_s_per_cm": time["s_per_cm"]}
+
+
+def time_limit(value) -> float | None:
+    """The longest time per square centimetre a filter allows, in seconds; None: no limit."""
+    if value is None:
+        return None
+    try:
+        limit = float(value)
+    except (TypeError, ValueError):
+        limit = math.nan
+    if not math.isfinite(limit) or limit <= 0:
+        raise su.ValidationError("the longest engraving time per square centimetre must be a positive number of seconds")
+    return limit
+
+
 def _task(task: dict) -> dict:
     """The task of a point: its kind and whether it was stated or derived from the layer."""
     return {"kind": task["kind"], "basis": task.get("basis", tasks.DERIVED)}
@@ -206,18 +230,22 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
             out.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],
                         "layer_name": f"{rep.get('name')} · серый {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
                         "referenced": referenced, "provisional": provisional, "lab": lab, "delta": None, "display_lab": display,
-                        "parameters": params, "source": "tonal", "task": task,
+                        "parameters": params, "source": "tonal", "task": task, **_time(params),
                         "observation_ids": [observations[rep.get("name")]] if rep.get("name") in (observations or {}) else [],
                         "group": _group(params, info, kind, referenced, provisional, task, tonal=True), **info})
     return out
 
 
 def collect(store: Store, include_unreferenced: bool = True, setup: str | None = None, material: str | None = None,
-            measurement: str | None = None, include_provisional: bool = True, task: str | None = None) -> dict:
+            measurement: str | None = None, include_provisional: bool = True, task: str | None = None,
+            max_time_s_per_cm2: float | None = None) -> dict:
     """Every colour of the map. Filters narrow the points (``setup`` is the key of a laser and lens, ``laser:1/lens:2``;
-    ``task`` an engraving task, REQ-020); the options and counts describe everything that exists."""
+    ``task`` an engraving task, REQ-020; ``max_time_s_per_cm2`` the longest estimated time per square centimetre, which
+    leaves out slower recipes and those with no time per area, counted as ``slower``, REQ-035); the options describe
+    everything that exists."""
     if task is not None:
         tasks.require(task)
+    limit = time_limit(max_time_s_per_cm2)
     refs = references(store)
     rows, witness, derived, nominal = refs["rows"], refs["witness"], refs["derived"], refs["nominal"]
     kept, names = experiments.kept_plan_ids(store), _names(store)
@@ -240,7 +268,8 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         points.append({"id": row["id"], "pair_id": row["pair_id"], "layer_index": row["layer_index"], "layer_name": evidence.get("layer_name"),
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "provisional": False, "lab": lab, "delta": delta,
                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
-                       "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **info})
+                       "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **_time(params),
+                       **info})
     first_row = {}
     for row in rows:
         first_row.setdefault(row["pair_id"], row)
@@ -260,6 +289,10 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
             materials.add(p["material"])
     shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["material"] == material)
              and (measurement is None or p["measurement"] == measurement) and (task is None or p["task"]["kind"] == task)]
+    slower = 0
+    if limit is not None:
+        fast = [p for p in shown if p["time_s_per_cm2"] is not None and p["time_s_per_cm2"] <= limit]
+        slower, shown = len(shown) - len(fast), fast
     provisional = sum(p["provisional"] for p in shown)
     if not include_provisional:
         shown = [p for p in shown if not p["provisional"]]
@@ -272,7 +305,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
                         "materials": sorted(materials), "tasks": [k for k in tasks.TASKS if k in kinds]},
             "counts": {"calibrated": sum(p["measurement"] == "calibrated" for p in shown),
                        "relative": sum(p["measurement"] == "relative" for p in shown), "unreferenced": unreferenced,
-                       "provisional": provisional}}
+                       "provisional": provisional, "slower": slower}}
 
 
 def _provisional_points(store: Store, names, kept: set[int], nominal: list[float]) -> list[dict]:
@@ -299,37 +332,87 @@ def _provisional_points(store: Store, names, kept: set[int], nominal: list[float
                         "layer_name": rep.get("name"), "measurement": kind, "approximate": approximate, "referenced": referenced,
                         "provisional": True, "lab": lab, "delta": [lab[i] - clean[i] for i in range(3)] if clean else None,
                         "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
-                        "observation_ids": [], "group": _group(params, info, kind, referenced, True, point_task), **info})
+                        "observation_ids": [], "group": _group(params, info, kind, referenced, True, point_task), **_time(params),
+                        **info})
         out += _tonal_points(pair["id"], check, info, kind, clean, nominal, True)
     return out
 
 
-def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced: bool = False, include_provisional: bool = False,
-           **filters) -> dict:
-    """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how many independent engravings gave it, in how
-    many photographs, and from which experiments. Colours without a clean reference and provisional colours are left out unless
-    asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
-    it came from, says how far its independent engravings agree when there are several, and names the context it lacks."""
-    data = collect(store, include_unreferenced=include_unreferenced, include_provisional=include_provisional, **filters)
-    best: dict[str, dict] = {}
-    for point in data["points"]:
-        distance = color.delta_e(lab, point["display_lab"])
-        entry = best.setdefault(point["group"], {"best": point, "distance": distance, "engravings": {}, "photographs": set(), "experiments": [],
-                                                 "observation_ids": [], "points": []})
+def by_recipe(points: list[dict]) -> dict[str, dict]:
+    """The points of each recipe (one entry of the search) with its evidence: the colours of each independent engraving (a
+    re-photograph counts once, DEC-021), its photographs, experiments and observations."""
+    out: dict[str, dict] = {}
+    for point in points:
+        entry = out.setdefault(point["group"], {"points": [], "engravings": {}, "photographs": set(), "experiments": [], "observation_ids": []})
+        entry["points"].append(point)
         entry["engravings"].setdefault(point["engraving_id"], []).append(point["display_lab"])
         entry["photographs"].add(point["pair_id"])
         entry["observation_ids"] += [i for i in point["observation_ids"] if i not in entry["observation_ids"]]
-        entry["points"].append(point)
         if point["experiment"] not in entry["experiments"]:
             entry["experiments"].append(point["experiment"])
-        if distance < entry["distance"]:
-            entry["best"], entry["distance"] = point, distance
-    ranked = sorted(best.values(), key=lambda e: e["distance"])[:limit]
+    return out
+
+
+def delta_tolerance(value) -> float:
+    """A delta E tolerance given by the operator: a non-negative number."""
+    try:
+        tolerance = float(value)
+    except (TypeError, ValueError):
+        tolerance = math.nan
+    if not math.isfinite(tolerance) or tolerance < 0:
+        raise su.ValidationError("the delta E tolerance must be a non-negative number")
+    return tolerance
+
+
+def _search_tolerance(store: Store, data: dict, tolerance_de, setup: str | None) -> tuple[float | None, str | None]:
+    """The delta E tolerance of a search and where it comes from: the request's, else the saved rule of the one laser and
+    lens the search is narrowed to; none otherwise (a tolerance is never invented)."""
+    if tolerance_de is not None:
+        return delta_tolerance(tolerance_de), "request"
+    option = next((o for o in data["options"]["setups"] if setup is not None and o["key"] == setup), None)
+    saved = su.get_rules(store, option["device_id"], option["lens_id"])["delta_tolerance"] if option else None
+    return (float(saved), "rules") if saved is not None else (None, None)
+
+
+def fastest_first(entries: list[dict], tolerance: float | None) -> list[dict]:
+    """Entries (each with its ``distance`` and the ``time_s_per_cm2`` of its recipe) in the order of DEC-075: within the
+    tolerance the fastest recipe first (those with no time per area after the timed ones, the nearer first among equals),
+    then every other entry by distance. Without a tolerance: by distance."""
+    if tolerance is None:
+        return sorted(entries, key=lambda e: e["distance"])
+    within = [e for e in entries if e["distance"] <= tolerance]
+    rest = [e for e in entries if e["distance"] > tolerance]
+    return (sorted(within, key=lambda e: (math.inf if e["time_s_per_cm2"] is None else e["time_s_per_cm2"], e["distance"]))
+            + sorted(rest, key=lambda e: e["distance"]))
+
+
+def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced: bool = False, include_provisional: bool = False,
+           tolerance_de: float | None = None, **filters) -> dict:
+    """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how many independent engravings gave it, in how
+    many photographs, and from which experiments. Colours without a clean reference and provisional colours are left out unless
+    asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
+    it came from, says how far its independent engravings agree when there are several, and names the context it lacks.
+
+    Within the delta E tolerance (``tolerance_de``, else the saved rule of the laser and lens the search is narrowed to) the
+    fastest recipe comes first (DEC-075); ``order`` says how the entries were ordered and with which tolerance."""
+    data = collect(store, include_unreferenced=include_unreferenced, include_provisional=include_provisional, **filters)
+    entries = []
+    for entry in by_recipe(data["points"]).values():
+        distances = [color.delta_e(lab, point["display_lab"]) for point in entry["points"]]
+        nearest = min(range(len(distances)), key=distances.__getitem__)
+        best = entry["points"][nearest]
+        entries.append({**entry, "best": best, "distance": distances[nearest], "time_s_per_cm2": best["time_s_per_cm2"]})
+    tolerance, source = _search_tolerance(store, data, tolerance_de, filters.get("setup"))
+    ranked = fastest_first(entries, tolerance)[:limit]
     return {"target": lab, "evidence": "observed",
+            "order": {"by": "distance" if tolerance is None else "time_within_tolerance", "tolerance_de": tolerance,
+                      "tolerance_source": source,
+                      "within_tolerance": None if tolerance is None else sum(e["distance"] <= tolerance for e in entries)},
             "matches": [{**e["best"], "distance": round(float(e["distance"]), 2), "repeats": len(e["engravings"]),
                          "photographs": len(e["photographs"]), "experiments": e["experiments"], "evidence": "observed",
                          "observation_ids": sorted(e["observation_ids"]),
                          "provisional_checks": sorted({p["pair_id"] for p in e["points"] if p["provisional"]}),
+                         "within_tolerance": None if tolerance is None else bool(e["distance"] <= tolerance),
                          "repeatability": _repeatability(e["engravings"]), "missing_context": missing_context(e["points"])} for e in ranked],
             "nominal_clean": data["nominal_clean"], "counts": data["counts"]}
 

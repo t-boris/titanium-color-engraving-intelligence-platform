@@ -19,6 +19,7 @@ class DiscreteUpdate(BaseModel):
     replacements: dict[str, int] | None = None
     exclusions: list[str] | None = None
     allowed_questioned: list[int] | None = None
+    max_time: float | None = None           # seconds per cm² the automatic matching may take; null removes it, absent keeps it
 
 
 class MarkersIn(BaseModel):
@@ -155,10 +156,13 @@ def delete_plan(plan_id: int, request: Request):
 @router.post("/discrete", status_code=201)
 async def start_discrete(request: Request, device_id: int = Form(...), lens_id: str = Form(...), name: str = Form(...), width_mm: float = Form(...),
                          threshold: float | None = Form(None), markers: bool = Form(False), max_colors: int = Form(conversion.MAX_COLORS),
-                         task: str | None = Form(None), goals: str | None = Form(None), image: UploadFile = File(None)):
+                         task: str | None = Form(None), goals: str | None = Form(None), max_time: float | None = Form(None),
+                         image: UploadFile = File(None)):
+    """A discrete colour plan from an image: each colour takes the fastest validated or production recipe within the delta E
+    threshold (DEC-030, DEC-075), no slower than ``max_time`` seconds per cm² when given."""
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
     pid = conversion.start_discrete(store_of(request), device_id, lens_param(lens_id), data, width_mm, name, threshold=threshold,
-                                    markers=markers, max_colors=max_colors, task=task or None, goals=task_goals(goals))
+                                    markers=markers, max_colors=max_colors, task=task or None, goals=task_goals(goals), max_time=max_time)
     return _plan(request, pid)
 
 
@@ -166,7 +170,10 @@ async def start_discrete(request: Request, device_id: int = Form(...), lens_id: 
 def update_discrete(plan_id: int, body: DiscreteUpdate, request: Request):
     s = store_of(request)
     _visible_plan(s, plan_id)
-    conversion.update_discrete(s, plan_id, **body.model_dump())
+    changes = body.model_dump()
+    if "max_time" not in body.model_fields_set:
+        changes["max_time"] = conversion.UNCHANGED
+    conversion.update_discrete(s, plan_id, **changes)
     return _plan(request, plan_id)
 
 

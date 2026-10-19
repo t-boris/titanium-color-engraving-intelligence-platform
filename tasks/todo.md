@@ -1,3 +1,19 @@
+# Vector work: photograph -> gapless colour regions -> titanium colours -> LightBurn (operator, 2026-10-19)
+
+Requirements REQ-033 (split), REQ-034 (colouring, recolouring, file), REQ-035 (engraving time); decisions DEC-073 (all measured
+colours, up to 29 with cleaning first), DEC-074 (recolouring modes, YuNet faces + manual areas), DEC-075 (time, filter, fastest
+within tolerance), DEC-076 (proposed: superpixels + planar map of shared borders). Branch feat/vector-work-colours from origin/main.
+
+- [x] V1 Segmentation core (worktree): smoothing + SLIC superpixels finer in important areas, Lab clustering to N <= 29,
+      small-region merge, planar map of shared arcs smoothed once, holes, Path export from arcs; YuNet model shipped as
+      package data with its licence; manual important areas; determinism; gapless test by rasterising (< 0.5 % gap/overlap).
+- [x] V2 Time and colouring (worktree): time per cm2 / per cm from settings (DEC-075); colour map shows time and filters;
+      search orders equal colours by time; palette = every measured colour of laser+lens+titanium; assignment modes
+      nearest / tonality / random (seeded, restorable) / fewer layers; fastest within tolerance; per-group and per-region change.
+- [x] V3 Vector work flow (main tree, after V1+V2): steps split -> preview -> colour -> preview -> file; important-area
+      marking on the picture; variants kept; export cleaning first, <= 29 recipe layers, Paths from shared borders; job time.
+- [ ] V4 Tests green, real photograph through the flow (gaps measured on the export), PR, CI, merge, 0.5.0, deploy, walkthrough.
+
 # Implement the whole specification (goal set 2026-10-18)
 
 Branch `feat/titanium-color-engraving-intelligence-platform`, created from `origin/main` (5d31a9d) and fast-forwarded by the 20

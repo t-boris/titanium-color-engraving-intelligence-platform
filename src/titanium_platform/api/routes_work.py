@@ -212,22 +212,27 @@ def create_plates(body: PlatesIn, request: Request):
 
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
-               include_unreferenced: bool = True, include_provisional: bool = True, task: str | None = None):
+               include_unreferenced: bool = True, include_provisional: bool = True, task: str | None = None,
+               max_time_s_per_cm2: float | None = None):
     """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
-    flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020)."""
+    flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020).
+    Every colour carries the estimated engraving time of its recipe; ``max_time_s_per_cm2`` leaves out slower ones (REQ-035)."""
     return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
-                            measurement=measurement, include_provisional=include_provisional, task=task or None)
+                            measurement=measurement, include_provisional=include_provisional, task=task or None,
+                            max_time_s_per_cm2=max_time_s_per_cm2)
 
 
 @router.get("/colors/search")
 def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
                   material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False,
-                  include_provisional: bool = False, task: str | None = None):
-    """Where did a wanted colour occur: the nearest recipes, with their settings, task, evidence and the experiments they came
-    from. Observed evidence only; the film model's settings are a prediction and come from /colors/settings."""
+                  include_provisional: bool = False, task: str | None = None, max_time_s_per_cm2: float | None = None,
+                  tolerance_de: float | None = None):
+    """Where did a wanted colour occur: the nearest recipes, with their settings, task, evidence, estimated engraving time and
+    the experiments they came from; within the delta E tolerance the fastest first (DEC-075). Observed evidence only; the film
+    model's settings are a prediction and come from /colors/settings."""
     return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
                            measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional,
-                           task=task or None)
+                           task=task or None, max_time_s_per_cm2=max_time_s_per_cm2, tolerance_de=tolerance_de)
 
 
 def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:

@@ -156,3 +156,55 @@ def test_the_app_serves_the_experiments_and_the_experiment_screen(tmp_path):
     assert client.get("/api/experiments/plan-1").status_code == 404
     assert "experiment.js" in client.get("/").text
     assert client.get("/screens/experiment.js").status_code == 200
+
+
+# -- REQ-041 AC2/AC3: what the experiment screen shows by itself, and every way into it (static checks of the scripts) ---------
+def screen(name: str) -> str:
+    from titanium_platform.api.app import UI_DIR
+    return (UI_DIR / "screens" / name).read_text(encoding="utf-8")
+
+
+def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_without_any_action():
+    page = screen("experiment.js")
+    layout = page[page.index("refreshAll();\n    return h('div', {class: 'stack experiment'}"):]
+    # rendered before the page is returned, the photograph card first after the title, then the checks, the result, the files
+    order = [layout.index(part) for part in ("h('section', {class: 'card stack exp-photo-card'}, photoTools, stage, caption)",
+                                             "checks,", "result,", "plate, files, findings")]
+    assert order == sorted(order)
+    assert "function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }" in page
+    # the overlay and the lifted brightness are on unless the operator switched them off; contours draw the overlay
+    assert "let contours = sessionStorage.getItem('experiment-contours') !== '0';" in page
+    assert "let lifted = sessionStorage.getItem('experiment-lifted') !== '0';" in page
+    assert "return contours && pair.alignment ? `${base}/overlay.png?${view}` : `${base}/photo.png?${view}`;" in page
+    # the latest check (or the one asked for) is shown at once
+    assert "pairs.find((p) => p.id === wanted) || pairs.find((p) => p.id === exp.main_pair_id) || pairs[pairs.length - 1]" in page
+
+
+def test_the_experiment_screen_offers_check_selection_brightness_and_contours_and_holds_files_layers_and_conclusions():
+    page = screen("experiment.js")
+    assert "btn(`Проверка №${p.id}`, () => { current = p; refreshAll(); }, 'btn-small')" in page          # every check, selectable
+    assert "btn(lifted ? 'Обычная яркость' : 'Поднять яркость'" in page
+    assert "btn(contours ? 'Скрыть контуры' : 'Показать контуры'" in page
+    for part in ("'Скачать .lbrn2'", "'Скачать файл LightBurn'", "`Измеренные слои · ${layers.length}`", "'Выводы по этому эксперименту'",
+                 "IngestReview.hiddenMargins(check.alignment)"):
+        assert part in page, part
+
+
+def test_the_experiment_list_shows_the_material_conclusions_beside_the_experiments():
+    page = screen("experiments.js")
+    assert "findings = await get(`/devices/${selectedDevice.id}/findings`)" in page
+    assert "finding.material_id === selectedMaterial?.id" in page
+    assert "panel('Выводы для материала', latest.size, insightCards," in page
+    assert "link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`)" in page
+
+
+def test_every_plate_work_and_check_entry_point_links_to_its_experiment():
+    experiment_of_pair = "'/experiment/' + (pair.plan_id && pair.plan_mode !== 'Restored from file' ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id)"
+    ingest = screen("ingest.js")
+    assert experiment_of_pair in ingest and "backTo(pair)" in ingest and "backTo(source)" in ingest   # the pair review and its re-photograph
+    assert "link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту')" in screen("analysis.js")
+    plan = screen("plan.js")
+    assert "link('/experiment/plan-' + p.id, 'К эксперименту')" in plan                                      # a plate
+    assert "link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту')" in plan        # a work restored from its file
+    assert "link('/experiment/' + encodeURIComponent(e.key), I18N.name(e.title))" in screen("experiment-cards.js")
+    assert "link('/experiment/' + encodeURIComponent(p.experiment), p.title)" in screen("color-map.js")

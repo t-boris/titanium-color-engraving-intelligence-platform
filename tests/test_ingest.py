@@ -1006,3 +1006,29 @@ def test_a_path_of_many_flattened_points_is_measured_quickly():
     started = time.time()
     ig._line_metrics(np.full((200, 200, 3), .5, np.float32), np.diag([0.25, 0.25, 1.0]), layer)
     assert time.time() - started < 2
+
+
+def test_the_check_reports_unread_shapes_and_unknown_settings_on_the_layer_they_belong_to(world):
+    """REQ-036 AC3: shapes and settings the importer does not read reach the check report as notes of their own layer."""
+    root = ET.fromstring(world["lbrn"])
+    cut = next(c for c in root.iter("CutSetting") if c.find("name").get("Value") == "r1c1")
+    index = cut.find("index").get("Value")
+    ET.SubElement(cut, "rampLength", Value="2")
+    for xml in (f'<Shape Type="Text" CutIndex="{index}" Font="Arial" Str="7" H="2" HasBackupPath="0"><XForm>1 0 0 1 1 1</XForm></Shape>',
+                f'<Shape Type="Ellipse" CutIndex="{index}" Rx="0" Ry="2"><XForm>1 0 0 1 1 1</XForm></Shape>',
+                f'<Shape Type="Polygon" CutIndex="{index}" N="6"><XForm>1 0 0 1 1 1</XForm></Shape>'):
+        root.append(ET.fromstring(xml))
+    pid = make_pair(world, lbrn=ET.tostring(root))
+
+    report = ig.check_pair(world["store"], pid)
+
+    assert report["problems"] == [], report["problems"]
+    layer = next(l for l in report["layers"] if l["name"] == "r1c1")
+    assert layer["measured_lab"] is not None                     # the readable outline is still measured
+    for note in ("1 Text objects on this layer are not read: no outline geometry",
+                 "1 Ellipse objects on this layer are not read: no outline geometry",
+                 "1 Polygon objects on this layer are not read: no outline geometry",
+                 "settings unknown to this version are kept with the recipe but not interpreted: rampLength"):
+        assert note in layer["notes"], layer["notes"]
+    others = [n for l in report["layers"] if l["name"] != "r1c1" for n in l["notes"]]
+    assert not any("not read" in n or "unknown to this version" in n for n in others)

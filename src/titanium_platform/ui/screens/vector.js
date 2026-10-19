@@ -1,12 +1,16 @@
-/* Векторная работа (REQ-021, DEC-065): изображение → редактируемые контуры → обычный файл LightBurn, одна связанная запись.
-   Каждая группа настроек получает валидированный или производственный рецепт этого лазера, линзы и титана, режим LightBurn
+/* Векторная работа (REQ-021, REQ-042, DEC-065, DEC-073): изображение → редактируемые контуры → обычный файл LightBurn, одна
+   связанная запись. Фотография («Фото: цветные области») идёт тремя шагами: разбиение (vector-split.js), цвета титана
+   (vector-colours.js) и файл LightBurn с оценкой времени всей работы. Заливка, текст и линии обводятся как раньше: каждая
+   группа настроек получает валидированный или производственный рецепт этого лазера, линзы и титана, режим LightBurn
    которого подходит задаче её областей; рецепт никогда не придумывается. Область без достаточных данных заштрихована на
-   предпросмотре и указана в списке; пока такие области есть, экспорт недоступен: удалите область, исключите её («без рецепта»:
-   она останется в документе, но не попадёт в файл), выберите настройки её группы или передайте её цвет планировщику. */
+   предпросмотре; пока такие области есть, экспорт недоступен. Файлы скачиваются через fetch: ошибка показывается на экране
+   по-русски, на адрес API экран никогда не переходит. */
 'use strict';
 (() => {
   const {h, fill, btn, field, link, pill, get, post, put, form, toast, fail, go, modal, table, num, labText, swatch, facts} = App;
-  const STRATEGIES = [['color', 'Цветные области'], ['fill', 'Заливка силуэта'], ['text', 'Текст'], ['line', 'Линии (центральные)']];
+  const STRATEGIES = [['photo', 'Фото: цветные области'], ['fill', 'Заливка силуэта'], ['text', 'Текст'], ['line', 'Линии (центральные)']];
+  const STRATEGY_NAME = {...Object.fromEntries(STRATEGIES), color: 'Цветные области (обводка)'};
+  const DETAIL = [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']];
   const TASKS = [['color', 'Цвет'], ['fill', 'Заливка'], ['text', 'Текст'], ['line', 'Линия'], ['tonal', 'Тон']];
   const STATUS = {matched: ['Есть рецепт', 'ok'], chosen: ['Рецепт выбран вручную', 'ok'], weak: ['Мало данных', 'bad'], excluded: ['Без рецепта: исключена', '']};
   const MODE = {Scan: 'заливка (Fill)', Cut: 'линия (Line)', OffsetFill: 'заливка по контуру (Offset Fill)', 'Offset Fill': 'заливка по контуру (Offset Fill)'};
@@ -27,24 +31,55 @@
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
     const name = h('input', {placeholder: 'Название работы'}), width = h('input', {type: 'number', step: 'any', min: '0', value: 60});
     const strategy = h('select', {'aria-label': 'Стратегия'}, STRATEGIES.map(([id, label]) => h('option', {value: id}, label)));
-    const colours = h('input', {type: 'number', step: '1', min: '1', value: 6});
-    const titaniumColours = h('input', {type: 'checkbox'});
+    const colours = h('input', {type: 'number', step: '1', min: '2', max: '29', value: 12});
+    const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l)));
+    const faces = h('input', {type: 'checkbox', checked: true});
+    const maxTime = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'});
+    const asShot = h('input', {type: 'checkbox'});
     const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'});
     const grey = h('input', {type: 'number', step: '1', min: '0', max: '255', placeholder: 'авто (Оцу)'});
-    const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: 0.05});
+    const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: 0.08});
     const markers = h('input', {type: 'checkbox'}), clean = h('input', {type: 'checkbox', checked: true});
     // REQ-020: главная задача работы следует из стратегии, пока оператор не выбрал другую; у каждой области — своя задача
-    const STRATEGY_TASK = {color: 'color_image', fill: 'fill', text: 'text', line: 'line'};
+    const STRATEGY_TASK = {photo: 'color_image', fill: 'fill', text: 'text', line: 'line'};
     const task = Tasks.chooser(STRATEGY_TASK[strategy.value], {hint: 'главная задача работы; задачу каждой области можно изменить после обводки'});
-    strategy.addEventListener('change', () => task.set(STRATEGY_TASK[strategy.value]));
     const info = h('div', {});
     const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (m) => { err.textContent = m; err.hidden = !m; };
-    let palette = [];
+    // поля фотографии и поля обводки показываются по стратегии; чистка у фотографии всегда первая (DEC-073)
+    const photoFields = h('div', {class: 'grid g2'}, field('Число цветов', colours, '2–29, с маркерами 2–28: чистка — первый слой'),
+      field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'),
+      field('Наибольшее время гравировки, с/см²', maxTime, 'пусто — без предела; медленные цвета автоматика не берёт'),
+      h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица: глаза и губы делятся подробнее')),
+      h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона и без чистого титана)')));
+    const traceFields = h('div', {class: 'grid g2'}, field('Порог серого', grey, 'пусто — автоматически'),
+      h('label', {class: 'row'}, clean, h('span', {}, 'Чистка первым слоем (C00)')));
+    const tolLabel = h('span', {});
+    const photo = () => strategy.value === 'photo';
+    const switchFields = () => {
+      photoFields.hidden = !photo(); traceFields.hidden = photo();
+      tolLabel.textContent = photo() ? 'Сглаживание границ, мм' : 'Точность контура, мм';
+      tolerance.value = photo() ? 0.08 : 0.05;
+      colours.max = markers.checked ? '28' : '29';
+      task.set(STRATEGY_TASK[strategy.value]);
+      loadPalette();
+    };
+    strategy.addEventListener('change', switchFields);
+    markers.addEventListener('change', () => { colours.max = markers.checked ? '28' : '29'; });
 
     async function loadPalette() {
       if (!stock.value) return fill(info);
-      try { palette = await get(`/vector/palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { palette = []; return fill(info, h('p', {class: 'alert bad'}, e.message)); }
+      if (photo()) {
+        let p;
+        try { p = await get(`/vector-palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
+        const asShotCount = p.entries.filter((e) => e.basis === 'as-shot').length;
+        return fill(info, p.entries.length
+          ? h('p', {class: 'muted small'}, `Измеренных цветов заливки этого лазера, линзы и титана: ${p.entries.length}`,
+            asShotCount ? `, из них без привязки к эталону: ${asShotCount}` : '', '. Каждому цвету картинки достанется самый быстрый цвет в пределах допуска ΔE.')
+          : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана нет измеренных цветов заливки: разбить можно, раскрасить будет нечем.'));
+      }
+      let palette;
+      try { palette = await get(`/vector/palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
       const lines = palette.filter((e) => e.mode === 'Cut').length;
       fill(info, palette.length
         ? h('p', {class: 'muted small'}, `Рецептов этого лазера, линзы и титана: ${palette.length} (заливка — ${palette.length - lines}, линия — ${lines}). `,
@@ -54,51 +89,60 @@
     }
     stock.addEventListener('change', loadPalette);
 
-    const submit = btn('Обвести и подобрать настройки', async (ev) => {
+    const submit = btn('Создать работу', async (ev) => {
       show('');
       if (!img.files[0]) return show('Добавьте изображение для векторной работы');
       const fd = new FormData();
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('material_id', stock.value); fd.append('name', name.value);
       fd.append('width_mm', width.value); fd.append('strategy', strategy.value); fd.append('tolerance_mm', tolerance.value);
-      fd.append('markers', markers.checked); fd.append('clean', clean.checked); fd.append('image', img.files[0]);
+      fd.append('markers', markers.checked); fd.append('image', img.files[0]);
       if (thr.value !== '') fd.append('threshold', thr.value);
-      if (grey.value !== '') fd.append('grey_threshold', grey.value);
       task.append(fd);
-      if (strategy.value === 'color') {
-        if (titaniumColours.checked) {
-          if (!palette.length) return show('Нет цветов титана для этого лазера, линзы и титана');
-          // белый — фон: иначе каждый пиксель фона достался бы ближайшему цвету титана и слился бы с его областью
-          fd.append('palette', JSON.stringify([[255, 255, 255], ...palette.filter((e) => e.mode !== 'Cut').map((e) => e.srgb)]));
-        } else fd.append('n_colors', colours.value);
+      if (photo()) {
+        fd.append('n_colors', colours.value); fd.append('detail', detail.value); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
+        if (maxTime.value !== '') fd.append('max_time', maxTime.value);
+      } else {
+        fd.append('clean', clean.checked);
+        if (grey.value !== '') fd.append('grey_threshold', grey.value);
       }
       const self = ev.currentTarget;
       self.disabled = true;
       try { const j = await form('/vector', fd); toast('Векторная работа создана', 'ok'); go('/vector?plan=' + j.id); } catch (e) { show(e.message); self.disabled = false; }
     }, 'primary');
-    loadPalette();
+    switchFields();
     return h('div', {class: 'stack'},
-      h('div', {}, h('h2', {}, 'Векторная работа'), h('p', {class: 'sub'}, 'Изображение превращается в контуры с задачей и настройками из измеренных знаний; результат — обычный файл LightBurn.')),
+      h('div', {}, h('h2', {}, 'Векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
-        field('Лазер', pick.laser), field('Линза', pick.lens, 'рецепты — измерения этого лазера с этой линзой'),
-        field('Титан', stock, 'рецепты, измеренные на другой заготовке, не используются'), field('Изображение', App.filePick(img, 'Выбрать изображение')),
+        field('Лазер', pick.laser), field('Линза', pick.lens, 'цвета и рецепты — измерения этого лазера с этой линзой'),
+        field('Титан', stock, 'цвета, измеренные на другой заготовке, не используются'), field('Изображение', App.filePick(img, 'Выбрать изображение')),
         field('Название работы', name), field('Ширина работы, мм', width),
-        field('Стратегия', strategy, 'цветные области — по цветам изображения; заливка, текст и линии — по тёмному силуэту'),
-        field('Число цветов', colours, 'только для цветных областей'), field('Порог ΔE', thr, 'пусто — допуск из правил этого лазера с линзой'),
-        field('Порог серого', grey, 'для заливки, текста и линий; пусто — автоматически'), field('Точность контура, мм', tolerance, 'наибольшее отклонение упрощённого контура')),
-        task.el, h('label', {class: 'row'}, titaniumColours, h('span', {}, 'Цвета областей — из палитры титана (рецепты заливки этого лазера, линзы и титана) и белый фон; область фона затем удалите')),
-        h('label', {class: 'row'}, clean, h('span', {}, 'Чистка первым слоем (C00)')),
+        field('Стратегия', strategy, 'фото — цветные области по картинке; заливка, текст и линии — по тёмному силуэту'),
+        field('Допуск ΔE', thr, 'пусто — допуск из правил этого лазера с линзой; если его нет, задайте здесь'),
+        h('label', {class: 'f'}, tolLabel, tolerance)),
+        photoFields, traceFields, task.el,
         h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')),
         info, err, submit));
   }
 
-  async function download(id) {
-    const res = await fetch(`/api/vector/${id}/export.lbrn2`);
-    if (!res.ok) { const d = await res.json(); throw new Error(I18N.tr((d.detail || d).error)); }
-    const name = decodeURIComponent((res.headers.get('content-disposition') || '').split("UTF-8''")[1] || 'vector.lbrn2');
+  /** Файл с сервера сохраняется на компьютер; ошибка сервера показывается переведённой, без перехода на адрес API. */
+  async function download(path, fallbackName) {
+    let res;
+    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Нет связи с локальным сервисом. Запущено ли приложение?'); }
+    if (!res.ok) {
+      let raw = null;
+      try { const d = await res.json(); raw = (d.detail || d).error; } catch (_) { raw = null; }
+      throw new Error(raw ? I18N.tr(raw) : `Ошибка сервера (${res.status}). Файл не получен.`);
+    }
+    const name = decodeURIComponent((res.headers.get('content-disposition') || '').split("UTF-8''")[1] || fallbackName);
     const url = URL.createObjectURL(await res.blob());
     const a = h('a', {href: url, download: name});
     document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
+  const saveButton = (path, label, name) => btn(label, async (ev) => {
+    const self = ev.currentTarget;
+    self.disabled = true;
+    try { await download(path, name); } catch (e) { fail(e); } finally { self.disabled = false; }
+  });
 
   function settingsDialog(j, group, run) {
     const byId = Object.fromEntries(j.palette.map((e) => [e.id, e]));
@@ -116,8 +160,16 @@
       {label: 'Применить', cls: 'primary', run: async (x) => { x.close(); await run({op: 'set_settings', group: group.key, knowledge_id: chosen}); }}]);
   }
 
-  async function jobView(id) {
-    const j = await get('/vector/' + id);
+  /** Сколько областей без данных — коротко; их номера — по «показать», а не сотнями в одном сообщении. */
+  function weakSummary(weak) {
+    const ids = h('p', {class: 'small', hidden: true}, weak.join(', '));
+    const toggle = btn('показать', () => { ids.hidden = !ids.hidden; toggle.textContent = ids.hidden ? 'показать' : 'скрыть'; });
+    return h('div', {class: 'alert bad stack'}, h('div', {class: 'row'}, h('span', {}, `Областей без достаточных данных: ${weak.length}. Рецепт не придумывается: `
+      + 'удалите или исключите область, выберите настройки её группы или передайте её цвет планировщику. Такие области заштрихованы на картинке.'), toggle), ids);
+  }
+
+  function jobView(j) {
+    const id = j.id;
     const reload = () => App.render({preserveScroll: true});
     const run = async (op) => { try { await post(`/vector/${id}/edit`, op); reload(); } catch (e) { fail(e); } };
     const selected = new Set();
@@ -154,7 +206,7 @@
     const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { await download(id); toast('Файл подготовлен, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); } catch (e) { fail(e); self.disabled = false; }
+      try { await download(`/vector/${id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл подготовлен, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); } catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !!j.export_blocked);
 
     const history = [...j.history].reverse().map((e) => [`v${e.version}`, OPS[e.op.op] || e.op.op, e.at.replace('T', ' ').slice(0, 16),
@@ -166,7 +218,7 @@
         h('span', {class: 'spacer'}), link('/plans/' + id, 'План гравировки'), link(`/designer?device=${j.device_id}&lens=${App.lensParam(j.lens_id)}`, 'Цели экспериментов')),
       h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', j.lens ? App.lensLabel(j.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
-        ['Стратегия', (STRATEGIES.find(([s]) => s === j.document.strategy) || [null, j.document.strategy])[1]],
+        ['Стратегия', STRATEGY_NAME[j.document.strategy] || j.document.strategy],
         ['Задача работы', j.engraving_task ? Tasks.name(j.engraving_task.kind) + (j.engraving_task.basis === 'explicit' ? '' : ' · по стратегии') : '—'],
         ['Чистка', j.clean_layer ? 'первый слой C00' : 'нет'], ['Маркеры', j.markers_enabled ? 'включены' : 'выключены'],
         ['Слоёв LightBurn', `${j.layers.length} из ${j.layer_cap} доступных`]])),
@@ -178,7 +230,7 @@
         field('Порог ΔE', thr), btn('Применить порог', () => run({op: 'set_threshold', threshold: +thr.value})),
         btn('Объединить выбранные', () => (selected.size === 2 ? run({op: 'merge', regions: [...selected]}) : fail(new Error('Выберите ровно две области')))),
         btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => { try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); } })),
-      j.weak.length ? h('div', {class: 'alert bad'}, `Областей без достаточных данных: ${j.weak.length} (${j.weak.join(', ')}). Рецепт не придумывается: удалите или исключите область, выберите настройки её группы или передайте её цвет планировщику.`) : null,
+      j.weak.length ? weakSummary(j.weak) : null,
       h('div', {class: 'card'}, h('h3', {}, `Области: ${j.regions.length}`),
         table(['', 'Область', 'Задача', 'Группа настроек', 'Рецепт', 'Прогноз (REQ-002)', 'Данные', ''], rows)),
       h('div', {class: 'card'}, h('h3', {}, 'Группы настроек'), h('p', {class: 'muted small'}, 'Одна группа — один рецепт; одинаковые рецепты разных групп выводятся в один слой LightBurn.'),
@@ -190,14 +242,67 @@
           l.task ? Tasks.name(l.task) : h('span', {class: 'muted small'}, 'смешанная: ' + (l.region_tasks || []).map((t) => (TASKS.find(([k]) => k === t) || [t, t])[1]).join(', ') + ' — по слою LightBurn'),
           `${l.region_ids.length}`, h('span', {}, swatch(l.prediction.lab), labText(l.prediction.lab)), `${num(l.prediction.confidence)} · ΔE ${num(l.prediction.expected_delta_e)}`]), 'Слоёв нет'),
         h('div', {class: 'row'}, exportBtn),
-        j.exports.length ? table(['Файл', 'Версия документа', 'Слоёв', 'Областей', 'Когда'], j.exports.map((e) => [
-          h('a', {href: `/api/vector/${id}/exports/${e.number}`, download: e.name}, `№ ${e.number} · ${e.name}`), `v${e.document_version}`, `${e.layers}`, `${e.regions}`,
-          e.at.replace('T', ' ').slice(0, 16)])) : null),
+        j.exports.length ? table(['Файл', 'Версия документа', 'Слоёв', 'Областей', 'Когда', ''], j.exports.map((e) => [
+          `№ ${e.number} · ${e.name}`, `v${e.document_version}`, `${e.layers}`, `${e.regions}`, e.at.replace('T', ' ').slice(0, 16),
+          saveButton(`/vector/${id}/exports/${e.number}`, 'Скачать', e.name)])) : null),
       h('div', {class: 'card'}, h('h3', {}, 'История правок'), table(['Версия', 'Действие', 'Когда', ''], history)));
   }
 
+  const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
+    : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
+
+  /** Шаг «Файл LightBurn»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043). */
+  function photoExport(j, reload) {
+    const t = j.time;
+    const rows = t.layers.map((row) => {
+      const layer = j.layers.find((l) => l.index === row.index);
+      return [`C${String(row.index).padStart(2, '0')}`, layer ? h('span', {}, h('span', {class: 'sw', style: `background:rgb(${layer.srgb.join(',')})`}), layer.name) : 'Чистка (перекрёстная заливка)',
+        layer ? `${layer.region_count}` : 'вся работа', layer ? `${num(layer.area_mm2 / 100, 2)} см²` : '—',
+        row.seconds == null ? h('span', {class: 'muted small'}, I18N.tr(row.note)) : duration(row.seconds)];
+    });
+    const exportBtn = btn('Создать файл LightBurn', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'primary', !!j.export_blocked);
+    return h('div', {class: 'card stack'}, h('h3', {}, '3. Файл LightBurn'),
+      h('p', {}, h('strong', {}, `Оценка времени всей работы: ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
+        h('span', {class: 'muted small'}, ' — оценка по скорости, шагу строк, проходам и перекрёстной заливке каждого рецепта; переходы между областями не учтены.')),
+      table(['Слой', 'Рецепт', 'Областей', 'Площадь', 'Время'], rows),
+      h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length} из ${j.layer_cap}: C00 — чистка` + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками.'),
+      j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе вместе с раскраской: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
+      h('div', {class: 'row'}, exportBtn),
+      j.exports.length ? table(['Файл', 'Вариант раскраски', 'Слоёв', 'Областей', 'Время', 'Когда', ''], j.exports.map((e) => [`№ ${e.number} · ${e.name}`,
+        e.variant ? `№ ${e.variant}` : '—', `${e.layers}`, `${e.regions}`, duration(e.seconds), e.at.replace('T', ' ').slice(0, 16),
+        saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name)])) : null);
+  }
+
+  /** Работа из фотографии: разбиение, цвета, файл (REQ-042). */
+  function photoView(j) {
+    const reload = () => App.render({preserveScroll: true});
+    const run = async (op) => { try { await post(`/vector/${j.id}/colouring`, op); reload(); } catch (e) { fail(e); } };
+    const exp = j.experiment || {};
+    const size = j.document.size_mm;
+    return h('div', {class: 'stack'},
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Векторная работа · ' + j.name),
+        h('p', {class: 'sub'}, `Фото: цветные области · ${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${j.document.version}`)),
+        h('span', {class: 'spacer'}), link('/plans/' + j.id, 'План гравировки')),
+      h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
+        ['Линза', j.lens ? App.lensLabel(j.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
+        ['Чистка', 'первый слой C00'], ['Маркеры', j.markers_enabled ? 'включены (C01)' : 'выключены'],
+        ['Слоёв цвета', `${j.layers.length} из ${j.layer_cap} доступных`]]),
+        h('div', {class: 'row'}, btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
+          try { await put(`/plans/${j.id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); }
+        }))),
+      VectorSplit.card(j, reload), VectorColours.card(j, run), photoExport(j, reload));
+  }
+
   App.register({id: 'vector', async render(ctx) {
-    if (ctx.query.plan) return jobView(ctx.query.plan);
+    if (ctx.query.plan) {
+      const j = await get('/vector/' + ctx.query.plan);
+      return j.strategy === 'photo' ? photoView(j) : jobView(j);
+    }
     const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
     if (!materials.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте заготовку титана'), link('/setup', 'Настройки'));

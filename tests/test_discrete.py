@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 import obs
-from titanium_platform import color, conversion as cv, knowledge as kn, lightburn as lb, plans as pl, setup as su
+from titanium_platform import color, conversion as cv, engraving_time, knowledge as kn, lightburn as lb, plans as pl, setup as su
 
 # Two measured colours, each from two engravings 2 apart in L: expected error = sqrt(variance) = sqrt(2) ~ 1.414
 RED_LAB = (45.0, 60.0, 40.0)
@@ -70,6 +70,70 @@ def test_each_match_carries_its_titanium_colour_with_confidence_expected_error_a
     cv.update_discrete(store, pid, exclusions=[pl.get_plan(store, pid)["matches"][0]["source_key"]])
     excluded = pl.get_plan(store, pid)["matches"][0]
     assert excluded["status"] == "excluded" and excluded["titanium"] is None
+
+
+def fast_red(store, w):
+    """A third validated colour 2 L from the red, engraved four times faster (speed 3600 instead of 900)."""
+    for dl in (-1.0, 1.0):
+        obs.add(store, w, (RED_LAB[0] + 2 + dl, RED_LAB[1], RED_LAB[2]), power=12, speed=3600)
+    kn.refresh(store, *w["setup"])
+    return next(k["id"] for k in kn.list_for_setup(store, *w["setup"]) if k["parameters"]["power"] == 12)
+
+
+def test_among_colours_within_the_threshold_the_fastest_recipe_is_chosen_and_said_so(store, w):
+    fast = fast_red(store, w)
+    palette = {e["id"]: e for e in cv.eligible_palette(store, *w["setup"])}
+    assert palette[fast]["time_s_per_cm2"] < palette[w["ids"][10]]["time_s_per_cm2"]
+    assert palette[fast]["time_s_per_cm2"] == pytest.approx(engraving_time.per_area(palette[fast]["parameters"])["s_per_cm2"])
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "A", threshold=8.0)
+    (m,) = pl.get_plan(store, pid)["matches"]
+    assert (m["status"], m["knowledge_id"], m["how"]) == ("matched", fast, "fastest_within_threshold")        # DEC-075, not the nearest
+    assert m["time_s_per_cm2"] == palette[fast]["time_s_per_cm2"] and m["distance"] > color.delta_e(palette[w["ids"][10]]["lab"], m["source_lab"])
+    # with a threshold only the nearer, slower red meets, that one is taken (DEC-030 still decides what is within)
+    tight = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB)]), 40, "B", threshold=m["distance"] + palette[fast]["expected_delta_e"] - 0.01)
+    assert pl.get_plan(store, tight)["matches"][0]["knowledge_id"] == w["ids"][10]
+
+
+def test_a_time_limit_per_square_centimetre_leaves_slower_recipes_out_of_the_automatic_matching(store, w):
+    fast = fast_red(store, w)
+    palette = {e["id"]: e for e in cv.eligible_palette(store, *w["setup"])}
+    limit = (palette[fast]["time_s_per_cm2"] + palette[w["ids"][10]]["time_s_per_cm2"]) / 2
+    pid = cv.start_discrete(store, *w["setup"], png([rgb_of(RED_LAB), rgb_of(BLUE_LAB)]), 40, "A", threshold=8.0, max_time=limit)
+    plan = pl.get_plan(store, pid)
+    assert plan["max_time"] == limit
+    by_status = {m["status"]: m for m in plan["matches"]}
+    assert by_status["matched"]["knowledge_id"] == fast and by_status["unreachable"]["candidate_id"] == fast   # the slow blue is left out
+    cv.update_discrete(store, pid, threshold=8.0)                                 # left out: the plan keeps its limit
+    assert pl.get_plan(store, pid)["max_time"] == limit
+    cv.update_discrete(store, pid, max_time=None)                                 # None removes it
+    assert {m["status"] for m in pl.get_plan(store, pid)["matches"]} == {"matched"}
+    with pytest.raises(su.ValidationError, match="positive number of seconds"):
+        cv.update_discrete(store, pid, max_time=0)
+
+
+def test_the_api_takes_and_keeps_the_time_limit_of_a_discrete_plan(tmp_path):
+    from fastapi.testclient import TestClient
+    from titanium_platform.api.app import create_app
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    w = obs.setup(store)
+    for power, base in ((10, RED_LAB), (30, BLUE_LAB)):
+        for dl in (-1.0, 1.0):
+            obs.add(store, w, (base[0] + dl, base[1], base[2]), power=power)
+    su.save_rules(store, *w["setup"], repeat_threshold=2, delta_tolerance=6.0, variance_threshold=5.0)
+    su.save_rules(store, *w["setup"], criteria_agreed=True)
+    kn.refresh(store, *w["setup"])
+    with TestClient(app) as c:
+        r = c.post("/api/discrete", data={"device_id": w["setup"][0], "lens_id": w["setup"][1], "name": "A", "width_mm": 40, "threshold": 8,
+                                          "max_time": 3}, files={"image": ("a.png", png([rgb_of(RED_LAB)]), "image/png")})
+        plan = r.json()
+        assert r.status_code == 201 and plan["max_time"] == 3 and plan["matches"][0]["status"] == "unreachable"   # 900 mm/s is slower
+        assert c.get(f"/api/discrete/{plan['id']}/palette").json()[0]["time_s_per_cm2"] > 3
+        kept = c.patch(f"/api/discrete/{plan['id']}", json={"threshold": 8}).json()
+        assert kept["max_time"] == 3
+        cleared = c.patch(f"/api/discrete/{plan['id']}", json={"max_time": None}).json()
+        assert cleared["max_time"] is None and cleared["matches"][0]["status"] == "matched" and cleared["matches"][0]["time_s_per_cm2"] > 3
+    store.close()
 
 
 def test_a_color_beyond_the_threshold_is_unreachable_and_becomes_a_designer_target(store, w):
