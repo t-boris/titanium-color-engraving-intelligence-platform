@@ -131,6 +131,20 @@ def task_goals(goals: str | None) -> dict | None:
     return value
 
 
+def form_flag(value: str | None, default: bool, name: str) -> bool:
+    """A yes/no form field read the same way under every FastAPI version: absent or empty gives ``default`` (a script may
+    leave the field out; FastAPI 0.148 reads a missing ``bool`` field as false, like an unticked HTML checkbox), else
+    true/false, 1/0, on/off or yes/no."""
+    if value is None or not value.strip():
+        return default
+    text = value.strip().lower()
+    if text in ("true", "1", "on", "yes"):
+        return True
+    if text in ("false", "0", "off", "no"):
+        return False
+    raise su.ValidationError(f"{name} must be true or false")
+
+
 def lens_param(value: str | None) -> int | None:
     """A lens given in a form or a query: its record id, or ``unknown`` for a work whose lens is not known (DEC-063).
     It is never left out, so an unknown lens is always an explicit choice."""
