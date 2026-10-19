@@ -543,6 +543,9 @@ select::-ms-expand {display:none}
 .vw-split-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 18px;align-items:start}
 .vw-split-actions {display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
 .vw-colours .toolbar>label.row {min-height:44px}
+.vw-slider {display:flex;align-items:center;gap:12px;min-height:44px}
+.vw-slider input[type=range] {flex:1 1 auto;min-width:0;height:auto;min-height:0;padding:0;border:0;background:none;box-shadow:none;accent-color:var(--accent)}
+.vw-slider-value {flex:none;min-width:84px;text-align:right;font-variant-numeric:tabular-nums;color:#e3e9f6}
 .vw-editor {display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,320px);gap:18px;align-items:start;min-width:0}
 .vw-ed-main {display:flex;flex-direction:column;gap:10px;min-width:0}
 .vw-ed-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}

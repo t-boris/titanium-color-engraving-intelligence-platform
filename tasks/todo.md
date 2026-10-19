@@ -781,7 +781,7 @@ Asked for twice by the operator ("не вижу ... на третье место
   order, Q-007 styles); the rest of vector-detail-and-colour-control (density, eyes, smoothing, Contrast and Artistic, automatic merging of
   same-recipe regions) is not built. CI stays switched off (CLAUDE.md); the run of dd0aceb finished on GitHub on its own.
 
-## 0.8.0 plan: a straight layout, methods that differ, smooth contours, colouring by AI (awaiting approval)
+## 0.8.0 plan: a straight layout, methods that differ, smooth contours, colouring by AI (approved 2026-10-19; steps 1-2 done)
 Evidence (portrait of work 22, 28 colours, coarse detail, scratchpad `look*.py` and `look*.png`):
 - Layout: toolbar labels at y = 748/723/705/748 (flex-end alignment, hints under some fields only); `h4` margin 20 + stack gap 18.
 - Methods: SLIC 290 regions vs SEEDS 267 regions, same patches. Different in kind: tonal grid (275 regions, follows the shading:
@@ -792,9 +792,11 @@ Evidence (portrait of work 22, 28 colours, coarse detail, scratchpad `look*.py` 
   files use them; `vectorize.py` writes `L` only.
 - AI: `research.openai_client()` and `.env.local` exist; the real app runs from the repository directory and finds the key. No new library.
 Steps (each ends with tests, a commit to main, and a look at the real screen):
-- [ ] 1. Layout: fields in a grid aligned at the top, hints in the same row height, checkbox and button on one baseline, no empty bands.
-- [ ] 2. Smoothing: "Сглаживание, мм" = the low-pass sigma along each shared arc (ends pinned, gapless by construction); the simplification
-  tolerance stops being a user knob. Then curve fitting: arcs stored as cubic Béziers, preview as `C`, LightBurn file as `B` primitives.
-- [ ] 3. Methods: "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости"; SEEDS leaves the list (DEC-080 amended, old works keep working).
+- [x] 1. Layout: fields in a grid aligned at the top, hints in the same row height, checkbox and button on one baseline, no empty bands (cf83634; all inputs at y = 695 on screen).
+- [x] 2. Smoothing as a live slider (operator's amendment: "он перерисовывает все заново"): `contour.py` low-passes each shared arc
+  (ends pinned, corners kept) and fits cubic Béziers; base arcs stay as traced, curves are derived at read time for `plan["smoothing_mm"]`
+  (new works 0.5, older 0, max 2), so the slider resets nothing and is not in undo; preview `C`, LightBurn file `B`; export entry records
+  the strength. Tests: `tests/test_contour.py` (30), route/export/slider tests in `tests/test_vector_work.py`.
+- [ ] 3. Methods: "Мозаика" (SLIC, default), "По тонам", "Крупные плоскости" and SEEDS kept (the operator's answer: "те же три и SEEDS"; DEC-082); old works keep their key; a test that the four maps differ.
 - [ ] 4. AI colouring (REQ-050): styles, the answer checked against the measured palette, one undoable operation, a variant.
 - [ ] 5. Spec: DEC for each, REQ ticks, version 0.8.0, backup and deploy, look at the real app.

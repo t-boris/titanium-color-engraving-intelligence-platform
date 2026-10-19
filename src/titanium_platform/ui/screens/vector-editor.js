@@ -40,9 +40,12 @@ const VectorEditor = (() => {
     return el;
   };
 
-  /** Разбиение в исходных цветах (SVG) один раз на версию документа: геометрия не приходит с каждым ответом. */
+  /** Рисунок границ меняют версия разбиения и гладкость линий (REQ-052): области и цвета при этом те же. */
+  const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;
+
+  /** Разбиение в исходных цветах (SVG) один раз на рисунок границ: геометрия не приходит с каждым ответом. */
   async function splitSvg(j) {
-    const key = `${j.id}:${j.document.version}`;
+    const key = `${j.id}:${geometryKey(j)}`;
     if (!svgCache.has(key)) {
       const res = await fetch(`/api/vector/${j.id}/split.svg`);
       if (!res.ok) throw new Error('Разбиение не загрузилось');
@@ -162,7 +165,7 @@ const VectorEditor = (() => {
 
     // --- картинка: загрузка, раскраска, масштаб ---------------------------------------------------------------------------
     async function load() {
-      const version = j.document.version;
+      const version = geometryKey(j);
       if (loadedVersion === version) return;
       loadedVersion = version;
       let next;
@@ -172,10 +175,10 @@ const VectorEditor = (() => {
         loading.setAttribute('class', 'vw-ed-loading alert bad');
         return fill(loading, e.message);
       }
-      if (version !== j.document.version) return;             // пока грузилось, пришла версия новее: её загрузка уже идёт
+      if (version !== geometryKey(j)) return;                 // пока грузилось, пришёл рисунок новее: его загрузка уже идёт
       const {width: W, height: H} = j.document.size_mm;
       const step = Math.max(W, H) / 80;
-      missId = `vw-miss-${id}-${version}`;
+      missId = `vw-miss-${id}-${version}`.replace(/[^\w-]/g, '-');
       const pattern = svgEl('pattern', {id: missId, patternUnits: 'userSpaceOnUse', width: step, height: step, patternTransform: 'rotate(45)'});
       pattern.append(svgEl('rect', {width: step, height: step, fill: '#ffffff'}), svgEl('rect', {width: step / 3, height: step, fill: MISSING}));
       const defs = svgEl('defs', {});
@@ -656,7 +659,7 @@ const VectorEditor = (() => {
       state.colours = new Set([...state.colours].filter((k) => known.has(k)));
       const inUse = new Set((j.layers || []).map((l) => String(l.entry_id)));
       state.layers = new Set([...state.layers].filter((e) => inUse.has(e)));
-      if (loadedVersion !== j.document.version) load();
+      if (loadedVersion !== geometryKey(j)) load();
       else { paint(); refreshHover(); }
       loadNear();
       syncPanel();

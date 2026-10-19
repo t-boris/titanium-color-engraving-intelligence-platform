@@ -81,6 +81,14 @@ def split_vector_job(plan_id: int, body: dict, request: Request):
     return _view(request, plan_id)
 
 
+@router.post("/vector/{plan_id}/smoothing")
+def smooth_vector_job(plan_id: int, body: dict, request: Request):
+    """Set how smooth a photograph job's borders are (see vector_job.smooth): ``mm`` from 0 (as traced) to the end of the slider.
+    Only the drawing of the borders changes; the job is returned as it is afterwards."""
+    vector_job.smooth(store_of(request), plan_id, body.get("mm"))
+    return _view(request, plan_id)
+
+
 @router.post("/vector/{plan_id}/colouring")
 def colour_vector_job(plan_id: int, op: dict, request: Request):
     """One operation of a photograph job's colour editor (see vector_job.colour): an automatic mode, a variant, the

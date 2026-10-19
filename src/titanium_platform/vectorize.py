@@ -439,12 +439,24 @@ def to_svg(document: dict, *, weak=frozenset()) -> str:
             f'<defs>{"".join(defs)}</defs>{"".join(body)}</svg>')
 
 
+def _has_handle(handle, node) -> bool:
+    return abs(handle[0] - node[0]) > 1e-6 or abs(handle[1] - node[1]) > 1e-6
+
+
+def _vertex(node) -> str:
+    """LightBurn's vertex: the point, then the out-handle ``c0`` and the in-handle ``c1`` as absolute points; ``c0x1`` / ``c1x1`` is no handle."""
+    out = f"c0x{node[2]:.5f}c0y{node[3]:.5f}" if _has_handle(node[2:4], node) else "c0x1"
+    into = f"c1x{node[4]:.5f}c1y{node[5]:.5f}" if _has_handle(node[4:6], node) else "c1x1"
+    return f"V{node[0]:.5f} {node[1]:.5f}{out}{into}"
+
+
 def to_lbrn2_shapes(document: dict, layer_index_of: Mapping[str, int] | Callable[[str], int], *,
                     offset: tuple[float, float] = (0.0, 0.0)) -> list[str]:
     """LightBurn ``<Shape Type="Path">`` XML, one per region, in the format :mod:`lightburn` reads.
 
     Every polyline of a region is a sub-path of its shape: an outline's loops close (holes nest inside their outer
-    boundary), centre-lines stay open. Straight edges only (``L a b``; ``c0x1c1x1`` marks a vertex without handles).
+    boundary), centre-lines stay open. Straight edges (``L a b``; ``c0x1c1x1`` marks a vertex without handles), or, for a
+    region that carries ``nodes`` (smooth borders, :func:`segment.smoothed`), cubic Béziers (``B a b``) through the nodes.
     ``layer_index_of`` maps a settings group (``layer_key``) to a LightBurn output colour 0..29; ``offset`` (mm) is
     written as the shape's XForm translation.
     """
@@ -458,7 +470,8 @@ def to_lbrn2_shapes(document: dict, layer_index_of: Mapping[str, int] | Callable
             raise VectorizeError(f"LightBurn layer {index!r} is not an output colour 00-29 (T1/T2 never carry geometry)")
         closed = bool(r["loops"])
         vertices, edges = [], []
-        for path in r["loops"] if closed else r["strokes"]:
+        curves = r.get("nodes")                       # a region with smooth borders: its loops as nodes with Bézier handles
+        for path in curves if curves and closed else r["loops"] if closed else r["strokes"]:
             start = len(vertices)
             vertices += path
             edges += [(start + i, start + i + 1) for i in range(len(path) - 1)]
@@ -466,8 +479,13 @@ def to_lbrn2_shapes(document: dict, layer_index_of: Mapping[str, int] | Callable
                 edges.append((start + len(path) - 1, start))
         if not edges:
             continue
-        verts = "".join(f"V{x:.5f} {y:.5f}c0x1c1x1" for x, y in vertices)
-        prims = "".join(f"L{a} {b}" for a, b in edges)
+        if curves and closed:
+            verts = "".join(_vertex(v) for v in vertices)
+            prims = "".join(f"{'B' if _has_handle(vertices[a][2:4], vertices[a]) or _has_handle(vertices[b][4:6], vertices[b]) else 'L'}{a} {b}"
+                            for a, b in edges)
+        else:
+            verts = "".join(f"V{x:.5f} {y:.5f}c0x1c1x1" for x, y in vertices)
+            prims = "".join(f"L{a} {b}" for a, b in edges)
         shapes.append(f'    <Shape Type="Path" CutIndex="{int(index)}">\n'
                       f'        <XForm>1 0 0 1 {offset[0]:.5f} {offset[1]:.5f}</XForm>\n'
                       f'        <VertList>{verts}</VertList>\n        <PrimList>{prims}</PrimList>\n    </Shape>\n')

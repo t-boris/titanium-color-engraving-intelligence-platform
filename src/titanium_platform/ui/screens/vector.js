@@ -303,7 +303,7 @@
         h('div', {class: 'row'}, btn(next.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
           try { await put(`/plans/${next.id}/markers`, {enabled: !next.markers_enabled}); await refresh(); } catch (e) { fail(e); }
         })));
-      if (resplit) fill(split, VectorSplit.card(next, reload));     // счётчики разбиения меняются только с его версией
+      if (resplit) fill(split, VectorSplit.card(next, reload, smooth));     // счётчики разбиения меняются только с его версией
       fill(file, photoExport(next, refresh));
       if (colours) colours.update(next);
     }
@@ -311,6 +311,8 @@
       try { show(await post(`/vector/${j.id}/colouring`, op)); return true; } catch (e) { fail(e); return false; }
     }
     const run = (op) => (queue = queue.then(() => send(op)));
+    /** Ползунок гладкости: в той же очереди, что и действия редактора; границы перерисовываются, цвета остаются (REQ-052). */
+    const smooth = (mm) => (queue = queue.then(async () => { try { show(await post(`/vector/${j.id}/smoothing`, {mm})); } catch (e) { fail(e); } }));
     async function refresh() {
       try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
     }

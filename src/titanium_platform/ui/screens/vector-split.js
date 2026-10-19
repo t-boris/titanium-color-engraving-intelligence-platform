@@ -26,6 +26,24 @@ const VectorSplit = (() => {
     explain();
     return {select, hint};
   }
+  /** Гладкость границ — ползунок в мм (0: как найдены): каждое движение перерисовывает границы сразу, разбиение и цвета остаются
+      (REQ-052, DEC-083). Запросы идут по одному: пока один считается, берётся последнее положение, промежуточные пропускаются. */
+  function smoothness(j, apply) {
+    const input = h('input', {type: 'range', min: '0', max: String(j.smoothing_max_mm || 2), step: '0.05', value: String(j.smoothing_mm || 0),
+      'aria-label': 'Гладкость линий, мм'});
+    const say = (v) => (+v === 0 ? 'как найдены' : `${App.num(+v, 2)} мм`);
+    const readout = h('output', {class: 'vw-slider-value'}, say(input.value));
+    let sent = +input.value, busy = false, timer = null;
+    async function pump() {
+      if (busy) return;
+      busy = true;
+      try {
+        while (+input.value !== sent) { sent = +input.value; await apply(sent); }
+      } catch (e) { fail(e); sent = +input.value; } finally { busy = false; }
+    }
+    input.addEventListener('input', () => { readout.textContent = say(input.value); clearTimeout(timer); timer = setTimeout(pump, 120); });
+    return h('div', {class: 'vw-slider'}, input, readout);
+  }
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -43,7 +61,7 @@ const VectorSplit = (() => {
 
   /** Блок разбиения в разделе «Цвета и разбиение»: настройки с выбором алгоритма, счётчики, «Разбить заново» и, в
       сворачиваемом блоке, картинка с важными областями. */
-  function card(j, reload) {
+  function card(j, reload, smooth) {
     const doc = j.document, s = j.split;
     const W = doc.image_px.width, H = doc.image_px.height;
     const manual = s.manual.map((a) => ({...a}));
@@ -51,7 +69,7 @@ const VectorSplit = (() => {
     const colours = h('input', {type: 'number', step: '1', min: '2', max: String(j.layer_cap), value: s.n_colors, 'aria-label': 'Число цветов'});
     const algorithm = picker(s.algorithm || 'slic');
     const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === s.detail}, l)));
-    const smoothing = h('input', {type: 'number', step: 'any', min: '0', value: s.tolerance_mm, 'aria-label': 'Сглаживание, мм'});
+    const smoothing = smoothness(j, smooth || (async () => {}));
     const faces = h('input', {type: 'checkbox', checked: s.faces});
     const tool = h('select', {'aria-label': 'Форма новой области'}, h('option', {value: 'rect'}, 'Прямоугольник'), h('option', {value: 'ellipse'}, 'Эллипс'));
     const overlay = svgEl('svg', {viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'vw-areas', role: 'img',
@@ -112,7 +130,7 @@ const VectorSplit = (() => {
       const self = ev.currentTarget;
       self.disabled = true;
       try {
-        await post(`/vector/${j.id}/split`, {n_colors: +colours.value, algorithm: algorithm.select.value, detail: detail.value, tolerance_mm: +smoothing.value,
+        await post(`/vector/${j.id}/split`, {n_colors: +colours.value, algorithm: algorithm.select.value, detail: detail.value,
           faces: faces.checked, manual, removed: [...removed]});
         toast('Картинка разбита заново; цвета подобраны заново', 'ok');
         reload();
@@ -123,7 +141,7 @@ const VectorSplit = (() => {
     return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Разбиение'),
       h('div', {class: 'vw-split-fields'}, field('Алгоритм разбиения', algorithm.select),
         field('Число цветов', colours, `2–${j.layer_cap}: чистка — первый слой` + (j.markers_enabled ? ', ещё один — маркеры' : '')),
-        field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Сглаживание границ, мм', smoothing)),
+        field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Гладкость линий', smoothing, 'ползунок перерисовывает границы сразу; области и цвета не меняются')),
       h('div', {class: 'vw-split-actions'}, h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run),
       algorithm.hint,
       h('p', {class: 'small'}, `Алгоритм ${algorithmName(doc.algorithm)} · цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')

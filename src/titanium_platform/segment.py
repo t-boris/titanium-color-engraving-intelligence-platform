@@ -44,6 +44,12 @@ down); ``~i`` (``-i - 1``, as in TopoJSON) walks it backwards; an arc's ``id`` i
 numbered in raster order of their first pixel; a region's ``lab`` and ``srgb`` are its colour's. :func:`neighbours` gives
 the regions bordering each region. :func:`regions_as_loops` turns the arcs back into closed outlines per region for :mod:`vectorize`'s LightBurn and
 SVG writers; :func:`coverage` measures gaps and overlaps of such outlines by rasterising them.
+
+The stored arcs are the borders as traced. :func:`smoothed` gives the same document with every border in use replaced by smooth
+cubic Béziers of the operator's strength in mm (:mod:`contour`, DEC-083): an arc then also has ``"nodes"``, ``[x, y, c0x, c0y, c1x,
+c1y]`` as LightBurn's ``Path`` shape has them, and its ``points`` are the curve flattened. The regions, their colours and the
+topology are untouched, so a colouring made on the traced split stays valid at every strength; :func:`regions_as_loops` and
+:func:`to_svg` follow the curves, which is how the preview and the LightBurn file get the same geometry.
 """
 from __future__ import annotations
 
@@ -55,7 +61,7 @@ from xml.sax.saxutils import quoteattr
 import cv2
 import numpy as np
 
-from . import color, faces
+from . import color, contour, faces
 from .vectorize import _num
 
 VERSION = 1
@@ -539,13 +545,66 @@ def _loop_points(document: dict, loop: list[int]) -> list[list[float]]:
     return ring[start:] + ring[:start]
 
 
+def smoothed(document: dict, sigma_mm: float) -> dict:
+    """The document with every border a region uses replaced by its smooth Bézier form (``nodes``) and the points along it; a strength of
+    0 is the document as traced. The ends of an arc do not move, so both regions of a border and all arcs of a junction still agree."""
+    sigma = _number(sigma_mm, "the smoothing")
+    if sigma == 0:
+        return document
+    used = {ref if ref >= 0 else ~ref for r in document["regions"] for loop in r["loops"] for ref in loop}
+    arcs = []
+    for arc in document["arcs"]:
+        if arc["id"] not in used:
+            arcs.append(arc)
+            continue
+        nodes = [[round(v, 5) for v in node] for node in contour.smooth_arc(arc["points"], arc["closed"], sigma)]
+        arcs.append({**arc, "nodes": nodes, "points": contour.flatten(nodes)})
+    return {**document, "arcs": arcs, "smoothing_mm": sigma}
+
+
+def _oriented(nodes: list[list[float]], backwards: bool) -> list[list[float]]:
+    """The nodes of an arc walked backwards: the order reverses and every node's in- and out-handle swap."""
+    return [[n[0], n[1], n[4], n[5], n[2], n[3]] for n in reversed(nodes)] if backwards else nodes
+
+
+def _split_node(a: list[float], b: list[float]) -> list[list[float]]:
+    """The nodes a and b with one more node in the middle of the curve between them (de Casteljau at 0.5); a and b keep their points."""
+    p0, c0, c1, p1 = np.array(a[0:2]), np.array(a[2:4]), np.array(b[4:6]), np.array(b[0:2])
+    q0, q1, q2 = (p0 + c0) / 2, (c0 + c1) / 2, (c1 + p1) / 2
+    r0, r1 = (q0 + q1) / 2, (q1 + q2) / 2
+    m = (r0 + r1) / 2
+    r = lambda v: [round(float(x), 5) for x in v]
+    return [[a[0], a[1], *r(q0), a[4], a[5]], [*r(m), *r(r1), *r(r0)], [b[0], b[1], b[2], b[3], *r(q2)]]
+
+
+def _loop_nodes(document: dict, loop: list[int]) -> list[list[float]]:
+    """A loop's closed outline as nodes (the last node joins the first by a curve of its own), starting inside an arc like
+    :func:`_loop_points`. A node at a junction has the in-handle of the arc before it and the out-handle of the arc after it."""
+    runs = [_oriented(document["arcs"][ref if ref >= 0 else ~ref]["nodes"], ref < 0) for ref in loop]
+    ring, spans = [], []
+    for k, run in enumerate(runs):
+        body = [list(n) for n in run[:-1]]
+        body[0][4:6] = runs[k - 1][-1][4:6]
+        spans.append((len(ring), len(body)))
+        ring += body
+    offset, size = next(((offset, size) for offset, size in spans if size >= 2), (None, 1))
+    if offset is None:                                 # every arc is a single curve: split the first one in two
+        a, b, rest = ring[0], ring[1 % len(ring)], ring[2:]
+        first, mid, last = _split_node(a, b)
+        return [mid, last, *rest, first] if len(ring) > 1 else [first, mid]
+    start = offset + size // 2
+    return ring[start:] + ring[:start]
+
+
 def regions_as_loops(document: dict) -> list[dict]:
     """Every region as :mod:`vectorize` keeps a traced colour region: closed ``loops`` in mm (outer boundary, then holes)
     built from the shared arcs, so two neighbours are identical along their border. The settings group (``layer_key``)
     is the colour, ``c<index>``. ``{"regions": regions_as_loops(doc)}`` goes to :func:`vectorize.to_lbrn2_shapes`."""
+    curved = any("nodes" in arc for arc in document["arcs"])
     return [{"id": r["id"], "task": "color", "color": r["color"], "srgb": r["srgb"], "lab": r["lab"], "pixels": r["pixels"],
              "important": r["important"], "layer_key": f"c{r['color']}", "loops": [_loop_points(document, loop) for loop in r["loops"]],
-             "strokes": []} for r in document["regions"]]
+             "strokes": [], **({"nodes": [_loop_nodes(document, loop) for loop in r["loops"]]} if curved else {})}
+            for r in document["regions"]]
 
 
 def _rgb(value) -> str:
@@ -556,6 +615,14 @@ def _rgb(value) -> str:
     if not all(isinstance(v, (int, np.integer)) and not isinstance(v, bool) and 0 <= v <= 255 for v in (r, g, b)):
         raise SegmentError("a preview colour must be three whole sRGB channels 0..255")
     return "#{:02x}{:02x}{:02x}".format(int(r), int(g), int(b))
+
+
+def _curve_path(ring: list[list[float]]) -> str:
+    """An SVG sub-path through a closed ring of nodes: one cubic curve from every node to the next, the last back to the first."""
+    parts = [f"M{_num(ring[0][0])} {_num(ring[0][1])}"]
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        parts.append(f"C{_num(a[2])} {_num(a[3])} {_num(b[4])} {_num(b[5])} {_num(b[0])} {_num(b[1])}")
+    return " ".join(parts) + " Z"
 
 
 def to_svg(document: dict, colours: Mapping[int, list] | None = None) -> str:
@@ -570,7 +637,10 @@ def to_svg(document: dict, colours: Mapping[int, list] | None = None) -> str:
     hairline = _num(SEAM_PX * document["px_mm"])
     body = []
     for r in regions_as_loops(document):
-        d = " ".join("M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in loop) + " Z" for loop in r["loops"])
+        if "nodes" in r:
+            d = " ".join(_curve_path(ring) for ring in r["nodes"])
+        else:
+            d = " ".join("M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in loop) + " Z" for loop in r["loops"])
         fill = fills.get(r["color"]) or _rgb(r["srgb"])
         body.append(f'<path d="{d}" fill="{fill}" fill-rule="evenodd" stroke="{fill}" stroke-width="{hairline}" stroke-linejoin="round" '
                     f'data-region={quoteattr(r["id"])} data-color="{r["color"]}"/>')

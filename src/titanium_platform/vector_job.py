@@ -30,6 +30,7 @@ import collections
 import copy
 import json
 import math
+import threading
 import uuid
 from pathlib import Path
 
@@ -45,6 +46,8 @@ DOCUMENT_OPS = ("set_task", "set_layer", "delete", "merge", "set_tolerance")
 EXPORTED = ("matched", "chosen")
 ST_EXPORTED = "Exported"
 JOB_NAME = "Векторная работа"
+SMOOTHING_MM = 0.5                      # a new photograph work's smoothing of its borders; a work made before has none (0: as traced)
+SMOOTHING_MAX_MM = 2.0                  # the end of the slider (REQ-052, DEC-083)
 
 
 def layer_cap(clean: bool) -> int:
@@ -86,6 +89,31 @@ def _job(store: Store, plan_id: int) -> dict:
 
 def _document(plan: dict) -> dict:
     return json.loads(Path(plan["document_path"]).read_text(encoding="utf-8"))
+
+
+_MEMO: "collections.OrderedDict[tuple, object]" = collections.OrderedDict()
+_MEMO_LOCK = threading.Lock()
+MEMO_SIZE = 6
+
+
+def _memo(key: tuple, make):
+    """The last few smoothed documents and their pictures: the slider asks for the same strength again as often as it moves back."""
+    with _MEMO_LOCK:
+        if key in _MEMO:
+            _MEMO.move_to_end(key)
+            return _MEMO[key]
+    value = make()
+    with _MEMO_LOCK:
+        _MEMO[key] = value
+        while len(_MEMO) > MEMO_SIZE:
+            _MEMO.popitem(last=False)
+    return value
+
+
+def _geometry(plan: dict) -> dict:
+    """The current split with its borders at the work's smoothing (:func:`segment.smoothed`): what the preview and the file draw."""
+    mm = float(plan.get("smoothing_mm", 0.0))
+    return _memo(("geometry", plan["document_path"], mm), lambda: seg.smoothed(_document(plan), mm))
 
 
 def _write_document(store: Store, document: dict) -> str:
@@ -498,7 +526,7 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
     h, w = picture.shape[:2]
     size = {"width": width, "height": h * width / w}
     lens = setup["lens"] or {}
-    plan = {"task": "vector", "engraving_task": tasks.chosen_or_default(task, tasks.VECTOR_STRATEGY_TASK[PHOTO], goals), "strategy": PHOTO,
+    plan = {"task": "vector", "engraving_task": tasks.chosen_or_default(task, tasks.VECTOR_STRATEGY_TASK[PHOTO], goals), "strategy": PHOTO, "smoothing_mm": SMOOTHING_MM,
             "image_path": cv._store_image(store, image_bytes), "size_mm": size, "material_id": material_id, "threshold": thr,
             "lens": su.lens_snapshot(setup), "split": split, "detected": {"areas": search.areas, "faces": search.faces, "error": search.error},
             "colour_settings": {"max_time": colormap.time_limit(max_time), "include_as_shot": bool(include_as_shot)},
@@ -771,8 +799,25 @@ def photo_palette(store: Store, plan_id: int) -> list[dict]:
 
 
 def split_svg(store: Store, plan_id: int) -> str:
-    """The current split in its source colours (one path per region, with its id and colour index)."""
-    return seg.to_svg(_document(_photo_job(store, plan_id)))
+    """The current split in its source colours (one path per region, with its id and colour index), borders at the work's smoothing."""
+    plan = _photo_job(store, plan_id)
+    return _memo(("svg", plan["document_path"], float(plan.get("smoothing_mm", 0.0))), lambda: seg.to_svg(_geometry(plan)))
+
+
+def smooth(store: Store, plan_id: int, mm) -> None:
+    """Set how smooth the borders are, in mm (0: as traced). Only the drawing of the borders changes, not a region or a colour, so
+    nothing is reset and nothing is added to the steps of undo; the picture and the file follow it from now on."""
+    plan = _photo_job(store, plan_id)
+    try:
+        value = float(mm)
+    except (TypeError, ValueError):
+        value = math.nan
+    if isinstance(mm, bool) or not math.isfinite(value) or not 0 <= value <= SMOOTHING_MAX_MM:
+        raise cv.ConversionError(f"the smoothing must be a number of millimetres from 0 to {SMOOTHING_MAX_MM:g}")
+    plan["smoothing_mm"] = round(value, 3)
+    document = _document(plan)
+    with store.transaction():
+        _photo_refresh(store, plan, document, _palette(store, plan))
 
 
 def photo_view(store: Store, plan: dict) -> dict:
@@ -808,7 +853,7 @@ def photo_view(store: Store, plan: dict) -> dict:
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         time=_estimate(plan, layers), export_blocked=_blocker_photo(plan, state), layer_cap=photo_cap(plan["markers_enabled"]),
-        palette_size=len(entries),
+        palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}
                  for e in plan["exports"]])
@@ -826,7 +871,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
         raise cv.ConversionError(blocker)
     layers = _export_layers(store, plan, state)
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
-    regions = [{**r, "layer_key": key[r["id"]]} for r in seg.regions_as_loops(document) if r["id"] in key]
+    regions = [{**r, "layer_key": key[r["id"]]} for r in seg.regions_as_loops(_geometry(plan)) if r["id"] in key]
     data = pl.export_lbrn2({**plan, "layers": layers, "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
@@ -835,7 +880,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
                             "document_version": plan["document_version"], "layers": len(layers), "regions": len(regions),
                             "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
-                            "seconds": _estimate(plan, layers)["seconds"]})
+                            "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers)["seconds"]})
     cv._persist(store, plan, ST_EXPORTED, plan["markers_enabled"])
     return plan["name"], data
 

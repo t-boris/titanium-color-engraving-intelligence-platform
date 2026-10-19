@@ -38,6 +38,7 @@
     [/^the level of detail must be coarse, medium or fine$/i, 'Детальность: крупно, средне или детально'],
     [/^the splitting algorithm must be slic or seeds$/i, 'Алгоритм разбиения: SLIC или SEEDS'],
     [/^the smoothing must be a non-negative number of millimetres$/i, 'Сглаживание — неотрицательное число миллиметров'],
+    [/^the smoothing must be a number of millimetres from 0 to (\d+(?:\.\d+)?)$/i, (m) => `Гладкость линий — число миллиметров от 0 до ${m[1]}`],
     [/^an important area must be an ellipse or a polygon of finite numbers in picture pixels$/i,
       'Важная область — эллипс или многоугольник в пикселях картинки'],
     [/^a removed area must be one of the areas found in the picture$/i, 'Убрать можно только область, найденную на картинке'],

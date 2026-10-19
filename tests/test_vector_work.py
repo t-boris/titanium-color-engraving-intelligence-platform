@@ -4,6 +4,7 @@ colour editor (feature vector-work-colour-editor: REQ-043..REQ-049, DEC-001, DEC
 and redo."""
 import copy
 import json
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -987,3 +988,115 @@ def test_the_area_overlay_does_not_paint_the_chart_background_over_the_picture()
     chart, overlay = css.index("svg[role=img] {"), css.index(".vw-stage>svg.vw-areas {")
     rule = css[overlay:css.index("}", overlay)]
     assert overlay > chart and "background:none" in rule and "box-shadow:none" in rule
+
+
+# -- the smoothness of the borders: a live slider (REQ-052, DEC-083) --------------------------------------------------------------
+def smoothing(c, j, mm):
+    return c["client"].post(f"/api/vector/{j['id']}/smoothing", json={"mm": mm})
+
+
+def test_a_new_photograph_work_starts_smooth_and_the_slider_changes_only_the_drawing_of_the_borders(work, job):
+    c, j = work, job
+    assert j["smoothing_mm"] == vector_job.SMOOTHING_MM == 0.5 and j["smoothing_max_mm"] == vector_job.SMOOTHING_MAX_MM
+    j = colouring(c, j, op="paint", region=areas(c, j)["paper"], scope="region", entry_id=by_rgb(j, BLUE)["entry_id"])
+    before = c["client"].get(f"/api/vector/{j['id']}").json()
+    svg_smooth = c["client"].get(f"/api/vector/{j['id']}/split.svg").text
+    assert " C" in svg_smooth
+    r = smoothing(c, j, 0)
+    assert r.status_code == 200 and r.json()["smoothing_mm"] == 0
+    after = r.json()
+    keep = ("document", "colours", "layers", "split", "undo", "redo", "variants", "history", "missing", "export_blocked")
+    assert {k: after[k] for k in keep} == {k: before[k] for k in keep}                           # no region, colour, undo step or history entry
+    traced = c["client"].get(f"/api/vector/{j['id']}/split.svg").text
+    assert " C" not in traced and traced != svg_smooth and len(traced) > len(svg_smooth)             # every traced point, against few curves
+    assert smoothing(c, j, 1.25).json()["smoothing_mm"] == 1.25
+    assert c["client"].get(f"/api/vector/{j['id']}/split.svg").text not in (traced, svg_smooth)
+    assert smoothing(c, j, 0.5).status_code == 200
+    assert c["client"].get(f"/api/vector/{j['id']}/split.svg").text == svg_smooth                  # back to the same picture, whatever the order
+    assert pl.get_plan(work["store"], j["id"])["smoothing_mm"] == 0.5
+
+
+def test_the_slider_never_resets_the_colouring_and_undo_goes_on_where_it_was(work, job):
+    c, j = work, job
+    j = colouring(c, j, op="paint", region=areas(c, j)["paper"], scope="region", entry_id=by_rgb(j, BLUE)["entry_id"])
+    state = (j["undo"], j["redo"], j["document"]["version"], [v["number"] for v in j["variants"]])
+    for mm in (0, 2, 0.35):
+        j = smoothing(c, j, mm).json()
+    assert (j["undo"], j["redo"], j["document"]["version"], [v["number"] for v in j["variants"]]) == state
+    j = colouring(c, j, op="undo")
+    assert j["undo"] == 0 and j["redo"] == 1 and j["smoothing_mm"] == 0.35                        # undo returns the colours, not the slider
+    j = colouring(c, j, op="redo")
+    assert j["smoothing_mm"] == 0.35 and by_rgb(j, BLUE)["regions"] >= 1
+
+
+@pytest.mark.parametrize("bad", [-0.1, 2.01, 5, "wide", None, True, float("nan"), [1]])
+def test_a_smoothing_outside_the_slider_is_refused_and_changes_nothing(work, job, bad):
+    c, j = work, job
+    r = c["client"].post(f"/api/vector/{j['id']}/smoothing", content=json.dumps({"mm": bad}), headers={"content-type": "application/json"})
+    assert r.status_code == 422 and r.json()["error"] == "the smoothing must be a number of millimetres from 0 to 2"
+    assert c["client"].get(f"/api/vector/{j['id']}").json()["smoothing_mm"] == vector_job.SMOOTHING_MM
+
+
+def test_a_work_made_before_the_slider_has_its_borders_as_traced_until_it_is_moved(work, job):
+    c, j, store = work, job, work["store"]
+    plan = pl.get_plan(store, j["id"])
+    del plan["smoothing_mm"]                                                                       # as release 0.7.0 and earlier stored it
+    cv._persist(store, plan, plan["status"], plan["markers_enabled"])
+    view = c["client"].get(f"/api/vector/{j['id']}").json()
+    assert view["smoothing_mm"] == 0 and " C" not in c["client"].get(f"/api/vector/{j['id']}/split.svg").text
+    assert smoothing(c, view, 0.8).json()["smoothing_mm"] == 0.8 and " C" in c["client"].get(f"/api/vector/{j['id']}/split.svg").text
+
+
+def test_the_file_is_written_at_the_smoothness_the_preview_shows_and_the_export_says_so(work, job):
+    c, j = work, job
+    for number, mm in ((1, 0), (2, 1.0)):
+        smoothing(c, j, mm)
+        r = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
+        assert r.status_code == 200
+        prims = re.findall(r"<PrimList>([^<]*)</PrimList>", r.text)
+        assert prims and ("B" in "".join(prims)) is (mm > 0)                                      # curves exactly when the work is smooth
+        project = lb.parse_bytes(r.content)
+        dx, dy = pl.export_offset(pl.get_plan(c["store"], j["id"]))
+        regions = [p for layer in project.layers if layer.index > 0 for p in layer.regions]
+        assert regions and all(p.closed and p.kind == "path" for p in regions)
+        back = [[[(x - dx, y - dy) for x, y in loop] for loop in [p.polygon] + p.holes] for p in regions]
+        cov = sg.coverage(back, 60, 45, 16)
+        assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005                                # smooth borders still tile the picture
+        assert pl.get_plan(work["store"], j["id"])["exports"][-1]["smoothing_mm"] == mm
+        assert c["client"].get(f"/api/vector/{j['id']}").json()["exports"][-1]["number"] == number
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_slider_sends_the_last_position_once_and_the_editor_redraws_the_borders_for_it(work, job, tmp_path):
+    j = job
+    routes = routes_of(work, j)
+    moved = {**routes[f"/api/vector/{j['id']}"]["json"], "smoothing_mm": 1.2}
+    routes[f"/api/vector/{j['id']}/smoothing"] = {"status": 200, "json": moved}
+    out = run_screen(tmp_path, j, routes, """
+  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Гладкость линий, мм');
+  out.initial = [slider.getAttribute('type'), slider.getAttribute('min'), slider.getAttribute('max'), slider.getAttribute('step'), slider.value];
+  const readout = tree.querySelectorAll('output').find((o) => o.className === 'vw-slider-value');
+  out.readoutBefore = readout.textContent;
+  const geometryBefore = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
+  for (const v of ['0.3', '0.6', '0.9', '1.2']) { slider.value = v; await slider.dispatch('input'); }
+  out.readoutDuring = readout.textContent;
+  await new Promise((r) => setTimeout(r, 400));
+  await tick(); await tick();
+  out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
+  out.geometry = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length - geometryBefore;
+  out.renders = ctx.__renders.length;
+  out.stillThere = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Гладкость линий, мм') === slider;
+  out.readoutAfter = readout.textContent;
+""")
+    assert out["initial"] == ["range", "0", "2", "0.05", "0.5"] and out["readoutBefore"].replace(",", ".") == "0.50 мм"
+    assert out["readoutDuring"].replace(",", ".") == "1.20 мм"                                                         # the number follows the finger at once
+    assert out["posted"] == [[f"/api/vector/{j['id']}/smoothing", {"mm": 1.2}]]                    # one request, with the last position
+    assert out["geometry"] == 1 and out["renders"] == 0                                            # the borders are fetched again, nothing else redrawn
+    assert out["stillThere"] and out["readoutAfter"].replace(",", ".") == "1.20 мм"                                   # the slider is the same element, still in the hand
+
+
+def test_the_editor_and_the_slider_are_wired_to_the_smoothness_of_the_work():
+    editor = (UI / "screens" / "vector-editor.js").read_text(encoding="utf-8")
+    assert "const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;" in editor and "loadedVersion !== geometryKey(j)" in editor
+    split_js = (UI / "screens" / "vector-split.js").read_text(encoding="utf-8")
+    assert "type: 'range'" in split_js and "'aria-label': 'Гладкость линий, мм'" in split_js and "max: String(j.smoothing_max_mm || 2)" in split_js

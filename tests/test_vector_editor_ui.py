@@ -83,7 +83,7 @@ def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it
 def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one_after_another():
     assert "const run = (op) => (queue = queue.then(() => send(op)));" in VECTOR
     assert "show(await post(`/vector/${j.id}/colouring`, op))" in VECTOR and "if (colours) colours.update(next);" in VECTOR
-    assert "if (resplit) fill(split, VectorSplit.card(next, reload));" in VECTOR
+    assert "if (resplit) fill(split, VectorSplit.card(next, reload, smooth));" in VECTOR
     assert "j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked))" in VECTOR      # the reason stays beside the export
 
 
