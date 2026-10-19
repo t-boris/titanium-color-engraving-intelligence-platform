@@ -231,3 +231,29 @@ def test_a_cleaning_layer_engraved_over_entirely_is_not_measured_and_says_so(tmp
     assert any("engraved over entirely" in n for n in witness["notes"])
     assert "clean_reference" not in report
     store.close()
+
+
+def test_a_refused_registration_leaves_the_four_corners_to_the_operator_and_they_align_the_work(tmp_path):
+    """REQ-038 AC4: too few anchors refuse the automatic registration with the reason kept; nothing else is accepted in
+    its place, and the four corners placed by the operator align the work."""
+    from test_anchoring import few_anchor_work
+    work = few_anchor_work()
+    store = Store(tmp_path)
+    store.set_setting("allow_non_raw_photos", True)
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    material = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")
+    su.save_capture_setup(store, "Rig", "camera on a stand", "LED 5600 K", "90", "ColorChecker Classic")
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=None, lightburn_name="x.lbrn2", lightburn_bytes=work["lightburn"],
+                         photo_name="x.png", photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(),
+                         context={"material_id": material["id"]})
+    report = ig.check_pair(store, pid)
+    assert not report["alignment"]["valid"]
+    assert report["alignment"]["anchoring"]["refused"] == "only 6 elements matched the photograph"
+    assert any("place the four image corners of the work" in p for p in report["problems"]), report["problems"]
+    corners = [(float(x), float(y)) for x, y in cv2.perspectiveTransform(np.float32([[(10, 10), (160, 10), (160, 160), (10, 160)]]), work["mm_to_px"])[0]]
+    report = ig.check_pair(store, pid, corners=corners)
+    assert report["alignment"]["valid"] and report["alignment"]["method"] == "manual", report["problems"]
+    grid = np.float32([[(x, y) for x in (30, 85, 140) for y in (30, 85, 140)]])
+    back = cv2.perspectiveTransform(cv2.perspectiveTransform(grid, work["mm_to_px"]), np.asarray(report["alignment"]["image_to_mm"], np.float32))
+    assert np.abs(back - grid).max() < 0.5
+    store.close()

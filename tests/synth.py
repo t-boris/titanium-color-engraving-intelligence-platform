@@ -96,14 +96,15 @@ def work_corners(plan: dict, scale: float = 20.0, origin=(520, 80)) -> list[tupl
 def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: int = 12, size=(2000, 2700),
                 px_per_mm: float = 9.5, rotate_deg: float = 1.2, mirror: bool = True, perspective=(2.0e-5, -1.5e-5),
                 extra=(), concentric: bool = False, with_chart: bool = False, with_frame: bool = True, style: str = "regions",
-                dark_layers=(), inset: float = 0.0) -> dict:
+                dark_layers=(), inset: float = 0.0, unseen_layers=()) -> dict:
     """150 x 150 mm plate (file mm 10..160) with closed 'cloud' outlines on ``layers`` layers.
 
     The photograph shows the plate mirrored vertically, rotated, in perspective, inside a black frame that hides
     ``hide_mm`` of the plate on every side. ``extra`` adds (layer, polygon in mm) outlines; ``concentric`` replaces the
     clouds by nested squares, a drawing whose orientation cannot be told; ``dark_layers`` are engraved black, as dark
-    as the frame; ``inset`` (mm) keeps the tiled regions away from the plate edge so that a ring of the cleaned plate
-    stays visible. Returns the LightBurn bytes, the photograph, the true file-mm -> pixel matrix and the outlines.
+    as the frame; ``unseen_layers`` are in the file but left no visible mark on the plate; ``inset`` (mm) keeps the
+    tiled regions away from the plate edge so that a ring of the cleaned plate stays visible. Returns the LightBurn
+    bytes, the photograph, the true file-mm -> pixel matrix and the outlines.
     """
     rng = np.random.default_rng(seed)
     palette = []
@@ -188,6 +189,8 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
     work = np.full((height, width, 3), (150, 155, 150), np.uint8)       # the table, also where there is no frame
     cv2.fillConvexPoly(work, np.round(project([(10, 10), (160, 10), (160, 160), (10, 160)])).astype(np.int32), (190, 195, 200))
     for layer, poly in shapes:
+        if layer in unseen_layers:
+            continue
         colour = (12, 12, 12) if layer in dark_layers else palette[(layer - 1) % layers]      # black engraving, as dark as a frame
         cv2.fillPoly(work, [np.round(project(poly)).astype(np.int32)], colour, cv2.LINE_AA)
     img = np.full((height, width, 3), (150, 155, 150), np.uint8)
@@ -205,6 +208,22 @@ def framed_work(seed: int = 3, hide_mm: float = 2.0, blobs: int = 45, layers: in
         c = chart_image()
         img[1500:1500 + c.shape[0], 120:120 + c.shape[1]] = c
     return {"lightburn": xml, "photo": img, "mm_to_px": mm_to_px, "shapes": shapes, "palette": palette, "hide_mm": hide_mm}
+
+
+def cloud(cx: float, cy: float, r: float, seed: int, n: int = 90) -> np.ndarray:
+    """A closed, irregular outline of mean radius ``r`` mm around (cx, cy): distinctive in shape, for ``extra``."""
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    rr = r * (1 + sum(rng.uniform(0.04, 0.15) * np.cos(k * t + rng.uniform(0, 6.28)) for k in range(2, 6)))
+    return np.column_stack([cx + rr * np.cos(t), cy + rr * np.sin(t)])
+
+
+def warped(img: np.ndarray, amplitude_px: float, wavelength_px: float) -> np.ndarray:
+    """The photograph bent by a smooth sinusoidal displacement (a plate that is not flat): no single homography fits it."""
+    yy, xx = np.indices(img.shape[:2]).astype(np.float32)
+    mx = xx + amplitude_px * np.sin(2 * np.pi * yy / wavelength_px)
+    my = yy + amplitude_px * np.sin(2 * np.pi * xx / wavelength_px)
+    return cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
 
 # -- a work engraved from a picture, photographed in a frame (REQ-027, DEC-054) -------------------------------------
