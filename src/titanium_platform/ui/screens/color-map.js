@@ -46,7 +46,9 @@ const ColorMap = (() => {
 
   /** Диаметр кружка — уверенность в цвете настроек (REQ-045): гравировка, которую не повторяли, мелкая; чем больше повторов дали тот же цвет,
       тем крупнее; цвет, который при тех же настройках менялся, самый мелкий. */
-  const radius = (p) => 3 + 12 * (p.trust == null ? 1 / 3 : p.trust);
+  // The square of the confidence: almost every recipe was engraved once (confidence 1/3), so a linear scale made two agreeing engravings
+  // (1/2) look like the rest; squared, the unrepeated stay small, repeated ones are clearly larger and a changed colour is a dot.
+  const radius = (p) => 2.5 + 14 * (p.trust == null ? 1 / 3 : p.trust) ** 2;
 
   function plot(points, onPick, target, picked, plane, spiral) {
     if (!points.length) return h('p', {class: 'muted'}, 'Нет цветов под такие условия.');
@@ -72,7 +74,7 @@ const ColorMap = (() => {
         add('circle', {cx: x(s.lab[P.x]), cy: y(s.lab[P.y]), r: 2.5, fill: '#8fa3c4'});
         add('text', {x: x(s.lab[P.x]) + 5, y: y(s.lab[P.y]) - 4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`); });
     }
-    points.slice().sort((p, q) => q.display_lab[0] - p.display_lab[0]).forEach((p) => {
+    points.slice().sort((p, q) => radius(q) - radius(p) || q.display_lab[0] - p.display_lab[0]).forEach((p) => {       // larger below, so no confident colour hides a small one
       const r = radius(p), on = picked && picked.id === p.id;
       const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: on ? r + 3 : r,
         fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced && !p.provisional ? 1 : 0.45,

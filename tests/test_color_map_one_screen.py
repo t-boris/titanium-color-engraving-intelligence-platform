@@ -249,10 +249,12 @@ def test_the_diameter_of_a_circle_follows_the_confidence_in_the_colour_of_its_se
   out.radii = circles.map((c) => +c.getAttribute('r'));
   out.titles = circles.map((c) => c.querySelector('title').textContent);
 """)
-    assert out["radii"] == sorted(out["radii"], reverse=True) or out["radii"] == sorted(out["radii"])
+    assert out["radii"] == sorted(out["radii"], reverse=True)          # the larger circles are drawn first: none hides a smaller one
     assert len(set(out["radii"])) == 4 and max(out["radii"]) - min(out["radii"]) > 5
+    assert max(out["radii"]) / min(out["radii"]) > 3                  # a changed colour and a confirmed one differ by more than a pixel or two
     by_title = {t.split(" · ")[0]: r for t, r in zip(out["titles"], out["radii"])}
     assert by_title["Test 1"] < by_title["Test 2"] < by_title["Test 3"] < by_title["Test 4"]
+    assert by_title["Test 3"] / by_title["Test 2"] > 1.5              # three agreeing engravings against one: clearly larger
     titles = " ".join(out["titles"])
     assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (все 3 совпали)" in titles and "уверенность 0.17 (1 из 2 совпали)" in titles
     assert "Диаметр кружка" in SCREEN
