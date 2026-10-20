@@ -102,8 +102,19 @@ def refresh_work(store: Store, plan_id: int) -> dict | None:
 
 
 def refresh_missing(store: Store) -> int:
-    """Count the works that were never counted (made or exported before the counts were kept): once, when the app starts. Returns how many."""
+    """Catch up works and photographs from before the work on the errors: the photographs already accepted for a vector work get their
+    review, and the works exported before the counts were kept get theirs. Once, when the app starts. Returns how many things were done."""
     done = 0
+    for row in store.query("SELECT p.id FROM pair p JOIN plan w ON w.id=p.plan_id WHERE p.status='Accepted' AND w.mode=? AND w.status!='Deleted' ORDER BY p.id",
+                           (pl.MODE_VECTOR,)):
+        pair = ingest.get_pair(store, row["id"])
+        work = _work(store, pair["plan_id"])
+        if work is None or any(r["engraving_id"] == pair["engraving_id"] for r in work.get("reviews") or []):
+            continue
+        try:
+            done += record(store, row["id"]) is not None
+        except SKIPPED:
+            continue
     for row in store.query("SELECT id, data_json FROM plan WHERE mode=? AND status!='Deleted'", (pl.MODE_VECTOR,)):
         data = json.loads(row["data_json"])
         if "attention" in data or not data.get("exports"):

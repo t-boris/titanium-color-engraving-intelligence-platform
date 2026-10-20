@@ -335,8 +335,10 @@ def test_a_work_exported_before_the_counts_were_kept_gets_them_once_when_the_app
     plan = pl.get_plan(c["store"], j["id"])
     plan.pop("attention", None)
     cv._persist(c["store"], plan, plan["status"], plan["markers_enabled"])
-    assert work_errors.refresh_missing(c["store"]) == 1 and pl.get_plan(c["store"], j["id"])["attention"]["layers"] == 1
-    assert work_errors.refresh_missing(c["store"]) == 0                                       # counted: not again
+    pair = engrave(c, j)                                                                          # accepted before the review existed
+    assert work_errors.refresh_missing(c["store"]) == 2 and pl.get_plan(c["store"], j["id"])["attention"]["layers"] == 1
+    assert [r["pair_id"] for r in pl.get_plan(c["store"], j["id"])["reviews"]] == [pair]
+    assert work_errors.refresh_missing(c["store"]) == 0                                       # counted and reviewed: not again
     never = c["client"].post("/api/vector", data={"device_id": c["w"]["setup"][0], "lens_id": c["w"]["setup"][1], "material_id": c["ti"], "name": "Never",
                                                   "width_mm": 60, "strategy": "photo", "n_colors": 5, "threshold": 6}, files={"image": ("p.png", picture(), "image/png")})
     assert never.status_code == 201 and work_errors.refresh_missing(c["store"]) == 0           # a work never exported is left alone
