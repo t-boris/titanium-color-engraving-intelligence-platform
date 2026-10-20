@@ -206,8 +206,8 @@ def test_a_proposal_models_one_job_settings_group_and_never_mixes_another(store,
 def test_the_job_settings_of_a_proposal_are_required_and_must_be_offered_by_the_laser(store, w):
     with pytest.raises(TypeError):
         ds.propose(store, *w["setup"])                   # no pulse width, line interval or passes is filled in (DEC-043)
-    with pytest.raises(su.ValidationError, match="not a selectable step"):
-        propose(store, w, pulse_width=210)
+    with pytest.raises(su.ValidationError, match="outside the range"):
+        propose(store, w, pulse_width=600)
     with pytest.raises(su.ValidationError, match="passes"):
         propose(store, w, passes=0)
 

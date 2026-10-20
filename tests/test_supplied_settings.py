@@ -102,13 +102,12 @@ def test_without_a_supplied_value_the_missing_setting_stays_unknown_and_out_of_t
     assert json.loads(row["evidence_json"])["settings_provenance"]["pulse_width"] is None
 
 
-def test_a_pulse_width_that_is_not_a_step_of_the_laser_is_refused_with_the_steps_listed(world):
+def test_a_pulse_width_outside_the_range_of_the_laser_is_refused_with_the_range(world):
     s = world["store"]
     pid = pair_without(world, "QPulseWidth")
     index = cell(ig.check_pair(s, pid))["index"]
-    steps = ", ".join(f"{w:g}" for w, _ in devices.JPT_60_M7_STEPS)
-    with pytest.raises(su.ValidationError, match=re.escape(f"pulse width 7 ns is not a selectable step of this laser; the steps are {steps}")):
-        ig.supply_setting(s, pid, index, "pulse_width", 7)
+    with pytest.raises(su.ValidationError, match=re.escape("pulse width 600 ns is outside the range of this laser (1-500 ns)")):
+        ig.supply_setting(s, pid, index, "pulse_width", 600)
     assert ig.get_pair(s, pid)["supplied_settings"] is None
 
 
@@ -176,14 +175,14 @@ def test_another_lightburn_file_drops_the_supplied_values_and_a_new_view_of_the_
     assert cell(ig.check_pair(s, again))["compatible"]
 
 
-def test_the_operator_supplies_a_setting_over_http_and_a_pulse_width_off_the_steps_is_refused_with_them(tmp_path):
+def test_the_operator_supplies_a_setting_over_http_and_a_pulse_width_outside_the_range_is_refused_with_it(tmp_path):
     app = create_app(tmp_path / "data")
     w = plate_world(app.state.store)
     pid = pair_without(w, "QPulseWidth")
     with TestClient(app) as client:
         index = cell(client.post(f"/api/pairs/{pid}/check", json={}).json()["check"])["index"]
-        bad = client.post(f"/api/pairs/{pid}/supplied-settings", json={"layer_index": index, "setting": "pulse_width", "value": 7})
-        assert bad.status_code == 422 and "the steps are 1, 2, 4, 6, 9" in bad.json()["error"]
+        bad = client.post(f"/api/pairs/{pid}/supplied-settings", json={"layer_index": index, "setting": "pulse_width", "value": 600})
+        assert bad.status_code == 422 and "outside the range of this laser (1-500 ns)" in bad.json()["error"]
         ok = client.post(f"/api/pairs/{pid}/supplied-settings", json={"layer_index": index, "setting": "pulse_width", "value": 200})
         assert ok.status_code == 200 and cell(ok.json()["check"])["supplied_settings"]["pulse_width"]["value"] == 200
         unknown = client.post(f"/api/pairs/{pid}/supplied-settings", json={"layer_index": index, "setting": "colour", "value": 1})

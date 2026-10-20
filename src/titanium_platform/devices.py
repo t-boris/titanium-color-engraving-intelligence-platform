@@ -144,9 +144,9 @@ def validate_passport(raw: Any) -> dict:
         default_width = None
     else:
         default_width = su._finite(default_width, "default pulse width", True)
-        if not any(abs(s["pulse_width_ns"] - default_width) <= STEP_TOLERANCE for s in steps):
-            raise su.ValidationError(f"the default pulse width {default_width:g} ns is not a step of this laser; the steps are "
-                                     + ", ".join(f"{s['pulse_width_ns']:g}" for s in steps))
+        if not steps[0]["pulse_width_ns"] <= default_width <= steps[-1]["pulse_width_ns"]:
+            raise su.ValidationError(f"the default pulse width {default_width:g} ns is outside the range of this laser "
+                                     f"({steps[0]['pulse_width_ns']:g}-{steps[-1]['pulse_width_ns']:g} ns)")
     open_items = raw.get("open_items") or []
     if not isinstance(open_items, list) or not all(isinstance(t, str) for t in open_items):
         raise su.ValidationError("a passport section has the wrong type")
@@ -169,13 +169,38 @@ def step_for(passport: dict, pulse_width: float) -> dict | None:
     return None
 
 
+def pulse_range(passport: dict) -> tuple[float, float]:
+    """The shortest and the longest pulse width of the laser's table: any width between them is accepted (DEC-089)."""
+    widths = [s["pulse_width_ns"] for s in passport["pulse_steps"]]
+    return min(widths), max(widths)
+
+
+def cutoff_for(passport: dict, pulse_width: float) -> dict:
+    """The cut-off frequency of any width in the laser's range: the table's own figure for a step, else interpolated between the two
+    neighbouring steps (straight line in log width and log frequency; next to a CW step the cut-off of the other neighbour). Returns
+    ``pulse_width_ns``, ``cutoff_khz`` (None for CW), ``interpolated`` and ``between`` (the two steps, or None)."""
+    exact = step_for(passport, pulse_width)
+    if exact is not None:
+        return {**exact, "interpolated": False, "between": None}
+    steps = sorted(passport["pulse_steps"], key=lambda s: s["pulse_width_ns"])
+    below = [s for s in steps if s["pulse_width_ns"] < pulse_width][-1]
+    above = [s for s in steps if s["pulse_width_ns"] > pulse_width][0]
+    low, high = below["cutoff_khz"], above["cutoff_khz"]
+    if low is None or high is None:
+        cutoff = high if low is None else low
+    else:
+        share = math.log(pulse_width / below["pulse_width_ns"]) / math.log(above["pulse_width_ns"] / below["pulse_width_ns"])
+        cutoff = math.exp(math.log(low) + share * (math.log(high) - math.log(low)))
+    return {"pulse_width_ns": pulse_width, "cutoff_khz": cutoff, "interpolated": True,
+            "between": [below["pulse_width_ns"], above["pulse_width_ns"]]}
+
+
 def require_selectable(passport: dict, pulse_width: float) -> dict:
-    """The step for ``pulse_width``; a width the laser does not offer is refused (the laser would ignore it)."""
-    step = step_for(passport, pulse_width)
-    if step is None:
-        steps = ", ".join(f"{s['pulse_width_ns']:g}" for s in passport["pulse_steps"])
-        raise su.ValidationError(f"pulse width {pulse_width:g} ns is not a selectable step of this laser; the steps are {steps}")
-    return step
+    """The cut-off record for ``pulse_width``; a width outside the laser's range is refused (DEC-089)."""
+    low, high = pulse_range(passport)
+    if not low <= pulse_width <= high:
+        raise su.ValidationError(f"pulse width {pulse_width:g} ns is outside the range of this laser ({low:g}-{high:g} ns)")
+    return cutoff_for(passport, pulse_width)
 
 
 # -- catalogue template: the manufacturer's table for the JPT YDFLP-E-60-M7-M-R (pulse width ns, cut-off kHz; None = CW) ---------
@@ -433,7 +458,11 @@ def operating_point(passport: dict, power: float, frequency: float, speed: float
     factor = 1.0 if cw or freq >= cutoff else freq / cutoff
     below = factor < 1.0
     if below:
-        notes.append(f"frequency {freq:g} kHz is below the cut-off frequency {cutoff:g} kHz of the {pulse_width:g} ns step: the output power is {factor * 100:.0f} % of the power set")
+        if step["interpolated"]:
+            notes.append(f"frequency {freq:g} kHz is below the cut-off frequency {cutoff:g} kHz of the {pulse_width:g} ns width (interpolated between the "
+                         f"{step['between'][0]:g} and {step['between'][1]:g} ns steps): the output power is {factor * 100:.0f} % of the power set")
+        else:
+            notes.append(f"frequency {freq:g} kHz is below the cut-off frequency {cutoff:g} kHz of the {pulse_width:g} ns step: the output power is {factor * 100:.0f} % of the power set")
     output = ch["effective_power_w"] * power / 100 * factor      # the unit's measured power when its test report gives one (DEC-040)
     pitch = energy = density = fluence = overlap = None
     if cw:
@@ -454,7 +483,7 @@ def operating_point(passport: dict, power: float, frequency: float, speed: float
             overlap = max(0.0, 1 - pitch / spot)
         else:
             notes.append("spot diameter is not known for this laser: fluence and pulse overlap are not calculated")
-    return {"basis": "passport model", "pulse_width_ns": pulse_width, "cw": cw, "cutoff_khz": cutoff, "set_power_pct": power, "frequency_khz": freq,
+    return {"basis": "passport model", "pulse_width_ns": pulse_width, "cw": cw, "cutoff_khz": cutoff, "cutoff_interpolated": step["interpolated"], "set_power_pct": power, "frequency_khz": freq,
             "speed_mm_s": speed, "line_interval_mm": interval, "passes": int(passes), "power_factor": _round(factor), "below_cutoff": below, "outside_controller_range": outside, "power_basis": ch["power_basis"],
             "output_power_w": _round(output), "pulse_energy_mj": _round(energy), "pulse_pitch_um": _round(pitch), "pulses_per_mm2": _round(density),
             "areal_energy_j_cm2": _round(per_pass * passes), "coverage_rate_mm2_s": _round(speed * interval / passes),

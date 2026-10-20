@@ -1,6 +1,6 @@
 """What a laser allows and what its characterization uses (REQ-017 AC2 and AC5, REQ-018).
 
-A pulse width that is not a selectable step is refused with the steps listed on every path; a handwritten note that
+A pulse width outside the laser's range is refused with the range on every path (DEC-089); a handwritten note that
 contradicts a printed controller value leaves both unresolved and neither used; the effective power, the frequency limits,
 the warning and problem levels, the pulse-energy cap and the work-field check rest only on evidence that is reliable.
 """
@@ -24,8 +24,7 @@ from titanium_platform.api.app import create_app
 
 TEMPLATE = "jpt-ydflp-e-60-m7-m-r"
 UNIT = Path(__file__).resolve().parents[1] / "tools" / "units" / "jpt-ydflp-e-60-m7-m-r-mc2bdjd71684.json"
-STEPS = ", ".join(f"{w:g}" for w, _ in dv.JPT_60_M7_STEPS)
-OFF_STEP = re.escape(f"pulse width 7 ns is not a selectable step of this laser; the steps are {STEPS}")
+OFF_STEP = re.escape("pulse width 600 ns is outside the range of this laser (1-500 ns)")
 JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 
 
@@ -61,38 +60,38 @@ def hardware(store):
     return {"store": store, "laser": laser, "lens": lens, "material": material}
 
 
-def test_a_calibration_plate_with_a_pulse_width_off_the_steps_is_refused_with_the_steps(hardware):
+def test_a_calibration_plate_with_a_pulse_width_outside_the_range_is_refused_with_the_range(hardware):
     with pytest.raises(su.ValidationError, match=OFF_STEP):
         plans.create_plate_series(hardware["store"], hardware["laser"]["id"], "10 20", "40 80", "900", 5, 4, 1,
-                                  pulse_width=7, line_interval=0.025, passes=1)
+                                  pulse_width=600, line_interval=0.025, passes=1)
 
 
 @pytest.mark.parametrize("test_type", ["calibration", "small_patches", "material_matrix", "power_speed"])
-def test_a_capability_plate_with_a_pulse_width_off_the_steps_is_refused_with_the_steps(hardware, test_type):
+def test_a_capability_plate_with_a_pulse_width_outside_the_range_is_refused_with_the_range(hardware, test_type):
     with pytest.raises(su.ValidationError, match=OFF_STEP):
-        cp.preview(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], test_type, {"pulse_width": 7})
+        cp.preview(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], test_type, {"pulse_width": 600})
 
 
-def test_one_patch_off_the_steps_refuses_the_small_patch_plate_with_the_steps(hardware):
+def test_one_patch_outside_the_range_refuses_the_small_patch_plate_with_the_steps(hardware):
     with pytest.raises(su.ValidationError, match=OFF_STEP):
         cp.preview(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], "small_patches",
-                   {"pulse_width": 200, "patches": [{}, {"pulse_width": 7}]})
+                   {"pulse_width": 200, "patches": [{}, {"pulse_width": 600}]})
 
 
-def test_a_plan_whose_marker_layer_names_a_pulse_width_off_the_steps_is_refused_with_the_steps(hardware):
-    plans.save_marker_layer_settings(hardware["store"], 25, 60, 150, pulse_width=7)
+def test_a_plan_whose_marker_layer_names_a_pulse_width_outside_the_range_is_refused_with_the_range(hardware):
+    plans.save_marker_layer_settings(hardware["store"], 25, 60, 150, pulse_width=600)
     with pytest.raises(su.ValidationError, match=OFF_STEP):
         plans.create_plate_series(hardware["store"], hardware["laser"]["id"], "10 20", "40 80", "900", 5, 4, 1, **JOB)
 
 
-def test_the_research_tools_refuse_a_pulse_width_off_the_steps_with_the_steps(hardware):
+def test_the_research_tools_refuse_a_pulse_width_outside_the_range_with_the_range(hardware):
     session = research.create_session(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], "line", "непрерывная линия")
     for tool in ("preview_test", "create_test"):
         with pytest.raises(su.ValidationError, match=OFF_STEP):
-            research.call_tool(hardware["store"], session["id"], tool, {"test_type": "calibration", "settings": {"pulse_width": 7}})
+            research.call_tool(hardware["store"], session["id"], tool, {"test_type": "calibration", "settings": {"pulse_width": 600}})
 
 
-def test_a_matrix_with_a_pulse_width_off_the_steps_cannot_be_confirmed_and_its_check_names_the_steps(hardware):
+def test_a_matrix_with_a_pulse_width_outside_the_range_cannot_be_confirmed_and_its_check_names_the_range(hardware):
     store = hardware["store"]
     store.set_setting("allow_non_raw_photos", True)
     su.save_capture_setup(store, "Rig", "cam", "LED", "90", "ColorChecker Classic")
@@ -100,7 +99,7 @@ def test_a_matrix_with_a_pulse_width_off_the_steps_cannot_be_confirmed_and_its_c
     pid = ig.create_matrix_pair(store, device_id=hardware["laser"]["id"], lens_id=None, photo_name="m.png",
                                 photo_bytes=cv2.imencode(".png", work["photo"])[1].tobytes(), context={"material_id": hardware["material"]["id"]})
     edit = {"x": {"param": "power", "first": 20, "last": 40}, "y": {"param": "speed", "first": 900, "last": 300},
-            "fixed": {"frequency": 330, "pulse_width": 7, "line_interval": 0.003, "passes": 1}}
+            "fixed": {"frequency": 330, "pulse_width": 600, "line_interval": 0.003, "passes": 1}}
     with pytest.raises(su.ValidationError, match=OFF_STEP):
         ig.update_matrix(store, pid, edit, confirm=True)
     report = ig.update_matrix(store, pid, edit)
@@ -108,19 +107,19 @@ def test_a_matrix_with_a_pulse_width_off_the_steps_cannot_be_confirmed_and_its_c
     with pytest.raises(su.ValidationError, match=OFF_STEP):
         ig.confirm_matrix(store, pid)
     report = ig.update_matrix(store, pid, {**edit, "fixed": {**edit["fixed"], "pulse_width": 4}}, confirm=True)
-    assert not any("selectable step" in p for p in report["problems"]) and ig.get_pair(store, pid)["matrix"]["confirmed"]
+    assert not any("outside the range" in p for p in report["problems"]) and ig.get_pair(store, pid)["matrix"]["confirmed"]
 
 
-def test_the_operating_point_and_the_photo_prediction_refuse_a_pulse_width_off_the_steps_over_http(tmp_path):
+def test_the_operating_point_and_the_photo_prediction_refuse_a_pulse_width_outside_the_range_over_http(tmp_path):
     app = create_app(tmp_path / "data")
     with TestClient(app) as client:
         laser = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
-        point = {"device_id": laser["id"], "lens_id": None, "power": 30, "frequency": 80, "speed": 900, **JOB, "pulse_width": 7}
+        point = {"device_id": laser["id"], "lens_id": None, "power": 30, "frequency": 80, "speed": 900, **JOB, "pulse_width": 600}
         refused = client.post("/api/operating-point", json=point)
-        assert refused.status_code == 422 and f"the steps are {STEPS}" in refused.json()["error"]
-        predicted = client.post("/api/predictions/photo", data={"device_id": laser["id"], "lens_id": "unknown", "pulse_width": 7},
+        assert refused.status_code == 422 and "outside the range of this laser (1-500 ns)" in refused.json()["error"]
+        predicted = client.post("/api/predictions/photo", data={"device_id": laser["id"], "lens_id": "unknown", "pulse_width": 600},
                                 files={"lightburn": ("p.lbrn2", synth.picture_work()["lightburn"], "application/octet-stream")})
-        assert predicted.status_code == 422 and f"the steps are {STEPS}" in predicted.json()["error"]
+        assert predicted.status_code == 422 and "outside the range of this laser (1-500 ns)" in predicted.json()["error"]
     app.state.store.close()
 
 

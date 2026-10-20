@@ -37,8 +37,9 @@ def test_the_lens_snapshot_keeps_the_spot_value_with_its_basis(store, w):
 def test_parameter_vector_contains_each_layers_job_settings(store, w):
     v = su.parameter_vector(w["device"]["passport"], 24, 40, 900, pulse_width=250, line_interval=0.05, passes=3)
     assert v == {"power": 24, "frequency": 40, "speed": 900, "pulse_width": 250, "line_interval": 0.05, "passes": 3}
-    with pytest.raises(su.ValidationError, match="not a selectable step"):
-        su.parameter_vector(w["device"]["passport"], 24, 40, 900, 210, 0.05, 3)
+    with pytest.raises(su.ValidationError, match="outside the range"):
+        su.parameter_vector(w["device"]["passport"], 24, 40, 900, 600, 0.05, 3)
+    assert su.parameter_vector(w["device"]["passport"], 24, 40, 900, 210, 0.05, 3)["pulse_width"] == 210       # any width in the range (DEC-089)
     with pytest.raises(TypeError):
         su.parameter_vector(w["device"]["passport"], 24, 40, 900)          # no job setting is filled in (DEC-043)
 

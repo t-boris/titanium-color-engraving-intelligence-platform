@@ -109,9 +109,9 @@ def test_cw_has_no_cutoff_pulse_energy_or_pitch(store):
     assert op["pulse_energy_mj"] is None and op["pulse_pitch_um"] is None and op["output_power_w"] == 30
 
 
-def test_a_pulse_width_that_is_not_a_step_is_refused_with_the_steps_listed(store):
-    with pytest.raises(su.ValidationError, match=r"5 ns is not a selectable step.*1, 2, 4, 6"):
-        dv.operating_point(jpt(store)["passport"], 50, 80, 900, 5, 0.025)
+def test_a_pulse_width_outside_the_range_is_refused_with_the_range(store):
+    with pytest.raises(su.ValidationError, match=r"600 ns is outside the range of this laser \(1-500 ns\)"):
+        dv.operating_point(jpt(store)["passport"], 50, 80, 900, 600, 0.025)
 
 
 def test_frequency_outside_the_laser_range_is_reported(store):
@@ -145,17 +145,14 @@ def test_charts_come_from_the_passport_and_agree_with_the_model(store):
 def test_job_settings_are_validated_against_the_selected_laser(store):
     d = jpt(store)
     assert su.parameter_vector(d["passport"], 20, 48, 900, **JOB)["pulse_width"] == 200
-    with pytest.raises(su.ValidationError, match="not a selectable step"):
-        su.parameter_vector(d["passport"], 20, 48, 900, 210, 0.025, 1)
+    with pytest.raises(su.ValidationError, match="outside the range"):
+        su.parameter_vector(d["passport"], 20, 48, 900, 600, 0.025, 1)
 
 
 def test_a_passport_edit_does_not_depend_on_stored_job_settings(store):
     d = jpt(store)
     _plates(store, d["id"])                                               # stored work used the 200 ns step
     trimmed = dict(d["passport"], pulse_steps=[s for s in d["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
-    with pytest.raises(su.ValidationError, match="default pulse width 200 ns is not a step"):         # the default is one of the steps (DEC-086)
-        dv.update_device(store, d["id"], passport=trimmed)
-    trimmed["default_pulse_width_ns"] = None
     assert len(dv.update_device(store, d["id"], passport=trimmed)["passport"]["pulse_steps"]) == 16
 
 
@@ -273,8 +270,8 @@ def test_api_device_flow(client):
 def test_api_job_settings_are_checked_and_a_device_with_stored_work_is_kept(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
     invalid_point = client.post("/api/operating-point", json={"device_id": d["id"], "lens_id": None, "power": 20, "frequency": 48,
-                                                              "speed": 900, "pulse_width": 210, "line_interval": 0.025, "passes": 1})
-    assert invalid_point.status_code == 422 and "selectable step" in invalid_point.json()["error"]
+                                                              "speed": 900, "pulse_width": 600, "line_interval": 0.025, "passes": 1})
+    assert invalid_point.status_code == 422 and "outside the range" in invalid_point.json()["error"]
     client.put("/api/marker-layer", json={"power": 20, "frequency": 60, "speed": 300})
     plates = {"device_id": d["id"], "powers": "50", "frequencies": "24", "speeds": "900", "cell_width": 6, "cell_height": 5, "gap": 1}
     assert client.post("/api/plates", json=plates).status_code == 422          # the job settings are never filled in

@@ -98,7 +98,7 @@ def test_a_check_that_finds_problems_keeps_the_old_measurement_and_names_them(st
     w = base.plate_world(store, default_pulse_width=200)
     old = accepted(w)
     real = ig.check_pair
-    problem = "pulse width 300 ns is not a selectable step of this laser; the steps are 1, 2"
+    problem = "matrix cell 4: a test problem the check found"
     monkeypatch.setattr(ig, "check_pair", lambda *a, **k: {**real(*a, **k), "problems": [problem]})
     result = ig.remeasure_pair(store, old)
     assert result["status"] == "kept" and result["reason"] == "resolve the problems found by the check: " + problem

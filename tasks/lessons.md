@@ -264,3 +264,10 @@ Rules written after the operator's remarks, to prevent a repeat.
   (which unlinks the superseded pair's files) would have deleted the operator's RAWs and LightBurn files.
 - Rule: before running any mutating rehearsal on a copy of the data, copy `files/` too, rewrite every stored path to the copy (pair, plan, device_document) and verify with a query
   that no row still points at the real folder. Read-only analysis on a copy is fine; anything that accepts, deletes or purges is not until that check is done.
+
+## A rule copied from documentation is a hypothesis about the operator's laser until the operator's own data agrees
+- Situation (2026-10-20): "pulse width must be a step of the manufacturer's table" came from photographs of the laser documentation and was enforced everywhere; it silently pushed 138 of the
+  operator's own observations (300 ns, 3, 5, 7, 8, 10 ns) out of the model, and when the re-measure kept two pairs for it I reported it as a fact about the laser. The operator: "Who said that?
+  Of course it works - I entered it."
+- Rule: when a refusal or exclusion rule comes from a document, first count how much of the operator's real data it excludes (a query by eligibility reason) and say so when the rule is introduced
+  and whenever a result depends on it. Treat what the operator actually engraves as evidence about the laser, and ask before keeping a rule that contradicts it.

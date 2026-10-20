@@ -1090,3 +1090,9 @@ Operator: "work in the other direction: you know the 24 squares; take the colour
 - [x] Rehearsal on a COPY of the real data (paths rewritten to the copy: the real DB holds absolute file paths and accepting a revision unlinks the old pair's files).
 - [ ] Apply to the real data after a DB backup + a copy of `files/`; report before / after per experiment.
 - Trap found: the database stores absolute file paths, so a plain copy of the DB would make `delete_pair` unlink the REAL files. Rewrite the paths in any copy first.
+
+### 0.13.3: any Q-Pulse in the laser's range (operator, 2026-10-20: "who said 300 is not supported? I entered it and it works"; DEC-089, accepted)
+- [x] Asked: any width 1-500 ns with an interpolated cut-off (chosen) / add the values to the table / any width without power loss.
+- [x] `devices.pulse_range`, `cutoff_for` (log-log interpolation; CW neighbour -> the other neighbour), `require_selectable` = range, operating point says "interpolated"; default pulse width in range.
+- [x] Tests moved from off-step values (7, 5, 210) to out-of-range ones (600); `tests/test_pulse_width_range.py`.
+- [ ] Deploy, then re-measure ALL accepted pairs once (the off-table widths sit in 10 of the 17 pairs and the 100-cell matrix of check 54): before / after report.

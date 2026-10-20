@@ -24,7 +24,7 @@ each such cell is checked against its target and the target records the result (
 
 Power is searched over 1-100 %, frequency over the laser's usable range (narrowed by confirmed controller limits,
 REQ-018) and speed over ``SPEED_RANGE_MM_S``: no scanner limit is stored, so it is the same ceiling as the capability
-plates. The pulse width must be a selectable step of the laser.
+plates. The pulse width must lie in the range of the laser (DEC-089).
 
 A proposal also states, in words built only from its reasons and numbers (REQ-022): the question it asks, why the answer is
 valuable, why each set was chosen, the task (its plates are LightBurn fill cells), the laser and lens, and the titanium stock

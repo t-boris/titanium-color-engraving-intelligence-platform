@@ -91,8 +91,8 @@ def test_markers_and_labels_burn_with_the_operators_marker_layer_settings_never_
     plans.save_marker_layer_settings(store, 30, 7000, 400)
     with pytest.raises(su.ValidationError, match="not offered by this laser: frequency 7000 kHz is outside"):
         cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
-    plans.save_marker_layer_settings(store, 30, 70, 400, pulse_width=210)
-    with pytest.raises(su.ValidationError, match="not a selectable step"):
+    plans.save_marker_layer_settings(store, 30, 70, 400, pulse_width=600)
+    with pytest.raises(su.ValidationError, match="outside the range"):
         cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
 
 

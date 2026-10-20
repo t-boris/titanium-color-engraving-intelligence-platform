@@ -10,17 +10,17 @@ from titanium_platform import ingest as ig
 from titanium_platform import setup as su
 
 
-def test_the_template_laser_carries_a_default_pulse_width_that_must_be_a_step_of_the_laser(store):
+def test_the_template_laser_carries_a_default_pulse_width_that_must_lie_in_the_range_of_the_laser(store):
     device = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
     assert device["passport"]["default_pulse_width_ns"] == 200
-    for bad, message in ((123, "not a step of this laser"), (-5, "")):
+    for bad, message in ((600, "outside the range of this laser"), (-5, "")):
         with pytest.raises(su.ValidationError) as caught:
             devices.update_device(store, device["id"], passport={**device["passport"], "default_pulse_width_ns": bad})
         assert message in str(caught.value)
     cleared = devices.update_device(store, device["id"], passport={**device["passport"], "default_pulse_width_ns": ""})
     assert cleared["passport"]["default_pulse_width_ns"] is None
-    kept = devices.update_device(store, device["id"], passport={**device["passport"], "default_pulse_width_ns": 150})
-    assert devices.get_passport(store, device["id"])["default_pulse_width_ns"] == 150 and kept["passport"]["default_pulse_width_ns"] == 150
+    kept = devices.update_device(store, device["id"], passport={**device["passport"], "default_pulse_width_ns": 123})          # any width in the range (DEC-089)
+    assert devices.get_passport(store, device["id"])["default_pulse_width_ns"] == 123 and kept["passport"]["default_pulse_width_ns"] == 123
 
 
 def test_a_layer_without_the_tag_takes_the_laser_default_and_is_comparable(store):

@@ -232,7 +232,7 @@ def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict
     if values.get("pulse_width") in (None, ""):
         raise su.ValidationError("выберите длительность импульса из ступеней лазера")
     values["pulse_width"] = su._finite(values["pulse_width"], "длительность импульса", True)
-    devices.require_selectable(passport, values["pulse_width"])        # refused with the laser's steps listed (REQ-017)
+    devices.require_selectable(passport, values["pulse_width"])        # refused when outside the laser's range (DEC-089)
     values["line_interval"] = su._finite(values["line_interval"], "шаг линий", True)
     if values["line_interval"] > 1:
         raise su.ValidationError("шаг линий должен быть не больше 1 мм")

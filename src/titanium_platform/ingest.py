@@ -557,8 +557,7 @@ def update_matrix(store: Store, pair_id: int, edit: dict, confirm: bool = False)
 
 
 def require_matrix_steps(passport: dict, record: dict) -> None:
-    """Every pulse width of a matrix's cells must be a step of the laser: the laser ignores any other, so a cell with one
-    would not record the job that was engraved. Refused with the steps listed (REQ-017)."""
+    """Every pulse width of a matrix's cells must lie in the laser's range; one outside it is refused with the range (DEC-089)."""
     from . import devices, matrix
     widths = {matrix.cell_settings(record["spec"], col, row)["pulse_width"] for row in range(record["rows"]) for col in range(record["cols"])}
     for width in sorted(w for w in widths if w is not None):
