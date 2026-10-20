@@ -31,6 +31,10 @@ const App = (() => {
   const pill = (text, kind = '') => h('span', {class: 'pill ' + kind}, text);
   const labText = (lab) => (lab ? `L ${(+lab[0]).toFixed(1)} · a ${(+lab[1]).toFixed(1)} · b ${(+lab[2]).toFixed(1)}` : '—');
   const num = (v, d = 2) => (v == null ? '—' : (+v).toFixed(d));
+  /** Сколько независимых гравировок настройки дали один цвет (REQ-045): «2 из 3 совпали»; одна гравировка не повторялась. */
+  const agreed = (a) => (!a || a.engravings < 2 ? 'не повторялась' : a.differing ? `${a.agreeing} из ${a.engravings} совпали` : `все ${a.engravings} совпали`);
+  /** Почему настройку не берёт автоматика: цвет менялся при тех же настройках или те же настройки измерены точнее. */
+  const CAUTION = {contradicted: 'цвет менялся при тех же настройках', superseded: 'есть более точное измерение этих настроек'};
 
   function swatch(lab) {
     const [L, a, b] = lab;
@@ -89,5 +93,5 @@ const App = (() => {
     });
   }
 
-  return {h, fill, btn, field, link, pill, labText, num, swatch, api, get, post, put, patch, del, form, formProgress};
+  return {h, fill, btn, field, link, pill, labText, num, agreed, CAUTION, swatch, api, get, post, put, patch, del, form, formProgress};
 })();

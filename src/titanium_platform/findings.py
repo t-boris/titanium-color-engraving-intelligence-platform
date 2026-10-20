@@ -256,7 +256,7 @@ def _questioned(partition: dict, key: str, row, s: dict | None) -> dict:
 
 
 def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> list[dict]:
-    """Observations far from their recipe's mean (exploratory: one observation against its recipe)."""
+    """Observations far from the agreed colour of their recipe (exploratory: one observation against its recipe, DEC-083)."""
     out = []
     tolerance = partition["rules"]["delta_tolerance"]
     groups: dict[str, list[dict]] = {}
@@ -274,7 +274,7 @@ def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> 
                 distance = color.delta_e(o["lab"], reference)
                 if distance <= tolerance:
                     continue
-                statement = f"observation {o['id']} lies {distance:.1f} ΔE from the mean of its recipe, beyond the saved tolerance {tolerance:g}"
+                statement = f"observation {o['id']} lies {distance:.1f} ΔE from the agreed colour of its recipe, beyond the saved tolerance {tolerance:g}"
             else:
                 others = [lab for e, lab in per_engraving.items() if e != o["engraving_id"]]
                 if len(others) < 2:

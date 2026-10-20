@@ -76,10 +76,12 @@ def job(work):
 
 def test_a_colour_measured_on_another_plate_of_the_same_material_is_a_colour_of_the_work(work):
     """Plates of one material are no difference (REQ-057, DEC-088): a red of another plate (other name, thickness and surface) of the same
-    grade is in the palette and, being as exact and faster, is what the red of the picture takes; a red of another grade is not."""
+    grade is in the palette and, being as exact, as confident (engraved twice, like the red of the work's own plate) and faster, is what the
+    red of the picture takes; a red of another grade is not."""
     c = work
     plate = su.save_material(c["store"], "Big plate", grade="Grade 2", thickness_mm=3, surface="polished")["id"]
-    obs.add(c["store"], c["w"], lab(RED), power=70, speed=4000, line_interval=0.02, material_id=plate, layer_type="Scan")
+    for _ in range(2):
+        obs.add(c["store"], c["w"], lab(RED), power=70, speed=4000, line_interval=0.02, material_id=plate, layer_type="Scan")
     fast_red = palette_ids(c)[(round(lab(RED)[0]), 4000)]
     j = create(c).json()
     assert by_rgb(j, RED)["entry_id"] == fast_red and fast_red in j["entries"]
@@ -1125,3 +1127,21 @@ def test_the_editor_and_the_slider_are_wired_to_the_smoothness_of_the_work():
     assert "const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;" in editor and "loadedVersion !== geometryKey(j)" in editor
     split_js = (UI / "screens" / "vector-split.js").read_text(encoding="utf-8")
     assert "type: 'range'" in split_js and "'aria-label': 'Гладкость линий, мм'" in split_js and "max: String(j.smoothing_max_mm || 2)" in split_js
+
+
+def test_a_work_can_be_made_when_every_measured_colour_of_the_titanium_changed_under_its_settings(tmp_path):
+    """REQ-045, DEC-083: contradicted colours are not taken by the automatic choice, but when nothing else exists the work is still coloured with
+    them (never refused), and every one of its colours says so."""
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    w = obs.setup(store)
+    ti = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1, surface="brushed")["id"]
+    obs.add(store, w, lab(RED), power=20, speed=500, line_interval=0.02, material_id=ti, layer_type="Scan")
+    obs.add(store, w, lab(BLUE), power=20, speed=500, line_interval=0.02, material_id=ti, layer_type="Scan")    # the same settings, another colour
+    with TestClient(app) as client:
+        r = create({"client": client, "store": store, "w": w, "ti": ti, "app": app})
+        assert r.status_code == 201, r.text
+        j = r.json()
+        assert j["entries"] and {e["caution"] for e in j["entries"].values()} == {"contradicted"} and not any(e["automatic"] for e in j["entries"].values())
+        assert all(c["entry_id"] in j["entries"] for c in j["colours"] if c["status"] == "automatic")
+    store.close()

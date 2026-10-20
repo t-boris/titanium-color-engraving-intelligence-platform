@@ -216,10 +216,13 @@ def all_colors(request: Request, setup: str | None = None, material: str | None 
                max_time_s_per_cm2: float | None = None):
     """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
     flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020).
-    Every colour carries the estimated engraving time of its recipe; ``max_time_s_per_cm2`` leaves out slower ones (REQ-035)."""
-    return colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
+    Every colour carries the estimated engraving time of its recipe; ``max_time_s_per_cm2`` leaves out slower ones (REQ-035), and the
+    confidence of its recipe (``trust``, ``confidence``, ``agreement``, ``caution``, REQ-045)."""
+    data = colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
                             measurement=measurement, include_provisional=include_provisional, task=task or None,
                             max_time_s_per_cm2=max_time_s_per_cm2)
+    colormap.annotate(data["points"])                    # the confidence of each recipe: the map draws a circle by it (REQ-045)
+    return data
 
 
 @router.get("/colors/search")

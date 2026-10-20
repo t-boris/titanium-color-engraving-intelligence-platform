@@ -247,7 +247,7 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
     assert ["← К модели цвета", "#/colors?device=1&lens=2"] in out["links"] and ["Правила оценки", "#/setup?tab=rules&device=1&lens=2"] in out["links"]
     assert len(out["alert"]) == 1 and out["alert"][0].startswith("Под вопросом. a doubt") and any(n.startswith("an attribution note") for n in out["note"])
     assert out["columns"] == ["os-col", "os-col kn-history", "os-col kn-evidence"]
-    assert out["facts"] == ["Стадия", "Цвет", "Параметры", "Независимых гравировок", "Уверенность", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
+    assert out["facts"] == ["Стадия", "Цвет", "Параметры", "Независимых гравировок", "Уверенность", "Совпали по цвету", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
     assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 кГц · 833 мм/с · импульс 4 · интервал 0.003 · проходов 1" in out["factText"]
     assert "не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте" in out["factText"]
     assert "Утвердить для производства" in out["buttons"] and "Подтвердить запись" in out["buttons"]            # the operator's decisions stay on the page

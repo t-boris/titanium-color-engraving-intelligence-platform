@@ -52,14 +52,14 @@ def test_a_recipe_measured_on_two_plates_of_one_material_is_one_entry_of_both_an
     obs.add(store, world, [60.0, 5.0, 20.0], speed=1000, line_interval=0.01, material_id=world["ti"], engraving="e1", layer_type="Scan")
     before = partition(store, world)["entries"]
     assert len(before) == 1
-    obs.add(store, world, [64.0, 7.0, 24.0], speed=1000, line_interval=0.01, material_id=second_plate, engraving="e2", layer_type="Scan")
+    obs.add(store, world, [63.0, 6.0, 23.0], speed=1000, line_interval=0.01, material_id=second_plate, engraving="e2", layer_type="Scan")   # agrees (dE 4.4, DEC-083)
     obs.add(store, world, [40.0, 0.0, 0.0], speed=3000, line_interval=0.02, material_id=second_plate, engraving="e3", layer_type="Scan")
     own = partition(store, world)["entries"]
     assert len(own) == 2 and before[0]["id"] in {e["id"] for e in own}                             # the first recipe: one entry, the same id
     merged = next(e for e in own if e["id"] == before[0]["id"])
-    assert merged["engravings"] == 2 and merged["lab"] == pytest.approx([62.0, 6.0, 22.0])         # the mean of both plates' engravings
+    assert merged["engravings"] == 2 and merged["lab"] == pytest.approx([61.5, 5.5, 21.5])         # the mean of both plates' engravings
     elsewhere = palette.vector_palette(store, world["setup"][0], world["setup"][1], second_plate)["entries"]
-    assert len(elsewhere) == 2 and sorted(round(e["lab"][0], 1) for e in elsewhere) == [40.0, 62.0]   # the same colours seen from the other plate
+    assert len(elsewhere) == 2 and sorted(round(e["lab"][0], 1) for e in elsewhere) == [40.0, 61.5]   # the same colours seen from the other plate
     same = next(e for e in elsewhere if e["lab"][0] > 50)
     assert same["id"] != merged["id"]                                                              # the merged recipe has the id of that work's plate
     assert {e["id"] for e in own} - {merged["id"]} == {e["id"] for e in elsewhere} - {same["id"]}  # a recipe of one plate has one id for both works

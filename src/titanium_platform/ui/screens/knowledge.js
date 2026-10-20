@@ -60,6 +60,7 @@ const KnowledgeView = (() => {
             ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')], ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
             ['Параметры', params(k.parameters) + ` · импульс ${k.parameters.pulse_width} · интервал ${k.parameters.line_interval} · проходов ${k.parameters.passes}`],
             ['Независимых гравировок', s ? s.independent_engravings : '—'], ['Уверенность', s ? num(s.confidence) : '—'],
+            ['Совпали по цвету', s ? App.agreed(s.agreement) + (s.caution ? ` · ${App.CAUTION[s.caution]}` : '') : '—'],
             ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
             ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']]),
           s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null, h('div', {class: 'row'}, actions(k, kid)))),

@@ -8,7 +8,7 @@
    Каждое действие возвращает работу целиком; вкладки обновляются на месте, редактор сохраняет масштаб, инструмент и выделение. */
 'use strict';
 const VectorColours = (() => {
-  const {h, fill, btn, field, pill, fail, modal, table, num, labText} = App;
+  const {h, fill, btn, field, pill, fail, modal, table, num, labText, agreed, CAUTION} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно']];
   const MODE = {...Object.fromEntries(MODES), fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};      // the old mode only names variants saved with it
@@ -27,6 +27,9 @@ const VectorColours = (() => {
   const HOW = {fastest_within_tolerance: 'самый быстрый в пределах допуска', nearest: 'ближайший', tonality: 'по тональности', random: 'случайно',
     cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора', ai: 'выбор AI'};
   const stability = (e) => (e.stability && e.stability.assessed ? 'дисперсия ' + num(e.stability.variance) : 'не оценено');
+  /** Уверенность в цвете настройки (REQ-045): число, сколько гравировок совпали и пометка, если автоматика цвет не берёт. */
+  const confidence = (e) => h('span', {}, e.confidence == null ? 'не оценено' : num(e.confidence), h('div', {class: 'muted small'}, agreed(e.agreement)),
+    e.caution ? pill(e.caution === 'superseded' ? 'заменён' : 'цвет менялся', 'bad') : null);
 
   /** Выбор цвета титана из палитры: ближайшие к исходному цвету первыми; снятые без привязки — с пунктиром. */
   async function pick(j, title, sourceLab, current, onPick) {
@@ -37,7 +40,9 @@ const VectorColours = (() => {
     const detail = h('div', {class: 'small'});
     const show = () => fill(detail, chosen ? [chip(chosen.srgb), labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} · ${BASIS[chosen.basis] || ''} · `,
       `гравировок ${chosen.engravings}, фото ${chosen.photographs} · ${seconds(chosen.time_s_per_cm2)}`, h('div', {class: 'muted'}, params(chosen.parameters)),
-      chosen.automatic ? null : h('div', {class: 'muted'}, 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.')]
+      h('div', {class: 'muted'}, `Уверенность ${chosen.confidence == null ? 'не оценена' : num(chosen.confidence)} · ${agreed(chosen.agreement)}`),
+      chosen.automatic ? null : h('div', {class: 'muted'}, chosen.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[chosen.caution]}; выбрать вручную можно.`
+        : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.')]
       : h('span', {class: 'muted'}, 'Выберите цвет'));
     const grid = h('div', {class: 'vw-swatches', role: 'group', 'aria-label': 'Измеренные цвета титана'}, sorted.map((e) => h('button', {type: 'button',
       class: 'vw-swatch' + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (e.id === current ? ' picked' : ''), style: `background:rgb(${e.srgb.join(',')})`,
@@ -61,7 +66,7 @@ const VectorColours = (() => {
         h('span', {}, e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null, c.how && HOW[c.how] ? h('div', {class: 'muted small'}, HOW[c.how]) : null),
         e ? h('span', {class: 'small'}, params(e.parameters)) : '—', e ? BASIS[e.basis] || '—' : '—',
         e ? `${e.engravings} / ${e.photographs}` : '—', c.delta_e == null ? '—' : h('span', {}, num(c.delta_e), c.outside_tolerance ? [' ', pill('вне допуска', 'bad')] : null),
-        e ? (e.confidence == null ? 'не оценено' : num(e.confidence)) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—',
+        e ? confidence(e) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—',
         h('span', {class: 'row'}, actions)];
     });
   }

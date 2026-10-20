@@ -23,8 +23,8 @@
       (m) => `Повторные гравировки этого рецепта расходятся на ${m[1]} ΔE² — выше сохранённого порога дисперсии ${m[2]}`],
     [/^this knowledge entry is questioned: (.*)$/i, (m) => 'Запись знания под вопросом: ' + t(m[1])],
     // аномалии
-    [re('observation # lies # ΔE from the mean of its recipe, beyond the saved tolerance #'),
-      (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от среднего своего рецепта — дальше сохранённого допуска ${m[3]}`],
+    [re('observation # lies # ΔE from the agreed colour of its recipe, beyond the saved tolerance #'),
+      (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от согласованного цвета своего рецепта — дальше сохранённого допуска ${m[3]}`],
     [re('observation # lies # ΔE from the mean of the other engravings of its recipe, more than three standard deviations \\(# ΔE\\)'),
       (m) => `Наблюдение № ${m[1]} отстоит на ${m[2]} ΔE от среднего других гравировок своего рецепта — больше трёх стандартных отклонений (${m[3]} ΔE)`],
     [/^an anomaly is one observation against its recipe: check its photograph and alignment before drawing a conclusion$/i,

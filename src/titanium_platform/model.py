@@ -4,6 +4,9 @@ Measured values are never changed (REQ-001): everything here is derived on read 
 observation rows and carries the ids of the observations it was derived from. The formulas for confidence,
 expected color error and stability are an explicit assumption (proposed DEC-029); the requirements define
 only that all three must accompany every prediction (REQ-002).
+
+The colour of a setting is the colour its independent engravings agree on and the confidence says how far they do (REQ-045, DEC-083,
+:mod:`agreement`); stability, variance and expected error still span all engravings, so a disagreement shows in them.
 """
 from __future__ import annotations
 
@@ -14,10 +17,10 @@ from typing import Any
 
 import numpy as np
 
-from . import color, lightburn, tasks
+from . import agreement, color, lightburn, tasks
 from .db import Store
 
-CONFIDENCE_K = 2.0
+CONFIDENCE_K = agreement.CONFIDENCE_K
 
 
 def _normalized_setting(value):
@@ -98,13 +101,19 @@ def _by_engraving(obs: list[dict]) -> dict[str, list[dict]]:
     return groups
 
 
+def _when(group: list[dict]) -> tuple:
+    """When an engraving was made: its latest accepted photograph (else the pair's creation), the observation id breaking a tie."""
+    return max(((o.get("source") or {}).get("accepted_at") or (o.get("source") or {}).get("created_at") or "", o["id"]) for o in group)
+
+
 def summarize(obs: list[dict]) -> dict:
     """Derived values for the observations that share one parameter vector."""
     groups = _by_engraving(obs)
     per_engraving = np.array([np.mean([o["lab"] for o in g], axis=0) for g in groups.values()])
     independent = len({o["engraving_id"] for o in obs if o["repeat_eligible"]})
     n = len(per_engraving)
-    lab = per_engraving.mean(axis=0)
+    found = agreement.consensus([{"lab": mean, "when": _when(g)} for mean, g in zip(per_engraving, groups.values())])
+    lab = np.asarray(found["lab"])
     if n >= 2:
         variance = float(np.var(per_engraving, axis=0, ddof=1).sum())
         deviations = [color.delta_e(x, lab) for x in per_engraving]
@@ -128,11 +137,11 @@ def summarize(obs: list[dict]) -> dict:
            "mean_delta_e": float(np.mean(repeat_devs)) if repeat_devs else None,
            "max_delta_e": float(max(repeat_devs)) if repeat_devs else None}
     expected = None if variance is None else math.sqrt(variance) + (rig["mean_delta_e"] or 0.0)
-    confidence = n / (n + CONFIDENCE_K) if variance is not None else None
     return {"lab": [float(v) for v in lab], "observation_ids": [o["id"] for o in obs], "observations": len(obs),
             "independent_engravings": independent, "engravings": n, "stability": stability, "rig_repeatability": rig,
-            "expected_delta_e": expected, "confidence": confidence, "available": variance is not None,
-            "context_groups": context_groups(obs)}
+            "expected_delta_e": expected, "confidence": found["confidence"] if variance is not None else None,
+            "available": variance is not None, "agreement": agreement.shown(found),
+            "caution": "contradicted" if found["contradicted"] else None, "context_groups": context_groups(obs)}
 
 
 def engraving_rig_repeatability(store: Store, engraving_id: str) -> dict:
@@ -403,7 +412,8 @@ def predict_for_lab(samples: list[dict], target_lab) -> dict:
     avail = [s for s in samples if s["available"]]
     if not avail:
         return {"available": False, "reason": "not enough data for a prediction", "outside_coverage": True}
-    best = min(avail, key=lambda s: (color.delta_e(s["lab"], target_lab), s["key"]))
+    reliable = [s for s in avail if not s.get("caution")] or avail           # a colour that changes under the same settings is not taken (DEC-083)
+    best = min(reliable, key=lambda s: (color.delta_e(s["lab"], target_lab), s["key"]))
     lo, hi = coverage_box(avail)
     t = np.asarray(target_lab, float)
     outside = bool((t < lo).any() or (t > hi).any())

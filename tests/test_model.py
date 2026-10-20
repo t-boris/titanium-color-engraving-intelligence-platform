@@ -37,12 +37,13 @@ def test_two_engravings_give_hand_computed_estimates(store, w):
 def test_rephotographs_average_into_one_engraving_and_feed_rig_repeatability(store, w):
     obs.add(store, w, (50, 0, 0), engraving="A")
     obs.add(store, w, (52, 0, 0), engraving="A", rephoto=True)
-    obs.add(store, w, (60, 0, 0), engraving="B")
+    obs.add(store, w, (54, 0, 0), engraving="B")                                   # agrees with A (dE 3, DEC-083)
     s = model.knowledge_summaries(store, *w["setup"])[BASE]
     assert s["engravings"] == 2 and s["independent_engravings"] == 2 and s["observations"] == 3
-    assert s["lab"][0] == pytest.approx((51 + 60) / 2)
+    assert s["lab"][0] == pytest.approx((51 + 54) / 2)
     assert s["rig_repeatability"] == {"assessed": True, "photos": 2, "mean_delta_e": pytest.approx(1.0), "max_delta_e": pytest.approx(1.0)}
-    assert s["stability"]["variance"] == pytest.approx((60 - 51) ** 2 / 2)
+    assert s["stability"]["variance"] == pytest.approx((54 - 51) ** 2 / 2)
+    assert s["confidence"] == pytest.approx(0.5) and s["agreement"]["agreeing"] == 2 and s["caution"] is None
 
 
 def test_two_layers_of_one_photograph_are_one_view_not_a_rig_repetition(store, w):

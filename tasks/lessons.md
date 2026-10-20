@@ -229,3 +229,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   quote the counts. "Another X" is a claim about rows; check the rows.
 - Rule: when the operator names what matters ("the material: titanium and grade, not the size"), put that definition in one function and
   test the neighbours of the boundary (same grade other case, other grade, other family, no grade), not only the case they described.
+
+## A rule about how a value is derived is searched for at every place that derives it
+- Situation (2026-10-20, REQ-045): "the colour of a setting" was the plain mean of its engravings in four places (knowledge `summarize`, the palette entry,
+  the colour map search, the points of the map) and the confidence formula in two. Changing one would have left screens disagreeing on the same setting.
+- Rule: before changing how a value is computed, grep every place that computes it (`np.mean` over engravings, `n / (n + K)`), put the rule in one pure
+  function (`agreement.consensus`), call it from all of them, and list in the review the old tests that pinned the old rule and why they changed.

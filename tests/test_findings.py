@@ -60,7 +60,8 @@ def test_a_finding_names_its_evidence_context_sample_counts_and_uncertainty(stor
     assert f["evidence"]["pair_ids"] == sorted(pair_of[i] for i in (first, second, again))
     assert f["evidence"]["knowledge_id"] == store.one("SELECT id FROM knowledge")["id"]
     assert f["samples"] == {"independent_engravings": 2, "engravings": 2, "photographs": 3, "observations": 3}
-    assert f["uncertainty"]["assessed"] and f["uncertainty"]["expected_delta_e"] > 4 and f["uncertainty"]["confidence"] == pytest.approx(0.5)
+    assert f["uncertainty"]["assessed"] and f["uncertainty"]["expected_delta_e"] > 4
+    assert f["uncertainty"]["confidence"] == pytest.approx(1 / 6)                  # the two engravings differ (dE 5.5): one of two agree, DEC-083
     assert f["compares"]["variance_threshold"] == 2.0 and f["compares"]["variance"] > 2.0
     assert (f["context"]["device_id"], f["context"]["lens"]["name"], f["context"]["stock"]["name"]) == \
         (w["device"]["id"], "F-Theta 174", "Grade 2 sheet")
@@ -115,8 +116,8 @@ def test_an_observation_beyond_the_tolerance_from_its_recipe_mean_is_an_explorat
     assert [f["evidence"]["observation_ids"] for f in anomalies] == [[far]]
     f = anomalies[0]
     assert f["basis"] == "exploratory" and f["key"] == f"anomaly:observation:{far}"
-    assert f["compares"]["rule"] == "tolerance" and f["compares"]["delta_e"] == pytest.approx(14.25)
-    assert f["compares"]["reference_lab"] == pytest.approx([55.75, 0, 0]) and len(f["evidence"]["recipe_observation_ids"]) == 4
+    assert f["compares"]["rule"] == "tolerance" and f["compares"]["delta_e"] == pytest.approx(19.0)     # from the agreed colour 51, not the mean 55.75
+    assert f["compares"]["reference_lab"] == pytest.approx([51.0, 0, 0]) and len(f["evidence"]["recipe_observation_ids"]) == 4
 
 
 def test_without_a_tolerance_an_anomaly_is_three_standard_deviations_of_the_other_engravings(store, w):
@@ -199,7 +200,7 @@ def test_a_finding_takes_the_task_stated_for_its_observations_else_the_one_their
 
     anomaly = one(found, "observation")                  # judged within the text recipe only: the fill at L* 30 takes no part
     assert anomaly["evidence"]["observation_ids"] == [far] and anomaly["task"] == "text"
-    assert anomaly["compares"]["reference_lab"] == pytest.approx([55.75, 0, 0])
+    assert anomaly["compares"]["reference_lab"] == pytest.approx([51.0, 0, 0])               # the agreed colour: the far one does not move it
     single = {(f["material_id"], f["task"]): f["samples"]["recipes"] for f in found if f["subkind"] == "single_engraving"}
     assert single == {(w["stock"]["id"], "fill"): 2, (other["id"], "text"): 1}
     grade2 = {f["task"] for f in found if f["subkind"] == "coverage" and f["material_id"] == w["stock"]["id"]}

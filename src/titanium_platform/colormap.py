@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import color, engraving_time, experiments, ingest, lightburn as lb, model, tasks
+from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, tasks
 from . import setup as su
 from .db import Store
 
@@ -340,17 +340,41 @@ def _provisional_points(store: Store, names, kept: set[int], nominal: list[float
 
 def by_recipe(points: list[dict]) -> dict[str, dict]:
     """The points of each recipe (one entry of the search) with its evidence: the colours of each independent engraving (a
-    re-photograph counts once, DEC-021), its photographs, experiments and observations."""
+    re-photograph counts once, DEC-021), when each was made (its latest photograph; the observation id breaks a tie), its
+    photographs, experiments and observations."""
     out: dict[str, dict] = {}
     for point in points:
-        entry = out.setdefault(point["group"], {"points": [], "engravings": {}, "photographs": set(), "experiments": [], "observation_ids": []})
+        entry = out.setdefault(point["group"], {"points": [], "engravings": {}, "when": {}, "photographs": set(), "experiments": [],
+                                                "observation_ids": []})
         entry["points"].append(point)
         entry["engravings"].setdefault(point["engraving_id"], []).append(point["display_lab"])
+        entry["when"][point["engraving_id"]] = max(entry["when"].get(point["engraving_id"], ("", 0)),
+                                                   (point.get("date") or "", max(point["observation_ids"], default=0)))
         entry["photographs"].add(point["pair_id"])
         entry["observation_ids"] += [i for i in point["observation_ids"] if i not in entry["observation_ids"]]
         if point["experiment"] not in entry["experiments"]:
             entry["experiments"].append(point["experiment"])
     return out
+
+
+def agreed(recipe: dict) -> dict:
+    """The agreed colour of a recipe of :func:`by_recipe` and the confidence in it (REQ-045, DEC-083): :func:`agreement.consensus`
+    over the mean colour of each independent engraving, which are also returned as ``means`` in the order of ``engravings``."""
+    means = [np.mean(np.asarray(labs, float), axis=0) for labs in recipe["engravings"].values()]
+    found = agreement.consensus([{"lab": mean, "when": recipe["when"].get(engraving)} for mean, engraving in zip(means, recipe["engravings"])])
+    return {**found, "means": means}
+
+
+def annotate(points: list[dict]) -> list[dict]:
+    """Give every point the confidence of its recipe, in place (REQ-045): ``trust`` (0..1, always a number: what the map draws the
+    circle's diameter by), ``confidence`` (None while the recipe was engraved once), ``agreement`` and ``caution``."""
+    for recipe in by_recipe(points).values():
+        found = agreed(recipe)
+        shown = {"trust": found["trust"], "confidence": found["confidence"], "agreement": agreement.shown(found),
+                 "caution": "contradicted" if found["contradicted"] else None}
+        for point in recipe["points"]:
+            point.update(shown)
+    return points
 
 
 def delta_tolerance(value) -> float:
@@ -375,14 +399,15 @@ def _search_tolerance(store: Store, data: dict, tolerance_de, setup: str | None)
 
 
 def fastest_first(entries: list[dict], tolerance: float | None) -> list[dict]:
-    """Entries (each with its ``distance`` and the ``time_s_per_cm2`` of its recipe) in the order of DEC-075: within the
-    tolerance the fastest recipe first (those with no time per area after the timed ones, the nearer first among equals),
-    then every other entry by distance. Without a tolerance: by distance."""
+    """Entries (each with its ``distance``, the ``time_s_per_cm2`` of its recipe and, when it has one, its ``confidence``) in the
+    order of DEC-083 and DEC-075: within the tolerance the most confident recipe first, among equally confident ones the fastest
+    (those with no time per area after the timed ones, the nearer first among equals), then every other entry by distance.
+    Without a tolerance: by distance."""
     if tolerance is None:
         return sorted(entries, key=lambda e: e["distance"])
     within = [e for e in entries if e["distance"] <= tolerance]
     rest = [e for e in entries if e["distance"] > tolerance]
-    return (sorted(within, key=lambda e: (math.inf if e["time_s_per_cm2"] is None else e["time_s_per_cm2"], e["distance"]))
+    return (sorted(within, key=lambda e: (-agreement.trust(e), math.inf if e["time_s_per_cm2"] is None else e["time_s_per_cm2"], e["distance"]))
             + sorted(rest, key=lambda e: e["distance"]))
 
 
@@ -393,15 +418,21 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
     asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
     it came from, says how far its independent engravings agree when there are several, and names the context it lacks.
 
-    Within the delta E tolerance (``tolerance_de``, else the saved rule of the laser and lens the search is narrowed to) the
-    fastest recipe comes first (DEC-075); ``order`` says how the entries were ordered and with which tolerance."""
+    The colour of an entry, and its distance to the wanted colour, is the colour its independent engravings agree on, not the nearest
+    single measurement (DEC-083); ``confidence``, ``agreement`` (how many engravings agree) and ``caution`` (``contradicted``) say how
+    far to trust it. Within the delta E tolerance (``tolerance_de``, else the saved rule of the laser and lens the search is narrowed
+    to) the most confident recipe comes first, then the fastest (DEC-083, DEC-075); ``order`` says how the entries were ordered and
+    with which tolerance."""
     data = collect(store, include_unreferenced=include_unreferenced, include_provisional=include_provisional, **filters)
     entries = []
     for entry in by_recipe(data["points"]).values():
-        distances = [color.delta_e(lab, point["display_lab"]) for point in entry["points"]]
-        nearest = min(range(len(distances)), key=distances.__getitem__)
-        best = entry["points"][nearest]
-        entries.append({**entry, "best": best, "distance": distances[nearest], "time_s_per_cm2": best["time_s_per_cm2"]})
+        found = agreed(entry)
+        agreeing = {engraving for engraving, i in zip(entry["engravings"], range(len(found["means"]))) if i in found["members"]}
+        # the point that stands for the recipe: of an engraving that agrees, the nearest to the agreed colour, the newer one first
+        stand = min((p for p in entry["points"] if p["engraving_id"] in agreeing),
+                    key=lambda p: (color.delta_e(found["lab"], p["display_lab"]), -max(p["observation_ids"], default=0)))
+        entries.append({**entry, "best": {**stand, "display_lab": found["lab"]}, "distance": color.delta_e(lab, found["lab"]),
+                        "time_s_per_cm2": stand["time_s_per_cm2"], "confidence": found["confidence"], "found": found})
     tolerance, source = _search_tolerance(store, data, tolerance_de, filters.get("setup"))
     ranked = fastest_first(entries, tolerance)[:limit]
     return {"target": lab, "evidence": "observed",
@@ -413,6 +444,8 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
                          "observation_ids": sorted(e["observation_ids"]),
                          "provisional_checks": sorted({p["pair_id"] for p in e["points"] if p["provisional"]}),
                          "within_tolerance": None if tolerance is None else bool(e["distance"] <= tolerance),
+                         "confidence": e["confidence"], "agreement": agreement.shown(e["found"]),
+                         "caution": "contradicted" if e["found"]["contradicted"] else None,
                          "repeatability": _repeatability(e["engravings"]), "missing_context": missing_context(e["points"])} for e in ranked],
             "nominal_clean": data["nominal_clean"], "counts": data["counts"]}
 

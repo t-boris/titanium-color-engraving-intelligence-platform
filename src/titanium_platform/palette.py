@@ -10,6 +10,15 @@ measured colour that was never repeated is in it, and says so through its counts
 colour error (REQ-002) come from the spread of its independent engravings as :func:`model.summarize` computes them for a
 knowledge entry (the rig's re-photograph term is not part of them); with one engraving they are not assessed.
 
+The colour of an entry is the colour its independent engravings agree on and its confidence says how far they do (REQ-045,
+DEC-083, :mod:`agreement`): repeats that agree raise it, engravings that differ lower it, and an older colour is replaced by a later
+redo. ``caution`` marks an entry the automatic modes must not choose: ``contradicted`` (its colour changes under the same settings,
+no strict majority of its engravings agrees) or ``superseded`` (the same settings were measured on a better basis: against a chart
+rather than against the clean titanium of the photograph, and that rather than as photographed). A cautioned entry stays in the
+palette, so that a saved work keeps its id and the operator may still choose it by hand; only when no other entry is left the
+automatic modes use the cautioned ones (:func:`choosable`, ``cautioned`` in the result), so a work can always be coloured. Among
+entries inside the tolerance the more confident one is chosen before the faster one.
+
 The regions of a vector work are areas, so only recipes that fill an area are colours of the palette. A Line-mode recipe
 traces a path, the grey steps of an image layer belong to their picture and a recipe kept apart as text or line
 (DEC-071) was measured for another task; colours of checks not accepted yet are left out because their masks may still
@@ -20,8 +29,8 @@ vector-detail-and-colour-control, REQ-058, makes them give as many different ent
 layers as it has colours, up to 29, and fewer only when the palette has fewer):
 
 * ``closest``: each source colour its own entry, the one-to-one assignment with the least pixel-weighted cost, where a delta E
-  within the tolerance costs the tolerance and then the faster entry is cheaper: a colour no other wants takes the fastest entry
-  within the tolerance, else the nearest (DEC-075). With more colours than entries every entry is used once and the other colours
+  within the tolerance costs the tolerance and then the more confident entry is cheaper, and among equally confident ones the faster:
+  a colour no other wants takes the most confident, then fastest, entry within the tolerance, else the nearest (DEC-083, DEC-075). With more colours than entries every entry is used once and the other colours
   take their nearest;
 * ``tonality``: the lightness order of the source colours is kept. Source colours sorted by L* get entries whose L* rises (a
   source colour its own entry), or, with more colours than entries, never falls and every entry is used by a run of neighbouring
@@ -47,7 +56,7 @@ import re
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from . import color, colormap, model, setup as su, tasks
+from . import agreement, color, colormap, model, setup as su, tasks
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
@@ -63,26 +72,28 @@ def _basis(point: dict) -> str:
     return "clean" if point["referenced"] else "as-shot"
 
 
-def _evidence(means: list, lab: list[float]) -> dict:
-    """Stability, confidence and expected colour error of the mean colours of independent engravings (REQ-002), as
-    :func:`model.summarize` gives them; not assessed with one engraving."""
-    n = len(means)
+def _evidence(found: dict) -> dict:
+    """Stability, confidence and expected colour error of the independent engravings of a recipe (REQ-002), as
+    :func:`model.summarize` gives them; the spread is over all engravings, so a disagreement shows; the confidence is the one of
+    the agreed colour (:mod:`agreement`). Not assessed with one engraving."""
+    means, n = found["means"], len(found["means"])
     if n < 2:
         return {"stability": {"assessed": False, "variance": None, "max_deviation": None, "engravings": n},
                 "confidence": None, "expected_delta_e": None}
     variance = float(np.var(np.asarray(means), axis=0, ddof=1).sum())
-    return {"stability": {"assessed": True, "variance": variance, "max_deviation": max(color.delta_e(m, lab) for m in means),
+    return {"stability": {"assessed": True, "variance": variance, "max_deviation": max(color.delta_e(m, found["lab"]) for m in means),
                           "engravings": n},
-            "confidence": n / (n + model.CONFIDENCE_K), "expected_delta_e": math.sqrt(variance)}
+            "confidence": found["confidence"], "expected_delta_e": math.sqrt(variance)}
 
 
 def _entry(group: str, recipe: dict) -> dict:
     """One palette entry: the mean colour of a recipe's independent engravings and everything the screen shows about it."""
     first = recipe["points"][0]
-    means = [np.mean(np.asarray(labs, float), axis=0) for labs in recipe["engravings"].values()]
-    lab = [float(v) for v in np.mean(means, axis=0)]
+    found = colormap.agreed(recipe)
+    lab = found["lab"]
     return {"id": hashlib.sha256(group.encode("utf-8")).hexdigest()[:12], "lab": lab, "srgb": color.lab_to_srgb8(lab).tolist(),
-            **_evidence(means, lab), "basis": _basis(first), "measurement": first["measurement"], "approximate": first["approximate"],
+            **_evidence(found), "agreement": agreement.shown(found), "caution": "contradicted" if found["contradicted"] else None,
+            "basis": _basis(first), "measurement": first["measurement"], "approximate": first["approximate"],
             "referenced": first["referenced"], "engravings": len(recipe["engravings"]), "photographs": len(recipe["photographs"]),
             "experiments": recipe["experiments"], "observation_ids": sorted(recipe["observation_ids"]),
             "parameters": first["parameters"], "mode": first["parameters"].get("layer_type"), "task": first["task"],
@@ -106,6 +117,27 @@ def _left_out(point: dict) -> str | None:
 
 
 PLATE = re.compile(r"\|ti:[^|]*\|")          # the titanium record inside the group key of a recipe (colormap._group)
+
+
+BASIS = re.compile(r"\|(?:chart|clean|as-shot)(\|(?:provisional|accepted)\|task:[^|]*)$")   # how a colour was measured, in the group key
+BASIS_RANK = {"chart": 2, "clean": 1, "as-shot": 0}                                      # a better basis replaces a worse one (DEC-083)
+
+
+def _settings_of(group: str) -> str:
+    """The settings of a recipe whatever the plate and the way its colour was measured: what the same engraving would be again."""
+    return BASIS.sub(r"|*\1", PLATE.sub("|ti:*|", group))
+
+
+def _supersede(built: list[tuple[str, dict]]) -> None:
+    """Mark the entries whose settings were measured on a better basis too (``caution`` = ``superseded``, DEC-083): the better
+    measurement replaces them in the automatic choice."""
+    best: dict[str, int] = {}
+    for group, entry in built:
+        key = _settings_of(group)
+        best[key] = max(best.get(key, 0), BASIS_RANK[entry["basis"]])
+    for group, entry in built:
+        if BASIS_RANK[entry["basis"]] < best[_settings_of(group)]:
+            entry["caution"] = "superseded"
 
 
 def _same_material(store: Store, material_id: int) -> set[int]:
@@ -151,16 +183,18 @@ def vector_palette(store: Store, device_id: int, lens_id: int | None, material_i
             area.append(point)
         else:
             left_out[reason].add(point["group"])
+    built = [(group, _entry(group, recipe)) for group, recipe in colormap.by_recipe(area).items()]
+    _supersede(built)
     entries = []
-    for group, recipe in colormap.by_recipe(area).items():
-        entry = _entry(group, recipe)
+    for group, entry in built:
         if limit is not None and (entry["time_s_per_cm2"] is None or entry["time_s_per_cm2"] > limit):
             left_out["slower"].add(group)
         else:
             entries.append(entry)
     entries.sort(key=lambda e: (-e["lab"][0], e["id"]))
     return {"device_id": device_id, "lens_id": lens_id, "material_id": material_id, "max_time_s_per_cm2": limit,
-            "max_colours": MAX_COLOURS, "entries": entries, "left_out": {reason: len(groups) for reason, groups in left_out.items()}}
+            "max_colours": MAX_COLOURS, "entries": entries, "left_out": {reason: len(groups) for reason, groups in left_out.items()},
+            "cautions": {reason: sum(e["caution"] == reason for e in entries) for reason in ("contradicted", "superseded")}}
 
 
 # -- assignment ------------------------------------------------------------------------------------------------------------------
@@ -207,13 +241,14 @@ def _pool(kept: dict[int, str], candidates: list[dict]) -> list[dict]:
 def _closest(free: list[dict], kept: dict[int, str], candidates: list[dict], distance, tolerance: float) -> dict[int, tuple[dict, str]]:
     """Each colour its own entry as far as the palette reaches (DEC-089): the one-to-one assignment of the least pixel-weighted cost.
     A delta E within the tolerance costs the tolerance, and then the faster entry is cheaper, so a colour that has no rival takes
-    the fastest entry within the tolerance, else the nearest (DEC-075). With more colours than entries every entry is used once
-    and the other colours take their nearest."""
+    the more confident entry within the tolerance, then the faster (DEC-083, DEC-075), else the nearest. With more colours than
+    entries every entry is used once and the other colours take their nearest."""
     pool, order = _pool(kept, candidates), sorted(free, key=lambda s: s["index"])
     slowest = max((_time(e) for e in pool if math.isfinite(_time(e))), default=1.0) or 1.0
     unit = [min(_time(e) / slowest, 1.0) for e in pool]                      # an unknown time counts as the slowest
-    cost = np.array([[max(s["pixels"], 1.0) * (max(distance(s, e), tolerance) + 1e-6 * u + 1e-9 * distance(s, e))
-                      for e, u in zip(pool, unit)] for s in order])
+    doubt = [1.0 - agreement.trust(e) for e in pool]                         # 0 = sure; a colour engraved once is 2/3, a contradicted one more
+    cost = np.array([[max(s["pixels"], 1.0) * (max(distance(s, e), tolerance) + 1e-3 * d + 1e-6 * u + 1e-9 * distance(s, e))
+                      for e, u, d in zip(pool, unit, doubt)] for s in order])
     n, m = len(order), len(pool)
     if n <= m:
         picks = dict(zip(*linear_sum_assignment(cost)))
@@ -342,11 +377,26 @@ def _spread(free: list[dict], kept: dict[int, str], candidates: list[dict], dist
 
 
 def automatic(entry: dict, limit: float | None, include_as_shot: bool) -> bool:
-    """Whether the automatic modes may choose an entry: no slower than ``limit`` seconds per square centimetre (an unknown
-    time is slower than any limit) and, unless included, not measured as photographed (DEC-077)."""
+    """Whether the automatic modes may choose an entry: not cautioned (its colour changes under the same settings, or a better
+    measurement of them exists, DEC-083), no slower than ``limit`` seconds per square centimetre (an unknown time is slower than
+    any limit) and, unless included, not measured as photographed (DEC-077)."""
+    if entry.get("caution"):
+        return False
     if limit is not None and (entry.get("time_s_per_cm2") is None or entry["time_s_per_cm2"] > limit):
         return False
     return include_as_shot or entry.get("basis") != "as-shot"
+
+
+def choosable(entries, limit: float | None, include_as_shot: bool) -> tuple[list[dict], bool]:
+    """The entries the automatic modes choose from, and whether they are the cautioned ones: when no entry is free of caution (every
+    colour of the titanium changed under its settings, or was replaced) the cautioned ones that pass the other limits are used, so that a
+    work can still be coloured; the screen marks each of them (DEC-083)."""
+    entries = list(entries)
+    free = [e for e in entries if automatic(e, limit, include_as_shot)]
+    if free:
+        return free, False
+    cautioned = [e for e in entries if automatic({**e, "caution": None}, limit, include_as_shot)]
+    return cautioned, bool(cautioned)
 
 
 def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: float, seed: int = 0, max_time: float | None = None,
@@ -371,7 +421,7 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
     if not by_id:
         raise su.ValidationError("no measured colour of this laser, lens and titanium stock fills an area")
     kept = _kept(keep, {s["index"] for s in sources}, by_id)
-    candidates = [e for e in by_id.values() if automatic(e, limit, include_as_shot)]
+    candidates, cautioned = choosable(by_id.values(), limit, include_as_shot)
     free = [s for s in sources if s["index"] not in kept]
     if free and not candidates:
         if limit is not None and any(automatic(e, None, include_as_shot) for e in by_id.values()):
@@ -409,7 +459,7 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
               "within_tolerance": sum(c["within_tolerance"] for c in colours),
               "mean_delta_e": round(float(np.average(distances, weights=weights)), 2),
               "mean_time_s_per_cm2": None if None in times else float(np.average(times, weights=weights))}
-    out = {"mode": mode, "tolerance_de": tolerance, "max_time_s_per_cm2": limit, "include_as_shot": include_as_shot,
+    out = {"mode": mode, "tolerance_de": tolerance, "max_time_s_per_cm2": limit, "include_as_shot": include_as_shot, "cautioned": cautioned,
            "keep": {str(k): v for k, v in kept.items()}, "colours": colours, "totals": totals}
     if mode == "random":
         out["seed"] = seed

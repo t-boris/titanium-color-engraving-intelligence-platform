@@ -44,6 +44,10 @@ const ColorMap = (() => {
   const PLANES = {ab: {x: 1, y: 2, right: 'a*  красный →', up: 'b*  жёлтый ↑', zero: true}, La: {x: 1, y: 0, right: 'a*  красный →', up: 'L*  светлее ↑', zero: false},
     Lb: {x: 2, y: 0, right: 'b*  жёлтый →', up: 'L*  светлее ↑', zero: false}};
 
+  /** Диаметр кружка — уверенность в цвете настроек (REQ-045): гравировка, которую не повторяли, мелкая; чем больше повторов дали тот же цвет,
+      тем крупнее; цвет, который при тех же настройках менялся, самый мелкий. */
+  const radius = (p) => 3 + 12 * (p.trust == null ? 1 / 3 : p.trust);
+
   function plot(points, onPick, target, picked, plane, spiral) {
     if (!points.length) return h('p', {class: 'muted'}, 'Нет цветов под такие условия.');
     const P = PLANES[plane] || PLANES.ab;
@@ -69,11 +73,12 @@ const ColorMap = (() => {
         add('text', {x: x(s.lab[P.x]) + 5, y: y(s.lab[P.y]) - 4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`); });
     }
     points.slice().sort((p, q) => q.display_lab[0] - p.display_lab[0]).forEach((p) => {
-      const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: picked && picked.id === p.id ? 10 : 7,
+      const r = radius(p), on = picked && picked.id === p.id;
+      const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: on ? r + 3 : r,
         fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced && !p.provisional ? 1 : 0.45,
         stroke: picked && picked.id === p.id ? '#ffffff' : p.provisional ? '#c9a2ff' : !p.referenced ? '#e0b050' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
         'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': p.provisional ? '6 2 1 2' : !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer'});
-      c.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: `${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}${p.provisional ? ' · предварительно' : ''}`}));
+      c.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: `${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}${p.provisional ? ' · предварительно' : ''} · уверенность ${p.confidence == null ? 'не оценена (одна гравировка)' : num(p.confidence)} (${App.agreed(p.agreement)})`}));
       c.addEventListener('click', () => onPick(p));
     });
     if (target) { add('circle', {cx: x(target[P.x]), cy: y(target[P.y]), r: 13, fill: 'none', stroke: '#ffd166', 'stroke-width': 2.5});
@@ -190,7 +195,8 @@ const ColorMap = (() => {
       // one entry per recipe: the same settings, laser and lens, titanium stock and kind of measurement; a re-photograph of one
       // engraving is not another repetition (DEC-021), so engravings and photographs are counted apart
       const often = (m) => (m.repeats > 1 ? `получался ${times(m.repeats)} (независимые гравировки)` : 'получен в одной гравировке')
-        + ` · фото: ${m.photographs} · экспериментов: ${m.experiments.length}`;
+        + ` · фото: ${m.photographs} · экспериментов: ${m.experiments.length}`
+        + (m.confidence == null ? '' : ` · уверенность ${num(m.confidence)} (${App.agreed(m.agreement)})`) + (m.caution ? ` · ${App.CAUTION[m.caution]}` : '');
       // REQ-020: измеренное свидетельство, не прогноз — наблюдения, повторяемость и чего не хватает в контексте
       const evidence = (m) => h('p', {class: 'muted small'},
         m.repeatability && m.repeatability.assessed ? `Повторяемость: независимые гравировки расходятся до ΔE ${num(m.repeatability.max_delta_e, 1)}`
@@ -263,7 +269,8 @@ const ColorMap = (() => {
             + 'умноженные на проходы, повторы и на 2 при перекрёстной штриховке; частота и длительность импульса на время не влияют. '
             + (data.counts.provisional ? 'Предварительные цвета обведены сиреневым штрихом и ведут к проверке пары; в прогнозы они не входят, а в поиск — только по отдельной просьбе, пока проверка не принята. ' : '')
             + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
-            + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует.')))));
+            + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует. '
+            + 'Диаметр кружка — уверенность в цвете этих настроек: мелкий — гравировка не повторялась или цвет при тех же настройках менялся, крупный — повторные гравировки дали тот же цвет (чем больше повторов, тем крупнее). Цвет настроек — тот, в котором совпали гравировки; позднейшая переделка заменяет старый цвет.')))));
     // the map fills the middle; the colour picked on it is described in a strip under it
     const mapCol = h('div', {class: 'os-col'},
       h('div', {class: 'os-col-head'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),

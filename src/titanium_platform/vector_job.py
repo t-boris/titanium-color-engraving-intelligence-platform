@@ -640,7 +640,7 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     titanium colour farther than the delta E tolerance; it never blocks the file (editor DEC-001)."""
     by_id = {e["id"]: e for e in entries}
     colouring, settings, tolerance = plan["colouring"], plan["colour_settings"], plan["threshold"]
-    candidates = [e for e in entries if palette.automatic(e, settings["max_time"], settings["include_as_shot"])]
+    candidates = palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0]
     excluded_colours, excluded_regions = set(colouring["excluded_colours"]), set(colouring["excluded_regions"])
     colours = []
     for source in document["palette"]:
@@ -789,7 +789,7 @@ def _estimate(plan: dict, layers: list[dict]) -> dict:
 
 # -- reading and the file ------------------------------------------------------------------------------------------------------
 SHOWN_ENTRY = ("id", "lab", "srgb", "basis", "engravings", "photographs", "parameters", "mode", "time_s_per_cm2", "confidence",
-               "expected_delta_e", "stability")
+               "expected_delta_e", "stability", "agreement", "caution")
 
 
 def _shown(entry: dict, settings: dict) -> dict:
@@ -1081,7 +1081,7 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
     except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
         raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
     settings, current = plan["colour_settings"], plan["colouring"]
-    candidates = [e for e in entries if palette.automatic(e, settings["max_time"], settings["include_as_shot"])]
+    candidates = palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0]
     if not candidates:
         raise cv.ConversionError("no measured colour of this titanium may be chosen with the present limits: widen them to colour with AI")
     by_id = {e["id"]: e for e in candidates}

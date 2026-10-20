@@ -960,3 +960,36 @@ Operator, 2026-10-20: "Какая кнопка как можно больше ц
 - [ ] Deploy: backup, wheel, install, first check on a copy, real app (no button; palette count; 29 layers on the work when the mode is pressed). No full suite,
   no push/tag until the operator has looked.
 Not done and not asked: widening the palette with colours predicted by the laser model (unmeasured; needs its own decision); AI colouring unchanged.
+
+## 0.12.0: confidence in the colour of a setting (operator goal, 2026-10-20; REQ-045, DEC-083)
+Operator: new experiments and pictures give "new colours"; a setting needs a confidence in its value and the more confident colours are preferred: the
+same colour repeating under the same settings is more confident, a colour that changes is not and "cannot be taken", a yellow that is redone as dark brown
+is replaced by the dark brown; more repeats, more confidence; more differences, less.
+Measured on the operator's data first (copy, GET only): 539 recipes on the colour map, 23 repeated, 11 of those disagree by dE 7 to 22.8; palette of work 22 =
+505 recipes, 496 engraved once, 9 with a confidence; 14 settings are in the palette twice or thrice because chart / against-clean / as-shot are separate recipes.
+- [x] A. `agreement.py` (pure): agreeing group within dE 5, newest wins a tie, confidence k^2/((k+2)n), contradicted; unit tests incl. the yellow -> dark brown case.
+- [x] B. Palette (what a vector work chooses from): colour = agreed colour, `agreement`, `caution` (contradicted / superseded by a better basis), `automatic()`
+      refuses cautioned entries, `_closest` prefers confident before fast inside the tolerance; error text when nothing is left; tests.
+- [x] C. Knowledge model `model.summarize` (agreed colour + agreement-aware confidence, stability still over all) and colour map `search` (distance to the
+      agreed colour, confidence, agreement); tests.
+- [x] D. Screens (+ the operator's addition of 2026-10-20: the diameter of a circle on the colour map follows the confidence): palette table and picker (confidence, "k of n agree", contradicted / replaced), colour map result, knowledge page; i18n coverage tests.
+- [x] E. Real data: before / after counts on the copy (changed colours, contradicted, superseded), a work's colouring before / after.
+- [ ] F. Release 0.12.0: targeted tests only (operator: no full suite unless asked), README, version, backup, wheel, install + dependency imports, first check from the
+      app environment on a data copy, real app view-only. Commit on main, NOT pushed until the operator has looked (feedback of 2026-10-20).
+Not in this step: pooling the three measurement bases of one setting into one estimate (REQ-029 keeps them apart); a screen to set the dE 5 limit.
+
+### Review 0.12.0 (before the deploy)
+- New code: `agreement.py` (consensus within dE 5, newest wins a tie, confidence k^2/((k+2)n), contradicted = no strict majority), `colormap.agreed / annotate`,
+  `palette._entry / _supersede / automatic / _closest`, `model.summarize / predict_for_lab`, `colormap.search / fastest_first`, `/api/colors` points carry `trust`,
+  screens: vector colours (table, picker), colour map (circle radius 3 + 12 * trust, title, legend), knowledge page.
+- Tests: `tests/test_agreement.py` (11, pure), `tests/test_setting_confidence.py` (16: palette, supersession, assign, knowledge, search, API points), the DOM test
+  of the circle diameter in `tests/test_color_map_one_screen.py`. Old tests that pinned "the mean of all engravings" were changed to agreeing data or to the agreed
+  colour (test_palette plate merge, test_model rephotographs, test_findings x3, test_vector_work other plate); the anomaly finding now measures from the agreed colour
+  (its statement and Russian translation changed).
+- Measured on a copy of the real data (GET only, own port 8799, stopped after): colour map 565 points, 517 engraved once (trust 0.33), 22 with two agreeing (0.5),
+  3 with three (0.6), 20 + 3 contradicted; palette of work 22: 505 entries, 3 contradicted, 16 superseded (11 of them as-shot, which automatic modes never took), 9 with a
+  confidence; palette 0.10 s, colour map 0.08 s, annotate 8 ms (no slower than before). Recolouring work 22 (closest): 29 layers, no cautioned entry used; without the
+  rules the old choice would have used one superseded colour (dE 22.7 from its source), mean dE 14.5 -> 16.3 when it is refused (the price of not taking it).
+- Headless Chrome on the copy: circles of the map have r = 7 (517), 9 (23), 5 (20), 10.2 (3), 4.3 (3): the map is dominated by colours engraved once.
+- Open / not done: pooling the three measurement bases of one setting into one estimate (the better basis only replaces the worse); no screen sets the dE 5 limit;
+  `conversion.eligible` (knowledge-based plans) takes the agreed colour through `summarize` but does not refuse contradicted entries (its stage gate stays).
