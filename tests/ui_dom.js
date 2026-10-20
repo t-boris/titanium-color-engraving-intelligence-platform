@@ -60,7 +60,7 @@ class El {
   removeEventListener() {}
   /** Fire an event that bubbles; the promises of async handlers are returned so a test can wait for them. */
   dispatch(type, extra = {}) {
-    const ev = {type, target: this, preventDefault() {}, pointerId: 1, ...extra};
+    const ev = {type, target: this, preventDefault() {}, stopPropagation() {}, pointerId: 1, ...extra};
     const done = [];
     for (let el = this; el; el = el.parentNode) for (const fn of el.listeners[type] || []) { ev.currentTarget = el; done.push(fn(ev)); }
     return Promise.all(done);

@@ -52,6 +52,21 @@ const ColorMap = (() => {
     return Math.min(RADIUS.most, Math.max(RADIUS.least, RADIUS.base * RADIUS.step ** (Math.max(a.agreeing || 1, 1) - 1 - (a.differing || 0))));
   };
 
+  // -- zoom and pan of the map (plain SVG, no library). A view is the scale ``s`` (1 = the whole map) and the offset of the picture in the
+  // 640 x 460 frame; it is kept for each plane while the page is open, so a click on a colour or a new search does not throw it away.
+  const ZOOM = {least: 1, most: 60, step: 1.5};
+  const views = {};
+  const clampView = (v, W, H) => {
+    const s = Math.min(ZOOM.most, Math.max(ZOOM.least, v.s));
+    return {s, tx: Math.min(0, Math.max(W * (1 - s), v.tx)), ty: Math.min(0, Math.max(H * (1 - s), v.ty))};
+  };
+  /** Scale the view by ``factor`` keeping the point (px, py) of the frame where it is. */
+  const zoomView = (v, factor, px, py, W, H) => {
+    const s = Math.min(ZOOM.most, Math.max(ZOOM.least, v.s * factor)), k = s / v.s;
+    return clampView({s, tx: px - (px - v.tx) * k, ty: py - (py - v.ty) * k}, W, H);
+  };
+  const panView = (v, dx, dy, W, H) => clampView({s: v.s, tx: v.tx + dx, ty: v.ty + dy}, W, H);
+
   function plot(points, onPick, target, picked, plane, spiral) {
     if (!points.length) return h('p', {class: 'muted'}, 'Нет цветов под такие условия.');
     const P = PLANES[plane] || PLANES.ab;
@@ -60,35 +75,102 @@ const ColorMap = (() => {
     const lo = [Math.min(...xs, P.zero ? -4 : Infinity) - 4, Math.min(...ys, P.zero ? -4 : Infinity) - 4], hi = [Math.max(...xs, P.zero ? 4 : -Infinity) + 4, Math.max(...ys, P.zero ? 4 : -Infinity) + 4];
     const x = (v) => pad + ((v - lo[0]) / (hi[0] - lo[0])) * (W - 2 * pad), y = (v) => H - pad - ((v - lo[1]) / (hi[1] - lo[1])) * (H - 2 * pad);
     const svg = document.createElementNS(SVG, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', `Карта измеренных цветов: ${P.right} и ${P.up}`); svg.style.cssText = 'width:100%;height:100%';       // the box around it sets the size; the viewBox keeps the proportions
-    const add = (tag, attrs, text) => { const el = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); if (text) el.textContent = text; svg.append(el); return el; };
-    if (P.zero) { add('line', {x1: x(lo[0]), x2: x(hi[0]), y1: y(0), y2: y(0), stroke: '#44556e', 'stroke-width': 1});
-      add('line', {x1: x(0), x2: x(0), y1: y(lo[1]), y2: y(hi[1]), stroke: '#44556e', 'stroke-width': 1}); }
-    add('text', {x: W - pad, y: H - pad + 16, fill: '#9fb0c8', 'font-size': 12, 'text-anchor': 'end'}, P.right);
-    add('text', {x: pad, y: pad - 10, fill: '#9fb0c8', 'font-size': 12}, P.up);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img'); svg.setAttribute('tabindex', '0');
+    svg.setAttribute('aria-label', `Карта измеренных цветов: ${P.right} и ${P.up}. Колесо мыши — масштаб, перетаскивание и стрелки — сдвиг, 0 — весь вид`);
+    svg.style.cssText = 'width:100%;height:100%;cursor:grab;touch-action:none;outline:none';       // the box around it sets the size; the viewBox keeps the proportions
+    const g = document.createElementNS(SVG, 'g');            // everything that moves and scales with the view
+    svg.append(g);
+    const add = (tag, attrs, text, parent = g) => { const el = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); if (text) el.textContent = text; parent.append(el); return el; };
+    const steady = [];       // sizes that stay the same on the screen however far the map is zoomed: each is told the scale
+    const fixed = (cx, cy, build) => { const holder = add('g', {}); build(holder); steady.push((s) => holder.setAttribute('transform', `translate(${cx} ${cy}) scale(${1 / s})`)); return holder; };
+    const thin = {'vector-effect': 'non-scaling-stroke'};
+    if (P.zero) { add('line', {x1: x(lo[0]), x2: x(hi[0]), y1: y(0), y2: y(0), stroke: '#44556e', 'stroke-width': 1, ...thin});
+      add('line', {x1: x(0), x2: x(0), y1: y(lo[1]), y2: y(hi[1]), stroke: '#44556e', 'stroke-width': 1, ...thin}); }
     if (spiral && spiral.length) {           // the film model: colour against the oxide thickness, drawn under the points
       const inside = (l) => l[P.x] >= lo[0] && l[P.x] <= hi[0] && l[P.y] >= lo[1] && l[P.y] <= hi[1];
       let d = '';
       spiral.forEach((s, i) => { const l = s.lab; d += (i && inside(l) && inside(spiral[i - 1].lab) ? 'L' : 'M') + `${x(l[P.x]).toFixed(1)} ${y(l[P.y]).toFixed(1)} `; });
-      add('path', {d, fill: 'none', stroke: '#8fa3c4', 'stroke-width': 1.2, 'stroke-opacity': 0.7, 'stroke-dasharray': '4 3'});
-      spiral.filter((s) => s.thickness_nm % 50 === 0 && inside(s.lab)).forEach((s) => {
-        add('circle', {cx: x(s.lab[P.x]), cy: y(s.lab[P.y]), r: 2.5, fill: '#8fa3c4'});
-        add('text', {x: x(s.lab[P.x]) + 5, y: y(s.lab[P.y]) - 4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`); });
+      add('path', {d, fill: 'none', stroke: '#8fa3c4', 'stroke-width': 1.2, 'stroke-opacity': 0.7, 'stroke-dasharray': '4 3', ...thin});
+      spiral.filter((s) => s.thickness_nm % 50 === 0 && inside(s.lab)).forEach((s) => fixed(x(s.lab[P.x]), y(s.lab[P.y]), (holder) => {
+        add('circle', {cx: 0, cy: 0, r: 2.5, fill: '#8fa3c4'}, null, holder);
+        add('text', {x: 5, y: -4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`, holder); }));
     }
     points.slice().sort((p, q) => radius(q) - radius(p) || q.display_lab[0] - p.display_lab[0]).forEach((p) => {       // larger below, so no confident colour hides a small one
       const r = radius(p), on = picked && picked.id === p.id;
       const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: on ? r + 3 : r,
         fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced && !p.provisional ? 1 : 0.45,
         stroke: picked && picked.id === p.id ? '#ffffff' : p.provisional ? '#c9a2ff' : !p.referenced ? '#e0b050' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
-        'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': p.provisional ? '6 2 1 2' : !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer'});
+        'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': p.provisional ? '6 2 1 2' : !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer', ...thin});
+      steady.push((s) => c.setAttribute('r', (on ? r + 3 : r) / s));        // the diameter tells the confidence, so it does not grow with the zoom
       c.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: `${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}${p.provisional ? ' · предварительно' : ''} · уверенность ${p.confidence == null ? 'не оценена (одна гравировка)' : num(p.confidence)} (${App.agreed(p.agreement)})`}));
       c.addEventListener('click', () => onPick(p));
     });
-    if (target) { add('circle', {cx: x(target[P.x]), cy: y(target[P.y]), r: 13, fill: 'none', stroke: '#ffd166', 'stroke-width': 2.5});
-      add('line', {x1: x(target[P.x]) - 18, x2: x(target[P.x]) + 18, y1: y(target[P.y]), y2: y(target[P.y]), stroke: '#ffd166', 'stroke-width': 1.5});
-      add('line', {x1: x(target[P.x]), x2: x(target[P.x]), y1: y(target[P.y]) - 18, y2: y(target[P.y]) + 18, stroke: '#ffd166', 'stroke-width': 1.5}); }
-    return svg;
+    if (target) fixed(x(target[P.x]), y(target[P.y]), (holder) => {
+      add('circle', {cx: 0, cy: 0, r: 13, fill: 'none', stroke: '#ffd166', 'stroke-width': 2.5}, null, holder);
+      add('line', {x1: -18, x2: 18, y1: 0, y2: 0, stroke: '#ffd166', 'stroke-width': 1.5}, null, holder);
+      add('line', {x1: 0, x2: 0, y1: -18, y2: 18, stroke: '#ffd166', 'stroke-width': 1.5}, null, holder); });
+    add('text', {x: W - pad, y: H - pad + 16, fill: '#9fb0c8', 'font-size': 12, 'text-anchor': 'end'}, P.right, svg);          // the axis names stay where they are
+    add('text', {x: pad, y: pad - 10, fill: '#9fb0c8', 'font-size': 12}, P.up, svg);
+
+    let view = clampView(views[plane] || {s: 1, tx: 0, ty: 0}, W, H);
+    const scaleText = h('span', {class: 'cm-scale'});
+    const apply = () => {
+      g.setAttribute('transform', `translate(${view.tx} ${view.ty}) scale(${view.s})`);
+      steady.forEach((fn) => fn(view.s));
+      scaleText.textContent = view.s > 1 ? `×${(Math.round(view.s * 10) / 10).toString().replace('.', ',')}` : '';
+      views[plane] = view;
+    };
+    // the frame of the picture inside the box that holds it (the picture is centred and keeps its proportions)
+    const frame = () => { const r = svg.getBoundingClientRect(), k = Math.min(r.width / W, r.height / H) || 1; return {r, k, ox: (r.width - W * k) / 2, oy: (r.height - H * k) / 2}; };
+    const at = (e) => { const f = frame(); return [(e.clientX - f.r.left - f.ox) / f.k, (e.clientY - f.r.top - f.oy) / f.k]; };
+    const zoomAt = (factor, px, py) => { view = zoomView(view, factor, px, py, W, H); apply(); };
+    svg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (!e.ctrlKey && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) {              // sideways: move the map
+        const k = frame().k; view = panView(view, -(e.deltaX || e.deltaY) / k, 0, W, H); apply(); return;
+      }
+      const [px, py] = at(e);
+      zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), px, py);                       // a pinch on a trackpad arrives as a wheel with ctrl
+    }, {passive: false});
+    svg.addEventListener('dblclick', (e) => { const [px, py] = at(e); zoomAt(2, px, py); });
+    // drag with the mouse or a finger; two fingers pinch. A click that ends a drag picks nothing.
+    const down = new Map();
+    let moved = false, pinch = null;
+    svg.addEventListener('pointerdown', (e) => { down.set(e.pointerId, {x: e.clientX, y: e.clientY}); moved = false;
+      if (down.size === 2) { const [a, b] = [...down.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y) || 1; } });
+    svg.addEventListener('pointermove', (e) => {
+      const was = down.get(e.pointerId);
+      if (!was) return;
+      const f = frame();
+      if (down.size === 2) {                                                                    // pinch: scale about the middle of the two fingers
+        down.set(e.pointerId, {x: e.clientX, y: e.clientY});
+        const [a, b] = [...down.values()], now = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        const px = ((a.x + b.x) / 2 - f.r.left - f.ox) / f.k, py = ((a.y + b.y) / 2 - f.r.top - f.oy) / f.k;
+        zoomAt(now / pinch, px, py); pinch = now; moved = true; return;
+      }
+      const dx = e.clientX - was.x, dy = e.clientY - was.y;
+      if (!moved && Math.hypot(dx, dy) < 4) return;                                             // a click is not a drag
+      if (!moved) { moved = true; svg.style.cursor = 'grabbing'; if (svg.setPointerCapture) svg.setPointerCapture(e.pointerId); }
+      down.set(e.pointerId, {x: e.clientX, y: e.clientY});
+      view = panView(view, dx / f.k, dy / f.k, W, H); apply();
+    });
+    const up = (e) => { down.delete(e.pointerId); pinch = null; svg.style.cursor = 'grab'; };
+    svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
+    svg.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); moved = false; } }, true);
+    svg.addEventListener('keydown', (e) => {
+      const k = {ArrowLeft: [60, 0], ArrowRight: [-60, 0], ArrowUp: [0, 60], ArrowDown: [0, -60]}[e.key];
+      if (k) view = panView(view, k[0], k[1], W, H);
+      else if (e.key === '+' || e.key === '=') view = zoomView(view, ZOOM.step, W / 2, H / 2, W, H);
+      else if (e.key === '-') view = zoomView(view, 1 / ZOOM.step, W / 2, H / 2, W, H);
+      else if (e.key === '0') view = {s: 1, tx: 0, ty: 0};
+      else return;
+      e.preventDefault(); apply();
+    });
+    apply();
+    const zoomIn = btn('+', () => zoomAt(ZOOM.step, W / 2, H / 2), 'btn-small'), zoomOut = btn('−', () => zoomAt(1 / ZOOM.step, W / 2, H / 2), 'btn-small');
+    zoomIn.setAttribute('aria-label', 'Приблизить'); zoomOut.setAttribute('aria-label', 'Отдалить');
+    const bar = h('div', {class: 'cm-zoombar'}, scaleText, zoomIn, zoomOut, btn('Весь вид', () => { view = {s: 1, tx: 0, ty: 0}; apply(); }, 'btn-small'));
+    return h('div', {class: 'cm-zoom'}, svg, bar);
   }
 
   // the film model's reading of one measured colour
@@ -282,7 +364,7 @@ const ColorMap = (() => {
       h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'),
         h('input', {type: 'number', min: 0, max: 100, value: band[0], 'aria-label': 'Светлота от', onChange: (e) => remember({band: [+e.target.value, band[1]]})}),
         h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
-        h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length}`)),
+        h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length} · колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — приблизить`)),
       model && model.summary && model.summary.observations ? h('p', {class: 'cm-caption muted small'}, `Пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null,
       plotBox, detail);
     // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
@@ -294,5 +376,5 @@ const ColorMap = (() => {
       h('div', {class: 'os-scroll'}, results));
     return h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));
   }
-  return {render, hexToLab};
+  return {render, hexToLab, zoomView, panView, clampView};
 })();

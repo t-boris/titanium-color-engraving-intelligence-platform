@@ -104,8 +104,8 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
     assert out["filterTitle"] == "Фильтры" and out["selects"] == 4 and out["checkbox"] is True and out["filtersScroll"] is True
     assert out["labels"][:5] == ["Лазер и линза", "Материал", "Как измерен", "Задача", "Не дольше, мин/см²"]
     assert [s for s, _ in out["details"]] == ["Как это считается"] and "Время гравировки — оценка по настройкам рецепта" in out["details"][0][1]
-    assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*"]
-    assert out["plot"] == [["svg"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
+    assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "+", "−", "Весь вид"]
+    assert out["plot"] == [["div"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
     assert out["rightTitle"] == "Какой цвет нужен" and out["target"] == 5 and out["findButton"] is True and out["rightScroll"] == 1      # the picker, L, a, b and the tolerance
 
 
@@ -227,7 +227,7 @@ def test_the_find_button_searches_the_typed_colour_with_the_tolerance_and_the_fi
 def test_the_screen_is_one_screen_frame_and_only_the_found_recipes_scroll():
     assert "h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search))" in SCREEN
     assert "h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается')" in SCREEN and "h('div', {class: 'os-scroll'}, results)" in SCREEN
-    assert "svg.style.cssText = 'width:100%;height:100%';" in SCREEN and "max-width:820px" not in SCREEN       # the box around the map sets its size
+    assert "svg.style.cssText = 'width:100%;height:100%;cursor:grab;touch-action:none;outline:none';" in SCREEN and "max-width:820px" not in SCREEN       # the box around the map sets its size
     section = CSS[CSS.index("/* === cm:"):CSS.index("/* === end cm === */")]
     assert re.search(r"\.cm-body \{grid-template-columns:minmax\(250px,290px\) minmax\(0,1fr\) minmax\(280px,340px\)\}", section)       # three columns
     assert re.search(r"\.cm-plot \{flex:1;min-height:0;display:flex", section) and re.search(r"\.cm-detail \{flex:none;max-height:40%;overflow:auto", section)
@@ -261,3 +261,71 @@ def test_the_diameter_of_a_circle_grows_one_and_a_half_times_per_agreeing_repeat
     titles = " ".join(out["titles"])
     assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (все 3 совпали)" in titles and "уверенность 0.17 (1 из 2 совпали)" in titles
     assert "каждый повтор с тем же цветом увеличивает его в 1,5 раза" in SCREEN
+
+
+# -- zoom and pan of the map -------------------------------------------------------------------------------------------------------------------
+@node
+def test_the_view_math_keeps_the_point_under_the_cursor_and_stays_inside_the_picture(tmp_path):
+    out = run(tmp_path, routes_of(), """
+  const {zoomView, panView, clampView} = ctx.ColorMap;
+  const v0 = {s: 1, tx: 0, ty: 0};
+  out.zoom = zoomView(v0, 2, 100, 50, 640, 460);
+  out.fixedPoint = [out.zoom.s * 100 + out.zoom.tx, out.zoom.s * 50 + out.zoom.ty];        // the point under the cursor does not move
+  out.most = zoomView(v0, 1e6, 10, 10, 640, 460).s;
+  out.least = zoomView({s: 2, tx: -100, ty: -50}, 1e-6, 10, 10, 640, 460);
+  out.panFull = panView(v0, 300, 300, 640, 460);                                           // the whole picture cannot be moved away
+  out.panZoomed = panView({s: 2, tx: -100, ty: -50}, -1000, 1000, 640, 460);
+  out.clamp = clampView({s: 3, tx: 50, ty: -9999}, 640, 460);
+""")
+    assert out["zoom"] == {"s": 2, "tx": -100, "ty": -50} and out["fixedPoint"] == [100, 50]
+    assert out["most"] == 60 and out["least"] == {"s": 1, "tx": 0, "ty": 0} and out["panFull"] == {"s": 1, "tx": 0, "ty": 0}
+    assert out["panZoomed"] == {"s": 2, "tx": -640, "ty": 0} and out["clamp"] == {"s": 3, "tx": 0, "ty": -920}
+
+
+@node
+def test_the_wheel_zooms_a_drag_moves_the_map_circles_keep_their_size_and_a_pick_keeps_the_view(tmp_path):
+    pts = [point(1, [80.0, 4.0, 30.0]), point(2, [55.0, 12.0, 20.0], agreement={"engravings": 3, "agreeing": 3, "differing": 0}), point(3, [30.0, -2.0, -6.0])]
+    out = run(tmp_path, routes_of(colours(pts)), """
+  const svg = () => tree.querySelector('svg');
+  const view = () => { const m = svg().querySelector('g').getAttribute('transform').match(/-?[0-9]+[.]?[0-9]*(?:e-?[0-9]+)?/g); return m ? m.map(Number) : null; };
+  const radii = () => svg().querySelectorAll('circle').filter((c) => c.getAttribute('stroke') !== '#ffd166').map((c) => +c.getAttribute('r'));
+  out.start = view(); out.r0 = radii();
+  await svg().dispatch('wheel', {clientX: 50, clientY: 50, deltaX: 0, deltaY: -460});       // one notch of a mouse wheel is about 100; this is a few
+  out.zoomed = view(); out.r1 = radii();
+  await svg().dispatch('pointerdown', {clientX: 40, clientY: 40});
+  await svg().dispatch('pointermove', {clientX: 41, clientY: 40});                           // inside the click tolerance: nothing moves
+  out.small = view();
+  await svg().dispatch('pointermove', {clientX: 60, clientY: 40});
+  await svg().dispatch('pointerup', {clientX: 60, clientY: 40});
+  out.dragged = view();
+  await svg().dispatch('wheel', {clientX: 50, clientY: 50, deltaX: 80, deltaY: 0});          // sideways: the map moves, the scale stays
+  out.sideways = view();
+  const bar = tree.querySelector('.cm-zoombar');
+  out.scaleText = bar.querySelector('.cm-scale').textContent;
+  await byText(bar, 'button', '+').dispatch('click');
+  out.plus = view();
+  await byText(bar, 'button', '−').dispatch('click');
+  out.minus = view();
+  // a colour is picked: the map is drawn again, and the view is kept
+  await svg().querySelectorAll('circle')[0].dispatch('click');
+  await tick();
+  out.afterPick = view();
+  await byText(tree.querySelector('.cm-zoombar'), 'button', 'Весь вид').dispatch('click');
+  out.reset = view(); out.r2 = radii();
+  await svg().dispatch('keydown', {key: '+'});
+  out.key = view();
+  await svg().dispatch('keydown', {key: '0'});
+  out.keyReset = view();
+""")
+    assert out["start"] == [0, 0, 1] and out["r0"] == sorted(out["r0"], reverse=True)
+    s = out["zoomed"][2]
+    assert out["zoomed"][2] > 1.5 and out["zoomed"][0] < 0 and out["zoomed"][1] < 0                       # zoomed about the middle of the box
+    assert [round(r * s, 6) for r in out["r1"]] == [round(r, 6) for r in out["r0"]]                      # a circle keeps its size on the screen: its diameter tells the confidence
+    assert out["small"] == out["zoomed"] and out["dragged"][0] > out["zoomed"][0] and out["dragged"][1] == out["zoomed"][1] and out["dragged"][2] == s
+    assert out["sideways"][0] < out["dragged"][0] and out["sideways"][2] == s
+    assert out["scaleText"].startswith("×")
+    assert out["plus"][2] == pytest.approx(s * 1.5) and out["minus"][2] == pytest.approx(s)
+    assert out["afterPick"][2] == pytest.approx(s)                                                       # picking a colour does not throw the view away
+    assert out["reset"] == [0, 0, 1] and out["r2"][1:] == out["r0"][1:] and out["r2"][0] == out["r0"][0] + 3          # only the picked circle is larger
+    assert out["key"][2] == 1.5 and out["keyReset"] == [0, 0, 1]
+    assert "touch-action:none" in SCREEN and "{passive: false}" in SCREEN
