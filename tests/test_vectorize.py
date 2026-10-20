@@ -1,6 +1,7 @@
 """Image -> editable vectors -> LightBurn Path shapes (REQ-021, DEC-065)."""
 import json
 import math
+import re
 import xml.etree.ElementTree as ET
 
 import cv2
@@ -261,3 +262,35 @@ def test_invalid_requests_are_refused(kwargs):
     args = {"width_mm": 50.0, **kwargs}
     with pytest.raises(vz.VectorizeError):
         vz.trace(ring(), args.pop("width_mm"), args.pop("strategy"), **args)
+
+
+# -- Bézier edges write both of their handles (platform REQ-052, DEC-094) ----------------------------------------------------------------------------------
+def handle_document():
+    """One region whose smooth border has a Bézier edge with a handle at one end only (the other end is a corner), and a straight edge."""
+    nodes = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],              # a corner: no handles
+             [10.0, 0.0, 12.0, 0.0, 10.0, 0.0],           # an out-handle only: the edge to the next node is curved
+             [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],        # a corner that the curved edge arrives at
+             [0.0, 10.0, 0.0, 10.0, 0.0, 10.0]]           # a corner: only straight edges around it
+    return {"regions": [{"id": "r1", "layer_key": "fill", "loops": [[0]], "nodes": [nodes]}]}
+
+
+def written_vertices(xml: str):
+    verts = re.search(r"<VertList>(.*?)</VertList>", xml).group(1)
+    return re.findall(r"V(-?[\d.]+) (-?[\d.]+)(c0x(?:-?[\d.]+c0y-?[\d.]+|1))(c1x(?:-?[\d.]+c1y-?[\d.]+|1))", verts)
+
+
+def test_a_bezier_edge_has_both_handles_written_even_when_one_lies_on_its_vertex():
+    xml = vz.to_lbrn2_shapes(handle_document(), {"fill": 4})[0]
+    vertices, prims = written_vertices(xml), re.findall(r"([BL])(\d+) (\d+)", xml)
+    curved = [(int(a), int(b)) for kind, a, b in prims if kind == "B"]
+    assert curved == [(1, 2)]                                                   # the one edge with a handle is curved, the others are straight
+    for a, b in curved:                                                         # LightBurn reads a handle that is missing as the origin of the shape
+        assert vertices[a][2] != "c0x1" and vertices[b][3] != "c1x1"
+    assert vertices[2][3].startswith("c1x10.00000c1y10.00000")                  # the corner's handle is written on the corner itself
+    assert vertices[0][2] == "c0x1" and vertices[3][3] == "c1x1"                # vertices no curved edge uses keep "no handle"
+
+
+def test_the_geometry_of_a_corner_with_a_written_handle_is_the_same_curve():
+    region = project(handle_document(), {"fill": 4}).layer(4).regions[0]
+    assert region.closed and region.x == pytest.approx(0, abs=1e-6) and region.y == pytest.approx(0, abs=1e-6)
+    assert region.width == pytest.approx(10.5, abs=0.6) and region.height == pytest.approx(10, abs=1e-6)

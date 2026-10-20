@@ -22,7 +22,7 @@ CSS = (UI_DIR / "styles.css").read_text(encoding="utf-8")
 def test_the_editor_is_loaded_after_the_helpers_and_before_the_colour_step_that_embeds_it():
     order = {s: i for i, s in enumerate(SCRIPTS)}
     assert order["/app.js"] < order["/dialogs.js"] < order["/screens/vector-editor.js"] < order["/screens/vector-colours.js"] < order["/screens/vector.js"]
-    assert "const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;" in COLOURS and "VectorEditor.create(j, run)" in COLOURS
+    assert "const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;" in COLOURS and "VectorEditor.create(j, run, {pick})" in COLOURS
 
 
 def test_no_colour_is_accepted_anywhere_any_more():
@@ -55,14 +55,14 @@ def test_undo_and_redo_answer_ctrl_z_and_ctrl_shift_z_only_while_the_editor_is_o
 
 def test_the_editor_fills_elements_through_app_fill_and_never_through_replaceChildren():
     assert ".replaceChildren(" not in EDITOR and ".replaceChildren(" not in COLOURS
-    assert "const {h, fill, btn, get, pill, toast, num, labText} = App;" in EDITOR
+    assert "const {h, fill, btn, get, pill, toast, num, labText, steadiness, STEADY, originText} = App;" in EDITOR
     assert "innerHTML" not in EDITOR and "location.href" not in EDITOR and "window.open(" not in EDITOR
 
 
 def test_every_label_of_the_editor_is_russian_and_present():
     labels = ("'Титан'", "'Исходные цвета'", "'Оригинал'", "'Вписать'", "'Кисть'", "'Пипетка'", "'Выделение'", "'Участок'",
-              "'Весь исходный цвет'", "'Заливка похожих'", "'Похожесть, ΔE'", "'Авто'", "'Слить в один контур'", "'Исключить'",
-              "'Вернуть'", "'Слои титана'", "'Слить в один'", "'Объединить исходные цвета'", "'вне допуска'",
+              "'Весь исходный цвет'", "'Заливка похожих'", "'Похожесть, ΔE'", "'Авто'", "'Слить в один контур'", "'Не гравировать'",
+              "'Гравировать'", "'Заменить'", "'Слои титана'", "'Слить в один'", "'Объединить исходные цвета'", "'вне допуска'",
               "'Показать далёкие от оригинала'", "'Отменить'", "'Повторить'", "'Активный цвет'", "'Палитра'")
     for label in labels:
         assert label in EDITOR, label
@@ -284,7 +284,7 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   out.selected = classed('vw-sel');
   out.selection = section('Выделение').textContent;
   await byText(section('Выделение'), 'button', 'Слить в один контур').dispatch('click'); await tick();
-  await byText(section('Выделение'), 'button', 'Исключить').dispatch('click'); await tick();
+  await byText(section('Выделение'), 'button', 'Не гравировать').dispatch('click'); await tick();
   out.selectedAfter = classed('vw-sel');
   const layerBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Отметить слой'));
   for (const box of layerBoxes.slice(0, 2)) { box.checked = true; await box.dispatch('change'); }
@@ -414,6 +414,94 @@ def test_a_refused_operation_is_shown_translated_and_the_picture_stays_as_it_was
 """)
     assert any("Такого исходного цвета нет" in t for t in out["toasts"]) and not any("no such" in t for t in out["toasts"])
     assert out["fill"] == "rgb(205,198,182)" and out["busy"] == "vw-editor" and out["renders"] == 0
+
+
+# -- where a colour comes from, and replacing it (REQ-051) --------------------------------------------------------------------------------
+def known(e, origins, agreeing, confidence, doubtful=False):
+    """A palette entry with the engravings it is known from (``origins``: "test" or "work" for each) and how many of them agree."""
+    sources = [{"engraving_id": f"g{n}", "experiment": f"eng-{n}", "title": f"{e['id']} {kind}", "origin": kind, "work_id": 22 if kind == "work" else None,
+                "date": "2026-10-19T10:00:00", "pair_ids": [n], "photos": [f"IMG_{n}.DNG"], "layers": ["C01"], "lab": e["lab"], "delta_e": 0.0,
+                "agrees": True, "measurement": "calibrated", "provisional": False} for n, kind in enumerate(origins)]
+    n = len(origins)
+    return {**e, "confidence": confidence, "doubtful": doubtful, "sources": sources, "engravings": n,
+            "agreement": {"engravings": n, "agreeing": agreeing, "differing": n - agreeing, "limit": 5.0, "contradicted": n >= 2 and 2 * agreeing <= n}}
+
+
+def routes_with_sources():
+    r = routes()
+    stocked = [known(PALETTE[0], ["test", "test", "work"], 3, 0.8), known(PALETTE[1], ["test"], 1, None),
+               known(PALETTE[2], ["test", "work"], 1, 0.17, doubtful=True), known(PALETTE[3], ["work", "work"], 2, 0.6)]
+    j = view()
+    j["entries"] = {e["id"]: e for e in stocked[:3]}
+    r["/api/vector/7"] = {"status": 200, "json": j}
+    r["/api/vector/7/colouring"] = {"status": 200, "json": j}
+    r["/api/vector/7/palette"] = {"status": 200, "json": stocked}
+    return r
+
+
+@node
+def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_where_it_comes_from(tmp_path):
+    out = run_editor(tmp_path, routes_with_sources(), """
+  const row = (k) => tree.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-ed-item') && d.querySelector('input')
+    && d.querySelector('input').getAttribute('aria-label') === `Отметить исходный цвет № ${k}`);
+  out.rows = [1, 2, 3].map((k) => row(k).textContent);
+  out.buttons = [1, 2, 3].map((k) => row(k).querySelectorAll('button').map((b) => b.textContent).filter(Boolean));
+  out.active = tree.textContent.includes('Авто');
+  await byText(row(1), 'button', 'Заменить').dispatch('click'); await tick(); await tick();
+  let dialog = ctx.document.body.querySelector('.modal');
+  out.title = dialog.getAttribute('aria-label');
+  out.better = dialog.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-better')).length;    // e11 is already confirmed by repeats
+  const chip = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
+  await chip('e13').dispatch('click');
+  out.detail = dialog.textContent;
+  out.links = dialog.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+  out.posted = posted();
+  out.closed = ctx.document.body.querySelector('.modal') === null;
+""")
+    rows = out["rows"]
+    assert "проверен повтором" in rows[0] and "3 гравировки: 2 теста, 1 работа" in rows[0] and "все 3 совпали" in rows[0]
+    assert "одна гравировка, не повторялась" in rows[1] and "1 гравировка: 1 тест" in rows[1]
+    assert "не гравируется" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
+    assert out["buttons"] == [["Заменить", "Не гравировать"], ["Заменить", "Автоматически", "Не гравировать"], ["Гравировать"]]
+    assert out["title"] == "Цвет группы № 1" and out["better"] == 0
+    detail = out["detail"]
+    assert "сомнительный: гравировки расходятся" in detail and "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)" in detail
+    assert ["векторная работа", "#/vector?plan=22"] in out["links"] and ["эксперимент", "#/experiment/eng-0"] in out["links"]
+    assert out["posted"] == [{"op": "set_colour", "colour": 0, "entry_id": "e13"}] and out["closed"] is True
+
+
+@node
+def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_orders_and_filters_by_stability(tmp_path):
+    out = run_editor(tmp_path, routes_with_sources(), """
+  const row = (k) => tree.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-ed-item') && d.querySelector('input')
+    && d.querySelector('input').getAttribute('aria-label') === `Отметить исходный цвет № ${k}`);
+  await byText(row(2), 'button', 'Заменить').dispatch('click'); await tick(); await tick();       // its colour was engraved once
+  const dialog = ctx.document.body.querySelector('.modal');
+  const order = (root) => root.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
+  const block = dialog.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-better'));
+  out.better = [block.textContent, order(block)];
+  const grid = () => dialog.querySelectorAll('div').find((d) => d.getAttribute('role') === 'group');
+  out.near = order(grid());
+  const sorter = dialog.querySelector('select');
+  sorter.value = 'stable'; await sorter.dispatch('change'); out.stable = order(grid());
+  sorter.value = 'fast'; await sorter.dispatch('change'); out.fast = order(grid());
+  out.classes = Object.fromEntries(grid().querySelectorAll('button').map((b) => [b.getAttribute('data-entry'), b.className]));
+  const only = dialog.querySelector('input'); only.checked = true; await only.dispatch('change'); out.repeated = order(grid());
+  out.now = dialog.textContent.includes('Сейчас:');
+""")
+    assert "Стабильнее и похоже на текущий цвет" in out["better"][0] and out["better"][1] == ["e11", "e14"]          # confirmed by repeats, nearest to the current colour first
+    assert out["near"] == ["e12", "e11", "e13", "e14"]                                                            # by dE to the source colour of this row
+    assert out["stable"] == ["e11", "e14", "e12", "e13"]                                                           # confirmed (the more confident first), once, doubtful
+    assert out["fast"] == ["e12", "e11", "e13", "e14"]                                                             # equal times keep the order by dE; e14 has no estimate: last
+    assert out["repeated"] == ["e11", "e14"] and out["now"] is True
+    assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
+
+
+def test_the_wording_of_leaving_an_area_unengraved_and_the_new_styles_are_present():
+    assert "'Не гравировать'" in EDITOR and "'Гравировать'" in EDITOR and "'Исключить'" not in EDITOR and "'Исключить'" not in COLOURS
+    assert "excluded: ['не гравируется', '']" in COLOURS and "steady-stable" in CSS and "steady-doubtful" in CSS and ".vw-better" in CSS
+    assert "VectorEditor.create(j, run, {pick})" in COLOURS and "tools.pick(" in EDITOR
 
 
 def test_the_contract_view_used_here_has_every_field_the_editor_reads():

@@ -8,7 +8,7 @@
    Каждое действие возвращает работу целиком; вкладки обновляются на месте, редактор сохраняет масштаб, инструмент и выделение. */
 'use strict';
 const VectorColours = (() => {
-  const {h, fill, btn, field, pill, fail, modal, table, num, labText, agreed, CAUTION} = App;
+  const {h, fill, btn, field, pill, fail, modal, table, num, labText, agreed, CAUTION, steadiness, STEADY, originText, sourcesBlock} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно']];
   const MODE = {...Object.fromEntries(MODES), fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};      // the old mode only names variants saved with it
@@ -23,7 +23,7 @@ const VectorColours = (() => {
   const aiName = (ai) => 'AI · ' + (ai.style === 'custom' ? `«${(ai.text || '').slice(0, 40)}»` : STYLE[ai.style] || ai.style)
     + (ai.free_lightness ? ' · светлота свободна' : '') + (ai.photo ? ' · с фото' : '');
   const STATUS = {automatic: ['подобран автоматически', 'ok'], hand: ['выбран вручную', 'ok'], accepted: ['выбран вручную', 'ok'],
-    missing: ['цвета титана больше нет среди измерений', 'bad'], excluded: ['исключён', '']};
+    missing: ['цвета титана больше нет среди измерений', 'bad'], excluded: ['не гравируется', '']};
   const HOW = {fastest_within_tolerance: 'самый быстрый в пределах допуска', nearest: 'ближайший', tonality: 'по тональности', random: 'случайно',
     cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора', ai: 'выбор AI'};
   const stability = (e) => (e.stability && e.stability.assessed ? 'дисперсия ' + num(e.stability.variance) : 'не оценено');
@@ -31,26 +31,59 @@ const VectorColours = (() => {
   const confidence = (e) => h('span', {}, e.confidence == null ? 'не оценено' : num(e.confidence), h('div', {class: 'muted small'}, agreed(e.agreement)),
     e.caution ? pill(e.caution === 'superseded' ? 'заменён' : 'цвет менялся', 'bad') : null);
 
-  /** Выбор цвета титана из палитры: ближайшие к исходному цвету первыми; снятые без привязки — с пунктиром. */
+  const ORDERS = [['near', 'Ближайшие к исходному цвету'], ['stable', 'Самые стабильные'], ['fast', 'Самые быстрые']];
+  const RANK = {stable: 2, single: 1, doubtful: 0};
+  const trustOf = (e) => e.confidence ?? 1 / 3;                   // одна гравировка стоит столько же, сколько в agreement.SINGLE
+  const BETTER = 6;                                               // сколько более стабильных цветов предложить взамен
+
+  /** Выбор цвета титана из палитры (REQ-051): у каждого цвета видно, откуда он известен (тесты и работы) и насколько он стабилен; порядок и фильтр
+      по повтору; взамен ненадёжного цвета предлагаются более стабильные, ближайшие к нему. Ближайшие к исходному цвету — первыми; снятые без
+      привязки — с пунктиром. */
   async function pick(j, title, sourceLab, current, onPick) {
     let entries;
     try { entries = await palette(j); } catch (e) { return fail(e); }
-    const sorted = [...entries].sort((a, b) => de(a.lab, sourceLab) - de(b.lab, sourceLab));
-    let chosen = sorted.find((e) => e.id === current) || null;
-    const detail = h('div', {class: 'small'});
-    const show = () => fill(detail, chosen ? [chip(chosen.srgb), labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} · ${BASIS[chosen.basis] || ''} · `,
-      `гравировок ${chosen.engravings}, фото ${chosen.photographs} · ${seconds(chosen.time_s_per_cm2)}`, h('div', {class: 'muted'}, params(chosen.parameters)),
-      h('div', {class: 'muted'}, `Уверенность ${chosen.confidence == null ? 'не оценена' : num(chosen.confidence)} · ${agreed(chosen.agreement)}`),
-      chosen.automatic ? null : h('div', {class: 'muted'}, chosen.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[chosen.caution]}; выбрать вручную можно.`
-        : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.')]
-      : h('span', {class: 'muted'}, 'Выберите цвет'));
-    const grid = h('div', {class: 'vw-swatches', role: 'group', 'aria-label': 'Измеренные цвета титана'}, sorted.map((e) => h('button', {type: 'button',
-      class: 'vw-swatch' + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (e.id === current ? ' picked' : ''), style: `background:rgb(${e.srgb.join(',')})`,
-      title: `${labText(e.lab)} · ΔE ${num(de(e.lab, sourceLab))} · ${seconds(e.time_s_per_cm2)}`, 'aria-label': `ΔE ${num(de(e.lab, sourceLab))}`,
-      onClick: (ev) => { chosen = e; grid.querySelectorAll('.picked').forEach((x) => x.classList.remove('picked')); ev.target.classList.add('picked'); show(); }})));
-    show();
-    modal(title, h('div', {class: 'stack'}, h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Ближайшие к исходному цвету — первыми.`),
-      grid, detail), [{label: 'Отмена', run: (m) => m.close()},
+    const now = entries.find((e) => e.id === current) || null;
+    let chosen = now, order = 'near', repeatedOnly = false;
+    const near = (a, b) => de(a.lab, sourceLab) - de(b.lab, sourceLab);
+    const compare = {near, fast: (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || near(a, b),
+      stable: (a, b) => RANK[steadiness(b)] - RANK[steadiness(a)] || trustOf(b) - trustOf(a) || near(a, b)};
+    const detail = h('div', {class: 'stack small'}), grid = h('div', {class: 'vw-swatches', role: 'group', 'aria-label': 'Измеренные цвета титана'}), better = h('div', {});
+    const swatchOf = (e, text) => h('button', {type: 'button',
+      class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (chosen && e.id === chosen.id ? ' picked' : ''),
+      style: `background:rgb(${e.srgb.join(',')})`, 'data-entry': e.id, title: text, 'aria-label': text, onClick: () => { chosen = e; paint(); }});
+    const text = (e) => `${labText(e.lab)} · ΔE ${num(de(e.lab, sourceLab))} · ${STEADY[steadiness(e)][0]} · ${originText(e.sources)} · ${seconds(e.time_s_per_cm2)}`;
+    function paint() {
+      const shown = entries.filter((e) => !repeatedOnly || steadiness(e) === 'stable').sort(compare[order]);
+      fill(grid, shown.length ? shown.map((e) => swatchOf(e, text(e))) : h('p', {class: 'muted small'}, 'Нет цветов под такой фильтр.'));
+      const stabler = now && steadiness(now) !== 'stable'
+        ? entries.filter((e) => e.id !== now.id && steadiness(e) === 'stable').sort((a, b) => de(a.lab, now.lab) - de(b.lab, now.lab)).slice(0, BETTER) : [];
+      fill(better, now && steadiness(now) !== 'stable' ? h('div', {class: 'stack small vw-better'},
+        h('strong', {}, 'Стабильнее и похоже на текущий цвет'),
+        stabler.length ? h('div', {class: 'vw-swatches'}, stabler.map((e) => swatchOf(e, `ΔE ${num(de(e.lab, now.lab))} до текущего · ${text(e)}`)))
+          : h('span', {class: 'muted'}, 'Цветов, проверенных повтором, в палитре нет.')) : null);
+      fill(detail, chosen ? [
+        h('div', {}, chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} до исходного цвета`,
+          now && now.id !== chosen.id ? ` · ΔE ${num(de(chosen.lab, now.lab))} до текущего` : ''),
+        h('div', {}, pill(...STEADY[steadiness(chosen)]), ' ', `Уверенность ${chosen.confidence == null ? 'не оценена' : num(chosen.confidence)} · ${agreed(chosen.agreement)}`,
+          chosen.caution ? [' ', pill(CAUTION[chosen.caution], 'warn')] : null),
+        h('div', {class: 'muted'}, `${BASIS[chosen.basis] || ''} · гравировок ${chosen.engravings}, фото ${chosen.photographs} · ${seconds(chosen.time_s_per_cm2)}`),
+        h('div', {class: 'muted'}, params(chosen.parameters)),
+        chosen.automatic ? null : h('div', {class: 'muted'}, chosen.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[chosen.caution]}; выбрать вручную можно.`
+          : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.'),
+        sourcesBlock(chosen.sources || [], chosen.agreement, chosen.lab, true)]
+        : h('span', {class: 'muted'}, 'Выберите цвет'));
+    }
+    const sorter = h('select', {'aria-label': 'Порядок цветов'}, ORDERS.map(([v, name]) => h('option', {value: v}, name)));
+    sorter.addEventListener('change', () => { order = sorter.value; paint(); });
+    const filter = h('input', {type: 'checkbox', 'aria-label': 'Только цвета, проверенные повтором'});
+    filter.addEventListener('change', () => { repeatedOnly = filter.checked; paint(); });
+    paint();
+    modal(title, h('div', {class: 'stack'},
+      h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Зелёная точка — цвет проверен повтором, красная — гравировки расходятся; `
+        + 'у остальных одна гравировка. «Откуда» — из каких тестов и работ цвет известен.'),
+      now ? h('p', {class: 'small'}, 'Сейчас: ', chip(now.srgb), ' ', pill(...STEADY[steadiness(now)]), ` ${originText(now.sources)}`) : null,
+      h('div', {class: 'row'}, h('label', {class: 'row small'}, 'Порядок ', sorter), h('label', {class: 'row small'}, filter, h('span', {}, 'Только проверенные повтором'))),
+      better, grid, detail), [{label: 'Отмена', run: (m) => m.close()},
       {label: 'Применить', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
   }
 
@@ -61,11 +94,11 @@ const VectorColours = (() => {
       const [label, kind] = STATUS[c.status] || [null, ''];
       const actions = [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id})))];
       if (c.status === 'hand' || c.status === 'accepted') actions.push(btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null})));
-      actions.push(c.status === 'excluded' ? btn('Вернуть', () => run({op: 'include_colour', colour: c.index})) : btn('Исключить', () => run({op: 'exclude_colour', colour: c.index})));
+      actions.push(c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index})) : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index})));
       return [h('span', {}, chip(c.srgb, labText(c.lab)), `№ ${c.index + 1}`, h('div', {class: 'muted small'}, `областей ${c.regions}`)),
         h('span', {}, e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null, c.how && HOW[c.how] ? h('div', {class: 'muted small'}, HOW[c.how]) : null),
         e ? h('span', {class: 'small'}, params(e.parameters)) : '—', e ? BASIS[e.basis] || '—' : '—',
-        e ? `${e.engravings} / ${e.photographs}` : '—', c.delta_e == null ? '—' : h('span', {}, num(c.delta_e), c.outside_tolerance ? [' ', pill('вне допуска', 'bad')] : null),
+        e ? h('span', {}, originText(e.sources), h('div', {class: 'muted small'}, `фото ${e.photographs}`)) : '—', c.delta_e == null ? '—' : h('span', {}, num(c.delta_e), c.outside_tolerance ? [' ', pill('вне допуска', 'bad')] : null),
         e ? confidence(e) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—',
         h('span', {class: 'row'}, actions)];
     });
@@ -149,7 +182,7 @@ const VectorColours = (() => {
   /** Части рабочего стола: вкладка «Цвета» (``colours``), вкладка «AI» (``ai``) и редактор (``editor``; его картинка и панель
       встают в рамку vector-workspace.js отдельно); update — на месте. */
   function parts(j, run, permit) {
-    const editor = VectorEditor.create(j, run);
+    const editor = VectorEditor.create(j, run, {pick});
     const ai = aiBlock(j, run, permit);
     const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {}), rows = h('div', {class: 'vw-wide'}), kept = h('div', {});
     let settings = null;
@@ -160,7 +193,7 @@ const VectorColours = (() => {
       fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: раскрасить нечем.'));
       const key = JSON.stringify(j.settings);
       if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // поля не сбрасываются, пока настройки те же
-      fill(rows, table(['Исходный цвет', 'Цвет титана', 'Рецепт', 'Как измерен', 'Гравировок / фото', 'ΔE', 'Уверенность', 'Стабильность', 'Время', ''], colourRows(j, run)));
+      fill(rows, table(['Исходный цвет', 'Цвет титана', 'Рецепт', 'Как измерен', 'Откуда', 'ΔE', 'Уверенность', 'Стабильность', 'Время', ''], colourRows(j, run)));
       fill(kept, variants(j, run));
     }
     show(j);

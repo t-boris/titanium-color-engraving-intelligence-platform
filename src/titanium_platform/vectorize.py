@@ -443,10 +443,15 @@ def _has_handle(handle, node) -> bool:
     return abs(handle[0] - node[0]) > 1e-6 or abs(handle[1] - node[1]) > 1e-6
 
 
-def _vertex(node) -> str:
-    """LightBurn's vertex: the point, then the out-handle ``c0`` and the in-handle ``c1`` as absolute points; ``c0x1`` / ``c1x1`` is no handle."""
-    out = f"c0x{node[2]:.5f}c0y{node[3]:.5f}" if _has_handle(node[2:4], node) else "c0x1"
-    into = f"c1x{node[4]:.5f}c1y{node[5]:.5f}" if _has_handle(node[4:6], node) else "c1x1"
+def _vertex(node, out_used: bool = False, in_used: bool = False) -> str:
+    """LightBurn's vertex: the point, then the out-handle ``c0`` and the in-handle ``c1`` as absolute points; ``c0x1`` / ``c1x1`` is no handle.
+
+    A Bézier edge needs both of its handles written. LightBurn does not read a missing handle as "on the vertex": it takes the origin of the
+    shape, so the curve swings out towards the top-left corner and back, a long straight sliver across the picture (operator's LightBurn,
+    2026-10-20). ``out_used`` / ``in_used`` say that a Bézier edge leaves from / arrives at this vertex: the handle is then written even when
+    it lies on the vertex (a corner)."""
+    out = f"c0x{node[2]:.5f}c0y{node[3]:.5f}" if out_used or _has_handle(node[2:4], node) else "c0x1"
+    into = f"c1x{node[4]:.5f}c1y{node[5]:.5f}" if in_used or _has_handle(node[4:6], node) else "c1x1"
     return f"V{node[0]:.5f} {node[1]:.5f}{out}{into}"
 
 
@@ -480,9 +485,10 @@ def to_lbrn2_shapes(document: dict, layer_index_of: Mapping[str, int] | Callable
         if not edges:
             continue
         if curves and closed:
-            verts = "".join(_vertex(v) for v in vertices)
-            prims = "".join(f"{'B' if _has_handle(vertices[a][2:4], vertices[a]) or _has_handle(vertices[b][4:6], vertices[b]) else 'L'}{a} {b}"
-                            for a, b in edges)
+            bezier = [_has_handle(vertices[a][2:4], vertices[a]) or _has_handle(vertices[b][4:6], vertices[b]) for a, b in edges]
+            leaves, arrives = {a for (a, _), curved in zip(edges, bezier) if curved}, {b for (_, b), curved in zip(edges, bezier) if curved}
+            verts = "".join(_vertex(v, i in leaves, i in arrives) for i, v in enumerate(vertices))
+            prims = "".join(f"{'B' if curved else 'L'}{a} {b}" for (a, b), curved in zip(edges, bezier))
         else:
             verts = "".join(f"V{x:.5f} {y:.5f}c0x1c1x1" for x, y in vertices)
             prims = "".join(f"L{a} {b}" for a, b in edges)

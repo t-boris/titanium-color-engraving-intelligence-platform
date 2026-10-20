@@ -527,6 +527,10 @@ select::-ms-expand {display:none}
 .vw-swatch.as-shot {opacity:.6;border:2px dashed #ffffffc0}
 .vw-swatch.not-auto::after {content:"";position:absolute;right:1px;top:1px;width:6px;height:6px;border-radius:50%;background:#0b0f16;box-shadow:0 0 0 1px #fff}
 .vw-swatch.picked {outline:3px solid var(--accent);outline-offset:1px}
+.vw-swatch.steady-stable::before,.vw-swatch.steady-doubtful::before {content:"";position:absolute;left:1px;top:1px;width:6px;height:6px;border-radius:50%;box-shadow:0 0 0 1px #fff}
+.vw-swatch.steady-stable::before {background:#35b36a}
+.vw-swatch.steady-doubtful::before {background:#e5484d}
+.vw-better {padding:6px 8px;border:1px solid var(--line);border-radius:8px}
 
 /* редактор цветов векторной работы (REQ-044..REQ-049): большая картинка, панель справа, под картинкой на узком экране;
    обводки — классы путей (областей до тысячи), толщина не зависит от масштаба */
@@ -592,6 +596,7 @@ select::-ms-expand {display:none}
 .vw-ed-item {display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:4px 6px;border-radius:8px;font-size:12px}
 .vw-ed-item:hover {background:#1b2638}
 .vw-ed-item.excluded {opacity:.65}
+.vw-ed-origin {flex-basis:100%;padding-left:24px}
 .vw-ed-item .sw,.vw-ed-item .vw-swatch {width:18px;height:18px;margin:0;border-radius:5px}
 .vw-ed-merge {display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .vw-ed-merge select {min-width:0;max-width:100%}

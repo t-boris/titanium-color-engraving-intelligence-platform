@@ -1152,3 +1152,20 @@ places (outlines on the ruler and the chart; 16 of 29 uncertain elements; rows C
 - [x] F. Checked on a COPY of the real data: pair 102 -> C18 left behind, C28 output off, 28 of 30 layers measured, alignment valid (256 of 269 elements found, 2.6 px), the other layers move by at most 0.8 dE.
 - [x] G. REQ-050 (draft) and DEC-092 (proposed) through the markview tools, README 0.15.1, version 0.15.1; deployed to 8765 (backup, wheel, restart); nothing pushed or tagged.
 - Not decided: pair 102 (accept or not): 27 layers beyond tolerance in the earlier review of the same photograph; the operator chooses.
+
+### 0.16.0: replace a colour of a work with a chosen one, and see where every colour comes from (operator, 2026-10-20: "I cannot change colours simply", "I want to see where the colour comes from: tests or an existing work", "replace it with a more stable colour", "I do not understand exclude"; plan agreed with "да делай"; REQ-051 draft, DEC-093 proposed)
+Today the editor's "Цвета" tab (source colours of the picture, each with the titanium colour it will be engraved in) offers only a merge checkbox and "Исключить"; the picker with "Изменить" exists only in the table on the work page. "Исключить" removes
+every area of that colour from the file (they are not engraved), which reads like a missing colour. The picker shows the basis, the number of engravings and photographs, dE and the confidence, but not which test or work the colour was measured in.
+- [x] A. Server: every point of the colour map says what its engraving was (`origin`: test = calibration plate, capability test or parameter matrix; work = everything else; `work_id` of a vector work);
+      `colormap.sources_of` carries it; palette entries carry `sources` and `doubtful` (so the picker, the editor and the work's own colours show where a colour comes from).
+- [x] B. UI shared: `App.sourcesBlock` (the "where we know this colour from" block of the colour map moved to app.js, now with the kind of each source and a work link) and `App.originText`; the colour map uses it.
+- [x] C. UI picker (vector-colours.js `pick`): "Откуда этот цвет" for the chosen colour, stability line (confirmed by repetition / one engraving / doubtful), sorting (closest | most stable | fastest), filter "only repeated colours",
+      and "Стабильнее и похоже на этот цвет": colours more stable than the current one, nearest to the current one first.
+- [x] D. UI editor "Цвета" tab: a row has "Заменить" (the same picker, `set_colour`), "Автоматически" when set by hand, where the colour comes from in one line; "Исключить" becomes "Не гравировать" with a hint of what happens, an excluded row says "не гравируется"; a short explanation of the tab.
+      The table on the work page uses the same words. The brush's "active colour" shows where the colour comes from.
+- [x] E. Tests (targeted), README 0.16.0, version 0.16.0, REQ-051 and DEC-093 through the markview tools, deploy to 8765 after the commit; nothing pushed or tagged; full suite not run.
+
+Review (0.16.0, 2026-10-20): the colours tab replaces a colour from the editor and says where each colour comes from and how stable it is (REQ-051, DEC-093); the LightBurn file of a vector work
+carries MirrorY and writes both handles of every Bezier edge (REQ-052, DEC-094). Targeted run of 695 tests passed (editor and colour-map UI, palette, colormap, vector work, vectorize, ingest,
+left behind, i18n, UI files, and neighbours); the full suite was not run. Deployed to 8765 before the run finished, at the operator's request (backup titanium-before-0.16.0-20261020T104412Z).
+Warm timings: /api/colors 0.16 s, /api/vector/22 0.17-0.21 s, palette 0.19 s. Not pushed or tagged. The effect of MirrorY in the operator's LightBurn is confirmed only by a new export.

@@ -36,6 +36,43 @@ const App = (() => {
   /** Почему настройку не берёт автоматика: цвет менялся при тех же настройках или те же настройки измерены точнее. */
   const CAUTION = {contradicted: 'цвет менялся при тех же настройках', superseded: 'есть более точное измерение этих настроек'};
 
+  const plural = (n, [one, few, many]) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many}`;
+  /** Откуда взят цвет (REQ-051): тест (плита, проверка лазера, матрица параметров: гравировали, чтобы измерить цвет) или работа (векторная работа
+      или любая готовая гравировка: гравировали, чтобы смотреть). */
+  const ORIGIN = {test: ['тест', ['тест', 'теста', 'тестов']], work: ['работа', ['работа', 'работы', 'работ']]};
+  const kindOf = (s) => (s && s.origin === 'test' ? 'test' : 'work');          // a source with no origin is taken for a work
+  /** «2 теста, 1 работа»: из чего известен цвет. */
+  const originParts = (sources) => ['test', 'work'].map((kind) => [kind, (sources || []).filter((s) => kindOf(s) === kind).length]).filter(([, n]) => n)
+    .map(([kind, n]) => plural(n, ORIGIN[kind][1])).join(', ');
+  /** «3 гравировки: 2 теста, 1 работа»: одной строкой, из чего известен цвет. */
+  const originText = (sources) => ((sources || []).length ? `${plural(sources.length, ['гравировка', 'гравировки', 'гравировок'])}: ${originParts(sources)}` : 'источники не записаны');
+  /** Можно ли верить цвету настройки (REQ-045, REQ-051): ``stable`` — повторён и совпал, ``single`` — одна гравировка, не повторялась,
+      ``doubtful`` — гравировки расходятся (кружок на карте меньше, чем у одной гравировки, или цвет менялся). */
+  function steadiness(e) {
+    const a = e.agreement || {};
+    if (a.engravings >= 2 && ((e.doubtful ?? (a.agreeing - 1 - (a.differing || 0) < 0)) || a.contradicted)) return 'doubtful';
+    return a.engravings >= 2 && a.agreeing >= 2 ? 'stable' : 'single';
+  }
+  const STEADY = {stable: ['проверен повтором', 'ok'], single: ['одна гравировка, не повторялась', 'warn'], doubtful: ['сомнительный: гравировки расходятся', 'bad']};
+  const day = (iso) => (iso || '').slice(0, 10);
+  const MEASURED = {calibrated: ['по эталонной карте', 'ok'], relative: ['относительно камеры', 'warn']};
+  /** Где мы знаем цвет (REQ-049, REQ-051): каждая независимая гравировка, откуда она (тест или работа), совпадает ли с цветом настроек и куда посмотреть. */
+  function sourcesBlock(sources, a, agreedLab, open = true) {
+    const n = sources.length;
+    const row = (s) => h('li', {class: 'cm-source'}, swatch(s.lab), ' ', h('strong', {}, s.title), ' ', pill(ORIGIN[kindOf(s)][0]), ' · ',
+      link('/experiment/' + encodeURIComponent(s.experiment), 'эксперимент'), ...(s.work_id ? [' · ', link('/vector?plan=' + s.work_id, 'векторная работа')] : []),
+      ...(s.provisional ? [' · ', pill('предварительно', 'warn')] : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
+      h('div', {class: 'muted'}, [day(s.date), s.photos.length ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
+        ' · ', pill(...MEASURED[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('совпадает', 'ok') : pill('расходится', 'warn')) : null,
+        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''));
+    return h('details', {class: 'cm-sources', open},
+      h('summary', {}, n > 1 ? `Откуда мы знаем этот цвет: ${n} независимые гравировки (${originParts(sources)})` : `Откуда мы знаем этот цвет: одна гравировка (${ORIGIN[kindOf(sources[0])][0]})`),
+      agreedLab && n > 1 ? h('p', {class: 'small'}, 'Цвет настроек: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
+      h('ul', {class: 'stack small cm-source-list'}, ...sources.map(row)),
+      n > 1 ? h('p', {class: 'muted small'}, `Цвет настроек — среднее гравировок, которые совпали между собой (в пределах ΔE ${num(a && a.limit != null ? a.limit : 5, 0)}); `
+        + 'повторное фото той же гравировки повтором не считается.') : null);
+  }
+
   function swatch(lab) {
     const [L, a, b] = lab;
     const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
@@ -93,5 +130,5 @@ const App = (() => {
     });
   }
 
-  return {h, fill, btn, field, link, pill, labText, num, agreed, CAUTION, swatch, api, get, post, put, patch, del, form, formProgress};
+  return {h, fill, btn, field, link, pill, labText, num, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress};
 })();

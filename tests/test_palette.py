@@ -388,3 +388,26 @@ def test_the_api_serves_the_palette_and_assigns_from_it(tmp_path):
     assert ruled["tolerance_de"] == 1.0 and ruled["colours"][1]["how"] == "kept" and ruled["totals"]["recipes"] == 2
     assert ruled["colours"][0]["entry_id"] == got["entries"][1]["id"]                          # the kept entry is not offered to the other colour
     assert client.post("/api/vector-palette/assign", json={**body, "lens_id": None}).status_code == 422   # the unknown lens has no colours
+
+
+# -- where a colour comes from (REQ-051) ------------------------------------------------------------------------------------------------
+def test_an_engraving_is_a_test_when_it_is_a_plate_a_capability_test_or_a_parameter_matrix_and_a_work_otherwise():
+    from titanium_platform import colormap, plans as pl
+    assert colormap.origin_of(pl.MODE_PLATE) == colormap.origin_of(pl.MODE_CAPABILITY) == "test"
+    assert colormap.origin_of(None, matrix=True) == colormap.origin_of(pl.MODE_VECTOR, matrix=True) == "test"
+    assert [colormap.origin_of(mode) for mode in (None, pl.MODE_VECTOR, pl.MODE_DISCRETE, pl.MODE_TONAL, pl.MODE_RESTORED)] == ["work"] * 5
+
+
+def test_every_palette_entry_names_the_engravings_it_is_known_from_with_their_origin_and_whether_the_colour_is_doubtful(store, world):
+    ti = world["ti"]
+    obs.add(store, world, [60.0, 5.0, 20.0], material_id=ti, engraving="e1", layer_type="Scan", evidence={"matrix_cell": {"row": 1}})   # a matrix: a test
+    obs.add(store, world, [62.0, 5.0, 20.0], material_id=ti, engraving="e2", layer_type="Scan")                                       # a finished work
+    obs.add(store, world, [30.0, 0.0, 0.0], speed=2000, material_id=ti, engraving="e3", layer_type="Scan")                            # engraved once
+    for n, lab in enumerate(([40.0, 0.0, 0.0], [60.0, 0.0, 0.0], [80.0, 0.0, 0.0])):                                                 # three that disagree
+        obs.add(store, world, lab, speed=3000, material_id=ti, engraving=f"d{n}", layer_type="Scan")
+    by_speed = {e["parameters"]["speed"]: e for e in partition(store, world)["entries"]}
+    repeated, once, doubtful = by_speed[900], by_speed[2000], by_speed[3000]
+    assert {s["engraving_id"]: s["origin"] for s in repeated["sources"]} == {"e1": "test", "e2": "work"} and repeated["doubtful"] is False
+    assert all(s["agrees"] and s["work_id"] is None for s in repeated["sources"])
+    assert [(s["engraving_id"], s["origin"]) for s in once["sources"]] == [("e3", "work")] and once["doubtful"] is False
+    assert len(doubtful["sources"]) == 3 and doubtful["doubtful"] is True and doubtful["agreement"]["differing"] == 2

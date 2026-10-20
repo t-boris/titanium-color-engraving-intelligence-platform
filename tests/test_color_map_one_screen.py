@@ -43,7 +43,7 @@ const has = (el, cls) => (el.className || '').split(' ').includes(cls);
 
 def point(i, lab, **extra):
     return {"id": f"p{i}", "display_lab": lab, "title": f"Test {i}", "layer_name": f"C0{i}", "layer_index": i, "referenced": True, "provisional": False,
-            "measurement": "calibrated", "approximate": False, "pair_id": 10 + i, "experiment": f"eng-{i}", "source": "color", "task": None, "review": None,
+            "measurement": "calibrated", "approximate": False, "pair_id": 10 + i, "experiment": f"eng-{i}", "origin": "test", "work_id": None, "source": "color", "task": None, "review": None,
             "setup_label": "Laser · lens", "material": "Grade 2", "photo": f"IMG_{i}.DNG", "date": "2026-10-19T10:00:00", "parameters": {"power": 25, "frequency": 330,
             "speed": 800, "pulse_width": 4, "line_interval": 0.005, "passes": 1}, "time": {}, "time_s_per_cm2": 41.0, **extra}
 
@@ -230,7 +230,8 @@ def agree(n, k):
 
 def source(i, title, lab, agrees=True, delta=0.5, **extra):
     return {"engraving_id": f"e{i}", "experiment": f"eng-{i}", "title": title, "date": f"2026-10-1{i}T10:00:00", "pair_ids": [20 + i], "photos": [f"IMG_{i}.DNG"],
-            "layers": ["C01"], "observation_ids": [i], "lab": lab, "delta_e": delta, "agrees": agrees, "measurement": "calibrated", "provisional": False, **extra}
+            "origin": "test" if i % 2 else "work", "work_id": None, "layers": ["C01"], "observation_ids": [i], "lab": lab, "delta_e": delta, "agrees": agrees,
+            "measurement": "calibrated", "provisional": False, **extra}
 
 
 TRUSTED = point(1, [80.0, 4.0, 30.0], group="g-three", trust=0.5, confidence=0.5, agreement=agree(3, 2), caution=None, doubtful=False)
@@ -285,13 +286,14 @@ def test_a_picked_colour_shows_its_confidence_and_every_engraving_it_is_known_fr
 """)
     three = out["three"]
     assert "Уверенность: 0.50 (2 из 3 совпали)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
-    assert three["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки" and "Цвет настроек: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
+    assert three["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)" and "Цвет настроек: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
     assert len(three["rows"]) == 3 and "Third try" in three["rows"][0] and "First try" in three["rows"][2] and "ΔE 20.5 от цвета настроек" in three["rows"][2]
     assert three["pills"].count("совпадает") == 2 and three["pills"].count("расходится") == 1 and "сомнительный" not in three["pills"]
+    assert three["pills"].count("тест") == 2 and three["pills"].count("работа") == 1                      # every engraving says what it was (REQ-051)
     assert ["разбор №23", "#/analysis/23"] in three["links"] and ["эксперимент", "#/experiment/eng-1"] in three["links"] and "фото IMG_3.DNG" in three["rows"][0]
     assert "в пределах ΔE 5" in three["text"] and "повторное фото той же гравировки повтором не считается" in three["text"]
     once = out["once"]
-    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Откуда мы знаем этот цвет: одна гравировка"
+    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Откуда мы знаем этот цвет: одна гравировка (тест)"
     assert len(once["rows"]) == 1 and "Test 2" in once["rows"][0] and "совпадает" not in once["pills"] and "Цвет настроек:" not in once["text"]
     doubt = out["doubt"]
     assert "Уверенность: 0.17 (1 из 2 совпали)" in doubt["text"] and "сомнительный" in doubt["pills"] and "цвет менялся при тех же настройках" in doubt["text"]
@@ -319,7 +321,7 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
   out.shown = JSON.parse(ctx.__store['color-map']).doubtful;
 """)
     assert "Уверенность: 0.50 (2 из 3 совпали)" in out["card"] and "получался 3 раза" in out["card"] and out["card"].count("уверенность 0.50") == 0       # said once
-    assert out["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки" and out["rows"] == 3
+    assert out["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)" and out["rows"] == 3
     assert out["once"] == ["Среди найденных рецептов сомнительных (при повторах цвет менялся): 2; они помечены. "]
     assert out["hidden"] == ["2 рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. Показать и их"] and out["shown"] is False
 

@@ -289,3 +289,17 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: when an engraved file differs from the file the system exported, compare the geometry of the two before trusting any layer's position (scale, offset and mirror per axis, shared by most
   layers), and name a layer only when it provably sits at the old place while others sit at the new one. A "hidden" or "output off" flag alone says nothing about where the shapes are.
 - Related: a layer that is not engraved must not become an observation with that recipe's settings; leave it out of the measurement and say so.
+
+## A file for another program: write what it reads, never what it should assume
+- Situation (2026-10-20): the operator opened the exported work in LightBurn and saw it upside down, with two straight slivers across the face. Two causes, both in the writer: the plates' flag
+  (MirrorY) was not set for vector works, and four Bezier edges had a handle at one end only, written as "no handle"; LightBurn takes a missing handle for the origin of the shape, so each
+  such edge swung to the top-left corner and back. Neither showed in our own tests: we parsed our own file with our own reader.
+- Rule: for a file that another program opens, write every value that program reads (both handles of every curve, even when one lies on its vertex), and compare each header flag with the file
+  of the same kind that is already known to work (the plates). Test it by reading the file back the way the other program does (a missing handle is the origin), not with our own parser's defaults.
+- Related: a number is checked against the picture, not only against the file: the sliver's far end was computed from the missing handle (33.1, 42.8) and matched the screenshot (32.7, 42.9).
+
+## A feature that exists in one place is not available where the operator works
+- Situation (2026-10-20): the colour picker with confidence and basis existed in the work's table, but the editor, where the operator actually looks at the picture, offered only a merge box and
+  "Исключить". The operator wrote "I cannot change colours so simply" and read "Исключить" as "this colour disappears".
+- Rule: when a control exists on one screen, check the screen where the decision is made. Name a button by its effect on the output ("Не гравировать", with a hint that only the cleaning remains),
+  not by an internal state ("exclude"). Show where a value comes from at the place it is chosen: one shared block, so the words are the same on every screen.

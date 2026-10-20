@@ -9,7 +9,7 @@
    версию разбиения (DEC-080); сервер всё равно проверяет каждое слияние. */
 'use strict';
 const VectorEditor = (() => {
-  const {h, fill, btn, get, pill, toast, num, labText} = App;
+  const {h, fill, btn, get, pill, toast, num, labText, steadiness, STEADY, originText} = App;
   const NS = 'http://www.w3.org/2000/svg';
   const EXCLUDED = '#e6e6e6';                 // исключённое не гравируется: остаётся только чистка
   const MISSING = '#d32f2f';                  // выбранного цвета титана больше нет среди измерений: штриховка
@@ -95,7 +95,7 @@ const VectorEditor = (() => {
   document.addEventListener('keydown', (ev) => { if (current) current.key(ev); });
 
   /** Редактор работы j; run(op) отправляет одно действие и обновляет экран (возвращает true, если сервер его принял). */
-  function create(j, run) {
+  function create(j, run, tools = {}) {           // tools.pick(j, title, sourceLab, entryId, onPick): the window that chooses a titanium colour (vector-colours.js)
     const id = j.id;
     const state = {tool: 'brush', scope: 'region', similarity: SIMILARITY, active: null, view: 'titanium', far: false, ref: null,
       selection: new Set(), layers: new Set(), colours: new Set()};
@@ -480,7 +480,8 @@ const VectorEditor = (() => {
       fill(activeBox, e ? h('span', {class: 'vw-ed-big', style: `background:${rgb(e.srgb)}`, title: labText(e.lab)}) : h('span', {class: 'vw-ed-big auto', 'aria-hidden': 'true'}, 'А'),
         h('div', {class: 'small'}, e ? [h('div', {}, ref ? `ΔE ${num(de(e.lab, ref.lab))} до исходного цвета № ${ref.index + 1}` : 'ΔE — наведите на область', ' · ', seconds(e.time_s_per_cm2)),
           h('div', {class: 'muted'}, params(e.parameters)),
-          h('div', {class: 'muted'}, [BASIS[e.basis], e.automatic === false ? 'автоматика его не выбирает' : null].filter(Boolean).join(' · '))]
+          h('div', {class: 'muted'}, [BASIS[e.basis], e.automatic === false ? 'автоматика его не выбирает' : null].filter(Boolean).join(' · ')),
+          e.sources ? h('div', {class: 'muted'}, pill(...STEADY[steadiness(e)]), ' ', originText(e.sources)) : null]
           : state.active != null ? 'Загрузка цвета…'
             : [h('strong', {}, 'Авто'), h('div', {class: 'muted'}, 'Щелчок кистью возвращает областям автоматический выбор цвета. Выберите цвет в палитре или пипеткой.')]));
       for (const b of grid.querySelectorAll('button')) {
@@ -511,8 +512,8 @@ const VectorEditor = (() => {
       const sorted = [...entries].sort(ref ? (a, b) => d(a) - d(b) : (a, b) => b.lab[0] - a.lab[0]);
       fill(grid, sorted.map((e) => {
         const title = [d(e) == null ? null : `ΔE ${num(d(e))}`, seconds(e.time_s_per_cm2), e.basis === 'as-shot' ? 'снят без привязки' : null,
-          e.automatic ? null : 'автоматика не берёт'].filter(Boolean).join(' · ');
-        return h('button', {type: 'button', class: 'vw-swatch' + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (same(e.id, state.active) ? ' picked' : ''),
+          e.automatic ? null : 'автоматика не берёт', e.sources ? `${STEADY[steadiness(e)][0]}; ${originText(e.sources)}` : null].filter(Boolean).join(' · ');
+        return h('button', {type: 'button', class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (same(e.id, state.active) ? ' picked' : ''),
           style: `background:${rgb(e.srgb)}`, 'data-entry': e.id, title, 'aria-label': title, 'aria-pressed': same(e.id, state.active) ? 'true' : 'false',
           onClick: () => setActive(e.id)});
       }));
@@ -555,7 +556,7 @@ const VectorEditor = (() => {
           : h('p', {class: 'small muted'}, 'Инструмент «Выделение»: щелчок выбирает область, Shift+щелчок добавляет или убирает, Esc снимает выделение.'),
         ids.length ? h('div', {class: 'row'},
           btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2 || link === false || checking),
-          btn('Исключить', () => act({op: 'exclude_region', regions: ids})), btn('Вернуть', () => act({op: 'include_region', regions: ids})),
+          btn('Не гравировать', () => act({op: 'exclude_region', regions: ids})), btn('Гравировать', () => act({op: 'include_region', regions: ids})),
           btn('Снять выделение', clearSelection)) : null,
         ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе.') : null,
         why ? h('p', {class: 'small muted'}, why) : null);
@@ -608,22 +609,30 @@ const VectorEditor = (() => {
     }
 
     function renderColours() {
-      fill(coloursBox, j.colours.map((c) => {
+      const tip = (el, text) => { el.title = text; return el; };
+      fill(coloursBox, h('p', {class: 'small muted'}, 'Исходный цвет — цвет области на вашей картинке; справа цвет титана, которым он будет выгравирован. «Заменить» выбирает другой '
+        + 'цвет титана: у каждого видно, откуда он известен (тесты и работы) и насколько стабилен. «Не гравировать» убирает все области этого цвета из файла: останется только чистка.'),
+      ...j.colours.map((c) => {
         const k = Number(c.index), e = c.entry_id == null ? null : j.entries[c.entry_id];
-        const excluded = c.status === 'excluded';
+        const excluded = c.status === 'excluded', byHand = c.status === 'hand' || c.status === 'accepted';
+        const choose = () => tools.pick(j, `Цвет группы № ${k + 1}`, c.lab, c.entry_id, (entryId) => act({op: 'set_colour', colour: k, entry_id: entryId}));
         return outlineOnHover(h('div', {class: 'vw-ed-item' + (excluded ? ' excluded' : '')},
           h('input', {type: 'checkbox', checked: state.colours.has(k), 'aria-label': `Отметить исходный цвет № ${k + 1}`,
             onChange: (ev) => { mark(state.colours, k, ev.target.checked); syncColourMerge(); }}),
           h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(c.srgb)}`, title: `${labText(c.lab)} · палитра — по этому цвету`,
             'aria-label': `Исходный цвет № ${k + 1}: поставить палитру по нему`, onClick: () => setRef(k)}),
-          '→', e ? chip(e.srgb, labText(e.lab)) : h('span', {class: 'muted'}, excluded ? 'исключён' : 'нет цвета'),
+          '→', e ? chip(e.srgb, labText(e.lab)) : h('span', {class: 'muted'}, excluded ? 'не гравируется' : 'нет цвета'),
           h('strong', {}, `№ ${k + 1}`),
           c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`),
           c.outside_tolerance ? pill('вне допуска', 'bad') : null,
-          c.status === 'hand' || c.status === 'accepted' ? pill('вручную') : c.status === 'missing' ? pill('цвета титана больше нет', 'bad') : null,
+          byHand ? pill('вручную') : c.status === 'missing' ? pill('цвета титана больше нет', 'bad') : null,
           h('span', {class: 'muted'}, `областей ${c.regions}`),
           h('span', {class: 'spacer'}),
-          excluded ? btn('Вернуть', () => act({op: 'include_colour', colour: k})) : btn('Исключить', () => act({op: 'exclude_colour', colour: k}))),
+          tools.pick && !excluded ? tip(btn('Заменить', choose), 'Выбрать другой цвет титана: видно, откуда он известен и насколько стабилен') : null,
+          byHand ? tip(btn('Автоматически', () => act({op: 'set_colour', colour: k, entry_id: null})), 'Вернуть выбор цвета автоматике') : null,
+          excluded ? tip(btn('Гравировать', () => act({op: 'include_colour', colour: k})), 'Вернуть области этого цвета в файл')
+            : tip(btn('Не гравировать', () => act({op: 'exclude_colour', colour: k})), 'Все области этого цвета не попадут в файл: останется только чистка'),
+          e && !excluded ? h('div', {class: 'vw-ed-origin small muted'}, pill(...STEADY[steadiness(e)]), ' ', `${originText(e.sources)} · ${App.agreed(e.agreement)}`) : null),
         () => byColour.get(k) || []);
       }));
       syncColourMerge();

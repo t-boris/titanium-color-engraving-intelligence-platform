@@ -68,23 +68,9 @@ const ColorMap = (() => {
       p.confidence == null ? 'не оценена, гравировка не повторялась' : `${num(p.confidence)} (${App.agreed(a)})`,
       p.doubtful ? ' ' : null, p.doubtful ? pill('сомнительный', 'warn') : null, p.caution ? ` · ${App.CAUTION[p.caution]}` : ''));
   }
-  const ONE_ENGRAVING = (p) => ({title: p.title, experiment: p.experiment, date: p.date, pair_ids: [p.pair_id], photos: p.photo ? [p.photo] : [],
+  const ONE_ENGRAVING = (p) => ({title: p.title, experiment: p.experiment, origin: p.origin, work_id: p.work_id, date: p.date, pair_ids: [p.pair_id], photos: p.photo ? [p.photo] : [],
     layers: p.layer_name ? [p.layer_name] : [], lab: p.display_lab, delta_e: 0, agrees: true, measurement: p.measurement, provisional: !!p.provisional});
-  /** Where a colour is known from (REQ-049): each independent engraving behind it, whether it agrees with the colour of the settings, and where to look at it. */
-  function sourcesBlock(sources, a, agreedLab) {
-    const n = sources.length;
-    const row = (s) => h('li', {class: 'cm-source'}, swatch(s.lab), ' ', h('strong', {}, s.title), ' · ', link('/experiment/' + encodeURIComponent(s.experiment), 'эксперимент'),
-      ...(s.provisional ? [' · ', pill('предварительно', 'warn')] : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
-      h('div', {class: 'muted'}, [when(s.date), s.photos.length ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
-        ' · ', pill(...KIND[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('совпадает', 'ok') : pill('расходится', 'warn')) : null,
-        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''));
-    return h('details', {class: 'cm-sources', open: true},
-      h('summary', {}, n > 1 ? `Откуда мы знаем этот цвет: ${n} независимые гравировки` : 'Откуда мы знаем этот цвет: одна гравировка'),
-      agreedLab && n > 1 ? h('p', {class: 'small'}, 'Цвет настроек: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
-      h('ul', {class: 'stack small cm-source-list'}, ...sources.map(row)),
-      n > 1 ? h('p', {class: 'muted small'}, `Цвет настроек — среднее гравировок, которые совпали между собой (в пределах ΔE ${num(a && a.limit != null ? a.limit : 5, 0)}); `
-        + 'повторное фото той же гравировки повтором не считается.') : null);
-  }
+  const sourcesBlock = App.sourcesBlock;             // shared with the picker of the vector work (REQ-051)
 
   // -- zoom and pan of the map (plain SVG, no library). A view is the scale ``s`` (1 = the whole map) and the offset of the picture in the
   // 640 x 460 frame; it is kept for each plane while the page is open, so a click on a colour or a new search does not throw it away.

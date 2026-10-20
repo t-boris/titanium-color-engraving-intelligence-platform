@@ -97,7 +97,8 @@ def _entry(group: str, recipe: dict) -> dict:
             "referenced": first["referenced"], "engravings": len(recipe["engravings"]), "photographs": len(recipe["photographs"]),
             "experiments": recipe["experiments"], "observation_ids": sorted(recipe["observation_ids"]),
             "parameters": first["parameters"], "mode": first["parameters"].get("layer_type"), "task": first["task"],
-            "time": first["time"], "time_s_per_cm2": first["time_s_per_cm2"], "missing_context": colormap.missing_context(recipe["points"])}
+            "time": first["time"], "time_s_per_cm2": first["time_s_per_cm2"], "missing_context": colormap.missing_context(recipe["points"]),
+            "doubtful": agreement.doubtful(found), "sources": colormap.sources_of(recipe, found)}
 
 
 def _left_out(point: dict) -> str | None:

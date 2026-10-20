@@ -48,6 +48,8 @@ ST_EXPORTED = "Exported"
 JOB_NAME = "Векторная работа"
 SMOOTHING_MM = 0.5                      # a new photograph work's smoothing of its borders; a work made before has none (0: as traced)
 SMOOTHING_MAX_MM = 2.0                  # the end of the slider (REQ-052, DEC-083)
+EXPORT_MIRROR_Y = True                  # the picture is laid out top-down, which LightBurn's galvo canvas shows upside down unless the file says
+                                        # MirrorY: as for the plates (platform REQ-052, DEC-094; the operator had to flip every exported work by hand)
 
 
 def layer_cap(clean: bool) -> int:
@@ -394,6 +396,7 @@ def export(store: Store, plan_id: int) -> tuple[str, bytes]:
     check_exportable(a, layer_cap(plan.get("clean_layer") is not None))
     keep = {r["id"] for r in a["regions"] if r["status"] in EXPORTED}
     plan["regions"], plan["layers"], plan["weak"] = a["regions"], a["layers"], a["weak"]
+    plan["export_mirror_y"] = EXPORT_MIRROR_Y
     data = pl.export_lbrn2({**plan, "vector_document": {**document, "regions": [r for r in document["regions"] if r["id"] in keep]}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
@@ -789,7 +792,7 @@ def _estimate(plan: dict, layers: list[dict]) -> dict:
 
 # -- reading and the file ------------------------------------------------------------------------------------------------------
 SHOWN_ENTRY = ("id", "lab", "srgb", "basis", "engravings", "photographs", "parameters", "mode", "time_s_per_cm2", "confidence",
-               "expected_delta_e", "stability", "agreement", "caution")
+               "expected_delta_e", "stability", "agreement", "caution", "doubtful", "sources")
 
 
 def _shown(entry: dict, settings: dict) -> dict:
@@ -892,6 +895,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     layers = _export_layers(store, plan, state)
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
     regions = [{**r, "layer_key": key[r["id"]]} for r in seg.regions_as_loops(_geometry(plan)) if r["id"] in key]
+    plan["export_mirror_y"] = EXPORT_MIRROR_Y
     data = pl.export_lbrn2({**plan, "layers": layers, "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)

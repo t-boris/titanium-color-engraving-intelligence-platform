@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 
 from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, tasks
+from . import plans as pl
 from . import setup as su
 from .db import Store
 
@@ -48,7 +49,7 @@ def _rows(store: Store):
         "SELECT o.id, o.pair_id, o.layer_index, o.lab_json, o.parameters_json, o.model_eligible, o.alignment_method, o.evidence_json, "
         "o.task_kind, p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
         "p.device_id, p.lens_id, p.material_id, "
-        "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status "
+        "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status, pl.mode AS plan_mode "
         "FROM observation o JOIN pair p ON p.id=o.pair_id LEFT JOIN plan pl ON pl.id=p.plan_id "
         "WHERE p.status!='Deleted' ORDER BY o.pair_id, o.layer_index")
 
@@ -70,17 +71,27 @@ def _names(store: Store) -> tuple[dict[int, str], dict[int, str]]:
     return lasers, {r["id"]: r["name"] for r in store.query("SELECT id, name FROM lens")}
 
 
-def _source_of_row(row) -> dict:
+def _source_of_row(row, matrix: bool = False) -> dict:
     return {"plan_id": row["plan_id"], "engraving_id": row["engraving_id"], "engraving_title": row["engraving_title"],
             "lightburn_name": row["lightburn_name"], "photo_name": row["photo_name"], "date": row["accepted_at"] or row["pair_created"],
             "context": json.loads(row["pair_context"] or "{}"), "device_id": row["device_id"], "lens_id": row["lens_id"],
-            "material_id": row["material_id"]}
+            "material_id": row["material_id"], "plan_mode": row["plan_mode"], "matrix": matrix}
 
 
 def _source_of_pair(pair: dict) -> dict:
     return {"plan_id": pair.get("plan_id"), "engraving_id": pair["engraving_id"], "engraving_title": pair.get("engraving_title"),
             "lightburn_name": pair["lightburn_name"], "photo_name": pair["photo_name"], "date": pair.get("accepted_at") or pair["created_at"],
-            "context": pair.get("context") or {}, "device_id": pair["device_id"], "lens_id": pair["lens_id"], "material_id": pair.get("material_id")}
+            "context": pair.get("context") or {}, "device_id": pair["device_id"], "lens_id": pair["lens_id"], "material_id": pair.get("material_id"),
+            "plan_mode": pair.get("plan_mode"), "matrix": bool(pair.get("matrix"))}
+
+
+TEST_PLANS = (pl.MODE_PLATE, pl.MODE_CAPABILITY)
+
+
+def origin_of(plan_mode: str | None, matrix: bool = False) -> str:
+    """What an engraving was (REQ-051): a ``test`` (a calibration plate, a laser capability test or a parameter matrix: made to measure
+    colours) or a ``work`` (a vector work, or any other finished work: engraved to be looked at, whether made here or uploaded as a file)."""
+    return "test" if matrix or plan_mode in TEST_PLANS else "work"
 
 
 def _pair_info(source: dict, names: tuple[dict[int, str], dict[int, str]], kept: set[int]) -> dict:
@@ -92,6 +103,7 @@ def _pair_info(source: dict, names: tuple[dict[int, str], dict[int, str]], kept:
     key = experiments.plan_key(source["plan_id"]) if source["plan_id"] in kept else experiments.engraving_key(source["engraving_id"])
     return {"experiment": key, "title": source["engraving_title"] or source["lightburn_name"].rsplit(".", 1)[0], "photo": source["photo_name"],
             "date": source["date"], "laser": laser, "lens": lens, "engraving_id": source["engraving_id"],
+            "origin": origin_of(source.get("plan_mode"), source.get("matrix", False)), "work_id": source["plan_id"] if source.get("plan_mode") == pl.MODE_VECTOR else None,
             "device_id": source["device_id"], "lens_id": source["lens_id"], "setup": su.setup_key(source["device_id"], source["lens_id"]),
             "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material, "material_id": source["material_id"],
             "batch": context.get("batch")}
@@ -257,7 +269,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         observations.setdefault(row["pair_id"], {}).setdefault(evidence.get("layer_name"), row["id"])
         if is_service(evidence.get("role"), row["layer_index"], derived.get(row["pair_id"])):
             continue
-        info = _pair_info(_source_of_row(row), names, kept)
+        info = _pair_info(_source_of_row(row, bool(evidence.get("matrix_cell"))), names, kept)
         lab = json.loads(row["lab_json"])
         kind = _kind(evidence, row["model_eligible"])
         ref = witness.get(row["pair_id"])
@@ -373,6 +385,7 @@ def sources_of(recipe: dict, found: dict) -> list[dict]:
     for i, (engraving, mean) in enumerate(zip(recipe["engravings"], found["means"])):
         points = [p for p in recipe["points"] if p["engraving_id"] == engraving]
         out.append({"engraving_id": engraving, "experiment": points[0]["experiment"], "title": points[0]["title"],
+                    "origin": points[0]["origin"], "work_id": points[0]["work_id"],
                     "date": recipe["when"][engraving][0] or None, "pair_ids": sorted({p["pair_id"] for p in points}),
                     "photos": sorted({p["photo"] for p in points if p.get("photo")}),
                     "layers": [name for name in dict.fromkeys(p.get("layer_name") for p in points) if name],

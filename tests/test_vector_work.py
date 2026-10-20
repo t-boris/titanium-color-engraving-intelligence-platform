@@ -387,6 +387,36 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert c["client"].get(f"/api/plans/{j['id']}/export.lbrn2").status_code == 200          # the plan screen exports it the same way
 
 
+def test_the_file_says_mirror_y_so_that_lightburn_shows_the_picture_upright_and_a_resaved_file_is_read_against_it(work, job):
+    """The picture is laid out top-down; LightBurn's galvo canvas shows such a layout upside down unless the file says MirrorY, as for the
+    plates (platform REQ-052, DEC-094). The operator had to flip every exported work by hand."""
+    from titanium_platform import ingest
+    c, j = work, job
+    file = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2").content
+    assert b'MirrorX="False" MirrorY="True"' in file and lb.parse_bytes(file).mirror_y is True
+    plan = pl.get_plan(c["store"], j["id"])
+    assert plan["export_mirror_y"] is True and vector_job.EXPORT_MIRROR_Y is True
+    resaved = lb.parse_bytes(file.replace(b'MirrorY="True"', b'MirrorY="False"'))                   # LightBurn rewrote the flag (and would reflect the shapes)
+    assert ingest._normalize_project_to_plan(resaved, plan) == ["Y"]
+
+
+def test_every_curved_edge_of_the_file_has_both_of_its_handles_so_that_no_sliver_swings_across_the_picture(work, job):
+    """LightBurn reads a missing handle as the origin of the shape: a Bézier edge with one handle drew a long straight sliver from its
+    corner towards the top-left, across the faces of the operator's picture (platform REQ-052, DEC-094)."""
+    c, j = work, job
+    assert j["smoothing_mm"] > 0                                                                   # a new work has smooth (Bézier) borders
+    text = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2").content.decode("utf-8")
+    pattern = re.compile(r"V(-?[\d.]+) (-?[\d.]+)(c0x(?:-?[\d.]+c0y-?[\d.]+|1))(c1x(?:-?[\d.]+c1y-?[\d.]+|1))")
+    curved = 0
+    for verts, prims in re.findall(r"<VertList>(.*?)</VertList>\s*<PrimList>(.*?)</PrimList>", text, re.S):
+        vertices = pattern.findall(verts)
+        for kind, a, b in re.findall(r"([BL])(\d+) (\d+)", prims):
+            if kind == "B":
+                curved += 1
+                assert vertices[int(a)][2] != "c0x1" and vertices[int(b)][3] != "c1x1"
+    assert curved > 0
+
+
 def test_a_file_with_markers_puts_them_on_c01_and_the_colours_after(work, job):
     c, j = work, job
     c["client"].put(f"/api/plans/{j['id']}/markers", json={"enabled": True})
