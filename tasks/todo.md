@@ -993,3 +993,59 @@ Not in this step: pooling the three measurement bases of one setting into one es
 - Headless Chrome on the copy: circles of the map have r = 7 (517), 9 (23), 5 (20), 10.2 (3), 4.3 (3): the map is dominated by colours engraved once.
 - Open / not done: pooling the three measurement bases of one setting into one estimate (the better basis only replaces the worse); no screen sets the dE 5 limit;
   `conversion.eligible` (knowledge-based plans) takes the agreed colour through `summarize` but does not refuse contradicted entries (its stage gate stays).
+
+### 0.12.3: zoom and pan of the colour map (operator, 2026-10-20; REQ-046)
+- [x] Wheel (about the cursor), sideways wheel / shift + wheel, drag, double click, buttons + / - / whole map, keys, two-finger pinch; circles keep their screen size;
+      the view of a plane survives picking a colour. Pure `zoomView / panView / clampView` tested in node; the DOM test covers wheel, drag, buttons, keys, pick.
+- [x] Real headless Chrome on a copy of the data (port 8801, stopped): wheel x2.5, drag, drag that starts on a circle does not pick it, plain click picks it, reset.
+- Not checked: a real pinch on a touch screen (REQ-046 criterion 4 stays unticked). Released locally and deployed to 8765; NOT pushed, NOT tagged.
+
+## 0.13.0 plan: the measured colour is the colour on the picture; every LightBurn parameter read and shown; re-measure (operator, 2026-10-20) - NOT APPROVED YET
+Operator: the colours listed for check 60 (pair 60, IMG_3327.DNG, work "Inna + Boris 2", plan 22) do not match the photo, "especially the dark ones"; the ColorChecker
+must make the shown colour the colour on the picture. Also: Q-pulse "not in file" is a bug, all parameters (passes, fill, angle, TC on/off) matter and their defaults
+must be known; experiments must be re-runnable after the colour fix.
+
+### Evidence (own analysis of pair 60, copy of the data, read only; scripts in the scratchpad)
+1. The chart fit has no offset (3x3 on linear RGB). The photo is ~3 stops under (gains 8-10), so any additive error (flare, black level) is multiplied by ~10 and lifts the darks:
+   black patch L 30.4 (reference 21.7), neutral 3.5: 40.4 (36.1), saturated patches desaturated (orange b 45.8 vs 56.1). Affine fit minimising dE in Lab:
+   black L 21.0, leave-one-out mean dE 4.0 (now 6.4), max 8.1 (now 12.9). Layer colours move by 0.7-8.1 dE (C07 8.1, C10 5.0, C05 4.3, C16 3.4, the rest < 3).
+2. The plate is specular and brighter than the matte white patch: median corrected linear > 1.0 for C05, C07, C10; 87% of C07's pixels are clipped at 1.0, so L is pushed to
+   ~99 and the hue moves (stored L 98.8 a -8.9 b 27.5, unclipped L 107 a -0.5 b 39.7). A matte chart cannot certify L* above its own white.
+3. One median per layer is not "the colour of the layer" when its elements differ. C16 (the darkest listed, L 55.2 / a 3.3 / b 5.8) has 20 measurable elements:
+   brown 47 / 7 / 12 (31.9 k px, the big rectangle at the top), grey-brown 55-58 (16.5 k, 9.9 k px), grey-blue 69 / -3 / -1 (17.8 k px). The listed colour matches none of them.
+   Only 25-91% of a layer's pixels are within dE 10 of its median (C15: 25%).
+4. The list has no dark colours: after correction only 2.3% of the plate is below L 45; the darkest listed layers are L 55 (C16), 60 (C14), 63 (C12). C16 is also excluded
+   from the model (`model_eligible=0`: no QPulseWidth in its layer), so the darkest measured colour never reaches the colour map or the palette.
+5. Sixteen layers represent a picture that has hundreds of distinct areas; the picture's own darks are not among the experiments' settings at all.
+
+### Part A: measurement (the operator's main complaint)
+- [ ] A1. Chart correction: 3x3 + offset fitted to minimise dE in Lab (fallback to the old fit when fewer than 18 patches are found); store `correction.model` and the
+      fit residual with every check so old and new measurements are told apart. Tests: synthetic chart with a known offset recovers it; leave-one-out bound.
+- [ ] A2. No per-pixel clipping before a layer's colour is taken; the median is taken in linear light and clamped only for display. A layer where > 20% of the pixels
+      exceed the chart white gets `lightness_bound = true` (its L is a lower bound); shown on the card; the model keeps it but does not use L as exact.
+- [ ] A3. DECIDE AFTER A1-A2 WITH NUMBERS: layer spread. Options: (a) keep the median and show the spread and the dominant cluster on the card; (b) the dominant
+      cluster is the layer colour; (c) every element is its own observation of the same recipe (the agreement rule of DEC-083 then judges repeats; it needs the re-measure of C).
+- [ ] A4. Proof on the screen: chart table (reference vs measured per patch, dE), grey ramp, and the layer fills drawn next to the corrected photo, so the operator can judge.
+
+### Part B: parameters and defaults (Q-pulse, TC on/off, passes, fill, angle)
+- [ ] B1. One module with the LightBurn defaults (bidirectional, cross-hatch, angle, passes, fill mode, interval ...). "Tag absent" is kept apart from "device default";
+      Q-pulse and the four TC timings have NO documented default, so they come from the operator. Found on this Mac (`~/Library/Preferences/LightBurn/prefs.ini`): the
+      default layer template holds QPulseWidth 2, LaserOn_TC 1, LaserOff_TC 1, End_TC 1, Polygon_TC 10, JumpSpeed 4000, OverrideGalvoTimings true, bidir false; the device
+      "JCZFiber" holds Laser_QPulseWidthEnabled true and no timing values. Needs the operator to read the two layers (cleaning, C16) in LightBurn.
+- [ ] B2. Every parameter on the layer card, recipe and colour-map details: direction, angle, cross-hatch, passes, global passes, fill, interval, TC timings + override,
+      Q-pulse with its source (file / default / supplied). Replace "Q-Pulse нет в файле".
+- [ ] B3. A layer without Q-pulse can be completed by the operator (existing `supplied_settings`), after which C16 becomes model-eligible.
+
+### Part C: re-measure an experiment (after A)
+- [ ] C1. Observations are immutable (DB trigger). A re-measure inserts new observations that SUPERSEDE the old ones (link to the replaced row); old rows stay as history;
+      every derived view takes the newest per (pair, layer). One button per check, and "re-measure all" with progress and a before / after report (changed colours, dE).
+
+### Not in this plan
+Pooling the three measurement bases of one setting; a screen for the dE 5 agreement limit; any change to the cameras or the chart itself.
+
+### Decisions needed from the operator
+1. A1 + A2 as written (affine fit in Lab, no clipping, a lightness-bound flag)?
+2. A3 option, after the numbers of A1-A2 (recommendation: (a) now, (c) later).
+3. B1: the Q-pulse and TC values LightBurn shows for the cleaning layer and C16 of "Inna + Boris 2" (or the device settings).
+4. C1: supersede-by-link (recommended), or something else.
+5. Order: A, then C, then B (recommended; B does not change existing observations).

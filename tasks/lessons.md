@@ -235,3 +235,10 @@ Rules written after the operator's remarks, to prevent a repeat.
   the colour map search, the points of the map) and the confidence formula in two. Changing one would have left screens disagreeing on the same setting.
 - Rule: before changing how a value is computed, grep every place that computes it (`np.mean` over engravings, `n / (n + K)`), put the rule in one pure
   function (`agreement.consensus`), call it from all of them, and list in the review the old tests that pinned the old rule and why they changed.
+
+## A number shown for an area is checked against the area, region by region, darkest first
+- Situation (2026-10-20, check 60): the layer list showed 16 colours that "do not match the photo, especially the dark ones". The earlier releases only checked the
+  chart residual and the layer medians; nobody drew the shown colour next to the photo, element by element. C16's "colour" (L 55) matched none of its own elements
+  (brown 47, grey-blue 69), and the whole plate had almost no pixel below L 45 because the correction had no offset.
+- Rule: before releasing a measurement feature, render each reported colour as a fill beside the source photo and compare the darkest and the most saturated areas,
+  and report the spread inside the area, not only its median. When the operator says "does not match", do this analysis first and quote numbers, not a re-explanation.
