@@ -75,6 +75,8 @@
   const made = (kind) => (kind === 'plan' ? 'план делался' : 'плата делалась');
   I18N.add([
     [/^the plan or plate chosen for this photograph was not found$/i, 'План или плата, для которых загружается фотография, не найдены'],
+    [/^this file belongs to \u201c(.*)\u201d, not to \u201c(.*)\u201d, the work chosen for this photograph$/i,
+      (m) => `Файл относится к работе «${m[1]}», а не к выбранной «${m[2]}»: фотография привязана к работе «${m[1]}»`],
     [/^experiment identifier (\S+) belongs to a deleted experiment$/i, (m) => `Идентификатор эксперимента ${m[1]} относится к удалённому эксперименту`],
     [/^this plan was made for a different laser than the one selected/i, 'План сделан для другого лазера, чем выбранный: выберите лазер плана'],
     [/^four registration markers match the LightBurn geometry, but the identifier QR code cannot be read/i,

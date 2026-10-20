@@ -124,3 +124,76 @@ def test_the_list_and_the_report_carry_the_conclusion(work, job, tmp_path):
 """)
     assert any("Результат гравировки (IMG_1.DNG)" in line for line in out["lines"])
     assert f"Вывод по работе «{job['name']}»" in out["card"] and out["link"] == [f"#/vector?plan={j['id']}"] and out["none"] is None
+
+
+UPLOAD = """
+const fs = require('fs');
+const {context, load} = require(%(dom)s);
+const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
+const ctx = context(data.routes);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'filepick.js', 'tasks.js', 'screens/ingest-upload.js', {code: 'globalThis.IU = IngestUpload;'}]);
+(async () => {
+  const out = {};
+  const tree = await ctx.IU.render({query: data.query}, data.lists, data.materials, []);
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+%(body)s
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+LISTS = {"devices": [{"id": 1, "name": "Laser A", "title": "Laser A", "lens": None}, {"id": 5, "name": "Laser B", "title": "Laser B", "lens": None}],
+         "lenses": [{"id": 2, "name": "F-theta 160", "focal_length_mm": 160}, {"id": 3, "name": "F-theta 254", "focal_length_mm": 254}]}
+
+
+def upload_form(tmp_path, query, plan, body):
+    data = {"query": query, "lists": LISTS, "materials": [{"id": 1, "name": "Ti sheet", "grade": "Grade 2"}, {"id": 4, "name": "Ti rod", "grade": "Grade 5"}],
+            "routes": {"/api/plans/22": {"status": 200, "json": plan}} if plan else {}}
+    (tmp_path / "upload.json").write_text(json.dumps(data), encoding="utf-8")
+    script = tmp_path / "upload.js"
+    script.write_text(UPLOAD % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "upload.json")),
+                                "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "body": body}, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    return json.loads(done.stdout)
+
+
+FORM_BODY = """
+  out.banner = tree.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('alert')).map((d) => d.textContent);
+  out.links = tree.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+  const selects = tree.querySelectorAll('select');
+  out.laser = selects.find((s) => s.getAttribute('aria-label') === 'Лазер').value;
+  out.lens = selects.find((s) => s.getAttribute('aria-label') === 'Линза').value;
+  out.titanium = selects.find((s) => s.getAttribute('aria-label') === 'Использованный титан').value;
+"""
+
+
+@node
+def test_the_link_on_the_result_tab_opens_the_upload_form_for_this_work_with_its_laser_lens_and_titanium(work, job, tmp_path):
+    payload = work["client"].get(f"/api/vector/{job['id']}").json()
+    out = run(tmp_path, {"job": payload}, """
+  out.hrefs = VR.view(data.job, run).querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert ["Загрузить фото для этой работы", f"#/ingest?plan={job['id']}&material={payload['material_id']}"] in out["hrefs"]
+    reviewed(work, job)
+    payload = work["client"].get(f"/api/vector/{job['id']}").json()
+    out = run(tmp_path, {"job": payload}, """
+  out.hrefs = VR.view(data.job, run).querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert out["hrefs"].count(["Загрузить фото для этой работы", f"#/ingest?plan={job['id']}&material={payload['material_id']}"]) == 1
+
+
+@node
+def test_the_upload_form_opened_for_a_work_names_it_and_takes_its_laser_lens_and_titanium(tmp_path):
+    plan = {"id": 22, "name": "Inna + Boris", "mode": "Vector job", "device_id": 5, "lens_id": 3, "material_id": 4}
+    out = upload_form(tmp_path, {"plan": "22", "material": "4"}, plan, FORM_BODY)
+    assert any("Фото для работы «Inna + Boris»" in text for text in out["banner"]), out["banner"]
+    assert ["«Inna + Boris»", "#/vector?plan=22"] in out["links"]
+    assert (out["laser"], out["lens"], out["titanium"]) == ("5", "3", "4")
+
+
+@node
+def test_the_upload_form_without_a_work_or_for_a_plate_says_nothing_about_a_work(tmp_path):
+    out = upload_form(tmp_path, {}, None, FORM_BODY)
+    assert out["banner"] == [] and not any(href.startswith("#/vector") for _, href in out["links"])
+    plate = {"id": 22, "name": "Plate", "mode": "Laser capability test", "device_id": 5, "lens_id": 3}
+    out = upload_form(tmp_path, {"plan": "22"}, plate, FORM_BODY)
+    assert out["banner"] == [] and (out["laser"], out["lens"]) == ("5", "3")

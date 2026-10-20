@@ -298,3 +298,18 @@ def test_a_restored_plan_follows_a_replaced_file_and_leaves_with_the_last_of_its
     record = ig.get_pair(s, again)["plan_id"]
     ig.delete_pair(s, again)
     assert s.one("SELECT status FROM plan WHERE id=?", (record,))["status"] == "Deleted"
+
+
+def test_a_file_that_names_another_work_than_the_one_chosen_is_linked_to_its_own_work_and_says_so(w):
+    s = w["store"]
+    chosen, own = discrete_plan(w, markers=False), discrete_plan(w, markers=False)
+    pid = upload(w, own, png(synth.scene()), plan_id=chosen["id"])
+    assert ig.get_pair(s, pid)["plan_id"] == chosen["id"]                       # until the check reads the file
+    report = ig.check_pair(s, pid)
+    assert any("not to" in text and "the work chosen for this photograph" in text for text in report["warnings"]), report["warnings"]
+    pair = ig.get_pair(s, pid)
+    assert pair["plan_id"] == own["id"] and pair["plan_name"] == own["name"]     # the file's own identifier decides
+    same = upload(w, own, png(synth.scene()), plan_id=own["id"])
+    assert not any("the work chosen for this photograph" in text for text in ig.check_pair(s, same)["warnings"])
+    bare = upload(w, own, png(synth.scene()))
+    assert ig.get_pair(s, bare)["plan_name"] is None and not any("chosen" in text for text in ig.check_pair(s, bare)["warnings"])

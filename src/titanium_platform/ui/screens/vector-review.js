@@ -44,13 +44,16 @@ const VectorReview = (() => {
       h('span', {class: 'small ' + (row.beyond ? 'vw-bad' : 'muted')}, `ΔE ${num(row.delta_e, 1)} · ΔL ${signed(row.dL)}`));
   }
 
+  // a photograph opened from here is linked to this work: the form takes its laser, lens and titanium from it
+  const uploadLink = (j) => link(`/ingest?plan=${j.id}` + (j.material_id ? `&material=${j.material_id}` : ''), 'Загрузить фото для этой работы');
+
   function resultBlock(j) {
     const head = h('h4', {}, 'Результат гравировки');
     const reviews = j.reviews || [];
     if (!reviews.length) {
       return h('div', {class: 'stack'}, head, h('p', {class: 'small muted'},
-        'Фото результата по этой работе ещё не принято. Выгравируйте файл, снимите результат и загрузите фото (раздел «Загрузить»), выбрав эту работу: здесь появится сравнение «обещано → получилось», '
-        + 'а вывод запишется в саму работу.'), link('/ingest', 'Загрузить фото'));
+        'Фото результата по этой работе ещё не принято. Выгравируйте файл работы без правок слоёв в LightBurn, снимите результат и загрузите фото по ссылке ниже: '
+        + 'здесь появится сравнение «обещано → получилось», а вывод запишется в саму работу.'), h('p', {}, uploadLink(j)));
     }
     const current = reviews.find((r) => r.engraving_id === shown.get(j.id)) || reviews[0];
     const body = h('div', {class: 'stack'});
@@ -78,7 +81,7 @@ const VectorReview = (() => {
           h('div', {class: 'vw-lines'}, r.unmatched.map((n) => h('div', {class: 'vw-line'}, h('span', {}, n.name))))) : null];
     }
     fill(body, content(current.engraving_id));
-    return h('div', {class: 'stack'}, head, picker, body);
+    return h('div', {class: 'stack'}, head, picker, body, h('p', {class: 'small'}, uploadLink(j)));
   }
 
   // ---- цвета работы после новых измерений ---------------------------------------------------------------------------------------

@@ -185,7 +185,10 @@ const IngestUpload = (() => {
         h('div', {class: 'card stack'}, h('h3', {}, 'Фотография'), field('Фотография RAW', App.filePick(photo, 'Выбрать фотографию'))),
         conditions, err, progress.el, h('div', {class: 'row'}, sendM));
     }
-    return h('div', {class: 'stack'}, kinds,
+    // a photograph opened from a work is linked to it; a file that names another work is linked to that one and the check says so
+    const work = planned && planned.mode === 'Vector job' ? h('div', {class: 'alert ok'}, 'Фото для работы ', link('/vector?plan=' + planned.id, `«${planned.name}»`),
+      ': лазер, линза и титан взяты из работы. Загрузите файл, выгруженный из неё, и фото его гравировки: вывод запишется в работу.') : null;
+    return h('div', {class: 'stack'}, kinds, work,
       h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте файл LightBurn и фотографию результата'),
         h('p', {}, 'Параметры наблюдения будут прочитаны из фактически использованного файла. Измерения появятся только после проверки и принятия.')),
       h('div', {class: 'grid g2'},

@@ -1118,3 +1118,11 @@ its pair report compared nothing; an export kept only its number of layers; the 
 - [ ] F. Parameter changes (power/speed) from measured neighbours, or send the colour to the Experiment Designer as a target. Not done.
 - Assumptions to confirm: visible difference 5 dE (the chart's own error is about 3.6), replacement gain 1 dE, poor chart 7 dE, systematic shift 3 L* on 75 % of layers.
 - Tests: tests/test_work_review.py (23), tests/test_work_review_ui.py (4); the vector UI tests list the new tab and script.
+
+### 0.14.1: "Загрузить фото для этой работы" (operator, 2026-10-20; REQ-048 draft)
+Operator asked for the link after learning that a photograph links to a work only through the TCE1 identifier in the file's notes (pair 78 "Inna + Boris 2" carries the identifier of work 22 but its layers were edited, so 0 of 16 matched).
+- [x] Link on the Result tab (empty and filled state) -> `/ingest?plan=<id>&material=<id>`; the form takes laser, lens, titanium from the work, names it, links back.
+- [x] Pair page names the linked work (`plan_name` on the pair).
+- [x] Check warns when the file's identifier names another work than the chosen one (the file's identifier wins; a file without one falls back to the chosen work).
+- [ ] Not done: the chosen work forcing the link when the file names another one (would hide a wrong file); a link on the "Файл" tab next to the saved files.
+- Tests: test_work_review_ui.py (3 new), test_plan_ingest.py (1 new); targeted run in pytest_0141.log. Full suite not run.

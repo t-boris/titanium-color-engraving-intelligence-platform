@@ -84,8 +84,9 @@ def _pair_row(store: Store, pair_id: int):
 
 def get_pair(store: Store, pair_id: int) -> dict:
     d = dict(_pair_row(store, pair_id))
-    plan = store.one("SELECT mode, data_json FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
+    plan = store.one("SELECT name, mode, data_json FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
     d["plan_mode"] = plan["mode"] if plan else None        # a plan restored from the imported file is not a plate (REQ-005)
+    d["plan_name"] = plan["name"] if plan else None
     d["context"] = json.loads(d.pop("context_json"))
     d["hardware"] = json.loads(d.pop("hardware_json") or "{}")
     d.update(json.loads(d.pop("data_json")))
@@ -1935,6 +1936,14 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
         # a file without an identifier: the plan (and its plate) the photograph is linked to
         plan = pl.get_plan(store, row["plan_id"])
         plate = _plate_row(store, plan["plate_id"]) if plan.get("plate_id") else None
+    chosen = pair.get("linked_plan_id")
+    if chosen and project.identifier and plan is not None and plan["id"] != chosen:
+        # the operator started from one work, but the file names another: its own identifier decides, and the operator is told
+        try:
+            chosen_name = pl.get_plan(store, chosen)["name"]
+        except KeyError:
+            chosen_name = f"plan {chosen}"
+        report["warnings"].append(f"this file belongs to \u201c{plan['name']}\u201d, not to \u201c{chosen_name}\u201d, the work chosen for this photograph")
     if plan is not None and plan["mode"] == pl.MODE_RESTORED:
         plan = None          # a plan restored from this very file describes it; it is not a system plan to align with
     linked = plan is not None and pair.get("linked_plan_id") == plan["id"]
