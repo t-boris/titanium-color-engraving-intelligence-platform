@@ -1088,11 +1088,13 @@ Operator: "work in the other direction: you know the 24 squares; take the colour
 - [x] `ingest.remeasure_pair` (revision -> check -> review -> accept; kept untouched unless the colour basis is the same, no problems and no layer less),
       `POST /api/pairs/{id}/remeasure`, buttons on the experiment and analysis screens, `tests/test_remeasure.py` (6).
 - [x] Rehearsal on a COPY of the real data (paths rewritten to the copy: the real DB holds absolute file paths and accepting a revision unlinks the old pair's files).
-- [ ] Apply to the real data after a DB backup + a copy of `files/`; report before / after per experiment.
+- [x] Applied to the real data in 0.13.3 (after the pulse-width rule was settled, so each pair was measured once more only): see 0.13.3.
 - Trap found: the database stores absolute file paths, so a plain copy of the DB would make `delete_pair` unlink the REAL files. Rewrite the paths in any copy first.
 
 ### 0.13.3: any Q-Pulse in the laser's range (operator, 2026-10-20: "who said 300 is not supported? I entered it and it works"; DEC-089, accepted)
 - [x] Asked: any width 1-500 ns with an interpolated cut-off (chosen) / add the values to the table / any width without power loss.
 - [x] `devices.pulse_range`, `cutoff_for` (log-log interpolation; CW neighbour -> the other neighbour), `require_selectable` = range, operating point says "interpolated"; default pulse width in range.
 - [x] Tests moved from off-step values (7, 5, 210) to out-of-range ones (600); `tests/test_pulse_width_range.py`.
-- [ ] Deploy, then re-measure ALL accepted pairs once (the off-table widths sit in 10 of the 17 pairs and the 100-cell matrix of check 54): before / after report.
+- [x] Deployed 0.13.3 (backup titanium-before-0.13.3-*.sqlite) and re-measured ALL 17 accepted pairs on the real data through the app (new pairs 61-77; old ones Deleted, rows kept):
+      539 layers, mean dE 1.98 (chart pairs 1.4; the 4 camera-relative pairs 6.7: they were measured by an older pipeline); model-eligible 353 -> 474 of 540 (the rest: 65 camera-relative layers
+      by design, 1 cleaning witness); no active observation without a pulse width; colour map 0.14 s warm.
