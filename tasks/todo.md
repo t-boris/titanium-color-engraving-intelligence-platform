@@ -1017,6 +1017,14 @@ must be known; experiments must be re-runnable after the colour fix.
 4. The list has no dark colours: after correction only 2.3% of the plate is below L 45; the darkest listed layers are L 55 (C16), 60 (C14), 63 (C12). C16 is also excluded
    from the model (`model_eligible=0`: no QPulseWidth in its layer), so the darkest measured colour never reaches the colour map or the palette.
 5. Sixteen layers represent a picture that has hundreds of distinct areas; the picture's own darks are not among the experiments' settings at all.
+6. PIPETTE vs CHART (operator, 2026-10-20: "why not take the colour from the photo like an eyedropper?"). The median of a layer's pixels IS an eyedropper; the question is
+   which picture it is taken from. On the camera's own preview (the DNG's embedded JPEG, what Photos / Preview show) the chart reads: white patch L 71.9 (reference 95.8),
+   grey ramp 71.9 / 59.2 / 44.3 / 30.3 / 18.6 / 9.5 (reference 95.8 / 80.6 / 65.9 / 51.2 / 36.1 / 21.7), mean chart dE 23.9. So the picture is ~20 L* darker than the chart's
+   white says. Layer colours, mean L*: pipette on the preview 61.3, exposure only (one gain x7.3 so that the white patch is white, no matrix) 81.0, current 3x3 79.8,
+   affine in Lab 80.7. C16: 36 / 56 / 55 / 53; C01: 66 / 82 / 81 / 83. The "lightening" is the exposure normalisation to the chart's white, NOT the matrix; the matrix only
+   changes chroma (mean 9.9 -> 14.1 to fit the chart). Clipped layers differ in hue: C07 pipette a -2 b 30, current a -9 b 28 (L 77 vs 99).
+   The open physical question (only the operator can judge it with the plate in hand): does the plate look like the camera picture (darker; then the matte chart overstates
+   the lightness of a mirror-like plate) or like the chart-corrected photo (then chart-relative colours are right)?
 
 ### Part A: measurement (the operator's main complaint)
 - [ ] A1. Chart correction: 3x3 + offset fitted to minimise dE in Lab (fallback to the old fit when fewer than 18 patches are found); store `correction.model` and the
@@ -1044,6 +1052,8 @@ must be known; experiments must be re-runnable after the colour fix.
 Pooling the three measurement bases of one setting; a screen for the dE 5 agreement limit; any change to the cameras or the chart itself.
 
 ### Decisions needed from the operator
+0. NEW, first: which basis for the colour of a layer: chart-relative (now; comparable between photos) or as the camera picture shows it (pipette), or both numbers on the
+   card and the operator picks what the palette and the map use? Decided by what the real plate looks like (see evidence 6).
 1. A1 + A2 as written (affine fit in Lab, no clipping, a lightness-bound flag)?
 2. A3 option, after the numbers of A1-A2 (recommendation: (a) now, (c) later).
 3. B1: the Q-pulse and TC values LightBurn shows for the cleaning layer and C16 of "Inna + Boris 2" (or the device settings).

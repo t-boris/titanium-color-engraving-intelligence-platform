@@ -242,3 +242,10 @@ Rules written after the operator's remarks, to prevent a repeat.
   (brown 47, grey-blue 69), and the whole plate had almost no pixel below L 45 because the correction had no offset.
 - Rule: before releasing a measurement feature, render each reported colour as a fill beside the source photo and compare the darkest and the most saturated areas,
   and report the spread inside the area, not only its median. When the operator says "does not match", do this analysis first and quote numbers, not a re-explanation.
+
+## "Why not just take it from the photo?" is answered by measuring the plain pipette first
+- Situation (2026-10-20): the operator asked why the colour is not taken from the photo "like an eyedropper" and said the app lightens it. The answer I had (chart
+  normalisation) was true but unmeasured for their picture. Measuring the plain eyedropper on the camera preview showed a 20 L* gap and that the lightening comes from the
+  exposure normalisation, not from the matrix (exposure-only gives the same L).
+- Rule: when the operator proposes the simple direct method, run it on their data next to mine, show both columns per item, say which part of the difference comes from which
+  step (ablate: exposure only / matrix / offset), and say what remains undecided and who can decide it.
