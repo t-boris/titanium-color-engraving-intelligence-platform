@@ -278,3 +278,7 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: a mark that means "something changed since X" needs an X that only the operator's explicit act can move (here: making another file). Ask "which action resets this, and does it
   reset more than the thing the operator dealt with?" before choosing the baseline. A fixture shared by two source colours (yellow also used the paper recipe) exposed the same flaw in the test.
 - Related: a threshold must be compared with the measurement's own error. 3.0 dE flagged 8 layers of the real work after the re-measure, all at 3.1-3.6 dE: the chart's honest error is 3.6.
+
+## A fix that is deployed does not reach a page that is already open
+- Situation (2026-10-20): the tab strip of a work clipped its sixth tab. I fixed the CSS, redeployed and reported, but the operator's open page still had the old CSS and sent a screenshot of the old layout.
+- Rule: after a deploy that changes CSS or JS, say in the report "reload the page (Cmd+R)" for the screens that changed. Before calling a screenshot "still broken", reproduce it: probe the real work read-only in a separate headless profile, and inject the old CSS on a copy to see whether it gives the same picture.
