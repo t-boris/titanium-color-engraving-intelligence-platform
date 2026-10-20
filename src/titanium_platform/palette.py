@@ -1,7 +1,8 @@
 """The titanium colours of a vector work and how its source colours get them (REQ-034, DEC-073, DEC-074, DEC-075).
 
-The palette of a vector work is every measured colour of the colour map (REQ-029) of its laser, lens and titanium stock,
-one entry per recipe: the mean of its independent engravings (a re-photograph counts once, DEC-021), how it was measured
+The palette of a vector work is every measured colour of the colour map (REQ-029) of its laser and lens on titanium of the
+work's material, whatever the plate: the same family and grade (REQ-057, DEC-088 of vector-detail-and-colour-control, which
+widens the work's own stock of DEC-073). It has one entry per recipe: the mean of its independent engravings (a re-photograph counts once, DEC-021), how it was measured
 (against a reference chart, against the clean titanium of its photograph, or as photographed), how many independent
 engravings and photographs gave it, its complete settings with the LightBurn mode, its engraving task and its estimated
 engraving time per square centimetre. It is the exception of DEC-073 to the validated/production rule of REQ-004: a
@@ -14,17 +15,22 @@ traces a path, the grey steps of an image layer belong to their picture and a re
 (DEC-071) was measured for another task; colours of checks not accepted yet are left out because their masks may still
 change. What was left out is counted, by reason, in ``left_out``.
 
-A source colour (index, Lab, pixel count) is given a palette entry by one of four modes (DEC-074):
+A source colour (index, Lab, pixel count) is given a palette entry by one of three modes (DEC-074; DEC-089 of
+vector-detail-and-colour-control, REQ-058, makes them give as many different entries as the palette has, so a work has as many
+layers as it has colours, up to 29, and fewer only when the palette has fewer):
 
-* ``closest``: the fastest entry within the delta E tolerance, else the nearest (DEC-075);
-* ``tonality``: the lightness order of the source colours is kept. Source colours sorted by L* get entries whose L*
-  never decreases, chosen by dynamic programming to minimise the pixel-weighted delta E; among equal totals the faster;
+* ``closest``: each source colour its own entry, the one-to-one assignment with the least pixel-weighted cost, where a delta E
+  within the tolerance costs the tolerance and then the faster entry is cheaper: a colour no other wants takes the fastest entry
+  within the tolerance, else the nearest (DEC-075). With more colours than entries every entry is used once and the other colours
+  take their nearest;
+* ``tonality``: the lightness order of the source colours is kept. Source colours sorted by L* get entries whose L* rises (a
+  source colour its own entry), or, with more colours than entries, never falls and every entry is used by a run of neighbouring
+  colours; chosen by dynamic programming to minimise the pixel-weighted delta E; among equal totals the faster;
 * ``random``: entries drawn with a seeded generator, deterministic per seed; a new seed gives another variant. Each
-  source colour gets its own entry while the palette has enough of them;
-* ``fewer_layers``: the smallest set of entries found by a greedy set cover such that every source colour lies within
-  the tolerance of one of them (among entries covering as many colours the one covering more pixels, then the faster,
-  then the nearer), with entries that became redundant dropped; each source colour then takes the nearest chosen entry. A
-  colour that no entry reaches within the tolerance takes its nearest entry and is flagged.
+  source colour gets its own entry while the palette has enough of them.
+
+The entries of the operator's kept choices are not offered to the other colours while others remain. The modes ``fewer_layers``
+(DEC-074) and ``most_colours`` (DEC-087) are gone: more layers is what every mode does now.
 
 ``keep`` holds the operator's own choices (source colour index -> entry id); every mode keeps them. Colours measured as
 photographed (no chart, no clean titanium in their photograph) take part in the automatic modes only when asked
@@ -36,15 +42,17 @@ from __future__ import annotations
 import hashlib
 import math
 import random
+import re
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from . import color, colormap, model, setup as su, tasks
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
 MAX_COLOURS = 29                  # LightBurn's 30 output layers less the cleaning layer, which always comes first (DEC-073)
-MODES = ("closest", "tonality", "random", "fewer_layers")
+MODES = ("closest", "tonality", "random")
 
 
 def _basis(point: dict) -> str:
@@ -97,19 +105,47 @@ def _left_out(point: dict) -> str | None:
     return None
 
 
+PLATE = re.compile(r"\|ti:[^|]*\|")          # the titanium record inside the group key of a recipe (colormap._group)
+
+
+def _same_material(store: Store, material_id: int) -> set[int]:
+    """The titanium records that are the work's material: the same family and the same grade, whatever their names, sizes,
+    thicknesses, batches or surfaces (DEC-088). Case and spacing do not matter; a record with no grade is only itself."""
+    def norm(value) -> str:
+        return " ".join((value or "").split()).casefold()
+    rows = store.query("SELECT id, family, grade FROM material_profile")
+    own = next(r for r in rows if r["id"] == material_id)
+    if not norm(own["grade"]):
+        return {material_id}
+    return {r["id"] for r in rows if norm(r["family"]) == norm(own["family"]) and norm(r["grade"]) == norm(own["grade"])}
+
+
+def _across_plates(points: list[dict], material_id: int) -> list[dict]:
+    """Plates of one material are no difference (DEC-088): a recipe measured on several of them is one recipe, whose colour is the
+    mean of all its independent engravings. Its points share one group, the one it has on the work's own plate when it was
+    measured there, else the first by name, so that an entry keeps the id it had when only the work's own plate was used."""
+    own, groups = f"|ti:{material_id}|", {}
+    for point in points:
+        groups.setdefault(PLATE.sub("|ti:*|", point["group"]), set()).add(point["group"])
+    pick = {key: min(found, key=lambda g: (own not in g, g)) for key, found in groups.items()}
+    return [{**point, "group": pick[PLATE.sub("|ti:*|", point["group"])]} for point in points]
+
+
 def vector_palette(store: Store, device_id: int, lens_id: int | None, material_id: int, max_time_s_per_cm2: float | None = None) -> dict:
-    """Every measured colour of one laser, lens and titanium stock that fills an area, one entry per recipe, lightest first;
-    with ``max_time_s_per_cm2`` only recipes no slower than that per square centimetre. ``left_out`` counts the recipes of
-    the partition that are not in it, by reason."""
+    """Every measured colour of one laser and lens on titanium of the work's material (the same family and grade, see
+    :func:`_same_material`) that fills an area, one entry per recipe, lightest first (``material_id`` is the work's own record: it
+    must exist and its recipes keep their ids, see :func:`_across_plates`); with ``max_time_s_per_cm2`` only recipes no slower than
+    that per square centimetre. ``left_out`` counts the recipes of the partition that are not in it, by reason. A colour measured
+    without a titanium record is in no palette."""
     su.resolve(store, device_id, lens_id)
     if store.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
         raise su.ValidationError("the selected titanium stock was not found; choose it again")
     limit = colormap.time_limit(max_time_s_per_cm2)
     left_out: dict[str, set] = {reason: set() for reason in ("line", "image", "other_mode", "task", "provisional", "slower")}
     area = []
-    for point in colormap.collect(store, setup=su.setup_key(device_id, lens_id))["points"]:
-        if point["material_id"] != material_id:
-            continue
+    plates = _same_material(store, material_id)
+    on_plates = [p for p in colormap.collect(store, setup=su.setup_key(device_id, lens_id))["points"] if p["material_id"] in plates]
+    for point in _across_plates(on_plates, material_id):
         reason = _left_out(point)
         if reason is None:
             area.append(point)
@@ -162,22 +198,36 @@ def _kept(keep: dict | None, indexes: set[int], by_id: dict) -> dict[int, str]:
     return out
 
 
-def _closest(free: list[dict], candidates: list[dict], distance, tolerance: float) -> dict[int, tuple[dict, str]]:
-    """The fastest entry within the tolerance, else the nearest (DEC-075)."""
-    out = {}
-    for s in free:
-        within = [e for e in candidates if distance(s, e) <= tolerance]
-        if within:
-            out[s["index"]] = (min(within, key=lambda e: (_time(e), distance(s, e), e["id"])), "fastest_within_tolerance")
-        else:
-            out[s["index"]] = (min(candidates, key=lambda e: (distance(s, e), _time(e), e["id"])), "nearest")
-    return out
+def _pool(kept: dict[int, str], candidates: list[dict]) -> list[dict]:
+    """The entries the free colours choose from: the ones the operator kept are theirs while others remain (DEC-087, DEC-089)."""
+    taken = set(kept.values())
+    return [e for e in candidates if e["id"] not in taken] or candidates
 
 
-def _monotone(sources: list[dict], options: list[dict], allowed, distance) -> list[int] | None:
+def _closest(free: list[dict], kept: dict[int, str], candidates: list[dict], distance, tolerance: float) -> dict[int, tuple[dict, str]]:
+    """Each colour its own entry as far as the palette reaches (DEC-089): the one-to-one assignment of the least pixel-weighted cost.
+    A delta E within the tolerance costs the tolerance, and then the faster entry is cheaper, so a colour that has no rival takes
+    the fastest entry within the tolerance, else the nearest (DEC-075). With more colours than entries every entry is used once
+    and the other colours take their nearest."""
+    pool, order = _pool(kept, candidates), sorted(free, key=lambda s: s["index"])
+    slowest = max((_time(e) for e in pool if math.isfinite(_time(e))), default=1.0) or 1.0
+    unit = [min(_time(e) / slowest, 1.0) for e in pool]                      # an unknown time counts as the slowest
+    cost = np.array([[max(s["pixels"], 1.0) * (max(distance(s, e), tolerance) + 1e-6 * u + 1e-9 * distance(s, e))
+                      for e, u in zip(pool, unit)] for s in order])
+    n, m = len(order), len(pool)
+    if n <= m:
+        picks = dict(zip(*linear_sum_assignment(cost)))
+    else:                                                                    # one column per colour for the entries beyond the first use
+        extra = np.repeat(cost.min(axis=1, keepdims=True) + float(cost.max()) * n + 1.0, n, axis=1)
+        picks = {r: c if c < m else int(cost[r].argmin()) for r, c in zip(*linear_sum_assignment(np.hstack([cost, extra])))}
+    return {order[r]["index"]: (pool[c], "fastest_within_tolerance" if distance(order[r], pool[c]) <= tolerance else "nearest")
+            for r, c in picks.items()}
+
+
+def _monotone(sources: list[dict], options: list[dict], allowed, distance, strict: bool = False) -> list[int] | None:
     """Dynamic programming over sources sorted by L* and options sorted by L*: the option index of each source such that the
-    indexes never decrease, with the least pixel-weighted delta E and, among equal totals, the least pixel-weighted time.
-    None when ``allowed`` leaves no such assignment."""
+    indexes never decrease (``strict``: always rise, so no two sources share an option), with the least pixel-weighted delta E and,
+    among equal totals, the least pixel-weighted time. None when ``allowed`` leaves no such assignment."""
     n, m = len(sources), len(options)
 
     def rank(cell):                                                        # totals equal within rounding are a tie
@@ -188,8 +238,9 @@ def _monotone(sources: list[dict], options: list[dict], allowed, distance) -> li
         weight = max(s["pixels"], 1.0)
         run = None                                                         # the best cell of the previous row up to option j
         for j, option in enumerate(options):
-            if i and best[i - 1][j] is not None and (run is None or rank(best[i - 1][j]) < rank(run)):
-                run = (*best[i - 1][j][:2], j)
+            before = j - 1 if strict else j
+            if i and before >= 0 and best[i - 1][before] is not None and (run is None or rank(best[i - 1][before]) < rank(run)):
+                run = (*best[i - 1][before][:2], before)
             if not allowed(s, option) or (i and run is None):
                 continue
             base = run if i else (0.0, 0.0, None)
@@ -206,66 +257,88 @@ def _monotone(sources: list[dict], options: list[dict], allowed, distance) -> li
 
 
 def _tonality(sources: list[dict], kept: dict[int, str], by_id: dict, candidates: list[dict], distance) -> tuple[dict, bool]:
-    """Keep the lightness order of the source colours: kept choices stay where the operator put them; when they themselves
-    break the order, the order is kept among the other colours only (the second value is then False)."""
+    """Keep the lightness order of the source colours, each colour its own entry as far as the palette reaches (DEC-089). Kept
+    choices stay where the operator put them; when they themselves break the order, the order is kept among the other colours
+    only (the second value is then False)."""
+    if not kept:
+        return _spread(sources, kept, candidates, distance), True
+    taken = set(kept.values())
     options = sorted({e["id"]: e for e in candidates + [by_id[i] for i in kept.values()]}.values(),
                      key=lambda e: (e["lab"][0], _time(e), e["id"]))
-    usable = {e["id"] for e in candidates}
+    usable = {e["id"] for e in candidates} - taken or {e["id"] for e in candidates}
 
     def allowed(s, option):
         return option["id"] == kept[s["index"]] if s["index"] in kept else option["id"] in usable
 
+    def place(order):
+        return _monotone(order, options, allowed, distance, strict=True) or _monotone(order, options, allowed, distance)
+
     order = sorted(sources, key=lambda s: (s["lab"][0], s["index"]))
-    chosen, kept_order = _monotone(order, options, allowed, distance), True
+    chosen, kept_order = place(order), True
     if chosen is None:
         order, kept_order = [s for s in order if s["index"] not in kept], False
-        chosen = _monotone(order, options, allowed, distance) if order else []
+        chosen = place(order) if order else []
     return {s["index"]: (options[j], "tonality") for s, j in zip(order, chosen) if s["index"] not in kept}, kept_order
 
 
-def _random(free: list[dict], candidates: list[dict], seed: int) -> dict[int, tuple[dict, str]]:
+def _random(free: list[dict], kept: dict[int, str], candidates: list[dict], seed: int) -> dict[int, tuple[dict, str]]:
     """Entries drawn with a generator seeded by ``seed``: the same seed gives the same variant. Each colour gets its own
-    entry while there are enough of them."""
+    entry while there are enough of them, else every entry is used."""
     rng = random.Random(seed)
-    pool = sorted(candidates, key=lambda e: e["id"])
+    pool = sorted(_pool(kept, candidates), key=lambda e: e["id"])
     order = sorted(free, key=lambda s: s["index"])
-    picks = rng.sample(pool, len(order)) if len(pool) >= len(order) else [rng.choice(pool) for _ in order]
+    if len(pool) >= len(order):
+        picks = rng.sample(pool, len(order))
+    else:
+        picks = rng.sample(pool, len(pool)) + [rng.choice(pool) for _ in order[len(pool):]]
+        rng.shuffle(picks)
     return {s["index"]: (e, "random") for s, e in zip(order, picks)}
 
 
-def _fewer_layers(free: list[dict], kept: dict[int, str], by_id: dict, candidates: list[dict], distance,
-                  tolerance: float) -> dict[int, tuple[dict, str]]:
-    """The smallest set of entries that brings every source colour within the tolerance (greedy set cover), then each
-    colour takes the nearest chosen entry; a colour no entry reaches within the tolerance takes its nearest and is flagged."""
-    usable = {e["id"] for e in candidates}
-    covers = {e["id"]: {s["index"] for s in free if distance(s, e) <= tolerance} for e in candidates}
-    by_index = {s["index"]: s for s in free}
-    fixed = [i for i in dict.fromkeys(kept.values()) if i in usable]       # a kept recipe is a layer already
-    reachable = set().union(*covers.values()) if covers else set()
-    uncovered = reachable - set().union(*(covers[i] for i in fixed))
-    chosen: list[str] = []
+def _spread(free: list[dict], kept: dict[int, str], candidates: list[dict], distance) -> dict[int, tuple[dict, str]]:
+    """Different entries for different source colours as far as the palette reaches, keeping the lightness order: the free source
+    colours sorted by L* take entries sorted by L*, each source its own entry (the order strictly rises) when there are not more
+    sources than entries, else every entry takes a run of neighbouring sources. The least pixel-weighted delta E, then the least
+    pixel-weighted time."""
+    order = sorted(free, key=lambda s: (s["lab"][0], s["index"]))
+    options = sorted(_pool(kept, candidates), key=lambda e: (e["lab"][0], _time(e), e["id"]))
+    n, m = len(order), len(options)
 
-    def gain(e):                       # more colours newly covered, then more of their pixels, then faster, then nearer
-        new = covers[e["id"]] & uncovered
-        return (-len(new), -sum(by_index[i]["pixels"] for i in new), _time(e),
-                sum(max(by_index[i]["pixels"], 1.0) * distance(by_index[i], e) for i in new), e["id"])
+    def cell(i: int, j: int) -> tuple[float, float]:
+        weight = max(order[i]["pixels"], 1.0)
+        return weight * distance(order[i], options[j]), weight * _time(options[j])
 
-    while uncovered:
-        pick = min(candidates, key=gain)
-        chosen.append(pick["id"])
-        uncovered -= covers[pick["id"]]
-    for entry_id in reversed(list(chosen)):                                # drop an entry the others cover anyway
-        others = set().union(*(covers[i] for i in fixed + chosen if i != entry_id))
-        if covers[entry_id] & reachable <= others:
-            chosen.remove(entry_id)
-    out = {}
-    layers = [by_id[i] for i in fixed + chosen]
-    for s in free:
-        if s["index"] in reachable:
-            out[s["index"]] = (min(layers, key=lambda e: (distance(s, e), _time(e), e["id"])), "cover")
-        else:
-            out[s["index"]] = (min(candidates, key=lambda e: (distance(s, e), _time(e), e["id"])), "nearest_outside_tolerance")
-    return out
+    def total(before, i: int, j: int, came: int | None):
+        step = cell(i, j)
+        return (step[0] + (before[0] if before else 0.0), step[1] + (before[1] if before else 0.0), came)
+
+    best: list[list[tuple | None]] = [[None] * m for _ in range(n)]       # (delta E total, time total, option of the source before)
+    if n <= m:
+        for i in range(n):
+            run = None                                                     # the best total of the previous row below option j
+            for j in range(m):
+                if i == 0:
+                    best[0][j] = total(None, 0, j, None)
+                    continue
+                if j and best[i - 1][j - 1] is not None and (run is None or best[i - 1][j - 1][:2] < run[:2]):
+                    run = (*best[i - 1][j - 1][:2], j - 1)
+                if run is not None:
+                    best[i][j] = total(run, i, j, run[2])
+        j = min((k for k in range(m) if best[n - 1][k] is not None), key=lambda k: best[n - 1][k][:2])
+    else:
+        best[0][0] = total(None, 0, 0, None)
+        for i in range(1, n):
+            for k in range(min(i, m - 1) + 1):
+                ways = [(best[i - 1][p], p) for p in (k, k - 1) if p >= 0 and best[i - 1][p] is not None]
+                if ways:
+                    before, p = min(ways, key=lambda w: w[0][:2])
+                    best[i][k] = total(before, i, k, p)
+        j = m - 1
+    picks = []
+    for i in range(n - 1, -1, -1):
+        picks.append(j)
+        j = best[i][j][2]
+    return {s["index"]: (options[k], "tonality") for s, k in zip(order, reversed(picks))}
 
 
 def automatic(entry: dict, limit: float | None, include_as_shot: bool) -> bool:
@@ -284,7 +357,7 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
     Each colour lists its entry, its delta E to the source, whether that is within the tolerance and the entry's time per
     square centimetre; the totals give the number of distinct recipes and the pixel-weighted mean delta E."""
     if mode not in MODES:
-        raise su.ValidationError("the recolouring mode must be closest, tonality, random or fewer_layers")
+        raise su.ValidationError("the recolouring mode must be closest, tonality or random")
     sources = [_source(item) for item in source_colours or []]
     if not sources:
         raise su.ValidationError("give the source colours to recolour")
@@ -314,13 +387,11 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
 
     order_kept = None
     if mode == "closest":
-        chosen = _closest(free, candidates, distance, tolerance)
+        chosen = _closest(free, kept, candidates, distance, tolerance) if free else {}
     elif mode == "tonality":
-        chosen, order_kept = _tonality(sources, kept, by_id, candidates, distance)
-    elif mode == "random":
-        chosen = _random(free, candidates, seed) if free else {}
+        chosen, order_kept = _tonality(sources, kept, by_id, candidates, distance) if free else ({}, True)
     else:
-        chosen = _fewer_layers(free, kept, by_id, candidates, distance, tolerance)
+        chosen = _random(free, kept, candidates, seed) if free else {}
     chosen.update({index: (by_id[entry_id], "kept") for index, entry_id in kept.items()})
 
     colours, distances = [], []

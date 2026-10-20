@@ -940,3 +940,23 @@ AI colouring works in production and the older state of 21:35 in the snapshot is
 - Open: the test copy on 8796 (`scratchpad/live-copy-4`) holds the operator's own edits (renamed "Inna + Boris", split 23, SEEDS) and is NOT the real
   app; moving them to the real app needs the operator's word. A vector work WITH photographs is still an experiment (see DEC-082).
 
+## 0.11.0: palette from all plates of the material, and as many layers as colours are set (operator, 2026-10-19/20)
+Spec ids: DEC-087/REQ-056 (the fifth mode) are SUPERSEDED by DEC-089/REQ-058; DEC-088/REQ-057 (palette) live in the feature `vector-detail-and-colour-control`.
+(Ids are per feature: DEC-080..082 and REQ-044 of the 0.10.0 notes above are in the main feature `titanium-color-engraving-intelligence-platform`.)
+Operator, 2026-10-20: "Какая кнопка как можно больше цветов? Не нужна такая кнопка. цветов всегда как можно больше и ограничено количеством в
+установках" -> asked what to do with the other modes -> "Разные цвета везде, «Меньше слоёв» убрать". Also: "не нужно запускать все тесты пока я не
+попрошу - все локально запускай как можно скорее - я проверю" (full suite NOT run for this release; targeted files only).
+- [x] DEC-089/REQ-058: `palette._closest` = one-to-one assignment (scipy `linear_sum_assignment`, tolerance-clipped cost, then time; n > m: every entry
+  used once, the rest nearest), `_tonality` = strict rising entries (`_monotone(strict=True)`, `_spread` DP without kept choices), `_random` uses every
+  entry when the palette is small; `_pool` keeps the operator's kept entries from the others; `fewer_layers` and `most_colours` removed (API error text,
+  buttons, translation); `vector_job._automatic` maps a stored old mode to closest; the old name stays in `MODE`/`MODE_NAME` for saved variants.
+- [x] DEC-088/REQ-057: `palette._same_material` (family + grade, case/spacing ignored, no grade = itself) and `palette._across_plates` (a recipe on several
+  plates is one entry; group/id of the work's own plate when measured there). Record 1 "Test Plate 1mm": "Garde 2" -> "Grade 5" (PUT
+  /api/materials/1 after `.backup` titanium-before-grade5-20261020T001540Z.sqlite).
+- [x] Measured on a data copy (port 8797, stopped): work 22 palette 18 -> 505; closest 29 of 29 layers (dE 6.97; before 20 layers / 6.16 with the 505 palette,
+  7 / 18.5 with 18), tonality 29 (7.84), random 29; old variant 1 restores (7 layers).
+- [x] Tests (targeted, 255 passed): test_palette (51: brute-force optimum for closest and tonality, own entry in every mode, every entry used, kept entries,
+  merged plates, grade/family/no grade), test_vector_work (5 layers on the fixture, the other-plate test), test_vector_list, UI label tests.
+- [ ] Deploy: backup, wheel, install, first check on a copy, real app (no button; palette count; 29 layers on the work when the mode is pressed). No full suite,
+  no push/tag until the operator has looked.
+Not done and not asked: widening the palette with colours predicted by the laser model (unmeasured; needs its own decision); AI colouring unchanged.

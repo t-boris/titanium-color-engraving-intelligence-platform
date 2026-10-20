@@ -503,7 +503,7 @@ const VectorEditor = (() => {
     function renderPalette() {
       const ref = refColour();
       fill(paletteHead, entries ? `Палитра: ${entries.length}` : 'Палитра');
-      fill(paletteNote, 'Все измеренные цвета этого лазера, линзы и титана. ',
+      fill(paletteNote, 'Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты). ',
         ref ? `Ближайшие к исходному цвету № ${ref.index + 1} — первыми. ` : 'Наведите на область — ближайшие к её исходному цвету встанут первыми. ',
         'Пунктир — сняты без привязки к эталону, точка — автоматика их не берёт.');
       if (!entries) return fill(grid, h('p', {class: paletteError ? 'alert bad' : 'muted small'}, paletteError || 'Загрузка палитры…'));

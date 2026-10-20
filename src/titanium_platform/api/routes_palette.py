@@ -32,7 +32,7 @@ def vector_palette(request: Request, device_id: int, lens_id: str, material_id: 
 
 @router.post("/vector-palette/assign")
 def assign_palette(body: AssignIn, request: Request):
-    """Give each source colour a colour of the palette by a recolouring mode (closest, tonality, random, fewer_layers),
+    """Give each source colour a colour of the palette by a recolouring mode (closest, tonality, random),
     keeping the operator's own choices."""
     return palette.assign_for(store_of(request), body.device_id, body.lens_id, body.material_id, body.source_colours, body.mode,
                               tolerance_de=body.tolerance_de, seed=body.seed, max_time=body.max_time, keep=body.keep,

@@ -88,7 +88,7 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
     colours = source("screens/vector-colours.js") + source("screens/vector-editor.js")
     for op in vector_job.COLOURING_OPS:
         assert f"'{op}'" in colours, op
-    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Меньше слоёв", "Включить цвета без привязки"):
+    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Включить цвета без привязки"):
         assert label in colours, label
     assert "Принять" not in colours                                                    # DEC-001: nothing waits for acceptance
     split = source("screens/vector-split.js")

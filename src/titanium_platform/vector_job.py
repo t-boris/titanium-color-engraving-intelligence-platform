@@ -604,6 +604,8 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
     (palette.assign), the operator's choices of colours (still measured, of a colour still in the split) and regions stay."""
     if mode == "ai":                         # the model's choices stay as they were made and are never asked for again (DEC-084)
         return copy.deepcopy(colouring)
+    if mode not in palette.MODES:            # a mode of an older version (fewer_layers, most_colours): the work's colours are made by the standing ones (DEC-089)
+        mode = "closest"
     by_id = {e["id"]: e for e in entries}
     out = {**copy.deepcopy(colouring), "mode": mode, "seed": seed, "assignment": {}, "how": {}}
     out.pop("ai", None)                      # what the model said belongs to the colouring it chose, not to this one
@@ -997,7 +999,7 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
     """One operation of the colour editor, recorded in the history; every one but ``undo`` and ``redo`` can be undone, and
     a new one clears what was undone (editor DEC-077).
 
-    ``{"op": "assign", "mode"}`` recolours automatically (closest, tonality, random: a new seed each time, fewer_layers) and
+    ``{"op": "assign", "mode"}`` recolours automatically (closest, tonality, random: a new seed each time) and
     adds a variant; ``{"op": "ai_colour", "style", "text"?, "free_lightness"?}`` lets the language model choose the colours
     in a style (:func:`_ai_colour`) and adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
     ``{"op": "settings", "tolerance_de", "max_time", "include_as_shot"}`` changes the choice and recolours with the current
@@ -1045,7 +1047,7 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
     if kind == "assign":
         mode = op.get("mode")
         if mode not in palette.MODES:
-            raise cv.ConversionError("the recolouring mode must be closest, tonality, random or fewer_layers")
+            raise cv.ConversionError("the recolouring mode must be closest, tonality or random")
         seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == "random"), default=0) if mode == "random" else 0
         return {"colouring": _automatic(plan, document, entries, mode, seed, current)}
     if kind == "ai_colour":

@@ -9,7 +9,7 @@
 'use strict';
 const VectorWorkspace = (() => {
   const {h, fill, btn, num, field, get, post, del, go, toast, fail, modal, confirmBox} = App;
-  const MODE_NAME = {closest: 'Ближе к оригиналу', tonality: 'Сохранить тональность', random: 'Случайно', fewer_layers: 'Меньше слоёв'};
+  const MODE_NAME = {closest: 'Ближе к оригиналу', tonality: 'Сохранить тональность', random: 'Случайно', fewer_layers: 'Меньше слоёв (прежний режим)'};
   const STRATEGY_NAME = {photo: 'Фото: цветные области', fill: 'Заливка силуэта', text: 'Текст', line: 'Линии (центральные)', color: 'Цветные области (обводка)'};
   const TAB_KEY = 'vw.tab';
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);

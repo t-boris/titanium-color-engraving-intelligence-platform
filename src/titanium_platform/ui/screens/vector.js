@@ -76,9 +76,9 @@
         try { p = await get(`/vector-palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
         const asShotCount = p.entries.filter((e) => e.basis === 'as-shot').length;
         return fill(info, p.entries.length
-          ? h('p', {class: 'muted small'}, `Измеренных цветов заливки этого лазера, линзы и титана: ${p.entries.length}`,
+          ? h('p', {class: 'muted small'}, `Измеренных цветов заливки этого лазера, линзы и титана этой марки (с любой плиты): ${p.entries.length}`,
             asShotCount ? `, из них без привязки к эталону: ${asShotCount}` : '', '. Каждому цвету картинки достанется самый быстрый цвет в пределах допуска ΔE.')
-          : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана нет измеренных цветов заливки: разбить можно, раскрасить будет нечем.'));
+          : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: разбить можно, раскрасить будет нечем.'));
       }
       let palette;
       try { palette = await get(`/vector/palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }

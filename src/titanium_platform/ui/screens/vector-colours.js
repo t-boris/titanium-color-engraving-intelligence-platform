@@ -10,8 +10,8 @@
 const VectorColours = (() => {
   const {h, fill, btn, field, pill, fail, modal, table, num, labText} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
-  const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно'], ['fewer_layers', 'Меньше слоёв']];
-  const MODE = {...Object.fromEntries(MODES), ai: 'AI'};
+  const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно']];
+  const MODE = {...Object.fromEntries(MODES), fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};      // the old mode only names variants saved with it
   /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
   const STYLES = [
     ['realistic', 'Реалистично', 'Как на фото, насколько позволяет палитра: близкие цвета, соседние области остаются различимыми.'],
@@ -44,7 +44,7 @@ const VectorColours = (() => {
       title: `${labText(e.lab)} · ΔE ${num(de(e.lab, sourceLab))} · ${seconds(e.time_s_per_cm2)}`, 'aria-label': `ΔE ${num(de(e.lab, sourceLab))}`,
       onClick: (ev) => { chosen = e; grid.querySelectorAll('.picked').forEach((x) => x.classList.remove('picked')); ev.target.classList.add('picked'); show(); }})));
     show();
-    modal(title, h('div', {class: 'stack'}, h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана: ${entries.length}. Ближайшие к исходному цвету — первыми.`),
+    modal(title, h('div', {class: 'stack'}, h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Ближайшие к исходному цвету — первыми.`),
       grid, detail), [{label: 'Отмена', run: (m) => m.close()},
       {label: 'Применить', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
   }
@@ -152,7 +152,7 @@ const VectorColours = (() => {
       j = next;
       fill(intro, `Палитра: измеренных цветов ${j.palette_size}. Каждому исходному цвету дан самый быстрый цвет в пределах допуска ΔE, иначе ближайший; `
         + 'далёкие от оригинала можно обвести на картинке, файл они не блокируют.');
-      fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана нет измеренных цветов заливки: раскрасить нечем.'));
+      fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: раскрасить нечем.'));
       const key = JSON.stringify(j.settings);
       if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // поля не сбрасываются, пока настройки те же
       fill(rows, table(['Исходный цвет', 'Цвет титана', 'Рецепт', 'Как измерен', 'Гравировок / фото', 'ΔE', 'Уверенность', 'Стабильность', 'Время', ''], colourRows(j, run)));

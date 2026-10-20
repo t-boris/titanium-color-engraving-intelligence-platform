@@ -153,7 +153,7 @@ def test_an_unchanged_thumbnail_is_not_drawn_or_sent_again_and_a_changed_one_is(
     assert again.status_code == 304 and again.content == b"" and drawn == []
     assert thumb(c, j).content == first.content and drawn == []                                         # from the cache
     monkeypatch.undo()
-    colouring(c, j, op="assign", mode="tonality")
+    colouring(c, j, op="assign", mode="random")
     recoloured = thumb(c, j)
     assert recoloured.headers["etag"] != etag and recoloured.content != first.content
     assert c["client"].post(f"/api/vector/{j['id']}/smoothing", json={"mm": 2}).status_code == 200

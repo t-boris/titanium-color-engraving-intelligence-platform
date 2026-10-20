@@ -221,3 +221,11 @@ Rules written after the operator's remarks, to prevent a repeat.
   near the real data as the task needs, and treat "something vanished from the copy" as a user action until the audit table and the UI paths to
   that delete show otherwise. The first move on "my data is gone" is: which instance, the audit of each, then the code path.
 
+
+- Mistake (2026-10-20): explaining why a work had only 18 colours I wrote "565 colours belong to other lasers, lenses and titaniums" without
+  looking. There was one laser, one lens and three titanium RECORDS; the work's own record held 18 and the other two plates of the same grade
+  held 489 more. The operator had to ask "Каким другим лазерам и титанам?" and then answered that the plate does not matter, only titanium and grade.
+- Rule: before explaining a number with a cause, query the data for that cause (here: group the points by device, lens and material record) and
+  quote the counts. "Another X" is a claim about rows; check the rows.
+- Rule: when the operator names what matters ("the material: titanium and grade, not the size"), put that definition in one function and
+  test the neighbours of the boundary (same grade other case, other grade, other family, no grade), not only the case they described.

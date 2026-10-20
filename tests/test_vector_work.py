@@ -74,6 +74,17 @@ def job(work):
     return r.json()
 
 
+def test_a_colour_measured_on_another_plate_of_the_same_material_is_a_colour_of_the_work(work):
+    """Plates of one material are no difference (REQ-057, DEC-088): a red of another plate (other name, thickness and surface) of the same
+    grade is in the palette and, being as exact and faster, is what the red of the picture takes; a red of another grade is not."""
+    c = work
+    plate = su.save_material(c["store"], "Big plate", grade="Grade 2", thickness_mm=3, surface="polished")["id"]
+    obs.add(c["store"], c["w"], lab(RED), power=70, speed=4000, line_interval=0.02, material_id=plate, layer_type="Scan")
+    fast_red = palette_ids(c)[(round(lab(RED)[0]), 4000)]
+    j = create(c).json()
+    assert by_rgb(j, RED)["entry_id"] == fast_red and fast_red in j["entries"]
+
+
 def colouring(c, job, **op):
     r = c["client"].post(f"/api/vector/{job['id']}/colouring", json=op)
     assert r.status_code == 200, r.text
@@ -216,8 +227,11 @@ def test_a_job_with_markers_holds_28_colours_and_cleans_first(work):
 def test_each_colour_takes_the_fastest_measured_colour_within_the_tolerance_and_says_how_it_was_measured(work, job):
     ids, j = palette_ids(work), job
     paper = by_rgb(j, PAPER)
-    assert paper["status"] == "automatic" and paper["how"] == "fastest_within_tolerance" and paper["entry_id"] == ids[(round(lab(PAPER)[0]) - 2, 3000)]
-    assert paper["delta_e"] == pytest.approx(2.0, abs=0.05)
+    slow_paper, fast_paper_id = ids[(round(lab(PAPER)[0]), 500)], ids[(round(lab(PAPER)[0]) - 2, 3000)]
+    yellow = by_rgb(j, YELLOW)
+    # the yellow is nearest to the paper too, and no two colours share a layer (DEC-089): the two paper recipes go to one each
+    assert paper["status"] == "automatic" and paper["how"] == "fastest_within_tolerance" and {paper["entry_id"], yellow["entry_id"]} == {slow_paper, fast_paper_id}
+    assert paper["delta_e"] <= 2.05
     red = by_rgb(j, RED)
     entry = j["entries"][red["entry_id"]]
     assert entry["basis"] == "chart" and entry["engravings"] == 2 and entry["photographs"] == 2 and entry["confidence"] == pytest.approx(0.5)
@@ -261,8 +275,8 @@ def test_the_file_is_blocked_only_by_a_colour_no_longer_measured_or_an_empty_pal
         f"{expected} region(s) have a titanium colour that is no longer measured on this laser, lens and titanium stock: choose another before export")
     refused = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
     assert refused.status_code == 422 and refused.json() == {"error": j["export_blocked"], "kind": "invalid"}
-    bare = su.save_material(c["store"], "Bare sheet", grade="Grade 2", thickness_mm=1, surface="polished")["id"]
-    empty = create(work, material_id=bare).json()                                      # nothing measured on this titanium
+    bare = su.save_material(c["store"], "Bare sheet", grade="Grade 7", thickness_mm=1, surface="polished")["id"]
+    empty = create(work, material_id=bare).json()                                      # nothing measured on titanium of this grade (DEC-088)
     assert empty["export_blocked"] == "no measured colour of this laser, lens and titanium stock fills an area" and empty["status"] == "Draft"
     assert {col["status"] for col in empty["colours"]} == {"missing"} and empty["palette_size"] == 0
 
@@ -290,9 +304,9 @@ def test_every_recolouring_mode_gives_a_variant_that_can_be_restored_and_undone(
     j = colouring(c, j, op="assign", mode="random")
     seeds = [v["seed"] for v in j["variants"] if v["mode"] == "random"]
     assert seeds == [1, 2]                                                              # each press: a new seed
-    j = colouring(c, j, op="assign", mode="fewer_layers")
-    assert j["totals"]["recipes"] <= j["variants"][0]["totals"]["recipes"]
-    assert [v["mode"] for v in j["variants"]] == ["closest", "tonality", "random", "random", "fewer_layers"] and j["colouring"]["variant"] == 5
+    j = colouring(c, j, op="assign", mode="closest")
+    assert j["totals"]["recipes"] == j["variants"][0]["totals"]["recipes"] == len(j["colours"])        # a layer for each colour
+    assert [v["mode"] for v in j["variants"]] == ["closest", "tonality", "random", "random", "closest"] and j["colouring"]["variant"] == 5
     random_two = j["variants"][3]
     j = colouring(c, j, op="restore", variant=random_two["number"])
     assert j["colouring"]["variant"] == 4 and j["totals"] == random_two["totals"]
@@ -351,7 +365,7 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert layers[0].index == 0 and layers[0].name.startswith("CLEAN-CROSSHATCH-") and layers[0].cross_hatch
     colour_layers = layers[1:]
     assert [layer.index for layer in colour_layers] == list(range(1, len(colour_layers) + 1)) and len(colour_layers) <= 29
-    assert len(colour_layers) == len(j["layers"]) == 4                                   # paper (and the yellow, nearest), red, blue, green
+    assert len(colour_layers) == len(j["layers"]) == 5                                   # paper, yellow, red, blue, green: a layer for each colour
     for layer, planned in zip(colour_layers, j["layers"]):
         assert (layer.name, layer.power, layer.speed, layer.layer_type) == (planned["name"], planned["parameters"]["power"],
                                                                             planned["parameters"]["speed"], "Scan")
@@ -362,7 +376,7 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
     assert project.identifier == j["plan_identifier"] and "Lens: F-Theta 174" in project.notes and "Titanium: Grade 2 sheet" in project.notes
     after = c["client"].get(f"/api/vector/{j['id']}").json()
-    assert after["status"] == "Exported" and after["exports"][0]["variant"] == 1 and after["exports"][0]["layers"] == 4
+    assert after["status"] == "Exported" and after["exports"][0]["variant"] == 1 and after["exports"][0]["layers"] == 5
     assert after["exports"][0]["seconds"] == pytest.approx(j["time"]["seconds"]) and "path" not in after["exports"][0]
     plan = pl.get_plan(c["store"], j["id"])
     assert plan["exports"][0]["colouring"]["assignment"] and "path" in plan["exports"][0]       # kept with the colouring it came from
@@ -531,7 +545,7 @@ def test_merging_titanium_colours_leaves_one_layer_fewer_and_every_automatic_mod
     assert len(j["layers"]) == j["totals"]["recipes"] == layers - 1 and blue_e not in {layer["entry_id"] for layer in j["layers"]}
     assert by_rgb(j, BLUE)["entry_id"] == red_e and by_rgb(j, BLUE)["status"] == "hand" and j["colouring"]["regions"] == {a["inner"]: red_e}
     assert by_rgb(j, RED)["status"] == "automatic" and j["document"]["version"] == 1
-    for mode in ("closest", "tonality", "random", "fewer_layers"):
+    for mode in ("closest", "tonality", "random"):
         j = colouring(c, j, op="assign", mode=mode)
         assert by_rgb(j, BLUE)["entry_id"] == red_e and j["colouring"]["regions"] == {a["inner"]: red_e}, mode
     used = {col["entry_id"] for col in j["colours"] if col["entry_id"]} | set(j["colouring"]["regions"].values())
@@ -573,7 +587,7 @@ def test_merging_source_colours_makes_a_new_version_on_which_every_mode_and_brus
     assert {p.get("data-region") for p in svg.findall(f"{SVG}path") if p.get("data-color") == str(red["index"])} == {a["ring"], a["ellipse"]}
     last = pl.get_plan(c["store"], j["id"])["history"][-1]
     assert last["op"] == {"op": "merge_colours", "colours": [blue["index"], red["index"]], "keeper": red["index"]} and last["version"] == 2
-    for mode in ("closest", "tonality", "random", "fewer_layers"):
+    for mode in ("closest", "tonality", "random"):
         j = colouring(c, j, op="assign", mode=mode)
         assert next(col for col in j["colours"] if col["index"] == red["index"])["entry_id"] == green_e
     for scope in ("region", "fill", "colour"):

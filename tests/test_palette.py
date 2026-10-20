@@ -1,4 +1,5 @@
-"""The palette of a vector work and the recolouring modes (REQ-034, DEC-073, DEC-074, DEC-075)."""
+"""The palette of a vector work and the recolouring modes (REQ-034, DEC-073, DEC-074, DEC-075). Every mode gives each colour an entry of its own
+as far as the palette reaches (REQ-058, DEC-089 of vector-detail-and-colour-control); the palette takes every plate of the material (REQ-057, DEC-088)."""
 import itertools
 
 import pytest
@@ -21,11 +22,11 @@ def partition(store, w, **extra):
     return palette.vector_palette(store, w["setup"][0], w["setup"][1], w["ti"], **extra)
 
 
-def test_the_palette_holds_every_measured_fill_colour_of_its_laser_lens_and_titanium_one_entry_per_recipe(store, world):
+def test_the_palette_holds_every_measured_fill_colour_of_its_laser_lens_and_material_one_entry_per_recipe(store, world):
     obs.add(store, world, [60.0, 5.0, 20.0], speed=1000, line_interval=0.01, material_id=world["ti"], engraving="e1", layer_type="Scan")
     obs.add(store, world, [62.0, 5.0, 20.0], speed=1000, line_interval=0.01, material_id=world["ti"], engraving="e2", layer_type="Scan")
     obs.add(store, world, [40.0, 10.0, -20.0], speed=2000, line_interval=0.02, material_id=world["ti"], layer_type="Scan")
-    obs.add(store, world, [50.0, 0.0, 0.0], speed=1000, line_interval=0.01, material_id=world["other_ti"], layer_type="Scan")   # other stock
+    obs.add(store, world, [50.0, 0.0, 0.0], speed=1000, line_interval=0.01, material_id=world["other_ti"], layer_type="Scan")   # other grade
     obs.add(store, world, [55.0, 0.0, 0.0], speed=1000, line_interval=0.01, material_id=world["ti"], lens_id=None, layer_type="Scan")  # lens unknown
     other = obs.setup(store)                                                                                   # another laser and lens
     other["n"] = 100
@@ -39,6 +40,47 @@ def test_the_palette_holds_every_measured_fill_colour_of_its_laser_lens_and_tita
     assert first["time"]["estimate"] is True and first["parameters"]["speed"] == 1000
     assert second["engravings"] == 1 and second["time_s_per_cm2"] < first["time_s_per_cm2"]
     assert len({e["id"] for e in p["entries"]}) == 2 and partition(store, world)["entries"][0]["id"] == first["id"]   # stable ids
+
+
+# -- plates of one material are no difference (DEC-088) ---------------------------------------------------------------------------------
+def plate_of(store, name, grade, **extra):
+    return su.save_material(store, name, grade=grade, thickness_mm=extra.pop("thickness_mm", 3.0), surface=extra.pop("surface", "polished"), **extra)["id"]
+
+
+def test_a_recipe_measured_on_two_plates_of_one_material_is_one_entry_of_both_and_keeps_the_id_it_had_on_the_works_own_plate(store, world):
+    second_plate = plate_of(store, "Big plate", "grade  2", batch="Other order")             # another name, thickness, surface and batch, the grade in other case
+    obs.add(store, world, [60.0, 5.0, 20.0], speed=1000, line_interval=0.01, material_id=world["ti"], engraving="e1", layer_type="Scan")
+    before = partition(store, world)["entries"]
+    assert len(before) == 1
+    obs.add(store, world, [64.0, 7.0, 24.0], speed=1000, line_interval=0.01, material_id=second_plate, engraving="e2", layer_type="Scan")
+    obs.add(store, world, [40.0, 0.0, 0.0], speed=3000, line_interval=0.02, material_id=second_plate, engraving="e3", layer_type="Scan")
+    own = partition(store, world)["entries"]
+    assert len(own) == 2 and before[0]["id"] in {e["id"] for e in own}                             # the first recipe: one entry, the same id
+    merged = next(e for e in own if e["id"] == before[0]["id"])
+    assert merged["engravings"] == 2 and merged["lab"] == pytest.approx([62.0, 6.0, 22.0])         # the mean of both plates' engravings
+    elsewhere = palette.vector_palette(store, world["setup"][0], world["setup"][1], second_plate)["entries"]
+    assert len(elsewhere) == 2 and sorted(round(e["lab"][0], 1) for e in elsewhere) == [40.0, 62.0]   # the same colours seen from the other plate
+    same = next(e for e in elsewhere if e["lab"][0] > 50)
+    assert same["id"] != merged["id"]                                                              # the merged recipe has the id of that work's plate
+    assert {e["id"] for e in own} - {merged["id"]} == {e["id"] for e in elsewhere} - {same["id"]}  # a recipe of one plate has one id for both works
+
+
+def test_titanium_of_another_grade_or_family_is_not_the_palette_and_a_record_without_a_grade_is_only_itself(store, world):
+    grade5 = plate_of(store, "Grade 5 plate", "Grade 5")
+    other_family = plate_of(store, "Zirconium plate", "Grade 2", family="Zirconium")
+    no_grade = plate_of(store, "Unknown plate", None)
+    no_grade_too = plate_of(store, "Another unknown plate", None)
+    for i, material in enumerate((world["ti"], grade5, other_family, no_grade, no_grade_too)):
+        obs.add(store, world, [30.0 + 10 * i, 0.0, 0.0], speed=1000 + 100 * i, line_interval=0.01, material_id=material, layer_type="Scan")
+    speeds = lambda m: sorted(e["parameters"]["speed"] for e in palette.vector_palette(store, world["setup"][0], world["setup"][1], m)["entries"])
+    assert speeds(world["ti"]) == [1000] and speeds(grade5) == [1100] and speeds(other_family) == [1200]
+    assert speeds(no_grade) == [1300] and speeds(no_grade_too) == [1400]                          # unknown grade: not assumed to be another's
+
+
+def test_a_colour_measured_without_a_titanium_record_is_in_no_palette(store, world):
+    obs.add(store, world, [60.0, 5.0, 20.0], speed=1000, line_interval=0.01, material_id=world["ti"], layer_type="Scan")
+    obs.add(store, world, [45.0, 0.0, 0.0], speed=2000, line_interval=0.01, material_id=None, layer_type="Scan")
+    assert len(partition(store, world)["entries"]) == 1
 
 
 def test_a_colour_repeated_on_independent_engravings_has_its_stability_confidence_and_expected_error(store, world):
@@ -57,7 +99,8 @@ def test_colours_measured_as_photographed_are_left_to_the_operator_unless_includ
     pal = [entry("chart", [60, 0, 0], 9.0), {**entry("as-shot", [50, 0, 0], 1.0), "basis": "as-shot"}]
     assert chosen(palette.assign(sources([50, 0, 0]), pal, "closest", tolerance_de=3)) == {0: "chart"}
     assert chosen(palette.assign(sources([50, 0, 0]), pal, "closest", tolerance_de=3, include_as_shot=True)) == {0: "as-shot"}
-    assert chosen(palette.assign(sources([50, 0, 0]), pal, "fewer_layers", tolerance_de=3, keep={0: "as-shot"})) == {0: "as-shot"}
+    for mode in palette.MODES:
+        assert chosen(palette.assign(sources([50, 0, 0]), pal, mode, tolerance_de=3, keep={0: "as-shot"})) == {0: "as-shot"}
     with pytest.raises(su.ValidationError, match="measured as photographed: include such colours"):
         palette.assign(sources([50, 0, 0]), pal[1:], "random", tolerance_de=3)
 
@@ -136,9 +179,8 @@ def test_tonality_keeps_the_lightness_order_with_the_least_weighted_delta_e():
         r = palette.assign(srcs, candidates, "tonality", tolerance_de=2)
         assert lightness_kept(r, srcs, pal) and r["lightness_order"] == "kept"
         cost = lambda pick: sum(s["pixels"] * color.delta_e(s["lab"], e["lab"]) for s, e in zip(srcs, pick))   # noqa: E731
-        monotone = [pick for pick in itertools.product(candidates, repeat=3)
-                    if all(a["lab"][0] <= b["lab"][0] for a, b in zip(pick, pick[1:]))]   # sources are given darkest first
-        best = min(cost(pick) for pick in monotone)
+        rising = itertools.combinations(sorted(candidates, key=lambda e: e["lab"][0]), 3)   # sources are given darkest first, none twice
+        best = min(cost(pick) for pick in rising)
         mine = sum(c["pixels"] * color.delta_e(c["lab"], c["entry_lab"]) for c in r["colours"])
         assert mine == pytest.approx(best)
     assert chosen(palette.assign(srcs, pal, "tonality", tolerance_de=2)) == {0: "dark", 1: "mid-red", 2: "light-green"}
@@ -167,26 +209,112 @@ def clusters():
     return srcs, own + middle
 
 
-def test_fewer_layers_uses_fewer_recipes_than_closest_and_keeps_every_colour_within_the_tolerance():
-    srcs, pal = clusters()
-    closest = palette.assign(srcs, pal, "closest", tolerance_de=4)
-    fewer = palette.assign(srcs, pal, "fewer_layers", tolerance_de=4)
-    assert closest["totals"]["recipes"] == 6 and closest["totals"]["within_tolerance"] == 6
-    assert fewer["totals"]["recipes"] == 2 and fewer["totals"]["within_tolerance"] == 6
-    # one entry per cluster: of those covering a whole cluster, the faster (own0 and own3 reach their neighbours within 4 too)
-    assert set(chosen(fewer).values()) == {"own0", "own3"} and all(c["how"] == "cover" for c in fewer["colours"])
-    slow_only = [e for e in pal if e["id"] not in ("own0", "own3")]
-    assert set(chosen(palette.assign(srcs, slow_only, "fewer_layers", tolerance_de=4)).values()) == {"mid-a", "mid-b"}
+# -- every mode gives each colour its own entry as far as the palette reaches (REQ-058, DEC-089) ---------------------------------------------
+def spread_world(n, m, seed=7):
+    """``n`` source colours and ``m`` entries with distinct lightness, the sources bunched together so that nearest-entry picking would merge them."""
+    import random
+    rng = random.Random(seed)
+    srcs = sources(*[[30 + 3 * i, rng.uniform(-6, 6), rng.uniform(-6, 6)] for i in range(n)], pixels=[rng.randint(20, 400) for _ in range(n)])
+    pal = [entry(f"e{j}", [20 + 60 * j / max(m - 1, 1), rng.uniform(-20, 20), rng.uniform(-20, 20)], rng.uniform(1, 9)) for j in range(m)]
+    return srcs, pal
 
 
-def test_fewer_layers_gives_a_colour_out_of_reach_its_nearest_entry_and_flags_it():
-    srcs, pal = clusters()
-    srcs.append({"index": 6, "lab": [20, 40, -40], "pixels": 50})
-    r = palette.assign(srcs, pal, "fewer_layers", tolerance_de=4)
-    out = next(c for c in r["colours"] if c["index"] == 6)
-    assert out["how"] == "nearest_outside_tolerance" and not out["within_tolerance"]
-    nearest = min(pal, key=lambda e: color.delta_e(e["lab"], [20, 40, -40]))
-    assert out["entry_id"] == nearest["id"] and r["totals"]["within_tolerance"] == 6 and r["totals"]["recipes"] == 3
+def weighted(srcs, pal, picks):
+    by_id = {e["id"]: e for e in pal}
+    return sum(s["pixels"] * color.delta_e(s["lab"], by_id[picks[s["index"]]]["lab"]) for s in srcs)
+
+
+@pytest.mark.parametrize("mode", palette.MODES)
+def test_every_mode_gives_each_source_colour_an_entry_of_its_own_when_the_palette_has_enough_of_them(mode):
+    srcs, pal = spread_world(5, 9)
+    r = palette.assign(srcs, pal, mode, tolerance_de=0.5, seed=3)
+    assert r["totals"]["recipes"] == 5 == len(set(chosen(r).values())) and r["mode"] == mode
+    srcs, pal = clusters()                                                       # six colours in two clusters: no shared layer either
+    assert palette.assign(srcs, pal, mode, tolerance_de=4, seed=3)["totals"]["recipes"] == 6
+
+
+@pytest.mark.parametrize("mode", palette.MODES)
+def test_every_mode_uses_every_entry_when_there_are_more_source_colours_than_entries(mode):
+    srcs, pal = spread_world(12, 5)
+    r = palette.assign(srcs, pal, mode, tolerance_de=0.5, seed=3)
+    assert r["totals"]["recipes"] == 5 and set(chosen(r).values()) == {e["id"] for e in pal}
+
+
+@pytest.mark.parametrize("n, m", [(3, 3), (4, 6), (5, 5), (6, 3), (7, 4)])
+def test_closest_costs_the_least_delta_e_of_all_assignments_that_use_as_many_entries_as_possible(n, m):
+    srcs, pal = spread_world(n, m, seed=n * 10 + m)
+    r = palette.assign(srcs, pal, "closest", tolerance_de=0)
+    ids = [e["id"] for e in pal]
+    if n <= m:                                                                   # each colour its own entry
+        plans = [dict(zip((s["index"] for s in srcs), pick)) for pick in itertools.permutations(ids, n)]
+    else:                                                                        # every entry used, the rest nearest
+        plans = []
+        for pick in itertools.product(ids, repeat=n):
+            if len(set(pick)) == m:
+                plans.append(dict(zip((s["index"] for s in srcs), pick)))
+    assert weighted(srcs, pal, chosen(r)) == pytest.approx(min(weighted(srcs, pal, p) for p in plans))
+
+
+def test_closest_keeps_the_fastest_within_the_tolerance_for_a_colour_nobody_else_wants_and_shares_nothing_when_two_want_one_entry():
+    pal = [entry("fast", [50, 0, 0], 2.0), entry("slow", [50.5, 0, 0], 20.0), entry("far", [80, 0, 0], 1.0)]
+    alone = palette.assign(sources([50, 0, 0]), pal, "closest", tolerance_de=3)
+    assert chosen(alone) == {0: "fast"} and alone["colours"][0]["how"] == "fastest_within_tolerance"
+    both = palette.assign(sources([50, 0, 0], [50.2, 0, 0]), pal, "closest", tolerance_de=3)    # two colours, one fast entry: the other takes the next
+    assert sorted(chosen(both).values()) == ["fast", "slow"] and both["totals"]["recipes"] == 2
+    far = palette.assign(sources([50, 0, 0], [50.2, 0, 0], [50.4, 0, 0]), pal, "closest", tolerance_de=3)
+    assert sorted(chosen(far).values()) == ["far", "fast", "slow"]                              # a third must go outside the tolerance
+    assert sum(c["how"] == "nearest" for c in far["colours"]) == 1 and far["totals"]["within_tolerance"] == 2
+
+
+def test_tonality_gives_the_lightness_order_of_entries_none_twice_and_says_so_per_colour():
+    srcs, pal = spread_world(5, 9)
+    r = palette.assign(srcs, pal, "tonality", tolerance_de=0.5)
+    assert all(c["how"] == "tonality" for c in r["colours"]) and "seed" not in r and r["lightness_order"] == "kept"
+    by_id = {e["id"]: e for e in pal}
+    ranked = [by_id[chosen(r)[s["index"]]]["lab"][0] for s in sorted(srcs, key=lambda s: s["lab"][0])]
+    assert ranked == sorted(set(ranked))                              # lighter source, lighter entry, none twice
+    srcs, pal = spread_world(12, 5)
+    ranked = [{e["id"]: e for e in pal}[chosen(palette.assign(srcs, pal, "tonality", tolerance_de=0.5))[s["index"]]]["lab"][0]
+              for s in sorted(srcs, key=lambda s: s["lab"][0])]
+    assert ranked == sorted(ranked)                                   # with more colours than entries the order of light and dark is kept
+
+
+@pytest.mark.parametrize("n, m", [(4, 6), (3, 3), (6, 3), (7, 4)])
+def test_tonality_costs_the_least_delta_e_of_all_assignments_that_keep_the_order_and_the_colours_different(n, m):
+    srcs, pal = spread_world(n, m, seed=n * 10 + m)
+    r = palette.assign(srcs, pal, "tonality", tolerance_de=0.5)
+    order = sorted(srcs, key=lambda s: s["lab"][0])
+    options = sorted(pal, key=lambda e: e["lab"][0])
+    if n <= m:
+        plans = [dict(zip((s["index"] for s in order), (options[j]["id"] for j in js))) for js in itertools.combinations(range(m), n)]
+    else:                                                              # cut the sorted sources into m runs, run k takes entry k
+        plans = []
+        for cuts in itertools.combinations(range(1, n), m - 1):
+            edges = (0, *cuts, n)
+            plans.append({order[i]["index"]: options[k]["id"] for k in range(m) for i in range(edges[k], edges[k + 1])})
+    assert weighted(srcs, pal, chosen(r)) == pytest.approx(min(weighted(srcs, pal, p) for p in plans))
+
+
+def test_tonality_takes_the_faster_of_equally_good_entries_for_each_of_two_colours():
+    srcs = sources([40, 0, 0], [60, 0, 0])
+    pal = [entry("slow-40", [40, 0, 0], 9), entry("fast-40", [40, 0, 0], 2), entry("slow-60", [60, 0, 0], 8), entry("fast-60", [60, 0, 0], 3)]
+    assert chosen(palette.assign(srcs, pal, "tonality", tolerance_de=1)) == {0: "fast-40", 1: "fast-60"}
+
+
+@pytest.mark.parametrize("mode", palette.MODES)
+def test_no_mode_offers_an_entry_the_operator_kept_to_another_colour_while_others_remain(mode):
+    srcs, pal = spread_world(3, 5)
+    r = palette.assign(srcs, pal, mode, tolerance_de=0.5, keep={0: "e2"}, seed=2)
+    picks = chosen(r)
+    assert picks[0] == "e2" and picks[1] != "e2" and picks[2] != "e2" and picks[1] != picks[2] and r["totals"]["recipes"] == 3
+    only = palette.assign(srcs, pal[:1], mode, tolerance_de=0.5, keep={0: "e0"}, seed=2)       # nothing else left: the kept one is shared
+    assert set(chosen(only).values()) == {"e0"}
+
+
+def test_the_modes_of_older_versions_are_refused_by_assign():
+    for gone in ("fewer_layers", "most_colours"):
+        with pytest.raises(su.ValidationError, match="must be closest, tonality or random"):
+            palette.assign(sources([50, 0, 0]), [entry("a", [50, 0, 0], 1.0)], gone, tolerance_de=3)
 
 
 @pytest.mark.parametrize("mode", palette.MODES)
@@ -216,7 +344,7 @@ def test_a_work_holds_at_most_29_colours_and_never_more_recipes():
 
 
 @pytest.mark.parametrize("args, message", [
-    ({"mode": "nearest"}, "the recolouring mode must be closest, tonality, random or fewer_layers"),
+    ({"mode": "nearest"}, "the recolouring mode must be closest, tonality or random"),
     ({"source_colours": []}, "give the source colours to recolour"),
     ({"source_colours": [{"index": 0, "lab": [50, 0]}]}, "each source colour needs its index, a Lab colour and a pixel count"),
     ({"source_colours": [[0, [50, 0, 0], 10], [0, [60, 0, 0], 10]]}, "two source colours have the same index"),
@@ -256,6 +384,7 @@ def test_the_api_serves_the_palette_and_assigns_from_it(tmp_path):
     assert [c["entry_id"] for c in r["colours"]] == [got["entries"][0]["id"], got["entries"][1]["id"]]
     assert r["totals"]["recipes"] == 2 and all(c["within_tolerance"] for c in r["colours"]) and r["tolerance_de"] == 5
     su.save_rules(store, device_id, lens_id, delta_tolerance=1.0)                          # the saved rule when none is given
-    ruled = client.post("/api/vector-palette/assign", json={**body, "mode": "fewer_layers", "keep": {"1": got["entries"][0]["id"]}}).json()
-    assert ruled["tolerance_de"] == 1.0 and ruled["colours"][1]["how"] == "kept" and ruled["totals"]["recipes"] == 1
+    ruled = client.post("/api/vector-palette/assign", json={**body, "keep": {"1": got["entries"][0]["id"]}}).json()
+    assert ruled["tolerance_de"] == 1.0 and ruled["colours"][1]["how"] == "kept" and ruled["totals"]["recipes"] == 2
+    assert ruled["colours"][0]["entry_id"] == got["entries"][1]["id"]                          # the kept entry is not offered to the other colour
     assert client.post("/api/vector-palette/assign", json={**body, "lens_id": None}).status_code == 422   # the unknown lens has no colours
