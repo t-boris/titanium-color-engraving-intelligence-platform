@@ -1138,6 +1138,17 @@ agree: `agreeing - 1 - differing < 0`) is "doubtful" and can be filtered out.
       and "Where we know this colour from" (every engraving, who agrees, links to the experiment and the analysis); the search results show the same.
 - [x] D. Tests: tests/test_colormap.py (annotate / filter / sources / API), tests/test_color_map_one_screen.py (UI in node). Targeted only; the full suite is not run.
 - [x] E. REQ-049 (draft) and DEC-091 (proposed) through the markview tools, README 0.15.0, version 0.15.0; deployed to 8765 after the commit (backup, wheel, restart); nothing pushed or tagged.
-- [ ] F. Next, after the colour map: the check meets layers hidden in LightBurn (they stay where they were when the rest is resized; found in the file of work 22: C18 and C28 stayed at
-      150x143 mm while 28 layers became 100x100 mm at (35, 35)): warn, leave them out of the measurement and the review. Operator agreed 2026-10-20.
-- Not touched: pair 101 (checked, not accepted); the operator has not chosen accept / delete / fix the material.
+- [x] F. Done as 0.15.1 (below).
+- Not touched by me: pair 101 (the operator deleted it and uploaded the photograph again as pair 102 with the material "Small Plate"; 102 is "Ready to accept", not accepted).
+
+### 0.15.1: the check does not measure layers the photograph cannot show where the file puts them (operator, 2026-10-20: "Не находит", screenshot; agreed "Согласен - вперед"; REQ-050 draft, DEC-092 proposed)
+The file engraved from work 22 had the picture resized to 100 x 100 mm and moved; layers C18 and C28 are hidden in LightBurn, so its tools skipped them and they stayed at the export's 150 x 143 mm
+places (outlines on the ruler and the chart; 16 of 29 uncertain elements; rows C18 dE 23.7 and C28 46.0 meaningless). C28 also has its output switched off.
+- [x] A. `lightburn.Layer.hidden` and `.output_off` (from the `hide` and `doOutput` settings of the file).
+- [x] B. `left_behind.py` (pure): per-axis scale, offset and mirror shared by the layers of the engraved and exported files; a layer is left behind when it sits at the export's place and not at the moved place.
+- [x] C. `ingest._leave_out_layers` called by `check_pair`: flags `left_out`, adds a note and a warning, drops the shapes of those layers so alignment, coverage and measurement skip them; the overlay skips them.
+- [x] D. Russian translations of the warnings and notes (`i18n-rest.js`); `test_i18n_coverage` green.
+- [x] E. tests/test_left_behind.py (11 tests; a mutation of the detector fails 4 of them); targeted run of 459 tests green (`pytest_0150b.log`). Full suite not run.
+- [x] F. Checked on a COPY of the real data: pair 102 -> C18 left behind, C28 output off, 28 of 30 layers measured, alignment valid (256 of 269 elements found, 2.6 px), the other layers move by at most 0.8 dE.
+- [x] G. REQ-050 (draft) and DEC-092 (proposed) through the markview tools, README 0.15.1, version 0.15.1; deployed to 8765 (backup, wheel, restart); nothing pushed or tagged.
+- Not decided: pair 102 (accept or not): 27 layers beyond tolerance in the earlier review of the same photograph; the operator chooses.

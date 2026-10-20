@@ -282,3 +282,10 @@ Rules written after the operator's remarks, to prevent a repeat.
 ## A fix that is deployed does not reach a page that is already open
 - Situation (2026-10-20): the tab strip of a work clipped its sixth tab. I fixed the CSS, redeployed and reported, but the operator's open page still had the old CSS and sent a screenshot of the old layout.
 - Rule: after a deploy that changes CSS or JS, say in the report "reload the page (Cmd+R)" for the screens that changed. Before calling a screenshot "still broken", reproduce it: probe the real work read-only in a separate headless profile, and inject the old CSS on a copy to see whether it gives the same picture.
+
+## A flag in the file is not proof of where a layer is: compare the files
+- Situation (2026-10-20): the photograph of work 22 showed outlines on the ruler. The operator resized the picture in LightBurn; two layers were hidden, LightBurn's tools skipped them, and
+  they stayed where the exported file had them. The check measured them at places where the photograph shows something else, and their rows (dE 24 and 46) looked like engraving errors.
+- Rule: when an engraved file differs from the file the system exported, compare the geometry of the two before trusting any layer's position (scale, offset and mirror per axis, shared by most
+  layers), and name a layer only when it provably sits at the old place while others sit at the new one. A "hidden" or "output off" flag alone says nothing about where the shapes are.
+- Related: a layer that is not engraved must not become an observation with that recipe's settings; leave it out of the measurement and say so.

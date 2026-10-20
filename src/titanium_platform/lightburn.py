@@ -98,6 +98,21 @@ class Layer:
     unsupported: dict = field(default_factory=dict)      # shape type -> how many objects of it are not read
     unknown_settings: list[str] = field(default_factory=list)   # setting tags outside KNOWN_SETTINGS, kept but not interpreted
 
+    def _switch(self, tag: str) -> str | None:
+        raw = self.source_settings.get(tag)
+        return None if not isinstance(raw, dict) else str(raw.get("Value", "")).strip().lower()
+
+    @property
+    def hidden(self) -> bool:
+        """The layer's "Show" switch is off. LightBurn still outputs it, but its tools skip the shapes of a hidden layer: select all,
+        move and resize leave them where they were (REQ-050)."""
+        return self._switch("hide") in ("1", "true", "yes")
+
+    @property
+    def output_off(self) -> bool:
+        """The layer's "Output" switch is off: LightBurn does not engrave it (REQ-050)."""
+        return self._switch("doOutput") in ("0", "false", "no")
+
     @property
     def readable(self) -> bool:
         return not self.unreadable

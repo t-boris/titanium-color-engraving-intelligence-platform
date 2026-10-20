@@ -44,6 +44,7 @@ import numpy as np
 import cv2
 
 from . import color
+from . import left_behind
 from . import lightburn as lb
 from . import photo as ph
 from . import plans as pl
@@ -1493,6 +1494,52 @@ def _looks_like_clean_titanium(lab) -> bool:
     return lab is not None and lab[0] >= CLEAN_TITANIUM_MIN_L and float(np.hypot(lab[1], lab[2])) <= CLEAN_TITANIUM_MAX_CHROMA
 
 
+def _exported_layouts(plan: dict | None):
+    """The files a vector work exported, newest first, as parsed projects (REQ-050); an export that cannot be read is skipped."""
+    if plan is None or plan.get("mode") != pl.MODE_VECTOR:
+        return
+    for export in sorted(plan.get("exports") or [], key=lambda e: e.get("number", 0), reverse=True):
+        try:
+            yield lb.parse_file(export["path"])
+        except (OSError, KeyError, lb.LightBurnError):
+            continue
+
+
+def _leave_out_layers(project: lb.Project, plan: dict | None, report: dict) -> None:
+    """Leave out of the measurement the layers the photograph cannot show where the file puts them (REQ-050): layers whose output is
+    switched off in LightBurn (never engraved), and layers left behind when the rest of the file was moved or resized (LightBurn's tools
+    skip hidden layers). Each is flagged ``left_out`` with a note, its shapes are dropped from ``project`` so that neither the alignment nor
+    the coverage of other layers uses them, and the operator is told in a warning."""
+    out = {layer.index: "output_off" for layer in project.layers if layer.regions and layer.output_off}
+    moved = next((found for found in (left_behind.compare(project, exported) for exported in _exported_layouts(plan))
+                  if found["verdict"] != "unknown"), None)
+    if moved is not None and moved["verdict"] == "moved":
+        out.update({index: "left_behind" for index in moved["left"] if index not in out})
+    if not out:
+        return
+    by_index = {layer.index: layer for layer in project.layers}
+    for rep in report["layers"]:
+        reason = out.get(rep["index"])
+        if reason is None:
+            continue
+        rep["left_out"], rep["compatible"] = reason, False
+        rep["notes"].append("output is switched off in LightBurn: this layer was not engraved and is not measured" if reason == "output_off"
+                            else "left behind: its shapes stayed where the exported file had them while the rest of the file was moved, so the photograph "
+                                 "cannot show them there; not measured")
+    switched_off = [by_index[i].name.split()[0] for i, why in out.items() if why == "output_off"]
+    left = [i for i, why in out.items() if why == "left_behind"]
+    if switched_off:
+        report["warnings"].append(f"layers {', '.join(switched_off)} have their output switched off in LightBurn: they were not engraved and are not measured")
+    if left:
+        names, hidden = ", ".join(by_index[i].name.split()[0] for i in left), all(by_index[i].hidden for i in left)
+        width, height = (round(100 * v) for v in moved["scale"])
+        report["warnings"].append(
+            f"layers {names} stayed where the exported file had them while the rest of the file was resized to {width}% by {height}% of its "
+            f"exported size{', and they are hidden in LightBurn, whose tools skip hidden layers' if hidden else ''}; they are not measured")
+    for index in out:
+        by_index[index].regions = []
+
+
 def _finished_work_cleaning_layer(project) -> int | None:
     """The layer of a finished work that cleans its plate before the engraving: run first, one filled rectangle that
     encloses everything else. Where later layers did not overwrite it, it shows the cleaned titanium of this very
@@ -1991,6 +2038,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
             rep["role"] = "pre-test cleaning witness"
         else:
             rep["role"] = "test feature"
+    _leave_out_layers(project, plan, report)
     work_layers = [layer for layer in project.layers if layer.regions]
     return _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
                     corners_fraction, linked)
@@ -2589,7 +2637,7 @@ def _draw_overlay(photo_path: str, lightburn_path: str, check: dict, plan: dict 
         if layer_index is not None and rep["index"] != layer_index:
             continue
         layer = by_index.get(rep["index"])
-        if layer is None or not layer.regions:
+        if layer is None or not layer.regions or rep.get("left_out"):         # a layer left out is not drawn where it is not (REQ-050)
             continue
         layer_h = _layer_image_to_mm(np.asarray(h, float), check.get("alignment") or {}, layer.index)
         layer_to_image = np.linalg.inv(layer_h)
