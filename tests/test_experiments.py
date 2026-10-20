@@ -176,9 +176,11 @@ def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_witho
              "['plate', 'Плата', plate]", "['work', 'Работа', files]", "['findings', `Выводы (${exp.findings.length})`, findings]")
     assert [tabs.index(part) for part in parts] == sorted(tabs.index(part) for part in parts)
     assert "function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }" in page
-    # the overlay and the lifted brightness are on unless the operator switched them off; contours draw the overlay
+    # the overlay is on unless the operator switched it off; the brightness is lifted for the dark uncorrected RAW and left alone for the
+    # corrected photograph unless the operator chose; contours draw the overlay
     assert "let contours = sessionStorage.getItem('experiment-contours') !== '0';" in page
-    assert "let lifted = sessionStorage.getItem('experiment-lifted') !== '0';" in page
+    assert "let lifted = storedLift === null ? null : storedLift !== '0';" in page
+    assert "const isLifted = (pair) => lifted === null ? !(pair && shownCorrected(pair)) : lifted;" in page
     assert "return contours && pair.alignment ? `${base}/overlay.png?${view}` : `${base}/photo.png?${view}`;" in page
     # the latest check (or the one asked for) is shown at once
     assert "pairs.find((p) => p.id === wanted) || pairs.find((p) => p.id === exp.main_pair_id) || pairs[pairs.length - 1]" in page
@@ -187,7 +189,7 @@ def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_witho
 def test_the_experiment_screen_offers_check_selection_brightness_and_contours_and_holds_files_layers_and_conclusions():
     page = screen("experiment.js")
     assert "btn(`Проверка №${p.id}`, () => { current = p; refreshAll(); }, 'btn-small')" in page          # every check, selectable
-    assert "btn(lifted ? 'Обычная яркость' : 'Поднять яркость'" in page
+    assert "btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость'" in page
     assert "btn(contours ? 'Скрыть контуры' : 'Показать контуры'" in page
     for part in ("'Скачать .lbrn2'", "'Скачать файл LightBurn'", "`Измеренные слои · ${layers.length}`", "'Выводы по этому эксперименту'",
                  "IngestReview.hiddenMargins(check.alignment)"):

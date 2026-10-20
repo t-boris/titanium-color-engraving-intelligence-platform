@@ -249,3 +249,12 @@ Rules written after the operator's remarks, to prevent a repeat.
   exposure normalisation, not from the matrix (exposure-only gives the same L).
 - Rule: when the operator proposes the simple direct method, run it on their data next to mine, show both columns per item, say which part of the difference comes from which
   step (ablate: exposure only / matrix / offset), and say what remains undecided and who can decide it.
+
+## When the operator says how the process should work, build their model first and measure mine against it
+- Situation (2026-10-20): the operator said the work should go "the other way": know the 24 squares, take the colour like an eyedropper, find it among the squares, give it numbers
+  - and asked why anything is lightened or darkened. I had defended one global matrix and then proposed a different shortcut (the camera preview). Their plain description, built and
+  measured as a look-up among the squares, was better on exactly the dark squares they complained about (3.1 against 5.0 dE).
+- Rule: when the operator describes the method in plain words, implement that description as the baseline, run it on their data in the same table as the current method, and then
+  say which one wins and by how much. Do not propose a third method first.
+- Also: an operator who says "it looks lighter" may be looking at a display default (gamma lift on top of an already corrected picture), not at the measurement. List every default
+  view parameter of the screen they look at before touching the measurement.

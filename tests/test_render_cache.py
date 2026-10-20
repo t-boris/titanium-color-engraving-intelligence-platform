@@ -188,7 +188,8 @@ def test_warm_cache_draws_what_the_experiment_screens_ask_for_and_only_reads_the
     pages = {}
     for pid in (aligned, plain):                                    # the URLs exactly as experiment-cards.js and experiment.js build them
         pair = shown[pid]
-        view = f"corrected={'true' if pair['measurement'] == 'reference_chart_corrected' else 'false'}&visibility=lifted&full=false&t=x"
+        chart = pair['measurement'] == 'reference_chart_corrected'
+        view = f"corrected={'true' if chart else 'false'}&visibility={'normal' if chart else 'lifted'}&full=false&t=x"
         pages[pid] = f"/api/pairs/{pid}/overlay.png?{view}" if pair["alignment"] else f"/api/pairs/{pid}/photo.png?{view}"
         for url in (f"/api/pairs/{pid}/photo.png?visibility=lifted&size=480", pages[pid]):
             assert client.get(url).status_code == 200, url

@@ -131,8 +131,8 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
     assert out["root"] == "os experiment" and "Тест материала" in out["head"] and "Принят" in out["head"] and "Заливка" in out["head"]   # task pill beside the title
     assert out["back"] == "#/experiments" and out["addPhoto"] == "#/ingest?rephoto=59"
     assert out["tabs"] == [["Результат", False], ["Матрица", False], ["Проверки (1)", False], ["Работа", False]] and out["shown"] == ["ep-tab-panel-result"]
-    assert out["photoTools"] == ["Скрыть контуры", "Обычная яркость"] and out["legend"] == ["Что означают линии"]
-    assert out["img"].startswith("/api/pairs/59/overlay.png?corrected=true&visibility=lifted&full=false") and "full=true" in out["full"]     # overlay first, lifted
+    assert out["photoTools"] == ["Скрыть контуры", "Поднять яркость"] and out["legend"] == ["Что означают линии"]
+    assert out["img"].startswith("/api/pairs/59/overlay.png?corrected=true&visibility=normal&full=false") and "full=true" in out["full"]     # overlay first, the corrected photograph as it is
     assert "проверка №59" in out["caption"] and "цвет по эталонной карте" in out["caption"]
     assert out["layers"] == 10 and out["layersHeading"][0] == "Измеренные слои · 10" and "Матрица параметров 1 × 10" in out["layersHeading"]
     assert len(out["alerts"]) == 1
@@ -164,12 +164,12 @@ def test_the_overlay_and_brightness_buttons_redraw_the_photo_and_are_remembered_
   const photo = tree.querySelectorAll('section').find((s) => has(s, 'ep-photo-col'));
   await byText(photo, 'button', 'Скрыть контуры').dispatch('click'); await tick();
   out.noContours = photo.querySelector('img').getAttribute('src'); out.stored = ctx.__session['experiment-contours'];
-  await byText(photo, 'button', 'Обычная яркость').dispatch('click'); await tick();
+  await byText(photo, 'button', 'Поднять яркость').dispatch('click'); await tick();
   out.normal = photo.querySelector('img').getAttribute('src'); out.light = ctx.__session['experiment-lifted'];
   out.buttons = photo.querySelectorAll('button').map((b) => b.textContent);
 """)
-    assert out["noContours"].startswith("/api/pairs/59/photo.png?corrected=true&visibility=lifted") and out["stored"] == "0"
-    assert "visibility=normal" in out["normal"] and out["light"] == "0" and out["buttons"] == ["Показать контуры", "Поднять яркость"]
+    assert out["noContours"].startswith("/api/pairs/59/photo.png?corrected=true&visibility=normal") and out["stored"] == "0"
+    assert "visibility=lifted" in out["normal"] and out["light"] == "1" and out["buttons"] == ["Показать контуры", "Обычная яркость"]
 
 
 @node

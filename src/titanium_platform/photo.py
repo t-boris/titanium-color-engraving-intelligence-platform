@@ -7,7 +7,9 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 * Reference patch values are the published sRGB (D65) values of the chart by default; every capture setup carries its
   own reference (24 Lab values with their white point and observer) as an explicit setting (DEC-025), and the correction
   of a photograph aims at the reference of the setup it was taken on.
-* Correction is a least-squares 3x3 matrix in linear RGB fitted on the 24 patches. The patches and the measured
+* Correction looks a colour up among the 24 patches as photographed (DEC-087): one smooth map (a 3x3 matrix with an offset) for
+  the whole range plus what that map misses at the nearest patches. The global least-squares 3x3 matrix of DEC-025 stays
+  selectable (``CALIBRATION``). The patches and the measured
   surface are taken from a 16-bit *linear* decode of the RAW (DEC-059): the 8-bit gamma-encoded decode read as sRGB
   under-read the dark tones up to threefold (chart black L* 13 instead of 21.7). The 8-bit decode serves detection,
   alignment and previews only. White point, observing conditions and the exact calibration method are not fixed by
@@ -17,6 +19,7 @@ Assumptions that the requirements leave open (all recorded as proposed decisions
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,8 +173,24 @@ def detect_chart(img_bgr: np.ndarray) -> Chart:
 @dataclass
 class Correction:
     matrix: np.ndarray  # 3x3, applied to linear RGB
-    residual: float     # mean patch delta E (CIE76) after correction
+    residual: float     # mean patch delta E (CIE76) after correction; for the look-up the leave-one-square-out error
     grey_ramp: dict | None = None   # L* of the six grey patches: reference, corrected (how the tones come out)
+    method: str = "matrix"          # "matrix" or "lookup" (DEC-087)
+    offset: np.ndarray | None = None        # look-up: the offset of the affine base (linear RGB)
+    gain: float = 1.0                       # look-up: brings the photographed white to about 1 before squares are compared
+    features: np.ndarray | None = None      # look-up: the 24 squares as photographed, gain-normalised and gamma-encoded
+    leftovers: np.ndarray | None = None     # look-up: Lab left at each square by the affine base (the local correction)
+    lut: np.ndarray | None = None           # look-up: the map sampled on a grid, for whole pictures
+
+
+CALIBRATION = "lookup"      # how correct() maps the photograph onto the chart: "lookup" (DEC-087) or the global "matrix" of DEC-025
+LOOKUP_NEAREST = 4          # squares whose known colours determine a colour
+LOOKUP_EPSILON = 1e-6       # keeps the weight of a colour that coincides with a square finite
+LOOKUP_FADE = 0.3           # distance (encoded RGB) at which the local correction has halved: far from every square only the base counts
+LOOKUP_RANGE = 2.0          # brightest colour mapped, in whites of the photograph (a specular plate is brighter than the white square)
+LUT_NODES = 41
+CHUNK = 400_000             # pixels mapped per thread task
+LUT_GAMMA = 2.2
 
 
 def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
@@ -190,6 +209,114 @@ def fit_correction_linear(patches_linear: np.ndarray, reference_rgb: np.ndarray 
     return Correction(matrix, residual, ramp)
 
 
+def _encode(corr_gain: float, linear: np.ndarray) -> np.ndarray:
+    """A photographed colour as it is compared with the squares: exposure-normalised (the white square is about 1) and gamma-encoded so
+    that distances follow what a person sees."""
+    return np.clip(np.asarray(linear, float) * corr_gain, 0, LOOKUP_RANGE) ** (1 / LUT_GAMMA)
+
+
+def _affine_base(src: np.ndarray, dst_linear: np.ndarray, dst_lab: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """3x3 matrix and offset (linear RGB) that bring the squares as photographed onto their known colours: the least-squares fit first,
+    then refined to minimise the colour difference in Lab (a person's measure), with a little pull toward the first."""
+    from scipy.optimize import least_squares
+    design = np.hstack([src, np.ones((len(src), 1))])
+    start, *_ = np.linalg.lstsq(design, dst_linear, rcond=None)
+
+    def residuals(p):
+        sol = p.reshape(start.shape)
+        diff = color.linear_rgb_to_lab(np.clip(design @ sol, 0, 1)) - dst_lab
+        return np.concatenate([diff.ravel(), 0.02 * (p - start.ravel()) / (np.abs(start.ravel()) + 1e-3)])
+
+    sol = least_squares(residuals, start.ravel(), method="lm", max_nfev=2000).x.reshape(start.shape)
+    return sol[:3].T, sol[3]
+
+
+def _lookup_lab(corr: Correction, linear: np.ndarray) -> np.ndarray:
+    """Lab of photographed colours (linear RGB, shape (n, 3)): the affine base, plus what the nearest squares show the base misses at
+    their own colours (inverse-square-distance weights), fading away from every square (DEC-087)."""
+    linear = np.asarray(linear, float).reshape(-1, 3)
+    out = np.empty_like(linear)
+    for start in range(0, len(linear), 200_000):
+        chunk = linear[start:start + 200_000]
+        base = color.linear_rgb_to_lab(np.clip(chunk @ corr.matrix.T + corr.offset, 0, 1))
+        enc = _encode(corr.gain, chunk)
+        dist = np.linalg.norm(enc[:, None, :] - corr.features[None, :, :], axis=2)
+        near = np.argpartition(dist, LOOKUP_NEAREST - 1, axis=1)[:, :LOOKUP_NEAREST]
+        d = np.take_along_axis(dist, near, axis=1)
+        w = 1.0 / (d ** 2 + LOOKUP_EPSILON)           # a colour that is a square takes that square's numbers exactly
+        local = (w[..., None] * corr.leftovers[near]).sum(axis=1) / w.sum(axis=1, keepdims=True)
+        out[start:start + 200_000] = base + local / (1.0 + (d.min(axis=1) / LOOKUP_FADE) ** 2)[:, None]
+    return out
+
+
+def _fit_lookup(src: np.ndarray, dst_linear: np.ndarray, dst_lab: np.ndarray) -> Correction:
+    matrix, offset = _affine_base(src, dst_linear, dst_lab)
+    white = max(float(src[18] @ (0.2126, 0.7152, 0.0722)), 1e-6)
+    corr = Correction(matrix, 0.0, method="lookup", offset=offset, gain=1.0 / white)
+    corr.features = _encode(corr.gain, src)
+    corr.leftovers = dst_lab - color.linear_rgb_to_lab(np.clip(src @ matrix.T + offset, 0, 1))
+    return corr
+
+
+def fit_lookup(patches_linear: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
+               target_linear: np.ndarray | None = None) -> Correction:
+    """The correction of DEC-087: a colour is looked up among the 24 squares as photographed and takes the numbers the nearest squares
+    have, on top of one smooth map fitted to all of them. ``residual`` is the honest error: each square is hidden in turn and guessed
+    from the other 23."""
+    src = np.clip(np.asarray(patches_linear, float), 0, None)
+    dst = color.srgb_to_linear(reference_rgb / 255.0) if target_linear is None else np.asarray(target_linear, float)
+    lab = color.linear_rgb_to_lab(dst)
+    corr = _fit_lookup(src, dst, lab)
+    hidden = []
+    for i in range(len(src)):
+        keep = np.arange(len(src)) != i
+        part = _fit_lookup(src[keep], dst[keep], lab[keep])
+        part.gain = corr.gain                        # the same exposure scale: one white, as in the whole fit
+        part.features = _encode(part.gain, src[keep])
+        hidden.append(np.linalg.norm(_lookup_lab(part, src[i:i + 1])[0] - lab[i]))
+    corr.residual = float(np.mean(hidden))
+    fitted = _lookup_lab(corr, src)
+    corr.grey_ramp = {"reference": [round(float(v), 1) for v in lab[18:24, 0]], "corrected": [round(float(v), 1) for v in fitted[18:24, 0]]}
+    corr.lut = _build_lut(corr)
+    return corr
+
+
+def _build_lut(corr: Correction) -> np.ndarray:
+    """The map on a grid of photographed colours (gamma-spaced, up to ``LOOKUP_RANGE`` whites), as corrected linear RGB; a whole picture
+    is mapped by trilinear interpolation in it."""
+    axis = np.linspace(0, 1, LUT_NODES) ** LUT_GAMMA * LOOKUP_RANGE / corr.gain           # photographed linear values of the nodes
+    grid = np.stack(np.meshgrid(axis, axis, axis, indexing="ij"), axis=-1).reshape(-1, 3)
+    return color.lab_to_linear_rgb(_lookup_lab(corr, grid)).reshape(LUT_NODES, LUT_NODES, LUT_NODES, 3).astype(np.float32)
+
+
+def _through_lut(corr: Correction, linear: np.ndarray) -> np.ndarray:
+    """Corrected linear RGB of a picture of photographed linear RGB (any shape (..., 3)): trilinear interpolation in the sampled map,
+    in chunks on several threads (numpy releases the GIL)."""
+    from concurrent.futures import ThreadPoolExecutor
+    flat = np.asarray(linear, np.float32).reshape(-1, 3)
+    out = np.empty_like(flat)
+    top = LUT_NODES - 1
+    scale = top / LOOKUP_RANGE ** (1 / LUT_GAMMA)
+    lut = corr.lut.reshape(-1, 3)
+
+    def chunk(start: int) -> None:
+        pos = _encode(corr.gain, flat[start:start + CHUNK]).astype(np.float32) * scale
+        lo = np.minimum(pos.astype(np.int32), top - 1)
+        t = pos - lo
+        base = (lo[:, 0] * LUT_NODES + lo[:, 1]) * LUT_NODES + lo[:, 2]
+        acc = np.zeros((len(pos), 3), np.float32)
+        for dr in (0, 1):
+            for dg in (0, 1):
+                for db in (0, 1):
+                    weight = (t[:, 0] if dr else 1 - t[:, 0]) * (t[:, 1] if dg else 1 - t[:, 1]) * (t[:, 2] if db else 1 - t[:, 2])
+                    acc += weight[:, None] * lut[base + (dr * LUT_NODES + dg) * LUT_NODES + db]
+        out[start:start + CHUNK] = acc
+
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        list(pool.map(chunk, range(0, len(flat), CHUNK)))
+    return out.reshape(np.shape(linear))
+
+
 def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
                    target_linear: np.ndarray | None = None) -> Correction:
     """The fit from the 8-bit decode's patches (sRGB 0..255); kept for photographs without a linear decode."""
@@ -199,6 +326,8 @@ def fit_correction(patches_rgb: np.ndarray, reference_rgb: np.ndarray = REFERENC
 def apply_correction(img_bgr: np.ndarray, corr: Correction, linear: np.ndarray | None = None) -> np.ndarray:
     """Corrected image as float sRGB (RGB order), values 0..1, from the linear decode when given."""
     lin = linear if linear is not None else color.srgb_to_linear(decoded_srgb(img_bgr))
+    if corr.method == "lookup":
+        return color.linear_to_srgb(np.clip(_through_lut(corr, lin), 0, 1))
     return color.linear_to_srgb(np.clip(lin @ corr.matrix.T, 0, 1))
 
 
@@ -240,7 +369,7 @@ def correct(img_bgr: np.ndarray, reference_rgb: np.ndarray = REFERENCE_SRGB,
         except PhotoError as exc:
             chart.reason = str(exc)
             return None, chart, None
-        corr = fit_correction_linear(chart.patches_linear, reference_rgb, target)
+        corr = (fit_lookup if CALIBRATION == "lookup" else fit_correction_linear)(chart.patches_linear, reference_rgb, target)
     else:
         corr = fit_correction(chart.patches_rgb, reference_rgb, target)
     if corr.residual > MAX_CORRECTION_RESIDUAL:

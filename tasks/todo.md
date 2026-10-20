@@ -1064,14 +1064,22 @@ Pooling the three measurement bases of one setting; a screen for the dE 5 agreem
 Decided by the operator: the colour of a layer is taken like an eyedropper from the picture (DEC-085); the default Q-pulse is 200 ns and is set in the parameters.
 Evidence added: the camera's own exposure is not steady - the chart white reads L 72..91 over 14 photographs (median 82.5), so one recipe photographed twice can differ by
 several L*; the same-recipe agreement (dE 5) will count some repeats as differing. Recorded in DEC-085; the operator is told, not asked.
-- [ ] 0.13.0 P1 `photo.decode_picture(path, shape, allow_non_raw)`: the embedded preview of a RAW (same aspect as the decode, resized to its shape), else the RAW
-      developed with camera white balance and automatic brightness; a non-RAW image is itself. Returns the picture and where it came from.
-- [ ] P2 `ingest`: setting `measurement_basis` ("picture" default of the app, "chart"); the picture basis measures from the picture (mode `camera_picture`), reads
-      the chart only as evidence (the picture's own white / grey / black), does not need a chart. Tests' default stays "chart" (conftest) so the old tests keep their path.
-- [ ] P3 One predicate for "a standard (absolute) measurement" (`is_standard(mode)`) instead of `== "reference_chart_corrected"` at 14 places; colour-map kind `picture`
-      (absolute, labelled "как на снимке"), basis token `picture`, palette and model treat it like `calibrated`; UI labels and filter.
-- [ ] P4 The photograph views of a check (preview, overlay) show the measured picture when the basis is `picture`.
-- [ ] P5 Tests (pure + node + ingest on a synthetic non-RAW image + the real data copy), README, version 0.13.0, DB backup, wheel, deploy; nothing pushed.
-- [ ] 0.13.1 Default Q-pulse width as a parameter of the laser (passport `default_pulse_width_ns`, 200 for the JPT M7 template and for the operator's laser): a layer whose
+- [-] 0.13.0 P1-P5 (eyedropper on the camera's embedded preview, `measurement_basis`, `is_standard`): DROPPED 2026-10-20 after the measurement: the preview reads the
+      chart 20 L* darker than the real chart and changes with the exposure (DEC-085 rejected). Replaced by DEC-087 (look-up among the 24 squares), below.
+- [x] 0.13.0 (released, deployed to 8765, not pushed) Default Q-pulse width as a parameter of the laser (passport `default_pulse_width_ns`, 200 for the JPT M7 template and for the operator's laser): a layer whose
       file has no QPulseWidth takes it with the provenance "laser default"; shown as such; DEC about the rule "nothing is filled in automatically" (REQ-015/016).
 - [ ] 0.13.2 Re-measure an experiment (`create_alignment_revision` + check + accept; one button, and all experiments with a before / after report on a COPY first).
+
+### 0.13.1: the colour is found among the 24 squares; the screens show the picture the numbers come from (operator, 2026-10-20; DEC-087, proposed)
+Operator: "work in the other direction: you know the 24 squares; take the colour with an eyedropper and find it among the squares; why lighten or darken at all?"
+- [x] Measured on 15 charted photographs (leave one square out): global matrix 4.5 dE (dark squares 5.0, worst 12.9); matrix + offset 3.8; radial basis 4.5-4.7;
+      look-up of the 4 nearest squares on an affine base 3.6 (dark 3.1, worst 8.8). Check 60: grey ramp 95.8/80.6/66.1/51.3/36.5/21.7 against 95.8/80.6/65.9/51.2/36.1/21.7.
+- [x] `photo.fit_lookup` (affine base in Lab + nearest-squares local correction, honest leave-one-out residual), picture map through a 41-node LUT in threads, `CALIBRATION`
+      switch ("lookup" default, "matrix" kept); `tests/test_lookup_correction.py` (8 tests).
+- [x] Screens: the check screen opens on the corrected picture when the chart is usable and does not lift it; the experiment screen lifts only the uncorrected RAW unless the
+      operator chooses; the cache pre-warm follows the same rule.
+- Finding: the layer colours of check 60 change little (mean dE 2.6, mean L 79.8 -> 80.1): the "lightening" was the exposure of the white square and, on screen, the gamma lift
+  of 0.58 on top of the corrected picture / the dark uncorrected default view. Specular layers C05, C07, C10 still saturate (L 98-99).
+- [ ] Open: layers brighter than the white square (flag "above the chart's white"); pixels of a layer covered by an earlier engraving (the pink / green areas missing from the list);
+      IMG_Lion chart read wrongly (grey ramp not monotonic, residual 38) - must be refused with a clear message; all LightBurn parameters shown with defaults (TC timings unknown);
+      0.13.2 re-measure (rehearse on a copy, before / after report, ask before applying to the real data).

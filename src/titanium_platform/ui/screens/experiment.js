@@ -35,7 +35,9 @@
     const pairs = exp.pairs;
     const wanted = Number(ctx.query.check);
     let current = pairs.find((p) => p.id === wanted) || pairs.find((p) => p.id === exp.main_pair_id) || pairs[pairs.length - 1] || null;
-    let lifted = sessionStorage.getItem('experiment-lifted') !== '0';
+    // null until the operator chooses: the corrected photograph is shown as it is, the uncorrected (dark) RAW is lifted
+    const storedLift = sessionStorage.getItem('experiment-lifted');
+    let lifted = storedLift === null ? null : storedLift !== '0';
     let contours = sessionStorage.getItem('experiment-contours') !== '0';
 
     // -- фото с наложением: первый блок страницы, показывается всегда ----------------------------------------------
@@ -48,9 +50,10 @@
     // the photograph is shown the way its colours were measured: corrected by the chart when a chart was used,
     // so that the swatches and the picture share one exposure (the RAW as shot is darker)
     const shownCorrected = (pair) => pair.measurement === 'reference_chart_corrected';
+    const isLifted = (pair) => lifted === null ? !(pair && shownCorrected(pair)) : lifted;
     function url(pair) {
       const base = '/api/pairs/' + pair.id, stamp = pair.accepted_at || pair.created_at || '';
-      const view = `corrected=${shownCorrected(pair)}&visibility=${lifted ? 'lifted' : 'normal'}&full=false&t=${encodeURIComponent(stamp)}`;
+      const view = `corrected=${shownCorrected(pair)}&visibility=${isLifted(pair) ? 'lifted' : 'normal'}&full=false&t=${encodeURIComponent(stamp)}`;
       return contours && pair.alignment ? `${base}/overlay.png?${view}` : `${base}/photo.png?${view}`;
     }
     function showPhoto() {
@@ -63,9 +66,9 @@
       }
       const img = h('img', {class: 'ep-photo', alt: `Фото «${current.photo_name}» с наложением контуров`, src: url(current)});
       img.addEventListener('error', () => {       // проверка ещё не выровняла фото: покажем снимок без контуров
-        if (!img.dataset.plain) { img.dataset.plain = '1'; img.src = `/api/pairs/${current.id}/photo.png?corrected=${shownCorrected(current)}&visibility=${lifted ? 'lifted' : 'normal'}&full=false`; }
+        if (!img.dataset.plain) { img.dataset.plain = '1'; img.src = `/api/pairs/${current.id}/photo.png?corrected=${shownCorrected(current)}&visibility=${isLifted(current) ? 'lifted' : 'normal'}&full=false`; }
       });
-      stage.replaceChildren(h('a', {href: `/api/pairs/${current.id}/overlay.png?corrected=${shownCorrected(current)}&full=true&visibility=${lifted ? 'lifted' : 'normal'}`,
+      stage.replaceChildren(h('a', {href: `/api/pairs/${current.id}/overlay.png?corrected=${shownCorrected(current)}&full=true&visibility=${isLifted(current) ? 'lifted' : 'normal'}`,
         target: '_blank', rel: 'noopener', title: 'Открыть в полном размере'}, img));
       const method = current.alignment ? `Выравнивание ${ALIGN[current.alignment] || current.alignment}` : 'Фото ещё не выровнено';
       caption.textContent = `${current.photo_name} · проверка №${current.id} · ${method}`
@@ -75,7 +78,7 @@
     function showTools() {
       photoTools.replaceChildren(
         btn(contours ? 'Скрыть контуры' : 'Показать контуры', () => { contours = !contours; sessionStorage.setItem('experiment-contours', contours ? '1' : '0'); refreshAll(); }, 'btn-small'),
-        btn(lifted ? 'Обычная яркость' : 'Поднять яркость', () => { lifted = !lifted; sessionStorage.setItem('experiment-lifted', lifted ? '1' : '0'); refreshAll(); }, 'btn-small'),
+        btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость', () => { lifted = !isLifted(current); sessionStorage.setItem('experiment-lifted', lifted ? '1' : '0'); refreshAll(); }, 'btn-small'),
         h('details', {class: 'ep-legend small muted'}, h('summary', {}, 'Что означают линии'),
           h('p', {}, 'Зелёные линии — контуры картинки, найденные на фото; цветные — векторы LightBurn; розовые — продолжение под рамкой.')));
     }

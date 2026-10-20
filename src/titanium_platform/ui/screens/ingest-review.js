@@ -17,7 +17,8 @@ const IngestReview = (() => {
       if (!flag.checked) return;
       try { await post(`/pairs/${pair.id}/review-masks`); reload(); } catch (e) { flag.checked = false; fail(e); }
     });
-    let corrected = false, visibility = 'lifted', selectedLayer = 'all', editing = false;
+    // the picture the numbers come from is shown first: corrected by the chart when the chart is usable, as it is (the lifted dark RAW) otherwise
+    let corrected = pair.check?.chart?.usable === true, visibility = corrected ? 'normal' : 'lifted', selectedLayer = 'all', editing = false;
     let shift = [0, 0], rotation = 0, schemeScale = 100, mirrorHorizontal = false,
       mirrorVertical = false, viewRotation = 0, zoom = 100, drag = null, highDetail = false;
     const photoSrc = () => `/api/pairs/${pair.id}/photo.png?corrected=${corrected}&visibility=${visibility}&full=${highDetail}&t=${Date.now()}`;
