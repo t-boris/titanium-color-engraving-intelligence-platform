@@ -8,7 +8,7 @@
    файл она не трогает. Вкладка узкая, поэтому слои идут строками, а подробности открываются по нажатию. */
 'use strict';
 const VectorReview = (() => {
-  const {h, btn, num, link, modal} = App;
+  const {h, fill, btn, num, link, modal} = App;
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
   const rgb = (c, title) => h('span', {class: 'sw', style: `background:rgb(${c.join(',')})`, title});
   const signed = (v, d = 1) => (v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d));
@@ -54,8 +54,8 @@ const VectorReview = (() => {
     }
     const current = reviews.find((r) => r.engraving_id === shown.get(j.id)) || reviews[0];
     const body = h('div', {class: 'stack'});
-    const picker = reviews.length > 1 ? h('select', {'aria-label': 'Гравировка', onChange: (ev) => { shown.set(j.id, ev.target.value); body.replaceChildren(...content(ev.target.value)); }},
-      reviews.map((r) => h('option', {value: r.engraving_id, selected: r.engraving_id === current.engraving_id}, `${r.photo_name} · ${when(r.reviewed_at)}`))) : h('span');
+    const picker = reviews.length > 1 ? h('select', {'aria-label': 'Гравировка', onChange: (ev) => { shown.set(j.id, ev.target.value); fill(body, content(ev.target.value)); }},
+      reviews.map((r) => h('option', {value: r.engraving_id, selected: r.engraving_id === current.engraving_id}, `${r.photo_name} · ${when(r.reviewed_at)}`))) : null;
     function content(id) {
       const r = reviews.find((x) => x.engraving_id === id) || current, t = r.summary;
       const rows = [...r.rows].sort((a, b) => b.delta_e - a.delta_e);
@@ -64,20 +64,20 @@ const VectorReview = (() => {
         h('figcaption', {class: 'small muted'}, promised ? 'как обещал файл' : 'как получилось'));
       return [
         h('p', {class: 'small'}, `Фото ${r.photo_name} · ${when(r.reviewed_at)} · ` + (r.export_number ? `файл № ${r.export_number}` : 'работа ещё не выгружалась')),
-        r.approximate ? h('div', {class: 'alert warn'}, 'Файл создан до того, как работа стала запоминать обещанные цвета, поэтому «обещано» взято из слоёв работы такими, как они сохранены сейчас.') : h('span'),
+        r.approximate ? h('div', {class: 'alert warn'}, 'Файл создан до того, как работа стала запоминать обещанные цвета, поэтому «обещано» взято из слоёв работы такими, как они сохранены сейчас.') : null,
         t.matched === 0 ? h('div', {class: 'alert warn'}, 'Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в LightBurn '
           + 'или сделали не из этой работы): сравнивать нечего.')
           : h('p', {}, `Совпало слоёв ${t.matched} из ${t.promised} обещанных. Средняя разница ${num(t.mean_delta_e, 1)} ΔE по площади; заметно отличаются ${t.beyond_layers} слоёв `
             + `(${percent(t.area_share_beyond)} площади). Порог ${num(r.limit, 1)} ΔE.`),
         ...r.notes.map((n) => h('div', {class: 'alert'}, (NOTE[n.code] || (() => n.code))(n))),
-        t.matched ? h('div', {class: 'vw-review-pics'}, pic(true), pic(false)) : h('span'),
-        rows.length ? h('div', {class: 'vw-lines'}, rows.map(rowLine)) : h('span'),
+        t.matched ? h('div', {class: 'vw-review-pics'}, pic(true), pic(false)) : null,
+        rows.length ? h('div', {class: 'vw-lines'}, rows.map(rowLine)) : null,
         r.not_engraved.length ? h('details', {class: 'vw-details'}, h('summary', {}, `Обещаны, но на фото не найдены (${r.not_engraved.length})`),
-          h('div', {class: 'vw-lines'}, r.not_engraved.map((n) => h('div', {class: 'vw-line'}, h('span', {}, n.name), h('span', {class: 'small muted'}, sq(n.area_mm2)))))) : h('span'),
+          h('div', {class: 'vw-lines'}, r.not_engraved.map((n) => h('div', {class: 'vw-line'}, h('span', {}, n.name), h('span', {class: 'small muted'}, sq(n.area_mm2)))))) : null,
         r.unmatched.length ? h('details', {class: 'vw-details'}, h('summary', {}, `Есть на фото, но не в файле работы (${r.unmatched.length})`),
-          h('div', {class: 'vw-lines'}, r.unmatched.map((n) => h('div', {class: 'vw-line'}, h('span', {}, n.name))))) : h('span')];
+          h('div', {class: 'vw-lines'}, r.unmatched.map((n) => h('div', {class: 'vw-line'}, h('span', {}, n.name))))) : null];
     }
-    body.replaceChildren(...content(current.engraving_id));
+    fill(body, content(current.engraving_id));
     return h('div', {class: 'stack'}, head, picker, body);
   }
 
@@ -91,8 +91,8 @@ const VectorReview = (() => {
       self.disabled = false;
     }, 'btn-small');
     return h('div', {class: 'vw-line'},
-      h('span', {class: 'small'}, rgb(p.srgb, 'исходный цвет'), p.delta_e_now == null ? 'цвет без измерения' : `сейчас ΔE ${num(p.delta_e_now, 1)}`,
-        ' → ', rgb(p.entry_srgb, 'предлагается'), `ΔE ${num(p.delta_e_proposed, 1)}`), apply);
+      h('span', {class: 'small'}, rgb(p.srgb, 'исходный цвет'), p.delta_e_now == null ? 'цвет без измерения' : `до исходного ΔE ${num(p.delta_e_now, 1)}`,
+        ' → ', rgb(p.entry_srgb, 'предлагается'), `${num(p.delta_e_proposed, 1)}`), apply);
   }
 
   function driftBlock(j, run) {
@@ -111,13 +111,13 @@ const VectorReview = (() => {
     return h('div', {class: 'stack'}, head,
       h('div', {class: 'alert warn'}, `Цвет ${a.layers.length} из ${a.layers_total} слоёв файла ушёл от обещанного больше чем на ${num(a.visible_de, 0)} ΔE (${percent(a.area_share)} площади).`
         + ' Выгравированный файл не меняется; замена правит только работу, её можно отменить.'),
-      a.approximate ? h('p', {class: 'small muted'}, 'Файл создан до того, как работа стала запоминать обещанные цвета: «обещано» восстановлено по слоям работы, какими они были при выгрузке.') : h('span'),
-      every || h('span'),
+      a.approximate ? h('p', {class: 'small muted'}, 'Файл создан до того, как работа стала запоминать обещанные цвета: «обещано» восстановлено по слоям работы, какими они были при выгрузке.') : null,
+      every,
       a.layers.map((l) => h('div', {class: 'stack vw-drift'},
         h('div', {class: 'vw-line'}, h('span', {}, rgb(l.was_srgb, 'обещано'), l.missing ? ' → цвет больше не измерен' : [' → ', rgb(l.now_srgb, 'сейчас')], ` ${l.name}`),
           h('span', {class: 'small vw-bad'}, l.delta_e == null ? sq(l.area_mm2) : `ΔE ${num(l.delta_e, 1)} · ${sq(l.area_mm2)}`)),
         ...l.proposals.filter((p) => p.entry_id).map((p) => replacement(p, run)),
-        l.proposals.some((p) => !p.entry_id) ? h('p', {class: 'small muted'}, 'Для остальных исходных цветов этого слоя ближе измеренного цвета нет.') : h('span'))));
+        l.proposals.some((p) => !p.entry_id) ? h('p', {class: 'small muted'}, 'Для остальных исходных цветов этого слоя ближе измеренного цвета нет.') : null)));
   }
 
   /** Вкладка «Результат»: итог последней гравировки и цвета после новых измерений. ``run`` отправляет правку раскраски в очередь экрана. */
