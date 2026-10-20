@@ -1059,3 +1059,19 @@ Pooling the three measurement bases of one setting; a screen for the dE 5 agreem
 3. B1: the Q-pulse and TC values LightBurn shows for the cleaning layer and C16 of "Inna + Boris 2" (or the device settings).
 4. C1: supersede-by-link (recommended), or something else.
 5. Order: A, then C, then B (recommended; B does not change existing observations).
+
+### 0.13.x plan after the operator's decisions of 2026-10-20 (DEC-085 pipette; "Q-Pulse default is 200, set it in the parameters")
+Decided by the operator: the colour of a layer is taken like an eyedropper from the picture (DEC-085); the default Q-pulse is 200 ns and is set in the parameters.
+Evidence added: the camera's own exposure is not steady - the chart white reads L 72..91 over 14 photographs (median 82.5), so one recipe photographed twice can differ by
+several L*; the same-recipe agreement (dE 5) will count some repeats as differing. Recorded in DEC-085; the operator is told, not asked.
+- [ ] 0.13.0 P1 `photo.decode_picture(path, shape, allow_non_raw)`: the embedded preview of a RAW (same aspect as the decode, resized to its shape), else the RAW
+      developed with camera white balance and automatic brightness; a non-RAW image is itself. Returns the picture and where it came from.
+- [ ] P2 `ingest`: setting `measurement_basis` ("picture" default of the app, "chart"); the picture basis measures from the picture (mode `camera_picture`), reads
+      the chart only as evidence (the picture's own white / grey / black), does not need a chart. Tests' default stays "chart" (conftest) so the old tests keep their path.
+- [ ] P3 One predicate for "a standard (absolute) measurement" (`is_standard(mode)`) instead of `== "reference_chart_corrected"` at 14 places; colour-map kind `picture`
+      (absolute, labelled "как на снимке"), basis token `picture`, palette and model treat it like `calibrated`; UI labels and filter.
+- [ ] P4 The photograph views of a check (preview, overlay) show the measured picture when the basis is `picture`.
+- [ ] P5 Tests (pure + node + ingest on a synthetic non-RAW image + the real data copy), README, version 0.13.0, DB backup, wheel, deploy; nothing pushed.
+- [ ] 0.13.1 Default Q-pulse width as a parameter of the laser (passport `default_pulse_width_ns`, 200 for the JPT M7 template and for the operator's laser): a layer whose
+      file has no QPulseWidth takes it with the provenance "laser default"; shown as such; DEC about the rule "nothing is filled in automatically" (REQ-015/016).
+- [ ] 0.13.2 Re-measure an experiment (`create_alignment_revision` + check + accept; one button, and all experiments with a before / after report on a COPY first).
