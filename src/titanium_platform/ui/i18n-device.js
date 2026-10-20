@@ -15,6 +15,8 @@ I18N.add([
   [/^pulse widths must not repeat/i, 'Длительности импульса в таблице не должны повторяться'],
   [/^pulse width (\S+) ns is not a selectable step of this laser; the steps are (.+)$/i,
     (m) => 'Длительность импульса ' + m[1] + ' нс — не ступень этого лазера: лазер её проигнорирует и оставит прежнюю. Доступны (нс): ' + m[2]],
+  [/^the default pulse width (\S+) ns is not a step of this laser; the steps are (.+)$/i,
+    (m) => 'Q-Pulse по умолчанию ' + m[1] + ' нс — не ступень этого лазера. Доступны (нс): ' + m[2]],
   [/^the laser device was not found/i, 'Лазер не найден'],
   [/^this laser is named by (\d+) stored records of work and keeps their history/i, (m) => 'Лазер указан в сохранённых записях работ (' + m[1] + ') и хранит их историю: удалить его нельзя'],
   [/^the laser template is not known/i, 'Шаблон лазера неизвестен'],

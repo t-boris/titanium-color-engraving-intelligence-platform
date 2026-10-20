@@ -388,7 +388,8 @@ const IngestReview = (() => {
       }
       const input = h('input', {type: 'number', step: 'any', min: 0, style: 'width:8em', 'aria-label': `${label}, слой ${layer.name}`,
         list: setting === 'pulse_width' && steps.length ? listId : null});
-      return h('div', {class: 'row small'}, h('span', {}, `${label}${unit ? ', ' + unit : ''}: нет в файле`), input,
+      const byDefault = (layer.defaulted_settings || {})[setting];
+      return h('div', {class: 'row small'}, h('span', {}, byDefault ? `${label}: в файле не записан, по умолчанию лазера ${byDefault.value}${unit ? ' ' + unit : ''}; другое значение:` : `${label}${unit ? ', ' + unit : ''}: нет в файле`), input,
         btn('Сохранить', (ev) => {
           const self = ev.currentTarget;
           if (input.value.trim() === '') { fail(new Error('Введите значение')); return; }
@@ -396,7 +397,7 @@ const IngestReview = (() => {
         }, 'btn-small primary'));
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Настройки, которых нет в файле LightBurn'),
-      h('p', {class: 'muted small'}, 'Без них слой не сопоставим и не попадает в модель: приложение ничего не подставляет само. '
+      h('p', {class: 'muted small'}, 'Без них слой не сопоставим и не попадает в модель. Приложение подставляет только то, что задано в параметрах лазера (сейчас — Q-Pulse по умолчанию): LightBurn не записывает значение, равное умолчанию. '
         + 'Если вы знаете, с какой настройкой гравировался слой, впишите её. Она сохранится с пометкой «введено оператором» и временем, '
         + 'пара будет проверена заново, а принятое наблюдение запомнит, какие настройки взяты из файла, а какие введены вами. '
         + 'Значения, прочитанные из файла, не меняются.'

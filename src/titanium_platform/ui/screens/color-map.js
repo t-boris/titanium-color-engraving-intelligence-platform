@@ -17,7 +17,7 @@ const ColorMap = (() => {
     return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
   }
   const settings = (p) => [p.power == null ? null : `${num(p.power, 1)}%`, p.frequency == null ? null : `${num(p.frequency, 0)} кГц`,
-    p.speed == null ? null : `${num(p.speed, 0)} мм/с`, p.pulse_width == null ? 'Q-Pulse нет в файле' : `${num(p.pulse_width, 0)} нс`,
+    p.speed == null ? null : `${num(p.speed, 0)} мм/с`, p.pulse_width == null ? 'Q-Pulse не записан' : `${num(p.pulse_width, 0)} нс`,
     p.line_interval == null ? null : `шаг ${num(p.line_interval, 4)} мм`, p.passes == null ? null : `${p.passes} проход(а)`].filter(Boolean).join(' · ');
   const when = (iso) => (iso || '').slice(0, 10);
   // REQ-035, DEC-075: время гравировки рецепта — оценка по его настройкам; фильтр хранит секунды, показывает минуты:секунды

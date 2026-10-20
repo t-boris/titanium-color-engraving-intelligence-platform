@@ -64,6 +64,7 @@ REQUIRED_SETTINGS = {"power": ("maxPower", "power"), "frequency": ("frequency", 
                      "pulse_width": ("QPulseWidth", "pulse_width"), "line_interval": ("interval", "line_interval"),
                      "passes": ("numPasses", "passes")}
 SUPPLIED_BY = "operator"
+DEFAULTED = "laser default"          # a setting the file leaves out and the laser's passport gives a default for (DEC-086)
 # The settings of a cell of a photographed parameter matrix: read from the photograph and confirmed by the operator; the
 # LightBurn file of such a pair is generated from them, so it is never evidence of its own (REQ-036, DEC-061, DEC-072).
 RECONSTRUCTED = "reconstruction"
@@ -756,6 +757,27 @@ def missing_settings(layer: lb.Layer) -> list[str]:
     return out
 
 
+def laser_defaults(passport: dict, settings: list[str]) -> dict:
+    """The settings of ``settings`` that the laser gives a default for: LightBurn leaves a setting out of a layer when it is at
+    the default, so a layer without the tag has that value (DEC-086). Only the pulse width has a default in the passport."""
+    width = passport.get("default_pulse_width_ns")
+    if "pulse_width" in settings and width is not None:
+        return {"pulse_width": {"value": width, "source": DEFAULTED}}
+    return {}
+
+
+def effective_setting(rep: dict, setting: str):
+    """The value of a required setting of a layer report: the file's, else the operator's, else the laser's default."""
+    field = REQUIRED_SETTINGS[setting][1]
+    if rep.get(field) is not None:
+        return rep[field]
+    for source in ("supplied_settings", "defaulted_settings"):
+        entry = (rep.get(source) or {}).get(setting)
+        if entry:
+            return entry["value"]
+    return None
+
+
 def supplied_value(passport: dict, setting: str, value) -> float | int:
     """A setting the operator supplies for a layer, checked as a plate's setting is: a pulse width must be a step of the
     laser (refused with the steps listed), a frequency within the laser's repetition-rate range, a power above 0 and up
@@ -789,8 +811,9 @@ def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) 
     the report lists the settings missing from the file and the supplied ones apart."""
     missing = missing_settings(layer)
     given = {k: v for k, v in (supplied or {}).items() if k in missing}
-    value = {k: given[k]["value"] if k in given else _file_value(layer, k) for k in REQUIRED_SETTINGS}
-    resolved = {f"{REQUIRED_SETTINGS[k][0]}: missing" for k in given}
+    defaulted = laser_defaults(passport, [k for k in missing if k not in given])
+    value = {k: given[k]["value"] if k in given else defaulted[k]["value"] if k in defaulted else _file_value(layer, k) for k in REQUIRED_SETTINGS}
+    resolved = {f"{REQUIRED_SETTINGS[k][0]}: missing" for k in (*given, *defaulted)}
     unreadable = [n for n in layer.unreadable if n not in resolved]
     notes, compatible = [], True
     if unreadable:
@@ -821,7 +844,7 @@ def layer_report(layer: lb.Layer, passport: dict, supplied: dict | None = None) 
             "bidirectional": layer.bidirectional, "cross_hatch": layer.cross_hatch, "scan_angle": layer.scan_angle,
             "angle_increment": layer.angle_increment, "source_settings": layer.source_settings,
             "regions": len(layer.regions), "readable": not unreadable, "missing_settings": missing, "supplied_settings": given,
-            "compatible": compatible, "notes": notes, "measured_lab": None, "pixels": None,
+            "defaulted_settings": defaulted, "compatible": compatible, "notes": notes, "measured_lab": None, "pixels": None,
             **({"image": image} if image else {})}
 
 
@@ -2265,8 +2288,8 @@ def settings_provenance(rep: dict) -> dict:
     None (unknown)."""
     if rep.get("matrix_cell") is not None:
         return {k: RECONSTRUCTED if rep.get(field) is not None else None for k, (_, field) in REQUIRED_SETTINGS.items()}
-    supplied = rep.get("supplied_settings") or {}
-    return {k: "file" if rep.get(field) is not None else SUPPLIED_BY if k in supplied else None
+    supplied, defaulted = rep.get("supplied_settings") or {}, rep.get("defaulted_settings") or {}
+    return {k: "file" if rep.get(field) is not None else SUPPLIED_BY if k in supplied else DEFAULTED if k in defaulted else None
             for k, (_, field) in REQUIRED_SETTINGS.items()}
 
 
@@ -2274,9 +2297,7 @@ def observation_parameters(passport: dict, rep: dict) -> tuple[dict, str | None]
     """The settings an observation of a layer report stores, and why they are not a parameter vector of this laser (None
     when they are): the six settings and the LightBurn execution controls of the layer. A setting the file lacks takes
     the value the operator supplied for it, if any (REQ-015)."""
-    supplied = rep.get("supplied_settings") or {}
-    v = {k: rep.get(field) if rep.get(field) is not None else (supplied.get(k) or {}).get("value")
-         for k, (_, field) in REQUIRED_SETTINGS.items()}
+    v = {k: effective_setting(rep, k) for k in REQUIRED_SETTINGS}
     param_error = None
     try:
         if None in (v["power"], v["frequency"], v["speed"]):         # an unreadable layer of a restored file
@@ -2348,6 +2369,7 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
                         "matrix_cell": rep.get("matrix_cell"), "task": rep.get("task") or layer_task(pair, plan, rep),
                         # which settings the file holds and which the operator supplied, with who and when (REQ-016)
                         "settings_provenance": settings_provenance(rep), "supplied_settings": rep.get("supplied_settings") or None,
+                        "defaulted_settings": rep.get("defaulted_settings") or None,
                         # a matrix cell: who confirmed the reconstructed settings and when (REQ-036, DEC-061)
                         "reconstruction": {"from": RECONSTRUCTED_FROM, "confirmed_by": SUPPLIED_BY,
                                            "confirmed_at": pair["matrix"].get("confirmed_at")} if rep.get("matrix_cell") else None}

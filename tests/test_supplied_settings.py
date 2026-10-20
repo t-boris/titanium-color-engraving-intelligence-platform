@@ -18,9 +18,11 @@ JOB = {"pulse_width": 200, "line_interval": 0.025, "passes": 1}
 FILE_FIELDS = ("power", "frequency_khz", "speed", "pulse_width", "line_interval", "passes")
 
 
-def plate_world(store):
+def plate_world(store, default_pulse_width=None):
+    """``default_pulse_width``: the laser's Q-Pulse default (DEC-086); the template carries 200, these tests are about a laser without one."""
     store.set_setting("allow_non_raw_photos", True)          # tests use PNG renders; real use requires RAW
     device = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    device = devices.update_device(store, device["id"], passport={**device["passport"], "default_pulse_width_ns": default_pulse_width})
     lens = lenses.create_lens(store, "F-Theta 174", 174, 170)
     lenses.install(store, device["id"], lens["id"])
     stand = su.save_capture_setup(store, "Rig", "cam", "LED", "90", "ColorChecker Classic")

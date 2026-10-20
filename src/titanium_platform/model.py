@@ -20,6 +20,13 @@ import numpy as np
 from . import agreement, color, lightburn, tasks
 from .db import Store
 
+
+def effective_setting(rep: dict, setting: str):
+    """The value of a setting of a layer report (the file's, the operator's or the laser's default): see ``ingest.effective_setting``."""
+    from . import ingest
+    return ingest.effective_setting(rep, setting)
+
+
 CONFIDENCE_K = agreement.CONFIDENCE_K
 
 
@@ -358,7 +365,7 @@ def camera_relative_sets(store: Store, device_id: int, lens_id: int | None) -> l
             if rep.get("measured_lab") is None:
                 continue
             params = {"power": rep.get("power"), "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
-                      "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
+                      "pulse_width": effective_setting(rep, "pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
                       "layer_type": rep.get("type"), "global_passes": rep.get("global_passes"),
                       "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
                       "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),

@@ -36,7 +36,7 @@
     if (s.power != null) parts.push(`${num(s.power, 1)} %`);
     if (s.frequency != null) parts.push(`${num(s.frequency, 1)} кГц`);
     if (s.speed != null) parts.push(`${num(s.speed, 0)} мм/с`);
-    parts.push(s.pulse_width != null ? `Q-Pulse ${num(s.pulse_width, 0)} нс` : 'Q-Pulse нет в файле');
+    parts.push(s.pulse_width != null ? `Q-Pulse ${num(s.pulse_width, 0)} нс` : s.defaulted_settings?.pulse_width ? `Q-Pulse ${num(s.defaulted_settings.pulse_width.value, 0)} нс (по умолчанию лазера)` : 'Q-Pulse не задан');
     if (s.layer_type !== 'Cut' && s.line_interval != null) parts.push(`шаг ${num(s.line_interval, 4)} мм`);
     if (s.passes != null) parts.push(`${s.passes} проход(а)${!source.numPasses ? ' (по умолчанию)' : ''}`);
     if (s.global_passes != null) parts.push(`глобальных проходов ${s.global_passes}${!source.globalRepeat ? ' (по умолчанию)' : ''}`);
@@ -61,7 +61,7 @@
       ['Мощность', s.power == null ? 'нет в файле' : `${num(s.power, 2)} %`],
       ['Частота', s.frequency == null ? 'нет в файле' : `${num(s.frequency, 2)} кГц`],
       ['Скорость', s.speed == null ? 'нет в файле' : `${num(s.speed, 2)} мм/с`],
-      ['Q-Pulse', s.pulse_width == null ? 'нет в файле' : `${num(s.pulse_width, 2)} нс`],
+      ['Q-Pulse', s.pulse_width != null ? `${num(s.pulse_width, 2)} нс` : s.defaulted_settings?.pulse_width ? `${num(s.defaulted_settings.pulse_width.value, 2)} нс (по умолчанию лазера)` : 'не задан'],
       ['Интервал линий', s.layer_type === 'Cut' ? 'не применяется к линии' : s.line_interval == null ? 'нет в файле' : `${num(s.line_interval, 4)} мм`],
       ['Проходы слоя', s.passes == null ? 'нет в файле' : sourced('numPasses', String(s.passes))],
       ['Глобальные проходы', s.global_passes == null ? 'нет в файле' : sourced('globalRepeat', String(s.global_passes))],

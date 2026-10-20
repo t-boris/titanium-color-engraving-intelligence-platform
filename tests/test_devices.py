@@ -153,6 +153,9 @@ def test_a_passport_edit_does_not_depend_on_stored_job_settings(store):
     d = jpt(store)
     _plates(store, d["id"])                                               # stored work used the 200 ns step
     trimmed = dict(d["passport"], pulse_steps=[s for s in d["passport"]["pulse_steps"] if s["pulse_width_ns"] != 200])
+    with pytest.raises(su.ValidationError, match="default pulse width 200 ns is not a step"):         # the default is one of the steps (DEC-086)
+        dv.update_device(store, d["id"], passport=trimmed)
+    trimmed["default_pulse_width_ns"] = None
     assert len(dv.update_device(store, d["id"], passport=trimmed)["passport"]["pulse_steps"]) == 16
 
 

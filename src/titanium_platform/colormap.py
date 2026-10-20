@@ -165,7 +165,7 @@ def expressed(lab: list[float], kind: str, clean: list[float] | None, nominal: l
 
 def layer_parameters(rep: dict) -> dict:
     """The settings of a measured layer of a check, as acceptance stores them with its observation."""
-    return {"power": rep.get("power"), "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"), "pulse_width": rep.get("pulse_width"),
+    return {"power": rep.get("power"), "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"), "pulse_width": ingest.effective_setting(rep, "pulse_width"),
             "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "layer_type": rep.get("type"),
             "global_passes": rep.get("global_passes"), "bidirectional": rep.get("bidirectional"), "cross_hatch": rep.get("cross_hatch"),
             "scan_angle": rep.get("scan_angle"), "angle_increment": rep.get("angle_increment"),
@@ -224,7 +224,7 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
             lab = [step["L"], step["a"], step["b"]]
             display, approximate, referenced = expressed(lab, kind, clean, nominal)
             params = {"power": step["power_pct"], "frequency": rep.get("frequency_khz"), "speed": rep.get("speed"),
-                      "pulse_width": rep.get("pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
+                      "pulse_width": ingest.effective_setting(rep, "pulse_width"), "line_interval": rep.get("line_interval"), "passes": rep.get("passes"),
                       "layer_type": "Image", "grayscale": True}
             task = _task(rep.get("task") or tasks.derive_from_parameters(params))
             out.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],

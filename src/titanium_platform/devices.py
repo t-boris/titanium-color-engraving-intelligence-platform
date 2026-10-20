@@ -139,6 +139,14 @@ def validate_passport(raw: Any) -> dict:
     steps.sort(key=lambda s: s["pulse_width_ns"])
     if len({s["pulse_width_ns"] for s in steps}) != len(steps):
         raise su.ValidationError("pulse widths must not repeat")
+    default_width = raw.get("default_pulse_width_ns")
+    if default_width in (None, ""):
+        default_width = None
+    else:
+        default_width = su._finite(default_width, "default pulse width", True)
+        if not any(abs(s["pulse_width_ns"] - default_width) <= STEP_TOLERANCE for s in steps):
+            raise su.ValidationError(f"the default pulse width {default_width:g} ns is not a step of this laser; the steps are "
+                                     + ", ".join(f"{s['pulse_width_ns']:g}" for s in steps))
     open_items = raw.get("open_items") or []
     if not isinstance(open_items, list) or not all(isinstance(t, str) for t in open_items):
         raise su.ValidationError("a passport section has the wrong type")
@@ -149,7 +157,7 @@ def validate_passport(raw: Any) -> dict:
             "max_pulse_energy_mj": _optional_positive(raw.get("max_pulse_energy_mj"), "maximum pulse energy"),
             "beam_diameter_mm": _optional_positive(raw.get("beam_diameter_mm"), "beam diameter"), "m2": _optional_positive(raw.get("m2"), "M2"),
             "m2_max": _optional_positive(raw.get("m2_max"), "M2 limit"),
-            "repetition_rate_khz": {"min": lo, "max": hi}, "pulse_steps": steps,
+            "repetition_rate_khz": {"min": lo, "max": hi}, "pulse_steps": steps, "default_pulse_width_ns": default_width,
             "test_report": _test_report(raw.get("test_report")), "controller": _controller(raw.get("controller")),
             "waveforms": _waveforms(raw.get("waveforms")), "open_items": [t.strip() for t in open_items if t.strip()]}
 
@@ -184,6 +192,7 @@ TEMPLATES = {
             "rated_power_w": 60, "wavelength_nm": 1064, "max_pulse_energy_mj": 1.5, "m2_max": 1.5, "beam_diameter_mm": 7.0,
             "repetition_rate_khz": {"min": 1, "max": 4000},
             "pulse_steps": [{"pulse_width_ns": w, "cutoff_khz": c} for w, c in JPT_60_M7_STEPS],
+            "default_pulse_width_ns": 200,         # LightBurn leaves QPulseWidth out of a layer whose width is this one (DEC-086)
         },
     },
 }

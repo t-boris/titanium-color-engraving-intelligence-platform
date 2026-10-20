@@ -11,6 +11,7 @@ const DeviceView = (() => {
       d.description ? h('details', {}, h('summary', {class: 'small muted'}, 'Описание лазера'), h('p', {class: 'muted'}, d.description)) : null,
       facts([['Производитель', d.manufacturer], ['Модель', d.model], ['Серийный номер', d.serial || 'не указан'], ['Номинальная мощность', p.rated_power_w + ' Вт' + (d.characterization.power_basis === 'measured' ? ` (у вашего экземпляра измерено ${d.characterization.effective_power_w} Вт)` : '')],
         ['Длина волны', p.wavelength_nm ? p.wavelength_nm + ' нм' : null], ['Частота повторения', `${r.min}–${r.max} кГц`],
+        ['Q-Pulse по умолчанию', p.default_pulse_width_ns != null ? p.default_pulse_width_ns + ' нс (его LightBurn не пишет в файл слоя)' : 'не задан: слой без Q-Pulse в файле не сопоставим'],
         ['Наибольшая энергия импульса', p.max_pulse_energy_mj ? p.max_pulse_energy_mj + ' мДж' : null],
         // the spot is the installed lens's: measured with it, or calculated from it (REQ-019)
         ['Диаметр пятна на металле', d.characterization.spot_diameter_um != null

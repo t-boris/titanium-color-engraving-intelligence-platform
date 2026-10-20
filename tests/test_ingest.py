@@ -618,6 +618,8 @@ def test_export_rounding_is_not_a_false_plate_discrepancy():
 
 def test_the_marker_layer_is_measured_even_when_legacy_settings_are_incomplete(world):
     s = world["store"]
+    device = world["device"]
+    devices.update_device(s, device["id"], passport={**device["passport"], "default_pulse_width_ns": None})      # a laser with no Q-Pulse default (DEC-086)
     pid = make_pair(world)
     report = ig.check_pair(s, pid)
     marker = next(l for l in report["layers"] if l["name"] == "Markers")
