@@ -10,7 +10,11 @@ const IngestReview = (() => {
     const accept = btn('Принять наблюдения', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { await post(`/pairs/${pair.id}/accept`); toast('Наблюдения приняты', 'ok'); go('/analysis/' + pair.id); }
+      try {
+        const out = await post(`/pairs/${pair.id}/accept`);
+        toast(out.work_review ? `Наблюдения приняты. Вывод записан в работу «${out.work_review.work}»` : 'Наблюдения приняты', 'ok');
+        go('/analysis/' + pair.id);
+      }
       catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !ready || !pair.masks_reviewed);
     flag.addEventListener('change', async () => {

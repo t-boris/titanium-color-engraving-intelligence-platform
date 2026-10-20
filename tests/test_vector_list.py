@@ -12,7 +12,7 @@ from test_vector_work import PAPER, RED, by_rgb, colouring, create, job, picture
 from titanium_platform import conversion as cv, plans as pl, render_cache as rc, research, vector_job
 
 LIST_KEYS = {"id", "name", "status", "created_at", "updated_at", "strategy", "width_mm", "height_mm", "algorithm", "n_colours", "regions", "layers",
-             "mode", "ai_style", "ai_text", "variants", "smoothing_mm", "version"}
+             "mode", "ai_style", "ai_text", "variants", "smoothing_mm", "version", "attention", "review"}
 
 
 def works(c) -> list[dict]:

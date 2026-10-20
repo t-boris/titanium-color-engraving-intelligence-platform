@@ -24,7 +24,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector-workspace.js', 'screens/vector.js']);
+  'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const has = (el, cls) => (el.className || '').split(' ').includes(cls);
@@ -141,8 +141,8 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   out.editorTabs = edTabs;
 """)
     assert has_class(out["root"], "workspace") and has_class(out["root"], "vw-work")
-    assert [name for name, _ in out["first"]] == ["Разбиение", "Цвета", "AI", "Варианты", "Файл"]
-    assert out["first"] == [["Разбиение", "false"], ["Цвета", "true"], ["AI", "false"], ["Варианты", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
+    assert [name for name, _ in out["first"]] == ["Разбиение", "Цвета", "AI", "Варианты", "Результат", "Файл"]
+    assert out["first"] == [["Разбиение", "false"], ["Цвета", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]

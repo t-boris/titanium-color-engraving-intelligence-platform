@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, segment as seg, setup as su, tasks, vectorize as vz
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -826,6 +826,15 @@ def smooth(store: Store, plan_id: int, mm) -> None:
         _photo_refresh(store, plan, document, _palette(store, plan))
 
 
+def _attention(plan: dict, state: dict, entries: list[dict], settings: dict) -> dict | None:
+    """The layers whose titanium colour moved since the last file promised it (DEC-090); None for a work never exported."""
+    baseline, approximate = work_review.baseline_of(plan)
+    if baseline is None:
+        return None
+    return work_review.drift(baseline, state["colours"], state["by_id"], palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0],
+                             {layer["entry_id"] for layer in state["layers"]}, approximate)
+
+
 def photo_view(store: Store, plan: dict) -> dict:
     """A photograph job as its screen shows it: the split's settings, counts and important areas, every source colour
     with its titanium colour and status, the colours beyond the tolerance (``outside``) and the regions whose colour is no
@@ -865,7 +874,9 @@ def photo_view(store: Store, plan: dict) -> dict:
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}
-                 for e in plan["exports"]])
+                 for e in plan["exports"]],
+        attention=_attention(plan, state, entries, settings),
+        reviews=work_review.newest_first(plan.get("reviews") or []))
     return out
 
 
@@ -889,7 +900,8 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
                             "document_version": plan["document_version"], "layers": len(layers), "regions": len(regions),
                             "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
-                            "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers)["seconds"]})
+                            "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers)["seconds"],
+                            "promised": work_review.promised_layers(layers)})       # what this file shows in the preview (DEC-090)
     cv._persist(store, plan, ST_EXPORTED, plan["markers_enabled"])
     return plan["name"], data
 
@@ -1324,7 +1336,19 @@ def _summary(row, data: dict) -> dict:
             "algorithm": data.get("split", {}).get("algorithm", seg.DEFAULT_ALGORITHM) if photo else None,
             "n_colours": colours, "regions": regions, "layers": len(data.get("layers") or []), "mode": colouring.get("mode"),
             "ai_style": said.get("style"), "ai_text": said.get("text"), "variants": len(data.get("variants") or []),
-            "smoothing_mm": data.get("smoothing_mm", 0.0) if photo else None, "version": data["document_version"]}
+            "smoothing_mm": data.get("smoothing_mm", 0.0) if photo else None, "version": data["document_version"],
+            "attention": data.get("attention") if photo else None, "review": _last_review(data) if photo else None}
+
+
+def _last_review(data: dict) -> dict | None:
+    """The newest review of a work in the few numbers the list shows (DEC-090)."""
+    reviews = work_review.newest_first(data.get("reviews") or [])
+    if not reviews:
+        return None
+    last = reviews[0]
+    return {"engraving_id": last["engraving_id"], "photo_name": last["photo_name"], "reviewed_at": last["reviewed_at"],
+            "matched": last["summary"]["matched"], "engraved": last["summary"]["engraved"], "mean_delta_e": last["summary"]["mean_delta_e"],
+            "area_share_beyond": last["summary"]["area_share_beyond"], "beyond_layers": last["summary"]["beyond_layers"]}
 
 
 def listing(store: Store) -> list[dict]:
@@ -1406,6 +1430,8 @@ def copy_work(store: Store, plan_id: int, name=None) -> int:
         if part in data:
             data[part] = empty
     data.pop("ai_photo", None)
+    data.pop("reviews", None)                  # the photographs of an engraving belong to the work that was engraved (DEC-090)
+    data.pop("attention", None)
     with store.transaction():
         new_id = cv.save_plan(store, None, name=title, mode=pl.MODE_VECTOR, status=cv.ST_DRAFT, device_id=plan["device_id"], lens_id=plan["lens_id"],
                               markers=enabled, identifier=identifier, band_count=None, data=data)

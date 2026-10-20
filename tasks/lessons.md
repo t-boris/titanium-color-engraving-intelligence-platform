@@ -271,3 +271,10 @@ Rules written after the operator's remarks, to prevent a repeat.
   Of course it works - I entered it."
 - Rule: when a refusal or exclusion rule comes from a document, first count how much of the operator's real data it excludes (a query by eligibility reason) and say so when the rule is introduced
   and whenever a result depends on it. Treat what the operator actually engraves as evidence about the laser, and ask before keeping a rule that contradicts it.
+
+## A baseline that moves with every edit hides what the operator has not dealt with
+- Situation (2026-10-20, work on the errors): the first design measured "colour drift" against the layers a work stored at its last edit. Any edit refreshes that snapshot for ALL layers, so
+  applying one replacement would silently clear the marks of the other drifted layers. Found by thinking through "apply one of three proposals", not by a test.
+- Rule: a mark that means "something changed since X" needs an X that only the operator's explicit act can move (here: making another file). Ask "which action resets this, and does it
+  reset more than the thing the operator dealt with?" before choosing the baseline. A fixture shared by two source colours (yellow also used the paper recipe) exposed the same flaw in the test.
+- Related: a threshold must be compared with the measurement's own error. 3.0 dE flagged 8 layers of the real work after the re-measure, all at 3.1-3.6 dE: the chart's honest error is 3.6.

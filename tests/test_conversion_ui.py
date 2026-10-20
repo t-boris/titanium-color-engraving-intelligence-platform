@@ -61,7 +61,7 @@ def test_the_vector_screen_disables_export_while_regions_lack_evidence_and_offer
     assert "App.laserLensPicker(" in screen and "/vector/palette?" in screen and "/exports/${e.number}" in screen
 
 
-VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-workspace.js")
+VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-review.js", "screens/vector-workspace.js")
 
 
 def test_the_vector_work_steps_are_loaded_before_the_screen_that_assembles_them():

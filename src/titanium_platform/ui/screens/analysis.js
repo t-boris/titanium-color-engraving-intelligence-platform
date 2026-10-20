@@ -339,6 +339,7 @@
         ...r.photos.map((photo) => link(photo.status === 'Accepted' ? '/analysis/' + photo.id : '/ingest?pair=' + photo.id,
           `№${photo.id} · ${photo.photo_name}${photo.id === Number(id) ? ' · сейчас' : ''}`))) : null,
       r.photos?.length > 1 ? rigCard(r.rig_repeatability) : null,
+      VectorReview.reportCard(r.work_review),
       ...(c ? capabilityDashboard(r) : genericDashboard(r)));
   }});
 })();

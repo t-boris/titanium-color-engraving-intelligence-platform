@@ -1098,3 +1098,23 @@ Operator: "work in the other direction: you know the 24 squares; take the colour
 - [x] Deployed 0.13.3 (backup titanium-before-0.13.3-*.sqlite) and re-measured ALL 17 accepted pairs on the real data through the app (new pairs 61-77; old ones Deleted, rows kept):
       539 layers, mean dE 1.98 (chart pairs 1.4; the 4 camera-relative pairs 6.7: they were measured by an older pipeline); model-eligible 353 -> 474 of 540 (the rest: 65 camera-relative layers
       by design, 1 cleaning witness); no active observation without a pulse width; colour map 0.14 s warm.
+
+### 0.14.0: "work on the errors" - close the loop promise -> engraved result -> conclusion -> correction (operator, 2026-10-20; DEC-090 proposed, REQ-047 draft)
+Operator's goal: what the screen promises must equal what is engraved. After each LightBurn file the operator reports the result (photo); the system compares, concludes about
+the work and the existing works, and may swap colours / change parameters / find the problems. Decisions of the operator: the conclusion lives inside the work plus a mark in the
+list of works; the system proposes replacements, the operator applies them.
+
+Found in code and real data: the palette is re-read on every view (a new measurement already changes the preview); a vector work kept the preview colour (`lab`) but `prediction` was None, so
+its pair report compared nothing; an export kept only its number of layers; the engraved file need not be the exported one (pair 77 matches 0 of 16 layers of work 22 by settings).
+
+- [x] A. An export keeps what every layer promised (`exports[n].promised`: settings, colour, basis, area, regions); older exports are reconstructed while the colouring is unchanged ("approximate").
+- [x] B. Engraved layers matched to the promise by settings (0.5 %), greedy by closeness, each layer once; unmatched layers listed on both sides.
+- [x] C. Review per layer (promised / got, dE, dL, dC, dh, beyond, causes from the measurements, systematic shift, poor chart), stored in the work (`reviews`, one per engraving), Result tab with
+      two pictures (promised / measured colours), mark in the list, block in the pair report, message on acceptance.
+- [x] D. Drift of every work of the laser and lens against the last file's promise (recipes no longer used are settled; never-exported works are not marked), counts kept for the list
+      (`attention`), replacement proposals (closest measured colour, >= 1 dE nearer), applied by the operator as ordinary edits.
+- [~] E. Causes: only what the measurements show (highlight above the chart white, different basis, no chart, poor chart, one shift of most layers). Not done: recipe measured once / unstable,
+      below the cut-off, covered by another layer (order).
+- [ ] F. Parameter changes (power/speed) from measured neighbours, or send the colour to the Experiment Designer as a target. Not done.
+- Assumptions to confirm: visible difference 5 dE (the chart's own error is about 3.6), replacement gain 1 dE, poor chart 7 dE, systematic shift 3 L* on 75 % of layers.
+- Tests: tests/test_work_review.py (23), tests/test_work_review_ui.py (4); the vector UI tests list the new tab and script.

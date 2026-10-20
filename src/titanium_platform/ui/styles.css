@@ -665,6 +665,12 @@ body.is-workspace .main {max-width:none;padding:10px 16px}
 .vw-variant-main {display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
 .vw-line {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:2px 8px;padding:6px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .vw-line .sw {display:inline-block;width:14px;height:14px;margin:0 4px;vertical-align:-2px;border-radius:4px}
+.vw-bad {color:var(--warning)}
+.vw-review-row {width:100%;background:none;border-width:0 0 1px;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.vw-review-pics {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.vw-review-pic {margin:0}
+.vw-review-pic img {display:block;width:100%;height:auto;border-radius:8px;background:#0e1420}
+.vw-drift {padding-bottom:8px;border-bottom:1px solid var(--line)}
 .modal:has(.vw-wide) {width:min(1180px,100%)}
 @media (max-width:1100px) {
   .vw-work {height:auto;min-height:0}

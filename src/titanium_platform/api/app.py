@@ -1,6 +1,7 @@
 """The application factory: JSON API under /api and the browser UI as static files from the same process."""
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, capability_results, findings, research
+from .. import __version__, capability_results, findings, research, work_errors
 from ..db import open_store
 from . import (routes_devices, routes_findings, routes_lenses, routes_palette, routes_plans, routes_prediction, routes_research, routes_setup,
                routes_vector, routes_work)
@@ -38,10 +39,21 @@ async def lifespan(app: FastAPI):
     scheduler = findings.Scheduler(app.state.store)
     app.state.analysis_scheduler = scheduler
     scheduler.start_if_enabled()
+    counting = threading.Thread(target=_count_works, args=(app.state.store,), name="work-attention", daemon=True)
+    counting.start()
     try:
         yield
     finally:
         scheduler.stop()
+        counting.join(30.0)
+
+
+def _count_works(store) -> None:
+    """Once at start: the works exported before the counts of the work on the errors (DEC-090) were kept get theirs, for the list of works."""
+    try:
+        work_errors.refresh_missing(store)
+    except Exception:                       # a count that fails is made again at the next start; it never stops the app
+        pass
 
 
 def create_app(data_dir: str | Path) -> FastAPI:

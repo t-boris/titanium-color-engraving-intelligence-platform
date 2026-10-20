@@ -7,7 +7,7 @@ import json
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from .. import segment, setup as su, vector_job
+from .. import segment, setup as su, vector_job, work_errors
 from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, picture_response, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
@@ -76,6 +76,13 @@ def get_vector_job(plan_id: int, request: Request):
 def vector_thumbnail(plan_id: int, request: Request):
     """A small picture of the work in the titanium colours of its colouring; drawn once, revalidated by ETag."""
     return picture_response(request, vector_job.thumbnail(store_of(request), plan_id))
+
+
+@router.get("/vector/{plan_id}/engraved.png")
+def vector_engraved(plan_id: int, engraving: str, request: Request, promised: bool = False):
+    """The work drawn in the colours its engraving measured, or with ``promised`` in the colours its file promised for the same layers
+    (DEC-090); ``engraving`` is the engraving of one of the work's reviews."""
+    return picture_response(request, work_errors.engraved_picture(store_of(request), plan_id, engraving, promised))
 
 
 @router.post("/vector/{plan_id}/copy", status_code=201)

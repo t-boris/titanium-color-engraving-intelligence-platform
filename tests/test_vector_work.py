@@ -839,7 +839,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector-workspace.js', 'screens/vector.js']);
+  'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 (async () => {
@@ -894,7 +894,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
 """)
     text = out["text"]
-    assert out["tabs"] == ["Разбиение", "Цвета", "AI", "Варианты", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
+    assert out["tabs"] == ["Разбиение", "Цвета", "AI", "Варианты", "Результат", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
     assert not any(old in text for old in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn"))
     assert "vw-ed-svg" in out["pictures"] and "vw-areas" in out["pictures"]
     for part in ("Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",

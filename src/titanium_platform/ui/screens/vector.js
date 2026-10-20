@@ -293,7 +293,7 @@
   function photoView(j) {
     const reload = () => App.render({preserveScroll: true});
     const exp = j.experiment || {};
-    const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {});
+    const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {}), review = h('div', {class: 'stack'});
     let shown = null, queue = Promise.resolve(), parts = null, frame = null;
     const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }});
     function show(next) {
@@ -309,6 +309,7 @@
         }))));
       if (resplit) fill(split, VectorSplit.card(next, reload, smooth));     // счётчики разбиения меняются только с его версией
       fill(file, photoExport(next, refresh));
+      fill(review, VectorReview.view(next, run));
       if (parts) parts.update(next);
     }
     async function send(op) {
@@ -326,7 +327,7 @@
     parts = VectorColours.parts(j, run, permit);
     frame = VectorWorkspace.frame({head: head.el, editor: parts.editor, initial: 'colours', items: [
       ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
-      ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
+      ['review', VectorReview.tabLabel(j), review], ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
     return frame.el;
   }
 

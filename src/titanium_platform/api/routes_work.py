@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
-               plans, setup as su, tasks)
+               plans, setup as su, tasks, work_errors)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, picture_response, public_pair, public_plan, read_upload,
                      refresh_after_change, store_of)
 from .common import content_disposition
@@ -391,6 +391,7 @@ def remeasure_pair(pair_id: int, request: Request):
     result = ingest.remeasure_pair(s, pair_id, on_accepted=refresh_after_change)
     if result["replaced_by"] is not None:
         findings.after_acceptance(s)
+        work_errors.after_acceptance(s, result["replaced_by"])
     return result
 
 
@@ -459,16 +460,19 @@ def accept_pair(pair_id: int, request: Request):
     target checks of the photograph are recorded."""
     ids = ingest.accept_pair(store_of(request), pair_id, on_accepted=refresh_after_change)
     run = findings.after_acceptance(store_of(request))
+    concluded = work_errors.after_acceptance(store_of(request), pair_id)       # the conclusion goes into the work the photograph belongs to (DEC-090)
     return {"pair": public_pair(ingest.get_pair(store_of(request), pair_id)), "observation_ids": ids,
-            "analysis_run_id": run["id"] if run else None}
+            "analysis_run_id": run["id"] if run else None, "work_review": concluded}
 
 
 @router.delete("/pairs/{pair_id}", status_code=204)
 def delete_pair(pair_id: int, request: Request):
     """Remove a pair from active use; the knowledge its observations fed is rebuilt with it (DEC-047), and a proposal whose
     plate it completed is no longer done."""
+    pair = ingest.get_pair(store_of(request), pair_id)
     ingest.delete_pair(store_of(request), pair_id)
     designer.reconcile_statuses(store_of(request))
+    work_errors.after_deletion(store_of(request), pair)
 
 
 @router.get("/pairs/{pair_id}/overlay.png")

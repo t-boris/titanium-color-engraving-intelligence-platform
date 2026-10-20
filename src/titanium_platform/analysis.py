@@ -104,6 +104,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     plate_id = pair["plate_id"] or (plan or {}).get("plate_id")
     result["proposal"] = designer.proposal_of_plate(store, plate_id)       # a plate of the designer links back to its proposal
     result["capability"] = capability_results.report_for_pair(store, pair_id)
+    mine = next((r for r in (plan or {}).get("reviews") or [] if r["engraving_id"] == pair["engraving_id"]), None)
+    result["work_review"] = None if mine is None else {"plan_id": plan["id"], "work": plan["name"], "review": mine}      # DEC-090
     if plan is None:
         limitations.append("no original plan is linked to this pair: only measurements and repeat comparison are available")
     elif mode == pl.MODE_RESTORED:

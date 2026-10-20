@@ -81,6 +81,7 @@ const VectorWorkspace = (() => {
         h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
         photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}`) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
         h('p', {class: 'small'}, how ? `Раскраска: ${how}` : 'Ещё не раскрашена', w.variants ? ` · вариантов ${w.variants}` : ''),
+        ...VectorReview.cardLines(w),
         h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
         h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
   }
