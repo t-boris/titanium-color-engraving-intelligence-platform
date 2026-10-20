@@ -632,6 +632,56 @@ def create_alignment_revision(store: Store, source_pair_id: int) -> int:
     return new_id
 
 
+def _observation_summary(store: Store, pair_id: int) -> dict[int, dict]:
+    """What a pair measured, by layer: the colour, the pulse width it was taken with and whether the model may learn from it."""
+    out = {}
+    for row in store.query("SELECT layer_index, lab_json, parameters_json, model_eligible, evidence_json FROM observation WHERE pair_id=? ORDER BY layer_index", (pair_id,)):
+        out[row["layer_index"]] = {"lab": json.loads(row["lab_json"]), "pulse_width": (json.loads(row["parameters_json"]) or {}).get("pulse_width"),
+                                   "model_eligible": bool(row["model_eligible"]), "name": (json.loads(row["evidence_json"]) or {}).get("layer_name")}
+    return out
+
+
+def remeasure_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, int | None], None] | None = None) -> dict:
+    """Measure an accepted photograph again with the measurement as it is now (the colour correction, the laser's defaults, the
+    settings the operator supplied) and let the new measurement replace the old one. The alignment is the one the pair was accepted
+    with. The old measurement stays untouched, and the draft is dropped, unless the new one is whole: the same colour basis, nothing
+    the check objects to, no layer less than before. Returns what happened and, layer by layer, the colour before and after."""
+    result = {"pair_id": pair_id, "status": "kept", "replaced_by": None, "reason": None, "layers": []}
+    before = _observation_summary(store, pair_id)
+    basis = ((get_pair(store, pair_id).get("check") or {}).get("color_measurement") or {}).get("mode")
+    try:
+        draft = create_alignment_revision(store, pair_id)
+    except IngestError as exc:
+        return {**result, "reason": str(exc)}
+    try:
+        report = check_pair(store, draft)
+        if report["problems"]:
+            raise IngestError("resolve the problems found by the check: " + "; ".join(report["problems"]))
+        now_basis = (report.get("color_measurement") or {}).get("mode")
+        if now_basis != basis:
+            raise IngestError(f"the colour basis of the photograph would change from {basis} to {now_basis}")
+        if sum(1 for layer in report["layers"] if layer["measured_lab"] is not None) < len(before):
+            raise IngestError("the new measurement reads fewer layers than the accepted one")
+        review_masks(store, draft)
+        accept_pair(store, draft, on_accepted)
+    except Exception as exc:
+        state = store.one("SELECT status FROM pair WHERE id=?", (draft,))
+        if state is not None and state["status"] == ST_ACCEPTED:
+            raise                                   # the new measurement is in; only what followed it failed
+        if state is not None and state["status"] != ST_DELETED:
+            delete_pair(store, draft)
+        return {**result, "reason": str(exc)}
+    after = _observation_summary(store, draft)
+    layers = [{"layer_index": index, "name": (after.get(index) or before.get(index))["name"], "before": (before.get(index) or {}).get("lab"),
+               "after": (after.get(index) or {}).get("lab"),
+               "delta_e": None if index not in before or index not in after else round(float(np.linalg.norm(np.array(before[index]["lab"]) - np.array(after[index]["lab"]))), 2),
+               "pulse_width_before": (before.get(index) or {}).get("pulse_width"), "pulse_width_after": (after.get(index) or {}).get("pulse_width"),
+               "model_eligible_before": (before.get(index) or {}).get("model_eligible"), "model_eligible_after": (after.get(index) or {}).get("model_eligible")}
+              for index in sorted(set(before) | set(after))]
+    store.audit("pair_remeasured", pair_id=pair_id, replaced_by=draft, layers=len(layers))
+    return {**result, "status": "replaced", "replaced_by": draft, "layers": layers}
+
+
 def replace_lightburn_file(store: Store, pair_id: int, name: str, data: bytes) -> None:
     """'Correct the pair': attach a different LightBurn file. Clears the check, confirmation and mask review."""
     row = _pair_row(store, pair_id)

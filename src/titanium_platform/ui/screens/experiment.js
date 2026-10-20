@@ -5,7 +5,7 @@
    браузером (удобство одного зрителя). */
 'use strict';
 (() => {
-  const {h, fill, btn, link, pill, get, del, toast, confirmBox, go, fail, num, swatch, labText} = App;
+  const {h, fill, btn, link, pill, get, post, del, toast, confirmBox, go, fail, num, swatch, labText} = App;
   const KIND = {'Awaiting check': ['Ожидает проверки', ''], 'Needs correction': ['Требует исправления', 'warn'],
     'Ready to accept': ['Готова к принятию', 'ok'], Accepted: ['Принята', 'ok']};
   const STATUS_KIND = {plate_ready: 'warn', needs_review: 'warn', accepted: 'ok'};
@@ -76,9 +76,18 @@
         + (shownCorrected(current) ? ' · фото показано после коррекции по карте, в той же экспозиции, что и плашки' : ' · фото показано как снято');
     }
     function showTools() {
-      photoTools.replaceChildren(
+      fill(photoTools,
         btn(contours ? 'Скрыть контуры' : 'Показать контуры', () => { contours = !contours; sessionStorage.setItem('experiment-contours', contours ? '1' : '0'); refreshAll(); }, 'btn-small'),
         btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость', () => { lifted = !isLifted(current); sessionStorage.setItem('experiment-lifted', lifted ? '1' : '0'); refreshAll(); }, 'btn-small'),
+        current && current.status === 'Accepted' ? btn('Перемерить заново', async (ev) => {
+          const control = ev.currentTarget; control.disabled = true; control.textContent = 'Измеряем заново…';
+          try {
+            const out = await post(`/pairs/${current.id}/remeasure`);
+            if (out.status === 'replaced') { toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok'); go('/experiment/' + encodeURIComponent(key) + '?check=' + out.replaced_by); return; }
+            toast('Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''), 'warn');
+            control.disabled = false; control.textContent = 'Перемерить заново';
+          } catch (error) { control.disabled = false; control.textContent = 'Перемерить заново'; fail(error); }
+        }, 'btn-small') : null,
         h('details', {class: 'ep-legend small muted'}, h('summary', {}, 'Что означают линии'),
           h('p', {}, 'Зелёные линии — контуры картинки, найденные на фото; цветные — векторы LightBurn; розовые — продолжение под рамкой.')));
     }

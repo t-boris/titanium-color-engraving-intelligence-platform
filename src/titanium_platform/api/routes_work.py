@@ -383,6 +383,17 @@ def create_alignment_revision(pair_id: int, request: Request):
     return public_pair(ingest.get_pair(s, new_id))
 
 
+@router.post("/pairs/{pair_id}/remeasure")
+def remeasure_pair(pair_id: int, request: Request):
+    """Measure an accepted photograph again with the measurement as it is now; the new measurement replaces the old one only when it comes
+    out whole, else the old one is kept and the reason is returned (DEC-088)."""
+    s = store_of(request)
+    result = ingest.remeasure_pair(s, pair_id, on_accepted=refresh_after_change)
+    if result["replaced_by"] is not None:
+        findings.after_acceptance(s)
+    return result
+
+
 @router.get("/devices/{device_id}/previous-context")
 def previous_context(device_id: int, request: Request):
     """'Same as previous' for this laser: the context and the lens of its last accepted pair."""

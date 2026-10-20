@@ -1083,3 +1083,10 @@ Operator: "work in the other direction: you know the 24 squares; take the colour
 - [ ] Open: layers brighter than the white square (flag "above the chart's white"); pixels of a layer covered by an earlier engraving (the pink / green areas missing from the list);
       IMG_Lion chart read wrongly (grey ramp not monotonic, residual 38) - must be refused with a clear message; all LightBurn parameters shown with defaults (TC timings unknown);
       0.13.2 re-measure (rehearse on a copy, before / after report, ask before applying to the real data).
+
+### 0.13.2: re-measure (operator, 2026-10-20: "redo all experiments with the new calculations"; DEC-088, proposed)
+- [x] `ingest.remeasure_pair` (revision -> check -> review -> accept; kept untouched unless the colour basis is the same, no problems and no layer less),
+      `POST /api/pairs/{id}/remeasure`, buttons on the experiment and analysis screens, `tests/test_remeasure.py` (6).
+- [x] Rehearsal on a COPY of the real data (paths rewritten to the copy: the real DB holds absolute file paths and accepting a revision unlinks the old pair's files).
+- [ ] Apply to the real data after a DB backup + a copy of `files/`; report before / after per experiment.
+- Trap found: the database stores absolute file paths, so a plain copy of the DB would make `delete_pair` unlink the REAL files. Rewrite the paths in any copy first.

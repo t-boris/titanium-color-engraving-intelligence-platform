@@ -116,6 +116,8 @@ I18N.add([
   [/^check and align the photograph before adjusting its contours$/i, 'Сначала проверьте и совместите фотографию, затем исправляйте контуры'],
   [/^(?:Alignment: )?the saved overlay adjustment is invalid$/i, 'Сохранённое смещение контуров некорректно; поставьте углы работы заново'],
   [/^only an accepted, aligned photograph can be revised$/i, 'Исправить совмещение можно только у принятой фотографии с выполненным выравниванием'],
+  [/^the colour basis of the photograph would change from (\S+) to (\S+)$/i, (m) => 'Основа цвета фотографии изменилась бы: было ' + m[1] + ', стало ' + m[2]],
+  [/^the new measurement reads fewer layers than the accepted one$/i, 'Новое измерение читает меньше слоёв, чем принятое'],
   [/^the source photograph is no longer available$/i, 'Исходная фотография больше недоступна'],
   [/^(?:Alignment: )?the selected detail is too small for the four placed corners/i, 'Выбранная деталь слишком мала для поставленной рамки. Отметьте четыре угла всей работы в разделе «Углы работы на фотографии».'],
   [/^Alignment: the four corners must form a convex quadrilateral/i, 'Четыре угла должны образовывать выпуклый четырёхугольник по порядку: верхний левый, верхний правый, нижний правый, нижний левый'],

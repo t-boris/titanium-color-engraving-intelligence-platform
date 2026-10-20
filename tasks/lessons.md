@@ -258,3 +258,9 @@ Rules written after the operator's remarks, to prevent a repeat.
   say which one wins and by how much. Do not propose a third method first.
 - Also: an operator who says "it looks lighter" may be looking at a display default (gamma lift on top of an already corrected picture), not at the measurement. List every default
   view parameter of the screen they look at before touching the measurement.
+
+## A copy of the database points at the real files
+- Situation (2026-10-20): the pair rows hold absolute paths; a copy of the DB in the scratchpad pointed at `~/.titanium-platform/files`, so the rehearsal of "accept a revision"
+  (which unlinks the superseded pair's files) would have deleted the operator's RAWs and LightBurn files.
+- Rule: before running any mutating rehearsal on a copy of the data, copy `files/` too, rewrite every stored path to the copy (pair, plan, device_document) and verify with a query
+  that no row still points at the real folder. Read-only analysis on a copy is fine; anything that accepts, deletes or purges is not until that check is done.

@@ -313,6 +313,15 @@
         go('/ingest?pair=' + revision.id);
       } catch (error) { control.disabled = false; control.textContent = 'Исправить совмещение'; fail(error); }
     }, 'btn-small');
+    const remeasure = btn('Перемерить заново', async (ev) => {
+      const control = ev.currentTarget; control.disabled = true; control.textContent = 'Измеряем заново…';
+      try {
+        const out = await post(`/pairs/${id}/remeasure`);
+        if (out.status === 'replaced') { toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok'); go('/analysis/' + out.replaced_by); return; }
+        toast('Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''), 'warn');
+        control.disabled = false; control.textContent = 'Перемерить заново';
+      } catch (error) { control.disabled = false; control.textContent = 'Перемерить заново'; fail(error); }
+    }, 'btn-small');
     const remove = btn('Удалить проверку', () => confirmBox('Удалить проверку',
       'Фотография и её измерения исчезнут из активной базы. История измерений останется для аудита; другие проверки гравировки сохранятся.',
       'Удалить', async () => { await del(`/pairs/${id}`); toast('Проверка удалена', 'ok'); go('/experiments'); }), 'btn-small danger');
@@ -324,7 +333,7 @@
         h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
           r.plan_id ? link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата') : null,
           r.proposal ? link(`/designer?device=${r.proposal.device_id}&lens=${App.lensParam(r.proposal.lens_id)}&proposal=${r.proposal.id}`, `Предложение № ${r.proposal.id}`) : null,
-          link('/ingest?rephoto=' + id, '+ Фото'), revise, remove)),
+          link('/ingest?rephoto=' + id, '+ Фото'), remeasure, revise, remove)),
       r.photos?.length > 1 ? h('div', {class: 'analysis-photo-strip'},
         h('span', {}, `Проверки этого запуска (${r.photos.length})`),
         ...r.photos.map((photo) => link(photo.status === 'Accepted' ? '/analysis/' + photo.id : '/ingest?pair=' + photo.id,
