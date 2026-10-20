@@ -223,6 +223,107 @@ def test_the_find_button_searches_the_typed_colour_with_the_tolerance_and_the_fi
         assert part in out["search"][0], (part, out["search"][0])
 
 
+# -- how far a colour is trusted and where it comes from (REQ-049) ----------------------------------------------------------------------------
+def agree(n, k):
+    return {"engravings": n, "agreeing": k, "differing": n - k, "limit": 5.0, "contradicted": 2 * k <= n}
+
+
+def source(i, title, lab, agrees=True, delta=0.5, **extra):
+    return {"engraving_id": f"e{i}", "experiment": f"eng-{i}", "title": title, "date": f"2026-10-1{i}T10:00:00", "pair_ids": [20 + i], "photos": [f"IMG_{i}.DNG"],
+            "layers": ["C01"], "observation_ids": [i], "lab": lab, "delta_e": delta, "agrees": agrees, "measurement": "calibrated", "provisional": False, **extra}
+
+
+TRUSTED = point(1, [80.0, 4.0, 30.0], group="g-three", trust=0.5, confidence=0.5, agreement=agree(3, 2), caution=None, doubtful=False)
+ONCE = point(2, [55.0, 12.0, 20.0], group="g-once", trust=1 / 3, confidence=None, agreement=agree(1, 1), caution=None, doubtful=False)
+DOUBT = point(3, [30.0, -2.0, -6.0], group="g-two", trust=1 / 6, confidence=1 / 6, agreement=agree(2, 1), caution="contradicted", doubtful=True)
+RECIPES = {"g-three": {"lab": [80.5, 4.0, 30.0], "sources": [source(3, "Third try", [80.2, 4.0, 30.0]), source(2, "Second try", [80.8, 4.0, 30.0]),
+                                                                 source(1, "First try", [60.0, 4.0, 30.0], agrees=False, delta=20.5)]},
+           "g-two": {"lab": [30.0, -2.0, -6.0], "sources": [source(5, "Newer", [30.0, -2.0, -6.0]), source(4, "Older", [50.0, 9.0, 9.0], agrees=False, delta=27.0)]}}
+
+
+@node
+def test_the_filter_hides_the_doubtful_colours_and_the_next_questions_carry_it(tmp_path):
+    world = colours([TRUSTED, ONCE, DOUBT])
+    world["counts"]["doubtful"] = 1
+    out = run(tmp_path, routes_of(world), """
+  const left = () => tree.querySelector('.os-body').children[0];
+  const box = () => left().querySelectorAll('label').find((l) => l.textContent.startsWith('Скрыть цвета, в которых не уверены')).querySelector('input');
+  out.title = box().parentNode.getAttribute('title'); out.sub0 = tree.querySelector('.sub').textContent;
+  box().checked = true; await box().dispatch('change'); tree = await screen();
+  out.stored = JSON.parse(ctx.__store['color-map']).doubtful;
+  out.checked = box().checked; out.sub1 = tree.querySelector('.sub').textContent;
+  const before = ctx.requests.length;
+  tree = await screen();
+  out.map = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
+  const middle = tree.querySelector('.os-body').children[1];
+  await middle.querySelectorAll('circle')[0].dispatch('click');
+  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  out.search = ctx.requests.filter((r) => r.path === '/api/colors/search').map((r) => r.url).pop();
+  out.explained = tree.querySelector('details').textContent.includes('такие цвета помечены «сомнительный» и их можно скрыть');
+""")
+    assert "Кружок меньше, чем у гравировки, которую не повторяли" in out["title"]
+    assert "сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub0"] and "скрыто" not in out["sub0"]
+    assert out["stored"] is True and out["checked"] is True and "скрыто сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub1"]
+    assert len(out["map"]) == 1 and "hide_doubtful=true" in out["map"][0] and "hide_doubtful=true" in out["search"] and out["explained"] is True
+
+
+@node
+def test_a_picked_colour_shows_its_confidence_and_every_engraving_it_is_known_from(tmp_path):
+    world = colours([TRUSTED, ONCE, DOUBT])
+    world["recipes"] = RECIPES
+    out = run(tmp_path, routes_of(world), """
+  const middle = tree.querySelector('.os-body').children[1];
+  const detail = middle.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
+  const circles = middle.querySelectorAll('circle').filter((c) => c.getAttribute('stroke') !== '#ffd166');
+  const pickByTitle = async (title) => { await circles.find((c) => c.querySelector('title').textContent.startsWith(title)).dispatch('click'); await tick(); };
+  const read = () => ({text: detail.textContent, summary: detail.querySelector('summary').textContent, rows: detail.querySelectorAll('li').map((li) => li.textContent),
+    links: detail.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]), pills: detail.querySelectorAll('.pill').map((p) => p.textContent),
+    dot: detail.querySelectorAll('svg').map((v) => +v.querySelector('circle').getAttribute('r'))});
+  await pickByTitle('Test 1'); out.three = read();
+  await pickByTitle('Test 2'); out.once = read();
+  await pickByTitle('Test 3'); out.doubt = read();
+""")
+    three = out["three"]
+    assert "Уверенность: 0.50 (2 из 3 совпали)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
+    assert three["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки" and "Цвет настроек: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
+    assert len(three["rows"]) == 3 and "Third try" in three["rows"][0] and "First try" in three["rows"][2] and "ΔE 20.5 от цвета настроек" in three["rows"][2]
+    assert three["pills"].count("совпадает") == 2 and three["pills"].count("расходится") == 1 and "сомнительный" not in three["pills"]
+    assert ["разбор №23", "#/analysis/23"] in three["links"] and ["эксперимент", "#/experiment/eng-1"] in three["links"] and "фото IMG_3.DNG" in three["rows"][0]
+    assert "в пределах ΔE 5" in three["text"] and "повторное фото той же гравировки повтором не считается" in three["text"]
+    once = out["once"]
+    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Откуда мы знаем этот цвет: одна гравировка"
+    assert len(once["rows"]) == 1 and "Test 2" in once["rows"][0] and "совпадает" not in once["pills"] and "Цвет настроек:" not in once["text"]
+    doubt = out["doubt"]
+    assert "Уверенность: 0.17 (1 из 2 совпали)" in doubt["text"] and "сомнительный" in doubt["pills"] and "цвет менялся при тех же настройках" in doubt["text"]
+    assert doubt["dot"][0] == pytest.approx(4 / 1.5) and "Older" in doubt["rows"][1] and "ΔE 27.0 от цвета настроек" in doubt["rows"][1]
+
+
+@node
+def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_filter_left_out(tmp_path):
+    match = {**SEARCH["matches"][0], **TRUSTED, "id": "p1", "distance": 0.4, "within_tolerance": True, "repeats": 3, "sources": RECIPES["g-three"]["sources"]}
+    found = {**SEARCH, "matches": [match], "counts": {"unreferenced": 0, "provisional": 0, "slower": 0, "doubtful": 2}}
+    routes = {"/api/colors": {"status": 200, "json": colours([TRUSTED])}, "/api/colors/search": {"status": 200, "json": found}}
+    out = run(tmp_path, routes, """
+  const [, middle, right] = tree.querySelector('.os-body').children;
+  await middle.querySelectorAll('circle')[0].dispatch('click');
+  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  const list = right.children.find((c) => has(c, 'os-scroll'));
+  const card = list.querySelectorAll('article')[0];
+  out.card = card.textContent; out.summary = card.querySelector('summary').textContent; out.rows = card.querySelectorAll('li').length;
+  out.once = list.querySelectorAll('.alert').map((a) => a.textContent);
+  ctx.sessionStorage.setItem('color-map', JSON.stringify({doubtful: true, target: [80, 4, 30]}));
+  tree = await screen();
+  const list2 = tree.querySelector('.os-body').children[2].children.find((c) => has(c, 'os-scroll'));
+  out.hidden = list2.querySelectorAll('.alert').map((a) => a.textContent);
+  const show = byText(list2, 'button', 'Показать и их'); await show.dispatch('click');
+  out.shown = JSON.parse(ctx.__store['color-map']).doubtful;
+""")
+    assert "Уверенность: 0.50 (2 из 3 совпали)" in out["card"] and "получался 3 раза" in out["card"] and out["card"].count("уверенность 0.50") == 0       # said once
+    assert out["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки" and out["rows"] == 3
+    assert out["once"] == ["Среди найденных рецептов сомнительных (при повторах цвет менялся): 2; они помечены. "]
+    assert out["hidden"] == ["2 рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. Показать и их"] and out["shown"] is False
+
+
 # -- the frame -----------------------------------------------------------------------------------------------------------------------------
 def test_the_screen_is_one_screen_frame_and_only_the_found_recipes_scroll():
     assert "h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search))" in SCREEN

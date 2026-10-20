@@ -213,29 +213,33 @@ def create_plates(body: PlatesIn, request: Request):
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
                include_unreferenced: bool = True, include_provisional: bool = True, task: str | None = None,
-               max_time_s_per_cm2: float | None = None):
+               max_time_s_per_cm2: float | None = None, hide_doubtful: bool = False):
     """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
     flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020).
     Every colour carries the estimated engraving time of its recipe; ``max_time_s_per_cm2`` leaves out slower ones (REQ-035), and the
-    confidence of its recipe (``trust``, ``confidence``, ``agreement``, ``caution``, REQ-045)."""
+    confidence of its recipe (``trust``, ``confidence``, ``agreement``, ``caution``, REQ-045). ``recipes`` tells, by ``group``, where the colour
+    of each recipe engraved more than once is known from; ``hide_doubtful`` leaves out the colours whose circle is smaller than that of one
+    engraving (REQ-049)."""
     data = colormap.collect(store_of(request), include_unreferenced=include_unreferenced, setup=setup, material=material,
                             measurement=measurement, include_provisional=include_provisional, task=task or None,
                             max_time_s_per_cm2=max_time_s_per_cm2)
-    colormap.annotate(data["points"])                    # the confidence of each recipe: the map draws a circle by it (REQ-045)
-    return data
+    data["recipes"] = {}
+    colormap.annotate(data["points"], data["recipes"])   # the confidence of each recipe: the map draws a circle by it (REQ-045)
+    data["counts"]["doubtful"] = sum(p["doubtful"] for p in data["points"])
+    return colormap.hide_doubtful(data) if hide_doubtful else data
 
 
 @router.get("/colors/search")
 def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
                   material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False,
                   include_provisional: bool = False, task: str | None = None, max_time_s_per_cm2: float | None = None,
-                  tolerance_de: float | None = None):
+                  tolerance_de: float | None = None, hide_doubtful: bool = False):
     """Where did a wanted colour occur: the nearest recipes, with their settings, task, evidence, estimated engraving time and
     the experiments they came from; within the delta E tolerance the fastest first (DEC-075). Observed evidence only; the film
     model's settings are a prediction and come from /colors/settings."""
     return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
                            measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional,
-                           task=task or None, max_time_s_per_cm2=max_time_s_per_cm2, tolerance_de=tolerance_de)
+                           task=task or None, max_time_s_per_cm2=max_time_s_per_cm2, tolerance_de=tolerance_de, hide_doubtful=hide_doubtful)
 
 
 def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:

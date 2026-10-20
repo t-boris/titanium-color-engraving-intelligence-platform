@@ -52,6 +52,40 @@ const ColorMap = (() => {
     return Math.min(RADIUS.most, Math.max(RADIUS.least, RADIUS.base * RADIUS.step ** (Math.max(a.agreeing || 1, 1) - 1 - (a.differing || 0))));
   };
 
+  /** The circle of a colour at the size it has on the map, beside the words that tell the confidence (REQ-049). */
+  function dot(p) {
+    const svg = document.createElementNS(SVG, 'svg'), c = document.createElementNS(SVG, 'circle');
+    for (const [k, v] of Object.entries({viewBox: `${-RADIUS.most - 1} ${-RADIUS.most - 1} ${2 * RADIUS.most + 2} ${2 * RADIUS.most + 2}`, width: 2 * RADIUS.most + 2,
+      height: 2 * RADIUS.most + 2, class: 'cm-dot', 'aria-hidden': 'true'})) svg.setAttribute(k, v);
+    for (const [k, v] of Object.entries({cx: 0, cy: 0, r: radius(p), fill: swatch(p.display_lab).style.background || '#888', stroke: '#dfe7f5', 'stroke-width': 1.4})) c.setAttribute(k, v);
+    svg.append(c);
+    return svg;
+  }
+  /** How far a colour is trusted (REQ-045, REQ-049): its circle, the confidence, how many engravings agree, and the warnings. */
+  function trustLine(p) {
+    const a = p.agreement || {};
+    return h('p', {class: 'cm-trust'}, dot(p), h('span', {}, h('strong', {}, 'Уверенность: '),
+      p.confidence == null ? 'не оценена, гравировка не повторялась' : `${num(p.confidence)} (${App.agreed(a)})`,
+      p.doubtful ? ' ' : null, p.doubtful ? pill('сомнительный', 'warn') : null, p.caution ? ` · ${App.CAUTION[p.caution]}` : ''));
+  }
+  const ONE_ENGRAVING = (p) => ({title: p.title, experiment: p.experiment, date: p.date, pair_ids: [p.pair_id], photos: p.photo ? [p.photo] : [],
+    layers: p.layer_name ? [p.layer_name] : [], lab: p.display_lab, delta_e: 0, agrees: true, measurement: p.measurement, provisional: !!p.provisional});
+  /** Where a colour is known from (REQ-049): each independent engraving behind it, whether it agrees with the colour of the settings, and where to look at it. */
+  function sourcesBlock(sources, a, agreedLab) {
+    const n = sources.length;
+    const row = (s) => h('li', {class: 'cm-source'}, swatch(s.lab), ' ', h('strong', {}, s.title), ' · ', link('/experiment/' + encodeURIComponent(s.experiment), 'эксперимент'),
+      ...(s.provisional ? [' · ', pill('предварительно', 'warn')] : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
+      h('div', {class: 'muted'}, [when(s.date), s.photos.length ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
+        ' · ', pill(...KIND[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('совпадает', 'ok') : pill('расходится', 'warn')) : null,
+        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''));
+    return h('details', {class: 'cm-sources', open: true},
+      h('summary', {}, n > 1 ? `Откуда мы знаем этот цвет: ${n} независимые гравировки` : 'Откуда мы знаем этот цвет: одна гравировка'),
+      agreedLab && n > 1 ? h('p', {class: 'small'}, 'Цвет настроек: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
+      h('ul', {class: 'stack small cm-source-list'}, ...sources.map(row)),
+      n > 1 ? h('p', {class: 'muted small'}, `Цвет настроек — среднее гравировок, которые совпали между собой (в пределах ΔE ${num(a && a.limit != null ? a.limit : 5, 0)}); `
+        + 'повторное фото той же гравировки повтором не считается.') : null);
+  }
+
   // -- zoom and pan of the map (plain SVG, no library). A view is the scale ``s`` (1 = the whole map) and the offset of the picture in the
   // 640 x 460 frame; it is kept for each plane while the page is open, so a click on a colour or a new search does not throw it away.
   const ZOOM = {least: 1, most: 60, step: 1.5};
@@ -232,7 +266,7 @@ const ColorMap = (() => {
 
   async function render(ctx) {
     const state = JSON.parse(sessionStorage.getItem('color-map') || '{}');
-    const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', task: state.task || '', hide: !!state.hide,
+    const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', task: state.task || '', hide: !!state.hide, doubtful: !!state.doubtful,
       within: !!state.within, provisional: !!state.provisional, maxTime: state.maxTime || null, tolerance: state.tolerance ?? ''};
     const q = new URLSearchParams();
     if (f.setup) q.set('setup', f.setup);
@@ -241,6 +275,7 @@ const ColorMap = (() => {
     if (f.task) q.set('task', f.task);                 // REQ-020: цвета одной задачи гравировки
     if (f.maxTime) q.set('max_time_s_per_cm2', f.maxTime);   // REQ-035: не дольше заданного времени на см², в секундах
     if (f.hide) q.set('include_unreferenced', 'false');
+    if (f.doubtful) q.set('hide_doubtful', 'true');            // REQ-049: not the colours whose circle is smaller than that of one engraving
     const data = await get('/colors' + (q.toString() ? '?' + q : ''));
     // the laser and lens chosen in the filter: the film model, its laws and computed settings are theirs alone
     const chosen = data.options.setups.find((o) => o.key === f.setup) || null;
@@ -262,7 +297,9 @@ const ColorMap = (() => {
     const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
       fill(detail, h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
         h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
-        p.referenced ? null : pill('как снято, без привязки', 'warn')), where(p), filmOf(p, model),
+        p.referenced ? null : pill('как снято, без привязки', 'warn')), trustLine(p),
+        sourcesBlock((data.recipes && data.recipes[p.group] ? data.recipes[p.group].sources : [ONE_ENGRAVING(p)]), p.agreement, data.recipes && data.recipes[p.group] ? data.recipes[p.group].lab : null),
+        where(p), filmOf(p, model),
         btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked, plane,
       model ? model.spiral : null));
     async function setTarget(lab) {
@@ -275,14 +312,14 @@ const ColorMap = (() => {
       if (f.tolerance !== '') p.set('tolerance_de', f.tolerance);
       if (f.within) p.set('include_unreferenced', 'true');
       if (f.provisional) p.set('include_provisional', 'true');
+      if (f.doubtful) p.set('hide_doubtful', 'true');
       const [r, film] = await Promise.all([get('/colors/search?' + p),
         get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}${partition ? '&' + partition : ''}`).catch(() => null)]);
       drawPlot();
       // one entry per recipe: the same settings, laser and lens, titanium stock and kind of measurement; a re-photograph of one
       // engraving is not another repetition (DEC-021), so engravings and photographs are counted apart
       const often = (m) => (m.repeats > 1 ? `получался ${times(m.repeats)} (независимые гравировки)` : 'получен в одной гравировке')
-        + ` · фото: ${m.photographs} · экспериментов: ${m.experiments.length}`
-        + (m.confidence == null ? '' : ` · уверенность ${num(m.confidence)} (${App.agreed(m.agreement)})`) + (m.caution ? ` · ${App.CAUTION[m.caution]}` : '');
+        + ` · фото: ${m.photographs} · экспериментов: ${m.experiments.length}`;
       // REQ-020: измеренное свидетельство, не прогноз — наблюдения, повторяемость и чего не хватает в контексте
       const evidence = (m) => h('p', {class: 'muted small'},
         m.repeatability && m.repeatability.assessed ? `Повторяемость: независимые гравировки расходятся до ΔE ${num(m.repeatability.max_delta_e, 1)}`
@@ -304,11 +341,14 @@ const ColorMap = (() => {
             m.approximate ? pill(m.referenced ? 'к чистому титану, условный оттенок' : 'как снят, без привязки', 'warn') : null,
             m.provisional ? pill('предварительно', 'warn') : null,
             h('span', {class: 'muted small'}, often(m))),
-          where(m), evidence(m)))),
+          trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab), where(m), evidence(m)))),
         r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
           btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
         r.counts.provisional && !f.provisional ? h('div', {class: 'alert warn'}, `${colours(r.counts.provisional)} из проверок, которые ещё не приняты, в поиске не участвуют: они предварительные. `,
           btn('Искать и среди предварительных', () => remember({provisional: true}), 'btn-small')) : null,
+        r.counts.doubtful ? h('div', {class: 'alert warn'}, f.doubtful ? `${r.counts.doubtful} рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. `
+          : `Среди найденных рецептов сомнительных (при повторах цвет менялся): ${r.counts.doubtful}; они помечены. `,
+          f.doubtful ? btn('Показать и их', () => remember({doubtful: false}), 'btn-small') : null) : null,
         r.counts.slower && f.maxTime ? h('div', {class: 'alert warn'}, `${colours(r.counts.slower)} дольше ${mmss(f.maxTime)} мин на см² или без оценки времени на площадь в поиске не участвуют. `,
           btn('Снять ограничение времени', () => remember({maxTime: null}), 'btn-small')) : null,
         film ? h('div', {class: 'stack'}, pill('Прогноз модели, не измерение', 'warn'), filmCard(film)) : null);
@@ -335,7 +375,8 @@ const ColorMap = (() => {
     const counts = `Показано цветов: ${total} · по эталонной карте ${data.counts.calibrated} · относительно камеры ${data.counts.relative}`
       + (data.counts.unreferenced && !f.hide ? ` · из них без привязки к чистому титану ${data.counts.unreferenced}` : '')
       + (data.counts.provisional ? ` · предварительных (проверка ещё не принята) ${data.counts.provisional}` : '')
-      + (data.counts.slower ? ` · скрыто как более долгие (или без оценки времени на площадь) ${data.counts.slower}` : '');
+      + (data.counts.slower ? ` · скрыто как более долгие (или без оценки времени на площадь) ${data.counts.slower}` : '')
+      + (data.counts.doubtful ? (f.doubtful ? ` · скрыто сомнительных (кружок меньше, чем у одной гравировки) ${data.counts.doubtful}` : ` · сомнительных (кружок меньше, чем у одной гравировки) ${data.counts.doubtful}`) : '');
     const head = h('div', {class: 'os-head'}, h('div', {class: 'cm-title'}, h('h2', {}, 'Карта цветов'), h('p', {class: 'sub', title: counts}, counts)), h('span', {class: 'spacer'}),
       chosen ? link(`/colors?device=${chosen.device_id}&lens=${App.lensParam(chosen.lens_id)}`, 'Модель и прогноз параметров для этого лазера с линзой')
         : h('span', {class: 'muted small'}, 'Выберите лазер и линзу, чтобы открыть их модель и прогноз'));
@@ -349,6 +390,8 @@ const ColorMap = (() => {
         h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime),
         h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
           'Скрыть цвета без чистого титана на снимке'),
+        h('label', {class: 'row small', title: 'Кружок меньше, чем у гравировки, которую не повторяли: при повторах цвет менялся'},
+          h('input', {type: 'checkbox', checked: f.doubtful, onChange: (e) => remember({doubtful: e.target.checked})}), 'Скрыть цвета, в которых не уверены (кружок меньше одиночной гравировки)'),
         h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается'),
           h('p', {class: 'muted small'}, 'Все измеренные цвета всех экспериментов. Выберите нужный цвет и увидите, где он встречался и какими настройками получен. '
             + 'Время гравировки — оценка по настройкам рецепта: 100 / (скорость × шаг строк) с на см² за проход и разворот на каждой строке, '
@@ -356,7 +399,7 @@ const ColorMap = (() => {
             + (data.counts.provisional ? 'Предварительные цвета обведены сиреневым штрихом и ведут к проверке пары; в прогнозы они не входят, а в поиск — только по отдельной просьбе, пока проверка не принята. ' : '')
             + 'Цвета без эталонной карты приведены к чистому титану того же снимка: так их можно сравнивать между снимками, но оттенок условный (пунктирный контур). '
             + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует. '
-            + 'Диаметр кружка — уверенность в цвете этих настроек: у гравировки, которую не повторяли, он средний; каждый повтор с тем же цветом увеличивает его в 1,5 раза (до предела), каждая гравировка с другим цветом уменьшает в 1,5 раза (до предела). Цвет настроек — тот, в котором совпали гравировки; позднейшая переделка заменяет старый цвет.')))));
+            + 'Диаметр кружка — уверенность в цвете этих настроек: у гравировки, которую не повторяли, он средний; каждый повтор с тем же цветом увеличивает его в 1,5 раза (до предела), каждая гравировка с другим цветом уменьшает в 1,5 раза (до предела). Если кружок меньше, чем у одной гравировки, цвет при повторах менялся: такие цвета помечены «сомнительный» и их можно скрыть. Выбрав цвет, вы видите уверенность в нём и все гравировки, из которых он известен. Цвет настроек — тот, в котором совпали гравировки; позднейшая переделка заменяет старый цвет.')))));
     // the map fills the middle; the colour picked on it is described in a strip under it
     const mapCol = h('div', {class: 'os-col'},
       h('div', {class: 'os-col-head'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),

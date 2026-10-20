@@ -1126,3 +1126,18 @@ Operator asked for the link after learning that a photograph links to a work onl
 - [x] Check warns when the file's identifier names another work than the chosen one (the file's identifier wins; a file without one falls back to the chosen work).
 - [ ] Not done: the chosen work forcing the link when the file names another one (would hide a wrong file); a link on the "Файл" tab next to the saved files.
 - Tests: test_work_review_ui.py (3 new), test_plan_ingest.py (1 new); targeted run in pytest_0141.log. Full suite not run.
+
+### 0.15.0: the colour map says how far a colour is trusted and where it comes from (operator, 2026-10-20: "filter < 1 diameter", "show the confidence when I pick colours", "show where we know this colour from"; REQ-049 draft, DEC-091 proposed)
+Operator's words, all on the colour map screen. "Diameter" is the circle of a colour (REQ-045, DEC-084): radius 4 for an engraving never repeated, x1.5 for each repeat that gave the same colour,
+/1.5 for each that gave another, 2..14. Agreed with the operator: "1 diameter" is the circle of one unrepeated engraving; a colour whose circle is smaller than that (more engravings differ than
+agree: `agreeing - 1 - differing < 0`) is "doubtful" and can be filtered out.
+- [x] A. Server: `agreement.doubtful(found)`; `colormap.annotate` marks each point `doubtful`; `/colors` and `/colors/search` take `hide_doubtful` and report `counts.doubtful`.
+- [x] B. Server: `sources` of a recipe = its independent engravings (experiment, pairs, photographs, date, colour, dE from the agreed colour, whether it agrees, measurement basis);
+      on every search match, and on `/colors` as `recipes[group]` for recipes engraved more than once.
+- [x] C. UI: filter "hide colours we doubt" (remembered with the other filters, counted in the head); the picked colour shows its confidence (the circle as on the map, the number, "N of M agree")
+      and "Where we know this colour from" (every engraving, who agrees, links to the experiment and the analysis); the search results show the same.
+- [x] D. Tests: tests/test_colormap.py (annotate / filter / sources / API), tests/test_color_map_one_screen.py (UI in node). Targeted only; the full suite is not run.
+- [x] E. REQ-049 (draft) and DEC-091 (proposed) through the markview tools, README 0.15.0, version 0.15.0; deployed to 8765 after the commit (backup, wheel, restart); nothing pushed or tagged.
+- [ ] F. Next, after the colour map: the check meets layers hidden in LightBurn (they stay where they were when the rest is resized; found in the file of work 22: C18 and C28 stayed at
+      150x143 mm while 28 layers became 100x100 mm at (35, 35)): warn, leave them out of the measurement and the review. Operator agreed 2026-10-20.
+- Not touched: pair 101 (checked, not accepted); the operator has not chosen accept / delete / fix the material.

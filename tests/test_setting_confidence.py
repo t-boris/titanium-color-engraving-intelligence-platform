@@ -253,3 +253,81 @@ def test_annotate_gives_the_points_of_a_recipe_the_same_confidence_in_place(stor
     assert all("trust" not in p for p in points)
     assert colormap.annotate(points) is points
     assert [p["trust"] for p in points] == pytest.approx([0.5, 0.5]) and [p["confidence"] for p in points] == pytest.approx([0.5, 0.5])
+
+
+# -- the colour map says how far a colour is trusted and where it comes from (REQ-049) ---------------------------------------------------------
+def test_a_colour_is_doubtful_when_its_circle_is_smaller_than_that_of_one_engraving():
+    """The circle of DEC-084 is 4 * 1.5 ** (agreeing - 1 - differing): smaller than 4 exactly when that exponent is negative."""
+    def found(agreeing, differing):
+        return {"agreeing": agreeing, "differing": differing}
+    assert not agreement.doubtful(found(1, 0))                       # engraved once: not assessed, not doubtful
+    assert not agreement.doubtful(found(3, 0)) and not agreement.doubtful(found(2, 1))      # the circle of one engraving or larger
+    assert agreement.doubtful(found(1, 1)) and agreement.doubtful(found(1, 2)) and agreement.doubtful(found(2, 2))
+    assert agreement.doubtful(agreement.shown(agreement.consensus([{"lab": YELLOW}, {"lab": BROWN}])))
+
+
+def build_map(store, w):
+    add(store, w, [60.0, 0.0, 0.0], "once", speed=1000)                                           # engraved once
+    for i, lab in enumerate((BROWN, BROWN_2, [29.5, 12.0, 14.0])):
+        add(store, w, lab, f"three{i}", speed=2000)                                                # three that agree
+    add(store, w, YELLOW, "y", speed=3000)
+    add(store, w, BROWN, "b", speed=3000)                                                          # a colour that changed
+
+
+def test_the_map_marks_the_doubtful_colours_names_their_sources_and_can_leave_them_out(tmp_path):
+    from fastapi.testclient import TestClient
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    w = obs.setup(store)
+    w["ti"] = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")["id"]
+    build_map(store, w)
+    client = TestClient(app)
+    data = client.get("/api/colors").json()
+    speeds = {p["parameters"]["speed"]: p["doubtful"] for p in data["points"]}
+    assert speeds == {1000: False, 2000: False, 3000: True} and data["counts"]["doubtful"] == 2
+    # the sources: every recipe engraved more than once, by group; a recipe engraved once is told by its own point
+    by_group = {p["parameters"]["speed"]: p["group"] for p in data["points"]}
+    assert set(data["recipes"]) == {by_group[2000], by_group[3000]}
+    three = data["recipes"][by_group[2000]]
+    assert len(three["sources"]) == 3 and all(s["agrees"] for s in three["sources"]) and three["lab"] == pytest.approx([30.17, 12.0, 14.33], abs=0.1)
+    changed = data["recipes"][by_group[3000]]["sources"]
+    assert sorted(s["agrees"] for s in changed) == [False, True] and {s["engraving_id"] for s in changed} == {"y", "b"}
+    one = three["sources"][0]
+    assert {"engraving_id", "experiment", "title", "date", "pair_ids", "photos", "layers", "observation_ids", "lab", "delta_e", "measurement",
+            "provisional"} <= set(one) and one["pair_ids"] and one["delta_e"] < 2
+    hidden = client.get("/api/colors?hide_doubtful=true").json()
+    assert {p["parameters"]["speed"] for p in hidden["points"]} == {1000, 2000} and hidden["counts"]["doubtful"] == 2
+    assert hidden["counts"]["calibrated"] + hidden["counts"]["relative"] == len(hidden["points"]) == 4
+
+
+def test_a_search_entry_names_the_engravings_its_colour_is_known_from_and_the_doubtful_can_be_left_out(store, world):
+    for i, lab in enumerate((BROWN, BROWN_2)):
+        add(store, world, lab, f"b{i}", speed=1000)
+    add(store, world, YELLOW, "y", speed=1000)                                                     # one yellow among two browns: still not doubtful
+    add(store, world, YELLOW, "c1", speed=2000)
+    add(store, world, BROWN, "c2", speed=2000)                                                     # two that disagree: doubtful
+    add(store, world, [60.0, 0.0, 0.0], "alone", speed=3000)
+    found = {m["parameters"]["speed"]: m for m in colormap.search(store, YELLOW, limit=10)["matches"]}
+    assert set(found) == {1000, 2000, 3000}
+    assert [found[s]["doubtful"] for s in (1000, 2000, 3000)] == [False, True, False]
+    assert sorted(s["agrees"] for s in found[1000]["sources"]) == [False, True, True]
+    off = next(s for s in found[1000]["sources"] if not s["agrees"])
+    assert off["engraving_id"] == "y" and off["delta_e"] > 50 and off["lab"] == YELLOW              # the engraving that does not agree says how far it is
+    assert [s["engraving_id"] for s in found[3000]["sources"]] == ["alone"] and found[3000]["sources"][0]["agrees"] is True
+    left = colormap.search(store, YELLOW, limit=10, hide_doubtful=True)
+    assert {m["parameters"]["speed"] for m in left["matches"]} == {1000, 3000} and left["counts"]["doubtful"] == 1
+    assert colormap.search(store, YELLOW, limit=10)["counts"]["doubtful"] == 1                      # counted when shown too
+
+
+def test_the_api_passes_the_doubtful_filter_to_the_search(tmp_path):
+    from fastapi.testclient import TestClient
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    w = obs.setup(store)
+    w["ti"] = su.save_material(store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed")["id"]
+    build_map(store, w)
+    client = TestClient(app)
+    query = "L=50&a=0&b=0&limit=10"
+    assert {m["parameters"]["speed"] for m in client.get(f"/api/colors/search?{query}").json()["matches"]} == {1000, 2000, 3000}
+    hidden = client.get(f"/api/colors/search?{query}&hide_doubtful=true").json()
+    assert {m["parameters"]["speed"] for m in hidden["matches"]} == {1000, 2000} and hidden["counts"]["doubtful"] == 1

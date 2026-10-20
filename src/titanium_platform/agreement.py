@@ -63,6 +63,13 @@ def shown(found: dict) -> dict:
     return {k: found[k] for k in ("engravings", "agreeing", "differing", "contradicted", "limit")}
 
 
+def doubtful(found: dict) -> bool:
+    """A colour whose circle on the colour map is smaller than that of one engraving never repeated (DEC-084, REQ-049): more of its
+    engravings differ from the agreed colour than repeats agree with it, ``agreeing - 1 - differing < 0``. A colour engraved once is not
+    doubtful, it is only not assessed. ``found`` is :func:`consensus` or :func:`shown`."""
+    return found["agreeing"] - 1 - found["differing"] < 0
+
+
 def trust(entry: dict) -> float:
     """The rank of an entry that carries ``confidence`` (a palette entry, a colour map result): its confidence, else that of a
     colour engraved once."""

@@ -365,16 +365,47 @@ def agreed(recipe: dict) -> dict:
     return {**found, "means": means}
 
 
-def annotate(points: list[dict]) -> list[dict]:
+def sources_of(recipe: dict, found: dict) -> list[dict]:
+    """Where the colour of a recipe is known from (REQ-049): one entry per independent engraving, the newest first, with the experiment
+    and photographs it was measured in, its own colour, how far that is from the agreed colour and whether it is one of the engravings
+    the agreed colour is made of. ``found`` is :func:`agreed` of the same recipe."""
+    out = []
+    for i, (engraving, mean) in enumerate(zip(recipe["engravings"], found["means"])):
+        points = [p for p in recipe["points"] if p["engraving_id"] == engraving]
+        out.append({"engraving_id": engraving, "experiment": points[0]["experiment"], "title": points[0]["title"],
+                    "date": recipe["when"][engraving][0] or None, "pair_ids": sorted({p["pair_id"] for p in points}),
+                    "photos": sorted({p["photo"] for p in points if p.get("photo")}),
+                    "layers": [name for name in dict.fromkeys(p.get("layer_name") for p in points) if name],
+                    "observation_ids": sorted({i for p in points for i in p["observation_ids"]}),
+                    "lab": [round(float(v), 1) for v in mean], "delta_e": round(float(color.delta_e(found["lab"], mean)), 2),
+                    "agrees": i in found["members"], "measurement": points[0]["measurement"],
+                    "provisional": any(p["provisional"] for p in points)})
+    return sorted(out, key=lambda e: (e["date"] or "", e["engraving_id"]), reverse=True)
+
+
+def annotate(points: list[dict], recipes: dict | None = None) -> list[dict]:
     """Give every point the confidence of its recipe, in place (REQ-045): ``trust`` (0..1, always a number: what the map draws the
-    circle's diameter by), ``confidence`` (None while the recipe was engraved once), ``agreement`` and ``caution``."""
-    for recipe in by_recipe(points).values():
+    circle's diameter by), ``confidence`` (None while the recipe was engraved once), ``agreement``, ``caution`` and ``doubtful`` (the
+    circle is smaller than that of one engraving, REQ-049). When ``recipes`` is a dict it receives, by group, the agreed colour and the
+    sources of each recipe engraved more than once; a recipe engraved once is its own source and is told by its point."""
+    for group, recipe in by_recipe(points).items():
         found = agreed(recipe)
         shown = {"trust": found["trust"], "confidence": found["confidence"], "agreement": agreement.shown(found),
-                 "caution": "contradicted" if found["contradicted"] else None}
+                 "caution": "contradicted" if found["contradicted"] else None, "doubtful": agreement.doubtful(found)}
         for point in recipe["points"]:
             point.update(shown)
+        if recipes is not None and found["engravings"] > 1:
+            recipes[group] = {"lab": [round(v, 1) for v in found["lab"]], "sources": sources_of(recipe, found)}
     return points
+
+
+def hide_doubtful(data: dict) -> dict:
+    """The colour map without the colours of doubtful recipes (REQ-049): the points left out are counted in ``counts.doubtful``, and the
+    counts of calibrated and camera-relative colours follow what is shown. ``data`` is :func:`collect` after :func:`annotate`."""
+    kept = [p for p in data["points"] if not p["doubtful"]]
+    counts = {**data["counts"], "calibrated": sum(p["measurement"] == "calibrated" for p in kept),
+              "relative": sum(p["measurement"] == "relative" for p in kept), "doubtful": len(data["points"]) - len(kept)}
+    return {**data, "points": kept, "counts": counts}
 
 
 def delta_tolerance(value) -> float:
@@ -412,7 +443,7 @@ def fastest_first(entries: list[dict], tolerance: float | None) -> list[dict]:
 
 
 def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced: bool = False, include_provisional: bool = False,
-           tolerance_de: float | None = None, **filters) -> dict:
+           tolerance_de: float | None = None, hide_doubtful: bool = False, **filters) -> dict:
     """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how many independent engravings gave it, in how
     many photographs, and from which experiments. Colours without a clean reference and provisional colours are left out unless
     asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
@@ -422,11 +453,16 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
     single measurement (DEC-083); ``confidence``, ``agreement`` (how many engravings agree) and ``caution`` (``contradicted``) say how
     far to trust it. Within the delta E tolerance (``tolerance_de``, else the saved rule of the laser and lens the search is narrowed
     to) the most confident recipe comes first, then the fastest (DEC-083, DEC-075); ``order`` says how the entries were ordered and
-    with which tolerance."""
+    with which tolerance. Each entry names its ``sources``, the engravings its colour is known from, and says whether it is ``doubtful``;
+    with ``hide_doubtful`` the doubtful ones are left out and counted in ``counts.doubtful`` (REQ-049)."""
     data = collect(store, include_unreferenced=include_unreferenced, include_provisional=include_provisional, **filters)
-    entries = []
+    entries, doubtful = [], 0
     for entry in by_recipe(data["points"]).values():
         found = agreed(entry)
+        if agreement.doubtful(found):
+            doubtful += 1
+            if hide_doubtful:
+                continue
         agreeing = {engraving for engraving, i in zip(entry["engravings"], range(len(found["means"]))) if i in found["members"]}
         # the point that stands for the recipe: of an engraving that agrees, the nearest to the agreed colour, the newer one first
         stand = min((p for p in entry["points"] if p["engraving_id"] in agreeing),
@@ -445,9 +481,10 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
                          "provisional_checks": sorted({p["pair_id"] for p in e["points"] if p["provisional"]}),
                          "within_tolerance": None if tolerance is None else bool(e["distance"] <= tolerance),
                          "confidence": e["confidence"], "agreement": agreement.shown(e["found"]),
-                         "caution": "contradicted" if e["found"]["contradicted"] else None,
+                         "caution": "contradicted" if e["found"]["contradicted"] else None, "doubtful": agreement.doubtful(e["found"]),
+                         "sources": sources_of(e, e["found"]),
                          "repeatability": _repeatability(e["engravings"]), "missing_context": missing_context(e["points"])} for e in ranked],
-            "nominal_clean": data["nominal_clean"], "counts": data["counts"]}
+            "nominal_clean": data["nominal_clean"], "counts": {**data["counts"], "doubtful": doubtful}}
 
 
 def _repeatability(engravings: dict[str, list]) -> dict:
