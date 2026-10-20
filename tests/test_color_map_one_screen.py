@@ -237,24 +237,27 @@ def test_the_screen_is_one_screen_frame_and_only_the_found_recipes_scroll():
 
 
 @node
-def test_the_diameter_of_a_circle_follows_the_confidence_in_the_colour_of_its_settings(tmp_path):
-    """REQ-045: a recipe engraved once is small, one whose repeats agree is larger the more they are, one whose colour changed is the smallest;
-    the title of a circle says the confidence and how many engravings agree."""
-    pts = [point(1, [80.0, 4.0, 30.0], trust=1 / 6, confidence=1 / 6, agreement={"engravings": 2, "agreeing": 1, "differing": 1}),
-           point(2, [60.0, 6.0, 20.0], trust=1 / 3, confidence=None, agreement={"engravings": 1, "agreeing": 1, "differing": 0}),
-           point(3, [50.0, 8.0, 10.0], trust=0.6, confidence=0.6, agreement={"engravings": 3, "agreeing": 3, "differing": 0}),
-           point(4, [40.0, 2.0, 5.0], trust=0.83, confidence=0.83, agreement={"engravings": 10, "agreeing": 10, "differing": 0})]
+def test_the_diameter_of_a_circle_grows_one_and_a_half_times_per_agreeing_repeat_and_shrinks_per_differing_one(tmp_path):
+    """REQ-045, DEC-084: radius 4 for a setting engraved once, times 1.5 for every agreeing repeat, divided by 1.5 for every differing engraving,
+    held between 2 and 14; the title of a circle says the confidence and how many engravings agree."""
+    def agree(n, k):
+        return {"engravings": n, "agreeing": k, "differing": n - k}
+    pts = [point(1, [80.0, 4.0, 30.0], trust=1 / 6, confidence=1 / 6, agreement=agree(2, 1)),        # 1 of 2: 4 / 1.5
+           point(2, [60.0, 6.0, 20.0], trust=1 / 3, confidence=None, agreement=agree(1, 1)),          # once: 4
+           point(3, [50.0, 8.0, 10.0], trust=0.6, confidence=0.6, agreement=agree(3, 3)),             # 3 agree: 4 * 1.5 * 1.5
+           point(4, [40.0, 2.0, 5.0], trust=0.83, confidence=0.83, agreement=agree(10, 10)),          # 10 agree: held at 14
+           point(5, [30.0, 1.0, 3.0], trust=0.05, confidence=0.05, agreement=agree(4, 1)),            # 1 of 4: 4 / 1.5^3 held at 2
+           point(6, [20.0, 3.0, 7.0], trust=0.5, confidence=0.5, agreement=agree(3, 2))]              # 2 of 3: 4 * 1.5 / 1.5
     out = run(tmp_path, routes_of(colours(pts)), """
   const circles = tree.querySelectorAll('circle').filter((c) => c.getAttribute('stroke') !== '#ffd166');
   out.radii = circles.map((c) => +c.getAttribute('r'));
   out.titles = circles.map((c) => c.querySelector('title').textContent);
 """)
     assert out["radii"] == sorted(out["radii"], reverse=True)          # the larger circles are drawn first: none hides a smaller one
-    assert len(set(out["radii"])) == 4 and max(out["radii"]) - min(out["radii"]) > 5
-    assert max(out["radii"]) / min(out["radii"]) > 3                  # a changed colour and a confirmed one differ by more than a pixel or two
     by_title = {t.split(" · ")[0]: r for t, r in zip(out["titles"], out["radii"])}
-    assert by_title["Test 1"] < by_title["Test 2"] < by_title["Test 3"] < by_title["Test 4"]
-    assert by_title["Test 3"] / by_title["Test 2"] > 1.5              # three agreeing engravings against one: clearly larger
+    assert by_title["Test 2"] == 4
+    assert by_title["Test 1"] == pytest.approx(4 / 1.5) and by_title["Test 3"] == pytest.approx(9)
+    assert by_title["Test 4"] == 14 and by_title["Test 5"] == 2 and by_title["Test 6"] == pytest.approx(4)
     titles = " ".join(out["titles"])
     assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (все 3 совпали)" in titles and "уверенность 0.17 (1 из 2 совпали)" in titles
-    assert "Диаметр кружка" in SCREEN
+    assert "каждый повтор с тем же цветом увеличивает его в 1,5 раза" in SCREEN
