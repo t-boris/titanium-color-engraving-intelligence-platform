@@ -1,7 +1,7 @@
 /* Маршруты: адрес после «#». Неизвестный маршрут открывает «Эксперименты». Экран — объект {id, render(ctx)}. */
 'use strict';
 Object.assign(App, (() => {
-  const {h, btn} = App;
+  const {h, btn, get} = App;
   const screens = new Map();
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/artwork', 'Цветная гравировка'],
     ['/photo', 'Фотогравировка'], ['/photo-preview', 'Предпросмотр фотогравировки'],
@@ -43,6 +43,18 @@ Object.assign(App, (() => {
   // поверх страницы окно с названиями: оно закрывается кликом вне его, Esc и переходом в раздел (DEC-081).
   const MENU_ICON = '<path d="M4 6h16M4 12h16M4 18h16"/>';
   let sidebar = null, menuButton = null, railButton = null;
+
+  // Версия приложения в шапке (REQ-057, DEC-099): один запрос к серверу, дальше значение берётся из памяти; если сервер не ответил, метка пуста и скрыта.
+  let appVersion = null, versionAsked = false;
+  function showVersion(tag) {
+    if (appVersion) { tag.textContent = 'v' + appVersion; return; }
+    if (versionAsked) return;
+    versionAsked = true;
+    get('/version').then((data) => {
+      appVersion = data && data.version ? String(data.version) : null;
+      for (const el of document.querySelectorAll('.app-version')) el.textContent = appVersion ? 'v' + appVersion : '';
+    }).catch(() => { versionAsked = false; });
+  }
   function setMenu(open) {
     if (!sidebar) return;
     if (open) sidebar.classList.add('is-open'); else sidebar.classList.remove('is-open');
@@ -64,10 +76,12 @@ Object.assign(App, (() => {
           onClick: () => setMenu(false)}, icon(i), h('span', {class: 'nav-text'}, l)))),
       h('p', {class: 'sidebar-note'}, 'Единственный пользователь. Все действия доступны; вход не требуется.'));
     menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Меню');
+    const versionTag = h('span', {class: 'app-version', title: 'Версия приложения'});
+    showVersion(versionTag);
     return [
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Лазерная мастерская', h('small', {}, 'Материалы · Режимы · Работы')),
-        h('div', {class: 'header-actions'}, menuButton, h('span', {class: 'user-chip', title: 'Вход не требуется'}, 'Исследователь / мастер'))),
+        h('div', {class: 'header-actions'}, menuButton, versionTag, h('span', {class: 'user-chip', title: 'Вход не требуется'}, 'Исследователь / мастер'))),
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 

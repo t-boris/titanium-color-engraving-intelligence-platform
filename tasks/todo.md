@@ -1261,3 +1261,24 @@ Operator, 2026-10-21 (voice-typed): pair 105 (`deploma.lbrn2` + `IMG_3307.DNG`):
 - Tests: full suite, 1518 passed, none skipped, 2 min 42 s on 12 workers (`-n 12`). New: `test_ruler.py` (7), `test_locate.py` (12), `test_ruler_alignment.py` (5, through `check_pair`), two assertions in `test_left_behind.py`;
   `tests/synth.py` gained a work of three pictures beside a measuring angle (`pictures_work`, `draw_angle`).
 
+## 0.17.2: every layer the alignment placed is drawn; the version is in the header (REQ-055, REQ-056)
+
+Operator, 2026-10-21, after 0.17.1 on the real pair 105 (re-checked, method "picture at ruler scale"): "В новой версии нашел только 1 картинку" (screenshot: one magenta frame on the seal; the eagle, the signatures
+and every fill have none). Earlier: "Мне непонятно почему я не вижу версию апликации в header?" - answered (the version is only at `GET /api/version`, DEC-023), operator: "с версией согласен".
+
+- [x] A. Root cause (confirmed on the stored check, GET only): the check found three pictures (C04 0.68, C05 0.84, C06 0.88) but `_draw_overlay` skips every layer flagged `left_out` (REQ-050), and the layers whose output is
+      off carry that flag. Only C05, the one layer that is on, is drawn.
+- [x] B. The overlay draws the layers of an alignment that was found by their pictures (`alignment.located`): output-off layers are drawn where the same transform puts them, in a colour of their own, not measured.
+      Layers left behind stay undrawn (REQ-050). Without `located` nothing changes.
+- [x] C. The note of a layer whose picture was found says so ("its picture is on the plate"), not "was not engraved": the photograph shows it was.
+- [x] D. Judge the overlay on the real pair 105 by numbers and by looking: the outlines of the fills (text, cleaning rectangle) must lie on the engraved text.
+- [x] E. The header shows `v<version>` next to the name (from `GET /api/version`, one request; nothing shown if it fails); Russian tooltip; UI test.
+- [x] F. Tests, MarkView (REQ-056 for B-C and the version, DEC-098), README 0.17.2, lessons, version bump, release, deploy; tell the operator to reload (Cmd+R) and that the stored check needs no re-run (the overlay is redrawn from it).
+
+#### Review of 0.17.2
+- Real pair 105 (the stored check fetched with GET, the cached files, the working-tree code): the overlay now outlines all six layers. Edge strength under the outlines against the outlines shifted by -6..+6 px:
+  C00 (97,649 outline px) peaks at dx -1, dy +1 px; C02 (25,975 px) at dx +2, dy -2 px; one pixel is 0.05 mm at 19.7 px/mm. The picture layers (C04-C06) have a bounding frame with no edge under it, so this
+  measure says nothing about them; their position rests on the correlation after refinement (0.68 / 0.84 / 0.88) and the look of the overlay.
+- New tests: `test_app_version_header.py` (4, node), seven in `test_ruler_alignment.py` (notes and warnings, overlay with and without `located`, left behind never drawn). `tests/ui_dom.js` got `classList.toggle`.
+- The wording "this layer was not engraved" stays for a check that was not found by pictures (REQ-050); it is replaced only when pictures found the work.
+

@@ -37,7 +37,8 @@ class El {
   get classList() {
     const list = () => this.className.split(/\s+/).filter(Boolean);
     return {add: (c) => { if (!list().includes(c)) this.className = [...list(), c].join(' '); },
-      remove: (c) => { this.className = list().filter((x) => x !== c).join(' '); }, contains: (c) => list().includes(c)};
+      remove: (c) => { this.className = list().filter((x) => x !== c).join(' '); }, contains: (c) => list().includes(c),
+      toggle: (c, force) => { const on = force === undefined ? !list().includes(c) : !!force; this.classList[on ? 'add' : 'remove'](c); return on; }};
   }
   _adopt(kid) {
     const node = kid && kid.nodeType ? kid : new Text_(kid);

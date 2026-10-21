@@ -320,3 +320,11 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: a prior from the scene (ruler scale) is checked on every real photograph before it is trusted: it was off by 2 on two of them (half-millimetre ticks) and in another plane on a framed plate, so the
   scale is tried as read, doubled and halved, and the match itself (several pictures agreeing) is the verification.
 
+## Show everything the check found, not only what it measured
+- Remark (2026-10-21, voice-typed, after 0.17.1): "В новой версии нашел только 1 картинку" with a screenshot of one frame on the seal. The check had found three pictures and placed every layer, and the overlay drew only the
+  layer that is measured, because it skipped all layers left out of the measurement (REQ-050). I had judged the release by the numbers of the check and by the one frame that was measured.
+- Rule: when a feature finds or places something, the picture the operator looks at must show all of it, with a style that tells "found, not measured" from "measured". After a fix, open the overlay on the real pair
+  and count what is drawn against what the report says was found, not only the report. A sentence in a note ("was not engraved") must be checked against the photograph when the same check found the layer on it.
+- Remark (same day): "Мне непонятно почему я не вижу версию апликации в header?" - the version existed only in `GET /api/version` (DEC-023). A fact the operator needs after every deploy (which release is running) belongs on the
+  screen, not only in the API: when a deploy step says "tell the operator to reload", check that the operator can see what they are looking at.
+

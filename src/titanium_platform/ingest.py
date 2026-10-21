@@ -1879,12 +1879,37 @@ def _locate_by_ruler(img_bgr, placed_layers: list, report: dict) -> np.ndarray |
     report["warnings"].append(
         f"The work was found by the pictures of layers {', '.join(d['pictures_used'])} at the scale of the ruler beside the plate "
         f"({d['px_per_mm']:.1f} px/mm); the pictures agree on one position within {d['residual_mm']:.2f} mm.")
-    switched_off = [layer.name for layer in placed_layers if not layer.regions and layer.name in d["pictures_used"]]
-    if switched_off:
-        report["warnings"].append(
-            f"The pictures of layers {', '.join(switched_off)} are on the plate although their output is switched off in LightBurn "
-            f"(engraved earlier): they helped to find the work and are still not measured.")
+    _say_work_was_found_by_pictures(report, placed_layers, d["pictures_used"])
     return matched.image_to_mm
+
+
+def _say_work_was_found_by_pictures(report: dict, placed_layers: list, found_by: list[str]) -> None:
+    """Correct what ``_leave_out_layers`` said of the layers whose output is off, now that the work was found by pictures: a picture of such a
+    layer that was found is on the plate (it was engraved earlier), the others are placed where the found work puts them; none is measured."""
+    names = {layer.index: layer.name for layer in placed_layers}
+    pictures, others = [], []
+    for rep in report["layers"]:
+        if rep.get("left_out") != "output_off":
+            continue
+        shown = names.get(rep["index"], f"C{rep['index']:02d}").split()[0]
+        found = names.get(rep["index"]) in found_by
+        (pictures if found else others).append(shown)
+        rep["notes"] = [(("output is switched off in LightBurn, but its picture is on the plate (engraved earlier): it helped to find the work "
+                          "and is not measured") if found else
+                         ("output is switched off in LightBurn: it is not measured and its outline is drawn where the work found by pictures puts it"))
+                        if note.startswith("output is switched off in LightBurn: this layer was not engraved") else note for note in rep["notes"]]
+    if not pictures and not others:
+        return
+    report["warnings"] = [w for w in report["warnings"] if not (w.startswith("layers ") and
+                          "have their output switched off in LightBurn: they were not engraved and are not measured" in w)]
+    if pictures:
+        report["warnings"].append(
+            f"The pictures of layers {', '.join(pictures)} are on the plate although their output is switched off in LightBurn "
+            f"(engraved earlier): they helped to find the work and are still not measured.")
+    if others:
+        report["warnings"].append(
+            f"Layers {', '.join(others)} have their output switched off in LightBurn and are not measured; "
+            f"their outlines are drawn where the work found by pictures puts them.")
 
 
 WHOLE_SHAPE_GUARD_MIN_OUTLINES = 30   # from this many outlines on, a fit of three whole shapes must be confirmed by anchors
@@ -2695,6 +2720,10 @@ def overlay_png(store: Store, pair_id: int, corrected: bool = True, layer_index:
     return overlay_picture(store, pair_id, corrected, layer_index, visibility, transparent, full, size).png()
 
 
+# the outline of a layer that is on the plate but not measured (its output is off in the file): found by its picture, drawn where the same transform puts it (REQ-056, DEC-098)
+NOT_MEASURED_COLOR = (255, 200, 40)
+
+
 def _draw_overlay(photo_path: str, lightburn_path: str, check: dict, plan: dict | None, allow_non_raw: bool, corrected: bool,
                   reference: dict | None, layer_index: int | None, visibility: str, transparent: bool, limit: int) -> bytes:
     """Draw the overlay of ``overlay_png`` from exactly the inputs its cache key names."""
@@ -2729,15 +2758,20 @@ def _draw_overlay(photo_path: str, lightburn_path: str, check: dict, plan: dict 
         window[cv2.fillConvexPoly(np.zeros(img_bgr.shape[:2], np.uint8),
                                   np.round(np.asarray(window_px, float)).astype(np.int32), 1) > 0] = True
     hidden_color = (255, 60, 255, 255) if transparent else (255, 60, 255)
+    found_by_pictures = bool((check.get("alignment") or {}).get("located"))    # the pictures of layers that are off found the work (REQ-055)
     for n, rep in enumerate(reports):
         if layer_index is not None and rep["index"] != layer_index:
             continue
         layer = by_index.get(rep["index"])
-        if layer is None or not layer.regions or rep.get("left_out"):         # a layer left out is not drawn where it is not (REQ-050)
+        left_out = rep.get("left_out")
+        if layer is None or not layer.regions:
+            continue
+        if left_out and not (left_out == "output_off" and found_by_pictures):  # a layer left behind is not drawn where it is not (REQ-050)
             continue
         layer_h = _layer_image_to_mm(np.asarray(h, float), check.get("alignment") or {}, layer.index)
         layer_to_image = np.linalg.inv(layer_h)
-        color = palette[n % len(palette)] if rep.get("measured_lab") is not None else (160, 160, 160)
+        color = (palette[n % len(palette)] if rep.get("measured_lab") is not None
+                 else NOT_MEASURED_COLOR if left_out else (160, 160, 160))
         if transparent:
             color = (*color, 255)
         # Display the exact LightBurn vectors. Measurement masks deliberately
