@@ -20,7 +20,8 @@ from typing import Any, Callable
 
 from .db import Store
 
-RENDER_VERSION = 1                      # bump whenever the drawing of a cached picture changes: every stored picture is redrawn
+RENDER_VERSION = 2                      # bump whenever the drawing of a cached picture changes: every stored picture is redrawn
+#                                         2: the overlay outlines the layers that are off when the work was found by pictures (REQ-056)
 LIMIT_BYTES = 500 * 1024 * 1024
 PNG_START = b"\x89PNG\r\n\x1a\n"
 PNG_END = b"IEND\xaeB`\x82"             # the last chunk of every complete PNG

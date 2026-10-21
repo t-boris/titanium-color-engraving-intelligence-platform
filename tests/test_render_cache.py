@@ -102,6 +102,16 @@ def test_the_key_changes_with_every_input_of_the_picture(world):
     assert all(a != b for a, b in zip(now(), grown))
 
 
+def test_the_version_of_the_drawing_is_part_of_the_key_so_a_changed_drawing_is_not_served_from_the_cache(world, monkeypatch):
+    s = world["store"]
+    pid = checked_pair(world)
+    before = ig.overlay_picture(s, pid).key
+    monkeypatch.setattr(rc, "RENDER_VERSION", rc.RENDER_VERSION + 1)
+    assert ig.overlay_picture(s, pid).key != before and ig.photo_preview_picture(s, pid).key != rc.key_of({})
+    monkeypatch.undo()
+    assert rc.RENDER_VERSION >= 2          # 0.17.2 changed what the overlay draws: pictures drawn by 0.17.1 and earlier are never served again
+
+
 def test_a_size_is_the_longest_side_and_an_impossible_one_is_refused(world):
     s = world["store"]
     pid = checked_pair(world)

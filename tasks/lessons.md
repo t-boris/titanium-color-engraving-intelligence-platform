@@ -328,3 +328,9 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Remark (same day): "Мне непонятно почему я не вижу версию апликации в header?" - the version existed only in `GET /api/version` (DEC-023). A fact the operator needs after every deploy (which release is running) belongs on the
   screen, not only in the API: when a deploy step says "tell the operator to reload", check that the operator can see what they are looking at.
 
+## A changed drawing needs a new render version, and a deploy is checked by fetching the picture, not by the code
+- Situation (2026-10-21, release 0.17.2): I changed what `_draw_overlay` draws and did not bump `render_cache.RENDER_VERSION` ("bump whenever the drawing of a cached picture changes"). The deployed server returned the
+  picture it had cached under 0.17.1 (a GET took 0.01 s and the file had no light-blue pixel); the operator would have reloaded and seen no change. I found it only because the timing of the check GET was too fast.
+- Rule: any change to what a cached picture shows (overlay, photograph preview, thumbnails) bumps `RENDER_VERSION` in the same commit. After a deploy that changes a picture, download that picture from the running server
+  and count what must be in it (colour pixels, outlines); a response that is much faster than a drawing takes is a cached one.
+

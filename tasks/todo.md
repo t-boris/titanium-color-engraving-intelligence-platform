@@ -1282,3 +1282,7 @@ and every fill have none). Earlier: "Мне непонятно почему я �
 - New tests: `test_app_version_header.py` (4, node), seven in `test_ruler_alignment.py` (notes and warnings, overlay with and without `located`, left behind never drawn). `tests/ui_dom.js` got `classList.toggle`.
 - The wording "this layer was not engraved" stays for a check that was not found by pictures (REQ-050); it is replaced only when pictures found the work.
 
+### 0.17.3: the picture cache version (REQ-056)
+- [x] After deploying 0.17.2, `GET /api/pairs/105/overlay.png?size=1400` answered in 0.01 s and the downloaded picture had 0 light-blue pixels (the working-tree drawing: 40,502): the render cache served the picture drawn by
+      0.17.1, because `RENDER_VERSION` was not bumped when the drawing changed. Bumped to 2; a test keeps the version in the key; full suite and a fresh GET of the overlay on the deployed server are the proof.
+
