@@ -303,3 +303,10 @@ Rules written after the operator's remarks, to prevent a repeat.
   "Исключить". The operator wrote "I cannot change colours so simply" and read "Исключить" as "this colour disappears".
 - Rule: when a control exists on one screen, check the screen where the decision is made. Name a button by its effect on the output ("Не гравировать", with a hint that only the cleaning remains),
   not by an internal state ("exclude"). Show where a value comes from at the place it is chosen: one shared block, so the words are the same on every screen.
+
+## A slow wait is the assistant's cost, not the operator's: parallelise the check and report the time honestly
+- Remark (2026-10-21, voice-typed, during the 0.17.0 release): "Почему тесты занимают 30 часа" and then "Это глупо". The full suite (1494 tests) ran in one process for 14 min 15 s while the operator waited, and I had
+  told them "11 minutes in, about 20 left" - I read the CPU-time column of `ps` as elapsed time. The real elapsed time was shorter and the end came sooner than I said.
+- Rule: estimate the time left from the elapsed wall clock (`ps -o etime=`) and the percentage printed by pytest, never from the TIME column. When a check takes more than a few minutes, look for a way to run it
+  in parallel before asking the operator to wait: `pytest-xdist` is in `.venv` (the operator approved it on 2026-10-21; it is in the `dev` extra, not in the app environment), so the release gate is
+  `.venv/bin/python -m pytest -q -rs -n 12` (1494 tests in 2 min 32 s, none skipped). Adding a library still needs approval first.
