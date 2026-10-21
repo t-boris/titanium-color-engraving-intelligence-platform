@@ -106,6 +106,7 @@ def test_the_check_leaves_out_a_layer_left_behind_with_a_note_and_a_warning_and_
     assert report["warnings"] == ["layers C04 stayed where the exported file had them while the rest of the file was resized to 50% by 60% of its exported "
                                   "size, and they are hidden in LightBurn, whose tools skip hidden layers; they are not measured"]
     assert next(l for l in project.layers if l.index == 4).regions == [] and all(l.regions for l in project.layers if l.index != 4)
+    assert next(l for l in project.layers if l.index == 4).placed == []        # its shapes are where the old file had them: no use for the alignment
 
 
 def test_a_layer_left_behind_that_is_not_hidden_is_named_without_the_reason_of_hiding(tmp_path):
@@ -125,6 +126,8 @@ def test_a_layer_whose_output_is_off_is_not_measured_with_or_without_an_exported
     assert [l["index"] for l in report["layers"] if l.get("left_out") == "output_off"] == [3]
     assert report["warnings"] == ["layers C03 have their output switched off in LightBurn: they were not engraved and are not measured"]
     assert next(l for l in project.layers if l.index == 3).regions == []
+    kept = next(l for l in project.layers if l.index == 3)
+    assert kept.regions_off and kept.placed is kept.regions_off                # not measured, but in the file's coordinates: the alignment may use it (REQ-055)
 
 
 def test_a_file_that_moved_nothing_or_a_plan_without_exports_leaves_every_layer_in(tmp_path):

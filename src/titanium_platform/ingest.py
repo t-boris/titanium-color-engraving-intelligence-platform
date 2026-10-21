@@ -1540,6 +1540,8 @@ def _leave_out_layers(project: lb.Project, plan: dict | None, report: dict) -> N
             f"layers {names} stayed where the exported file had them while the rest of the file was resized to {width}% by {height}% of its "
             f"exported size{', and they are hidden in LightBurn, whose tools skip hidden layers' if hidden else ''}; they are not measured")
     for index in out:
+        if out[index] == "output_off":
+            by_index[index].regions_off = by_index[index].regions     # not measured, but in the file's own coordinates (REQ-055)
         by_index[index].regions = []
 
 
@@ -1707,7 +1709,7 @@ def _by_markers(img_bgr, markers: dict, expected: str | None, area, dx: float, d
 
 
 def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
-           prefer_corners: bool = False, linked: bool = False) -> tuple:
+           prefer_corners: bool = False, linked: bool = False, placed_layers: list | None = None) -> tuple:
     """Returns (image->mm homography, dx, dy). Raises PhotoError instead of guessing (REQ-003).
 
     ``plan`` is the plan of the plate, or the engraving plan the file names or the operator linked; ``linked`` says the
@@ -1809,6 +1811,9 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                     report["warnings"].append(f"The edge of the frame was not found on the {side} side: a margin of "
                                               f"{picturing.FALLBACK_INSET * 100:g}% ({hidden[side]:g} mm) is assumed there.")
             return matched.image_to_mm, dx, dy
+    located = _locate_by_ruler(img_bgr, placed_layers if placed_layers is not None else work_layers, report)
+    if located is not None:
+        return located, dx, dy
     matched = registration.register_geometry(img_bgr, work_layers)
     if matched is not None:
         # Three whole shapes can agree by chance in a dense drawing (a mirrored fit of a lion of parallel strokes
@@ -1842,6 +1847,44 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
         report["alignment"]["method"] = "manual"
         return ph.homography_from_corners([tuple(c) for c in corners], area), dx, dy
     raise ph.PhotoError("no reliable combination of LightBurn details was found: place the four image corners of the work")
+
+
+def _locate_by_ruler(img_bgr, placed_layers: list, report: dict) -> np.ndarray | None:
+    """The work found by any picture of the file at the scale of a ruler lying beside the plate (REQ-055, DEC-097): every layer lies in one
+    coordinate system, so it does not matter which layer is found, and a layer whose output is off may show on a plate engraved earlier.
+    Run only when the elements of the drawing and the largest picture have not found the work; None when there is no ruler or the pictures
+    do not agree."""
+    if not any(r.bitmap and r.bitmap.get("png") for layer in placed_layers for r in layer.placed):
+        return None
+    from . import picturing, ruler
+    ruler_diagnostics: dict = {}
+    found = ruler.find_scale(img_bgr, ruler_diagnostics)
+    report["alignment"]["ruler"] = ruler_diagnostics
+    if found is None:
+        return None
+    angle = {k: found[k] for k in ("corner_px", "quadrant")} if "corner_px" in found else None
+    tried = []
+    for scale in (found["px_per_mm"], *found["alternatives"]):            # the tick pitch of a ruler may read as twice or half the millimetre
+        diagnostics: dict = {}
+        matched = picturing.locate(img_bgr, placed_layers, scale, diagnostics, angle)
+        tried.append({"px_per_mm": round(scale, 3), "refused": diagnostics.get("refused")})
+        if matched is not None:
+            break
+    report["alignment"]["located"] = {**diagnostics, "tried": tried}
+    if matched is None:
+        return None
+    d = matched.details
+    report["alignment"].update(method=matched.method, element_matches=[], residual_px=matched.residual_px, reflected=matched.reflected,
+                               px_per_mm=d["px_per_mm"], window_found=False)
+    report["warnings"].append(
+        f"The work was found by the pictures of layers {', '.join(d['pictures_used'])} at the scale of the ruler beside the plate "
+        f"({d['px_per_mm']:.1f} px/mm); the pictures agree on one position within {d['residual_mm']:.2f} mm.")
+    switched_off = [layer.name for layer in placed_layers if not layer.regions and layer.name in d["pictures_used"]]
+    if switched_off:
+        report["warnings"].append(
+            f"The pictures of layers {', '.join(switched_off)} are on the plate although their output is switched off in LightBurn "
+            f"(engraved earlier): they helped to find the work and are still not measured.")
+    return matched.image_to_mm
 
 
 WHOLE_SHAPE_GUARD_MIN_OUTLINES = 30   # from this many outlines on, a fit of three whole shapes must be confirmed by anchors
@@ -2172,7 +2215,8 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
             report["warnings"].append("The whole LightBurn drawing was adjusted by hand; inspect every contour before accepting measurements.")
         else:
             h, dx, dy = _align(store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
-                               prefer_corners=bool(pair.get("prefer_corners")), linked=linked)
+                               prefer_corners=bool(pair.get("prefer_corners")), linked=linked,
+                               placed_layers=[layer for layer in project.layers if layer.placed])
         if anchor:
             # A quadrilateral on the entire plate must never be accepted as a
             # 3 mm LightBurn detail. One anchor defines the transform, but the

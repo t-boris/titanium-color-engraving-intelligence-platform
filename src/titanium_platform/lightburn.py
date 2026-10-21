@@ -97,6 +97,7 @@ class Layer:
     angle_increment: float | None = 0.0
     source_settings: dict = field(default_factory=dict)
     regions: list[Region] = field(default_factory=list)
+    regions_off: list[Region] = field(default_factory=list)   # the shapes of a layer left out of the measurement because its output is off
     unreadable: list[str] = field(default_factory=list)
     unsupported: dict = field(default_factory=dict)      # shape type -> how many objects of it are not read
     unknown_settings: list[str] = field(default_factory=list)   # setting tags outside KNOWN_SETTINGS, kept but not interpreted
@@ -104,6 +105,12 @@ class Layer:
     def _switch(self, tag: str) -> str | None:
         raw = self.source_settings.get(tag)
         return None if not isinstance(raw, dict) else str(raw.get("Value", "")).strip().lower()
+
+    @property
+    def placed(self) -> list[Region]:
+        """Every shape the file puts on this layer, measured or not: all layers share one coordinate system, so a layer that was not
+        engraved this time can still show where the work lies (REQ-055)."""
+        return self.regions or self.regions_off
 
     @property
     def hidden(self) -> bool:

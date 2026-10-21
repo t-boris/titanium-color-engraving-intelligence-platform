@@ -582,6 +582,7 @@ const IngestReview = (() => {
         : check.alignment.method === 'two marker + QR' ? (check.alignment.qr_used_as_anchor === false
           ? 'по двум меткам; QR подтвердил плату' : 'по двум меткам и QR-коду платы')
         : check.alignment.method === 'picture' ? `по вложенной картинке (корреляция ${num((check.alignment.picture || {}).zncc, 2)})`
+        : check.alignment.method === 'picture at ruler scale' ? `по картинкам файла и масштабу линейки (совпало картинок: ${((check.alignment.located || {}).pictures || []).length})`
         : check.alignment.method === 'element anchors' ? `по элементам-якорям (${(check.alignment.element_matches || []).length})`
         : check.alignment.method === 'geometry' ? `по деталям рисунка (${(check.alignment.element_matches || []).length})`
         : check.alignment.method === 'single distinctive detail' ? 'по одной характерной детали'

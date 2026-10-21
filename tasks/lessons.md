@@ -310,3 +310,13 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: estimate the time left from the elapsed wall clock (`ps -o etime=`) and the percentage printed by pytest, never from the TIME column. When a check takes more than a few minutes, look for a way to run it
   in parallel before asking the operator to wait: `pytest-xdist` is in `.venv` (the operator approved it on 2026-10-21; it is in the `dev` extra, not in the app environment), so the release gate is
   `.venv/bin/python -m pytest -q -rs -n 12` (1494 tests in 2 min 32 s, none skipped). Adding a library still needs approval first.
+
+## One found layer places all the others: do not let the file's on/off switches decide what the photograph can show
+- Remarks (2026-10-21, voice-typed): "Не смог найти картинку" (a magenta frame far from the diploma), "достаточно найти один из слоев ... Важно, какой слой ты найдешь. НЕ важно", "ты можешь ориентироваться
+  на линейку", "Это не просто линейка, а уголок". I had treated "output off" as "not on the plate" (REQ-050) and aligned by the largest picture of the layers that are on, which was a symmetric seal.
+- Rule: every layer of a LightBurn file lies in one coordinate system, so an alignment needs evidence from any layer, not from the layer the file marks as on. Before designing a fix for a mismatch on a real pair,
+  look at the photograph itself (an overlay, a crop) and test each assumption against the numbers: here a template match showed the "switched off" pictures are on the plate. A thing in the photograph that
+  I named "a ruler" was a measuring angle: name what is there before choosing what to read from it.
+- Rule: a prior from the scene (ruler scale) is checked on every real photograph before it is trusted: it was off by 2 on two of them (half-millimetre ticks) and in another plane on a framed plate, so the
+  scale is tried as read, doubled and halved, and the match itself (several pictures agreeing) is the verification.
+

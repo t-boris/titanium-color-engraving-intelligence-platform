@@ -1229,3 +1229,35 @@ results, and a prediction of how an engraving will look at given settings ("a bi
 - New tests: `test_photo_modes.py` (12: catalogue, strike rule, orientation, UI table equals catalogue), `test_mixed_work.py` (8), `test_dot_modes.py` (14: spread, transparency, dot-mode prediction,
   `sample_spread`). Changed on purpose: the dither-refusal tests (REQ-030 refused every dot mode, DEC-096 predicts seven of them), the mode record in the API test, the node harness of the experiment screen
   (it must load `photo-modes.js` and `composition.js`).
+
+## 0.17.1: the work is found by any picture of the file and the ruler (REQ-055, DEC-097)
+
+Operator, 2026-10-21 (voice-typed): pair 105 (`deploma.lbrn2` + `IMG_3307.DNG`): "Не смог найти картинку"; "исправь, чтобы находила диплом"; "достаточно найти один из слоев, все остальные ты можешь рассчитать ...
+Важно, какой слой ты найдешь. НЕ важно"; "ты можешь ориентироваться на линейку ... масштабы, один из углов, плюс ... направление по линейке"; "он может определять тебе, в какой области искать любой из секторов
+заливок"; "Это не просто линейка, а уголок".
+
+- [x] A. Root cause, on the real files (copy of the pair through GET, scratch Store, nothing mutated): the check dropped every output-off layer before the alignment; the only active layer is a 25 x 23 mm seal
+      (symmetric, ambiguous alone, picture route refuses), the outline route has no outlines, so the operator's four corners were fitted to the seal's bounding box (anisotropic 0.0104 / 0.0080 mm/px).
+      Not a regression of 0.17.0 (REQ-050 / 0.15.1).
+- [x] B. Evidence before design: the other layers ARE on the plate (template match of their pictures at 19.6 px/mm: eagle 0.49, seal 0.57, signatures 0.69 in one orientation, vertical flip), and the photograph shows
+      a measuring angle (two rulers) with the plate in its inner corner.
+- [x] C. `ruler.py`: scale from the 1 mm tick spectrum with its 5 and 10 mm ticks (chains of windows along a narrow strip, leakage and half-period handling), the inner corner and side of an angle.
+- [x] D. `picturing.locate`: every picture of every layer (output-off included, `Layer.placed`), eight orientations, scale +-5 %, agreement of the pictures on the file's origin, ECC twice, one homography; the
+      side of the angle first, the whole photograph if nothing is found there.
+- [x] E. `ingest._locate_by_ruler` after the outline and largest-picture routes; the scale as read, doubled, halved; warnings; UI label; Russian translations.
+- [ ] F. Not built, flagged: the ruler's direction as a rotation prior (strip edges were not stable on the real photograph; the search tolerates about 1.5 degrees instead); fill layers as templates (Q-029);
+      the manual corners fitted to all layers (Q-028).
+- [x] G. Tests, docs, release.
+
+#### Review of 0.17.1
+- Pair 105 in a scratch Store, full `check_pair`: method "picture at ruler scale", C05 measured Lab [60.3, 0.2, 6.5] at the seal (before: [72.6, 1.7, 13.8] at the wrong place); the overlay frame sits on the seal;
+  the plate's lower-left corner of the cleaning rectangle falls within about 1.5 mm of the angle's inner corner (independent check). Ruler 19.64 px/mm against 19.67 fitted from the pictures; the three pictures
+  agree within 0.13 mm; correlation after refinement 0.68 / 0.84 / 0.88.
+- Real data, GET only (19 other pairs): the ruler is found on 15, absent (none reported) on 4. Where an accepted alignment gives the scale it agrees within 0.2-3.2 % (pairs 88, 90-93, 102); pairs 103 / 104 read
+  half (the doubled scale is tried), pair 89 has the plate in a frame above the ruler's plane (1.5 times: not searched). Pairs 88 and 93 (colour portraits, aligned by the older route): `locate` refuses (correlation
+  at the true pose 0.09 or below), so it cannot override them. No pair other than 105 has a picture the older routes miss; `locate` is validated on one real work and on synthetic ones, and says so.
+- Needs the operator: (1) check pair 105 again with the automatic alignment (its stored check keeps the wrong frame); (2) Q-028 and Q-029.
+- Cost: about 2 s for the ruler and 7-11 s for the search, only when every other automatic route has failed.
+- Tests: full suite, 1518 passed, none skipped, 2 min 42 s on 12 workers (`-n 12`). New: `test_ruler.py` (7), `test_locate.py` (12), `test_ruler_alignment.py` (5, through `check_pair`), two assertions in `test_left_behind.py`;
+  `tests/synth.py` gained a work of three pictures beside a measuring angle (`pictures_work`, `draw_angle`).
+

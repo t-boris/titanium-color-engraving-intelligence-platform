@@ -15,8 +15,15 @@ because the engraved colour often carries more of the picture than the lightness
 
 Nothing is guessed: a registration that is not supported by the data is refused with a reason in ``diagnostics`` and the
 operator places four corners (REQ-013).
+
+``locate`` is the other entry point (REQ-055): when the scale of the photograph is known, from a ruler beside the plate, ANY picture of
+the file finds the work, output switched off or not, because every layer lies in one coordinate system and the photograph of a finished
+plate shows what was engraved at any time. The pictures are searched in all eight orientations at that scale and must agree on where the
+file's origin lies.
 """
 from __future__ import annotations
+
+import math
 
 import cv2
 import numpy as np
@@ -31,6 +38,18 @@ MIN_MARGIN = 1.4           # the best orientation must beat the second by this f
 REFINE_TOP = 4             # poses of the global search (best per orientation) refined with ECC; the coarse ranking is weak
 BAND = 0.15                # share of the picture inspected for the edge of the window, per side
 FALLBACK_INSET = 0.06      # assumed hidden share per side when no edge of a window is found
+
+LOCATE_PX_PER_MM = 5.0     # working resolution of the template search
+LOCATE_SIGMA = 3.0         # blur of the edge structure at that resolution: a pose up to about 1.5 degrees or 2 per cent off still correlates
+LOCATE_SCALES = (0.95, 0.975, 1.0, 1.025, 1.05)   # tried around the given scale: the ruler lies beside the plate, a plane and a lens away
+LOCATE_CORNER_MARGIN_MM = 5.0   # the work may reach this far over the edge of the measuring angle's inner corner
+LOCATE_MIN_NCC = 0.3       # a picture whose best match at a place is weaker than this does not vote
+LOCATE_PEAKS = 3           # places kept per picture, orientation and scale
+LOCATE_AGREE_MM = 2.5      # pictures agree on where the file's origin lies within this
+LOCATE_SINGLE_NCC = 0.5    # a lone picture must match at least this well ...
+LOCATE_MARGIN = 1.25       # ... and the best orientation must beat the best of the others by this factor (any number of pictures)
+LOCATE_REFINE_PX_PER_MM = 10.0   # working resolution of the refinement
+LOCATE_MAX_RESIDUAL_MM = 0.6     # the pictures' corners must agree with one transform to this
 
 
 def _structure(lab: np.ndarray, sigma: float) -> np.ndarray:
@@ -163,6 +182,19 @@ def side_insets(margins: dict) -> dict[str, float]:
     return {k: (v["share"] if v["edge_found"] else FALLBACK_INSET) for k, v in margins.items()}
 
 
+def _picture_of(region) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """(grey levels, local->mm, PICTURE-unit pixels->mm) of the picture of an image object, None when it has no tones to match."""
+    from .ingest import _picture_gray                  # the same decoding as for the tonal profile
+    gray = _picture_gray(region.bitmap["png"])
+    if gray is None or float(np.ptp(gray)) < 0.05:
+        return None
+    bm = region.bitmap
+    a, b, c, d, e, f = bm["matrix"]
+    local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
+    picture_to_local = np.array([[bm["w"] / PICTURE, 0, -bm["w"] / 2], [0, bm["h"] / PICTURE, -bm["h"] / 2], [0, 0, 1.0]])
+    return gray, local_to_mm, local_to_mm @ picture_to_local
+
+
 def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None) -> Registration | None:
     """Align the photograph to the picture of the largest image object of ``layers``; None when it is not supported."""
     diag = diagnostics if diagnostics is not None else {}
@@ -175,16 +207,11 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
     if not bitmaps:
         return refuse("the file holds no picture to match")
     region = max(bitmaps, key=lambda r: r.width * r.height)
-    from .ingest import _picture_gray                  # the same decoding as for the tonal profile
-    gray = _picture_gray(region.bitmap["png"])
-    if gray is None or float(np.ptp(gray)) < 0.05:
+    found = _picture_of(region)
+    if found is None:
         return refuse("the picture of the file has no tones to match")
-
+    gray, local_to_mm, picture_to_mm = found
     bm = region.bitmap
-    a, b, c, d, e, f = bm["matrix"]
-    local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
-    picture_to_local = np.array([[bm["w"] / PICTURE, 0, -bm["w"] / 2], [0, bm["h"] / PICTURE, -bm["h"] / 2], [0, 0, 1.0]])
-    picture_to_mm = local_to_mm @ picture_to_local
 
     h0, w0 = img_bgr.shape[:2]
     s = WORK_LONG_SIDE / max(h0, w0)
@@ -241,3 +268,211 @@ def register(img_bgr: np.ndarray, layers: list, diagnostics: dict | None = None)
     reflected = bool(np.linalg.det(image_to_mm[:2, :2]) < 0)
     diag["details"] = details
     return Registration(image_to_mm, "picture", [], round(1.0 - best, 3), reflected, details=details)
+
+
+# -- the work found by any of its pictures at a known scale (REQ-055) ------------------------------------------------------------------------
+ORIENTATIONS = tuple((mirror, k) for mirror in (False, True) for k in range(4))
+
+
+def _linear(mirror: bool, k: int) -> np.ndarray:
+    """The file's axes as they lie in the photograph: a right angle k times, after a mirror of y."""
+    th = math.radians(90 * k)
+    return np.array([[math.cos(th), -math.sin(th)], [math.sin(th), math.cos(th)]]) @ np.diag([1.0, -1.0 if mirror else 1.0])
+
+
+def _template(gray: np.ndarray, picture_to_mm: np.ndarray, linear: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Edge structure of the picture laid in the photograph's pixels by ``linear`` (file mm -> pixels), and the offset of its top left
+    corner from the file's origin: the photograph's pixel of the origin is the template's place plus this."""
+    h, w = gray.shape
+    full = np.eye(3)
+    full[:2, :2] = linear
+    full = full @ picture_to_mm @ np.diag([PICTURE / w, PICTURE / h, 1.0])      # picture pixels (of ``gray``) -> pixels
+    corners = cv2.perspectiveTransform(np.float32([[[0, 0], [w, 0], [w, h], [0, h]]]), full)[0]
+    low = corners.min(axis=0)
+    size = (max(int(np.ceil(corners[:, 0].max() - low[0])), 1), max(int(np.ceil(corners[:, 1].max() - low[1])), 1))
+    warped = cv2.warpPerspective(gray.astype(np.float32), np.array([[1, 0, -low[0]], [0, 1, -low[1]], [0, 0, 1.0]]) @ full, size, flags=cv2.INTER_AREA)
+    lab = cv2.cvtColor(np.dstack([warped] * 3).astype(np.float32), cv2.COLOR_RGB2LAB)
+    return _structure(lab, LOCATE_SIGMA).astype(np.float32), low
+
+
+def _peaks(response: np.ndarray, count: int, radius: int) -> list[tuple[float, int, int]]:
+    """The ``count`` best places of a correlation map, each at least ``radius`` pixels from the better ones."""
+    response = response.copy()
+    found = []
+    for _ in range(count):
+        y, x = np.unravel_index(int(response.argmax()), response.shape)
+        value = float(response[y, x])
+        if value < LOCATE_MIN_NCC:
+            break
+        found.append((value, int(x), int(y)))
+        response[max(0, y - radius):y + radius + 1, max(0, x - radius):x + radius + 1] = -1.0
+    return found
+
+
+def _agreement(candidates: dict[int, list[tuple[float, np.ndarray]]], tolerance: float) -> tuple[float, dict[int, tuple[float, np.ndarray]]]:
+    """Where do the pictures put the file's origin? candidates: picture -> [(correlation, origin)]. The best set of one place per
+    picture whose origins lie within ``tolerance``: (sum of correlations, picture -> (correlation, origin))."""
+    best: tuple[float, dict] = (0.0, {})
+    for seed_picture, seeds in candidates.items():
+        for ncc, origin in seeds:
+            members = {seed_picture: (ncc, origin)}
+            for other, places in candidates.items():
+                near = [(n, o) for n, o in places if other != seed_picture and np.linalg.norm(o - origin) <= tolerance]
+                if near:
+                    members[other] = max(near, key=lambda item: item[0])
+            total = sum(n for n, _ in members.values())
+            if total > best[0]:
+                best = (total, members)
+    return best
+
+
+def _quadrant_mask(shape: tuple[int, int], template: tuple[int, int], corner: dict, per_px: float) -> np.ndarray:
+    """Places of a correlation map where the template's centre lies on the plate's side of a measuring angle's inner corner
+    (``per_px``: photograph pixels per working pixel)."""
+    sx, sy = corner["quadrant"]
+    margin = LOCATE_CORNER_MARGIN_MM
+    x = (np.arange(shape[1]) + template[1] / 2) * per_px
+    y = (np.arange(shape[0]) + template[0] / 2) * per_px
+    return np.outer(sy * (y - corner["corner_px"][1]) >= -margin * corner["px_per_mm"], sx * (x - corner["corner_px"][0]) >= -margin * corner["px_per_mm"])
+
+
+def locate(img_bgr: np.ndarray, layers: list, px_per_mm: float, diagnostics: dict | None = None, corner: dict | None = None) -> Registration | None:
+    """Find the work by any of the pictures of ``layers`` (all of them, whether or not their output is on) when the scale of the
+    photograph is known. Every picture is searched in the eight orientations at that scale (a few per cent either way); the orientation
+    in which the pictures agree on where the file's origin lies wins, and one picture alone is believed only if it matches well and
+    clearly better than in any other orientation. The winners are refined with ECC and one transform is fitted to their corners.
+    ``corner`` ({"corner_px", "quadrant"}) is the inner corner of a measuring angle lying beside the plate: the work is looked for on
+    the side of it the arms point to, and, should nothing be found there, anywhere. None, with the reason in ``diagnostics``, when the
+    data do not support a work."""
+    diag = diagnostics if diagnostics is not None else {}
+    if corner is not None:
+        found = _locate(img_bgr, layers, px_per_mm, diag, {**corner, "px_per_mm": px_per_mm})
+        if found is not None:
+            diag["searched"] = "beside the measuring angle"
+            return found
+    found = _locate(img_bgr, layers, px_per_mm, diag, None)
+    diag["searched"] = "the whole photograph"
+    return found
+
+
+def _locate(img_bgr: np.ndarray, layers: list, px_per_mm: float, diag: dict, corner: dict | None) -> Registration | None:
+
+    def refuse(reason: str):
+        diag["refused"] = reason
+        return None
+
+    pictures = []
+    for layer in layers:
+        for region in layer.placed:
+            if region.bitmap and region.bitmap.get("png") and (found := _picture_of(region)) is not None:
+                pictures.append({"layer": layer.name, "region": region, "gray": found[0], "local_to_mm": found[1], "to_mm": found[2]})
+    if not pictures:
+        return refuse("the file holds no picture to look for")
+    h0, w0 = img_bgr.shape[:2]
+    spans = [r for pic in pictures for r in (pic["region"].width, pic["region"].height)]
+    if max(spans) * px_per_mm > max(h0, w0):
+        return refuse("a picture of the file would be longer than the photograph at this scale")
+    k_work = min(1.0, LOCATE_PX_PER_MM / px_per_mm)
+    small = cv2.resize(ph.decoded_srgb(img_bgr).astype(np.float32), None, fx=k_work, fy=k_work, interpolation=cv2.INTER_AREA)
+    photo = _structure(cv2.cvtColor(small, cv2.COLOR_RGB2LAB), LOCATE_SIGMA).astype(np.float32)
+
+    # 1. every picture, orientation and scale: the best few places of its edge structure in the photograph
+    places: dict[tuple, dict[int, list]] = {}
+    for orientation in ORIENTATIONS:
+        for factor in LOCATE_SCALES:
+            per_mm = px_per_mm * factor * k_work                               # photograph's pixels per mm for this hypothesis
+            for i, pic in enumerate(pictures):
+                template, low = _template(pic["gray"], pic["to_mm"], _linear(*orientation) * per_mm)
+                if template.shape[0] >= photo.shape[0] or template.shape[1] >= photo.shape[1]:
+                    continue
+                response = cv2.matchTemplate(photo, template, cv2.TM_CCOEFF_NORMED)
+                if corner is not None:
+                    response[~_quadrant_mask(response.shape, template.shape, corner, 1.0 / k_work)] = -1.0
+                radius = max(8, min(template.shape) // 2)
+                found = [(ncc, np.array([x, y], float) - low) for ncc, x, y in _peaks(response, LOCATE_PEAKS, radius)]
+                if found:
+                    places.setdefault((orientation, factor), {})[i] = found
+    if not places:
+        return refuse("no picture of the file matches the photograph at the scale of the ruler")
+
+    # 2. the hypothesis (orientation, scale) in which the pictures agree on the origin of the file
+    scored = []
+    for (orientation, factor), candidates in places.items():
+        total, members = _agreement(candidates, LOCATE_AGREE_MM * px_per_mm * factor * k_work)
+        if members:
+            scored.append((total, orientation, factor, members))
+    scored.sort(key=lambda item: -item[0])
+    best_total, orientation, factor, members = scored[0]
+    others = [item[0] for item in scored if item[1] != orientation]
+    runner_up = max(others) if others else 0.0
+    diag["hypotheses"] = [{"mirror": o[0], "rotation_degrees": 90 * o[1], "scale_factor": f, "pictures": len(m), "score": round(t, 3)}
+                          for t, o, f, m in scored[:6]]
+    diag["pictures_in_file"] = len(pictures)
+    if len(members) == 1 and max(n for n, _ in members.values()) < LOCATE_SINGLE_NCC:
+        return refuse("one picture matches the photograph only weakly and no other picture confirms it")
+    if runner_up > 0 and best_total < LOCATE_MARGIN * runner_up:
+        return refuse("the orientation of the work is ambiguous: another orientation matches almost as well")
+
+    # 3. refine each picture of the winning hypothesis with ECC at a finer resolution and fit one transform to their corners
+    mirror, k = orientation
+    per_mm = px_per_mm * factor * k_work
+    s_ref = min(1.0, LOCATE_REFINE_PX_PER_MM / px_per_mm)
+    refined_small = cv2.resize(ph.decoded_srgb(img_bgr).astype(np.float32), None, fx=s_ref, fy=s_ref, interpolation=cv2.INTER_AREA)
+    lab = cv2.cvtColor(refined_small, cv2.COLOR_RGB2LAB)
+    def refine(i: int, m: np.ndarray) -> dict:
+        """ECC from ``m`` (picture pixels -> pixels of the refinement copy): the picture's map to the photograph and how well it correlates."""
+        pic = pictures[i]
+        m = _refine(lab, pic["gray"], m.astype(np.float64))
+        z = _zncc(_picture_structure(pic["gray"], PICTURE, 1.8), _structure(_warp_photo(lab, m, PICTURE), 1.8))
+        return {"index": i, "layer": pic["layer"], "zncc": round(z, 3), "to_photo": np.diag([1 / s_ref, 1 / s_ref, 1.0]) @ m}
+
+    def transform(chosen: list[dict]) -> tuple[np.ndarray, float]:
+        """One map (file mm -> photograph pixels) fitted to the corners and centres of the pictures, and how far (mm) it leaves them."""
+        mm, px = [], []
+        for f in chosen:
+            to_mm = pictures[f["index"]]["to_mm"]
+            frame = np.float32([[0, 0], [PICTURE, 0], [PICTURE, PICTURE], [0, PICTURE], [PICTURE / 2, PICTURE / 2]])
+            mm.append((np.c_[frame, np.ones(len(frame))] @ to_mm.T)[:, :2])
+            px.append(cv2.perspectiveTransform(frame[None], f["to_photo"])[0])
+        mm_all, px_all = np.vstack(mm), np.vstack(px)
+        if len(chosen) == 1:
+            h_to_px = chosen[0]["to_photo"] @ np.linalg.inv(pictures[chosen[0]["index"]]["to_mm"])
+        else:
+            h_to_px, _ = cv2.findHomography(mm_all, px_all, 0)
+        back = cv2.perspectiveTransform(px_all[None].astype(np.float64), np.linalg.inv(h_to_px))[0]
+        return h_to_px, float(np.abs(back - mm_all).max())
+
+    fits = []
+    for i, (ncc, origin) in sorted(members.items()):
+        pose = np.eye(3)
+        pose[:2, :2] = _linear(mirror, k) * (px_per_mm * factor)
+        pose[:2, 2] = origin / k_work                                          # file mm -> full-size photograph pixels
+        fits.append({**refine(i, np.diag([s_ref, s_ref, 1.0]) @ pose @ pictures[i]["to_mm"]), "ncc": round(ncc, 3)})
+    good = [f for f in fits if f["zncc"] >= MIN_ZNCC]
+    if not good:
+        diag["pictures"] = [{k_: v for k_, v in f.items() if k_ != "to_photo"} for f in fits]
+        return refuse("the picture of the file does not match the photograph closely enough after refinement")
+    if len(good) > 1:        # a second pass from the transform they share: a picture that has little structure of its own is held by the others
+        h_to_px, _ = transform(good)
+        good = [{**refine(f["index"], np.diag([s_ref, s_ref, 1.0]) @ h_to_px @ pictures[f["index"]]["to_mm"]), "ncc": f["ncc"]} for f in good]
+        good = [f for f in good if f["zncc"] >= MIN_ZNCC] or good
+    diag["pictures"] = [{k_: v for k_, v in f.items() if k_ != "to_photo"} for f in good]
+    h_to_px, residual = transform(good)
+    while len(good) > 2 and residual > LOCATE_MAX_RESIDUAL_MM:                 # drop the picture that agrees least with the rest
+        trial = [(transform([g for g in good if g is not f])[1], f) for f in good]
+        good.remove(min(trial, key=lambda item: item[0])[1])
+        h_to_px, residual = transform(good)
+    diag["residual_mm"] = round(residual, 3)
+    if residual > LOCATE_MAX_RESIDUAL_MM and len(good) >= 2:
+        return refuse("the pictures of the file do not agree on one position in the photograph")
+    image_to_mm = np.linalg.inv(h_to_px)
+    middle = np.mean([(pictures[f["index"]]["to_mm"] @ np.array([PICTURE / 2, PICTURE / 2, 1.0]))[:2] for f in good], axis=0)
+    around = cv2.perspectiveTransform(np.float64([[middle, middle + (10, 0), middle + (0, 10)]]), h_to_px)[0]
+    scale = float((np.linalg.norm(around[1] - around[0]) + np.linalg.norm(around[2] - around[0])) / 20.0)     # pixels per mm where the pictures are
+    details = {"px_per_mm": round(scale, 3), "orientation": {"mirror": bool(mirror), "rotation_degrees": 90 * int(k)},
+               "pictures": diag["pictures"], "pictures_used": [f["layer"] for f in good], "residual_mm": round(residual, 3),
+               "window_found": False, "window_px": None, "found_by": "ruler scale"}
+    best_z = max(f["zncc"] for f in good)
+    reflected = bool(np.linalg.det(image_to_mm[:2, :2]) < 0)
+    diag["details"] = details
+    return Registration(image_to_mm, "picture at ruler scale", [], round(1.0 - best_z, 3), reflected, details=details)

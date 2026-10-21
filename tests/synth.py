@@ -386,3 +386,95 @@ def two_material_tests(first: dict | None = None, second: dict | None = None, ke
     photo = np.hstack([a["photo"], b["photo"][:, :keep]])
     shifted = b["centres"] + np.array([a["photo"].shape[1], 0.0])
     return {"photo": photo, "first": a, "second": {**b, "centres": shifted}}
+
+
+# -- a work of several pictures beside a measuring angle (REQ-055) ------------------------------------------------------------------------
+def structured_picture(seed: int, n: int = 192, rings: bool = False) -> np.ndarray:
+    """Grey levels 0..1 of a picture with edges everywhere (smoothed noise and discs); ``rings``: concentric rings, which look alike
+    turned by any angle."""
+    rng = np.random.default_rng(seed)
+    if rings:
+        yy, xx = np.mgrid[:n, :n]
+        return 0.5 + 0.5 * np.cos(np.hypot(xx - n / 2, yy - n / 2) * 0.35)
+    base = cv2.resize(rng.random((12, 12)).astype(np.float32), (n, n), interpolation=cv2.INTER_CUBIC)
+    base = cv2.GaussianBlur(base, (0, 0), 1.5)
+    for _ in range(10):
+        cx, cy, r = rng.integers(15, n - 15, 2).tolist() + [int(rng.integers(8, 30))]
+        cv2.circle(base, (cx, cy), r, float(rng.random()), -1)
+    base = cv2.GaussianBlur(base, (0, 0), 1.0)
+    return (base - base.min()) / (base.max() - base.min())
+
+
+def draw_angle(img: np.ndarray, px_per_mm: float, corner, length_mm: float = 170.0, width_mm: float = 22.0, arms=("vertical", "horizontal")) -> None:
+    """Two steel rulers at a right angle, the vertical one left of ``corner`` and the horizontal one below it (the plate lies up and to
+    the right), with ticks every mm, longer every 5 mm and longest every 10 mm, drawn in place."""
+    cx, cy = corner
+    w, length = int(width_mm * px_per_mm), int(length_mm * px_per_mm)
+    if "vertical" in arms:
+        img[cy - length:cy, cx - w:cx] = (200, 205, 205)
+    if "horizontal" in arms:
+        img[cy:cy + w, cx:cx + length] = (200, 205, 205)
+    for k in range(int(length_mm) + 1):
+        reach = int((9.0 if k % 10 == 0 else 6.0 if k % 5 == 0 else 3.5) * px_per_mm)
+        y, x = int(round(cy - k * px_per_mm)), int(round(cx + k * px_per_mm))
+        if "vertical" in arms and cy - length <= y < cy:
+            img[y:y + 2, cx - reach:cx] = (30, 30, 30)
+            img[y:y + 2, cx - w:cx - w + reach] = (30, 30, 30)
+        if "horizontal" in arms and x < cx + length:
+            img[cy:cy + reach, x:x + 2] = (30, 30, 30)
+            img[cy + w - reach:cy + w, x:x + 2] = (30, 30, 30)
+
+
+def pictures_work(seed: int = 7, px_per_mm: float = 10.0, size=(1900, 2100), rotate_deg: float = 0.8, mirror: bool = True,
+                  off=(1, 2), rings_first: bool = True, angle=("vertical", "horizontal"), perspective=(6e-6, -4e-6), with_chart: bool = False) -> dict:
+    """A 160 x 160 mm file of three Image layers (C00 a small ring seal, C01 a portrait, C02 a wide banner) and the photograph of the plate
+    engraved with all three, lying in the inner corner of a measuring angle. Layers ``off`` have their output switched off in the file
+    (they were engraved earlier). The photograph is mirrored vertically (file y is up), turned a little and in perspective."""
+    import base64
+    layout = [(14.0, 14.0, 30.0, 30.0), (60.0, 12.0, 60.0, 56.0), (14.0, 100.0, 130.0, 40.0)]       # x, y, w, h in file mm
+    pics = [structured_picture(seed + i, rings=(rings_first and i == 0)) for i in range(3)]
+    shapes, settings = [], []
+    for i, ((x, y, w, h), pic) in enumerate(zip(layout, pics)):
+        png = cv2.imencode(".png", (pic * 255).astype(np.uint8))[1].tobytes()
+        settings.append(f'<CutSetting_Img type="Image"><index Value="{i}"/><name Value="C0{i}"/>'
+                        + ('<doOutput Value="0"/>' if i in off else '') + '<minPower Value="5"/><maxPower Value="16"/><maxPower2 Value="20"/>'
+                        '<speed Value="128"/><frequency Value="60000"/><QPulseWidth Value="300"/><interval Value="0.0169"/>'
+                        '<ditherMode Value="grayscale"/><dpi Value="1503"/></CutSetting_Img>')
+        shapes.append(f'<Shape Type="Bitmap" CutIndex="{i}" W="{w}" H="{h}" Gamma="1" Contrast="0" Brightness="0" EnhanceAmount="0" '
+                      f'EnhanceRadius="0" EnhanceDenoise="0" File="/x/p{i}.png" SourceHash="0" Data="{base64.b64encode(png).decode()}">'
+                      f'<XForm>1 0 0 1 {x + w / 2} {y + h / 2}</XForm></Shape>')
+    xml = ('<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="1.7.01" DeviceName="JPT MOPA M7 60W">'
+           + "".join(settings) + "".join(shapes) + '<Notes ShowOnLoad="0" Notes=""/></LightBurnProject>').encode()
+
+    height, width = size
+    th = np.deg2rad(rotate_deg)
+    lin = px_per_mm * np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]) @ np.diag([1, -1 if mirror else 1])
+    affine = np.eye(3)
+    affine[:2, :2] = lin
+    affine[:2, 2] = -lin @ [0.0, 0.0]
+    persp = np.array([[1, 0, 0], [0, 1, 0], [perspective[0], perspective[1], 1.0]])
+    origin = np.array([[1, 0, 330.0], [0, 1, height - 230.0], [0, 0, 1.0]])
+    mm_to_px = origin @ persp @ affine
+    img = np.full((height, width, 3), (120, 126, 122), np.uint8)
+    rng = np.random.default_rng(seed)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 9, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    plate = cv2.warpPerspective(np.full((160, 160), 255, np.uint8), mm_to_px @ np.diag([1.0, 1.0, 1.0]), (width, height), flags=cv2.INTER_NEAREST) > 127
+    img[plate] = (172, 168, 166)
+    for (x, y, w, h), pic in zip(layout, pics):
+        lab = np.dstack([8 + 30 * pic, 1.5 - 3.0 * pic, 7.0 * pic]).astype(np.float32)
+        colour = (cv2.cvtColor(cv2.cvtColor(lab, cv2.COLOR_Lab2RGB), cv2.COLOR_RGB2BGR) * 255).astype(np.uint8)
+        n = pic.shape[0]
+        to_px = mm_to_px @ np.array([[w / n, 0, x], [0, h / n, y], [0, 0, 1.0]])
+        warped = cv2.warpPerspective(colour, to_px, (width, height), flags=cv2.INTER_LINEAR)
+        cover = cv2.warpPerspective(np.full((n, n), 255, np.uint8), to_px, (width, height), flags=cv2.INTER_NEAREST) > 127
+        img[cover] = warped[cover]
+    img = cv2.GaussianBlur(img, (0, 0), 0.8)
+    corner = (int(round(mm_to_px[0, 2])), int(round(mm_to_px[1, 2])))
+    if angle:
+        draw_angle(img, px_per_mm, corner, arms=angle)
+        img = cv2.GaussianBlur(img, (0, 0), 0.6)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 1.5, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    if with_chart:
+        chart = chart_image()
+        img[40:40 + chart.shape[0], 30:30 + chart.shape[1]] = chart
+    return {"lightburn": xml, "photo": img, "mm_to_px": mm_to_px, "layout": layout, "corner_px": corner, "px_per_mm": px_per_mm, "off": off}
