@@ -154,6 +154,7 @@
       h('p', {class: 'muted small'}, [exp.plate.test_name || I18N.name(exp.plate.mode), `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
         exp.plate.identifier].filter(Boolean).join(' · ')),
       exp.plate.description ? h('p', {class: 'small'}, exp.plate.description) : null,
+      App.timeBlock(exp.time),
       // a plate of the experiment designer answers its proposal (REQ-022): the proposal shows this plate's result
       exp.plate.proposal ? h('p', {class: 'small'}, 'Сделана по ', link(`/designer?device=${exp.plate.proposal.device_id}&lens=${App.lensParam(exp.plate.proposal.lens_id)}&proposal=${exp.plate.proposal.id}`,
         `предложению планировщика № ${exp.plate.proposal.id}`)) : null,
@@ -167,7 +168,7 @@
     // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power
     const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && (p.grayscale_image || p.tonal_image));
     const files = !exp.plate && work ? h('div', {class: 'stack'}, h('h3', {}, 'Готовая работа'),
-      h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`),
+      h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`), App.timeBlock(exp.time),
       h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'),
         photoEngraving ? link(`/photo-preview?pair=${photoEngraving.id}`, 'Как будет выглядеть при других Min/Max') : null)) : null;
     const findings = exp.findings.length ? h('div', {class: 'stack'}, h('h3', {}, 'Выводы по этому эксперименту'),

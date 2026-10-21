@@ -58,6 +58,7 @@ class CapabilityPlateIn(BaseModel):
     passes: int = 1
     global_passes: int = 1
     matrix: dict | None = None
+    scales: dict | None = None            # a grey-scales plate: its rows, columns and Min/Max power (REQ-059)
     patch_size_mm: float = 3.0
     patches: list[dict] | None = None
     registration: str = "full"
@@ -166,6 +167,8 @@ def _capability_settings(body: CapabilityPlateIn) -> dict:
     settings = {k: getattr(body, k) for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes",
                                               "global_passes", "patch_size_mm", "registration", "max_width_mm", "max_height_mm")}
     settings["matrix"] = body.matrix or {}
+    if body.scales is not None:
+        settings["scales"] = body.scales
     if body.patches is not None:
         settings["patches"] = body.patches
     if body.task:

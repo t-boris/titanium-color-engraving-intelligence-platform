@@ -399,10 +399,32 @@ def _flatten_bezier(p0, p1, p2, p3) -> list[tuple[float, float]]:
     return points
 
 
-def _path_loops(shape: ET.Element, m) -> list[tuple[list[tuple[float, float]], bool]]:
-    """Every sub-path of a Path shape as (points in project mm, closed). Edges chain into one sub-path."""
+def _shared_lists(root: ET.Element) -> dict[str, dict[str, str]]:
+    """The vertex and primitive lists of a file by their ids. LightBurn writes a list once, on the first path that has it, and a later
+    path with the same list carries only its ``VertID`` / ``PrimID`` (in a saved work 222 of 574 paths have no ``PrimList`` of their
+    own: shapes of the same topology share one). The first definition of an id is the list; it always comes before its uses (DEC-102)."""
+    shared: dict[str, dict[str, str]] = {"VertList": {}, "PrimList": {}}
+    for element in root.iter():
+        for tag, key in (("VertList", "VertID"), ("PrimList", "PrimID")):
+            ref = element.get(key)
+            text = element.findtext(tag) if ref is not None else None
+            if text is not None:
+                shared[tag].setdefault(ref, text)
+    return shared
+
+
+def _list_of(shape: ET.Element, tag: str, key: str, shared: dict[str, dict[str, str]] | None) -> str:
+    own = shape.findtext(tag)
+    if own is not None or shared is None or shape.get(key) is None:
+        return own or ""
+    return shared[tag].get(shape.get(key), "")
+
+
+def _path_loops(shape: ET.Element, m, shared: dict[str, dict[str, str]] | None = None) -> list[tuple[list[tuple[float, float]], bool]]:
+    """Every sub-path of a Path shape as (points in project mm, closed). Edges chain into one sub-path. A list the path does not carry
+    itself is the one its id names in ``shared`` (``_shared_lists``)."""
     try:
-        verts = _vertices(shape.findtext("VertList") or "")
+        verts = _vertices(_list_of(shape, "VertList", "VertID", shared))
     except (ValueError, IndexError):
         return []
     if not verts:
@@ -412,7 +434,7 @@ def _path_loops(shape: ET.Element, m) -> list[tuple[list[tuple[float, float]], b
         for handle in ("c0", "c1"):
             if v[handle] is not None:
                 v[handle] = _apply(m, *v[handle])
-    edges = [(k, int(a), int(b)) for k, a, b in _PRIMITIVE.findall(shape.findtext("PrimList") or "")]
+    edges = [(k, int(a), int(b)) for k, a, b in _PRIMITIVE.findall(_list_of(shape, "PrimList", "PrimID", shared))]
     edges = [e for e in edges if e[1] < len(verts) and e[2] < len(verts)]
     if not edges:   # vertices without topology: one polyline through them, closed only by a repeated endpoint
         points = [v["p"] for v in verts]
@@ -458,9 +480,9 @@ def _inside(point, polygon, box) -> bool:
     return hit
 
 
-def _path_regions(shape: ET.Element, m) -> list[Region]:
+def _path_regions(shape: ET.Element, m, shared: dict[str, dict[str, str]] | None = None) -> list[Region]:
     """One Region per open polyline and per outer loop; loops nested in a loop are its holes (even-odd nesting)."""
-    loops = _path_loops(shape, m)
+    loops = _path_loops(shape, m, shared)
     closed = [points for points, is_closed in loops if is_closed]
     boxes = [_box(points) for points in closed]
     areas = [abs(_signed_area(points)) for points in closed]
@@ -486,7 +508,7 @@ def _path_regions(shape: ET.Element, m) -> list[Region]:
     return regions
 
 
-def _regions(shape: ET.Element, parent=_IDENTITY) -> list[Region]:
+def _regions(shape: ET.Element, parent=_IDENTITY, shared: dict[str, dict[str, str]] | None = None) -> list[Region]:
     kind = shape.get("Type", "")
     m = _compose(parent, _xform(shape))
     if kind in ("Rect", "Bitmap"):
@@ -507,7 +529,7 @@ def _regions(shape: ET.Element, parent=_IDENTITY) -> list[Region]:
             region.bitmap = {"png": png, "file": shape.get("File") or "", "w": w, "h": h, "matrix": m}
         return [region]
     if kind == "Path":
-        return _path_regions(shape, m)
+        return _path_regions(shape, m, shared)
     if kind == "Ellipse":
         try:
             rx, ry = float(shape.get("Rx", "nan")), float(shape.get("Ry", "nan"))
@@ -526,7 +548,7 @@ def _regions(shape: ET.Element, parent=_IDENTITY) -> list[Region]:
         # Its own XForm equals the text's (checked on files of LightBurn 1.7), so it is not applied on top of the text's.
         backup = shape.find("BackupPath")
         if backup is not None:
-            return _path_regions(backup, _compose(parent, _xform(backup)))
+            return _path_regions(backup, _compose(parent, _xform(backup)), shared)
     return []
 
 
@@ -580,6 +602,7 @@ def parse_bytes(data: bytes) -> Project:
         )
 
     bitmaps: dict[int, list[dict]] = {}
+    shared = _shared_lists(root)
     for shape, parent in _shapes(root):
         raw = shape.get("CutIndex")
         try:
@@ -589,7 +612,7 @@ def parse_bytes(data: bytes) -> Project:
         layer = layers.get(idx) if idx is not None else None
         if layer is None:
             continue
-        found = _regions(shape, parent)
+        found = _regions(shape, parent, shared)
         layer.regions.extend(found)
         kind = shape.get("Type", "")
         if not found:           # no outline to measure, whatever the type: counted, never dropped silently

@@ -1286,3 +1286,56 @@ and every fill have none). Earlier: "Мне непонятно почему я �
 - [x] After deploying 0.17.2, `GET /api/pairs/105/overlay.png?size=1400` answered in 0.01 s and the downloaded picture had 0 light-blue pixels (the working-tree drawing: 40,502): the render cache served the picture drawn by
       0.17.1, because `RENDER_VERSION` was not bumped when the drawing changed. Bumped to 2; a test keeps the version in the key; full suite and a fresh GET of the overlay on the deployed server are the proof.
 
+
+## 0.18.0 plan: photo engraving is the fourth section; grayscale scales "grey -> colour" from the operator's data, confirmed by a grey-ramp plate; time of every work (operator goal, 2026-10-21)
+
+Operator's words (voice-typed): "четвёртым пунктом была фотогравировка ... цветная гравировка мне вообще не нужна, потому что это и есть векторная работа"; "по моим данным, выбирая сеттинги фотогравировки,
+видеть, как она будет выглядеть. И мои эксперименты должны это подтверждать"; grayscale: "все статичные, кроме мощности ... если эти основные сеттинги не вокруг чёрного цвета, а вокруг какого-то другого, то изменение
+мощности меняет цвет ... научился понимать, какой серый создает какой цвет"; "считал ... скорость выполнения каждой работы ... 3 часа она делается или 15 минут"; "обрати внимание, какое должно быть расстояние между
+точками ... такое же расстояние, как и для цвета ... grayscale вообще не получится ... я нашел 0.0169, но может быть есть более удобный вариант"; "да, делай писатель слоя Image и пластину".
+
+#### Evidence (read only: the live DB opened read-only, GET on 8765; scripts in the scratchpad)
+- One laser (JPT M7 60 W), one lens (F-Theta 174, field 170), three Grade 5 titanium records. Grayscale works: pairs 88 Motorcycle and 93 Girl on a bike (Big Plate, Min 1 / Max 30, 150 mm/s, 60 kHz, 300 ns,
+  0.0169 mm = 1500 dpi, chart-corrected) form one mode ("Mode A", 31 tonal points, P 1.9-29.1); pair 85 Inna-2 (Test Plate, 5-16.1 %, 128 mm/s, camera-relative, 13 points).
+- Mode A changes colour with power, not only lightness: pale gold (P 2-9, L 76-82 b 14-21) -> gold (P 12.8: 72/4/26) -> violet-neutral (P 18.2: 53/2.5/-1) -> dark brown-grey (P >= 23.7: 43/-1/5). Ends dE 25-33.
+- Repeatability of Mode A (88 vs 93): dark half dE 1.2-2.9, light half 8-16.
+- The fill row of the Power x Speed plate (pair 95) has EXACTLY the settings of Mode A. Grayscale pixel vs fill at the same power: dark (P 24-29) dE 1.4-6.2; middle (P 16-22) 15-21; light and gold (P 5-15) 6-36.
+  A power factor does not explain it (best x1.1: still 12-17). So a grayscale scale is measured with grayscale engravings; fills are not a predictor (answers Q-026 with numbers; the operator's remark on
+  the line interval says why).
+- Nothing writes `CutSetting_Img`; no grey-ramp plate exists; no photo job or plate shows its total time; no real job duration is stored anywhere (estimates only, DEC-075, never timed).
+- The operator's own Image layers (reference for the writer): `CutSetting_Img type="Image"` with minPower, maxPower, speed, frequency (Hz), QPulseWidth, interval, ditherMode, dpi (= 25.4 / interval, rounded);
+  `Shape Type="Bitmap"` with W/H = mm of the PNG at its own pHYs dpi, XForm scale + centre, Gamma/Contrast/Brightness/Enhance*, File, SourceHash, Data = base64 PNG (L or RGBA).
+
+#### Order (the operator's ask first; each step tested on its own files while building, the full suite once at the end)
+- [x] A. Navigation: 1 Эксперименты, 2 Карта цветов, 3 Векторная работа, 4 Фотогравировка (new section), then the rest. "Цветная гравировка" leaves the menu; its address stays (plan pages link to it).
+      The banded tonal / colour-path form and the old preview stay reachable from the section; their addresses keep working.
+- [x] B. Grayscale scales (the core): a scale = one grayscale mode (laser, lens, titanium, speed, frequency, pulse, interval, passes) with its measured "power -> colour" points from grayscale engravings only.
+      Per scale: the colour bar over its measured power span, the grey -> colour bar for the chosen Min/Max with grey numbers (0-255) and power, the table "which grey makes which colour", where each point
+      was measured, and the confirmation by experiments: each engraving against the curve of the OTHER engravings (dE per power band). Fills of the same settings are shown beside as reference, not used.
+- [x] C. Preview of a picture on a scale: a plain picture (PNG/JPG) or a LightBurn file; Min/Max sliders inside the measured span; side by side with the prediction; the engraving time for the chosen size;
+      download a LightBurn file with the picture on an Image layer with exactly these settings (needs D).
+- [x] D. The Image-layer writer: `CutSetting_Img` + `Shape Type="Bitmap"` (PNG with pHYs at the layer dpi), read back by our parser AND compared tag by tag with the operator's real Image files.
+- [x] E. The grey-ramp plate ("Шкалы серого"): a plate type with markers and cleaning first; each tile one Image layer in grayscale mode with a horizontal 16-step ramp (steps at the measurement's bin centres,
+      white on the left), its own settings; two axes chosen from speed, line interval, frequency, pulse width, passes (default rows = interval 0.0127 / 0.0169 / 0.0212 / 0.0254 mm = 2000 / 1500 / 1200 /
+      1000 dpi, columns = speed around 150 mm/s); Min/Max power shared. Engraved -> photographed -> the existing check measures each tile as a tonal profile -> each tile becomes a scale. Proven end to end on a
+      synthetic photograph of the plate (check, accept, the scale appears with the right colours).
+- [x] F. "Which grey for this colour": a colour picture -> the grey picture whose grayscale engraving on the chosen scale comes nearest (each pixel to the nearest colour the scale reaches); preview and download.
+- [x] G. Time of every work: the photo preview and the downloaded file, every plan and plate page (`engraving_time.estimate`), with what the estimate leaves out.
+- [x] H. Docs (MarkView feature through the tools), README 0.18.0, version, lessons, full suite (-n 12), backup + deploy to 8765, check on the real app (GET only), report with "reload (Cmd+R)".
+      Done 2026-10-21: REQ-059, REQ-060, DEC-100..102 through MarkView; README 0.18.0; lessons; 1545 passed (-n 12, none skipped) on the final tree; backup
+      `backups/titanium-before-0.18.0-20261021T192658Z.sqlite` (integrity ok); wheel installed with its dependencies; 8765 answers 0.18.0. GET only: 2 scales, Inna + Boris 1.65 h,
+      vector screen 3.11 h, overlay of pair 104 redrawn (4.1 s, then 0.008 s from the cache) with every shape outlined.
+- Ids: requirement numbers are global across features in MarkView (REQ-058 is vector-detail's), so this release is REQ-059 (photo engraving) and REQ-060 (time);
+  decisions DEC-100 (scales from grayscale engravings only), DEC-101 (time per piece of scan line, 1 ms), DEC-102 (shared VertList / PrimList).
+
+#### Review (2026-10-21)
+- Built: A-G as listed; tests `tests/test_grey_scales.py` (11), `tests/test_engraving_time.py` (+4), `tests/test_lightburn.py` (+1), UI and i18n tests; the framed-ingest acceptance became a module
+  fixture (the witness test depended on another test's side effect and failed when pytest-xdist put them on different workers).
+- Found while timing works: the reader did not follow LightBurn's shared lists (`VertID` / `PrimID`): 222 of 574 paths of Inna + Boris 9_backup were open lines with no area, 8 stored files affected
+  (DEC-102). Fixed in `lightburn._shared_lists`; overlays redrawn (`RENDER_VERSION` 3).
+- Time model timed against the operator's jobs (DEC-101): Inna + Boris about 3 h at 150 mm and 1.5-2 h at 100 mm. Counting pieces of scan line from the shapes (edge extent / 2 x interval) at 1 ms:
+  150 mm 3.11 h on the vector screen, 2.9-3.3 h by the files; 100 mm 1.5-1.65 h. The old 0.3 ms with 10 mm lines gave 1.2-1.4 h for the 100 mm file.
+- Real data (Mode A): confirmation median dE 10.2, not confirmed: dark half 1-3 dE, light half 10-16; 10 fills of the same settings differ by up to 33.8 dE (reference only).
+- Full suite: 1545 passed, none skipped, 2 min 38 s on 12 workers.
+- Open for the operator (answered with a default, not blocking): pure white at Min power (the plate's first step is white: the photograph decides); a convenient interval (the plate's rows decide: the one
+  with the widest colour range and distinct steps); the pulse width 300 ns is not one of the laser's steps (250 / 350): the laser keeps the last valid one, so what these works really used is uncertain.

@@ -334,3 +334,30 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: any change to what a cached picture shows (overlay, photograph preview, thumbnails) bumps `RENDER_VERSION` in the same commit. After a deploy that changes a picture, download that picture from the running server
   and count what must be in it (colour pixels, outlines); a response that is much faster than a drawing takes is a cached one.
 
+
+## Ask the operator for facts only he has, not for the method; then tie his number to the exact artefact
+- Remark (2026-10-21, voice-typed, release 0.18.0): asked how the time model should learn ("record real times" / "fix the reader only" / "fit now"), the operator answered "Понимаю, в чём проблема
+  рассчитать, когда ты знаешь скорость, расстояние между линиями, частоту ... и площадь? ... около трёх часов, но не полтора часа точно". Then: "я модернизировал это на 100 на 100 миллиметров, не 150
+  на 150. 150 на 150 занимало где-то около трех часов. 100 на 100 ... полтора часа, около двух".
+- Rule: when a measured number disagrees with the model, first find which file, size and settings the number belongs to (the work existed as three files: 150 mm and two at 100 mm) and show the
+  operator those facts; ask him only what he alone knows (which job, how long). Choosing the method (count pieces of scan line from the geometry, fit one cost to his jobs) is my job, and the
+  physics plus his two numbers settled it: 1 ms per piece fits both sizes, 0.3 ms per 10 mm line fitted the 150 mm job only by chance.
+
+## Two estimates of the same thing that disagree are a bug report: find why before shipping either
+- Situation (2026-10-21): the new time of a work from its LightBurn file (1 h 10 min) disagreed with the vector screen (2 h 59 min). The cause was in the reader, not in the time: LightBurn writes a
+  path's VertList / PrimList once and later paths name it by VertID / PrimID; 222 of 574 paths were read as open lines with no area, in 8 stored files (DEC-102), so areas, overlays and
+  measurements of those works had missed shapes since the start.
+- Rule: when I add a second way to compute a number the platform already shows, compare the two on the operator's real data before release; a gap is traced to its cause (here: count closed vs
+  open regions per file) instead of being explained away by "different models".
+
+## A picture written for LightBurn is checked by reading it back, not by its tags
+- Situation (2026-10-21): the Image-layer writer copied every tag of the operator's real files but stored the picture top row first; LightBurn stores Image pictures bottom row first (the operator's
+  Motorcycle PNG is upside down under a positive XForm), so every downloaded file would have engraved upside down.
+- Rule: a writer of an existing format is tested by a round trip through the same reader that reads the operator's real files, comparing the result pixel by pixel with what was uploaded, and the
+  reader's convention is checked on a real file first.
+
+## Bulk edits go through a script over source files, and spec ids come from MarkView before they go into code
+- Situation (2026-10-21): code cited REQ-058 for photo engraving, but requirement ids are global across MarkView features and REQ-058 was vector-detail's. Renumbering with `sed` over `grep -rl`
+  hit `__pycache__/*.pyc` (grep lists binary files; sed stopped half-way with "illegal byte sequence"), and an unquoted `$FILES` is one word in zsh.
+- Rule: add the requirement or decision with the MarkView tool first and cite the id it returns. Rename across files with a Python script over text files only (`*.py`, `*.js`, `*.css`), deciding
+  the new id line by line by meaning, then grep the result for every old and new id.

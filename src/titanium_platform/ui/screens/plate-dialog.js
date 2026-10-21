@@ -24,7 +24,12 @@ const PlateDialog = (() => {
   };
   const materialName = (m) => [m.family, m.name, m.grade, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ');
 
-  async function open(devices, materials, reload) {
+  // REQ-059: шкалы серого — две оси из этих параметров; по умолчанию строки — шаг линий (2000/1500/1200/1000 dpi), столбцы — скорость
+  const GREY_AXES = ['line_interval', 'speed', 'frequency', 'pulse_width', 'passes'];
+  const GREY_DEFAULTS = {rows: 'line_interval', rowValues: '0.0127, 0.0169, 0.0212, 0.0254', columns: 'speed', columnValues: '100, 150, 250',
+    min: 1, max: 40, speed: 150, frequency: 60, interval: 0.0169};
+
+  async function open(devices, materials, reload, preset = {}) {
     const typeRows = await get('/plate-types');
     const available = (devices || []).filter((d) => d.lens);
     const type = h('select', {'aria-label': 'Тип экспериментальной платы'}, h('option', {value: '', selected: true}, 'выберите тип платы'));
@@ -92,6 +97,22 @@ const PlateDialog = (() => {
       h('div', {class: 'grid g3'}, field('Y: от', matrix.yMin), field('Y: до', matrix.yMax), field('Точек по Y', matrix.yCount)),
       field('Шаг wobble, мм (при включении)', matrix.wobbleStep),
       h('p', {class: 'muted small'}, 'Для Q-Pulse используются только ступени из паспорта лазера. Шаг линий действует только для заливки и заполненных букв. Wobble проверяется на векторных линиях и однолинейных буквах.'));
+    const grey = {
+      rows: h('select', {'aria-label': 'Строки шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
+      rowValues: h('input', {value: GREY_DEFAULTS.rowValues}),
+      columns: h('select', {'aria-label': 'Столбцы шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
+      columnValues: h('input', {value: GREY_DEFAULTS.columnValues}),
+      min: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.min}),
+      max: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.max}),
+    };
+    grey.rows.value = GREY_DEFAULTS.rows; grey.columns.value = GREY_DEFAULTS.columns;
+    const greyCard = h('div', {class: 'card stack', style: 'display:none'},
+      h('p', {class: 'muted small'}, 'Каждая полоска — свой слой-изображение LightBurn в режиме градаций серого: 16 ступеней от белого (слева, мощность Min) до чёрного (справа, мощность Max). '
+        + 'Строки и столбцы меняют два постоянных параметра; остальные берутся из «Основных параметров опыта». До 7 строк и 4 столбцов.'),
+      h('div', {class: 'grid g2'}, field('Строки: параметр', grey.rows), field('Значения строк, через запятую', grey.rowValues)),
+      h('div', {class: 'grid g2'}, field('Столбцы: параметр', grey.columns), field('Значения столбцов, через запятую', grey.columnValues)),
+      h('div', {class: 'grid g2'}, field('Min мощность, % (белый)', grey.min), field('Max мощность, % (чёрный)', grey.max)),
+      h('p', {class: 'muted small'}, 'Шаг линий 0,0127 / 0,0169 / 0,0212 / 0,0254 мм — это 2000 / 1500 / 1200 / 1000 dpi. После фотографии каждая полоска станет шкалой «серый → цвет» в разделе «Фотогравировка».'));
     const settings = {
       power: h('input', {type: 'number', min: '1', max: '100', step: 'any', value: DEFAULTS.power}),
       frequency: h('input', {type: 'number', min: '1', step: 'any', value: DEFAULTS.frequency}),
@@ -160,7 +181,15 @@ const PlateDialog = (() => {
       const item = typeRows.find((row) => row.id === type.value);
       matrixCard.style.display = type.value === 'material_matrix' ? '' : 'none';
       smallCard.style.display = type.value === 'small_patches' ? '' : 'none';
+      greyCard.style.display = type.value === 'grey_scales' ? '' : 'none';
       if (resetSize) maxWidth.value = maxHeight.value = type.value === 'small_patches' ? '25' : '100';
+      if (resetSize && type.value === 'grey_scales') {
+        settings.speed.value = GREY_DEFAULTS.speed;
+        settings.interval.value = GREY_DEFAULTS.interval;
+        const laser = available.find((d) => String(d.id) === device.value) || available[0];
+        const range = laser?.passport?.repetition_rate_khz || {min: 1, max: 4000};
+        settings.frequency.value = Math.min(Math.max(GREY_DEFAULTS.frequency, range.min), range.max);
+      }
       if (type.value === 'small_patches') patchDefaults();
       desc.replaceChildren(...(item ? type.value === 'small_patches' ? [
         h('div', {}, item.purpose),
@@ -184,6 +213,7 @@ const PlateDialog = (() => {
     patch.count.addEventListener('change', patchDefaults);
     patch.axis.addEventListener('change', patchDefaults);
     fillHardware(); changeDescription();
+    if (preset.type && typeRows.some((row) => row.id === preset.type)) { type.value = preset.type; changeDescription(true); }
 
     const newMaterial = {
       name: h('input', {placeholder: 'Например: лист Grade 2'}),
@@ -212,7 +242,7 @@ const PlateDialog = (() => {
       field('Заготовка', material),
       h('div', {class: 'grid g2'}, field('Максимальная ширина платы, мм', maxWidth),
         field('Максимальная высота платы, мм', maxHeight)),
-      matrixCard, smallCard,
+      matrixCard, smallCard, greyCard,
       h('details', {class: 'card'}, h('summary', {}, 'Добавить новую заготовку'),
         h('div', {class: 'stack', style: 'margin-top:12px'},
           h('div', {class: 'grid g3'}, field('Материал', newMaterial.family), field('Название / лист', newMaterial.name), field('Марка / сплав', newMaterial.grade), field('Партия', newMaterial.batch)),
@@ -241,6 +271,16 @@ const PlateDialog = (() => {
           wobble_step: +matrix.wobbleStep.value,
           x_min: +matrix.xMin.value, x_max: +matrix.xMax.value, x_count: +matrix.xCount.value,
           y_min: +matrix.yMin.value, y_max: +matrix.yMax.value, y_count: +matrix.yCount.value}, ...task.body()};
+      if (type.value === 'grey_scales') {
+        const values = (input, label) => {
+          const numbers = input.value.split(/[,;\s]+/).filter(Boolean).map(Number);
+          if (!numbers.length || numbers.some((n) => !Number.isFinite(n))) throw new Error(`${label}: укажите числа через запятую`);
+          return numbers;
+        };
+        out.power = +grey.max.value;
+        out.scales = {rows: {axis: grey.rows.value, values: values(grey.rowValues, 'Строки')},
+          columns: {axis: grey.columns.value, values: values(grey.columnValues, 'Столбцы')}, min_power: +grey.min.value, max_power: +grey.max.value};
+      }
       if (type.value === 'small_patches') {
         const count = +patch.count.value;
         const numbers = patch.values.value.split(/[,;\s]+/).filter(Boolean).map(Number);

@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, plans, render_cache, research, setup as su, vector_job
+from .. import conversion, designer, experiments, plans, render_cache, research, setup as su, vector_job
 from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
@@ -51,6 +51,7 @@ def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
     s = store_of(request)
     result = public_plan(plans.with_operating_points(s, _visible_plan(s, plan_id)), with_regions=regions)
     result["active_pairs"] = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))["n"]
+    result["time"] = experiments.plan_time(plans.get_plan(s, plan_id))
     return result
 
 

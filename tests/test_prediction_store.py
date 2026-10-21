@@ -72,7 +72,8 @@ def test_the_grey_of_a_bin_goes_through_the_files_picture_adjustments_as_the_pre
     assert powers == pytest.approx(sorted(5.0 + 11.0 * (1 - g ** 0.8) for g, _ in BINS))
 
 
-def test_flat_fills_at_exactly_the_mode_are_points_and_every_other_layer_is_not(w):
+def test_flat_fills_at_exactly_the_mode_are_kept_beside_the_curve_and_every_other_layer_is_not(w):
+    """DEC-100: a fill with the settings of a grayscale mode is a reference beside its curve, never a point of it."""
     pid = pair(w)
     observe(w, pid, [30.0, 2.0, 8.0], 6.0)
     observe(w, pid, [31.0, 2.0, 8.0], 6.0, speed=129.0)               # another speed: another mode
@@ -80,8 +81,22 @@ def test_flat_fills_at_exactly_the_mode_are_points_and_every_other_layer_is_not(
     observe(w, pid, [33.0, 2.0, 8.0], 6.0, layer_type="Image")        # the median of an image layer is not a colour at one power
     observe(w, pid, [70.0, 0.0, 2.0], 3.0, index=-1, role=colormap.WITNESS)
     observe(w, pid, [50.0, 0.0, 0.0], 20.0, index=0, role=colormap.SERVICE[0])
-    (point,) = ps.collect(w["store"], mode(w))["points"]
+    found = ps.collect(w["store"], mode(w))
+    (point,) = found["fills"]
+    assert found["points"] == []
     assert point.power == 6.0 and point.source["how"] == "flat fill" and point.source["layer_name"] == "C01"
+    with pytest.raises(pr.PredictionError, match="no colour has been measured at this mode"):
+        ps.curve_for(w["store"], mode(w))                             # fills alone make no curve
+
+
+def test_a_curve_with_fills_of_its_settings_names_them_and_leaves_them_out(w):
+    pair(w, check=tonal_check(chart=True))
+    fill = pair(w)
+    observe(w, fill, [90.0, -8.0, 36.0], 10.5, chart=True)          # a fill far from the picture's colour at the same power
+    curve, basis = ps.curve_for(w["store"], mode(w))
+    assert len(curve.points) == 3 and all(src["how"] == "tonal profile" for row in curve.points for src in row["sources"])
+    assert [p.power for p in basis["fills"]] == [10.5]
+    assert any("1 flat fills with these settings are shown beside the curve and not used" in n for n in basis["notes"])
 
 
 def test_another_laser_lens_or_titanium_stock_is_another_partition(w):
@@ -112,9 +127,7 @@ def test_a_weak_tonal_profile_and_another_dither_mode_are_not_used(w):
 
 def test_referenced_points_are_preferred_and_the_camera_relative_ones_are_counted_left_out(w):
     pair(w, check=tonal_check())
-    charted = pair(w)
-    observe(w, charted, [40.0, 5.0, 20.0], 6.0, chart=True)
-    observe(w, charted, [30.0, 6.0, 25.0], 12.0, chart=True)
+    pair(w, check=tonal_check(bins=[(0.0, [40.0, 5.0, 20.0]), (1.0, [30.0, 6.0, 25.0])], power_range=(6.0, 12.0), chart=True))
     curve, basis = ps.curve_for(w["store"], mode(w))
     assert curve.referenced and curve.span == (6.0, 12.0) and curve.left_out == 3 and basis["reference"] == ps.CHART
     assert [s["reference"] for row in curve.points for s in row["sources"]] == [ps.CHART, ps.CHART]
@@ -165,6 +178,6 @@ def test_a_point_of_a_kept_plate_names_the_plate_and_its_experiment(w):
                               (w["laser"]["id"], w["lens"]["id"], now())).lastrowid
     pid = pair(w, plan_id=plan)
     observe(w, pid, [30.0, 2.0, 8.0], 6.0)
-    (point,) = ps.collect(w["store"], mode(w))["points"]
+    (point,) = ps.collect(w["store"], mode(w))["fills"]
     assert point.source["kind"] == "plate" and point.source["id"] == plan and point.source["pair_id"] == pid
     assert point.source["experiment"] == f"plan-{plan}"

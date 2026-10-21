@@ -7,7 +7,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from titanium_platform import color
+from titanium_platform import color, grayscale
 from titanium_platform import photo as ph
 
 
@@ -42,13 +42,13 @@ def scene(width: int = 1500, height: int = 1000, chart_at=(60, 40), work_rgb=(12
 
 
 def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: float = 20.0, size=(1500, 1900),
-                origin=(520, 80), chart_at=None, gains=None, with_chart: bool = True) -> np.ndarray:
+                origin=(520, 80), chart_at=None, gains=None, with_chart: bool = True, step_rgb=None) -> np.ndarray:
     """Render a plate from its plan: white sheet, grey cells coloured per ``cell_rgb``, ArUco markers, QR.
 
     ``plan`` is an EngravingPlan, a plate or any plan with rectangular regions: ``cell_rgb`` is keyed by a layer's cell id,
     else by its name. Without markers the sheet is the extent of the regions (cleaning areas included) and nothing else is
     drawn. The plan's own geometry is used, so a photo made from a plan and a LightBurn file exported from the same plan
-    agree exactly.
+    agree exactly. ``step_rgb(layer_name, grey)`` colours each step of a layer's grey ramp (a "grey scales" plate).
     """
     h, w = size
     img = np.full((h, w, 3), (150, 155, 150), np.uint8)
@@ -63,6 +63,10 @@ def plate_photo(plan: dict, cell_rgb: dict[str, tuple[int, int, int]], scale: fl
         r, g, b = cell_rgb.get(layer.get("cell_id", layer["name"]), (128, 128, 128))
         for reg in layer["regions"]:
             img[sy(reg["y"]):sy(reg["y"] + reg["height"]), sx(reg["x"]):sx(reg["x"] + reg["width"])] = (b, g, r)
+        if step_rgb is not None and layer.get("ramp"):
+            for step in grayscale.ramp_steps(layer["ramp"]):
+                r, g, b = step_rgb(layer["name"], step["grey"])
+                img[sy(step["y"]):sy(step["y"] + step["height"]), sx(step["x"]):sx(step["x"] + step["width"])] = (b, g, r)
     rects = [r for a in markers["aruco"] for r in a["rects"]] + markers["qr"]["rects"] if markers else []
     for r in rects:
         img[sy(r["y"]):sy(r["y"] + r["height"]), sx(r["x"]):sx(r["x"] + r["width"])] = 0

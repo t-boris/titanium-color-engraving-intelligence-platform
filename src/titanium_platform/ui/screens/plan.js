@@ -119,6 +119,7 @@
         ['Титан', materialLabel], ['Рабочее поле', fieldLabel], ['Чистка — первый слой C00', cleanLabel],
         ['Подписи и маркеры', markers + (['Calibration plate', 'Laser capability test'].includes(p.mode) ? ' · слой C01, ArUco + QR ID' : '')]]),
         exp.test_description ? h('p', {class: 'muted small'}, exp.test_description) : null,
+        p.time ? App.timeBlock(p.time) : null,
         h('p', {class: 'muted small'}, 'Чистка — первый слой C00. При экспорте файл LightBurn скачивается на компьютер; он не отправляется в лазер автоматически.'),
         h('div', {class: 'row'}, toggle, exportBtn)),
       banding(p),

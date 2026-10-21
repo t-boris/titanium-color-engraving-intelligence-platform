@@ -31,6 +31,18 @@ const App = (() => {
   const pill = (text, kind = '') => h('span', {class: 'pill ' + kind}, text);
   const labText = (lab) => (lab ? `L ${(+lab[0]).toFixed(1)} · a ${(+lab[1]).toFixed(1)} · b ${(+lab[2]).toFixed(1)}` : '—');
   const num = (v, d = 2) => (v == null ? '—' : (+v).toFixed(d));
+  /** Оценка времени гравировки работы по её файлу LightBurn (REQ-060): итог, что в него не входит, время каждого слоя. */
+  function timeBlock(t) {
+    if (!t) return h('p', {class: 'muted small'}, 'Время гравировки не оценить: файл работы не читается или ещё не создаётся.');
+    return h('div', {class: 'stack'},
+      h('p', {}, h('strong', {}, `Время гравировки ≈ ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
+        h('span', {class: 'muted small'}, ' — оценка по файлу LightBurn: площадь или длина каждого слоя, скорость, шаг строк, проходы и повторы; переходы между объектами не учтены.')),
+      h('details', {class: 'small'}, h('summary', {}, `По слоям (${t.layers.length})`),
+        h('ul', {}, t.layers.map((r) => h('li', {}, `${r.name}: `, r.seconds == null ? I18N.tr(r.note) : duration(r.seconds))))));
+  }
+  /** Длительность в секундах по-русски: «2 ч 05 мин», «4 мин 07 с», «45 с». */
+  const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
+    : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
   /** Сколько независимых гравировок настройки дали один цвет (REQ-045): «2 из 3 совпали»; одна гравировка не повторялась. */
   const agreed = (a) => (!a || a.engravings < 2 ? 'не повторялась' : a.differing ? `${a.agreeing} из ${a.engravings} совпали` : `все ${a.engravings} совпали`);
   /** Почему настройку не берёт автоматика: цвет менялся при тех же настройках или те же настройки измерены точнее. */
@@ -130,5 +142,5 @@ const App = (() => {
     });
   }
 
-  return {h, fill, btn, field, link, pill, labText, num, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress};
+  return {h, fill, btn, field, link, pill, labText, num, duration, timeBlock, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress};
 })();

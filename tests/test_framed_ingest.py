@@ -34,6 +34,14 @@ def world(tmp_path_factory, work):
     store.close()
 
 
+@pytest.fixture(scope="module")
+def accepted(world):
+    """The pair reviewed and accepted once, whichever test asks first: tests share it without depending on their order (pytest-xdist)."""
+    store, pid, _ = world
+    ig.review_masks(store, pid)
+    return ig.accept_pair(store, pid)
+
+
 @pytest.fixture
 def pair(world):
     return world[0], world[1]
@@ -124,13 +132,11 @@ def test_a_layer_is_not_sampled_where_a_later_layer_engraves_over_it(tmp_path):
     store.close()
 
 
-def test_a_checked_framed_pair_can_be_reviewed_and_accepted_into_observations(world):
+def test_a_checked_framed_pair_can_be_reviewed_and_accepted_into_observations(world, accepted):
     """The whole path of a framed work: check, review of the masks, acceptance, immutable observations."""
     store, pid, report = world
     assert report["alignment"]["valid"] and not report["problems"]
-    ig.review_masks(store, pid)
-    ids = ig.accept_pair(store, pid)
-    assert len(ids) >= 5
+    assert len(accepted) >= 5
     rows = store.query("SELECT alignment_method, parameters_json, lab_json FROM observation WHERE pair_id=?", (pid,))
     assert {r["alignment_method"] for r in rows} == {"element anchors"}
     import json
@@ -203,8 +209,8 @@ def test_the_cleaning_rectangle_of_a_finished_work_is_its_clean_titanium_referen
     assert layers[0]["measured_lab"] is not None                  # the plate's own clean surface, measured where nothing was engraved over it
 
 
-def test_the_witness_becomes_observation_minus_one_and_the_colours_keep_their_layer_index(pair):
-    store, pid = pair                                            # accepted by the test above
+def test_the_witness_becomes_observation_minus_one_and_the_colours_keep_their_layer_index(pair, accepted):
+    store, pid = pair
     indices = sorted(r["layer_index"] for r in store.query("SELECT layer_index FROM observation WHERE pair_id=?", (pid,)))
     assert indices.count(-1) == 1 and 0 not in indices and max(indices) >= 5
 

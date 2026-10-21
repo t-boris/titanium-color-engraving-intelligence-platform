@@ -45,6 +45,7 @@ import cv2
 
 from . import color
 from . import composition
+from . import grayscale
 from . import left_behind
 from . import lightburn as lb
 from . import photo as ph
@@ -1468,6 +1469,48 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     return best
 
 
+def _ramp_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, ramp: dict, dx: float, dy: float, shape: tuple[int, int],
+                  allowed: np.ndarray | None) -> dict | None:
+    """The colour of every step of a grey ramp of a plate (REQ-059): each step is measured where the plan put it, its edges left out
+    (DEC-028), so its grey and therefore its power are known exactly, pure white and pure black included. The result has the form
+    of a tonal profile, so the curve of the mode takes it like any other. A rank correlation is reported but is no evidence here:
+    the colours of a scale need not darken step by step (gold, violet, blue ...); the evidence is that the steps were found."""
+    steps = grayscale.ramp_steps(ramp)
+    bins, missed = [], 0
+    for step, polygon in zip(steps, _rect_polygons(steps, dx, dy)):
+        mask = ph.layer_mask([polygon], layer_h, shape)
+        if allowed is not None:
+            mask &= allowed
+        try:
+            lab, pixels = ph.sample_lab(corrected_rgb, mask)
+        except ph.PhotoError:
+            missed += 1
+            continue
+        bins.append({"gray": round(step["grey"], 6), "L": round(lab[0], 2), "a": round(lab[1], 2), "b": round(lab[2], 2),
+                     "C": round(float(np.hypot(lab[1], lab[2])), 2), "n": int(pixels)})
+    if len(bins) < 3:
+        return None
+    greys, lightness = np.array([b["gray"] for b in bins]), np.array([b["L"] for b in bins])
+    rank = lambda v: np.argsort(np.argsort(v)).astype(np.float64)
+    rho = float(np.corrcoef(rank(greys), rank(lightness))[0, 1]) if np.ptp(lightness) > 1e-6 else 0.0
+    out = {"samples": int(sum(b["n"] for b in bins)), "rho": round(rho, 3), "vertical_flip": False, "bins": sorted(bins, key=lambda b: b["gray"]),
+           "measured_by": "grey ramp", "steps": len(steps), "steps_missed": missed, "power_range": None,
+           "adjustments": {}, "adjustments_keep_order": True, "evidence": "clear",
+           "limitation": "Each step of the ramp is measured where the plate puts it, edges left out; its power follows the layer's Min and Max: "
+                         "the white step gets Min, the black step Max, linearly between (DEC-057)."}
+    try:
+        low, high = float(layer.source_settings["minPower"]["Value"]), float(layer.source_settings["maxPower"]["Value"])
+    except (KeyError, TypeError, ValueError):
+        low = high = None
+    if low is not None:
+        out["power_range"] = [low, high]
+        for item in out["bins"]:
+            item["power_pct"] = round(low + (high - low) * (1 - item["gray"]), 3)
+    levels = [b["L"] for b in out["bins"]]
+    out.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1])
+    return out
+
+
 def _picture_silhouettes(project, image_to_mm: np.ndarray, shape: tuple[int, int]) -> np.ndarray | None:
     """Mask, in photograph pixels, of the strongest edges (silhouettes) of the picture stored in the file."""
     regions = [r for layer in project.layers for r in layer.regions if r.bitmap and r.bitmap.get("png")]
@@ -2377,7 +2420,9 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
             allowed = visible_surface
             if covered is not None:
                 allowed = ~covered if allowed is None else allowed & ~covered
-            tonal = _tonal_profile(corrected, layer_h, layer, shape, allowed)
+            ramp = (planned_layer or {}).get("ramp")
+            tonal = (_ramp_profile(corrected, layer_h, layer, ramp, dx, dy, shape, allowed) if ramp
+                     else _tonal_profile(corrected, layer_h, layer, shape, allowed))
             if tonal is not None:
                 rep["tonal"] = tonal
         if rep.get("role") == "registration, QR and engraved labels" and plan and plan.get("markers"):

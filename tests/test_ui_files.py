@@ -58,12 +58,20 @@ def test_the_laser_page_shows_the_one_experiment_list_filtered_by_it_and_no_list
     assert "ExperimentCards.list(shown" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
 
 
-def test_the_photo_preview_is_in_the_menu_right_after_photo_engraving_with_an_icon_of_its_own():
+def test_photo_engraving_is_the_fourth_section_and_the_other_photo_screens_open_from_it():
+    """REQ-059: the menu's fourth item is photo engraving; colour engraving (it is vector work) left the menu; the banded form and the
+    preview by LightBurn file left it too and open from the section; every address still opens its screen."""
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[nav.index("/photo") + 1] == "/photo-preview" and len(icons) == len(nav)
-    assert "'photo-preview': 'photo-preview'" in router and "App.register({id: 'photo-preview'" in _screen("photo-preview.js")
+    assert nav[3] == "/photo-engraving" and "['/photo-engraving', 'Фотогравировка']" in router and len(icons) == len(nav)
+    assert not {"/artwork", "/photo", "/photo-preview"} & set(nav)
+    for route, screen, file in (("artwork", "artwork", "artwork.js"), ("photo", "photo", "photo.js"), ("'photo-preview'", "photo-preview", "photo-preview.js"),
+                                ("'photo-engraving'", "photo-engraving", "photo-engraving.js")):
+        assert f"{route}: '{screen}'" in router and f"App.register({{id: '{screen}'" in _screen(file)
+    engraving = _screen("photo-engraving.js")
+    assert "link('/photo-preview'" in engraving and "link('/photo'," in engraving and "type: 'grey_scales'" in engraving
+    assert "photo: '/photo-engraving', 'photo-preview': '/photo-engraving'" in router
 
 
 def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_every_route_still_opens():
@@ -72,7 +80,7 @@ def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_eve
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
     assert nav[:3] == ["/experiments", "/colors", "/vector"] and len(icons) == len(nav) == len(set(nav))
-    assert nav[3:] == ["/artwork", "/photo", "/photo-preview", "/designer", "/findings", "/devices", "/setup", "/research"]      # the rest as it was
+    assert nav[3:] == ["/photo-engraving", "/designer", "/findings", "/devices", "/setup", "/research"]      # REQ-059: photo engraving fourth
     assert "vector: 'vector'" in router and "App.register({id: 'vector'" in _screen("vector.js")
     vector_icon = '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>'
     assert vector_icon in icons_block(router, 2)                                                           # the vector icon moved with its entry

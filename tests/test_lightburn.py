@@ -333,3 +333,18 @@ def test_every_shape_without_an_outline_and_every_setting_unknown_to_the_reader_
     assert layer.unknown_settings == ["perfMode", "rampLength"]
     assert layer.source_settings["rampLength"] == {"Value": "2"}            # kept, so it still separates recipes
     assert layer.as_dict()["unknown_settings"] == ["perfMode", "rampLength"]
+
+
+def test_a_path_without_its_own_lists_takes_the_ones_its_ids_name():
+    """LightBurn writes a vertex or primitive list once and later paths name it by VertID / PrimID: in a saved work 222 of 574 paths
+    carried no PrimList of their own and were read as open lines with no area."""
+    verts, prims = _square(0, 0, 10)
+    other, _ = _square(20, 0, 4)
+    project = _project(
+        f'<Shape Type="Path" CutIndex="0" VertID="0" PrimID="0"><XForm>1 0 0 1 0 0</XForm><VertList>{verts}</VertList>'
+        f'<PrimList>{prims}</PrimList></Shape>',
+        f'<Shape Type="Path" CutIndex="0" VertID="1" PrimID="0"><XForm>1 0 0 1 0 0</XForm><VertList>{other}</VertList></Shape>',
+        '<Shape Type="Path" CutIndex="0" VertID="0" PrimID="0"><XForm>1 0 0 1 0 30</XForm></Shape>')
+    regions = project.layer(0).regions
+    assert [r.closed for r in regions] == [True, True, True]
+    assert [(round(r.x), round(r.y), round(r.width), round(r.height)) for r in regions] == [(0, 0, 10, 10), (20, 0, 4, 4), (0, 30, 10, 10)]

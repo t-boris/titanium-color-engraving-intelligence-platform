@@ -8,7 +8,12 @@ against power at a mode:
 * the tonal profile of an accepted grayscale photo engraving whose image layer has that mode: each grey bin is the colour
   photographed where the picture had that grey, at the power that grey was engraved with (DEC-057, after the file's picture
   adjustments, applied as the prediction applies them, so that a picture rendered at its own mode meets its own bins);
-* the flat fills (``Scan`` layers) of accepted checks with exactly those settings: one colour at the layer's power.
+* the grey ramps of a "grey scales" plate (REQ-059): each step measured where the plate put it, at the power of its grey.
+
+The flat fills (``Scan`` layers) of accepted checks with exactly those settings are collected too, but only as a reference beside
+the curve (``fills``), never in it (DEC-100): on the operator's plate a fill and a grayscale picture engraved with the same settings
+and power differ by up to 36 dE in the light and middle tones (the Power x Speed row at 150 mm/s against Motorcycle and Girl on a
+bike), so a fill does not say what a grey level of a picture comes out as.
 
 Only accepted checks count: provisional checks (DEC-045) and deleted pairs never take part, nor do service layers (labels, the
 cleaning witness) or tonal profiles whose relation to the grey is weak.
@@ -33,7 +38,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import colormap, experiments, ingest, lightburn as lb, photo_modes, prediction, tasks
+from . import color, colormap, engraving_time, experiments, grayscale, ingest, lightburn as lb, photo_modes, prediction, tasks
 from .db import Store
 from .prediction import PredictionError
 
@@ -125,7 +130,8 @@ def _where(pair: Mapping, kept: set[int]) -> dict:
 
 
 def collect(store: Store, mode: Mode) -> dict:
-    """Every colour measured at ``mode`` as curve points, and what was left aside: tonal profiles too weak to use."""
+    """Every colour measured at ``mode`` in its image mode as curve points; the flat fills with the same settings beside them
+    (``fills``, a power curve only, DEC-100); and what was left aside: tonal profiles too weak to use."""
     refs = colormap.references(store)
     witness, derived, nominal = refs["witness"], refs["derived"], refs["nominal"]
     kept = experiments.kept_plan_ids(store)
@@ -133,8 +139,8 @@ def collect(store: Store, mode: Mode) -> dict:
         "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, photo_name, accepted_at, data_json FROM pair "
         "WHERE status='Accepted' AND device_id=? AND lens_id IS ? AND material_id IS ? ORDER BY id",
         (mode.device_id, mode.lens_id, mode.material_id))}
-    points, weak, over_fills = [], 0, 0
-    for row in refs["rows"]:                                 # flat fills: one colour at a power, the points of a power curve only
+    points, fills, weak, over_fills = [], [], 0, 0
+    for row in refs["rows"]:                                 # flat fills: one colour at a power, a reference for a power curve only
         if row["pair_id"] not in pairs or mode.dither != prediction.PREDICTED_MODE:
             continue
         evidence = json.loads(row["evidence_json"] or "{}")
@@ -150,8 +156,8 @@ def collect(store: Store, mode: Mode) -> dict:
         lab, reference = _expressed(json.loads(row["lab_json"]), kind, clean["lab"] if clean else None, nominal)
         source = {**_where(pairs[row["pair_id"]], kept), "layer": row["layer_index"], "layer_name": evidence.get("layer_name"),
                   "how": "flat fill", "reference": reference, "observation_id": row["id"]}
-        points.append(prediction.Point(params["power"], lab, source, kind == "calibrated"))
-    for pair_id, pair in pairs.items():                      # tonal profiles of photo engravings
+        fills.append(prediction.Point(params["power"], lab, source, kind == "calibrated"))
+    for pair_id, pair in pairs.items():                      # tonal profiles of photo engravings and grey ramps
         check = json.loads(pair["data_json"] or "{}").get("check") or {}
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         clean = witness.get(pair_id)
@@ -177,10 +183,11 @@ def collect(store: Store, mode: Mode) -> dict:
                 grey = prediction.adjust_grey(step["gray"], values["Gamma"], values["Contrast"], values["Brightness"])
                 power = float(prediction.grey_to_power(grey, *tonal["power_range"])) if mode.dither == prediction.PREDICTED_MODE else float(100.0 * (1.0 - grey))
                 lab, reference = _expressed([step["L"], step["a"], step["b"]], kind, clean["lab"] if clean else None, nominal)
-                source = {**_where(pair, kept), "layer": rep["index"], "layer_name": rep.get("name"), "how": "tonal profile",
+                how = "grey ramp" if tonal.get("measured_by") == "grey ramp" else "tonal profile"
+                source = {**_where(pair, kept), "layer": rep["index"], "layer_name": rep.get("name"), "how": how,
                           "gray": step["gray"], "pixels": step.get("n"), "reference": reference}
                 points.append(prediction.Point(power, lab, source, kind == "calibrated"))
-    return {"points": points, "weak_profiles": weak, "over_fills": over_fills}
+    return {"points": points, "fills": fills, "weak_profiles": weak, "over_fills": over_fills}
 
 
 def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
@@ -210,7 +217,113 @@ def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
     if found["over_fills"]:
         notes.append(f"{found['over_fills']} tonal profiles of this mode were photographed over vector fills and are not used: their colour is "
                      "the fill mixed with the dots.")
-    return curve, {"reference": reference, "notes": notes}
+    if found["fills"]:
+        notes.append(f"{len(found['fills'])} flat fills with these settings are shown beside the curve and not used in it: a fill and a grey "
+                     "level of a picture engraved at the same power need not come out the same colour.")
+    return curve, {"reference": reference, "notes": notes, "fills": found["fills"]}
+
+
+# -- grayscale scales (REQ-059) ---------------------------------------------------------------------------------------------------
+BAR_SAMPLES = 48
+
+
+def _materials(store: Store) -> dict[int, dict]:
+    return {r["id"]: dict(r) for r in store.query("SELECT id, name, family, grade, batch, thickness_mm FROM material_profile")}
+
+
+def scale_modes(store: Store, device_id: int | None = None, lens_id=None, material_id=None) -> list[Mode]:
+    """Every grayscale mode with a clear grey -> colour measurement in an accepted check (a photo engraving or a grey ramp), optionally
+    of one laser, lens and titanium; each once, in the order first measured."""
+    sql = "SELECT id, device_id, lens_id, material_id, data_json FROM pair WHERE status='Accepted'"
+    args: list = []
+    if device_id is not None:
+        sql += " AND device_id=?"
+        args.append(device_id)
+    if lens_id is not None:
+        sql += " AND lens_id IS ?"
+        args.append(lens_id)
+    if material_id is not None:
+        sql += " AND material_id IS ?"
+        args.append(material_id)
+    modes: list[Mode] = []
+    for pair in store.query(sql + " ORDER BY id", tuple(args)):
+        check = json.loads(pair["data_json"] or "{}").get("check") or {}
+        for rep in check.get("layers", []):
+            tonal, image = rep.get("tonal") or {}, rep.get("image") or {}
+            seen = photo_modes.mode(image.get("dither"))
+            if seen is None or seen.key != prediction.PREDICTED_MODE or tonal.get("evidence") != "clear" or not tonal.get("power_range"):
+                continue
+            mode = mode_of({"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
+                            "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")},
+                           pair["device_id"], pair["lens_id"], pair["material_id"])
+            if mode not in modes:
+                modes.append(mode)
+    return modes
+
+
+def _hex(lab) -> str:
+    r, g, b = (int(v) for v in np.clip(color.lab_to_srgb8(np.asarray([lab], np.float64)), 0, 255)[0])
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _scale_summary(store: Store, mode: Mode, materials: Mapping) -> dict | None:
+    try:
+        curve, basis = curve_for(store, mode)
+    except PredictionError:
+        return None
+    lo, hi = curve.span
+    powers = np.linspace(lo, hi, BAR_SAMPLES) if hi > lo else np.array([lo])
+    labs = curve.lab_at(powers)
+    sources = [src for row in curve.points for src in row["sources"]]
+    engravings = {prediction._engraving_of(src) for src in sources}
+    hows = {}
+    for key in engravings:
+        how = next(src["how"] for src in sources if prediction._engraving_of(src) == key)
+        hows[how] = hows.get(how, 0) + 1
+    settings = {k: getattr(mode, k) for k in SETTINGS} | {"global_passes": mode.global_passes}
+    time = engraving_time.per_area(settings)
+    return {"mode": mode.as_dict(), "material": materials.get(mode.material_id), "span": [lo, hi], "points": len(curve.points),
+            "engravings": len(engravings), "by_kind": hows, "reference": basis["reference"], "referenced": curve.referenced,
+            "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
+            "bar": [{"power": round(float(p), 2), "hex": _hex(lab)} for p, lab in zip(powers, labs) if np.isfinite(lab[0])],
+            "confirmation": {k: v for k, v in grayscale.confirmation(_per_engraving(store, mode, curve.referenced)).items() if k != "rows"},
+            "fills": len(basis["fills"]), "time_s_per_cm2": time["s_per_cm2"], "notes": basis["notes"]}
+
+
+def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[prediction.Point]:
+    """The points of a mode as each engraving measured them (not averaged over engravings), of the kind its curve uses."""
+    found = collect(store, mode)["points"]
+    kind = [p for p in found if p.referenced == referenced]
+    if not referenced and kind and any(p.source["reference"] == CLEAN for p in kind):
+        kind = [p for p in kind if p.source["reference"] == CLEAN]
+    return kind
+
+
+def scales(store: Store, device_id: int | None = None, lens_id=None, material_id=None) -> list[dict]:
+    """Every grayscale scale (one per mode) with its colour bar over the measured powers, how many engravings measured it and of which
+    kind, whether they confirm each other, the fills of the same settings and the time per square centimetre. The best measured first:
+    chart-referenced colours, then more engravings, then more points."""
+    materials = _materials(store)
+    out = [_scale_summary(store, mode, materials) for mode in scale_modes(store, device_id, lens_id, material_id)]
+    return sorted((item for item in out if item is not None), key=lambda item: (not item["referenced"], -item["engravings"], -item["points"]))
+
+
+def scale(store: Store, mode: Mode, min_power=None, max_power=None) -> dict:
+    """One scale in full: its curve with every source, "which grey makes which colour" at Min..Max (by default the measured span), each
+    engraving against the curve of the others, and each fill of the same settings against the curve at its power."""
+    curve, basis = curve_for(store, mode)
+    lo, hi = curve.span
+    low, high = check_power_range(lo if min_power is None else min_power, hi if max_power is None else max_power)
+    summary = _scale_summary(store, mode, _materials(store))
+    fills = []
+    for p in basis["fills"]:
+        at = curve.lab_at(p.power)
+        fills.append({"power": p.power, "lab": list(p.lab), "hex": _hex(p.lab), "source": p.source, "referenced": p.referenced,
+                      "curve_lab": None if not np.isfinite(at[0]) else [round(float(v), 2) for v in at],
+                      "de": None if not np.isfinite(at[0]) or p.referenced != curve.referenced else round(float(np.linalg.norm(np.asarray(p.lab) - at)), 1)})
+    points = [{**row, "hex": _hex(row["lab"])} for row in curve.as_dict()["points"]]
+    return {**summary, "curve": {**curve.as_dict(), "points": points}, "greys": grayscale.scale_of_greys(curve, low, high),
+            "confirmation": grayscale.confirmation(_per_engraving(store, mode, curve.referenced)), "fill_points": fills}
 
 
 # -- an uploaded LightBurn file ---------------------------------------------------------------------------------------------------
@@ -339,3 +452,94 @@ def describe(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndarr
             "adjustments": rendered["adjustments"], "notes": rendered["notes"] + item["basis_notes"],
             "picture": {"width": item["size"][0], "height": item["size"][1], "shown_width": cols, "shown_height": rows}}
     return info, prediction.side_by_side(item["picture"], rendered["rgb8"])
+
+
+# -- a picture engraved on a scale (REQ-059) --------------------------------------------------------------------------------------
+MAX_PICTURE_PIXELS = 60_000_000      # a larger upload is refused: it would not fit in memory with its Lab copy
+
+
+def decode_upload(data: bytes) -> dict:
+    """An uploaded picture (PNG, JPEG, TIFF ...) as LightBurn takes it: grey 0..1 by luminance (as a colour picture is converted for
+    an Image layer, and as the reader converts the pictures of the operator's files), its opacity, and its colour (Lab) for choosing
+    greys by colour; everything at full size and at preview size."""
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise PredictionError("the file is not a picture that can be read (PNG, JPEG, TIFF, BMP or WebP)")
+    if img.shape[0] * img.shape[1] > MAX_PICTURE_PIXELS:
+        raise PredictionError(f"the picture has {img.shape[1]} x {img.shape[0]} pixels: at most {MAX_PICTURE_PIXELS // 1_000_000} million are taken")
+    if img.dtype != np.uint8:
+        img = (img.astype(np.float32) / (65535.0 if img.dtype == np.uint16 else 1.0) * 255).clip(0, 255).astype(np.uint8)
+    bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img[..., :3]
+    grey, alpha = photo_modes.decode_picture(cv2.imencode(".png", img)[1].tobytes())
+    rows, cols = grey.shape
+    scale = min(1.0, PREVIEW_SIDE / max(rows, cols))
+    size = (max(1, round(cols * scale)), max(1, round(rows * scale)))
+    small = (lambda a: a) if scale >= 1 else (lambda a: cv2.resize(a, size, interpolation=cv2.INTER_AREA))
+    return {"grey_full": grey, "alpha_full": alpha, "bgr_full": np.ascontiguousarray(bgr), "picture": np.ascontiguousarray(small(grey)),
+            "alpha": np.ascontiguousarray(np.clip(small(alpha), 0.0, 1.0)), "lab": _lab_of(small(bgr)), "size": [cols, rows]}
+
+
+def _lab_of(bgr: np.ndarray) -> np.ndarray:
+    rgb = bgr[..., ::-1].reshape(-1, 3).astype(np.float64)
+    return color.srgb8_to_lab(rgb).reshape(bgr.shape[:2] + (3,))
+
+
+def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour: bool = False) -> dict:
+    """A picture prepared for ``describe`` at ``mode``: its curve, the levels and counts of its greys and the measured span. With
+    ``by_colour`` the picture's colours are what is wanted: its greys are chosen at each Min and Max (``with_colours``)."""
+    if mode.dither != prediction.PREDICTED_MODE:
+        raise PredictionError("only the grayscale image mode is predicted from a scale")
+    curve, basis = curve_for(store, mode)
+    lo, hi = curve.span
+    settings = {**{k: getattr(mode, k) for k in SETTINGS}, "global_passes": mode.global_passes, "min_power": lo, "max_power": hi,
+                "overridden": []}
+    item = {"index": 0, "name": name, "dither": prediction.PREDICTED_MODE, "settings": settings, "refused": None, "mode": mode,
+            "curve": curve, "reference": basis["reference"], "adjustments": {}, "basis_notes": list(basis["notes"]), "by_colour": by_colour,
+            "pictures": 1, "turned": False, **{k: upload[k] for k in ("picture", "alpha", "size", "lab", "grey_full", "alpha_full", "bgr_full")}}
+    return _with_levels(item)
+
+
+def _with_levels(item: dict) -> dict:
+    opaque = item["alpha"] >= photo_modes.ALPHA_MIN
+    if not opaque.any():
+        raise PredictionError("the picture is fully transparent: it engraves nothing, so there is nothing to predict")
+    item["levels"], item["counts"] = np.unique(item["picture"][opaque], return_counts=True)
+    return item
+
+
+def with_colours(item: dict, min_power: float, max_power: float) -> dict:
+    """The item whose picture is the grey that makes each pixel's colour nearest on the scale at Min..Max (``grayscale.grey_for_colours``),
+    and how near it comes (median and 90th percentile dE of the opaque pixels)."""
+    low, high = check_power_range(min_power, max_power)
+    found = grayscale.grey_for_colours(item["lab"], item["curve"], low, high)
+    opaque = item["alpha"] >= photo_modes.ALPHA_MIN
+    de = found["delta_e"][opaque]
+    out = _with_levels({**item, "picture": np.ascontiguousarray(found["grey8"].astype(np.float32) / (grayscale.LEVELS - 1))})
+    out["colour_match"] = {"median_de": round(float(np.median(de)), 1), "p90_de": round(float(np.percentile(de, 90)), 1),
+                           "greys_used": int(len(np.unique(found["grey8"][opaque]))), "greys_available": found["choices"]}
+    return out
+
+
+def picture_time(mode: Mode, width_mm: float, height_mm: float) -> dict:
+    """How long the picture engraves at ``mode``: its whole rectangle is scanned row by row (in grayscale mode every grey fires, the
+    white at Min), at the mode's settings, one piece of scan line per row (``engraving_time.estimate``, DEC-101)."""
+    settings = {**{k: getattr(mode, k) for k in SETTINGS}, "global_passes": mode.global_passes, "layer_type": "Image"}
+    rows = (height_mm + (width_mm if settings.get("cross_hatch") else 0.0)) / mode.line_interval if mode.line_interval else None
+    return engraving_time.estimate([{"index": 0, "name": "C00", "parameters": settings, "area_mm2": width_mm * height_mm, "scan_pieces": rows}])
+
+
+def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float) -> np.ndarray:
+    """The 8-bit upright picture written to the LightBurn file: the uploaded grey, or with ``by_colour`` the greys chosen for its colours
+    at the layer's DPI (no finer: the laser does not engrave finer). Transparent pixels are white, so they get Min power."""
+    rows, cols = item["grey_full"].shape
+    dpi = grayscale.image_dpi(item["mode"].line_interval)
+    target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
+    fit = (lambda a: a) if target[0] >= cols else (lambda a: cv2.resize(a, target, interpolation=cv2.INTER_AREA))
+    alpha = fit(item["alpha_full"])
+    if item.get("by_colour"):
+        lab = _lab_of(fit(item["bgr_full"]))
+        grey = grayscale.grey_for_colours(lab, item["curve"], *check_power_range(min_power, max_power))["grey8"].astype(np.float32) / 255
+    else:
+        grey = fit(item["grey_full"])
+    grey = np.where(alpha >= photo_modes.ALPHA_MIN, grey, 1.0)
+    return (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)

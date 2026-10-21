@@ -10,7 +10,7 @@ import json
 import math
 from typing import Any
 
-from . import devices, plans, setup as su, tasks
+from . import devices, grayscale, plans, setup as su, tasks
 from .db import Store, now
 
 PLATE_TYPES = [
@@ -62,6 +62,10 @@ PLATE_TYPES = [
      "purpose": "Понять, как wobble меняет ширину и выраженность следа на выбранной марке титана.",
      "action": "9 небольших заполненных образцов: 3 значения Step × 3 значения Size; LightBurn Wobble включён только на этих слоях.",
      "finds": "Как шаг между центрами окружностей и их диаметр влияют на видимый след. Это наблюдаемая ширина гравировки, а не оптический диаметр пятна."},
+    {"id": "grey_scales", "name": "Шкалы серого (фотогравировка, режим градаций серого)",
+     "purpose": "Узнать, какой серый картинки каким цветом выгравируется в режиме градаций серого при выбранных постоянных настройках, и найти настройки, при которых мощность меняет цвет, а ступени остаются различимыми.",
+     "action": "До 28 полосок по 16 ступеней серого: от белого слева до чёрного справа, каждая ступень — своя мощность между Min и Max. Каждая полоска — свой слой-изображение LightBurn со своими настройками: строки и столбцы меняют два параметра из скорости, шага линий (DPI), частоты, длительности импульса и проходов. Очистка и метки занимают ещё два слоя.",
+     "finds": "Шкалу «серый → цвет» для каждой полоски: измеренный цвет каждой ступени при её мощности. По ней предпросмотр фотогравировки показывает, как выйдет картинка, а работы в том же режиме сверяются с пластиной. Первая ступень — чистый белый: видно, бьёт ли Min по белому."},
 ]
 for item in PLATE_TYPES:
     item["description"] = f"Зачем: {item['purpose']} Что делает плата: {item['action']} Что выясняет результат: {item['finds']}"
@@ -811,9 +815,101 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     return out
 
 
+GREY_AXES = ("speed", "line_interval", "frequency", "pulse_width", "passes")
+GREY_DEFAULTS = {"rows": {"axis": "line_interval", "values": [0.0127, 0.0169, 0.0212, 0.0254]},     # 2000, 1500, 1200, 1000 dpi
+                 "columns": {"axis": "speed", "factors": [2 / 3, 1.0, 5 / 3]}, "min_power": 1.0}
+GREY_MAX_ROWS, GREY_MAX_COLUMNS = 7, 4
+GREY_LABEL_WIDTH, GREY_GAP, GREY_TILE_HEIGHT, GREY_ROW_PITCH, GREY_TOP = 9.0, 2.0, 4.0, 6.5, 6.0
+GREY_MAX_STEP = 2.5                    # mm: a step wider than this only makes the plate longer
+GREY_MIN_STEP = 1.0                    # mm: a narrower step leaves too few photograph pixels once its edges are left out
+
+
+def _grey_axis(name: str, axis: dict, base: dict, passport: dict) -> tuple[str, list[float]]:
+    """One axis of the grey-ramp plate: a setting from ``GREY_AXES`` and its values, each one the laser can engrave."""
+    key = axis.get("axis")
+    if key not in GREY_AXES:
+        raise su.ValidationError(f"{name}: выберите параметр из скорости, шага линий, частоты, длительности импульса и проходов")
+    raw = axis.get("values")
+    if raw is None and axis.get("factors"):
+        raw = [round(base[key] * f, 4) for f in axis["factors"]]
+    try:
+        values = [float(v) for v in (raw or [])]
+    except (TypeError, ValueError):
+        raise su.ValidationError(f"{name}: значения должны быть числами") from None
+    if not values or len(set(values)) != len(values) or not all(math.isfinite(v) and v > 0 for v in values):
+        raise su.ValidationError(f"{name}: нужны разные положительные значения")
+    rate = passport["repetition_rate_khz"]
+    for v in values:
+        if key == "speed" and v > 10000:
+            raise su.ValidationError("скорость теста не должна превышать 10000 мм/с")
+        if key == "line_interval" and not 0.001 <= v <= 1:
+            raise su.ValidationError("шаг линий слоя-изображения должен быть от 0,001 до 1 мм")
+        if key == "frequency" and not rate["min"] <= v <= rate["max"]:
+            raise su.ValidationError(f"частота должна быть в диапазоне {rate['min']:g}–{rate['max']:g} кГц для выбранного лазера")
+        if key == "pulse_width":
+            devices.require_selectable(passport, v)
+        if key == "passes" and (int(v) != v or not 1 <= v <= 20):
+            raise su.ValidationError("проходы: укажите целые числа от 1 до 20")
+    return key, [int(v) if key == "passes" else v for v in values]
+
+
+def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
+    """Grey ramps in grayscale mode (REQ-059): one Image layer per tile, a 16-step ramp from white to black, so each step is one power
+    between the plate's Min and Max; rows and columns change two of the fixed settings. The ramp runs left to right, so the plate's
+    vertical mirror (``export_mirror_y``) cannot reverse it."""
+    supplied = values.get("scales") or {}
+    rows_key, row_values = _grey_axis("строки", supplied.get("rows") or GREY_DEFAULTS["rows"], values, passport)
+    cols_key, col_values = _grey_axis("столбцы", supplied.get("columns") or GREY_DEFAULTS["columns"], values, passport)
+    if rows_key == cols_key:
+        raise su.ValidationError("строки и столбцы должны менять разные параметры")
+    if len(row_values) > GREY_MAX_ROWS or len(col_values) > GREY_MAX_COLUMNS:
+        raise su.ValidationError(f"не больше {GREY_MAX_ROWS} строк и {GREY_MAX_COLUMNS} столбцов: 28 полосок и два служебных слоя — все 30 слоёв LightBurn")
+    try:
+        low = float(supplied.get("min_power", GREY_DEFAULTS["min_power"]))
+        high = float(supplied.get("max_power", values["power"]))
+    except (TypeError, ValueError):
+        raise su.ValidationError("Min и Max мощность должны быть числами") from None
+    if not (math.isfinite(low) and math.isfinite(high) and 0 <= low < high <= 100):
+        raise su.ValidationError("Min и Max мощность: от 0 до 100 %, Min меньше Max")
+    width_limit = values.get("max_width_mm", 100) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"] + COMPACT_MARKER_SIZE["margin_mm"])
+    columns = len(col_values)
+    tile_w = min(grayscale.RAMP_STEPS * GREY_MAX_STEP, (width_limit - GREY_LABEL_WIDTH - 1 - (columns - 1) * GREY_GAP) / columns)
+    if tile_w / grayscale.RAMP_STEPS < GREY_MIN_STEP:
+        raise su.ValidationError("полоски не помещаются по ширине платы: уменьшите число столбцов или увеличьте предельную ширину")
+    tile_w = math.floor(tile_w / grayscale.RAMP_STEPS * 10) / 10 * grayscale.RAMP_STEPS      # steps of whole tenths of a millimetre
+    r_meta, c_meta = MATRIX_AXES[rows_key], MATRIX_AXES[cols_key]
+    labels = _text(f"GREY {r_meta['short']} X {c_meta['short']} P{low:g}-{high:g}", 1.0, 0.8, 0.14)
+    greys = grayscale.ramp_greys()
+    layers, cells = [], []
+    for col, c_value in enumerate(col_values):
+        labels += _text(f"{c_meta['short']}{c_value:g}", GREY_LABEL_WIDTH + col * (tile_w + GREY_GAP), GREY_TOP - 1.6, 0.10)
+    for row, r_value in enumerate(row_values):
+        y = GREY_TOP + row * GREY_ROW_PITCH
+        labels += _text(f"{r_meta['short']}{r_value:g}", 0.6, y + 1.4, 0.10)
+        for col, c_value in enumerate(col_values):
+            x = GREY_LABEL_WIDTH + col * (tile_w + GREY_GAP)
+            params = _process({**values, rows_key: r_value, cols_key: c_value, "power": high})
+            params["min_power"] = low
+            name = f"GREY-{r_meta['short']}{r_value:g}-{c_meta['short']}{c_value:g}"
+            ramp = {"x": x, "y": y, "width": tile_w, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": "grayscale"}
+            layer = _layer(len(layers) + 1, name, params, [_rect(x, y, tile_w, GREY_TILE_HEIGHT)], mode="Image",
+                           line_interval=params["line_interval"], global_passes=values["global_passes"])
+            layer["ramp"] = ramp
+            layers.append(layer)
+            cells.append({"name": name, "parameters": params, "x": x, "y": y, "width": tile_w, "height": GREY_TILE_HEIGHT,
+                          "row_axis": rows_key, "row_value": r_value, "column_axis": cols_key, "column_value": c_value,
+                          "min_power": low, "max_power": high, "steps": len(greys)})
+    width = GREY_LABEL_WIDTH + columns * tile_w + (columns - 1) * GREY_GAP + 1.0
+    height = GREY_TOP + (len(row_values) - 1) * GREY_ROW_PITCH + GREY_TILE_HEIGHT + 1.0
+    return layers, labels, {"width": width, "height": height, "columns": columns, "rows": len(row_values), "cells": cells,
+                            "feature_count": len(cells) * len(greys), "sample_area_mm2": round(len(cells) * tile_w * GREY_TILE_HEIGHT, 2),
+                            "scales": {"rows": {"axis": rows_key, "values": row_values}, "columns": {"axis": cols_key, "values": col_values},
+                                       "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(tile_w / len(greys), 3)}}
+
+
 BUILDERS = {"small_patches": _small_patches, "compact_capability": _compact_capability, "text_readability": _text_readability, "calibration": _calibration, "power_speed": _power_speed, "frequency": _frequency,
             "pulse_cutoff": _pulse_cutoff, "line_resolution": _line_resolution, "hatch_interval": _hatch_interval,
-            "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix}
+            "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix, "grey_scales": _grey_scales}
 
 
 def preview(store: Store, device_id: int, material_id: int, test_type: str, settings: dict | None = None) -> dict:
@@ -845,12 +941,14 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         cw = next((s for s in device["passport"]["pulse_steps"] if s["cutoff_khz"] is None), None)
         if cw:
             values["pulse_width"] = float(cw["pulse_width_ns"])
-    if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability"):
+    if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability", "grey_scales"):
         layers, label_regions, geometry = BUILDERS[test_type](values, device["passport"])
     else:
         layers, label_regions, geometry = BUILDERS[test_type](values)
     if test_type == "material_matrix":
         values["matrix"] = geometry["matrix"]
+    if test_type == "grey_scales":
+        values["scales"] = geometry["scales"]
     # REQ-020: every cell states its task (letters are text, the rest what their LightBurn mode implies), and the plate
     # records the task it was made for: the operator's choice, else its research goal, else what its test type examines
     for layer in layers:

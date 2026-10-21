@@ -85,3 +85,60 @@ def test_the_time_of_a_whole_job_sums_its_layers_and_says_when_one_is_unknown():
     assert not partial["complete"] and partial["seconds"] == pytest.approx(10 + 1000 * TURN)
     assert [row["note"] for row in partial["layers"]] == [None, "the speed of this recipe is not recorded: its engraving time is not known",
                                                           "how much this layer engraves is not given"]
+
+
+# -- the time of a whole LightBurn file (REQ-060): every work says whether it takes minutes or hours ---------------------------
+def project(layers_xml: str, shapes_xml: str) -> bytes:
+    return f'<LightBurnProject AppVersion="1.7.01">{layers_xml}{shapes_xml}</LightBurnProject>'.encode()
+
+
+def test_a_file_is_timed_layer_by_layer_over_the_area_it_fills_and_the_length_it_traces():
+    from titanium_platform import lightburn as lb
+    data = project('<CutSetting type="Scan"><index Value="0"/><name Value="C00"/><speed Value="500"/><interval Value="0.05"/></CutSetting>'
+                   '<CutSetting type="Cut"><index Value="1"/><name Value="C01"/><speed Value="100"/><numPasses Value="2"/></CutSetting>'
+                   '<CutSetting type="Scan"><index Value="2"/><name Value="C02"/><speed Value="500"/><interval Value="0.05"/>'
+                   '<doOutput Value="0"/></CutSetting>',
+                   '<Shape Type="Rect" CutIndex="0" W="20" H="10"><XForm>1 0 0 1 10 5</XForm></Shape>'
+                   '<Shape Type="Rect" CutIndex="1" W="10" H="5"><XForm>1 0 0 1 30 5</XForm></Shape>'
+                   '<Shape Type="Rect" CutIndex="2" W="50" H="50"><XForm>1 0 0 1 30 5</XForm></Shape>')
+    t = et.of_project(lb.parse_bytes(data))
+    fill = 2.0 * 4.0 + 10 / 0.05 * TURN                                   # 2 cm² at 500 mm/s, 0.05 mm: 200 pieces of 20 mm
+    line = 3.0 * (10 / 100) * 2                                           # a 30 mm outline at 100 mm/s, two passes
+    assert [r["name"] for r in t["layers"]] == ["C00", "C01"]             # the layer with its output off does not engrave
+    assert t["seconds"] == pytest.approx(fill + line) and t["complete"]
+
+
+def test_a_picture_is_timed_over_its_whole_rectangle_and_a_missing_speed_leaves_the_total_incomplete():
+    import numpy as np
+    from titanium_platform import lightburn as lb, plans
+    data = plans.export_picture(np.zeros((200, 300), np.uint8), 30, {"power": 30, "min_power": 1, "speed": 150, "frequency": 60, "line_interval": 0.0169})
+    t = et.of_project(lb.parse_bytes(data))
+    assert t["seconds"] == pytest.approx(6.0 * 100 / (150 * 0.0169) + 20 / 0.0169 * TURN, rel=1e-6)    # 30 x 20 mm: 6 cm², a piece per row
+    unknown = et.of_project(lb.parse_bytes(project('<CutSetting type="Scan"><index Value="0"/><name Value="C00"/></CutSetting>',
+                                                   '<Shape Type="Rect" CutIndex="0" W="20" H="10"><XForm>1 0 0 1 10 5</XForm></Shape>')))
+    assert not unknown["complete"] and unknown["layers"][0]["seconds"] is None and "speed" in unknown["layers"][0]["note"]
+
+
+def test_the_pieces_of_scan_line_are_counted_from_the_shapes_so_small_shapes_cost_more_than_their_area():
+    """DEC-101: every piece of scan line costs its turnaround; a line crosses a shape once per interval of each edge's extent."""
+    from titanium_platform import lightburn as lb
+    square = lb.Region("path", 0, 0, 10, 10, polygon=[(0, 0), (10, 0), (10, 10), (0, 10)], closed=True)
+    ring = lb.Region("path", 0, 0, 10, 10, polygon=[(0, 0), (10, 0), (10, 10), (0, 10)], closed=True,
+                     holes=[[(4, 2), (6, 2), (6, 8), (4, 8)]])               # lines through the hole are cut in two
+    assert et.scan_pieces([square], 0.01) == pytest.approx(1000)
+    assert et.scan_pieces([ring], 0.01) == pytest.approx(1000 + 600)
+    assert et.scan_pieces([square], 0.01, 45) == pytest.approx(1000 * 2 ** 0.5)        # lines at 45 degrees cross the diagonal
+    open_line = lb.Region("path", 0, 0, 10, 0, polygon=[(0, 0), (10, 0)], closed=False)
+    assert et.scan_pieces([open_line], 0.01) == 0                              # a fill does not fill an open path
+    settings = {"speed": 1000.0, "line_interval": 0.01}
+    hundred_small = [lb.Region("path", 0, 0, 1, 1, polygon=[(0, 0), (1, 0), (1, 1), (0, 1)], closed=True)] * 100
+    big, small = (et.estimate([{"parameters": settings, "area_mm2": 100.0, "scan_pieces": et.scan_pieces(r, 0.01)}])["seconds"]
+                  for r in ([square], hundred_small))
+    assert big == pytest.approx(10.0 + 1000 * TURN) and small == pytest.approx(10.0 + 10000 * TURN)   # the same area, ten times the pieces
+    crossed = et.estimate([{"parameters": {**settings, "cross_hatch": True, "passes": 2}, "area_mm2": 100.0, "scan_pieces": 2000}])
+    assert crossed["seconds"] == pytest.approx(2 * (2 * 10.0 + 2000 * TURN))      # the pieces already count both directions
+
+
+def test_the_turnaround_was_timed_against_the_workshop_s_own_jobs():
+    """DEC-101: about 1 ms per piece made the file of a work engraved in 3 h at 150 mm and 1.5-2 h at 100 mm come out right."""
+    assert TURN == pytest.approx(0.001)

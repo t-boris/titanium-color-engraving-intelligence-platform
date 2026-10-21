@@ -72,7 +72,7 @@ GOAL_TASK = {"text": "text", "line": "line", "black_mark": "mark", "white_mark":
 # a capability plate tests one task, or mixes them layer by layer (None)
 TEST_TYPE_TASK = {"small_patches": "fill", "calibration": "fill", "hatch_interval": "fill", "offset_fill": "fill", "wobble": "fill",
                   "text_readability": "text", "power_speed": "line", "frequency": "line", "pulse_cutoff": "line",
-                  "line_resolution": "line", "compact_capability": None, "material_matrix": None}
+                  "line_resolution": "line", "compact_capability": None, "material_matrix": None, "grey_scales": "tonal_image"}
 MATRIX_GEOMETRY_TASK = {"line": "line", "fill": "fill", "text": "text", "vector_text": "text"}
 # the main task of a vector job by its tracing strategy, and the task of a traced region by its own (vectorize.TASKS): a colour,
 # fill or tonal region is a filled area judged by its colour or lightness

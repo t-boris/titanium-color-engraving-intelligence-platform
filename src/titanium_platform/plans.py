@@ -13,6 +13,7 @@ both as filled rectangles on a dedicated marker layer that never produces observ
 """
 from __future__ import annotations
 
+import base64
 import itertools
 import json
 import re
@@ -22,7 +23,7 @@ from xml.sax.saxutils import escape, quoteattr
 import cv2
 import numpy as np
 
-from . import lenses, setup as su, tasks, vectorize
+from . import grayscale, lenses, setup as su, tasks, vectorize
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -428,6 +429,62 @@ def _cut_setting(index: int, name: str, power: float, frequency_khz: float, spee
             f'        <tabCount Value="1"/>\n        <tabCountMax Value="1"/>\n    </CutSetting>\n')
 
 
+IMAGE_DITHER = "grayscale"
+
+
+def _image_setting(index: int, name: str, p: dict, *, priority: int, dither: str = IMAGE_DITHER) -> str:
+    """An Image layer as LightBurn writes one (the operator's own files of LightBurn 1.7.01 and 2.1.04, in their order): ``CutSetting_Img``
+    with Min and Max power, speed, frequency (integer Hz), Q-pulse, the line interval, the image mode and the DPI LightBurn links
+    to that interval. ``maxPower2`` repeats Max, as on every other layer this writer makes."""
+    interval = float(p["line_interval"])
+    tags = [("minPower", f"{float(p['min_power']):.10g}"), ("maxPower", f"{float(p['power']):.10g}"), ("maxPower2", f"{float(p['power']):.10g}"),
+            ("speed", f"{float(p['speed']):.10g}"), ("frequency", str(round(float(p["frequency"]) * 1000))),
+            ("QPulseWidth", None if p.get("pulse_width") is None else f"{float(p['pulse_width']):.10g}"), ("interval", f"{interval:.10g}"),
+            ("numPasses", str(int(p.get("passes") or 1))), ("globalRepeat", str(int(p.get("global_passes") or 1))), ("priority", str(priority)),
+            ("tabCount", "1"), ("tabCountMax", "1"), ("ditherMode", dither), ("dpi", str(grayscale.image_dpi(interval)))]
+    body = "".join(f'        <{tag} Value="{value}"/>\n' for tag, value in tags if value is not None)
+    return (f'    <CutSetting_Img type="Image">\n        <index Value="{index}"/>\n        <name Value={quoteattr(name)}/>\n'
+            f'{body}    </CutSetting_Img>\n')
+
+
+def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: float, layer: int, file_name: str) -> str:
+    """A picture object filling the rectangle (x, y, w, h) mm: the PNG at ``dpi`` with that DPI in its header, W and H the size it has at
+    that DPI and the transform scaling it to the rectangle (1 when the picture was drawn for it), as the operator's files store it.
+    ``picture`` is upright; it is stored bottom row first, as LightBurn stores it (its y points up: the operator's Motorcycle file holds
+    its picture upside down under a positive transform)."""
+    rows, cols = picture.shape[:2]
+    native_w, native_h = cols / dpi * grayscale.MM_PER_INCH, rows / dpi * grayscale.MM_PER_INCH
+    data = base64.b64encode(grayscale.png_with_dpi(np.ascontiguousarray(picture[::-1]), dpi)).decode("ascii")
+    return (f'    <Shape Type="Bitmap" CutIndex="{layer}" W="{native_w:.5f}" H="{native_h:.5f}" Gamma="1" Contrast="0" Brightness="0" '
+            f'EnhanceAmount="0" EnhanceRadius="0" EnhanceDenoise="0" File={quoteattr(file_name)} SourceHash="0" Data="{data}">\n'
+            f'        <XForm>{w / native_w:.8f} 0 0 {h / native_h:.8f} {x + w / 2:.5f} {y + h / 2:.5f}</XForm>\n    </Shape>\n')
+
+
+def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture") -> bytes:
+    """A LightBurn project of one picture engraved in grayscale mode with ``parameters`` (power = Max, ``min_power``, speed, frequency
+    in kHz, pulse width, line interval, passes): one Image layer C00, the picture ``width_mm`` wide at the layer's DPI, its top-left
+    corner at the origin. Written like the operator's own photo files (no mirroring, no cleaning, no markers): what it engraves is
+    the picture alone. The picture keeps its own pixels, as in those files (LightBurn resamples it to the layer's DPI when it
+    engraves); only a picture finer than that DPI is reduced to it, so the file does not carry pixels the laser never uses."""
+    width = float(width_mm)
+    if not np.isfinite(width) or width <= 0:
+        raise su.ValidationError("the width of the picture must be a positive number of millimetres")
+    for key in ("power", "min_power", "speed", "frequency", "line_interval"):
+        if parameters.get(key) is None:
+            raise su.ValidationError(f"the picture layer needs {key}")
+    rows, cols = picture.shape[:2]
+    height = width * rows / cols
+    dpi = grayscale.image_dpi(parameters["line_interval"])
+    own_dpi = cols / width * grayscale.MM_PER_INCH
+    if own_dpi > dpi:
+        target = (max(1, round(width / grayscale.MM_PER_INCH * dpi)), max(1, round(height / grayscale.MM_PER_INCH * dpi)))
+        picture, own_dpi = cv2.resize(picture, target, interpolation=cv2.INTER_AREA), target[0] / width * grayscale.MM_PER_INCH
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-") or "picture"
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">\n'
+            + _image_setting(0, "C00", parameters, priority=0) + _bitmap(0.0, 0.0, width, height, picture, own_dpi, 0, f"{stem}.png")
+            + '    <Notes ShowOnLoad="0" Notes=""/>\n</LightBurnProject>\n').encode("utf-8")
+
+
 def is_recipe(parameters: dict) -> bool:
     """Parameters of a knowledge entry measured from a LightBurn file carry its mode and preserved settings; plate cells and
     legacy entries carry only the six numbers."""
@@ -528,6 +585,16 @@ def export_lbrn2(plan: dict) -> bytes:
         pred = layer.get("prediction")
         if pred is not None and any(pred.get(k) is None for k in ("confidence", "expected_delta_e", "stability")):
             raise su.ValidationError(f"layer {layer['name']} has an incomplete prediction (confidence, expected error and stability are required)")
+        if layer.get("cut_type") == "Image":
+            # a grey-ramp tile (REQ-059): the layer engraves its picture, not the rectangle that marks its place on the plan
+            if p.get("min_power") is None or p.get("line_interval") is None or not layer.get("ramp"):
+                raise su.ValidationError(f"layer {layer['name']} is an image layer without Min power, line interval or its picture")
+            out.append(_image_setting(file_index, layer["name"], p, priority=file_index))
+            ramp = layer["ramp"]
+            dpi = grayscale.image_dpi(p["line_interval"])
+            shapes.append(_bitmap(ramp["x"] + x_offset, ramp["y"] + y_offset, ramp["width"], ramp["height"], grayscale.ramp_picture(ramp, dpi), dpi,
+                                  file_index, f"{layer['name']}.png"))
+            continue
         if is_recipe(p):
             out.append(_recipe_setting(file_index, layer["name"], p))
         else:

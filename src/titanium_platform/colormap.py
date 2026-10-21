@@ -220,6 +220,12 @@ def _task(task: dict) -> dict:
     return {"kind": task["kind"], "basis": task.get("basis", tasks.DERIVED)}
 
 
+def _tonal_layers(check: dict) -> set:
+    """The names of the layers of a check whose grey steps are points of the map (``_tonal_points``)."""
+    return {rep.get("name") for rep in check.get("layers", []) if (rep.get("tonal") or {}).get("evidence") == "clear"
+            and (rep.get("tonal") or {}).get("power_range") and any("power_pct" in step for step in rep["tonal"]["bins"])}
+
+
 def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nominal, provisional: bool,
                   observations: dict | None = None) -> list[dict]:
     """A grayscale-mode image is a continuum of recipes: the grey level sets the power and the power sets the colour. Each step of
@@ -264,11 +270,14 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
 
     points = []
     observations: dict[int, dict[str, int]] = {}
+    checks = {pair_id: ingest.get_pair(store, pair_id).get("check") or {} for pair_id in dict.fromkeys(row["pair_id"] for row in rows)}
     for row in rows:
         evidence = json.loads(row["evidence_json"] or "{}")
         observations.setdefault(row["pair_id"], {}).setdefault(evidence.get("layer_name"), row["id"])
         if is_service(evidence.get("role"), row["layer_index"], derived.get(row["pair_id"])):
             continue
+        if evidence.get("layer_name") in _tonal_layers(checks[row["pair_id"]]):
+            continue          # a grayscale image layer is a continuum of colours: its grey steps are its points, its median is no colour (REQ-059)
         info = _pair_info(_source_of_row(row, bool(evidence.get("matrix_cell"))), names, kept)
         lab = json.loads(row["lab_json"])
         kind = _kind(evidence, row["model_eligible"])
@@ -286,7 +295,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     for row in rows:
         first_row.setdefault(row["pair_id"], row)
     for pair_id, row in first_row.items():
-        check = ingest.get_pair(store, pair_id).get("check") or {}
+        check = checks[pair_id]
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         ref = witness.get(pair_id)
         points += _tonal_points(pair_id, check, _pair_info(_source_of_row(row), names, kept), kind, ref["lab"] if ref else None, nominal, False,

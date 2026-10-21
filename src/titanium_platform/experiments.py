@@ -10,8 +10,10 @@ The checks of a plate that is not kept stay as a finished work.
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from pathlib import Path
 
-from . import capability_results, designer, ingest, photo_modes, plans as pl, tasks
+from . import capability_results, designer, engraving_time, ingest, lightburn as lb, photo_modes, plans as pl, setup as su, tasks
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
@@ -134,6 +136,33 @@ def list_experiments(store: Store, device_id: int | None = None, task: str | Non
     return sorted(out, key=lambda e: (e["last_activity"] or "", e["main_pair_id"] or 0, e["key"]), reverse=True)
 
 
+def plan_time(plan: dict) -> dict | None:
+    """The estimated engraving time of a plan (REQ-060): of the LightBurn file it exports, cleaning and markers included. None when the
+    plan cannot be exported yet (the reason is shown where the file is made) and for a vector job, whose colour layers its own export
+    writes (the vector screen shows their time)."""
+    if plan["mode"] == pl.MODE_VECTOR:
+        return None
+    try:
+        return engraving_time.of_project(lb.parse_bytes(pl.export_lbrn2(plan)))
+    except (su.ValidationError, lb.LightBurnError, KeyError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=64)
+def _file_time(path: str, stamp: int) -> dict | None:
+    try:
+        return engraving_time.of_project(lb.parse_file(path))
+    except (OSError, lb.LightBurnError):
+        return None
+
+
+def work_time(lightburn_path: str | None) -> dict | None:
+    """The estimated engraving time of a finished work from its stored LightBurn file; None when the file cannot be read."""
+    if not lightburn_path or not Path(lightburn_path).is_file():
+        return None
+    return _file_time(lightburn_path, Path(lightburn_path).stat().st_mtime_ns)
+
+
 def get_experiment(store: Store, key: str) -> dict:
     groups = _groups(store)
     if key not in groups:
@@ -172,7 +201,10 @@ def get_experiment(store: Store, key: str) -> dict:
             findings.append({"id": r["id"], "pair_id": r["pair_id"], "purpose": r["purpose"], "status": r["status"], "summary": r["summary"],
                              "next_test": r["next_test"], "parameters": json.loads(r["parameters_json"]) if r["parameters_json"] else None,
                              "updated_at": r["updated_at"], "history": capability_results.finding_history(store, r["id"])})
-    return {**summary, "plate": plate, "pairs": pairs, "findings": findings}
+    # a plate: the file it exports; a finished work (a vector job's too): the file that was engraved
+    last = group["pairs"][-1] if group["pairs"] else None
+    time = plan_time(plan) if plan and plan["mode"] != pl.MODE_VECTOR else work_time(last.get("lightburn_path")) if last else None
+    return {**summary, "plate": plate, "pairs": pairs, "findings": findings, "time": time}
 
 
 # -- the pictures the experiment screens show by default ------------------------------------------------------------------

@@ -508,6 +508,17 @@ select::-ms-expand {display:none}
 @media (max-width: 1000px) {.color-map-grid {grid-template-columns:minmax(0,1fr)}}
 
 /* Предпросмотр фотогравировки (REQ-030): картинка и прогноз рядом; оговорка о цветах относительно камеры — на самой картинке (DEC-062) */
+/* Фотогравировка: шкалы серого (REQ-059) */
+.ge-scales {display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.ge-scale {display:flex;flex-direction:column;gap:6px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:inherit;cursor:pointer;font:inherit}
+.ge-scale.is-chosen {border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ge-bar {display:block;height:22px;border-radius:6px;border:1px solid var(--line)}
+.ge-ends {display:flex;justify-content:space-between;color:var(--muted)}
+.ge-strip {display:flex;height:34px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.ge-strip > span {flex:1 1 0}
+.ge-ramp {height:12px;background:linear-gradient(to right,#fff,#000)}
+.ge-none {background:repeating-linear-gradient(45deg,transparent 0 4px,rgba(127,127,127,.45) 4px 6px)}
+.sw.ge-none {border:1px dashed var(--muted)}
 .pp-captions {display:grid;grid-template-columns:1fr 1fr;color:var(--muted);font-size:13px;text-align:center}
 .pp-stage {position:relative;display:flex;justify-content:center;background:#0b1220;border-radius:10px;padding:8px}
 .pp-image {display:block;max-width:100%;max-height:80vh;width:auto;height:auto;border-radius:6px}
