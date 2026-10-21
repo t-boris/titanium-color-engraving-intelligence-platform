@@ -1337,5 +1337,15 @@ Operator's words (voice-typed): "четвёртым пунктом была фо
   150 mm 3.11 h on the vector screen, 2.9-3.3 h by the files; 100 mm 1.5-1.65 h. The old 0.3 ms with 10 mm lines gave 1.2-1.4 h for the 100 mm file.
 - Real data (Mode A): confirmation median dE 10.2, not confirmed: dark half 1-3 dE, light half 10-16; 10 fills of the same settings differ by up to 33.8 dE (reference only).
 - Full suite: 1545 passed, none skipped, 2 min 38 s on 12 workers.
+- Light half of Mode A (why it is not confirmed; analysis on an isolated copy, the live data only read):
+  - Not the measurement: keeping only pixels whose picture is uniform within 0.3 / 0.5 mm (no blur mixing, no registration error) leaves the two engravings 10-20 dE apart at greys 135-255.
+  - Not the LightBurn file: both Image layers have Gamma 1, Contrast 0, Brightness 0, the same Min 1 / Max 30, 1500 dpi.
+  - Not the photograph's correction: in both chart-corrected photos the chart patches agree within 2.6 L, the steel ruler within 2.6, the background within 2.7.
+  - Not the focus: the operator answered (2026-10-21) that both were engraved at the same focus height.
+  - What is seen: at the same greys Motorcycle reads L 72-85 (lighter at the top of the plate than at the bottom), Girl on a bike L 64-71 everywhere; the dark greys
+    read L 38-44 on both, everywhere. The holders differ (light grey under Motorcycle, dark grey under Girl: 69 vs 30 L).
+  - Next, by the operator: photograph both plates again in the same holder, in one photograph or one after the other, and add the photos to their experiments
+    ("Добавить фото"); then engrave the "Шкалы серого" plate. Same plates reading alike in the same holder means the photographs were the cause; reading apart
+    means the light end of grayscale on these plates is not repeatable, and the scale must show that spread instead of one colour.
 - Open for the operator (answered with a default, not blocking): pure white at Min power (the plate's first step is white: the photograph decides); a convenient interval (the plate's rows decide: the one
   with the widest colour range and distinct steps); the pulse width 300 ns is not one of the laser's steps (250 / 350): the laser keeps the last valid one, so what these works really used is uncertain.
