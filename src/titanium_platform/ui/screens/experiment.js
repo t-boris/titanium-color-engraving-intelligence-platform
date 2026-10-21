@@ -123,12 +123,14 @@
           h('strong', {}, I18N.name(l.name)), Tasks.badge(l.task)),
         Tasks.colourBasis(l.metrics) ? h('div', {class: 'muted small'}, Tasks.colourBasis(l.metrics)) : null,
         h('div', {class: 'small muted'}, params(l)),
-        h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null)));
+        h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null,
+          ...Composition.layerNotes(l))));
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
       fill(result,
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
         ...(check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m))),
         frameNote(check),
+        ...(check.composition ? [Composition.card(check)] : []),
         ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
           `Цвета приведены к чистому титану этой же фотографии (слой очистки: L* ${num(ref.lab[0], 1)} как снято, принят за L* ${num(ref.nominal[0], 0)}`
           + `${ref.nominal_source === 'chart' ? ', по измерениям с картой' : ', значение по умолчанию'}). `
@@ -163,7 +165,7 @@
         link('/research', 'Попросить AI-исследователя изменить плату'))) : null;
     const work = pairs[pairs.length - 1];
     // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power
-    const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && p.grayscale_image);
+    const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && (p.grayscale_image || p.tonal_image));
     const files = !exp.plate && work ? h('div', {class: 'stack'}, h('h3', {}, 'Готовая работа'),
       h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`),
       h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'),

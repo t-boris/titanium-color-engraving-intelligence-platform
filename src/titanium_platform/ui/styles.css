@@ -897,3 +897,7 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
   .kn-right {display:block}
   .kn-right>.os-col {margin-bottom:12px}
 }
+
+.comp-bar {display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line)}
+.comp-bar span {display:block;height:100%}
+.comp-fill {background:#d7a85a} .comp-photo {background:#7aa2e8} .comp-both {background:#b48ad6}

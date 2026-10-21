@@ -174,18 +174,22 @@ def test_enhance_and_denoise_are_not_modelled_and_are_named():
     assert any("assumed" in n and "Gamma 1.2" in n for n in result["notes"])
 
 
-@pytest.mark.parametrize("mode", ["stucki", "jarvis", "threshold", "Stucki", "3dslice", "sketch", "dither", "newsprint", "", None])
-def test_dithered_and_other_non_grayscale_modes_are_refused_with_a_reason(mode):
-    with pytest.raises(pr.PredictionError, match="only grayscale mode, where the grey level sets the power, is predicted"):
+TAIL = "only grayscale mode, where the grey level sets the power, and the dot modes whose grey level sets the density of dots are predicted"
+
+
+@pytest.mark.parametrize("mode,why", [("threshold", "a cut at mid grey"), ("3dslice", "engraves depth"), ("sketch", "the edges of the picture"),
+                                      ("flux", "does not set the power or the density of dots"), ("", None), (None, None)])
+def test_modes_without_tones_to_measure_are_refused_with_a_reason(mode, why):
+    with pytest.raises(pr.PredictionError, match=TAIL) as raised:
         pr.refuse_mode(mode)
+    assert why is None or why in str(raised.value)
 
 
-def test_only_grayscale_mode_is_predicted():
+@pytest.mark.parametrize("mode", ["grayscale", " Grayscale ", "stucki", "Stucki", "jarvis", "dither", "dithered", "ordered", "atkinson", "newsprint", "halftone"])
+def test_grayscale_and_the_dot_modes_whose_grey_sets_the_density_are_predicted(mode):
+    """REQ-054: the dot modes are predicted from what was photographed in the same mode (REQ-030 refused them all)."""
     assert issubclass(pr.PredictionError, ValueError)
-    pr.refuse_mode("grayscale")
-    pr.refuse_mode(" Grayscale ")
-    with pytest.raises(pr.PredictionError, match="dithered mode"):
-        pr.refuse_mode("jarvis")
+    pr.refuse_mode(mode)
 
 
 @pytest.mark.parametrize("picture", [None, np.zeros((0, 0)), np.zeros((4, 4, 3)), np.full((4, 4), 1.5)])

@@ -74,7 +74,8 @@ def test_an_upload_returns_every_point_of_the_curve_with_where_it_was_measured(w
     assert body["cache_id"] and layer["refused"] is None and layer["dither"] == "grayscale"
     assert layer["settings"]["min_power"] == 5.0 and layer["settings"]["max_power"] == 16.0 and layer["settings"]["overridden"] == []
     assert layer["mode"] == {"device_id": world["laser"]["id"], "lens_id": None, "material_id": world["titanium"]["id"], "speed": 128.0,
-                             "frequency": 60.0, "pulse_width": 300.0, "line_interval": 0.0169, "passes": 1, "global_passes": 1}
+                             "frequency": 60.0, "pulse_width": 300.0, "line_interval": 0.0169, "passes": 1, "global_passes": 1,
+                             "dither": "grayscale", "power": None, "dot_width": None}
     points = layer["curve"]["points"]
     assert len(points) >= 14 and [p["power"] for p in points] == sorted(p["power"] for p in points)
     for p in points:
@@ -114,11 +115,11 @@ def test_a_preview_no_longer_kept_says_so_instead_of_drawing_anything(world):
     assert response.status_code == 404 and response.json()["error"] == "the preview is no longer kept: upload the LightBurn file again"
 
 
-def test_a_dithered_layer_is_refused_with_its_reason(world):
-    body = upload(world, lightburn(world["work"]["png"], "stucki"), name="dithered.lbrn2").json()
-    (layer,) = body["layers"]
-    assert body["cache_id"] is None and layer["dither"] == "stucki"
-    assert layer["refused"].startswith("stucki mode is not predicted: it is a dithered mode")
+def test_a_dot_mode_nothing_was_measured_in_is_refused_and_one_without_tones_is_refused_with_its_reason(world):
+    (layer,) = upload(world, lightburn(world["work"]["png"], "stucki"), name="dithered.lbrn2").json()["layers"]
+    assert layer["dither"] == "stucki" and layer["refused"] == "no colour has been measured at this mode: there is nothing to predict from"
+    (layer,) = upload(world, lightburn(world["work"]["png"], "threshold"), name="cut.lbrn2").json()["layers"]
+    assert layer["refused"].startswith("threshold mode is not predicted: it is a cut at mid grey")
 
 
 def test_a_file_without_a_picture_is_refused(world):

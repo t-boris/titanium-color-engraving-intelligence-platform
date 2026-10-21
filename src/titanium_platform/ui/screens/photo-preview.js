@@ -9,8 +9,7 @@
   const REFERENCE = {chart: ['по эталонной карте', 'ok'], 'clean titanium': ['относительно камеры, приведены к чистому титану своего снимка', 'warn'],
     'as photographed': ['относительно камеры, как сняты', 'warn']};
   const SOURCE_REFERENCE = {chart: 'по карте', 'clean titanium': 'к чистому титану', 'as photographed': 'как снят'};
-  const DITHER = {stucki: 'Стаки', jarvis: 'Джарвис', threshold: 'порог', grayscale: 'градации серого', sketch: 'эскиз', '3dslice': '3D-слайс',
-    atkinson: 'Аткинсон', dither: 'растр', halftone: 'полутона', newsprint: 'газетный растр', passthrough: 'без растрирования'};
+  const SPREAD_LIMIT = 5;                     // ΔE within which independent engravings agree (agreement.AGREEMENT_DE, DEC-083)
   const OVERRIDES = [['min_power', 'Мин. мощность, %'], ['max_power', 'Макс. мощность, %'], ['speed', 'Скорость, мм/с'], ['frequency', 'Частота, кГц'],
     ['pulse_width', 'Длительность импульса, нс'], ['line_interval', 'Шаг линий, мм'], ['passes', 'Проходы']];
   const value = (v, d = 2) => (v == null ? '—' : String(+(+v).toFixed(d)));
@@ -23,31 +22,43 @@
       pill(SOURCE_REFERENCE[s.reference] || s.reference, s.reference === 'chart' ? 'ok' : 'warn'));
   }
 
+  const TONE = (info) => info.axis === 'darkness';       // a dot mode: the curve runs over the darkness of the grey, not over a power
+
+  const spreadCell = (p) => (p.spread_de == null ? h('span', {class: 'muted'}, p.engravings === 1 ? 'одна гравировка' : '—')
+    : h('span', {}, pill(`${value(p.spread_de, 1)} ΔE`, p.spread_de > SPREAD_LIMIT ? 'warn' : 'ok'), ` · гравировок ${p.engravings}`));
+
   function curveTable(info) {
-    return table(['Серый картинки', 'Мощность, %', 'Измеренный цвет', 'Где измерен'], info.curve.points.map((p) => [
-      p.grey == null ? h('span', {class: 'muted'}, 'вне Min–Max') : value(p.grey, 3), value(p.power),
-      h('span', {}, swatch(p.lab), labText(p.lab)), h('div', {class: 'stack'}, p.sources.map(sourceLine))]));
+    const tone = TONE(info);
+    return table(['Серый картинки', tone ? 'Тон (темнота серого), %' : 'Мощность, %', 'Измеренный цвет', 'Расхождение гравировок', 'Где измерен'], info.curve.points.map((p) => [
+      p.grey == null ? h('span', {class: 'muted'}, tone ? 'вне картинки' : 'вне Min–Max') : value(p.grey, 3), value(p.power),
+      h('span', {}, swatch(p.lab), labText(p.lab)), spreadCell(p), h('div', {class: 'stack'}, p.sources.map(sourceLine))]));
   }
 
   function restsOn(info) {
     const s = info.mode, experiments = new Set(info.curve.points.flatMap((p) => p.sources.map((x) => x.experiment)));
     const [reference] = REFERENCE[info.reference] || [info.reference];
+    const tone = TONE(info);
+    const pictureMode = `${value(s.speed, 1)} мм/с · ${value(s.frequency, 1)} кГц · `
+      + `${s.pulse_width == null ? 'импульс не указан' : value(s.pulse_width, 0) + ' нс'} · шаг ${value(s.line_interval, 4)} мм · `
+      + `проходов ${s.passes ?? '—'}${s.global_passes > 1 ? ` · глобально ${s.global_passes}×` : ''}`
+      + (tone ? ` · мощность точек ${value(s.power, 1)} %${s.dot_width != null ? ` · ширина точки ${value(s.dot_width, 3)} мм` : ''}` : '');
     return h('div', {class: 'stack'},
       h('p', {}, h('strong', {}, 'На чём основан прогноз. '),
-        `Измеренные мощности этого режима: ${info.curve.points.length}, от ${value(info.span[0])} до ${value(info.span[1])} %, `
-        + `из экспериментов: ${experiments.size}. Цвета ${reference}. Режим: ${value(s.speed, 1)} мм/с · ${value(s.frequency, 1)} кГц · `
-        + `${s.pulse_width == null ? 'импульс не указан' : value(s.pulse_width, 0) + ' нс'} · шаг ${value(s.line_interval, 4)} мм · `
-        + `проходов ${s.passes ?? '—'}${s.global_passes > 1 ? ` · глобально ${s.global_passes}×` : ''}. `
-        + 'Серый картинки становится мощностью линейно: самый светлый — Min, самый тёмный — Max; цвет между измеренными мощностями — линейно в Lab.'),
+        `Измеренные ${tone ? 'тона' : 'мощности'} этого режима: ${info.curve.points.length}, от ${value(info.span[0])} до ${value(info.span[1])} %, `
+        + `из экспериментов: ${experiments.size}. Цвета ${reference}. Режим: ${pictureMode}. `
+        + (tone ? 'Серый картинки задаёт плотность точек, каждая бьёт на мощности слоя; цвет между измеренными тонами — линейно в Lab.'
+          : 'Серый картинки становится мощностью линейно: самый светлый — Min, самый тёмный — Max; цвет между измеренными мощностями — линейно в Lab.')),
       h('p', {}, h('strong', {}, 'Чего прогноз не знает. '),
-        info.outside_share > 0 ? `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренного диапазона: там прогноза нет, эти места заштрихованы. `
-          : 'Вся картинка лежит в измеренном диапазоне мощностей. ',
-        'Растрирование и ход луча не моделируются: показан цвет при мощности, которую задаёт серый.'),
+        info.outside_share > 0 ? `${value(info.outside_share * 100, 1)} % картинки требует ${tone ? 'тона' : 'мощности'} вне измеренного диапазона: там прогноза нет, эти места заштрихованы. `
+          : `Вся картинка лежит в измеренном диапазоне ${tone ? 'тонов' : 'мощностей'}. `,
+        tone ? 'Растрирование не моделируется: цвет тона — то, что сфотографировано при этом тоне в этом режиме и на этих настройках.'
+          : 'Растрирование и ход луча не моделируются: показан цвет при мощности, которую задаёт серый.',
+        info.spread && info.spread.max_de != null ? ` Независимые гравировки этого режима расходятся до ${value(info.spread.max_de, 0)} ΔE; на ${value(info.spread.uncertain * 100, 0)} % предсказанной картинки — больше ${SPREAD_LIMIT} ΔE: читайте цвет там как диапазон.` : ''),
       h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))));
   }
 
   function layerCard(layer, cacheId) {
-    const head = h('div', {class: 'row'}, h('h3', {}, `Слой ${layer.name}`), pill(layer.dither ? DITHER[layer.dither] || layer.dither : 'режим не указан'),
+    const head = h('div', {class: 'row'}, h('h3', {}, `Слой ${layer.name}`), pill(layer.dither ? PhotoModes.label(layer.dither) : 'режим не указан'),
       (layer.settings.overridden || []).length ? pill('настройки изменены', 'warn') : null);
     if (layer.refused) return h('section', {class: 'card stack'}, head, h('div', {class: 'alert warn', role: 'status'}, I18N.tr(layer.refused)));
     const img = h('img', {class: 'pp-image', alt: `Картинка слоя ${layer.name} и её прогноз на титане`});
@@ -63,23 +74,25 @@
       exact.addEventListener('change', () => { range.value = exact.value; schedule(); });
       return {exact, box: h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, exact))};
     };
+    const tone = TONE(layer);
     const low = slider('min_power', 'Мин. мощность, %'), high = slider('max_power', 'Макс. мощность, %');
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
 
     function draw(info) {
       const lo = +low.exact.value, hi = +high.exact.value;
-      img.src = `${info.preview}?min_power=${lo}&max_power=${hi}`;
+      img.src = tone ? info.preview : `${info.preview}?min_power=${lo}&max_power=${hi}`;
       // DEC-062: a prediction from camera-relative colours says so on the picture itself
       banner.hidden = info.referenced;
       banner.textContent = info.referenced ? '' : 'Цвета относительно камеры: такими их увидела камера при том освещении, без коррекции по эталонной карте'
         + (info.reference === 'as photographed' ? '; чистого титана на снимке нет — цвета как сняты.' : '; приведены к чистому титану своего снимка.');
       fill(about, restsOn(info));
-      fill(curve, h('h4', {}, 'Кривая «мощность → цвет» этого режима'), curveTable(info));
+      fill(curve, h('h4', {}, tone ? 'Кривая «тон → цвет» этого режима' : 'Кривая «мощность → цвет» этого режима'), curveTable(info));
     }
     let timer = null, seq = 0;
     async function rerender() {
       const lo = +low.exact.value, hi = +high.exact.value;
       error.hidden = true;
+      if (tone) return;
       if (!(lo <= hi)) { error.textContent = 'Мин. мощность должна быть не выше макс.'; error.hidden = false; return; }
       const mine = ++seq;
       try {
@@ -90,7 +103,8 @@
     function schedule() { clearTimeout(timer); timer = setTimeout(rerender, 250); }
     draw(layer);
     return h('section', {class: 'card stack'}, head,
-      h('div', {class: 'grid g2'}, low.box, high.box), error, lost,
+      tone ? h('p', {class: 'muted small'}, 'В этом режиме каждая точка бьёт на мощности слоя: Min и Max не меняют результат, ползунков нет. Другая мощность — другой режим, его нужно измерить отдельно.')
+        : h('div', {class: 'grid g2'}, low.box, high.box), error, lost,
       h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка из файла'), h('span', {}, 'Прогноз на титане')),
       h('div', {class: 'pp-stage'}, img, banner),
       about, curve);
@@ -135,7 +149,8 @@
     if (preloaded) predict();
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Предпросмотр фотогравировки'),
-        h('p', {class: 'sub'}, 'Как картинка слоя Grayscale выйдет на титане при заданных Min и Max мощности — по измеренной кривой «мощность → цвет» этого режима.')),
+        h('p', {class: 'sub'}, 'Как картинка слоя-изображения выйдет на титане: в режиме градаций серого — при заданных Min и Max по измеренной кривой «мощность → цвет»; '
+          + 'в режимах точек (Джарвис, Стаки и другие) — по тонам, измеренным в том же режиме. Там, где независимые гравировки расходятся, это видно.')),
         h('span', {class: 'spacer'}), link('/photo', 'Фотогравировка'), link('/colors', 'Карта цветов')),
       h('div', {class: 'card stack'},
         h('div', {class: 'grid g2'}, field('Файл LightBurn', App.filePick(fileIn, 'Выбрать файл')), field('Титан', mat),

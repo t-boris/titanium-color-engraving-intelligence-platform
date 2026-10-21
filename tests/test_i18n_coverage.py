@@ -513,7 +513,7 @@ def test_the_screens_print_the_servers_english_vocabulary_through_a_translation(
     assert "I18N.name(exp.kind)" in screen("experiment.js") and "I18N.name(exp.plate.mode)" in screen("experiment.js")
     assert "I18N.name(p.name)" in screen("plan.js") and "PAIR_STATUS[set.status]" in screen("colors.js")
     assert "ROLE[l.role]" in screen("ingest-dialogs.js") and "goalNames[c.purpose]" in screen("findings.js")
-    assert "PLATE_TYPE[guide.plate.test_type]" in screen("experiments.js") and "DITHER[layer.dither]" in screen("photo-preview.js")
+    assert "PLATE_TYPE[guide.plate.test_type]" in screen("experiments.js") and "PhotoModes.label(layer.dither)" in screen("photo-preview.js")
     assert "I18N.name(w.title)" in screen("device-report.js") and "I18N.name(w.title)" in screen("device-plots.js")
     assert "I18N.known(e.reason) ?? e.reason" in screen("knowledge.js") and "I18N.name(r.name)" in screen("ingest-upload.js")
 

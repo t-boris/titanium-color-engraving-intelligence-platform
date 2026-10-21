@@ -13,6 +13,11 @@ against power at a mode:
 Only accepted checks count: provisional checks (DEC-045) and deleted pairs never take part, nor do service layers (labels, the
 cleaning witness) or tonal profiles whose relation to the grey is weak.
 
+A dot mode (REQ-054) has no power to vary: every dot is fired at the layer's power, so that power and the dot width belong to the
+mode, and the one source is the tonal profile of an accepted check in that mode, whose bins give the colour at a grey level; the curve
+runs over the darkness of the grey. A profile of a picture lying over vector fills is not used: its colour is the fill mixed with the
+dots (DEC-095).
+
 A chart-corrected colour is referenced. A camera-relative colour is expressed against the clean titanium of its own photograph
 where that exists (DEC-056) and is used as photographed otherwise. One curve is built from one kind only: referenced points are
 preferred (``prediction.curve``); among camera-relative ones, those expressed against clean titanium are preferred to colours as
@@ -28,7 +33,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import colormap, experiments, ingest, lightburn as lb, prediction, tasks
+from . import colormap, experiments, ingest, lightburn as lb, photo_modes, prediction, tasks
 from .db import Store
 from .prediction import PredictionError
 
@@ -50,11 +55,16 @@ class Mode:
     line_interval: float | None      # mm
     passes: int | None
     global_passes: int | None = 1
+    dither: str = prediction.PREDICTED_MODE      # the image mode: a curve belongs to one
+    power: float | None = None                   # a dot mode fires every dot at the layer's power, so it is part of the mode (grayscale: None)
+    dot_width: float | None = None               # mm, when the layer corrects the dot width (dot modes only)
 
     def matches(self, settings: Mapping) -> bool:
         """Do these settings (``speed``, ``frequency`` in kHz, ...) engrave at this mode? A missing value equals only a missing one."""
-        return all(_same(getattr(self, k), settings.get(k)) for k in SETTINGS) and \
-            _same(self.global_passes or 1, settings.get("global_passes") or 1)
+        same = all(_same(getattr(self, k), settings.get(k)) for k in SETTINGS) and _same(self.global_passes or 1, settings.get("global_passes") or 1)
+        if self.dither == prediction.PREDICTED_MODE:
+            return same
+        return same and _same(self.power, settings.get("power")) and _same(self.dot_width, settings.get("dot_width"))
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -79,17 +89,21 @@ def _number(value) -> float | None:
 
 def layer_settings(layer: lb.Layer, overrides: Mapping | None = None) -> dict:
     """Min and Max power and the mode settings of an image layer as the file states them, with the operator's overrides."""
+    summary = layer.image_summary() or {}
     settings = {"min_power": _number(layer.source_settings.get("minPower")), "max_power": _number(layer.source_settings.get("maxPower")),
                 "speed": layer.speed, "frequency": layer.frequency_khz, "pulse_width": layer.pulse_width,
-                "line_interval": layer.line_interval, "passes": layer.passes, "global_passes": layer.global_passes}
+                "line_interval": layer.line_interval, "passes": layer.passes, "global_passes": layer.global_passes,
+                "dot_width": summary.get("dot_width_mm") if summary.get("dot_correction") else None}
     given = {k: v for k, v in (overrides or {}).items() if k in OVERRIDES and v is not None}
     if "passes" in given:
         given["passes"] = int(given["passes"])
     return {**settings, **given, "overridden": sorted(given)}
 
 
-def mode_of(settings: Mapping, device_id: int, lens_id: int | None, material_id: int | None) -> Mode:
-    return Mode(device_id, lens_id, material_id, *(settings.get(k) for k in SETTINGS), settings.get("global_passes") or 1)
+def mode_of(settings: Mapping, device_id: int, lens_id: int | None, material_id: int | None, dither: str = prediction.PREDICTED_MODE) -> Mode:
+    dots = dither != prediction.PREDICTED_MODE
+    return Mode(device_id, lens_id, material_id, *(settings.get(k) for k in SETTINGS), settings.get("global_passes") or 1, dither,
+                settings.get("max_power") if dots else None, settings.get("dot_width") if dots else None)
 
 
 # -- the measured points of a mode ------------------------------------------------------------------------------------------------
@@ -119,9 +133,9 @@ def collect(store: Store, mode: Mode) -> dict:
         "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, photo_name, accepted_at, data_json FROM pair "
         "WHERE status='Accepted' AND device_id=? AND lens_id IS ? AND material_id IS ? ORDER BY id",
         (mode.device_id, mode.lens_id, mode.material_id))}
-    points, weak = [], 0
-    for row in refs["rows"]:                                 # flat fills
-        if row["pair_id"] not in pairs:
+    points, weak, over_fills = [], 0, 0
+    for row in refs["rows"]:                                 # flat fills: one colour at a power, the points of a power curve only
+        if row["pair_id"] not in pairs or mode.dither != prediction.PREDICTED_MODE:
             continue
         evidence = json.loads(row["evidence_json"] or "{}")
         params = json.loads(row["parameters_json"] or "{}")
@@ -142,25 +156,31 @@ def collect(store: Store, mode: Mode) -> dict:
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         clean = witness.get(pair_id)
         for rep in check.get("layers", []):
-            tonal = rep.get("tonal")
-            if not tonal or not tonal.get("power_range") or (rep.get("image") or {}).get("dither") != prediction.PREDICTED_MODE:
+            tonal, image = rep.get("tonal"), rep.get("image") or {}
+            seen = photo_modes.mode(image.get("dither"))
+            if not tonal or seen is None or seen.key != mode.dither:
+                continue
+            if mode.dither == prediction.PREDICTED_MODE and not tonal.get("power_range"):
                 continue
             if not mode.matches({"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
-                                 "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")}):
+                                 "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes"),
+                                 "power": rep.get("power"), "dot_width": image.get("dot_width_mm") if image.get("dot_correction") else None}):
                 continue
             if tonal.get("evidence") != "clear":
                 weak += 1
                 continue
-            low, high = tonal["power_range"]
+            if mode.dither != prediction.PREDICTED_MODE and (check.get("composition") or {}).get("picture_over_fills"):
+                over_fills += 1                              # the colour there is the fill mixed with the dots (DEC-095)
+                continue
             values = prediction.adjustments_of(tonal.get("adjustments"))["values"]
             for step in tonal["bins"]:
                 grey = prediction.adjust_grey(step["gray"], values["Gamma"], values["Contrast"], values["Brightness"])
-                power = float(prediction.grey_to_power(grey, low, high))
+                power = float(prediction.grey_to_power(grey, *tonal["power_range"])) if mode.dither == prediction.PREDICTED_MODE else float(100.0 * (1.0 - grey))
                 lab, reference = _expressed([step["L"], step["a"], step["b"]], kind, clean["lab"] if clean else None, nominal)
                 source = {**_where(pair, kept), "layer": rep["index"], "layer_name": rep.get("name"), "how": "tonal profile",
                           "gray": step["gray"], "pixels": step.get("n"), "reference": reference}
                 points.append(prediction.Point(power, lab, source, kind == "calibrated"))
-    return {"points": points, "weak_profiles": weak}
+    return {"points": points, "weak_profiles": weak, "over_fills": over_fills}
 
 
 def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
@@ -172,7 +192,8 @@ def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
         anchored = [p for p in points if p.source["reference"] == CLEAN]
         if anchored:
             as_shot_left_out, points = len(points) - len(anchored), anchored
-    curve = prediction.curve(points)                         # raises PredictionError when nothing was measured at the mode
+    curve = prediction.curve(points, axis=prediction.POWER_AXIS if mode.dither == prediction.PREDICTED_MODE else prediction.TONE_AXIS)
+    # (raises PredictionError when nothing was measured at the mode)
     references = {source["reference"] for row in curve.points for source in row["sources"]}
     reference = CHART if curve.referenced else CLEAN if references == {CLEAN} else AS_SHOT
     notes = []
@@ -186,6 +207,9 @@ def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
                      "mixed with colours expressed against clean titanium.")
     if found["weak_profiles"]:
         notes.append(f"{found['weak_profiles']} tonal profiles of this mode relate their colour to the grey only weakly and are not used.")
+    if found["over_fills"]:
+        notes.append(f"{found['over_fills']} tonal profiles of this mode were photographed over vector fills and are not used: their colour is "
+                     "the fill mixed with the dots.")
     return curve, {"reference": reference, "notes": notes}
 
 
@@ -217,21 +241,26 @@ def _upright(grey: np.ndarray, matrix) -> tuple[np.ndarray, bool]:
 
 
 def _picture(layer: lb.Layer) -> dict:
-    """The layer's largest picture as grey 0..1, upright, at most PREVIEW_SIDE px on its long side for rendering; the grey levels
-    of the whole picture with their pixel counts (the share outside the span is the whole picture's); how many pictures the layer
-    has and whether the picture is turned by an angle the preview does not undo."""
+    """The layer's largest picture as grey 0..1 and opacity 0..1, upright, at most PREVIEW_SIDE px on its long side for rendering; the
+    grey levels of the whole picture's opaque pixels with their counts (the share outside the span is the whole picture's); how many
+    pictures the layer has and whether the picture is turned by an angle the preview does not undo."""
     regions = [r for r in layer.regions if r.bitmap and r.bitmap.get("png")]
     region = max(regions, key=lambda r: r.width * r.height, default=None)
-    grey = ingest._picture_gray(region.bitmap["png"]) if region else None
-    if grey is None:
+    found = photo_modes.decode_picture(region.bitmap["png"]) if region else None
+    if found is None:
         raise PredictionError("the layer has no picture: there is nothing to predict")
-    grey, upright = _upright(np.clip(grey.astype(np.float32), 0.0, 1.0), region.bitmap["matrix"])
-    levels, counts = np.unique(grey, return_counts=True)
+    grey, upright = _upright(np.clip(found[0].astype(np.float32), 0.0, 1.0), region.bitmap["matrix"])
+    alpha, _ = _upright(found[1], region.bitmap["matrix"])
+    opaque = alpha >= photo_modes.ALPHA_MIN
+    if not opaque.any():
+        raise PredictionError("the picture is fully transparent: the layer engraves nothing, so there is nothing to predict")
+    levels, counts = np.unique(grey[opaque], return_counts=True)
     rows, cols = grey.shape
     scale = PREVIEW_SIDE / max(rows, cols)
-    shown = grey if scale >= 1 else cv2.resize(grey, (max(1, round(cols * scale)), max(1, round(rows * scale))), interpolation=cv2.INTER_AREA)
-    return {"picture": np.ascontiguousarray(np.clip(shown, 0.0, 1.0)), "levels": levels, "counts": counts, "size": [cols, rows],
-            "pictures": len({r.bitmap["png"] for r in regions}), "turned": not upright}
+    size = (max(1, round(cols * scale)), max(1, round(rows * scale)))
+    shown, shown_alpha = (grey, alpha) if scale >= 1 else (cv2.resize(grey, size, interpolation=cv2.INTER_AREA), cv2.resize(alpha, size, interpolation=cv2.INTER_AREA))
+    return {"picture": np.ascontiguousarray(np.clip(shown, 0.0, 1.0)), "alpha": np.ascontiguousarray(np.clip(shown_alpha, 0.0, 1.0)),
+            "levels": levels, "counts": counts, "size": [cols, rows], "pictures": len({r.bitmap["png"] for r in regions}), "turned": not upright}
 
 
 def check_power_range(min_power, max_power) -> tuple[float, float]:
@@ -254,9 +283,13 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
         item = {"index": layer.index, "name": layer.name, "dither": summary.get("dither"), "settings": settings, "refused": None}
         try:
             prediction.refuse_mode(summary.get("dither"))
+            dither = photo_modes.mode(summary.get("dither")).key
             picture = _picture(layer)
-            settings["min_power"], settings["max_power"] = check_power_range(settings["min_power"], settings["max_power"])
-            mode = mode_of(settings, device_id, lens_id, material_id)
+            if dither == prediction.PREDICTED_MODE:
+                settings["min_power"], settings["max_power"] = check_power_range(settings["min_power"], settings["max_power"])
+            elif settings["max_power"] is None:
+                raise PredictionError("a dot mode fires every dot at the layer's power and the layer states none: there is nothing to predict from")
+            mode = mode_of(settings, device_id, lens_id, material_id, dither)
             curve, basis = curve_for(store, mode)
         except PredictionError as exc:
             item["refused"] = str(exc)
@@ -272,31 +305,37 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
     return out
 
 
-def _grey_for(power: float, low: float, high: float, values: Mapping) -> float | None:
-    """The grey level of the stored picture that is engraved with ``power`` at Min..Max (after the assumed adjustments);
-    None when the power lies outside Min..Max."""
+def _grey_for(x: float, curve: prediction.Curve, low, high, values: Mapping) -> float | None:
+    """The grey level of the stored picture that lands at ``x`` on the curve (a power at Min..Max, or a darkness for a curve over tones,
+    after the assumed adjustments); None when ``x`` lies outside what the picture can reach."""
     grey = np.linspace(0.0, 1.0, 1001)
-    powers = prediction.grey_to_power(prediction.adjust_grey(grey, values["Gamma"], values["Contrast"], values["Brightness"]), low, high)
-    if not powers.min() - prediction.SPAN_TOLERANCE <= power <= powers.max() + prediction.SPAN_TOLERANCE:
+    xs = prediction.x_of(grey, curve, values, low, high)
+    if not xs.min() - prediction.SPAN_TOLERANCE <= x <= xs.max() + prediction.SPAN_TOLERANCE:
         return None
-    order = np.argsort(powers, kind="stable")
-    return round(float(np.interp(power, powers[order], grey[order])), 3)
+    order = np.argsort(xs, kind="stable")
+    return round(float(np.interp(x, xs[order], grey[order])), 3)
 
 
 def describe(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndarray]:
     """The prediction of one prepared layer at Min..Max power (the layer's own when not given): the description shown beside the
     preview, and the side-by-side image (picture | prediction, hatched where no power was measured)."""
-    low, high = check_power_range(item["settings"]["min_power"] if min_power is None else min_power,
-                                  item["settings"]["max_power"] if max_power is None else max_power)
+    if item["curve"].axis == prediction.TONE_AXIS:           # a dot mode: the layer's power is part of its mode, there is no Min..Max to move
+        low = high = None
+    else:
+        low, high = check_power_range(item["settings"]["min_power"] if min_power is None else min_power,
+                                      item["settings"]["max_power"] if max_power is None else max_power)
     outside = prediction.share_outside(item["levels"], item["counts"], low, high, item["curve"], item["adjustments"])
-    rendered = prediction.render(item["picture"], low, high, item["curve"], item["adjustments"], outside_share=outside)
+    spread = prediction.share_by_spread(item["levels"], item["counts"], low, high, item["curve"], item["adjustments"])
+    rendered = prediction.render(item["picture"], low, high, item["curve"], item["adjustments"], outside_share=outside, spread_shares=spread,
+                                 alpha=item["alpha"])
     values = rendered["adjustments"]["values"]
     curve = item["curve"].as_dict()
-    curve["points"] = [{**row, "grey": _grey_for(row["power"], low, high, values)} for row in curve["points"]]
+    curve["points"] = [{**row, "grey": _grey_for(row["power"], item["curve"], low, high, values)} for row in curve["points"]]
     rows, cols = item["picture"].shape
     info = {"index": item["index"], "name": item["name"], "dither": item["dither"], "settings": item["settings"], "refused": None,
             "mode": item["mode"].as_dict(), "curve": curve, "referenced": rendered["referenced"], "reference": item["reference"],
-            "span": rendered["span"], "power_range": rendered["power_range"], "outside_share": rendered["outside_share"],
+            "span": rendered["span"], "axis": rendered["axis"], "power_range": rendered["power_range"], "outside_share": rendered["outside_share"], "spread": rendered["spread"],
+            "transparent_share": rendered["transparent_share"],
             "adjustments": rendered["adjustments"], "notes": rendered["notes"] + item["basis_notes"],
             "picture": {"width": item["size"][0], "height": item["size"][1], "shown_width": cols, "shown_height": rows}}
     return info, prediction.side_by_side(item["picture"], rendered["rgb8"])

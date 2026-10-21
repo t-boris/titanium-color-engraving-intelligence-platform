@@ -57,10 +57,15 @@
   const adjustments = (s) => s.replace(/\b(Gamma|Contrast|Brightness|EnhanceAmount|EnhanceRadius|EnhanceDenoise)\b/g, (tag) => ADJUSTMENT[tag]);
   const WHY = {
     '3D slicing engraves depth in repeated passes, not a tone': '3D-срез гравирует глубину повторными проходами, а не тон',
+    'it is a cut at mid grey: every pixel is fired at full power or not at all, so there are no tones in between':
+      'это отсечка по середине серого: каждый пиксель бьёт на полной мощности или не бьёт, промежуточных тонов нет',
+    'it engraves the edges of the picture, not its tones': 'он гравирует края картинки, а не её тона',
+    'the grey level does not set the power or the density of dots in this mode': 'в этом режиме уровень серого не задаёт ни мощность, ни плотность точек',
     'it is a dithered mode: every dot is fired at full power or not at all, the grey sets the dot pattern and dithering is not modelled':
       'это режим растрирования: каждая точка прожигается полной мощностью или не прожигается вовсе, серый задаёт узор точек, а растрирование не моделируется',
     'the grey level does not set the power in this mode': 'в этом режиме уровень серого не задаёт мощность'};
   const GRAYSCALE = 'прогнозируется только режим Grayscale, в котором уровень серого задаёт мощность';
+  const PREDICTED = 'прогнозируются режим Grayscale, где серый задаёт мощность, и режимы точек, где серый задаёт плотность точек';
   I18N.add([
     [/^The prediction rests on (\d+) measured powers of this mode, (\S+)\.\.(\S+) %, (chart-corrected \(referenced\)|camera-relative)\.$/i,
       (m) => `Прогноз опирается на измеренные мощности этого режима (их ${m[1]}) от ${m[2]} до ${m[3]} %, цвет ${/chart/i.test(m[4]) ? 'с коррекцией по эталонной карте' : 'относительно камеры'}.`],
@@ -91,9 +96,26 @@
     [/^Min and Max power must be numbers, got (.+) and (.+)$/i, (m) => `Мин. и макс. мощность должны быть числами, получено: ${m[1]} и ${m[2]}`],
     [/^Min power (\S+) % and Max power (\S+) % must lie within 0\.\.100 % with Min not above Max$/i,
       (m) => `Мин. мощность ${m[1]} % и макс. мощность ${m[2]} % должны лежать в пределах 0–100 %, минимальная не выше максимальной`],
-    [/^the layer states no image mode: only grayscale mode/i, `У слоя не указан режим изображения: ${GRAYSCALE}`],
-    [/^(.+) mode is not predicted: (.+); only grayscale mode, where the grey level sets the power, is predicted$/i,
-      (m) => `Режим ${m[1]} не прогнозируется: ${WHY[m[2]] || m[2]}; ${GRAYSCALE}`],
+    [/^the layer states no image mode: only grayscale mode/i, `У слоя не указан режим изображения: ${PREDICTED}`],
+    [/^(.+) mode is not predicted: (.+); only grayscale mode, where the grey level sets the power, and the dot modes whose grey level sets the density of dots are predicted$/i,
+      (m) => `Режим ${m[1]} не прогнозируется: ${WHY[m[2]] || m[2]}; ${PREDICTED}`],
+    [/^the picture is fully transparent: the layer engraves nothing, so there is nothing to predict$/i, 'Картинка полностью прозрачна: слой ничего не гравирует, прогнозировать нечего'],
+    [/^a dot mode fires every dot at the layer's power and the layer states none: there is nothing to predict from$/i,
+      'В режиме точек каждая точка бьёт на мощности слоя, а у слоя она не указана: прогнозировать не из чего'],
+    [/^The prediction rests on (\d+) measured tones of this mode, darkness (\S+)\.\.(\S+) %, (chart-corrected \(referenced\)|camera-relative)\.$/i,
+      (m) => `Прогноз опирается на измеренные тона этого режима (их ${m[1]}), темнота серого от ${m[2]} до ${m[3]} %, цвет ${/chart/i.test(m[4]) ? 'с коррекцией по эталонной карте' : 'относительно камеры'}.`],
+    [/^Dithering is not modelled: the colour of a tone is what was photographed at that tone in this mode and these settings\.$/i,
+      'Растрирование не моделируется: цвет тона — то, что сфотографировано при этом тоне в этом режиме и на этих настройках.'],
+    [/^(\S+) % of the picture needs a tone outside the measured darkness span (\S+)\.\.(\S+) %: not predicted, hatched\.$/i,
+      (m) => `${m[1]} % картинки требует тона вне измеренного диапазона темноты ${m[2]}–${m[3]} %: там прогноза нет, эти места заштрихованы.`],
+    [/^(\S+) % of the picture is transparent: this layer engraves nothing there, so nothing is predicted for it and what lies under it shows\.$/i,
+      (m) => `${m[1]} % картинки прозрачно: слой там ничего не гравирует, поэтому для него ничего не прогнозируется, а виден слой под ним.`],
+    [/^(\S+) % of the predicted picture lies at (\S+) that only one engraving measured: how much the colour repeats there is not known\.$/i,
+      (m) => `${m[1]} % предсказанной картинки лежит на ${m[2] === 'tones' ? 'тонах' : 'мощностях'}, которые измерила только одна гравировка: повторяется ли там цвет, неизвестно.`],
+    [/^(\S+) % of the predicted picture lies at (\S+) where independent engravings of this mode differ by more than (\S+) ΔE \(up to (\S+)\): read the colour there as a range, not a value\.$/i,
+      (m) => `${m[1]} % предсказанной картинки лежит на ${m[2] === 'tones' ? 'тонах' : 'мощностях'}, где независимые гравировки этого режима расходятся больше чем на ${m[3]} ΔE (до ${m[4]}): цвет там читайте как диапазон, а не значение.`],
+    [/^(\d+) tonal profiles of this mode were photographed over vector fills and are not used: their colour is the fill mixed with the dots\.$/i,
+      (m) => `Тональных профилей этого режима, снятых поверх векторных заливок, не использовано: ${m[1]}. Их цвет — заливка, смешанная с точками.`],
     [/^the layer has no picture: there is nothing to predict$/i, 'У слоя нет картинки: прогнозировать нечего'],
     [/^the picture is empty or not a single grey channel/i, 'Картинка пуста или не является одним серым каналом: прогнозировать нечего'],
     [/^the grey levels of the picture must lie within 0\.\.1$/i, 'Уровни серого картинки должны лежать в пределах 0..1'],

@@ -608,3 +608,23 @@ def sample_lab(corrected_rgb: np.ndarray, mask: np.ndarray) -> tuple[list[float]
         raise PhotoError(f"region is too small after excluding its edges ({n} pixels)")
     rgb = np.median(corrected_rgb[mask], axis=0) * 255.0
     return [float(v) for v in color.srgb8_to_lab(rgb)], n
+
+
+SPREAD_SAMPLE = 100_000     # pixels the spread is computed from: more adds time, not information
+
+
+def sample_spread(corrected_rgb: np.ndarray, mask: np.ndarray) -> dict:
+    """How much the colour varies over the sampled area, robustly (1.4826 x the median absolute deviation, so a few specks do not
+    count): L* and chroma, with the 5th to 95th percentile range of L*. A flat fill varies by the noise of the camera and the gradient of
+    the light; a picture varies by its tones (REQ-053)."""
+    pixels = corrected_rgb[mask]
+    if len(pixels) > SPREAD_SAMPLE:
+        pixels = pixels[np.random.default_rng(0).choice(len(pixels), SPREAD_SAMPLE, replace=False)]
+    lab = color.srgb8_to_lab(pixels * 255.0)
+
+    def robust(values: np.ndarray) -> float:
+        return float(1.4826 * np.median(np.abs(values - np.median(values))))
+
+    low, high = np.percentile(lab[:, 0], [5, 95])
+    return {"L": round(robust(lab[:, 0]), 2), "chroma": round(robust(np.hypot(lab[:, 1], lab[:, 2])), 2),
+            "L_range": [round(float(low), 1), round(float(high), 1)]}

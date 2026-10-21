@@ -32,6 +32,8 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
+from . import photo_modes
+
 _HANDLE_TAG = re.compile(r"(c0x|c0y|c1x|c1y)")
 _PRIMITIVE = re.compile(r"([LB])(\d+) (\d+)")
 _BITMAP_NOT_A_SETTING = ("Type", "CutIndex", "CutOrder", "W", "H", "Data", "File", "SourceHash")
@@ -44,7 +46,8 @@ KNOWN_SETTINGS = frozenset((
     "globalRepeat", "bidir", "crossHatch", "angle", "anglePerPass", "priority", "SubLayer", "bitmaps",
     "ditherMode", "dpi", "dotWidth", "useDotCorrection", "cleanupPass", "wobbleEnable", "wobbleStep", "wobbleSize",
     "maxPower2", "tabCount", "tabCountMax", "scanOpt", "floodFill", "hide", "subname", "suboutput",
-    "OverrideGalvoTimings", "LaserOn_TC", "LaserOff_TC", "End_TC", "Polygon_TC", "JumpSpeed"))
+    "OverrideGalvoTimings", "LaserOn_TC", "LaserOff_TC", "End_TC", "Polygon_TC", "JumpSpeed",
+    "doOutput", "negative", "passThrough", "cellsPerInch", "halftoneAngle", "overscan", "overscanPercent", "linkDPItoInterval"))
 
 
 class LightBurnError(ValueError):
@@ -114,6 +117,16 @@ class Layer:
         return self._switch("doOutput") in ("0", "false", "no")
 
     @property
+    def burn_order(self) -> tuple[float, int]:
+        """LightBurn runs layers by priority, then by index; what is run later is on top where outlines overlap."""
+        value = self.source_settings.get("priority")
+        try:
+            priority = float(value.get("Value") if isinstance(value, dict) else value)
+        except (TypeError, ValueError, AttributeError):
+            priority = 0.0
+        return priority, self.index
+
+    @property
     def readable(self) -> bool:
         return not self.unreadable
 
@@ -139,9 +152,14 @@ class Layer:
 
         sub = settings.get("SubLayer")
         mode = raw("ditherMode")
+        known = photo_modes.mode(mode)
         return {"dither": mode, "kind": "depth" if mode == "3dslice" else "tonal", "dpi": number("dpi"),
+                "family": None if known is None else known.family,
                 "dot_width_mm": number("dotWidth"), "dot_correction": flag("useDotCorrection"),
                 "cleanup_pass": flag("cleanupPass"), "passes": number("numPasses"), "line_interval_mm": number("interval"),
+                "min_power": number("minPower"), "max_power": number("maxPower"), "negative": flag("negative"),
+                "pass_through": flag("passThrough"), "cells_per_inch": number("cellsPerInch"), "halftone_angle": number("halftoneAngle"),
+                "overscan": flag("overscan"),
                 "sub_layers": 0 if sub is None else len(sub) if isinstance(sub, list) else 1,
                 "processing": settings.get("bitmaps", []), "adjusted": changed_processing(settings.get("bitmaps", []))}
 

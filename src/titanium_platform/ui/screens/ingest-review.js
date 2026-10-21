@@ -641,18 +641,24 @@ const IngestReview = (() => {
       ...((check.lens && check.lens.warnings) || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))));
     const supplied = await suppliedSettingsCard(pair, reload);
     if (supplied) out.append(supplied);
+    const composed = Composition.card(check);
+    if (composed) out.append(composed);
     const imageLayers = (check.layers || []).filter((l) => l.image);
     if (imageLayers.length) {
-      const DITHER = {stucki: 'Стаки', jarvis: 'Джарвис', threshold: 'порог', grayscale: 'градации серого', sketch: 'эскиз', '3dslice': '3D-слайс',
-        atkinson: 'Аткинсон', dither: 'растр', halftone: 'полутона', newsprint: 'газетный растр', passthrough: 'без растрирования'};
       out.append(h('div', {class: 'card stack'}, h('h3', {}, 'Слои-изображения'),
         ...imageLayers.map((l) => {
           const i = l.image, t = l.tonal;
           return h('div', {class: 'stack'},
-            h('p', {}, `${l.name}: ${i.kind === 'depth' ? 'глубина (3D-слайс)' : 'фотогравировка'}, режим «${DITHER[i.dither] || i.dither || 'не указан'}»`
+            h('p', {}, `${l.name}: ${i.kind === 'depth' ? 'глубина (3D-слайс)' : 'фотогравировка'}, режим «${PhotoModes.label(i.dither)}»`
               + (i.dpi ? `, ${num(i.dpi, 0)} DPI` : '') + (i.dot_width_mm != null ? `, ширина точки ${num(i.dot_width_mm, 3)} мм` : '')
               + (i.dot_correction ? ', поправка точки включена' : '') + (i.cleanup_pass ? ', есть проход очистки' : '')
-              + (i.passes ? `, проходов ${num(i.passes, 0)}` : '') + '.'),
+              + (i.passes ? `, проходов ${num(i.passes, 0)}` : '')
+              + (i.min_power != null ? `, Min ${num(i.min_power, 1)}%` : '') + (i.max_power != null ? `, Max ${num(i.max_power, 1)}%` : '')
+              + (i.cells_per_inch ? `, ${num(i.cells_per_inch, 0)} линий на дюйм, угол ${num(i.halftone_angle, 0)}°` : '')
+              + (i.negative ? ', негатив' : '') + (i.pass_through ? ', без растрирования LightBurn (pass-through)' : '') + '.'),
+            PhotoModes.get(i.dither) ? h('p', {class: 'small muted'}, `${PhotoModes.get(i.dither).controls} Важные настройки: ${PhotoModes.get(i.dither).settings}. `
+              + `Результат ${PhotoModes.PREDICT[PhotoModes.get(i.dither).predict]}.`)
+              : h('p', {class: 'small muted'}, 'Этот режим версия не знает: описание не придумывается, настройки слоя сохранены как есть.'),
             t ? h('p', {class: 'small'}, `Тон на металле: L* от ${num(t.dark_L, 0)} (тёмные места картинки) до ${num(t.light_L, 0)} (светлые), размах ${num(t.range_L, 0)}. `
               + `Связь серого уровня с яркостью ${num(t.rho, 2)} (${t.evidence === 'clear' ? 'уверенная' : 'слабая'}). `
               + 'Серые уровни взяты из картинки в файле, до яркости, контраста и гаммы LightBurn; растрирование не моделируется. '

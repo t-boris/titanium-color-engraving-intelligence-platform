@@ -44,9 +44,11 @@ import numpy as np
 import cv2
 
 from . import color
+from . import composition
 from . import left_behind
 from . import lightburn as lb
 from . import photo as ph
+from . import photo_modes
 from . import plans as pl
 from . import render_cache as rc
 from . import setup as su
@@ -1356,20 +1358,16 @@ TONAL_BINS = 16
 TONAL_BLUR_MM = 0.25    # dithered dots are far finer than the photograph resolves: compare local averages, not pixels
 
 
+_picture_grey_alpha = photo_modes.decode_picture
+
+
 def _picture_gray(png: bytes) -> np.ndarray | None:
     """The embedded picture as grey levels 0..1 (black engraves); a transparent area counts as white."""
-    img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
-    if img is None:
+    found = _picture_grey_alpha(png)
+    if found is None:
         return None
-    if img.dtype != np.uint8:
-        img = (img.astype(np.float32) / (65535.0 if img.dtype == np.uint16 else 1.0) * 255).clip(0, 255).astype(np.uint8)
-    if img.ndim == 2:
-        return img.astype(np.float32) / 255.0
-    gray = cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-    if img.shape[2] == 4:
-        alpha = img[..., 3].astype(np.float32) / 255.0
-        gray = gray * alpha + (1 - alpha)
-    return gray
+    grey, alpha = found
+    return grey * alpha + (1 - alpha)
 
 
 def _prefer_reading(rho: float, other: float | None) -> bool:
@@ -1380,7 +1378,7 @@ def _prefer_reading(rho: float, other: float | None) -> bool:
 
 
 def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape: tuple[int, int],
-                   allowed: np.ndarray | None) -> dict | None:
+                   allowed: np.ndarray | None, flip: bool | None = None) -> dict | None:
     """How the grey levels of an image object came out on the metal: L* of the photograph against the grey level of the
     embedded picture at the same place (REQ-004, tonal evaluation).
 
@@ -1392,11 +1390,14 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
     lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)
     best = None
+    flip_given = flip
     for region in layer.regions:
         bm = region.bitmap
-        gray = _picture_gray(bm["png"]) if bm and bm.get("png") else None
-        if gray is None:
+        found = _picture_grey_alpha(bm["png"]) if bm and bm.get("png") else None
+        if found is None:
             continue
+        gray, opacity = found
+        solid_picture = (opacity >= photo_modes.ALPHA_MIN).astype(np.float32)      # the grey of a transparent pixel is no tone (DEC-095)
         rows, cols = gray.shape
         a, b, c, d, e, f = bm["matrix"]
         local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
@@ -1408,13 +1409,15 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
         if allowed is not None:
             shrink &= allowed
         lit = [cv2.GaussianBlur(lab[:, :, c], (0, 0), sigma) for c in range(3)]
-        for flip in (False, True):
+        for flip in (False, True) if flip_given is None else (flip_given,):
             to_local = np.array([[bm["w"] / cols, 0, -bm["w"] / 2],
                                  [0, (-1 if flip else 1) * bm["h"] / rows, (bm["h"] / 2 if flip else -bm["h"] / 2)],
                                  [0, 0, 1.0]])
             warp = mm_to_image @ local_to_mm @ to_local
             laid = cv2.GaussianBlur(cv2.warpPerspective(gray, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA), (0, 0), sigma)
-            inside = shrink & (cv2.warpPerspective(np.ones_like(gray), warp, (shape[1], shape[0])) > 0.999)
+            solid = cv2.erode((cv2.warpPerspective(solid_picture, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA) > 0.999).astype(np.uint8),
+                              np.ones((int(max(3, 2 * sigma)) | 1,) * 2, np.uint8)).astype(bool)
+            inside = shrink & solid & (cv2.warpPerspective(np.ones_like(gray), warp, (shape[1], shape[0])) > 0.999)
             if int(inside.sum()) < 400:
                 continue
             ys, xs = np.nonzero(inside)
@@ -1561,21 +1564,25 @@ def _finished_work_cleaning_layer(project) -> int | None:
 
 
 def _burn_order(layer) -> tuple[float, int]:
-    """LightBurn runs layers by priority, then by index; what is run later is on top where outlines overlap."""
-    value = layer.source_settings.get("priority")
-    try:
-        priority = float(value.get("Value") if isinstance(value, dict) else value)
-    except (TypeError, ValueError, AttributeError):
-        priority = 0.0
-    return priority, layer.index
+    return layer.burn_order
 
 
-def _covered_by_later_layers(layer, layers, h, alignment, shape, system_indices) -> np.ndarray | None:
+def _struck_mask(layer, layer_h: np.ndarray, shape: tuple[int, int], flip: bool = False) -> np.ndarray:
+    """Pixels of the photograph on which an image layer strikes the metal (DEC-095): the picture and the mode decide, not the
+    rectangle of the bitmap (``photo_modes.struck_mask``)."""
+    return photo_modes.struck_mask(layer, layer_h, shape, flip)
+
+
+def _covered_by_later_layers(layer, layers, h, alignment, shape, system_indices, flips: dict | None = None,
+                             pictures: dict | None = None) -> np.ndarray | None:
     """Pixels of this layer's area that a layer run after it engraves again (DEC-050).
 
     The colour seen there belongs to the later layer, so it must not enter this layer's sample. Only filled areas of
     ``Scan``/``Image`` layers count; lines and the plate's service layers do not cover anything. A two-pixel
-    guard avoids mixing the edge of the later engraving into the sample, as for the cleaning witness.
+    guard avoids mixing the edge of the later engraving into the sample, as for the cleaning witness. An image layer
+    covers what its picture strikes (``_struck_mask``), not the rectangle of its bitmap: a transparent or white part leaves the
+    layers below it showing (DEC-095); ``flips`` gives the edge of each picture that is up (layer index -> bool). ``pictures``, when
+    given, receives the area each image layer strikes (layer index -> mask), for saying what covers the sample.
     """
     later = [other for other in layers if other.index != layer.index and other.index not in system_indices and
              other.regions and other.layer_type in ("Scan", "Image") and _burn_order(other) > _burn_order(layer)]
@@ -1584,12 +1591,50 @@ def _covered_by_later_layers(layer, layers, h, alignment, shape, system_indices)
     covered = np.zeros(shape, bool)
     for other in later:
         regions = [r for r in other.regions if len(r.polygon) >= 3 and (r.closed or r.kind in ("rect", "bitmap"))]
+        if other.layer_type == "Image":
+            # Only pictures are engraved on an Image layer: a plain shape on it (the frame the operator drew round the picture) strikes
+            # nothing. The Joker's photograph shows flat fill colours inside such a frame (assumption, DEC-095).
+            if any(r.bitmap and r.bitmap.get("png") for r in regions):
+                struck = _struck_mask(other, _layer_image_to_mm(h, alignment, other.index), shape, bool((flips or {}).get(other.index)))
+                covered |= struck
+                if pictures is not None:
+                    pictures[other.index] = struck
+            continue
         if regions:
             covered |= ph.layer_mask([r.polygon for r in regions], _layer_image_to_mm(h, alignment, other.index), shape,
                                      edge_fraction=0, holes_mm=[r.holes for r in regions])
     if not covered.any():
         return None
     return cv2.dilate(covered.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+
+
+def _covered_by_pictures(sample: np.ndarray, size: int, pictures: dict, by_index: dict, composed: dict | None) -> list[dict]:
+    """The image layers that lie over a layer's sample, with the share of the sample each strikes and, for a dot mode, the share of the
+    area its dots strike on average (a fill under dots shows through between them: its colour there is a mix, DEC-095). Pictures
+    under 1 % of the sample are left out."""
+    detail = {item["index"]: item for item in (composed or {}).get("layers", [])}
+    out = []
+    for index, struck in pictures.items():
+        percent = round(100.0 * int((sample & struck).sum()) / size, 1)
+        if percent < 1:
+            continue
+        info = detail.get(index, {})
+        out.append({"index": index, "name": by_index[index].name, "mode": info.get("mode"), "family": info.get("family"), "percent": percent,
+                    "dot_density_percent": info.get("dot_density_percent")})
+    return out
+
+
+def _picture_flips(corrected, h, alignment: dict, project, shape, visible_surface) -> dict:
+    """For each image layer, the edge of its picture that is up, read once from the photograph (the file does not say) so that what the
+    layer strikes is laid over the photograph the way its tonal profile will be. Layers whose tones cannot be read keep the file's own
+    orientation."""
+    out = {}
+    for layer in project.layers:
+        if layer.layer_type != "Image" or not any(r.bitmap and r.bitmap.get("png") for r in layer.regions):
+            continue
+        profile = _tonal_profile(corrected, _layer_image_to_mm(np.asarray(h, float), alignment, layer.index), layer, shape, visible_surface)
+        out[layer.index] = bool(profile and profile["vertical_flip"])
+    return out
 
 
 def _note_frame(rep: dict, alignment: dict) -> None:
@@ -2192,6 +2237,8 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
     visible_surface = _visible_surface_mask(shape, report["alignment"])
     by_index = {layer.index: layer for layer in project.layers}
     qr_local = _qr_local_geometry(plan, report["alignment"])
+    picture_flips = _picture_flips(corrected, h, report["alignment"], project, shape, visible_surface)
+    report["composition"] = composition.compose(project.layers, picture_flips)
     for rep in report["layers"]:
         layer = by_index[rep["index"]]
         if not rep["readable"] or not layer.regions:
@@ -2210,18 +2257,22 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
                                  holes_mm=[region.holes for region in layer.regions])
         if visible_surface is not None:
             mask &= visible_surface
+        if layer.layer_type == "Image" and rep.get("role") == "test feature" and any(r.bitmap and r.bitmap.get("png") for r in layer.regions):
+            mask &= _struck_mask(layer, layer_h, shape, bool(picture_flips.get(layer.index)))      # not where the picture is transparent (DEC-095)
         covered = None
         if rep.get("role") == "test feature":
+            pictures: dict[int, np.ndarray] = {}
             covered = _covered_by_later_layers(layer, project.layers, np.asarray(h, float), report["alignment"], shape,
-                                               system_indices)
+                                               system_indices, picture_flips, pictures)
             if covered is not None:
-                before = int(mask.sum())
+                before_mask, before = mask.copy(), int(mask.sum())
                 mask &= ~covered
                 if before:
                     rep["covered_by_later_layers_percent"] = round(100.0 * (before - int(mask.sum())) / before, 1)
                     if rep["covered_by_later_layers_percent"] >= 1:
                         rep["notes"].append(f"{rep['covered_by_later_layers_percent']:g}% of the sampled area is engraved again by a "
                                             "later layer and is not sampled")
+                    rep["covered_by"] = _covered_by_pictures(before_mask, before, pictures, by_index, report["composition"])
         _note_frame(rep, report["alignment"])
         if rep.get("role") == "pre-test cleaning witness" and int(mask.sum()) < ph.MIN_MASK_PIXELS:
             # the first layer is engraved over entirely: nothing of it shows, and there is no clean reference here
@@ -2230,6 +2281,7 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
             continue
         try:
             rep["measured_lab"], rep["pixels"] = ph.sample_lab(corrected, mask)
+            rep["spread"] = ph.sample_spread(corrected, mask)
         except ph.PhotoError as exc:
             fallback = _small_path_mask(layer, layer_h, shape)
             if visible_surface is not None:

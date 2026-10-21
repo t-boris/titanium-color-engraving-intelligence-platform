@@ -143,7 +143,7 @@ def test_a_finished_work_offers_its_lightburn_file_on_its_experiment(tmp_path):
         assert client.get("/api/experiments", params={"device_id": w["laser"]["id"] + 1}).json() == []
         detail = client.get("/api/experiments/" + summary["key"]).json()
         (check,) = detail["pairs"]
-        assert check["lightburn_url"] == f"/api/pairs/{pid}/lightburn" and check["grayscale_image"] is False
+        assert check["lightburn_url"] == f"/api/pairs/{pid}/lightburn" and check["grayscale_image"] is False and check["tonal_image"] is False
         assert client.get(check["lightburn_url"]).content == synth.framed_work(seed=3, blobs=8)["lightburn"]
     store.close()
 

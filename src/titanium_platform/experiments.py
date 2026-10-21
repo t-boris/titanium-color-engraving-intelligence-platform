@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from . import capability_results, designer, ingest, plans as pl, tasks
+from . import capability_results, designer, ingest, photo_modes, plans as pl, tasks
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
@@ -160,7 +160,10 @@ def get_experiment(store: Store, key: str) -> dict:
                       "measurement": (check.get("color_measurement") or {}).get("mode"),
                       "lightburn_url": f"/api/pairs/{p['id']}/lightburn",
                       # a photo engraving whose grey sets the power: its look at other Min and Max can be predicted (REQ-030)
-                      "grayscale_image": any((l.get("image") or {}).get("dither") == "grayscale" for l in check.get("layers", []))})
+                      "grayscale_image": any((l.get("image") or {}).get("dither") == "grayscale" for l in check.get("layers", [])),
+                      # a dot mode whose tones are predicted from what was photographed in it (REQ-054)
+                      "tonal_image": any(getattr(photo_modes.mode((l.get("image") or {}).get("dither")), "predicted_from", None) == photo_modes.PROFILE
+                                         for l in check.get("layers", []))})
     ids = [p["id"] for p in group["pairs"]]
     findings = []
     if ids:

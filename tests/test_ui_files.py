@@ -28,6 +28,8 @@ def test_screens_are_loaded_after_the_helpers_they_use():
     order = {s: i for i, s in enumerate(SCRIPTS)}
     for dep, user in [("/i18n.js", "/app.js"), ("/app.js", "/dialogs.js"), ("/dialogs.js", "/router.js"), ("/router.js", "/screens/setup.js"),
                       ("/screens/setup-forms.js", "/screens/setup.js"), ("/screens/setup-rules.js", "/screens/setup.js"), ("/screens/plate-dialog.js", "/screens/experiments.js"),
+                      ("/photo-modes.js", "/screens/composition.js"), ("/photo-modes.js", "/screens/ingest-review.js"), ("/photo-modes.js", "/screens/photo-preview.js"),
+                      ("/screens/composition.js", "/screens/ingest-review.js"), ("/screens/composition.js", "/screens/experiment.js"),
                       ("/screens/corners.js", "/screens/ingest-review.js"), ("/screens/ingest-dialogs.js", "/screens/ingest-review.js"), ("/screens/ingest-upload.js", "/screens/ingest.js"),
                       ("/screens/ingest-review.js", "/screens/ingest.js"), ("/screens/knowledge.js", "/screens/colors.js"), ("/screens/artwork-start.js", "/screens/artwork.js"),
                       ("/screens/photo-form.js", "/screens/photo.js"), ("/screens/device-charts.js", "/screens/device-plots.js"), ("/screens/device-plots.js", "/screens/device.js"),
@@ -124,7 +126,7 @@ def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal
 
 def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():
     experiment = _screen("experiment.js")
-    assert "p.status === 'Accepted' && p.grayscale_image" in experiment and "/photo-preview?pair=${photoEngraving.id}" in experiment
+    assert "p.status === 'Accepted' && (p.grayscale_image || p.tonal_image)" in experiment and "/photo-preview?pair=${photoEngraving.id}" in experiment
     assert "work.lightburn_url" in experiment
     preview = _screen("photo-preview.js")
     assert "ctx.query.pair" in preview and "/lightburn`" in preview      # the work's own file, fetched, not asked for again

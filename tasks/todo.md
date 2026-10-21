@@ -1169,3 +1169,63 @@ Review (0.16.0, 2026-10-20): the colours tab replaces a colour from the editor a
 carries MirrorY and writes both handles of every Bezier edge (REQ-052, DEC-094). Targeted run of 695 tests passed (editor and colour-map UI, palette, colormap, vector work, vectorize, ingest,
 left behind, i18n, UI files, and neighbours); the full suite was not run. Deployed to 8765 before the run finished, at the operator's request (backup titanium-before-0.16.0-20261020T104412Z).
 Warm timings: /api/colors 0.16 s, /api/vector/22 0.17-0.21 s, palette 0.19 s. Not pushed or tagged. The effect of MirrorY in the operator's LightBurn is confirmed only by a new export.
+
+### 0.17.0 plan: photo engraving understood, and works that mix vector layers with photo engraving (operator goal, 2026-10-21) - written before the build
+Operator's words: some works are "a mix: part vector, part photo engraving, one layer is the photo engraving"; (1) understand photo engraving: the kinds, their parameters, their
+results, and a prediction of how an engraving will look at given settings ("a big piece"); (2) understand in experiments that part of a picture is photo engraving and part is fill.
+
+#### Evidence (own analysis, read only, scripts in the scratchpad; the real app on 8765 only read, new pairs only on a COPY of the data)
+- The operator's art folder (/Volumes/Storage0/Art/Laser, 27 files with a LightBurn project) holds 8 mixed works and 3 image-only ones. Image modes in use: grayscale (1500 dpi, Min 1-3 / Max 27-30 %,
+  100-150 mm/s, 60 kHz, 300 ns; one at 2048 dpi 0-15 %), jarvis (2540 dpi, dot width 0.01 mm with dot correction, 25 %, 150 mm/s; 1100 dpi in Downloads/deploma.lbrn2), sketch (1100 dpi). The earlier
+  survey (DEC-052) also names 3dslice, stucki and threshold. A mixed work = a cleaning rectangle + 7..20 colour fills (Scan) + ONE Image layer burned last (priority highest).
+- The Image layer's bitmap covers a rectangle (Joker 152 x 152 mm) but only 70 % of its pixels are opaque: the transparent part is where the vector fills are. In deploma.lbrn2 three small
+  sketch/jarvis bitmaps (60-85 % white) lie over the fills; in Sleeping Girl the 16 fills have output OFF and only the photo burns.
+- DEFECT, measured on the operator's real works (check on a COPY, finished-work photographs without a chart): `_covered_by_later_layers` treats the whole bitmap rectangle as "engraved again by a later
+  layer", so ALL 7 fills of the Joker and ALL 6 fills of "girl art deco" come out "100 % engraved again ... not measured"; only the photo layer gets one median colour. Geometry (first reading, superseded by the check in the Review below) said the fills lie
+  under 0-3 % opaque pixels of the picture; that holds for the Joker, not for girl art deco, whose picture is a jarvis halftone over all the fills.
+- Real photo-engraving pairs (93 Girl on a bike, 88 Motorcycle, 85 Inna-2; all grayscale) are aligned by the picture and give a tonal profile; the existing prediction (grayscale only) reproduces its own
+  pair. Leave-one-pair-out on the two pairs that share one mode (same plate stock, speed 150, 60 kHz, 300 ns, 0.0169): power >= 16 % (dark tones) 1.2-2.9 dE; power < 15 % (light tones) 10-16 dE
+  (L* 65-67 in one photograph, 75-82 in the other). It is NOT optical blur (sigma 0-0.8 mm tried), NOT a smooth illumination field (polynomial up to degree 3), NOT heat from the neighbourhood (mean grey
+  over 0.5-16 mm): the cross-picture error stays 7-8 L* rms whatever is added. So two engravings at the same settings differ in light tones, and a prediction must show that spread instead of one line.
+- The colours of a photo engraving are iridescent (gold, orange, violet, blue by power), not only a lightness ramp: the prediction already carries Lab per power; the descriptor "tonal" is a colour path.
+- Nothing classifies photo against fill from the photograph; nothing writes `CutSetting_Img`; no plate engraves a grey ramp per mode (explore report, 2026-10-21).
+
+#### Order (what the operator named first, and what blocks what)
+- [x] A. Kinds of photo engraving, one catalogue (`photo_modes.py`, pure): per mode (grayscale, threshold, ordered, atkinson, dither, stucki, jarvis, newsprint, halftone, sketch, passthrough, 3dslice)
+      its family, what the grey level controls (power / dot density / depth), the settings that matter, whether a pixel fires (transparent and, in binary modes, white never fire), what the platform can
+      predict. `image_summary` carries it; the labels on the screens come from it (today `ordered` and `passthrough` are missing from the label maps).
+- [x] B. Mixed works in experiments (blocks every real mixed work):
+  - [x] B1. The area an Image layer really engraves (`fired` mask in mm: opaque pixels, mode rule) replaces the bitmap rectangle in `_covered_by_later_layers`; the vector fills under the transparent part
+        are measured again. Fills under a pixel that fires stay "engraved again". Tested on synthetic files AND on Joker / girl art deco (before: 0 of 7 / 0 of 6 fills measured).
+  - [x] B2. The composition of a file, pure and shown with every check: per layer its kind (cleaning, fill, line, photo tonal, photo depth), area, the share that shows in the end (not covered), the share
+        of the picture area that is photo, fill, both-with-holes, nothing; the Image layer's own opaque share. On the review screen and the experiment screen.
+  - [x] B3. Tonal profile on the visible opaque part only (transparent pixels excluded; regression on Girl on a bike: identical bins, rho 0.898). NOT built: one profile per bitmap object - every real Image layer
+        has exactly one picture object (every real Image layer examined in this work), so there is nothing to split. Dithered modes give grey -> colour bins too: that is C2.
+  - [x] B4. (decided against, with the numbers) What the photograph says about the kind: the spread (robust, L*) of each layer's visible area is reported next to the median; a fill that varies like a picture or a photo layer that is flat is named,
+        with a threshold taken from the real works' numbers, not invented.
+        Result: the spread is reported as information only. On the Joker a flat fill (fill 6, L-spread 6.4) varies MORE than the photo layer (5.5), so no threshold separates flat from tonal; a verdict
+        would have been invented. The kind comes from the file (layer type and mode), which is exact; the photograph only says how stable a colour is.
+- [x] C. Prediction of a photo engraving (C3 stays open)
+  - [x] C1. A curve point keeps how far independent engravings disagree at that power (the 10-16 dE of the evidence above); the preview names the share of the picture in uncertain powers.
+  - [x] C2. Dithered modes: the colour of a grey level is read from tonal profiles measured in the same mode and settings (no dither model needed); refused with the reason only when nothing was measured.
+  - [ ] C3. Open until C1-C2 are measured on real data: a dot simulation for a mode never photographed (assumed, flagged); a photo-mode test plate (a grey ramp per mode) needs the Image-layer writer, so
+        it needs the operator's yes (the file must open in LightBurn; the three real files are the reference for the structure).
+- Not decided, needs the operator: (1) pure white in grayscale mode - does Min power fire on it? (the real photographs show no step at pure white; settled by a ramp plate, C3); (2) path shapes
+  that sit on an Image layer (Lana Portrait: 12 outlines on C17) - does LightBurn engrave them? They are kept as they are and named in the composition.
+- Tests while building: only the files touched; the full suite once before the release; deploy after a backup; "reload the page (Cmd+R)" in the report.
+
+#### Review of 0.17.0
+- Built: `photo_modes.py` (catalogue, strike rule), `composition.py` (the file by layers, shares fill / photo / both), the strike mask replacing the bitmap rectangle in the "engraved again" test, the
+  tonal profile without transparent pixels, `photo.sample_spread`, the spread between independent engravings on every curve point and in the preview, transparent pixels blank in the preview,
+  prediction of the dot modes from the tonal profiles of the same mode, the Russian table `ui/photo-modes.js` with a test that compares it with the catalogue, the composition card and the layer notes.
+- On the operator's real works (copy of the data, read only): Joker 0 of 7 fills measured -> 7 of 7 (Lab in the report); the Image layer's colour L 48 -> 84 once the figure left its sample; girl art deco
+  stays unmeasured and now says why (jarvis picture over all fills, dot density 48 %). Girl on a bike, re-checked as a new pair: identical tonal bins.
+- Needs the operator's decision (not changed): (1) in one curve, flat-fill points and photo tonal points of the same mode disagree up to 39 dE (the Power x Speed plate against Girl and Motorcycle) - should
+  flat fills stay in a photo-mode curve at all? (2) the assumptions: a plain shape on an Image layer strikes nothing; threshold cuts at mid grey; white is struck at Min in grayscale (documentation and
+  forums, not measured); (3) a photo-mode test plate (a grey ramp per mode) needs an Image-layer LightBurn writer (C3).
+- No real photograph pair in a dot mode exists in the database: that prediction is tested on synthetic works only and says so.
+- Tests: full suite, 1494 passed, none skipped, serial 14 min 15 s (`.venv/bin/python -m pytest -q -rs`). `pytest-xdist` 3.8.0 was installed into `.venv` with the operator's approval (2026-10-21) and
+  declared in the `dev` extra of `pyproject.toml`; the same 1494 pass on 12 workers in 2 min 32 s (`-n 12`). It is a development tool only: the app environment on 8765 does not get it.
+- New tests: `test_photo_modes.py` (12: catalogue, strike rule, orientation, UI table equals catalogue), `test_mixed_work.py` (8), `test_dot_modes.py` (14: spread, transparency, dot-mode prediction,
+  `sample_spread`). Changed on purpose: the dither-refusal tests (REQ-030 refused every dot mode, DEC-096 predicts seven of them), the mode record in the API test, the node harness of the experiment screen
+  (it must load `photo-modes.js` and `composition.js`).
