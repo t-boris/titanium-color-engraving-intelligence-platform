@@ -460,3 +460,9 @@ written "like the operator's own photo files" with the picture alone, so the wor
 plates.
 - Rule: a new export path lists what every other export writes (the cleaning first, markers, the identifier in Notes, the run order) and either writes it or says
   in its docstring and on screen why not; the conditions of the measurement the prediction rests on (cleaned plate) are the conditions of the file.
+
+## A test in a shared world asserts what it changed, not what the world holds
+Twice (0.20.0 `others == 2`, 0.20.3 `others == 1`) a test of `test_photo_work_engravings` passed alone and failed in the full suite: the module's plate world is
+shared, so earlier tests' works are engravings of the same scale too.
+- Rule: in a module- or session-scoped fixture, count before and after (`after == before + 1`) or assert a bound (`>= 1`); an exact count only of what the test
+  itself made. Run the new test with its whole module before the full suite.
