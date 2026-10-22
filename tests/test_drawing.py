@@ -55,24 +55,38 @@ def test_a_picture_of_one_lightness_is_not_stretched():
     assert np.allclose(got, 60, atol=0.5)
 
 
-# a scale of one lightness whose b* rises slowly to 20 %, jumps from 22 to 30 between 20 and 20.5 %, then rises slowly again
-STEEP = prediction.Curve(powers=np.array([0, 20, 20.5, 50], float), labs=np.array([(60, 0, 0), (60, 0, 22), (60, 0, 30), (60, 0, 50)], float),
-                         points=(), referenced=True, left_out=0)
+# cream, gold, brown, then a swing to blue at the brown's lightness and a light-blue bump, then grey falling to dark: the operator's scale
+BUMP = prediction.Curve(powers=np.array([0, 10, 20, 25, 30, 40, 50], float),
+                        labs=np.array([(90, 0, 6), (78, 4, 38), (60, 4, 0), (60, 0, -20), (71, -6, -20), (60, 0, 5), (40, 0, 4)], float),
+                        points=(), referenced=True, left_out=0)
 
 
-def b_of(grey8):
-    greys, labs = grayscale.usable_greys(STEEP, LO, HI)
-    return dict(zip(greys.tolist(), labs[:, 2].tolist()))[int(grey8)]
+def test_the_path_runs_from_the_lightest_grey_to_the_darkest_never_lighter_and_skips_a_swing_of_hue():
+    greys, labs = grayscale.usable_greys(BUMP, LO, HI)
+    on = drawing.path(greys, labs)
+    way = labs[on]
+    assert way[0, 0] == labs[:, 0].max() and way[-1, 0] == labs[:, 0].min()
+    assert np.all(np.diff(way[:, 0]) <= drawing.PATH_RISE_L)                  # lightness never rises
+    assert np.all(np.diff(greys[on].astype(int)) < 0)                         # in the order of power
+    assert way[:, 2].min() > -5                                               # the blue swing and bump are skipped
+    assert np.linalg.norm(np.diff(way, axis=0), axis=1).max() < 10            # no jump of colour along it
 
 
-def test_in_a_flat_area_a_grey_where_the_colour_changes_fast_gives_way_to_a_slower_one_nearly_as_near():
-    lab = np.full((60, 60, 3), (60.0, 0.0, 24.5))                             # nearest: inside the jump (25.1)
-    flat = drawing.choose(lab, np.ones((60, 60), bool), STEEP, LO, HI, 10.0)["grey8"]
-    assert b_of(flat[30, 30]) <= 22                                          # below the jump (21.8), not its foot: that one moves too
-    textured = lab.copy()
-    textured[::2, :, 0], textured[1::2, :, 0] = 40, 80                       # the same colour in a busy area: the nearest is taken
-    busy = drawing.choose(textured, np.ones((60, 60), bool), STEEP, LO, HI, 10.0)["grey8"]
-    assert abs(b_of(busy[30, 30]) - 24.5) < 1
+def test_a_gradient_of_the_picture_gets_neighbouring_powers_and_its_grain_does_not_become_spots():
+    n = 200
+    lab = np.zeros((n, n, 3))
+    lab[..., 0] = np.linspace(85, 35, n)[None, :]                             # light to dark, left to right
+    lab[..., 1:] = (12, 20)                                                   # one skin hue
+    grain = lab.copy()
+    grain[..., 0] += np.random.default_rng(1).normal(0, 2, (n, n))             # JPEG blocks and skin grain
+    for picture in (lab, grain):
+        got = drawing.choose(picture, np.ones((n, n), bool), BUMP, LO, HI, 10.0)
+        power = 255 - np.median(got["grey8"].astype(int), axis=0)              # each column's power, in grey steps
+        assert np.all(np.diff(power) >= -1)                                   # darker picture, more power: no going back
+        assert got["lab"][..., 2].min() > -5 and got["order"] > 0.95
+    smooth = drawing.choose(grain, np.ones((n, n), bool), BUMP, LO, HI, 10.0)
+    column = predicted_l(BUMP, smooth["grey8"])[:, 40:60]
+    assert np.std(column - column.mean(axis=0)) < 1.5                          # one column of the gradient: an even tone, not spots
 
 
 # -- contours ------------------------------------------------------------------------------------------------------------------------

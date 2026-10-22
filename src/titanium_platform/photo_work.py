@@ -7,8 +7,8 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * the scale it is engraved on (``scale``): the titanium and the settings that do not vary with the grey, which with the laser and the
   lens make a ``prediction_store.Mode``; only a measured scale can be chosen;
 * Min and Max power, the width on the titanium in mm and whether the greys are chosen for the picture's colours (``by_colour``), and how
-  (``colour_choice``, DEC-108: keeping the drawing, the default, or the nearest colour); whether the edges its engraving would lose are drawn
-  in (``contours``, on by default);
+  (``colour_choice``, DEC-108, DEC-109: keeping the drawing, the default, or the nearest colour); whether the edges its engraving would lose
+  are drawn in (``contours``, off by default and only with ``by_colour``: the picture engraved as uploaded is never drawn on);
 * the rules of the picture's parts (``rules``, REQ-062): a part found by the people model (:mod:`people`) may be engraved by its own rule
   (:mod:`picture_rules`), set by hand or proposed by the AI (:mod:`ai_picture`); whether a reduced copy of the picture may be sent to
   the AI (``ai_photo``, off until the operator allows it) and the last request to it (``ai``: the wish, whether the picture went, the AI's
@@ -53,7 +53,7 @@ DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_pow
         "ai_photo", "ai", "undo", "redo", "updated_at")
 SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai_photo")
 # what a work made before the rules of parts (0.19.0), undo or the drawing kept (0.20.1) has
-DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": True, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}
+DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
 STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai")
@@ -288,7 +288,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
-            "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": True, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [],
+            "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [],
             "updated_at": now()}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))

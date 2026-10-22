@@ -1,23 +1,23 @@
-"""Greys of a picture chosen so that its drawing survives on titanium (REQ-067, DEC-108).
+"""Greys of a picture chosen so that its drawing survives on titanium (REQ-067, REQ-068, DEC-108, DEC-109).
 
 On a grayscale scale the colours do not darken step by step: power drives the oxide through straw, gold, violet, blue and back, so the grey
-whose colour is nearest a pixel's colour (``grayscale.grey_for_colours``) may lie anywhere in power. A skin tone may come nearest at a high
-power that engraves dark (the black on a forehead), and lips of nearly the skin's colour get the same grey as the skin and vanish. Two steps
-keep the drawing. Both measure on the titanium (millimetres, or a share of the picture's width for its edges), never in pixels, so the
-preview (at preview size) and the LightBurn file (at the layer's DPI) are the same picture:
+whose colour is nearest a pixel's colour (``grayscale.grey_for_colours``) may lie anywhere in power. Neighbouring skin tones then land on
+distant powers (grey-blue next to tan, a black forehead), and the plain picture puts a whole face on the flat light end of a scale and its
+shadows on the drop to dark. Two steps keep the drawing. Both measure on the titanium (millimetres, or a share of the picture's width for its
+edges), never in pixels, so the preview (at preview size) and the LightBurn file (at the layer's DPI) are the same picture:
 
-* :func:`choose` ("Сохранить рисунок"): lightness first. The picture's lightness is stretched in order over the lightness the scale reaches
-  (``STRETCH`` of the picture over ``REACH`` of the scale), its local contrast over ``DETAIL_MM`` raised by ``DETAIL_GAIN``, and each pixel
-  gets the grey whose colour is nearest that target with a difference of lightness counted ``LIGHTNESS_WEIGHT`` times. In a flat area
-  (lightness varying less than ``FLAT_L`` around it) a grey where the colour changes fast with power is avoided when one no more than
-  ``STEEP_SLACK`` farther changes slower: a fast-changing colour is the one that shifts most when the titanium runs hotter or colder, and
-  a large area shows that shift as blotches.
+* :func:`choose` ("Сохранить рисунок"): the picture's tones laid along one path of the scale (:func:`path`): from its lightest grey to its
+  darkest in power order, lightness never rising, the colour moving as little as it can at each step. Neighbouring tones get neighbouring
+  powers, so a gradient of the skin stays a gradient and a hue swing of the scale at one lightness (a blue bump) is skipped. The picture's
+  lightness is smoothed over ``SMOOTH_MM`` keeping its edges (JPEG blocks and skin grain would become spots), its contrast over ``DETAIL_MM``
+  raised by ``DETAIL_GAIN`` (lips, eyes, the nose's shading), stretched over the path (``STRETCH``) with mid-tones lifted (``MIDTONES``);
+  each pixel takes the grey of the path at its lightness. The picture's own hues are not matched: that is "Ближайший цвет".
 * :func:`contours`: where the picture has an edge (``EDGE_DE`` across ``EDGE_SHARE`` of its width, not less than ``LINE_MM``: a lip's
   border is a feature of the picture and as soft at any size) that the predicted engraving does not keep (less than ``KEPT_DE`` across it)
   along at least ``MIN_LINE_MM``, the edge is drawn ``LINE_MM`` wide in the darkest grey of the scale, or in the lightest where the
   picture is a light ridge there (``RIDGE_L`` lighter than around it: a reflection); the other one when the engraving around would not let
   the first show (less than ``LINE_CONTRAST`` from it) and the other stands out more. Edges are found at ``WORK_PX_PER_MM`` whatever the
-  size of the picture given.
+  size of the picture given. Only on request, and only for greys picked by colour (DEC-109).
 
 Pure functions on numpy arrays; nothing here reads the store.
 """
@@ -25,21 +25,19 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from scipy.spatial import cKDTree
+from scipy import stats
 
 from . import grayscale, prediction
 
 CHOICES = ("drawing", "nearest")    # "Сохранить рисунок" (this module) and "Ближайший цвет" (``grayscale.grey_for_colours``)
-STRETCH = (2.0, 98.0)               # percentiles of the picture's lightness laid over the scale's reach
-REACH = (3.0, 97.0)                 # percentiles of the lightness of the scale's greys taken as what it reaches
-MIN_SPAN_L = 1.0                    # L*: a picture whose lightness spans less is not stretched
+PATH_RISE_L = 0.5                   # L*: how much the lightness may rise along the path (the measurement's noise)
+SMOOTH_MM = 0.25                    # the picture's lightness is smoothed over this, keeping edges
+SMOOTH_L = 6.0                      # L*: differences larger than this are edges the smoothing keeps
 DETAIL_MM = 1.5                     # the size of the detail whose contrast is raised
-DETAIL_GAIN = 0.8                   # how much of the local contrast is added on top of the stretch
-LIGHTNESS_WEIGHT = 4.0              # a difference of lightness counts this many times a difference of colour
-FLAT_L = 2.0                        # L*: a pixel whose surroundings (DETAIL_MM) vary less is in a flat area
-STEEP_SLACK = 3.0                   # dE (weighted): how much farther a slower-changing grey may be in a flat area
-CANDIDATES = 8                      # nearest greys looked at for a flat area
-CHUNK = 500_000                     # pixels whose candidates are looked up at once
+DETAIL_GAIN = 0.5                   # how much of the local contrast is added
+STRETCH = (1.0, 99.0)               # percentiles of the picture's lightness laid over the path, lightest to darkest
+MIDTONES = 0.8                      # the stretched tone t (0 dark .. 1 light) is laid as t ** MIDTONES: mid-tones lighter
+MIN_SPAN_L = 1.0                    # L*: a picture whose lightness spans less is not stretched
 LINE_MM = 0.3                       # the width of a contour line
 EDGE_SHARE = 0.005                  # an edge is measured across this share of the picture's width (not less than LINE_MM)
 EDGE_DE = 8.0                       # a difference across it at or above which the picture has an edge (a lip's border: 9-10)
@@ -51,61 +49,69 @@ WORK_PX_PER_MM = 10.0               # the resolution edges are found at
 CANNY = (20, 40)                    # thresholds that only thin the edges; their strength is EDGE_DE
 
 
+def path(greys: np.ndarray, labs: np.ndarray) -> np.ndarray:
+    """The indices (into ``greys`` / ``labs``, as ``grayscale.usable_greys`` gives them) of the path tones are laid along, lightest first:
+    from the lightest grey to the darkest, in the order of power between them, lightness never rising by more than ``PATH_RISE_L``, and of
+    such paths the one whose squared colour steps add up least (dynamic programming), so it takes small steps and skips a swing of hue."""
+    light, dark = int(np.argmax(labs[:, 0])), int(np.argmin(labs[:, 0]))
+    power = -greys.astype(np.int64)                                             # a lower grey is a higher power
+    way = np.argsort(power if power[light] <= power[dark] else -power, kind="stable")
+    way = way[np.flatnonzero(way == light)[0]:np.flatnonzero(way == dark)[0] + 1]
+    lab = labs[way].astype(np.float64)
+    cost, before = np.full(len(way), np.inf), np.full(len(way), -1)
+    cost[0] = 0.0
+    for j in range(1, len(way)):
+        step = cost[:j] + np.sum((lab[j] - lab[:j]) ** 2, axis=1)
+        step[lab[j, 0] > lab[:j, 0] + PATH_RISE_L] = np.inf
+        k = int(np.argmin(step))
+        cost[j], before[j] = step[k], k
+    kept, j = [], len(way) - 1
+    while j >= 0:
+        kept.append(way[j])
+        j = before[j]
+    return np.array(kept[::-1], np.int64)
+
+
 def choose(lab: np.ndarray, opaque: np.ndarray, curve: prediction.Curve, min_power: float, max_power: float, px_per_mm: float) -> dict:
     """The 8-bit grey of every pixel (``lab``: the picture's colours, shape (rows, cols, 3)) that keeps the picture's light and dark on the
-    scale at Min..Max: as ``grayscale.grey_for_colours`` answers (``grey8``, ``lab`` reached, ``delta_e`` to the picture's own colour,
-    ``choices``), with the lightness the scale reaches (``reach``) and how well the order of light and dark is kept (``order``: the rank
-    correlation of the picture's lightness and the predicted one over the opaque pixels)."""
+    scale at Min..Max, laid along :func:`path`: as ``grayscale.grey_for_colours`` answers (``grey8``, ``lab`` reached, ``delta_e`` to the
+    picture's own colour, ``choices``), with the lightness the path spans (``reach``, darkest and lightest), the number of greys on it
+    (``path``) and how well the order of light and dark is kept (``order``: the rank correlation of the picture's lightness and the
+    predicted one over the opaque pixels)."""
     greys, labs = grayscale.usable_greys(curve, min_power, max_power)
+    on = path(greys, labs)
+    way = labs[on]
     pic = np.asarray(lab, np.float64)
-    light = pic[..., 0]
+    light = pic[..., 0].astype(np.float32)
     shown = light[opaque] if opaque.any() else light.ravel()
     lo, hi = np.percentile(shown, STRETCH)
-    reach_lo, reach_hi = np.percentile(labs[:, 0], REACH)
-    sigma = DETAIL_MM * px_per_mm
-    around = cv2.GaussianBlur(light.astype(np.float32), (0, 0), sigma).astype(np.float64)
-    target = pic.copy()
     if hi - lo >= MIN_SPAN_L:
-        gain = (reach_hi - reach_lo) / (hi - lo)
-        target[..., 0] = np.clip(reach_lo + gain * (light - lo + DETAIL_GAIN * (light - around)), reach_lo, reach_hi)
+        reach = max(1, int(round(SMOOTH_MM * px_per_mm)))
+        smooth = cv2.bilateralFilter(light, 2 * reach + 1, SMOOTH_L, SMOOTH_MM * px_per_mm)
+        around = cv2.GaussianBlur(smooth, (0, 0), DETAIL_MM * px_per_mm)
+        tone = np.clip((smooth + DETAIL_GAIN * (smooth - around) - lo) / (hi - lo), 0, 1) ** MIDTONES
+        target = way[-1, 0] + tone * (way[0, 0] - way[-1, 0])
     else:                                                                       # one lightness: nothing to stretch, it stays as it is
-        target[..., 0] = np.clip(light, reach_lo, reach_hi)
-    weight = np.array([np.sqrt(LIGHTNESS_WEIGHT), 1.0, 1.0])
-    tree = cKDTree(labs * weight)
-    wanted = (target * weight).reshape(-1, 3)
-    k = min(CANDIDATES, len(greys))
-    step = np.linalg.norm(np.diff(labs, axis=0), axis=1)
-    steep = np.maximum(np.r_[step, 0.0], np.r_[0.0, step])                      # dE to the next grey either way: how fast the colour moves
-    spread = np.sqrt(np.maximum(cv2.GaussianBlur((light * light).astype(np.float32), (0, 0), sigma) - around.astype(np.float32) ** 2, 0))
-    flat = (spread < FLAT_L).ravel()
-    pick = np.empty(len(wanted), np.int64)
-    for start in range(0, len(wanted), CHUNK):                                  # k candidates of every pixel at once would not fit in memory
-        part = slice(start, start + CHUNK)
-        distance, index = tree.query(wanted[part], k=k)
-        if k == 1:
-            pick[part] = index
-            continue
-        allowed = distance <= distance[:, :1] + STEEP_SLACK
-        calm = np.argmin(np.where(allowed, steep[index], np.inf), axis=1)
-        pick[part] = index[np.arange(len(index)), np.where(flat[part], calm, 0)]
-    pick = pick.reshape(light.shape)
+        target = light
+    drop = way[0, 0] - np.minimum.accumulate(way[:, 0])                         # how far each grey of the path is below its start
+    pick = on[np.clip(np.searchsorted(drop, way[0, 0] - target), 0, len(on) - 1)]
     reached = labs[pick]
     return {"grey8": greys[pick], "lab": reached, "delta_e": np.linalg.norm(reached - pic, axis=-1), "choices": len(greys),
-            "reach": [round(float(reach_lo), 1), round(float(reach_hi), 1)], "order": _order(light, reached[..., 0], opaque)}
+            "reach": [round(float(way[:, 0].min()), 1), round(float(way[0, 0]), 1)], "path": len(on),
+            "order": _order(pic[..., 0], reached[..., 0], opaque)}
 
 
 def _order(wanted: np.ndarray, got: np.ndarray, opaque: np.ndarray, sample: int = 20000) -> float | None:
-    """Spearman's rank correlation of two lightness pictures over the opaque pixels (a fixed sample of them)."""
+    """Spearman's rank correlation of two lightness pictures over the opaque pixels (a fixed sample of them; tied values share their rank)."""
     a, b = wanted[opaque], got[opaque]
     if a.size < 3:
         return None
     if a.size > sample:
         keep = np.random.default_rng(0).choice(a.size, sample, replace=False)
         a, b = a[keep], b[keep]
-    ra, rb = np.argsort(np.argsort(a)).astype(np.float64), np.argsort(np.argsort(b)).astype(np.float64)
-    if ra.std() == 0 or rb.std() == 0:
+    if np.ptp(a) == 0 or np.ptp(b) == 0:
         return None
-    return round(float(np.corrcoef(ra, rb)[0, 1]), 2)
+    return round(float(stats.spearmanr(a, b)[0]), 2)
 
 
 def contours(grey8: np.ndarray, lab: np.ndarray, opaque: np.ndarray, curve: prediction.Curve, min_power: float, max_power: float,

@@ -568,11 +568,11 @@ def _lab_of(bgr: np.ndarray) -> np.ndarray:
 
 
 def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour: bool = False, width_mm: float | None = None,
-                 colour_choice: str = drawing.CHOICES[0], contours: bool = True) -> dict:
+                 colour_choice: str = drawing.CHOICES[0], contours: bool = False) -> dict:
     """A picture prepared for ``describe`` at ``mode``, engraved ``width_mm`` wide (its rows that long, DEC-107): its curve at that size,
     the levels and counts of its greys and the measured span. With ``by_colour`` the picture's colours are what is wanted: its greys are
-    chosen at each Min and Max (``with_colours``) the way ``colour_choice`` says (DEC-108); with ``contours`` the edges its engraving would
-    lose are drawn in (``engraved``)."""
+    chosen at each Min and Max (``with_colours``) the way ``colour_choice`` says (DEC-108, DEC-109); with ``contours`` and ``by_colour`` the
+    edges its engraving would lose are drawn in (``engraved``): never on a picture engraved as it was uploaded."""
     if mode.dither != prediction.PREDICTED_MODE:
         raise PredictionError("only the grayscale image mode is predicted from a scale")
     curve, basis = curve_for(store, mode, width_mm)
@@ -581,7 +581,7 @@ def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour
                 "overridden": []}
     item = {"index": 0, "name": name, "dither": prediction.PREDICTED_MODE, "settings": settings, "refused": None, "mode": mode,
             "curve": curve, "reference": basis["reference"], "adjustments": {}, "basis_notes": list(basis["notes"]), "by_colour": by_colour,
-            "colour_choice": colour_choice, "contours": contours, "sizes": basis["sizes"],
+            "colour_choice": colour_choice, "contours": bool(contours and by_colour), "sizes": basis["sizes"],
             "pictures": 1, "turned": False, "width_mm": width_mm,
             **{k: upload[k] for k in ("picture", "alpha", "size", "lab", "grey_full", "alpha_full", "bgr_full")}}
     return _with_levels(item)
@@ -622,8 +622,8 @@ def _choose(item: dict, lab: np.ndarray, opaque: np.ndarray, low: float, high: f
 
 def with_colours(item: dict, min_power: float, max_power: float) -> dict:
     """The item whose picture is the grey chosen for each pixel's colour on the scale at Min..Max (``_choose``), and how near the colours
-    come (median and 90th percentile dE of the opaque pixels), with, when the drawing is kept, the lightness the scale reaches and how well
-    the order of light and dark is kept."""
+    come (median and 90th percentile dE of the opaque pixels), with, when the drawing is kept, the lightness its path of the scale spans, the
+    greys on that path and how well the order of light and dark is kept."""
     low, high = check_power_range(min_power, max_power)
     opaque = item["alpha"] >= photo_modes.ALPHA_MIN
     found = _choose(item, item["lab"], opaque, low, high, item.get("width_mm"))
@@ -631,7 +631,7 @@ def with_colours(item: dict, min_power: float, max_power: float) -> dict:
     out = _with_levels({**item, "picture": np.ascontiguousarray(found["grey8"].astype(np.float32) / (grayscale.LEVELS - 1))})
     out["colour_match"] = {"choice": item.get("colour_choice", drawing.CHOICES[0]), "median_de": round(float(np.median(de)), 1),
                            "p90_de": round(float(np.percentile(de, 90)), 1), "greys_used": int(len(np.unique(found["grey8"][opaque]))),
-                           "greys_available": found["choices"], "reach": found.get("reach"), "order": found.get("order")}
+                           "greys_available": found["choices"], "reach": found.get("reach"), "path": found.get("path"), "order": found.get("order")}
     return out
 
 
@@ -681,14 +681,15 @@ def _spared(rules, parts: np.ndarray) -> np.ndarray | None:
 
 def engraved(item: dict, min_power: float, max_power: float, rules: list[dict] | None = None) -> dict:
     """The item as it is engraved at Min..Max: its own greys or the greys chosen for its colours (``by_colour``), each part with a rule
-    by that rule (``with_rules``) and, with ``contours``, the edges this engraving would lose drawn in (``drawing.contours``; not inside a
-    part engraved in one tone), with the share of the picture the lines take (``contours_report``)."""
+    by that rule (``with_rules``) and, with ``contours`` (only for greys chosen for its colours, ``picture_item``), the edges this engraving
+    would lose drawn in (``drawing.contours``; not inside a part engraved in one tone), with the share of the picture the lines take
+    (``contours_report``)."""
     low, high = check_power_range(min_power, max_power)
     if rules:
         shown = with_rules(item, low, high, rules)
     else:
         shown = with_colours(item, low, high) if item["by_colour"] else item
-    if not item.get("contours", True):
+    if not item.get("contours"):
         return shown
     rows, cols = item["picture"].shape
     spare = _spared(rules, people.parts_at(part_scores(item), (cols, rows))) if any(r["kind"] == "even" for r in rules or ()) else None
@@ -733,7 +734,7 @@ def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: f
     fit = (lambda a: a) if target[0] >= cols else (lambda a: cv2.resize(a, target, interpolation=cv2.INTER_AREA))
     alpha = fit(item["alpha_full"])
     low, high = check_power_range(min_power, max_power)
-    contours = item.get("contours", True)
+    contours = item.get("contours", False)
     lab = _lab_of(fit(item["bgr_full"])) if item.get("by_colour") or rules or contours else None
     opaque = alpha >= photo_modes.ALPHA_MIN
     if item.get("by_colour"):

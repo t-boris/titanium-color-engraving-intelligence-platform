@@ -430,3 +430,12 @@ preview promised colours the plate could not give. The same file drawn with the 
 - A per-pixel "nearest colour" choice is not a drawing: it can put neighbouring skin tones in different regimes of the scale (black forehead) and give the lips the
   skin's grey. Keep the picture's light and dark in order and check that every edge of the picture survives in the predicted engraving.
 - Before saying "the colours are wrong", draw the engraved file through the colours measured at the engraved size: it separates a wrong scale from a wrong choice.
+
+## A default that changes the engraved picture is walked in every mode and on every scale it reaches, not only the case that asked for it
+Operator, 2026-10-22, after 0.20.1: "какие-то белые секции делает непонятные, очень неприятно ... раньше этого не было". Contours were made for the colour choice that
+keeps the drawing and walked only there (0.04 % of «Inna Portrait»), but they were on by default for every work, the plain picture too. On a scale whose colours are all
+dark every edge counts as lost and was drawn in the lightest grey: white dashes over up to 3.7 % of the picture, on the operator's own picture as LightBurn sees it.
+- Before turning on by default anything that adds to or changes the greys of a file, run it on every scale of the operator's data and in every mode (plain picture,
+  picked greys, rules) and look at the pictures, not only the share.
+- The plain picture «как её видит LightBurn» is the operator's own picture: nothing is added to it unless the operator asks for it.
+- A line drawn only where a test fails along an edge breaks into dashes wherever the test flickers; a line is either the whole edge or none.

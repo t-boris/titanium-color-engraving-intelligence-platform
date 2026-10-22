@@ -1583,6 +1583,30 @@ Map (subagent, 2026-10-22): points come only from `check.layers[].tonal.bins` (`
 - Walk on a copy of the live data (8768): «Inna Portrait» 100 mm - forehead light grey, the mouth line dark, the lower lip darker than the chin, order 98 %, contours
   0.04 %; 150 mm (measured there) - order 98 %, no edge lost; «Ближайший цвет» at 150 mm - 0.2 % outlined, the caption says «и контуры».
 
+### 0.20.2: the skin light and even, features kept; no lines on the plain picture (operator, 2026-10-22, after 0.20.1; plan approved)
+Operator: "белые секции делает непонятные ... раньше этого не было"; "в превью есть градиент в цвете кожи, в гравировке градиента вообще никакого нет ... квадратные
+пятна ... практически черные"; "осветлил кожу ... ровным слоем, ровным градиентом ... выделенные губы, выделенные основные черты лица". Contours: "удаляй ... или
+включить/выключить, но точно не для такой фотогравировки". Causes: (1) contours were on for every work, the plain picture too; on a dark scale every edge is "lost" and
+was drawn in the lightest grey, broken into dashes where the test flickers; (2) the 0.20.1 choice took each pixel's grey from anywhere on the scale, so neighbouring skin
+pixels landed on distant powers (grey-blue next to tan); the plain picture puts the skin on the flat light end and the shadows on the dark drop (the engravings 109/111).
+- [x] D1. «Сохранить рисунок» lays the picture's tones along one path of the scale: from its lightest grey to its darkest in power order, lightness never rising, the
+      sum of squared colour steps smallest (a hue swing at one lightness is skipped). The picture's lightness is smoothed edge-preserving over 0.25 mm (JPEG blocks,
+      skin grain), its contrast over 1.5 mm raised by 0.5, stretched 1-99 % and mid-tones lifted (t^0.8); each pixel takes the path grey of that lightness. The picture's
+      hues are not matched (that is «Ближайший цвет»). Prototype on «Inna Portrait» (live scale, 100 and 150 mm): order 0.99, the skin an even gradient, lips and
+      features kept, no blue in the shadows.
+- [x] D2. Contours off by default and drawn only when the greys are picked by colour; the switch is disabled for the plain picture.
+- [x] D3. Tests (path skips a hue swing; a gradient gets neighbouring powers; grain does not become spots; one lightness unchanged; contours only with picking), UI
+      texts, RENDER_VERSION 6, README, MarkView, walk on a copy (every scale of the operator, both widths), full suite, release.
+- As built (REQ-068, DEC-109): `drawing.path` (dynamic programming over greys in power order, lightness rising at most 0.5 L*, least sum of squared
+  colour steps) and `drawing.choose` (bilateral 0.25 mm / 6 L*, detail 1.5 mm x 0.5, stretch 1-99 %, t^0.8); the flat-area rule of 0.20.1 is gone with its constants.
+  `_order` ranks ties together (scipy Spearman): on a three-tone picture the arbitrary ranks gave 0.79 for a perfect order. `picture_item` keeps contours only with
+  `by_colour`, so the preview, the file and the report agree; RENDER_VERSION 6.
+- Review (2026-10-22): the live portrait through the product code on all 11 scales of the operator at 100 and 150 mm - order 0.99 on each, skin even, lips and features
+  kept, preview 0.07 s, file (1800 px) 0.5 s; one scale (300 ns / 0.0169, P6-14) reaches only L* 4-15 and stays dark. Walk on a copy (8768): picking on - «Рисунок
+  сохранён: ... из 160 серых (L* от 88 до 41) ... 99 %», contours off; picking off - the switch and the choice disabled, «Картинка (как её видит LightBurn)», no lines.
+- Waiting for the operator: "new work" in photo and vector engraving offers every way of creating one, and a photo work without enough data can start a test plan
+  (pictures about 50 x 50 mm at several settings, engraved and photographed, as examples) - the operator's message continues ("продолжение следует").
+
 #### 0.20.0, vector works: the size of each layer (and the photo colours added to their palette)
 Map (subagent, 2026-10-22): a vector work's colour is one palette entry per recipe (`palette._entry` = `colormap.agreed`), test-plate patches and works pooled with no size;
 the preview paints every region of a layer with its entry's colour (`vector-editor.js paint`, `vector_job._draw_thumbnail`); the export is one layer per colour, each region a

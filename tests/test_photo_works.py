@@ -419,14 +419,16 @@ def portrait_png(rows=800, cols=1600) -> bytes:
     return cv2.imencode(".png", bgr)[1].tobytes()
 
 
-def test_a_new_work_keeps_the_drawing_with_contours_and_both_are_saved_and_undone(app_world):
+def test_a_new_work_keeps_the_drawing_without_contours_and_lines_are_drawn_only_on_greys_picked_by_colour(app_world):
     client = app_world["client"]
     work = create(client)
-    assert (work["colour_choice"], work["contours"]) == ("drawing", True)
-    assert work["picture"]["contours_report"] == {"share": 0.0}                                  # a smooth gradient loses no edge
+    assert (work["colour_choice"], work["contours"], work["picture"]["contours_report"]) == ("drawing", False, None)
+    plain = settings(client, work, contours=True)
+    assert plain["contours"] is True and plain["picture"]["contours_report"] is None                # the picture as uploaded is never drawn on
     coloured = settings(client, work, by_colour=True)
     match = coloured["picture"]["colour_match"]
-    assert match["choice"] == "drawing" and match["reach"][0] < match["reach"][1] and match["order"] > 0.9
+    assert match["choice"] == "drawing" and match["reach"][0] < match["reach"][1] and match["path"] > 1 and match["order"] > 0.9
+    assert coloured["picture"]["contours_report"] == {"share": 0.0}                                 # a smooth gradient loses no edge
     changed = settings(client, work, colour_choice="nearest", contours=False)
     assert (changed["colour_choice"], changed["contours"], changed["picture"]["contours_report"]) == ("nearest", False, None)
     assert changed["picture"]["colour_match"]["choice"] == "nearest" and changed["picture"]["preview"] != coloured["picture"]["preview"]
@@ -434,7 +436,7 @@ def test_a_new_work_keeps_the_drawing_with_contours_and_both_are_saved_and_undon
     assert (back["colour_choice"], back["contours"], back["by_colour"]) == ("drawing", True, True)
 
 
-def test_a_work_saved_before_the_drawing_was_kept_opens_keeping_it_with_contours(app_world):
+def test_a_work_saved_before_the_drawing_was_kept_opens_keeping_it_without_contours(app_world):
     client = app_world["client"]
     store = client.app.state.store
     work = create(client)
@@ -443,7 +445,7 @@ def test_a_work_saved_before_the_drawing_was_kept_opens_keeping_it_with_contours
     del data["colour_choice"], data["contours"]
     store.execute("UPDATE plan SET data_json=? WHERE id=?", (json.dumps(data), work["id"]))
     shown = client.get(f"/api/photo-works/{work['id']}").json()
-    assert (shown["colour_choice"], shown["contours"]) == ("drawing", True) and shown["picture"]["contours_report"] is not None
+    assert (shown["colour_choice"], shown["contours"], shown["picture"]["contours_report"]) == ("drawing", False, None)
 
 
 def test_the_file_is_the_picture_the_preview_shows_at_the_layers_resolution(app_world):
