@@ -1901,3 +1901,20 @@ and not its zone's Image layer C28, though its own export writes it (`vector_job
 - Released 2026-10-22: full suite 1800 passed (-n 12, 2 min 54 s, none skipped); backup `backups/titanium-before-0.22.2-20261022T205050Z.sqlite`
   (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.2,
   `/api/plans/22` 0.08 s (no zone in the live work 22 yet: `photo_zones` []); the operator's tab reloaded from 0.22.1 (nothing unsaved), no console messages.
+
+## 0.22.3: «Фото» selects, Escape drops the selection (operator, 2026-10-22)
+The operator: «Не выбирается» (a screenshot of «Фото» open, the hint «Щелчок — вернуть автоматический выбор: только эта область»), then
+«Когда нажимаешь Escape, выделения должны уходить.»
+- [x] F1. Root cause: the tool buttons and the selection block are on «Кисть»; on «Фото» the brush stayed the tool, so a click painted «Авто» and
+      a drag panned. Opening «Фото» makes «Выделение» the tool; the selection block moves to the pane that is open («Кисть» or «Фото»); «Выделить»
+      of a zone stays on «Фото». The empty-zones hint says where the button is.
+- [x] F2. Root cause: the editor skips every key while a field has the focus (a zone's power, a checkbox, the slider), Escape too; and Escape left a
+      lasso being drawn and the white line under the pointer. Escape now drops the selection from anywhere but a dialog, cancels the lasso
+      (nothing is asked) and hides the line until the pointer moves; the zone frames stay.
+- [x] F3. Tests: node - «Фото» selects and holds the selection, a click there posts nothing, «Сделать фотозоной» from it; Escape from a power
+      field, the hovered region and zone card line, a lasso cancelled mid-draw (and the click after it selects), a dialog keeps its Escape (fails on
+      the old handler). The node test document keeps and fires its listeners now (`document.dispatch`). Walk on the copy: a click, Shift+click
+      and a lasso on «Фото», a zone made from it (1.5 s), a real Escape from a power field.
+
+- Released 2026-10-22: full suite 1802 passed (-n 12, 3 min, none skipped); backup `backups/titanium-before-0.22.3-20261022T210551Z.sqlite`
+  (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.3.

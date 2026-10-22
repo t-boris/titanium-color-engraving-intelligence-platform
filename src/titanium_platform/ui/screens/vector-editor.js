@@ -128,7 +128,7 @@ const VectorEditor = (() => {
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
     let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
-    let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null;
+    let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null, ready = false;
     let zonePics = null;                                     // <g> с картинками фотозон под областями
     let borders = [], bordersOf = new Map();                 // every border of the split once: its path and the regions on its sides
     let lines = null;                                        // <g> of the outlines above the regions: the zones, the hover, the selection
@@ -164,6 +164,7 @@ const VectorEditor = (() => {
     const scopeBox = h('div', {class: 'vw-ed-scope'}, h('h4', {}, 'Щелчок кистью меняет'),
       h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Что меняет щелчок кистью'}, scopeButtons), simBox);
     const selectionBox = h('section', {class: 'vw-ed-section'});
+    const selectionSlots = {brush: h('div', {}), photo: h('div', {})};   // the selection and its actions: on «Кисть», or on «Фото» while it is open
     const autoBtn = btn('Авто', () => setActive(null));
     autoBtn.setAttribute('title', 'Кисть возвращает автоматический выбор цвета');
     const activeBox = h('div', {class: 'vw-ed-active'});
@@ -180,14 +181,19 @@ const VectorEditor = (() => {
         h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Инструмент'),
           h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Инструмент'}, toolButtons),
           h('p', {class: 'small muted'}, 'Alt+щелчок кистью — пипетка.'), scopeBox),
-        selectionBox,
+        selectionSlots.brush,
         h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
         h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid))],
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
-      ['photo', 'Фото', photo.el]],
-      {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab', onSelect: (id) => { sideTab = id; syncSvgClass(); }});
+      ['photo', 'Фото', h('div', {class: 'vw-ed-pane'}, selectionSlots.photo, photo.el)]],
+      {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab', onSelect: (id) => {
+        sideTab = id;
+        syncSvgClass();
+        (id === 'photo' ? selectionSlots.photo : selectionSlots.brush).append(selectionBox);
+        if (ready && id === 'photo') setTool('select');       // on «Фото» a click selects (the brush is on «Кисть», out of sight)
+      }});
     const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'}, sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
     const el = h('div', {class: 'vw-editor'},
       h('div', {class: 'vw-ed-main'}, bar, totals, stage,
@@ -395,7 +401,7 @@ const VectorEditor = (() => {
           if (drag.lasso) startLasso(ev);
           else stage.classList.add('panning');
         }
-        if (drag.moving && drag.lasso) return extendLasso(ev);
+        if (drag.moving && drag.lasso) return drag.cancelled ? undefined : extendLasso(ev);
         if (drag.moving) return setBox(drag.vb.x - dx / drag.s, drag.vb.y - dy / drag.s, drag.vb.w);
       }
       hoverAt(ev);
@@ -404,7 +410,7 @@ const VectorEditor = (() => {
       if (drag && drag.moving) {
         dragged = true;
         stage.classList.remove('panning');
-        if (drag.lasso) finishLasso(drag, ev || {});
+        if (drag.lasso && !drag.cancelled) finishLasso(drag, ev || {});
       }
       drag = null;
     };
@@ -422,6 +428,12 @@ const VectorEditor = (() => {
       drag.last = [ev.clientX, ev.clientY];
       drag.points.push(toMm(ev));
       if (drag.line) drag.line.setAttribute('points', drag.points.map(([x, y]) => `${+x.toFixed(3)},${+y.toFixed(3)}`).join(' '));
+    }
+    function cancelLasso() {                                  // Escape while a lasso is drawn: it selects nothing
+      if (!drag || !drag.lasso || !drag.moving) return;
+      if (drag.line) drag.line.remove();
+      drag.line = null;
+      drag.cancelled = true;
     }
     async function finishLasso(done, ev) {
       if (done.line) done.line.remove();
@@ -547,12 +559,21 @@ const VectorEditor = (() => {
       if (hover) showTip(hover);
     }
     function clearSelection() { state.selection = new Set(); outlineSelection(); syncSelection(); }
+    /** Escape: nothing stays outlined on the picture but the photo zones - the selection and a lasso being drawn go, and so does the line
+        under the pointer (a region's or a zone card's) until the pointer moves again. */
+    function dropSelection() {
+      cancelLasso();
+      hover = null;
+      tip.hidden = true;
+      setHot([]);
+      if (state.selection.size) clearSelection();
+    }
     function selectOnly(ids) {
       setTool('select');
       state.selection = new Set(ids.filter((rid) => paths.has(rid)));
       outlineSelection();
       syncSelection();
-      sideTabs.select('brush');                                // выделение и его действия — во вкладке «Кисть»
+      if (sideTab !== 'photo') sideTabs.select('brush');       // the selection and its actions are on «Кисть» and on «Фото»
     }
 
     function outlineSelection() {
@@ -836,12 +857,12 @@ const VectorEditor = (() => {
 
     const editor = {el, update, key(ev) {
       if (!el.isConnected) { if (current === editor) current = null; return; }
+      if (document.querySelector('.modal-bg')) return;
+      if (ev.key === 'Escape') return dropSelection();        // in a field too: Escape means nothing there (a power, a checkbox, the slider)
       const t = ev.target;
       if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
-      if (document.querySelector('.modal-bg')) return;
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); undoRedo(z && !ev.shiftKey ? 'undo' : 'redo'); }
-      else if (ev.key === 'Escape' && state.selection.size) clearSelection();
       else if (ev.code === 'Space' && !ev.repeat) { ev.preventDefault(); spaceHeld = true; stage.classList.add('pan-ready'); }
       else if (ev.code === 'Space') ev.preventDefault();
     }, keyup(ev) {
@@ -849,7 +870,8 @@ const VectorEditor = (() => {
     }};
     current = editor;
 
-    setTool(state.tool);
+    setTool(sideTab === 'photo' ? 'select' : state.tool);
+    ready = true;
     setScope(state.scope);
     setView(state.view);
     fit();

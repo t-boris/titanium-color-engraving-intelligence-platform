@@ -119,8 +119,15 @@ function parseXml(text) {
 function context(routes) {
   const body = new El('body');
   const requests = [];
+  const listeners = {};                                   // the document's own listeners (keys): a test fires them with document.dispatch
   const document = {body, activeElement: null, createElement: (t) => new El(t), createElementNS: (_, t) => new El(t),
-    createTextNode: (t) => new Text_(t), importNode: (n, deep) => n.cloneNode(deep), addEventListener() {}, removeEventListener() {},
+    createTextNode: (t) => new Text_(t), importNode: (n, deep) => n.cloneNode(deep),
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
+    dispatch(type, extra = {}) {
+      const ev = {type, target: body, preventDefault() {}, stopPropagation() {}, ...extra};
+      return Promise.all([...(listeners[type] || [])].map((fn) => fn(ev)));
+    },
     querySelector: (s) => body.querySelector(s)};
   async function fetch(url, opts = {}) {
     const path = String(url).split('?')[0];

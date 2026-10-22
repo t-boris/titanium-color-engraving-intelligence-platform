@@ -511,3 +511,14 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
 - Rule: when the file gets a new kind of layer, grep every screen that lists layers (`layers.map`, `p.layers`, layer tables) and every count of them,
   and walk each on a copy with the new layer present before the release.
 
+## A tab that asks for an action on the picture switches the picture to that action
+- Mistake (2026-10-22, 0.22.0): «Фото» told the operator to select regions, but the selection tool and the selection's buttons were on «Кисть»; on
+  «Фото» a click repainted with the brush. The operator: «Не выбирается».
+- Rule: when a panel tab's work starts with a click on the picture, opening the tab sets the tool for it, and the buttons that act on the result
+  are on that tab. Walk the flow from the tab itself, starting with the tool the operator last left.
+
+## Escape works from anywhere a key means nothing else
+- Mistake (2026-10-22): the editor's "a field has the focus - leave the keys to it" rule covered Escape too, so after a power field, a checkbox
+  or the slider Escape did nothing. The operator: «Когда нажимаешь Escape, выделения должны уходить.»
+- Rule: guard only the keys a field uses (typing, Ctrl+Z, space); Escape drops the selection and everything drawn for it except in an open dialog.
+

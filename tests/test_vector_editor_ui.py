@@ -50,7 +50,7 @@ def test_the_editor_sends_every_operation_of_the_contract_and_asks_the_server_fo
 def test_undo_and_redo_answer_ctrl_z_and_ctrl_shift_z_only_while_the_editor_is_on_screen_and_no_field_has_the_focus():
     assert "document.addEventListener('keydown'" in EDITOR and "if (current) current.key(ev)" in EDITOR
     assert "(ev.ctrlKey || ev.metaKey)" in EDITOR and "ev.code === 'KeyZ'" in EDITOR and "z && !ev.shiftKey ? 'undo' : 'redo'" in EDITOR
-    assert "if (!el.isConnected)" in EDITOR and "/^(INPUT|TEXTAREA|SELECT)$/" in EDITOR and "ev.key === 'Escape'" in EDITOR
+    assert "if (!el.isConnected)" in EDITOR and "/^(INPUT|TEXTAREA|SELECT)$/" in EDITOR and "if (ev.key === 'Escape') return dropSelection();" in EDITOR
 
 
 def test_the_editor_fills_elements_through_app_fill_and_never_through_replaceChildren():
@@ -645,6 +645,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   const tone = byLabel(zone, 'input', 'Цвета по картинке, фотозона 1'); tone.checked = false; await tone.dispatch('change'); await tick();
   await byText(zone, 'button', 'Выделить').dispatch('click');
   out.selectedZone = classed('vw-sel');
+  out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
   out.selection = section('Выделение').textContent;
   await byText(section('Выделение'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
   await byText(tree, 'button', 'Фото').dispatch('click');
@@ -666,6 +667,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert "Другие шкалы этого лазера и титана: 1" in out["card"]
     assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
     assert out["selectedZone"] == ["r3", "r4"] and "из них в фотозонах: 2" in out["selection"] and "Добавить в фотозону 1" in out["selection"]
+    assert out["stayed"] == "true"                                                   # «Выделить» keeps «Фото»: the selection is shown there
     zone_outline = ["M20 0 L20 10", "M20 0 L30 0", "M20 10 L30 10", "M30 0 L40 0", "M30 10 L40 10", "M40 0 L40 10"]   # r3 + r4, not r3|r4
     assert out["zoneOutline"] == zone_outline and out["zonesShownBefore"] is False and out["zonesShown"] is True   # framed on «Фото»
     assert out["hot"] == [["r3", "r4"], zone_outline] and out["hotAfter"] == ["r3"]  # the card's hover: the zone as one shape; then the area under the pointer
@@ -675,3 +677,80 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_set", "zone": 1, "by_colour": False},
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
     assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id="]
+
+
+@node
+def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(tmp_path):
+    """On «Фото» the brush is out of sight: a click there selects (and a drag draws a lasso), and the selection with «Сделать фотозоной» is there."""
+    out = run_editor(tmp_path, zone_routes(zoned=False), """
+  const tab = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') === 'tab');
+  const tool = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') !== 'tab').getAttribute('aria-pressed');
+  const panelOf = (el) => { for (let n = el; n; n = n.parentNode) if (n.getAttribute && n.getAttribute('role') === 'tabpanel') return n.getAttribute('id'); return null; };
+  out.before = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  await tab('Фото').dispatch('click');
+  out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  out.stage = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-ed-stage')).className;
+  out.empty = section('Фотозоны').textContent;
+  await path('r1').dispatch('click');
+  await path('r2').dispatch('click', {shiftKey: true});
+  out.selected = classed('vw-sel');
+  out.sent = ctx.requests.filter((r) => r.method === 'POST').length;
+  out.actions = section('Выделение').querySelectorAll('button').map((b) => b.textContent);
+  await byText(section('Выделение'), 'button', 'Сделать фотозоной').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
+  await tab('Кисть').dispatch('click');
+  out.back = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+""")
+    assert out["before"] == ["true", "false", "vw-ed-tab-panel-brush"]
+    assert out["on"] == ["false", "true", "vw-ed-tab-panel-photo"] and "tool-select" in out["stage"]
+    assert "Обведите мышью (лассо) области на картинке" in out["empty"] and "в «Выделении» выше" in out["empty"]
+    assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Фото» selects, it does not paint
+    assert "Сделать фотозоной" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]
+    assert out["back"] == ["false", "true", "vw-ed-tab-panel-brush"]                 # back on «Кисть»: the tool as left, the selection there
+
+
+@node
+def test_escape_drops_the_selection_a_lasso_being_drawn_and_the_line_under_the_pointer_even_from_a_field(tmp_path):
+    """Escape leaves only the photo zones framed: the selection goes though a power field has the focus, a lasso being drawn selects nothing,
+    the white line of a hovered region or zone card goes until the pointer moves; with a dialog open Escape is the dialog's."""
+    out = run_editor(tmp_path, zone_routes(zoned=True), """
+  ctx.document.body.append(tree);                                                  // on screen, as the app shows it
+  const esc = (target) => ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: target || tree});
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await path('r1').dispatch('click');
+  await path('r2').dispatch('click', {shiftKey: true});
+  await path('r2').dispatch('pointermove', {clientX: 20, clientY: 20});
+  out.before = [classed('vw-sel'), classed('vw-hot'), classed('vw-zone')];
+  const field = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number');
+  await esc(field);
+  out.after = [classed('vw-sel'), classed('vw-hot'), classed('vw-zone')];
+  out.selection = section('Выделение').textContent;
+  await path('r2').dispatch('pointermove', {clientX: 21, clientY: 20});
+  out.moved = classed('vw-hot');
+  const card = tree.querySelectorAll('article').find((a) => a.classList.contains('vp-zone'));
+  await card.dispatch('mouseenter');
+  out.card = classed('vw-hot');
+  await esc();
+  out.cardAfter = classed('vw-hot');
+  await path('r1').dispatch('pointerdown', {clientX: 5, clientY: 30, button: 0});
+  for (const [x, y] of [[30, 30], [30, 60], [5, 60]]) await path('r1').dispatch('pointermove', {clientX: x, clientY: y});
+  out.drawing = svg().querySelectorAll('polyline').length;
+  await esc();
+  await path('r1').dispatch('pointermove', {clientX: 40, clientY: 70});
+  await path('r1').dispatch('pointerup', {clientX: 40, clientY: 70});
+  await path('r1').dispatch('click', {clientX: 40, clientY: 70});
+  await wait(5);
+  out.lasso = [svg().querySelectorAll('polyline').length, ctx.requests.filter((r) => r.path === '/api/vector/7/lasso').length, classed('vw-sel')];
+  await path('r3').dispatch('click');
+  out.next = classed('vw-sel');                                                   // the click after a cancelled lasso selects again
+  const bg = ctx.document.createElement('div'); bg.classList.add('modal-bg'); tree.append(bg);
+  await esc();
+  out.modal = classed('vw-sel');
+""")
+    assert out["before"] == [["r1", "r2"], ["r2"], ["r3", "r4"]]
+    assert out["after"] == [[], [], ["r3", "r4"]] and "Выбрано областей" not in out["selection"]   # from a field; the zone stays framed
+    assert out["moved"] == ["r2"]                                                  # the pointer moves: the line under it comes back
+    assert out["card"] == ["r3", "r4"] and out["cardAfter"] == []
+    assert out["drawing"] == 1 and out["lasso"] == [0, 0, []]                      # the lasso is gone and asks nothing
+    assert out["next"] == ["r3"] and out["modal"] == ["r3"]                        # a dialog keeps its Escape
+
