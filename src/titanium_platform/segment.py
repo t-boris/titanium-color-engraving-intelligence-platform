@@ -667,9 +667,32 @@ def _curve_path(ring: list[list[float]]) -> str:
     return " ".join(parts) + " Z"
 
 
-def to_svg(document: dict, colours: Mapping[int, list] | None = None) -> str:
+def _arc_path(arc: dict) -> str:
+    """An SVG sub-path along one arc, the same curves (or points) the loops of its regions take there."""
+    if "nodes" in arc:
+        n = arc["nodes"]
+        return " ".join([f"M{_num(n[0][0])} {_num(n[0][1])}"] + [f"C{_num(a[2])} {_num(a[3])} {_num(b[4])} {_num(b[5])} {_num(b[0])} {_num(b[1])}"
+                                                               for a, b in zip(n, n[1:])])
+    return "M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in arc["points"])
+
+
+def _borders(document: dict) -> str:
+    """Every border the regions use, once: a hidden group of paths, each with ``data-sides`` - the regions whose loops take it (one at the
+    edge of the picture). The outline of any set of regions is then the borders with a region of the set on one side only."""
+    sides: dict[int, dict[str, None]] = {}
+    for r in document["regions"]:
+        for loop in r["loops"]:
+            for ref in loop:
+                sides.setdefault(ref if ref >= 0 else ~ref, {})[r["id"]] = None
+    arcs = document["arcs"]
+    return ('<g class="vw-borders" display="none">'
+            + "".join(f'<path d="{_arc_path(arcs[i])}" data-sides={quoteattr(" ".join(sides[i]))}/>' for i in sorted(sides)) + "</g>")
+
+
+def to_svg(document: dict, colours: Mapping[int, list] | None = None, *, borders: bool = False) -> str:
     """Preview in mm: one even-odd ``<path>`` per region (holes stay open) filled with its source colour, or with
-    ``colours[color index]`` (sRGB) where given, e.g. the titanium colour assigned to that colour.
+    ``colours[color index]`` (sRGB) where given, e.g. the titanium colour assigned to that colour; with ``borders``, also every border
+    once (:func:`_borders`), for the editor to outline a selection as one shape.
 
     Each path has a hairline of its own colour: a browser anti-aliases two touching paths separately and lets the
     background show along their common border, a seam the geometry does not have.
@@ -687,7 +710,7 @@ def to_svg(document: dict, colours: Mapping[int, list] | None = None) -> str:
         body.append(f'<path d="{d}" fill="{fill}" fill-rule="evenodd" stroke="{fill}" stroke-width="{hairline}" stroke-linejoin="round" '
                     f'data-region={quoteattr(r["id"])} data-color="{r["color"]}"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_num(w)} {_num(h)}" width="{_num(w)}mm" height="{_num(h)}mm">'
-            f'{"".join(body)}</svg>')
+            f'{"".join(body)}{_borders(document) if borders else ""}</svg>')
 
 
 def coverage(regions: Iterable[list], width_mm: float, height_mm: float, samples_per_mm: float) -> dict:

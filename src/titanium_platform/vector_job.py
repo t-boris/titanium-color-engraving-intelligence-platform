@@ -1074,9 +1074,10 @@ def photo_palette(store: Store, plan_id: int) -> list[dict]:
 
 
 def split_svg(store: Store, plan_id: int) -> str:
-    """The current split in its source colours (one path per region, with its id and colour index), borders at the work's smoothing."""
+    """The current split in its source colours (one path per region, with its id and colour index), borders at the work's smoothing;
+    every border also once on its own, with the regions on its sides (the editor outlines a selection with them)."""
     plan = _photo_job(store, plan_id)
-    return _memo(("svg", plan["document_path"], float(plan.get("smoothing_mm", 0.0))), lambda: seg.to_svg(_geometry(plan)))
+    return _memo(("svg", plan["document_path"], float(plan.get("smoothing_mm", 0.0))), lambda: seg.to_svg(_geometry(plan), borders=True))
 
 
 def smooth(store: Store, plan_id: int, mm) -> None:

@@ -2,6 +2,7 @@
 import itertools
 import json
 import math
+import re
 import xml.etree.ElementTree as ET
 
 import cv2
@@ -336,6 +337,36 @@ def test_the_svg_preview_fills_every_region_with_its_colour_or_the_assigned_one(
     with pytest.raises(ValueError):
         sg.to_svg(doc, {0: [300, 0, 0]})
 
+
+
+@pytest.mark.parametrize("smoothing", [0.0, 0.8])
+def test_the_borders_of_the_editor_svg_outline_any_set_of_regions_as_its_merge_does(smoothing):
+    """A selection is outlined as one shape (0.22.1): the borders with a region of the set on one side only are exactly the outline of
+    the region a merge of that set makes (merges are made on the traced document), every border once, in the same curves as the regions."""
+    traced = sg.segment(photo_like(), 50.0, 8, use_faces=False)
+    doc = sg.smoothed(traced, smoothing)
+    assert ET.fromstring(sg.to_svg(doc)).find(f"{SVG}g") is None                     # only the editor asks for them
+    root = ET.fromstring(sg.to_svg(doc, borders=True))
+    group = root.find(f"{SVG}g")
+    assert group.get("class") == "vw-borders" and group.get("display") == "none"
+    used = sorted({ref if ref >= 0 else ~ref for r in doc["regions"] for loop in r["loops"] for ref in loop})
+    borders = {arc: (p.get("d"), set(p.get("data-sides").split(" "))) for arc, p in zip(used, group.findall(f"{SVG}path"), strict=True)}
+    assert all(1 <= len(sides) <= 2 for _, sides in borders.values())
+    curves = {p.get("data-region"): set(re.findall(r"C[^CMZ]+", p.get("d"))) for p in root.findall(f"{SVG}path[@data-region]")}
+    tokens = lambda d: set(re.findall(r"C[^CMZ]+", d + " "))
+    for arc, (d, sides) in borders.items():
+        assert bool(tokens(d)) == bool(smoothing)
+        if len(tokens(d)) >= 2:                              # a loop of single curves only is split in its first one (_loop_nodes)
+            back = tokens(sg._arc_path({"nodes": sg._oriented(doc["arcs"][arc]["nodes"], True)}))
+            assert all(tokens(d) <= curves[rid] or back <= curves[rid] for rid in sides)     # one side walks the border backwards
+    rng = np.random.default_rng(3)
+    for size in (2, 3, 6, 12):
+        chosen = set(connected_set(traced, rng, size))
+        outline = {arc for arc, (_, sides) in borders.items() if sides & chosen and not (len(sides) == 2 and sides <= chosen)}
+        merged, keeper = sg.merge_regions(traced, chosen)
+        kept = [i for i, arc in enumerate(traced["arcs"]) if not (arc["left"] in chosen and arc["right"] in chosen)]
+        region = next(r for r in merged["regions"] if r["id"] == keeper)
+        assert outline == {kept[ref if ref >= 0 else ~ref] for loop in region["loops"] for ref in loop}
 
 # -- merging (the colour editor: REQ-047, REQ-048, DEC-076) ------------------------------------------------------------------
 def pixel_document(region, of_class):

@@ -291,6 +291,10 @@ Rules written after the operator's remarks, to prevent a repeat.
 ## A fix that is deployed does not reach a page that is already open
 - Situation (2026-10-20): the tab strip of a work clipped its sixth tab. I fixed the CSS, redeployed and reported, but the operator's open page still had the old CSS and sent a screenshot of the old layout.
 - Rule: after a deploy that changes CSS or JS, say in the report "reload the page (Cmd+R)" for the screens that changed. Before calling a screenshot "still broken", reproduce it: probe the real work read-only in a separate headless profile, and inject the old CSS on a copy to see whether it gives the same picture.
+- Again (2026-10-22, 0.22.0): «не могу перевести фото» - the operator's open tab of work 22 still ran 0.21.1 (no «Фото», no lasso) after the deploy and
+  the report's "reload". Rule added: after a deploy that changes JS or CSS, read the version in the operator's open tabs of the app (read-only evaluate of
+  the header); a tab on the old version is reloaded when it holds nothing unsaved (the editor saves every action; check the audit), otherwise the report
+  names that tab and says to reload it. A banner "the app was updated, reload" in the app itself is the lasting fix - proposed, not built.
 
 ## A flag in the file is not proof of where a layer is: compare the files
 - Situation (2026-10-20): the photograph of work 22 showed outlines on the ruler. The operator resized the picture in LightBurn; two layers were hidden, LightBurn's tools skipped them, and
@@ -494,3 +498,10 @@ Operator, 2026-10-22, after 0.21.0: "Почему при фотографиро�
 the question from the «Вид» button and never clicked «Новая работа» as the operator would; the operator deleted Boris - 3 and stopped at the dialog.
 - Rule: when the operator says "when I choose X it should ask Y", Y is on screen the moment X is chosen (its first step), not after a later button.
 - Rule: walk every new flow from the operator's own entry point (here «Новая работа» on «Мои работы»), click by click, before the release.
+
+## A set of regions is shown as one shape
+Operator, 2026-10-22, after 0.22.0: «пусть он все выделения как-то обозначает ... желтым ... не каждую часть, а общее ... объединять его одно.»
+A selection (and a zone, and a hover) outlined every region on its own: 108 thin yellow outlines for one face, lost on the cream colours.
+- Rule: whatever the operator picks as one thing (a selection, a zone, a layer under the pointer) is drawn as one outline - the borders with the set on
+  one side only - on a dark halo so it shows on light and dark colours. Per-region marks are for per-region facts only (the far colours).
+

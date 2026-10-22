@@ -51,8 +51,8 @@ Object.assign(App, (() => {
 
   /** Вкладки: ``items`` — [id, подпись, узел]; возвращает ``list`` (полоса вкладок), ``panels`` (по одной панели на вкладку) и ``select``.
       Открыта вкладка, запомненная браузером под ``remember`` (удобство одного зрителя: без хранилища просто не запоминается), иначе
-      ``initial``; стрелки влево и вправо переключают вкладки. */
-  function tabs(items, {initial, remember, label, prefix = 'tab'}) {
+      ``initial``; стрелки влево и вправо переключают вкладки; ``onSelect(id)`` is called on every switch, the first one included. */
+  function tabs(items, {initial, remember, label, prefix = 'tab', onSelect}) {
     const ids = items.map(([id]) => id);
     const saved = () => { try { return remember ? localStorage.getItem(remember) : null; } catch (_) { return null; } };
     let current = ids.includes(saved()) ? saved() : initial;
@@ -69,6 +69,7 @@ Object.assign(App, (() => {
         panels[i].hidden = !on;
       });
       try { if (remember) localStorage.setItem(remember, id); } catch (_) { /* окно без хранилища */ }
+      if (onSelect) onSelect(id);
     }
     const list = h('div', {role: 'tablist', class: 'vw-tabs', 'aria-label': label}, buttons);
     list.addEventListener('keydown', (ev) => {

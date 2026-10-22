@@ -128,8 +128,10 @@ const VectorEditor = (() => {
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
     let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
-    let hover = null, hot = [], shownSelection = [], farCount = 0, pending = 0, spaceHeld = false;
+    let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null;
     let zonePics = null;                                     // <g> с картинками фотозон под областями
+    let borders = [], bordersOf = new Map();                 // every border of the split once: its path and the regions on its sides
+    let lines = null;                                        // <g> of the outlines above the regions: the zones, the hover, the selection
     const reach = new Map();
     let reachTimer = null, sortTimer = null;
 
@@ -185,7 +187,7 @@ const VectorEditor = (() => {
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
       ['photo', 'Фото', photo.el]],
-      {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab'});
+      {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab', onSelect: (id) => { sideTab = id; syncSvgClass(); }});
     const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'}, sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
     const el = h('div', {class: 'vw-editor'},
       h('div', {class: 'vw-ed-main'}, bar, totals, stage,
@@ -225,11 +227,19 @@ const VectorEditor = (() => {
         if (!byColour.has(k)) byColour.set(k, []);
         byColour.get(k).push(rid);
       }
+      const group = next.querySelector('g.vw-borders');
+      borders = group ? [...group.querySelectorAll('path')].map((b) => ({d: b.getAttribute('d'), sides: b.getAttribute('data-sides').split(' ')})) : [];
+      if (group) group.remove();                               // kept as data only: the page does not carry them twice
+      bordersOf = new Map();
+      borders.forEach((b, i) => { for (const rid of b.sides) { if (!bordersOf.has(rid)) bordersOf.set(rid, []); bordersOf.get(rid).push(i); } });
+      lines = svgEl('g', {class: 'vw-outlines'});
+      for (const kind of ['vw-zone', 'vw-hot', 'vw-sel']) lines.append(svgEl('path', {class: `vw-outline vw-halo ${kind}`}), svgEl('path', {class: `vw-outline ${kind}`}));
+      next.append(lines);
       if (svg) svg.remove();
       stage.prepend(next);
       svg = next;
       loading.hidden = true;
-      hot = []; shownSelection = [];
+      hot = [];
       state.selection = new Set([...state.selection].filter((rid) => paths.has(rid)));
       if (hover && !paths.has(hover)) hover = null;
       setBox(vb.x, vb.y, vb.w);
@@ -269,7 +279,28 @@ const VectorEditor = (() => {
     }
 
     function syncSvgClass() {
-      if (svg) svg.setAttribute('class', ['vw-ed-svg', state.view === 'original' ? 'view-original' : '', state.far ? 'show-far' : ''].filter(Boolean).join(' '));
+      if (svg) svg.setAttribute('class', ['vw-ed-svg', state.view === 'original' ? 'view-original' : '', state.far ? 'show-far' : '',
+        sideTab === 'photo' ? 'show-zones' : ''].filter(Boolean).join(' '));
+    }
+
+    /** The outline of a set of regions as one shape: the borders with a region of the set on one side only (none between two of them). */
+    function outlineOf(ids) {
+      const inside = new Set(ids), parts = new Set();
+      for (const rid of inside) {
+        for (const i of bordersOf.get(rid) || []) if (borders[i].sides.length < 2 || !borders[i].sides.every((s) => inside.has(s))) parts.add(i);
+      }
+      return [...parts].map((i) => borders[i].d).join(' ');
+    }
+
+    /** One kind of outline (``vw-sel``, ``vw-hot``, ``vw-zone``) around each of ``groups`` (lists of regions): a light line on a dark halo,
+        so it shows on light and dark titanium alike; ``data-regions`` names what it outlines. */
+    function drawLine(kind, groups) {
+      if (!lines) return;
+      const d = groups.filter((g) => g.length).map(outlineOf).join(' '), named = groups.flat().sort().join(' ');
+      for (const p of [...lines.querySelectorAll(`path.${kind}`)]) {
+        if (d) p.setAttribute('d', d); else p.removeAttribute('d');
+        if (!p.classList.contains('vw-halo')) p.setAttribute('data-regions', named);
+      }
     }
 
     /** Картинки фотозон — каждая на своём прямоугольнике под областями зоны; адрес меняется, только когда меняется сама картинка. */
@@ -286,6 +317,7 @@ const VectorEditor = (() => {
         shown.delete(key);
       }
       for (const im of shown.values()) im.remove();
+      drawLine('vw-zone', (j.zones || []).map((z) => z.regions.filter((rid) => paths.has(rid))));     // each zone one shape, shown on «Фото»
     }
 
     /** A zone's new picture replaces its old one only once it has loaded: the old one stays in place meanwhile, never a blank zone. */
@@ -441,9 +473,8 @@ const VectorEditor = (() => {
     }
 
     function setHot(ids) {
-      for (const rid of hot) if (paths.has(rid)) paths.get(rid).classList.remove('vw-hot');
       hot = ids.filter((rid) => paths.has(rid));
-      for (const rid of hot) paths.get(rid).classList.add('vw-hot');
+      drawLine('vw-hot', [hot]);
     }
 
     // заливка: какие области она займёт, спрашивается у сервера (через 120 мс покоя, один раз на область, похожесть и версию)
@@ -525,9 +556,7 @@ const VectorEditor = (() => {
     }
 
     function outlineSelection() {
-      for (const rid of shownSelection) if (paths.has(rid)) paths.get(rid).classList.remove('vw-sel');
-      shownSelection = [...state.selection].filter((rid) => paths.has(rid));
-      for (const rid of shownSelection) paths.get(rid).classList.add('vw-sel');
+      drawLine('vw-sel', [[...state.selection].filter((rid) => paths.has(rid))]);
     }
 
     // --- действия: по одному, по порядку; экран обновляет run, редактор — update -----------------------------------------------

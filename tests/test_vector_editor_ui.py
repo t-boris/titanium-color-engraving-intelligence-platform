@@ -77,7 +77,10 @@ def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it
     narrow = re.search(r"@media \(max-width:900px\) \{(.*?)\n\}", CSS, re.S)
     assert narrow and ".vw-editor {grid-template-columns:minmax(0,1fr)}" in narrow.group(1)
     assert re.search(r"\.vw-details \.tw \{[^}]*overflow-x:auto", CSS) and re.search(r"\.vw-details \{min-width:0", CSS)
-    assert re.search(r"\.vw-ed-svg path\.vw-hot \{[^}]*vector-effect:non-scaling-stroke", CSS)      # outlines are classes on the paths
+    outline = re.search(r"\.vw-ed-svg path\.vw-outline \{([^}]*)\}", CSS)                     # a set of regions is outlined as one path
+    assert outline and "vector-effect:non-scaling-stroke" in outline.group(1) and "pointer-events:none" in outline.group(1)
+    assert re.search(r"\.vw-ed-svg path\.vw-outline\.vw-halo \{[^}]*stroke:#000000", CSS) and re.search(r"\.vw-ed-svg path\.vw-sel \{[^}]*stroke:#ffd54a", CSS)
+    assert ".vw-ed-svg:not(.show-zones) path.vw-zone {display:none}" in CSS                      # the zones' outlines only on «Фото»
     assert re.search(r"\.vw-swatch\.as-shot \{[^}]*dashed", CSS)
 
 
@@ -110,7 +113,10 @@ const byLabel = (root, tag, label) => root.querySelectorAll(tag).find((el) => el
   await tick(); await tick();
   const svg = () => tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
   const path = (id) => svg().querySelectorAll('path').find((p) => p.getAttribute('data-region') === id);
-  const classed = (cls) => svg().querySelectorAll('path').filter((p) => p.classList.contains(cls)).map((p) => p.getAttribute('data-region')).sort();
+  const outline = (cls) => svg().querySelectorAll('path').find((p) => p.classList.contains(cls) && !p.classList.contains('vw-halo'));
+  const classed = (cls) => ((outline(cls) || {getAttribute: () => ''}).getAttribute('data-regions') || '').split(' ').filter(Boolean);
+  const tagged = (cls) => svg().querySelectorAll('path[data-region]').filter((p) => p.classList.contains(cls)).map((p) => p.getAttribute('data-region')).sort();
+  const drawn = (cls) => (outline(cls).getAttribute('d') || '').match(/M[^M]+/g)?.map((d) => d.trim()).sort() || [];
   const posted = () => ctx.requests.filter((r) => r.method === 'POST').map((r) => JSON.parse(r.body));
   const section = (title) => tree.querySelectorAll('section').find((s) => (s.querySelector('h4') || {}).textContent === title);
   const swatch = (entry) => tree.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === entry);
@@ -126,7 +132,12 @@ SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" width="40mm"
                  f'data-region="{rid}" data-color="{k}"/>'
                  for rid, k, (x0, y0, x1, y1) in (("r1", 0, (0, 0, 10, 10)), ("r2", 0, (10, 0, 20, 10)), ("r3", 1, (20, 0, 30, 10)),
                                                   ("r4", 1, (30, 0, 40, 10)), ("r5", 2, (0, 10, 40, 20))))
-       + "</svg>")
+       + '<g class="vw-borders" display="none">'                       # every border once, with the regions on its sides
+       + "".join(f'<path d="{d}" data-sides="{sides}"/>' for d, sides in (
+           ("M0 0 L10 0", "r1"), ("M10 0 L20 0", "r2"), ("M20 0 L30 0", "r3"), ("M30 0 L40 0", "r4"), ("M0 0 L0 10", "r1"), ("M40 0 L40 10", "r4"),
+           ("M10 0 L10 10", "r1 r2"), ("M20 0 L20 10", "r2 r3"), ("M30 0 L30 10", "r3 r4"),
+           ("M0 10 L10 10", "r1 r5"), ("M10 10 L20 10", "r2 r5"), ("M20 10 L30 10", "r3 r5"), ("M30 10 L40 10", "r4 r5"), ("M0 10 L0 20 L40 20 L40 10", "r5")))
+       + "</g></svg>")
 
 
 def entry(eid, srgb, lab, basis="chart", automatic=True, rate=0.5):
@@ -216,7 +227,9 @@ node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not inst
 @node
 def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_totals_and_history(tmp_path):
     out = run_editor(tmp_path, routes(), """
-  out.fills = Object.fromEntries(svg().querySelectorAll('path').map((p) => [p.getAttribute('data-region'), p.getAttribute('fill')]));
+  out.fills = Object.fromEntries(svg().querySelectorAll('path[data-region]').map((p) => [p.getAttribute('data-region'), p.getAttribute('fill')]));
+  out.borders = svg().querySelectorAll('g').filter((g) => g.classList.contains('vw-borders')).length;
+  out.outlines = svg().childNodes.at(-1).getAttribute('class') + ': ' + svg().childNodes.at(-1).childNodes.map((p) => p.getAttribute('class')).join(' | ');
   out.viewBox = svg().getAttribute('viewBox');
   out.undo = byText(tree, 'button', 'Отменить').disabled;
   out.redo = byText(tree, 'button', 'Повторить').disabled;
@@ -226,6 +239,9 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
 """)
     assert out["fills"] == {"r1": "rgb(205,198,182)", "r2": "rgb(205,198,182)", "r3": "rgb(150,60,90)", "r4": "rgb(120,140,60)", "r5": "#e6e6e6"}
     assert out["viewBox"] == "0 0 40 20" and out["undo"] is False and out["redo"] is True
+    assert out["borders"] == 0                                                       # read once as data, not left in the page
+    assert out["outlines"] == ("vw-outlines: vw-outline vw-halo vw-zone | vw-outline vw-zone | vw-outline vw-halo vw-hot | vw-outline vw-hot"
+                               " | vw-outline vw-halo vw-sel | vw-outline vw-sel")   # above the regions: zones, then hover, then selection on top
     classes = {eid: cls for eid, cls, _ in out["palette"]}
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
     assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ с/см²|не оценено)", title) for _, _, title in out["palette"])
@@ -312,7 +328,7 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   out.posted = posted();
   const far = section('Исходные цвета').querySelector('input');
   far.checked = true; await far.dispatch('change');
-  out.far = [svg().getAttribute('class'), classed('vw-far')];
+  out.far = [svg().getAttribute('class'), tagged('vw-far')];
   await byText(tree, 'button', 'Оригинал').dispatch('click');
   out.original = [svg().getAttribute('class'), svg().querySelector('image').getAttribute('href')];
   await byText(tree, 'button', 'Исходные цвета').dispatch('click');
@@ -571,6 +587,8 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
   };
   await lasso();
   out.selected = classed('vw-sel');
+  out.outline = drawn('vw-sel');
+  out.selPaths = svg().querySelectorAll('path').filter((p) => p.classList.contains('vw-sel')).length;
   out.lines = svg().querySelectorAll('polyline').length;
   out.points = JSON.parse(ctx.requests.find((r) => r.path === '/api/vector/7/lasso').body).points;
   out.viewBox = svg().getAttribute('viewBox');
@@ -585,6 +603,8 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
 """)
     assert out["drawn"] == [4] and out["lines"] == 0                                 # the lasso is drawn while dragged, then removed
     assert out["selected"] == ["r1", "r2"] and out["removed"] == [] and out["added"] == ["r1", "r2"]
+    assert out["outline"] == ["M0 0 L0 10", "M0 0 L10 0", "M0 10 L10 10", "M10 0 L20 0", "M10 10 L20 10", "M20 0 L20 10"]   # one shape: not r1|r2
+    assert out["selPaths"] == 2                                                      # its line and its halo, not a line per region
     assert out["points"][0] == [2, 2] and out["points"][2] == [12, 14] and out["viewBox"] == "0 0 40 20"   # mm under «meet», nothing panned
     assert "Выбрано областей: 2" in out["selection"] and "Сделать фотозоной" in out["selection"] and "обвести мышью — лассо" not in out["selection"]
     assert out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}] and out["photoTab"] == "true"
@@ -596,15 +616,22 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   out.pics = svg().querySelectorAll('image').filter((im) => im.classList.contains('vw-zone-pic'))
     .map((im) => ['data-zone', 'href', 'x', 'y', 'width', 'height'].map((k) => im.getAttribute(k)));
   out.fills = ['r1', 'r3', 'r4'].map((rid) => [path(rid).getAttribute('fill'), path(rid).getAttribute('stroke')]);
-  out.totals = tree.textContent.match(/Слоёв \d[^·]+/)[0];
+  out.totals = tree.textContent.match(/Слоёв [0-9][^·]+/)[0];
   out.file = tree.querySelectorAll('div').filter((d) => d.className === 'vw-line').map((d) => d.textContent);
   out.layerRow = section('Слои титана').textContent;
+  out.zoneOutline = drawn('vw-zone');
+  out.zonesShownBefore = svg().getAttribute('class').includes('show-zones');
   await path('r3').dispatch('pointermove', {clientX: 75, clientY: 30});
   out.tip = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
   await byText(tree, 'button', 'Фото').dispatch('click');
   await wait(5);
+  out.zonesShown = svg().getAttribute('class').includes('show-zones');
   const zone = section('Фотозоны');
   out.card = zone.textContent;
+  await zone.querySelector('article').dispatch('mouseenter');
+  out.hot = [classed('vw-hot'), drawn('vw-hot')];
+  await zone.querySelector('article').dispatch('mouseleave');
+  out.hotAfter = classed('vw-hot');
   out.tiles = zone.querySelectorAll('button').filter((b) => b.classList.contains('vp-kind')).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
   const picked = zone.querySelectorAll('button').find((b) => b.className === 'vp-scale-pick picked');
   out.picked = [picked.textContent, picked.getAttribute('aria-pressed')];
@@ -639,6 +666,9 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert "Другие шкалы этого лазера и титана: 1" in out["card"]
     assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
     assert out["selectedZone"] == ["r3", "r4"] and "из них в фотозонах: 2" in out["selection"] and "Добавить в фотозону 1" in out["selection"]
+    zone_outline = ["M20 0 L20 10", "M20 0 L30 0", "M20 10 L30 10", "M30 0 L40 0", "M30 10 L40 10", "M40 0 L40 10"]   # r3 + r4, not r3|r4
+    assert out["zoneOutline"] == zone_outline and out["zonesShownBefore"] is False and out["zonesShown"] is True   # framed on «Фото»
+    assert out["hot"] == [["r3", "r4"], zone_outline] and out["hotAfter"] == ["r3"]  # the card's hover: the zone as one shape; then the area under the pointer
     assert out["posted"] == [{"op": "photo_set", "zone": 1, "kind": "jarvis"},
                              {"op": "photo_set", "zone": 1, "scale": {**SCALE, "speed": 500, "pulse_width": 200}},
                              {"op": "photo_set", "zone": 1, "min_power": 5, "max_power": 29},

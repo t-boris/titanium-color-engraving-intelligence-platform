@@ -1847,3 +1847,36 @@ Order (the operator's ask first):
   (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, every declared library imports;
   8765 restarted on 0.22.0 and checked with GETs only: header v0.22.0, work 22 with no zones and 27 layers, the «Фото» tab's empty state, no console
   messages, audit still 806. DEC-114 and DEC-115 accepted.
+
+## 0.22.1: a selection and a photo zone are outlined as one shape (operator, 2026-10-22)
+Operator, after 0.22.0: «Я пытаюсь объединить какие-то секции, но я не вижу их нормально, не могу перевести фото.» Their open tab was still
+0.21.1 (no «Фото», no lasso) - reloaded (no unsaved state: audit unchanged since the deploy). Then: «Если мы переводим фото, то пусть он все
+выделения как-то обозначает, там желтым или еще чем-нибудь, ну рамки. Пусть он это обозначает общее, причем не каждую часть, а общее. То есть
+когда он соединяет ближайшие, что он должен объединять его одно.»
+Now each selected region gets its own yellow line (108 outlines for a face), thin and lost on the cream colours.
+- [x] O1. `segment.to_svg(..., borders=True)` (the editor's `split.svg` only): a hidden `<g class="vw-borders">` with every border arc once as
+      its own path (the same curves the regions use) and `data-sides` = the regions whose loops use it.
+- [x] O2. Editor: the outline of a set of regions = the arcs with a region of the set on one side only, one path; drawn above the regions with
+      a dark halo under the line. Selection - yellow; hover (zone card, layer row, the fill's reach) - white; each photo zone - dashed, while
+      the «Фото» tab is open. `App.tabs` gets an optional `onSelect`. The per-region classes `vw-sel` / `vw-hot` go.
+- [x] O3. Tests (python: borders in the SVG; node: the outline of two neighbours skips their shared border, zone frames only on «Фото»),
+      README 0.22.1, version, suite, walk on a copy (work 22, lasso on the face), backup, deploy, the operator's tab reloaded.
+
+#### Review of 0.22.1 (2026-10-22)
+- Built as planned. The split SVG of the editor carries every border once (`<g class="vw-borders" display="none">`, `data-sides` from the regions'
+  loops); the editor reads them as data and removes the group. `drawLine(kind, groups)` sets one halo + one line per kind (zones, hover, selection,
+  in that order above the regions) with `data-regions` naming what it outlines; the per-region classes `vw-sel` / `vw-hot` are gone (`vw-far` stays:
+  it marks each far region). `App.tabs` has an optional `onSelect`; the editor shows the zones' outlines (`show-zones`) while «Фото» is open.
+- Tests: python - the borders outline any connected set exactly as `merge_regions` does (2, 3, 6, 12 regions; traced and smoothed), each smoothed
+  border has the same curves as the regions on its sides (115 of 191 checked; single-curve loops are split); node - one outline for r1+r2 without
+  their shared border, line + halo only, the zone framed only on «Фото», the zone card's hover outlines the zone as one shape.
+- Walk on the copy of work 22 (port 8791, stopped after): the face zone framed as one dashed shape on «Фото»; «Выделить» -> one yellow outline of 108
+  regions (1 ms), visible on the light face; hovering 27 layer rows 4 ms; no console messages. split.svg 557 -> 868 KB (1667 borders), served in 0.05 s
+  first, 0.005 s after.
+- Not changed: the face zone's regions are not all connected by shared borders (the editor says so), so «Слить в один контур» stays off for
+  that selection, as before; «Сделать фотозоной» does not need them connected.
+
+- Released 2026-10-22: full suite 1797 passed (-n 12, 2 min 42 s, none skipped); backup `backups/titanium-before-0.22.1-20261022T204119Z.sqlite`
+  (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.1
+  (split.svg 868 KB in 0.05 s, view 5.3 s cold as before); the operator's open tab of work 22 reloaded (it was on 0.22.0, nothing unsaved): v0.22.1,
+  six outline paths, no console messages.

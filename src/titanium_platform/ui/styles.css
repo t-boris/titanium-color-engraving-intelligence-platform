@@ -586,8 +586,16 @@ select::-ms-expand {display:none}
 .vw-ed-svg.view-original image {display:inline}
 .vw-ed-svg.view-original path {fill-opacity:0;stroke-opacity:0}
 .show-far path.vw-far {stroke:#ff4d6d;stroke-opacity:1;stroke-width:1.5px;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
-.vw-ed-svg path.vw-sel {stroke:#ffd54a;stroke-opacity:1;stroke-width:2.5px;stroke-dasharray:none;vector-effect:non-scaling-stroke}
-.vw-ed-svg path.vw-hot {stroke:#ffffff;stroke-opacity:1;stroke-width:2px;stroke-dasharray:none;vector-effect:non-scaling-stroke}
+/* outlines of a set of regions as one shape (0.22.1): a light line on a dark halo; the zones only while «Фото» is open */
+.vw-ed-svg path.vw-outline {fill:none;stroke-opacity:1;stroke-dasharray:none;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;pointer-events:none}
+.vw-ed-svg path.vw-outline.vw-halo {stroke:#000000;stroke-opacity:.55;stroke-dasharray:none}
+.vw-ed-svg path.vw-sel {stroke:#ffd54a;stroke-width:2.5px}
+.vw-ed-svg path.vw-sel.vw-halo {stroke-width:6px}
+.vw-ed-svg path.vw-hot {stroke:#ffffff;stroke-width:2px}
+.vw-ed-svg path.vw-hot.vw-halo {stroke-width:5px}
+.vw-ed-svg path.vw-zone {stroke:#7fe3ff;stroke-width:2px;stroke-dasharray:7 5}
+.vw-ed-svg path.vw-zone.vw-halo {stroke-width:4.5px}
+.vw-ed-svg:not(.show-zones) path.vw-zone {display:none}
 .vw-ed-tip {position:absolute;z-index:2;max-width:300px;padding:8px 10px;border:1px solid #46536b;border-radius:10px;background:#101722f0;
   color:var(--text);font-size:12px;line-height:1.45;pointer-events:none;box-shadow:0 8px 24px #0008}
 .vw-ed-tip .sw {width:14px;height:14px;margin:0 4px;border-radius:4px}
