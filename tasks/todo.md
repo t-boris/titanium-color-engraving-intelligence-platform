@@ -1494,6 +1494,11 @@ each building on the rules before it, then the work deleted and a new one made. 
     pixel, blurred as the photograph is) - to be agreed with the operator.
   - Open question for the operator: «Удалить эксперимент» of a photographed work (vector or photo) deletes its checks and then archives the work itself; on the isolated copy
     work 28 was archived this way at 03:53 UTC (restored on the copy; the operator's data untouched).
+  - The operator's goal ("my experiments must confirm it") is NOT met yet and cannot be met from the data there is: the earlier real engravings were re-read under DEC-106
+    (pairs 85, 88, 93 were already read as matched: flip False, evidence clear, so re-measuring changes nothing); Mode A's two works still disagree in the light half
+    (10.2 dE, 0.18.0 review) and the plate does not reproduce them (0.18.1 review). It waits on the agreed experiment: work 28 «Inna Portrait» (plate scale 150 mm/s,
+    60 kHz, 350 ns, 0.0212 mm, Min 1 / Max 30) engraved at 100 mm and a copy at 38 mm, files downloaded from 0.19.3 on, photos uploaded from the work's «Подтверждение».
+    When the operator says they engraved: read pairs > 108 read-only and report each work's check.
 ### 0.20.0: photo-engraving colours in the vector palette
 - [ ] G. Palette entries from the grey scales (each measured power of a scale); a region given one is written as an Image layer of one even grey with the scale's settings
       (Min = Max = that power); time per cm2; the colour picker says where it comes from. Tests, release.
