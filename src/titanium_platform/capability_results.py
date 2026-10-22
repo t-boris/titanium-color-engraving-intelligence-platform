@@ -342,7 +342,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
                       + ". Название слоя не заменяет реальные настройки файла.")
     if test_type == "line_resolution":
         limits.append("Среднее измерение группы линий не определяет минимально различимый зазор и не является измерением оптического диаметра пятна.")
-    elif test_type in ("hatch_interval", "offset_fill"):
+    elif test_type in ("hatch_interval", "offset_fill", "fill_sizes"):
         limits.append("Среднее значение участка не оценивает пространственную равномерность заливки; для этого нужен анализ распределения пикселей внутри каждой ячейки.")
     elif test_type == "power_speed":
         limits.append("По среднему сигналу линии нельзя подтвердить её непрерывность или паспортный максимум скорости.")

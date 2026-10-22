@@ -61,6 +61,8 @@ class CapabilityPlateIn(BaseModel):
     scales: dict | None = None            # a grey-scales plate: its rows, columns and Min/Max power (REQ-059)
     patch_size_mm: float = 3.0
     patches: list[dict] | None = None
+    recipes: list[dict] | None = None     # a fill-size plate: its recipes and strip widths
+    widths_mm: list[float] | None = None
     registration: str = "full"
     max_width_mm: float = 100.0
     max_height_mm: float = 100.0
@@ -171,6 +173,10 @@ def _capability_settings(body: CapabilityPlateIn) -> dict:
         settings["scales"] = body.scales
     if body.patches is not None:
         settings["patches"] = body.patches
+    if body.recipes is not None:
+        settings["recipes"] = body.recipes
+    if body.widths_mm is not None:
+        settings["widths_mm"] = body.widths_mm
     if body.task:
         settings.update(task=body.task, task_goals=body.task_goals)
     return settings

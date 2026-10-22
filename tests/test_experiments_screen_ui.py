@@ -209,6 +209,87 @@ def test_the_experiment_cards_keep_the_list_api_the_laser_page_uses(tmp_path):
     assert out["list"] == "dashboard-list" and out["cards"] == ["dashboard-item exp-card"] * 3 and out["empty"] == "Пусто" and out["api"] == ["card", "list", "layers"]
 
 
+# -- «Создать плату»: the plate dialog ---------------------------------------------------------------------------------------------
+DIALOG = """
+const fs = require('fs');
+const {context, load, El} = require(%(dom)s);
+// the small DOM keeps no inline style; the dialog shows and hides the card of the chosen plate type through element.style
+Object.defineProperty(El.prototype, 'style', {get() { return this._style || (this._style = {}); }});
+const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
+const ctx = context(data.routes);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'tasks.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
+const card = (input) => {                                                   // whether the card around an input is shown
+  let el = input;
+  while (!(el.className || '').split(' ').includes('card')) el = el.parentNode;
+  return el.style.display;
+};
+/** Open the dialog for a plate type, choose the stock, let ``fill`` set the card, press «Создать плату»: the body it sends. */
+async function made(preset, fill) {
+  const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, preset);
+  await tick();
+  labelled(dialog.el, 'Заготовка').value = '1';
+  fill(dialog.el);
+  const before = ctx.requests.length;
+  await dialog.el.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  for (let i = 0; i < 5; i += 1) await tick();
+  const sent = ctx.requests.slice(before).find((r) => r.path === '/api/capability-plates' && r.method === 'POST');
+  return sent ? JSON.parse(sent.body) : null;
+}
+(async () => {
+  const out = {};
+%(body)s
+  console.log(JSON.stringify(out));
+  process.exit(0);                                                          // the toasts' timers need not run out
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+
+
+def run_dialog(tmp_path, body) -> dict:
+    from titanium_platform import capability_plates
+    data = {"routes": {"/api/plate-types": {"status": 200, "json": capability_plates.PLATE_TYPES},
+                       "/api/tasks": ROUTES["/api/tasks"],
+                       "/api/capability-plates": {"status": 201, "json": {"plan_id": 9, "name": "Плата · TCE-1",
+                                                                          "summary": {"layers": 4, "work_field": {"checked": True}}}}},
+            "devices": [{"id": 1, "name": "Laser A", "lens": {"id": 5, "name": "F-Theta", "focal_length_mm": 174, "field_mm": 170},
+                         "passport": {"pulse_steps": [{"pulse_width_ns": 200, "cutoff_khz": 100}], "repetition_rate_khz": {"min": 1, "max": 4000}}}],
+            "materials": [{"id": 1, "family": "Titanium", "name": "Titan", "grade": "2"}]}
+    (tmp_path / "data.json").write_text(json.dumps(data), encoding="utf-8")
+    script = tmp_path / "dialog.js"
+    script.write_text(DIALOG % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+                                "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "body": body}, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    return json.loads(done.stdout)
+
+
+@node
+def test_the_plate_dialog_sends_the_recipes_and_widths_of_a_fill_size_plate_and_a_grey_ramp_width_axis(tmp_path):
+    out = run_dialog(tmp_path, """
+  out.fill = await made({type: 'fill_sizes'}, (box) => {
+    out.fillCard = card(labelled(box, 'Ширины полосок заливки')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
+    labelled(box, 'Ширины полосок заливки').value = '5, 40, 120';
+    labelled(box, 'Параметр рецептов заливки').value = 'speed';
+    labelled(box, 'Значения рецептов заливки').value = '150, 300';
+  });
+  out.oneRecipe = await made({type: 'fill_sizes'}, () => {});
+  out.grey = await made({type: 'grey_scales'}, (box) => {
+    const rows = labelled(box, 'Строки шкал серого');
+    out.greyAxes = rows.options.map((o) => [o.value, o.textContent]);
+    rows.value = 'width';
+    box.querySelectorAll('input').find((i) => i.value === '0.0127, 0.0169, 0.0212, 0.0254').value = '20, 40, 70';
+  });
+""")
+    assert out["fillCard"] == "" and out["greyCard"] == "none"                     # the fill card is the one shown
+    fill = out["fill"]
+    assert fill["test_type"] == "fill_sizes" and fill["widths_mm"] == [5, 40, 120] and fill["recipes"] == [{"speed": 150}, {"speed": 300}]
+    assert (fill["max_width_mm"], fill["max_height_mm"], fill["pulse_width"]) == (150, 150, 200)     # strips up to 100 mm do not fit 100 mm
+    assert out["oneRecipe"]["recipes"] == [{}] and out["oneRecipe"]["widths_mm"] == [5, 20, 50, 100]   # the plate's own settings, the default widths
+    assert ["width", "Ширина полоски, мм"] in out["greyAxes"]
+    assert out["grey"]["scales"]["rows"] == {"axis": "width", "values": [20, 40, 70]} and out["grey"]["max_width_mm"] == 100
+
+
 # -- the CSS ---------------------------------------------------------------------------------------------------------------------------
 def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_long_panels_scroll():
     assert re.search(r"\.ex-body \{grid-template-columns:minmax\(340px,40%\) minmax\(0,1fr\)\}", CSS)

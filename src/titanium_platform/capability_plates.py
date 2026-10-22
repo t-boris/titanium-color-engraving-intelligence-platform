@@ -64,8 +64,12 @@ PLATE_TYPES = [
      "finds": "Как шаг между центрами окружностей и их диаметр влияют на видимый след. Это наблюдаемая ширина гравировки, а не оптический диаметр пятна."},
     {"id": "grey_scales", "name": "Шкалы серого (фотогравировка, режим градаций серого)",
      "purpose": "Узнать, какой серый картинки каким цветом выгравируется в режиме градаций серого при выбранных постоянных настройках, и найти настройки, при которых мощность меняет цвет, а ступени остаются различимыми.",
-     "action": "До 28 полосок по 16 ступеней серого: от белого слева до чёрного справа, каждая ступень — своя мощность между Min и Max. Каждая полоска — свой слой-изображение LightBurn со своими настройками: строки и столбцы меняют два параметра из скорости, шага линий (DPI), частоты, длительности импульса и проходов. Очистка и метки занимают ещё два слоя.",
+     "action": "До 28 полосок по 16 ступеней серого: от белого слева до чёрного справа, каждая ступень — своя мощность между Min и Max. Каждая полоска — свой слой-изображение LightBurn со своими настройками: строки и столбцы меняют два параметра из скорости, шага линий (DPI), частоты, длительности импульса, проходов и ширины полоски (ступень — 1/16 ширины). Очистка и метки занимают ещё два слоя.",
      "finds": "Шкалу «серый → цвет» для каждой полоски: измеренный цвет каждой ступени при её мощности. По ней предпросмотр фотогравировки показывает, как выйдет картинка, а работы в том же режиме сверяются с пластиной. Первая ступень — чистый белый: видно, бьёт ли Min по белому."},
+    {"id": "fill_sizes", "name": "Размер заливки",
+     "purpose": "Узнать, как цвет заливки меняется с её размером: одни и те же настройки на полосках разной ширины, то есть с разной длиной строки.",
+     "action": "До 28 залитых полосок высотой 4 мм (режим Scan, постоянная мощность): каждая полоска — свой слой LightBurn с одним из 1–7 рецептов и одной из 1–5 ширин от 3 до 300 мм. Строки заливки идут вдоль ширины, поэтому ширина полоски — длина строки. Очистка и метки занимают ещё два слоя.",
+     "finds": "Цвет каждого рецепта при каждой ширине: насколько он сдвигается с длиной строки и с какой ширины перестаёт меняться. Измеряется середина полоски, края не учитываются."},
 ]
 for item in PLATE_TYPES:
     item["description"] = f"Зачем: {item['purpose']} Что делает плата: {item['action']} Что выясняет результат: {item['finds']}"
@@ -96,6 +100,8 @@ WOBBLE_STEPS_MM = (0.025, 0.05, 0.1)
 WOBBLE_SIZES_MM = (0.05, 0.1, 0.2)
 COMPACT_MARKER_SIZE = {"aruco_mm": 4.0, "qr_module_mm": 0.25, "margin_mm": 0.5,
                        "qr_position": "top-right"}
+PLATE_DEFAULT_MM, PLATE_MAX_MM = 100.0, 300.0     # the size limit of a plate unless the operator sets one, and the largest one allowed
+RECIPE_KEYS = frozenset({"power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes"})
 MATRIX_AXES = {
     "power": {"label": "Power", "short": "P", "unit": "%", "default_min": 5, "default_max": 100},
     "speed": {"label": "Speed", "short": "V", "unit": "mm/s", "default_min": 500, "default_max": 10000},
@@ -624,10 +630,9 @@ def _small_patches(values: dict, passport: dict) -> tuple[list[dict], list[dict]
         patch_specs = [{}]
     if not isinstance(patch_specs, list) or not 1 <= len(patch_specs) <= 4 or any(not isinstance(p, dict) for p in patch_specs):
         raise su.ValidationError("задайте от одного до четырёх квадратов с параметрами")
-    allowed = {"power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes"}
     gap, pad = 0.8, 1.5
-    max_width = float(values.get("max_width_mm", 100))
-    max_height = float(values.get("max_height_mm", 100))
+    max_width = float(values.get("max_width_mm", PLATE_DEFAULT_MM))
+    max_height = float(values.get("max_height_mm", PLATE_DEFAULT_MM))
     minimum_canvas = 10.0 if registration == "full" else 0.0
     marker_overhead = 9.0 if registration == "full" else 0.0
     layouts = []
@@ -644,7 +649,7 @@ def _small_patches(values: dict, passport: dict) -> tuple[list[dict], list[dict]
     x0, y0 = (width - content_w) / 2, (height - content_h) / 2
     layers, cells = [], []
     for i, spec in enumerate(patch_specs):
-        unknown = set(spec) - allowed
+        unknown = set(spec) - RECIPE_KEYS
         if unknown:
             raise su.ValidationError(f"квадрат {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
         selected, _, _ = _passport_defaults(passport, {**values, **spec})
@@ -815,7 +820,9 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     return out
 
 
-GREY_AXES = ("speed", "line_interval", "frequency", "pulse_width", "passes")
+GREY_AXES = ("speed", "line_interval", "frequency", "pulse_width", "passes", "width")
+# the ramp's own width in mm: the length of its scan lines, so the plate measures how a colour depends on the size of what is engraved
+GREY_WIDTH_AXIS = {"label": "Ramp width", "short": "W", "unit": "mm"}
 GREY_DEFAULTS = {"rows": {"axis": "line_interval", "values": [0.0127, 0.0169, 0.0212, 0.0254]},     # 2000, 1500, 1200, 1000 dpi
                  "columns": {"axis": "speed", "factors": [2 / 3, 1.0, 5 / 3]}, "min_power": 1.0}
 GREY_MAX_ROWS, GREY_MAX_COLUMNS = 7, 4
@@ -824,13 +831,21 @@ GREY_MAX_STEP = 2.5                    # mm: a step wider than this only makes t
 GREY_MIN_STEP = 1.0                    # mm: a narrower step leaves too few photograph pixels once its edges are left out
 
 
+def _grey_meta(key: str) -> dict:
+    """The label metadata of a grey-plate axis: a laser setting's from ``MATRIX_AXES``, or the ramp width's."""
+    return GREY_WIDTH_AXIS if key == "width" else MATRIX_AXES[key]
+
+
 def _grey_axis(name: str, axis: dict, base: dict, passport: dict) -> tuple[str, list[float]]:
-    """One axis of the grey-ramp plate: a setting from ``GREY_AXES`` and its values, each one the laser can engrave."""
+    """One axis of the grey-ramp plate: a setting from ``GREY_AXES`` and its values, each one the laser can engrave (a ramp width:
+    one whose steps are wide enough to measure)."""
     key = axis.get("axis")
     if key not in GREY_AXES:
-        raise su.ValidationError(f"{name}: выберите параметр из скорости, шага линий, частоты, длительности импульса и проходов")
+        raise su.ValidationError(f"{name}: выберите параметр из скорости, шага линий, частоты, длительности импульса, проходов и ширины полоски")
     raw = axis.get("values")
     if raw is None and axis.get("factors"):
+        if key == "width":
+            raise su.ValidationError(f"{name}: ширина полоски задаётся значениями в мм")
         raw = [round(base[key] * f, 4) for f in axis["factors"]]
     try:
         values = [float(v) for v in (raw or [])]
@@ -850,13 +865,19 @@ def _grey_axis(name: str, axis: dict, base: dict, passport: dict) -> tuple[str, 
             devices.require_selectable(passport, v)
         if key == "passes" and (int(v) != v or not 1 <= v <= 20):
             raise su.ValidationError("проходы: укажите целые числа от 1 до 20")
+        if key == "width" and v / grayscale.RAMP_STEPS < GREY_MIN_STEP:
+            raise su.ValidationError(f"полоска шириной {v:g} мм даёт ступень {v / grayscale.RAMP_STEPS:g} мм, а ступень уже {GREY_MIN_STEP:g} мм "
+                                     f"на фотографии не измерить: задайте ширину не меньше {grayscale.RAMP_STEPS * GREY_MIN_STEP:g} мм")
     return key, [int(v) if key == "passes" else v for v in values]
 
 
 def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """Grey ramps in grayscale mode (REQ-059): one Image layer per tile, a 16-step ramp from white to black, so each step is one power
-    between the plate's Min and Max; rows and columns change two of the fixed settings. The ramp runs left to right, so the plate's
-    vertical mirror (``export_mirror_y``) cannot reverse it."""
+    between the plate's Min and Max; rows and columns change two of the fixed settings, or one setting and the ramp's width. The ramp
+    runs left to right, so the plate's vertical mirror (``export_mirror_y``) cannot reverse it.
+
+    Without a width axis every ramp has the width that fits the plate's limit (at most 2.5 mm a step). With one, each ramp is as wide as
+    its width value; a column is as wide as its widest ramp and its ramps start at its left edge."""
     supplied = values.get("scales") or {}
     rows_key, row_values = _grey_axis("строки", supplied.get("rows") or GREY_DEFAULTS["rows"], values, passport)
     cols_key, col_values = _grey_axis("столбцы", supplied.get("columns") or GREY_DEFAULTS["columns"], values, passport)
@@ -871,45 +892,133 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
         raise su.ValidationError("Min и Max мощность должны быть числами") from None
     if not (math.isfinite(low) and math.isfinite(high) and 0 <= low < high <= 100):
         raise su.ValidationError("Min и Max мощность: от 0 до 100 %, Min меньше Max")
-    width_limit = values.get("max_width_mm", 100) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"] + COMPACT_MARKER_SIZE["margin_mm"])
     columns = len(col_values)
-    tile_w = min(grayscale.RAMP_STEPS * GREY_MAX_STEP, (width_limit - GREY_LABEL_WIDTH - 1 - (columns - 1) * GREY_GAP) / columns)
-    if tile_w / grayscale.RAMP_STEPS < GREY_MIN_STEP:
-        raise su.ValidationError("полоски не помещаются по ширине платы: уменьшите число столбцов или увеличьте предельную ширину")
-    tile_w = math.floor(tile_w / grayscale.RAMP_STEPS * 10) / 10 * grayscale.RAMP_STEPS      # steps of whole tenths of a millimetre
-    r_meta, c_meta = MATRIX_AXES[rows_key], MATRIX_AXES[cols_key]
+    if "width" in (rows_key, cols_key):
+        tile_w = None                  # each ramp has its own width; the plate's size limit is checked on the whole plate
+    else:
+        width_limit = values.get("max_width_mm", PLATE_DEFAULT_MM) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"] + COMPACT_MARKER_SIZE["margin_mm"])
+        tile_w = min(grayscale.RAMP_STEPS * GREY_MAX_STEP, (width_limit - GREY_LABEL_WIDTH - 1 - (columns - 1) * GREY_GAP) / columns)
+        if tile_w / grayscale.RAMP_STEPS < GREY_MIN_STEP:
+            raise su.ValidationError("полоски не помещаются по ширине платы: уменьшите число столбцов или увеличьте предельную ширину")
+        tile_w = math.floor(tile_w / grayscale.RAMP_STEPS * 10) / 10 * grayscale.RAMP_STEPS      # steps of whole tenths of a millimetre
+
+    def ramp_width(r_value: float, c_value: float) -> float:
+        return r_value if rows_key == "width" else c_value if cols_key == "width" else tile_w
+
+    column_widths = [max(ramp_width(r_value, c_value) for r_value in row_values) for c_value in col_values]
+    column_x = [GREY_LABEL_WIDTH + sum(column_widths[:col]) + col * GREY_GAP for col in range(columns)]
+    r_meta, c_meta = _grey_meta(rows_key), _grey_meta(cols_key)
     labels = _text(f"GREY {r_meta['short']} X {c_meta['short']} P{low:g}-{high:g}", 1.0, 0.8, 0.14)
     greys = grayscale.ramp_greys()
     layers, cells = [], []
     for col, c_value in enumerate(col_values):
-        labels += _text(f"{c_meta['short']}{c_value:g}", GREY_LABEL_WIDTH + col * (tile_w + GREY_GAP), GREY_TOP - 1.6, 0.10)
+        labels += _text(f"{c_meta['short']}{c_value:g}", column_x[col], GREY_TOP - 1.6, 0.10)
     for row, r_value in enumerate(row_values):
         y = GREY_TOP + row * GREY_ROW_PITCH
         labels += _text(f"{r_meta['short']}{r_value:g}", 0.6, y + 1.4, 0.10)
         for col, c_value in enumerate(col_values):
-            x = GREY_LABEL_WIDTH + col * (tile_w + GREY_GAP)
+            x, tile = column_x[col], ramp_width(r_value, c_value)
             params = _process({**values, rows_key: r_value, cols_key: c_value, "power": high})
             params["min_power"] = low
             name = f"GREY-{r_meta['short']}{r_value:g}-{c_meta['short']}{c_value:g}"
-            ramp = {"x": x, "y": y, "width": tile_w, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": "grayscale"}
-            layer = _layer(len(layers) + 1, name, params, [_rect(x, y, tile_w, GREY_TILE_HEIGHT)], mode="Image",
+            ramp = {"x": x, "y": y, "width": tile, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": "grayscale"}
+            layer = _layer(len(layers) + 1, name, params, [_rect(x, y, tile, GREY_TILE_HEIGHT)], mode="Image",
                            line_interval=params["line_interval"], global_passes=values["global_passes"])
             layer["ramp"] = ramp
             layers.append(layer)
-            cells.append({"name": name, "parameters": params, "x": x, "y": y, "width": tile_w, "height": GREY_TILE_HEIGHT,
+            cells.append({"name": name, "parameters": params, "x": x, "y": y, "width": tile, "height": GREY_TILE_HEIGHT,
                           "row_axis": rows_key, "row_value": r_value, "column_axis": cols_key, "column_value": c_value,
                           "min_power": low, "max_power": high, "steps": len(greys)})
-    width = GREY_LABEL_WIDTH + columns * tile_w + (columns - 1) * GREY_GAP + 1.0
+    width = GREY_LABEL_WIDTH + sum(column_widths) + (columns - 1) * GREY_GAP + 1.0
     height = GREY_TOP + (len(row_values) - 1) * GREY_ROW_PITCH + GREY_TILE_HEIGHT + 1.0
+    narrowest = min(cell["width"] for cell in cells)       # step_mm: the narrowest step, every step when the ramps share one width
     return layers, labels, {"width": width, "height": height, "columns": columns, "rows": len(row_values), "cells": cells,
-                            "feature_count": len(cells) * len(greys), "sample_area_mm2": round(len(cells) * tile_w * GREY_TILE_HEIGHT, 2),
+                            "feature_count": len(cells) * len(greys),
+                            "sample_area_mm2": round(sum(cell["width"] for cell in cells) * GREY_TILE_HEIGHT, 2),
                             "scales": {"rows": {"axis": rows_key, "values": row_values}, "columns": {"axis": cols_key, "values": col_values},
-                                       "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(tile_w / len(greys), 3)}}
+                                       "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(narrowest / len(greys), 3)}}
+
+
+FILL_DEFAULT_WIDTHS_MM = (5.0, 20.0, 50.0, 100.0)
+FILL_MAX_RECIPES, FILL_MAX_WIDTHS, FILL_MAX_STRIPS = 7, 5, 28
+FILL_MIN_WIDTH, FILL_STRIP_HEIGHT, FILL_GAP = 3.0, 4.0, 2.0
+FILL_TOP = 3.0                         # mm: below the QR, which reaches 1.75 mm into the top of the plate
+FILL_MIN_PLATE_WIDTH = 10.0            # mm: the QR fits in the top band between the two upper markers, as on a small-patch plate
+FILL_LABEL_PIXEL = 0.10
+FILL_LABEL_AXES = ("power", "speed", "frequency", "pulse_width", "line_interval", "passes")
+
+
+def _fill_widths(raw) -> list[float]:
+    """The strip widths of a fill-size plate: 1–5 different widths of 3–300 mm."""
+    if raw is None:
+        raw = FILL_DEFAULT_WIDTHS_MM
+    if not isinstance(raw, (list, tuple)) or not 1 <= len(raw) <= FILL_MAX_WIDTHS:
+        raise su.ValidationError(f"задайте от одной до {FILL_MAX_WIDTHS} ширин полосок")
+    try:
+        widths = [float(w) for w in raw]
+    except (TypeError, ValueError):
+        raise su.ValidationError("ширины полосок должны быть числами") from None
+    if len(set(widths)) != len(widths) or not all(math.isfinite(w) and FILL_MIN_WIDTH <= w <= PLATE_MAX_MM for w in widths):
+        raise su.ValidationError(f"ширины полосок должны быть разными, от {FILL_MIN_WIDTH:g} до {PLATE_MAX_MM:g} мм")
+    return widths
+
+
+def _fill_recipe_labels(recipes: list[dict]) -> list[str]:
+    """A short label per recipe: the settings in which the recipes differ (P40 V150), one recipe's power and speed, else R1, R2 ..."""
+    differ = [key for key in FILL_LABEL_AXES if len({recipe[key] for recipe in recipes}) > 1]
+    if not differ and len(recipes) == 1:
+        differ = ["power", "speed"]
+    if not differ:
+        return [f"R{n}" for n in range(1, len(recipes) + 1)]
+    return [" ".join(f"{MATRIX_AXES[key]['short']}{recipe[key]:g}" for key in differ) for recipe in recipes]
+
+
+def _fill_sizes(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
+    """Flat fills of chosen recipes at several widths: one Scan strip 4 mm high per recipe and width, each its own layer at constant
+    power. The scan lines run along the strip, so its width is the length of a line; the strips are stacked, recipe by recipe, and
+    start at the right of their labels."""
+    specs = values.get("recipes")
+    if specs is None:
+        specs = [{}]
+    if not isinstance(specs, list) or not 1 <= len(specs) <= FILL_MAX_RECIPES or any(not isinstance(r, dict) for r in specs):
+        raise su.ValidationError(f"задайте от одного до {FILL_MAX_RECIPES} рецептов заливки")
+    widths = _fill_widths(values.get("widths_mm"))
+    if len(specs) * len(widths) > FILL_MAX_STRIPS:
+        raise su.ValidationError(f"не больше {FILL_MAX_STRIPS} полосок (рецепты × ширины), а задано {len(specs) * len(widths)}: "
+                                 "ещё два слоя LightBurn занимают очистка и метки")
+    recipes = []
+    for i, spec in enumerate(specs):
+        unknown = set(spec) - RECIPE_KEYS
+        if unknown:
+            raise su.ValidationError(f"рецепт {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
+        selected, _, _ = _passport_defaults(passport, {**values, **spec})
+        recipes.append({**_process(selected), "global_passes": selected["global_passes"]})
+    short = _fill_recipe_labels(recipes)
+    texts = [f"{short[r]} W{w:g}" for r in range(len(recipes)) for w in widths]
+    char_pitch = FILL_LABEL_PIXEL * 1.45 * 1.35              # the pitch of _text's characters
+    x0 = math.ceil((0.6 + max(len(t) for t in texts) * char_pitch + 1.0) * 10) / 10
+    layers, labels, cells = [], [], []
+    for r, recipe in enumerate(recipes):
+        params = _process(recipe)
+        for w in widths:
+            y = FILL_TOP + len(layers) * (FILL_STRIP_HEIGHT + FILL_GAP)
+            name = f"FILL-R{r + 1}-W{w:g}"
+            labels += _text(texts[len(layers)], 0.6, y + 1.6, FILL_LABEL_PIXEL)
+            layers.append(_layer(len(layers) + 1, name, params, [_rect(x0, y, w, FILL_STRIP_HEIGHT)], mode="Scan",
+                                 line_interval=recipe["line_interval"], global_passes=recipe["global_passes"]))
+            cells.append({"name": name, "parameters": params, "x": x0, "y": y, "width": w, "height": FILL_STRIP_HEIGHT,
+                          "recipe_index": r + 1})
+    width = max(FILL_MIN_PLATE_WIDTH, x0 + max(widths) + 1.0)
+    height = FILL_TOP + len(cells) * FILL_STRIP_HEIGHT + (len(cells) - 1) * FILL_GAP + 1.0
+    return layers, labels, {"width": width, "height": height, "columns": 1, "rows": len(cells), "cells": cells,
+                            "sample_area_mm2": round(sum(c["width"] for c in cells) * FILL_STRIP_HEIGHT, 2),
+                            "fills": {"recipes": recipes, "widths_mm": widths, "strip_height_mm": FILL_STRIP_HEIGHT}}
 
 
 BUILDERS = {"small_patches": _small_patches, "compact_capability": _compact_capability, "text_readability": _text_readability, "calibration": _calibration, "power_speed": _power_speed, "frequency": _frequency,
             "pulse_cutoff": _pulse_cutoff, "line_resolution": _line_resolution, "hatch_interval": _hatch_interval,
-            "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix, "grey_scales": _grey_scales}
+            "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix, "grey_scales": _grey_scales,
+            "fill_sizes": _fill_sizes}
 
 
 def preview(store: Store, device_id: int, material_id: int, test_type: str, settings: dict | None = None) -> dict:
@@ -929,11 +1038,11 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
     limits = {}
     for axis in ("width", "height"):
         try:
-            limit = float((settings or {}).get(f"max_{axis}_mm", 100))
+            limit = float((settings or {}).get(f"max_{axis}_mm", PLATE_DEFAULT_MM))
         except (TypeError, ValueError):
-            raise su.ValidationError("максимальные размеры платы должны быть числами от 1 до 100 мм") from None
-        if not math.isfinite(limit) or not 1 <= limit <= 100:
-            raise su.ValidationError("максимальные размеры платы должны быть от 1 до 100 мм")
+            raise su.ValidationError(f"максимальные размеры платы должны быть числами от 1 до {PLATE_MAX_MM:g} мм") from None
+        if not math.isfinite(limit) or not 1 <= limit <= PLATE_MAX_MM:
+            raise su.ValidationError(f"максимальные размеры платы должны быть от 1 до {PLATE_MAX_MM:g} мм")
         limits[axis] = limit
         values[f"max_{axis}_mm"] = limit
     if test_type == "frequency":
@@ -941,7 +1050,8 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         cw = next((s for s in device["passport"]["pulse_steps"] if s["cutoff_khz"] is None), None)
         if cw:
             values["pulse_width"] = float(cw["pulse_width_ns"])
-    if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability", "grey_scales"):
+    if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability",
+                     "grey_scales", "fill_sizes"):
         layers, label_regions, geometry = BUILDERS[test_type](values, device["passport"])
     else:
         layers, label_regions, geometry = BUILDERS[test_type](values)
@@ -949,6 +1059,8 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         values["matrix"] = geometry["matrix"]
     if test_type == "grey_scales":
         values["scales"] = geometry["scales"]
+    if test_type == "fill_sizes":
+        values["recipes"], values["widths_mm"] = geometry["fills"]["recipes"], geometry["fills"]["widths_mm"]
     # REQ-020: every cell states its task (letters are text, the rest what their LightBurn mode implies), and the plate
     # records the task it was made for: the operator's choice, else its research goal, else what its test type examines
     for layer in layers:

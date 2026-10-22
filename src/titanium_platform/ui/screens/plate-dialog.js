@@ -24,10 +24,14 @@ const PlateDialog = (() => {
   };
   const materialName = (m) => [m.family, m.name, m.grade, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ');
 
-  // REQ-059: шкалы серого — две оси из этих параметров; по умолчанию строки — шаг линий (2000/1500/1200/1000 dpi), столбцы — скорость
-  const GREY_AXES = ['line_interval', 'speed', 'frequency', 'pulse_width', 'passes'];
+  // REQ-059: шкалы серого — две оси из этих параметров и ширины полоски; по умолчанию строки — шаг линий (2000/1500/1200/1000 dpi), столбцы — скорость
+  const GREY_AXES = ['line_interval', 'speed', 'frequency', 'pulse_width', 'passes', 'width'];
+  const greyAxisName = (key) => key === 'width' ? 'Ширина полоски, мм' : MATRIX_AXES[key].name;
   const GREY_DEFAULTS = {rows: 'line_interval', rowValues: '0.0127, 0.0169, 0.0212, 0.0254', columns: 'speed', columnValues: '100, 150, 250',
     min: 1, max: 40, speed: 150, frequency: 60, interval: 0.0169};
+  // Размер заливки: полоски этих ширин для каждого рецепта; рецепт — основные параметры опыта с одним изменённым параметром
+  const FILL_AXES = ['power', 'speed', 'frequency', 'pulse_width', 'line_interval', 'passes'];
+  const FILL_WIDTHS = '5, 20, 50, 100';
 
   async function open(devices, materials, reload, preset = {}) {
     const typeRows = await get('/plate-types');
@@ -37,8 +41,8 @@ const PlateDialog = (() => {
     const material = h('select', {'aria-label': 'Заготовка'}, [h('option', {value: ''}, 'выберите конкретную заготовку')].concat((materials || []).map((m) => h('option', {value: m.id}, materialName(m)))));
     const desc = h('div', {class: 'stack muted small'});
     const hardware = h('p', {class: 'muted small'});
-    const maxWidth = h('input', {type: 'number', min: '1', max: '100', step: 'any', value: '100'});
-    const maxHeight = h('input', {type: 'number', min: '1', max: '100', step: 'any', value: '100'});
+    const maxWidth = h('input', {type: 'number', min: '1', max: '300', step: 'any', value: '100'});
+    const maxHeight = h('input', {type: 'number', min: '1', max: '300', step: 'any', value: '100'});
     const patch = {
       count: h('select', {}, [1, 2, 4].map((n) => h('option', {value: n}, String(n)))),
       size: h('select', {}, [3, 5].map((n) => h('option', {value: n}, `${n} × ${n} мм`))),
@@ -98,9 +102,9 @@ const PlateDialog = (() => {
       field('Шаг wobble, мм (при включении)', matrix.wobbleStep),
       h('p', {class: 'muted small'}, 'Для Q-Pulse используются только ступени из паспорта лазера. Шаг линий действует только для заливки и заполненных букв. Wobble проверяется на векторных линиях и однолинейных буквах.'));
     const grey = {
-      rows: h('select', {'aria-label': 'Строки шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
+      rows: h('select', {'aria-label': 'Строки шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, greyAxisName(key)))),
       rowValues: h('input', {value: GREY_DEFAULTS.rowValues}),
-      columns: h('select', {'aria-label': 'Столбцы шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
+      columns: h('select', {'aria-label': 'Столбцы шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, greyAxisName(key)))),
       columnValues: h('input', {value: GREY_DEFAULTS.columnValues}),
       min: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.min}),
       max: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.max}),
@@ -112,7 +116,18 @@ const PlateDialog = (() => {
       h('div', {class: 'grid g2'}, field('Строки: параметр', grey.rows), field('Значения строк, через запятую', grey.rowValues)),
       h('div', {class: 'grid g2'}, field('Столбцы: параметр', grey.columns), field('Значения столбцов, через запятую', grey.columnValues)),
       h('div', {class: 'grid g2'}, field('Min мощность, % (белый)', grey.min), field('Max мощность, % (чёрный)', grey.max)),
-      h('p', {class: 'muted small'}, 'Шаг линий 0,0127 / 0,0169 / 0,0212 / 0,0254 мм — это 2000 / 1500 / 1200 / 1000 dpi. После фотографии каждая полоска станет шкалой «серый → цвет» в разделе «Фотогравировка».'));
+      h('p', {class: 'muted small'}, 'Шаг линий 0,0127 / 0,0169 / 0,0212 / 0,0254 мм — это 2000 / 1500 / 1200 / 1000 dpi. После фотографии каждая полоска станет шкалой «серый → цвет» в разделе «Фотогравировка».'),
+      h('p', {class: 'muted small'}, 'Ширина полоски, мм — длина её строк: ступень — 1/16 ширины, не уже 1 мм (ширина от 16 мм). Без этой оси ширина полосок подбирается под предельную ширину платы, не больше 40 мм.'));
+    const fill = {
+      widths: h('input', {value: FILL_WIDTHS, 'aria-label': 'Ширины полосок заливки'}),
+      axis: h('select', {'aria-label': 'Параметр рецептов заливки'}, FILL_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
+      values: h('input', {placeholder: 'Пусто — один рецепт; например: 20, 40, 60', 'aria-label': 'Значения рецептов заливки'}),
+    };
+    const fillCard = h('div', {class: 'card stack', style: 'display:none'},
+      h('p', {class: 'muted small'}, 'Каждая полоска — свой слой заливки LightBurn (Scan) высотой 4 мм при постоянной мощности. Строки идут вдоль полоски, поэтому её ширина — длина строки. '
+        + 'Рецепт — «Основные параметры опыта»; рецептов столько, сколько значений меняемого параметра. До 7 рецептов и 5 ширин, не больше 28 полосок.'),
+      field('Ширины полосок, мм, через запятую (3–300)', fill.widths),
+      h('div', {class: 'grid g2'}, field('Рецепты: меняемый параметр', fill.axis), field('Значения по рецептам, через запятую', fill.values)));
     const settings = {
       power: h('input', {type: 'number', min: '1', max: '100', step: 'any', value: DEFAULTS.power}),
       frequency: h('input', {type: 'number', min: '1', step: 'any', value: DEFAULTS.frequency}),
@@ -182,7 +197,9 @@ const PlateDialog = (() => {
       matrixCard.style.display = type.value === 'material_matrix' ? '' : 'none';
       smallCard.style.display = type.value === 'small_patches' ? '' : 'none';
       greyCard.style.display = type.value === 'grey_scales' ? '' : 'none';
-      if (resetSize) maxWidth.value = maxHeight.value = type.value === 'small_patches' ? '25' : '100';
+      fillCard.style.display = type.value === 'fill_sizes' ? '' : 'none';
+      // полоски заливки до 100 мм вместе с подписями и метками шире 100 мм
+      if (resetSize) maxWidth.value = maxHeight.value = type.value === 'small_patches' ? '25' : type.value === 'fill_sizes' ? '150' : '100';
       if (resetSize && type.value === 'grey_scales') {
         settings.speed.value = GREY_DEFAULTS.speed;
         settings.interval.value = GREY_DEFAULTS.interval;
@@ -242,7 +259,7 @@ const PlateDialog = (() => {
       field('Заготовка', material),
       h('div', {class: 'grid g2'}, field('Максимальная ширина платы, мм', maxWidth),
         field('Максимальная высота платы, мм', maxHeight)),
-      matrixCard, smallCard, greyCard,
+      matrixCard, smallCard, greyCard, fillCard,
       h('details', {class: 'card'}, h('summary', {}, 'Добавить новую заготовку'),
         h('div', {class: 'stack', style: 'margin-top:12px'},
           h('div', {class: 'grid g3'}, field('Материал', newMaterial.family), field('Название / лист', newMaterial.name), field('Марка / сплав', newMaterial.grade), field('Партия', newMaterial.batch)),
@@ -271,15 +288,19 @@ const PlateDialog = (() => {
           wobble_step: +matrix.wobbleStep.value,
           x_min: +matrix.xMin.value, x_max: +matrix.xMax.value, x_count: +matrix.xCount.value,
           y_min: +matrix.yMin.value, y_max: +matrix.yMax.value, y_count: +matrix.yCount.value}, ...task.body()};
+      const values = (input, label) => {
+        const numbers = input.value.split(/[,;\s]+/).filter(Boolean).map(Number);
+        if (!numbers.length || numbers.some((n) => !Number.isFinite(n))) throw new Error(`${label}: укажите числа через запятую`);
+        return numbers;
+      };
       if (type.value === 'grey_scales') {
-        const values = (input, label) => {
-          const numbers = input.value.split(/[,;\s]+/).filter(Boolean).map(Number);
-          if (!numbers.length || numbers.some((n) => !Number.isFinite(n))) throw new Error(`${label}: укажите числа через запятую`);
-          return numbers;
-        };
         out.power = +grey.max.value;
         out.scales = {rows: {axis: grey.rows.value, values: values(grey.rowValues, 'Строки')},
           columns: {axis: grey.columns.value, values: values(grey.columnValues, 'Столбцы')}, min_power: +grey.min.value, max_power: +grey.max.value};
+      }
+      if (type.value === 'fill_sizes') {
+        out.widths_mm = values(fill.widths, 'Ширины полосок');
+        out.recipes = fill.values.value.trim() ? values(fill.values, 'Рецепты').map((value) => ({[fill.axis.value]: value})) : [{}];
       }
       if (type.value === 'small_patches') {
         const count = +patch.count.value;

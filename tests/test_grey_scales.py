@@ -66,6 +66,84 @@ def test_settings_the_laser_cannot_engrave_and_too_many_tiles_are_refused(world)
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"min_power": 50}})
 
 
+# -- the ramp width as an axis: how a colour depends on the length of the scan line -------------------------------------------------
+WIDTHS = {"rows": {"axis": "width", "values": [20, 40, 70, 100, 140]}, "columns": {"axis": "speed", "values": [150]}, "min_power": 2}
+
+
+def test_a_width_axis_gives_each_ramp_its_own_width_and_a_column_the_width_of_its_widest_ramp(world):
+    """The same settings on ramps 20 to 140 mm wide: each ramp's 16 steps are a sixteenth of its width; the ramps start at their
+    column's left edge."""
+    made = cp.create(world["store"], world["laser"]["id"], world["titanium"]["id"], "grey_scales", {**SETTINGS, "scales": WIDTHS, "max_width_mm": 170})
+    plan = plans.get_plan(world["store"], made["plan_id"])
+    tiles = [layer for layer in plan["layers"] if layer.get("ramp")]
+    assert [t["name"] for t in tiles] == ["GREY-W20-V150", "GREY-W40-V150", "GREY-W70-V150", "GREY-W100-V150", "GREY-W140-V150"]
+    assert [t["ramp"]["width"] for t in tiles] == [20, 40, 70, 100, 140] and {t["ramp"]["x"] for t in tiles} == {cp.GREY_LABEL_WIDTH}
+    assert all(t["parameters"] == {"power": 40, "min_power": 2, "speed": 150, "frequency": 60, "pulse_width": 300, "line_interval": 0.0169,
+                                   "passes": 1} for t in tiles)
+    assert made["summary"]["size_mm"]["width"] == pytest.approx(cp.GREY_LABEL_WIDTH + 140 + 1 + 9)       # labels, widest ramp, markers
+    assert plan["experiment"]["test_settings"]["scales"] == {
+        "rows": {"axis": "width", "values": [20, 40, 70, 100, 140]}, "columns": {"axis": "speed", "values": [150]},
+        "min_power": 2, "max_power": 40, "steps": 16, "step_mm": 1.25}
+    images = [layer for layer in lightburn.parse_bytes(plans.export_lbrn2(plan)).layers if layer.layer_type == "Image"]
+    for layer, wanted in zip(images, (20, 40, 70, 100, 140)):
+        (region,) = layer.regions
+        xs = [p[0] for p in region.polygon]
+        grey = cv2.imdecode(np.frombuffer(region.bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
+        assert max(xs) - min(xs) == pytest.approx(wanted, abs=1e-3) and grey[0, 0] == 255 and grey[0, -1] == 0
+    # widths on the columns: the next column starts after the widest ramp of the one before
+    across = cp.preview(world["store"], world["laser"]["id"], world["titanium"]["id"], "grey_scales",
+                        {**SETTINGS, "scales": {"rows": {"axis": "speed", "values": [100, 150]}, "columns": {"axis": "width", "values": [20, 40]}}})
+    assert [(c["name"], c["x"], c["width"]) for c in across["geometry"]["cells"]] == [
+        ("GREY-V100-W20", 9, 20), ("GREY-V100-W40", 31, 40), ("GREY-V150-W20", 9, 20), ("GREY-V150-W40", 31, 40)]
+    assert across["geometry"]["width"] == 9 + 20 + 2 + 40 + 1
+
+
+def test_a_ramp_too_narrow_for_its_steps_a_width_by_factors_and_a_plate_beyond_its_limit_are_refused(world):
+    s, laser, ti = world["store"], world["laser"]["id"], world["titanium"]["id"]
+    with pytest.raises(su.ValidationError, match="шириной 15 мм даёт ступень 0.9375 мм.*не меньше 16 мм"):
+        cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"rows": {"axis": "width", "values": [15, 40]}}})
+    with pytest.raises(su.ValidationError, match="ширина полоски задаётся значениями в мм"):
+        cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"columns": {"axis": "width", "factors": [1, 2]}}})
+    with pytest.raises(su.ValidationError, match="занимает 159.0 × 46.0 мм; заданный предел — 100 × 100 мм"):
+        cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": WIDTHS})
+
+
+def test_a_photo_work_orders_one_ramp_of_its_own_width_at_its_own_settings(world):
+    """How a photo work orders a ramp from code: its base settings, one width and one speed, its Min and Max."""
+    base = {"power": 35, "speed": 300, "frequency": 60, "pulse_width": 300, "line_interval": 0.0169, "passes": 1}
+    settings = {**base, "max_width_mm": 150, "scales": {"rows": {"axis": "width", "values": [100]}, "columns": {"axis": "speed", "values": [300]},
+                                                        "min_power": 3, "max_power": 35}}
+    s, laser, ti = world["store"], world["laser"]["id"], world["titanium"]["id"]
+    assert cp.preview(s, laser, ti, "grey_scales", settings)["experiment"]["summary"]["layers"] == 1
+    made = cp.create(s, laser, ti, "grey_scales", settings)
+    (tile,) = [layer for layer in plans.get_plan(s, made["plan_id"])["layers"] if layer.get("ramp")]
+    assert (tile["name"], tile["ramp"]["width"], tile["ramp"]["height"]) == ("GREY-W100-V300", 100, cp.GREY_TILE_HEIGHT)
+    assert tile["parameters"] == {**base, "min_power": 3}
+    (image,) = [layer for layer in lightburn.parse_bytes(plans.export_lbrn2(plans.get_plan(s, made["plan_id"]))).layers if layer.layer_type == "Image"]
+    assert (image.power, image.image_summary()["min_power"], image.speed, image.line_interval) == (35, 3, 300, 0.0169)
+
+
+def test_ramps_of_different_widths_are_each_measured_step_by_step(world):
+    s = world["store"]
+    scales = {"rows": {"axis": "width", "values": [20, 40]}, "columns": {"axis": "speed", "values": [150, 250]}, "min_power": 2}
+    made = cp.create(s, world["laser"]["id"], world["titanium"]["id"], "grey_scales", {**SETTINGS, "scales": scales, "max_width_mm": 110})
+    plan = plans.get_plan(s, made["plan_id"])
+    photo = synth.plate_photo(plan, {}, size=(1300, 2700), step_rgb=lambda name, grey: step_colour(grey))
+    pid = ig.create_pair(s, device_id=world["laser"]["id"], lens_id=world["lens"]["id"], stand_id=world["stand"]["id"],
+                         lightburn_name="widths.lbrn2", lightburn_bytes=plans.export_lbrn2(plan), photo_name="widths.png",
+                         context={"material_id": world["titanium"]["id"]}, photo_bytes=cv2.imencode(".png", photo)[1].tobytes())
+    report = ig.check_pair(s, pid)
+    assert report["problems"] == [], report["problems"]
+    tiles = {rep["name"]: rep for rep in report["layers"] if rep["name"].startswith("GREY-")}
+    assert set(tiles) == {"GREY-W20-V150", "GREY-W20-V250", "GREY-W40-V150", "GREY-W40-V250"}
+    for name, tile in tiles.items():
+        tonal = tile["tonal"]
+        assert len(tonal["bins"]) == 16 and tonal["steps_missed"] == 0 and tonal["power_range"] == [2.0, 40.0], name
+        for step in tonal["bins"]:
+            drawn = color.srgb8_to_lab(np.array([step_colour(step["gray"])], np.float64))[0]
+            assert color.delta_e([step["L"], step["a"], step["b"]], drawn) < 3, (name, step)
+
+
 def test_a_photographed_plate_gives_each_tile_a_scale_with_every_step_at_its_power(world):
     s = world["store"]
     made = cp.create(s, world["laser"]["id"], world["titanium"]["id"], "grey_scales", {**SETTINGS, "scales": SMALL})

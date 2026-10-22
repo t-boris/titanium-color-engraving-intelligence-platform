@@ -54,7 +54,8 @@ def build_server(store: Store) -> FastMCP:
 
     @server.tool()
     def preview_lightburn_test(session_id: int, test_type: str, settings: dict | None = None) -> dict:
-        """Preview a content-sized plate; small_patches makes 1–4 squares of 3–5 mm. The 100 mm size is a ceiling.
+        """Preview a content-sized plate; small_patches makes 1–4 squares of 3–5 mm, fill_sizes 4 mm high strips of
+        settings.recipes at settings.widths_mm. The size limit (default 100 mm, at most 300 mm) is a ceiling.
         settings.pulse_width (ns) is required and must be a step of the laser: no value is filled in."""
         return research.preview_plate(store, session_id, test_type, settings)
 

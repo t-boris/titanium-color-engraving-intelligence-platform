@@ -424,7 +424,7 @@ TOOL_SPECS = [
      "parameters": {"type": "object", "properties": {}, "additionalProperties": False}, "strict": True},
     {"type": "function", "name": "suggest_next_test", "description": "Read the deterministic, evidence-based next test suggestion without creating a plate.",
      "parameters": {"type": "object", "properties": {}, "additionalProperties": False}, "strict": True},
-    {"type": "function", "name": "preview_test", "description": "Validate and preview a content-sized LightBurn plate. For one to four tiny filled samples use test_type=small_patches; settings.patch_size_mm=3..5 and settings.patches=[{}, {power:30}, ...] (one dict per square). Set settings.registration=none for the smallest footprint (3 mm patch occupies 6 x 6 mm); full adds QR and four photo-registration marks. Optional settings.max_width_mm/max_height_mm constrain the full size; 100 x 100 mm is only an upper bound. For speed x wobble on open vector letters use test_type=material_matrix; settings.matrix={x_axis:speed,y_axis:wobble_size,geometry:vector_text,x_min:500,x_max:2300,x_count:3,y_min:0,y_max:0.08,y_count:3,wobble_step:0.02}. Zero wobble size is the OFF control. Laser limits, titanium cleaning first and <=30 output layers are enforced.",
+    {"type": "function", "name": "preview_test", "description": "Validate and preview a content-sized LightBurn plate. For one to four tiny filled samples use test_type=small_patches; settings.patch_size_mm=3..5 and settings.patches=[{}, {power:30}, ...] (one dict per square). Set settings.registration=none for the smallest footprint (3 mm patch occupies 6 x 6 mm); full adds QR and four photo-registration marks. Optional settings.max_width_mm/max_height_mm (default 100, at most 300 mm) constrain the full size; they are only an upper bound. To see how a flat fill's colour changes with its size use test_type=fill_sizes; settings.recipes=[{}, {power:40}, ...] (1..7, missing keys from the base settings) and settings.widths_mm=[5,20,50,100] (1..5 widths of 3..300 mm) make one 4 mm high Scan strip per recipe and width, at most 28. For speed x wobble on open vector letters use test_type=material_matrix; settings.matrix={x_axis:speed,y_axis:wobble_size,geometry:vector_text,x_min:500,x_max:2300,x_count:3,y_min:0,y_max:0.08,y_count:3,wobble_step:0.02}. Zero wobble size is the OFF control. Laser limits, titanium cleaning first and <=30 output layers are enforced.",
      "parameters": {"type": "object", "properties": {"test_type": {"type": "string"}, "settings": SETTINGS_SCHEMA},
                     "required": ["test_type", "settings"]}, "strict": False},
     {"type": "function", "name": "create_test", "description": "Create one validated LightBurn plate for this research session; use only when the user asks to create a test.",
@@ -502,7 +502,9 @@ working_memory — конспект прошлых решений и гипот�
 если специальная плата и физическое измерение ещё не реализованы. Не выдавай поверхностный тест за проверку глубины или реза.
 Для предложения следующего теста укажи гипотезу, два меняемых параметра, фиксированные параметры,
 проверяемый критерий и площадь платы. Предпочитай маленький тест, который снимает конкретную неопределённость.
-100 × 100 мм — лишь верхний предел, а не желаемый размер. Для простой проверки одного режима или
+Предел размера платы (по умолчанию 100 × 100 мм, не больше 300 мм) — лишь верхняя граница, а не желаемый размер.
+Чтобы узнать, как цвет заливки меняется с её размером, выбирай fill_sizes: settings.recipes (1–7 рецептов)
+и settings.widths_mm (1–5 ширин полосок, 3–300 мм). Для простой проверки одного режима или
 сравнения 2–4 заливок выбирай small_patches: квадрат 3–5 мм, settings.patches с полными или частичными
 параметрами каждого участка, settings.max_width_mm/max_height_mm как лимит всего файла.
 Для минимальной площади ставь settings.registration="none"; тогда автоматическое совмещение фото менее

@@ -4,7 +4,8 @@ import numpy as np
 from fastapi.testclient import TestClient
 import pytest
 
-from titanium_platform import capability_plates as cp, devices, lenses, lightburn, photo, plans
+import synth
+from titanium_platform import capability_plates as cp, color, devices, ingest as ig, lenses, lightburn, photo, plans
 from titanium_platform import setup as su
 from titanium_platform.api.app import create_app
 
@@ -97,8 +98,9 @@ def test_markers_and_labels_burn_with_the_operators_marker_layer_settings_never_
 
 
 def test_every_plate_type_explains_purpose_method_and_findings():
-    assert len(cp.PLATE_TYPES) == 13
-    assert len({item["id"] for item in cp.PLATE_TYPES}) == 13
+    assert len(cp.PLATE_TYPES) == 14
+    assert len({item["id"] for item in cp.PLATE_TYPES}) == 14
+    assert set(cp.BUILDERS) == {item["id"] for item in cp.PLATE_TYPES}
     assert all(item.get("purpose") and item.get("action") and item.get("finds") for item in cp.PLATE_TYPES)
 
 
@@ -590,3 +592,160 @@ def test_the_lightburn_notes_name_a_lens_whose_focal_length_is_unknown(store):
     made = cp.create(store, laser["id"], titanium["id"], "calibration", JOB)
     notes = plans.export_lbrn2(plans.get_plan(store, made["plan_id"])).decode("utf-8")
     assert "Lens: Unmarked F-theta, focal length unknown" in notes and "Lens: Unmarked F-theta  mm" not in notes
+
+
+# -- the size of a plate and the fill-size plate -----------------------------------------------------------------------------------
+FILL = {**JOB, "max_width_mm": 150}      # strips up to 100 mm with their labels and markers are wider than 100 mm
+SIX = ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")
+
+
+def test_a_plate_may_be_up_to_300_mm_but_never_larger_than_the_lens_field(store):
+    """The operator's Big Plate is 150 mm: the size limit goes to 300 mm, and the lens field still refuses a plate it cannot hold."""
+    laser, _, titanium = hardware(store)                                                  # its lens field is 170 mm
+    full = {**JOB, "recipes": [{"power": p} for p in (10, 20, 30, 40, 50, 60, 70)], "widths_mm": [5, 10, 20, 40],
+            "max_width_mm": 300, "max_height_mm": 300}
+    with pytest.raises(su.ValidationError, match="larger than the work field 170 x 170 mm"):
+        cp.preview(store, laser["id"], titanium["id"], "fill_sizes", full)            # 28 strips stack to 179 mm with the markers
+    for limit in (0.5, 301, "wide"):
+        with pytest.raises(su.ValidationError, match="от 1 до 300 мм"):
+            cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {**FILL, "max_height_mm": limit})
+    big = lenses.create_lens(store, "F-Theta 420", 420, 300)
+    lenses.install(store, laser["id"], big["id"])
+    made = cp.create(store, laser["id"], titanium["id"], "fill_sizes", full)
+    project = lightburn.parse_bytes(plans.export_lbrn2(plans.get_plan(store, made["plan_id"])))
+    assert made["summary"]["size_mm"]["height"] == pytest.approx(179) and made["summary"]["limit_mm"] == {"width": 300, "height": 300}
+    assert made["summary"]["work_field"]["checked"] and len(project.layers) == 30 and max(layer.index for layer in project.layers) == 29
+
+
+def test_a_fill_size_plate_makes_one_constant_power_scan_strip_per_recipe_and_width(store):
+    """By default one recipe, the plate's own settings, at 5, 20, 50 and 100 mm: each strip 4 mm high and its own layer."""
+    laser, _, titanium = hardware(store)
+    made = cp.create(store, laser["id"], titanium["id"], "fill_sizes", FILL)
+    plan = plans.get_plan(store, made["plan_id"])
+    project = lightburn.parse_bytes(plans.export_lbrn2(plan))
+    strips = project.layers[2:]
+    assert project.layer(0).name.startswith("CLEAN-") and project.layer(1).name == "Markers and labels"
+    assert [layer.name for layer in strips] == ["FILL-R1-W5", "FILL-R1-W20", "FILL-R1-W50", "FILL-R1-W100"]
+    assert all(layer.layer_type == "Scan" and len(layer.regions) == 1 for layer in strips)
+    assert [layer.regions[0].width for layer in strips] == pytest.approx([5, 20, 50, 100])
+    assert [layer.regions[0].height for layer in strips] == pytest.approx([4] * 4)
+    assert {(layer.power, layer.frequency_khz, layer.speed, layer.pulse_width, layer.line_interval, layer.passes) for layer in strips} == {
+        (20, 48, 900, 200, 0.025, 1)}
+    assert all(layer.unknown_settings == [] and not layer.unsupported for layer in project.layers)
+    (strip_x,) = {layer["regions"][0]["x"] for layer in plan["layers"]}               # every strip starts right of the labels
+    assert plan["marker_labels"] and max(r["x"] + r["width"] for r in plan["marker_labels"]) < strip_x
+    assert {layer["task"] for layer in plan["layers"]} == {"fill"} and plan["experiment"]["engraving_task"]["kind"] == "fill"
+    assert made["summary"]["test_features"] == 4 and made["summary"]["sample_area_mm2"] == 4 * (5 + 20 + 50 + 100)
+    assert made["summary"]["size_mm"] == {"width": 114.2, "height": 35}
+    settings = plan["experiment"]["test_settings"]
+    assert settings["widths_mm"] == [5, 20, 50, 100]
+    assert settings["recipes"] == [{"power": 20, "frequency": 48, "speed": 900, "pulse_width": 200, "line_interval": 0.025, "passes": 1,
+                                    "global_passes": 1}]
+    with pytest.raises(su.ValidationError, match="занимает 114.2 × 35.0 мм; заданный предел — 100 × 100 мм"):
+        cp.preview(store, laser["id"], titanium["id"], "fill_sizes", JOB)
+
+
+def test_a_fill_size_plate_takes_explicit_recipes_and_widths_from_code(store):
+    """How a photo work orders one: its recipes, each missing setting from the plate's base settings, at the widths it needs."""
+    laser, _, titanium = hardware(store)
+    settings = {"power": 30, "speed": 150, "frequency": 60, "pulse_width": 200, "line_interval": 0.0169, "passes": 1,
+                "recipes": [{"power": 25}, {"power": 45, "speed": 300, "line_interval": 0.0254}], "widths_mm": [38.4, 150],
+                "max_width_mm": 170}
+    previewed = cp.preview(store, laser["id"], titanium["id"], "fill_sizes", settings)
+    made = cp.create(store, laser["id"], titanium["id"], "fill_sizes", settings)
+    plan = plans.get_plan(store, made["plan_id"])
+    layers = {layer["name"]: layer for layer in plan["layers"]}
+    assert list(layers) == ["FILL-R1-W38.4", "FILL-R1-W150", "FILL-R2-W38.4", "FILL-R2-W150"]
+    assert {name: (layer["regions"][0]["width"], layer["regions"][0]["height"]) for name, layer in layers.items()} == {
+        "FILL-R1-W38.4": (38.4, 4), "FILL-R1-W150": (150, 4), "FILL-R2-W38.4": (38.4, 4), "FILL-R2-W150": (150, 4)}
+    first = {"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.0169, "passes": 1}
+    second = {"power": 45, "frequency": 60, "speed": 300, "pulse_width": 200, "line_interval": 0.0254, "passes": 1}
+    assert [layer["parameters"] for layer in plan["layers"]] == [first, first, second, second]
+    plate = store.one("SELECT cells_json FROM plate WHERE id=?", (made["plate_id"],))
+    assert [(cell["name"], cell["width"], cell["recipe_index"]) for cell in json.loads(plate["cells_json"])] == [
+        ("FILL-R1-W38.4", 38.4, 1), ("FILL-R1-W150", 150, 1), ("FILL-R2-W38.4", 38.4, 2), ("FILL-R2-W150", 150, 2)]
+    exported = lightburn.parse_bytes(plans.export_lbrn2(plan)).layers[2:]
+    assert [(layer.power, layer.speed, layer.line_interval) for layer in exported] == [(25, 150, 0.0169)] * 2 + [(45, 300, 0.0254)] * 2
+    assert previewed["experiment"]["summary"]["size_mm"] == made["summary"]["size_mm"]
+    assert plan["experiment"]["test_settings"]["recipes"] == [{**first, "global_passes": 1}, {**second, "global_passes": 1}]
+
+
+def test_a_fill_size_plate_refuses_what_it_cannot_make(store):
+    laser, _, titanium = hardware(store)
+
+    def preview(**more):
+        return cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {**FILL, **more})
+
+    with pytest.raises(su.ValidationError, match="от одного до 7 рецептов"):
+        preview(recipes=[{"power": p} for p in range(10, 90, 10)])
+    with pytest.raises(su.ValidationError, match="от одной до 5 ширин"):
+        preview(widths_mm=[5, 10, 20, 30, 40, 50])
+    for widths in ([2, 10], [10, 10], [301], [float("nan")]):
+        with pytest.raises(su.ValidationError, match="разными, от 3 до 300 мм"):
+            preview(widths_mm=widths)
+    with pytest.raises(su.ValidationError, match="не больше 28 полосок .*задано 35"):
+        preview(recipes=[{"power": p} for p in (10, 20, 30, 40, 50, 60, 70)], widths_mm=[5, 10, 20, 30, 40])
+    with pytest.raises(su.ValidationError, match="рецепт 2: неизвестные параметры: wobble_size"):
+        preview(recipes=[{}, {"wobble_size": 0.1}])
+    with pytest.raises(su.ValidationError, match="частота должна быть в диапазоне"):
+        preview(recipes=[{"frequency": 9000}])
+    with pytest.raises(su.ValidationError, match="выберите длительность импульса"):
+        cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {"max_width_mm": 150})
+
+
+def test_each_strip_of_a_photographed_fill_size_plate_is_one_flat_fill_measured_inside_its_edges(store):
+    """The photograph check measures every strip as one fill, its edges left out (DEC-028), and accepting it stores one observation
+    per strip with that strip's settings."""
+    laser, lens, titanium = hardware(store)
+    store.set_setting("allow_non_raw_photos", True)                      # tests use PNG renders; real use requires RAW
+    stand = su.save_capture_setup(store, "Rig", "cam", "LED", "90", "ColorChecker Classic")
+    made = cp.create(store, laser["id"], titanium["id"], "fill_sizes", {**JOB, "recipes": [{"power": 20}, {"power": 40}], "widths_mm": [5, 20, 50]})
+    plan = plans.get_plan(store, made["plan_id"])
+    drawn = dict(zip((layer["name"] for layer in plan["layers"]),
+                     [(205, 190, 150), (200, 160, 90), (150, 90, 150), (110, 90, 170), (80, 110, 190), (70, 130, 200)]))
+    scale = 20.0                                                           # photo pixels per millimetre
+    photo_png = cv2.imencode(".png", synth.plate_photo(plan, drawn, scale=scale, size=(1200, 2000)))[1].tobytes()
+    pid = ig.create_pair(store, device_id=laser["id"], lens_id=lens["id"], stand_id=stand["id"], lightburn_name="fill.lbrn2",
+                         lightburn_bytes=plans.export_lbrn2(plan), photo_name="fill.png", context={"material_id": titanium["id"]},
+                         photo_bytes=photo_png)
+    report = ig.check_pair(store, pid)
+    assert report["problems"] == [] and report["discrepancies"] == []
+    strips = {rep["name"]: rep for rep in report["layers"] if rep["name"].startswith("FILL-")}
+    assert set(strips) == set(drawn)
+    for layer in plan["layers"]:
+        rep, region = strips[layer["name"]], layer["regions"][0]
+        assert rep["role"] == "test feature" and rep["compatible"], rep["notes"]
+        assert color.delta_e(rep["measured_lab"], color.srgb8_to_lab(np.array([drawn[layer["name"]]], np.float64))[0]) < 2
+        assert 0 < rep["pixels"] < 0.6 * region["width"] * region["height"] * scale ** 2          # its interior only
+    ig.review_masks(store, pid)
+    ig.accept_pair(store, pid)
+    rows = store.query("SELECT layer_index, parameters_json, evidence_json, task_kind FROM observation WHERE pair_id=? AND layer_index>0 "
+                       "ORDER BY layer_index", (pid,))
+    assert len(rows) == len(plan["layers"]) == 6
+    for row, layer in zip(rows, plan["layers"]):
+        params, evidence = json.loads(row["parameters_json"]), json.loads(row["evidence_json"])
+        assert (row["layer_index"], evidence["layer_name"], row["task_kind"]) == (layer["index"], layer["name"], "fill")
+        assert {key: params[key] for key in SIX} == layer["parameters"] and params["layer_type"] == "Scan"
+
+
+def test_api_makes_a_fill_size_plate_on_a_plate_larger_than_100_mm(tmp_path):
+    with TestClient(create_app(tmp_path / "data")) as client:
+        laser = client.post("/api/devices/from-template", json={
+            "template": "jpt-ydflp-e-60-m7-m-r", "name": "JPT M7", "serial": "API-FILL"}).json()
+        lens = client.post("/api/lenses", json={"name": "F-Theta", "focal_length_mm": 174, "field_mm": 170}).json()
+        client.put(f"/api/devices/{laser['id']}/lens", json={"lens_id": lens["id"]})
+        client.put("/api/marker-layer", json={"power": 25, "frequency": 60, "speed": 150, "pulse_width": 200, "line_interval": 0.01, "passes": 1})
+        titanium = client.post("/api/materials", json={"name": "Grade 2", "grade": "Grade 2", "batch": "FILL-1"}).json()
+        request = {"device_id": laser["id"], "material_id": titanium["id"], "pulse_width": 200, "test_type": "fill_sizes",
+                   "recipes": [{"power": 20}, {"power": 40}], "widths_mm": [10, 140], "max_width_mm": 160, "max_height_mm": 160}
+        preview = client.post("/api/capability-plates/preview", json=request)
+        assert preview.status_code == 200 and preview.json()["output_layers"] == 6
+        assert preview.json()["summary"]["size_mm"]["width"] > 140
+        created = client.post("/api/capability-plates", json=request)
+        assert created.status_code == 201
+        project = lightburn.parse_bytes(client.get(f"/api/plans/{created.json()['plan_id']}/export.lbrn2").content)
+        assert [(layer.name, layer.power) for layer in project.layers[2:]] == [
+            ("FILL-R1-W10", 20), ("FILL-R1-W140", 20), ("FILL-R2-W10", 40), ("FILL-R2-W140", 40)]
+        assert any(t["id"] == "fill_sizes" for t in client.get("/api/plate-types").json())
+        too_big = client.post("/api/capability-plates/preview", json={**request, "max_width_mm": 301})
+        assert too_big.status_code == 422 and "300" in too_big.json()["error"]
