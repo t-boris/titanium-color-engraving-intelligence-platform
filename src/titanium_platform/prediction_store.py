@@ -38,7 +38,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import color, colormap, engraving_time, experiments, grayscale, ingest, lightburn as lb, photo_modes, prediction, tasks
+from . import color, colormap, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules, prediction, tasks
 from .db import Store
 from .prediction import PredictionError
 
@@ -540,6 +540,59 @@ def with_colours(item: dict, min_power: float, max_power: float) -> dict:
     return out
 
 
+# the colours shown for the parts of a picture on its overlay, in the order of ``people.PARTS``
+PART_COLOURS = ((90, 90, 90), (160, 90, 40), (255, 190, 140), (255, 140, 100), (70, 120, 255), (60, 200, 90))
+
+
+def part_scores(item: dict) -> np.ndarray:
+    """The people model's scores of the item's picture (``people.scores``), computed once and kept with the upload."""
+    if "part_scores" not in item:
+        item["part_scores"] = people.scores(item["bgr_full"])
+    return item["part_scores"]
+
+
+def parts_of(item: dict) -> list[dict]:
+    """The parts the picture has, at preview size: each one's share of the opaque picture and its mean colour in the photograph."""
+    rows, cols = item["picture"].shape
+    parts = people.parts_at(part_scores(item), (cols, rows))
+    opaque = item["alpha"] >= photo_modes.ALPHA_MIN
+    total = int(opaque.sum()) or 1
+    out = []
+    for index, name in enumerate(people.PARTS):
+        mask = (parts == index) & opaque
+        if not mask.any():
+            continue
+        lab = item["lab"][mask].mean(axis=0)
+        rgb = np.clip(color.lab_to_srgb8(lab[None]), 0, 255).astype(int)[0]
+        out.append({"part": name, "share": round(float(mask.sum()) / total, 4), "lab": [round(float(v), 1) for v in lab],
+                    "hex": "#%02x%02x%02x" % tuple(rgb)})
+    return out
+
+
+def parts_overlay(item: dict) -> np.ndarray:
+    """The preview of the picture with every part tinted in its colour (``PART_COLOURS``), RGB uint8, to check what the model found."""
+    rows, cols = item["picture"].shape
+    parts = people.parts_at(part_scores(item), (cols, rows))
+    grey = np.repeat((np.clip(item["picture"], 0, 1) * 255)[..., None], 3, axis=-1)
+    tint = np.asarray(PART_COLOURS, np.float32)[parts]
+    return (grey * 0.45 + tint * 0.55).round().astype(np.uint8)
+
+
+def with_rules(item: dict, min_power: float, max_power: float, rules: list[dict]) -> dict:
+    """The item as it is engraved at Min..Max: its own greys (or the greys chosen for its colours with ``by_colour``) and, inside each
+    part that has a rule, the greys of that rule (``picture_rules.greys``), with what each rule covers and reaches."""
+    low, high = check_power_range(min_power, max_power)
+    shown = with_colours(item, low, high) if item["by_colour"] else item
+    if not rules:
+        return shown
+    rows, cols = item["picture"].shape
+    base = (np.clip(shown["picture"], 0, 1) * 255).round().astype(np.uint8)
+    done = picture_rules.greys(item["lab"], base, people.parts_at(part_scores(item), (cols, rows)), rules, item["curve"], low, high)
+    out = _with_levels({**shown, "picture": np.ascontiguousarray(done["grey8"].astype(np.float32) / (grayscale.LEVELS - 1))})
+    out["rules_report"] = done["rules"]
+    return out
+
+
 def picture_time(mode: Mode, width_mm: float, height_mm: float) -> dict:
     """How long the picture engraves at ``mode``: its whole rectangle is scanned row by row (in grayscale mode every grey fires, the
     white at Min), at the mode's settings, one piece of scan line per row (``engraving_time.estimate``, DEC-101)."""
@@ -548,18 +601,24 @@ def picture_time(mode: Mode, width_mm: float, height_mm: float) -> dict:
     return engraving_time.estimate([{"index": 0, "name": "C00", "parameters": settings, "area_mm2": width_mm * height_mm, "scan_pieces": rows}])
 
 
-def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float) -> np.ndarray:
-    """The 8-bit upright picture written to the LightBurn file: the uploaded grey, or with ``by_colour`` the greys chosen for its colours
-    at the layer's DPI (no finer: the laser does not engrave finer). Transparent pixels are white, so they get Min power."""
+def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float, rules: list[dict] | None = None) -> np.ndarray:
+    """The 8-bit upright picture written to the LightBurn file: the uploaded grey, or with ``by_colour`` the greys chosen for its colours,
+    and inside each part with a rule that rule's greys, at the layer's DPI (no finer: the laser does not engrave finer). Transparent pixels
+    are white, so they get Min power."""
     rows, cols = item["grey_full"].shape
     dpi = grayscale.image_dpi(item["mode"].line_interval)
     target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
     fit = (lambda a: a) if target[0] >= cols else (lambda a: cv2.resize(a, target, interpolation=cv2.INTER_AREA))
     alpha = fit(item["alpha_full"])
+    low, high = check_power_range(min_power, max_power)
+    lab = _lab_of(fit(item["bgr_full"])) if item.get("by_colour") or rules else None
     if item.get("by_colour"):
-        lab = _lab_of(fit(item["bgr_full"]))
-        grey = grayscale.grey_for_colours(lab, item["curve"], *check_power_range(min_power, max_power))["grey8"].astype(np.float32) / 255
+        grey = grayscale.grey_for_colours(lab, item["curve"], low, high)["grey8"].astype(np.float32) / 255
     else:
         grey = fit(item["grey_full"])
+    if rules:
+        base = (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)
+        parts = people.parts_at(part_scores(item), (grey.shape[1], grey.shape[0]))
+        grey = picture_rules.greys(lab, base, parts, rules, item["curve"], low, high)["grey8"].astype(np.float32) / 255
     grey = np.where(alpha >= photo_modes.ALPHA_MIN, grey, 1.0)
     return (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)

@@ -50,6 +50,13 @@ ctx.fetch = async (url, opts = {}) => {
     return answer(view());
   }
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
+  if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
+  if (path === `/api/photo-works/${work.id}/ai`) {
+    if (hold.length) await hold.shift();
+    work = {...work, rules: data.ai_rules, ai: {wish: body.wish.trim(), note: 'платье фиолетовым, остальное как есть', photo: work.ai_photo, before: work.rules}};
+    version++;
+    return answer(view());
+  }
   return answer({error: path + ' not found'}, 404);
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -62,6 +69,8 @@ const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r)
 const chosen = (tree) => tree.querySelectorAll('button.ge-scale').map((b) => b.getAttribute('aria-pressed') === 'true');
 const powers = (tree) => [labelled(tree, 'Min мощность, %% (белый)').value, labelled(tree, 'Max мощность, %% (чёрный)').value];
 const dialog = () => ctx.document.body.querySelector('.modal');
+const asks = () => requests.filter((r) => r.path.endsWith('/ai')).map((r) => r.body);
+const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label);
 (async () => {
   const out = {};
   const tree = await ctx.__screens['photo-engraving'].render({query: %(query)s});
@@ -75,7 +84,7 @@ const dialog = () => ctx.document.body.querySelector('.modal');
 def run(tmp_path, query, body, work=None):
     work = {**WORK, **(work or {})}
     (tmp_path / "data.json").write_text(json.dumps({"scales": [scale(150, [1, 30]), scale(100, [2, 25])], "scale": scale_answer(), "work": work,
-                                                    "works": [listed(work)]}), encoding="utf-8")
+                                                    "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES}), encoding="utf-8")
     script = tmp_path / "screen.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
@@ -104,11 +113,15 @@ def scale_answer():
 
 WORK = {"id": 7, "name": "Портрет", "identifier": "TCE-P-1", "created_at": "2026-10-21T10:00:00", "updated_at": "2026-10-21T10:05:00",
         "image_name": "girl.png", "image_size": [240, 120], "scale": mode(100), "material": {"name": "Big Plate 150"}, "dpi": 1000,
-        "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "time": {"seconds": 600}, "problem": None}
+        "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "time": {"seconds": 600}, "problem": None,
+        "rules": [], "ai": None, "ai_photo": False, "ai_missing": None}
+PARTS = {"parts": [{"part": "face_skin", "share": 0.5, "lab": [70, 10, 15], "hex": "#c8a08c", "tint": "#ff8c64"},
+                   {"part": "clothes", "share": 0.5, "lab": [40, 0, -30], "hex": "#3355aa", "tint": "#4678ff"}], "picture": "/api/photo-works/7/parts.png?v=1"}
+AI_RULES = [{"part": "clothes", "kind": "colour", "lab": [40, 40, -40], "hex": "#7a3fa0"}]
 
 
 def listed(work):
-    return {k: v for k, v in work.items() if k != "problem"}
+    return {k: v for k, v in work.items() if k not in ("problem", "ai_missing")}
 
 
 # -- the list and a new work -----------------------------------------------------------------------------------------------------------
@@ -219,3 +232,59 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
     sent = out["sent"][0]
     assert json.loads(sent.pop("scale")) == mode(100) and sent == {"picture": "girl.png", "name": "girl", "width_mm": "50"}
     assert out["went"] == ["/photo-engraving?work=9"]
+
+
+# -- the AI tab: the parts and their rules (REQ-062) -------------------------------------------------------------------------------------
+@node
+def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_target_colour(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  out.table = tree.textContent.includes('Кожа лица') && tree.textContent.includes('Одежда') && tree.textContent.includes('50 %');
+  out.overlay = tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/parts.png?v=1');
+  const clothes = select(tree, 'Правило: Одежда');
+  out.before = clothes.value;
+  clothes.value = 'even'; await clothes.dispatch('change'); await settle();
+  const colour = input(tree, (i) => i.getAttribute('aria-label') === 'Цвет-цель: Одежда');
+  out.colour = colour.value;
+  colour.value = '#ff0000'; await colour.dispatch('change'); await settle();
+  const face = select(tree, 'Правило: Кожа лица');
+  face.value = 'neutral'; await face.dispatch('change'); await settle();
+  select(tree, 'Правило: Одежда').value = 'as_is'; await select(tree, 'Правило: Одежда').dispatch('change'); await settle();
+  out.saves = saves();
+""")
+    assert out["table"] and out["overlay"] and out["before"] == "as_is" and out["colour"] == "#3355aa"      # the part's own colour to start from
+    assert out["saves"] == [{"rules": [{"part": "clothes", "kind": "even", "hex": "#3355aa"}]},
+                            {"rules": [{"part": "clothes", "kind": "even", "hex": "#ff0000"}]},
+                            {"rules": [{"part": "clothes", "kind": "even", "hex": "#ff0000"}, {"part": "face_skin", "kind": "neutral"}]},
+                            {"rules": [{"part": "face_skin", "kind": "neutral"}]}]                       # "as it is" is no rule
+
+
+@node
+def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_rules_before_can_be_put_back(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  await button(tree, 'Попросить AI').dispatch('click'); await settle();
+  out.empty = {asks: asks().length, text: tree.textContent.includes('Напишите, что AI должен изменить в картинке.')};
+  const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('уменьшенную картинку'));
+  permission.checked = true; await permission.dispatch('change'); await settle();
+  const wish = tree.querySelectorAll('textarea')[0];
+  wish.value = ' платье сделать фиолетовым '; await button(tree, 'Попросить AI').dispatch('click'); await settle();
+  out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', с картинкой'),
+               rule: select(tree, 'Правило: Одежда').value, shown: shown(tree)};
+  await button(tree, 'Вернуть как было').dispatch('click'); await settle();
+  out.back = {saves: saves(), again: !!button(tree, 'Вернуть как было'), rule: select(tree, 'Правило: Одежда').value};
+""")
+    assert out["empty"] == {"asks": 0, "text": True}
+    assert out["asked"] == {"asks": [{"wish": " платье сделать фиолетовым "}], "note": True, "photo": True, "rule": "colour",
+                            "shown": "/api/photo-works/7/preview.png?v=2"}
+    assert out["back"] == {"saves": [{"ai_photo": True}, {"rules": []}], "again": False, "rule": "as_is"}
+
+
+@node
+def test_without_a_key_the_ai_button_is_off_and_says_why_while_rules_can_still_be_set(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  out.disabled = button(tree, 'Попросить AI').disabled;
+  out.text = tree.textContent.includes('AI выключен: не задан ключ языковой модели (OPENAI_API_KEY)');
+  const clothes = select(tree, 'Правило: Одежда');
+  clothes.value = 'photo'; await clothes.dispatch('change'); await settle();
+  out.saves = saves();
+""", work={"ai_missing": "key"})
+    assert out == {"disabled": True, "text": True, "saves": [{"rules": [{"part": "clothes", "kind": "photo"}]}]}

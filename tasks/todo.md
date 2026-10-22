@@ -1429,8 +1429,28 @@ exported file, so the photograph of the engraving finds its work (REQ-013, DEC-0
       dependencies; 8765 answers 0.19.0 and shows "Мои работы" (GET only: no works yet, 10 scales).
 ### 0.19.1: "Попросить AI" on the picture of a work
 - [x] Spike: MediaPipe multiclass selfie model converted once to ONNX, run by OpenCV (`models/selfie_multiclass_256x256.onnx`, Apache 2.0; 0.06-0.09 s per picture). DEC to record.
-- [ ] Parts (`people.py`, done in code), rules -> greys (`picture_rules.py`, done in code), the rules stored in the work and applied to preview and file; an "AI" tab: the wish, the parts
+- [x] Parts (`people.py`, done in code), rules -> greys (`picture_rules.py`, done in code), the rules stored in the work and applied to preview and file; an "AI" tab: the wish, the parts
       table (share, colour, rule, editable by hand), the overlay; the AI (`ai_picture.py`, OpenAI, one retry) proposes the rules. Tests with a fake client, release.
+  Plan (2026-10-22, after 0.19.0 went live; REQ-062, DEC-105):
+  - [x] E1. Work data: `rules` (checked by `picture_rules.check`; a hand rule may give `hex`, turned into L*a*b* here), `ai_photo` (permission to send a reduced picture,
+        off by default), `ai` (the last request: wish, photo sent, note, when, the rules before it). Older works get the defaults. `update` takes `rules` and `ai_photo`.
+        The part scores are computed once per decoded picture (kept with it). The preview, the list picture and the file follow the rules (their keys include them); the
+        view reports per rule its share and how near its greys come (median dE). The time does not change: in grayscale every pixel is scanned.
+  - [x] E2. `photo_work.parts` (each part found: share, mean colour) and `parts_picture` (the preview tinted by part, render cache). `ai_picture.py`: the brief (wish, parts,
+        16 greys of the scale with their colours, the range of the near-grey greys, the current rules), the instructions, the check (rules by `picture_rules.check`, parts
+        the picture does not have dropped), one retry through `ai_colouring.choose`; `photo_work.ask_ai` saves the rules, the note and the rules before.
+  - [x] E3. API: `GET /photo-works/{id}/parts`, `GET /photo-works/{id}/parts.png`, `POST /photo-works/{id}/ai`; settings take `rules`, `ai_photo`. Translations.
+  - [x] E4. UI: tab "AI" in the work: the wish, "send a reduced picture" (off), "Попросить AI" (off with the reason when there is no key or library), the AI's note with
+        "Вернуть как было"; the parts table (part, share, colour, rule select, target colour for "colour" / "one tone", how near); the parts over the picture.
+  - [x] E5. Tests: rules (unit, a made-up curve), parts with made-up model scores, the work's rules through the API (preview, file, copy, refusals), the AI with a fake client
+        (good answer, one bad then good, two bad: nothing changes, the picture sent only when allowed, no key), UI in node. README, MarkView, full suite, backup, deploy.
+        Done 2026-10-22: `tests/test_picture_rules.py` (15), `tests/test_photo_works.py` +16 (29), `tests/test_photo_engraving_ui.py` +3 (9); README 0.19.1; REQ-062
+        approved (DEC-105 accepted earlier). Found on the copy and fixed before release: the list of works failed on a work saved by 0.19.0 (no rules; defaults now filled
+        in for the list too, test added); the answer of the AI no longer overwrites a change made while it answered (the work is read again before saving, test added);
+        the rule select was cut ("Один т") - the closeness column is now "ΔE к цели". Real check on the copy (8768, work 26 "Лицо"): the model found background 13 %, hair
+        54 %, body skin 7 %, face skin 26 % in 0.26 s; the real AI on «всё как есть, черно-белое, а кожу сделать равномерно светлой» (numbers only, 6 s) answered
+        background and hair black and white (ΔE 6.0 and 6.5), body and face skin one light colour L 80 (ΔE 3.2), features kept; «Вернуть как было» put the rules back.
+        Review: the instructions now tell the AI that "one tone" erases the eyes and lips inside face skin, so even light skin is a target colour.
 ### 0.19.2: the engraving of a photo work checks its prediction
 - [ ] The photograph of an engraved photo work (its file carries the identifier) is linked to the work; the work shows predicted against engraved per grey level, and the scale's
       confirmation counts it. Tests, release.

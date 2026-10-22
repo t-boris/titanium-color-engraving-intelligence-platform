@@ -963,6 +963,13 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 /* the table of greys on the grey-scales page fills the centre under the bar and scrolls there */
 .ge-work>.ge-table {flex:1 1 auto;min-height:0;overflow:auto}
 .ge .vw-name-row h2 {font-size:20px}
+/* the AI tab of a photo work: the wish fills the panel, a rule is its select with the target colour beside it */
+.ge-right textarea {width:100%;resize:vertical}
+.ge-check {display:flex;align-items:flex-start;gap:8px}
+.ge-check input {flex:none;margin-top:2px}
+.ge-rule {flex-wrap:nowrap;gap:6px}
+.ge-rule select {min-width:9em}
+.ge-rule input[type=color] {flex:none;width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;background:none}
 @media (max-width:1100px) {
   .ge-work>.ge-stage {min-height:60vh}
 }

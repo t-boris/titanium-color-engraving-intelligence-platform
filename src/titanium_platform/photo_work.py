@@ -7,6 +7,10 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * the scale it is engraved on (``scale``): the titanium and the settings that do not vary with the grey, which with the laser and the
   lens make a ``prediction_store.Mode``; only a measured scale can be chosen;
 * Min and Max power, the width on the titanium in mm and whether the greys are chosen for the picture's colours (``by_colour``);
+* the rules of the picture's parts (``rules``, REQ-062): a part found by the people model (:mod:`people`) may be engraved by its own rule
+  (:mod:`picture_rules`), set by hand or proposed by the AI (:mod:`ai_picture`); whether a reduced copy of the picture may be sent to
+  the AI (``ai_photo``, off until the operator allows it) and the last request to it (``ai``: the wish, whether the picture went, the AI's
+  note and the rules before it, so that they can be put back);
 * when it last changed (``updated_at``).
 
 Everything shown is computed from these and the scale's measurements as they are now: the picture beside its prediction, the time
@@ -20,6 +24,7 @@ from __future__ import annotations
 import json
 import math
 import mimetypes
+import re
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -28,7 +33,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import conversion as cv, grayscale, plans as pl, prediction, prediction_store as ps, render_cache as rc, setup as su
+from . import (ai_colouring as ai, ai_picture, color, conversion as cv, grayscale, people, picture_rules, plans as pl, prediction, prediction_store as ps,
+               render_cache as rc, research, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
 from .vector_job import COPY_SUFFIX
@@ -37,8 +43,10 @@ MODE = pl.MODE_PHOTO_WORK
 IDENTIFIER_PREFIX = "TCE-P"
 THUMB_PX = 360                      # the longer side of the picture of a work in the list
 KEEP_DECODED = 2                    # decoded pictures kept in memory: the work open now and the one before
-DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "updated_at")
-SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour")
+PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
+DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo", "ai", "updated_at")
+SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo")
+DEFAULTS = {"rules": [], "ai_photo": False, "ai": None}          # what a work made before the rules of parts (0.19.0) has
 
 _decoded: OrderedDict[str, dict] = OrderedDict()
 _lock = threading.Lock()
@@ -48,6 +56,8 @@ def _work(store: Store, plan_id: int) -> dict:
     plan = pl.get_plan(store, plan_id)
     if plan["status"] == "Deleted" or plan["mode"] != MODE:
         raise KeyError(f"photo work {plan_id} not found")
+    for key, value in DEFAULTS.items():
+        plan.setdefault(key, value)
     return plan
 
 
@@ -110,10 +120,18 @@ def _upload(plan: Mapping) -> dict:
 
 
 def _item(store: Store, plan: Mapping) -> dict:
-    return ps.picture_item(store, mode_of(plan), _upload(plan), plan["name"], plan["by_colour"])
+    upload = _upload(plan)
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"])
+    if plan["rules"]:
+        item["part_scores"] = ps.part_scores(upload)         # the people model runs once per decoded picture
+    return item
 
 
 def _shown(item: dict, plan: Mapping) -> dict:
+    """The item as it is engraved: its own greys, the greys chosen for its colours (``by_colour``) and, inside each part with a rule,
+    that rule's greys."""
+    if plan["rules"]:
+        return ps.with_rules(item, plan["min_power"], plan["max_power"], plan["rules"])
     return ps.with_colours(item, plan["min_power"], plan["max_power"]) if plan["by_colour"] else item
 
 
@@ -121,7 +139,7 @@ def _key(kind: str, plan: Mapping, curve: prediction.Curve) -> str:
     """The key of a picture of the work: everything it is drawn from, the measured points of the scale included."""
     return rc.key_of({"kind": kind, "image": rc.file_stamp(plan["image_path"]), "mode": mode_of(plan).as_dict(),
                       "curve": rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str)),
-                      "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"]})
+                      "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"], "rules": plan["rules"]})
 
 
 def _material(store: Store, material_id: int | None) -> dict | None:
@@ -140,20 +158,29 @@ def _summary(store: Store, plan: Mapping) -> dict:
             "scale": mode.as_dict(), "material": _material(store, mode.material_id),
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
-            "by_colour": plan["by_colour"], "time": ps.picture_time(mode, width, height)}
+            "by_colour": plan["by_colour"], "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
+            "time": ps.picture_time(mode, width, height)}
+
+
+def _shown_rule(rule: Mapping) -> dict:
+    """A rule as the screen shows it: with its target colour also as #rrggbb, for the colour picker."""
+    if "lab" not in rule:
+        return dict(rule)
+    rgb = np.clip(color.lab_to_srgb8(np.asarray([rule["lab"]], float)), 0, 255).round().astype(int)[0]
+    return {**rule, "hex": "#%02x%02x%02x" % tuple(rgb)}
 
 
 def listing(store: Store) -> list[dict]:
     """Every photo work, the newest first."""
     rows = store.query("SELECT id FROM plan WHERE mode=? AND status!='Deleted' ORDER BY id DESC", (MODE,))
-    return [_summary(store, pl.get_plan(store, row["id"])) for row in rows]
+    return [_summary(store, _work(store, row["id"])) for row in rows]
 
 
 def view(store: Store, plan_id: int) -> dict:
     """An open work: its summary and the picture beside its predicted look with what is said about it (as the scales' picture says it,
     ``prediction_store.describe``), or, when its scale is no longer measured, why there is no prediction (``problem``)."""
     plan = _work(store, plan_id)
-    out = _summary(store, plan)
+    out = {**_summary(store, plan), "ai_missing": _ai_missing()}
     try:
         item = _item(store, plan)
     except PredictionError as exc:
@@ -167,7 +194,7 @@ def view(store: Store, plan_id: int) -> dict:
             rc.write(store, _folder(plan["id"]), key, prediction.to_png(prediction.side_by_side(shown["picture"], rgb8)))
         except OSError:
             pass
-    out["picture"] = {**info, "by_colour": plan["by_colour"], "colour_match": shown.get("colour_match"),
+    out["picture"] = {**info, "by_colour": plan["by_colour"], "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"),
                       "size_mm": {"width": out["width_mm"], "height": out["height_mm"]}, "time": out["time"], "dpi": out["dpi"],
                       "preview": f"/api/photo-works/{plan['id']}/preview.png?v={key[:16]}", "file": f"/api/photo-works/{plan['id']}/export.lbrn2"}
     return out
@@ -223,7 +250,7 @@ def export(store: Store, plan_id: int) -> tuple[bytes, str]:
     plan = _work(store, plan_id)
     item = _item(store, plan)
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
-    picture = ps.picture_for_file(item, low, high, plan["width_mm"])
+    picture = ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"])
     data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"])
     return data, f"{plan['name']}-P{low:g}-{high:g}"
 
@@ -250,7 +277,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
-            "by_colour": False, "updated_at": now()}
+            "by_colour": False, "rules": [], "ai_photo": False, "ai": None, "updated_at": now()}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_created", plan_id=plan_id)
@@ -263,7 +290,7 @@ def update(store: Store, plan_id: int, changes) -> None:
     ``min_power`` and ``max_power``, ``width_mm`` and ``by_colour``."""
     plan = _work(store, plan_id)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
-        raise su.ValidationError("change the scale, Min and Max power, the width or the colour choice of the work")
+        raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work")
     if "scale" in changes:
         mode = measured_scale(store, changes["scale"])
         plan.update(scale=_scale_data(mode), device_id=mode.device_id, lens_id=mode.lens_id)
@@ -277,6 +304,12 @@ def update(store: Store, plan_id: int, changes) -> None:
         if not isinstance(changes["by_colour"], bool):
             raise su.ValidationError("the colour choice must be on or off")
         plan["by_colour"] = changes["by_colour"]
+    if "rules" in changes:
+        plan["rules"] = _rules_in(changes["rules"])
+    if "ai_photo" in changes:
+        if not isinstance(changes["ai_photo"], bool):
+            raise su.ValidationError("the permission to send the photograph must be on or off")
+        plan["ai_photo"] = changes["ai_photo"]
     plan["updated_at"] = now()
     with store.transaction():
         _save(store, plan, plan["id"])
@@ -314,3 +347,87 @@ def rename_work(store: Store, plan_id: int, name) -> str:
             store.execute("UPDATE plan SET name=? WHERE id=?", (title, plan["id"]))
             store.audit("photo_work_renamed", plan_id=plan["id"], old_name=plan["name"], new_name=title)
     return title
+
+
+# -- the parts of the picture and the AI (REQ-062, DEC-105) -------------------------------------------------------------------------
+def _with_lab(rule):
+    """A rule whose target colour is given by hand as ``hex`` (#rrggbb), with it as L*a*b*, as the rules keep it."""
+    if not isinstance(rule, Mapping) or "hex" not in rule or "lab" in rule:
+        return rule
+    hexed = rule["hex"]
+    if not isinstance(hexed, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", hexed):
+        raise su.ValidationError("a target colour must be given as #rrggbb")
+    lab = color.srgb8_to_lab(np.array([[int(hexed[i:i + 2], 16) for i in (1, 3, 5)]], float))[0]
+    return {**{k: v for k, v in rule.items() if k != "hex"}, "lab": [round(float(v), 2) for v in lab]}
+
+
+def _rules_in(rules) -> list[dict]:
+    """The rules of the parts as given by hand, checked (``picture_rules.check``); ``as_is`` is a part without a rule."""
+    try:
+        checked = picture_rules.check([_with_lab(r) for r in rules] if isinstance(rules, list) else rules)
+    except picture_rules.RuleError as exc:
+        raise su.ValidationError(str(exc)) from None
+    return [r for r in checked if r["kind"] != "as_is"]
+
+
+def _ai_missing() -> str | None:
+    """Why the AI cannot run on this computer: ``library`` (the client library is not installed), ``key`` (no key is set) or None."""
+    if not research.ai_library():
+        return "library"
+    return None if research.ai_available() else "key"
+
+
+def _parts_key(plan: Mapping) -> str:
+    return rc.key_of({"kind": "photo-work-parts", "image": rc.file_stamp(plan["image_path"]), "model": people.MODEL.name, "colours": ps.PART_COLOURS})
+
+
+def _parts_found(upload: dict) -> list[dict]:
+    ps.part_scores(upload)                                   # kept with the decoded picture: the model runs once for it
+    return [p for p in ps.parts_of(upload) if p["share"] >= PART_MIN_SHARE]
+
+
+def parts(store: Store, plan_id: int) -> dict:
+    """The parts the people model finds in the work's picture (each one's share of the picture and mean colour in it) and the address of
+    the picture with each part tinted, to check what was found."""
+    plan = _work(store, plan_id)
+    tint = {name: "#%02x%02x%02x" % rgb for name, rgb in zip(people.PARTS, ps.PART_COLOURS)}
+    return {"parts": [{**p, "tint": tint[p["part"]]} for p in _parts_found(_upload(plan))],
+            "picture": f"/api/photo-works/{plan['id']}/parts.png?v={_parts_key(plan)[:16]}"}
+
+
+def parts_picture(store: Store, plan_id: int) -> rc.Picture:
+    """The work's picture with every part tinted in its colour (``prediction_store.PART_COLOURS``)."""
+    plan = _work(store, plan_id)
+
+    def draw() -> bytes:
+        upload = _upload(plan)
+        ps.part_scores(upload)
+        return prediction.to_png(ps.parts_overlay(upload))
+    return rc.Picture(store, _folder(plan["id"]), _parts_key(plan), draw)
+
+
+def ask_ai(store: Store, plan_id: int, wish) -> None:
+    """Ask the AI for the rules of the parts after the operator's ``wish`` and save them in the work with the AI's note and the rules
+    before them. A refused answer changes nothing (``ai_picture.ask``)."""
+    plan = _work(store, plan_id)
+    text = ai_picture.request(wish)
+    if not research.ai_available():
+        raise cv.ConversionError("the AI is off: no key for the language model is set (OPENAI_API_KEY)")
+    try:
+        client = research.openai_client()
+    except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
+        raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
+    upload = _upload(plan)
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"])
+    low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
+    found = _parts_found(upload)
+    what = ai_picture.brief(text, found, grayscale.scale_of_greys(item["curve"], low, high), plan["rules"])
+    photo = ai.photo_data_url(Path(plan["image_path"]).read_bytes()) if plan["ai_photo"] else None
+    rules, note = ai_picture.ask(client, what, photo, {p["part"] for p in found})
+    plan = _work(store, plan_id)                             # as it is now: other changes made while the AI answered are kept
+    plan["ai"] = {"wish": text, "photo": photo is not None, "note": note, "at": now(), "before": plan["rules"]}
+    plan["rules"] = rules
+    plan["updated_at"] = now()
+    with store.transaction():
+        _save(store, plan, plan["id"])
+        store.audit("photo_work_ai", plan_id=plan["id"], rules=len(rules), photo=photo is not None)

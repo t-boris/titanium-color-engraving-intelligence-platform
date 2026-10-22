@@ -61,7 +61,7 @@ DATA_TAILS = {
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.
-PASSTHROUGH = {("ingest.py", "update_matrix"): ("matrix.py", "ValueError")}
+PASSTHROUGH = {("ingest.py", "update_matrix"): ("matrix.py", "ValueError"), ("photo_work.py", "_rules_in"): ("picture_rules.py", "RuleError")}
 
 
 class Scope(NamedTuple):

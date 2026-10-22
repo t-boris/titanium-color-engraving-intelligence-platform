@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from test_ai_colouring import Fake, sent
 from test_grey_scales import HUES, app_world, picture_png  # noqa: F401  (the measured grey-ramp plate, four scales)
-from titanium_platform import lightburn, photo_work
+from titanium_platform import lightburn, people, photo_work, research
 from titanium_platform.api.app import create_app
 
 
@@ -65,8 +66,8 @@ def test_another_scale_keeps_the_picture_and_takes_its_measured_span_and_every_c
 
 
 @pytest.mark.parametrize("body, message", [
-    ({}, "change the scale, Min and Max power, the width or the colour choice of the work"),
-    ({"name": "x"}, "change the scale, Min and Max power, the width or the colour choice of the work"),
+    ({}, "change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work"),
+    ({"name": "x"}, "change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work"),
     ({"scale": {"speed": 999}}, "this scale is not measured: choose one of the measured scales"),
     ({"width_mm": 0}, "the width of the picture must be 1..1000 mm"),
     ({"width_mm": True}, "the width of the picture must be 1..1000 mm"),
@@ -143,3 +144,171 @@ def test_without_a_measured_scale_a_new_work_is_refused_with_the_way_to_measure_
         not_a_picture = client.post("/api/photo-works", data={"width_mm": 50}, files={"picture": ("p.png", b"nothing", "image/png")})
         assert not_a_picture.status_code == 422
     app.state.store.close()
+
+
+# -- the parts of the picture and their rules (REQ-062, DEC-105) ----------------------------------------------------------------------
+@pytest.fixture
+def parts_model(monkeypatch):
+    """The people model as if it found face skin on the left half of the test picture (white to grey) and clothes on the right."""
+    calls = []
+
+    def scores(bgr):
+        calls.append(bgr.shape)
+        out = np.zeros((256, 256, 6), np.float32)
+        out[:, :128, people.PARTS.index("face_skin")] = 1
+        out[:, 128:, people.PARTS.index("clothes")] = 1
+        return out
+    monkeypatch.setattr(people, "scores", scores)
+    return calls
+
+
+@pytest.fixture
+def model(monkeypatch):
+    def install(*replies, available=True):
+        fake = Fake(*replies)
+        monkeypatch.setattr(research, "ai_available", lambda: available)
+        monkeypatch.setattr(research, "openai_client", lambda: fake)
+        return fake
+    return install
+
+
+def stored_grey(client, work):
+    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(0)
+    return cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
+
+
+def test_the_parts_of_the_picture_are_found_once_with_their_share_and_colour_and_shown_tinted(app_world, parts_model):
+    client = app_world["client"]
+    work = create(client)
+    found = client.get(f"/api/photo-works/{work['id']}/parts").json()
+    assert [(p["part"], p["share"], p["tint"]) for p in found["parts"]] == [("face_skin", 0.5, "#ff8c64"), ("clothes", 0.5, "#4678ff")]
+    face, clothes = found["parts"]
+    assert face["lab"][0] > clothes["lab"][0] and face["hex"].startswith("#")              # the white half is lighter
+    png = client.get(found["picture"])
+    assert png.status_code == 200 and png.headers["content-type"] == "image/png" and png.headers["etag"]
+    client.get(f"/api/photo-works/{work['id']}/parts")
+    assert len(parts_model) == 1                                                              # kept with the decoded picture
+
+
+def test_a_rule_set_by_hand_changes_the_prediction_and_the_file_inside_its_part_only_and_a_copy_keeps_it(app_world, parts_model):
+    client = app_world["client"]
+    work = create(client)
+    before = stored_grey(client, work)
+    ruled = client.post(f"/api/photo-works/{work['id']}/settings", json={"rules": [{"part": "clothes", "kind": "even", "hex": "#808080"}]}).json()
+    assert [(r["part"], r["kind"]) for r in ruled["rules"]] == [("clothes", "even")] and len(ruled["rules"][0]["lab"]) == 3
+    report = ruled["picture"]["rules_report"]
+    assert [(r["part"], r["share"]) for r in report] == [("clothes", 0.5)] and report[0]["median_de"] is not None
+    assert ruled["picture"]["preview"] != work["picture"]["preview"] and ruled["time"] == work["time"]   # every pixel is scanned anyway
+    after = stored_grey(client, work)
+    assert len(np.unique(after[:, 125:])) == 1 and len(np.unique(before[:, 125:])) > 10              # clothes: one even tone
+    assert np.array_equal(after[:, :115], before[:, :115])                                            # face skin: as it was
+    made = client.post(f"/api/photo-works/{work['id']}/copy", json={}).json()
+    assert client.get(f"/api/photo-works/{made['id']}").json()["rules"] == ruled["rules"]
+    cleared = client.post(f"/api/photo-works/{work['id']}/settings", json={"rules": [{"part": "clothes", "kind": "as_is"}]}).json()
+    assert cleared["rules"] == [] and cleared["picture"]["preview"] == work["picture"]["preview"]
+
+
+@pytest.mark.parametrize("body, message", [
+    ({"rules": [{"part": "dress", "kind": "even"}]}, "a rule must name one of the parts background, hair, body_skin, face_skin, clothes, other, each once"),
+    ({"rules": [{"part": "clothes", "kind": "glow"}]}, "a rule must be one of as_is, photo, neutral, colour, even"),
+    ({"rules": [{"part": "clothes", "kind": "colour"}]}, "a target colour must be L*a*b*: L 0..100, a and b -128..128"),
+    ({"rules": [{"part": "clothes", "kind": "even", "hex": "violet"}]}, "a target colour must be given as #rrggbb"),
+    ({"rules": "all"}, "the rules of the parts must be a list of at most 6"),
+    ({"ai_photo": "yes"}, "the permission to send the photograph must be on or off"),
+])
+def test_a_rule_that_cannot_be_applied_is_refused_with_the_reason(app_world, body, message):
+    client = app_world["client"]
+    work = create(client)
+    refused = client.post(f"/api/photo-works/{work['id']}/settings", json=body)
+    assert refused.status_code == 422 and refused.json()["error"] == message
+    kept = client.get(f"/api/photo-works/{work['id']}").json()
+    assert (kept["rules"], kept["ai_photo"]) == ([], False)
+
+
+VIOLET = {"rules": [{"part": "clothes", "kind": "colour", "lab": [40, 40, -40]}, {"part": "hair", "kind": "neutral"}, {"part": "face_skin", "kind": "as_is"}],
+          "note": "платье фиолетовым, остальное как есть"}
+
+
+def test_the_ai_gets_the_wish_the_parts_and_the_scale_and_its_rules_are_saved_with_its_note(app_world, parts_model, model):
+    client = app_world["client"]
+    fake = model(VIOLET)
+    work = create(client)
+    answer = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "  платье сделать фиолетовым  "})
+    assert answer.status_code == 200, answer.text
+    done = answer.json()
+    assert [{k: r[k] for k in ("part", "kind", "lab")} for r in done["rules"]] == [{"part": "clothes", "kind": "colour", "lab": [40.0, 40.0, -40.0]}]
+    assert done["rules"][0]["hex"].startswith("#")                                                    # no hair in the picture; as_is is no rule
+    assert {k: done["ai"][k] for k in ("wish", "photo", "note", "before")} == {"wish": "платье сделать фиолетовым", "photo": False,
+                                                                                "note": "платье фиолетовым, остальное как есть", "before": []}
+    brief = sent(fake.calls[0])
+    assert brief["wish"] == "платье сделать фиолетовым" and [p["part"] for p in brief["parts"]] == ["face_skin", "clothes"]
+    assert brief["scale"][0]["grey"] == 255 and len(brief["scale"]) == 16 and brief["current"] == []
+    assert isinstance(fake.calls[0]["input"][0]["content"], str)                                    # numbers only: no picture
+    assert client.get(f"/api/photo-works/{work['id']}").json()["rules"] == done["rules"]
+    back = client.post(f"/api/photo-works/{work['id']}/settings", json={"rules": done["ai"]["before"]}).json()
+    assert back["rules"] == []                                                                        # "Вернуть как было"
+
+
+def test_the_picture_goes_to_the_ai_only_when_allowed(app_world, parts_model, model):
+    client = app_world["client"]
+    fake = model(VIOLET)
+    work = create(client)
+    assert client.post(f"/api/photo-works/{work['id']}/settings", json={"ai_photo": True}).json()["ai_photo"] is True
+    done = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"}).json()
+    content = fake.calls[0]["input"][0]["content"]
+    assert [part["type"] for part in content] == ["input_text", "input_image"] and done["ai"]["photo"] is True
+
+
+def test_a_bad_ai_answer_is_sent_back_once_and_a_second_one_changes_nothing(app_world, parts_model, model):
+    client = app_world["client"]
+    bad = {"rules": [{"part": "clothes", "kind": "glow"}], "note": "?"}
+    fake = model(bad, VIOLET)
+    work = create(client)
+    assert client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"}).json()["rules"][0]["part"] == "clothes"
+    assert "Rejected: a rule must be one of as_is, photo, neutral, colour, even" in fake.calls[1]["input"][2]["content"]
+    other = create(client)
+    model(bad, bad)
+    refused = client.post(f"/api/photo-works/{other['id']}/ai", json={"wish": "платье фиолетовым"})
+    assert refused.status_code == 422 and refused.json()["error"] == "a rule must be one of as_is, photo, neutral, colour, even"
+    kept = client.get(f"/api/photo-works/{other['id']}").json()
+    assert (kept["rules"], kept["ai"]) == ([], None)
+
+
+@pytest.mark.parametrize("wish, available, message", [
+    ("  ", True, "describe what the AI should change in the picture"),
+    ("я" * 401, True, "the description may have at most 400 characters"),
+    ("платье фиолетовым", False, "the AI is off: no key for the language model is set (OPENAI_API_KEY)"),
+])
+def test_the_ai_is_not_asked_without_a_wish_or_a_key(app_world, model, wish, available, message):
+    client = app_world["client"]
+    fake = model(VIOLET, available=available)
+    work = create(client)
+    refused = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": wish})
+    assert refused.status_code == 422 and refused.json()["error"] == message and fake.calls == []
+
+
+def test_a_work_saved_before_the_rules_of_parts_is_listed_opened_changed_and_copied(app_world):
+    client = app_world["client"]
+    store = client.app.state.store
+    work = create(client)
+    row = store.one("SELECT data_json FROM plan WHERE id=?", (work["id"],))
+    data = {k: v for k, v in json.loads(row["data_json"]).items() if k not in ("rules", "ai_photo", "ai")}   # as 0.19.0 stored it
+    store.execute("UPDATE plan SET data_json=? WHERE id=?", (json.dumps(data), work["id"]))
+    listed = client.get("/api/photo-works")
+    assert listed.status_code == 200 and listed.json()[0]["rules"] == []
+    opened = client.get(f"/api/photo-works/{work['id']}").json()
+    assert (opened["rules"], opened["ai"], opened["ai_photo"]) == ([], None, False)
+    assert client.post(f"/api/photo-works/{work['id']}/settings", json={"max_power": 30}).json()["max_power"] == 30
+    assert client.post(f"/api/photo-works/{work['id']}/copy", json={}).status_code == 201
+
+
+def test_a_change_made_while_the_ai_answers_is_kept(app_world, parts_model, model):
+    client = app_world["client"]
+    work = create(client)
+
+    def answer(brief):
+        assert client.post(f"/api/photo-works/{work['id']}/settings", json={"max_power": 30}).status_code == 200
+        return VIOLET
+    model(answer)
+    done = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"}).json()
+    assert done["max_power"] == 30 and done["rules"][0]["part"] == "clothes"

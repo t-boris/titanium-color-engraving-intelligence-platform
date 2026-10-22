@@ -167,12 +167,12 @@ def _parse(text: str):
         raise Rejected(UNREADABLE) from None
 
 
-def _ask(client, messages: list[dict]) -> str:
+def _ask(client, messages: list[dict], instructions: str = INSTRUCTIONS) -> str:
     """One call of the model. Whatever goes wrong with the service (no network, a refused key, a quota, a cut answer) is one message for
     the operator and the answer is not used; the service's own text is never shown, it may carry part of the key."""
     try:
         result = client.responses.create(model=research.DEFAULT_MODEL, reasoning={"effort": "medium"}, store=False, max_output_tokens=4000,
-                                         instructions=INSTRUCTIONS, input=messages)
+                                         instructions=instructions, input=messages)
     except Exception:
         raise cv.ConversionError("the AI service did not answer: check the connection and the key, then try again") from None
     if getattr(result, "status", None) == "incomplete":
@@ -180,14 +180,15 @@ def _ask(client, messages: list[dict]) -> str:
     return getattr(result, "output_text", "") or ""
 
 
-def choose(client, what: dict, photo: str | None, check) -> tuple[dict[int, object], str]:
+def choose(client, what: dict, photo: str | None, check, instructions: str = INSTRUCTIONS):
     """Ask the model for a colouring and return its checked choice and note. ``check`` turns a parsed answer into the choice or raises
-    :class:`Rejected`; a rejected answer is sent back with its reason once, and the second one is refused."""
+    :class:`Rejected`; a rejected answer is sent back with its reason once, and the second one is refused. Another task of the same kind
+    (the tones of a photo engraving, :mod:`ai_picture`) passes its own ``instructions``."""
     text = json.dumps(what, ensure_ascii=False, separators=(",", ":"))
     content = [{"type": "input_text", "text": text}, {"type": "input_image", "image_url": photo}] if photo else text
     messages = [{"role": "user", "content": content}]
     for attempt in range(ATTEMPTS):
-        reply = _ask(client, messages)
+        reply = _ask(client, messages, instructions)
         try:
             answer = _parse(reply)
             chosen = check(answer)

@@ -1,5 +1,5 @@
-"""Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file. A work is
-deleted as every plan is (``DELETE /api/plans/{id}``)."""
+"""Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file; the parts
+of a work's picture and the AI that proposes their rules (REQ-062, DEC-105). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 import json
@@ -39,7 +39,8 @@ def get_photo_work(plan_id: int, request: Request):
 
 @router.post("/photo-works/{plan_id}/settings")
 def change_photo_work(plan_id: int, body: dict, request: Request):
-    """Change the scale, Min and Max power, the width or the colour choice (see photo_work.update); the work is returned as it is now."""
+    """Change the scale, Min and Max power, the width, the colour choice, the rules of the parts or the permission to send the picture to
+    the AI (see photo_work.update); the work is returned as it is now."""
     s = store_of(request)
     photo_work.update(s, plan_id, body)
     return photo_work.view(s, plan_id)
@@ -80,3 +81,23 @@ def photo_work_file(plan_id: int, request: Request):
     data, name = photo_work.export(store_of(request), plan_id)
     return Response(data, media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(name, ".lbrn2"), "Cache-Control": "no-store"})
+
+
+@router.get("/photo-works/{plan_id}/parts")
+def photo_work_parts(plan_id: int, request: Request):
+    """The parts the people model finds in the picture: share and mean colour of each, and the address of the picture tinted by part."""
+    return photo_work.parts(store_of(request), plan_id)
+
+
+@router.get("/photo-works/{plan_id}/parts.png")
+def photo_work_parts_picture(plan_id: int, request: Request):
+    """The picture with every part tinted in its colour."""
+    return picture_response(request, photo_work.parts_picture(store_of(request), plan_id))
+
+
+@router.post("/photo-works/{plan_id}/ai")
+def ask_photo_work_ai(plan_id: int, request: Request, body: dict | None = None):
+    """Ask the AI for the rules of the parts after the operator's ``wish``; the work is returned with them (see photo_work.ask_ai)."""
+    s = store_of(request)
+    photo_work.ask_ai(s, plan_id, (body or {}).get("wish"))
+    return photo_work.view(s, plan_id)

@@ -232,6 +232,95 @@
     return {inputs, out, foot, details, show, waiting};
   }
 
+  const PART_NAMES = {background: 'Фон', hair: 'Волосы', body_skin: 'Кожа тела', face_skin: 'Кожа лица', clothes: 'Одежда', other: 'Другое'};
+  const RULES = [['as_is', 'Как есть'], ['photo', 'Цвета фото'], ['neutral', 'Чёрно-белое'], ['colour', 'Цвет'], ['even', 'Один тон']];
+  const WITH_TARGET = ['colour', 'even'];
+  const AI_MISSING = {library: 'AI недоступен: в окружении приложения нет библиотеки openai (как её поставить — в README). Правила частей можно задать вручную.',
+    key: 'AI выключен: не задан ключ языковой модели (OPENAI_API_KEY). Правила частей можно задать вручную.'};
+  const plainRules = (rules) => JSON.stringify((rules || []).map(({part, kind, lab, range}) => ({part, kind, lab, range})));
+
+  /** Вкладка «AI» работы (REQ-062): пожелание своими словами, разрешение отправить уменьшенную картинку, «Попросить AI» и его ответ с
+      «Вернуть как было»; части картинки, найденные моделью, с правилом каждой (его можно поменять вручную), цветом-целью и тем, насколько
+      близко к нему подходят серые шкалы; части поверх картинки. Серые всегда подбираются на шкале работы, не моделью. ``save`` сохраняет
+      правила и разрешение, ``ask(wish)`` спрашивает AI; оба отдают ошибку или null. */
+  function aiTab(id, save, ask) {
+    const wish = h('textarea', {rows: 3, maxlength: 400, 'aria-label': 'Что изменить в картинке',
+      placeholder: 'например: всё как есть, чёрно-белое; платье фиолетовым, ярким; кожу равномерно светлой'});
+    const photo = h('input', {type: 'checkbox'});
+    const status = h('p', {class: 'small', role: 'status', hidden: true});
+    const missing = h('p', {class: 'alert warn small', hidden: true});
+    const answer = h('div', {class: 'stack'});
+    const table_ = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем части картинки…'));
+    const overlay = h('div');
+    let view = null, parts = null, asking = false;
+    photo.addEventListener('change', () => save({ai_photo: photo.checked}));
+    const button = btn('Попросить AI', async () => {
+      if (asking) return;
+      if (!wish.value.trim()) { status.textContent = 'Напишите, что AI должен изменить в картинке.'; status.hidden = false; return; }
+      asking = true;
+      button.disabled = true;
+      status.textContent = 'AI думает… обычно это до минуты.';
+      status.hidden = false;
+      const failed = await ask(wish.value);
+      asking = false;
+      status.textContent = failed ? failed.message : '';
+      status.hidden = !failed;
+      button.disabled = !!(view && view.ai_missing);
+    }, 'primary btn-small');
+    function setRule(part, kind, hex) {
+      const others = view.rules.filter((r) => r.part !== part);
+      save({rules: kind === 'as_is' ? others : [...others, WITH_TARGET.includes(kind) ? {part, kind, hex} : {part, kind}]});
+    }
+    function rows() {
+      if (!parts) return;
+      const report = (view.picture && view.picture.rules_report) || [];
+      fill(table_, parts.length ? table(['Часть', 'Доля', 'Цвет', 'Правило', 'ΔE к цели'], parts.map((p) => {
+        const name = PART_NAMES[p.part] || p.part;
+        const rule = view.rules.find((r) => r.part === p.part) || {kind: 'as_is'};
+        const select = h('select', {'aria-label': `Правило: ${name}`}, RULES.map(([kind, label]) => h('option', {value: kind}, label)));
+        select.value = rule.kind;
+        select.addEventListener('change', () => setRule(p.part, select.value, rule.hex || p.hex));
+        const target = WITH_TARGET.includes(rule.kind) ? h('input', {type: 'color', value: rule.hex || p.hex, 'aria-label': `Цвет-цель: ${name}`}) : null;
+        if (target) target.addEventListener('change', () => setRule(p.part, rule.kind, target.value));
+        const near = report.find((r) => r.part === p.part);
+        return [h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${p.tint}`, title: 'цвет части на картинке частей'}), ` ${name}`),
+          h('span', {class: 'ge-nowrap'}, `${value(p.share * 100, 1)} %`), hexChip(p.hex), h('span', {class: 'row ge-rule'}, select, target),
+          near && near.median_de != null ? `≈ ${value(near.median_de, 1)}` : h('span', {class: 'muted'}, '—')];
+      }), '', true) : h('p', {class: 'muted'}, 'Модель не нашла на картинке частей: правила задать не для чего.'));
+    }
+    function show(next) {
+      view = next;
+      photo.checked = !!view.ai_photo;
+      missing.textContent = AI_MISSING[view.ai_missing] || '';
+      missing.hidden = !view.ai_missing;
+      button.disabled = asking || !!view.ai_missing;
+      if (!wish.value && view.ai) wish.value = view.ai.wish;
+      fill(answer, view.ai ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai.note || 'без пояснения',
+        h('span', {class: 'muted'}, ` — на «${view.ai.wish}»${view.ai.photo ? ', с картинкой' : ''}`)) : null,
+        view.ai && plainRules(view.ai.before) !== plainRules(view.rules)
+          ? h('div', {class: 'row'}, btn('Вернуть как было', () => save({rules: view.ai.before}), 'btn-small'),
+            h('span', {class: 'small muted'}, 'правила частей, какими они были до ответа AI')) : null);
+      rows();
+    }
+    get(`/photo-works/${id}/parts`).then((found) => {
+      parts = found.parts;
+      fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Части на картинке'),
+        h('img', {class: 'pp-image', src: found.picture, alt: 'Части картинки, каждая своим цветом'})));
+      if (view) rows();
+    }, (e) => fill(table_, h('p', {class: 'alert bad'}, e.message)));
+    const el = h('div', {class: 'stack'},
+      h('p', {class: 'small'}, 'Скажите своими словами, что изменить в картинке. AI предложит правило для каждой части — фона, волос, кожи, одежды; '
+        + 'серые подбираются на шкале работы по вашим измерениям, поэтому видно, что на этом титане достижимо.'),
+      wish, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Отправить AI уменьшенную картинку (без этого — только числа: части и их цвета)')),
+      h('div', {class: 'row'}, button), missing, status, answer,
+      h('h4', {}, 'Части картинки'), table_, overlay,
+      h('p', {class: 'small muted'}, 'Как есть — серые картинки; цвета фото — для каждого пикселя серый с ближайшим цветом на шкале; чёрно-белое — только серые, '
+        + 'которые на титане выходят почти серыми; цвет — цель, светлое и тёмное части сохраняются; один тон — один серый на всю часть: он стирает всё внутри неё (глаза, брови и губы — часть кожи лица, '
+        + 'поэтому ровную светлую кожу лучше задать цветом). '
+        + '«ΔE к цели» — медиана ΔE между желаемым цветом и тем, что даёт шкала.'));
+    return {el, show};
+  }
+
   /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Шкалы серого», «Сделать копию» и «Файл LightBurn». */
   function workHead(first) {
     const title = h('div', {class: 'ge-title'});
@@ -270,7 +359,8 @@
     const slots = newSlots();
     const picture = workPicture(save);
     const head = workHead(view);
-    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
+    const ai = aiTab(id, save, (wish) => send(`/photo-works/${id}/ai`, {wish}));
+    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => modeQuery(sc.mode) === modeQuery(view.scale)) || null;
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
@@ -286,16 +376,20 @@
     function shown() {
       head.update(view);
       picture.show(view, chosen());
+      ai.show(view);
       if (modeQuery(view.scale) !== shownKey) showScale();
     }
-    function save(changes) {
+    /** One change of the work (``path`` with ``body``): sent after those before it; the answer to the last one is shown. The promise
+        gives the error of this change, or null. */
+    function send(path, body) {
       const mine = ++seq;
       error.hidden = true;
       picture.waiting();
-      queue = queue.then(() => post(`/photo-works/${id}/settings`, changes)).then((next) => { view = next; if (mine === seq) shown(); },
-        (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); } });
+      queue = queue.then(() => post(path, body)).then((next) => { view = next; if (mine === seq) shown(); return null; },
+        (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); } return e; });
       return queue;
     }
+    function save(changes) { return send(`/photo-works/${id}/settings`, changes); }
     /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
     function pick(item) {
       if (modeQuery(item.mode) === shownKey) return;
@@ -367,7 +461,8 @@
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
         h('p', {class: 'small'}, settingsText(w.scale, w.dpi)),
-        h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ' · серые подобраны под цвета' : ''}`),
+        h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ' · серые подобраны под цвета' : ''}`
+          + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
         h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),
         h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
         h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
