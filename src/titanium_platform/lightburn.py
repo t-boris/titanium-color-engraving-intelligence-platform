@@ -218,7 +218,9 @@ def normalize_saved_orientation(project: Project, *, mirror_x: bool, mirror_y: b
     every XForm at the same time. Its canvas stays visually unchanged, but the
     file coordinates no longer match the marker positions stored in the plan.
     The cleaning rectangle is the invariant work-area boundary, including a
-    translation the operator made in LightBurn.
+    translation the operator made in LightBurn. A shape's holes and a picture's
+    own matrix are reflected with its outline, so the picture stays on its shape
+    (DEC-103).
     """
     flip_x = project.mirror_x is not None and project.mirror_x != mirror_x
     flip_y = project.mirror_y is not None and project.mirror_y != mirror_y
@@ -234,10 +236,19 @@ def normalize_saved_orientation(project: Project, *, mirror_x: bool, mirror_y: b
     y0 = min(region.y for region in boundary)
     x1 = max(region.x + region.width for region in boundary)
     y1 = max(region.y + region.height for region in boundary)
+    def reflect(points):
+        return [((x0 + x1 - x) if flip_x else x, (y0 + y1 - y) if flip_y else y) for x, y in points]
+
     for region in regions:
-        region.polygon = [((x0 + x1 - x) if flip_x else x,
-                           (y0 + y1 - y) if flip_y else y)
-                          for x, y in region.polygon]
+        region.polygon = reflect(region.polygon)
+        region.holes = [reflect(hole) for hole in region.holes]
+        if region.bitmap:
+            a, b, c, d, e, f = region.bitmap["matrix"]
+            if flip_x:
+                a, c, e = -a, -c, x0 + x1 - e
+            if flip_y:
+                b, d, f = -b, -d, y0 + y1 - f
+            region.bitmap["matrix"] = (a, b, c, d, e, f)
         xs, ys = zip(*region.polygon)
         region.x, region.y = min(xs), min(ys)
         region.width, region.height = max(xs) - region.x, max(ys) - region.y
@@ -526,7 +537,7 @@ def _regions(shape: ET.Element, parent=_IDENTITY, shared: dict[str, dict[str, st
                 png = base64.b64decode(shape.get("Data") or "", validate=False) or None
             except ValueError:
                 png = None
-            region.bitmap = {"png": png, "file": shape.get("File") or "", "w": w, "h": h, "matrix": m}
+            region.bitmap = {"png": png, "file": shape.get("File") or "", "source_hash": shape.get("SourceHash"), "w": w, "h": h, "matrix": m}
         return [region]
     if kind == "Path":
         return _path_regions(shape, m, shared)
@@ -623,12 +634,13 @@ def parse_bytes(data: bytes) -> Project:
                 bitmaps[layer.index].append(attrs)
     for index, items in bitmaps.items():
         layers[index].source_settings["bitmaps"] = items
-    pictures = {r.bitmap["file"]: r.bitmap["png"] for layer in layers.values() for r in layer.regions
-                if r.bitmap and r.bitmap["png"] and r.bitmap["file"]}
+    stored = [r.bitmap for layer in layers.values() for r in layer.regions if r.bitmap and r.bitmap["png"]]
+    by_file = {b["file"]: b["png"] for b in reversed(stored) if b["file"]}
+    by_hash = {b["source_hash"]: b["png"] for b in reversed(stored) if b["source_hash"] is not None}
     for layer in layers.values():           # an image used on several layers is stored once, with the first object
-        for region in layer.regions:
+        for region in layer.regions:        # named by its file, or by its SourceHash when the files differ (LightBurn 2.2, DEC-103)
             if region.bitmap and not region.bitmap["png"]:
-                region.bitmap["png"] = pictures.get(region.bitmap["file"])
+                region.bitmap["png"] = by_file.get(region.bitmap["file"]) or by_hash.get(region.bitmap["source_hash"])
 
     notes_el = root.find("Notes")
     notes = (notes_el.get("Notes") or "") if notes_el is not None else ""

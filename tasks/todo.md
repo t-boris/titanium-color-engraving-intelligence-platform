@@ -1349,3 +1349,18 @@ Operator's words (voice-typed): "четвёртым пунктом была фо
     means the light end of grayscale on these plates is not repeatable, and the scale must show that spread instead of one colour.
 - Open for the operator (answered with a default, not blocking): pure white at Min power (the plate's first step is white: the photograph decides); a convenient interval (the plate's rows decide: the one
   with the widest colour range and distinct steps); the pulse width 300 ns is not one of the laser's steps (250 / 350): the laser keeps the last valid one, so what these works really used is uncertain.
+
+## 0.18.1 plan: the grey-ramp plate saved by LightBurn is read whole (operator added the photo of TCE-A93B49E6, 2026-10-22)
+The plate (pair 107, IMG_3376.DNG) aligned by its markers, but 3 of the 4 tiles at 250 ns gave "0 pixels" and the 4 tiles at 350 ns were read with no picture.
+Two causes, found on an isolated copy (`scratchpad/plate107`, the live data only read):
+- LightBurn 2.2 stores a picture placed twice once: the second Bitmap of a row has `Data=""` and the first one's `SourceHash`. The reader saw no picture there.
+- `lightburn.normalize_saved_orientation` (LightBurn rewrote `MirrorY` and reflected the XForms) mirrored the outlines only: the picture's own matrix (and the holes) stayed
+  in the saved axes, so what a picture strikes landed mirrored about the plate's centre (tile 8 at rows 1171-1283, its struck mask at 541-654) and missed its own tile.
+- [x] A. A Bitmap without `Data` takes the picture stored with an earlier object: by the same file name (as before), otherwise by the same `SourceHash` (DEC-103). Done in the existing
+      pass of `lightburn.parse_bytes`, not as a second mechanism in `_shared_lists` (tried first, reverted: the file-name pass already existed).
+- [x] B. `normalize_saved_orientation`: reflect the holes and every picture's matrix with the outline, so the picture stays on its shape.
+- [x] C. Test: the grey plate saved the way LightBurn 2.2 saves it (MirrorY rewritten, XForms reflected, each row's picture stored once) measures every tile, all 16 steps,
+      each step its drawn colour; reader tests for the shared picture and the reflected matrix.
+- [ ] D. Version 0.18.1, README, MarkView (DEC-103 + bug), lessons; full suite (-n 12, none skipped); backup + deploy to 8765.
+- [ ] E. The plate's photo measured again with the fixed reader (re-measure keeps the accepted alignment): by the operator's button, or by me once approved.
+- [ ] F. Read the 8 scales: which pulse reproduces Mode A on the 0.0169 row, and whether its light steps confirm the light half.

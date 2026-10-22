@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 
 from titanium_platform import lightburn as lb
@@ -348,3 +350,38 @@ def test_a_path_without_its_own_lists_takes_the_ones_its_ids_name():
     regions = project.layer(0).regions
     assert [r.closed for r in regions] == [True, True, True]
     assert [(round(r.x), round(r.y), round(r.width), round(r.height)) for r in regions] == [(0, 0, 10, 10), (20, 0, 4, 4), (0, 30, 10, 10)]
+
+
+def test_a_picture_stored_once_is_read_for_every_bitmap_that_names_it():
+    """LightBurn 2.2 stores a picture placed twice once: the later Bitmap carries no Data, only the SourceHash of the first, under its own
+    file name (the grey-ramp plate saved by the operator held each row's ramp once for its two tiles, GREY-...-PW250.png and -PW350.png,
+    and the second tile was read with no picture, DEC-103)."""
+    ramp = base64.b64encode(b"ramp of the first row").decode()
+    project = _project(
+        f'<Shape Type="Bitmap" CutIndex="0" W="38" H="4" Data="{ramp}" File="GREY-PW250.png" SourceHash="3"><XForm>1 0 0 -1 20 10</XForm></Shape>',
+        '<Shape Type="Bitmap" CutIndex="0" W="38" H="4" Data="" File="GREY-PW350.png" SourceHash="3"><XForm>1 0 0 -1 60 10</XForm></Shape>',
+        '<Shape Type="Bitmap" CutIndex="0" W="38" H="4" Data="" File="other.png" SourceHash="5"><XForm>1 0 0 -1 20 20</XForm></Shape>')
+    # a hash no Bitmap of the file stores names no picture, as before
+    assert [r.bitmap["png"] for r in project.layer(0).regions] == [b"ramp of the first row", b"ramp of the first row", None]
+
+
+def test_a_file_lightburn_reflected_keeps_each_picture_and_hole_on_its_shape():
+    """LightBurn rewrote MirrorY and reflected every XForm: the outlines are reflected back to the plan's axes, and a picture's own matrix
+    and a shape's holes go with them. Before, what a picture strikes landed mirrored about the work's centre and missed its tile (DEC-103)."""
+    outer, _ = _square(60, 0, 20)
+    hole, _ = _square(63, 2, 2)
+    data = ('<LightBurnProject AppVersion="2.2.00" MirrorX="False" MirrorY="False"><CutSetting type="Image"><index Value="0"/>'
+            '<name Value="C00"/><maxPower Value="30"/><speed Value="150"/><frequency Value="60000"/></CutSetting>'
+            '<Shape Type="Bitmap" CutIndex="0" W="40" H="10" Data="" SourceHash="0"><XForm>1 0 0 -1 30 5</XForm></Shape>'
+            f'<Shape Type="Path" CutIndex="0"><XForm>1 0 0 1 0 0</XForm><VertList>{outer}{hole}</VertList>'
+            '<PrimList>L0 1L1 2L2 3L3 0L4 5L5 6L6 7L7 4</PrimList></Shape></LightBurnProject>')
+    project = lb.parse_bytes(data.encode())
+
+    assert lb.normalize_saved_orientation(project, mirror_x=False, mirror_y=True) == ["Y"]
+
+    picture, shape = project.layer(0).regions
+    assert (picture.y, picture.height) == pytest.approx((10, 10))                      # y -> 20 - y over the work's 0..20
+    corners = [lb._apply(picture.bitmap["matrix"], sx * 20, sy * 5) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    assert sorted(corners) == pytest.approx(sorted(picture.polygon))                  # the picture lies on its reflected rectangle
+    (inside,) = shape.holes
+    assert (min(y for _, y in inside), max(y for _, y in inside)) == pytest.approx((16, 18))

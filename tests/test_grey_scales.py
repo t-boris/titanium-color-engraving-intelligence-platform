@@ -1,6 +1,7 @@
 """Grey scales (REQ-059): the grey-ramp plate, its Image layers in LightBurn, each step measured at its power, and the scale it makes."""
 import re
 import struct
+import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
@@ -103,6 +104,54 @@ def test_a_photographed_plate_gives_each_tile_a_scale_with_every_step_at_its_pow
     hexes = [by_level[l]["hex"] for l in (255, 128, 0)]
     assert len(set(hexes)) == 3                                         # gold, violet and blue: one power, one colour each
     assert [sc["mode"]["line_interval"] for sc in ps.scales(s, world["laser"]["id"])] == [0.0169, 0.0169, 0.0254, 0.0254]
+
+
+def saved_by_lightburn_2_2(plan) -> bytes:
+    """The plate as LightBurn 2.2 saved the operator's: MirrorY rewritten with every XForm reflected over the work's height, and a picture
+    placed twice stored once (the later Bitmap keeps only the first one's SourceHash, under its own file name)."""
+    root = ET.fromstring(plans.export_lbrn2(plan))
+    assert root.get("MirrorY") == "True"
+    height = plan["markers"]["extent"]["max_y"] - plan["markers"]["extent"]["min_y"]
+    root.set("MirrorY", "False")
+    for shape in root.findall(".//Shape"):
+        xform = shape.find("XForm")
+        if xform is not None:
+            a, b, c, d, e, f = (float(value) for value in xform.text.split())
+            xform.text = " ".join(str(value) for value in (a, -b, c, -d, e, height - f))
+    hashes: dict[str, int] = {}
+    for shape in root.findall(".//Shape[@Type='Bitmap']"):
+        data = shape.get("Data")
+        stored = data in hashes
+        shape.set("SourceHash", str(hashes.setdefault(data, len(hashes))))
+        if stored:
+            shape.set("Data", "")
+    return ET.tostring(root)
+
+
+def test_a_plate_saved_again_by_lightburn_is_measured_tile_by_tile_with_every_step(world):
+    """The operator's plate came back from LightBurn 2.2 reflected in its axes and with each row's ramp stored once: three of the four tiles
+    at 250 ns read "0 pixels" (what a picture strikes was laid mirrored about the plate's centre) and the 350 ns tiles had no picture (DEC-103)."""
+    s = world["store"]
+    made = cp.create(s, world["laser"]["id"], world["titanium"]["id"], "grey_scales", {**SETTINGS, "scales": SMALL})
+    plan = plans.get_plan(s, made["plan_id"])
+    saved = saved_by_lightburn_2_2(plan)
+    assert saved.count(b'Data=""') == 2                                 # each row's two tiles hold one ramp
+    photo = synth.plate_photo(plan, {}, size=(1300, 2800), step_rgb=lambda name, grey: step_colour(grey))
+    pid = ig.create_pair(s, device_id=world["laser"]["id"], lens_id=world["lens"]["id"], stand_id=world["stand"]["id"],
+                         lightburn_name="grey.lbrn2", lightburn_bytes=saved, photo_name="grey.png",
+                         context={"material_id": world["titanium"]["id"]}, photo_bytes=cv2.imencode(".png", photo)[1].tobytes())
+
+    report = ig.check_pair(s, pid)
+
+    assert report["problems"] == [] and report["project"]["normalized_axes"] == ["Y"]
+    tiles = [rep for rep in report["layers"] if rep["name"].startswith("GREY-")]
+    assert len(tiles) == 4
+    for tile in tiles:
+        tonal = tile.get("tonal") or {}
+        assert tile["pixels"] and len(tonal.get("bins", [])) == 16 and tonal["steps_missed"] == 0, (tile["name"], tile["notes"])
+        for step in tonal["bins"]:
+            drawn = color.srgb8_to_lab(np.array([step_colour(step["gray"])], np.float64))[0]
+            assert color.delta_e([step["L"], step["a"], step["b"]], drawn) < 3, (tile["name"], step)
 
 
 # -- the picture writer: a picture the operator can open in LightBurn and engrave in grayscale mode ------------------------------

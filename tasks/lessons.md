@@ -361,3 +361,16 @@ Rules written after the operator's remarks, to prevent a repeat.
   hit `__pycache__/*.pyc` (grep lists binary files; sed stopped half-way with "illegal byte sequence"), and an unquoted `$FILES` is one word in zsh.
 - Rule: add the requirement or decision with the MarkView tool first and cite the id it returns. Rename across files with a Python script over text files only (`*.py`, `*.js`, `*.css`), deciding
   the new id line by line by meaning, then grep the result for every old and new id.
+
+## An isolated copy of the data is isolated only when its file paths point into the copy
+- Situation (2026-10-22): to reproduce the check of the plate's photo I copied the database and the files folder to the scratchpad and ran `remeasure_pair` on the copy. The copy's
+  pairs still held absolute paths into `~/.titanium-platform/files`: the revision's files were written there, and accepting it on the copy deleted the operator's own `.lbrn2` and DNG of
+  pair 107 from the live folder. Restored byte-identical from the copy taken two minutes before (21 pairs checked, none missing); the live database was never written.
+- Rule: right after copying, rewrite every path column of the copy (`pair.lightburn_path`, `pair.photo_path`, and any other stored path) to the copy's folder and assert that no path
+  of the copy starts with the live data folder, before running anything that can create, accept, revise or delete. Compare the live files folder with its copy after every such run.
+
+## A new kind of layer on a plate is tested with the file as LightBurn saves it back, not only with our export
+- Situation (2026-10-22): the grey-ramp plate (the first plate with Image layers) passed every test with our own export, but the operator engraves from the file LightBurn 2.2 saved again:
+  `MirrorY` rewritten with the XForms reflected, and a picture placed twice stored once (`Data=""`, the same `SourceHash`, another file name). Three tiles read "0 pixels", four had no picture.
+- Rule: when a plate or writer adds a new kind of shape (pictures, holes, groups, texts), add a test that round-trips the file through LightBurn's saving habits (`saved_by_lightburn_2_2` in
+  `tests/test_grey_scales.py`, the MirrorY reflection in `tests/test_ingest.py`) and measures it, and make every transform of a shape (outline, holes, the picture's matrix) go through one place.
