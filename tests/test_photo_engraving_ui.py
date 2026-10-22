@@ -69,6 +69,7 @@ ctx.fetch = async (url, opts = {}) => {
     return answer(view());
   }
   if (path === `/api/photo-works/${work.id}/kinds`) return answer(data.kinds);
+  if (path === `/api/plans/${work.id}` && method === 'DELETE') return answer(null, 204);
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
   if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Шкалы серого · TCE-31'}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
@@ -193,26 +194,70 @@ def listed(work):
 
 # -- the list and a new work -----------------------------------------------------------------------------------------------------------
 @node
-def test_the_list_shows_each_work_and_a_new_work_is_made_from_a_picture_a_name_and_a_width_and_opened(tmp_path):
+def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_picture_then_which_kind_with_the_picture_in_each(tmp_path):
     out = run(tmp_path, {}, """
   out.cards = tree.querySelectorAll('article.vw-work-card').map((c) => c.textContent);
   out.thumb = tree.querySelector('a.vw-thumb').children[0].getAttribute('src');
   await button(tree, 'Новая работа').dispatch('click'); await settle();
-  const box = dialog();
+  let box = dialog();
+  out.first = {title: box.querySelector('h3').textContent, buttons: box.querySelectorAll('button').map((b) => b.textContent)};
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
   out.name = labelled(box, 'Название работы').value;
   labelled(box, 'Ширина на титане, мм').value = '80';
-  await button(box, 'Создать').dispatch('click'); await settle();
+  await button(box, 'Дальше →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
-  out.went = ctx.__went; out.open = !!dialog();
-""")
+  box = dialog();
+  const tiles = () => box.querySelectorAll('button.ge-kind');
+  const marked = () => tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
+  out.second = {title: box.querySelector('h3').textContent, tiles: tiles().length, pictures: tiles().map((b) => b.querySelector('img').getAttribute('src')),
+                marked: marked(), create: !!button(box, 'Создать в «Градации серого»'), back: !!button(box, '← Назад'), went: [...ctx.__went]};
+  await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
+  out.picked = {marked: marked(), open: !!dialog(), saved: saves()};
+  await button(box, 'Создать в «Джарвис»').dispatch('click'); await settle();
+  out.saved = saves(); out.went = ctx.__went; out.open = !!dialog();
+  out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
+""", work={"id": 9})
     card = out["cards"][0]
     assert "Портрет" in card and "60 × 30 мм" in card and "Min 12 % · Max 28 %" in card and "100 мм/с" in card
-    assert out["thumb"] == "/api/photo-works/7/thumb.png?v=2026-10-21T10%3A05%3A00"
+    assert out["thumb"] == "/api/photo-works/9/thumb.png?v=2026-10-21T10%3A05%3A00"
+    assert out["first"] == {"title": "Новая работа · шаг 1 из 2: картинка", "buttons": ["×", "Отмена", "Дальше →"]}
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
     assert out["sent"] == [{"picture": "moto.jpg", "name": "moto", "width_mm": "80"}]   # no scale: the best measured one is taken
-    assert out["went"] == ["/photo-engraving?work=9&ask=kind"] and not out["open"]          # the new work asks which kind first
+    second = out["second"]
+    assert second["title"] == "Новая работа · шаг 2 из 2: какая гравировка?" and second["tiles"] == 10 and second["went"] == []
+    assert second["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1"            # the work's own picture in each kind
+    assert second["marked"] == ["Градации серого выбрано"] and second["create"] and second["back"]
+    assert out["picked"] == {"marked": ["Джарвис выбрано"], "open": True, "saved": []}      # a click chooses; nothing is saved yet
+    assert out["saved"] == [{"kind": "jarvis"}] and out["went"] == ["/photo-engraving?work=9"] and not out["open"]
+    assert out["deleted"] == []
+
+
+@node
+def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_second_step_deletes_the_work_it_made(tmp_path):
+    out = run(tmp_path, {}, """
+  const posts = () => requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').length;
+  const deleted = () => requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
+  await button(tree, 'Новая работа').dispatch('click'); await settle();
+  let box = dialog();
+  const file = input(box, (i) => i.getAttribute('type') === 'file');
+  file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
+  labelled(box, 'Название работы').value = 'Мото';
+  labelled(box, 'Ширина на титане, мм').value = '80';
+  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(dialog(), '← Назад').dispatch('click'); await settle();
+  box = dialog();
+  out.back = {title: box.querySelector('h3').textContent, name: labelled(box, 'Название работы').value, width: labelled(box, 'Ширина на титане, мм').value,
+              file: box.querySelector('.file-name').textContent, deleted: deleted(), went: [...ctx.__went]};
+  await button(box, 'Дальше →').dispatch('click'); await settle();
+  out.again = {title: dialog().querySelector('h3').textContent, posts: posts()};
+  await press({key: 'Escape'}); await settle();
+  out.escaped = {open: !!dialog(), deleted: deleted(), went: ctx.__went, saved: saves()};
+""", work={"id": 9})
+    assert out["back"] == {"title": "Новая работа · шаг 1 из 2: картинка", "name": "Мото", "width": "80", "file": "moto.jpg · 4 КБ",
+                           "deleted": ["/api/plans/9"], "went": []}
+    assert out["again"] == {"title": "Новая работа · шаг 2 из 2: какая гравировка?", "posts": 2}
+    assert out["escaped"] == {"open": False, "deleted": ["/api/plans/9", "/api/plans/9"], "went": [], "saved": []}
 
 
 # -- a work -----------------------------------------------------------------------------------------------------------------------------
@@ -343,17 +388,19 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   const box = dialog();
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'girl.png', size: 2048}]; await file.dispatch('change');
-  await button(box, 'Создать').dispatch('click'); await settle();
+  await button(box, 'Дальше →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
-  out.went = ctx.__went;
-""")
+  out.tiles = dialog().querySelectorAll('button.ge-kind').length;
+  await button(dialog(), 'Создать в «Градации серого»').dispatch('click'); await settle();
+  out.went = ctx.__went; out.saved = saves();
+""", work={"id": 9})
     assert out["first"] == {"chosen": [True, False], "powers": ["1", "30"], "table": True, "works": False}
     assert out["widths"] == [["38,4 мм", "false"], ["150 мм", "true"]]                    # shown at the size most measured, the others a click away
     assert out["asked"] == ["150", "38.4"] and out["pressed"] == ["true", "false"]
     assert out["second"] == {"chosen": [False, True], "powers": ["2", "25"]}
     sent = out["sent"][0]
     assert json.loads(sent.pop("scale")) == mode(100) and sent == {"picture": "girl.png", "name": "girl", "width_mm": "50"}
-    assert out["went"] == ["/photo-engraving?work=9&ask=kind"]
+    assert out["tiles"] == 10 and out["went"] == ["/photo-engraving?work=9"] and out["saved"] == []    # grayscale: nothing to change
 
 
 # -- the AI tab: the parts and their rules (REQ-062) -------------------------------------------------------------------------------------
@@ -494,16 +541,18 @@ def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engrav
 
 # -- the kind of engraving (0.21.0) ----------------------------------------------------------------------------------------------------
 @node
-def test_a_new_work_asks_which_kind_with_its_picture_in_each_and_a_dot_kind_has_one_power_picked_on_the_scale_strip(tmp_path):
-    out = run(tmp_path, {"work": "7", "ask": "kind"}, """
+def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind_has_one_power_picked_on_the_scale_strip(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  out.before = !!dialog();
+  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
   const box = dialog();
   const tiles = () => box.querySelectorAll('button.ge-kind');
   out.title = box.querySelector('h3').textContent;
   out.tiles = tiles().map((b) => b.querySelector('strong').textContent);
   out.pictures = tiles().map((b) => b.querySelector('img').getAttribute('src'));
-  out.current = tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent);
+  out.current = tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
   out.estimates = tiles().map((b) => b.textContent.includes('оценка'));
-  out.keep = !!button(box, 'Оставить «Градации серого»');
+  out.keep = !!button(box, 'Закрыть');
   await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
   out.closed = !dialog();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
@@ -519,10 +568,10 @@ def test_a_new_work_asks_which_kind_with_its_picture_in_each_and_a_dot_kind_has_
   out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
   out.saved = saves();
 """)
-    assert out["title"] == "Какая гравировка?"
+    assert not out["before"] and out["title"] == "Какая гравировка?"                     # an existing work asks only when the button is clicked
     assert out["tiles"] == ["Градации серого", "Порог", "Упорядоченный (Байер)", "Аткинсон", "Растр (Флойд-Стейнберг)", "Стаки", "Джарвис",
                             "Газетный растр", "Полутона", "Эскиз"]
-    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Градации серого"] and out["keep"]
+    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Градации серого сейчас"] and out["keep"]
     assert out["estimates"] == [False] + [True] * 9                                       # grayscale is measured, the dot kinds estimated
     assert out["closed"] and out["kind"] == "Вид: Джарвис" and not out["minMax"] and out["dot"] == "12.5"
     assert out["byColour"] and out["closeup"] and out["says"] == [True, True, True] and out["ramp"]

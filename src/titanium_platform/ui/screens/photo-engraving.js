@@ -1,17 +1,17 @@
 /* Фотогравировка (REQ-059, REQ-061): работы на измеренных шкалах. Шкала — постоянные настройки (лазер, линза, титан, скорость,
    частота, импульс, шаг строк, проходы) с измеренной кривой «мощность → цвет»; в градациях серого серый картинки задаёт мощность от Min
-   (белый) до Max (чёрный), и на титане мощность даёт цвет. Вид гравировки (0.21.0): новая работа спрашивает «Какая гравировка?» и
-   показывает картинку в каждом виде; в видах точками каждая точка бьёт на одной мощности — цвет шкалы при ней, между точками очищенный
+   (белый) до Max (чёрный), и на титане мощность даёт цвет. Вид гравировки (0.21.0): «Новая работа» вторым шагом спрашивает «Какая гравировка?»
+   и показывает картинку в каждом виде; в видах точками каждая точка бьёт на одной мощности — цвет шкалы при ней, между точками очищенный
    титан; пока такой вид не гравировался, это оценка по шкале. Раскраска по объектам (0.21.0), как в раскраске: губам, очкам, волосам,
    кускам фона — каждому свой основной цвет шкалы (щелчком по цвету, темой, «Случайно» или по просьбе AI), светлое и тёмное объекта
    ложатся вокруг этого цвета в его семействе.
    Работа — картинка на шкале, как векторная работа (DEC-104): список «Мои работы» (открыть, сделать копию, переименовать, удалить),
-   «Новая работа» (картинка, название, ширина), сама работа на один экран: шкалы слева, картинка рядом с прогнозом посередине, справа
+   «Новая работа» в два шага (картинка, название, ширина; затем «Какая гравировка?»), сама работа на один экран: шкалы слева, картинка рядом с прогнозом посередине, справа
    вкладки; шкала, Min и Max, ширина и подбор серых сохраняются в работе сразу. Страница «Шкалы серого» показывает, какой серый каким
    цветом выходит на каждой шкале и подтверждают ли это эксперименты.
    Цвет зависит от размера гравировки (DEC-107): от длины строки, у картинки — её ширины. Шкала показывает, при какой ширине она измерена;
    работа берёт цвета при своей ширине — измеренные, между двумя измеренными или ближайшие, и говорит какие.
-   Адреса: #/photo-engraving — мои работы; ?work=<id> — работа (&ask=kind — сразу спросить вид); ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
+   Адреса: #/photo-engraving — мои работы; ?work=<id> — работа; ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
    #/photo-preview (прогноз по файлу LightBurn) и #/photo (непрерывная полосами). */
 'use strict';
 (() => {
@@ -764,36 +764,56 @@
     dots: (k) => `Точки одного цвета на очищенном титане, тон — сколько точек. Точки ${value(k.power, 1)} %.`,
     edges: (k) => `Точки по краям рисунка, ровные места остаются титаном. Точки ${value(k.power, 1)} %.`};
 
-  /** «Какая гравировка?»: каждый вид, который красит титан, с картинкой работы, какой она в нём выйдет (вид точками — оценка по шкале), и
-      нынешний вид отмечен. Щелчок по виду — работа переходит на него (отменяется «Отменить»). ``first`` — работа только что создана. */
-  function kindChooser(id, current, choose, first = false) {
+  const KINDS_ABOUT = 'Градации серого измерены вашими шкалами; виды точками показаны оценкой: точка — цвет шкалы при мощности точек, между точками — '
+    + 'очищенный титан. Вид можно поменять в работе в любой момент.';
+
+  /** The tiles of «Какая гравировка?»: every kind that colours titanium, each with the work's picture as it would come out in it (a dot kind
+      is an estimate from the scale). The tile of ``current`` is marked with ``tag``; a click on a tile calls ``pick`` with its kind, and
+      ``mark(key)`` moves the mark. Shared by the second step of «Новая работа» and the «Вид» button of a work. */
+  function kindTiles(id, current, pick, tag) {
     const grid = h('div', {class: 'ge-kinds'}, h('p', {class: 'muted'}, 'Считаем, как картинка выйдет в каждом виде…'));
-    const intro = first ? 'Работа создана. Выберите, как её гравировать: под каждым видом — ваша картинка, какой она выйдет на титане на шкале работы. '
-      : 'Под каждым видом — картинка работы, какой она выйдет на титане на её шкале. ';
-    const dialog = modal('Какая гравировка?', h('div', {class: 'stack'}, h('p', {class: 'small'}, intro
-      + 'Градации серого измерены вашими шкалами; виды точками показаны оценкой: точка — цвет шкалы при мощности точек, между точками — очищенный титан. '
-      + 'Вид можно поменять в работе в любой момент.'), grid),
-      [{label: first ? `Оставить «${kindName(current)}»` : 'Закрыть', run: (m) => m.close()}]);
+    let tiles = [];
+    const mark = (key) => {
+      current = key;
+      for (const t of tiles) {
+        const on = t.key === key;
+        t.el.classList.toggle('is-chosen', on);
+        t.el.setAttribute('aria-pressed', String(on));
+        fill(t.tag, on ? pill(tag, 'ok') : null);
+      }
+    };
     get(`/photo-works/${id}/kinds`).then((d) => {
       if (d.problem) { fill(grid, h('p', {class: 'alert warn'}, I18N.tr(d.problem))); return; }
-      fill(grid, d.kinds.map((k) => {
+      tiles = d.kinds.map((k) => {
         const name = kindName(k.key);
         const about = (KIND_ABOUT[k.family] || KIND_ABOUT.dots)(k);
-        return h('button', {type: 'button', class: 'ge-kind' + (k.key === current ? ' is-chosen' : ''), 'aria-pressed': String(k.key === current),
-          onClick: () => { dialog.close(); if (k.key !== current) choose(k.key); }},
+        const slot = h('span', {});
+        const el = h('button', {type: 'button', class: 'ge-kind', onClick: () => pick(k.key)},
           h('img', {src: k.picture, alt: `Картинка в виде «${name}»`, loading: 'lazy'}),
-          h('span', {class: 'ge-kind-head'}, h('strong', {}, name), k.key === current ? pill('сейчас', 'ok') : null),
+          h('span', {class: 'ge-kind-head'}, h('strong', {}, name), slot),
           h('span', {class: 'small'}, k.hex ? hexChip(k.hex) : null, k.hex ? ' ' : null, about),
           k.estimate ? h('span', {class: 'small muted'}, k.basis === 'inferred' ? 'оценка; узор LightBurn не опубликован — показан похожий' : 'оценка: этот вид ещё не гравировался') : null);
-      }));
+        return {key: k.key, el, tag: slot};
+      });
+      fill(grid, tiles.map((t) => t.el));
+      mark(current);
     }, (e) => fill(grid, h('p', {class: 'alert bad'}, e.message)));
+    return {el: grid, mark};
+  }
+
+  /** «Вид» of a work: «Какая гравировка?» with the work's picture in each kind and its kind marked; a click on another kind switches the
+      work to it («Отменить» takes it back). */
+  function kindChooser(id, current, choose) {
+    const tiles = kindTiles(id, current, (key) => { dialog.close(); if (key !== current) choose(key); }, 'сейчас');
+    const dialog = modal('Какая гравировка?', h('div', {class: 'stack'},
+      h('p', {class: 'small'}, 'Под каждым видом — картинка работы, какой она выйдет на титане на её шкале. ' + KINDS_ABOUT), tiles.el),
+      [{label: 'Закрыть', run: (m) => m.close()}]);
     return dialog;
   }
 
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
-      сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max.
-      ``ask`` — сразу спросить вид гравировки (работа только что создана). */
-  async function workScreen(id, ask = false) {
+      сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
+  async function workScreen(id) {
     const [first, {scales}] = await Promise.all([get('/photo-works/' + id), get('/grey-scales')]);
     let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve();
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
@@ -863,10 +883,6 @@
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
     };
     keys = key;
-    if (ask) {
-      kindChooser(id, view.kind || GRAYSCALE, (kind) => save({kind}), true);
-      try { history.replaceState(null, '', `#/photo-engraving?work=${id}`); } catch (_) { /* без истории спросит снова при перезагрузке */ }
-    }
     return fill(root, head.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
@@ -877,8 +893,10 @@
 
   // ---- список работ, новая работа, шкалы серого ----------------------------------------------------------------------------------------
 
-  /** «Новая работа»: картинка, название и ширина на титане. Шкала — ``scale`` (со страницы шкал) или лучшая из измеренных, Min и Max — её
-      измеренный диапазон; всё это меняется в работе. Работа открывается сразу. */
+  /** «Новая работа» in two steps of one dialog. Step 1: the picture, the name and the width on titanium; «Дальше» makes the work on ``scale``
+      (from the scales page) or the best measured scale, Min and Max its measured span. Step 2: «Какая гравировка?» with the picture in each
+      kind, grayscale chosen; a click on a tile chooses its kind and «Создать» keeps the work in it and opens the work. Leaving step 2 any
+      other way («Назад», ×, Escape, a click outside) deletes the work step 1 made; «Назад» returns to step 1 with its fields as they were. */
   function newWork(scale) {
     const fileIn = h('input', {type: 'file', accept: PICTURES, 'aria-label': 'Картинка'});
     const name = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
@@ -887,12 +905,13 @@
       const file = fileIn.files && fileIn.files[0];
       if (file && !name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '');
     });
-    modal('Новая работа', h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width),
+    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width),
       h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
         : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
-        + ' Следом работа спросит, какая гравировка: градации серого или вид точками, — и покажет картинку в каждом.')), [
+        + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'));
+    const pictureStep = () => modal('Новая работа · шаг 1 из 2: картинка', fields, [
       {label: 'Отмена', run: (m) => m.close()},
-      {label: 'Создать', cls: 'primary', run: async (m) => {
+      {label: 'Дальше →', cls: 'primary', run: async (m) => {
         const file = fileIn.files && fileIn.files[0];
         if (!file) throw new Error('Выберите картинку (PNG, JPEG, TIFF)');
         const fd = new FormData();
@@ -902,8 +921,30 @@
         if (scale) fd.append('scale', JSON.stringify(scale));
         const made = await form('/photo-works', fd);
         m.close();
-        go(`/photo-engraving?work=${made.id}&ask=kind`);
+        kindStep(made.id);
       }}]);
+    const kindStep = (id) => {
+      let chosen = GRAYSCALE, kept = false, back = false;
+      const label = () => `Создать в «${kindName(chosen)}»`;
+      const tiles = kindTiles(id, chosen, (key) => { chosen = key; tiles.mark(key); create.textContent = label(); }, 'выбрано');
+      const dialog = modal('Новая работа · шаг 2 из 2: какая гравировка?', h('div', {class: 'stack'},
+        h('p', {class: 'small'}, 'Под каждым видом — ваша картинка, какой она выйдет на титане на шкале работы; щелчок выбирает вид. ' + KINDS_ABOUT), tiles.el), [
+        {label: '← Назад', run: (m) => { back = true; m.close(); }},
+        {label: label(), cls: 'primary', run: async (m) => {
+          kept = true;                                      // from here the work stays, even if the dialog is closed while it is saved
+          try { if (chosen !== GRAYSCALE) await post(`/photo-works/${id}/settings`, {kind: chosen}); }
+          catch (e) { kept = false; throw e; }
+          m.close();
+          go(`/photo-engraving?work=${id}`);
+        }}], () => {
+        if (kept) return;
+        del('/plans/' + id).catch(fail);
+        if (back) pictureStep();
+      });
+      const buttons = dialog.el.querySelectorAll('button');
+      const create = buttons[buttons.length - 1];
+    };
+    pictureStep();
   }
 
   const plateButton = (devices, materials, cls) => btn('Пластина «Шкалы серого»', () => PlateDialog.open(devices, materials, null, {type: 'grey_scales'}), cls,
@@ -1001,7 +1042,7 @@
   }
 
   App.register({id: 'photo-engraving', async render(ctx) {
-    if (ctx.query.work) return workScreen(encodeURIComponent(ctx.query.work), ctx.query.ask === 'kind');
+    if (ctx.query.work) return workScreen(encodeURIComponent(ctx.query.work));
     if (ctx.query.scales || ctx.query.scale) return scalesScreen(ctx.query.scale);
     return listScreen();
   }});

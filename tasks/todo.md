@@ -1761,3 +1761,24 @@ Former plans move: photo-engraving colours in the vector palette (G) -> 0.21.0, 
 - The 150 mm engraving (pair 111 of plan 32 «Inna Portrait-P1-30», restored from its file; work 28 of the plan no longer exists) cannot be reproduced under
   leave-one-out: it is the only measurement of its mode at 150 mm, so its check says "other size, measured at 38.4 mm" (nothing to compare with), not a failure. With
   it included, the 150 mm scale is that engraving itself.
+
+## 0.21.1: «Новая работа» asks «Какая гравировка?» as its own step (operator, 2026-10-22)
+Operator: "Почему при фотографировке, когда я выбираю новую работу, он не спрашивает меня, какую фотографировку я хочу сделать?" In 0.21.0 the dialog asked for the
+picture, name and width only; the question opened after «Создать» (verified on a copy: it does open, with the picture in every kind). Answer: «Шаг 1 картинка, шаг 2 вид».
+- [x] N1. One dialog, two steps: «Новая работа · шаг 1 из 2: картинка» (picture, name, width; «Дальше →» uploads it and makes the work) and «шаг 2 из 2: какая
+      гравировка?» (the tiles of the kinds with the operator's picture, grayscale chosen; a click chooses; «Создать в «…»» sets the kind and opens the work).
+      «← Назад» returns to step 1 with its fields kept, and the work made by «Дальше» is deleted; closing the dialog at step 2 deletes it too.
+- [x] N2. The tiles' grid is shared by the new-work step and the «Вид» chooser in a work; the work no longer asks on `&ask=kind` (no new work goes there).
+- [ ] N3. UI tests (both steps, «Назад», closing, the scales page's «Новая работа»), README 0.21.1, a MarkView bug, walk from «Мои работы» → «Новая работа» on a
+      copy, full suite, backup, deploy, commit and push.
+
+#### Review of 0.21.1 (2026-10-22)
+- N1, N2 built: `newWork` is two modals in sequence (step 1 builds its fields once, so «Назад» shows them as they were); `kindTiles` is the
+  grid shared with the work's «Вид» chooser; `modal()` got an optional `onClose`, called once however the dialog closes, which deletes the
+  draft work unless «Создать» was pressed. `workScreen` lost `ask`, the route lost `&ask=kind`.
+- Tests: the list test walks both steps and creates in «Джарвис»; a new test checks «Назад» (fields kept, the draft deleted) and Escape;
+  the scales page's test goes through both steps; the kinds test opens the chooser from «Вид» of a work. UI tests 17 passed.
+- Walk on a copy of the live data from «Мои работы» → «Новая работа», click by click: step 1, step 2 with all 10 kinds pictured,
+  «Назад» kept the fields and deleted the draft, «Создать в «Джарвис»» opened the work in Джарвис at 29,1 %, Escape on step 2 deleted
+  its draft; no console errors.
+- Known: a work created in a dot kind has one undo step (back to grayscale), as the kind is set right after the work is made.

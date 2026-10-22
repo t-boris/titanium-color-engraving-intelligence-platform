@@ -478,3 +478,10 @@ Operator, 2026-10-22: "Я открыл существующую Boris3 рабо�
 colouring was a prototype on a scratch page.
 - Rule: the report names, for the operator's own works, what changes on screen and what stays the same and why; a prototype is called a prototype, with
   where to look, and never mixed into "what is new in the app".
+
+## A question the operator expects at a click is visible at that click
+Operator, 2026-10-22, after 0.21.0: "Почему при фотографировке, когда я выбираю новую работу, он не спрашивает меня, какую фотографировку я хочу сделать?"
+«Новая работа» opened the old dialog (picture, name, width); «Какая гравировка?» opened only after «Создать», promised in grey small print. The walk opened
+the question from the «Вид» button and never clicked «Новая работа» as the operator would; the operator deleted Boris - 3 and stopped at the dialog.
+- Rule: when the operator says "when I choose X it should ask Y", Y is on screen the moment X is chosen (its first step), not after a later button.
+- Rule: walk every new flow from the operator's own entry point (here «Новая работа» on «Мои работы»), click by click, before the release.

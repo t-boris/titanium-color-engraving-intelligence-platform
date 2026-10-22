@@ -16,11 +16,19 @@ Object.assign(App, (() => {
   }
   const fail = (e) => toast(e.message || String(e), 'bad');
 
-  function modal(title, body, actions) {
+  /** A dialog: ``title``, ``body`` and a row of ``actions`` ({label, cls, run(m)}). ``onClose`` is called once when the dialog is closed,
+      however it is: by an action, ×, Escape or a click outside. */
+  function modal(title, body, actions, onClose = null) {
     const opener = document.activeElement;
+    let closed = false;
     const bg = h('div', {class: 'modal-bg', onClick: (e) => { if (e.target === bg) close(); }});
     const onKey = (e) => { if (e.key === 'Escape') close(); };
-    const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus(); };
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus();
+      if (onClose) onClose();
+    };
     const buttons = (actions || []).map((a) => btn(a.label, async (ev) => {
       const b = ev.currentTarget;
       b.disabled = true;
