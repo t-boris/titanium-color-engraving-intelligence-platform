@@ -1361,6 +1361,20 @@ Two causes, found on an isolated copy (`scratchpad/plate107`, the live data only
 - [x] B. `normalize_saved_orientation`: reflect the holes and every picture's matrix with the outline, so the picture stays on its shape.
 - [x] C. Test: the grey plate saved the way LightBurn 2.2 saves it (MirrorY rewritten, XForms reflected, each row's picture stored once) measures every tile, all 16 steps,
       each step its drawn colour; reader tests for the shared picture and the reflected matrix.
-- [ ] D. Version 0.18.1, README, MarkView (DEC-103 + bug), lessons; full suite (-n 12, none skipped); backup + deploy to 8765.
-- [ ] E. The plate's photo measured again with the fixed reader (re-measure keeps the accepted alignment): by the operator's button, or by me once approved.
-- [ ] F. Read the 8 scales: which pulse reproduces Mode A on the 0.0169 row, and whether its light steps confirm the light half.
+- [x] D. Version 0.18.1, README, MarkView DEC-103, lessons; full suite 1548 passed (-n 12, none skipped); backup
+      `backups/titanium-before-0.18.1-20261022T010813Z.sqlite` (integrity ok, 87 pairs, 2108 observations); 8765 answers 0.18.1.
+- [x] E. Re-measured with the operator's approval ("Перемерить заново" pressed in a second MarkView tab): pair 107 -> 108, 8 of 8 tiles, 16 of 16 steps each; 21 pairs, no file missing.
+- [x] F. Read the 8 scales: neither pulse reproduces Mode A on the 0.0169 row (below).
+
+#### Review (2026-10-22)
+- Incident: the first reproduction ran `remeasure_pair` on a copy whose paths still pointed into the live files folder; accepting the revision on the copy deleted the live `.lbrn2` and DNG of
+  pair 107. Restored byte-identical within minutes from the copy taken just before (the live database was never written); lesson added; `scratchpad/tools/safe_copy.py` rewrites every stored
+  path of a copy and refuses one that still names the live folder.
+- What the plate shows (chart-corrected, 16 steps per tile, Min 1 / Max 30):
+  - Within the plate colour follows energy per area: the bluest step sits at P / interval = 535-686 on every row (one step is 1.9 %). Wider intervals spread the sequence over more steps and
+    saturate it: at 0.0254 gold b +30..+38 at P 7-11, blue b -22..-28 at P 14.5-16.5; at 0.0169 the whole sequence is squeezed into P 5-11.
+  - Against Mode A (Motorcycle, Girl; 0.0169, 150 mm/s, 60 kHz, entered as 300 ns): light half 24-29 dE median, dark half 10-13, for 250 and 350 ns alike. The plate is bare at P 2, straw at
+    4, gold at 5.5, violet and blue at 7-11, light blue at 13, then grey; the works stay straw (L 65-82, b +14..+28) up to P 13, turn brownish at 15-17 and grey after, never violet or blue.
+  - Same layer settings; differences: line length 150 mm (works) vs 38 mm (tile), cleaning interval 0.04 vs 0.05, the real pulse of the works unknown (operator: "Don't know").
+- Next (operator's choice, 2026-10-22): one picture on one plate scale engraved twice from "Картинка на шкале", 38 mm and 100 mm wide. The small one tests the prediction in the plate's own
+  geometry; the large one shows whether size (line length, heat) moves the colours. Both are compared with the plate's scale by the confirmation the scale already shows.
