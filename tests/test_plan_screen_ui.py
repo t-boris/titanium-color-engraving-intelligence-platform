@@ -39,9 +39,10 @@ SETTINGS = {"speed": 150.0, "frequency": 60.0, "pulse_width": 350.0, "line_inter
             "layer_type": "Image"}
 
 
-def zone(number, index, kind, parameters, problem=None, regions=("r1", "r2")):
+def zone(number, index, kind, parameters, problem=None, regions=("r1", "r2"), **greys):
     name = None if parameters is None else f"C{index:02d} Photo {number} {kind} P{parameters['power']:g}"
-    return {"number": number, "index": index, "kind": kind, "regions": list(regions), "name": name, "problem": problem, "parameters": parameters,
+    greys = {"by_colour": False, "colour_choice": "drawing", "contours": False, "rules": [], **greys}
+    return {"number": number, "index": index, "kind": kind, "regions": list(regions), "name": name, "problem": problem, "parameters": parameters, **greys,
             "picture": None if problem else f"/api/vector/22/photo/{number}.png?v=k{number}", "width_mm": 50.0, "area_mm2": 2109.0}
 
 
@@ -66,15 +67,16 @@ def run(tmp_path, body) -> dict:
 
 @node
 def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_after_the_colours(tmp_path):
-    out = run(tmp_path, plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0}),
-                              zone(2, 4, "jarvis", {**SETTINGS, "min_power": 20.0, "power": 20.0}, regions=("r4",)),
+    out = run(tmp_path, plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0}, by_colour=True, colour_choice="nearest", contours=True),
+                              zone(2, 4, "jarvis", {**SETTINGS, "min_power": 20.0, "power": 20.0}, regions=("r4",), by_colour=True),
                               zone(3, 5, "grayscale", None, problem="the width of the picture must be 1..1000 mm")]))
     assert [r[0] for r in out["rows"]] == ["C02 P50-F1950-V1800-I0.01", "C03 Photo 1 grayscale P29Фотозона 1 · Градации серого",
                                            "C04 Photo 2 jarvis P20Фотозона 2 · Джарвис", "Фотозона 3Фотозона 3 · Градации серого"]
     gray, dots, bad = out["rows"][1:]
     assert gray[1].startswith("Min 2.0 % – Max 29.0 % · 60.0 кГц · 150 мм/с · Q-Pulse 350 нс · шаг строк 0.0212 мм · 1 проход(а)")
-    assert "Изображение (Image), режим «Градации серого»: картинка работы в областях зоны, вне зоны прозрачна" in gray[1]
-    assert dots[1].startswith("точки 20.0 % · 60.0 кГц") and "режим «Джарвис»" in dots[1]
+    assert gray[1].endswith("Изображение (Image), режим «Градации серого»: картинка работы в областях зоны, вне зоны прозрачна; "
+                            "серые подобраны под цвета: ближайший цвет · контуры")                      # how its greys are chosen (0.23.0)
+    assert dots[1].startswith("точки 20.0 % · 60.0 кГц") and dots[1].endswith("режим «Джарвис»: картинка работы в областях зоны, вне зоны прозрачна")
     assert bad[1] == "Ширина картинки должна быть от 1 до 1000 мм" and bad[2] == "—"            # the server's reason, translated
     assert [gray[-1], dots[-1], bad[-1]] == ["2", "1", "2"] and gray[3:7] == ["—"] * 4
     assert out["pictures"] == [["/api/vector/22/photo/1.png?v=k1", "Фотозона 1", "plan-zone-pic"], ["/api/vector/22/photo/2.png?v=k2", "Фотозона 2", "plan-zone-pic"]]

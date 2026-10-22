@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, palette, photo_zones as pz, plans as pl, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -882,10 +882,11 @@ def _zone_loops(plan: dict) -> dict[str, list]:
 def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], first: int) -> list[dict]:
     """Every photo zone with what the screen, the time and the file need, its layer numbered from ``first``: how wide it is (the length of its
     rows, DEC-107), its area and box, its scale's curve at that width with the dots of a dot kind (their measured tones when that kind was
-    photographed), the settings and the time of its layer; or why it cannot be engraved (``problem``: its scale is not measured there)."""
+    photographed), the settings and the time of its layer; or why it cannot be engraved (``problem``: its scale is not measured there). The
+    row's zone has every setting (``photo_zones.full``)."""
     loops = _zone_loops(plan)
     rows = []
-    for n, zone in enumerate(zones):
+    for n, zone in enumerate(pz.full(z) for z in zones):
         width = pz.width_of(loops, zone["regions"])
         mode = pz.mode_of(plan, zone)
         box = pz.box_of(loops, zone["regions"], grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)[0]
@@ -910,11 +911,13 @@ def _first_zone(plan: dict, state: dict) -> int:
 
 
 def _zone_shown(plan: dict, row: dict) -> dict:
-    """A photo zone as the editor shows it: its photo engraving, where it lies, its width and area, the scale's measured span at its width,
-    the dots of a dot kind and whether they are estimated, its layer and the address of its picture."""
+    """A photo zone as the editor shows it: its photo engraving (the rules of its parts with their target colours as #rrggbb) and the AI's
+    last answers, where it lies, its width and area, the scale's measured span at its width, the dots of a dot kind and whether they are
+    estimated, its layer and the address of its picture."""
     zone, curve = row["zone"], row["curve"]
     key = pz.key(plan, zone, curve, row["measured"])
-    return {**copy.deepcopy({k: zone[k] for k in ("number", "regions", *pz.SETTINGS)}), "index": row["index"],
+    return {**copy.deepcopy({k: zone[k] for k in ("number", "regions", *pz.SETTINGS, *pz.ANSWERS)}),
+            "rules": [st.shown_rule(r) for r in zone["rules"]], "index": row["index"],
             "width_mm": round(row["width_mm"], 2), "area_mm2": round(row["area_mm2"], 2), "box": {k: round(v, 4) for k, v in row["box"].items()},
             "span": None if curve is None else [round(float(v), 2) for v in curve.span], "referenced": None if curve is None else curve.referenced,
             "dots": row["dots"], "estimate": pz.dotted(zone) and row["measured"] is None, "problem": row["problem"],
@@ -932,7 +935,8 @@ def _photo_op(store: Store, plan: dict, document: dict, colouring: dict, kind: s
     """The photo zones after an operation, on a copy of the colouring that is returned (REQ-073). ``photo_add`` puts ``regions`` into the zone
     ``zone`` or, without one, into a new zone (:func:`photo_zones.new_zone`), taking them out of any other zone and out of the regions left
     out of the file; ``photo_remove`` gives ``regions`` back to their colours; ``photo_set`` changes the photo engraving of the zone ``zone``
-    (``kind``, ``scale``, ``min_power``, ``max_power``, ``dot_power``, ``by_colour``: :func:`photo_zones.changed`); ``photo_delete`` gives
+    (``kind``, ``scale``, ``min_power``, ``max_power``, ``dot_power``, ``by_colour``, ``colour_choice``, ``contours``, ``rules``,
+    ``colouring``: :func:`photo_zones.changed`); ``photo_delete`` gives
     every region of the zone back to its colours. A zone left without a region is gone."""
     zones = copy.deepcopy(pz.zones(colouring))
     loops = _zone_loops(plan)
@@ -968,20 +972,26 @@ def _photo_op(store: Store, plan: dict, document: dict, colouring: dict, kind: s
     return colouring
 
 
-def _zone_of_work(store: Store, plan_id: int, number) -> tuple[dict, dict, dict]:
-    """The work, the zone ``number`` and its row (:func:`_zone_rows`); KeyError when there is no such zone, ConversionError when its scale
-    is not measured."""
+def _zone_found(store: Store, plan_id: int, number) -> tuple[dict, dict]:
+    """The work and the row (:func:`_zone_rows`) of its zone ``number``, numbered as its layer in the file; KeyError when there is no such
+    zone."""
     plan = _photo_job(store, plan_id)
     try:
         number = int(number)
         zone = pz.find(plan["colouring"], number)
     except (TypeError, ValueError):
         raise KeyError(f"there is no photo zone {number!r}") from None
-    document = _document(plan)
-    row = _zone_rows(store, plan, document, [zone], 0)[0]
+    zones = pz.zones(plan["colouring"])
+    first = _first_zone(plan, {"layers": plan["layers"]}) + zones.index(zone)
+    return plan, _zone_rows(store, plan, _document(plan), [zone], first)[0]
+
+
+def _zone_of_work(store: Store, plan_id: int, number) -> tuple[dict, dict, dict]:
+    """The work, the zone ``number`` with every setting and its row (:func:`_zone_found`); ConversionError when its scale is not measured."""
+    plan, row = _zone_found(store, plan_id, number)
     if row["problem"]:
         raise cv.ConversionError(row["problem"])
-    return plan, zone, row
+    return plan, row["zone"], row
 
 
 def _zone_cut(plan: dict, zone: dict) -> dict:
@@ -1014,7 +1024,8 @@ def zone_kinds(store: Store, plan_id: int, number) -> dict:
     for kind in pz.KINDS:
         measured = pz.measured_dots(store, plan, zone, kind, power, width) if kind != pz.GRAYSCALE else None
         shown = {**zone, "kind": kind, "dot_power": power}
-        entry = {"key": kind, "family": pz.photo_modes.MODES[kind].family, "estimate": kind != pz.GRAYSCALE and measured is None,
+        entry = {"key": kind, "family": pz.photo_modes.MODES[kind].family, "basis": pz.photo_modes.MODES[kind].basis,
+                 "estimate": kind != pz.GRAYSCALE and measured is None,
                  "picture": f"/api/vector/{plan['id']}/photo/{zone['number']}/kinds/{kind}.png?v="
                             f"{pz.key(plan, shown, curve, measured, px=pz.TILE_PX)[:16]}"}
         if kind == pz.GRAYSCALE:
@@ -1037,6 +1048,110 @@ def zone_kind_picture(store: Store, plan_id: int, number, kind: str) -> rc.Pictu
     def draw() -> bytes:
         return pz.to_png(pz.look(store, plan, shown, _zone_cut(plan, zone), row["curve"], px=pz.TILE_PX)[0])
     return rc.Picture(store, f"vector-{plan['id']}", pz.key(plan, shown, row["curve"], measured, px=pz.TILE_PX), draw)
+
+
+# -- a photo zone on its own screen, as a photo work opens (0.23.0, DEC-116) ------------------------------------------------
+def zone_view(store: Store, plan_id: int, number) -> dict:
+    """A photo zone opened on its own screen as a photo work opens (``photo_work.view``): the zone as the editor shows it, with its scale as
+    a mode (the work's laser and lens, the zone's titanium and settings) and its layer's time; the work it belongs to, whose undo and redo
+    its changes are steps of, and whether the AI may run and see the picture (the work's permission, DEC-084); the zone's picture beside its
+    predicted look with what is said about it, or why there is none (``problem``: its scale is not measured at its width)."""
+    plan, row = _zone_found(store, plan_id, number)
+    zone = row["zone"]
+    mode = pz.mode_of(plan, zone)
+    base = f"/api/vector/{plan['id']}/photo/{zone['number']}"
+    out = {**_zone_shown(plan, row), "scale": mode.as_dict(), "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
+           "time": None if row["time"] is None else engraving_time.estimate([row["time"]]), "ai_missing": st.ai_missing(),
+           "ai_photo": bool(plan.get("ai_photo")),
+           "work": {"id": plan["id"], "name": plan["name"], "device_id": plan["device_id"], "lens_id": plan["lens_id"], "material_id": plan["material_id"],
+                    "undo": len(plan["undo"]), "redo": len(plan["redo"])}}
+    if row["problem"]:
+        return {**out, "picture": None}
+    found = _zone_cut(plan, zone)
+    width = found["box"]["width"]
+    sizes = ps.curve_for(store, mode, width)[1]["sizes"]
+    common = {"scale_size": dict(row["curve"].size), "scale_sizes": sizes, "time": out["time"], "dpi": out["dpi"],
+              "size_mm": {"width": round(found["box"]["width"], 2), "height": round(found["box"]["height"], 2)}}
+    key = _zone_preview_key(plan, row)
+    if pz.dotted(zone):
+        state = {**zone, "dot_power": row["parameters"]["power"]}
+        rgb8, dots = st.dot_look(store, mode, found["picture"], found["alpha"], state, width, row["curve"], row["measured"])
+        _keep(store, plan, key, lambda: pz.side_by_side(found["picture"], rgb8, found["alpha"]))
+        rows, cols = found["picture"].shape
+        out["picture"] = {**common, "kind": zone["kind"], "dots": dots, "estimate": row["measured"] is None, "span": list(row["curve"].span),
+                          "shown": {"width": cols, "height": rows}, "preview": f"{base}/preview.png?v={key[:16]}",
+                          "closeup": f"{base}/closeup.png?v={key[:16]}", "closeup_mm": ps.CLOSEUP_MM, "closeup_px": ps.CLOSEUP_PX}
+        return out
+    shown = st.engraved(st.item(store, mode, found, zone, f"zone {zone['number']}", width), zone)
+    info, rgb8 = ps.predicted(shown, *ps.check_power_range(zone["min_power"], zone["max_power"]))
+    _keep(store, plan, key, lambda: pz.side_by_side(shown["picture"], rgb8, found["alpha"]))
+    out["picture"] = {**info, **common, "by_colour": zone["by_colour"], "colour_choice": zone["colour_choice"], "contours": zone["contours"],
+                      "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"),
+                      "contours_report": shown.get("contours_report"), "preview": f"{base}/preview.png?v={key[:16]}"}
+    return out
+
+
+def _zone_preview_key(plan: dict, row: dict) -> str:
+    return rc.key_of({"kind": "vector-photo-zone-preview", "of": pz.key(plan, row["zone"], row["curve"], row["measured"])})
+
+
+def _keep(store: Store, plan: dict, key: str, draw) -> None:
+    """A picture drawn while its numbers were computed, kept so that the screen's request for it next is not drawn again."""
+    if rc.read(store, f"vector-{plan['id']}", key) is None:
+        try:
+            rc.write(store, f"vector-{plan['id']}", key, pz.to_png(draw()))
+        except OSError:
+            pass
+
+
+def zone_preview(store: Store, plan_id: int, number) -> rc.Picture:
+    """The zone's picture beside its predicted look (:func:`photo_zones.side_by_side`), at preview size, transparent outside the zone."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+
+    def draw() -> bytes:
+        found = _zone_cut(plan, zone)
+        mode, width = pz.mode_of(plan, zone), found["box"]["width"]
+        if pz.dotted(zone):
+            state = {**zone, "dot_power": row["parameters"]["power"]}
+            rgb8 = st.dot_look(store, mode, found["picture"], found["alpha"], state, width, row["curve"], row["measured"])[0]
+            return pz.to_png(pz.side_by_side(found["picture"], rgb8, found["alpha"]))
+        shown = st.engraved(st.item(store, mode, found, zone, f"zone {zone['number']}", width), zone)
+        _, rgb8 = ps.predicted(shown, *ps.check_power_range(zone["min_power"], zone["max_power"]))
+        return pz.to_png(pz.side_by_side(shown["picture"], rgb8, found["alpha"]))
+    return rc.Picture(store, f"vector-{plan['id']}", _zone_preview_key(plan, row), draw)
+
+
+def zone_closeup(store: Store, plan_id: int, number) -> rc.Picture:
+    """The dots of a zone in a dot kind dot for dot from the middle of its box (``prediction_store.dot_closeup``)."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    if not pz.dotted(zone):
+        raise su.ValidationError("a work in grayscale has no dots to show")
+
+    def draw() -> bytes:
+        found = _zone_cut(plan, zone)
+        dots = row["dots"]
+        item = st.item(store, pz.mode_of(plan, zone), found, zone, f"zone {zone['number']}", found["box"]["width"])
+        return prediction.to_png(ps.dot_closeup(item, zone["kind"], dots["lab"], dots["clean_lab"], found["box"]["width"]))
+    return rc.Picture(store, f"vector-{plan['id']}", rc.key_of({"kind": "vector-photo-zone-closeup", "of": pz.key(plan, zone, row["curve"], None)}), draw)
+
+
+def zone_change(store: Store, plan_id: int, number, changes) -> dict:
+    """Change the photo engraving of the zone ``number`` from its own screen: one operation ``photo_set`` of the work's colour editor (one
+    step of its undo); the zone as it is now (:func:`zone_view`)."""
+    if not isinstance(changes, dict):
+        raise cv.ConversionError("say what to change in the photo zone")
+    colour(store, plan_id, {**{k: v for k, v in changes.items() if k not in ("op", "zone")}, "op": "photo_set", "zone": number})
+    return zone_view(store, plan_id, number)
+
+
+def zone_step(store: Store, plan_id: int, number, direction: str) -> dict:
+    """Undo or redo one operation of the work's colour editor from the zone's screen; the zone as it is then, or ``{"gone": true}`` when it
+    is not there any more (the step took it away)."""
+    colour(store, plan_id, {"op": direction})
+    try:
+        return zone_view(store, plan_id, number)
+    except KeyError:
+        return {"gone": True, "work": {"id": int(plan_id)}}
 
 
 def lasso(store: Store, plan_id: int, points) -> dict:

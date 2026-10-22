@@ -1,11 +1,12 @@
 /* Фотозоны векторной работы (REQ-073, DEC-114): выделенные области гравируются фотогравировкой самой картинки работы — градациями серого
    на измеренной шкале или видом точками (Джарвис и другие) — вместо плоских цветов титана, и картина выходит частью векторной, частью
    фотогравировкой. Вкладка «Фото» редактора: каждая фотозона с видом гравировки (плитки зоны в каждом виде — щелчок выбирает), шкалой
-   серого (палитрой: у каждой измеренной шкалы полоса её цветов, щелчок выбирает), Min и Max или мощностью точек и «Цветами по картинке». Каждое изменение — одно действие
+   серого (палитрой: у каждой измеренной шкалы полоса её цветов, щелчок выбирает), Min и Max или мощностью точек и «Цветами по картинке»;
+   «Открыть» показывает зону на своём экране, как работу фотогравировки (vector-zone.js, 0.23.0). Каждое изменение — одно действие
    редактора: оно отменяется и повторяется, как любое другое. Картинку зоны на рисунке работы показывает редактор (vector-editor.js). */
 'use strict';
 const VectorPhoto = (() => {
-  const {h, fill, btn, get, num} = App;
+  const {h, fill, btn, get, go, num} = App;
   const GRAYSCALE = 'grayscale';
   const SCALE_KEYS = ['speed', 'frequency', 'pulse_width', 'line_interval', 'passes'];
   const scalesCache = new Map();
@@ -21,6 +22,11 @@ const VectorPhoto = (() => {
   /** Что зона выжжет — коротко, для заголовка и строки слоя. */
   const zoneSummary = (zone) => [layerOf(zone), kindName(zone.kind),
     dotted(zone) ? `точки ${value(zone.dot_power)} %` : `${value(zone.min_power)}–${value(zone.max_power)} %`].filter(Boolean).join(' · ');
+  const CHOICE = {drawing: 'рисунок сохранён', nearest: 'ближайший цвет', objects: 'раскраска по объектам'};
+  /** Как подобраны серые зоны (0.23.0) — коротко, как у работы фотогравировки; у вида точками — ничего: точка бьёт на одной мощности. */
+  const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'серые самой картинки'
+    : [`серые подобраны под цвета: ${CHOICE[zone.colour_choice] || CHOICE.drawing}`, zone.contours ? 'контуры' : null,
+      zone.rules && zone.rules.length ? `правил для частей: ${zone.rules.length}` : null].filter(Boolean).join(' · '));
 
   /** Измеренные шкалы серого лазера, линзы и титана работы, лучшие первыми: один запрос на работу (он долгий — грузится в фоне). */
   function scales(j) {
@@ -77,7 +83,7 @@ const VectorPhoto = (() => {
       const tiles = h('div', {class: 'vp-kinds', role: 'group', 'aria-label': `Вид гравировки фотозоны ${zone.number}`});
       const scaleBox = h('div', {class: 'vp-scale'});
       const box = h('article', {class: 'vp-zone' + (zone.problem ? ' bad' : '')},
-        h('div', {class: 'row vp-head'}, h('strong', {}, `Фотозона ${zone.number}`), h('span', {class: 'spacer'}),
+        h('div', {class: 'row vp-head'}, h('strong', {}, `Фотозона ${zone.number}`), h('span', {class: 'spacer'}), open(zone),
           btn('Выделить', () => ctx.select(zone.regions)), btn('Вернуть в цвета', () => ctx.act({op: 'photo_delete', zone: zone.number}))),
         h('p', {class: 'small muted'}, `${zoneSummary(zone)} · ${value(zone.box.width)} × ${value(zone.box.height)} мм · ${area(zone.area_mm2)} · областей ${zone.regions.length}`),
         zone.problem ? h('p', {class: 'alert bad small'}, I18N.tr(zone.problem)) : null,
@@ -90,6 +96,13 @@ const VectorPhoto = (() => {
       fillKinds(tiles, zone, got);
       fillScale(scaleBox, zone);
       return box;
+    }
+
+    /** «Открыть»: зона на своём экране, как работа фотогравировки — подбор серых, контуры, шкала и прогноз рядом с картинкой. */
+    function open(zone) {
+      const b = btn('Открыть', () => go(`/vector-zone?work=${j.id}&zone=${zone.number}`), 'primary');
+      b.setAttribute('title', 'Зона на своём экране, как фотогравировка: подбор серых, контуры, шкала, картинка рядом с прогнозом');
+      return b;
     }
 
     function fillKinds(tiles, zone, got) {
@@ -144,7 +157,8 @@ const VectorPhoto = (() => {
       return h('div', {class: 'vp-powers'},
         h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low), h('label', {class: 'row'}, h('span', {}, 'Max, %'), high)),
         h('label', {class: 'row small'}, tone, h('span', {}, 'Цвета по картинке: серые подобраны так, чтобы цвета титана шли за цветами картинки, '
-          + 'сохраняя рисунок — как у векторных областей вокруг. Выключено — гравируются серые самой картинки.')));
+          + 'как у векторных областей вокруг. Выключено — гравируются серые самой картинки.')),
+        zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Как подбирать серые и контуры — в «Открыть».`) : null);
     }
 
     function update(next) { j = next; render(); }
@@ -152,5 +166,5 @@ const VectorPhoto = (() => {
     return {el, update};
   }
 
-  return {create, zoneSummary, kindName};
+  return {create, zoneSummary, greysText, kindName};
 })();

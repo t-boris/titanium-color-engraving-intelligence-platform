@@ -10,8 +10,12 @@ carry it like any other choice of the operator (editor DEC-077). It holds
 * ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`, as a photo work offers them);
 * ``scale``: the titanium and the fixed settings of a measured grey scale (as a photo work keeps it); the laser and lens are the work's;
 * ``min_power`` and ``max_power`` (grayscale: white and black) and ``dot_power`` (a dot kind fires every dot at it);
-* ``by_colour``: the greys are chosen so that the titanium colours follow the picture's colours keeping its drawing (DEC-108, DEC-109),
-  as the vector colours follow it; off, the picture's own greys are engraved.
+* ``by_colour``: the greys are chosen so that the titanium colours follow the picture's colours, as the vector colours follow it; off,
+  the picture's own greys are engraved;
+* how the greys are chosen (:data:`GREYS`, 0.23.0, DEC-116), as a photo work chooses them (:mod:`photo_state`): keeping the drawing, the
+  default, the nearest colour or colouring the objects (``colour_choice``, DEC-108, DEC-109), the lost edges drawn in (``contours``), the
+  main colours of the picture's objects (``colouring``) and the rules of its parts (``rules``); and the AI's last answers about them
+  (:data:`ANSWERS`). A zone made before them reads them as :data:`DEFAULTS` (:func:`full`).
 
 What a zone engraves is the work's original picture cut to the zone's box and made transparent outside its regions, rasterised from the
 same smoothed borders the file's paths are written from (:func:`cut`); in the file it is one Image layer after the colour layers
@@ -36,21 +40,22 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import color, conversion as cv, engraving_time, grayscale, photo_modes, prediction, prediction_store as ps, render_cache as rc
+from . import color, conversion as cv, engraving_time, grayscale, photo_modes, photo_state as st, prediction, prediction_store as ps, render_cache as rc
 from .db import Store
 from .prediction import PredictionError
 
-GRAYSCALE = prediction.PREDICTED_MODE
-# every kind of photo engraving that colours titanium, as a photo work offers them (3D slice engraves relief)
-KINDS = tuple(key for key, kind in photo_modes.MODES.items() if kind.family != photo_modes.DEPTH)
-SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "by_colour")
+GRAYSCALE = st.GRAYSCALE
+KINDS = st.KINDS                    # every kind of photo engraving that colours titanium, as a photo work offers them
+GREYS = ("colour_choice", "contours", "rules", "colouring")
+SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "by_colour", *GREYS)
+ANSWERS = ("ai", "ai_theme")
+DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, *ANSWERS)}      # what a zone made before 0.23.0 lacks
 LASSO_SHARE = 0.5           # a region is inside a lasso (or an old zone, after a new split) when at least this share of it is
 FILE_PX_PER_MM = 20.0       # the zone's picture in the file has this many pixels a mm (fewer when the layer's DPI is lower): its
                             # transparent edge follows the smoothed borders to 0.05 mm, and a zone of a whole 150 mm work stays under 9 Mpx
 PREVIEW_PX = ps.PREVIEW_SIDE
 TILE_PX = 240               # the longer side of a zone's picture in one kind (the tiles of «Вид»)
 KEEP_DECODED = 2            # decoded pictures kept in memory: the work open now and the one before
-COLOUR_CHOICE = "drawing"   # how greys are chosen for the picture's colours: keeping the drawing (DEC-109)
 
 KEEP_CUTS = 2               # cut zones kept in memory: the tiles of every kind of a zone are drawn from one cut
 _decoded: OrderedDict[str, dict] = OrderedDict()
@@ -71,6 +76,11 @@ def zones(colouring: Mapping | None) -> list[dict]:
 def zone_of(colouring: Mapping | None) -> dict[str, int]:
     """Region id -> the number of the zone it is in."""
     return {rid: z["number"] for z in zones(colouring) for rid in z["regions"]}
+
+
+def full(zone: Mapping) -> dict:
+    """The zone with what one made before 0.23.0 lacks (:data:`DEFAULTS`); the stored zone is not changed."""
+    return {**copy.deepcopy(DEFAULTS), **zone}
 
 
 def find(colouring: Mapping, number) -> dict:
@@ -140,13 +150,14 @@ def new_zone(store: Store, plan: Mapping, colouring: Mapping, region_ids: list[s
     others = zones(colouring)
     number = 1 + max((z["number"] for z in others), default=0)
     if others:
-        last = others[-1]
-        zone = {"number": number, "regions": list(region_ids), **copy.deepcopy({k: last[k] for k in SETTINGS})}
+        last = full(others[-1])
+        zone = {"number": number, "regions": list(region_ids), **copy.deepcopy({k: last[k] for k in SETTINGS}),
+                **copy.deepcopy({k: DEFAULTS[k] for k in ANSWERS})}
         return settle(store, plan, zone, width_mm)
     mode = best_scale(store, plan, width_mm)
     low, high = ps.measured_span(store, mode, width_mm)
     return {"number": number, "regions": list(region_ids), "kind": GRAYSCALE, "scale": scale_data(mode), "min_power": low, "max_power": high,
-            "dot_power": None, "by_colour": True}
+            "dot_power": None, "by_colour": True, **copy.deepcopy(DEFAULTS)}
 
 
 def settle(store: Store, plan: Mapping, zone: dict, width_mm: float) -> dict:
@@ -173,11 +184,12 @@ def _number(value, what: str) -> float:
 
 def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_mm: float) -> dict:
     """The zone with the operator's ``changes`` of its photo engraving (any of :data:`SETTINGS`), checked; the zone is not changed. A new
-    scale brings Min and Max to its span at the zone's width; a dot kind's power must lie in the scale's measured powers there."""
+    scale brings Min and Max to its span at the zone's width; a dot kind's power must lie in the scale's measured powers there; how the
+    greys are chosen (:data:`GREYS`) is checked as a photo work's (``photo_state.change``)."""
     unknown = sorted(set(changes) - set(SETTINGS))
     if unknown:
         raise ZoneError(f"a photo zone has no setting {unknown[0]!r}")
-    out = copy.deepcopy(dict(zone))
+    out = full(copy.deepcopy(dict(zone)))
     if "kind" in changes:
         if changes["kind"] not in KINDS:
             raise ZoneError(f"there is no kind of photo engraving {changes['kind']!r}")
@@ -203,6 +215,9 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         if not isinstance(changes["by_colour"], bool):
             raise ZoneError("«colours by the picture» must be on or off")
         out["by_colour"] = changes["by_colour"]
+    greys = {k: changes[k] for k in GREYS if k in changes}
+    if greys:
+        st.change(store, out, greys, mode_of(plan, out), width_mm)
     if "dot_power" in changes and changes["dot_power"] is not None:
         power = _number(changes["dot_power"], "dots' power")
         try:
@@ -393,29 +408,26 @@ def _rgba(rgb8: np.ndarray, alpha: np.ndarray) -> np.ndarray:
 
 def look(store: Store, plan: Mapping, zone: Mapping, found: Mapping, scale_curve: prediction.Curve, *, kind: str | None = None,
          px: int | None = None) -> tuple[np.ndarray, dict]:
-    """The zone as it will come out on the titanium, RGBA uint8 (transparent outside it), at preview size or with the longer side ``px``,
-    in its own kind or in ``kind``; with what is said about it. Grayscale on the scale at Min..Max with the greys the zone engraves (chosen by
-    the picture's colours with ``by_colour``), hatched where no power was measured; a dot kind from its measured tones, else estimated from the
-    scale (``prediction_store.dot_look``)."""
+    """The zone (:func:`full`) as it will come out on the titanium, RGBA uint8 (transparent outside it), at preview size or with the longer
+    side ``px``, in its own kind or in ``kind``; with what is said about it. Grayscale on the scale at Min..Max with the greys the zone
+    engraves (``photo_state.engraved``: chosen for the picture's colours with ``by_colour``, its parts' rules, its contours), hatched where no
+    power was measured; a dot kind from its measured tones, else estimated from the scale (``prediction_store.dot_look``). The objects and
+    the people model's scores the greys need are found once and kept with the cut ``found``."""
     kind = kind or zone["kind"]
-    shown = _reduced(found, px) if px else dict(found)
+    shown = _reduced(found, px) if px else found
     width = found["box"]["width"]
     mode = mode_of(plan, zone)
     if kind == GRAYSCALE:
-        item = ps.picture_item(store, mode, shown, f"zone {zone['number']}", zone["by_colour"], width, COLOUR_CHOICE)
-        low, high = ps.check_power_range(zone["min_power"], zone["max_power"])
-        engraved = ps.engraved(item, low, high)
-        info, rgb8 = ps.predicted(engraved, low, high)
+        state = {**zone, "kind": GRAYSCALE}
+        engraved = st.engraved(st.item(store, mode, shown, state, f"zone {zone['number']}", width), state)
+        info, rgb8 = ps.predicted(engraved, *ps.check_power_range(zone["min_power"], zone["max_power"]))
         return _rgba(rgb8, shown["alpha"]), {"outside_share": info["outside_share"], "notes": info["notes"],
-                                             "colour_match": engraved.get("colour_match")}
+                                             "colour_match": engraved.get("colour_match"), "rules_report": engraved.get("rules_report"),
+                                             "contours_report": engraved.get("contours_report")}
     power = ps.dot_power_at(store, mode, width, zone.get("dot_power"))
-    dots = ps.dots_at(store, power, scale_curve)
     measured = measured_dots(store, plan, zone, kind, power, width)
-    if measured is not None:
-        rendered = prediction.render(shown["picture"], None, None, measured, None, alpha=shown["alpha"])
-        return _rgba(rendered["rgb8"], shown["alpha"]), {"dots": dots, "estimate": False, "notes": rendered["notes"]}
-    rgb8, _ = ps.dot_look(shown["picture"], shown["alpha"], kind, dots["lab"], dots["clean_lab"], width, grayscale.image_dpi(mode.line_interval))
-    return _rgba(rgb8, shown["alpha"]), {"dots": dots, "estimate": True, "notes": []}
+    rgb8, dots = st.dot_look(store, mode, shown["picture"], shown["alpha"], {**zone, "kind": kind, "dot_power": power}, width, scale_curve, measured)
+    return _rgba(rgb8, shown["alpha"]), {"dots": dots, "estimate": measured is None, "notes": [] if measured is None else dots["measured"]["notes"]}
 
 
 def digest(curve_: prediction.Curve | None) -> str | None:
@@ -424,15 +436,25 @@ def digest(curve_: prediction.Curve | None) -> str | None:
 
 def key(plan: Mapping, zone: Mapping, scale_curve: prediction.Curve | None, measured: prediction.Curve | None, *, kind: str | None = None,
         px: int | None = None) -> str:
-    """The key of a picture of the zone: everything it is drawn from (the picture, the split and its smoothing, the zone's regions, scale and
-    the settings of its kind, the scale's measured points and, for a dot kind, its measured tones). A dot kind does not draw from Min, Max
-    and the colours by the picture, nor grayscale from the dots' power: changing one leaves the tiles of the other kinds as they are."""
+    """The key of a picture of the zone (:func:`full`): everything it is drawn from (the picture, the split and its smoothing, the zone's
+    regions, scale and the settings of its kind, the scale's measured points and, for a dot kind, its measured tones). A dot kind does not
+    draw from Min, Max and how the greys are chosen, nor grayscale from the dots' power: changing one leaves the tiles of the other kinds as
+    they are; the objects' colours count while the objects are coloured."""
     engraving = kind or zone["kind"]
-    drawn_by = ("min_power", "max_power", "by_colour") if engraving == GRAYSCALE else ("dot_power",)
+    objects = zone["colour_choice"] == "objects"
+    drawn_by = (("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", *(("colouring",) if objects else ()))
+                if engraving == GRAYSCALE else ("dot_power",))
     return rc.key_of({"kind": "vector-photo-zone", "image": rc.file_stamp(plan["image_path"]), "document": rc.file_stamp(plan["document_path"]),
                       "smoothing_mm": plan.get("smoothing_mm", 0.0), "size": plan["size_mm"],
                       "zone": {k: zone[k] for k in ("regions", "scale", *drawn_by)}, "engraving": engraving, "px": px,
                       "curve": digest(scale_curve), "dots_curve": digest(measured)})
+
+
+def side_by_side(grey: np.ndarray, rgb8: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    """The zone's picture (left) beside its look (right, ``prediction.side_by_side``), RGBA uint8: both transparent outside the zone."""
+    both = prediction.side_by_side(grey, rgb8)
+    opaque = np.where(np.asarray(alpha) >= photo_modes.ALPHA_MIN, 255, 0).astype(np.uint8)
+    return np.dstack([both, np.hstack([opaque, np.zeros((opaque.shape[0], prediction.GAP), np.uint8), opaque])])
 
 
 def to_png(rgba: np.ndarray) -> bytes:
@@ -457,14 +479,14 @@ def parameters(store: Store, plan: Mapping, zone: Mapping, width_mm: float) -> d
 
 
 def file_layer(store: Store, plan: Mapping, zone: Mapping, found: Mapping, index: int) -> dict:
-    """The zone as a layer of the work's file (``plans.export_lbrn2``): an Image layer in the zone's kind with its scale's settings and its
-    picture placed on its box, BGRA, transparent outside the zone (DEC-114). Grayscale engraves the greys the preview shows (chosen by the
-    picture's colours with ``by_colour``); a dot kind the picture's own greys, and LightBurn makes the dots."""
+    """The zone (:func:`full`) as a layer of the work's file (``plans.export_lbrn2``): an Image layer in the zone's kind with its scale's
+    settings and its picture placed on its box, BGRA, transparent outside the zone (DEC-114). Grayscale engraves the greys the preview shows
+    (``photo_state.item``: chosen for the picture's colours with ``by_colour``, its parts' rules, its contours); a dot kind the picture's own
+    greys, and LightBurn makes the dots."""
     width = found["box"]["width"]
     p = parameters(store, plan, zone, width)
-    toned = zone["kind"] == GRAYSCALE and zone["by_colour"]
-    item = ps.picture_item(store, mode_of(plan, zone), found, f"zone {zone['number']}", toned, width, COLOUR_CHOICE)
-    pixels = ps.picture_for_file(item, p["min_power"], p["power"], width, transparent=True)
+    item = st.item(store, mode_of(plan, zone), found, zone, f"zone {zone['number']}", width)
+    pixels = ps.picture_for_file(item, p["min_power"], p["power"], width, None if dotted(zone) else zone["rules"], transparent=True)
     return {"index": index, "name": layer_name(index, zone, p), "cut_type": "Image", "parameters": p, "prediction": None, "regions": [],
             "layer_keys": [], "zone": zone["number"],
             "picture": {**found["box"], "pixels": pixels, "dither": zone["kind"], "file": f"photo-zone-{zone['number']}.png"}}

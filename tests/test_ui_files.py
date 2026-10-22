@@ -42,7 +42,9 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js"),
                       ("/screens/experiment-cards.js", "/screens/device-view.js"), ("/screens/experiment-cards.js", "/screens/experiments.js"),
                       ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js"),
-                      ("/photo-modes.js", "/screens/vector-photo.js"), ("/screens/vector-photo.js", "/screens/vector-editor.js")]:
+                      ("/photo-modes.js", "/screens/vector-photo.js"), ("/screens/vector-photo.js", "/screens/vector-editor.js"),
+                      ("/photo-modes.js", "/screens/photo-panels.js"), ("/screens/photo-panels.js", "/screens/photo-engraving.js"),
+                      ("/screens/photo-panels.js", "/screens/vector-zone.js")]:
         assert order[dep] < order[user], (dep, user)
 
 

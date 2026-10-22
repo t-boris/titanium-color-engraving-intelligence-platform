@@ -48,7 +48,8 @@
       const powers = !s ? '' : z.kind === 'grayscale' ? `Min ${num(s.min_power, 1)} % – Max ${num(s.power, 1)} %` : `точки ${num(s.power, 1)} %`;
       return [h('span', {}, z.name || `Фотозона ${z.number}`, h('div', {class: 'muted small'}, `Фотозона ${z.number} · ${kind}`)),
         s ? h('span', {}, `${powers} · ${num(s.frequency, 1)} кГц · ${num(s.speed, 0)} мм/с · Q-Pulse ${num(s.pulse_width, 0)} нс · шаг строк ${num(s.line_interval, 4)} мм · ${s.passes} проход(а)`,
-          h('div', {class: 'muted small'}, `Изображение (Image), режим «${kind}»: картинка работы в областях зоны, вне зоны прозрачна`))
+          h('div', {class: 'muted small'}, [`Изображение (Image), режим «${kind}»: картинка работы в областях зоны, вне зоны прозрачна`,
+            VectorPhoto.greysText(z)].filter(Boolean).join('; ')))
           : h('span', {class: 'alert bad small'}, I18N.tr(z.problem)),
         z.picture ? h('img', {class: 'plan-zone-pic', src: z.picture, alt: `Фотозона ${z.number}`}) : '—', '—', '—', '—', '—', z.regions.length];
     });

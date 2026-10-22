@@ -95,7 +95,7 @@ def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
           "i18n-palette.js", "i18n-gaps.js"]
 GLUE = ("const __screens = {}, __renders = []; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { __renders.push(1); };"
-        "globalThis.__screens = __screens; globalThis.__renders = __renders;")
+        "globalThis.__screens = __screens; globalThis.__renders = __renders; globalThis.__went = []; App.go = (route) => { __went.push(route); };")
 HARNESS = """
 const fs = require('fs');
 const {context, load} = require(%(dom)s);
@@ -643,6 +643,8 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   await others[0].dispatch('click'); await tick();
   const low = byLabel(zone, 'input', 'Min мощность фотозоны 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
   const tone = byLabel(zone, 'input', 'Цвета по картинке, фотозона 1'); tone.checked = false; await tone.dispatch('change'); await tick();
+  await byText(zone, 'button', 'Открыть').dispatch('click');
+  out.opened = ctx.__went;
   await byText(zone, 'button', 'Выделить').dispatch('click');
   out.selectedZone = classed('vw-sel');
   out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
@@ -661,6 +663,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert "Слоёв цвета: 1, фотозон: 1 из 29" in out["text"] and "1 и фотозон 1 из 29 доступных" in out["text"]
     assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Градации серого · 2–29 %")
     assert "20 × 10 мм · 2.00 см² · областей 2" in out["card"] and "Измерено при ширине зоны 20 мм: 1.9–29.1 %." in out["card"]
+    assert "серые подобраны под цвета: рисунок сохранён. Как подбирать серые и контуры — в «Открыть»." in out["card"]   # a zone made before 0.23
     assert out["tiles"] == [["Градации серого", "true"], ["Джарвис ≈", "false"]]
     assert out["picked"] == ["1000 мм/с · 60 кГц · 350 нсшаг 0.0212 мм · 1.9–29.1 %", "true"]
     assert out["others"] == [["500 мм/с · 60 кГц · 200 нсшаг 0.0212 мм · 3–40 % · без карты", "false", ["", ""]]] and not out["othersOpen"]
@@ -677,6 +680,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_set", "zone": 1, "by_colour": False},
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
     assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id="]
+    assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Открыть»: the zone on its own screen
 
 
 @node

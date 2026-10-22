@@ -150,6 +150,42 @@ def vector_zone_picture(plan_id: int, number: int, request: Request):
     return picture_response(request, vector_job.zone_picture(store_of(request), plan_id, number))
 
 
+@router.get("/vector/{plan_id}/photo/{number}")
+def vector_zone(plan_id: int, number: int, request: Request):
+    """A photo zone on its own screen, as a photo work opens (see vector_job.zone_view)."""
+    return vector_job.zone_view(store_of(request), plan_id, number)
+
+
+@router.post("/vector/{plan_id}/photo/{number}/settings")
+def change_vector_zone(plan_id: int, number: int, body: dict, request: Request):
+    """Change the photo engraving of a zone from its screen: one step of the work's editor (see vector_job.zone_change)."""
+    return vector_job.zone_change(store_of(request), plan_id, number, body)
+
+
+@router.post("/vector/{plan_id}/photo/{number}/undo")
+def undo_vector_zone(plan_id: int, number: int, request: Request):
+    """Undo one step of the work's editor from a zone's screen (see vector_job.zone_step)."""
+    return vector_job.zone_step(store_of(request), plan_id, number, "undo")
+
+
+@router.post("/vector/{plan_id}/photo/{number}/redo")
+def redo_vector_zone(plan_id: int, number: int, request: Request):
+    """Redo one undone step of the work's editor from a zone's screen (see vector_job.zone_step)."""
+    return vector_job.zone_step(store_of(request), plan_id, number, "redo")
+
+
+@router.get("/vector/{plan_id}/photo/{number}/preview.png")
+def vector_zone_preview(plan_id: int, number: int, request: Request):
+    """The zone's picture beside its predicted look, transparent outside the zone (see vector_job.zone_preview)."""
+    return picture_response(request, vector_job.zone_preview(store_of(request), plan_id, number))
+
+
+@router.get("/vector/{plan_id}/photo/{number}/closeup.png")
+def vector_zone_closeup(plan_id: int, number: int, request: Request):
+    """The dots of a zone in a dot kind dot for dot (see vector_job.zone_closeup)."""
+    return picture_response(request, vector_job.zone_closeup(store_of(request), plan_id, number))
+
+
 @router.get("/vector/{plan_id}/photo/{number}/kinds")
 def vector_zone_kinds(plan_id: int, number: int, request: Request):
     """Every kind of photo engraving with the zone as it would come out in it (see vector_job.zone_kinds)."""

@@ -8,10 +8,10 @@ Object.assign(App, (() => {
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/photo-engraving', 'Фотогравировка'],
     ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
-    artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', vector: 'vector', plans: 'plan', designer: 'designer',
+    artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', vector: 'vector', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
     findings: 'findings', devices: 'devices', research: 'research'};
   const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors',
-    artwork: '/vector', photo: '/photo-engraving', 'photo-preview': '/photo-engraving'};
+    artwork: '/vector', 'vector-zone': '/vector', photo: '/photo-engraving', 'photo-preview': '/photo-engraving'};
   let token = 0;
 
   const register = (def) => screens.set(def.id, def);

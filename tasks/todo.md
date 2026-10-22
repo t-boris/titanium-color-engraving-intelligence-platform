@@ -1935,3 +1935,33 @@ fill warning). Root cause: no rules were ever saved for any laser and lens (live
   (integrity ok, 91 pairs - latest 111, 2121 observations, 11 plans, audit 806, the ΔE 5 rule in it); 8765 on 0.22.4.
 - Seen: work 39 «Inna Portait Mix 1» (21:08, before the rule) and work 22 carry ΔE 0.05 typed into the form - every colour is out of tolerance
   and takes the nearest recipe, never a faster one; the editor's «Цвета» tab changes it (`set_threshold`). Left to the operator.
+
+## 0.23: a photo zone does what a photo engraving work does (operator, 2026-10-22; plan approved: a zone screen, shared code)
+The operator: «в фотозоне нужно иметь тот же функционал, как и в этой фотогравировке ... сохранить рисунок, подобрать серые, подцветить и так
+далее ... без этого у меня какая-то хрень получается». A zone has kind, scale and powers only; its greys are fixed to «по рисунку»
+(photo_zones.py:53). The photo work's «Картинка» is grey picking (по рисунку / ближайшие / по объектам) and contours (no brightness/contrast
+exists); «Раскраска» is per-object colours, themes, «Случайно»; «AI» the parts' rules and an AI theme. The zone's prediction and file layer
+already share prediction_store with the photo work; its state, objects, themes and AI do not.
+Design (C): one shared core, no copy.
+- [x] Z1. Move the photo work's state core out of photo_work.py into photo_state.py (keys and defaults, validation of a change, the
+      prediction item, objects, themes, AI theme and rules); photo_work.py keeps the record (plan row, picture, width, undo). No behaviour
+      change: the photo work tests pass unchanged.
+- [x] Z2. A zone stores the same keys in the vector work's colouring (old zones get the defaults): grey picking, contours, colouring by objects,
+      parts' rules. Its picture and its LightBurn layer follow them. Undo, copies, variants and the plan page come with the colouring.
+- [ ] Z3. Objects and parts are found once on the whole picture of the vector work and cut to each zone (keys stay when the zone grows,
+      after a re-split and between zones).
+- [ ] Z4. (0.23.0: view, preview, close-up, settings, undo, redo; 0.23.1: the rest) Zone routes under /api/vector/{id}/photo/{n}: view, prediction side by side, dot close-up, objects, parts, settings (= photo_set,
+      one editor undo step), theme, AI theme, AI (reads the work again after the AI answers).
+- [x] Z5. photo-panels.js: «Картинка», «Раскраска», «AI», «Шкала», kinds and dots panels out of photo-engraving.js, taking a base URL; the
+      photo engraving screen uses them (its tests unchanged in behaviour).
+- [x] Z6. «Открыть» on a zone card: the zone in the photo engraving layout (scales left, picture and prediction in the middle, the tabs right,
+      «← К работе»); Ctrl+Z/Ctrl+Shift+Z are the vector work's.
+- [x] Z7. The plan page and the editor's zone card name the new settings; DEC-116 (extends DEC-114).
+Review of 0.23.0 (Z1, Z2, Z4 in part, Z5, Z6, Z7): photo_state.py holds the state core of both; photo_zones.full() reads a zone made before
+as the drawing kept (zones() still returns the stored dicts: the merge mutates them). photo-panels.js holds scales, «Картинка» (options
+ramp, original, width, objects, layer), «Раскраска», «AI» and the kinds; vector-zone.js is the zone's screen (#/vector-zone?work=&zone=),
+its «Подтверждение» is the scale's own (no engravings of the zone yet). «Раскраска по объектам» is not offered on a zone until its tab
+comes (0.23.1). Tests: test_vector_photo_zones (API), test_vector_zone_ui (screen), test_vector_editor_ui («Открыть»),
+test_plan_screen_ui (the greys named).
+Out: «Подтверждение» (engravings belong to the vector work) and the width (a zone's width is its box). Releases: 0.23.0 = Z1, Z2, Z4, Z5, Z6
+with «Картинка», «Шкала», kinds, dots; 0.23.1 = Z3 and «Раскраска» + «AI». Each with node and API tests, a walk on a copy, timings.

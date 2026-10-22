@@ -13,8 +13,8 @@ import pytest
 import obs
 from test_grey_scales import app_world  # noqa: F401  (a laser, lens and titanium with four measured grey scales)
 from test_vector_work import BLUE, GREEN, PAPER, RED, YELLOW, lab, picture
-from titanium_platform import ingest, lightburn as lb, photo_modes, photo_zones as pz, plans as pl, prediction_store as ps, segment as sg
-from titanium_platform import setup as su, vector_job
+from titanium_platform import ingest, lightburn as lb, objects, people, photo_modes, photo_zones as pz, plans as pl, prediction_store as ps
+from titanium_platform import segment as sg, setup as su, vector_job
 
 
 @pytest.fixture(scope="module")
@@ -412,3 +412,108 @@ def test_the_engraving_plan_lists_each_zone_as_its_image_layer_after_the_colour_
     data = world["client"].get(f"/api/plans/{job['id']}/export.lbrn2").content         # the plan's export writes them too
     names = [layer.name for layer in lb.parse_bytes(data).layers]
     assert [z["name"] for z in plan["photo_zones"]] == names[-2:]
+
+
+# -- how a zone chooses its greys, as a photo work does (0.23.0, DEC-116) ----------------------------------------------------------------
+def zone_grey(world, job) -> np.ndarray:
+    """The picture of the last zone's Image layer as the file carries it (BGRA)."""
+    project = lb.parse_bytes(world["client"].get(f"/api/vector/{job['id']}/export.lbrn2").content)
+    image = sorted(project.layers, key=lambda layer: layer.index)[-1]
+    return cv2.imdecode(np.frombuffer(image.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
+
+
+def stored_zones(world, job) -> list[dict]:
+    return json.loads(world["store"].one("SELECT data_json FROM plan WHERE id=?", (job["id"],))["data_json"])["colouring"]["photo"]
+
+
+def test_a_zone_chooses_its_greys_as_a_photo_work_does_and_its_picture_its_file_and_the_next_zone_follow(world):
+    job = create(world)
+    red, yellow = of_colour(world, job, RED), of_colour(world, job, YELLOW)
+    zone = colouring(world, job, op="photo_add", regions=red + yellow)["zones"][0]
+    assert {k: zone[k] for k in pz.DEFAULTS} == {"colour_choice": "drawing", "contours": False, "rules": [], "colouring": {}, "ai": None, "ai_theme": None}
+    drawn, filed = png(world, zone["picture"]), zone_grey(world, job)
+    nearest = colouring(world, job, op="photo_set", zone=1, colour_choice="nearest")["zones"][0]
+    assert nearest["colour_choice"] == "nearest" and nearest["picture"] != zone["picture"]
+    assert not np.array_equal(png(world, nearest["picture"]), drawn) and not np.array_equal(zone_grey(world, job), filed)
+    lined = colouring(world, job, op="photo_set", zone=1, contours=True)["zones"][0]
+    assert lined["contours"] is True and lined["picture"] != nearest["picture"]
+    two = colouring(world, job, op="photo_add", regions=of_colour(world, job, BLUE))["zones"]
+    assert [(z["colour_choice"], z["contours"]) for z in two] == [("nearest", True)] * 2         # the last zone's photo engraving
+    assert colouring(world, job, op="undo")["zones"] == [lined]
+    assert colouring(world, job, op="undo")["zones"][0]["contours"] is False
+    for change, message in (({"colour_choice": "prettiest"}, "the colour choice must keep the drawing, take the nearest colour or colour the objects"),
+                            ({"contours": 1}, "the contours must be on or off"),
+                            ({"colouring": {"dress": {"power": 10}}}, f"an object is named by its kind ({', '.join(objects.KINDS)}), a background "
+                                                                        "piece also by its number"),
+                            ({"rules": [{"part": "tail", "kind": "neutral"}]}, f"a rule must name one of the parts {', '.join(people.PARTS)}, each once")):
+        refused(world, job, {"op": "photo_set", "zone": 1, **change}, message)
+
+
+def test_a_rule_of_a_part_changes_the_zone_inside_that_part_only(world, monkeypatch):
+    def scores(bgr):                                    # the people model as if the zone's left half were face skin and its right half clothes
+        out = np.zeros((256, 256, 6), np.float32)
+        out[:, :128, people.PARTS.index("face_skin")] = 1
+        out[:, 128:, people.PARTS.index("clothes")] = 1
+        return out
+    monkeypatch.setattr(people, "scores", scores)
+    monkeypatch.setattr(pz, "_cuts", type(pz._cuts)())   # the cuts of earlier tests carry no scores of this model
+    job = create(world)
+    red = of_colour(world, job, RED)
+    zone = colouring(world, job, op="photo_add", regions=red)["zones"][0]
+    before = zone_grey(world, job)
+    ruled = colouring(world, job, op="photo_set", zone=1, rules=[{"part": "clothes", "kind": "colour", "hex": "#2040c0"}])["zones"][0]
+    assert ruled["rules"] == [{"part": "clothes", "kind": "colour", "lab": ruled["rules"][0]["lab"], "hex": ruled["rules"][0]["hex"]}]
+    assert stored_zones(world, job)[0]["rules"][0].keys() == {"part", "kind", "lab"} and ruled["picture"] != zone["picture"]
+    after = zone_grey(world, job)
+    half = after.shape[1] // 2
+    opaque = after[..., 3] > 0
+    changed = (after[..., 0] != before[..., 0]) & opaque
+    assert changed[:, half + 2:].any() and not changed[:, :half - 2].any()
+
+
+def test_a_zone_made_before_its_greys_could_be_chosen_reads_them_as_the_drawing_kept(world):
+    job = create(world)
+    made = colouring(world, job, op="photo_add", regions=of_colour(world, job, RED))["zones"][0]
+    store = world["store"]
+    data = json.loads(store.one("SELECT data_json FROM plan WHERE id=?", (job["id"],))["data_json"])
+    data["colouring"]["photo"] = [{k: v for k, v in z.items() if k not in pz.DEFAULTS} for z in data["colouring"]["photo"]]
+    with store.transaction():
+        store.execute("UPDATE plan SET data_json=? WHERE id=?", (json.dumps(data), job["id"]))
+    old = world["client"].get(f"/api/vector/{job['id']}").json()["zones"][0]
+    assert old == made and world["client"].get(old["picture"]).status_code == 200
+    assert world["client"].get(f"/api/vector/{job['id']}/export.lbrn2").status_code == 200
+    colouring(world, job, op="photo_set", zone=1, contours=True)
+    assert stored_zones(world, job)[0].keys() >= set(pz.DEFAULTS)
+
+
+# -- a zone on its own screen, as a photo work opens (0.23.0, DEC-116) -----------------------------------------------------------------
+def test_a_zone_opens_on_its_own_screen_with_its_picture_beside_its_look_and_its_changes_are_steps_of_the_work(world):
+    job = create(world)
+    client = world["client"]
+    made = colouring(world, job, op="photo_add", regions=of_colour(world, job, RED))["zones"][0]
+    view = client.get(f"/api/vector/{job['id']}/photo/1").json()
+    assert {k: view[k] for k in ("number", "regions", "index", "name", "kind", "min_power", "max_power", "colour_choice", "contours")} == \
+        {k: made[k] for k in ("number", "regions", "index", "name", "kind", "min_power", "max_power", "colour_choice", "contours")}
+    assert view["scale"]["device_id"] == world["laser"]["id"] and view["scale"]["speed"] == made["scale"]["speed"]
+    assert view["work"] == {"id": job["id"], "name": "Portrait", "device_id": world["laser"]["id"], "lens_id": world["lens"]["id"],
+                            "material_id": world["titanium"]["id"], "undo": 1, "redo": 0} and view["time"]["seconds"] > 0
+    shown = view["picture"]
+    assert shown["by_colour"] and shown["colour_match"]["choice"] == "drawing" and shown["size_mm"]["width"] == pytest.approx(made["box"]["width"], abs=0.01)
+    both = png(world, shown["preview"])
+    half = (both.shape[1] - 8) // 2
+    assert both.shape[2] == 4 and not both[..., 3].all() and np.array_equal(both[:, :half, 3], both[:, half + 8:, 3])   # transparent outside it
+    nearest = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"colour_choice": "nearest"}).json()
+    assert nearest["colour_choice"] == "nearest" and nearest["picture"]["colour_match"]["choice"] == "nearest" and nearest["work"]["undo"] == 2
+    assert nearest["picture"]["preview"] != shown["preview"]
+    dots = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"kind": "jarvis"}).json()
+    assert dots["picture"]["dots"]["power"] == dots["dot_power"] and dots["picture"]["estimate"] and dots["picture"]["dots"]["struck_share"] > 0
+    assert png(world, dots["picture"]["closeup"]).shape[0] > 0 and png(world, dots["picture"]["preview"]).shape[2] == 4
+    refused_ = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"colour_choice": "prettiest"})
+    assert refused_.status_code == 422 and refused_.json()["error"] == "the colour choice must keep the drawing, take the nearest colour or colour the objects"
+    back = client.post(f"/api/vector/{job['id']}/photo/1/undo").json()
+    assert back["kind"] == "grayscale" and back["work"]["redo"] == 1
+    assert client.post(f"/api/vector/{job['id']}/photo/1/redo").json()["kind"] == "jarvis"
+    for _ in range(3):
+        last = client.post(f"/api/vector/{job['id']}/photo/1/undo").json()
+    assert last == {"gone": True, "work": {"id": job["id"]}}                           # the zone's making was undone too
+    assert client.get(f"/api/vector/{job['id']}/photo/1").status_code == 404
