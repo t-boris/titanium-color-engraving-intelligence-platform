@@ -330,6 +330,59 @@
     return {el, show};
   }
 
+  const PAIR_STATUS = {'Awaiting check': ['ждёт проверки', 'warn'], 'Needs correction': ['нужно исправить', 'warn'], 'Ready to accept': ['готова к принятию', 'warn'],
+    Accepted: ['принята', 'ok']};
+  const NOT_COMPARED = {no_points: 'Фото не дало ясных цветов этих настроек: слой не найден или серые на нём не различить.',
+    kind: 'На фото нет эталонной карты, а цвета шкалы исправлены по карте (или наоборот): сравнить их нельзя.',
+    alone: 'Других гравировок с этими настройками нет: сравнивать не с чем, эта гравировка сама стала шкалой.',
+    outside: 'Мощности этой гравировки — вне диапазона, измеренного другими гравировками.'};
+
+  /** Гравировки работы (0.19.3), вверху вкладки «Подтверждение»: «Загрузить фото гравировки» и каждая фотография этой работы — её
+      состояние и, когда она принята, каждый серый картинки: какой цвет предсказывали другие гравировки этих настроек и какой получился,
+      ΔE между ними, медиана и подтверждено ли (не больше 5 ΔE), как в подтверждении шкалы. ``load(view)`` загружает их заново. */
+  function engravingsBlock(id) {
+    const el = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Загружаем гравировки работы…'));
+    let seq = 0;
+    function strip(bands, key, label) {
+      return h('div', {class: 'ge-strip-row'}, h('span', {class: 'small muted'}, label),
+        h('div', {class: 'ge-strip ge-compare'}, bands.map((b) => h('span', {style: `background:${b[key]}`, title: `серый ${Math.round(b.gray * 255)} · ${value(b.power, 1)} % · ΔE ${value(b.de, 1)}`}))));
+    }
+    function entry(e) {
+      const [label, tone] = PAIR_STATUS[e.status] || [e.status, 'warn'];
+      const where = e.status === 'Accepted' ? '/analysis/' + e.pair_id : '/ingest?pair=' + e.pair_id;
+      const c = e.check;
+      const bands = c ? [...c.bands].sort((a, b) => a.power - b.power) : [];
+      return h('li', {class: 'ge-entry stack'},
+        h('div', {class: 'ge-entry-head'}, h('span', {}, link(where, `№${e.pair_id} · ${e.photo_name}`), ` · ${when(e.accepted_at || e.created_at)}`), pill(label, tone)),
+        e.same_scale === false ? h('p', {class: 'small alert warn'}, `Выгравирована с другими настройками, чем шкала работы: ${settingsText(e.mode)}; сравнивается с гравировками этих настроек.`) : null,
+        e.settings && e.settings.power_range ? h('p', {class: 'small muted'}, `Min ${value(e.settings.power_range[0], 1)} % · Max ${value(e.settings.power_range[1], 1)} % в файле`) : null,
+        e.status !== 'Accepted' ? h('p', {class: 'small muted'}, 'Сравнение появится, когда проверку фото примут: откройте её по ссылке.') : null,
+        c && c.reason ? h('p', {class: 'small'}, NOT_COMPARED[c.reason] || c.reason) : null,
+        c && !c.reason ? h('div', {class: 'stack'},
+          h('p', {class: 'small'}, pill(c.confirmed ? `подтверждает прогноз: медиана ${value(c.median_de, 1)} ΔE` : `не подтверждает: медиана ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn'),
+            ` сравнено серых ${c.compared}, в пределах ${c.tolerance_de} ΔE — ${value(c.within * 100, 0)} %, наибольшая разница ${value(c.max_de, 1)} ΔE; `
+            + `прогноз — по ${c.others} ${c.others === 1 ? 'другой гравировке' : 'другим гравировкам'} этих настроек.`),
+          strip(bands, 'predicted_hex', 'Прогноз'), strip(bands, 'hex', 'Получилось'),
+          h('details', {}, h('summary', {class: 'small'}, 'По серым'),
+            table(['Серый', 'Мощность, %', 'Прогноз', 'Получилось', 'ΔE'], bands.map((b) => [String(Math.round(b.gray * 255)), value(b.power, 1),
+              hexChip(b.predicted_hex), hexChip(b.hex), b.de > c.tolerance_de ? pill(value(b.de, 1), 'warn') : value(b.de, 1)]), '', true))) : null);
+    }
+    async function load(view) {
+      const mine = ++seq;
+      const upload = link(`/ingest?plan=${id}` + (view.scale && view.scale.material_id ? `&material=${view.scale.material_id}` : ''), 'Загрузить фото гравировки');
+      try {
+        const list = await get(`/photo-works/${id}/engravings`);
+        if (mine !== seq) return;
+        fill(el, h('h4', {}, 'Гравировки этой работы'),
+          h('p', {class: 'small'}, 'Каждый серый выгравированной работы сравнивается с цветом, который для него предсказывают остальные гравировки этих настроек, — так '
+            + 'эксперимент подтверждает прогноз или поправляет шкалу. Файл LightBurn работы несёт её имя: фото, загруженное с этим файлом, привяжется к работе само.'),
+          h('p', {}, upload),
+          list.length ? h('ul', {class: 'ge-entries'}, list.map(entry)) : h('p', {class: 'muted small'}, 'Фото гравировок этой работы пока нет.'));
+      } catch (e) { if (mine === seq) fill(el, h('p', {class: 'alert bad'}, e.message), h('p', {}, upload)); }
+    }
+    return {el, load};
+  }
+
   /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Отменить» и «Повторить» (``step('undo' | 'redo')``), «Шкалы серого»,
       «Сделать копию» и «Файл LightBurn». */
   function workHead(first, step) {
@@ -376,7 +429,9 @@
     const picture = workPicture(save);
     const head = workHead(view, step);
     const ai = aiTab(id, save, (wish, fresh) => send(`/photo-works/${id}/ai`, {wish, fresh}));
-    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
+    const engraved = engravingsBlock(id);
+    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
+      ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => modeQuery(sc.mode) === modeQuery(view.scale)) || null;
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
@@ -386,6 +441,7 @@
       const sc = chosen();
       shownKey = modeQuery(view.scale);
       cards(sc);
+      engraved.load(view);
       if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi})});
       else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
     }

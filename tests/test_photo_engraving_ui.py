@@ -61,6 +61,7 @@ ctx.fetch = async (url, opts = {}) => {
   }
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
+  if (path === `/api/photo-works/${work.id}/engravings`) return answer(data.engravings);
   if (path === `/api/photo-works/${work.id}/ai`) {
     if (hold.length) await hold.shift();
     remember();
@@ -95,10 +96,11 @@ const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.ge
 """
 
 
-def run(tmp_path, query, body, work=None):
+def run(tmp_path, query, body, work=None, engravings=()):
     work = {**WORK, **(work or {})}
     (tmp_path / "data.json").write_text(json.dumps({"scales": [scale(150, [1, 30]), scale(100, [2, 25])], "scale": scale_answer(), "work": work,
-                                                    "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES}), encoding="utf-8")
+                                                    "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings)}),
+                                        encoding="utf-8")
     script = tmp_path / "screen.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
@@ -344,3 +346,41 @@ def test_the_ai_can_start_again_from_the_picture_and_every_part_can_be_put_back_
     assert out["plainOff"] is True
     assert out["asked"] == {"asks": [{"wish": "платье фиолетовым", "fresh": True}], "again": True, "plainOff": False}
     assert out["plain"] == {"saves": [{"rules": []}], "rule": "as_is", "plainOff": True}
+
+
+# -- the engravings of the work (0.19.3) ------------------------------------------------------------------------------------------------
+def band(gray, power, de, hex_, predicted_hex):
+    return {"gray": gray, "power": power, "de": de, "lab": [50, 0, 0], "predicted": [50, 0, 0], "hex": hex_, "predicted_hex": predicted_hex}
+
+
+ENGRAVINGS = [
+    {"pair_id": 41, "status": "Awaiting check", "photo_name": "IMG_2.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-22T09:00:00",
+     "accepted_at": None, "settings": None, "same_scale": None, "mode": None, "check": None},
+    {"pair_id": 40, "status": "Accepted", "photo_name": "IMG_1.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-22T08:00:00",
+     "accepted_at": "2026-10-22T08:10:00", "settings": {"power_range": [12, 28]}, "same_scale": True, "mode": None,
+     "check": {"reason": None, "compared": 3, "median_de": 2.4, "max_de": 7.5, "within": 0.667, "confirmed": True, "others": 1, "tolerance_de": 5.0,
+               "bands": [band(0.0, 28, 2.4, "#223344", "#203040"), band(1.0, 12, 1.1, "#ddccbb", "#ddcabb"), band(0.5, 20, 7.5, "#886644", "#776655")]}},
+    {"pair_id": 39, "status": "Accepted", "photo_name": "IMG_0.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-21T08:00:00",
+     "accepted_at": "2026-10-21T08:10:00", "settings": {"power_range": [12, 28]}, "same_scale": False,
+     "mode": {"speed": 250, "frequency": 60, "pulse_width": 300, "line_interval": 0.0169, "passes": 1},
+     "check": {"reason": "alone", "compared": 0, "bands": []}},
+]
+
+
+@node
+def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engraved_and_the_upload_for_it(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const links = tree.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+  out.upload = links.find(([t]) => t === 'Загрузить фото гравировки');
+  out.pairs = links.filter(([t]) => t.startsWith('№')).map(([t, href]) => [t, href]);
+  const text = tree.textContent;
+  out.text = ['ждёт проверки', 'подтверждает прогноз: медиана 2,4 ΔE', 'сравнено серых 3', 'по 1 другой гравировке',
+    'Выгравирована с другими настройками, чем шкала работы: 250 мм/с', 'Других гравировок с этими настройками нет'].map((t) => text.includes(t));
+  const strips = tree.querySelectorAll('div').filter((d) => (d.className || '') === 'ge-strip ge-compare');
+  out.strips = strips.map((st) => st.children.map((c) => c.getAttribute('style')));
+""", engravings=ENGRAVINGS)
+    assert out["upload"] == ["Загрузить фото гравировки", "#/ingest?plan=7&material=3"]
+    assert out["pairs"] == [["№41 · IMG_2.dng", "#/ingest?pair=41"], ["№40 · IMG_1.dng", "#/analysis/40"], ["№39 · IMG_0.dng", "#/analysis/39"]]
+    assert out["text"] == [True] * 6
+    assert out["strips"] == [["background:#ddcabb", "background:#776655", "background:#203040"],          # white (Min) first
+                             ["background:#ddccbb", "background:#886644", "background:#223344"]]

@@ -192,6 +192,27 @@ def test_a_plate_without_photos_shows_its_picture_slot_the_plate_and_its_actions
     assert links["Попросить AI-исследователя изменить плату"] == "#/research" and links["предложению планировщика № 3"].startswith("#/designer?device=1&lens=")
 
 
+PHOTO_WORK = experiment("plan-28", kind="Photo engraving work", plan_id=28, engraving_id=None, main_pair_id=51,
+                        plate={"plan_id": 28, "name": "Inna Portrait", "mode": "Photo engraving work", "status": "Draft", "test_name": None, "description": None,
+                               "layers": 0, "band_count": None, "identifier": "TCE-P-41F96DBB", "proposal": None, "engraving_task": None},
+                        pairs=[pair_summary(51, alignment="picture", name="simulated.png", grayscale_image=True)])
+
+
+@node
+def test_a_photo_work_is_shown_as_the_work_opened_and_exported_on_its_own_screen_not_as_a_plate(tmp_path):
+    out = run(tmp_path, routes_for(PHOTO_WORK), "plan-28", """
+  out.tabs = tabButtons(tree).map((b) => b.textContent);
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  out.side = side.textContent;
+  out.links = side.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert out["tabs"][-1] == "Работа фотогравировки" and "Плата" not in out["tabs"]
+    assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "слоёв" not in out["side"]
+    links = dict(out["links"])
+    assert links["Открыть работу"] == "#/photo-engraving?work=28" and links["Скачать .lbrn2"] == "/api/photo-works/28/export.lbrn2"
+    assert "Открыть и изменить плату" not in links and "Попросить AI-исследователя изменить плату" not in links
+
+
 @node
 def test_checks_conclusions_and_the_two_deletions_keep_their_actions(tmp_path):
     routes = routes_for(BOTH)

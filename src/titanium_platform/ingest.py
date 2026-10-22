@@ -1357,6 +1357,7 @@ def _element_status(details: dict) -> dict:
 
 TONAL_BINS = 16
 TONAL_BLUR_MM = 0.25    # dithered dots are far finer than the photograph resolves: compare local averages, not pixels
+PICTURE_ALIGNMENTS = ("picture", "picture at ruler scale")      # the photograph aligned by matching the picture of its own file
 
 
 _picture_grey_alpha = photo_modes.decode_picture
@@ -1379,7 +1380,7 @@ def _prefer_reading(rho: float, other: float | None) -> bool:
 
 
 def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape: tuple[int, int],
-                   allowed: np.ndarray | None, flip: bool | None = None) -> dict | None:
+                   allowed: np.ndarray | None, flip: bool | None = None, matched: bool = False) -> dict | None:
     """How the grey levels of an image object came out on the metal: L* of the photograph against the grey level of the
     embedded picture at the same place (REQ-004, tonal evaluation).
 
@@ -1387,11 +1388,16 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     stated by the file, so both are tried and the one that agrees better is kept and reported. The grey levels are
     those of the picture as stored, before LightBurn's brightness, contrast and gamma, and dithering is not modelled:
     this is a measurement of what was photographed, not a prediction.
+
+    ``matched``: the photograph was aligned by matching this file's picture (:mod:`picturing`). The picture is then read as it was
+    matched, and the match is the evidence that its greys lie where they were engraved. The rank correlation of grey and lightness is
+    only reported: the colours of a scale need not darken step by step (gold, violet, blue ...), and guessing the edge that is up from
+    it could read the picture upside down.
     """
     mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
     lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)
     best = None
-    flip_given = flip
+    flip_given = False if matched else flip
     for region in layer.regions:
         bm = region.bitmap
         found = _picture_grey_alpha(bm["png"]) if bm and bm.get("png") else None
@@ -1461,9 +1467,11 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     best["adjustments"] = adjusted                       # applied by LightBurn before engraving; the grey axis is before them
     best["adjustments_keep_order"] = not any(tag not in lb.MONOTONE_ADJUSTMENTS for tag in adjusted)
     best.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1],
-                evidence="clear" if abs(best["rho"]) >= 0.5 else "weak",
+                evidence="clear" if matched or abs(best["rho"]) >= 0.5 else "weak",
                 limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "
-                           "modelled. Which edge of the picture is up is taken from the better positive agreement: a turned picture with an inverted tone looks the same. "
+                           "modelled. " + ("The photograph was aligned by matching this picture: it is read as it was matched, and the match is the "
+                                           "evidence. " if matched else "Which edge of the picture is up is taken from the better positive agreement: "
+                                                                        "a turned picture with an inverted tone looks the same. ") +
                            "The power of a bin follows the settings of the layer: the lightest grey gets Min power, the darkest Max power, linearly between "
                            "(rule confirmed by the operator, Q-024).")
     return best
@@ -1671,11 +1679,15 @@ def _covered_by_pictures(sample: np.ndarray, size: int, pictures: dict, by_index
 
 def _picture_flips(corrected, h, alignment: dict, project, shape, visible_surface) -> dict:
     """For each image layer, the edge of its picture that is up, read once from the photograph (the file does not say) so that what the
-    layer strikes is laid over the photograph the way its tonal profile will be. Layers whose tones cannot be read keep the file's own
-    orientation."""
+    layer strikes is laid over the photograph the way its tonal profile will be. Layers whose tones cannot be read, and every picture of
+    a photograph aligned by matching its file's picture, keep the file's own orientation."""
     out = {}
+    matched = alignment.get("method") in PICTURE_ALIGNMENTS
     for layer in project.layers:
         if layer.layer_type != "Image" or not any(r.bitmap and r.bitmap.get("png") for r in layer.regions):
+            continue
+        if matched:
+            out[layer.index] = False
             continue
         profile = _tonal_profile(corrected, _layer_image_to_mm(np.asarray(h, float), alignment, layer.index), layer, shape, visible_surface)
         out[layer.index] = bool(profile and profile["vertical_flip"])
@@ -2422,7 +2434,7 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
                 allowed = ~covered if allowed is None else allowed & ~covered
             ramp = (planned_layer or {}).get("ramp")
             tonal = (_ramp_profile(corrected, layer_h, layer, ramp, dx, dy, shape, allowed) if ramp
-                     else _tonal_profile(corrected, layer_h, layer, shape, allowed))
+                     else _tonal_profile(corrected, layer_h, layer, shape, allowed, matched=report["alignment"].get("method") in PICTURE_ALIGNMENTS))
             if tonal is not None:
                 rep["tonal"] = tonal
         if rep.get("role") == "registration, QR and engraved labels" and plan and plan.get("markers"):

@@ -11,7 +11,8 @@
   const param = (s) => PARAM[s.toLowerCase()] || s;
   const MODE = {'Calibration plate': 'Калибровочная матрица', 'Laser capability test': 'Тест возможностей лазера',
     'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
-    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Восстановленный из файла', 'Vector job': 'Векторная работа'};
+    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Восстановленный из файла', 'Vector job': 'Векторная работа',
+    'Photo engraving work': 'Работа фотогравировки'};
   const units = (s) => s.replace(/(\d)\s+(kHz|ns|mm\/s|mm)(?![\w/])/g, (_, d, u) => `${d} ${UNIT[u]}`);
   const NAMES = [
     // «Material test: Power x Speed · 330 kHz 4 ns · IMG_1234» — заголовок матрицы, прочитанной с фотографии
@@ -22,7 +23,7 @@
       ? `${param(m[1])} ${m[2]}${m[3] ? ` × ${param(m[3])} ${m[4]}` : ''}` : null)],
     [/^Cell (\d+),(\d+)$/, (m) => `Ячейка ${m[1]},${m[2]}`],
     // вид плана и название платы, которые сервер хранит по-английски: «Calibration plate», «Plate TCE-… (speed 900)»
-    [/^(Calibration plate|Laser capability test|Discrete color engraving|Tonal photo engraving|Color-path photo engraving|Restored from file|Vector job)$/,
+    [/^(Calibration plate|Laser capability test|Discrete color engraving|Tonal photo engraving|Color-path photo engraving|Restored from file|Vector job|Photo engraving work)$/,
       (m) => MODE[m[1]]],
     [/^Plate (\S+) \(speed (-?[\d.]+)\)$/, (m) => `Плата ${m[1]} (скорость ${m[2]} мм/с)`],
     [/^waveform$/, () => 'Форма импульса'],                       // осциллограмма, которой не дали названия

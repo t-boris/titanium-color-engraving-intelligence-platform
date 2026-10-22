@@ -299,6 +299,27 @@ def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[predictio
     return kind
 
 
+def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5.0) -> dict:
+    """One photographed engraving at ``mode`` against the curve of every other engraving there, as the scale's confirmation compares
+    them (``grayscale.compare``): each grey it was measured at, the colour predicted there and the colour engraved. ``reason`` says why
+    nothing is compared: the engraving gave no clear colours at this mode, its photograph has no colour chart while the scale's
+    colours are chart-corrected (or the other way round), or no other engraving measured this mode yet."""
+    found = [p for p in collect(store, mode)["points"] if p.source["pair_id"] == pair_id]
+    if not found:
+        return {"reason": "no_points", "compared": 0, "bands": []}
+    curve, _ = curve_for(store, mode)
+    points = _per_engraving(store, mode, curve.referenced)
+    own = [p for p in points if p.source["pair_id"] == pair_id]
+    if not own:
+        return {"reason": "kind", "compared": 0, "bands": []}
+    others = [p for p in points if p.source["pair_id"] != pair_id]
+    out = {**grayscale.compare(own, others, tolerance), "referenced": curve.referenced, "tolerance_de": tolerance,
+           "others": len({prediction._engraving_of(p.source) for p in others})}
+    out["confirmed"] = out["median_de"] is not None and out["median_de"] <= tolerance
+    out["reason"] = None if out["compared"] else ("alone" if not others else "outside")
+    return out
+
+
 def scales(store: Store, device_id: int | None = None, lens_id=None, material_id=None) -> list[dict]:
     """Every grayscale scale (one per mode) with its colour bar over the measured powers, how many engravings measured it and of which
     kind, whether they confirm each other, the fills of the same settings and the time per square centimetre. The best measured first:

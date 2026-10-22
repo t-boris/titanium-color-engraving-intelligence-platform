@@ -53,7 +53,8 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     mode = plan["mode"] if plan else None
     summaries = model.knowledge_summaries(store, pair["device_id"], pair["lens_id"])
     limitations = []
-    planned = {l["index"]: l for l in plan["layers"]} if plan else {}
+    # a photo work plans no layers: its prediction is its grey scale, checked on the work itself (photo_work.engravings)
+    planned = {l["index"]: l for l in plan.get("layers", [])} if plan else {}
     # colours of a photograph without a chart, as they would look next to clean titanium (derived by get_pair, DEC-056)
     checked = {rep["index"]: rep for rep in (pair.get("check") or {}).get("layers", [])}
     scale = tasks.photo_scale((pair.get("check") or {}).get("alignment"))

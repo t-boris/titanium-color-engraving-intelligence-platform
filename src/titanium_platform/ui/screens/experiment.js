@@ -149,7 +149,13 @@
     function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }
 
     // -- плата, выводы, действия -------------------------------------------------------------------------------------
-    const plate = exp.plate ? h('div', {class: 'stack'}, h('h3', {}, 'Плата'),
+    // a photo work is not a plate: it is opened, changed and exported on its own screen (0.19.3)
+    const photoWork = exp.plate && exp.plate.mode === 'Photo engraving work';
+    const plate = photoWork ? h('div', {class: 'stack'}, h('h3', {}, 'Работа фотогравировки'),
+      h('p', {}, h('strong', {}, exp.plate.name)), h('p', {class: 'muted small'}, exp.plate.identifier || ''),
+      h('div', {class: 'row'}, link('/photo-engraving?work=' + exp.plate.plan_id, 'Открыть работу'),
+        h('a', {class: 'btn btn-small', href: `/api/photo-works/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2')))
+      : exp.plate ? h('div', {class: 'stack'}, h('h3', {}, 'Плата'),
       h('p', {}, h('strong', {}, I18N.name(exp.plate.name))),
       h('p', {class: 'muted small'}, [exp.plate.test_name || I18N.name(exp.plate.mode), `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
         exp.plate.identifier].filter(Boolean).join(' · ')),
@@ -194,7 +200,7 @@
     // -- tabs on the right: only the sections this experiment has -------------------------------------------------------------
     const items = [
       ...(pairs.length ? [['result', 'Результат', result], ['matrix', 'Матрица', matrixBox], ['checks', `Проверки (${pairs.length})`, checks]] : []),
-      ...(plate ? [['plate', 'Плата', plate]] : []), ...(files ? [['work', 'Работа', files]] : []),
+      ...(plate ? [['plate', photoWork ? 'Работа фотогравировки' : 'Плата', plate]] : []), ...(files ? [['work', 'Работа', files]] : []),
       ...(findings ? [['findings', `Выводы (${exp.findings.length})`, findings]] : [])];
     const box = App.tabs(items, {initial: items[0][0], remember: 'ep.tab', label: 'Разделы эксперимента', prefix: 'ep-tab'});
     // the matrix tab is there only while the shown check has a parameter matrix

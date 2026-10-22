@@ -461,12 +461,14 @@ def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: fl
             f'        <XForm>{w / native_w:.8f} 0 0 {h / native_h:.8f} {x + w / 2:.5f} {y + h / 2:.5f}</XForm>\n    </Shape>\n')
 
 
-def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture") -> bytes:
+def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture", identifier: str | None = None) -> bytes:
     """A LightBurn project of one picture engraved in grayscale mode with ``parameters`` (power = Max, ``min_power``, speed, frequency
     in kHz, pulse width, line interval, passes): one Image layer C00, the picture ``width_mm`` wide at the layer's DPI, its top-left
     corner at the origin. Written like the operator's own photo files (no mirroring, no cleaning, no markers): what it engraves is
     the picture alone. The picture keeps its own pixels, as in those files (LightBurn resamples it to the layer's DPI when it
-    engraves); only a picture finer than that DPI is reduced to it, so the file does not carry pixels the laser never uses."""
+    engraves); only a picture finer than that DPI is reduced to it, so the file does not carry pixels the laser never uses. With an
+    ``identifier`` (a photo work's) the Notes carry ``TCE1:<identifier>``, as a plan's file does, so that the photograph of the engraving
+    is linked to it."""
     width = float(width_mm)
     if not np.isfinite(width) or width <= 0:
         raise su.ValidationError("the width of the picture must be a positive number of millimetres")
@@ -483,7 +485,7 @@ def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name:
     stem = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-") or "picture"
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">\n'
             + _image_setting(0, "C00", parameters, priority=0) + _bitmap(0.0, 0.0, width, height, picture, own_dpi, 0, f"{stem}.png")
-            + '    <Notes ShowOnLoad="0" Notes=""/>\n</LightBurnProject>\n').encode("utf-8")
+            + f'    <Notes ShowOnLoad="0" Notes={quoteattr(f"TCE1:{identifier}" if identifier else "")}/>\n</LightBurnProject>\n').encode("utf-8")
 
 
 def is_recipe(parameters: dict) -> bool:

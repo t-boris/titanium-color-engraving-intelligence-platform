@@ -173,7 +173,7 @@ def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_witho
     assert order == sorted(order)
     tabs = page[page.index("const items = ["):page.index("const box = App.tabs(")]
     parts = ("['result', 'Результат', result]", "['matrix', 'Матрица', matrixBox]", "['checks', `Проверки (${pairs.length})`, checks]",
-             "['plate', 'Плата', plate]", "['work', 'Работа', files]", "['findings', `Выводы (${exp.findings.length})`, findings]")
+             "['plate', photoWork ? 'Работа фотогравировки' : 'Плата', plate]", "['work', 'Работа', files]", "['findings', `Выводы (${exp.findings.length})`, findings]")
     assert [tabs.index(part) for part in parts] == sorted(tabs.index(part) for part in parts)
     assert "function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }" in page
     # the overlay is on unless the operator switched it off; the brightness is lifted for the dark uncorrected RAW and left alone for the

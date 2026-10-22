@@ -35,8 +35,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (ai_colouring as ai, ai_picture, color, conversion as cv, grayscale, people, picture_rules, plans as pl, prediction, prediction_store as ps,
-               render_cache as rc, research, setup as su)
+from . import (ai_colouring as ai, ai_picture, color, conversion as cv, grayscale, ingest as ig, people, picture_rules, plans as pl, prediction,
+               prediction_store as ps, render_cache as rc, research, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
 from .vector_job import COPY_SUFFIX
@@ -171,10 +171,7 @@ def _summary(store: Store, plan: Mapping) -> dict:
 
 def _shown_rule(rule: Mapping) -> dict:
     """A rule as the screen shows it: with its target colour also as #rrggbb, for the colour picker."""
-    if "lab" not in rule:
-        return dict(rule)
-    rgb = np.clip(color.lab_to_srgb8(np.asarray([rule["lab"]], float)), 0, 255).round().astype(int)[0]
-    return {**rule, "hex": "#%02x%02x%02x" % tuple(rgb)}
+    return {**rule, "hex": _hex(rule["lab"])} if "lab" in rule else dict(rule)
 
 
 def listing(store: Store) -> list[dict]:
@@ -258,7 +255,7 @@ def export(store: Store, plan_id: int) -> tuple[bytes, str]:
     item = _item(store, plan)
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     picture = ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"])
-    data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"])
+    data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"], plan["plan_identifier"])
     return data, f"{plan['name']}-P{low:g}-{high:g}"
 
 
@@ -383,6 +380,50 @@ def rename_work(store: Store, plan_id: int, name) -> str:
             store.execute("UPDATE plan SET name=? WHERE id=?", (title, plan["id"]))
             store.audit("photo_work_renamed", plan_id=plan["id"], old_name=plan["name"], new_name=title)
     return title
+
+
+# -- the engravings of the work (0.19.3) --------------------------------------------------------------------------------------------
+def _engraved_layer(check: Mapping) -> dict | None:
+    """The picture layer a photograph measured: the first layer with a tonal profile."""
+    return next((rep for rep in check.get("layers", []) if rep.get("tonal")), None)
+
+
+def engravings(store: Store, plan_id: int) -> list[dict]:
+    """Every photograph linked to the work (its file names the work, or it was uploaded for it), the newest first: its state, the
+    settings and Min and Max it was engraved with and, once accepted, each grey of it against the colour the other engravings of those
+    settings predict (``prediction_store.engraving_check``). An engraving with other settings than the work's scale is checked on its
+    own settings and says so."""
+    plan = _work(store, plan_id)
+    work_mode = mode_of(plan)
+    out = []
+    for row in store.query("SELECT id, status, device_id, lens_id, material_id, photo_name, lightburn_name, created_at, accepted_at, data_json "
+                           "FROM pair WHERE plan_id=? AND status!=? ORDER BY id DESC", (plan["id"], ig.ST_DELETED)):
+        rep = _engraved_layer(json.loads(row["data_json"] or "{}").get("check") or {})
+        item = {"pair_id": row["id"], "status": row["status"], "photo_name": row["photo_name"], "lightburn_name": row["lightburn_name"],
+                "created_at": row["created_at"], "accepted_at": row["accepted_at"], "settings": None, "same_scale": None, "mode": None, "check": None}
+        if rep is not None:
+            settings = {"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
+                        "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")}
+            dither = (rep.get("image") or {}).get("dither") or prediction.PREDICTED_MODE
+            same = (row["device_id"], row["lens_id"], row["material_id"], dither) == (work_mode.device_id, work_mode.lens_id, work_mode.material_id,
+                                                                                      work_mode.dither) and work_mode.matches(settings)
+            mode = work_mode if same else ps.mode_of(settings, row["device_id"], row["lens_id"], row["material_id"], dither)
+            item.update(settings={**settings, "power_range": rep["tonal"].get("power_range"), "evidence": rep["tonal"].get("evidence")},
+                        same_scale=same, mode=mode.as_dict())
+            if row["status"] == ig.ST_ACCEPTED:
+                try:
+                    item["check"] = ps.engraving_check(store, mode, row["id"])
+                except PredictionError:
+                    item["check"] = {"reason": "no_points", "compared": 0, "bands": []}
+                for band in item["check"]["bands"]:
+                    band["hex"], band["predicted_hex"] = _hex(band["lab"]), _hex(band["predicted"])
+        out.append(item)
+    return out
+
+
+def _hex(lab) -> str:
+    rgb = np.clip(color.lab_to_srgb8(np.asarray([lab], float)), 0, 255).round().astype(int)[0]
+    return "#%02x%02x%02x" % tuple(rgb)
 
 
 # -- the parts of the picture and the AI (REQ-062, DEC-105) -------------------------------------------------------------------------

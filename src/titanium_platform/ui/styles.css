@@ -966,6 +966,9 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 /* the AI tab of a photo work: the wish fills the panel, a rule is its select with the target colour beside it */
 .ge-right textarea {width:100%;resize:vertical}
 .ge-check {display:flex;align-items:flex-start;gap:8px}
+/* the engravings of a photo work: what was predicted above what came out, grey by grey from white (Min) to black (Max) */
+.ge-strip-row {display:grid;grid-template-columns:6.5em 1fr;align-items:center;gap:8px}
+.ge-strip.ge-compare {height:20px;border-radius:4px}
 .ge-check input {flex:none;margin-top:2px}
 .ge-rule {flex-wrap:nowrap;gap:6px}
 .ge-rule select {min-width:9em}

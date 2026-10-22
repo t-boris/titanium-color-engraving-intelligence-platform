@@ -482,3 +482,39 @@ def pictures_work(seed: int = 7, px_per_mm: float = 10.0, size=(1900, 2100), rot
         chart = chart_image()
         img[40:40 + chart.shape[0], 30:30 + chart.shape[1]] = chart
     return {"lightburn": xml, "photo": img, "mm_to_px": mm_to_px, "layout": layout, "corner_px": corner, "px_per_mm": px_per_mm, "off": off}
+
+
+# -- a photographed photo work (0.19.3) -----------------------------------------------------------------------------------------
+def engraved_picture(lightburn_bytes: bytes, colour_rgb, px_per_mm: float = 12.0, rotate_deg: float = 1.0, size=(1300, 1900),
+                     centre=(1150.0, 700.0), seed: int = 5) -> np.ndarray:
+    """The photograph of the picture of a LightBurn file engraved on a plate: every pixel in the colour ``colour_rgb(grey8)`` gives its
+    grey (an array of 0..255 to RGB 0..255, shape (..., 3)), on a brushed plate 4 mm wider than the picture, with the colour chart
+    beside it. The file's y is up, so the photograph shows it mirrored vertically (the picture upright); it is turned a little."""
+    from titanium_platform import lightburn
+    region = next(r for layer in lightburn.parse_bytes(lightburn_bytes).layers for r in layer.regions if r.bitmap and r.bitmap.get("png"))
+    stored = cv2.imdecode(np.frombuffer(region.bitmap["png"], np.uint8), cv2.IMREAD_GRAYSCALE)      # bottom row first, as the file holds it
+    rows, cols = stored.shape
+    colour = np.asarray(colour_rgb(stored), np.float32)[..., ::-1]
+    picture_to_mm = np.array([[region.width / cols, 0, region.x], [0, region.height / rows, region.y], [0, 0, 1.0]])
+    th = np.deg2rad(rotate_deg)
+    lin = px_per_mm * np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]) @ np.diag([1, -1])
+    mid = np.array([region.x + region.width / 2, region.y + region.height / 2])
+    mm_to_px = np.eye(3)
+    mm_to_px[:2, :2], mm_to_px[:2, 2] = lin, np.asarray(centre) - lin @ mid
+    height, width = size
+    img = np.full((height, width, 3), (120, 126, 122), np.uint8)
+    margin = 4.0
+    plate_to_mm = np.array([[region.width + 2 * margin, 0, region.x - margin], [0, region.height + 2 * margin, region.y - margin], [0, 0, 1.0]])
+    plate = cv2.warpPerspective(np.full((2, 2), 255, np.uint8), mm_to_px @ plate_to_mm @ np.diag([0.5, 0.5, 1.0]), (width, height),
+                                flags=cv2.INTER_NEAREST) > 127
+    img[plate] = (172, 168, 166)
+    to_px = mm_to_px @ picture_to_mm
+    inside = cv2.warpPerspective(np.full((rows, cols), 255, np.uint8), to_px, (width, height), flags=cv2.INTER_NEAREST) > 127
+    engraved = cv2.warpPerspective(colour, to_px, (width, height), flags=cv2.INTER_LINEAR)
+    img[inside] = np.clip(engraved[inside], 0, 255).astype(np.uint8)
+    img = cv2.GaussianBlur(img, (0, 0), 1.0)
+    rng = np.random.default_rng(seed)
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 1.5, img.shape).astype(np.int16), 0, 255).astype(np.uint8)
+    c = chart_image()
+    img[40:40 + c.shape[0], 30:30 + c.shape[1]] = c
+    return img

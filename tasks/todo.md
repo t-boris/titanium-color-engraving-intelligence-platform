@@ -1468,8 +1468,32 @@ each building on the rules before it, then the work deleted and a new one made. 
       Max 25 undone one by one (Max back to 30 on the slider), Ctrl+Z / Ctrl+Shift+Z; the real AI asked "волосы чёрно-белые", then "кожу светлой, остальное как есть" (hair kept,
       skin added), then «Заново с картинки» (skin only, hair as it is again); 4 steps to undo; nothing cut at 1771 px.
 ### 0.19.3: the engraving of a photo work checks its prediction
-- [ ] The photograph of an engraved photo work (its file carries the identifier) is linked to the work; the work shows predicted against engraved per grey level, and the scale's
+- [x] The photograph of an engraved photo work (its file carries the identifier) is linked to the work; the work shows predicted against engraved per grey level, and the scale's
       confirmation counts it. Tests, release.
+  Plan (2026-10-22; how ingest works was mapped first: identifiers are read from the file's Notes `TCE1:<id>` by `ingest._load_identified` for any plan; a checked pair keeps
+  the plan in `pair.plan_id`; an Image layer in grayscale is measured as a tonal profile of 16 grey bins; an accepted one already feeds its scale and its confirmation):
+  - [x] V1. The file names its work: `plans.export_picture(..., identifier)` writes `TCE1:<identifier>` into the Notes; `photo_work.export` passes the work's identifier.
+  - [x] V2. End to end: a photograph of that file links to the work by itself (no plan chosen), is measured as a tonal profile and, accepted, counts in the scale.
+  - [x] V3. The check of one engraving, as the scale's confirmation does it (DEC-100): each grey bin of the engraving against the curve of the OTHER engravings at the settings
+        it was engraved with (leave one out; the comparison is factored out of `grayscale.confirmation` so both use it): grey, power, predicted colour, engraved colour, ΔE;
+        median, max, share within 5 ΔE, confirmed or not; said plainly when there is nothing else to compare with, or the settings differ from the work's scale.
+  - [x] V4. API `GET /photo-works/{id}/engravings` (every photograph linked to the work: its state, and the check once accepted). UI: tab «Гравировки» in the work with
+        «Загрузить фото гравировки» (the upload screen with this work) and per engraving the summary and a strip of greys, predicted beside engraved.
+  - [x] V5. Tests (export identifier; ingest end to end with a made-up photograph; the check numbers; API; UI in node), README, REQ, version, full suite, backup, deploy, commit.
+  Review (2026-10-22):
+  - Built as planned except the place of the engravings: they open the «Подтверждение» tab instead of a tab of their own (five tabs already fill the narrow column, and it is
+    the same subject: the scale's confirmation follows right below).
+  - Found on the real scale, not in the synthetic one: a free picture was oriented and accepted by the rank correlation of grey and lightness. Work 28's scale (150 mm/s,
+    1-30 %) does not darken step by step, so a photograph drawn exactly from it was read upside down and dropped as "weak". The operator chose "trust the picture match"
+    (DEC-106): a photograph aligned by matching its file's picture reads it as matched, and the match is the evidence (`ingest.PICTURE_ALIGNMENTS`); every work with a picture,
+    accepted pairs unchanged until re-measured. On the copy: no points -> 16 greys, median 2.8 dE, confirmed. The regression test uses colours that rise and fall along the greys.
+  - New paths a photo-work pair opened, fixed: its analysis report (the plan has no `layers`), the experiment page (a «Работа фотогравировки» block that opens the work and
+    downloads its file instead of the plate links), the upload and check screens (a line naming the work), the mode name in Russian.
+  - Known limitation: bins of 16 greys of a slightly blurred photograph mix neighbouring colours where the titanium colour changes fast with power; on the copy two bins near
+    13-15 % showed 15-19 dE for a photograph drawn exactly from the scale while the median was 2.8. Proposed next: compare like with like (the predicted colour of every
+    pixel, blurred as the photograph is) - to be agreed with the operator.
+  - Open question for the operator: «Удалить эксперимент» of a photographed work (vector or photo) deletes its checks and then archives the work itself; on the isolated copy
+    work 28 was archived this way at 03:53 UTC (restored on the copy; the operator's data untouched).
 ### 0.20.0: photo-engraving colours in the vector palette
 - [ ] G. Palette entries from the grey scales (each measured power of a scale); a region given one is written as an Image layer of one even grey with the scale's settings
       (Min = Max = that power); time per cm2; the colour picker says where it comes from. Tests, release.

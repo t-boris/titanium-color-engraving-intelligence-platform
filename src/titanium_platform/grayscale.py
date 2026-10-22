@@ -126,6 +126,29 @@ def grey_for_colours(lab_pixels: np.ndarray, curve: prediction.Curve, min_power:
     return {"grey8": grey8, "lab": reached, "delta_e": distance.reshape(wanted.shape[:-1]), "choices": len(usable)}
 
 
+def compare(own: list[prediction.Point], others: list[prediction.Point], tolerance: float = 5.0) -> dict:
+    """The points of one engraving (``own``) against the curve of ``others``: at each of its powers inside that curve's span, the grey
+    of the picture it was measured at, the colour it measured, the colour the others predict there and the distance (CIE76) between
+    them; their median and largest, and the share within ``tolerance``. Nothing is compared without others."""
+    out = {"compared": 0, "median_de": None, "max_de": None, "within": None, "bands": []}
+    if not own or not others:
+        return out
+    powers = np.array([p.power for p in own])
+    predicted = prediction.curve(others).lab_at(powers)
+    inside = np.isfinite(predicted[:, 0])
+    if not inside.any():
+        return out
+    measured = np.array([p.lab for p in own])
+    de = np.linalg.norm(measured[inside] - predicted[inside], axis=1)
+    kept = [p for p, keep in zip(own, inside) if keep]
+    out.update(compared=int(inside.sum()), median_de=round(float(np.median(de)), 1), max_de=round(float(de.max()), 1),
+               within=round(float(np.mean(de <= tolerance)), 3),
+               bands=[{"power": round(float(p.power), 2), "gray": p.source.get("gray"), "lab": [round(float(v), 2) for v in p.lab],
+                       "predicted": [round(float(v), 2) for v in lab], "de": round(float(d), 1)}
+                      for p, lab, d in zip(kept, predicted[inside], de)])
+    return out
+
+
 def confirmation(points: Iterable[prediction.Point], tolerance: float = 5.0) -> dict:
     """Do the engravings of a scale confirm each other? Each engraving (one photographed pair) is compared with the curve built from
     every OTHER engraving of the same kind: at each of its powers inside that curve's span, the distance (CIE76) between what it
@@ -138,21 +161,10 @@ def confirmation(points: Iterable[prediction.Point], tolerance: float = 5.0) -> 
     for key, own in by.items():
         others = [p for k, ps in by.items() if k != key for p in ps if p.referenced == own[0].referenced]
         first = own[0].source
-        row = {"engraving": {"kind": first.get("kind"), "pair_id": first.get("pair_id"), "title": first.get("title"),
-                             "how": first.get("how"), "experiment": first.get("experiment"), "photo": first.get("photo")},
-               "points": len(own), "compared": 0, "median_de": None, "max_de": None, "within": None, "bands": []}
-        if others:
-            other = prediction.curve(others)
-            powers = np.array([p.power for p in own])
-            predicted = other.lab_at(powers)
-            inside = np.isfinite(predicted[:, 0])
-            if inside.any():
-                measured = np.array([p.lab for p in own])
-                de = np.linalg.norm(measured[inside] - predicted[inside], axis=1)
-                row.update(compared=int(inside.sum()), median_de=round(float(np.median(de)), 1), max_de=round(float(de.max()), 1),
-                           within=round(float(np.mean(de <= tolerance)), 3),
-                           bands=[{"power": round(float(pw), 2), "de": round(float(d), 1)} for pw, d in zip(powers[inside], de)])
-        rows.append(row)
+        compared = compare(own, others, tolerance)
+        rows.append({"engraving": {"kind": first.get("kind"), "pair_id": first.get("pair_id"), "title": first.get("title"),
+                                   "how": first.get("how"), "experiment": first.get("experiment"), "photo": first.get("photo")},
+                     "points": len(own), **compared, "bands": [{"power": b["power"], "de": b["de"]} for b in compared["bands"]]})
     compared = [r for r in rows if r["compared"]]
     every = [b["de"] for r in compared for b in r["bands"]]
     return {"engravings": len(rows), "tolerance_de": tolerance, "rows": rows,

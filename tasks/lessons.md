@@ -406,3 +406,17 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: every editable work keeps undo and redo of every change that alters what it engraves (server side, as the vector editor does, with the buttons and Ctrl+Z / Ctrl+Shift+Z);
   an AI request that refines the present state also has a way to start from the original. Before releasing an editing screen, check it against the vector editor: what can be
   undone there must be undoable here.
+
+## A synthetic test of a measurement uses data shaped like the real material, and a new path is walked on a copy of the real data before release
+- Situation (2026-10-22): the end-to-end test of 0.19.3 drew the photograph from the test scale, whose colours happen to darken with the grey; it passed at once. On a copy of
+  the operator's data the same photograph drawn from work 28's real scale (150 mm/s, 1-30 %, colours that rise and fall along the power) was read upside down and dropped as
+  "weak": the free-picture measurement guessed the orientation from the order of lightness. The same walk found the analysis page, the experiment page and the mode name broken
+  for a photo-work pair, a path no test had opened.
+- Rule: a measurement test includes data shaped like the real material (for titanium: colours that do not darken step by step), and before release every screen a new kind of
+  record reaches (check, analysis, experiment, upload) is opened on a copy of the real data with a simulated record, not only the screen that was built.
+
+## On an isolated copy, touch only records the copy created
+- Situation (2026-10-22): the copy of the database keeps the old pairs' file paths in the operator's folder (`~/.titanium-platform/files`); deleting or re-measuring such a pair
+  on the copy would delete the operator's original files. During the check a pair and work 28 on the copy were deleted through «Удалить эксперимент» (cause not established).
+- Rule: on a copy, delete, re-measure or change only records made on that copy (check their file paths first); before touching any record, read its paths read-only. In a browser
+  script never set `location.href` (it reloads the page and the script never returns); navigate with the browser tool and read in a separate call.

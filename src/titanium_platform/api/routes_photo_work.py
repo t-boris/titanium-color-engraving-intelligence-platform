@@ -83,6 +83,12 @@ def photo_work_file(plan_id: int, request: Request):
                     headers={"Content-Disposition": content_disposition(name, ".lbrn2"), "Cache-Control": "no-store"})
 
 
+@router.get("/photo-works/{plan_id}/engravings")
+def photo_work_engravings(plan_id: int, request: Request):
+    """Every photograph of the work's engravings, with each grey engraved against the colour predicted for it once accepted."""
+    return photo_work.engravings(store_of(request), plan_id)
+
+
 @router.get("/photo-works/{plan_id}/parts")
 def photo_work_parts(plan_id: int, request: Request):
     """The parts the people model finds in the picture: share and mean colour of each, and the address of the picture tinted by part."""

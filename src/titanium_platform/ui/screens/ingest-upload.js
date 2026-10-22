@@ -76,7 +76,8 @@ const IngestUpload = (() => {
       h('div', {class: 'card stack'}, h('h3', {}, 'Новая фотография той же гравировки'),
         h('p', {}, `Исходная принятая пара №${source.id} · файл ${source.lightburn_name}`),
         h('p', {class: 'muted small'}, `${laser} · ${titanium}`),
-        source.plan_id ? link('/plans/' + source.plan_id, source.plan_mode === 'Restored from file' ? 'Открыть план, восстановленный из файла' : 'Открыть экспериментальную плату') : null,
+        source.plan_id ? (source.plan_mode === 'Photo engraving work' ? link('/photo-engraving?work=' + source.plan_id, 'Открыть работу фотогравировки')
+          : link('/plans/' + source.plan_id, source.plan_mode === 'Restored from file' ? 'Открыть план, восстановленный из файла' : 'Открыть экспериментальную плату')) : null,
         h('p', {}, 'LightBurn, настройки слоёв, лазер, линза и титан будут взяты из исходной пары. Новое фото не считается отдельной гравировкой.')),
       h('div', {class: 'card stack'}, h('h3', {}, 'Только новая фотография'),
         field('RAW-фото всей гравировки', App.filePick(photo, 'Выбрать RAW-фото')),
@@ -187,7 +188,10 @@ const IngestUpload = (() => {
     }
     // a photograph opened from a work is linked to it; a file that names another work is linked to that one and the check says so
     const work = planned && planned.mode === 'Vector job' ? h('div', {class: 'alert ok'}, 'Фото для работы ', link('/vector?plan=' + planned.id, `«${planned.name}»`),
-      ': лазер, линза и титан взяты из работы. Загрузите файл, выгруженный из неё, и фото его гравировки: вывод запишется в работу.') : null;
+      ': лазер, линза и титан взяты из работы. Загрузите файл, выгруженный из неё, и фото его гравировки: вывод запишется в работу.')
+      : planned && planned.mode === 'Photo engraving work' ? h('div', {class: 'alert ok'}, 'Фото для работы фотогравировки ',
+        link('/photo-engraving?work=' + planned.id, `«${planned.name}»`), ': лазер, линза и титан взяты из работы. Загрузите файл LightBurn, '
+        + 'выгруженный из неё, и фото его гравировки: когда проверку примут, каждый серый работы сравнится с прогнозом.') : null;
     return h('div', {class: 'stack'}, kinds, work,
       h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте файл LightBurn и фотографию результата'),
         h('p', {}, 'Параметры наблюдения будут прочитаны из фактически использованного файла. Измерения появятся только после проверки и принятия.')),

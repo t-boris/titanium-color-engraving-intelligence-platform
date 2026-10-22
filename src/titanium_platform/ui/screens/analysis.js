@@ -4,7 +4,8 @@
   const {h, btn, link, pill, get, post, del, go, toast, fail, confirmBox, modal, table, num, labText, swatch} = App;
   const MODE = {'Calibration plate': 'Калибровочная плата', 'Laser capability test': 'Тест возможностей лазера',
     'Discrete color engraving': 'Цветная гравировка', 'Tonal photo engraving': 'Тональная фотогравировка',
-    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Работа, план восстановлен из файла'};
+    'Color-path photo engraving': 'Фотогравировка по цветовому пути', 'Restored from file': 'Работа, план восстановлен из файла',
+    'Photo engraving work': 'Работа фотогравировки'};
   const PURPOSE = {line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'};
   const PURPOSE_STATUS = {candidate: ['Кандидат', 'ok'], incomplete_settings: ['Не хватает настроек', 'warn'],
     insufficient: ['Недостаточно данных', 'warn'], needs_text_test: ['Нужен тест', 'warn'],
@@ -331,7 +332,8 @@
           h('p', {class: 'sub'}, [MODE[r.mode] || 'Гравировка', device, lens, material].filter(Boolean).join(' · ')),
           h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`)),
         h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
-          r.plan_id ? link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата') : null,
+          r.plan_id ? (r.mode === 'Photo engraving work' ? link('/photo-engraving?work=' + r.plan_id, 'Работа фотогравировки')
+            : link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата')) : null,
           r.proposal ? link(`/designer?device=${r.proposal.device_id}&lens=${App.lensParam(r.proposal.lens_id)}&proposal=${r.proposal.id}`, `Предложение № ${r.proposal.id}`) : null,
           link('/ingest?rephoto=' + id, '+ Фото'), remeasure, revise, remove)),
       r.photos?.length > 1 ? h('div', {class: 'analysis-photo-strip'},
