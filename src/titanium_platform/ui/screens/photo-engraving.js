@@ -105,14 +105,15 @@
     document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
-  /** Картинка на шкале: загрузка, прогноз рядом с картинкой, время для размера и файл LightBurn с этими Min и Max. */
-  function pictureBlock(sc, powers) {
+  /** Картинка на шкале: загрузка, прогноз рядом с картинкой, время для размера и файл LightBurn с этими Min и Max. Блок один на экран: картинка
+      остаётся при выборе другой шкалы, а прогноз сам следует за шкалой, Min и Max, шириной и подбором серых. */
+  function pictureBlock() {
     const fileIn = h('input', {type: 'file', accept: 'image/png,image/jpeg,image/tiff,image/bmp,image/webp', 'aria-label': 'Картинка'});
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', value: '50', 'aria-label': 'Ширина на титане, мм', style: 'width:7em'});
     const byColour = h('input', {type: 'checkbox'});
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const out = h('div', {class: 'stack'});
-    let cacheId = null, original = null, seq = 0;
+    let sc = null, powers = null, upload = null, original = null, seq = 0;
     const show = (info) => {
       const outside = info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null;
       const match = info.colour_match ? h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(info.colour_match.median_de, 1)} ΔE `
@@ -134,42 +135,60 @@
           + `${settingsText(sc.mode, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`)),
         h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))));
     };
-    async function send() {
-      error.hidden = true;
-      const file = fileIn.files[0];
-      if (!file) { error.textContent = 'Выберите картинку (PNG, JPEG, TIFF)'; error.hidden = false; return; }
-      const [lo, hi] = powers();
+    // the server keeps an upload with the scale it was sent for: one upload per scale, file and colour choice, everything else re-renders it
+    function send(file, lo, hi) {
       const fd = new FormData();
       for (const [k, v] of new URLSearchParams(modeQuery(sc.mode))) fd.append(k, v);
       fd.append('min_power', lo); fd.append('max_power', hi); fd.append('width_mm', width.value); fd.append('by_colour', byColour.checked ? 'true' : 'false');
       fd.append('picture', file, file.name);
-      if (original) URL.revokeObjectURL(original);
-      original = URL.createObjectURL(file);
-      fill(out, h('p', {class: 'muted'}, 'Считаем прогноз…'));
-      try { const info = await form('/grey-scales/picture', fd); cacheId = info.cache_id; show(info); }
-      catch (e) { fill(out); error.textContent = e.message; error.hidden = false; }
+      const sent = {sc, file, byColour: byColour.checked, answer: form('/grey-scales/picture', fd)};
+      sent.answer.catch(() => { if (upload === sent) upload = null; });
+      return sent;
     }
-    async function rerender() {
-      if (!cacheId) return;
+    async function update() {
+      const file = fileIn.files && fileIn.files[0];
+      if (!file || !sc) return;
       const [lo, hi] = powers();
       const mine = ++seq;
+      error.hidden = true;
       try {
-        const info = await get(`/grey-scales/picture/${cacheId}?min_power=${lo}&max_power=${hi}&width_mm=${encodeURIComponent(width.value)}`);
+        let info;
+        if (upload && upload.sc === sc && upload.file === file && upload.byColour === byColour.checked) {
+          const {cache_id: id} = await upload.answer;
+          info = await get(`/grey-scales/picture/${id}?min_power=${lo}&max_power=${hi}&width_mm=${encodeURIComponent(width.value)}`);
+        } else {
+          if (!upload || upload.file !== file) { if (original) URL.revokeObjectURL(original); original = URL.createObjectURL(file); }
+          upload = send(file, lo, hi);
+          fill(out, h('p', {class: 'muted'}, 'Считаем прогноз…'));
+          info = await upload.answer;
+        }
         if (mine === seq) show(info);
-      } catch (e) { error.textContent = e.message; error.hidden = false; }
+      } catch (e) {
+        if (mine === seq) { fill(out); error.textContent = e.message; error.hidden = false; }
+      }
     }
-    width.addEventListener('change', rerender);
+    /** Другая шкала: картинка остаётся, ответы для прежней шкалы больше не показываются; прогноз на новой — после загрузки её Min и Max. */
+    function use(scale, scalePowers) {
+      sc = scale; powers = scalePowers; seq++;
+      if (fileIn.files && fileIn.files[0]) fill(out, h('p', {class: 'muted'}, 'Считаем прогноз…'));
+    }
+    function again() {
+      if (!(fileIn.files && fileIn.files[0])) { error.textContent = 'Выберите картинку (PNG, JPEG, TIFF)'; error.hidden = false; return; }
+      upload = null;
+      return update();
+    }
+    for (const input of [fileIn, width, byColour]) input.addEventListener('change', update);
     const el = h('section', {class: 'card stack'}, h('h3', {}, 'Картинка на этой шкале'),
       h('p', {class: 'muted small'}, 'Серая картинка гравируется как есть. Цветная — либо как LightBurn переводит её в серый (по яркости), либо с подбором: для каждого пикселя берётся серый, '
-        + 'который на этой шкале даёт ближайший цвет.'),
+        + 'который на этой шкале даёт ближайший цвет. Прогноз пересчитывается сам, когда меняются шкала, Min и Max, ширина или подбор.'),
       h('div', {class: 'grid g3'}, field('Картинка', App.filePick(fileIn, 'Выбрать картинку')), field('Ширина на титане, мм', width),
         h('label', {class: 'row'}, byColour, h('span', {}, 'Цветная картинка: подобрать серые под её цвета'))),
-      error, h('div', {class: 'toolbar'}, btn('Показать на титане', send, 'primary')), out);
-    return {el, rerender};
+      error, h('div', {class: 'toolbar'}, btn('Показать на титане', again, 'primary')), out);
+    return {el, use, update};
   }
 
   /** Выбранная шкала: Min и Max, полоса и таблица «серый → цвет», подтверждение экспериментами, заливки, точки и картинка. */
-  function scaleDetail(sc) {
+  function scaleDetail(sc, picture) {
     const span = sc.span;
     const slider = (label, initial) => {
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: initial, 'aria-label': label});
@@ -183,7 +202,7 @@
     const powers = () => [+low.exact.value, +high.exact.value];
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const body = h('div', {class: 'stack'}, h('p', {class: 'muted'}, 'Загружаем шкалу…'));
-    const picture = pictureBlock(sc, powers);
+    picture.use(sc, powers);
     let timer = null, seq = 0;
     async function load() {
       const [lo, hi] = powers();
@@ -202,7 +221,7 @@
           greyTable(levels), confirmationBlock(d.confirmation), fillsBlock(d.fill_points), pointsBlock(d.curve),
           h('ul', {class: 'small'}, d.notes.map((n) => h('li', {}, I18N.tr(n)))));
       } catch (e) { error.textContent = e.message; error.hidden = false; }
-      picture.rerender();
+      picture.update();
     }
     function schedule() { clearTimeout(timer); timer = setTimeout(load, 250); }
     load();
@@ -230,9 +249,10 @@
     const detail = h('div', {class: 'stack'});
     const wanted = ctx.query.scale;
     const key = (sc) => modeQuery(sc.mode);
+    const picture = pictureBlock();
     const choose = (sc) => {
       fill(list, scales.map((item) => scaleCard(item, item === sc, () => choose(item))));
-      fill(detail, scaleDetail(sc));
+      fill(detail, scaleDetail(sc, picture));
     };
     if (scales.length) choose(scales.find((sc) => key(sc) === wanted) || scales[0]);
     return h('div', {class: 'stack'},

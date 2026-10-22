@@ -1378,3 +1378,33 @@ Two causes, found on an isolated copy (`scratchpad/plate107`, the live data only
   - Same layer settings; differences: line length 150 mm (works) vs 38 mm (tile), cleaning interval 0.04 vs 0.05, the real pulse of the works unknown (operator: "Don't know").
 - Next (operator's choice, 2026-10-22): one picture on one plate scale engraved twice from "Картинка на шкале", 38 mm and 100 mm wide. The small one tests the prediction in the plate's own
   geometry; the large one shows whether size (line length, heat) moves the colours. Both are compared with the plate's scale by the confirmation the scale already shows.
+
+## 0.18.2 plan: the picture stays when another scale is chosen, and its prediction follows every change (operator, 2026-10-22)
+Operator: "когда я выбираю картинку, а потом меняю шкалу, то он картинку удаляет. Не удаляй картинку, меняй шкалу и он динамически должен менять как будет выглядеть картинка."
+Cause: choosing a scale replaces the scale panel with `scaleDetail(sc)`, and each panel built its own `pictureBlock`: the chosen file, width, "подобрать серые" and the prediction
+went with the old panel. The server keeps an uploaded picture with the scale it was sent for (the cache item holds the mode), so on another scale the file is sent again.
+- [x] A. One picture block for the whole screen, handed to each scale panel: the file, width and "подобрать серые" stay when another scale is chosen, and the picture is predicted on
+      the new scale (its Min/Max) without pressing anything.
+- [x] B. The prediction follows every change by itself: choosing the file, the width, "подобрать серые", Min/Max, the scale. One upload per (scale, file, by-colour); later changes
+      re-render the kept upload; an answer for an earlier state is dropped. "Показать на титане" stays as "send the file again" (after a restart the server forgets uploads).
+- [x] C. Test in node over the screen's own code: choose a picture, change Max, choose another scale -> the same file is kept, a second upload carries the new scale's settings
+      and Min/Max, its prediction is shown; a late answer of the old scale does not replace the new one.
+- [x] D. Version 0.18.2, README, MarkView bug, full suite (-n 12, none skipped), backup, deploy, check in the operator's app.
+      Done: 1551 passed (-n 12, none skipped); the 3 new tests fail on 0.18.1 and pass now; checked in a browser on an isolated copy (port 8768): the file stays on another
+      scale, colour choice and Max re-predict; backup `backups/titanium-before-0.18.2-20261022T020208Z.sqlite` (integrity ok, 88 pairs, 2118 observations); 8765 answers 0.18.2.
+
+## Next (draft, waiting for the operator's answers): ask AI to change a photo engraving; photo-engraving colours in the colour map (operator, 2026-10-22)
+Operator: "в фотомастерской или векторной мастерской ... попросить AI что-то поменять ... с фотографии ... всё как есть, черно-белое ... платье сделать фиолетовым или красным,
+ярким ... кожу сделать равномерно светлой ... он должен будет подобрать такой серый цвет" and "фотогравировка нам дает неплохие еще цвета. Ты должен их цвета туда тоже добавить."
+What exists (research 2026-10-22):
+- AI: OpenAI only (`research.openai_client`, model `gpt-6.1-sol`, key `OPENAI_API_KEY` / `.env.local`); `ai_colouring.py` recolours the vector work's source colours to palette
+  entries with a style or free text (vector screen, "AI" tab), the photo is sent only with the work's permission (`ai_photo`). Nothing on the photo engraving screen.
+- Regions: `segment.py` splits a photo into colour regions (not semantic); `faces.py` finds faces, eyes, lips. Nothing knows "dress" or "skin".
+- Photo engraving keeps the picture's grey, BGR and Lab (`prediction_store.decode_upload`); `grayscale.grey_for_colours(lab, curve, lo, hi, levels=...)` already finds the nearest
+  grey per pixel and can be limited to chosen levels.
+- The vector palette leaves grey steps of image layers out (`palette._left_out`: source "tonal" or mode Image); the colour map has them as points (`colormap._tonal_points`).
+Proposed (to agree):
+- [ ] A. "Попросить AI" on the photo engraving picture: the picture is split into colour regions, the AI (the existing OpenAI client) names them and returns a rule per region:
+      keep tonality on neutral greys (optionally a range), a target colour (keep tonality or flat), or one flat grey; the code turns rules into greys on the chosen scale with
+      `grey_for_colours(levels=...)`, preview and LightBurn file as now; the operator can correct a region by clicking it.
+- [ ] B. Photo-engraving colours in the vector palette: each measured grey-scale colour becomes an entry engraved as a uniform Image layer at the scale's settings.
