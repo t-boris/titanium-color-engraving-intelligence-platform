@@ -1769,7 +1769,7 @@ picture, name and width only; the question opened after «Создать» (veri
       гравировка?» (the tiles of the kinds with the operator's picture, grayscale chosen; a click chooses; «Создать в «…»» sets the kind and opens the work).
       «← Назад» returns to step 1 with its fields kept, and the work made by «Дальше» is deleted; closing the dialog at step 2 deletes it too.
 - [x] N2. The tiles' grid is shared by the new-work step and the «Вид» chooser in a work; the work no longer asks on `&ask=kind` (no new work goes there).
-- [ ] N3. UI tests (both steps, «Назад», closing, the scales page's «Новая работа»), README 0.21.1, a MarkView bug, walk from «Мои работы» → «Новая работа» on a
+- [x] N3. UI tests (both steps, «Назад», closing, the scales page's «Новая работа»), README 0.21.1, a MarkView bug, walk from «Мои работы» → «Новая работа» on a
       copy, full suite, backup, deploy, commit and push.
 
 #### Review of 0.21.1 (2026-10-22)
