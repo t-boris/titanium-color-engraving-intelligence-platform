@@ -115,7 +115,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   out.width = [width.value, !!width.disabled];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.layer = tree.textContent.includes('Файл LightBurn работы: слой C03 — изображение в режиме градаций серого после слоёв цвета: Min 12 %, Max 28 %');
-  out.missing = [!!button(tree, 'Проба на ширине работы'), tree.textContent.includes('Исходная цветная картинка')];
+  out.missing = [!!button(tree, 'Проба на ширине работы'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
   out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые').querySelectorAll('option').map((o) => o.textContent);
   out.tabs = tree.querySelectorAll('button').filter((t) => t.getAttribute('role') === 'tab').map((t) => t.textContent);
   out.steps = [button(tree, 'Отменить').disabled, button(tree, 'Повторить').disabled];
@@ -124,7 +124,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
     assert out["scales"] == [{"device_id": "1", "material_id": "3", "lens_id": "2"}]           # only the scales the work can be engraved on
     assert out["opened"] == {"chosen": [False, True], "powers": ["12", "28"], "shown": "/api/vector/9/photo/1/preview.png?v=0"}
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
-    assert out["layer"] and out["missing"] == [False, False]                                   # no ramp and no original picture of its own
+    assert out["layer"] and out["missing"] == [False, False, False]                   # no ramp, no original picture, no cleaning of its own
     assert out["choices"] == ["Сохранить рисунок", "Ближайший цвет"]                            # «Раскраска по объектам» comes with its tab
     assert out["tabs"] == ["Картинка", "Шкала", "Подтверждение", "Точки"] and out["steps"] == [True, True]
 
