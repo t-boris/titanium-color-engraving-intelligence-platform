@@ -33,7 +33,8 @@ const restore = (from, to, error) => {
 };
 const same = (a, b) => ['speed', 'line_interval', 'material_id'].every((k) => a[k] === b[k]);
 const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour, colour_match: null,
-  outside_share: 0, time: {seconds: 600}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: []}});
+  outside_share: 0, time: {seconds: 600}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
+  scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0}}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
   const path = String(url).split('?')[0], method = opts.method || 'GET';
@@ -60,6 +61,7 @@ ctx.fetch = async (url, opts = {}) => {
     return answer(view());
   }
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
+  if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Шкалы серого · TCE-31'}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
   if (path === `/api/photo-works/${work.id}/engravings`) return answer(data.engravings);
   if (path === `/api/photo-works/${work.id}/ai`) {
@@ -118,13 +120,16 @@ def mode(speed):
 
 def scale(speed, span):
     return {"mode": mode(speed), "dpi": 1000, "span": span, "material": {"name": "Big Plate 150"}, "bar": [{"hex": "#aa8844"}, {"hex": "#3355aa"}],
-            "by_kind": {"grey ramp": 1}, "time_s_per_cm2": 70, "confirmation": {"engravings": 1, "median_de": None}, "reference": "chart"}
+            "by_kind": {"grey ramp": 1}, "time_s_per_cm2": 70, "confirmation": {"engravings": 1, "median_de": None}, "reference": "chart",
+            "sizes": [{"row_mm": 38.4, "engravings": 1, "points": 16}, {"row_mm": 150, "engravings": 1, "points": 16}],
+            "size": {"row_mm": 150, "how": "measured", "measured_mm": [38.4, 150], "from_mm": [150], "unknown_points": 0, "engravings": 2}}
 
 
 def scale_answer():
     levels = [{"level": g, "power": 30 - g * 29 / 255, "lab": [50, 0, 0], "hex": "#777777", "spread_de": None} for g in range(256)]
     return {"greys": {"levels": levels, "measured_levels": 256}, "confirmation": {"rows": [], "tolerance_de": 5, "engravings": 1, "median_de": None},
-            "fill_points": [], "curve": {"points": []}, "notes": []}
+            "fill_points": [], "curve": {"points": []}, "notes": [], "span": [1, 30],
+            "size": {"row_mm": 150, "how": "measured", "measured_mm": [38.4, 150], "from_mm": [150], "unknown_points": 0, "engravings": 2}}
 
 
 WORK = {"id": 7, "name": "Портрет", "identifier": "TCE-P-1", "created_at": "2026-10-21T10:00:00", "updated_at": "2026-10-21T10:05:00",
@@ -177,6 +182,12 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();
   out.saves = saves(); out.shown = shown(tree); out.size = tree.textContent.includes('для 100 × 50 мм');
+  out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
+  out.between = tree.textContent.includes('100 мм: между измерениями 38,4 и 150 мм');
+  const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Проба на ширине работы');
+  out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('полоской серого 100 мм в ширину')};
+  await ramp.dispatch('click'); await settle();
+  out.ramp.posted = requests.filter((r) => r.path.endsWith('/width-ramp')).map((r) => r.method); out.ramp.went = ctx.__went.slice(-1);
   width.value = '0'; await width.dispatch('change'); await settle();
   out.refused = {width: width.value, error: tree.querySelectorAll('p.alert').filter((p) => !p.hidden).map((p) => p.textContent)};
 """)
@@ -185,6 +196,8 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert opened["shown"] == "/api/photo-works/7/preview.png?v=0"
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"width_mm": 100}, {"by_colour": True}]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=3" and out["size"]
+    assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
+    assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
     assert out["refused"] == {"width": "100", "error": ["Ширина картинки должна быть от 1 до 1000 мм"]}   # refused: the work stays as it was
 
 
@@ -233,6 +246,11 @@ def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be
 def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chosen_one(tmp_path):
     out = run(tmp_path, {"scales": "1"}, """
   out.first = {chosen: chosen(tree), powers: powers(tree), table: tree.textContent.includes('Серый картинки (0–255)'), works: requests.some((r) => r.path.startsWith('/api/photo-works'))};
+  const sizeButtons = (t) => t.querySelectorAll('button').filter((b) => (b.getAttribute('title') || '').startsWith('измерено гравировок'));
+  out.widths = sizeButtons(tree).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+  await button(tree, '38,4 мм').dispatch('click'); await settle();
+  out.asked = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
+  out.pressed = sizeButtons(tree).map((b) => b.getAttribute('aria-pressed'));
   await tree.querySelectorAll('button.ge-scale')[1].dispatch('click'); await settle();
   out.second = {chosen: chosen(tree), powers: powers(tree)};
   await button(tree, 'Новая работа на этой шкале').dispatch('click'); await settle();
@@ -244,6 +262,8 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   out.went = ctx.__went;
 """)
     assert out["first"] == {"chosen": [True, False], "powers": ["1", "30"], "table": True, "works": False}
+    assert out["widths"] == [["38,4 мм", "false"], ["150 мм", "true"]]                    # shown at the size most measured, the others a click away
+    assert out["asked"] == ["150", "38.4"] and out["pressed"] == ["true", "false"]
     assert out["second"] == {"chosen": [False, True], "powers": ["2", "25"]}
     sent = out["sent"][0]
     assert json.loads(sent.pop("scale")) == mode(100) and sent == {"picture": "girl.png", "name": "girl", "width_mm": "50"}

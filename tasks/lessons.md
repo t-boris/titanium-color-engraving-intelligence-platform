@@ -420,3 +420,13 @@ Rules written after the operator's remarks, to prevent a repeat.
   on the copy would delete the operator's original files. During the check a pair and work 28 on the copy were deleted through «Удалить эксперимент» (cause not established).
 - Rule: on a copy, delete, re-measure or change only records made on that copy (check their file paths first); before touching any record, read its paths read-only. In a browser
   script never set `location.href` (it reloads the page and the script never returns); navigate with the browser tool and read in a separate call.
+
+## A measurement predicts only the conditions it was made under: record them, and say on screen when a prediction is used outside them
+Operator, 2026-10-22: "цвета дичайше меняются ... в зависимости от размера картинки ... черный на лбу не должен быть черным ... ты неправильно выбрал". The scale of the
+work was measured on 38.4 mm ramps and used for a picture stretched to 150 mm; at 150 mm the first oxide colours came at higher power (median 14 dE apart), so the
+preview promised colours the plate could not give. The same file drawn with the colours measured at 150 mm matched the engraving (median 4.9 dE per pixel).
+- Every colour measurement keeps the conditions that move colour (here the scanned row length, i.e. the size); a prediction says which conditions it was measured under and
+  warns when the work is outside them, instead of silently using the nearest scale.
+- A per-pixel "nearest colour" choice is not a drawing: it can put neighbouring skin tones in different regimes of the scale (black forehead) and give the lips the
+  skin's grey. Keep the picture's light and dark in order and check that every edge of the picture survives in the predicted engraving.
+- Before saying "the colours are wrong", draw the engraved file through the colours measured at the engraved size: it separates a wrong scale from a wrong choice.

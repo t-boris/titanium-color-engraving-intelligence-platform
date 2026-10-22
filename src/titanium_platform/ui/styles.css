@@ -660,6 +660,7 @@ body.is-workspace .main {max-width:none;padding:10px 16px}
 .vw-work .vw-ed-item {padding:2px 6px}
 .vw-work .vw-ed-layers .vw-ed-item {flex-wrap:nowrap;white-space:nowrap;font-size:11.5px}
 .vw-work .vw-ed-layers .vw-ed-item .muted {overflow:hidden;text-overflow:ellipsis}
+.vw-ed-item .vw-rows {flex:none;color:var(--muted)} .vw-ed-item .vw-rows.warn {color:var(--warning)}
 .vw-work .vw-ed-item .btn {min-height:24px;padding:1px 8px;font-size:11px}
 .vw-work .vw-ed-item {row-gap:0}
 .vw-work .vw-modes .row {gap:6px}

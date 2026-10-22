@@ -1,5 +1,5 @@
-"""Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file; the parts
-of a work's picture and the AI that proposes their rules (REQ-062, DEC-105). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
+"""Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file, a ramp
+plate at a work's width (DEC-107); the parts of a work's picture and the AI that proposes their rules (REQ-062, DEC-105). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 import json
@@ -54,6 +54,13 @@ def copy_photo_work(plan_id: int, request: Request, body: dict | None = None):
 @router.post("/photo-works/{plan_id}/rename")
 def rename_photo_work(plan_id: int, request: Request, body: dict | None = None):
     return {"id": plan_id, "name": photo_work.rename_work(store_of(request), plan_id, (body or {}).get("name"))}
+
+
+@router.post("/photo-works/{plan_id}/width-ramp", status_code=201)
+def photo_work_width_ramp(plan_id: int, request: Request):
+    """A grey-ramp plate of one ramp as wide as the work at its scale's settings, to measure the scale at the work's size (DEC-107); the
+    plate is returned as the plate dialog creates one (``plan_id``, ``name``, ``summary`` ...)."""
+    return photo_work.width_ramp(store_of(request), plan_id)
 
 
 @router.get("/photo-works/{plan_id}/preview.png")

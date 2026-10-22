@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -95,11 +95,12 @@ def _document(plan: dict) -> dict:
 
 _MEMO: "collections.OrderedDict[tuple, object]" = collections.OrderedDict()
 _MEMO_LOCK = threading.Lock()
-MEMO_SIZE = 6
+MEMO_SIZE = 9
 
 
 def _memo(key: tuple, make):
-    """The last few smoothed documents and their pictures: the slider asks for the same strength again as often as it moves back."""
+    """The last few smoothed documents and their pictures (the slider asks for the same strength again as often as it moves back) and the
+    loops and row lengths of the last splits (DEC-107)."""
     with _MEMO_LOCK:
         if key in _MEMO:
             _MEMO.move_to_end(key)
@@ -617,8 +618,10 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
     settings = plan["colour_settings"]
     indexes = {str(p["index"]) for p in document["palette"]}
     keep = {i: g["entry_id"] for i, g in colouring["groups"].items() if g["entry_id"] in by_id and i in indexes}
+    colour_rows = _row_lengths(plan, document)[1]
     result = palette.assign(_sources(document), entries, mode, tolerance_de=plan["threshold"], seed=seed, max_time=settings["max_time"],
-                            keep=keep, include_as_shot=settings["include_as_shot"])
+                            keep=keep, include_as_shot=settings["include_as_shot"],
+                            size_of=lambda index, entry: colour_rows(index, _angle(entry)))     # each colour at its own size (DEC-107)
     out["assignment"] = {str(c["index"]): c["entry_id"] for c in result["colours"]}
     out["how"] = {str(c["index"]): c["how"] for c in result["colours"]}
     return out
@@ -634,38 +637,72 @@ def _add_variant(plan: dict, document: dict, entries: list[dict]) -> None:
                              "version": plan["document_version"], "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
 
 
+def _loops_by_region(plan: dict, document: dict) -> dict[str, list]:
+    """The closed loops (mm) of every region of the split as it was made: the smoothing only redraws the borders, by far less than the 10 %
+    that tells two sizes apart (``prediction.SIZE_TOLERANCE``), so the sizes and colours of a work do not move with the slider."""
+    return _memo(("loops", plan["document_path"]), lambda: {r["id"]: r["loops"] for r in seg.regions_as_loops(document)})
+
+
+def _angle(entry: dict) -> float:
+    return float(entry["parameters"].get("scan_angle") or 0.0)
+
+
+def _row_lengths(plan: dict, document: dict):
+    """How long the scan rows of regions engraved as one layer are (DEC-107): ``of(region_ids, angle)`` fills their shapes together, as
+    LightBurn fills a layer's shapes by default (the file writes no other grouping), and ``of_colour(index, angle)`` takes the regions
+    of one source colour, the layer it makes when it has an entry of its own. Each length is computed once per split."""
+    loops = _loops_by_region(plan, document)
+    known = _memo(("rows", plan["document_path"]), dict)
+    by_colour: dict[int, list[str]] = {}
+    for region in document["regions"]:
+        by_colour.setdefault(region["color"], []).append(region["id"])
+
+    def of(region_ids, angle: float = 0.0) -> float | None:
+        key = (frozenset(region_ids), round(angle, 3))
+        if key not in known:
+            known[key] = row_length.of_shapes([loops[r] for r in region_ids if r in loops], angle)
+        return known[key]
+
+    def of_colour(index: int, angle: float = 0.0) -> float | None:
+        return of(by_colour.get(index, ()), angle)
+
+    return of, of_colour
+
+
 def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     """Every source colour and region with its titanium colour and status, the colours beyond the delta E tolerance, the
     regions whose titanium colour is no longer measured, the layers of the file and the totals of the current colouring.
 
     A colour's status: ``excluded``, ``missing`` (its titanium colour is not measured, or not any more), ``hand`` or
     ``accepted`` (the operator's choice; accepted before the editor) or ``automatic``. ``outside_tolerance`` flags a
-    titanium colour farther than the delta E tolerance; it never blocks the file (editor DEC-001)."""
-    by_id = {e["id"]: e for e in entries}
+    titanium colour farther than the delta E tolerance; it never blocks the file (editor DEC-001).
+
+    A layer's titanium colour is its recipe's in rows as long as the layer's (DEC-107, ``palette.at_size``): ``by_id`` holds the entry of
+    each layer at its size (with ``size``) and every other entry as measured, and a colour's delta E is to the colour of its layer (to its
+    entry at the length of its own regions while it has none). ``nearest_delta_e`` compares every candidate at the colour's own length."""
+    measured = {e["id"]: e for e in entries}
     colouring, settings, tolerance = plan["colouring"], plan["colour_settings"], plan["threshold"]
     candidates = palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0]
     excluded_colours, excluded_regions = set(colouring["excluded_colours"]), set(colouring["excluded_regions"])
+    rows, colour_rows = _row_lengths(plan, document)
     colours = []
     for source in document["palette"]:
         key = str(source["index"])
         group = colouring["groups"].get(key)
-        entry = by_id.get(group["entry_id"] if group else colouring["assignment"].get(key))
-        nearest = min((color.delta_e(source["lab"], e["lab"]) for e in candidates), default=None)
+        entry = measured.get(group["entry_id"] if group else colouring["assignment"].get(key))
         if source["index"] in excluded_colours:
             status = "excluded"
         elif entry is None:
             status = "missing"
         else:
             status = group["by"] if group else "automatic"
-        delta = None if entry is None else color.delta_e(source["lab"], entry["lab"])
         colours.append({"index": source["index"], "lab": source["lab"], "srgb": source["srgb"], "pixels": source["pixels"], "status": status,
-                        "entry_id": entry["id"] if entry else None, "how": "hand" if group else colouring["how"].get(key),
-                        "delta_e": None if delta is None else round(delta, 2), "outside_tolerance": delta is not None and delta > tolerance,
-                        "nearest_delta_e": None if nearest is None else round(nearest, 2), "regions": 0, "open_regions": 0})
+                        "entry_id": entry["id"] if entry else None, "how": "hand" if group else colouring["how"].get(key), "regions": 0,
+                        "open_regions": 0})
     by_index = {c["index"]: c for c in colours}
     px_area = document["px_mm"] ** 2
     used: dict[str, dict] = {}
-    missing_regions, open_pixels, weighted, weight = [], {}, 0.0, 0.0
+    missing_regions, open_pixels, placed = [], {}, []
     for region in document["regions"]:
         c = by_index[region["color"]]
         c["regions"] += 1
@@ -673,7 +710,7 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
         if region["id"] in excluded_regions:
             continue
         if chosen is not None:                  # a region's own colour wins over its colour's, even an excluded one
-            if chosen not in by_id:
+            if chosen not in measured:
                 missing_regions.append(region["id"])
                 continue
             entry_id = chosen
@@ -689,8 +726,25 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
         layer = used.setdefault(entry_id, {"entry_id": entry_id, "region_ids": [], "pixels": 0})
         layer["region_ids"].append(region["id"])
         layer["pixels"] += region["pixels"]
-        weighted += region["pixels"] * color.delta_e(region["lab"], by_id[entry_id]["lab"])
-        weight += region["pixels"]
+        placed.append((region, entry_id))
+    by_id = dict(measured)
+    for entry_id, layer in used.items():                 # each layer in the colour its recipe gives at the length of its rows
+        entry = measured[entry_id]
+        layer["row_mm"] = rows(layer["region_ids"], _angle(entry))
+        seen = palette.at_size(entry, layer["row_mm"])
+        by_id[entry_id] = {**entry, "lab": seen["lab"], "srgb": seen["srgb"], "size": seen["size"]}
+    weighted = sum(region["pixels"] * color.delta_e(region["lab"], by_id[entry_id]["lab"]) for region, entry_id in placed)
+    weight = sum(region["pixels"] for region, _ in placed)
+    for c in colours:
+        entry = measured.get(c["entry_id"])
+        if entry is None:
+            delta = None
+        else:
+            lab = by_id[entry["id"]]["lab"] if entry["id"] in used else palette.at_size(entry, colour_rows(c["index"], _angle(entry)))["lab"]
+            delta = color.delta_e(c["lab"], lab)
+        nearest = min((color.delta_e(c["lab"], palette.at_size(e, colour_rows(c["index"], _angle(e)))["lab"]) for e in candidates), default=None)
+        c.update(delta_e=None if delta is None else round(delta, 2), outside_tolerance=delta is not None and delta > tolerance,
+                 nearest_delta_e=None if nearest is None else round(nearest, 2))
     outside = [c for c in colours if c["outside_tolerance"] and c["status"] != "excluded" and c["open_regions"]]
     total = sum(p["pixels"] for p in document["palette"]) or 1
     layers = sorted(used.values(), key=lambda layer: (-by_id[layer["entry_id"]]["lab"][0], layer["entry_id"]))
@@ -765,7 +819,7 @@ def _export_layers(store: Store, plan: dict, state: dict) -> list[dict]:
                     "mode": entry["mode"], "cut_type": entry["mode"] or "Scan", "prediction": _prediction(entry), "knowledge_id": None,
                     "stage": None, "questioned": False, "basis": entry["basis"], "lab": entry["lab"], "srgb": entry["srgb"],
                     "time_s_per_cm2": entry["time_s_per_cm2"], "regions": [], "region_ids": layer["region_ids"],
-                    "area_mm2": round(layer["area_mm2"], 3), "layer_keys": [f"e{entry['id']}"]})
+                    "area_mm2": round(layer["area_mm2"], 3), "layer_keys": [f"e{entry['id']}"], "size": entry.get("size")})
     return out
 
 
@@ -797,8 +851,8 @@ SHOWN_ENTRY = ("id", "lab", "srgb", "basis", "engravings", "photographs", "param
 
 def _shown(entry: dict, settings: dict) -> dict:
     """A palette colour as the screen shows it, and whether the automatic modes may choose it."""
-    return {**{k: entry[k] for k in SHOWN_ENTRY}, "experiments": len(entry["experiments"]),
-            "automatic": palette.automatic(entry, settings["max_time"], settings["include_as_shot"])}
+    return {**{k: entry[k] for k in SHOWN_ENTRY}, "experiments": len(entry["experiments"]), "sizes": entry.get("sizes") or [],
+            "size": entry.get("size"), "automatic": palette.automatic(entry, settings["max_time"], settings["include_as_shot"])}
 
 
 def photo_palette(store: Store, plan_id: int) -> list[dict]:

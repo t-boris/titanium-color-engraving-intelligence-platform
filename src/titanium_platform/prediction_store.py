@@ -23,6 +23,10 @@ mode, and the one source is the tonal profile of an accepted check in that mode,
 runs over the darkness of the grey. A profile of a picture lying over vector fills is not used: its colour is the fill mixed with the
 dots (DEC-095).
 
+Every point and fill keeps the row length it was measured at (``source["row_mm"]``, DEC-107): the length the laser marks along a scan
+row through it, derived from the pair's stored LightBurn file (``row_length``; nothing is written to the database), so that a curve is
+made for the size of what it predicts (``curve_for(..., row_mm)``, ``prediction.curve_at``).
+
 A chart-corrected colour is referenced. A camera-relative colour is expressed against the clean titanium of its own photograph
 where that exists (DEC-056) and is used as photographed otherwise. One curve is built from one kind only: referenced points are
 preferred (``prediction.curve``); among camera-relative ones, those expressed against clean titanium are preferred to colours as
@@ -38,7 +42,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import color, colormap, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules, prediction, tasks
+from . import (color, colormap, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules, prediction,
+               row_length, tasks)
 from .db import Store
 from .prediction import PredictionError
 
@@ -136,7 +141,7 @@ def collect(store: Store, mode: Mode) -> dict:
     witness, derived, nominal = refs["witness"], refs["derived"], refs["nominal"]
     kept = experiments.kept_plan_ids(store)
     pairs = {r["id"]: r for r in store.query(
-        "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, photo_name, accepted_at, data_json FROM pair "
+        "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, lightburn_path, photo_name, accepted_at, data_json FROM pair "
         "WHERE status='Accepted' AND device_id=? AND lens_id IS ? AND material_id IS ? ORDER BY id",
         (mode.device_id, mode.lens_id, mode.material_id))}
     points, fills, weak, over_fills = [], [], 0, 0
@@ -155,7 +160,8 @@ def collect(store: Store, mode: Mode) -> dict:
         clean = witness.get(row["pair_id"])
         lab, reference = _expressed(json.loads(row["lab_json"]), kind, clean["lab"] if clean else None, nominal)
         source = {**_where(pairs[row["pair_id"]], kept), "layer": row["layer_index"], "layer_name": evidence.get("layer_name"),
-                  "how": "flat fill", "reference": reference, "observation_id": row["id"]}
+                  "how": "flat fill", "reference": reference, "observation_id": row["id"],
+                  "row_mm": row_length.of_file(pairs[row["pair_id"]]["lightburn_path"]).get(row["layer_index"])}
         fills.append(prediction.Point(params["power"], lab, source, kind == "calibrated"))
     for pair_id, pair in pairs.items():                      # tonal profiles of photo engravings and grey ramps
         check = json.loads(pair["data_json"] or "{}").get("check") or {}
@@ -179,19 +185,22 @@ def collect(store: Store, mode: Mode) -> dict:
                 over_fills += 1                              # the colour there is the fill mixed with the dots (DEC-095)
                 continue
             values = prediction.adjustments_of(tonal.get("adjustments"))["values"]
+            row_mm = row_length.of_file(pair["lightburn_path"]).get(rep["index"])
             for step in tonal["bins"]:
                 grey = prediction.adjust_grey(step["gray"], values["Gamma"], values["Contrast"], values["Brightness"])
                 power = float(prediction.grey_to_power(grey, *tonal["power_range"])) if mode.dither == prediction.PREDICTED_MODE else float(100.0 * (1.0 - grey))
                 lab, reference = _expressed([step["L"], step["a"], step["b"]], kind, clean["lab"] if clean else None, nominal)
                 how = "grey ramp" if tonal.get("measured_by") == "grey ramp" else "tonal profile"
                 source = {**_where(pair, kept), "layer": rep["index"], "layer_name": rep.get("name"), "how": how,
-                          "gray": step["gray"], "pixels": step.get("n"), "reference": reference}
+                          "gray": step["gray"], "pixels": step.get("n"), "reference": reference, "row_mm": row_mm}
                 points.append(prediction.Point(power, lab, source, kind == "calibrated"))
     return {"points": points, "fills": fills, "weak_profiles": weak, "over_fills": over_fills}
 
 
-def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
-    """The curve of ``mode`` and what it rests on: the kind of reference of its colours and notes on what was left out."""
+def curve_for(store: Store, mode: Mode, row_mm: float | None = None) -> tuple[prediction.Curve, dict]:
+    """The curve of ``mode`` for an engraving whose rows are ``row_mm`` long (``prediction.curve_at``; without it, at the size most
+    engravings measured) and what it rests on: the kind of reference of its colours, the sizes measured (``sizes``: each one's row
+    length, engravings and points) and notes on what was left out and on the size."""
     found = collect(store, mode)
     points = found["points"]
     as_shot_left_out = 0
@@ -199,7 +208,7 @@ def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
         anchored = [p for p in points if p.source["reference"] == CLEAN]
         if anchored:
             as_shot_left_out, points = len(points) - len(anchored), anchored
-    curve = prediction.curve(points, axis=prediction.POWER_AXIS if mode.dither == prediction.PREDICTED_MODE else prediction.TONE_AXIS)
+    curve = prediction.curve_at(points, row_mm, axis=prediction.POWER_AXIS if mode.dither == prediction.PREDICTED_MODE else prediction.TONE_AXIS)
     # (raises PredictionError when nothing was measured at the mode)
     references = {source["reference"] for row in curve.points for source in row["sources"]}
     reference = CHART if curve.referenced else CLEAN if references == {CLEAN} else AS_SHOT
@@ -220,7 +229,34 @@ def curve_for(store: Store, mode: Mode) -> tuple[prediction.Curve, dict]:
     if found["fills"]:
         notes.append(f"{len(found['fills'])} flat fills with these settings are shown beside the curve and not used in it: a fill and a grey "
                      "level of a picture engraved at the same power need not come out the same colour.")
-    return curve, {"reference": reference, "notes": notes, "fills": found["fills"]}
+    notes += size_notes(curve.size)
+    groups = prediction.sizes([p for p in points if p.referenced == curve.referenced])
+    sizes = [{"row_mm": g["row_mm"], "engravings": g["engravings"], "points": len(g["points"])} for g in groups]
+    return curve, {"reference": reference, "notes": notes, "fills": found["fills"], "sizes": sizes}
+
+
+def _mm(values) -> str:
+    return ", ".join(f"{v:g}" for v in values)
+
+
+def size_notes(size) -> list[str]:
+    """What a curve's size (``prediction.curve_at``) says beside a prediction: nothing when that size was measured."""
+    if not size:
+        return []
+    how, row, measured, used = size["how"], size["row_mm"], size["measured_mm"], size["from_mm"]
+    notes = []
+    if how == prediction.BETWEEN:
+        notes.append(f"Rows {row:g} mm long were not measured at this mode: the colours are interpolated between the measurements with "
+                     f"rows of {used[0]:g} and {used[1]:g} mm.")
+    elif how == prediction.OUTSIDE:
+        notes.append(f"Rows {row:g} mm long were not measured at this mode (measured: {_mm(measured)} mm): the colours are those of {used[0]:g} mm "
+                     "rows and may come out different at this size; engrave a grey ramp of this width to measure it.")
+    elif how == prediction.UNKNOWN and row is not None:
+        notes.append(f"The row length of these measurements is not known (their LightBurn files cannot be read): the colours may come out "
+                     f"different with rows {row:g} mm long.")
+    if size.get("unknown_points") and measured:
+        notes.append(f"{size['unknown_points']} points whose row length is not known (their LightBurn file cannot be read) are left out.")
+    return notes
 
 
 # -- grayscale scales (REQ-059) ---------------------------------------------------------------------------------------------------
@@ -266,9 +302,9 @@ def _hex(lab) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-def _scale_summary(store: Store, mode: Mode, materials: Mapping) -> dict | None:
+def _scale_summary(store: Store, mode: Mode, materials: Mapping, row_mm: float | None = None) -> dict | None:
     try:
-        curve, basis = curve_for(store, mode)
+        curve, basis = curve_for(store, mode, row_mm)
     except PredictionError:
         return None
     lo, hi = curve.span
@@ -287,7 +323,8 @@ def _scale_summary(store: Store, mode: Mode, materials: Mapping) -> dict | None:
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "bar": [{"power": round(float(p), 2), "hex": _hex(lab)} for p, lab in zip(powers, labs) if np.isfinite(lab[0])],
             "confirmation": {k: v for k, v in grayscale.confirmation(_per_engraving(store, mode, curve.referenced)).items() if k != "rows"},
-            "fills": len(basis["fills"]), "time_s_per_cm2": time["s_per_cm2"], "notes": basis["notes"]}
+            "fills": len(basis["fills"]), "time_s_per_cm2": time["s_per_cm2"], "notes": basis["notes"], "size": dict(curve.size),
+            "sizes": basis["sizes"]}
 
 
 def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[prediction.Point]:
@@ -300,10 +337,12 @@ def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[predictio
 
 
 def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5.0) -> dict:
-    """One photographed engraving at ``mode`` against the curve of every other engraving there, as the scale's confirmation compares
-    them (``grayscale.compare``): each grey it was measured at, the colour predicted there and the colour engraved. ``reason`` says why
-    nothing is compared: the engraving gave no clear colours at this mode, its photograph has no colour chart while the scale's
-    colours are chart-corrected (or the other way round), or no other engraving measured this mode yet."""
+    """One photographed engraving at ``mode`` against the curve of every other engraving there at its own size, as the scale's
+    confirmation compares them (``grayscale.compare``): each grey it was measured at, the colour predicted there and the colour engraved.
+    ``reason`` says why nothing is compared: the engraving gave no clear colours at this mode (``no_points``), its photograph has no
+    colour chart while the scale's colours are chart-corrected or the other way round (``kind``), no other engraving measured this mode
+    yet (``alone``), the others measured no size near or around its own (``other_size``: ``size`` names theirs), or its powers lie
+    outside theirs (``outside``)."""
     found = [p for p in collect(store, mode)["points"] if p.source["pair_id"] == pair_id]
     if not found:
         return {"reason": "no_points", "compared": 0, "bands": []}
@@ -314,9 +353,11 @@ def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5
         return {"reason": "kind", "compared": 0, "bands": []}
     others = [p for p in points if p.source["pair_id"] != pair_id]
     out = {**grayscale.compare(own, others, tolerance), "referenced": curve.referenced, "tolerance_de": tolerance,
-           "others": len({prediction._engraving_of(p.source) for p in others})}
+           "row_mm": own[0].source.get("row_mm")}
+    out["others"] = (out["size"] or {}).get("engravings", 0)        # the other engravings the prediction was made from, at its size
     out["confirmed"] = out["median_de"] is not None and out["median_de"] <= tolerance
-    out["reason"] = None if out["compared"] else ("alone" if not others else "outside")
+    other_size = (out["size"] or {}).get("how") == prediction.OUTSIDE
+    out["reason"] = None if out["compared"] else ("alone" if not others else "other_size" if other_size else "outside")
     return out
 
 
@@ -329,13 +370,14 @@ def scales(store: Store, device_id: int | None = None, lens_id=None, material_id
     return sorted((item for item in out if item is not None), key=lambda item: (not item["referenced"], -item["engravings"], -item["points"]))
 
 
-def scale(store: Store, mode: Mode, min_power=None, max_power=None) -> dict:
-    """One scale in full: its curve with every source, "which grey makes which colour" at Min..Max (by default the measured span), each
-    engraving against the curve of the others, and each fill of the same settings against the curve at its power."""
-    curve, basis = curve_for(store, mode)
+def scale(store: Store, mode: Mode, min_power=None, max_power=None, row_mm=None) -> dict:
+    """One scale in full at a size (rows ``row_mm`` long; by default the size most engravings measured): its curve with every source,
+    "which grey makes which colour" at Min..Max (by default the measured span), each engraving against the curve of the others at its own
+    size, and each fill of the same settings against the curve at its power."""
+    curve, basis = curve_for(store, mode, None if row_mm is None else check_width(row_mm))
     lo, hi = curve.span
     low, high = check_power_range(lo if min_power is None else min_power, hi if max_power is None else max_power)
-    summary = _scale_summary(store, mode, _materials(store))
+    summary = _scale_summary(store, mode, _materials(store), curve.size["row_mm"])
     fills = []
     for p in basis["fills"]:
         at = curve.lab_at(p.power)
@@ -438,7 +480,7 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
             elif settings["max_power"] is None:
                 raise PredictionError("a dot mode fires every dot at the layer's power and the layer states none: there is nothing to predict from")
             mode = mode_of(settings, device_id, lens_id, material_id, dither)
-            curve, basis = curve_for(store, mode)
+            curve, basis = curve_for(store, mode, row_length.of_layer(layer))
         except PredictionError as exc:
             item["refused"] = str(exc)
             out.append(item)
@@ -525,19 +567,32 @@ def _lab_of(bgr: np.ndarray) -> np.ndarray:
     return color.srgb8_to_lab(rgb).reshape(bgr.shape[:2] + (3,))
 
 
-def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour: bool = False) -> dict:
-    """A picture prepared for ``describe`` at ``mode``: its curve, the levels and counts of its greys and the measured span. With
-    ``by_colour`` the picture's colours are what is wanted: its greys are chosen at each Min and Max (``with_colours``)."""
+def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour: bool = False, width_mm: float | None = None) -> dict:
+    """A picture prepared for ``describe`` at ``mode``, engraved ``width_mm`` wide (its rows that long, DEC-107): its curve at that size,
+    the levels and counts of its greys and the measured span. With ``by_colour`` the picture's colours are what is wanted: its greys are
+    chosen at each Min and Max (``with_colours``)."""
     if mode.dither != prediction.PREDICTED_MODE:
         raise PredictionError("only the grayscale image mode is predicted from a scale")
-    curve, basis = curve_for(store, mode)
+    curve, basis = curve_for(store, mode, width_mm)
     lo, hi = curve.span
     settings = {**{k: getattr(mode, k) for k in SETTINGS}, "global_passes": mode.global_passes, "min_power": lo, "max_power": hi,
                 "overridden": []}
     item = {"index": 0, "name": name, "dither": prediction.PREDICTED_MODE, "settings": settings, "refused": None, "mode": mode,
             "curve": curve, "reference": basis["reference"], "adjustments": {}, "basis_notes": list(basis["notes"]), "by_colour": by_colour,
-            "pictures": 1, "turned": False, **{k: upload[k] for k in ("picture", "alpha", "size", "lab", "grey_full", "alpha_full", "bgr_full")}}
+            "sizes": basis["sizes"],
+            "pictures": 1, "turned": False, "width_mm": width_mm,
+            **{k: upload[k] for k in ("picture", "alpha", "size", "lab", "grey_full", "alpha_full", "bgr_full")}}
     return _with_levels(item)
+
+
+def at_width(store: Store, item: dict, width_mm: float) -> dict:
+    """A prepared picture (``picture_item``) engraved at another width: its curve made again for that size; the same item when its width
+    is that already."""
+    width = check_width(width_mm)
+    if item.get("width_mm") == width:
+        return item
+    curve, basis = curve_for(store, item["mode"], width)
+    return {**item, "curve": curve, "reference": basis["reference"], "basis_notes": list(basis["notes"]), "sizes": basis["sizes"], "width_mm": width}
 
 
 def _with_levels(item: dict) -> dict:

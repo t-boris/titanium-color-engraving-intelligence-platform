@@ -16,7 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import obs
-from titanium_platform import color, conversion as cv, engraving_time, faces, lightburn as lb, model, plans as pl, segment as sg, setup as su, vector_job
+from titanium_platform import color, conversion as cv, engraving_time, faces, lightburn as lb, model, palette, plans as pl, row_length, segment as sg, setup as su
+from titanium_platform import vector_job
 from titanium_platform.api.app import create_app
 
 SVG = "{http://www.w3.org/2000/svg}"
@@ -349,6 +350,43 @@ def test_a_whole_colour_or_one_region_can_be_given_another_titanium_colour_by_ha
         assert bad.status_code == 422 and message in bad.json()["error"]
     plan = pl.get_plan(c["store"], j["id"])
     assert [h["op"]["op"] for h in plan["history"][1:4]] == ["set_colour", "assign", "set_colour"]
+
+
+# -- the size of each layer (DEC-107) ----------------------------------------------------------------------------------------------
+def test_each_layer_shows_the_colour_its_recipe_gives_at_the_length_of_the_layers_rows(work, monkeypatch):
+    """One recipe engraved as a 5 mm patch came out blue and as a 50 mm strip green: given to the green band, which runs the work's whole
+    60 mm width around the yellow disc (its rows about 53 mm long), its layer is green (measured at that length); given to the disc, about
+    11 mm across, it lies between the two sizes. The preview, the delta E, the stored layers and the colours the file promises all use
+    that colour."""
+    c, store = work, work["store"]
+    for rgb, mm in ((BLUE, 5), (GREEN, 50)):
+        oid = obs.add(store, c["w"], lab(rgb), power=55, speed=700, line_interval=0.02, material_id=c["ti"], layer_type="Scan")
+        store.execute("UPDATE pair SET lightburn_path=? WHERE id=(SELECT pair_id FROM observation WHERE id=?)", (f"/rows/{mm}", oid))
+    read = row_length.of_file                                         # the pairs' files: one Scan layer whose rows are that long
+    monkeypatch.setattr(row_length, "of_file", lambda path: {1: float(path[6:])} if str(path).startswith("/rows/") else read(path))
+    entries = c["client"].get(f"/api/vector-palette?device_id={c['w']['setup'][0]}&lens_id={c['w']['setup'][1]}&material_id={c['ti']}").json()["entries"]
+    (sized,) = [e for e in entries if e["parameters"]["speed"] == 700]
+    assert [(z["row_mm"], z["engravings"]) for z in sized["sizes"]] == [(5.0, 1), (50.0, 1)]
+    j = create(c).json()
+    green, yellow = by_rgb(j, GREEN)["index"], by_rgb(j, YELLOW)["index"]
+
+    j = colouring(c, j, op="set_colour", colour=green, entry_id=sized["id"])
+    (band,) = [layer for layer in j["layers"] if layer["entry_id"] == sized["id"]]
+    assert band["size"]["how"] == "measured" and band["size"]["from_mm"] == [50.0] and 48 < band["size"]["row_mm"] < 56, band["size"]
+    assert color.delta_e(lab(tuple(band["srgb"])), lab(GREEN)) < 1.5 and by_rgb(j, GREEN)["delta_e"] < 1   # green, not blue and green pooled
+    assert j["entries"][sized["id"]]["srgb"] == band["srgb"]                                               # the editor paints it so
+
+    j = colouring(c, j, op="set_colour", colour=green, entry_id=None)
+    j = colouring(c, j, op="set_colour", colour=yellow, entry_id=sized["id"])
+    (disc,) = [layer for layer in j["layers"] if layer["entry_id"] == sized["id"]]
+    assert disc["size"]["how"] == "between" and 7 < disc["size"]["row_mm"] < 13, disc["size"]
+    between = palette.at_size(sized, disc["size"]["row_mm"])                                               # (its length rounded to 0.1 mm)
+    assert color.delta_e(lab(tuple(disc["srgb"])), between["lab"]) < 1 and lab(BLUE)[0] < between["lab"][0] < lab(GREEN)[0]
+    stored = next(layer for layer in pl.get_plan(store, j["id"])["layers"] if layer["entry_id"] == sized["id"])
+    assert stored["srgb"] == disc["srgb"]                                                                  # the list's picture draws it
+    assert c["client"].get(f"/api/vector/{j['id']}/export.lbrn2").status_code == 200
+    promised = next(layer for layer in pl.get_plan(store, j["id"])["exports"][-1]["promised"] if layer["entry_id"] == sized["id"])
+    assert promised["srgb"] == disc["srgb"]                                                                # what the file promised
 
 
 # -- the file -------------------------------------------------------------------------------------------------------------------

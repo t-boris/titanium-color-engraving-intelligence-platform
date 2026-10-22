@@ -23,6 +23,9 @@ provisional checks, settings missing from the file).
 Every colour and every entry carries the estimated engraving time of its recipe (REQ-035, DEC-075): seconds per square
 centimetre, or per centimetre of path for a Line-mode recipe, labelled an estimate. The map can be narrowed to recipes no
 slower than a time per square centimetre, and within the delta E tolerance the search puts the fastest recipe first.
+
+A measured colour keeps the row length of its layer (``row_mm``, DEC-107): the length the laser marks along a scan row through it, read
+from the pair's stored LightBurn file (:mod:`row_length`), so that a palette gives a recipe's colour at the size it is engraved at.
 """
 from __future__ import annotations
 
@@ -33,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, tasks
+from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, row_length, tasks
 from . import plans as pl
 from . import setup as su
 from .db import Store
@@ -290,7 +293,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "provisional": False, "lab": lab, "delta": delta,
                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
                        "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **_time(params),
-                       **info})
+                       "row_mm": row_length.of_file(row["lightburn_path"]).get(row["layer_index"]), **info})
     first_row = {}
     for row in rows:
         first_row.setdefault(row["pair_id"], row)

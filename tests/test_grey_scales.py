@@ -142,6 +142,13 @@ def test_ramps_of_different_widths_are_each_measured_step_by_step(world):
         for step in tonal["bins"]:
             drawn = color.srgb8_to_lab(np.array([step_colour(step["gray"])], np.float64))[0]
             assert color.delta_e([step["L"], step["a"], step["b"]], drawn) < 3, (name, step)
+    ig.review_masks(s, pid)
+    ig.accept_pair(s, pid)
+    sizes = {sc["mode"]["speed"]: [size["row_mm"] for size in sc["sizes"]] for sc in ps.scales(s)
+             if sc["mode"]["line_interval"] == SETTINGS["line_interval"] and sc["mode"]["speed"] in (150, 250)}
+    assert set(sizes) == {150, 250}, sizes                                # each speed's scale knows both widths of its ramps as sizes (DEC-107);
+    for found in sizes.values():                                          # the module's other plates may have measured these settings too
+        assert all(any(abs(mm / width - 1) <= 0.1 for mm in found) for width in (20, 40)), sizes
 
 
 def test_a_photographed_plate_gives_each_tile_a_scale_with_every_step_at_its_power(world):

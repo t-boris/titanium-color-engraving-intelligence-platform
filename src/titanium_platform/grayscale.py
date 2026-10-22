@@ -127,14 +127,20 @@ def grey_for_colours(lab_pixels: np.ndarray, curve: prediction.Curve, min_power:
 
 
 def compare(own: list[prediction.Point], others: list[prediction.Point], tolerance: float = 5.0) -> dict:
-    """The points of one engraving (``own``) against the curve of ``others``: at each of its powers inside that curve's span, the grey
-    of the picture it was measured at, the colour it measured, the colour the others predict there and the distance (CIE76) between
-    them; their median and largest, and the share within ``tolerance``. Nothing is compared without others."""
-    out = {"compared": 0, "median_de": None, "max_de": None, "within": None, "bands": []}
+    """The points of one engraving (``own``) against the curve of ``others`` at the engraving's own size (``prediction.curve_at``, DEC-107):
+    at each of its powers inside that curve's span, the grey of the picture it was measured at, the colour it measured, the colour the
+    others predict there and the distance (CIE76) between them; their median and largest, and the share within ``tolerance``. Nothing is
+    compared without others, nor when the others measured no size near it or around it (``size`` says which sizes they measured): a
+    colour at another size is not a prediction of this one."""
+    out = {"compared": 0, "median_de": None, "max_de": None, "within": None, "bands": [], "size": None}
     if not own or not others:
         return out
+    curve = prediction.curve_at(others, own[0].source.get("row_mm"))
+    out["size"] = dict(curve.size)
+    if curve.size["how"] == prediction.OUTSIDE:
+        return out
     powers = np.array([p.power for p in own])
-    predicted = prediction.curve(others).lab_at(powers)
+    predicted = curve.lab_at(powers)
     inside = np.isfinite(predicted[:, 0])
     if not inside.any():
         return out
@@ -151,8 +157,9 @@ def compare(own: list[prediction.Point], others: list[prediction.Point], toleran
 
 def confirmation(points: Iterable[prediction.Point], tolerance: float = 5.0) -> dict:
     """Do the engravings of a scale confirm each other? Each engraving (one photographed pair) is compared with the curve built from
-    every OTHER engraving of the same kind: at each of its powers inside that curve's span, the distance (CIE76) between what it
-    measured and what the others predict. With one engraving nothing is confirmed yet, and that is said."""
+    every OTHER engraving of the same kind at its own size (``compare``): at each of its powers inside that curve's span, the distance
+    (CIE76) between what it measured and what the others predict. With one engraving, or none other near its size, nothing is
+    confirmed yet, and that is said."""
     points = list(points)
     by: dict[tuple, list[prediction.Point]] = {}
     for p in points:
@@ -164,7 +171,8 @@ def confirmation(points: Iterable[prediction.Point], tolerance: float = 5.0) -> 
         compared = compare(own, others, tolerance)
         rows.append({"engraving": {"kind": first.get("kind"), "pair_id": first.get("pair_id"), "title": first.get("title"),
                                    "how": first.get("how"), "experiment": first.get("experiment"), "photo": first.get("photo")},
-                     "points": len(own), **compared, "bands": [{"power": b["power"], "de": b["de"]} for b in compared["bands"]]})
+                     "row_mm": first.get("row_mm"), "points": len(own), **compared,
+                     "bands": [{"power": b["power"], "de": b["de"]} for b in compared["bands"]]})
     compared = [r for r in rows if r["compared"]]
     every = [b["de"] for r in compared for b in r["bands"]]
     return {"engravings": len(rows), "tolerance_de": tolerance, "rows": rows,

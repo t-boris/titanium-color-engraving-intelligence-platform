@@ -9,6 +9,9 @@ layer's Min and Max (DEC-057), the power into the colour measured at that power 
   not publish its own. Its documentation gives the directions only (gamma: lower values lighten the mid-tones; contrast: higher
   values make light tones lighter and dark ones darker; brightness: lightens or darkens every tone). Enhance amount, radius and
   denoise are local filters; they are not modelled and are named when set.
+* The colour depends on the size of what is engraved (DEC-107, ``row_length``): every point keeps the row length it was measured at
+  (``source["row_mm"]``) and a curve is made for one size (``curve_at``): from the points measured at that size, between the two
+  nearest measured sizes when it lies between them, else from the nearest size with the curve saying that it was not measured there.
 * Two kinds of mode are predicted (REQ-054): grayscale, where the grey sets the power, from the colour measured at each power; and the
   dot modes whose grey sets the density of full-power dots (ordered, atkinson, dither, stucki, jarvis, newsprint, halftone), from the
   colour measured at each tone in the same mode and settings, the curve running over the darkness of the grey instead of a power
@@ -18,7 +21,8 @@ Pure functions on plain data: nothing is read from or written to the store, so a
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping
 
 import cv2
@@ -34,6 +38,8 @@ NOT_PREDICTED = {"3dslice": "3D slicing engraves depth in repeated passes, not a
 ASSUMED = lb.MONOTONE_ADJUSTMENTS                                              # Gamma, Contrast, Brightness: applied, marked assumed
 NOT_MODELLED = tuple(tag for tag in lb.BITMAP_DEFAULTS if tag not in ASSUMED)  # EnhanceAmount, EnhanceRadius, EnhanceDenoise
 SPAN_TOLERANCE = 1e-6      # % power: this close to an end of the measured span counts as inside (rounding of grey -> power)
+SIZE_TOLERANCE = 0.10      # row lengths this close (relative) are one size: what is measured at one serves the other (DEC-107)
+MEASURED, BETWEEN, OUTSIDE, UNKNOWN = "measured", "between", "outside", "unknown"     # how a curve's size relates to the measured ones
 HATCH_PERIOD = 8           # px between diagonal hatch lines at least; more on a large picture, so the hatch survives scaling down
 HATCH_PER_SIDE = 64        # hatch lines across the long side of a large picture
 GAP = 8                    # px of white between the picture and its prediction
@@ -74,6 +80,7 @@ class Curve:
     referenced: bool
     left_out: int                        # points of the other kind at this mode, not used
     axis: str = POWER_AXIS               # what ``powers`` are: powers (%), or for a dot mode the darkness (%) of the grey
+    size: Mapping | None = None          # the size it is made for and how that size was measured (``curve_at``); None: sizes not looked at
 
     @property
     def span(self) -> tuple[float, float]:
@@ -99,7 +106,8 @@ class Curve:
         return np.where(inside, np.interp(p, xs, ys), np.nan)
 
     def as_dict(self) -> dict:
-        return {"span": list(self.span), "referenced": self.referenced, "left_out": self.left_out, "axis": self.axis, "points": list(self.points)}
+        out = {"span": list(self.span), "referenced": self.referenced, "left_out": self.left_out, "axis": self.axis, "points": list(self.points)}
+        return out if self.size is None else {**out, "size": dict(self.size)}
 
 
 def _engraving_of(source: Mapping) -> tuple:
@@ -148,6 +156,119 @@ def curve(points: Iterable[Point], prefer_referenced: bool = True, axis: str = P
     rows = tuple({"power": k, "lab": [float(v) for v in lab], "referenced": use, "sources": [dict(p.source) for p in at[k]], **extent}
                  for k, lab, extent in zip(powers, labs, spread))
     return Curve(np.array(powers), labs, rows, use, sum(p.referenced != use for p in points), axis)
+
+
+def _row_mm(value) -> float | None:
+    try:
+        row = float(value)
+    except (TypeError, ValueError):
+        return None
+    return row if math.isfinite(row) and row > 0 else None
+
+
+def size_groups(items: Iterable, row_of) -> list[dict]:
+    """``items`` grouped by their row length (``row_of(item)``, mm) so that each lies within ``SIZE_TOLERANCE`` of its group's smallest,
+    smallest first: each group with its size (the geometric mean of its row lengths, mm) and its ``items``. Items of unknown size belong
+    to none."""
+    known = sorted(((row, item) for item in items if (row := _row_mm(row_of(item))) is not None), key=lambda pair: pair[0])
+    groups: list[dict] = []
+    for row, item in known:
+        if groups and row <= groups[-1]["rows"][0] * (1 + SIZE_TOLERANCE):
+            groups[-1]["rows"].append(row)
+            groups[-1]["items"].append(item)
+        else:
+            groups.append({"rows": [row], "items": [item]})
+    return [{"row_mm": round(float(np.exp(np.mean(np.log(g["rows"])))), 1), "items": g["items"]} for g in groups]
+
+
+def sizes(points: Iterable[Point]) -> list[dict]:
+    """The sizes ``points`` were measured at (``size_groups``), each with its ``points`` and how many engravings measured it."""
+    return [{"row_mm": g["row_mm"], "points": g["items"], "engravings": len({_engraving_of(p.source) for p in g["items"]})}
+            for g in size_groups(points, lambda p: p.source.get("row_mm"))]
+
+
+def main_size(groups: list[dict]) -> dict:
+    """The size a scale is shown at when none is asked for: the one most engravings measured (then most points, then the larger)."""
+    return max(groups, key=lambda g: (g["engravings"], len(g["points"]), g["row_mm"]))
+
+
+def place(measured: list[float], row_mm: float | None) -> dict:
+    """Where rows ``row_mm`` long lie among the ``measured`` sizes (ascending, mm): ``how`` (``measured`` within ``SIZE_TOLERANCE`` of
+    one, ``between`` two, ``outside`` them, ``unknown`` when none was measured or no size is asked), the indexes of the measured sizes
+    used (``use``) and, between two, how far it lies from the first to the second in the logarithm of the length (``t``)."""
+    row = _row_mm(row_mm)
+    if not measured or row is None:
+        return {"how": UNKNOWN, "use": [], "t": 0.0}
+    near = min(range(len(measured)), key=lambda i: abs(math.log(row / measured[i])))
+    if abs(row / measured[near] - 1) <= SIZE_TOLERANCE + 1e-9:                       # (the bound itself is that size)
+        return {"how": MEASURED, "use": [near], "t": 0.0}
+    below = [i for i, m in enumerate(measured) if m < row]
+    above = [i for i, m in enumerate(measured) if m > row]
+    if below and above:
+        a, b = below[-1], above[0]
+        return {"how": BETWEEN, "use": [a, b], "t": math.log(row / measured[a]) / math.log(measured[b] / measured[a])}
+    return {"how": OUTSIDE, "use": [near], "t": 0.0}
+
+
+def _between(low: Curve, high: Curve, t: float) -> Curve | None:
+    """The curve a fraction ``t`` of the way from ``low`` to ``high`` at each power both measured over (None when their spans do not
+    overlap): Lab interpolated at every power either measured there; each power keeps the sources of the nearest measured power of
+    both. How far engravings disagree is not known between sizes."""
+    lo, hi = max(low.span[0], high.span[0]), min(low.span[1], high.span[1])
+    if hi < lo - SPAN_TOLERANCE:
+        return None
+    powers = np.unique(np.concatenate([low.powers, high.powers]))
+    powers = powers[(powers >= lo - SPAN_TOLERANCE) & (powers <= hi + SPAN_TOLERANCE)]
+    labs = (1 - t) * low.lab_at(powers) + t * high.lab_at(powers)
+    rows = []
+    for power, lab in zip(powers, labs):
+        sources = [dict(s) for c in (low, high) for s in c.points[int(np.argmin(np.abs(c.powers - power)))]["sources"]]
+        rows.append({"power": float(power), "lab": [float(v) for v in lab], "referenced": low.referenced, "sources": sources,
+                     "engravings": len({_engraving_of(s) for s in sources}), "spread_de": None})
+    return Curve(powers, labs, tuple(rows), low.referenced, 0, low.axis)
+
+
+def curve_at(points: Iterable[Point], row_mm: float | None = None, prefer_referenced: bool = True, axis: str = POWER_AXIS) -> Curve:
+    """The curve of one mode for engravings whose rows are ``row_mm`` long (DEC-107), from the points of one kind (as ``curve``), the
+    size placed among the measured ones by ``place``:
+
+    * ``measured``: a size within ``SIZE_TOLERANCE`` was measured: its points alone;
+    * ``between``: it lies between two measured sizes: their curves interpolated in the logarithm of the row length at every power both
+      measured over (the heat the hypothesis speaks of falls off with the row length, not in steps);
+    * ``outside``: it is smaller than the smallest or larger than the largest measured size (or the two around it share no power):
+      the nearest size's curve, never extrapolated, and the curve says so;
+    * ``unknown``: no point says its size: every point, as before sizes were kept.
+
+    Without ``row_mm`` the curve is at the size most engravings measured (``main_size``). Points of unknown size are left out while
+    others are known. ``Curve.size`` says which: the size, how, the measured sizes, the ones used and how many engravings it was made
+    from."""
+    points = list(points)
+    if not points:
+        raise PredictionError("no colour has been measured at this mode: there is nothing to predict from")
+    kinds = {p.referenced for p in points}
+    use = prefer_referenced if len(kinds) == 2 else kinds.pop()
+    kind = [p for p in points if p.referenced == use]
+    groups = sizes(kind)
+    unknown = len(kind) - sum(len(g["points"]) for g in groups)
+    measured = [g["row_mm"] for g in groups]
+    size = {"row_mm": None if row_mm is None else round(float(row_mm), 1), "measured_mm": measured, "unknown_points": unknown}
+    if not groups:
+        return replace(curve(kind, use, axis), left_out=len(points) - len(kind),
+                       size={**size, "how": UNKNOWN, "from_mm": [], "engravings": len({_engraving_of(p.source) for p in kind})})
+    wanted = float(row_mm) if row_mm is not None else main_size(groups)["row_mm"]
+    size["row_mm"] = round(wanted, 1)
+    where = place(measured, wanted)
+    made = None
+    if where["how"] == BETWEEN:
+        a, b = (groups[i] for i in where["use"])
+        made = _between(curve(a["points"], use, axis), curve(b["points"], use, axis), where["t"])
+        if made is None:                                    # the two sizes share no power: the nearest one, as outside them
+            near = min(where["use"], key=lambda i: abs(math.log(wanted / measured[i])))
+            where = {"how": OUTSIDE, "use": [near], "t": 0.0}
+    if made is None:
+        made = curve(groups[where["use"][0]]["points"], use, axis)
+    return replace(made, left_out=len(points) - len(kind), size={**size, "how": where["how"], "from_mm": [measured[i] for i in where["use"]],
+                                                                 "engravings": sum(groups[i]["engravings"] for i in where["use"])})
 
 
 def adjust_grey(grey, gamma: float = 1.0, contrast: float = 0.0, brightness: float = 0.0) -> np.ndarray:
@@ -286,7 +407,7 @@ def render(picture_grey, min_power: float, max_power: float, curve: Curve, adjus
                      "for it and what lies under it shows.")
     shares = dict(spread_shares) if spread_shares is not None else _shares_of_shown(curve.spread_at(power), covered)
     unit = "tones" if curve.axis == TONE_AXIS else "powers"
-    if shares["single"] > 0:
+    if shares["single"] > 0 and (curve.size or {}).get("how") != BETWEEN:     # between two sizes no engraving measured it: the size's note says so
         notes.append(f"{100 * shares['single']:.3g} % of the predicted picture lies at {unit} that only one engraving measured: "
                      "how much the colour repeats there is not known.")
     if shares["uncertain"] > 0:

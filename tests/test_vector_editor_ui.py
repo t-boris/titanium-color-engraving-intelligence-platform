@@ -139,10 +139,16 @@ PALETTE = [entry("e11", [205, 198, 182], [79.5, 0.3, 11.0]), entry("e12", [150, 
            entry("e13", [120, 140, 60], [55.0, -20.0, 40.0]), entry("e14", [60, 70, 200], [35.0, 20.0, -60.0], basis="as-shot", automatic=False, rate=None)]
 
 
+SIZES = {1: {"row_mm": 12.5, "how": "measured", "measured_mm": [12.0], "from_mm": [12.0]},       # the row length of each layer (DEC-107)
+         2: {"row_mm": 40.0, "how": "outside", "measured_mm": [4.4], "from_mm": [4.4]},
+         3: {"row_mm": 30.0, "how": "between", "measured_mm": [20.0, 50.0], "from_mm": [20.0, 50.0]}}
+
+
 def layer(index, eid, regions, area_mm2):
     e = PALETTE[[p["id"] for p in PALETTE].index(eid)]
     return {"index": index, "name": f"C{index:02d} P10-F30-V500-I0.02", "entry_id": eid, "regions": regions, "region_count": len(regions),
-            "pixels": int(area_mm2 * 100), "area_mm2": area_mm2, "srgb": e["srgb"], "lab": e["lab"], "time_s_per_cm2": e["time_s_per_cm2"]}
+            "pixels": int(area_mm2 * 100), "area_mm2": area_mm2, "srgb": e["srgb"], "lab": e["lab"], "time_s_per_cm2": e["time_s_per_cm2"],
+            "size": SIZES[index]}
 
 
 def view(version=1):
@@ -215,6 +221,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
   out.redo = byText(tree, 'button', 'Повторить').disabled;
   out.palette = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className, b.getAttribute('title')]);
   out.details = tree.querySelectorAll('details').map((d) => d.querySelector('summary').textContent);
+  out.rows = tree.querySelectorAll('span').filter((x) => (x.className || '').startsWith('vw-rows')).map((x) => [x.textContent, x.className, x.getAttribute('title')]);
 """)
     assert out["fills"] == {"r1": "rgb(205,198,182)", "r2": "rgb(205,198,182)", "r3": "rgb(150,60,90)", "r4": "rgb(120,140,60)", "r5": "#e6e6e6"}
     assert out["viewBox"] == "0 0 40 20" and out["undo"] is False and out["redo"] is True
@@ -224,10 +231,15 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     text = out["text"]
     for part in ("Разбиение", "Цвета", "AI", "Файл", "Файл LightBurn", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
                  "Исходные цвета", "вне допуска", "Показать далёкие от оригинала", "C01", "2.00 см² · областей 2 · 1 с", "№ 2", "ΔE 17.70",
-                 "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "на разбиении № 0", "Авто"):
+                 "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "на разбиении № 0", "Авто",
+                 "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"):
         assert part in text, part
+    assert out["rows"] == [["↔ 12.5 мм", "vw-rows", "строки 12.5 мм: цвет рецепта измерен при 12.0 мм"],             # each layer's row length
+                           ["↔ 40.0 мм", "vw-rows warn", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
+                           ["↔ 30.0 мм", "vw-rows warn", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
     assert out["details"][0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text           # the wide table is a window
-    assert [d for d in out["details"][1:]] == ["Слои и время по слоям (4)", "Параметры работы"]                       # the file tab folds its long parts
+    assert [d for d in out["details"][1:]] == ["Слои и время по слоям (4)", "Параметры работы",                        # the file tab folds its long parts,
+                                               "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]           # the layers why their sizes matter
     assert out["renders"] == 0
 
 

@@ -14,8 +14,9 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * the steps that can be undone and redone (``undo``, ``redo``): each holds the work's state as it decides what is engraved (:data:`STATE`);
 * when it last changed (``updated_at``).
 
-Everything shown is computed from these and the scale's measurements as they are now: the picture beside its prediction, the time
-and the LightBurn file. The pictures go through the render cache (folder ``photo-work-<id>``), known by everything they are drawn
+Everything shown is computed from these and the scale's measurements as they are now, at the work's width (DEC-107: the colour depends
+on the length of the scan rows, and a picture's rows are as long as it is wide): the picture beside its prediction, the time and the
+LightBurn file. The pictures go through the render cache (folder ``photo-work-<id>``), known by everything they are drawn
 from, the scale's measured points included, so a new measurement draws them again. The decoded pictures of the works opened last are
 kept in memory (``KEEP_DECODED``). The file carries no identifier yet (DEC-104): its engraving is measured as the operator's own photo
 engravings are and counts towards the scale.
@@ -35,8 +36,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (ai_colouring as ai, ai_picture, color, conversion as cv, grayscale, ingest as ig, people, picture_rules, plans as pl, prediction,
-               prediction_store as ps, render_cache as rc, research, setup as su)
+from . import (ai_colouring as ai, ai_picture, capability_plates as cp, color, conversion as cv, devices, grayscale, ingest as ig, people,
+               picture_rules, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
 from .vector_job import COPY_SUFFIX
@@ -93,9 +94,10 @@ def measured_scale(store: Store, wanted) -> ps.Mode:
     raise su.ValidationError("this scale is not measured: choose one of the measured scales")
 
 
-def _span(store: Store, mode: ps.Mode) -> tuple[float, float]:
-    """The scale's measured powers rounded inwards to 0.1 %, so that the white and the black of a picture both stay inside them."""
-    lo, hi = ps.curve_for(store, mode)[0].span
+def _span(store: Store, mode: ps.Mode, width_mm: float) -> tuple[float, float]:
+    """The scale's measured powers at the work's width rounded inwards to 0.1 %, so that the white and the black of a picture both stay
+    inside them."""
+    lo, hi = ps.curve_for(store, mode, width_mm)[0].span
     low, high = math.ceil(lo * 10 - 1e-9) / 10, math.floor(hi * 10 + 1e-9) / 10
     return (low, high) if low <= high else (float(lo), float(hi))
 
@@ -128,7 +130,7 @@ def _upload(plan: Mapping) -> dict:
 
 def _item(store: Store, plan: Mapping) -> dict:
     upload = _upload(plan)
-    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"])
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"])
     if plan["rules"]:
         item["part_scores"] = ps.part_scores(upload)         # the people model runs once per decoded picture
     return item
@@ -145,7 +147,7 @@ def _shown(item: dict, plan: Mapping) -> dict:
 def _key(kind: str, plan: Mapping, curve: prediction.Curve) -> str:
     """The key of a picture of the work: everything it is drawn from, the measured points of the scale included."""
     return rc.key_of({"kind": kind, "image": rc.file_stamp(plan["image_path"]), "mode": mode_of(plan).as_dict(),
-                      "curve": rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str)),
+                      "curve": rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str)), "width_mm": plan["width_mm"],
                       "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"], "rules": plan["rules"]})
 
 
@@ -199,6 +201,7 @@ def view(store: Store, plan_id: int) -> dict:
         except OSError:
             pass
     out["picture"] = {**info, "by_colour": plan["by_colour"], "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"),
+                      "scale_size": dict(item["curve"].size), "scale_sizes": item["sizes"],
                       "size_mm": {"width": out["width_mm"], "height": out["height_mm"]}, "time": out["time"], "dpi": out["dpi"],
                       "preview": f"/api/photo-works/{plan['id']}/preview.png?v={key[:16]}", "file": f"/api/photo-works/{plan['id']}/export.lbrn2"}
     return out
@@ -207,7 +210,7 @@ def view(store: Store, plan_id: int) -> dict:
 def preview(store: Store, plan_id: int) -> rc.Picture:
     """The picture beside its predicted look (``prediction.side_by_side``), at preview size."""
     plan = _work(store, plan_id)
-    curve, _ = ps.curve_for(store, mode_of(plan))
+    curve, _ = ps.curve_for(store, mode_of(plan), plan["width_mm"])
 
     def draw() -> bytes:
         shown = _shown(_item(store, plan), plan)
@@ -220,7 +223,7 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     """The work in the list: its predicted look on the titanium, or the picture as LightBurn sees it while its scale is not measured."""
     plan = _work(store, plan_id)
     try:
-        curve = ps.curve_for(store, mode_of(plan))[0]
+        curve = ps.curve_for(store, mode_of(plan), plan["width_mm"])[0]
     except PredictionError:
         curve = None
 
@@ -277,7 +280,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
             raise su.ValidationError("no grayscale scale is measured yet: engrave the grey-scale plate and add its photograph first")
         mode = ps.Mode(**found[0]["mode"])
     title = name.strip() if isinstance(name, str) and name.strip() else (Path(file_name or "").stem or "picture")
-    low, high = _span(store, mode)
+    low, high = _span(store, mode, width)
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
@@ -297,15 +300,15 @@ def update(store: Store, plan_id: int, changes) -> None:
     before = _here(plan)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
         raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work")
+    if "width_mm" in changes:
+        plan["width_mm"] = ps.check_width(changes["width_mm"])
     if "scale" in changes:
         mode = measured_scale(store, changes["scale"])
         plan.update(scale=_scale_data(mode), device_id=mode.device_id, lens_id=mode.lens_id)
         if "min_power" not in changes and "max_power" not in changes:
-            plan["min_power"], plan["max_power"] = _span(store, mode)
+            plan["min_power"], plan["max_power"] = _span(store, mode, plan["width_mm"])
     if "min_power" in changes or "max_power" in changes:
         plan["min_power"], plan["max_power"] = ps.check_power_range(changes.get("min_power", plan["min_power"]), changes.get("max_power", plan["max_power"]))
-    if "width_mm" in changes:
-        plan["width_mm"] = ps.check_width(changes["width_mm"])
     if "by_colour" in changes:
         if not isinstance(changes["by_colour"], bool):
             raise su.ValidationError("the colour choice must be on or off")
@@ -382,6 +385,30 @@ def rename_work(store: Store, plan_id: int, name) -> str:
     return title
 
 
+# -- a ramp at the work's width (DEC-107) ----------------------------------------------------------------------------------------------
+RAMP_MARGIN_MM = 19.0                # what a grey-ramp plate adds to its widest ramp: the labels, the markers and their margins
+
+
+def width_ramp(store: Store, plan_id: int) -> dict:
+    """A grey-ramp plate of one ramp as wide as the work, at its scale's settings, Min and Max: engraved and photographed before the
+    picture, it measures the scale at the size the picture is engraved at (the colour depends on the length of the rows, DEC-107). A
+    plate is made for the lens on the laser now, so the work's lens must be on it."""
+    plan = _work(store, plan_id)
+    mode = mode_of(plan)
+    lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
+    if lens.get("id") != plan["lens_id"]:
+        raise su.ValidationError("the laser has another lens on it than this work's scale was measured with: put that lens on the laser first")
+    width = float(plan["width_mm"])
+    fixed = {k: v for k, v in {"speed": mode.speed, "frequency": mode.frequency, "pulse_width": mode.pulse_width, "line_interval": mode.line_interval,
+                               "passes": mode.passes, "global_passes": mode.global_passes}.items() if v is not None}
+    settings = {**fixed, "power": plan["max_power"], "max_width_mm": min(cp.PLATE_MAX_MM, width + RAMP_MARGIN_MM),
+                "scales": {"rows": {"axis": "width", "values": [width]}, "columns": {"axis": "speed", "values": [mode.speed]},
+                           "min_power": plan["min_power"], "max_power": plan["max_power"]}}
+    made = cp.create(store, plan["device_id"], mode.material_id, "grey_scales", settings)
+    store.audit("photo_work_width_ramp", plan_id=plan["id"], ramp_plan_id=made["plan_id"], width_mm=width)
+    return made
+
+
 # -- the engravings of the work (0.19.3) --------------------------------------------------------------------------------------------
 def _engraved_layer(check: Mapping) -> dict | None:
     """The picture layer a photograph measured: the first layer with a tonal profile."""
@@ -390,17 +417,18 @@ def _engraved_layer(check: Mapping) -> dict | None:
 
 def engravings(store: Store, plan_id: int) -> list[dict]:
     """Every photograph linked to the work (its file names the work, or it was uploaded for it), the newest first: its state, the
-    settings and Min and Max it was engraved with and, once accepted, each grey of it against the colour the other engravings of those
-    settings predict (``prediction_store.engraving_check``). An engraving with other settings than the work's scale is checked on its
-    own settings and says so."""
+    settings, Min and Max and row length (its width as engraved, ``row_mm``) it was engraved with and, once accepted, each grey of it
+    against the colour the other engravings of those settings predict at its size (``prediction_store.engraving_check``). An engraving
+    with other settings than the work's scale is checked on its own settings and says so."""
     plan = _work(store, plan_id)
     work_mode = mode_of(plan)
     out = []
-    for row in store.query("SELECT id, status, device_id, lens_id, material_id, photo_name, lightburn_name, created_at, accepted_at, data_json "
-                           "FROM pair WHERE plan_id=? AND status!=? ORDER BY id DESC", (plan["id"], ig.ST_DELETED)):
+    for row in store.query("SELECT id, status, device_id, lens_id, material_id, photo_name, lightburn_name, lightburn_path, created_at, accepted_at, "
+                           "data_json FROM pair WHERE plan_id=? AND status!=? ORDER BY id DESC", (plan["id"], ig.ST_DELETED)):
         rep = _engraved_layer(json.loads(row["data_json"] or "{}").get("check") or {})
         item = {"pair_id": row["id"], "status": row["status"], "photo_name": row["photo_name"], "lightburn_name": row["lightburn_name"],
-                "created_at": row["created_at"], "accepted_at": row["accepted_at"], "settings": None, "same_scale": None, "mode": None, "check": None}
+                "created_at": row["created_at"], "accepted_at": row["accepted_at"], "settings": None, "same_scale": None, "mode": None, "check": None,
+                "row_mm": None if rep is None else row_length.of_file(row["lightburn_path"]).get(rep["index"])}
         if rep is not None:
             settings = {"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
                         "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")}
@@ -498,7 +526,7 @@ def ask_ai(store: Store, plan_id: int, wish, fresh=False) -> None:
     except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
         raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
     upload = _upload(plan)
-    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"])
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"])
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     found = _parts_found(upload)
     what = ai_picture.brief(text, found, grayscale.scale_of_greys(item["curve"], low, high), [] if fresh else plan["rules"])

@@ -5,6 +5,8 @@
    «Новая работа» (картинка, название, ширина), сама работа на один экран: шкалы слева, картинка рядом с прогнозом посередине, справа
    вкладки; шкала, Min и Max, ширина и подбор серых сохраняются в работе сразу. Страница «Шкалы серого» показывает, какой серый каким
    цветом выходит на каждой шкале и подтверждают ли это эксперименты.
+   Цвет зависит от размера гравировки (DEC-107): от длины строки, у картинки — её ширины. Шкала показывает, при какой ширине она измерена;
+   работа берёт цвета при своей ширине — измеренные, между двумя измеренными или ближайшие, и говорит какие.
    Адреса: #/photo-engraving — мои работы; ?work=<id> — работа; ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
    #/photo-preview (прогноз по файлу LightBurn) и #/photo (непрерывная полосами). */
 'use strict';
@@ -36,6 +38,23 @@
     return pill(`${c.confirmed ? 'подтверждена' : 'не подтверждена'}: медиана ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn');
   }
 
+  const mm = (v) => `${value(v, 1)} мм`;
+  const mmList = (list) => list.map((v) => value(v, 1)).join(' и ') + ' мм';
+
+  /** Как цвета шкалы относятся к ширине (``size`` прогноза, DEC-107): короткая плашка и строка пояснения. */
+  function sizeText(size) {
+    if (!size) return null;
+    if (size.how === 'measured') return {short: `шкала измерена при ширине ${mm(size.from_mm[0])}`, tone: 'ok',
+      long: `Цвета измерены при ширине ${mm(size.from_mm[0])}${size.measured_mm.length > 1 ? ` (шкала измерена при ${mmList(size.measured_mm)})` : ''}.`};
+    if (size.how === 'between') return {short: `${mm(size.row_mm)}: между измерениями ${mmList(size.from_mm)}`, tone: 'warn',
+      long: `При ширине ${mm(size.row_mm)} шкала не измерялась: цвета взяты между измерениями при ${mmList(size.from_mm)}. Чтобы проверить, выгравируйте пробу этой ширины.`};
+    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: шкала измерена при ${mmList(size.measured_mm)}`, tone: 'warn',
+      long: `Шкала измерена при ширине ${mmList(size.measured_mm)}, при ${mm(size.row_mm)} — нет: цвета взяты при ${mm(size.from_mm[0])} и на этой ширине могут выйти другими.`};
+    return {short: 'ширина измерений неизвестна', tone: 'warn', long: 'Неизвестно, при какой ширине измерена шкала: её файлы LightBurn недоступны.'};
+  }
+  const SIZE_ABOUT = 'Цвет на титане зависит от длины строки гравировки (у картинки — от её ширины): лазер возвращается к точке через строку, '
+    + 'и на коротких строках титан не успевает остыть.';
+
   /** Карточка шкалы в списке: цвета по измеренным мощностям, настройки, чем измерена, подтверждение и время на см². */
   function scaleCard(sc, chosen, choose) {
     const bar = sc.bar.length ? `linear-gradient(to right, ${sc.bar.map((b) => b.hex).join(', ')})` : 'none';
@@ -45,6 +64,7 @@
       h('span', {class: 'ge-ends small'}, h('span', {}, `P ${value(sc.span[0], 1)} %`), h('span', {}, `P ${value(sc.span[1], 1)} %`)),
       h('strong', {}, settingsText(sc.mode, sc.dpi)),
       h('span', {class: 'small muted'}, `${materialLabel(sc.material)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
+      sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `измерена при ширине ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
   }
 
@@ -132,11 +152,21 @@
 
   /** Шкала: её настройки, Min и Max, полоса «серый → цвет» и во вкладках таблица серых, подтверждение экспериментами, заливки и точки.
       ``slots`` — места экрана, которые она заполняет. ``initial`` — Min и Max (у работы — её), иначе измеренный диапазон, округлённый внутрь
-      до 0,1 %, чтобы белый и чёрный оба остались в нём; ``changed(lo, hi)`` узнаёт новые Min и Max, когда их поменяли. ``stop()`` — шкала
-      больше не показывается: её отложенное изменение и поздние ответы не применяются. */
-  function scaleDetail(sc, slots, {initial = null, changed = null} = {}) {
-    const span = sc.span;
+      до 0,1 %, чтобы белый и чёрный оба остались в нём; ``changed(lo, hi)`` узнаёт новые Min и Max, когда их поменяли. ``rowMm`` — ширина,
+      при которой показывать цвета (у работы — её ширина); без неё — ширина, измеренная больше всего, и кнопки других измеренных ширин.
+      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. */
+  function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null} = {}) {
+    let span = sc.span;
     let timer = null, seq = 0, stopped = false;
+    let atMm = rowMm != null ? rowMm : (sc.size ? sc.size.row_mm : null);
+    const widths = rowMm == null && sc.sizes && sc.sizes.length > 1 ? h('div', {class: 'row ge-sizes', role: 'group', 'aria-label': 'Ширина, при которой показать цвета'},
+      h('span', {class: 'small'}, 'Ширина:'), sc.sizes.map((z) => h('button', {type: 'button', class: 'btn btn-small', 'aria-pressed': String(z.row_mm === atMm),
+        title: `измерено гравировок: ${z.engravings}, точек: ${z.points}`, onClick: (ev) => {
+          const self = ev.currentTarget;
+          atMm = z.row_mm;
+          for (const b of self.parentNode.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === self));
+          load(false);
+        }}, mm(z.row_mm)))) : null;
     const slider = (label, short, start) => {
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: start, 'aria-label': label});
       const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: start, 'aria-label': label});
@@ -151,7 +181,7 @@
     const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
     fill(slots.title, settingsText(sc.mode, sc.dpi));
     slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${materialLabel(sc.material)}`);
-    fill(slots.powers, low.box, high.box);
+    fill(slots.powers, low.box, high.box, widths);
     fill(slots.error, error);
     fill(slots.bar, loading());
     for (const tab of [slots.scale, slots.confirm, slots.points]) fill(tab, loading());
@@ -162,8 +192,10 @@
       if (byOperator && changed) changed(lo, hi);
       const mine = ++seq;
       try {
-        const d = await get(`/grey-scales/scale?${modeQuery(sc.mode)}&min_power=${lo}&max_power=${hi}`);
+        const d = await get(`/grey-scales/scale?${modeQuery(sc.mode)}&min_power=${lo}&max_power=${hi}${atMm != null ? `&row_mm=${atMm}` : ''}`);
         if (stopped || mine !== seq) return;
+        span = d.span;
+        const size = sizeText(d.size);
         const levels = d.greys.levels;
         const unmeasured = 256 - d.greys.measured_levels;
         fill(slots.bar, greyBar(levels));
@@ -171,6 +203,7 @@
           h('p', {class: 'small muted'}, `${materialLabel(sc.material)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
             + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
           unmeasured ? h('p', {class: 'small muted'}, `Серых вне измеренных мощностей (${value(span[0], 1)}–${value(span[1], 1)} %): ${unmeasured} из 256 — заштрихованы; цвет там не прогнозируется.`) : null,
+          size ? h('p', {class: 'small'}, pill(size.short, size.tone), ' ', size.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
           greyTable(levels), h('ul', {class: 'small'}, d.notes.map((n) => h('li', {}, I18N.tr(n)))));
         fill(slots.confirm, confirmationBlock(d.confirmation));
         fill(slots.points, fillsBlock(d.fill_points), pointsBlock(d.curve));
@@ -182,6 +215,20 @@
   }
 
   // ---- работа ------------------------------------------------------------------------------------------------------------------------
+
+  /** «Проба на ширине работы» (DEC-107): пластина с одной полоской серого шириной с работу на настройках её шкалы, Min и Max. Её фото
+      измеряет шкалу при ширине работы до того, как гравируется картинка; кнопка открывает созданный эксперимент. Главная кнопка, пока
+      при этой ширине шкала не измерена. */
+  function rampOffer(view, size) {
+    const make = btn('Проба на ширине работы', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const made = await post(`/photo-works/${view.id}/width-ramp`, {}); toast(`Создано: ${made.name}`, 'ok'); go('/experiment/plan-' + made.plan_id); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, size && size.how === 'measured' ? 'btn-small' : 'primary btn-small');
+    return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину на настройках шкалы, `
+      + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
+  }
 
   /** Картинка работы на её шкале: ширина и подбор серых над картинкой, картинка рядом с прогнозом посередине, время под ней, подробности —
       во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); ширина и подбор сохраняются в работе через ``save``. */
@@ -210,8 +257,10 @@
       fill(out,
         h('div', {class: 'pp-captions'}, h('span', {}, info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)'), h('span', {}, 'Прогноз на титане')),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
+      const atSize = sizeText(info.scale_size);
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
+        atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
         info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
       const match = info.colour_match ? h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(info.colour_match.median_de, 1)} ΔE `
         + `(у 90 % пикселей — не больше ${value(info.colour_match.p90_de, 1)}); использовано серых ${info.colour_match.greys_used} из ${info.colour_match.greys_available}.`) : null;
@@ -220,6 +269,8 @@
           h('span', {class: 'muted small'}, ' — оценка: строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.')),
         info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
         match,
+        atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
+        rampOffer(view, info.scale_size),
         h('p', {class: 'small'}, `Файл LightBurn: один слой-изображение C00 в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
           + `${settingsText(view.scale, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`),
         h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))),
@@ -335,7 +386,10 @@
   const NOT_COMPARED = {no_points: 'Фото не дало ясных цветов этих настроек: слой не найден или серые на нём не различить.',
     kind: 'На фото нет эталонной карты, а цвета шкалы исправлены по карте (или наоборот): сравнить их нельзя.',
     alone: 'Других гравировок с этими настройками нет: сравнивать не с чем, эта гравировка сама стала шкалой.',
-    outside: 'Мощности этой гравировки — вне диапазона, измеренного другими гравировками.'};
+    outside: 'Мощности этой гравировки — вне диапазона, измеренного другими гравировками.',
+    other_size: (c) => `Других гравировок этих настроек при ширине около ${mm(c.row_mm)} нет (шкала измерена при ${mmList(c.size.measured_mm)}): цвет при другой `
+      + 'ширине — не прогноз для этой. Эта гравировка сама стала шкалой для своей ширины.'};
+  const notCompared = (c) => (typeof NOT_COMPARED[c.reason] === 'function' ? NOT_COMPARED[c.reason](c) : NOT_COMPARED[c.reason] || c.reason);
 
   /** Гравировки работы (0.19.3), вверху вкладки «Подтверждение»: «Загрузить фото гравировки» и каждая фотография этой работы — её
       состояние и, когда она принята, каждый серый картинки: какой цвет предсказывали другие гравировки этих настроек и какой получился,
@@ -355,13 +409,15 @@
       return h('li', {class: 'ge-entry stack'},
         h('div', {class: 'ge-entry-head'}, h('span', {}, link(where, `№${e.pair_id} · ${e.photo_name}`), ` · ${when(e.accepted_at || e.created_at)}`), pill(label, tone)),
         e.same_scale === false ? h('p', {class: 'small alert warn'}, `Выгравирована с другими настройками, чем шкала работы: ${settingsText(e.mode)}; сравнивается с гравировками этих настроек.`) : null,
-        e.settings && e.settings.power_range ? h('p', {class: 'small muted'}, `Min ${value(e.settings.power_range[0], 1)} % · Max ${value(e.settings.power_range[1], 1)} % в файле`) : null,
+        e.settings && e.settings.power_range ? h('p', {class: 'small muted'}, `Min ${value(e.settings.power_range[0], 1)} % · Max ${value(e.settings.power_range[1], 1)} % в файле`
+          + (e.row_mm != null ? ` · ширина ${mm(e.row_mm)}` : '')) : null,
         e.status !== 'Accepted' ? h('p', {class: 'small muted'}, 'Сравнение появится, когда проверку фото примут: откройте её по ссылке.') : null,
-        c && c.reason ? h('p', {class: 'small'}, NOT_COMPARED[c.reason] || c.reason) : null,
+        c && c.reason ? h('p', {class: 'small'}, notCompared(c)) : null,
         c && !c.reason ? h('div', {class: 'stack'},
           h('p', {class: 'small'}, pill(c.confirmed ? `подтверждает прогноз: медиана ${value(c.median_de, 1)} ΔE` : `не подтверждает: медиана ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn'),
             ` сравнено серых ${c.compared}, в пределах ${c.tolerance_de} ΔE — ${value(c.within * 100, 0)} %, наибольшая разница ${value(c.max_de, 1)} ΔE; `
-            + `прогноз — по ${c.others} ${c.others === 1 ? 'другой гравировке' : 'другим гравировкам'} этих настроек.`),
+            + `прогноз — по ${c.others} ${c.others === 1 ? 'другой гравировке' : 'другим гравировкам'} этих настроек`
+            + (c.size && c.size.how === 'between' ? `, между измерениями при ширине ${mmList(c.size.from_mm)}.` : c.size && c.size.from_mm.length ? ` при ширине ${mm(c.size.from_mm[0])}.` : '.')),
           strip(bands, 'predicted_hex', 'Прогноз'), strip(bands, 'hex', 'Получилось'),
           h('details', {}, h('summary', {class: 'small'}, 'По серым'),
             table(['Серый', 'Мощность, %', 'Прогноз', 'Получилось', 'ΔE'], bands.map((b) => [String(Math.round(b.gray * 255)), value(b.power, 1),
@@ -434,22 +490,23 @@
       ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => modeQuery(sc.mode) === modeQuery(view.scale)) || null;
+    const scaleKey = (v) => `${modeQuery(v.scale)}&row_mm=${v.width_mm}`;                 // the scale is shown at the work's width
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
 
     function showScale() {
       if (detail) detail.stop();
       const sc = chosen();
-      shownKey = modeQuery(view.scale);
+      shownKey = scaleKey(view);
       cards(sc);
       engraved.load(view);
-      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi})});
+      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm});
       else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
     }
     function shown() {
       head.update(view);
       picture.show(view, chosen());
       ai.show(view);
-      if (modeQuery(view.scale) !== shownKey) showScale();
+      if (scaleKey(view) !== shownKey) showScale();
     }
     /** One change of the work (``path`` with ``body``): sent after those before it; the answer to the last one is shown. With ``again``
         the scale is shown anew from the answer (an undo or redo can bring back other Min and Max on the same scale). The promise gives the
@@ -467,7 +524,7 @@
     function step(kind) { return (view[kind] || 0) > 0 ? send(`/photo-works/${id}/${kind}`, {}, true) : Promise.resolve(null); }
     /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
     function pick(item) {
-      if (modeQuery(item.mode) === shownKey) return;
+      if (`${modeQuery(item.mode)}&row_mm=${view.width_mm}` === shownKey) return;
       if (detail) detail.stop();
       detail = null;
       shownKey = null;

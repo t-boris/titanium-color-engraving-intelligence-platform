@@ -26,6 +26,21 @@ const VectorEditor = (() => {
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 1)} кГц · ${num(p.speed, 0)} мм/с · Q-Pulse ${num(p.pulse_width, 0)} нс`
     + (p.line_interval == null ? '' : ` · шаг ${num(p.line_interval, 3)} мм`) + ` · ${p.passes ?? 1} проход(а)` + (p.cross_hatch ? ' · cross-hatch' : '');
   const seconds = (s) => (s == null ? 'не оценено' : num(s, 1) + ' с/см²');
+  const mmList = (list) => list.map((v) => num(v, 1)).join(' и ') + ' мм';
+  /** Длина строк слоя (DEC-107) — короткая отметка «↔ 13,3 мм» в строке слоя; цветом предупреждения, когда цвет рецепта при такой длине
+      не измерен; полный текст — в подсказке. */
+  function sizeNote(size) {
+    if (!size || size.row_mm == null) return null;
+    const rows = `строки ${num(size.row_mm, 1)} мм`;
+    const says = size.how === 'measured' ? `${rows}: цвет рецепта измерен при ${mmList(size.from_mm)}`
+      : size.how === 'between' ? `${rows}: цвет взят между измерениями при ${mmList(size.from_mm)}`
+        : size.how === 'outside' ? `${rows}: цвет рецепта измерен при ${mmList(size.measured_mm)}, при такой длине — нет; на титане может выйти другим`
+          : `${rows}: при какой длине измерен цвет рецепта, неизвестно`;
+    return h('span', {class: 'vw-rows' + (size.how === 'measured' ? '' : ' warn'), title: says, 'aria-label': says}, `↔ ${num(size.row_mm, 1)} мм`);
+  }
+  const SIZE_ABOUT = 'Цвет на титане зависит от длины строк заливки (DEC-107): лазер возвращается к точке через строку, и на коротких строках титан '
+    + 'не успевает остыть. Цвет слоя взят при длине его строк: измеренный, между двумя измеренными или — вне измеренных размеров — у ближайшего, '
+    + 'и тогда на титане он может выйти другим. Пластина «Размер заливки» измеряет рецепты при нужных ширинах.';
   const de = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);       // CIE76, как на сервере
   const duration = (s) => (s == null ? 'не оценено' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
     : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
@@ -143,7 +158,7 @@ const VectorEditor = (() => {
     const activeBox = h('div', {class: 'vw-ed-active'});
     const paletteHead = h('h4', {}, 'Палитра'), paletteNote = h('p', {class: 'small muted'});
     const grid = h('div', {class: 'vw-swatches vw-ed-palette', role: 'group', 'aria-label': 'Измеренные цвета титана'});
-    const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}), layerMerge = h('div', {});
+    const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}), layerMerge = h('div', {}), layersAbout = h('div', {});
     const farBox = h('input', {type: 'checkbox', onChange: (ev) => { state.far = ev.target.checked; syncSvgClass(); }});
     const farNote = h('p', {class: 'small muted'});
     const coloursBox = h('div', {class: 'vw-ed-list'}), colourMerge = h('div', {});
@@ -156,7 +171,7 @@ const VectorEditor = (() => {
         selectionBox,
         h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
         h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid))],
-      ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersBox, layerMerge))],
+      ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))]],
       {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab'});
@@ -591,9 +606,13 @@ const VectorEditor = (() => {
           h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(l.srgb || e.srgb)}`, title: 'Сделать активным цветом',
             'aria-label': `Сделать активным цвет слоя ${l.name || key}`, onClick: () => setActive(l.entry_id)}),
           l.index != null ? h('strong', {}, `C${String(l.index).padStart(2, '0')}`) : null,
+          sizeNote(l.size),
           h('span', {class: 'muted'}, `${area(l.area_mm2)} · областей ${count} · ${rate == null || l.area_mm2 == null ? 'время не оценено' : duration(rate * l.area_mm2 / 100)}`)),
         () => regionsOf(l));
       }) : h('p', {class: 'small muted'}, 'Слоёв цвета нет: всё исключено.'));
+      const away = layers.filter((l) => l.size && l.size.how !== 'measured').length;
+      fill(layersAbout, away ? h('details', {class: 'small alert warn'},
+        h('summary', {}, `${away} из ${layers.length} слоёв: цвет при длине их строк (↔) не измерен`), h('p', {}, SIZE_ABOUT)) : null);
       syncLayerMerge();
     }
 

@@ -45,6 +45,12 @@ The entries of the operator's kept choices are not offered to the other colours 
 photographed (no chart, no clean titanium in their photograph) take part in the automatic modes only when asked
 (``include_as_shot``, DEC-057, DEC-077); the operator may still keep one by hand. The work's cleaning layer comes first,
 so a work holds at most 29 colours (DEC-073); with registration markers the vector job allows 28.
+
+The colour of a recipe depends on the size of what is engraved (DEC-107): on the length of its scan rows. An entry keeps the sizes its
+engravings were made at (``sizes``: each with the colour the engravings of that size agree on) and :func:`at_size` gives its colour in rows
+of a given length: measured there, between two measured sizes, the nearest one outside them (never extrapolated), saying which. The
+entry's own colour is the one all its engravings agree on, whatever their size; a vector work shows each layer at the length of its own
+rows and chooses for each source colour the entries by the colour they give in rows as long as that colour's regions (``size_of``).
 """
 from __future__ import annotations
 
@@ -56,7 +62,7 @@ import re
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from . import agreement, color, colormap, model, setup as su, tasks
+from . import agreement, color, colormap, model, prediction, setup as su, tasks
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
@@ -98,7 +104,41 @@ def _entry(group: str, recipe: dict) -> dict:
             "experiments": recipe["experiments"], "observation_ids": sorted(recipe["observation_ids"]),
             "parameters": first["parameters"], "mode": first["parameters"].get("layer_type"), "task": first["task"],
             "time": first["time"], "time_s_per_cm2": first["time_s_per_cm2"], "missing_context": colormap.missing_context(recipe["points"]),
-            "doubtful": agreement.doubtful(found), "sources": colormap.sources_of(recipe, found)}
+            "doubtful": agreement.doubtful(found), "sources": colormap.sources_of(recipe, found), "sizes": _sizes(recipe)}
+
+
+def _sizes(recipe: dict) -> list[dict]:
+    """The sizes a recipe's engravings were made at (DEC-107), smallest first: its engravings grouped by the row length of their layer
+    (``prediction.size_groups``), each size with the colour its engravings agree on. An engraving of unknown size is in none."""
+    rows: dict = {}
+    for point in recipe["points"]:
+        if point.get("row_mm") is not None:
+            rows.setdefault(point["engraving_id"], point["row_mm"])
+    out = []
+    for group in prediction.size_groups(recipe["engravings"], rows.get):
+        found = colormap.agreed({**recipe, "engravings": {e: recipe["engravings"][e] for e in group["items"]}})
+        out.append({"row_mm": group["row_mm"], "engravings": len(group["items"]), "lab": [float(v) for v in found["lab"]]})
+    return out
+
+
+def at_size(entry: dict, row_mm: float | None) -> dict:
+    """The colour of a palette entry engraved in rows ``row_mm`` long (DEC-107), placed among the sizes its engravings were made at by
+    ``prediction.place``: the colour of the size measured there, interpolated in the logarithm of the length between two, the nearest
+    size's outside them (never extrapolated); the entry's own colour when none of its sizes is known or no length is given. ``size`` says
+    which: the length, how, the measured sizes and the ones used."""
+    sizes = entry.get("sizes") or []
+    measured = [s["row_mm"] for s in sizes]
+    where = prediction.place(measured, row_mm)
+    if where["how"] == prediction.UNKNOWN:
+        lab = list(entry["lab"])
+    elif where["how"] == prediction.BETWEEN:
+        a, b = (sizes[i]["lab"] for i in where["use"])
+        lab = [(1 - where["t"]) * x + where["t"] * y for x, y in zip(a, b)]
+    else:
+        lab = list(sizes[where["use"][0]]["lab"])
+    return {"lab": lab, "srgb": color.lab_to_srgb8(lab).tolist(),
+            "size": {"row_mm": None if row_mm is None else round(float(row_mm), 1), "how": where["how"], "measured_mm": measured,
+                     "from_mm": [measured[i] for i in where["use"]]}}
 
 
 def _left_out(point: dict) -> str | None:
@@ -401,10 +441,12 @@ def choosable(entries, limit: float | None, include_as_shot: bool) -> tuple[list
 
 
 def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: float, seed: int = 0, max_time: float | None = None,
-           keep: dict | None = None, include_as_shot: bool = False) -> dict:
+           keep: dict | None = None, include_as_shot: bool = False, size_of=None) -> dict:
     """Give each source colour an entry of ``palette`` by ``mode`` (see the module). ``max_time`` leaves slower entries (and
     those with no time per area) out of the automatic choice, and so do colours measured as photographed unless
-    ``include_as_shot``; ``keep`` holds the operator's choices, which every mode keeps.
+    ``include_as_shot``; ``keep`` holds the operator's choices, which every mode keeps. ``size_of(index, entry)`` gives the row length
+    (mm) a source colour is engraved at with an entry (DEC-107): its distance to the entry is then to the entry's colour at that length
+    (:func:`at_size`); without it, to the entry's own colour.
     Each colour lists its entry, its delta E to the source, whether that is within the tolerance and the entry's time per
     square centimetre; the totals give the number of distinct recipes and the pixel-weighted mean delta E."""
     if mode not in MODES:
@@ -429,11 +471,19 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
             raise su.ValidationError(f"no colour of the palette engraves within {limit:g} s per square centimetre")
         raise su.ValidationError("every colour of the palette was measured as photographed: include such colours to colour automatically")
     cache: dict[tuple[int, str], float] = {}
+    seen: dict[tuple[int, str], dict] = {}
+
+    def looks(s, e) -> dict:
+        """The entry as this source colour would be engraved with it: at the row length of its regions, or as measured."""
+        key = (s["index"], e["id"])
+        if key not in seen:
+            seen[key] = {"lab": e["lab"], "srgb": e.get("srgb"), "size": None} if size_of is None else at_size(e, size_of(s["index"], e))
+        return seen[key]
 
     def distance(s, e):
         key = (s["index"], e["id"])
         if key not in cache:
-            cache[key] = color.delta_e(s["lab"], e["lab"])
+            cache[key] = color.delta_e(s["lab"], looks(s, e)["lab"])
         return cache[key]
 
     order_kept = None
@@ -449,9 +499,10 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
     for s in sorted(sources, key=lambda s: s["index"]):
         entry, how = chosen[s["index"]]
         distances.append(distance(s, entry))
-        colours.append({"index": s["index"], "lab": s["lab"], "pixels": s["pixels"], "entry_id": entry["id"], "entry_lab": entry["lab"],
-                        "srgb": entry.get("srgb"), "delta_e": round(distances[-1], 2), "within_tolerance": distances[-1] <= tolerance,
-                        "time_s_per_cm2": entry.get("time_s_per_cm2"), "how": how})
+        shown = looks(s, entry)
+        colours.append({"index": s["index"], "lab": s["lab"], "pixels": s["pixels"], "entry_id": entry["id"], "entry_lab": shown["lab"],
+                        "srgb": shown["srgb"], "delta_e": round(distances[-1], 2), "within_tolerance": distances[-1] <= tolerance,
+                        "time_s_per_cm2": entry.get("time_s_per_cm2"), "how": how, **({"size": shown["size"]} if size_of else {})})
     weights = np.array([c["pixels"] for c in colours], float)
     if weights.sum() <= 0:
         weights = np.ones(len(colours))
