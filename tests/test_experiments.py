@@ -1,4 +1,5 @@
 """Experiments are derived from plates and checks, not stored (REQ-028, DEC-055)."""
+import json
 import cv2
 import numpy as np
 import pytest
@@ -214,3 +215,48 @@ def test_every_plate_work_and_check_entry_point_links_to_its_experiment():
     assert "link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту')" in plan        # a work restored from its file
     assert "link('/experiment/' + encodeURIComponent(e.key), I18N.name(e.title))" in screen("experiment-cards.js")
     assert "link('/experiment/' + encodeURIComponent(p.experiment), p.title)" in screen("color-map.js")
+
+
+# -- renaming an experiment (0.19.4) ---------------------------------------------------------------------------------------------------
+def renamed_rows(store) -> list[dict]:
+    return [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='experiment_renamed' ORDER BY id")]
+
+
+def test_an_experiment_with_a_plate_is_renamed_by_its_plan_and_one_audit_row(world):
+    store, out = world["store"], plate(world)
+    key = experiments.plan_key(out["plan_id"])
+    assert experiments.rename(store, key, "  Плата №1 — «тест»  ") == "Плата №1 — «тест»"
+    assert experiments.get_experiment(store, key)["title"] == "Плата №1 — «тест»" and experiments.list_experiments(store)[0]["title"] == "Плата №1 — «тест»"
+    assert pl.get_plan(store, out["plan_id"])["name"] == "Плата №1 — «тест»"
+    assert experiments.rename(store, key, "Плата №1 — «тест»") == "Плата №1 — «тест»"          # the name it has: nothing is written
+    (row,) = renamed_rows(store)
+    assert row["key"] == key and row["new_name"] == "Плата №1 — «тест»" and row["old_name"] != row["new_name"]
+
+
+def test_a_finished_work_without_a_plate_is_renamed_for_every_photograph_of_its_engraving(world):
+    store = world["store"]
+    first = work_pair(world, None, 3)
+    set_status(store, first, "Accepted")
+    again = work_pair(world, None, 4, rephoto_of=first)
+    other = work_pair(world, None, 5)                                       # another engraving keeps its own name
+    key = next(e["key"] for e in experiments.list_experiments(store) if e["main_pair_id"] == again)
+    assert experiments.rename(store, key, "Inna Portrait 150 мм") == "Inna Portrait 150 мм"
+    titles = {r["id"]: r["engraving_title"] for r in store.query("SELECT id, engraving_title FROM pair")}
+    assert titles[first] == titles[again] == "Inna Portrait 150 мм" and titles[other] != "Inna Portrait 150 мм"
+    assert experiments.get_experiment(store, key)["title"] == "Inna Portrait 150 мм"
+
+
+def test_a_blank_name_or_an_unknown_experiment_is_refused_and_the_api_answers_as_for_a_work(tmp_path):
+    from fastapi.testclient import TestClient
+    from titanium_platform.api.app import create_app
+    with TestClient(create_app(tmp_path / "data")) as client:
+        store = client.app.state.store
+        laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+        pl.save_marker_layer_settings(store, 20, 60, 300)
+        out = pl.create_plate_series(store, laser["id"], "10 20", "40 80", "900", 5, 4, 1, pulse_width=200, line_interval=0.025, passes=1)[0]
+        key = experiments.plan_key(out["plan_id"])
+        assert client.post(f"/api/experiments/{key}/rename", json={"name": "   "}).status_code == 422
+        assert client.post("/api/experiments/plan-999/rename", json={"name": "x"}).status_code == 404
+        answer = client.post(f"/api/experiments/{key}/rename", json={"name": " Новое имя "})
+        assert answer.status_code == 200 and answer.json() == {"id": key, "name": "Новое имя"}
+        assert client.get(f"/api/experiments/{key}").json()["title"] == "Новое имя"

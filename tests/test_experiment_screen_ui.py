@@ -13,7 +13,8 @@ from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
-SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js"]
+SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
+           "screens/vector-workspace.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { globalThis.__renders = (globalThis.__renders || 0) + 1; };"
         "App.go = (route) => { location.hash = '#' + route; };"
         "const __local = {}, __session = {};"
@@ -260,3 +261,28 @@ def test_the_experiment_page_takes_the_screen_with_the_photo_filling_its_column_
         assert gone not in CSS, gone                                                                      # the rules of the old long page are gone
     script = (UI / "screens" / "experiment.js").read_text(encoding="utf-8")
     assert "App.tabs(items, {initial: items[0][0], remember: 'ep.tab'" in script and "class: 'os experiment'" in script
+
+
+@node
+def test_the_pencil_beside_the_title_renames_the_experiment_with_one_request(tmp_path):
+    routes = routes_for(WORK)
+    routes["/api/experiments/eng-work/rename"] = {"status": 200, "json": {"id": "eng-work", "name": "Inna Portrait 150 мм"}}
+    out = run(tmp_path, routes, "eng-work", """
+  const head = tree.querySelectorAll('header').find((x) => has(x, 'ep-head'));
+  const pencil = head.querySelectorAll('button').find((b) => has(b, 'vw-rename'));
+  out.pencil = [pencil.textContent, pencil.getAttribute('aria-label')];
+  await pencil.dispatch('click');
+  const dialog = ctx.document.body.querySelector('.modal');
+  out.dialog = [dialog.querySelector('h3').textContent, dialog.querySelector('input').value];
+  dialog.querySelector('input').value = '  Inna Portrait 150 мм ';
+  await byText(dialog, 'button', 'Сохранить').dispatch('click'); await tick(); await tick();
+  out.posts = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, r.body]);
+  out.title = head.querySelector('h2').textContent;
+  out.label = pencil.getAttribute('aria-label');
+  out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
+""")
+    assert out["pencil"] == ["✎", "Переименовать эксперимент «Тест материала»"]
+    assert out["dialog"] == ["Переименовать эксперимент", "Тест материала"]
+    assert out["posts"] == [["/api/experiments/eng-work/rename", json.dumps({"name": "Inna Portrait 150 мм"}, separators=(",", ":"), ensure_ascii=False)]]
+    assert out["title"] == "Inna Portrait 150 мм" and out["label"] == "Переименовать эксперимент «Inna Portrait 150 мм»"
+    assert out["toasts"] == ["Эксперимент переименован ×"]

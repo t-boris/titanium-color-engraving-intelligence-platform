@@ -136,6 +136,7 @@ I18N.add([
   [/^the work width must be a positive number/i, 'Ширина работы должна быть положительным числом, мм'],
   [/^the image could not be read/i, 'Не удалось прочитать изображение'],
   [/^give the plan a name/i, 'Назовите план'],
+  [/^give the experiment a name/i, 'Назовите эксперимент'],
   // планировщик, знание, отчёт
   [/^plates were already created for this proposal/i, 'Платы для этого предложения уже созданы'],
   [/^the proposal size must be/i, 'Размер предложения — целое число от 1 до 40'],

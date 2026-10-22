@@ -213,8 +213,14 @@
     }
     refreshAll();
     const sub = [I18N.name(exp.kind), exp.laser, exp.lens, exp.material].filter(Boolean).join(' · ') + (exp.created_at ? ` · ${when(exp.created_at)}` : '');
+    const name = h('h2', {}, I18N.name(exp.title));
+    const titleBox = h('div', {class: 'ep-title', title: `${I18N.name(exp.title)} · ${sub}`});
+    // only the name changes; the list of experiments shows the new one when it is opened again
+    const pencil = VectorWorkspace.renameButton(exp.key, exp.title, (stored) => {
+      exp.title = stored; fill(name, I18N.name(stored)); titleBox.setAttribute('title', `${I18N.name(stored)} · ${sub}`);
+    }, '/experiments', 'experiment');
     const head = h('header', {class: 'os-head ep-head'}, h('a', {class: 'btn btn-small', href: '#/experiments'}, '← Эксперименты'),
-      h('div', {class: 'ep-title', title: `${I18N.name(exp.title)} · ${sub}`}, h('h2', {}, I18N.name(exp.title)),
+      fill(titleBox, h('div', {class: 'ep-name'}, name, pencil),
         h('div', {class: 'ep-sub'}, h('span', {class: 'sub'}, sub),
           (exp.tasks || []).length ? [h('span', {class: 'muted small'}, 'Задачи:'), ...exp.tasks.map((k) => pill(Tasks.name(k)))] : null)),
       h('span', {class: 'spacer'}), pill(exp.status_text, STATUS_KIND[exp.status] || ''), addPhoto, remove);

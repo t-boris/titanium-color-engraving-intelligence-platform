@@ -17,38 +17,45 @@ const VectorWorkspace = (() => {
 
   // ---- переименование ------------------------------------------------------------------------------------------------------------
 
+  // the words of the dialog for what is renamed: a work (vector or photo engraving) or an experiment
+  const WORDS = {work: {title: 'Переименовать работу', field: 'Название работы', blank: 'Впишите название работы', done: 'Работа переименована',
+                        button: 'Переименовать работу'},
+                 experiment: {title: 'Переименовать эксперимент', field: 'Название эксперимента', blank: 'Впишите название эксперимента',
+                              done: 'Эксперимент переименован', button: 'Переименовать эксперимент'}};
+
   /** The dialog with the name in a field. A blank name is refused before any request, the name as it is closes the dialog without one,
       Enter saves (not while an input method is composing), and a second press while the first is being saved does nothing. ``base`` is
-      the API of the kind of work (a photo engraving work is renamed at ``/photo-works``). */
-  function renameDialog(id, current, done, base) {
+      the API of the kind of work (a photo engraving work is renamed at ``/photo-works``, an experiment at ``/experiments``). */
+  function renameDialog(id, current, done, base, words) {
     let saving = false, box = null;
-    const input = h('input', {value: current, autocomplete: 'off', 'aria-label': 'Название работы',
+    const input = h('input', {value: current, autocomplete: 'off', 'aria-label': words.field,
       onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
     async function save(close) {
       if (saving) return;
       const title = input.value.trim();
-      if (!title) throw new Error('Впишите название работы');
+      if (!title) throw new Error(words.blank);
       if (title === current) { close(); return; }
       saving = true;
       try {
-        const made = await post(`${base}/${id}/rename`, {name: title});
-        toast('Работа переименована', 'ok');
+        const made = await post(`${base}/${encodeURIComponent(id)}/rename`, {name: title});
+        toast(words.done, 'ok');
         close();
         done(made.name);
       } catch (e) { saving = false; throw e; }
     }
-    box = modal('Переименовать работу', h('div', {class: 'stack'}, field('Название', input)), [
+    box = modal(words.title, h('div', {class: 'stack'}, field('Название', input)), [
       {label: 'Отмена', run: (m) => m.close()}, {label: 'Сохранить', cls: 'primary', run: (m) => save(m.close)}]);
     if (input.select) input.select();
   }
 
   /** The pencil beside a work's name. ``renamed(name)`` is told the stored name once it is saved; the button keeps the name it shows,
-      so its label and the dialog's field are right for the next rename too. */
-  function renameButton(id, name, renamed, base = '/vector') {
+      so its label and the dialog's field are right for the next rename too. ``kind`` is ``work`` or ``experiment`` (the words). */
+  function renameButton(id, name, renamed, base = '/vector', kind = 'work') {
     let shown = name;
-    const label = () => `Переименовать работу «${shown}»`;
+    const words = WORDS[kind];
+    const label = () => `${words.button} «${shown}»`;
     const el = h('button', {type: 'button', class: 'btn btn-small vw-rename', title: 'Переименовать', 'aria-label': label(),
-      onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); }, base)}, '✎');
+      onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); }, base, words)}, '✎');
     return el;
   }
 

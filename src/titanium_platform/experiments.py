@@ -208,6 +208,30 @@ def get_experiment(store: Store, key: str) -> dict:
     return {**summary, "plate": plate, "pairs": pairs, "findings": findings, "time": time}
 
 
+def rename(store: Store, key: str, name) -> str:
+    """Give an experiment another name and return it as stored; nothing else changes. The name of an experiment is the name of its plate
+    or work (its plan), and for a finished work without a plate the title of its engraving, which all its photographs share. Naming it as
+    it is already named writes nothing."""
+    groups = _groups(store)
+    if key not in groups:
+        raise KeyError(f"experiment {key} not found")
+    if not isinstance(name, str) or not name.strip():
+        raise ingest.IngestError("give the experiment a name")
+    title = name.strip()
+    group = groups[key]
+    old = _summary(key, group, {}, {})["title"]
+    if title == old:
+        return title
+    with store.transaction():
+        if group["plan"]:
+            store.execute("UPDATE plan SET name=? WHERE id=?", (title, group["plan"]["id"]))
+        else:
+            engraving = group["pairs"][0]["engraving_id"]
+            store.execute("UPDATE pair SET engraving_title=? WHERE engraving_id=?", (title, engraving))
+        store.audit("experiment_renamed", key=key, old_name=old, new_name=title)
+    return title
+
+
 # -- the pictures the experiment screens show by default ------------------------------------------------------------------
 LIST_THUMBNAIL_PX = 480     # experiment-cards.js: photo.png?visibility=lifted&size=480
 

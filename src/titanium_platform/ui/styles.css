@@ -872,6 +872,9 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ep-head {gap:10px}
 .ep-title {min-width:0}
 .ep-title h2 {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-name {display:flex;align-items:center;gap:6px;min-width:0}
+.ep-name h2 {min-width:0}
+.ep-name .vw-rename {flex:none}
 .ep-sub {display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;white-space:nowrap}
 .ep-sub .sub {min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ep-sub .pill {flex:none}

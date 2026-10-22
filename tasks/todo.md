@@ -1504,3 +1504,80 @@ each building on the rules before it, then the work deleted and a new one made. 
       (Min = Max = that power); time per cm2; the colour picker says where it comes from. Tests, release.
 ### 0.21.0: every section on one screen
 - [ ] H. Measure every menu section and its pages at 1421 x 951 (copy of the data); move those that scroll onto `.os`; report the heights before and after. Tests, release.
+
+## 0.19.4-0.20.x plan: the size of an engraving changes its colours; previews at the real size; a colour choice that keeps the drawing; rename an experiment (operator goal, 2026-10-22)
+Requests: «в экспериментах у меня нет возможности поменять имя эксперимента»; «цвета дичайше меняются, осветляются в зависимости от размера картинки ... на маленькой
+картинке 100 на 100, на шероховатой поверхности цвета выглядят намного темнее ... черный на лбу не должен быть черным ... губы ... вообще не видно ... Ты всегда должен показывать
+какие-то контуры ... подумай, как все это дело поменять, чтобы разукрашивать красивее в зависимости от размера, чтобы мы могли сказать, как оно будет»; and «фотографировочная
+работа, векторная работа, если используются эти цвета ... учитывали размер ... и показывали бы в превью правильную версию».
+
+Findings (read-only on the operator's data and its LightBurn files; scratchpad `look/`):
+- Pair 110 = the «Inna Portrait-P1-30» file (no identifier: downloaded before 0.19.3) stretched in LightBurn to 150 x 150 mm (bitmap 1800 px, 1198 dpi), a cleaning layer
+  C01 run first (priority 0) as on the grey-ramp plate, Big Plate 150, Min 1 / Max 30, 150 mm/s, 60 kHz, 350 ns, 0.0212 mm. Pair 109 = the same bitmap at 100 x 100 mm on
+  Small Plate (rough). The scale of the work was measured on the grey-ramp plate 108: ramps 38.4 x 4 mm.
+- Colour against power, 38.4 mm ramp vs 150 mm picture (same plate kind, same settings): at 150 mm the first oxide colours come later - 4.9-14.5 % straw/gold (L 78-87,
+  b up to 40) where the ramp gave violet and dark blue (L 38-45); blue at 16.5-18.4 %; the darkening at 20-30 % nearly the same (L 63->38 vs 71->43). Median 14.2 dE; no single
+  power factor explains it (best k = 1.0). 109 (100 mm, rough Small Plate) is darker than both; material and surface differ, so its size effect cannot be separated.
+- Per pixel (blurred, like with like), the file's greys drawn with the colours measured at 150 mm match the 150 mm engraving: median 4.9 dE, 78 % within 10 dE; drawn with the
+  38.4 mm scale: median 15.8 dE, 26 % within 10. At one size the colour is a function of the grey; the size is the missing dimension. (In-sample: the 150 mm colours come from
+  this engraving; a second engraving at the same size is the real check.)
+- The black forehead: face skin had no rule; the nearest-colour choice put the forehead in the 20-30 % neutral band (predicted dark grey at 38.4 mm, near black at 150 mm).
+  The lips got the same grey as the skin around them. Both were visible in advance with the 150 mm scale.
+- Physics (hypothesis to confirm): the time between two passes over a point is the row length / speed. Short rows (a 38.4 mm ramp, a 5 mm test patch) keep the heat ->
+  colours further along the oxide series; long rows (a 150 mm picture) cool between passes. Bidirectional scanning makes the edges of a row hotter than its middle; the 150 mm
+  picture had too few flat areas near its edges to measure that (inconclusive).
+- Prototype (scratchpad `proto_colouring.py`, 150 mm colours): lightness first (the picture's light and dark kept in order over what the scale reaches, local contrast over
+  1.5 mm raised), then hue -> lips, nose, eyes and forehead read like the photo; contours that were still lost: 0.02 % of the picture.
+
+### 0.19.4: rename an experiment (REQ-065)
+- [x] `experiments.rename(store, key, name)`: a plate or work - its plan's name; a finished work without a plate - its engraving's title (all its photographs); stripped, blank
+      refused, the same name writes nothing, one audit row `experiment_renamed`. `POST /api/experiments/{key}/rename` answers as the rename of a work.
+- [x] The pencil beside the title of the experiment page: the shared rename dialog of works (`VectorWorkspace.renameButton(..., '/experiments', 'experiment')`, its words).
+- [x] Tests: 3 backend (plan, engraving with its re-photograph, API 422/404/200), 1 screen in node. Walked on a copy (8768): renamed, list shows it, one audit row.
+- [x] README, version, full suite, backup, deploy, REQ-065 approved. Done 2026-10-22: full suite 1617 passed (-n 12, none skipped; it first caught the
+      untranslated "give the experiment a name" - translated); backup `backups/titanium-before-0.19.4-20261022T103107Z.sqlite` (integrity ok, 90 pairs, 2120
+      observations, 9 plans, latest pair 110); wheel installed with its dependencies; 8765 answers 0.19.4 and serves the route and the pencil.
+
+### 0.20.0: the size is part of every colour measurement and prediction (photo works; vector works below)
+Map (subagent, 2026-10-22): points come only from `check.layers[].tonal.bins` (`prediction_store.collect` 160-189) and carry no size; the ramp width is reachable through the plan
+(`layers[i].ramp.width`, matched by layer name as ingest.py:2370), a photo engraving's picture width only through its LightBurn file (`Region.width`, an axis-aligned box);
+`photo_work._key` has no `width_mm`; the grey-ramp plate caps a plate at 100 mm (`capability_plates.preview` 930-938), so a 150 mm ramp does not fit; `grayscale.*` and
+`picture_rules.greys` take a curve and need no change.
+- [ ] S1. Row length of a measurement (`row_mm`): the scanned length of a row through it - a ramp's width; a picture's width (its height when the scan angle is 90 deg); the tonal
+      report records it from now on, and `collect` derives it once for older pairs (from the plan's ramp, else from the stored LightBurn file; cached by path and mtime; nothing
+      written to the operator's database). `Point.source["row_mm"]`.
+- [ ] S2. A curve at a row length: `curve_for(store, mode, row_mm=None)` - the measurements at that length (within 10 %), else between the two nearest measured lengths (Lab
+      interpolated at each power in log length), else the nearest, marked "not measured at this size" with the measured lengths. Without `row_mm` as today (all points).
+- [ ] S3. Photo work: the curve at the work's width everywhere - scale shown in the work, colour choice, rules, preview, list picture, file, AI brief, the check of its engravings
+      (`engraving_check` at the engraving's own row length; another size is "not comparable", not a failed confirmation). `_key` includes the width. The work says at which
+      measured widths its scale was made and warns when its width is outside them. Changing the width redraws.
+- [ ] S4. Grey-scales page and cards: the widths each scale was measured at; the scale shown at a chosen width.
+- [ ] S5. Grey-ramp plate: a new axis "ramp width, mm" (e.g. 20 / 40 / 70 / 100 / 150 on one setting), per-row ramp width in layout, labels, cells, metadata; the 100 mm cap
+      becomes the plate size the operator gives. The check reads each ramp at its own width (already per ramp).
+- [ ] S6. "Проба на ширине работы" in a photo work: a small plate file - one ramp of the work's width x 5 mm at the work's scale settings, with markers and QR - so the scale is
+      measured at that size before the picture is engraved.
+- [ ] S7. Tests with synthetic ramps whose colours depend on row length like 108 vs 110 (and a size between them); walk on a copy of the real data (scale of work 28 at 150 mm
+      must reproduce the 150 mm engraving; at 100 mm interpolated and said so); README, MarkView REQ/DEC, full suite, backup, deploy.
+
+### 0.20.1: a colour choice that keeps the drawing, and contours always shown
+- [ ] C1. "Сохранить рисунок" (the default for a picture chosen by colour; "Ближайший цвет" stays as an option): the picture's lightness stretched in order over the lightness the
+      scale reaches at the work's size, its local contrast over 1.5 mm (physical, so it follows the size) raised, then the grey whose colour is nearest with lightness counted
+      four times; greys where the colour changes fastest with power are avoided for large areas (they shift most with heat).
+- [ ] C2. Contours: where the picture has an edge (12 dE across 0.3 mm) that the predicted engraving loses (under 6 dE), the edge is drawn 0.3 mm wide in the grey of the scale
+      that contrasts most with its surroundings; on by default, a switch in the work; the preview and the file are the same picture.
+- [ ] C3. Part rules act on top as now. Tests (lips darker than skin stay darker; a lost edge is drawn; the file equals the preview), walk on a copy with «Inna Portrait» at
+      150 mm, README, MarkView, release.
+
+### 0.21.0: the size in vector works (and in the photo colours added to their palette)
+Map (subagent, 2026-10-22): a vector work's colour is one palette entry per recipe (`palette._entry` = `colormap.agreed`), test-plate patches and works pooled with no size;
+the preview paints every region of a layer with its entry's colour (`vector-editor.js paint`, `vector_job._draw_thumbnail`); the export is one layer per colour, each region a
+separate shape, no fill grouping written (LightBurn's default applies; assumed "all shapes of the layer at once" - to confirm with the operator's LightBurn); patch sizes are
+reachable through plan layers / plate cells / the stored LightBurn files. The engraved vector works on file (102-104) used a palette of another titanium, so they cannot show
+the size effect; it has to be measured.
+- [ ] W1. Each fill observation gets its row span (a plate patch: its width; a work's layer: the span of the layer's shapes along a row), derived as in S1.
+- [ ] W2. A palette entry's colour at a row span (as S2); the work computes each layer's row span from its shapes once the colours are assigned, re-predicts the layer's colour at
+      that span, and the preview, the thumbnail, dE to the wanted colour and the promised colours of the check use it. The automatic colour choice runs again on the
+      re-predicted colours (two rounds), so a layer is chosen for the colour it gives at its own size.
+- [ ] W3. A fill size plate: the same settings as patches 5 / 20 / 50 / 100 mm wide, to measure the shift for fills; until then a layer outside the measured sizes is marked.
+- [ ] W4. Tests, walk on a copy, README, MarkView, release. The planned "photo-engraving colours in the vector palette" (former 0.20.0) comes with sizes from the start.
+Former plans move: every section on one screen -> 0.22.0.

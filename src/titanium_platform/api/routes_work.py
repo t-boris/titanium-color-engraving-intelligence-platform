@@ -284,6 +284,12 @@ def get_experiment(key: str, request: Request):
     return experiments.get_experiment(store_of(request), key)
 
 
+@router.post("/experiments/{key}/rename")
+def rename_experiment(key: str, request: Request, body: dict | None = None):
+    """Another name for an experiment (see experiments.rename); answered as the rename of a work is."""
+    return {"id": key, "name": experiments.rename(store_of(request), key, (body or {}).get("name"))}
+
+
 @router.get("/pairs")
 def list_pairs(request: Request):
     s = store_of(request)
