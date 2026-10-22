@@ -466,3 +466,15 @@ Twice (0.20.0 `others == 2`, 0.20.3 `others == 1`) a test of `test_photo_work_en
 shared, so earlier tests' works are engravings of the same scale too.
 - Rule: in a module- or session-scoped fixture, count before and after (`after == before + 1`) or assert a bound (`>= 1`); an exact count only of what the test
   itself made. Run the new test with its whole module before the full suite.
+
+## Every release report says what of the operator's goal is still not built
+Operator, 2026-10-22: "где вот это изменение, которое я тебе давно просил ... какую конкретно ты хочешь делать гравировку ... grayscale или какую-то другую".
+The first goal of photo engraving named many kinds; only grayscale works were built, and no report said that the other kinds were still missing.
+- Rule: a release report ends with the parts of the operator's standing goals that are not built yet, in one line each; a scope narrowed for a release
+  ("grayscale first") is written into `tasks/todo.md` as an open item, never left implicit.
+
+## Say what an existing work will and will not show after a release
+Operator, 2026-10-22: "Я открыл существующую Boris3 работу, и там ничего не поменялось". 0.20.3 changed the file, the time and labels, not the picture; the object
+colouring was a prototype on a scratch page.
+- Rule: the report names, for the operator's own works, what changes on screen and what stays the same and why; a prototype is called a prototype, with
+  where to look, and never mixed into "what is new in the app".
