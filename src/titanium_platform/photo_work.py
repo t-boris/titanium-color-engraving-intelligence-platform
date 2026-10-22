@@ -6,7 +6,9 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * the picture as it was uploaded, stored once in the data folder (``image_path``), with its file name and size in pixels;
 * the scale it is engraved on (``scale``): the titanium and the settings that do not vary with the grey, which with the laser and the
   lens make a ``prediction_store.Mode``; only a measured scale can be chosen;
-* Min and Max power, the width on the titanium in mm and whether the greys are chosen for the picture's colours (``by_colour``);
+* Min and Max power, the width on the titanium in mm and whether the greys are chosen for the picture's colours (``by_colour``), and how
+  (``colour_choice``, DEC-108: keeping the drawing, the default, or the nearest colour); whether the edges its engraving would lose are drawn
+  in (``contours``, on by default);
 * the rules of the picture's parts (``rules``, REQ-062): a part found by the people model (:mod:`people`) may be engraved by its own rule
   (:mod:`picture_rules`), set by hand or proposed by the AI (:mod:`ai_picture`); whether a reduced copy of the picture may be sent to
   the AI (``ai_photo``, off until the operator allows it) and the last request to it (``ai``: the wish, whether the picture went, the AI's
@@ -36,7 +38,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (ai_colouring as ai, ai_picture, capability_plates as cp, color, conversion as cv, devices, grayscale, ingest as ig, people,
+from . import (ai_colouring as ai, ai_picture, capability_plates as cp, color, conversion as cv, devices, drawing, grayscale, ingest as ig, people,
                picture_rules, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
@@ -47,13 +49,14 @@ IDENTIFIER_PREFIX = "TCE-P"
 THUMB_PX = 360                      # the longer side of the picture of a work in the list
 KEEP_DECODED = 2                    # decoded pictures kept in memory: the work open now and the one before
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
-DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo", "ai", "undo", "redo",
-        "updated_at")
-SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo")
-DEFAULTS = {"rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}   # what a work made before the rules of parts (0.19.0) or undo has
+DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
+        "ai_photo", "ai", "undo", "redo", "updated_at")
+SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai_photo")
+# what a work made before the rules of parts (0.19.0), undo or the drawing kept (0.20.1) has
+DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": True, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
-STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai")
+STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai")
 UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 
 _decoded: OrderedDict[str, dict] = OrderedDict()
@@ -130,25 +133,24 @@ def _upload(plan: Mapping) -> dict:
 
 def _item(store: Store, plan: Mapping) -> dict:
     upload = _upload(plan)
-    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"])
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"], plan["colour_choice"], plan["contours"])
     if plan["rules"]:
         item["part_scores"] = ps.part_scores(upload)         # the people model runs once per decoded picture
     return item
 
 
 def _shown(item: dict, plan: Mapping) -> dict:
-    """The item as it is engraved: its own greys, the greys chosen for its colours (``by_colour``) and, inside each part with a rule,
-    that rule's greys."""
-    if plan["rules"]:
-        return ps.with_rules(item, plan["min_power"], plan["max_power"], plan["rules"])
-    return ps.with_colours(item, plan["min_power"], plan["max_power"]) if plan["by_colour"] else item
+    """The item as it is engraved: its own greys, the greys chosen for its colours (``by_colour``), inside each part with a rule that
+    rule's greys, and the lost edges drawn in (``prediction_store.engraved``)."""
+    return ps.engraved(item, plan["min_power"], plan["max_power"], plan["rules"])
 
 
 def _key(kind: str, plan: Mapping, curve: prediction.Curve) -> str:
     """The key of a picture of the work: everything it is drawn from, the measured points of the scale included."""
     return rc.key_of({"kind": kind, "image": rc.file_stamp(plan["image_path"]), "mode": mode_of(plan).as_dict(),
                       "curve": rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str)), "width_mm": plan["width_mm"],
-                      "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"], "rules": plan["rules"]})
+                      "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"],
+                      "colour_choice": plan["colour_choice"], "contours": plan["contours"], "rules": plan["rules"]})
 
 
 def _material(store: Store, material_id: int | None) -> dict | None:
@@ -167,7 +169,8 @@ def _summary(store: Store, plan: Mapping) -> dict:
             "scale": mode.as_dict(), "material": _material(store, mode.material_id),
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
-            "by_colour": plan["by_colour"], "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
+            "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
+            "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
             "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": ps.picture_time(mode, width, height)}
 
 
@@ -200,7 +203,8 @@ def view(store: Store, plan_id: int) -> dict:
             rc.write(store, _folder(plan["id"]), key, prediction.to_png(prediction.side_by_side(shown["picture"], rgb8)))
         except OSError:
             pass
-    out["picture"] = {**info, "by_colour": plan["by_colour"], "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"),
+    out["picture"] = {**info, "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
+                      "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"), "contours_report": shown.get("contours_report"),
                       "scale_size": dict(item["curve"].size), "scale_sizes": item["sizes"],
                       "size_mm": {"width": out["width_mm"], "height": out["height_mm"]}, "time": out["time"], "dpi": out["dpi"],
                       "preview": f"/api/photo-works/{plan['id']}/preview.png?v={key[:16]}", "file": f"/api/photo-works/{plan['id']}/export.lbrn2"}
@@ -284,7 +288,8 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
-            "by_colour": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [], "updated_at": now()}
+            "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": True, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [],
+            "updated_at": now()}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_created", plan_id=plan_id)
@@ -294,12 +299,12 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
 
 def update(store: Store, plan_id: int, changes) -> None:
     """Change what the work is engraved with: ``scale`` (Min and Max then become its measured span unless they are given too),
-    ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and the ``rules`` of the parts, or whether the picture may be sent to the
-    AI (``ai_photo``). A change of what is engraved can be undone."""
+    ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and how (``colour_choice``), ``contours`` and the ``rules`` of the parts,
+    or whether the picture may be sent to the AI (``ai_photo``). A change of what is engraved can be undone."""
     plan = _work(store, plan_id)
     before = _here(plan)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
-        raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work")
+        raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice, the contours or the rules of the parts of the work")
     if "width_mm" in changes:
         plan["width_mm"] = ps.check_width(changes["width_mm"])
     if "scale" in changes:
@@ -313,6 +318,14 @@ def update(store: Store, plan_id: int, changes) -> None:
         if not isinstance(changes["by_colour"], bool):
             raise su.ValidationError("the colour choice must be on or off")
         plan["by_colour"] = changes["by_colour"]
+    if "colour_choice" in changes:
+        if changes["colour_choice"] not in drawing.CHOICES:
+            raise su.ValidationError("the colour choice must keep the drawing or take the nearest colour")
+        plan["colour_choice"] = changes["colour_choice"]
+    if "contours" in changes:
+        if not isinstance(changes["contours"], bool):
+            raise su.ValidationError("the contours must be on or off")
+        plan["contours"] = changes["contours"]
     if "rules" in changes:
         plan["rules"] = _rules_in(changes["rules"])
     if "ai_photo" in changes:

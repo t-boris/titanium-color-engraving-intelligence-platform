@@ -230,20 +230,57 @@
       + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
   }
 
-  /** Картинка работы на её шкале: ширина и подбор серых над картинкой, картинка рядом с прогнозом посередине, время под ней, подробности —
-      во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); ширина и подбор сохраняются в работе через ``save``. */
+  const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет']];
+  const CHOICE_ABOUT = '«Сохранить рисунок»: светлое и тёмное картинки раскладываются по светлоте, которую даёт шкала, мелкие детали (до 1,5 мм) '
+    + 'усиливаются, и берётся серый с ближайшим цветом при такой светлоте; на большой ровной площади — серый, цвет которого меньше меняется с мощностью. '
+    + '«Ближайший цвет»: серый, который на шкале даёт ближайший цвет, даже если он намного темнее или светлее.';
+  const CONTOURS_ABOUT = 'где граница картинки (губы, глаза, блики) на титане потерялась бы, она обводится линией 0,3 мм — самым тёмным серым шкалы, '
+    + 'на тёмном или у светлого блика — самым светлым. Внутри части с правилом «Один тон» не обводится.';
+
+  /** Что сказать о подборе серых (``colour_match`` с сервера): насколько сохранён рисунок или насколько близки цвета. */
+  function matchText(match) {
+    if (!match) return null;
+    const used = `использовано серых ${match.greys_used} из ${match.greys_available}`;
+    if (match.choice === 'nearest') {
+      return h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(match.median_de, 1)} ΔE `
+        + `(у 90 % пикселей — не больше ${value(match.p90_de, 1)}); ${used}.`);
+    }
+    return h('p', {}, h('strong', {}, 'Рисунок сохранён: '), `светлое и тёмное картинки разложены по светлоте шкалы (L* от ${value(match.reach[0], 0)} `
+      + `до ${value(match.reach[1], 0)})${match.order == null ? '' : `, их порядок совпадает с картинкой на ${value(match.order * 100, 0)} %`}; цвета отличаются `
+      + `от картинки в среднем на ${value(match.median_de, 1)} ΔE — светлота важнее оттенка; ${used}.`);
+  }
+
+  /** Что сказать о контурах работы: выключены, обводить нечего или какую долю картинки занимают линии. */
+  function contoursText(view, info) {
+    if (!view.contours) return h('p', {class: 'small muted'}, 'Контуры выключены: границы, которые на титане теряются, не обводятся.');
+    const share = info.contours_report ? info.contours_report.share : 0;
+    return h('p', {class: 'small'}, h('strong', {}, 'Контуры: '), share > 0
+      ? `границы, которые на титане потерялись бы, обведены линией 0,3 мм — ${value(share * 100, share < 0.001 ? 2 : 1)} % картинки.`
+      : 'на титане не теряется ни одна граница картинки — обводить нечего.');
+  }
+
+  /** Картинка работы на её шкале: ширина, подбор серых и контуры над картинкой, картинка рядом с прогнозом посередине, время под ней,
+      подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
+      ``save`` (DEC-108). */
   function workPicture(save) {
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em'});
     const byColour = h('input', {type: 'checkbox'});
+    const choice = h('select', {'aria-label': 'Как подбирать серые', title: CHOICE_ABOUT}, CHOICES.map(([v, t]) => h('option', {value: v}, t)));
+    const contours = h('input', {type: 'checkbox', 'aria-label': 'Контуры'});
     const out = h('div', {class: 'ge-stage'});
     const foot = h('div', {class: 'ge-foot'});
     const details = h('div', {class: 'stack'});
     width.addEventListener('change', () => save({width_mm: +width.value}));
     byColour.addEventListener('change', () => save({by_colour: byColour.checked}));
+    choice.addEventListener('change', () => save({colour_choice: choice.value}));
+    contours.addEventListener('change', () => save({contours: contours.checked}));
     const waiting = () => fill(out, h('p', {class: 'muted ge-placeholder'}, 'Считаем прогноз…'));
     function show(view, sc) {
       width.value = String(view.width_mm);
       byColour.checked = !!view.by_colour;
+      choice.value = view.colour_choice || 'drawing';
+      choice.disabled = !view.by_colour;
+      contours.checked = view.contours !== false;
       const info = view.picture;
       if (!info) {
         fill(out, h('div', {class: 'ge-placeholder stack'}, h('p', {class: 'alert warn'}, I18N.tr(view.problem)),
@@ -254,21 +291,21 @@
       }
       const t = info.time;
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
+      const lined = info.contours_report && info.contours_report.share > 0 ? ' и контуры' : '';
       fill(out,
-        h('div', {class: 'pp-captions'}, h('span', {}, info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)'), h('span', {}, 'Прогноз на титане')),
+        h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Прогноз на титане')),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
       const atSize = sizeText(info.scale_size);
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
         info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
-      const match = info.colour_match ? h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(info.colour_match.median_de, 1)} ΔE `
-        + `(у 90 % пикселей — не больше ${value(info.colour_match.p90_de, 1)}); использовано серых ${info.colour_match.greys_used} из ${info.colour_match.greys_available}.`) : null;
       fill(details,
         h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`,
           h('span', {class: 'muted small'}, ' — оценка: строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.')),
         info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
-        match,
+        matchText(info.colour_match),
+        contoursText(view, info),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         rampOffer(view, info.scale_size),
         h('p', {class: 'small'}, `Файл LightBurn: один слой-изображение C00 в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
@@ -276,12 +313,15 @@
         h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))),
         info.by_colour ? h('details', {}, h('summary', {class: 'small'}, 'Исходная цветная картинка'),
           h('img', {class: 'pp-image', src: `/api/photo-works/${view.id}/picture`, alt: 'Исходная картинка'})) : null,
-        h('p', {class: 'muted small'}, 'Серая картинка гравируется как есть. Цветная — либо как LightBurn переводит её в серый (по яркости), либо с подбором: для каждого пикселя берётся серый, '
-          + 'который на этой шкале даёт ближайший цвет. Прогноз пересчитывается сам, когда меняются шкала, Min и Max, ширина или подбор.'));
+        h('p', {class: 'muted small'}, 'Серая картинка гравируется как есть. Цветная — либо как LightBurn переводит её в серый (по яркости), либо с подбором серых под цвета. '
+          + CHOICE_ABOUT + ' Контуры: ' + CONTOURS_ABOUT + ' Прогноз и файл LightBurn — одна и та же картинка; прогноз пересчитывается сам, когда меняются шкала, Min и Max, '
+          + 'ширина, подбор или контуры.'));
     }
     const inputs = h('div', {class: 'ge-inputs'},
       h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width),
-      h('label', {class: 'row', title: 'Для каждого пикселя берётся серый, который на этой шкале даёт ближайший цвет'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')));
+      h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
+      choice,
+      h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
     return {inputs, out, foot, details, show, waiting};
   }
 
@@ -603,7 +643,7 @@
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
         h('p', {class: 'small'}, settingsText(w.scale, w.dpi)),
-        h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ' · серые подобраны под цвета' : ''}`
+        h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : 'рисунок сохранён'}` : ''}`
           + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
         h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),
         h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),

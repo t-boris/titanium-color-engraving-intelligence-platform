@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 from .db import Store
 
-RENDER_VERSION = 4                      # bump whenever the drawing of a cached picture changes: every stored picture is redrawn
+RENDER_VERSION = 5                      # bump whenever the drawing of a cached picture changes: every stored picture is redrawn
 #                                         2: the overlay outlines the layers that are off when the work was found by pictures (REQ-056)
 #                                         3: paths that share their vertex or primitive list with an earlier path are outlined whole
 LIMIT_BYTES = 500 * 1024 * 1024

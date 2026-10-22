@@ -32,7 +32,10 @@ const restore = (from, to, error) => {
   return answer(view());
 };
 const same = (a, b) => ['speed', 'line_interval', 'material_id'].every((k) => a[k] === b[k]);
-const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour, colour_match: null,
+const match = () => (work.by_colour ? {choice: work.colour_choice, median_de: 16.2, p90_de: 30.4, greys_used: 200, greys_available: 240,
+  reach: work.colour_choice === 'nearest' ? null : [42, 87.2], order: work.colour_choice === 'nearest' ? null : 0.98} : null);
+const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour,
+  colour_match: match(), contours_report: work.contours ? {share: work.by_colour ? 0.0123 : 0} : null,
   outside_share: 0, time: {seconds: 600}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
   scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0}}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
@@ -134,7 +137,8 @@ def scale_answer():
 
 WORK = {"id": 7, "name": "Портрет", "identifier": "TCE-P-1", "created_at": "2026-10-21T10:00:00", "updated_at": "2026-10-21T10:05:00",
         "image_name": "girl.png", "image_size": [240, 120], "scale": mode(100), "material": {"name": "Big Plate 150"}, "dpi": 1000,
-        "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "time": {"seconds": 600}, "problem": None,
+        "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "colour_choice": "drawing", "contours": True,
+        "time": {"seconds": 600}, "problem": None,
         "rules": [], "ai": None, "ai_photo": False, "ai_missing": None}
 PARTS = {"parts": [{"part": "face_skin", "share": 0.5, "lab": [70, 10, 15], "hex": "#c8a08c", "tint": "#ff8c64"},
                    {"part": "clothes", "share": 0.5, "lab": [40, 0, -30], "hex": "#3355aa", "tint": "#4678ff"}], "picture": "/api/photo-works/7/parts.png?v=1"}
@@ -199,6 +203,29 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
     assert out["refused"] == {"width": "100", "error": ["Ширина картинки должна быть от 1 до 1000 мм"]}   # refused: the work stays as it was
+
+
+@node
+def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_said(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые'), contours = labelled(tree, 'Контуры');
+  const said = () => tree.textContent;
+  out.before = {disabled: !!choice.disabled, value: choice.value, contours: contours.checked, nothing: said().includes('на титане не теряется ни одна граница картинки — обводить нечего'),
+                options: choice.querySelectorAll('option').map((o) => o.textContent)};
+  const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
+  colour.checked = true; await colour.dispatch('change'); await settle();
+  out.drawing = {disabled: !!choice.disabled, kept: said().includes('Рисунок сохранён: светлое и тёмное картинки разложены по светлоте шкалы (L* от 42 до 87), их порядок совпадает с картинкой на 98 %'),
+                 lined: said().includes('обведены линией 0,3 мм — 1,2 % картинки'), caption: said().includes('Подобранные серые и контуры')};
+  choice.value = 'nearest'; await choice.dispatch('change'); await settle();
+  out.nearest = said().includes('Подбор по цвету: ближайшие цвета шкалы отличаются от цветов картинки в среднем на 16,2 ΔE');
+  contours.checked = false; await contours.dispatch('change'); await settle();
+  out.off = said().includes('Контуры выключены') && !said().includes('Подобранные серые и контуры');
+  out.saves = saves();
+""")
+    assert out["before"] == {"disabled": True, "value": "drawing", "contours": True, "nothing": True, "options": ["Сохранить рисунок", "Ближайший цвет"]}
+    assert out["drawing"] == {"disabled": False, "kept": True, "lined": True, "caption": True}
+    assert out["nearest"] and out["off"]
+    assert out["saves"] == [{"by_colour": True}, {"colour_choice": "nearest"}, {"contours": False}]
 
 
 @node

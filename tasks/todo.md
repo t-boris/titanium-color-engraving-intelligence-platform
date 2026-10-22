@@ -1563,13 +1563,25 @@ Map (subagent, 2026-10-22): points come only from `check.layers[].tonal.bins` (`
       must reproduce the 150 mm engraving; at 100 mm interpolated and said so); README, MarkView REQ/DEC, full suite, backup, deploy.
 
 ### 0.20.1: a colour choice that keeps the drawing, and contours always shown
-- [ ] C1. "Сохранить рисунок" (the default for a picture chosen by colour; "Ближайший цвет" stays as an option): the picture's lightness stretched in order over the lightness the
+- [x] C1. "Сохранить рисунок" (the default for a picture chosen by colour; "Ближайший цвет" stays as an option): the picture's lightness stretched in order over the lightness the
       scale reaches at the work's size, its local contrast over 1.5 mm (physical, so it follows the size) raised, then the grey whose colour is nearest with lightness counted
       four times; greys where the colour changes fastest with power are avoided for large areas (they shift most with heat).
-- [ ] C2. Contours: where the picture has an edge (12 dE across 0.3 mm) that the predicted engraving loses (under 6 dE), the edge is drawn 0.3 mm wide in the grey of the scale
+- [x] C2. Contours: where the picture has an edge (12 dE across 0.3 mm) that the predicted engraving loses (under 6 dE), the edge is drawn 0.3 mm wide in the grey of the scale
       that contrasts most with its surroundings; on by default, a switch in the work; the preview and the file are the same picture.
-- [ ] C3. Part rules act on top as now. Tests (lips darker than skin stay darker; a lost edge is drawn; the file equals the preview), walk on a copy with «Inna Portrait» at
+- [x] C3. Part rules act on top as now. Tests (lips darker than skin stay darker; a lost edge is drawn; the file equals the preview), walk on a copy with «Inna Portrait» at
       150 mm, README, MarkView, release.
+- As built (REQ-067, DEC-108; `drawing.py`): C1 as planned; flat areas (local L* std under 2) take among the 8 nearest greys within 3 dE the one whose colour changes
+  slowest with power. C2 changed on the real portrait: 12 dE across 0.3 mm drew skin texture and white "teeth" in the mouth, so an edge is 8 dE across 0.5 % of the
+  picture's width (at least 0.3 mm), found at 10 px/mm, kept only if it reaches 1 mm; the line is the darkest grey, or the lightest on a light ridge or where the dark one
+  would not contrast by 15 L*. Order: colour choice, part rules, contours (none in parts with an "even" rule), the same code for the preview (800 px) and the file
+  (layer DPI, at most the picture's own). `usable_greys` is shared with `grey_for_colours`. RENDER_VERSION 5.
+
+#### Review of 0.20.1 (2026-10-22)
+- Tests: `test_drawing.py` (forehead light, lips darker, one lightness not stretched, steep greys avoided only in flat areas, contours drawn at 8 and 25 px/mm, kept /
+  spared / speck not drawn, light line on dark, no usable grey), photo-work API (defaults, change and undo, an old work without the keys, the file equals the preview
+  at twice its pixels - the file's bitmap is stored bottom row first), UI (select and switch saved, texts).
+- Walk on a copy of the live data (8768): «Inna Portrait» 100 mm - forehead light grey, the mouth line dark, the lower lip darker than the chin, order 98 %, contours
+  0.04 %; 150 mm (measured there) - order 98 %, no edge lost; «Ближайший цвет» at 150 mm - 0.2 % outlined, the caption says «и контуры».
 
 #### 0.20.0, vector works: the size of each layer (and the photo colours added to their palette)
 Map (subagent, 2026-10-22): a vector work's colour is one palette entry per recipe (`palette._entry` = `colormap.agreed`), test-plate patches and works pooled with no size;

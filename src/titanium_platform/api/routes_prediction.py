@@ -150,12 +150,13 @@ def _picture_answer(cache_id: str, item: dict, min_power, max_power, width_mm: f
     """The kept picture at ``width_mm`` (its curve made for that size, DEC-107)."""
     low, high = prediction_store.check_power_range(item["settings"]["min_power"] if min_power is None else min_power,
                                                    item["settings"]["max_power"] if max_power is None else max_power)
-    shown = prediction_store.with_colours(item, low, high) if item["by_colour"] else item
+    shown = prediction_store.engraved(item, low, high)
     info, _ = prediction_store.describe(shown, low, high)
     cols, rows = item["size"]
     height_mm = width_mm * rows / cols
     query = f"min_power={low:g}&max_power={high:g}&width_mm={width_mm:g}"
     return {**info, "cache_id": cache_id, "by_colour": item["by_colour"], "colour_match": shown.get("colour_match"),
+            "contours_report": shown.get("contours_report"),
             "size_mm": {"width": width_mm, "height": round(height_mm, 2)}, "time": prediction_store.picture_time(item["mode"], width_mm, height_mm),
             "dpi": grayscale.image_dpi(item["mode"].line_interval),
             "preview": f"/api/grey-scales/picture/{cache_id}.png?{query}", "file": f"/api/grey-scales/picture/{cache_id}.lbrn2?{query}"}
@@ -193,7 +194,7 @@ def grey_picture_png(cache_id: str, request: Request, width_mm: float, min_power
     item = prediction_store.at_width(store_of(request), _kept_picture(request, cache_id), width_mm)
     low, high = prediction_store.check_power_range(item["settings"]["min_power"] if min_power is None else min_power,
                                                    item["settings"]["max_power"] if max_power is None else max_power)
-    shown = prediction_store.with_colours(item, low, high) if item["by_colour"] else item
+    shown = prediction_store.engraved(item, low, high)
     _, image = prediction_store.describe(shown, low, high)
     return Response(prediction.to_png(image), media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -201,7 +202,7 @@ def grey_picture_png(cache_id: str, request: Request, width_mm: float, min_power
 @router.get("/grey-scales/picture/{cache_id}.lbrn2")
 def grey_picture_file(cache_id: str, request: Request, min_power: float, max_power: float, width_mm: float):
     """The LightBurn file of the picture: one grayscale Image layer at the scale's settings and the chosen Min and Max, the picture at the
-    chosen width (with ``by_colour`` the chosen greys)."""
+    chosen width (with ``by_colour`` the greys chosen keeping the drawing, DEC-108), the lost edges drawn in as the preview shows them."""
     width = prediction_store.check_width(width_mm)
     item = prediction_store.at_width(store_of(request), _kept_picture(request, cache_id), width)
     low, high = prediction_store.check_power_range(min_power, max_power)

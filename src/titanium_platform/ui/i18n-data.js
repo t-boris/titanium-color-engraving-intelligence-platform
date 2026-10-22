@@ -133,8 +133,8 @@
       'На лазере сейчас другая линза, чем та, с которой измерена шкала работы: сначала поставьте на лазер её'],
     [/^no grayscale scale is measured yet: engrave the grey-scale plate and add its photograph first$/i,
       'Ещё нет ни одной измеренной шкалы серого: выгравируйте пластину «Шкалы серого» и добавьте её фотографию в «Эксперименты»'],
-    [/^change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work$/i,
-      'У работы можно изменить шкалу, Min и Max мощность, ширину, подбор серых под цвета или правила частей картинки'],
+    [/^change the scale, Min and Max power, the width, the colour choice, the contours or the rules of the parts of the work$/i,
+      'У работы можно изменить шкалу, Min и Max мощность, ширину, подбор серых под цвета, контуры или правила частей картинки'],
     // части картинки и AI в работе фотогравировки (REQ-062)
     [/^the rules of the parts must be a list of at most (\d+)$/i, (m) => `Правила частей — список, не больше ${m[1]}`],
     [/^each rule must name a part and what to do with it$/i, 'В каждом правиле нужны часть картинки и что с ней сделать'],
@@ -148,6 +148,10 @@
     [/^there is no earlier change of the work to undo$/i, 'Нет более раннего изменения работы, которое можно отменить'],
     [/^starting again from the picture must be on or off$/i, '«Заново с картинки»: включено или выключено'],
     [/^the colour choice must be on or off$/i, 'Подбор серых под цвета — либо включён, либо выключен'],
+    // как подбирать серые и контуры (DEC-108)
+    [/^the colour choice must keep the drawing or take the nearest colour$/i, 'Подбор серых — «Сохранить рисунок» или «Ближайший цвет»'],
+    [/^the contours must be on or off$/i, 'Контуры — либо включены, либо выключены'],
+    [/^the width of the picture on the titanium is needed to keep its drawing$/i, 'Чтобы сохранить рисунок, нужна ширина картинки на титане'],
     [/^the picture layer needs (power|min_power|speed|frequency|line_interval)$/i,
       (m) => `Слою картинки нужно значение: ${{power: 'Max мощность', min_power: 'Min мощность', speed: 'скорость', frequency: 'частота', line_interval: 'шаг строк'}[m[1]]}`],
     [/^layer (\d+) is an image layer without Min power, line interval or its picture$/i,

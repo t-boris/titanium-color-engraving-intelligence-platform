@@ -106,24 +106,32 @@ def scale_of_greys(curve: prediction.Curve, min_power: float, max_power: float, 
             "span": list(curve.span)}
 
 
+def usable_greys(curve: prediction.Curve, min_power: float, max_power: float, levels: Iterable[int] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """The 8-bit greys that can be chosen at Min..Max (every level inside the measured span, or only ``levels``), ascending, and the colour
+    (Lab) the curve gives each. Refused when no level of Min..Max lies inside the span."""
+    level = np.arange(LEVELS)
+    lab = curve.lab_at(grey_power(level / (LEVELS - 1), min_power, max_power))
+    keep = np.isfinite(lab[:, 0])
+    if levels is not None:
+        keep &= np.isin(level, list(levels))
+    if not keep.any():
+        raise prediction.PredictionError(f"no grey level of Min {min_power:g} % .. Max {max_power:g} % falls inside the measured powers "
+                                         f"{curve.span[0]:g}..{curve.span[1]:g} %: there is no colour to choose from")
+    return level[keep].astype(np.uint8), np.round(lab[keep], 2)
+
+
 def grey_for_colours(lab_pixels: np.ndarray, curve: prediction.Curve, min_power: float, max_power: float,
                      levels: Iterable[int] | None = None) -> dict:
     """For each wanted colour (Lab, shape (..., 3)) the 8-bit grey whose power at Min..Max the curve turns into the nearest colour
     (CIE76), with that colour and its distance. ``levels`` limits the greys allowed (a palette chosen on the scale); by default every
     level inside the measured span. Refused when no level of Min..Max lies inside the span."""
-    table = scale_of_greys(curve, min_power, max_power)
-    allowed = set(levels) if levels is not None else None
-    usable = [r for r in table["levels"] if r["lab"] is not None and (allowed is None or r["level"] in allowed)]
-    if not usable:
-        raise prediction.PredictionError(f"no grey level of Min {min_power:g} % .. Max {max_power:g} % falls inside the measured powers "
-                                         f"{curve.span[0]:g}..{curve.span[1]:g} %: there is no colour to choose from")
-    labs = np.array([r["lab"] for r in usable], np.float64)
+    greys, labs = usable_greys(curve, min_power, max_power, levels)
     tree = cKDTree(labs)
     wanted = np.asarray(lab_pixels, np.float64)
     distance, index = tree.query(wanted.reshape(-1, 3))
-    grey8 = np.array([r["level"] for r in usable], np.uint8)[index].reshape(wanted.shape[:-1])
+    grey8 = greys[index].reshape(wanted.shape[:-1])
     reached = labs[index].reshape(wanted.shape)
-    return {"grey8": grey8, "lab": reached, "delta_e": distance.reshape(wanted.shape[:-1]), "choices": len(usable)}
+    return {"grey8": grey8, "lab": reached, "delta_e": distance.reshape(wanted.shape[:-1]), "choices": len(greys)}
 
 
 def compare(own: list[prediction.Point], others: list[prediction.Point], tolerance: float = 5.0) -> dict:

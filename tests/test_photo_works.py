@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from test_ai_colouring import Fake, sent
 from test_grey_scales import HUES, app_world, picture_png  # noqa: F401  (the measured grey-ramp plate, four scales)
-from titanium_platform import lightburn, people, photo_work, research
+from titanium_platform import grayscale, lightburn, people, photo_work, research
 from titanium_platform.api.app import create_app
 
 
@@ -66,12 +66,14 @@ def test_another_scale_keeps_the_picture_and_takes_its_measured_span_and_every_c
 
 
 @pytest.mark.parametrize("body, message", [
-    ({}, "change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work"),
-    ({"name": "x"}, "change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work"),
+    ({}, "change the scale, Min and Max power, the width, the colour choice, the contours or the rules of the parts of the work"),
+    ({"name": "x"}, "change the scale, Min and Max power, the width, the colour choice, the contours or the rules of the parts of the work"),
     ({"scale": {"speed": 999}}, "this scale is not measured: choose one of the measured scales"),
     ({"width_mm": 0}, "the width of the picture must be 1..1000 mm"),
     ({"width_mm": True}, "the width of the picture must be 1..1000 mm"),
     ({"by_colour": "yes"}, "the colour choice must be on or off"),
+    ({"colour_choice": "prettiest"}, "the colour choice must keep the drawing or take the nearest colour"),
+    ({"contours": 1}, "the contours must be on or off"),
     ({"min_power": 50, "max_power": 20}, "Min power 50 % and Max power 20 % must lie within 0..100 % with Min not above Max"),
 ])
 def test_a_change_that_cannot_be_made_is_refused_with_the_reason_and_the_work_stays_as_it_was(app_world, body, message):
@@ -403,3 +405,62 @@ def test_asked_again_from_the_picture_the_ai_is_not_told_the_present_rules(app_w
     assert [r["part"] for r in fresh["rules"]] == ["clothes"] and fresh["ai"]["fresh"] is True    # face skin as it is again
     refused = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье", "fresh": "yes"})
     assert refused.status_code == 422 and refused.json()["error"] == "starting again from the picture must be on or off"
+
+
+# -- the drawing kept and contours (0.20.1, DEC-108) -----------------------------------------------------------------------------------
+def portrait_png(rows=800, cols=1600) -> bytes:
+    """A coloured picture larger than the preview: a light skin-coloured field over a grey gradient, a darker reddish 'mouth' with a dark
+    crease, and a blue band."""
+    bgr = np.tile(np.linspace(230, 60, cols), (rows, 1))[..., None].repeat(3, axis=2).astype(np.uint8)
+    bgr[100:700, 200:1000] = (150, 180, 220)
+    bgr[450:550, 400:800] = (120, 120, 200)
+    bgr[497:503, 420:780] = (60, 60, 110)
+    bgr[150:300, 1100:1500] = (200, 120, 60)
+    return cv2.imencode(".png", bgr)[1].tobytes()
+
+
+def test_a_new_work_keeps_the_drawing_with_contours_and_both_are_saved_and_undone(app_world):
+    client = app_world["client"]
+    work = create(client)
+    assert (work["colour_choice"], work["contours"]) == ("drawing", True)
+    assert work["picture"]["contours_report"] == {"share": 0.0}                                  # a smooth gradient loses no edge
+    coloured = settings(client, work, by_colour=True)
+    match = coloured["picture"]["colour_match"]
+    assert match["choice"] == "drawing" and match["reach"][0] < match["reach"][1] and match["order"] > 0.9
+    changed = settings(client, work, colour_choice="nearest", contours=False)
+    assert (changed["colour_choice"], changed["contours"], changed["picture"]["contours_report"]) == ("nearest", False, None)
+    assert changed["picture"]["colour_match"]["choice"] == "nearest" and changed["picture"]["preview"] != coloured["picture"]["preview"]
+    back = step(client, work, "undo").json()
+    assert (back["colour_choice"], back["contours"], back["by_colour"]) == ("drawing", True, True)
+
+
+def test_a_work_saved_before_the_drawing_was_kept_opens_keeping_it_with_contours(app_world):
+    client = app_world["client"]
+    store = client.app.state.store
+    work = create(client)
+    row = store.one("SELECT data_json FROM plan WHERE id=?", (work["id"],))
+    data = json.loads(row["data_json"])
+    del data["colour_choice"], data["contours"]
+    store.execute("UPDATE plan SET data_json=? WHERE id=?", (json.dumps(data), work["id"]))
+    shown = client.get(f"/api/photo-works/{work['id']}").json()
+    assert (shown["colour_choice"], shown["contours"]) == ("drawing", True) and shown["picture"]["contours_report"] is not None
+
+
+def test_the_file_is_the_picture_the_preview_shows_at_the_layers_resolution(app_world):
+    client = app_world["client"]
+    store = client.app.state.store
+    answer = client.post("/api/photo-works", data={"width_mm": 60}, files={"picture": ("face.png", portrait_png(), "image/png")})
+    work = answer.json()
+    settings(client, work, by_colour=True)
+    plan = photo_work._work(store, work["id"])
+    item = photo_work._item(store, plan)
+    preview = (np.clip(photo_work._shown(item, plan)["picture"], 0, 1) * 255).round().astype(np.uint8)
+    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(0)
+    stored = cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)[::-1]   # stored bottom row first
+    assert stored.shape == (800, 1600) and preview.shape == (400, 800)                         # the file has twice the preview's pixels
+    greys, labs = grayscale.usable_greys(item["curve"], plan["min_power"], plan["max_power"])
+    table = np.zeros((256, 3), np.float32)
+    table[greys] = labs
+    file_look = cv2.resize(table[stored], (800, 400), interpolation=cv2.INTER_AREA)
+    differ = np.linalg.norm(file_look - table[preview], axis=-1)
+    assert np.median(differ) < 2 and np.percentile(differ, 90) < 8                              # the same picture, finer
