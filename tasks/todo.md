@@ -1918,3 +1918,20 @@ The operator: «Не выбирается» (a screenshot of «Фото» open, 
 
 - Released 2026-10-22: full suite 1802 passed (-n 12, 3 min, none skipped); backup `backups/titanium-before-0.22.3-20261022T210551Z.sqlite`
   (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.3.
+
+
+## 0.22.4: the delta E tolerance in the new vector work form (operator, 2026-10-22)
+The operator: «Чини» (a screenshot of the form: «Задайте порог ΔE для этого плана: допуск для этого лазера с этой линзой не сохранён», and the
+fill warning). Root cause: no rules were ever saved for any laser and lens (live and every backup), and the tolerance is never invented
+(conversion._threshold, palette.tolerance_for); the form said so only after «Создать работу». The operator chose ΔE 5 and «show at once and remember».
+- [x] T1. ΔE 5 saved to the rules of laser 1 + lens 2 through `PUT /api/rules` (tried on a copy first: only the setting row changes; knowledge,
+      its events, findings and works do not).
+- [x] T2. The form reads `/rules` for the laser and lens (and on every change of them): «из правил: 5» or a red field with the scale and
+      «Запомнить для этого лазера с линзой» (on); an empty field with no rule is not sent; a typed tolerance is saved to the rules before the work.
+- [x] T3. The «Титан» hint follows the strategy (photo: every plate of the grade, `palette.vector_palette`; silhouettes: this plate, `vector_job.eligible`).
+- [x] T4. Tests: `tests/test_vector_form_ui.py` (no rule: asks first, nothing sent, PUT then POST with the threshold; a rule: named, never PUT;
+      the hint per strategy). Walk on a copy: both lenses, the error with the focus, the rule saved for the unknown lens and the work created.
+- Released 2026-10-22: full suite 1804 passed (-n 12, 2 min 38 s, none skipped); backup `backups/titanium-before-0.22.4-20261022T212248Z.sqlite`
+  (integrity ok, 91 pairs - latest 111, 2121 observations, 11 plans, audit 806, the ΔE 5 rule in it); 8765 on 0.22.4.
+- Seen: work 39 «Inna Portait Mix 1» (21:08, before the rule) and work 22 carry ΔE 0.05 typed into the form - every colour is out of tolerance
+  and takes the nearest recipe, never a faster one; the editor's «Цвета» tab changes it (`set_threshold`). Left to the operator.

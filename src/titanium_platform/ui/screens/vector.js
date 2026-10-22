@@ -26,7 +26,7 @@
   const svgSrc = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
   function startForm(lists, materials, ctx) {
-    const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => loadPalette()});
+    const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { loadPalette(); loadRules(); }});
     const stock = h('select', {'aria-label': 'Титан'}, materials.map((m) => h('option', {value: m.id}, material(m))));
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
     const name = h('input', {placeholder: 'Название работы'}), width = h('input', {type: 'number', step: 'any', min: '0', value: 60});
@@ -39,6 +39,12 @@
     const maxTime = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'});
     const asShot = h('input', {type: 'checkbox'});
     const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'});
+    // the delta E tolerance is never invented (conversion._threshold): the form shows at once whether the rules of the laser and lens hold one,
+    // and a tolerance typed while they hold none is saved to them, once («Запомнить», on by default)
+    const thrHint = h('span', {class: 'small muted'});
+    const remember = h('input', {type: 'checkbox', checked: true});
+    const rememberRow = h('label', {class: 'row small', hidden: true}, remember, h('span', {}, 'Запомнить для этого лазера с линзой'));
+    let savedTolerance;                                   // in the rules: a number, null when none is saved, undefined while not known
     const grey = h('input', {type: 'number', step: '1', min: '0', max: '255', placeholder: 'авто (Оцу)'});
     const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: 0.08});
     const markers = h('input', {type: 'checkbox'}), clean = h('input', {type: 'checkbox', checked: true});
@@ -57,10 +63,13 @@
     const traceFields = h('div', {class: 'grid g2'}, field('Порог серого', grey, 'пусто — автоматически'),
       h('label', {class: 'row'}, clean, h('span', {}, 'Чистка первым слоем (C00)')));
     const tolLabel = h('span', {});
+    const stockHint = h('span', {class: 'small muted'});      // «Фото» takes every plate of this grade (palette.vector_palette), the others this plate only
     const photo = () => strategy.value === 'photo';
     const switchFields = () => {
       photoFields.hidden = !photo(); traceFields.hidden = photo();
       tolLabel.textContent = photo() ? 'Сглаживание границ, мм' : 'Точность контура, мм';
+      stockHint.textContent = photo() ? 'цвета — измерения титана этой марки с любой его пластины'
+        : 'рецепты — только измеренные на этой заготовке';
       tolerance.value = photo() ? 0.08 : 0.05;
       colours.max = markers.checked ? '28' : '29';
       task.set(STRATEGY_TASK[strategy.value]);
@@ -91,9 +100,34 @@
     }
     stock.addEventListener('change', loadPalette);
 
+    async function loadRules() {
+      const asked = pick.query();
+      let rules = null;
+      try { rules = await get('/rules?' + asked); } catch (_) { rules = null; }
+      if (asked !== pick.query()) return;                // the laser or the lens changed meanwhile
+      savedTolerance = rules ? rules.delta_tolerance : undefined;
+      showTolerance();
+    }
+    function showTolerance() {
+      const none = savedTolerance === null, de = savedTolerance == null ? '' : String(+(+savedTolerance).toFixed(2));   // 5, not 5.00
+      thr.setAttribute('placeholder', savedTolerance != null ? `из правил: ${de}` : none ? 'задайте' : 'из правил');
+      thr.setAttribute('aria-invalid', none && thr.value === '' ? 'true' : 'false');
+      rememberRow.hidden = !none;
+      fill(thrHint, savedTolerance != null
+        ? `пусто — ΔE ${de} из правил этого лазера с линзой; число здесь — только для этой работы`
+        : none ? 'Для этого лазера с линзой допуск не сохранён — задайте его. Внутри допуска берётся самый быстрый цвет; ΔE 1 едва заметно, '
+          + '2–3 — мало, 5 — две гравировки одного рецепта ещё совпадают.'
+          : 'пусто — допуск из правил этого лазера с линзой');
+    }
+    thr.addEventListener('input', showTolerance);
+
     const submit = btn('Создать работу', async (ev) => {
       show('');
       if (!img.files[0]) return show('Добавьте изображение для векторной работы');
+      if (thr.value === '' && savedTolerance === null) {
+        thr.focus();
+        return show('Задайте допуск ΔE: для этого лазера с линзой он не сохранён');
+      }
       const fd = new FormData();
       fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('material_id', stock.value); fd.append('name', name.value);
       fd.append('width_mm', width.value); fd.append('strategy', strategy.value); fd.append('tolerance_mm', tolerance.value);
@@ -109,17 +143,25 @@
       }
       const self = ev.currentTarget;
       self.disabled = true;
+      if (thr.value !== '' && savedTolerance === null && remember.checked) {
+        try {
+          await put('/rules', {device_id: pick.deviceId(), lens_id: pick.lensId(), delta_tolerance: +thr.value});
+          savedTolerance = +thr.value;
+          showTolerance();
+        } catch (e) { self.disabled = false; return show(e.message); }
+      }
       try { const j = await form('/vector', fd); toast('Векторная работа создана', 'ok'); go('/vector?plan=' + j.id); } catch (e) { show(e.message); self.disabled = false; }
     }, 'primary');
     switchFields();
+    loadRules();
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Новая векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')), h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
         field('Лазер', pick.laser), field('Линза', pick.lens, 'цвета и рецепты — измерения этого лазера с этой линзой'),
-        field('Титан', stock, 'цвета, измеренные на другой заготовке, не используются'), field('Изображение', App.filePick(img, 'Выбрать изображение')),
+        h('label', {class: 'f'}, h('span', {}, 'Титан'), stock, stockHint), field('Изображение', App.filePick(img, 'Выбрать изображение')),
         field('Название работы', name), field('Ширина работы, мм', width),
         field('Стратегия', strategy, 'фото — цветные области по картинке; заливка, текст и линии — по тёмному силуэту'),
-        field('Допуск ΔE', thr, 'пусто — допуск из правил этого лазера с линзой; если его нет, задайте здесь'),
+        h('div', {class: 'f'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), thr, thrHint), rememberRow),
         h('label', {class: 'f'}, tolLabel, tolerance)),
         photoFields, traceFields, task.el,
         h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')),
