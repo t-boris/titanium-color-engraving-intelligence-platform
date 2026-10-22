@@ -29,7 +29,9 @@ from scipy import stats
 
 from . import grayscale, prediction
 
-CHOICES = ("drawing", "nearest")    # "Сохранить рисунок" (this module) and "Ближайший цвет" (``grayscale.grey_for_colours``)
+# "Сохранить рисунок" (this module), "Ближайший цвет" (``grayscale.grey_for_colours``) and "Раскраска по объектам" (``colouring``: the drawing
+# kept, each object with a main colour of its own along a path through it)
+CHOICES = ("drawing", "nearest", "objects")
 PATH_RISE_L = 0.5                   # L*: how much the lightness may rise along the path (the measurement's noise)
 SMOOTH_MM = 0.25                    # the picture's lightness is smoothed over this, keeping edges
 SMOOTH_L = 6.0                      # L*: differences larger than this are edges the smoothing keeps
@@ -86,10 +88,7 @@ def choose(lab: np.ndarray, opaque: np.ndarray, curve: prediction.Curve, min_pow
     shown = light[opaque] if opaque.any() else light.ravel()
     lo, hi = np.percentile(shown, STRETCH)
     if hi - lo >= MIN_SPAN_L:
-        reach = max(1, int(round(SMOOTH_MM * px_per_mm)))
-        smooth = cv2.bilateralFilter(light, 2 * reach + 1, SMOOTH_L, SMOOTH_MM * px_per_mm)
-        around = cv2.GaussianBlur(smooth, (0, 0), DETAIL_MM * px_per_mm)
-        tone = np.clip((smooth + DETAIL_GAIN * (smooth - around) - lo) / (hi - lo), 0, 1) ** MIDTONES
+        tone = np.clip((detailed(light, px_per_mm) - lo) / (hi - lo), 0, 1) ** MIDTONES
         target = way[-1, 0] + tone * (way[0, 0] - way[-1, 0])
     else:                                                                       # one lightness: nothing to stretch, it stays as it is
         target = light
@@ -99,6 +98,16 @@ def choose(lab: np.ndarray, opaque: np.ndarray, curve: prediction.Curve, min_pow
     return {"grey8": greys[pick], "lab": reached, "delta_e": np.linalg.norm(reached - pic, axis=-1), "choices": len(greys),
             "reach": [round(float(way[:, 0].min()), 1), round(float(way[0, 0]), 1)], "path": len(on),
             "order": _order(pic[..., 0], reached[..., 0], opaque)}
+
+
+def detailed(light: np.ndarray, px_per_mm: float) -> np.ndarray:
+    """The picture's lightness (float32 L*) as :func:`choose` lays it: smoothed over ``SMOOTH_MM`` keeping edges, the contrast of detail of
+    ``DETAIL_MM`` raised by ``DETAIL_GAIN``."""
+    light = np.asarray(light, np.float32)
+    reach = max(1, int(round(SMOOTH_MM * px_per_mm)))
+    smooth = cv2.bilateralFilter(light, 2 * reach + 1, SMOOTH_L, SMOOTH_MM * px_per_mm)
+    around = cv2.GaussianBlur(smooth, (0, 0), DETAIL_MM * px_per_mm)
+    return smooth + DETAIL_GAIN * (smooth - around)
 
 
 def _order(wanted: np.ndarray, got: np.ndarray, opaque: np.ndarray, sample: int = 20000) -> float | None:

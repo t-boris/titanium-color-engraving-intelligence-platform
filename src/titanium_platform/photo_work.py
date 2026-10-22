@@ -9,10 +9,17 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
 * Min and Max power, the width on the titanium in mm and whether the greys are chosen for the picture's colours (``by_colour``), and how
   (``colour_choice``, DEC-108, DEC-109: keeping the drawing, the default, or the nearest colour); whether the edges its engraving would lose
   are drawn in (``contours``, off by default and only with ``by_colour``: the picture engraved as uploaded is never drawn on);
+* the main colours of the picture's objects (``colouring``, 0.21.0, with ``colour_choice`` "objects"): the lips, the glasses, a piece of
+  the background ... (:mod:`objects`) each coloured along its own stretch of the scale (:mod:`colouring`), by hand or from a theme;
 * the rules of the picture's parts (``rules``, REQ-062): a part found by the people model (:mod:`people`) may be engraved by its own rule
   (:mod:`picture_rules`), set by hand or proposed by the AI (:mod:`ai_picture`); whether a reduced copy of the picture may be sent to
   the AI (``ai_photo``, off until the operator allows it) and the last request to it (``ai``: the wish, whether the picture went, the AI's
   note and the rules before it, so that they can be put back);
+* the kind of engraving (``kind``, 0.21.0): grayscale, or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at one power
+  (``dot_power``) chosen on the scale; a dot kind is shown from the scale (each dot in the scale's colour at that power, the cleaned
+  titanium between them) until that kind has been photographed at that power on the work's settings (a ramp of «Проба этого вида»,
+  ``width_ramp``, or an engraving), then from its measured tones; its picture is engraved as uploaded (the greys chosen for colours,
+  the contours and the rules of parts are grayscale's and wait for it);
 * the steps that can be undone and redone (``undo``, ``redo``): each holds the work's state as it decides what is engraved (:data:`STATE`);
 * when it last changed (``updated_at``).
 
@@ -32,14 +39,15 @@ import mimetypes
 import re
 import threading
 from collections import OrderedDict
+from dataclasses import replace
 from pathlib import Path
 from typing import Mapping
 
 import cv2
 import numpy as np
 
-from . import (ai_colouring as ai, ai_picture, capability_plates as cp, color, conversion as cv, devices, drawing, grayscale, ingest as ig, people,
-               picture_rules, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, setup as su)
+from . import (ai_colouring as ai, ai_picture, capability_plates as cp, color, colouring as co, conversion as cv, devices, drawing, grayscale,
+               ingest as ig, objects as ob, people, photo_modes, picture_rules, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
 from .vector_job import COPY_SUFFIX
@@ -49,14 +57,22 @@ IDENTIFIER_PREFIX = "TCE-P"
 THUMB_PX = 360                      # the longer side of the picture of a work in the list
 KEEP_DECODED = 2                    # decoded pictures kept in memory: the work open now and the one before
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
+GRAYSCALE = prediction.PREDICTED_MODE
+# every kind of photo engraving that colours titanium: LightBurn's image modes (``photo_modes``) but 3D slice, which engraves relief
+KINDS = tuple(key for key, kind in photo_modes.MODES.items() if kind.family != photo_modes.DEPTH)
+TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
+MAX_COLOURED = 32                   # main colours a work keeps at most: one per object
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
-        "ai_photo", "ai", "undo", "redo", "updated_at")
-SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai_photo")
-# what a work made before the rules of parts (0.19.0), undo or the drawing kept (0.20.1) has
-DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}
+        "colouring", "kind", "dot_power", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at")
+SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power",
+            "ai_photo")
+# what a work made before the rules of parts (0.19.0), undo, the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
+DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE, "dot_power": None,
+            "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
-STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "ai")
+STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind",
+         "dot_power", "ai", "ai_theme")
 UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 
 _decoded: OrderedDict[str, dict] = OrderedDict()
@@ -133,9 +149,14 @@ def _upload(plan: Mapping) -> dict:
 
 
 def _item(store: Store, plan: Mapping) -> dict:
+    """The work's picture prepared on its scale at its width; in a dot kind as uploaded (its greys are not chosen, its parts not ruled)."""
     upload = _upload(plan)
-    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"], plan["colour_choice"], plan["contours"])
-    if plan["rules"]:
+    toned = not _dotted(plan)
+    item = ps.picture_item(store, mode_of(plan), upload, plan["name"], toned and plan["by_colour"], plan["width_mm"], plan["colour_choice"],
+                           toned and plan["contours"], plan["colouring"])
+    if toned and plan["by_colour"] and plan["colour_choice"] == "objects" and plan["colouring"]:
+        item["objects"] = _objects(upload)                   # found once per decoded picture
+    if toned and plan["rules"]:
         item["part_scores"] = ps.part_scores(upload)         # the people model runs once per decoded picture
     return item
 
@@ -146,12 +167,83 @@ def _shown(item: dict, plan: Mapping) -> dict:
     return ps.engraved(item, plan["min_power"], plan["max_power"], plan["rules"])
 
 
-def _key(kind: str, plan: Mapping, curve: prediction.Curve) -> str:
-    """The key of a picture of the work: everything it is drawn from, the measured points of the scale included."""
-    return rc.key_of({"kind": kind, "image": rc.file_stamp(plan["image_path"]), "mode": mode_of(plan).as_dict(),
-                      "curve": rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str)), "width_mm": plan["width_mm"],
+def _digest(curve: prediction.Curve | None) -> str | None:
+    return None if curve is None else rc.text_digest(json.dumps(curve.as_dict(), sort_keys=True, default=str))
+
+
+def _key(kind: str, plan: Mapping, curve: prediction.Curve, measured: prediction.Curve | None = None) -> str:
+    """The key of a picture of the work: everything it is drawn from, the measured points of the scale included (and in a dot kind the
+    measured tones of that kind, ``measured``)."""
+    return rc.key_of({"kind": kind, "image": rc.file_stamp(plan["image_path"]), "mode": mode_of(plan).as_dict(), "dots_curve": _digest(measured),
+                      "curve": _digest(curve), "width_mm": plan["width_mm"],
                       "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"],
-                      "colour_choice": plan["colour_choice"], "contours": plan["contours"], "rules": plan["rules"]})
+                      "colour_choice": plan["colour_choice"], "contours": plan["contours"], "rules": plan["rules"],
+                      "colouring": plan["colouring"] if plan["colour_choice"] == "objects" else None, "engraving": plan["kind"], "dot_power": plan["dot_power"] if _dotted(plan) else None})
+
+
+# -- the kinds of engraving (0.21.0) ----------------------------------------------------------------------------------------------
+def _dotted(plan: Mapping) -> bool:
+    """Whether the work is engraved in a dot kind: every dot at one power, the tone by how many dots there are."""
+    return plan["kind"] != GRAYSCALE
+
+
+def _dot_power(store: Store, mode: ps.Mode, width_mm: float, wanted=None) -> float:
+    """The power of a dot kind's dots on ``mode`` at ``width_mm``: ``wanted`` while the scale is measured there at that width, otherwise
+    the power whose colour stands out most from the cleaned titanium (``prediction_store.dot_power``)."""
+    curve = ps.curve_for(store, mode, width_mm)[0]
+    lo, hi = curve.span
+    if wanted is not None and lo <= wanted <= hi:
+        return float(wanted)
+    return ps.dot_power(curve, ps.clean_titanium(store))
+
+
+def _dots(store: Store, power: float, curve: prediction.Curve) -> dict:
+    """The colour of the dots at ``power`` (the scale's colour there, at the work's width) and of the cleaned titanium between them."""
+    lab = curve.lab_at(float(power))
+    if not np.all(np.isfinite(lab)):
+        lo, hi = curve.span
+        raise PredictionError(f"the dots' power {float(power):g} % lies outside the measured powers {lo:g}..{hi:g} % of the scale at this width: choose it inside them")
+    clean = ps.clean_titanium(store)
+    return {"power": float(power), "lab": [round(float(v), 2) for v in lab], "hex": _hex(lab),
+            "clean_lab": [round(float(v), 2) for v in clean], "clean_hex": _hex(clean)}
+
+
+def _measured_dots(store: Store, plan: Mapping) -> prediction.Curve | None:
+    """The tones of the work's dot kind at its dots' power on its settings and titanium, as photographs of that kind measured them (a ramp
+    of «Проба этого вида» or an engraving in that kind), at the work's width; None until that kind was photographed there."""
+    try:
+        return ps.curve_for(store, replace(mode_of(plan), dither=plan["kind"], power=plan["dot_power"]), plan["width_mm"])[0]
+    except PredictionError:
+        return None
+
+
+def _reduced(upload: Mapping, px: int) -> tuple[np.ndarray, np.ndarray]:
+    """The picture's grey and opacity with the longer side at most ``px``."""
+    grey, alpha = upload["picture"], upload["alpha"]
+    rows, cols = grey.shape
+    scale = min(1.0, px / max(rows, cols))
+    if scale >= 1:
+        return grey, alpha
+    size = (max(1, round(cols * scale)), max(1, round(rows * scale)))
+    return cv2.resize(grey, size, interpolation=cv2.INTER_AREA), cv2.resize(alpha, size, interpolation=cv2.INTER_AREA)
+
+
+def _dot_look(store: Store, plan: Mapping, curve: prediction.Curve, px: int | None = None,
+              measured: prediction.Curve | None = None) -> tuple[np.ndarray, np.ndarray, dict]:
+    """The work in its dot kind seen from a distance at preview size, or with the longer side ``px``: the picture's grey, the look (RGB
+    uint8) and the dots (``_dots``). With the ``measured`` tones of the kind (``_measured_dots``) each tone takes its photographed colour
+    (``prediction.render``); without, it is estimated from the scale (``prediction_store.dot_look``) with the share of the picture the dots
+    strike."""
+    dots = _dots(store, plan["dot_power"], curve)
+    grey, alpha = _reduced(_upload(plan), px) if px else (_upload(plan)["picture"], _upload(plan)["alpha"])
+    if measured is not None:
+        rendered = prediction.render(grey, None, None, measured, None, alpha=alpha)
+        return grey, rendered["rgb8"], {**dots, "struck_share": None, "measured": {"tones": len(measured.points), "span": list(measured.span),
+                                                                                   "outside_share": rendered["outside_share"], "notes": rendered["notes"]}}
+    rgb8, share = ps.dot_look(grey, alpha, plan["kind"], dots["lab"], dots["clean_lab"], plan["width_mm"],
+                              grayscale.image_dpi(mode_of(plan).line_interval))
+    opaque = np.asarray(alpha) >= photo_modes.ALPHA_MIN
+    return grey, rgb8, {**dots, "struck_share": round(float(share[opaque].mean()), 4) if opaque.any() else 0.0, "measured": None}
 
 
 def _material(store: Store, material_id: int | None) -> dict | None:
@@ -171,7 +263,8 @@ def _summary(store: Store, plan: Mapping) -> dict:
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
-            "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
+            "kind": plan["kind"], "dot_power": plan["dot_power"], "colouring": plan["colouring"],
+            "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_theme": plan["ai_theme"], "ai_photo": plan["ai_photo"],
             "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": ps.picture_time(mode, width, height, ps.cleaning(store, mode))}
 
 
@@ -193,6 +286,8 @@ def view(store: Store, plan_id: int) -> dict:
     out = {**_summary(store, plan), "ai_missing": _ai_missing()}
     try:
         item = _item(store, plan)
+        if _dotted(plan):
+            return _dot_view(store, plan, item, out)
     except PredictionError as exc:
         return {**out, "picture": None, "problem": str(exc)}
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
@@ -212,16 +307,43 @@ def view(store: Store, plan_id: int) -> dict:
     return out
 
 
+def _dot_view(store: Store, plan: Mapping, item: dict, out: dict) -> dict:
+    """``view`` of a work in a dot kind: the picture beside its dots seen from a distance, estimated from the scale (each dot in the scale's
+    colour at the dots' power, at the work's width; the cleaned titanium between them)."""
+    measured = _measured_dots(store, plan)
+    grey, rgb8, dots = _dot_look(store, plan, item["curve"], measured=measured)
+    key = _key("photo-work-preview", plan, item["curve"], measured)
+    if rc.read(store, _folder(plan["id"]), key) is None:
+        try:
+            rc.write(store, _folder(plan["id"]), key, prediction.to_png(prediction.side_by_side(grey, rgb8)))
+        except OSError:
+            pass
+    rows, cols = grey.shape
+    out["picture"] = {"kind": plan["kind"], "dots": dots, "estimate": measured is None, "span": list(item["curve"].span),
+                      "scale_size": dict(item["curve"].size), "scale_sizes": item["sizes"], "dpi": out["dpi"], "time": out["time"],
+                      "size_mm": {"width": out["width_mm"], "height": out["height_mm"]}, "shown": {"width": cols, "height": rows},
+                      "transparent_share": round(float((np.asarray(item["alpha"]) < photo_modes.ALPHA_MIN).mean()), 4),
+                      "preview": f"/api/photo-works/{plan['id']}/preview.png?v={key[:16]}",
+                      "closeup": f"/api/photo-works/{plan['id']}/closeup.png?v={key[:16]}", "closeup_mm": ps.CLOSEUP_MM, "closeup_px": ps.CLOSEUP_PX,
+                      "file": f"/api/photo-works/{plan['id']}/export.lbrn2"}
+    return out
+
+
 def preview(store: Store, plan_id: int) -> rc.Picture:
     """The picture beside its predicted look (``prediction.side_by_side``), at preview size."""
     plan = _work(store, plan_id)
     curve, _ = ps.curve_for(store, mode_of(plan), plan["width_mm"])
 
+    measured = _measured_dots(store, plan) if _dotted(plan) else None
+
     def draw() -> bytes:
+        if _dotted(plan):
+            grey, rgb8, _ = _dot_look(store, plan, curve, measured=measured)
+            return prediction.to_png(prediction.side_by_side(grey, rgb8))
         shown = _shown(_item(store, plan), plan)
         _, rgb8 = ps.predicted(shown, plan["min_power"], plan["max_power"])
         return prediction.to_png(prediction.side_by_side(shown["picture"], rgb8))
-    return rc.Picture(store, _folder(plan["id"]), _key("photo-work-preview", plan, curve), draw)
+    return rc.Picture(store, _folder(plan["id"]), _key("photo-work-preview", plan, curve, measured), draw)
 
 
 def thumbnail(store: Store, plan_id: int) -> rc.Picture:
@@ -231,11 +353,14 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
         curve = ps.curve_for(store, mode_of(plan), plan["width_mm"])[0]
     except PredictionError:
         curve = None
+    measured = _measured_dots(store, plan) if curve is not None and _dotted(plan) else None
 
     def draw() -> bytes:
         upload = _upload(plan)
         if curve is None:
             rgb8 = np.repeat((np.clip(upload["picture"], 0, 1) * 255).round().astype(np.uint8)[..., None], 3, axis=-1)
+        elif _dotted(plan):
+            rgb8 = _dot_look(store, plan, curve, THUMB_PX, measured)[1]
         else:
             _, rgb8 = ps.predicted(_shown(_item(store, plan), plan), plan["min_power"], plan["max_power"])
         rows, cols = rgb8.shape[:2]
@@ -243,7 +368,7 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
         small = cv2.resize(rgb8, (max(1, round(cols * scale)), max(1, round(rows * scale))), interpolation=cv2.INTER_AREA) if scale < 1 else rgb8
         return prediction.to_png(small)
     key = rc.key_of({"kind": "photo-work-thumbnail", "px": THUMB_PX, "image": rc.file_stamp(plan["image_path"]), "unmeasured": True}) \
-        if curve is None else _key("photo-work-thumbnail", plan, curve)
+        if curve is None else _key("photo-work-thumbnail", plan, curve, measured)
     return rc.Picture(store, _folder(plan["id"]), key, draw)
 
 
@@ -257,10 +382,79 @@ def original(store: Store, plan_id: int) -> tuple[bytes, str]:
     return data, mimetypes.guess_type(plan["image_name"] or "")[0] or "application/octet-stream"
 
 
+def closeup(store: Store, plan_id: int) -> rc.Picture:
+    """The dots of a work in a dot kind dot for dot from the middle of the picture (``prediction_store.dot_closeup``)."""
+    plan = _work(store, plan_id)
+    if not _dotted(plan):
+        raise su.ValidationError("a work in grayscale has no dots to show")
+    curve, _ = ps.curve_for(store, mode_of(plan), plan["width_mm"])
+
+    def draw() -> bytes:
+        dots = _dots(store, plan["dot_power"], curve)
+        return prediction.to_png(ps.dot_closeup(_item(store, plan), plan["kind"], dots["lab"], dots["clean_lab"], plan["width_mm"]))
+    return rc.Picture(store, _folder(plan["id"]), _key("photo-work-closeup", plan, curve), draw)
+
+
+def kinds(store: Store, plan_id: int) -> dict:
+    """«Какая гравировка?»: every kind that colours titanium (:data:`KINDS`) with the work's picture as it would come out in it, the one
+    the work has marked. Grayscale on the work's Min and Max and greys; a dot kind at the work's dots' power, or where the scale's colour
+    stands out most, estimated from the scale (``_dot_look``). With no measured scale there is nothing to show (``problem``)."""
+    plan = _work(store, plan_id)
+    mode = mode_of(plan)
+    try:
+        curve = ps.curve_for(store, mode, plan["width_mm"])[0]
+        power = _dot_power(store, mode, plan["width_mm"], plan["dot_power"])
+    except PredictionError as exc:
+        return {"kind": plan["kind"], "kinds": [], "problem": str(exc)}
+    dots = _dots(store, power, curve)
+    out = []
+    for key in KINDS:
+        shown = {**plan, "kind": key, "dot_power": power}
+        measured = _measured_dots(store, shown) if key != GRAYSCALE else None
+        entry = {"key": key, "family": photo_modes.MODES[key].family, "basis": photo_modes.MODES[key].basis,
+                 "estimate": key != GRAYSCALE and measured is None,
+                 "picture": f"/api/photo-works/{plan['id']}/kinds/{key}.png?v={_key('photo-work-kind', shown, curve, measured)[:16]}"}
+        if key == GRAYSCALE:
+            entry.update(min_power=plan["min_power"], max_power=plan["max_power"])
+        else:
+            entry.update(power=power, hex=dots["hex"], clean_hex=dots["clean_hex"])
+        out.append(entry)
+    return {"kind": plan["kind"], "kinds": out, "problem": None}
+
+
+def kind_picture(store: Store, plan_id: int, kind: str) -> rc.Picture:
+    """The work's picture as it would come out in ``kind`` (``kinds``), the longer side TILE_PX."""
+    plan = _work(store, plan_id)
+    if kind not in KINDS:
+        raise KeyError(f"no kind of engraving {kind!r}")
+    mode = mode_of(plan)
+    curve = ps.curve_for(store, mode, plan["width_mm"])[0]
+    shown = {**plan, "kind": kind, "dot_power": _dot_power(store, mode, plan["width_mm"], plan["dot_power"])}
+    measured = _measured_dots(store, shown) if _dotted(shown) else None
+
+    def draw() -> bytes:
+        if _dotted(shown):
+            return prediction.to_png(_dot_look(store, shown, curve, TILE_PX, measured)[1])
+        _, rgb8 = ps.predicted(_shown(_item(store, shown), shown), shown["min_power"], shown["max_power"])
+        rows, cols = rgb8.shape[:2]
+        scale = min(1.0, TILE_PX / max(rows, cols))
+        small = cv2.resize(rgb8, (max(1, round(cols * scale)), max(1, round(rows * scale))), interpolation=cv2.INTER_AREA) if scale < 1 else rgb8
+        return prediction.to_png(small)
+    return rc.Picture(store, _folder(plan["id"]), rc.key_of({"tile": TILE_PX, "of": _key("photo-work-kind", shown, curve, measured)}), draw)
+
+
 def export(store: Store, plan_id: int) -> tuple[bytes, str]:
-    """The LightBurn file of the work (the cleaning, then one grayscale Image layer, ``plans.export_picture``) and the name to save it under."""
+    """The LightBurn file of the work (the cleaning, then one Image layer in the work's kind, ``plans.export_picture``) and the name to
+    save it under. A dot kind's layer fires every dot at the dots' power (Min = Max) and carries the picture as uploaded: LightBurn
+    makes the dots."""
     plan = _work(store, plan_id)
     item = _item(store, plan)
+    if _dotted(plan):
+        power = _dots(store, plan["dot_power"], item["curve"])["power"]
+        picture = ps.picture_for_file(item, power, power, plan["width_mm"])
+        data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], power, power), plan["name"], plan["plan_identifier"],
+                                 clean=ps.cleaning(store, item["mode"]), dither=plan["kind"])
+        return data, f"{plan['name']}-{plan['kind']}-P{power:g}"
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     picture = ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"])
     data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"], plan["plan_identifier"],
@@ -290,8 +484,8 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
-            "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [],
-            "updated_at": now()}
+            "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE,
+            "dot_power": None, "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now()}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_created", plan_id=plan_id)
@@ -301,12 +495,16 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
 
 def update(store: Store, plan_id: int, changes) -> None:
     """Change what the work is engraved with: ``scale`` (Min and Max then become its measured span unless they are given too),
-    ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and how (``colour_choice``), ``contours`` and the ``rules`` of the parts,
-    or whether the picture may be sent to the AI (``ai_photo``). A change of what is engraved can be undone."""
+    ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and how (``colour_choice``), ``contours``, the main colours of the
+    picture's objects (``colouring``: an object's key to its ``power`` and ``shift``) and the ``rules`` of the parts, the ``kind`` of
+    engraving and the power of a dot kind's dots (``dot_power``, inside the scale's measured powers at the work's width;
+    kept through another kind, scale or width while the scale is measured there, otherwise where its colour stands out most), or whether
+    the picture may be sent to the AI (``ai_photo``). A change of what is engraved can be undone."""
     plan = _work(store, plan_id)
     before = _here(plan)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
-        raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice, the contours or the rules of the parts of the work")
+        raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice, the contours, the colours of the objects, the "
+                                 "rules of the parts, the kind of engraving or the power of its dots")
     if "width_mm" in changes:
         plan["width_mm"] = ps.check_width(changes["width_mm"])
     if "scale" in changes:
@@ -322,7 +520,7 @@ def update(store: Store, plan_id: int, changes) -> None:
         plan["by_colour"] = changes["by_colour"]
     if "colour_choice" in changes:
         if changes["colour_choice"] not in drawing.CHOICES:
-            raise su.ValidationError("the colour choice must keep the drawing or take the nearest colour")
+            raise su.ValidationError("the colour choice must keep the drawing, take the nearest colour or colour the objects")
         plan["colour_choice"] = changes["colour_choice"]
     if "contours" in changes:
         if not isinstance(changes["contours"], bool):
@@ -330,6 +528,20 @@ def update(store: Store, plan_id: int, changes) -> None:
         plan["contours"] = changes["contours"]
     if "rules" in changes:
         plan["rules"] = _rules_in(changes["rules"])
+    if "colouring" in changes:
+        plan["colouring"] = _colouring_in(changes["colouring"])
+    if "kind" in changes:
+        if changes["kind"] not in KINDS:
+            raise su.ValidationError("the kind of engraving must be one of " + ", ".join(KINDS))
+        plan["kind"] = changes["kind"]
+    if "dot_power" in changes:
+        power = None if isinstance(changes["dot_power"], bool) else ps._number(changes["dot_power"])
+        lo, hi = ps.curve_for(store, mode_of(plan), plan["width_mm"])[0].span
+        if power is None or not lo <= power <= hi:
+            raise su.ValidationError(f"the dots' power must be a number inside the scale's measured powers {lo:g}..{hi:g} % at the work's width")
+        plan["dot_power"] = power
+    elif _dotted(plan) and {"kind", "scale", "width_mm"} & set(changes):
+        plan["dot_power"] = _dot_power(store, mode_of(plan), plan["width_mm"], plan["dot_power"])
     if "ai_photo" in changes:
         if not isinstance(changes["ai_photo"], bool):
             raise su.ValidationError("the permission to send the photograph must be on or off")
@@ -406,8 +618,9 @@ RAMP_MARGIN_MM = 19.0                # what a grey-ramp plate adds to its widest
 
 def width_ramp(store: Store, plan_id: int) -> dict:
     """A grey-ramp plate of one ramp as wide as the work, at its scale's settings, Min and Max: engraved and photographed before the
-    picture, it measures the scale at the size the picture is engraved at (the colour depends on the length of the rows, DEC-107). A
-    plate is made for the lens on the laser now, so the work's lens must be on it."""
+    picture, it measures the scale at the size the picture is engraved at (the colour depends on the length of the rows, DEC-107). In a
+    dot kind the ramp is engraved in that kind at the dots' power («Проба этого вида»): its photograph measures the kind's tones, which
+    then replace the estimate from the scale. A plate is made for the lens on the laser now, so the work's lens must be on it."""
     plan = _work(store, plan_id)
     mode = mode_of(plan)
     lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
@@ -416,11 +629,12 @@ def width_ramp(store: Store, plan_id: int) -> dict:
     width = float(plan["width_mm"])
     fixed = {k: v for k, v in {"speed": mode.speed, "frequency": mode.frequency, "pulse_width": mode.pulse_width, "line_interval": mode.line_interval,
                                "passes": mode.passes, "global_passes": mode.global_passes}.items() if v is not None}
-    settings = {**fixed, "power": plan["max_power"], "max_width_mm": min(cp.PLATE_MAX_MM, width + RAMP_MARGIN_MM),
-                "scales": {"rows": {"axis": "width", "values": [width]}, "columns": {"axis": "speed", "values": [mode.speed]},
-                           "min_power": plan["min_power"], "max_power": plan["max_power"]}}
+    dotted = _dotted(plan)
+    powers = {"dither": plan["kind"]} if dotted else {"min_power": plan["min_power"], "max_power": plan["max_power"]}
+    settings = {**fixed, "power": plan["dot_power"] if dotted else plan["max_power"], "max_width_mm": min(cp.PLATE_MAX_MM, width + RAMP_MARGIN_MM),
+                "scales": {"rows": {"axis": "width", "values": [width]}, "columns": {"axis": "speed", "values": [mode.speed]}, **powers}}
     made = cp.create(store, plan["device_id"], mode.material_id, "grey_scales", settings)
-    store.audit("photo_work_width_ramp", plan_id=plan["id"], ramp_plan_id=made["plan_id"], width_mm=width)
+    store.audit("photo_work_width_ramp", plan_id=plan["id"], ramp_plan_id=made["plan_id"], width_mm=width, kind=plan["kind"])
     return made
 
 
@@ -482,6 +696,23 @@ def _with_lab(rule):
     return {**{k: v for k, v in rule.items() if k != "hex"}, "lab": [round(float(v), 2) for v in lab]}
 
 
+def _colouring_in(colouring) -> dict:
+    """The main colours of the objects as the work keeps them: an object's key (``colouring.key_of``) to ``{"power": 0..100, "shift": -1..1}``."""
+    if not isinstance(colouring, Mapping) or len(colouring) > MAX_COLOURED:
+        raise su.ValidationError(f"the colours of the objects must be a mapping of at most {MAX_COLOURED} objects")
+    out = {}
+    for key, chosen in colouring.items():
+        kind, _, piece = str(key).partition("-")
+        if kind not in ob.KINDS or (piece and not piece.isdigit()):
+            raise su.ValidationError("an object is named by its kind (" + ", ".join(ob.KINDS) + "), a background piece also by its number")
+        power = None if not isinstance(chosen, Mapping) or isinstance(chosen.get("power"), bool) else ps._number(chosen.get("power"))
+        shift = 0.0 if not isinstance(chosen, Mapping) or chosen.get("shift") is None else ps._number(chosen.get("shift"))
+        if power is None or not 0 <= power <= 100 or shift is None or not -1 <= shift <= 1:
+            raise su.ValidationError("an object's colour is a power 0..100 % with lighter or darker -1..1")
+        out[str(key)] = {"power": power, "shift": shift}
+    return out
+
+
 def _rules_in(rules) -> list[dict]:
     """The rules of the parts as given by hand, checked (``picture_rules.check``); ``as_is`` is a part without a rule."""
     try:
@@ -527,6 +758,97 @@ def parts_picture(store: Store, plan_id: int) -> rc.Picture:
     return rc.Picture(store, _folder(plan["id"]), _parts_key(plan), draw)
 
 
+# -- the objects of the picture and their colours (0.21.0) ----------------------------------------------------------------------------
+def _objects(upload: dict) -> dict:
+    """The objects of the decoded picture (``objects.find``), found once and kept with it."""
+    if "objects" not in upload:
+        upload["objects"] = ob.find(upload)
+    return upload["objects"]
+
+
+def _objects_key(plan: Mapping) -> str:
+    return rc.key_of({"kind": "photo-work-objects", "image": rc.file_stamp(plan["image_path"]), "model": people.MODEL.name, "tints": ob.TINTS,
+                      "pieces": ob.PIECE_TINTS})
+
+
+def objects_of(store: Store, plan_id: int) -> dict:
+    """The objects of the work's picture to colour: each one's key, kind, piece, share, own colour and box, and its main colour in the work
+    (or None: «Авто»), the address of the picture with them tinted, the scale's colours a main colour is chosen from at the work's Min and
+    Max (``colouring.candidates``) and the themes, and why lips or eyes are missing (``notes``)."""
+    plan = _work(store, plan_id)
+    found = _objects(_upload(plan))
+    tints = {o["id"]: (ob.PIECE_TINTS[(o["piece"] - 1) % len(ob.PIECE_TINTS)] if o["piece"] else ob.TINTS[o["kind"]]) for o in found["objects"]}
+    listed = [{**{k: o[k] for k in ("id", "kind", "piece", "share", "lab", "hex", "box")}, "key": co.key_of(o), "tint": "#%02x%02x%02x" % tints[o["id"]],
+               "colour": plan["colouring"].get(co.key_of(o))} for o in found["objects"]]
+    try:
+        options = co.candidates(ps.curve_for(store, mode_of(plan), plan["width_mm"])[0], plan["min_power"], plan["max_power"])
+    except PredictionError:
+        options = []
+    return {"objects": listed, "faces": found["faces"], "notes": found["notes"], "options": options, "themes": list(co.THEMES),
+            "active": plan["by_colour"] and plan["colour_choice"] == "objects" and not _dotted(plan),
+            "picture": f"/api/photo-works/{plan['id']}/objects.png?v={_objects_key(plan)[:16]}"}
+
+
+def objects_picture(store: Store, plan_id: int) -> rc.Picture:
+    """The work's picture with every object tinted in its colour (``objects.overlay``)."""
+    plan = _work(store, plan_id)
+
+    def draw() -> bytes:
+        upload = _upload(plan)
+        return prediction.to_png(ob.overlay(upload, _objects(upload)))
+    return rc.Picture(store, _folder(plan["id"]), _objects_key(plan), draw)
+
+
+def colour_theme(store: Store, plan_id: int, name, seed=0) -> None:
+    """Colour every object of the picture by the theme ``name`` (``colouring.theme``: warm, cool, contrast or random by ``seed``) on the
+    scale's colours at the work's Min and Max: the work then chooses its greys for the objects (one step to undo)."""
+    if name not in co.THEMES:
+        raise su.ValidationError("a theme is one of " + ", ".join(co.THEMES))
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise su.ValidationError("the seed of a random theme is a whole number from 0")
+    plan = _work(store, plan_id)
+    if _dotted(plan):
+        raise su.ValidationError("the objects are coloured in grayscale only: a dot kind fires every dot at one power")
+    options = co.candidates(ps.curve_for(store, mode_of(plan), plan["width_mm"])[0], plan["min_power"], plan["max_power"])
+    found = _objects(_upload(plan))
+    update(store, plan_id, {"by_colour": True, "colour_choice": "objects", "colouring": co.theme(name, found["objects"], options, seed)})
+
+
+def ai_theme(store: Store, plan_id: int, wish) -> None:
+    """Ask the AI for the main colours of the picture's objects after the operator's ``wish`` (``ai_picture.ask_objects``: it sees the
+    objects, the scale's colours at the work's Min and Max and the colours the objects have now) and colour the work with them, keeping its
+    note (one step to undo); a refused answer changes nothing."""
+    plan = _work(store, plan_id)
+    text = ai_picture.request(wish)
+    if _dotted(plan):
+        raise su.ValidationError("the objects are coloured in grayscale only: a dot kind fires every dot at one power")
+    client = _ai_client()
+    upload = _upload(plan)
+    found = _objects(upload)
+    options = co.candidates(ps.curve_for(store, mode_of(plan), plan["width_mm"])[0], plan["min_power"], plan["max_power"])
+    listed = [{**o, "key": co.key_of(o)} for o in found["objects"]]
+    what = ai_picture.objects_brief(text, listed, options, plan["colouring"])
+    photo = ai.photo_data_url(Path(plan["image_path"]).read_bytes()) if plan["ai_photo"] else None
+    colours, note = ai_picture.ask_objects(client, what, photo, {o["key"] for o in listed}, [c["power"] for c in options])
+    plan = _work(store, plan_id)                             # as it is now: other changes made while the AI answered are kept
+    _push(plan, _here(plan))
+    plan.update({"by_colour": True, "colour_choice": "objects", "colouring": colours, "updated_at": now(),
+                 "ai_theme": {"wish": text, "photo": photo is not None, "note": note, "at": now()}})
+    with store.transaction():
+        _save(store, plan, plan["id"])
+        store.audit("photo_work_ai_theme", plan_id=plan["id"], objects=len(colours), photo=photo is not None)
+
+
+def _ai_client():
+    """The language model's client, or the reason the AI cannot answer on this computer."""
+    if not research.ai_available():
+        raise cv.ConversionError("the AI is off: no key for the language model is set (OPENAI_API_KEY)")
+    try:
+        return research.openai_client()
+    except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
+        raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
+
+
 def ask_ai(store: Store, plan_id: int, wish, fresh=False) -> None:
     """Ask the AI for the rules of the parts after the operator's ``wish`` and save them in the work with the AI's note and the rules
     before them; the AI sees the present rules and changes what the wish asks, or with ``fresh`` starts from the plain picture (it is not
@@ -535,12 +857,7 @@ def ask_ai(store: Store, plan_id: int, wish, fresh=False) -> None:
     text = ai_picture.request(wish)
     if not isinstance(fresh, bool):
         raise su.ValidationError("starting again from the picture must be on or off")
-    if not research.ai_available():
-        raise cv.ConversionError("the AI is off: no key for the language model is set (OPENAI_API_KEY)")
-    try:
-        client = research.openai_client()
-    except Exception:                        # a missing or broken library: its own text names paths and is of no use to the operator
-        raise cv.ConversionError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's dependencies (see README)") from None
+    client = _ai_client()
     upload = _upload(plan)
     item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"], plan["width_mm"])
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])

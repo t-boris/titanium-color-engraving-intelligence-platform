@@ -21,7 +21,9 @@ URL = re.compile(r"""https?://[^\s"'`)<>]+|(?<=["'(`])//[A-Za-z0-9-]+(?:\.[A-Za-
 UI_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace: a name passed to createElementNS and xmlns, never fetched"}
 # URLs that may appear in the server code, and why no request is made to them.
 SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into generated SVG files",
-               "http://{args.host}:{args.port}": "the local address the launcher prints for the operator's browser"}
+               "http://{args.host}:{args.port}": "the local address the launcher prints for the operator's browser",
+               "https://docs.lightburnsoftware.com/latest/Reference/CutSettingsEditor/ImageMode/": "a source cited in the docstring of dots.py",
+               "https://forum.lightburnsoftware.com/t/halftone-questions-angle/16438": "a source cited in the docstring of dots.py"}
 # Modules that can open a network connection; ``urllib.parse`` only builds strings and is not among them.
 NETWORK_MODULES = ("socket", "ssl", "http.client", "urllib.request", "urllib3", "requests", "httpx", "aiohttp", "ftplib", "smtplib",
                    "websocket", "websockets", "openai", "anthropic")

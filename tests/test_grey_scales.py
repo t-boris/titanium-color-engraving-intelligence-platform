@@ -83,7 +83,7 @@ def test_a_width_axis_gives_each_ramp_its_own_width_and_a_column_the_width_of_it
     assert made["summary"]["size_mm"]["width"] == pytest.approx(cp.GREY_LABEL_WIDTH + 140 + 1 + 9)       # labels, widest ramp, markers
     assert plan["experiment"]["test_settings"]["scales"] == {
         "rows": {"axis": "width", "values": [20, 40, 70, 100, 140]}, "columns": {"axis": "speed", "values": [150]},
-        "min_power": 2, "max_power": 40, "steps": 16, "step_mm": 1.25}
+        "min_power": 2, "max_power": 40, "steps": 16, "step_mm": 1.25, "dither": "grayscale"}
     images = [layer for layer in lightburn.parse_bytes(plans.export_lbrn2(plan)).layers if layer.layer_type == "Image"]
     for layer, wanted in zip(images, (20, 40, 70, 100, 140)):
         (region,) = layer.regions

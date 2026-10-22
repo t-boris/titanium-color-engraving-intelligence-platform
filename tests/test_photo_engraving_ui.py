@@ -34,11 +34,14 @@ const restore = (from, to, error) => {
 const same = (a, b) => ['speed', 'line_interval', 'material_id'].every((k) => a[k] === b[k]);
 const match = () => (work.by_colour ? {choice: work.colour_choice, median_de: 16.2, p90_de: 30.4, greys_used: 200, greys_available: 240,
   reach: work.colour_choice === 'nearest' ? null : [42, 87.2], path: work.colour_choice === 'nearest' ? null : 180,
-  order: work.colour_choice === 'nearest' ? null : 0.98} : null);
+  order: work.colour_choice === 'nearest' ? null : 0.98,
+  objects: work.colour_choice === 'objects' ? Object.entries(work.colouring || {}).map(([key, c]) => ({key, power: c.power, hex: '#7d5256', shift: c.shift})) : null} : null);
 const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour,
   colour_match: match(), contours_report: work.contours && work.by_colour ? {share: 0.0123} : null,
   outside_share: 0, time: {seconds: 600, layers: [{index: 0, name: 'CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05', seconds: 42}, {index: 1, name: 'C01', seconds: 558}]}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
-  scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0}}});
+  scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0},
+  ...(work.kind && work.kind !== 'grayscale' ? {kind: work.kind, estimate: true, dots: {power: work.dot_power, hex: '#3355aa', clean_hex: '#bbbbbb', struck_share: 0.42},
+    closeup: `/api/photo-works/${work.id}/closeup.png?v=${version}`, closeup_mm: 4, closeup_px: 3} : {})}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
   const path = String(url).split('?')[0], method = opts.method || 'GET';
@@ -57,6 +60,7 @@ ctx.fetch = async (url, opts = {}) => {
     if (body.width_mm === 0) return answer({error: 'the width of the picture must be 1..1000 mm'}, 422);
     if (Object.keys(body).some((k) => k !== 'ai_photo')) remember();
     const next = {...work, ...body};
+    if (body.kind && body.kind !== 'grayscale' && next.dot_power == null) next.dot_power = 12.5;     // where the scale's colour stands out most
     if (body.scale) {
       const sc = data.scales.find((s) => same(s.mode, body.scale));
       Object.assign(next, {scale: sc.mode, min_power: sc.span[0], max_power: sc.span[1], problem: null});
@@ -64,9 +68,22 @@ ctx.fetch = async (url, opts = {}) => {
     work = next; version++;
     return answer(view());
   }
+  if (path === `/api/photo-works/${work.id}/kinds`) return answer(data.kinds);
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
   if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Шкалы серого · TCE-31'}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
+  if (path === `/api/photo-works/${work.id}/objects`) return answer({...data.objects, active: work.by_colour && work.colour_choice === 'objects'});
+  if (path === `/api/photo-works/${work.id}/theme`) {
+    remember();
+    work = {...work, by_colour: true, colour_choice: 'objects', colouring: data.themes[body.name]}; version++;
+    return answer(view());
+  }
+  if (path === `/api/photo-works/${work.id}/ai-theme`) {
+    remember();
+    work = {...work, by_colour: true, colour_choice: 'objects', colouring: data.themes.warm,
+      ai_theme: {wish: body.wish.trim(), note: 'очки золотом, губы красные', photo: work.ai_photo}}; version++;
+    return answer(view());
+  }
   if (path === `/api/photo-works/${work.id}/engravings`) return answer(data.engravings);
   if (path === `/api/photo-works/${work.id}/ai`) {
     if (hold.length) await hold.shift();
@@ -105,8 +122,9 @@ const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.ge
 def run(tmp_path, query, body, work=None, engravings=(), scales=None):
     work = {**WORK, **(work or {})}
     scales = [scale(150, [1, 30]), scale(100, [2, 25])] if scales is None else scales
-    (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_answer(), "work": work,
-                                                    "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings)}),
+    (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_answer(), "work": work, "kinds": KINDS,
+                                                    "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings),
+                                                    "objects": OBJECTS, "themes": THEMES}),
                                         encoding="utf-8")
     script = tmp_path / "screen.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
@@ -141,10 +159,32 @@ WORK = {"id": 7, "name": "Портрет", "identifier": "TCE-P-1", "created_at"
         "image_name": "girl.png", "image_size": [240, 120], "scale": mode(100), "material": {"name": "Big Plate 150"}, "dpi": 1000,
         "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "colour_choice": "drawing", "contours": False,
         "time": {"seconds": 600}, "problem": None,
-        "rules": [], "ai": None, "ai_photo": False, "ai_missing": None}
+        "rules": [], "ai": None, "ai_photo": False, "ai_missing": None, "colouring": {}, "ai_theme": None}
 PARTS = {"parts": [{"part": "face_skin", "share": 0.5, "lab": [70, 10, 15], "hex": "#c8a08c", "tint": "#ff8c64"},
                    {"part": "clothes", "share": 0.5, "lab": [40, 0, -30], "hex": "#3355aa", "tint": "#4678ff"}], "picture": "/api/photo-works/7/parts.png?v=1"}
 AI_RULES = [{"part": "clothes", "kind": "colour", "lab": [40, 40, -40], "hex": "#7a3fa0"}]
+KIND_KEYS = ["grayscale", "threshold", "ordered", "atkinson", "dither", "stucki", "jarvis", "newsprint", "halftone", "sketch"]
+FAMILY = {"grayscale": "power", "sketch": "edges"}
+KINDS = {"kind": "grayscale", "problem": None, "kinds": [
+    {"key": k, "family": FAMILY.get(k, "dots"), "basis": "inferred" if k in ("ordered", "newsprint", "sketch") else "documented", "estimate": k != "grayscale",
+     "picture": f"/api/photo-works/7/kinds/{k}.png?v=1", **({"min_power": 12, "max_power": 28} if k == "grayscale" else {"power": 12.5, "hex": "#3355aa",
+                                                                                                                           "clean_hex": "#bbbbbb"})}
+    for k in KIND_KEYS]}
+
+
+def thing(i, kind, piece, share, tint):
+    return {"id": i, "kind": kind, "piece": piece, "share": share, "lab": [60, 10, 10], "hex": "#9a8070", "box": [0, 0, 10, 10],
+            "key": kind if not piece else f"{kind}-{piece}", "tint": tint, "colour": None}
+
+
+OBJECTS = {"objects": [thing(0, "background", 0, 0.3, "#5a5a5a"), thing(1, "background", 1, 0.15, "#963cc8"), thing(2, "face_skin", 0, 0.3, "#ff8c64"),
+                       thing(3, "other", 0, 0.1, "#e6c828"), thing(4, "lips", 0, 0.02, "#dc283c")],
+           "faces": 1, "notes": ["1 eye is behind glasses or something else worn: they stay in the part 'other'."],
+           "options": [{"power": 1.0, "lab": [80, 1, 5], "hex": "#cdc6bc", "hue": 84, "chroma": 6}, {"power": 6.46, "lab": [56, 8, 28], "hex": "#a38157", "hue": 75, "chroma": 28},
+                       {"power": 12.15, "lab": [40, 16, 4], "hex": "#7d5256", "hue": 16, "chroma": 19}, {"power": 17.6, "lab": [58, -6, -17], "hex": "#7093ab", "hue": 250, "chroma": 18}],
+           "themes": ["warm", "cool", "contrast", "random"], "active": False, "picture": "/api/photo-works/7/objects.png?v=1"}
+THEMES = {"warm": {"face_skin": {"power": 1.0, "shift": 0}, "lips": {"power": 12.15, "shift": 0}}, "cool": {"background": {"power": 17.6, "shift": 0}},
+          "contrast": {"background": {"power": 12.15, "shift": 0}}, "random": {"other": {"power": 6.46, "shift": 0}}}
 
 
 def listed(work):
@@ -172,7 +212,7 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_from_a_picture_a_name_a
     assert out["thumb"] == "/api/photo-works/7/thumb.png?v=2026-10-21T10%3A05%3A00"
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
     assert out["sent"] == [{"picture": "moto.jpg", "name": "moto", "width_mm": "80"}]   # no scale: the best measured one is taken
-    assert out["went"] == ["/photo-engraving?work=9"] and not out["open"]
+    assert out["went"] == ["/photo-engraving?work=9&ask=kind"] and not out["open"]          # the new work asks which kind first
 
 
 # -- a work -----------------------------------------------------------------------------------------------------------------------------
@@ -240,7 +280,8 @@ def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_sai
   out.nearest = said().includes('Подбор по цвету: ближайшие цвета шкалы отличаются от цветов картинки в среднем на 16,2 ΔE');
   out.saves = saves();
 """)
-    assert out["before"] == {"choice": True, "value": "drawing", "contours": True, "on": False, "said": False, "options": ["Сохранить рисунок", "Ближайший цвет"]}
+    assert out["before"] == {"choice": True, "value": "drawing", "contours": True, "on": False, "said": False,
+                             "options": ["Сохранить рисунок", "Ближайший цвет", "Раскраска по объектам"]}
     assert out["drawing"] == {"choice": False, "contours": False, "off": True, "kept": True}
     assert out["lined"] and out["nearest"]
     assert out["saves"] == [{"by_colour": True}, {"contours": True}, {"colour_choice": "nearest"}]
@@ -275,7 +316,7 @@ def test_changes_are_sent_one_after_another_in_their_order_and_the_last_one_is_s
 @node
 def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be_chosen(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.opened = {chosen: chosen(tree), text: tree.textContent, sliders: tree.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'range').length};
+  out.opened = {chosen: chosen(tree), text: tree.textContent, sliders: tree.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'range' && !i.closest('li.ge-object')).length};
   await tree.querySelectorAll('button.ge-scale')[1].dispatch('click'); await settle(); await wait(300); await settle();
   out.saves = saves(); out.chosen = chosen(tree); out.powers = powers(tree); out.shown = shown(tree);
 """, work={"scale": {**mode(999)}, "problem": "no colour has been measured at this mode: there is nothing to predict from"})
@@ -312,7 +353,7 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
     assert out["second"] == {"chosen": [False, True], "powers": ["2", "25"]}
     sent = out["sent"][0]
     assert json.loads(sent.pop("scale")) == mode(100) and sent == {"picture": "girl.png", "name": "girl", "width_mm": "50"}
-    assert out["went"] == ["/photo-engraving?work=9"]
+    assert out["went"] == ["/photo-engraving?work=9&ask=kind"]
 
 
 # -- the AI tab: the parts and their rules (REQ-062) -------------------------------------------------------------------------------------
@@ -449,3 +490,82 @@ def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engrav
     assert out["text"] == [True] * 6
     assert out["strips"] == [["background:#ddcabb", "background:#776655", "background:#203040"],          # white (Min) first
                              ["background:#ddccbb", "background:#886644", "background:#223344"]]
+
+
+# -- the kind of engraving (0.21.0) ----------------------------------------------------------------------------------------------------
+@node
+def test_a_new_work_asks_which_kind_with_its_picture_in_each_and_a_dot_kind_has_one_power_picked_on_the_scale_strip(tmp_path):
+    out = run(tmp_path, {"work": "7", "ask": "kind"}, """
+  const box = dialog();
+  const tiles = () => box.querySelectorAll('button.ge-kind');
+  out.title = box.querySelector('h3').textContent;
+  out.tiles = tiles().map((b) => b.querySelector('strong').textContent);
+  out.pictures = tiles().map((b) => b.querySelector('img').getAttribute('src'));
+  out.current = tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent);
+  out.estimates = tiles().map((b) => b.textContent.includes('оценка'));
+  out.keep = !!button(box, 'Оставить «Градации серого»');
+  await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
+  out.closed = !dialog();
+  out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
+  out.minMax = !!labelled(tree, 'Min мощность, % (белый)');
+  out.dot = labelled(tree, 'Мощность точек, %').value;
+  out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
+  out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').includes('/closeup.png'));
+  out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Джарвис»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
+  out.ramp = !!button(tree, 'Проба этого вида') && tree.textContent.includes('в виде «Джарвис» на мощности точек 12,5 %');
+  await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
+  out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
+  await button(tree, 'Отменить').dispatch('click'); await settle();
+  out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
+  out.saved = saves();
+""")
+    assert out["title"] == "Какая гравировка?"
+    assert out["tiles"] == ["Градации серого", "Порог", "Упорядоченный (Байер)", "Аткинсон", "Растр (Флойд-Стейнберг)", "Стаки", "Джарвис",
+                            "Газетный растр", "Полутона", "Эскиз"]
+    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Градации серого"] and out["keep"]
+    assert out["estimates"] == [False] + [True] * 9                                       # grayscale is measured, the dot kinds estimated
+    assert out["closed"] and out["kind"] == "Вид: Джарвис" and not out["minMax"] and out["dot"] == "12.5"
+    assert out["byColour"] and out["closeup"] and out["says"] == [True, True, True] and out["ramp"]
+    # the strip runs over the scale's measured powers 1..30 %: a click at three quarters of it is 22.75 %, rounded to 0.1 %
+    assert out["saved"] == [{"kind": "jarvis"}, {"dot_power": 22.8}] and out["mark"].startswith("left:75.172")
+    assert out["undone"] == "Вид: Джарвис"                                                # undo takes back the power first
+
+
+@node
+def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_and_themes_and_the_ai_colour_all_of_them(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const objects = () => tree.querySelectorAll('li.ge-object');
+  const row = (name) => objects().find((li) => li.childNodes[0].textContent.trim() === name);
+  const swatch = (label) => tree.querySelectorAll('button.ge-swatch').find((b) => b.getAttribute('aria-label') === label);
+  const posts = (end) => requests.filter((r) => r.path.endsWith(end)).map((r) => r.body);
+  out.listed = objects().map((li) => li.childNodes[0].textContent.trim());
+  out.first = {current: row('Фон').getAttribute('aria-current'), auto: row('Губы').textContent.includes('авто'), swatches: tree.querySelectorAll('button.ge-swatch').length,
+               note: tree.textContent.includes('Глаз за очками или чем-то надетым: 1'), overlay: tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/objects.png?v=1')};
+  await row('Губы').dispatch('click'); await settle();
+  out.selected = row('Губы').getAttribute('aria-current');
+  await swatch('Цвет шкалы 12,15 %').dispatch('click'); await settle();
+  out.coloured = {chosen: swatch('Цвет шкалы 12,15 %').className.includes('is-chosen'), text: row('Губы').textContent.includes('12,15 %'),
+                  choice: select(tree, 'Как подбирать серые').value, said: tree.textContent.includes('Раскраска по объектам: в своих цветах 1 объект')};
+  const shift = input(tree, (i) => i.getAttribute('aria-label') === 'Светлее или темнее: Губы');
+  shift.value = '-0.5'; await shift.dispatch('change'); await settle();
+  await button(tree, 'Тёплая').dispatch('click'); await settle();
+  await button(tree, 'Случайно').dispatch('click'); await settle();
+  await button(row('Другое (очки…)'), 'Авто').dispatch('click'); await settle();
+  tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Как раскрасить — своими словами').value = ' очки золотом ';
+  await button(tree, 'Раскрасить по просьбе').dispatch('click'); await settle();
+  out.saves = saves();
+  out.themes = posts('/theme').map((b) => [b.name, typeof b.seed]);
+  out.ai = {asks: posts('/ai-theme'), note: tree.textContent.includes('AI: очки золотом, губы красные')};
+  await button(tree, 'Всё — авто').dispatch('click'); await settle();
+  out.cleared = saves().slice(-1)[0];
+""")
+    assert out["listed"] == ["Фон", "Фон 2", "Кожа лица", "Другое (очки…)", "Губы"]
+    assert out["first"] == {"current": "true", "auto": True, "swatches": 4, "note": True, "overlay": True}
+    assert out["selected"] == "true" and out["coloured"] == {"chosen": True, "text": True, "choice": "objects", "said": True}
+    objects_on = {"by_colour": True, "colour_choice": "objects"}
+    assert out["saves"] == [{**objects_on, "colouring": {"lips": {"power": 12.15, "shift": 0}}},
+                            {**objects_on, "colouring": {"lips": {"power": 12.15, "shift": -0.5}}},
+                            {**objects_on, "colouring": {}}]                                          # «Авто» on the random theme's only object
+    assert out["themes"] == [["warm", "undefined"], ["random", "number"]]                             # «Случайно»: new colours each time
+    assert out["ai"] == {"asks": [{"wish": " очки золотом "}], "note": True}
+    assert out["cleared"] == {**objects_on, "colouring": {}}

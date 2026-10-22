@@ -10,7 +10,7 @@ import json
 import math
 from typing import Any
 
-from . import devices, grayscale, plans, setup as su, tasks
+from . import devices, grayscale, photo_modes, plans, setup as su, tasks
 from .db import Store, now
 
 PLATE_TYPES = [
@@ -877,8 +877,15 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
     runs left to right, so the plate's vertical mirror (``export_mirror_y``) cannot reverse it.
 
     Without a width axis every ramp has the width that fits the plate's limit (at most 2.5 mm a step). With one, each ramp is as wide as
-    its width value; a column is as wide as its widest ramp and its ramps start at its left edge."""
+    its width value; a column is as wide as its widest ramp and its ramps start at its left edge.
+
+    With ``scales.dither`` a dot kind of LightBurn (0.21.0), the ramps are engraved in that kind at the plate's one power: LightBurn
+    makes the dots of each step, so each step is one share of dots at that power and the photograph measures the kind's tonal profile."""
     supplied = values.get("scales") or {}
+    dither = supplied.get("dither") or plans.IMAGE_DITHER
+    kind = photo_modes.mode(dither)
+    if kind is None or kind.family not in (photo_modes.POWER, photo_modes.DOTS, photo_modes.EDGES) or kind.key != dither:
+        raise su.ValidationError("полоски — в градациях серого или в одном из видов точками LightBurn")
     rows_key, row_values = _grey_axis("строки", supplied.get("rows") or GREY_DEFAULTS["rows"], values, passport)
     cols_key, col_values = _grey_axis("столбцы", supplied.get("columns") or GREY_DEFAULTS["columns"], values, passport)
     if rows_key == cols_key:
@@ -890,7 +897,11 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
         high = float(supplied.get("max_power", values["power"]))
     except (TypeError, ValueError):
         raise su.ValidationError("Min и Max мощность должны быть числами") from None
-    if not (math.isfinite(low) and math.isfinite(high) and 0 <= low < high <= 100):
+    if dither != plans.IMAGE_DITHER:
+        low = high = float(values["power"])            # every dot fires at the layer's power
+        if not 0 < high <= 100:
+            raise su.ValidationError("мощность точек: больше 0 и не больше 100 %")
+    elif not (math.isfinite(low) and math.isfinite(high) and 0 <= low < high <= 100):
         raise su.ValidationError("Min и Max мощность: от 0 до 100 %, Min меньше Max")
     columns = len(col_values)
     if "width" in (rows_key, cols_key):
@@ -908,7 +919,8 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
     column_widths = [max(ramp_width(r_value, c_value) for r_value in row_values) for c_value in col_values]
     column_x = [GREY_LABEL_WIDTH + sum(column_widths[:col]) + col * GREY_GAP for col in range(columns)]
     r_meta, c_meta = _grey_meta(rows_key), _grey_meta(cols_key)
-    labels = _text(f"GREY {r_meta['short']} X {c_meta['short']} P{low:g}-{high:g}", 1.0, 0.8, 0.14)
+    labels = _text(f"GREY {r_meta['short']} X {c_meta['short']} P{low:g}-{high:g}" if dither == plans.IMAGE_DITHER
+                   else f"{dither} {r_meta['short']} X {c_meta['short']} P{high:g}", 1.0, 0.8, 0.14)
     greys = grayscale.ramp_greys()
     layers, cells = [], []
     for col, c_value in enumerate(col_values):
@@ -921,7 +933,7 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
             params = _process({**values, rows_key: r_value, cols_key: c_value, "power": high})
             params["min_power"] = low
             name = f"GREY-{r_meta['short']}{r_value:g}-{c_meta['short']}{c_value:g}"
-            ramp = {"x": x, "y": y, "width": tile, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": "grayscale"}
+            ramp = {"x": x, "y": y, "width": tile, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": dither}
             layer = _layer(len(layers) + 1, name, params, [_rect(x, y, tile, GREY_TILE_HEIGHT)], mode="Image",
                            line_interval=params["line_interval"], global_passes=values["global_passes"])
             layer["ramp"] = ramp
@@ -936,7 +948,8 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
                             "feature_count": len(cells) * len(greys),
                             "sample_area_mm2": round(sum(cell["width"] for cell in cells) * GREY_TILE_HEIGHT, 2),
                             "scales": {"rows": {"axis": rows_key, "values": row_values}, "columns": {"axis": cols_key, "values": col_values},
-                                       "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(narrowest / len(greys), 3)}}
+                                       "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(narrowest / len(greys), 3),
+                                       "dither": dither}}
 
 
 FILL_DEFAULT_WIDTHS_MM = (5.0, 20.0, 50.0, 100.0)

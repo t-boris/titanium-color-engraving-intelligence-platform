@@ -1,13 +1,17 @@
-/* Фотогравировка (REQ-059, REQ-061): работы в режиме градаций серого на измеренных шкалах. Шкала — постоянные настройки (лазер, линза,
-   титан, скорость, частота, импульс, шаг строк, проходы) с измеренной кривой «мощность → цвет»; серый картинки задаёт мощность от Min
-   (белый) до Max (чёрный), и на титане мощность даёт цвет.
+/* Фотогравировка (REQ-059, REQ-061): работы на измеренных шкалах. Шкала — постоянные настройки (лазер, линза, титан, скорость,
+   частота, импульс, шаг строк, проходы) с измеренной кривой «мощность → цвет»; в градациях серого серый картинки задаёт мощность от Min
+   (белый) до Max (чёрный), и на титане мощность даёт цвет. Вид гравировки (0.21.0): новая работа спрашивает «Какая гравировка?» и
+   показывает картинку в каждом виде; в видах точками каждая точка бьёт на одной мощности — цвет шкалы при ней, между точками очищенный
+   титан; пока такой вид не гравировался, это оценка по шкале. Раскраска по объектам (0.21.0), как в раскраске: губам, очкам, волосам,
+   кускам фона — каждому свой основной цвет шкалы (щелчком по цвету, темой, «Случайно» или по просьбе AI), светлое и тёмное объекта
+   ложатся вокруг этого цвета в его семействе.
    Работа — картинка на шкале, как векторная работа (DEC-104): список «Мои работы» (открыть, сделать копию, переименовать, удалить),
    «Новая работа» (картинка, название, ширина), сама работа на один экран: шкалы слева, картинка рядом с прогнозом посередине, справа
    вкладки; шкала, Min и Max, ширина и подбор серых сохраняются в работе сразу. Страница «Шкалы серого» показывает, какой серый каким
    цветом выходит на каждой шкале и подтверждают ли это эксперименты.
    Цвет зависит от размера гравировки (DEC-107): от длины строки, у картинки — её ширины. Шкала показывает, при какой ширине она измерена;
    работа берёт цвета при своей ширине — измеренные, между двумя измеренными или ближайшие, и говорит какие.
-   Адреса: #/photo-engraving — мои работы; ?work=<id> — работа; ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
+   Адреса: #/photo-engraving — мои работы; ?work=<id> — работа (&ask=kind — сразу спросить вид); ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
    #/photo-preview (прогноз по файлу LightBurn) и #/photo (непрерывная полосами). */
 'use strict';
 (() => {
@@ -40,6 +44,9 @@
   const modeQuery = (m) => new URLSearchParams(Object.entries({device_id: m.device_id, lens_id: App.lensParam(m.lens_id), material_id: m.material_id,
     speed: m.speed, frequency: m.frequency, pulse_width: m.pulse_width, line_interval: m.line_interval, passes: m.passes ?? 1, global_passes: m.global_passes ?? 1})
     .filter(([, v]) => v != null)).toString();
+  const GRAYSCALE = 'grayscale';
+  const dotted = (v) => !!v.kind && v.kind !== GRAYSCALE;                                    // a dot kind: every dot at one power
+  const kindName = (key) => { const t = PhotoModes.label(key); return t.charAt(0).toUpperCase() + t.slice(1); };
   const greyChip = (level) => h('span', {class: 'sw', style: `background:rgb(${level},${level},${level})`});
   const hexChip = (hex) => (hex ? h('span', {class: 'sw', style: `background:${hex}`}) : h('span', {class: 'sw ge-none', title: 'не измерено'}));
 
@@ -78,15 +85,28 @@
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
   }
 
-  /** Полоса «серый → цвет» при выбранных Min и Max: слева белый (Min), справа чёрный (Max), как ступени пластины; вне измеренного — штриховка. */
-  function greyBar(levels) {
+  /** Полоса «серый → цвет» при выбранных Min и Max: слева белый (Min), справа чёрный (Max), как ступени пластины; вне измеренного — штриховка.
+      С ``dot`` ({power, pick}) — полоса цветов по мощностям шкалы для вида точками: метка на мощности точек, щелчок выбирает другую. */
+  function greyBar(levels, dot = null) {
     const at = (i) => levels[255 - Math.round(i * 255 / (BAR_SEGMENTS - 1))];
     const segments = Array.from({length: BAR_SEGMENTS}, (_, i) => at(i));
-    return h('div', {class: 'stack ge-greybar'},
-      h('div', {class: 'ge-strip', 'aria-label': 'Цвет каждого серого'}, segments.map((row) => h('span', {class: row.hex ? '' : 'ge-none',
-        style: row.hex ? `background:${row.hex}` : '', title: `серый ${row.level} · мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}`}))),
-      h('div', {class: 'ge-strip ge-ramp', 'aria-hidden': 'true'}),
-      h('div', {class: 'ge-ends small'}, h('span', {}, `белый 255 · Min ${value(levels[255].power, 1)} %`), h('span', {}, `чёрный 0 · Max ${value(levels[0].power, 1)} %`)));
+    const lo = levels[255].power, hi = levels[0].power;
+    const strip = h('div', {class: 'ge-strip' + (dot ? ' ge-pickable' : ''), 'aria-label': dot ? 'Цвет точек при каждой мощности: щёлкните, чтобы выбрать' : 'Цвет каждого серого'},
+      segments.map((row) => h('span', {class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
+        title: dot ? `мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}` : `серый ${row.level} · мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}`})));
+    if (!dot) {
+      return h('div', {class: 'stack ge-greybar'}, strip, h('div', {class: 'ge-strip ge-ramp', 'aria-hidden': 'true'}),
+        h('div', {class: 'ge-ends small'}, h('span', {}, `белый 255 · Min ${value(lo, 1)} %`), h('span', {}, `чёрный 0 · Max ${value(hi, 1)} %`)));
+    }
+    strip.addEventListener('click', (ev) => {
+      const box = strip.getBoundingClientRect();
+      if (!(box.width > 0)) return;
+      const share = Math.min(1, Math.max(0, (ev.clientX - box.left) / box.width));
+      dot.pick(Math.round((lo + share * (hi - lo)) * 10) / 10);
+    });
+    const mark = h('span', {class: 'ge-dotmark', 'aria-hidden': 'true', style: `left:${hi > lo ? Math.min(100, Math.max(0, (dot.power - lo) / (hi - lo) * 100)) : 0}%`});
+    return h('div', {class: 'stack ge-greybar'}, h('div', {class: 'ge-markbox'}, strip, mark),
+      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, `точки: ${value(dot.power, 1)} %`), h('span', {}, `${value(hi, 1)} %`)));
   }
 
   // L, a and b each stay whole: a narrow column breaks the colour only between them
@@ -164,8 +184,9 @@
       ``slots`` — места экрана, которые она заполняет. ``initial`` — Min и Max (у работы — её), иначе измеренный диапазон, округлённый внутрь
       до 0,1 %, чтобы белый и чёрный оба остались в нём; ``changed(lo, hi)`` узнаёт новые Min и Max, когда их поменяли. ``rowMm`` — ширина,
       при которой показывать цвета (у работы — её ширина); без неё — ширина, измеренная больше всего, и кнопки других измеренных ширин.
-      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. */
-  function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null} = {}) {
+      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. ``dot`` ({power, changed(p)}) —
+      работа в виде точками: вместо Min и Max одна мощность точек, полоса — цвета по всем измеренным мощностям, щелчок по ней выбирает мощность. */
+  function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null, dot = null} = {}) {
     let span = sc.span;
     let timer = null, seq = 0, stopped = false;
     let atMm = rowMm != null ? rowMm : (sc.size ? sc.size.row_mm : null);
@@ -177,21 +198,33 @@
           for (const b of self.parentNode.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === self));
           load(false);
         }}, mm(z.row_mm)))) : null;
-    const slider = (label, short, start) => {
+    const slider = (label, short, start, moved = () => schedule()) => {
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: start, 'aria-label': label});
       const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: start, 'aria-label': label});
-      range.addEventListener('input', () => { exact.value = range.value; schedule(); });
-      exact.addEventListener('change', () => { range.value = exact.value; schedule(); });
-      return {exact, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+      range.addEventListener('input', () => { exact.value = range.value; moved(); });
+      exact.addEventListener('change', () => { range.value = exact.value; moved(); });
+      return {exact, range, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
     };
-    const [lo0, hi0] = initial || [Math.ceil(span[0] * 10 - 1e-9) / 10, Math.floor(span[1] * 10 + 1e-9) / 10];
+    const measured = [Math.ceil(span[0] * 10 - 1e-9) / 10, Math.floor(span[1] * 10 + 1e-9) / 10];
+    const [lo0, hi0] = dot ? measured : initial || measured;
     const low = slider('Min мощность, % (белый)', 'Min, %', lo0);
     const high = slider('Max мощность, % (чёрный)', 'Max, %', hi0);
+    let levelsShown = null;
+    const dotPower = dot ? slider('Мощность точек, %', 'Точки, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }) : null;
+    /** Мощность точек ``p``: метка на полосе сразу, работа узнаёт её (сервер проверит, что шкала там измерена). */
+    function pickDot(p) {
+      if (!(p >= 0 && p <= 100)) return;
+      dotPower.exact.value = String(p);
+      dotPower.range.value = String(p);
+      dot.power = p;
+      if (levelsShown) fill(slots.bar, greyBar(levelsShown, {power: p, pick: pickDot}));
+      dot.changed(p);
+    }
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
     fill(slots.title, settingsText(sc.mode, sc.dpi));
     slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`);
-    fill(slots.powers, low.box, high.box, widths);
+    fill(slots.powers, ...(dot ? [dotPower.box] : [low.box, high.box]), widths);
     fill(slots.error, error);
     fill(slots.bar, loading());
     for (const tab of [slots.scale, slots.confirm, slots.points]) fill(tab, loading());
@@ -208,7 +241,8 @@
         const size = sizeText(d.size);
         const levels = d.greys.levels;
         const unmeasured = 256 - d.greys.measured_levels;
-        fill(slots.bar, greyBar(levels));
+        levelsShown = levels;
+        fill(slots.bar, greyBar(levels, dot ? {power: dot.power, pick: pickDot} : null));
         fill(slots.scale,
           h('p', {class: 'small muted'}, `${titaniumLabel(sc)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
             + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
@@ -230,22 +264,28 @@
       измеряет шкалу при ширине работы до того, как гравируется картинка; кнопка открывает созданный эксперимент. Главная кнопка, пока
       при этой ширине шкала не измерена. */
   function rampOffer(view, size) {
-    const make = btn('Проба на ширине работы', async (ev) => {
+    const dots = dotted(view);
+    const make = btn(dots ? 'Проба этого вида' : 'Проба на ширине работы', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try { const made = await post(`/photo-works/${view.id}/width-ramp`, {}); toast(`Создано: ${made.name}`, 'ok'); go('/experiment/plan-' + made.plan_id); }
       catch (e) { fail(e); self.disabled = false; }
-    }, size && size.how === 'measured' ? 'btn-small' : 'primary btn-small');
+    }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
+    if (dots) {
+      return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину в виде «${kindName(view.kind)}» `
+        + `на мощности точек ${value(view.dot_power, 1)} % и настройках шкалы: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на ваших настройках, `
+        + 'и картинка покажется по измеренным тонам вместо оценки.'));
+    }
     return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину на настройках шкалы, `
       + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
   }
 
-  const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет']];
+  const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет'], ['objects', 'Раскраска по объектам']];
   const CHOICE_ABOUT = '«Сохранить рисунок»: тона картинки раскладываются по одной плавной полосе шкалы — от самого светлого её цвета к самому тёмному, '
     + 'светлота только убывает, оттенок не скачет; соседние тона получают соседние мощности, поэтому кожа остаётся ровной, с градиентом, без пятен. '
     + 'Зерно и квадраты JPEG сглаживаются (до 0,25 мм), губы, глаза и тени лица (до 1,5 мм) подчёркиваются, средние тона светлеют. Оттенки картинки '
     + 'не повторяются — вся картинка в цветах этой полосы. «Ближайший цвет»: серый, который на шкале даёт ближайший цвет, даже если он намного '
-    + 'темнее или светлее.';
+    + 'темнее или светлее. «Раскраска по объектам»: как «Сохранить рисунок», но объекты, которым во вкладке «Раскраска» дан свой цвет, — в нём.';
   const CONTOURS_ABOUT = 'только при подборе серых под цвета: где граница картинки (губы, глаза, блики) на титане потерялась бы, она обводится '
     + 'линией 0,3 мм — самым тёмным серым шкалы, на тёмном или у светлого блика — самым светлым. Внутри части с правилом «Один тон» не обводится.';
 
@@ -253,6 +293,14 @@
   function matchText(match) {
     if (!match) return null;
     const used = `использовано серых ${match.greys_used} из ${match.greys_available}`;
+    if (match.choice === 'objects') {
+      const done = match.objects || [];
+      return h('p', {}, h('strong', {}, 'Раскраска по объектам: '), done.length
+        ? h('span', {}, `в своих цветах ${done.length} ${done.length === 1 ? 'объект' : done.length < 5 ? 'объекта' : 'объектов'} — `,
+          ...done.flatMap((o, i) => [i ? ', ' : '', hexChip(o.hex), objectName(o.key)]),
+          `; остальное — как «Сохранить рисунок». Порядок светлого и тёмного совпадает с картинкой${match.order == null ? '' : ` на ${value(match.order * 100, 0)} %`}; ${used}.`)
+        : 'ни одному объекту цвет ещё не дан — вся картинка как при «Сохранить рисунок». Цвета объектов — во вкладке «Раскраска».');
+    }
     if (match.choice === 'nearest') {
       return h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(match.median_de, 1)} ΔE `
         + `(у 90 % пикселей — не больше ${value(match.p90_de, 1)}); ${used}.`);
@@ -275,7 +323,9 @@
   /** Картинка работы на её шкале: ширина, подбор серых и контуры над картинкой, картинка рядом с прогнозом посередине, время под ней,
       подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
       ``save`` (DEC-108). */
-  function workPicture(save) {
+  function workPicture(save, chooseKind) {
+    const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
+    kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em'});
     const byColour = h('input', {type: 'checkbox'});
     const choice = h('select', {'aria-label': 'Как подбирать серые', title: CHOICE_ABOUT}, CHOICES.map(([v, t]) => h('option', {value: v}, t)));
@@ -289,12 +339,15 @@
     contours.addEventListener('change', () => save({contours: contours.checked}));
     const waiting = () => fill(out, h('p', {class: 'muted ge-placeholder'}, 'Считаем прогноз…'));
     function show(view, sc) {
+      const dots = dotted(view);
+      fill(kind, `Вид: ${kindName(view.kind || GRAYSCALE)}`);
       width.value = String(view.width_mm);
       byColour.checked = !!view.by_colour;
+      byColour.disabled = dots;
       choice.value = view.colour_choice || 'drawing';
-      choice.disabled = !view.by_colour;
+      choice.disabled = dots || !view.by_colour;
       contours.checked = !!view.contours;
-      contours.disabled = !view.by_colour;
+      contours.disabled = dots || !view.by_colour;
       const info = view.picture;
       if (!info) {
         fill(out, h('div', {class: 'ge-placeholder stack'}, h('p', {class: 'alert warn'}, I18N.tr(view.problem)),
@@ -303,6 +356,7 @@
         fill(details, h('p', {class: 'muted'}, 'Прогноза нет: шкала этой работы не измерена.'));
         return;
       }
+      if (dots) { showDots(view, info, sc); return; }
       const t = info.time;
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;      // the file cleans the titanium first (C00)
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
@@ -334,12 +388,184 @@
           + CHOICE_ABOUT + ' Контуры: ' + CONTOURS_ABOUT + ' Прогноз и файл LightBurn — одна и та же картинка; прогноз пересчитывается сам, когда меняются шкала, Min и Max, '
           + 'ширина, подбор или контуры.'));
     }
-    const inputs = h('div', {class: 'ge-inputs'},
+    /** Работа в виде точками: картинка рядом с точками на титане издалека (оценка по шкале), точки вблизи, мощность и файл. */
+    function showDots(view, info, sc) {
+      const t = info.time, d = info.dots, name = kindName(view.kind), measured = d.measured;
+      const cleaning = t.layers.length > 1 ? t.layers[0] : null;
+      const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
+      const estimate = 'оценка по шкале: этот вид ещё не гравировался';
+      fill(out,
+        h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка (как её видит LightBurn)'), h('span', {}, `${name} на титане — ${measured ? 'по измеренной пробе' : 'оценка'}`)),
+        h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Картинка и она же в виде «${name}» на титане`})));
+      const atSize = sizeText(info.scale_size);
+      fill(foot,
+        h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
+        h('span', {class: 'row'}, 'точки ', hexChip(d.hex), ` ${value(d.power, 1)} % на титане `, hexChip(d.clean_hex)),
+        measured ? pill(`измерено: ${measured.tones} тонов этого вида`, 'ok') : pill(estimate, 'warn'),
+        atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null);
+      fill(details,
+        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %. Цвета картинки — как сфотографирована проба этого вида `
+          + `на этих настройках и этом титане: ${measured.tones} тонов. Мощность точек меняется на полосе шкалы; при другой мощности снова будет оценка, пока её не измерить.`)
+          : h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex),
+            '; между точками — очищенный титан ', hexChip(d.clean_hex), `. Тон — сколько точек: они покрывают ${value(d.struck_share * 100, 0)} % картинки, `
+            + 'издалека глаз смешивает их с титаном. Мощность точек меняется на полосе шкалы: щёлкните по цвету, который нужен точкам.'),
+        measured ? h('ul', {class: 'small'}, measured.notes.map((n) => h('li', {}, I18N.tr(n))))
+          : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки взят со шкалы, измеренной строками; '
+            + 'точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. '
+            + 'Узор точек — по опубликованному алгоритму; LightBurn ставит точки своим кодом, узор может отличаться, доля точек — та же.'),
+        rampOffer(view, info.scale_size),
+        h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
+          h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
+            + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — со шкалы.`)),
+        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
+          + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
+          h('span', {class: 'muted small'}, ' — оценка сверху: строки на всю ширину картинки, как в градациях серого; белые места лазер в виде точками пролетает быстрее.')),
+        atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
+        h('p', {class: 'small'}, `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой; C01 — ` : ''}`
+          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settingsText(view.scale, info.dpi)}. `
+          + `Картинка — как загружена, ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле: точки ставит LightBurn.`),
+        h('p', {class: 'muted small'}, 'Подбор серых под цвета, контуры и правила частей — для градаций серого: в виде точками все точки одного цвета, и картинка '
+          + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));
+    }
+    const inputs = h('div', {class: 'ge-inputs'}, kind,
       h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width),
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
     return {inputs, out, foot, details, show, waiting};
+  }
+
+  const OBJECT_NAMES = {background: 'Фон', hair: 'Волосы', face_skin: 'Кожа лица', body_skin: 'Кожа тела', clothes: 'Одежда', other: 'Другое (очки…)',
+    lips: 'Губы', eyes: 'Глаза'};
+  /** Имя объекта по его ключу: вид, у кусков фона — ещё номер («Фон 2»). */
+  const objectName = (key) => { const [kind, piece] = String(key).split('-'); return (OBJECT_NAMES[kind] || kind) + (piece ? ` ${+piece + 1}` : ''); };
+  const THEMES = [['warm', 'Тёплая', 'Кожа — самым светлым тёплым цветом шкалы, губы — самым красным, остальное — тёплыми цветами по своей светлоте'],
+    ['cool', 'Холодная', 'Кожа и губы тёплые, остальное — холодными цветами шкалы по своей светлоте'],
+    ['contrast', 'Контрастная', 'Крупные объекты первыми, каждый — цветом шкалы, самым далёким от уже данных'],
+    ['random', 'Случайно', 'Каждому объекту — случайный цвет шкалы; ещё раз — другие цвета']];
+  const COLOURING_ABOUT = 'Как в раскраске: каждому объекту — свой основной цвет шкалы. Его светлые и тёмные места ложатся вокруг этого цвета, '
+    + 'по соседним цветам шкалы (шаг не больше 5 ΔE, в одном семействе — от золотого не прыгает в синий), поэтому губы остаются губами, очки — очками. '
+    + '«Светлее/темнее» сдвигает тона объекта по его семейству. Объект без цвета — «Авто»: как вся картинка при «Сохранить рисунок».';
+
+  /** Вкладка «Раскраска» (0.21.0): объекты картинки — фон и его куски, волосы, кожа, одежда, губы, глаза, другое (очки) — каждому свой
+      основной цвет: выберите объект, щёлкните цвет шкалы; «Светлее/темнее»; «Авто» убирает цвет. Темы и «Случайно» дают цвета всем сразу,
+      AI — по просьбе своими словами (с картинкой, если разрешено во вкладке «AI»). Любой шаг отменяет «Отменить» в шапке. ``save`` сохраняет
+      настройки работы, ``send(path, body)`` — тему или просьбу к AI; оба отдают ошибку или null. */
+  function colourTab(id, save, send) {
+    const status = h('p', {class: 'small', role: 'status', hidden: true});
+    const themes = h('div', {class: 'row'});
+    const wish = h('input', {type: 'text', maxlength: 400, 'aria-label': 'Как раскрасить — своими словами', placeholder: 'например: очки золотом, фон синий, губы красные'});
+    const aiNote = h('div');
+    const palette = h('div', {class: 'ge-palette', role: 'group', 'aria-label': 'Цвета шкалы'});
+    const list = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем объекты картинки…'));
+    const notes = h('ul', {class: 'small'});
+    const overlay = h('div');
+    const blocked = h('p', {class: 'alert warn small', hidden: true});
+    let view = null, found = null, foundKey = null, selected = null, asking = false;
+    const colours = () => (view && view.colouring) || {};
+    const options = () => (found && found.options) || [];
+    const hexOf = (c) => { const o = options().find((x) => Math.abs(x.power - c.power) < 0.01); return o ? o.hex : null; };
+    /** Цвета объектов ``next`` (ключ → цвет): работа переходит на раскраску по объектам. */
+    const colourWith = (next) => save({by_colour: true, colour_choice: 'objects', colouring: next});
+    function setColour(key, power) {
+      const was = colours()[key];
+      colourWith({...colours(), [key]: {power, shift: was ? was.shift : 0}});
+    }
+    function setShift(key, shift) { colourWith({...colours(), [key]: {...colours()[key], shift}}); }
+    function clear(key) { const next = {...colours()}; delete next[key]; colourWith(next); }
+    async function ask() {
+      if (asking) return;
+      if (!wish.value.trim()) { status.textContent = 'Напишите, как раскрасить картинку.'; status.hidden = false; return; }
+      asking = true;
+      enable();
+      status.textContent = 'AI думает… обычно это до минуты.';
+      status.hidden = false;
+      const failed = await send(`/photo-works/${id}/ai-theme`, {wish: wish.value});
+      asking = false;
+      status.textContent = failed ? failed.message : '';
+      status.hidden = !failed;
+      enable();
+    }
+    const askButton = btn('Раскрасить по просьбе', ask, 'primary btn-small');
+    askButton.setAttribute('title', 'AI видит объекты, их цвета на фото и цвета шкалы и даёт каждому объекту основной цвет шкалы');
+    wish.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ask(); } });
+    const auto = btn('Всё — авто', () => colourWith({}), 'btn-small');
+    auto.setAttribute('title', 'Убрать цвета всех объектов: вся картинка как при «Сохранить рисунок»');
+    fill(themes, THEMES.map(([name, label, about]) => {
+      const b = btn(label, () => send(`/photo-works/${id}/theme`, name === 'random' ? {name, seed: Math.floor(Math.random() * 1e9)} : {name}), 'btn-small');
+      b.setAttribute('title', about);
+      return b;
+    }), auto);
+    function enable() {
+      const off = !view || dotted(view) || !view.picture;
+      for (const b of themes.querySelectorAll('button')) b.disabled = off;
+      auto.disabled = off || !Object.keys(colours()).length;
+      askButton.disabled = off || asking || !!view.ai_missing;
+      wish.disabled = off;
+    }
+    function rows() {
+      if (!found || !view) return;
+      const off = dotted(view) || !view.picture;
+      const picked = options().length && selected ? (colours()[selected] || null) : null;
+      fill(palette, options().map((o) => {
+        const b = h('button', {type: 'button', class: 'ge-swatch' + (picked && Math.abs(picked.power - o.power) < 0.01 ? ' is-chosen' : ''), style: `background:${o.hex}`,
+          title: `${value(o.power)} % · L* ${value(o.lab[0], 0)}`, 'aria-label': `Цвет шкалы ${value(o.power)} %`, disabled: off || !selected,
+          onClick: () => setColour(selected, o.power)});
+        return b;
+      }));
+      fill(list, found.objects.length ? h('ul', {class: 'ge-objects'}, found.objects.map((o) => {
+        const c = colours()[o.key] || null;
+        const shift = h('input', {type: 'range', min: '-1', max: '1', step: '0.25', value: String(c ? c.shift : 0), disabled: off || !c,
+          'aria-label': `Светлее или темнее: ${objectName(o.key)}`, title: 'Темнее ← → светлее'});
+        shift.addEventListener('change', () => setShift(o.key, +shift.value));
+        const clearIt = btn('Авто', () => clear(o.key), 'btn-small');
+        clearIt.disabled = off || !c;
+        clearIt.setAttribute('title', 'Убрать цвет объекта: как при «Сохранить рисунок»');
+        return h('li', {class: 'ge-object' + (o.key === selected ? ' is-selected' : ''), 'aria-current': o.key === selected ? 'true' : null,
+          onClick: (ev) => { if (ev.target.closest('button,input')) return; selected = o.key; rows(); }},
+          h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${o.tint}`, title: 'цвет объекта на картинке объектов'}), objectName(o.key)),
+          h('span', {class: 'small muted ge-nowrap'}, `${value(o.share * 100, 1)} % · на фото `, hexChip(o.hex)),
+          h('span', {class: 'row ge-nowrap'}, c ? hexChip(hexOf(c)) : pill('авто', 'muted'), c ? `${value(c.power)} %` : null),
+          h('span', {class: 'row ge-nowrap'}, h('span', {class: 'small muted'}, 'темнее'), shift, h('span', {class: 'small muted'}, 'светлее'), clearIt));
+      })) : h('p', {class: 'muted'}, 'На картинке не нашлось объектов: раскрашивать нечего.'));
+      fill(notes, (found.notes || []).map((n) => h('li', {}, I18N.tr(n))));
+    }
+    async function load() {
+      const key = view ? JSON.stringify([view.scale, view.min_power, view.max_power, view.width_mm]) : null;
+      if (key === foundKey) { rows(); return; }
+      foundKey = key;
+      try {
+        const next = await get(`/photo-works/${id}/objects`);
+        if (key !== foundKey) return;
+        found = next;
+        if (!selected || !found.objects.some((o) => o.key === selected)) selected = found.objects.length ? found.objects[0].key : null;
+        fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Объекты на картинке'),
+          h('img', {class: 'pp-image', src: found.picture, alt: 'Объекты картинки, каждый своим цветом'})));
+        rows();
+      } catch (e) { if (key === foundKey) fill(list, h('p', {class: 'alert bad'}, e.message)); }
+    }
+    function show(next) {
+      view = next;
+      blocked.textContent = dotted(view) ? 'Раскраска по объектам — для градаций серого: в виде точками каждая точка бьёт на одной мощности. Вид меняется кнопкой «Вид» над картинкой; цвета объектов сохранены.'
+        : !view.picture ? 'Шкала этой работы не измерена: цветов, чтобы раскрашивать, нет.' : '';
+      blocked.hidden = !blocked.textContent;
+      if (!wish.value && view.ai_theme) wish.value = view.ai_theme.wish;
+      fill(aiNote, view.ai_theme ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai_theme.note || 'без пояснения',
+        h('span', {class: 'muted'}, ` — на «${view.ai_theme.wish}»${view.ai_theme.photo ? ', с картинкой' : ''}`)) : null);
+      enable();
+      load();
+    }
+    const el = h('div', {class: 'stack'},
+      h('p', {class: 'small'}, COLOURING_ABOUT),
+      blocked,
+      h('h4', {}, 'Темы'), themes,
+      h('div', {class: 'row ge-ask'}, wish, askButton), status, aiNote,
+      h('h4', {}, 'Объекты'),
+      h('p', {class: 'small muted'}, 'Выберите объект в списке и щёлкните его цвет на полосе цветов шкалы.'),
+      palette, list, notes, overlay,
+      h('p', {class: 'small muted'}, 'Цвета шкалы — при Min и Max работы, не ближе 8 ΔE друг к другу. Картинку AI получает, только если это разрешено во вкладке «AI». '
+        + 'Объекты находит модель людей (кожа, волосы, одежда, другое), губы и глаза — поиск лица, куски фона — по их цвету.'));
+    return {el, show};
   }
 
   const PART_NAMES = {background: 'Фон', hair: 'Волосы', body_skin: 'Кожа тела', face_skin: 'Кожа лица', clothes: 'Одежда', other: 'Другое'};
@@ -533,23 +759,56 @@
     return {el, update};
   }
 
+  const KIND_ABOUT = {
+    power: (k) => `Многоцветная: серый задаёт мощность от Min ${value(k.min_power, 1)} % до Max ${value(k.max_power, 1)} %, мощность на титане — цвет. По измеренной шкале.`,
+    dots: (k) => `Точки одного цвета на очищенном титане, тон — сколько точек. Точки ${value(k.power, 1)} %.`,
+    edges: (k) => `Точки по краям рисунка, ровные места остаются титаном. Точки ${value(k.power, 1)} %.`};
+
+  /** «Какая гравировка?»: каждый вид, который красит титан, с картинкой работы, какой она в нём выйдет (вид точками — оценка по шкале), и
+      нынешний вид отмечен. Щелчок по виду — работа переходит на него (отменяется «Отменить»). ``first`` — работа только что создана. */
+  function kindChooser(id, current, choose, first = false) {
+    const grid = h('div', {class: 'ge-kinds'}, h('p', {class: 'muted'}, 'Считаем, как картинка выйдет в каждом виде…'));
+    const intro = first ? 'Работа создана. Выберите, как её гравировать: под каждым видом — ваша картинка, какой она выйдет на титане на шкале работы. '
+      : 'Под каждым видом — картинка работы, какой она выйдет на титане на её шкале. ';
+    const dialog = modal('Какая гравировка?', h('div', {class: 'stack'}, h('p', {class: 'small'}, intro
+      + 'Градации серого измерены вашими шкалами; виды точками показаны оценкой: точка — цвет шкалы при мощности точек, между точками — очищенный титан. '
+      + 'Вид можно поменять в работе в любой момент.'), grid),
+      [{label: first ? `Оставить «${kindName(current)}»` : 'Закрыть', run: (m) => m.close()}]);
+    get(`/photo-works/${id}/kinds`).then((d) => {
+      if (d.problem) { fill(grid, h('p', {class: 'alert warn'}, I18N.tr(d.problem))); return; }
+      fill(grid, d.kinds.map((k) => {
+        const name = kindName(k.key);
+        const about = (KIND_ABOUT[k.family] || KIND_ABOUT.dots)(k);
+        return h('button', {type: 'button', class: 'ge-kind' + (k.key === current ? ' is-chosen' : ''), 'aria-pressed': String(k.key === current),
+          onClick: () => { dialog.close(); if (k.key !== current) choose(k.key); }},
+          h('img', {src: k.picture, alt: `Картинка в виде «${name}»`, loading: 'lazy'}),
+          h('span', {class: 'ge-kind-head'}, h('strong', {}, name), k.key === current ? pill('сейчас', 'ok') : null),
+          h('span', {class: 'small'}, k.hex ? hexChip(k.hex) : null, k.hex ? ' ' : null, about),
+          k.estimate ? h('span', {class: 'small muted'}, k.basis === 'inferred' ? 'оценка; узор LightBurn не опубликован — показан похожий' : 'оценка: этот вид ещё не гравировался') : null);
+      }));
+    }, (e) => fill(grid, h('p', {class: 'alert bad'}, e.message)));
+    return dialog;
+  }
+
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
-      сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
-  async function workScreen(id) {
+      сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max.
+      ``ask`` — сразу спросить вид гравировки (работа только что создана). */
+  async function workScreen(id, ask = false) {
     const [first, {scales}] = await Promise.all([get('/photo-works/' + id), get('/grey-scales')]);
     let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve();
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
-    const picture = workPicture(save);
+    const picture = workPicture(save, () => kindChooser(id, view.kind || GRAYSCALE, (kind) => save({kind})));
     const head = workHead(view, step);
     const ai = aiTab(id, save, (wish, fresh) => send(`/photo-works/${id}/ai`, {wish, fresh}));
+    const colour = colourTab(id, save, (path, body) => send(path, body));
     const engraved = engravingsBlock(id);
-    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
+    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['colour', 'Раскраска', colour.el], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
       ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
-    const scaleKey = (v) => `${modeQuery(v.scale)}&row_mm=${v.width_mm}`;                 // the scale is shown at the work's width
+    const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}`;   // at the work's width, for its kind
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
 
     function showScale() {
@@ -558,12 +817,14 @@
       shownKey = scaleKey(view);
       cards(sc);
       engraved.load(view);
-      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm});
+      const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p})} : null;
+      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot});
       else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
     }
     function shown() {
       head.update(view);
       picture.show(view, chosen());
+      colour.show(view);
       ai.show(view);
       if (scaleKey(view) !== shownKey) showScale();
     }
@@ -583,7 +844,7 @@
     function step(kind) { return (view[kind] || 0) > 0 ? send(`/photo-works/${id}/${kind}`, {}, true) : Promise.resolve(null); }
     /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
     function pick(item) {
-      if (`${modeQuery(item.mode)}&row_mm=${view.width_mm}` === shownKey) return;
+      if (scaleKey(view, item.mode) === shownKey) return;
       if (detail) detail.stop();
       detail = null;
       shownKey = null;
@@ -602,6 +863,10 @@
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
     };
     keys = key;
+    if (ask) {
+      kindChooser(id, view.kind || GRAYSCALE, (kind) => save({kind}), true);
+      try { history.replaceState(null, '', `#/photo-engraving?work=${id}`); } catch (_) { /* без истории спросит снова при перезагрузке */ }
+    }
     return fill(root, head.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
@@ -623,8 +888,9 @@
       if (file && !name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '');
     });
     modal('Новая работа', h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width),
-      h('p', {class: 'small muted'}, scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
-        : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')), [
+      h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
+        : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
+        + ' Следом работа спросит, какая гравировка: градации серого или вид точками, — и покажет картинку в каждом.')), [
       {label: 'Отмена', run: (m) => m.close()},
       {label: 'Создать', cls: 'primary', run: async (m) => {
         const file = fileIn.files && fileIn.files[0];
@@ -636,7 +902,7 @@
         if (scale) fd.append('scale', JSON.stringify(scale));
         const made = await form('/photo-works', fd);
         m.close();
-        go('/photo-engraving?work=' + made.id);
+        go(`/photo-engraving?work=${made.id}&ask=kind`);
       }}]);
   }
 
@@ -662,8 +928,9 @@
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
         h('p', {class: 'small'}, settingsText(w.scale, w.dpi)),
-        h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : 'рисунок сохранён'}` : ''}`
-          + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
+        dotted(w) ? h('p', {class: 'small'}, `${materialLabel(w.material)} · ${kindName(w.kind)} · точки ${value(w.dot_power, 1)} % (оценка по шкале)`)
+          : h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : w.colour_choice === 'objects' ? 'раскраска по объектам' : 'рисунок сохранён'}` : ''}`
+            + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
         h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),
         h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
         h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
@@ -688,7 +955,8 @@
   function kindsBlock() {
     const rows = Object.entries(PhotoModes.MODES).map(([key, m]) => h('li', {class: 'ge-entry'},
       h('div', {class: 'ge-entry-head'}, h('strong', {}, m.label),
-        key === 'grayscale' ? pill('здесь: по шкалам «серый → цвет»', 'ok') : m.predict === 'profile' ? link('/photo-preview', 'прогноз по файлу LightBurn') : h('span', {class: 'muted small'}, PhotoModes.PREDICT[m.predict])),
+        key === 'grayscale' ? pill('здесь: по шкалам «серый → цвет»', 'ok') : m.family === 'depth' ? h('span', {class: 'muted small'}, PhotoModes.PREDICT[m.predict])
+          : pill('в работе — оценка по шкале: точка цвета шкалы при своей мощности', 'warn')),
       h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Серый задаёт: '), PhotoModes.FAMILY[m.family]),
       h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Важно в настройках: '), m.settings)));
     return h('div', {class: 'stack'}, h('p', {class: 'small'}, ABOUT), h('h4', {}, 'Виды фотогравировки LightBurn и что здесь предсказывается'),
@@ -733,7 +1001,7 @@
   }
 
   App.register({id: 'photo-engraving', async render(ctx) {
-    if (ctx.query.work) return workScreen(encodeURIComponent(ctx.query.work));
+    if (ctx.query.work) return workScreen(encodeURIComponent(ctx.query.work), ctx.query.ask === 'kind');
     if (ctx.query.scales || ctx.query.scale) return scalesScreen(ctx.query.scale);
     return listScreen();
   }});

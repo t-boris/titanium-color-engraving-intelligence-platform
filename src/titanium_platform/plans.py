@@ -473,8 +473,9 @@ def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: fl
 
 
 def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture", identifier: str | None = None, *,
-                   clean: dict | None) -> bytes:
-    """A LightBurn project of one picture engraved in grayscale mode with ``parameters`` (power = Max, ``min_power``, speed, frequency
+                   clean: dict | None, dither: str = IMAGE_DITHER) -> bytes:
+    """A LightBurn project of one picture engraved in the image mode ``dither`` (grayscale unless another kind is given: LightBurn makes
+    the dots of a dot kind itself) with ``parameters`` (power = Max, ``min_power``, speed, frequency
     in kHz, pulse width, line interval, passes): the picture ``width_mm`` wide at the layer's DPI, its top-left corner at the origin,
     no mirroring and no markers. With ``clean`` (the laser's ``clean_layer``) the titanium under the picture is cleaned first, as on
     the plates its scale was measured on: C00 cleans the picture's rectangle and the Image layer C01 engraves the picture after it;
@@ -500,7 +501,7 @@ def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name:
     cleaning = "" if clean is None else _clean_setting(clean)
     frame = "" if clean is None else _rect(0.0, 0.0, width, height, CLEAN_LAYER_INDEX)
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">\n'
-            + cleaning + _image_setting(index, f"C{index:02d}", parameters, priority=index) + frame
+            + cleaning + _image_setting(index, f"C{index:02d}", parameters, priority=index, dither=dither) + frame
             + _bitmap(0.0, 0.0, width, height, picture, own_dpi, index, f"{stem}.png")
             + f'    <Notes ShowOnLoad="0" Notes={quoteattr(f"TCE1:{identifier}" if identifier else "")}/>\n</LightBurnProject>\n').encode("utf-8")
 
@@ -600,8 +601,8 @@ def export_lbrn2(plan: dict) -> bytes:
             # a grey-ramp tile (REQ-059): the layer engraves its picture, not the rectangle that marks its place on the plan
             if p.get("min_power") is None or p.get("line_interval") is None or not layer.get("ramp"):
                 raise su.ValidationError(f"layer {layer['name']} is an image layer without Min power, line interval or its picture")
-            out.append(_image_setting(file_index, layer["name"], p, priority=file_index))
             ramp = layer["ramp"]
+            out.append(_image_setting(file_index, layer["name"], p, priority=file_index, dither=ramp.get("dither") or IMAGE_DITHER))
             dpi = grayscale.image_dpi(p["line_interval"])
             shapes.append(_bitmap(ramp["x"] + x_offset, ramp["y"] + y_offset, ramp["width"], ramp["height"], grayscale.ramp_picture(ramp, dpi), dpi,
                                   file_index, f"{layer['name']}.png"))

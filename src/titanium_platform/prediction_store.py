@@ -42,7 +42,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (color, colormap, devices, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules,
+from . import (color, colormap, colouring, devices, dots, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules,
                plans as pl, prediction, row_length, setup as su, tasks)
 from .db import Store
 from .prediction import PredictionError
@@ -606,11 +606,13 @@ def _lab_of(bgr: np.ndarray) -> np.ndarray:
 
 
 def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour: bool = False, width_mm: float | None = None,
-                 colour_choice: str = drawing.CHOICES[0], contours: bool = False) -> dict:
+                 colour_choice: str = drawing.CHOICES[0], contours: bool = False, colouring: Mapping | None = None) -> dict:
     """A picture prepared for ``describe`` at ``mode``, engraved ``width_mm`` wide (its rows that long, DEC-107): its curve at that size,
     the levels and counts of its greys and the measured span. With ``by_colour`` the picture's colours are what is wanted: its greys are
     chosen at each Min and Max (``with_colours``) the way ``colour_choice`` says (DEC-108, DEC-109); with ``contours`` and ``by_colour`` the
-    edges its engraving would lose are drawn in (``engraved``): never on a picture engraved as it was uploaded."""
+    edges its engraving would lose are drawn in (``engraved``): never on a picture engraved as it was uploaded. With ``colour_choice``
+    "objects" the objects of the picture (``objects`` of the item, :mod:`objects`, set by the caller) with a main colour in ``colouring``
+    are coloured each along its own stretch of the scale (:mod:`colouring`)."""
     if mode.dither != prediction.PREDICTED_MODE:
         raise PredictionError("only the grayscale image mode is predicted from a scale")
     curve, basis = curve_for(store, mode, width_mm)
@@ -619,10 +621,69 @@ def picture_item(store: Store, mode: Mode, upload: Mapping, name: str, by_colour
                 "overridden": []}
     item = {"index": 0, "name": name, "dither": prediction.PREDICTED_MODE, "settings": settings, "refused": None, "mode": mode,
             "curve": curve, "reference": basis["reference"], "adjustments": {}, "basis_notes": list(basis["notes"]), "by_colour": by_colour,
-            "colour_choice": colour_choice, "contours": bool(contours and by_colour), "sizes": basis["sizes"],
+            "colour_choice": colour_choice, "contours": bool(contours and by_colour), "colouring": dict(colouring or {}), "sizes": basis["sizes"],
             "pictures": 1, "turned": False, "width_mm": width_mm,
             **{k: upload[k] for k in ("picture", "alpha", "size", "lab", "grey_full", "alpha_full", "bgr_full")}}
     return _with_levels(item)
+
+
+# -- a picture in a dot kind seen from the scale, before that kind was photographed (0.21.0) ---------------------------------------
+DOT_PX_MAX = 4          # at most this many dots a side are drawn per preview pixel to see a dot kind from a distance (16 a pixel)
+CLOSEUP_MM = 4.0        # the side of the close-up of the dots, in mm of the titanium, drawn dot for dot at the layer's DPI
+CLOSEUP_PX = 3          # screen pixels per dot in the close-up
+
+
+def clean_titanium(store: Store) -> list[float]:
+    """The colour of cleaned titanium, between the dots of a dot kind: the nominal clean colour the measurements are expressed against."""
+    return list(colormap.references(store)["nominal"])
+
+
+def dot_power(curve: prediction.Curve, clean_lab) -> float:
+    """The power of a dot kind's dots by default: the one at which the scale's colour stands out most from the cleaned titanium between
+    the dots (the largest dE), to 0.1 %."""
+    lo, hi = curve.span
+    powers = np.unique(np.round(np.linspace(lo, hi, 200), 1))
+    de = np.linalg.norm(curve.lab_at(powers) - np.asarray(clean_lab, np.float64), axis=1)
+    return float(powers[int(np.nanargmax(np.where(np.isfinite(de), de, -1.0)))])
+
+
+def _mixed(share: np.ndarray, dot_lab, clean_lab) -> np.ndarray:
+    """RGB uint8 of dots of ``dot_lab`` striking ``share`` of the area on titanium of ``clean_lab``, as the eye mixes them (in linear light)."""
+    dot, clean = (color.lab_to_linear_rgb(np.asarray(lab, np.float64)) for lab in (dot_lab, clean_lab))
+    linear = share[..., None] * dot + (1.0 - share[..., None]) * clean
+    return (color.linear_to_srgb(linear) * 255).round().astype(np.uint8)
+
+
+def dot_look(picture, alpha, kind: str, dot_lab, clean_lab, width_mm: float, layer_dpi: float) -> tuple[np.ndarray, np.ndarray]:
+    """A picture (grey 0..1 at preview size, ``width_mm`` wide on the titanium) engraved in the dot kind ``kind`` at ``layer_dpi`` with
+    dots of colour ``dot_lab`` on cleaned titanium of ``clean_lab``, seen from a distance: the share of each pixel its dots strike
+    (:func:`dots.coverage`, as many dots a pixel as the layer fires there, at most DOT_PX_MAX a side) and the colour mixed from dots and
+    titanium in that share. RGB uint8 and the share; a transparent pixel is blank. An estimate: a dot is the shortest row there is, and
+    its colour is taken from the scale's rows (DEC-107: the colour moves with the length of the rows)."""
+    grey = np.asarray(picture, np.float64)
+    rows, cols = grey.shape
+    per_px = int(min(DOT_PX_MAX, max(1, round(float(width_mm) / grayscale.MM_PER_INCH * float(layer_dpi) / cols))))
+    share = dots.coverage(grey, kind, dots_per_px=per_px, dpi=per_px * cols * grayscale.MM_PER_INCH / float(width_mm), alpha=alpha)
+    rgb8 = _mixed(np.asarray(share, np.float64), dot_lab, clean_lab)
+    if alpha is not None:
+        rgb8[np.asarray(alpha) < photo_modes.ALPHA_MIN] = prediction.BLANK
+    return rgb8, share
+
+
+def dot_closeup(item: Mapping, kind: str, dot_lab, clean_lab, width_mm: float) -> np.ndarray:
+    """The dots of a dot kind dot for dot: a square of ``CLOSEUP_MM`` mm from the middle of the picture at the layer's DPI (the grid the laser
+    fires on), each fired dot in ``dot_lab`` and the titanium between in ``clean_lab``, CLOSEUP_PX screen pixels a dot. RGB uint8."""
+    rows, cols = item["grey_full"].shape
+    dpi = grayscale.image_dpi(item["mode"].line_interval)
+    target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
+    grey = cv2.resize(item["grey_full"], target, interpolation=cv2.INTER_AREA if target[0] < cols else cv2.INTER_LINEAR)
+    alpha = cv2.resize(item["alpha_full"], target, interpolation=cv2.INTER_AREA if target[0] < cols else cv2.INTER_LINEAR)
+    side = max(1, min(round(CLOSEUP_MM / grayscale.MM_PER_INCH * dpi), *grey.shape))
+    y0, x0 = (grey.shape[0] - side) // 2, (grey.shape[1] - side) // 2
+    window = (slice(y0, y0 + side), slice(x0, x0 + side))
+    fired = dots.struck(grey[window], kind, dpi=dpi, alpha=alpha[window])
+    rgb8 = _mixed(fired.astype(np.float64), dot_lab, clean_lab)
+    return np.repeat(np.repeat(rgb8, CLOSEUP_PX, axis=0), CLOSEUP_PX, axis=1)
 
 
 def at_width(store: Store, item: dict, width_mm: float) -> dict:
@@ -651,11 +712,20 @@ def _px_per_mm(width_mm: float | None, cols: int) -> float:
 
 
 def _choose(item: dict, lab: np.ndarray, opaque: np.ndarray, low: float, high: float, width_mm: float | None) -> dict:
-    """The greys for the colours ``lab`` the way the item's ``colour_choice`` says: keeping the drawing (``drawing.choose``) or the
-    nearest colour (``grayscale.grey_for_colours``)."""
-    if item.get("colour_choice", drawing.CHOICES[0]) == "nearest":
+    """The greys for the colours ``lab`` the way the item's ``colour_choice`` says: keeping the drawing (``drawing.choose``), the nearest
+    colour (``grayscale.grey_for_colours``), or keeping the drawing with every object that has a main colour coloured along its own stretch
+    of the scale (``colouring.colour``; the objects found at preview size, their map resized to ``lab``)."""
+    choice = item.get("colour_choice", drawing.CHOICES[0])
+    if choice == "nearest":
         return grayscale.grey_for_colours(lab, item["curve"], low, high)
-    return drawing.choose(lab, opaque, item["curve"], low, high, _px_per_mm(width_mm, lab.shape[1]))
+    px_per_mm = _px_per_mm(width_mm, lab.shape[1])
+    found = drawing.choose(lab, opaque, item["curve"], low, high, px_per_mm)
+    if choice != "objects" or not item.get("colouring") or not item.get("objects"):
+        return found
+    labels = item["objects"]["labels"]
+    if labels.shape != lab.shape[:2]:
+        labels = cv2.resize(labels, (lab.shape[1], lab.shape[0]), interpolation=cv2.INTER_NEAREST)
+    return colouring.colour(lab, opaque, labels, item["objects"]["objects"], item["colouring"], item["curve"], low, high, px_per_mm, found)
 
 
 def with_colours(item: dict, min_power: float, max_power: float) -> dict:
@@ -669,7 +739,8 @@ def with_colours(item: dict, min_power: float, max_power: float) -> dict:
     out = _with_levels({**item, "picture": np.ascontiguousarray(found["grey8"].astype(np.float32) / (grayscale.LEVELS - 1))})
     out["colour_match"] = {"choice": item.get("colour_choice", drawing.CHOICES[0]), "median_de": round(float(np.median(de)), 1),
                            "p90_de": round(float(np.percentile(de, 90)), 1), "greys_used": int(len(np.unique(found["grey8"][opaque]))),
-                           "greys_available": found["choices"], "reach": found.get("reach"), "path": found.get("path"), "order": found.get("order")}
+                           "greys_available": found["choices"], "reach": found.get("reach"), "path": found.get("path"), "order": found.get("order"),
+                           "objects": found.get("objects")}
     return out
 
 

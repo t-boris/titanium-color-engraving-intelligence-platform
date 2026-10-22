@@ -1667,15 +1667,60 @@ thickness do not matter), everywhere (scales, photo works, preview, vector palet
   - Colour map: the «Материал» filter offers «Grade 5» only; «Test Plate 1mm» points, uploaded when the record said «Garde 2», are Grade 5 (the record now).
   - Vector work 22: its palette of 553 entries has the same ids and colours as on the live app.
 
-#### 0.21.0: colouring by objects ("как в разукрашке")
-- [ ] T1. Objects of the picture: the people model's parts, the lips and eyes from the face detector (lips refined by their colour inside the mouth's ellipse), the
+### After 0.20.3: a new work asks which kind of engraving, each kind shown on the picture (operator, 2026-10-22; plan to approve)
+Operator: "Я открыл существующую Boris3 работу, и там ничего не поменялось ... где вот это изменение, которое я тебе давно просил, что когда ты открываешь
+новую работу по фотогравировке, он тебе выдает вопросы, то есть какую конкретно ты хочешь делать гравировку. То есть тональную гравировку ... grayscale или какую-то
+другую. И все, мы должны показывать, как эта каждая работа будет выглядеть в превью."
+Evidence:
+- The first goal (2026-10-21) named it: "Учти, что есть очень много разных типов фотогравировки ... один из видов ... grayscale". Built: the catalogue of kinds
+  (`photo_modes`, 11 LightBurn modes), the dot kinds predicted from a photograph of the same kind (none exists), and photo works in grayscale only. A new work never
+  asks for the kind; nothing shows the picture in another kind. Not said in any release report.
+- Boris - 3 (live, GET only): 0.20.3 changed its file (C00 cleaning), its time (47 min incl. cleaning 3 min 24 s), the scale cards («Титан Grade 5 · измерена на
+  Big Plate 150») and «Файл в предпросмотре»; its picture is the same, as every scale was measured on Big Plate 150 only (pooling adds no points). The object
+  colouring is a prototype only (page «Тональность»), not in the app.
+- A dot kind fires every dot at the layer's one power; the colour of a struck spot at that power and the scale's settings is the scale's colour at that power,
+  between dots the cleaned titanium (its nominal colour is known). So every dot kind can be shown from the measured scales before it is engraved - as an estimate:
+  single dots are the shortest rows there are, and DEC-107 shows the colour moves with row length.
+
+Operator's answers (2026-10-22): both in one release (kinds and colouring by objects, 0.21.0); every kind that colours titanium; dot kinds shown as an estimate
+from the scale until engraved. The LightBurn files of the operator: a dot layer fires at maxPower (minPower ignored), `dotWidth` / `useDotCorrection` with it
+(deploma.lbrn2: jarvis and sketch at 30 %, dot width 0.02 mm, 1100 dpi).
+Build order: pure modules in parallel (subagents: `dots.py` - the dots of each kind and the share they strike; `objects.py` - the objects of a picture), the work's
+kind, power, preview, file and chooser meanwhile; then the colouring by objects on top.
+
+#### Plan: kinds of photo engraving in a work (0.21.0, approved)
+- [x] K1. «Новая работа» asks «Какая гравировка?» after the picture: one tile per kind that colours titanium - Градации серого (multi-colour, measured), Джарвис,
+      Стаки, Аткинсон, Флойд-Стейнберг, Упорядоченный, Полутон, Газетный, Порог, Эскиз (3D-срез left out: relief, not colour). Each tile is the operator's picture
+      as it would come out: grayscale from the scale as now; a dot kind by its dots (error diffusion with the published kernels, ordered by a Bayer matrix, halftone
+      and newsprint by cells), each dot in the scale's colour at the dot power, cleaned titanium between, seen at a distance (and the dots at 1:1 on zoom). A dot
+      kind not photographed yet says «оценка: этот вид ещё не гравировался».
+- [x] K2. A work keeps its kind; «Вид гравировки» in the work switches it (undo/redo). A dot kind has one power instead of Min/Max: chosen by a click on the scale
+      strip (the colour of the dots) or the field; dot width correction as LightBurn has it.
+- [x] K3. The file: the Image layer in that kind (`ditherMode`, power, dpi), C00 cleaning first; the time per kind. LightBurn dithers by its own code: the preview
+      uses the published algorithms and says so.
+- [x] K4. Experiments confirm: «Проба этого вида» - a grey ramp in the work's kind at its power (as «Проба на ширине работы»); its photograph is measured in that
+      kind (the existing dot-kind profile) and replaces the estimate; the work's engravings in that kind check it as grayscale ones do.
+- [x] K5. Tests (each kind's dots, colour of a dot kind from a scale, the file's ditherMode, the dialog), README, MarkView REQ/DEC, walk on a copy, release.
+
+#### 0.21.0: colouring by objects ("как в разукрашке"), in the same release as the kinds
+- [x] T1. Objects of the picture: the people model's parts, the lips and eyes from the face detector (lips refined by their colour inside the mouth's ellipse), the
       glasses and other things worn, and the background split into its own objects (pole, sky ...) by region segmentation (OpenCV contrib, already a dependency);
       the AI may name them. Prototype on «Inna Portrait» first and show the operator before building.
-- [ ] T2. Each object gets its own stretch of the scale: a main colour (a click on the scale strip) and lighter/darker; the path through it stays in its colour
+- [x] T2. Each object gets its own stretch of the scale: a main colour (a click on the scale strip) and lighter/darker; the path through it stays in its colour
       family (steps of at most 5 dE, lightness never rising) and the object's own light and dark tones are laid around it (its middle tone on the main colour).
       «Авто» is 0.20.2 for the whole picture.
-- [ ] T3. Themes: ready palettes over the scale's families (warm, cool, contrast ...), «Случайно», and the AI's theme from a wish ("очки красные, фон синий").
-- [ ] T4. Kept in the work, undo, the picture key, the file; tests; UI; README; MarkView; walk; release.
+- [x] T3. Themes: ready palettes over the scale's families (warm, cool, contrast ...), «Случайно», and the AI's theme from a wish ("очки красные, фон синий").
+- [x] T4. Kept in the work, undo, the picture key, the file; tests; UI; README; MarkView; walk; release.
+
+#### Review of 0.21.0 (2026-10-22)
+- Built: K1-K4 and T1-T4 (REQ-071, REQ-072, DEC-112, DEC-113). Pure modules `dots.py` (each kind's dots), `objects.py` (the objects), `colouring.py` (a path through each
+  object's main colour, themes); the work keeps `kind`, `dot_power`, `colouring`, `ai_theme` with undo; endpoints `/kinds`, `/kinds/{kind}.png`, `/closeup.png`,
+  `/objects`, `/objects.png`, `/theme`, `/ai-theme`; UI «Какая гравировка?», «Вид», the dot power on the strip, the «Раскраска» tab.
+- Not built: K2's dot width correction (`dotWidth` / `useDotCorrection` are not written); K4's check of a dot-kind work's engravings has no test of its own (they go
+  through the general path of other settings). The background pieces follow the segmentation at 400 px and their borders can be stepped.
+- Walk on a copy of the operator's data (walk-0210, port 8769): Inna Portrait - lips by a click (12.11 %), «Тёплая», «Случайно», undo back to «Тёплая», a real AI theme
+  («очки золотом, фон синий, губы красные, кожа светлая») answered at the first attempt, the file C00 + C01 with 216 greys, «Какая гравировка?» with ten tiles,
+  Джарвис at 14.6 % with the «Раскраска» tab saying it is grayscale only; no console errors.
 
 #### 0.20.0, vector works: the size of each layer (and the photo colours added to their palette)
 Map (subagent, 2026-10-22): a vector work's colour is one palette entry per recipe (`palette._entry` = `colormap.agreed`), test-plate patches and works pooled with no size;

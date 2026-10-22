@@ -1,5 +1,7 @@
 """Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file, a ramp
-plate at a work's width (DEC-107); the parts of a work's picture and the AI that proposes their rules (REQ-062, DEC-105). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
+plate at a work's width (DEC-107); the parts of a work's picture and the AI that proposes their rules (REQ-062, DEC-105); the kinds of
+engraving a work can take, each with the work's picture as it would come out, and the dots of a dot kind close up; the objects of a work's
+picture and their colours, by hand or from a theme (0.21.0). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 import json
@@ -39,8 +41,8 @@ def get_photo_work(plan_id: int, request: Request):
 
 @router.post("/photo-works/{plan_id}/settings")
 def change_photo_work(plan_id: int, body: dict, request: Request):
-    """Change the scale, Min and Max power, the width, the colour choice, the rules of the parts or the permission to send the picture to
-    the AI (see photo_work.update); the work is returned as it is now."""
+    """Change the scale, Min and Max power, the width, the colour choice, the rules of the parts, the kind of engraving and its dots' power
+    or the permission to send the picture to the AI (see photo_work.update); the work is returned as it is now."""
     s = store_of(request)
     photo_work.update(s, plan_id, body)
     return photo_work.view(s, plan_id)
@@ -75,6 +77,24 @@ def photo_work_thumbnail(plan_id: int, request: Request):
     return picture_response(request, photo_work.thumbnail(store_of(request), plan_id))
 
 
+@router.get("/photo-works/{plan_id}/closeup.png")
+def photo_work_closeup(plan_id: int, request: Request):
+    """The dots of a work in a dot kind dot for dot, from the middle of the picture."""
+    return picture_response(request, photo_work.closeup(store_of(request), plan_id))
+
+
+@router.get("/photo-works/{plan_id}/kinds")
+def photo_work_kinds(plan_id: int, request: Request):
+    """Every kind of engraving that colours titanium, each with the address of the work's picture as it would come out in it."""
+    return photo_work.kinds(store_of(request), plan_id)
+
+
+@router.get("/photo-works/{plan_id}/kinds/{kind}.png")
+def photo_work_kind_picture(plan_id: int, kind: str, request: Request):
+    """The work's picture as it would come out in ``kind``."""
+    return picture_response(request, photo_work.kind_picture(store_of(request), plan_id, kind))
+
+
 @router.get("/photo-works/{plan_id}/picture")
 def photo_work_picture(plan_id: int, request: Request):
     """The picture as it was uploaded."""
@@ -84,7 +104,8 @@ def photo_work_picture(plan_id: int, request: Request):
 
 @router.get("/photo-works/{plan_id}/export.lbrn2")
 def photo_work_file(plan_id: int, request: Request):
-    """The LightBurn file of the work: the cleaning, then one grayscale Image layer at its scale's settings, Min and Max, the picture at its width."""
+    """The LightBurn file of the work: the cleaning, then one Image layer in its kind at its scale's settings (Min and Max, or the dots' power), the
+    picture at its width."""
     data, name = photo_work.export(store_of(request), plan_id)
     return Response(data, media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(name, ".lbrn2"), "Cache-Control": "no-store"})
@@ -106,6 +127,34 @@ def photo_work_parts(plan_id: int, request: Request):
 def photo_work_parts_picture(plan_id: int, request: Request):
     """The picture with every part tinted in its colour."""
     return picture_response(request, photo_work.parts_picture(store_of(request), plan_id))
+
+
+@router.get("/photo-works/{plan_id}/objects")
+def photo_work_objects(plan_id: int, request: Request):
+    """The objects of the picture to colour, the scale's colours to colour them with and the themes (see photo_work.objects_of)."""
+    return photo_work.objects_of(store_of(request), plan_id)
+
+
+@router.get("/photo-works/{plan_id}/objects.png")
+def photo_work_objects_picture(plan_id: int, request: Request):
+    """The picture with every object tinted in its colour."""
+    return picture_response(request, photo_work.objects_picture(store_of(request), plan_id))
+
+
+@router.post("/photo-works/{plan_id}/theme")
+def colour_photo_work_by_theme(plan_id: int, request: Request, body: dict | None = None):
+    """Colour every object by a theme (``name``: warm, cool, contrast or random with ``seed``); the work is returned as it is then."""
+    s = store_of(request)
+    photo_work.colour_theme(s, plan_id, (body or {}).get("name"), (body or {}).get("seed", 0))
+    return photo_work.view(s, plan_id)
+
+
+@router.post("/photo-works/{plan_id}/ai-theme")
+def colour_photo_work_by_ai(plan_id: int, request: Request, body: dict | None = None):
+    """Colour every object as the AI chooses after the operator's ``wish``; the work is returned as it is then."""
+    s = store_of(request)
+    photo_work.ai_theme(s, plan_id, (body or {}).get("wish"))
+    return photo_work.view(s, plan_id)
 
 
 @router.post("/photo-works/{plan_id}/ai")

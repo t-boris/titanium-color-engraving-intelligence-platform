@@ -951,6 +951,28 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ge-stage .pp-stage {position:relative;flex:1;min-height:0;padding:0}
 .ge-stage .pp-stage .pp-image {position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);max-height:none;object-fit:contain}
 .ge-placeholder {margin:auto;text-align:center}
+/* the kinds of engraving (0.21.0): «Какая гравировка?», the dots' power on the scale strip, the dots close up */
+.modal:has(.ge-kinds) {width:min(1080px,100%)}
+.ge-kinds {display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.ge-kind {display:flex;flex-direction:column;gap:6px;text-align:left;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:inherit;cursor:pointer;font:inherit}
+.ge-kind.is-chosen {border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ge-kind img {width:100%;aspect-ratio:1;object-fit:contain;background:#0b1220;border-radius:6px}
+.ge-kind-head {display:flex;align-items:center;justify-content:space-between;gap:6px}
+.ge-markbox {position:relative}
+.ge-pickable {cursor:crosshair}
+.ge-dotmark {position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1.5px;background:var(--text);border:1px solid var(--surface);border-radius:2px;pointer-events:none}
+.ge-closeup {margin:0;display:flex;flex-direction:column;gap:4px}
+.ge-closeup img {max-width:100%;image-rendering:pixelated;border-radius:6px;align-self:flex-start}
+/* colouring by objects (0.21.0): the scale's colours to click, the objects of the picture */
+.ge-palette {display:flex;flex-wrap:wrap;gap:4px}
+.ge-swatch {width:24px;height:24px;padding:0;border:1px solid #ffffff38;border-radius:6px;cursor:pointer}
+.ge-swatch:disabled {cursor:not-allowed;opacity:.5}
+.ge-swatch.is-chosen {outline:2px solid var(--accent);outline-offset:1px}
+.ge-objects {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ge-object {display:grid;grid-template-columns:minmax(120px,1fr) auto;align-items:center;gap:4px 10px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);cursor:pointer}
+.ge-object.is-selected {border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ge-object input[type=range] {width:90px}
+.ge-ask input {flex:1;min-width:0}
 .ge-foot {display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-height:32px}
 .ge-right>.vw-tabs {flex:none}
 .ge-right .os-scroll>.vw-tabpanel>.stack>h4 {margin:0}

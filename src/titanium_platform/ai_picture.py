@@ -11,9 +11,14 @@ the model:
   and an answer that breaks a rule is sent back once with the reason, a second bad one is refused and the work stays as it was
   (:func:`ai_colouring.choose`);
 * the greys are always chosen by :func:`picture_rules.greys` on the scale, never by the model.
+
+The same way it may colour the picture's objects like a colouring book (0.21.0, :func:`ask_objects`): it gets the objects of the picture
+(:mod:`objects`) with their share and mean colour and the scale's colours a main colour is chosen from (``colouring.candidates``), and
+answers with a main colour (one of those powers) and lighter or darker for each object; the greys are chosen by :mod:`colouring`.
 """
 from __future__ import annotations
 
+import math
 from typing import Iterable, Mapping
 
 from . import ai_colouring as ai, picture_rules
@@ -77,3 +82,61 @@ def validate(answer, present: set[str]) -> list[dict]:
 def ask(client, what: dict, photo: str | None, present: set[str]) -> tuple[list[dict], str]:
     """Ask the model for the rules of the parts and return them checked, with its one-sentence note."""
     return ai.choose(client, what, photo, lambda answer: validate(answer, present), INSTRUCTIONS)
+
+
+OBJECTS_INSTRUCTIONS = """You colour a photograph like a colouring book for laser engraving on titanium in grayscale mode. Every grey of the
+picture becomes a laser power, and on titanium each power gives a colour: "colours" lists the colours this titanium takes at the work's
+settings, each with its "power" and its L*a*b* colour "lab" (L* 0 dark .. 100 light, a* green to red, b* blue to yellow). The picture was
+split into objects: "objects" gives each one's "key", its kind (background; hair; face_skin; body_skin; clothes; other - glasses and other
+things worn; lips; eyes; "background-1", "background-2" ... are further pieces of the background), its share of the picture and its mean
+colour in the photograph. An object given a main colour is engraved with its middle tone in that colour and its own light and dark around
+it in colours of the same family; "shift" from -1 (darker) to 1 (lighter) moves its tones within that family. "wish" is what the operator
+wants, in their own words (often Russian); "current" is the main colour each object has now. Give every object a main colour by its
+"power" - only powers listed in "colours" - and a shift: an object the wish does not mention keeps its colour in "current", or, when it has
+none, gets one that suits the wish and the picture. Keep the picture readable: objects that touch (the lips and the face, the face and the
+hair) should differ in colour or lightness.
+Reply with one JSON object and nothing else: {"colours": {"<key>": {"power": <power>, "shift": <-1..1>}, ...}, "note": "<one sentence in
+Russian: what you did>"}."""
+SHIFT_OUTSIDE = "the AI made an object lighter or darker beyond -1..1"
+POWER_TOLERANCE = 0.01              # %: a power the model repeats from "colours" may be rounded this much
+
+
+def objects_brief(wish: str, objects: Iterable[Mapping], options: Iterable[Mapping], current: Mapping) -> dict:
+    """What the model is told to colour the objects, numbers only: the wish, the ``objects`` (``key``, ``kind``, ``share``, ``lab``), the
+    scale's colours (``colouring.candidates``: ``power``, ``lab``) and the main colours the objects have now."""
+    return {"wish": wish, "objects": [{"key": o["key"], "kind": o["kind"], "share": o["share"], "lab": o["lab"]} for o in objects],
+            "colours": [{"power": c["power"], "lab": c["lab"]} for c in options], "current": dict(current)}
+
+
+def validate_objects(answer, current: Mapping, keys: set[str], powers: Iterable[float]) -> dict:
+    """The model's main colours, checked: one of ``powers`` and a shift -1..1 for objects of the picture (``keys``; others are dropped),
+    the objects it left out keeping their ``current`` colour; or :class:`ai_colouring.Rejected` with the reason."""
+    given = answer.get("colours") if isinstance(answer, Mapping) else None
+    if not isinstance(given, Mapping) or not given:
+        raise ai.Rejected(ai.UNREADABLE)
+    powers = list(powers)
+    out = {k: dict(v) for k, v in current.items() if k in keys}
+    for key, chosen in given.items():
+        if key not in keys:
+            continue
+        power = chosen.get("power") if isinstance(chosen, Mapping) else None
+        shift = chosen.get("shift", 0) if isinstance(chosen, Mapping) else None
+        if not _real(power):
+            raise ai.Rejected(ai.UNREADABLE)
+        near = min(powers, key=lambda p: abs(p - power), default=None)
+        if near is None or abs(near - power) > POWER_TOLERANCE:
+            raise ai.Rejected(ai.NOT_MEASURED)
+        if not _real(shift) or not -1 <= shift <= 1:
+            raise ai.Rejected(SHIFT_OUTSIDE)
+        out[key] = {"power": float(near), "shift": float(shift)}
+    return out
+
+
+def ask_objects(client, what: dict, photo: str | None, keys: set[str], powers: Iterable[float]) -> tuple[dict, str]:
+    """Ask the model for the main colours of the objects and return them checked, with its one-sentence note."""
+    powers = list(powers)
+    return ai.choose(client, what, photo, lambda answer: validate_objects(answer, what["current"], keys, powers), OBJECTS_INSTRUCTIONS)
+
+
+def _real(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
