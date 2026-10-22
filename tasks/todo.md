@@ -1963,5 +1963,11 @@ ramp, original, width, objects, layer), «Раскраска», «AI» and the k
 its «Подтверждение» is the scale's own (no engravings of the zone yet). «Раскраска по объектам» is not offered on a zone until its tab
 comes (0.23.1). Tests: test_vector_photo_zones (API), test_vector_zone_ui (screen), test_vector_editor_ui («Открыть»),
 test_plan_screen_ui (the greys named).
+0.23.0 deployed 2026-10-22 22:14 UTC (backup titanium-before-0.23.0-20261022T221427Z.sqlite). Walk on a copy (work 39, zone 1, 175
+regions): «Открыть» 0.41 s, tiles of «Вид» 0.2 s (images 0.43 s), no cut text at 1771 and 1372 px on every tab; undo/redo/Ctrl+Z
+right. Defect, not new: a change takes 0.8-1.1 s = the editor's colour() 0.74 s (_state's nearest delta E over 553 entries x 25
+colours with sRGB each 0.42 s, vector_palette rebuilt each op 0.29 s) + the zone view 0.3 s; a photo work's change takes 0.6 s.
+Proposal (needs the operator's approval: it is the editor's core): keep the palette per data version, compute the nearest delta E
+on L*a*b* only, draw the zone's look once per key.
 Out: «Подтверждение» (engravings belong to the vector work) and the width (a zone's width is its box). Releases: 0.23.0 = Z1, Z2, Z4, Z5, Z6
 with «Картинка», «Шкала», kinds, dots; 0.23.1 = Z3 and «Раскраска» + «AI». Each with node and API tests, a walk on a copy, timings.
