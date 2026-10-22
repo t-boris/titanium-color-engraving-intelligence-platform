@@ -374,3 +374,27 @@ Rules written after the operator's remarks, to prevent a repeat.
   `MirrorY` rewritten with the XForms reflected, and a picture placed twice stored once (`Data=""`, the same `SourceHash`, another file name). Three tiles read "0 pixels", four had no picture.
 - Rule: when a plate or writer adds a new kind of shape (pictures, holes, groups, texts), add a test that round-trips the file through LightBurn's saving habits (`saved_by_lightburn_2_2` in
   `tests/test_grey_scales.py`, the MirrorY reflection in `tests/test_ingest.py`) and measures it, and make every transform of a shape (outline, holes, the picture's matrix) go through one place.
+
+## What the operator entered lives above any panel that is rebuilt on a choice
+- Situation (2026-10-22): on the photo engraving screen each scale panel built its own picture block, so choosing another scale threw away the picture the operator had chosen
+  ("когда я выбираю картинку, а потом меняю шкалу, то он картинку удаляет"). The tests checked one scale at a time and never switched.
+- Rule: input that does not depend on the choice (a file, a width, a checkbox) is owned by the screen and handed to the rebuilt panel; a UI test of a screen with a list of choices
+  switches the choice after entering something and checks it is still there and re-used.
+
+## The next physical experiment is written as screen steps: what to press, what stays the same, what changes, and why
+- Situation (2026-10-22): I described the next experiment as "one picture, two sizes on the plate scale"; the operator downloaded the plate's file again, saw the same speed and asked
+  what to re-engrave. The plate was not to be re-engraved: a picture was to be engraved twice at two widths with the plate's settings.
+- Rule: every experiment I ask for names the screen, the fields with their values, the files to download, what to engrave, what is unchanged from before and the one thing that changes,
+  in numbered steps; never only a short name of the experiment.
+
+## A one-screen page uses the whole window, and every column and tab is checked for cut text at the operator's real width
+- Situation (2026-10-22): the one-screen photo engraving kept `.main {max-width:1440px}`, so on the operator's 1771 px window it stood in the middle with empty sides while the
+  right table (506 px) had 374 px and the subtitle ended in "…" ("расширяй до конца - не помещаются надписи"). I had looked at one tab at one width only.
+- Rule: a `.os` page has no width cap (the shared rule `.main:has(>.os)`). Before showing a one-screen page, read the window width of the operator's tab, and for that width and for
+  1372 px walk every tab of every column: no element may scroll sideways or end in an ellipsis. A wide table in a narrow side panel becomes a list of entries.
+
+## "Like the other section" means its whole structure, not only its layout
+- Situation (2026-10-22): asked to make photo engraving "на один экран, так же как и все другие", I turned the reference screen of scales into one screen. The operator meant what the
+  vector section is: saved works, a list of them, open, copy, rename, delete, and a one-screen workspace for one work ("мне нужны работы, так же как и в векторной гравировке").
+- Rule: when the operator compares a section with another one, list what the other one has (its entry screen, what it stores, its actions, its workspace) and confirm which of them are
+  meant before building; the layout alone is rarely the whole request.

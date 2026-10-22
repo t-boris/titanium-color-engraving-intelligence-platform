@@ -385,6 +385,20 @@ def check_power_range(min_power, max_power) -> tuple[float, float]:
     return low, high
 
 
+def check_width(width_mm) -> float:
+    """The width of a picture on the titanium: 1..1000 mm."""
+    width = None if isinstance(width_mm, bool) else _number(width_mm)
+    if width is None or not 1 <= width <= 1000:
+        raise PredictionError("the width of the picture must be 1..1000 mm")
+    return width
+
+
+def file_parameters(mode: Mode, min_power: float, max_power: float) -> dict:
+    """The settings of the grayscale Image layer that engraves a picture at ``mode`` with Min and Max power (``plans.export_picture``)."""
+    return {"power": max_power, "min_power": min_power, "speed": mode.speed, "frequency": mode.frequency, "pulse_width": mode.pulse_width,
+            "line_interval": mode.line_interval, "passes": mode.passes or 1, "global_passes": mode.global_passes or 1}
+
+
 def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, material_id: int | None,
             overrides: Mapping | None = None) -> list[dict]:
     """Per image layer of the file: what rendering it needs (the picture at preview resolution, the curve of its mode, its
@@ -432,6 +446,12 @@ def _grey_for(x: float, curve: prediction.Curve, low, high, values: Mapping) -> 
 def describe(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndarray]:
     """The prediction of one prepared layer at Min..Max power (the layer's own when not given): the description shown beside the
     preview, and the side-by-side image (picture | prediction, hatched where no power was measured)."""
+    info, rgb8 = predicted(item, min_power, max_power)
+    return info, prediction.side_by_side(item["picture"], rgb8)
+
+
+def predicted(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndarray]:
+    """What :func:`describe` says, with the predicted look alone (RGB uint8, at preview size), as the list of photo works shows it."""
     if item["curve"].axis == prediction.TONE_AXIS:           # a dot mode: the layer's power is part of its mode, there is no Min..Max to move
         low = high = None
     else:
@@ -451,7 +471,7 @@ def describe(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndarr
             "transparent_share": rendered["transparent_share"],
             "adjustments": rendered["adjustments"], "notes": rendered["notes"] + item["basis_notes"],
             "picture": {"width": item["size"][0], "height": item["size"][1], "shown_width": cols, "shown_height": rows}}
-    return info, prediction.side_by_side(item["picture"], rendered["rgb8"])
+    return info, rendered["rgb8"]
 
 
 # -- a picture engraved on a scale (REQ-059) --------------------------------------------------------------------------------------

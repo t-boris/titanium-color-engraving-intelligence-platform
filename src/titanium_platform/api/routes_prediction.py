@@ -170,12 +170,6 @@ def _kept_picture(request: Request, cache_id: str) -> dict:
     return item
 
 
-def _width(width_mm: float) -> float:
-    if not (np.isfinite(width_mm) and 1 <= width_mm <= 1000):
-        raise su.ValidationError("the width of the picture must be 1..1000 mm")
-    return float(width_mm)
-
-
 @router.post("/grey-scales/picture")
 async def grey_picture(request: Request, device_id: int = Form(...), lens_id: str = Form(...), speed: float = Form(...),
                        frequency: float = Form(...), line_interval: float = Form(...), width_mm: float = Form(...),
@@ -189,7 +183,7 @@ async def grey_picture(request: Request, device_id: int = Form(...), lens_id: st
     mode = _scale_mode(request, device_id, lens_id, material_id, speed, frequency, pulse_width, line_interval, passes, global_passes)
     item = prediction_store.picture_item(store_of(request), mode, prediction_store.decode_upload(data), name.rsplit(".", 1)[0], by_colour)
     cache_id = _cache(request).put({0: item})
-    return _picture_answer(cache_id, item, min_power, max_power, _width(width_mm))
+    return _picture_answer(cache_id, item, min_power, max_power, prediction_store.check_width(width_mm))
 
 
 @router.get("/grey-scales/picture/{cache_id}.png")
@@ -207,16 +201,14 @@ def grey_picture_file(cache_id: str, request: Request, min_power: float, max_pow
     """The LightBurn file of the picture: one grayscale Image layer at the scale's settings and the chosen Min and Max, the picture at the
     chosen width (with ``by_colour`` the chosen greys)."""
     item = _kept_picture(request, cache_id)
-    width = _width(width_mm)
+    width = prediction_store.check_width(width_mm)
     low, high = prediction_store.check_power_range(min_power, max_power)
     picture = prediction_store.picture_for_file(item, low, high, width)
-    mode = item["mode"]
-    parameters = {"power": high, "min_power": low, "speed": mode.speed, "frequency": mode.frequency, "pulse_width": mode.pulse_width,
-                  "line_interval": mode.line_interval, "passes": mode.passes or 1, "global_passes": mode.global_passes or 1}
+    parameters = prediction_store.file_parameters(item["mode"], low, high)
     return Response(plans.export_picture(picture, width, parameters, item["name"]), media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(f"{item['name']}-P{low:g}-{high:g}", ".lbrn2"), "Cache-Control": "no-store"})
 
 
 @router.get("/grey-scales/picture/{cache_id}")
 def grey_picture_info(cache_id: str, request: Request, width_mm: float, min_power: float | None = None, max_power: float | None = None):
-    return _picture_answer(cache_id, _kept_picture(request, cache_id), min_power, max_power, _width(width_mm))
+    return _picture_answer(cache_id, _kept_picture(request, cache_id), min_power, max_power, prediction_store.check_width(width_mm))

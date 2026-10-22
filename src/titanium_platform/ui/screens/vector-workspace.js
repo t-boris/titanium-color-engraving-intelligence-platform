@@ -18,8 +18,9 @@ const VectorWorkspace = (() => {
   // ---- переименование ------------------------------------------------------------------------------------------------------------
 
   /** The dialog with the name in a field. A blank name is refused before any request, the name as it is closes the dialog without one,
-      Enter saves (not while an input method is composing), and a second press while the first is being saved does nothing. */
-  function renameDialog(id, current, done) {
+      Enter saves (not while an input method is composing), and a second press while the first is being saved does nothing. ``base`` is
+      the API of the kind of work (a photo engraving work is renamed at ``/photo-works``). */
+  function renameDialog(id, current, done, base) {
     let saving = false, box = null;
     const input = h('input', {value: current, autocomplete: 'off', 'aria-label': 'Название работы',
       onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
@@ -30,7 +31,7 @@ const VectorWorkspace = (() => {
       if (title === current) { close(); return; }
       saving = true;
       try {
-        const made = await post(`/vector/${id}/rename`, {name: title});
+        const made = await post(`${base}/${id}/rename`, {name: title});
         toast('Работа переименована', 'ok');
         close();
         done(made.name);
@@ -43,11 +44,11 @@ const VectorWorkspace = (() => {
 
   /** The pencil beside a work's name. ``renamed(name)`` is told the stored name once it is saved; the button keeps the name it shows,
       so its label and the dialog's field are right for the next rename too. */
-  function renameButton(id, name, renamed) {
+  function renameButton(id, name, renamed, base = '/vector') {
     let shown = name;
     const label = () => `Переименовать работу «${shown}»`;
     const el = h('button', {type: 'button', class: 'btn btn-small vw-rename', title: 'Переименовать', 'aria-label': label(),
-      onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); })}, '✎');
+      onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); }, base)}, '✎');
     return el;
   }
 

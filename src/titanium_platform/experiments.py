@@ -47,9 +47,10 @@ def _groups(store: Store) -> dict[str, dict]:
         pair = ingest.get_pair(store, row["id"])
         key = plan_key(pair["plan_id"]) if pair.get("plan_id") in plans else engraving_key(pair["engraving_id"])
         groups.setdefault(key, {"plan": None, "pairs": []})["pairs"].append(pair)
-    # a vector work nobody has photographed is the operator's work, not an experiment: deleting an "experiment" deletes its plan,
-    # and for such a work the plan is the work itself (REQ-044, DEC-082)
-    return {key: g for key, g in groups.items() if g["pairs"] or not g["plan"] or g["plan"]["mode"] != pl.MODE_VECTOR}
+    # a vector or photo work nobody has photographed is the operator's work, not an experiment: deleting an "experiment" deletes its
+    # plan, and for such a work the plan is the work itself (REQ-044, DEC-082, DEC-104)
+    works = (pl.MODE_VECTOR, pl.MODE_PHOTO_WORK)
+    return {key: g for key, g in groups.items() if g["pairs"] or not g["plan"] or g["plan"]["mode"] not in works}
 
 
 def _status(group: dict) -> str:

@@ -153,6 +153,7 @@ def delete_plan(plan_id: int, request: Request):
             s.execute("DELETE FROM plate WHERE id=?", (plan["plate_id"],))
     s.audit("plan_deleted", plan_id=plan_id)
     render_cache.remove_pair(s, f"vector-{plan_id}")        # the thumbnails of a vector work
+    render_cache.remove_pair(s, f"photo-work-{plan_id}")    # the pictures of a photo work
 
 
 @router.post("/discrete", status_code=201)

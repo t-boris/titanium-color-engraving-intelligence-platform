@@ -702,14 +702,15 @@ body.is-workspace .main {max-width:none;padding:10px 16px}
 
 /* 15) один экран без прокрутки страницы: общие правила для «Экспериментов», «Карты цветов» и их страниц (REQ-044, DEC-080).
    Корень .os: шапка .os-head и тело .os-body из колонок .os-col; прокручивается только длинный список внутри своей панели (.os-scroll).
-   Страница с .os имеет узкие отступы, высота --os-h считается по ним. Класс .workspace (экран векторной работы) убирает ещё и предел ширины. */
+   Страница с .os имеет узкие отступы и занимает всю ширину окна, высота --os-h считается по отступам. Класс .workspace (экран векторной
+   работы) убирает ещё и боковое меню. */
 :root {--os-h:calc(100vh - 76px - 26px)}
-.main:has(>.os) {padding:12px 20px 14px}
+.main:has(>.os) {padding:12px 20px 14px;max-width:none}
 body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .os {display:flex;flex-direction:column;gap:10px;height:var(--os-h);min-height:520px;min-width:0}
 .os-head {display:flex;align-items:center;gap:8px;flex:none;min-width:0}
 .os-head h2 {margin:0;font-size:19px;line-height:1.25}
-.os-head .sub {margin:0;font-size:12px}
+.os-head .sub {margin:0;font-size:12px;max-width:none}
 .os-head .btn {flex:none;white-space:nowrap}
 .os-body {flex:1;min-height:0;display:grid;gap:12px}
 .os-col {display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--line-2);border-radius:14px;background:#111826;overflow:hidden}
@@ -914,3 +915,54 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .comp-bar {display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line)}
 .comp-bar span {display:block;height:100%}
 .comp-fill {background:#d7a85a} .comp-photo {background:#7aa2e8} .comp-both {background:#b48ad6}
+
+/* === ge: Фотогравировка на один экран (REQ-044) ===
+   Три колонки: измеренные шкалы | картинка и её прогноз (поля, Min и Max, полоса «серый → цвет», картинка во всю оставшуюся высоту, время и файл) |
+   вкладки шкалы и картинки. Прокручиваются только список шкал и вкладки. Основа: .os*; боковое меню остаётся. */
+.ge-title {min-width:0;flex:1 1 auto}
+.ge-title .sub {line-height:1.35}
+.ge-body {grid-template-columns:minmax(230px,270px) minmax(0,1.5fr) minmax(420px,1fr)}
+.ge .os-head>a {white-space:nowrap;font-size:13px}
+.ge-empty {grid-template-columns:minmax(0,1fr)}
+.ge .ge-scales {grid-template-columns:minmax(0,1fr);gap:8px}
+.ge .ge-scale {padding:8px 10px;gap:4px}
+.ge-centre .os-col-head {gap:4px 12px;flex-wrap:wrap}
+.ge-centre .os-col-head h3 {flex:none}
+.ge-settings {min-width:0}
+.ge-work {flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding:10px 14px}
+.ge-work>* {flex:none}
+.ge-inputs {display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.ge-inputs label {gap:6px}
+.ge-powers {display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 18px}
+.ge-power {display:flex;align-items:center;gap:8px;min-width:0}
+.ge-power>.small {flex:none;white-space:nowrap}
+.ge-power input[type=range] {flex:1;min-width:50px}
+.ge-power input[type=number] {width:5em;flex:none}
+.ge-barbox .ge-strip {height:22px}
+.ge-barbox .ge-ramp {height:6px}
+.ge-barbox .ge-greybar {gap:3px}
+.ge-work>.ge-stage {flex:1 1 auto;min-height:160px;display:flex;flex-direction:column;gap:4px}
+.ge-stage .pp-captions {flex:none}
+.ge-stage .pp-stage {position:relative;flex:1;min-height:0;padding:0}
+.ge-stage .pp-stage .pp-image {position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);max-height:none;object-fit:contain}
+.ge-placeholder {margin:auto;text-align:center}
+.ge-foot {display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-height:32px}
+.ge-right>.vw-tabs {flex:none}
+.ge-right .os-scroll>.vw-tabpanel>.stack>h4 {margin:0}
+.ge-right table {font-size:12.5px}
+.ge-right .tw.compact th,.ge-right .tw.compact td {padding:6px 8px}
+.ge-nowrap {white-space:nowrap}
+.ge-lab {display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px 6px}
+.ge-entries {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ge-entry {display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.ge-entry-head {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 10px}
+.ge .ge-scale strong {font-size:14px}
+.ge .ge-scale .pill {white-space:normal;text-align:left}
+.ge .ge-scale>.row {flex-wrap:wrap}
+.ge-right .tw {overflow-x:auto}
+/* the table of greys on the grey-scales page fills the centre under the bar and scrolls there */
+.ge-work>.ge-table {flex:1 1 auto;min-height:0;overflow:auto}
+.ge .vw-name-row h2 {font-size:20px}
+@media (max-width:1100px) {
+  .ge-work>.ge-stage {min-height:60vh}
+}

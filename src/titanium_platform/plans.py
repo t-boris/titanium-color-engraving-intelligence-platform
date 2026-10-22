@@ -33,6 +33,7 @@ MODE_TONAL = "Tonal photo engraving"
 MODE_COLOR_PATH = "Color-path photo engraving"
 MODE_RESTORED = "Restored from file"
 MODE_VECTOR = "Vector job"
+MODE_PHOTO_WORK = "Photo engraving work"      # a picture engraved in grayscale mode on a measured scale (photo_work)
 ST_RESTORED = "Restored"          # a plan restored from an imported file records a job; it is never exported
 MARKER_LAYER_INDEX = 0
 # LightBurn exposes 30 output colors (00..29); T1/T2 are non-output tool layers. Treat this as

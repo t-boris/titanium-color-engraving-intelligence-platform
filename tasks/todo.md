@@ -1393,18 +1393,49 @@ went with the old panel. The server keeps an uploaded picture with the scale it 
       Done: 1551 passed (-n 12, none skipped); the 3 new tests fail on 0.18.1 and pass now; checked in a browser on an isolated copy (port 8768): the file stays on another
       scale, colour choice and Max re-predict; backup `backups/titanium-before-0.18.2-20261022T020208Z.sqlite` (integrity ok, 88 pairs, 2118 observations); 8765 answers 0.18.2.
 
-## Next (draft, waiting for the operator's answers): ask AI to change a photo engraving; photo-engraving colours in the colour map (operator, 2026-10-22)
-Operator: "в фотомастерской или векторной мастерской ... попросить AI что-то поменять ... с фотографии ... всё как есть, черно-белое ... платье сделать фиолетовым или красным,
-ярким ... кожу сделать равномерно светлой ... он должен будет подобрать такой серый цвет" and "фотогравировка нам дает неплохие еще цвета. Ты должен их цвета туда тоже добавить."
-What exists (research 2026-10-22):
-- AI: OpenAI only (`research.openai_client`, model `gpt-6.1-sol`, key `OPENAI_API_KEY` / `.env.local`); `ai_colouring.py` recolours the vector work's source colours to palette
-  entries with a style or free text (vector screen, "AI" tab), the photo is sent only with the work's permission (`ai_photo`). Nothing on the photo engraving screen.
-- Regions: `segment.py` splits a photo into colour regions (not semantic); `faces.py` finds faces, eyes, lips. Nothing knows "dress" or "skin".
-- Photo engraving keeps the picture's grey, BGR and Lab (`prediction_store.decode_upload`); `grayscale.grey_for_colours(lab, curve, lo, hi, levels=...)` already finds the nearest
-  grey per pixel and can be limited to chosen levels.
-- The vector palette leaves grey steps of image layers out (`palette._left_out`: source "tonal" or mode Image); the colour map has them as points (`colormap._tonal_points`).
-Proposed (to agree):
-- [ ] A. "Попросить AI" on the photo engraving picture: the picture is split into colour regions, the AI (the existing OpenAI client) names them and returns a rule per region:
-      keep tonality on neutral greys (optionally a range), a target colour (keep tonality or flat), or one flat grey; the code turns rules into greys on the chosen scale with
-      `grey_for_colours(levels=...)`, preview and LightBurn file as now; the operator can correct a region by clicking it.
-- [ ] B. Photo-engraving colours in the vector palette: each measured grey-scale colour becomes an entry engraved as a uniform Image layer at the scale's settings.
+## 0.19.0-0.21.0 plan: photo engraving on one screen, "ask AI" on a photo, photo-engraving colours in the vector palette, every section on one screen (operator, 2026-10-22)
+Requests: "в фотомастерской или векторной мастерской ... попросить AI что-то поменять ... всё как есть, черно-белое ... платье сделать фиолетовым или красным, ярким ... кожу сделать
+равномерно светлой ... он должен будет подобрать такой серый цвет"; "фотогравировка нам дает неплохие еще цвета. Ты должен их цвета туда тоже добавить"; "сделай фотогравировку ... на один
+экран. Так же, как и все другие. Вообще, все ... на один экран"; "насчет других скоростей ... чтобы получить другие совершенно шкалы".
+Answers (2026-10-22): parts of a photo = a people segmentation model (MediaPipe multiclass: background, hair, body skin, face skin, clothes, other); AI = OpenAI as now (`research.openai_client`);
+photo-engraving colours = the vector work palette; next engraving = both the picture at 38 / 100 mm and a plate of speeds 100 / 150 / 250 mm/s.
+What exists: AI only in vector work (`ai_colouring.py`, free text, photo sent only with permission); `segment.py` colour regions, `faces.py` faces; photo engraving keeps grey, BGR and Lab
+of an upload (`prediction_store.decode_upload`); `grayscale.grey_for_colours(lab, curve, lo, hi, levels=...)`; the vector palette leaves image-layer greys out (`palette._left_out`); the
+one-screen frame `.os` (styles.css section 15) is used by experiments, colour map, experiment page, laser model, knowledge.
+
+### 0.19.0: photo engraving works, like vector works (operator, 2026-10-22: "мне нужны работы, так же как и в векторной гравировке"; "расширяй до конца - не помещаются надписи")
+What vector works are: rows of `plan` (mode "Vector job", `data_json`), a list `#/vector` (card: picture, name with a pencil, size, colours, last engraving result, changed at; Open,
+Make a copy, Delete), a new work `#/vector?new=1`, a one-screen workspace `#/vector?plan=ID` (head: "← Мои работы", name, "Сделать копию", "Файл LightBurn"), the TCE identifier in the
+exported file, so the photograph of the engraving finds its work (REQ-013, DEC-090) and the work shows promised against engraved.
+- [x] A0. One-screen frame for photo engraving (`.os ge`: scales | picture and prediction | tabs) and full window width for every `.os` page; no column or tab cuts text at 1771 and
+      1372 px (checked on the copy). It becomes the workspace of one work.
+- [x] A. Store: `photo_work.py`, a `plan` row of a new mode "Photo engraving work": the picture stored once (`cv._store_image`), name, laser, lens, titanium, the scale (its settings),
+      Min / Max, width, colour choice, an identifier; list, view, create, change settings, copy (own picture copy, new identifier), rename, a list picture. Delete is the plans' own
+      `DELETE /api/plans/{id}` (a work nobody photographed is removed, with its cached pictures); such a work is not listed as an experiment.
+- [x] B. API `/api/photo-works`: list, create (upload), get, settings, copy, rename, `thumb.png`, `preview.png` (picture and prediction), `picture` (the upload), `export.lbrn2`
+      (grayscale Image layer; no identifier in the file yet, DEC-104: that is 0.19.2), time. Pictures through the render cache, keyed by everything they are drawn from, the
+      scale's measured points included. Shared with the grey-scales picture: `prediction_store.check_width`, `file_parameters`, `predicted`.
+- [x] C. UI: "Фотогравировка" opens on "Мои работы" (cards as in vector) with "Новая работа", "Шкалы серого" (the scales overview), the plate button and the two links; a new work:
+      picture, name, width (the scale is chosen in the work); a work opens the one-screen workspace: choosing a scale, Min / Max, width or colour choice saves the work and re-predicts.
+      Changes go to the server one after another in their order, the last answer is shown; a work whose scale is no longer measured says why and offers the measured ones. The
+      scales page (`?scales=1`) has Min / Max, the bar and the grey table in the centre, confirmation, points and kinds on the right, and "Новая работа на этой шкале". The rename
+      pencil of vector works takes a base path (`VectorWorkspace.renameButton(..., '/photo-works')`).
+      Checked on the copy (8768): list, open, switch scale (saved, Min / Max become its span, the picture stays), Max saved, rename, the dialog; no cut text and no page scroll
+      at 1675 and 1080 px. The 0.19.1 groundwork (`people.py`, `picture_rules.py`, the model, the rules in `prediction_store`, `ai_colouring` instructions) is kept out of 0.19.0
+      (scratchpad `groundwork-0191/`) and comes back for 0.19.1.
+- [x] D. Tests (store, API, UI in node: list, open, switch scale keeps the picture, copy, rename, delete), README, MarkView REQ, full suite, backup, deploy, check in the app.
+      Done 2026-10-22: `tests/test_photo_works.py` (13), `tests/test_photo_engraving_ui.py` rewritten (6); README 0.19.0; REQ-061 approved, DEC-104 accepted; full suite 1567 passed
+      (-n 12, none skipped); backup `backups/titanium-before-0.19.0-20261022T025408Z.sqlite` (integrity ok, 88 pairs, 2118 observations, 5 plans); wheel installed with its
+      dependencies; 8765 answers 0.19.0 and shows "Мои работы" (GET only: no works yet, 10 scales).
+### 0.19.1: "Попросить AI" on the picture of a work
+- [x] Spike: MediaPipe multiclass selfie model converted once to ONNX, run by OpenCV (`models/selfie_multiclass_256x256.onnx`, Apache 2.0; 0.06-0.09 s per picture). DEC to record.
+- [ ] Parts (`people.py`, done in code), rules -> greys (`picture_rules.py`, done in code), the rules stored in the work and applied to preview and file; an "AI" tab: the wish, the parts
+      table (share, colour, rule, editable by hand), the overlay; the AI (`ai_picture.py`, OpenAI, one retry) proposes the rules. Tests with a fake client, release.
+### 0.19.2: the engraving of a photo work checks its prediction
+- [ ] The photograph of an engraved photo work (its file carries the identifier) is linked to the work; the work shows predicted against engraved per grey level, and the scale's
+      confirmation counts it. Tests, release.
+### 0.20.0: photo-engraving colours in the vector palette
+- [ ] G. Palette entries from the grey scales (each measured power of a scale); a region given one is written as an Image layer of one even grey with the scale's settings
+      (Min = Max = that power); time per cm2; the colour picker says where it comes from. Tests, release.
+### 0.21.0: every section on one screen
+- [ ] H. Measure every menu section and its pages at 1421 x 951 (copy of the data); move those that scroll onto `.os`; report the heights before and after. Tests, release.
