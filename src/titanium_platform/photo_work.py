@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import copy
 import json
-import math
 import mimetypes
 import re
 import threading
@@ -103,23 +102,8 @@ def _scale_data(mode: ps.Mode) -> dict:
     return {"material_id": mode.material_id, **{k: getattr(mode, k) for k in ps.SETTINGS}, "global_passes": mode.global_passes}
 
 
-def measured_scale(store: Store, wanted) -> ps.Mode:
-    """The measured scale named by ``wanted``: the laser, lens, titanium and fixed settings, as the list of scales gives them; on any
-    plate of its titanium (DEC-110), the work keeping the plate named."""
-    if isinstance(wanted, Mapping):
-        for mode in ps.scale_modes(store, material_id=wanted.get("material_id")):
-            if (mode.device_id == wanted.get("device_id") and mode.lens_id == wanted.get("lens_id")
-                    and mode.material_id == wanted.get("material_id") and mode.matches(wanted)):
-                return mode
-    raise su.ValidationError("this scale is not measured: choose one of the measured scales")
-
-
-def _span(store: Store, mode: ps.Mode, width_mm: float) -> tuple[float, float]:
-    """The scale's measured powers at the work's width rounded inwards to 0.1 %, so that the white and the black of a picture both stay
-    inside them."""
-    lo, hi = ps.curve_for(store, mode, width_mm)[0].span
-    low, high = math.ceil(lo * 10 - 1e-9) / 10, math.floor(hi * 10 + 1e-9) / 10
-    return (low, high) if low <= high else (float(lo), float(hi))
+measured_scale = ps.measured_mode         # the measured scale a work names (shared with the photo zones of vector works, REQ-073)
+_span = ps.measured_span
 
 
 def _remember(path: str, upload: dict) -> None:
@@ -187,25 +171,8 @@ def _dotted(plan: Mapping) -> bool:
     return plan["kind"] != GRAYSCALE
 
 
-def _dot_power(store: Store, mode: ps.Mode, width_mm: float, wanted=None) -> float:
-    """The power of a dot kind's dots on ``mode`` at ``width_mm``: ``wanted`` while the scale is measured there at that width, otherwise
-    the power whose colour stands out most from the cleaned titanium (``prediction_store.dot_power``)."""
-    curve = ps.curve_for(store, mode, width_mm)[0]
-    lo, hi = curve.span
-    if wanted is not None and lo <= wanted <= hi:
-        return float(wanted)
-    return ps.dot_power(curve, ps.clean_titanium(store))
-
-
-def _dots(store: Store, power: float, curve: prediction.Curve) -> dict:
-    """The colour of the dots at ``power`` (the scale's colour there, at the work's width) and of the cleaned titanium between them."""
-    lab = curve.lab_at(float(power))
-    if not np.all(np.isfinite(lab)):
-        lo, hi = curve.span
-        raise PredictionError(f"the dots' power {float(power):g} % lies outside the measured powers {lo:g}..{hi:g} % of the scale at this width: choose it inside them")
-    clean = ps.clean_titanium(store)
-    return {"power": float(power), "lab": [round(float(v), 2) for v in lab], "hex": _hex(lab),
-            "clean_lab": [round(float(v), 2) for v in clean], "clean_hex": _hex(clean)}
+_dot_power = ps.dot_power_at
+_dots = ps.dots_at
 
 
 def _measured_dots(store: Store, plan: Mapping) -> prediction.Curve | None:

@@ -137,6 +137,31 @@ def colour_vector_job(plan_id: int, op: dict, request: Request):
     return _view(request, plan_id)
 
 
+@router.post("/vector/{plan_id}/lasso")
+def vector_job_lasso(plan_id: int, body: dict, request: Request):
+    """The regions a lasso drawn through ``points`` (mm, [x, y] each) encloses, at least half of each (see vector_job.lasso); nothing is
+    changed. The selection of the editor takes them."""
+    return vector_job.lasso(store_of(request), plan_id, body.get("points"))
+
+
+@router.get("/vector/{plan_id}/photo/{number}.png")
+def vector_zone_picture(plan_id: int, number: int, request: Request):
+    """A photo zone of the work as it will come out, transparent outside it (see vector_job.zone_picture); revalidated by ETag."""
+    return picture_response(request, vector_job.zone_picture(store_of(request), plan_id, number))
+
+
+@router.get("/vector/{plan_id}/photo/{number}/kinds")
+def vector_zone_kinds(plan_id: int, number: int, request: Request):
+    """Every kind of photo engraving with the zone as it would come out in it (see vector_job.zone_kinds)."""
+    return vector_job.zone_kinds(store_of(request), plan_id, number)
+
+
+@router.get("/vector/{plan_id}/photo/{number}/kinds/{kind}.png")
+def vector_zone_kind_picture(plan_id: int, number: int, kind: str, request: Request):
+    """The zone as it would come out in one kind, a tile of «Вид» (see vector_job.zone_kind_picture)."""
+    return picture_response(request, vector_job.zone_kind_picture(store_of(request), plan_id, number, kind))
+
+
 @router.get("/vector/{plan_id}/reach")
 def vector_job_reach(plan_id: int, request: Request, region: str | None = None, similarity_de: str | None = None):
     """The regions a click of the brush with the fill scope on ``region`` would paint at ``similarity_de`` (see

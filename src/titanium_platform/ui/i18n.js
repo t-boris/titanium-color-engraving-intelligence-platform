@@ -78,6 +78,8 @@ const I18N = (() => {
 })();
 
 I18N.add([
+  // обёртки сообщений: прежде общих правил, которые иначе съели бы и обёртку
+  [/^photo zone (\d+) cannot be engraved: (.+)$/i, (m) => `Фотозону ${m[1]} не выгравировать: ` + I18N.tr(m[2])],
   // загрузка и проверка пары
   [/^a RAW photograph is required for measurement$/i, 'Для измерения требуется фотография RAW'],
   [/^Select a \.lbrn or \.lbrn2 file$/i, 'Выберите файл .lbrn или .lbrn2'],

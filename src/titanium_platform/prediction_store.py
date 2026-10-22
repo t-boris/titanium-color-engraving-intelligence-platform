@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
 from typing import Mapping
 
 import cv2
@@ -50,6 +51,7 @@ from .prediction import PredictionError
 SETTINGS = ("speed", "frequency", "pulse_width", "line_interval", "passes")
 OVERRIDES = ("min_power", "max_power") + SETTINGS
 PREVIEW_SIDE = 800           # px: the long side of the picture as it is rendered and shown
+COLLECTED = 64               # modes whose measurements are kept in memory while the data is unchanged (``collect``)
 CHART, CLEAN, AS_SHOT = "chart", "clean titanium", "as photographed"
 
 
@@ -145,7 +147,15 @@ def _on_titanium(store: Store, material_id: int | None) -> tuple[str, tuple]:
 
 def collect(store: Store, mode: Mode) -> dict:
     """Every colour measured at ``mode`` in its image mode, on any plate of its titanium (DEC-110), as curve points; the flat fills with
-    the same settings beside them (``fills``, a power curve only, DEC-100); and what was left aside: tonal profiles too weak to use."""
+    the same settings beside them (``fills``, a power curve only, DEC-100); and what was left aside: tonal profiles too weak to use.
+    Read once per state of the data (``Store.stamp``): a photo zone, its tiles of every kind and the list of scales ask for the same
+    modes many times (REQ-073). Each caller gets lists of its own; the points themselves are frozen."""
+    found = _collected(store, mode, store.stamp())
+    return {**found, "points": list(found["points"]), "fills": list(found["fills"])}
+
+
+@lru_cache(maxsize=COLLECTED)
+def _collected(store: Store, mode: Mode, stamp: tuple[int, int]) -> dict:
     refs = colormap.references(store)
     witness, derived, nominal = refs["witness"], refs["derived"], refs["nominal"]
     kept = experiments.kept_plan_ids(store)
@@ -203,7 +213,24 @@ def collect(store: Store, mode: Mode) -> dict:
                 source = {**_where(pair, kept), "layer": rep["index"], "layer_name": rep.get("name"), "how": how,
                           "gray": step["gray"], "pixels": step.get("n"), "reference": reference, "row_mm": row_mm}
                 points.append(prediction.Point(power, lab, source, kind == "calibrated"))
-    return {"points": points, "fills": fills, "weak_profiles": weak, "over_fills": over_fills}
+    return {"points": tuple(points), "fills": tuple(fills), "weak_profiles": weak, "over_fills": over_fills}
+
+
+def photographed_kinds(store: Store) -> frozenset[str]:
+    """The kinds of photo engraving an accepted check measured a tonal profile of, on any laser and titanium: a kind outside it has no
+    measured tones anywhere, so :func:`collect` need not look for them (REQ-073). Read once per state of the data."""
+    return _photographed_kinds(store, store.stamp())
+
+
+@lru_cache(maxsize=8)
+def _photographed_kinds(store: Store, stamp: tuple[int, int]) -> frozenset[str]:
+    kinds = set()
+    for pair in store.query("SELECT data_json FROM pair WHERE status='Accepted'"):
+        for rep in (json.loads(pair["data_json"] or "{}").get("check") or {}).get("layers", []):
+            seen = photo_modes.mode((rep.get("image") or {}).get("dither"))
+            if rep.get("tonal") and seen is not None:
+                kinds.add(seen.key)
+    return frozenset(kinds)
 
 
 def curve_for(store: Store, mode: Mode, row_mm: float | None = None) -> tuple[prediction.Curve, dict]:
@@ -395,6 +422,25 @@ def scales(store: Store, device_id: int | None = None, lens_id=None, material_id
     materials = _materials(store)
     out = [_scale_summary(store, mode, materials) for mode in scale_modes(store, device_id, lens_id, material_id)]
     return sorted((item for item in out if item is not None), key=lambda item: (not item["referenced"], -item["engravings"], -item["points"]))
+
+
+def measured_mode(store: Store, wanted) -> Mode:
+    """The measured scale named by ``wanted``: the laser, lens, titanium and fixed settings, as the list of scales gives them; on any
+    plate of its titanium (DEC-110), the caller keeping the plate named."""
+    if isinstance(wanted, Mapping):
+        for mode in scale_modes(store, material_id=wanted.get("material_id")):
+            if (mode.device_id == wanted.get("device_id") and mode.lens_id == wanted.get("lens_id")
+                    and mode.material_id == wanted.get("material_id") and mode.matches(wanted)):
+                return mode
+    raise su.ValidationError("this scale is not measured: choose one of the measured scales")
+
+
+def measured_span(store: Store, mode: Mode, width_mm: float) -> tuple[float, float]:
+    """The scale's measured powers at ``width_mm`` rounded inwards to 0.1 %, so that the white and the black of a picture both stay
+    inside them."""
+    lo, hi = curve_for(store, mode, width_mm)[0].span
+    low, high = math.ceil(lo * 10 - 1e-9) / 10, math.floor(hi * 10 + 1e-9) / 10
+    return (low, high) if low <= high else (float(lo), float(hi))
 
 
 def scale(store: Store, mode: Mode, min_power=None, max_power=None, row_mm=None) -> dict:
@@ -647,6 +693,32 @@ def dot_power(curve: prediction.Curve, clean_lab) -> float:
     return float(powers[int(np.nanargmax(np.where(np.isfinite(de), de, -1.0)))])
 
 
+def dot_power_at(store: Store, mode: Mode, width_mm: float, wanted=None) -> float:
+    """The power of a dot kind's dots on ``mode`` at ``width_mm``: ``wanted`` while the scale is measured there at that width, otherwise
+    the power whose colour stands out most from the cleaned titanium (:func:`dot_power`)."""
+    curve = curve_for(store, mode, width_mm)[0]
+    lo, hi = curve.span
+    if wanted is not None and lo <= wanted <= hi:
+        return float(wanted)
+    return dot_power(curve, clean_titanium(store))
+
+
+def _rounded_hex(lab) -> str:
+    rgb = np.clip(color.lab_to_srgb8(np.asarray([lab], float)), 0, 255).round().astype(int)[0]
+    return "#%02x%02x%02x" % tuple(rgb)
+
+
+def dots_at(store: Store, power: float, curve: prediction.Curve) -> dict:
+    """The colour of the dots at ``power`` (the scale's colour there, at the curve's width) and of the cleaned titanium between them."""
+    lab = curve.lab_at(float(power))
+    if not np.all(np.isfinite(lab)):
+        lo, hi = curve.span
+        raise PredictionError(f"the dots' power {float(power):g} % lies outside the measured powers {lo:g}..{hi:g} % of the scale at this width: choose it inside them")
+    clean = clean_titanium(store)
+    return {"power": float(power), "lab": [round(float(v), 2) for v in lab], "hex": _rounded_hex(lab),
+            "clean_lab": [round(float(v), 2) for v in clean], "clean_hex": _rounded_hex(clean)}
+
+
 def _mixed(share: np.ndarray, dot_lab, clean_lab) -> np.ndarray:
     """RGB uint8 of dots of ``dot_lab`` striking ``share`` of the area on titanium of ``clean_lab``, as the eye mixes them (in linear light)."""
     dot, clean = (color.lab_to_linear_rgb(np.asarray(lab, np.float64)) for lab in (dot_lab, clean_lab))
@@ -844,10 +916,12 @@ def picture_time(mode: Mode, width_mm: float, height_mm: float, clean: dict | No
                                              "scan_pieces": rows}])
 
 
-def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float, rules: list[dict] | None = None) -> np.ndarray:
+def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float, rules: list[dict] | None = None, *,
+                     transparent: bool = False) -> np.ndarray:
     """The 8-bit upright picture written to the LightBurn file, as ``engraved`` makes the preview: the uploaded grey, or with ``by_colour``
     the greys chosen for its colours, inside each part with a rule that rule's greys, and with ``contours`` the lost edges drawn in, at the
-    layer's DPI (no finer: the laser does not engrave finer). Transparent pixels are white, so they get Min power."""
+    layer's DPI (no finer: the laser does not engrave finer). Transparent pixels are white, so they get Min power; with ``transparent``
+    the picture is BGRA instead and they stay transparent, so the layer leaves them alone (a photo zone of a vector work, DEC-114)."""
     rows, cols = item["grey_full"].shape
     dpi = grayscale.image_dpi(item["mode"].line_interval)
     target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
@@ -870,4 +944,7 @@ def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: f
         grey = drawing.contours(base, lab, opaque, item["curve"], low, high, _px_per_mm(width_mm, grey.shape[1]),
                                 _spared(rules, parts) if rules else None)["grey8"].astype(np.float32) / 255
     grey = np.where(opaque, grey, 1.0)
-    return (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)
+    grey8 = (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)
+    if not transparent:
+        return grey8
+    return np.dstack([grey8, grey8, grey8, np.where(opaque, 255, 0).astype(np.uint8)])

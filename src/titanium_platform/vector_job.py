@@ -37,7 +37,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, palette, plans as pl, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, palette, photo_zones as pz, plans as pl, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from .prediction import PredictionError
 from .db import Store, now
 
 MAX_SOURCE_PX = 1200                    # the longer side an image is traced at; a larger one is reduced first
@@ -95,7 +96,7 @@ def _document(plan: dict) -> dict:
 
 _MEMO: "collections.OrderedDict[tuple, object]" = collections.OrderedDict()
 _MEMO_LOCK = threading.Lock()
-MEMO_SIZE = 9
+MEMO_SIZE = 12
 
 
 def _memo(key: tuple, make):
@@ -444,8 +445,9 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 (least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
 regions."""
 DEFAULT_DETAIL = "medium"
+PHOTO_OPS = ("photo_add", "photo_remove", "photo_set", "photo_delete")     # the photo zones (REQ-073, :mod:`photo_zones`)
 COLOURING_OPS = ("assign", "ai_colour", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
-                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo")
+                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo") + PHOTO_OPS
 MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
 UNDO_DEPTH = 50                                      # steps kept to undo and redo together
@@ -578,11 +580,13 @@ def resplit(store: Store, plan_id: int, params: dict) -> None:
     if not isinstance(params, dict):
         raise cv.ConversionError("the split settings must be an object")
     plan["split"] = _split_settings(params, plan["markers_enabled"], len(plan["detected"]["areas"]))
+    old = _document(plan)
     document = _segment(plan, _source_rgb(Path(plan["image_path"]).read_bytes()))
     entries = _palette(store, plan)
+    zones = _carried_zones(store, plan, old, document)
     with store.transaction():
         _new_version(store, plan, document, {"op": "split", **_split_op(plan["split"])})
-        plan["colouring"] = _automatic(plan, document, entries, "closest", 0, _empty_colouring())
+        plan["colouring"] = _automatic(plan, document, entries, "closest", 0, {**_empty_colouring(), "photo": zones})
         plan["variants"], plan["undo"], plan["redo"] = [], [], []
         _add_variant(plan, document, entries)
         _photo_refresh(store, plan, document, entries)
@@ -625,6 +629,19 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
     out["assignment"] = {str(c["index"]): c["entry_id"] for c in result["colours"]}
     out["how"] = {str(c["index"]): c["how"] for c in result["colours"]}
     return out
+
+
+def _carried_zones(store: Store, plan: dict, old: dict, new: dict) -> list[dict]:
+    """The photo zones of the split ``old`` on the split ``new`` of the same picture: each on the new regions at least half inside it, a dot
+    kind's power settled at its new width (:func:`photo_zones.carried`)."""
+    zones = pz.zones(plan["colouring"])
+    if not zones:
+        return []
+    old_raster = pz.labels(old, _loops_by_region(plan, old))
+    new_raster = pz.labels(new, {r["id"]: r["loops"] for r in seg.regions_as_loops(new)})
+    carried = pz.carried(old, old_raster, new, new_raster, zones)
+    loops = {r["id"]: r["loops"] for r in seg.regions_as_loops(seg.smoothed(new, float(plan.get("smoothing_mm", 0.0))))}
+    return [pz.settle(store, plan, zone, pz.width_of(loops, zone["regions"])) for zone in carried]
 
 
 def _add_variant(plan: dict, document: dict, entries: list[dict]) -> None:
@@ -684,6 +701,7 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     colouring, settings, tolerance = plan["colouring"], plan["colour_settings"], plan["threshold"]
     candidates = palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0]
     excluded_colours, excluded_regions = set(colouring["excluded_colours"]), set(colouring["excluded_regions"])
+    zoned = pz.zone_of(colouring)                   # engraved as photo engravings, not in a colour (REQ-073)
     rows, colour_rows = _row_lengths(plan, document)
     colours = []
     for source in document["palette"]:
@@ -707,7 +725,7 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
         c = by_index[region["color"]]
         c["regions"] += 1
         chosen = colouring["regions"].get(region["id"])
-        if region["id"] in excluded_regions:
+        if region["id"] in excluded_regions or region["id"] in zoned:
             continue
         if chosen is not None:                  # a region's own colour wins over its colour's, even an excluded one
             if chosen not in measured:
@@ -750,13 +768,14 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     layers = sorted(used.values(), key=lambda layer: (-by_id[layer["entry_id"]]["lab"][0], layer["entry_id"]))
     for layer in layers:
         layer["area_mm2"] = layer["pixels"] * px_area
-    return {"colours": colours, "layers": layers, "by_id": by_id, "missing_regions": missing_regions,
+    return {"colours": colours, "layers": layers, "by_id": by_id, "missing_regions": missing_regions, "zones": pz.zones(colouring),
             "outside": {"colours": len(outside), "regions": sum(c["open_regions"] for c in outside),
                         "share": sum(open_pixels[c["index"]] for c in outside) / total, "indexes": [c["index"] for c in outside]},
             "totals": {"recipes": len(layers), "regions": sum(len(layer["region_ids"]) for layer in layers),
                        "mean_delta_e": round(weighted / weight, 2) if weight else None,
                        "within_tolerance": sum(1 for c in colours if c["delta_e"] is not None and c["delta_e"] <= tolerance),
-                       "colours": len(colours), "seconds": _seconds(plan, layers, by_id)}}
+                       "colours": len(colours), "seconds": _seconds(plan, layers, by_id), "zones": len(pz.zones(colouring)),
+                       "zone_regions": len(zoned)}}
 
 
 def _seconds(plan: dict, layers: list[dict], by_id: dict) -> float | None:
@@ -768,29 +787,37 @@ def _seconds(plan: dict, layers: list[dict], by_id: dict) -> float | None:
     return sum(rate * layer["area_mm2"] / 100 for rate, layer in zip(rates, layers))
 
 
-def _blocker_photo(plan: dict, state: dict) -> str | None:
-    """Why the file cannot be written yet, or None; a colour beyond the delta E tolerance never is a reason (editor DEC-001)."""
-    if not state["by_id"]:
+def _blocker_photo(plan: dict, state: dict, zones: list[dict] | None = None) -> str | None:
+    """Why the file cannot be written yet, or None; a colour beyond the delta E tolerance never is a reason (editor DEC-001). ``zones``
+    (:func:`_zone_rows`) says why a photo zone cannot be engraved; each zone takes a layer of its own."""
+    if not state["by_id"] and not state["zones"]:
         return "no measured colour of this laser, lens and titanium stock fills an area"
     if state["missing_regions"]:
         return (f"{len(state['missing_regions'])} region(s) have a titanium colour that is no longer measured on this laser, lens and "
                 "titanium stock: choose another before export")
-    if not state["layers"]:
+    if not state["layers"] and not state["zones"]:
         return "every region is excluded: there is nothing to engrave"
     cap = photo_cap(plan["markers_enabled"])
     if len(state["layers"]) > cap:
         return f"{len(state['layers'])} different recipes need more LightBurn layers than the {cap} available"
+    if len(state["layers"]) + len(state["zones"]) > cap:
+        return (f"{len(state['layers'])} different recipes and {len(state['zones'])} photo zone(s) need more LightBurn layers than the {cap} "
+                "available: merge titanium colours or zones")
+    for row in zones or ():
+        if row["problem"]:
+            return f"photo zone {row['number']} cannot be engraved: {row['problem']}"
     return None
 
 
 def _photo_refresh(store: Store, plan: dict, document: dict, entries: list[dict]) -> dict:
     """Store the layers of the current colouring and set the status: ready when it can be exported."""
     state = _state(plan, document, entries)
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
     plan["layers"] = _export_layers(store, plan, state)
     plan["regions"], plan["weak"] = [], []
     plan["counts"] = {"colours": len(document["palette"]), "regions": len(document["regions"])}    # for the list of works (:func:`listing`)
     plan.pop("unresolved", None)                 # kept by works made before the editor
-    cv._persist(store, plan, cv.ST_READY if _blocker_photo(plan, state) is None else cv.ST_DRAFT, plan["markers_enabled"])
+    cv._persist(store, plan, cv.ST_READY if _blocker_photo(plan, state, zones) is None else cv.ST_DRAFT, plan["markers_enabled"])
     return state
 
 
@@ -830,9 +857,9 @@ def _layer_name(index: int, entry: dict) -> str:
     return f"C{index:02d} " + "-".join(parts)
 
 
-def _estimate(plan: dict, layers: list[dict]) -> dict:
+def _estimate(plan: dict, layers: list[dict], zones: list[dict] = ()) -> dict:
     """The estimated engraving time of the whole job (DEC-075): the cleaning over the work (and the markers when they are
-    on), then every colour layer over the area of its regions."""
+    on), then every colour layer over the area of its regions, then every photo zone over its area (:func:`_zone_rows`)."""
     clean, size, markers = plan["clean_layer"], plan["size_mm"], plan.get("markers")
     if markers and plan["markers_enabled"]:
         extent = markers["extent"]
@@ -841,7 +868,192 @@ def _estimate(plan: dict, layers: list[dict]) -> dict:
         area = size["width"] * size["height"]
     return engraving_time.estimate([{"index": 0, "name": clean["name"], "parameters": clean, "area_mm2": area}]
                                    + [{"index": layer["index"], "name": layer["name"], "parameters": layer["parameters"],
-                                       "area_mm2": layer["area_mm2"]} for layer in layers])
+                                       "area_mm2": layer["area_mm2"]} for layer in layers]
+                                   + [row["time"] for row in zones if row["time"] is not None])
+
+
+# -- photo zones (REQ-073, DEC-114) ---------------------------------------------------------------------------------------------
+def _zone_loops(plan: dict) -> dict[str, list]:
+    """The closed loops (mm) of every region at the work's smoothing: what the file's paths are written from and the zones are cut along."""
+    mm = float(plan.get("smoothing_mm", 0.0))
+    return _memo(("zone-loops", plan["document_path"], mm), lambda: {r["id"]: r["loops"] for r in seg.regions_as_loops(_geometry(plan))})
+
+
+def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], first: int) -> list[dict]:
+    """Every photo zone with what the screen, the time and the file need, its layer numbered from ``first``: how wide it is (the length of its
+    rows, DEC-107), its area and box, its scale's curve at that width with the dots of a dot kind (their measured tones when that kind was
+    photographed), the settings and the time of its layer; or why it cannot be engraved (``problem``: its scale is not measured there)."""
+    loops = _zone_loops(plan)
+    rows = []
+    for n, zone in enumerate(zones):
+        width = pz.width_of(loops, zone["regions"])
+        mode = pz.mode_of(plan, zone)
+        box = pz.box_of(loops, zone["regions"], grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)[0]
+        row = {"zone": zone, "number": zone["number"], "index": first + n, "width_mm": width, "area_mm2": pz.area_of(document, zone["regions"]),
+               "box": box, "curve": None, "measured": None, "dots": None, "parameters": None, "time": None, "problem": None}
+        try:
+            curve = pz.curve(store, plan, zone, width)[0]
+            p = pz.parameters(store, plan, zone, width)
+            if pz.dotted(zone):
+                row["dots"] = ps.dots_at(store, p["power"], curve)
+                row["measured"] = pz.measured_dots(store, plan, zone, zone["kind"], p["power"], width)
+            row.update(curve=curve, parameters=p, time=pz.time_layer(plan, zone, document, loops, first + n, p))
+        except PredictionError as exc:
+            row["problem"] = str(exc)
+        rows.append(row)
+    return rows
+
+
+def _first_zone(plan: dict, state: dict) -> int:
+    """The layer of the first photo zone: after the cleaning, the markers and the colour layers."""
+    return 1 + int(bool(plan["markers_enabled"])) + len(state["layers"])
+
+
+def _zone_shown(plan: dict, row: dict) -> dict:
+    """A photo zone as the editor shows it: its photo engraving, where it lies, its width and area, the scale's measured span at its width,
+    the dots of a dot kind and whether they are estimated, its layer and the address of its picture."""
+    zone, curve = row["zone"], row["curve"]
+    key = pz.key(plan, zone, curve, row["measured"])
+    return {**copy.deepcopy({k: zone[k] for k in ("number", "regions", *pz.SETTINGS)}), "index": row["index"],
+            "width_mm": round(row["width_mm"], 2), "area_mm2": round(row["area_mm2"], 2), "box": {k: round(v, 4) for k, v in row["box"].items()},
+            "span": None if curve is None else [round(float(v), 2) for v in curve.span], "referenced": None if curve is None else curve.referenced,
+            "dots": row["dots"], "estimate": pz.dotted(zone) and row["measured"] is None, "problem": row["problem"],
+            "name": None if row["parameters"] is None else pz.layer_name(row["index"], zone, row["parameters"]),
+            "picture": None if row["problem"] else f"/api/vector/{plan['id']}/photo/{zone['number']}.png?v={key[:16]}"}
+
+
+def _region_list(document: dict, value) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise cv.ConversionError("choose one or more regions")
+    return list(dict.fromkeys(_region_id(document, v) for v in value))
+
+
+def _photo_op(store: Store, plan: dict, document: dict, colouring: dict, kind: str, op: dict) -> dict:
+    """The photo zones after an operation, on a copy of the colouring that is returned (REQ-073). ``photo_add`` puts ``regions`` into the zone
+    ``zone`` or, without one, into a new zone (:func:`photo_zones.new_zone`), taking them out of any other zone and out of the regions left
+    out of the file; ``photo_remove`` gives ``regions`` back to their colours; ``photo_set`` changes the photo engraving of the zone ``zone``
+    (``kind``, ``scale``, ``min_power``, ``max_power``, ``dot_power``, ``by_colour``: :func:`photo_zones.changed`); ``photo_delete`` gives
+    every region of the zone back to its colours. A zone left without a region is gone."""
+    zones = copy.deepcopy(pz.zones(colouring))
+    loops = _zone_loops(plan)
+    try:
+        if kind in ("photo_add", "photo_remove"):
+            ids = _region_list(document, op.get("regions"))
+            chosen = set(ids)
+            target = None if kind == "photo_remove" or op.get("zone") is None else pz.find({"photo": zones}, op.get("zone"))
+            for zone in zones:
+                if zone is not target and chosen & set(zone["regions"]):
+                    zone["regions"] = [r for r in zone["regions"] if r not in chosen]
+                    if zone["regions"]:
+                        pz.settle(store, plan, zone, pz.width_of(loops, zone["regions"]))
+            if kind == "photo_add":
+                if target is None:
+                    zones.append(pz.new_zone(store, plan, {"photo": zones}, ids, pz.width_of(loops, ids)))
+                else:
+                    inside = set(target["regions"]) | chosen
+                    target["regions"] = [r["id"] for r in document["regions"] if r["id"] in inside]
+                    pz.settle(store, plan, target, pz.width_of(loops, target["regions"]))
+                colouring["excluded_regions"] = [r for r in colouring["excluded_regions"] if r not in chosen]
+        elif kind == "photo_set":
+            zone = pz.find({"photo": zones}, op.get("zone"))
+            changes = {k: v for k, v in op.items() if k not in ("op", "zone")}
+            if not changes:
+                raise cv.ConversionError("say what to change in the photo zone")
+            zones[zones.index(zone)] = pz.changed(store, plan, zone, changes, pz.width_of(loops, zone["regions"]))
+        else:
+            zones.remove(pz.find({"photo": zones}, op.get("zone")))
+    except (pz.ZoneError, PredictionError, su.ValidationError) as exc:
+        raise cv.ConversionError(str(exc)) from None
+    colouring["photo"] = [zone for zone in zones if zone["regions"]]
+    return colouring
+
+
+def _zone_of_work(store: Store, plan_id: int, number) -> tuple[dict, dict, dict]:
+    """The work, the zone ``number`` and its row (:func:`_zone_rows`); KeyError when there is no such zone, ConversionError when its scale
+    is not measured."""
+    plan = _photo_job(store, plan_id)
+    try:
+        number = int(number)
+        zone = pz.find(plan["colouring"], number)
+    except (TypeError, ValueError):
+        raise KeyError(f"there is no photo zone {number!r}") from None
+    document = _document(plan)
+    row = _zone_rows(store, plan, document, [zone], 0)[0]
+    if row["problem"]:
+        raise cv.ConversionError(row["problem"])
+    return plan, zone, row
+
+
+def _zone_cut(plan: dict, zone: dict) -> dict:
+    mode = pz.mode_of(plan, zone)
+    return pz.cut(plan, _zone_loops(plan), zone, grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)
+
+
+def zone_picture(store: Store, plan_id: int, number) -> rc.Picture:
+    """The photo zone as it will come out, transparent outside it, at preview size (:func:`photo_zones.look`)."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    return _zone_picture(store, plan, row)
+
+
+def _zone_picture(store: Store, plan: dict, row: dict) -> rc.Picture:
+    zone = row["zone"]
+
+    def draw() -> bytes:
+        return pz.to_png(pz.look(store, plan, zone, _zone_cut(plan, zone), row["curve"])[0])
+    return rc.Picture(store, f"vector-{plan['id']}", pz.key(plan, zone, row["curve"], row["measured"]), draw)
+
+
+def zone_kinds(store: Store, plan_id: int, number) -> dict:
+    """«Вид» of a photo zone: every kind that colours titanium with the zone as it would come out in it (the tiles), the one it has
+    marked; a dot kind at the zone's dots' power, estimated from the scale until that kind was photographed there."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    width, curve = row["width_mm"], row["curve"]
+    power = ps.dot_power_at(store, pz.mode_of(plan, zone), width, zone.get("dot_power"))
+    dots = ps.dots_at(store, power, curve)
+    out = []
+    for kind in pz.KINDS:
+        measured = pz.measured_dots(store, plan, zone, kind, power, width) if kind != pz.GRAYSCALE else None
+        shown = {**zone, "kind": kind, "dot_power": power}
+        entry = {"key": kind, "family": pz.photo_modes.MODES[kind].family, "estimate": kind != pz.GRAYSCALE and measured is None,
+                 "picture": f"/api/vector/{plan['id']}/photo/{zone['number']}/kinds/{kind}.png?v="
+                            f"{pz.key(plan, shown, curve, measured, px=pz.TILE_PX)[:16]}"}
+        if kind == pz.GRAYSCALE:
+            entry.update(min_power=zone["min_power"], max_power=zone["max_power"])
+        else:
+            entry.update(power=power, hex=dots["hex"], clean_hex=dots["clean_hex"])
+        out.append(entry)
+    return {"zone": zone["number"], "kind": zone["kind"], "kinds": out}
+
+
+def zone_kind_picture(store: Store, plan_id: int, number, kind: str) -> rc.Picture:
+    """The photo zone as it would come out in ``kind`` (:func:`zone_kinds`), the longer side ``photo_zones.TILE_PX``."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    if kind not in pz.KINDS:
+        raise KeyError(f"no kind of engraving {kind!r}")
+    power = ps.dot_power_at(store, pz.mode_of(plan, zone), row["width_mm"], zone.get("dot_power"))
+    shown = {**zone, "kind": kind, "dot_power": power}
+    measured = pz.measured_dots(store, plan, zone, kind, power, row["width_mm"]) if kind != pz.GRAYSCALE else None
+
+    def draw() -> bytes:
+        return pz.to_png(pz.look(store, plan, shown, _zone_cut(plan, zone), row["curve"], px=pz.TILE_PX)[0])
+    return rc.Picture(store, f"vector-{plan['id']}", pz.key(plan, shown, row["curve"], measured, px=pz.TILE_PX), draw)
+
+
+def lasso(store: Store, plan_id: int, points) -> dict:
+    """The regions of the current split a lasso drawn through ``points`` (mm) encloses, at least half of each (REQ-073); nothing is changed."""
+    plan = _photo_job(store, plan_id)
+    document = _document(plan)
+    raster = _memo(("labels", plan["document_path"]), lambda: pz.labels(document, _loops_by_region(plan, document)))
+    try:
+        ids = pz.lasso(document, raster, points)
+    except pz.ZoneError as exc:
+        raise cv.ConversionError(str(exc)) from None
+    return {"version": plan["document_version"], "regions": ids}
+
+
+def _zone_layers(store: Store, plan: dict, rows: list[dict]) -> list[dict]:
+    """The Image layer of every photo zone for the file (:func:`photo_zones.file_layer`)."""
+    return [pz.file_layer(store, plan, row["zone"], _zone_cut(plan, row["zone"]), row["index"]) for row in rows]
 
 
 # -- reading and the file ------------------------------------------------------------------------------------------------------
@@ -903,6 +1115,7 @@ def photo_view(store: Store, plan: dict) -> dict:
     by_id, colouring, settings = state["by_id"], plan["colouring"], plan["colour_settings"]
     used = {c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
     layers = _export_layers(store, plan, state)
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
     hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
               "unresolved", "ai_photo", "counts")
     out = {k: v for k, v in plan.items() if k not in hidden}
@@ -927,7 +1140,8 @@ def photo_view(store: Store, plan: dict) -> dict:
             "photo_px": ai.PHOTO_PX, "max_text": ai.MAX_TEXT},
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
-        time=_estimate(plan, layers), export_blocked=_blocker_photo(plan, state), layer_cap=photo_cap(plan["markers_enabled"]),
+        zones=[_zone_shown(plan, row) for row in zones], zone_kinds=list(pz.KINDS),
+        time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), layer_cap=photo_cap(plan["markers_enabled"]),
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}
@@ -943,23 +1157,26 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     document = _document(plan)
     entries = _palette(store, plan)
     state = _state(plan, document, entries)
-    blocker = _blocker_photo(plan, state)
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
+    blocker = _blocker_photo(plan, state, zones)
     if blocker is not None:
         raise cv.ConversionError(blocker)
     layers = _export_layers(store, plan, state)
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
     regions = [{**r, "layer_key": key[r["id"]]} for r in seg.regions_as_loops(_geometry(plan)) if r["id"] in key]
     plan["export_mirror_y"] = EXPORT_MIRROR_Y
-    data = pl.export_lbrn2({**plan, "layers": layers, "vector_document": {"regions": regions}})
+    data = pl.export_lbrn2({**plan, "layers": layers + _zone_layers(store, plan, zones), "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
     plan["layers"] = layers
     plan.pop("unresolved", None)
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
-                            "document_version": plan["document_version"], "layers": len(layers), "regions": len(regions),
+                            "document_version": plan["document_version"], "layers": len(layers) + len(zones), "regions": len(regions),
                             "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
-                            "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers)["seconds"],
-                            "promised": work_review.promised_layers(layers)})       # what this file shows in the preview (DEC-090)
+                            "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers, zones)["seconds"],
+                            "promised": work_review.promised_layers(layers),       # what this file shows in the preview (DEC-090)
+                            "zones": [{**copy.deepcopy(row["zone"]), "index": row["index"], "name": pz.layer_name(row["index"], row["zone"], row["parameters"]),
+                                       "parameters": row["parameters"]} for row in zones]})
     cv._persist(store, plan, ST_EXPORTED, plan["markers_enabled"])
     return plan["name"], data
 
@@ -1128,13 +1345,15 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
             raise cv.ConversionError("there is no such variant of the colouring")
         if variant["version"] != plan["document_version"]:
             raise cv.ConversionError("this variant of the colouring belongs to another version of the split")
-        return {"colouring": copy.deepcopy(variant["colouring"])}
+        return {"colouring": {**copy.deepcopy(variant["colouring"]), "photo": copy.deepcopy(pz.zones(current))}}   # the zones stay as they are
     if kind == "settings":
         settings = {"max_time": colormap.time_limit(op.get("max_time")), "include_as_shot": bool(op.get("include_as_shot"))}
         threshold = cv._threshold(store, plan["device_id"], plan["lens_id"], op.get("tolerance_de", plan["threshold"]))
         ruled = {**plan, "threshold": threshold, "colour_settings": settings}
         return {"threshold": threshold, "colour_settings": settings,
                 "colouring": _automatic(ruled, document, entries, current["mode"] or "closest", current["seed"], current)}
+    if kind in PHOTO_OPS:
+        return {"colouring": _photo_op(store, plan, document, copy.deepcopy(current), kind, op)}
     return {"colouring": _choose(copy.deepcopy(current), plan, document, entries, kind, op)}
 
 
@@ -1165,7 +1384,7 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
     base = _automatic(plan, document, entries, "closest", 0, current)          # what the model does not decide: left-out colours
     total = sum(p["pixels"] for p in document["palette"]) or 1
     sources = [{"index": p["index"], "lab": [round(v, 1) for v in p["lab"]], "share": round(p["pixels"] / total, 4)} for p in free]
-    cap = photo_cap(plan["markers_enabled"])
+    cap = photo_cap(plan["markers_enabled"]) - len(pz.zones(current))          # each photo zone takes a layer of its own
     what = ai.brief(style, text, free_lightness, free=sources, fixed=fixed, touches=ai.touching(document), palette=candidates, max_recipes=cap)
     photo = ai.photo_data_url(Path(plan["image_path"]).read_bytes()) if plan.get("ai_photo") else None
 
@@ -1230,6 +1449,9 @@ def _choose(colouring: dict, plan: dict, document: dict, entries: list[dict], ki
             raise cv.ConversionError(f"there is no region {ids!r}")
         chosen = {_region_id(document, region) for region in ids}
         colouring["excluded_regions"] = sorted(set(colouring["excluded_regions"]) - chosen | (chosen if kind == "exclude_region" else set()))
+        if kind == "exclude_region":                 # a region left out of the file is not engraved by its photo zone either
+            colouring["photo"] = [z for z in ({**z, "regions": [r for r in z["regions"] if r not in chosen]} for z in pz.zones(colouring))
+                                  if z["regions"]]
     return colouring
 
 
@@ -1238,7 +1460,8 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
     paints the clicked region; ``colour`` its whole source colour, the own colours of the regions inside it cleared (null:
     the colour goes back to the automatic choice); ``fill`` every region :func:`_reach` finds from it. A region or colour
     painted with a titanium colour is included again, and with the scope ``colour`` so is every region of the colour that
-    was excluded one by one (editor DEC-079), as the hover outlines them."""
+    was excluded one by one (editor DEC-079), as the hover outlines them. A region painted with the scope ``region`` or ``fill`` leaves
+    its photo zone (REQ-073: the brush gives it a colour); the scope ``colour`` leaves the zones as they are."""
     region = _region_id(document, op.get("region"))
     scope, entry = op.get("scope"), op.get("entry_id")
     if scope not in SCOPES:
@@ -1257,6 +1480,8 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
         painted = inside
     else:
         painted = {region} if scope == "region" else set(_reach(document, colouring, region, _similarity(op.get("similarity_de"))))
+        colouring["photo"] = [z for z in ({**z, "regions": [r for r in z["regions"] if r not in painted]} for z in pz.zones(colouring))
+                              if z["regions"]]
         for r in painted:
             if entry is None:
                 colouring["regions"].pop(r, None)
@@ -1270,9 +1495,10 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
 def _reach(document: dict, colouring: dict, region: str, similarity: float) -> list[str]:
     """The regions a fill from ``region`` paints, in the document's order (editor REQ-045): breadth first over shared
     borders, a neighbour joins when its source colour lies within ``similarity`` delta E of the clicked region's (never
-    of the region it was reached from); excluded regions and regions of excluded colours stop it, the clicked one aside."""
+    of the region it was reached from); excluded regions, regions of excluded colours and of photo zones stop it, the clicked one aside."""
     excluded_colours = set(colouring["excluded_colours"])
-    walls = set(colouring["excluded_regions"]) | {r["id"] for r in document["regions"] if r["color"] in excluded_colours}
+    walls = (set(colouring["excluded_regions"]) | {r["id"] for r in document["regions"] if r["color"] in excluded_colours}
+             | set(pz.zone_of(colouring)))
     walls.discard(region)
     lab = {r["id"]: r["lab"] for r in document["regions"]}
     near, seen, queue = seg.neighbours(document), {region}, collections.deque([region])
@@ -1347,10 +1573,16 @@ def _merge(plan: dict, document: dict, entries: list[dict], kind: str, op: dict)
         away = set(ids) - {keeper}
         colouring["regions"] = {k: v for k, v in colouring["regions"].items() if k not in away}
         colouring["excluded_regions"] = [r for r in colouring["excluded_regions"] if r not in away]
+        sizes = {r["id"]: r["pixels"] for r in document["regions"] if r["id"] in set(ids)}
+        for zone in pz.zones(colouring):                     # the region left is in a photo zone that held half of it or more
+            held = sum(sizes[r] for r in zone["regions"] if r in sizes)
+            inside = set(zone["regions"]) - set(ids) | ({keeper} if 2 * held >= sum(sizes.values()) else set())
+            zone["regions"] = [r["id"] for r in merged["regions"] if r["id"] in inside]
     left = {p["index"] for p in merged["palette"]}           # a colour merged away, or left without a region
     for part in ("groups", "assignment", "how"):
         colouring[part] = {k: v for k, v in colouring[part].items() if int(k) in left}
     colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i in left]
+    colouring["photo"] = [z for z in pz.zones(colouring) if z["regions"]]
     return merged, colouring, keeper
 
 
@@ -1392,7 +1624,8 @@ def _summary(row, data: dict) -> dict:
             "updated_at": history[-1]["at"] if history else row["created_at"], "strategy": PHOTO if photo else "trace",
             "width_mm": round(size["width"], 2), "height_mm": round(size["height"], 2),
             "algorithm": data.get("split", {}).get("algorithm", seg.DEFAULT_ALGORITHM) if photo else None,
-            "n_colours": colours, "regions": regions, "layers": len(data.get("layers") or []), "mode": colouring.get("mode"),
+            "n_colours": colours, "regions": regions, "layers": len(data.get("layers") or []), "zones": len(pz.zones(colouring)),
+            "mode": colouring.get("mode"),
             "ai_style": said.get("style"), "ai_text": said.get("text"), "variants": len(data.get("variants") or []),
             "smoothing_mm": data.get("smoothing_mm", 0.0) if photo else None, "version": data["document_version"],
             "attention": data.get("attention") if photo else None, "review": _last_review(data) if photo else None}
@@ -1424,7 +1657,7 @@ def _painted(plan: dict) -> dict[str, list[int]] | None:
     return {region: layer["srgb"] for layer in layers for region in layer["region_ids"]}
 
 
-def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None) -> bytes:
+def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None, zones: list[tuple[dict, rc.Picture]] = ()) -> bytes:
     photo = is_photo(plan)
     document = _geometry(plan) if photo else _document(plan)
     size = document["size_mm"]
@@ -1444,8 +1677,25 @@ def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None) -> bytes:
         else:                                             # a line of a traced work
             for stroke in region["strokes"]:
                 cv2.polylines(canvas, [np.round(np.asarray(stroke) * big).astype(np.int32)], False, colour, width)
+    for box, picture in zones:                            # a photo zone: its picture as it will come out, transparent outside it
+        _paste(canvas, cv2.cvtColor(cv2.imdecode(np.frombuffer(picture.png(), np.uint8), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA), box, big)
     small = cv2.resize(canvas, (cols, rows), interpolation=cv2.INTER_AREA)
     return cv2.imencode(".png", cv2.cvtColor(small, cv2.COLOR_RGB2BGR))[1].tobytes()
+
+
+def _paste(canvas: np.ndarray, rgba: np.ndarray, box: dict, scale: float) -> None:
+    """``rgba`` laid over ``canvas`` (RGB) on ``box`` (mm) at ``scale`` pixels a mm, through its transparency."""
+    x0, y0 = round(box["x"] * scale), round(box["y"] * scale)
+    w, h = max(1, round(box["width"] * scale)), max(1, round(box["height"] * scale))
+    shown = cv2.resize(rgba, (w, h), interpolation=cv2.INTER_AREA if w < rgba.shape[1] else cv2.INTER_LINEAR)
+    rows, cols = canvas.shape[:2]
+    cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(cols, x0 + w), min(rows, y0 + h)
+    if cx1 <= cx0 or cy1 <= cy0:
+        return
+    part = shown[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+    alpha = part[..., 3:4].astype(np.float32) / 255.0
+    under = canvas[cy0:cy1, cx0:cx1].astype(np.float32)
+    canvas[cy0:cy1, cx0:cx1] = (part[..., :3] * alpha + under * (1 - alpha)).round().astype(np.uint8)
 
 
 def thumbnail(store: Store, plan_id: int) -> rc.Picture:
@@ -1454,10 +1704,15 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     another picture and an unchanged one is neither drawn nor sent again; it lives in the render cache (``vector-<id>``)."""
     plan = _job(store, plan_id)
     painted = _painted(plan)
+    zones = []
+    if painted is not None and pz.zones(plan["colouring"]):          # its photo zones as they will come out (REQ-073)
+        rows = _zone_rows(store, plan, _document(plan), pz.zones(plan["colouring"]), 0)
+        zones = [(row["box"], _zone_picture(store, plan, row)) for row in rows if not row["problem"]]
     key = rc.key_of({"kind": "vector-thumbnail", "plan": plan["id"], "px": THUMB_PX, "version": plan["document_version"],
                      "document": rc.file_stamp(plan["document_path"]), "smoothing_mm": plan.get("smoothing_mm", 0.0),
-                     "painted": None if painted is None else rc.text_digest(json.dumps(painted, sort_keys=True))})
-    return rc.Picture(store, f"vector-{plan['id']}", key, lambda: _draw_thumbnail(plan, painted))
+                     "painted": None if painted is None else rc.text_digest(json.dumps(painted, sort_keys=True)),
+                     "zones": [picture.key for _, picture in zones]})
+    return rc.Picture(store, f"vector-{plan['id']}", key, lambda: _draw_thumbnail(plan, painted, zones))
 
 
 def copy_work(store: Store, plan_id: int, name=None) -> int:

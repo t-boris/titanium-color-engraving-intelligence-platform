@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "titanium_platform"
 UI = ROOT / "ui"
 SOURCES = sorted(ROOT.rglob("*.py"))                  # the package and its api/ routes
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
-               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError",
+               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError",
                "KeyError"}                             # a record that is not found: the API answers 404 with its message
 HTTP_ERRORS = {"HTTPException"}                        # HTTPException(status, {"error": text, ...}) or HTTPException(status, text)
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
@@ -51,6 +51,8 @@ INNER_OF = {
     "flag cleared by the operator: ": (("listed", "_breaks_thresholds"), ("returned", "removal_doubt")),
     "a removed photograph took away the evidence of this stage: what remains supports only 7: ": (
         ("returned", "supported_stage"), ("returned", "automatic_stage")),
+    # why a photo zone of a vector work cannot be engraved: the message of its scale's curve, kept in the zone's row (REQ-073)
+    "photo zone 7 cannot be engraved: ": (("raised", "PredictionError"),),
 }
 # Messages that end in a dynamic part after a colon which is data, not a server message: it is shown as it is.
 DATA_TAILS = {

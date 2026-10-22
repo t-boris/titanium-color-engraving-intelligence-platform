@@ -66,8 +66,9 @@ def test_every_label_of_the_editor_is_russian_and_present():
               "'Показать далёкие от оригинала'", "'Отменить'", "'Повторить'", "'Активный цвет'", "'Палитра'")
     for label in labels:
         assert label in EDITOR, label
-    assert "`Область ${rid} · исходный цвет № ${k + 1} · титан: `" in EDITOR and "`рецепт: ${params(e.parameters)}" in EDITOR
-    assert "`Слоёв ${t.recipes ?? (j.layers || []).length} из ${j.layer_cap} · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`" in EDITOR
+    assert "`Область ${rid} · исходный цвет № ${k + 1} · `, r.zone ? `фотозона ${r.zone.number}: " in EDITOR and "['титан: ',\n" in EDITOR and "`рецепт: ${params(e.parameters)}" in EDITOR
+    assert "`Слоёв ${(t.recipes ?? (j.layers || []).length) + zones} из ${j.layer_cap}` + (zones ? ` (фотозон ${zones})` : '')" in EDITOR
+    assert "` · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`" in EDITOR
     assert "btn('Подробно по цветам…', () => modal('Подробно по цветам', rows," in COLOURS      # the wide table opens in a window
 
 
@@ -97,7 +98,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -320,7 +321,7 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   await byText(tree, 'button', 'Кисть').dispatch('click');
   await byLabel(tree, 'button', 'Увеличить').dispatch('click');
   out.zoomed = svg().getAttribute('viewBox');
-  await path('r1').dispatch('pointerdown', {clientX: 50, clientY: 50, button: 0});
+  await path('r1').dispatch('pointerdown', {clientX: 50, clientY: 50, button: 1});    // «Выделение» draws a lasso: the middle button pans
   await path('r1').dispatch('pointermove', {clientX: 60, clientY: 50});
   await path('r1').dispatch('pointerup', {clientX: 60, clientY: 50});
   await path('r1').dispatch('click', {clientX: 60, clientY: 50});                    // the end of a drag is not a click
@@ -524,3 +525,123 @@ def test_the_contract_view_used_here_has_every_field_the_editor_reads():
         assert field in j and f"j.{field}" in EDITOR + COLOURS + VECTOR, field
     for field in ("index", "lab", "srgb", "status", "entry_id", "delta_e", "outside_tolerance", "regions"):
         assert field in j["colours"][0] and f"c.{field}" in EDITOR, field
+
+
+# -- photo zones (REQ-073) ----------------------------------------------------------------------------------------------------------
+SCALE = {"material_id": 3, "speed": 1000, "frequency": 60, "pulse_width": 350, "line_interval": 0.0212, "passes": 1, "global_passes": 1}
+ZONE = {"number": 1, "regions": ["r3", "r4"], "kind": "grayscale", "scale": SCALE, "min_power": 2, "max_power": 29, "dot_power": None,
+        "by_colour": True, "index": 2, "width_mm": 20, "area_mm2": 200, "box": {"x": 20, "y": 0, "width": 20, "height": 10}, "span": [1.9, 29.1],
+        "referenced": True, "dots": None, "estimate": False, "problem": None, "name": "C02 Photo 1 grayscale P2-29",
+        "picture": "/api/vector/7/photo/1.png?v=abc"}
+SCALES = {"scales": [{"mode": {**SCALE, "device_id": 1, "lens_id": None}, "span": [1.9, 29.1], "referenced": True,
+                      "bar": [{"power": 2, "hex": "#aa8844"}, {"power": 15, "hex": "#4455aa"}, {"power": 40, "hex": "#33aa66"}]},
+                     {"mode": {**SCALE, "speed": 500, "pulse_width": 200, "device_id": 1, "lens_id": None}, "span": [3, 40], "referenced": False,
+                      "bar": [{"power": 3, "hex": "#998877"}, {"power": 40, "hex": "#223344"}]}]}
+KINDS = {"zone": 1, "kind": "grayscale", "kinds": [
+    {"key": "grayscale", "family": "power", "estimate": False, "picture": "/api/vector/7/photo/1/kinds/grayscale.png?v=1", "min_power": 2, "max_power": 29},
+    {"key": "jarvis", "family": "dots", "estimate": True, "picture": "/api/vector/7/photo/1/kinds/jarvis.png?v=2", "power": 20, "hex": "#445566",
+     "clean_hex": "#ccbbaa"}]}
+
+
+def zone_routes(zoned=True) -> dict:
+    """The job of the routes above with r3 and r4 in photo zone 1 (only r1 and r2 left in a colour layer), the lasso, the zone's kinds and
+    the measured scales."""
+    j = view()
+    if zoned:
+        j.update(layers=j["layers"][:1], totals={**j["totals"], "recipes": 1}, zones=[ZONE], zone_kinds=["grayscale", "jarvis"],
+                 time={"seconds": 300, "complete": True, "layers": [{"index": i, "seconds": 100, "note": None} for i in range(3)]})
+    out = routes(j)
+    out["/api/vector/7"] = {"status": 200, "json": j}
+    out.update({"/api/vector/7/lasso": {"status": 200, "json": {"version": 1, "regions": ["r1", "r2"]}},
+                "/api/vector/7/photo/1/kinds": {"status": 200, "json": KINDS}, "/api/grey-scales": {"status": 200, "json": SCALES}})
+    return out
+
+
+@node
+def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tmp_path):
+    out = run_editor(tmp_path, zone_routes(zoned=False), """
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  const lasso = async (extra = {}) => {
+    await path('r1').dispatch('pointerdown', {clientX: 5, clientY: 30, button: 0});
+    for (const [x, y] of [[30, 30], [30, 60], [5, 60]]) await path('r1').dispatch('pointermove', {clientX: x, clientY: y});
+    out.drawn = svg().querySelectorAll('polyline').map((p) => p.getAttribute('points').split(' ').length);
+    await path('r1').dispatch('pointerup', {clientX: 5, clientY: 60, ...extra});
+    await path('r1').dispatch('click', {clientX: 5, clientY: 60});                   // the end of a lasso is not a click
+    await wait(5);
+  };
+  await lasso();
+  out.selected = classed('vw-sel');
+  out.lines = svg().querySelectorAll('polyline').length;
+  out.points = JSON.parse(ctx.requests.find((r) => r.path === '/api/vector/7/lasso').body).points;
+  out.viewBox = svg().getAttribute('viewBox');
+  out.selection = section('Выделение').textContent;
+  await lasso({altKey: true});
+  out.removed = classed('vw-sel');
+  await lasso({shiftKey: true});
+  out.added = classed('vw-sel');
+  await byText(section('Выделение'), 'button', 'Сделать фотозоной').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
+  out.photoTab = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
+""")
+    assert out["drawn"] == [4] and out["lines"] == 0                                 # the lasso is drawn while dragged, then removed
+    assert out["selected"] == ["r1", "r2"] and out["removed"] == [] and out["added"] == ["r1", "r2"]
+    assert out["points"][0] == [2, 2] and out["points"][2] == [12, 14] and out["viewBox"] == "0 0 40 20"   # mm under «meet», nothing panned
+    assert "Выбрано областей: 2" in out["selection"] and "Сделать фотозоной" in out["selection"] and "обвести мышью — лассо" not in out["selection"]
+    assert out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}] and out["photoTab"] == "true"
+
+
+@node
+def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(tmp_path):
+    out = run_editor(tmp_path, zone_routes(), """
+  out.pics = svg().querySelectorAll('image').filter((im) => im.classList.contains('vw-zone-pic'))
+    .map((im) => ['data-zone', 'href', 'x', 'y', 'width', 'height'].map((k) => im.getAttribute(k)));
+  out.fills = ['r1', 'r3', 'r4'].map((rid) => [path(rid).getAttribute('fill'), path(rid).getAttribute('stroke')]);
+  out.totals = tree.textContent.match(/Слоёв \d[^·]+/)[0];
+  out.file = tree.querySelectorAll('div').filter((d) => d.className === 'vw-line').map((d) => d.textContent);
+  out.layerRow = section('Слои титана').textContent;
+  await path('r3').dispatch('pointermove', {clientX: 75, clientY: 30});
+  out.tip = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
+  await byText(tree, 'button', 'Фото').dispatch('click');
+  await wait(5);
+  const zone = section('Фотозоны');
+  out.card = zone.textContent;
+  out.tiles = zone.querySelectorAll('button').filter((b) => b.classList.contains('vp-kind')).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+  const picked = zone.querySelectorAll('button').find((b) => b.className === 'vp-scale-pick picked');
+  out.picked = [picked.textContent, picked.getAttribute('aria-pressed')];
+  out.bar = picked.querySelector('div').childNodes.map((x) => x.className);
+  const others = byLabel(zone, 'div', 'Шкала серого фотозоны 1').querySelectorAll('button');
+  out.others = others.map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.querySelector('div').childNodes.map((x) => x.className)]);
+  out.othersOpen = zone.querySelector('details').hasAttribute('open');
+  await zone.querySelectorAll('button').find((b) => b.textContent.startsWith('Джарвис')).dispatch('click'); await tick();
+  await others[0].dispatch('click'); await tick();
+  const low = byLabel(zone, 'input', 'Min мощность фотозоны 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
+  const tone = byLabel(zone, 'input', 'Цвета по картинке, фотозона 1'); tone.checked = false; await tone.dispatch('change'); await tick();
+  await byText(zone, 'button', 'Выделить').dispatch('click');
+  out.selectedZone = classed('vw-sel');
+  out.selection = section('Выделение').textContent;
+  await byText(section('Выделение'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Фото').dispatch('click');
+  await byText(section('Фотозоны'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
+  out.scalesFetched = ctx.requests.filter((r) => r.path === '/api/grey-scales').map((r) => r.url);
+""")
+    assert out["pics"] == [["1", "/api/vector/7/photo/1.png?v=abc", "20", "0", "20", "10"]]
+    assert out["fills"] == [["rgb(205,198,182)", "rgb(205,198,182)"], ["rgba(0,0,0,0)", "none"], ["rgba(0,0,0,0)", "none"]]
+    assert out["totals"].startswith("Слоёв 2 из 29 (фотозон 1)") and "Фотозона 1" in out["layerRow"] and "C02 · Градации серого · 2–29 %" in out["layerRow"]
+    assert out["file"] == ["C00 Чистка (перекрёстная заливка)вся работа · 1 мин 40 с",
+                           "C01 C01 P10-F30-V500-I0.02областей 2 · 2.00 см² · 1 мин 40 с", "C02 Фотозона 1: Градации серогообластей 2 · 2.00 см² · 1 мин 40 с"]
+    assert "Слоёв цвета: 1, фотозон: 1 из 29" in out["text"] and "1 и фотозон 1 из 29 доступных" in out["text"]
+    assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Градации серого · 2–29 %")
+    assert "20 × 10 мм · 2.00 см² · областей 2" in out["card"] and "Измерено при ширине зоны 20 мм: 1.9–29.1 %." in out["card"]
+    assert out["tiles"] == [["Градации серого", "true"], ["Джарвис ≈", "false"]]
+    assert out["picked"] == ["1000 мм/с · 60 кГц · 350 нсшаг 0.0212 мм · 1.9–29.1 %", "true"]
+    assert out["others"] == [["500 мм/с · 60 кГц · 200 нсшаг 0.0212 мм · 3–40 % · без карты", "false", ["", ""]]] and not out["othersOpen"]
+    assert "Другие шкалы этого лазера и титана: 1" in out["card"]
+    assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
+    assert out["selectedZone"] == ["r3", "r4"] and "из них в фотозонах: 2" in out["selection"] and "Добавить в фотозону 1" in out["selection"]
+    assert out["posted"] == [{"op": "photo_set", "zone": 1, "kind": "jarvis"},
+                             {"op": "photo_set", "zone": 1, "scale": {**SCALE, "speed": 500, "pulse_width": 200}},
+                             {"op": "photo_set", "zone": 1, "min_power": 5, "max_power": 29},
+                             {"op": "photo_set", "zone": 1, "by_colour": False},
+                             {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
+    assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id="]

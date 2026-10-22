@@ -6,7 +6,10 @@
    меняют viewBox картинки. После каждого действия сервер возвращает работу целиком, и картинка перекрашивается на месте:
    масштаб, сдвиг, инструмент, активный цвет и выделение сохраняются; новая версия разбиения загружается заново.
    Слить области в один контур можно только связному выделению: кто с кем граничит, экран спрашивает у сервера один раз на
-   версию разбиения (DEC-080); сервер всё равно проверяет каждое слияние. */
+   версию разбиения (DEC-080); сервер всё равно проверяет каждое слияние.
+   Фотозоны (REQ-073): выделенные области (щелчок, Shift+щелчок или лассо — обвести мышью инструментом «Выделение») становятся фотозоной —
+   они гравируются фотогравировкой картинки работы; на картинке зона показана такой, какой выйдет (её области прозрачны над её картинкой),
+   её вид и шкала — во вкладке «Фото» (vector-photo.js). Сдвиг при «Выделении» — пробел+перетаскивание или средняя кнопка мыши. */
 'use strict';
 const VectorEditor = (() => {
   const {h, fill, btn, get, pill, toast, num, labText, steadiness, STEADY, originText} = App;
@@ -18,6 +21,8 @@ const VectorEditor = (() => {
   const SCOPES = [['region', 'Участок'], ['colour', 'Весь исходный цвет'], ['fill', 'Заливка похожих']];
   const VIEWS = [['titanium', 'Титан'], ['source', 'Исходные цвета'], ['original', 'Оригинал']];
   const SIMILARITY = 8;                       // ΔE заливки похожих по умолчанию
+  const SEE_THROUGH = 'rgba(0,0,0,0)';        // область фотозоны: видна картинка зоны под ней, а наведение и щелчок по ней работают
+  const LASSO_STEP = 3;                       // экранных пикселей между точками лассо
   const svgCache = new Map();
   const paletteCache = new Map();
   const nearCache = new Map();
@@ -92,8 +97,10 @@ const VectorEditor = (() => {
     const exColours = new Set((j.colouring.excluded_colours || []).map(Number)), exRegions = new Set(j.colouring.excluded_regions || []);
     const own = j.colouring.regions || {};
     const tol = j.settings.tolerance_de;
+    const zones = new Map((j.zones || []).flatMap((z) => z.regions.map((rid) => [rid, z])));
     return (rid, k) => {
       const c = colours.get(k) || null;
+      if (zones.has(rid)) return {c, zone: zones.get(rid)};               // фотозона: гравируется картинкой, не цветом
       if (exRegions.has(rid)) return {c, excluded: true};
       if (own[rid] != null) {
         const entry = j.entries[own[rid]];
@@ -108,6 +115,7 @@ const VectorEditor = (() => {
   // клавиши действуют только для редактора, который сейчас на экране
   let current = null;
   document.addEventListener('keydown', (ev) => { if (current) current.key(ev); });
+  document.addEventListener('keyup', (ev) => { if (current) current.keyup(ev); });
 
   /** Редактор работы j; run(op) отправляет одно действие и обновляет экран (возвращает true, если сервер его принял). */
   function create(j, run, tools = {}) {           // tools.pick(j, title, sourceLab, entryId, onPick): the window that chooses a titanium colour (vector-colours.js)
@@ -120,7 +128,8 @@ const VectorEditor = (() => {
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
     let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
-    let hover = null, hot = [], shownSelection = [], farCount = 0, pending = 0;
+    let hover = null, hot = [], shownSelection = [], farCount = 0, pending = 0, spaceHeld = false;
+    let zonePics = null;                                     // <g> с картинками фотозон под областями
     const reach = new Map();
     let reachTimer = null, sortTimer = null;
 
@@ -162,7 +171,8 @@ const VectorEditor = (() => {
     const farBox = h('input', {type: 'checkbox', onChange: (ev) => { state.far = ev.target.checked; syncSvgClass(); }});
     const farNote = h('p', {class: 'small muted'});
     const coloursBox = h('div', {class: 'vw-ed-list'}), colourMerge = h('div', {});
-    // панель на три вкладки, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085)
+    const photo = VectorPhoto.create(j, {act: (op) => act(op), select: (ids) => selectOnly(ids), outline: (ids) => (ids ? setHot(ids) : refreshHover())});
+    // панель на четыре вкладки, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085), фотозоны (REQ-073)
     const sideTabs = App.tabs([
       ['brush', 'Кисть', h('div', {class: 'vw-ed-pane'},
         h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Инструмент'),
@@ -173,13 +183,14 @@ const VectorEditor = (() => {
         h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid))],
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
-        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))]],
+        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
+      ['photo', 'Фото', photo.el]],
       {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab'});
     const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'}, sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
     const el = h('div', {class: 'vw-editor'},
       h('div', {class: 'vw-ed-main'}, bar, totals, stage,
-        h('p', {class: 'small muted'}, 'Колесо мыши — масштаб у курсора, перетаскивание — сдвиг, «Вписать» — вся картинка. ',
-          'Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Esc — снять выделение.')),
+        h('p', {class: 'small muted'}, 'Колесо мыши — масштаб у курсора, перетаскивание — сдвиг (при «Выделении» — лассо, сдвиг — пробел+перетаскивание '
+          + 'или средней кнопкой), «Вписать» — вся картинка. ', 'Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Esc — снять выделение.')),
       panel);
 
     // --- картинка: загрузка, раскраска, масштаб ---------------------------------------------------------------------------
@@ -203,7 +214,8 @@ const VectorEditor = (() => {
       const defs = svgEl('defs', {});
       defs.append(pattern);
       // оригинал — в той же рамке и пропорциях, что и разбиение; грузится, только когда его показывают
-      next.prepend(defs, svgEl('image', {x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none'}));
+      zonePics = svgEl('g', {class: 'vw-zone-pics'});
+      next.prepend(defs, svgEl('image', {x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none'}), zonePics);
       next.setAttribute('preserveAspectRatio', 'xMidYMid meet');
       paths = new Map(); colourOf = new Map(); byColour = new Map();
       for (const path of next.querySelectorAll('path[data-region]')) {
@@ -222,6 +234,7 @@ const VectorEditor = (() => {
       if (hover && !paths.has(hover)) hover = null;
       setBox(vb.x, vb.y, vb.w);
       paint();
+      showZones();
       showImage();
       outlineSelection();
       syncSelection();
@@ -237,11 +250,12 @@ const VectorEditor = (() => {
         const r = lookup(rid, colourOf.get(rid));
         let colour;
         if (state.view === 'source') colour = r.c ? rgb(r.c.srgb) : '#ffffff';
+        else if (r.zone) colour = SEE_THROUGH;
         else if (r.excluded) colour = EXCLUDED;
         else if (r.missing) colour = `url(#${missId})`;
         else colour = rgb(r.entry.srgb);
         path.setAttribute('fill', colour);
-        path.setAttribute('stroke', r.missing && state.view !== 'source' ? MISSING : colour);
+        path.setAttribute('stroke', r.missing && state.view !== 'source' ? MISSING : r.zone && state.view !== 'source' ? 'none' : colour);
         if (r.entry) {
           const key = String(r.entryId);
           if (!byEntry.has(key)) byEntry.set(key, []);
@@ -256,6 +270,36 @@ const VectorEditor = (() => {
 
     function syncSvgClass() {
       if (svg) svg.setAttribute('class', ['vw-ed-svg', state.view === 'original' ? 'view-original' : '', state.far ? 'show-far' : ''].filter(Boolean).join(' '));
+    }
+
+    /** Картинки фотозон — каждая на своём прямоугольнике под областями зоны; адрес меняется, только когда меняется сама картинка. */
+    function showZones() {
+      if (!zonePics) return;
+      const shown = new Map([...zonePics.querySelectorAll('image')].map((im) => [im.getAttribute('data-zone'), im]));
+      for (const z of j.zones || []) {
+        if (!z.picture) continue;
+        const key = String(z.number);
+        const im = shown.get(key) || svgEl('image', {class: 'vw-zone-pic', 'data-zone': key, preserveAspectRatio: 'none'});
+        for (const [k, v] of [['x', z.box.x], ['y', z.box.y], ['width', z.box.width], ['height', z.box.height]]) im.setAttribute(k, v);
+        setPicture(im, z.picture);
+        if (!shown.has(key)) zonePics.append(im);
+        shown.delete(key);
+      }
+      for (const im of shown.values()) im.remove();
+    }
+
+    /** A zone's new picture replaces its old one only once it has loaded: the old one stays in place meanwhile, never a blank zone. */
+    function setPicture(im, src) {
+      if (im.getAttribute('href') === src || im.getAttribute('data-next') === src) return;
+      if (!im.getAttribute('href') || typeof Image === 'undefined') return im.setAttribute('href', src);
+      im.setAttribute('data-next', src);
+      const next = new Image();
+      next.onload = next.onerror = () => {
+        if (im.getAttribute('data-next') !== src) return;                   // a newer picture was asked for meanwhile
+        im.setAttribute('href', src);
+        im.removeAttribute('data-next');
+      };
+      next.src = src;
     }
 
     function showImage() {
@@ -301,10 +345,13 @@ const VectorEditor = (() => {
       const delta = (ev.deltaY || 0) * (ev.deltaMode === 1 ? 16 : 1);
       zoomAt(clamp(Math.exp(-delta * 0.002), 0.5, 2), vb.x + (ev.clientX - f.r.left - f.ox) / f.s, vb.y + (ev.clientY - f.r.top - f.oy) / f.s);
     }, {passive: false});
+    const toMm = (ev, f = frame()) => [vb.x + (ev.clientX - f.r.left - f.ox) / f.s, vb.y + (ev.clientY - f.r.top - f.oy) / f.s];
     stage.addEventListener('pointerdown', (ev) => {
-      if (ev.button > 0) return;
+      if (ev.button > 1) return;
+      if (ev.button === 1) ev.preventDefault();               // средняя кнопка — сдвиг, а не автопрокрутка страницы
       dragged = false;
-      drag = {x: ev.clientX, y: ev.clientY, vb: {...vb}, s: frame().s, pointer: ev.pointerId, moving: false};
+      const lasso = ev.button === 0 && state.tool === 'select' && !spaceHeld;
+      drag = {x: ev.clientX, y: ev.clientY, vb: {...vb}, s: frame().s, pointer: ev.pointerId, moving: false, lasso, points: [], line: null};
     });
     stage.addEventListener('pointermove', (ev) => {
       if (drag) {
@@ -312,17 +359,53 @@ const VectorEditor = (() => {
         if (!drag.moving && Math.hypot(dx, dy) > 4) {
           drag.moving = true;
           try { stage.setPointerCapture(drag.pointer); } catch (_) { /* указатель уже отпущен */ }
-          stage.classList.add('panning');
           tip.hidden = true;
+          if (drag.lasso) startLasso(ev);
+          else stage.classList.add('panning');
         }
+        if (drag.moving && drag.lasso) return extendLasso(ev);
         if (drag.moving) return setBox(drag.vb.x - dx / drag.s, drag.vb.y - dy / drag.s, drag.vb.w);
       }
       hoverAt(ev);
     });
-    const endDrag = () => {
-      if (drag && drag.moving) { dragged = true; stage.classList.remove('panning'); }
+    const endDrag = (ev) => {
+      if (drag && drag.moving) {
+        dragged = true;
+        stage.classList.remove('panning');
+        if (drag.lasso) finishLasso(drag, ev || {});
+      }
       drag = null;
     };
+
+    // --- лассо: обвести мышью области инструментом «Выделение»; выбираются те, что внутри хотя бы наполовину (решает сервер) ----------
+    function startLasso(ev) {
+      drag.line = svgEl('polyline', {class: 'vw-lasso', points: ''});
+      if (svg) svg.append(drag.line);
+      drag.points = [toMm({clientX: drag.x, clientY: drag.y})];
+      drag.last = [drag.x, drag.y];
+      extendLasso(ev);
+    }
+    function extendLasso(ev) {
+      if (Math.hypot(ev.clientX - drag.last[0], ev.clientY - drag.last[1]) < LASSO_STEP) return;
+      drag.last = [ev.clientX, ev.clientY];
+      drag.points.push(toMm(ev));
+      if (drag.line) drag.line.setAttribute('points', drag.points.map(([x, y]) => `${+x.toFixed(3)},${+y.toFixed(3)}`).join(' '));
+    }
+    async function finishLasso(done, ev) {
+      if (done.line) done.line.remove();
+      if (done.points.length < 3) return;
+      const how = ev.altKey ? 'remove' : ev.shiftKey ? 'add' : 'replace';
+      let got;
+      try { got = await App.post(`/vector/${id}/lasso`, {points: done.points.map(([x, y]) => [+x.toFixed(3), +y.toFixed(3)])}); }
+      catch (e) { return toast(e.message); }
+      if (got.version !== j.document.version) return;          // пока считалось, разбиение сменилось
+      const ids = got.regions.filter((rid) => paths.has(rid));
+      if (how === 'replace') state.selection = new Set(ids);
+      else for (const rid of ids) mark(state.selection, rid, how === 'add');
+      outlineSelection();
+      syncSelection();
+      if (!ids.length) toast('Лассо не обвело ни одной области хотя бы наполовину');
+    }
     stage.addEventListener('pointerup', endDrag);
     stage.addEventListener('pointercancel', endDrag);
     stage.addEventListener('pointerleave', () => { if (!drag) setHover(null); });
@@ -380,7 +463,8 @@ const VectorEditor = (() => {
       if (state.tool === 'pipette') return 'Щелчок — сделать цвет титана этой области активным';
       if (state.tool === 'select') return state.selection.has(rid) ? 'Щелчок — оставить выбранной только её, Shift+щелчок — убрать из выделения'
         : 'Щелчок — выбрать, Shift+щелчок — добавить к выделению';
-      const what = state.active == null ? 'вернуть автоматический выбор' : 'покрасить активным цветом';
+      const what = (state.active == null ? 'вернуть автоматический выбор' : 'покрасить активным цветом')
+        + (state.scope !== 'colour' && lookup(rid, colourOf.get(rid)).zone ? ' и вывести из фотозоны' : '');
       if (state.scope === 'colour') return `Щелчок — ${what}: весь исходный цвет № ${colourOf.get(rid) + 1}, областей ${(byColour.get(colourOf.get(rid)) || []).length}`;
       if (state.scope === 'fill') {
         const r = reach.get(reachKey(rid));
@@ -392,8 +476,8 @@ const VectorEditor = (() => {
     function showTip(rid) {
       const k = colourOf.get(rid), r = lookup(rid, k), e = r.entry;
       if (!r.c) { tip.hidden = true; return; }
-      fill(tip, h('div', {}, `Область ${rid} · исходный цвет № ${k + 1} · титан: `,
-        r.excluded ? 'исключена' : r.missing ? 'цвета больше нет среди измерений' : [chip(e.srgb, labText(e.lab)), `ΔE ${num(de(r.c.lab, e.lab))}`, r.own ? ' · свой цвет области' : null]),
+      fill(tip, h('div', {}, `Область ${rid} · исходный цвет № ${k + 1} · `, r.zone ? `фотозона ${r.zone.number}: ${VectorPhoto.zoneSummary(r.zone)}` : ['титан: ',
+        r.excluded ? 'исключена' : r.missing ? 'цвета больше нет среди измерений' : [chip(e.srgb, labText(e.lab)), `ΔE ${num(de(r.c.lab, e.lab))}`, r.own ? ' · свой цвет области' : null]]),
       e ? h('div', {class: 'muted'}, `рецепт: ${params(e.parameters)} · ${seconds(e.time_s_per_cm2)}`) : null,
       h('div', {class: 'vw-ed-tip-do'}, clickText(rid)));
       tip.hidden = false;
@@ -420,7 +504,8 @@ const VectorEditor = (() => {
     function pipette(rid) {
       const r = lookup(rid, colourOf.get(rid));
       if (r.entry) return setActive(r.entryId);
-      toast(r.excluded ? `Область ${rid} исключена: цвета титана у неё нет` : `У области ${rid} нет измеренного цвета титана`);
+      toast(r.zone ? `Область ${rid} в фотозоне ${r.zone.number}: она гравируется картинкой, цвета титана у неё нет`
+        : r.excluded ? `Область ${rid} исключена: цвета титана у неё нет` : `У области ${rid} нет измеренного цвета титана`);
     }
 
     function select(rid, add) {
@@ -431,6 +516,13 @@ const VectorEditor = (() => {
       if (hover) showTip(hover);
     }
     function clearSelection() { state.selection = new Set(); outlineSelection(); syncSelection(); }
+    function selectOnly(ids) {
+      setTool('select');
+      state.selection = new Set(ids.filter((rid) => paths.has(rid)));
+      outlineSelection();
+      syncSelection();
+      sideTabs.select('brush');                                // выделение и его действия — во вкладке «Кисть»
+    }
 
     function outlineSelection() {
       for (const rid of shownSelection) if (paths.has(rid)) paths.get(rid).classList.remove('vw-sel');
@@ -454,7 +546,7 @@ const VectorEditor = (() => {
     function setTool(t) {
       state.tool = t;
       toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', TOOLS[i][0] === t ? 'true' : 'false'));
-      stage.setAttribute('class', `vw-ed-stage tool-${t}`);
+      stage.setAttribute('class', `vw-ed-stage tool-${t}` + (spaceHeld ? ' pan-ready' : ''));
       scopeBox.hidden = t !== 'brush';
       refreshHover();
     }
@@ -566,20 +658,31 @@ const VectorEditor = (() => {
       const why = link === false ? 'Слить нельзя: выбранные области не связаны общими границами (касания углом недостаточно).'
         : checking ? 'Проверяем, какие области соседние…'
           : ids.length > 1 && nearFailed ? 'Не удалось проверить, какие области соседние: слияние проверит сервер.' : null;
+      const zones = j.zones || [];
+      const zoned = ids.filter((rid) => lookup(rid, colourOf.get(rid)).zone);
       fill(selectionBox, h('h4', {}, 'Выделение'),
-        ids.length ? h('p', {class: 'small'}, `Выбрано областей: ${ids.length}`)
-          : h('p', {class: 'small muted'}, 'Инструмент «Выделение»: щелчок выбирает область, Shift+щелчок добавляет или убирает, Esc снимает выделение.'),
+        ids.length ? h('p', {class: 'small'}, `Выбрано областей: ${ids.length}` + (zoned.length ? `, из них в фотозонах: ${zoned.length}` : ''))
+          : h('p', {class: 'small muted'}, 'Инструмент «Выделение»: щелчок выбирает область, Shift+щелчок добавляет или убирает, обвести мышью — лассо '
+            + '(с Shift добавляет, с Alt убирает), Esc снимает выделение.'),
         ids.length ? h('div', {class: 'row'},
           btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2 || link === false || checking),
           btn('Не гравировать', () => act({op: 'exclude_region', regions: ids})), btn('Гравировать', () => act({op: 'include_region', regions: ids})),
           btn('Снять выделение', clearSelection)) : null,
+        ids.length ? h('div', {class: 'row vw-ed-photo-acts'},
+          btn('Сделать фотозоной', () => act({op: 'photo_add', regions: ids}, () => sideTabs.select('photo')), 'primary'),
+          zones.map((z) => btn(`Добавить в фотозону ${z.number}`, () => act({op: 'photo_add', regions: ids, zone: z.number}))),
+          zoned.length ? btn('Вернуть в цвета', () => act({op: 'photo_remove', regions: zoned})) : null) : null,
+        ids.length && !zones.length ? h('p', {class: 'small muted'}, '«Сделать фотозоной» — выделенные области выйдут фотогравировкой картинки работы, '
+          + 'а не цветами; вид и шкала — во вкладке «Фото».') : null,
         ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе.') : null,
         why ? h('p', {class: 'small muted'}, why) : null);
     }
 
     function syncTotals() {
       const t = j.totals || {};
-      fill(totals, `Слоёв ${t.recipes ?? (j.layers || []).length} из ${j.layer_cap} · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`,
+      const zones = (j.zones || []).length;
+      fill(totals, `Слоёв ${(t.recipes ?? (j.layers || []).length) + zones} из ${j.layer_cap}` + (zones ? ` (фотозон ${zones})` : '')
+        + ` · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`,
         t.colours ? ` · цветов в допуске ${t.within_tolerance} из ${t.colours}` : null);
       undoBtn.disabled = !(j.undo > 0);
       redoBtn.disabled = !(j.redo > 0);
@@ -609,7 +712,11 @@ const VectorEditor = (() => {
           sizeNote(l.size),
           h('span', {class: 'muted'}, `${area(l.area_mm2)} · областей ${count} · ${rate == null || l.area_mm2 == null ? 'время не оценено' : duration(rate * l.area_mm2 / 100)}`)),
         () => regionsOf(l));
-      }) : h('p', {class: 'small muted'}, 'Слоёв цвета нет: всё исключено.'));
+      }) : h('p', {class: 'small muted'}, 'Слоёв цвета нет: всё исключено.'),
+      (j.zones || []).map((z) => outlineOnHover(h('div', {class: 'vw-ed-item vw-ed-zone-row'},
+        z.picture ? h('img', {class: 'vw-ed-zone-chip', src: z.picture, alt: ''}) : h('span', {class: 'sw'}),
+        h('strong', {}, `Фотозона ${z.number}`), h('span', {class: 'muted'}, `${VectorPhoto.zoneSummary(z)} · ${area(z.area_mm2)} · областей ${z.regions.length}`)),
+      () => z.regions)));
       const away = layers.filter((l) => l.size && l.size.how !== 'measured').length;
       fill(layersAbout, away ? h('details', {class: 'small alert warn'},
         h('summary', {}, `${away} из ${layers.length} слоёв: цвет при длине их строк (↔) не измерен`), h('p', {}, SIZE_ABOUT)) : null);
@@ -692,9 +799,10 @@ const VectorEditor = (() => {
       const inUse = new Set((j.layers || []).map((l) => String(l.entry_id)));
       state.layers = new Set([...state.layers].filter((e) => inUse.has(e)));
       if (loadedVersion !== geometryKey(j)) load();
-      else { paint(); refreshHover(); }
+      else { paint(); showZones(); refreshHover(); }
       loadNear();
       syncPanel();
+      photo.update(j);
     }
 
     const editor = {el, update, key(ev) {
@@ -705,6 +813,10 @@ const VectorEditor = (() => {
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); undoRedo(z && !ev.shiftKey ? 'undo' : 'redo'); }
       else if (ev.key === 'Escape' && state.selection.size) clearSelection();
+      else if (ev.code === 'Space' && !ev.repeat) { ev.preventDefault(); spaceHeld = true; stage.classList.add('pan-ready'); }
+      else if (ev.code === 'Space') ev.preventDefault();
+    }, keyup(ev) {
+      if (ev.code === 'Space') { spaceHeld = false; stage.classList.remove('pan-ready'); }
     }};
     current = editor;
 

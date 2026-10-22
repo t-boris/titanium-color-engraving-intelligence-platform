@@ -1502,7 +1502,7 @@ each building on the rules before it, then the work deleted and a new one made. 
 ### 0.21.0 (was 0.20.0; moved behind the size work, 2026-10-22): photo-engraving colours in the vector palette
 - [ ] G. Palette entries from the grey scales (each measured power of a scale); a region given one is written as an Image layer of one even grey with the scale's settings
       (Min = Max = that power); time per cm2; the colour picker says where it comes from. Tests, release.
-### 0.22.0 (was 0.21.0): every section on one screen
+### 0.23.0 (was 0.21.0, then 0.22.0: photo zones came first): every section on one screen
 - [ ] H. Measure every menu section and its pages at 1421 x 951 (copy of the data); move those that scroll onto `.os`; report the heights before and after. Tests, release.
 
 ## 0.19.4-0.20.x plan: the size of an engraving changes its colours; previews at the real size; a colour choice that keeps the drawing; rename an experiment (operator goal, 2026-10-22)
@@ -1782,3 +1782,68 @@ picture, name and width only; the question opened after «Создать» (veri
   «Назад» kept the fields and deleted the draft, «Создать в «Джарвис»» opened the work in Джарвис at 29,1 %, Escape on step 2 deleted
   its draft; no console errors.
 - Known: a work created in a dot kind has one undo step (back to grayscale), as the kind is set right after the work is made.
+
+## 0.22.0: photo engraving inside a vector work, «фото-зоны» (operator goal, 2026-10-22)
+Operator (voice): "в векторной работе ... выделял ... все, которые на голове ... врезал бы эти вектора и вставлял бы вместо них картинки из
+фотогравировки ... часть картины это просто вектора, а часть фотогравировка ... выбирать, какую фотогравировку, то есть какую палитру ...
+простые конструкции, чтобы можно было быстро поменять ... Jarvis, а можно сделать и цветной в плане Grayscale ... лицо это чисто
+фотогравировка, причем сконфигурируемая так, чтобы было удачно и удобно видеть и подходило к общей картине".
+What exists (mapped 2026-10-22): the photo work's kinds (grayscale + 9 dot/edge kinds, `photo_modes`, `dots`), its scales (`prediction_store`:
+curve at a width, Min/Max, colours chosen by the picture keeping the drawing, dot look estimated from the scale), the Image-layer writer
+(`plans._image_setting`, `_bitmap`, `export_picture`); the vector editor selects regions by click / Shift+click only (drag pans), has
+«Не гравировать» and merges, undo/redo of the whole colouring (DEC-077). Nothing puts an Image layer into a vector work's file; the photo
+file writes transparent pixels white (= Min power in grayscale), which over vector areas would engrave them.
+Live data: work 22 «Inna + Boris» has 27 of 28 layers (one zone fits), 10 grayscale scales on laser 1 / lens 2 / Grade 5.
+
+Decisions taken with defaults (to confirm with the operator in the report):
+- A photo zone = regions of the split + its own photo engraving (kind, scale, Min/Max or dot power, «цвета по картинке»), kept in the work's
+  colouring: undo/redo, copy and history carry it; restoring a colour variant keeps the zones as they are now.
+- In the file each zone is one Image layer after the colour layers: the work's picture cut to the zone's box, transparent (alpha 0) outside
+  the zone, never white, as the operator's own mixed works cut vector areas out of a picture (DEC-095). Cleaning C00 covers it as before.
+- The vector file is MirrorY=True (top-down): its pictures are stored top row first (LightBurn shows row 0 at the smallest y).
+- A new zone takes the best measured scale of the work's laser, lens and titanium (chart first, then engravings), its measured span at the
+  zone's width (DEC-107: rows as long as the zone is wide), grayscale, colours chosen by the picture keeping the drawing.
+
+Order (the operator's ask first):
+- [x] Z1. Server: zones in the colouring; ops `photo_add` (new zone or into one), `photo_remove`, `photo_set`, `photo_delete` through
+      `/colouring` (undo, history); zone regions leave the colour layers; merges, a new split (zones carried over by area) and variants keep
+      them consistent; the view lists the zones; the file's layer cap counts them; `POST /vector/{id}/lasso` (regions at least half inside).
+- [x] Z2. The zone's picture: crop + mask from the same smoothed borders as the paths; predicted look per kind (grayscale on the scale with
+      Min/Max and colours by the picture; dot kinds estimated from the scale or from their measured tones); `photo/{zone}.png` (transparent
+      outside), `photo/{zone}/kinds` + tiles; render cache keys with the scale's points; RENDER_VERSION bump; the list thumbnail shows zones.
+- [x] Z3. LightBurn file: an Image layer per zone (ditherMode, Min/Max or Min=Max=dot power, the scale's settings), bitmap with alpha at
+      <= layer dpi placed on the zone's box; time of each zone (its area and scan pieces); the export records the zones.
+- [x] Z4. Editor UI: lasso in «Выделение» (drag draws; Shift adds, Alt removes; Space+drag or the middle button pans); selection actions
+      «Фотогравировка» / «В зону N» / «Вернуть в вектор»; a tab «Фото» with every zone: the kind as tiles of that zone, the scale (bars),
+      Min/Max or the dots' power, «Цвета по картинке», select / dissolve; the stage shows each zone's predicted picture in its regions.
+- [x] Z5. Tests (state, ops, undo, merge, resplit, lasso, export read back by our reader: picture on the zone, transparent outside, after a
+      LightBurn 2.2 save too; API; UI in node), README, MarkView REQ + DEC, version 0.22.0, full suite, backup, deploy, walk on a copy of
+      work 22 from «Векторная работа» → the work, timings of every new request, the operator's app checked view-only.
+
+#### Review of 0.22.0 (2026-10-22)
+- Built as planned (Z1-Z5); additions found while building: the brush on a zone's region (scope «Участок» or «Заливка похожих») gives it a colour and
+  takes it out of the zone, «Весь исходный цвет» leaves zones alone, a fill of similar colours stops at a zone, «Не гравировать» takes the region out of
+  its zone; a copy of the work keeps its zones (tested). The scale choice is a list of scale cards with their colour bars, not a select (the select cut
+  its text at the panel's width).
+- Walk on a copy of the live data (`sqlite3 .backup` + files cloned, 192 rows of paths rewritten, none left; dev server on 8791 in a tab named «ТЕСТ: копия
+  данных, порт 8791 (не настоящее приложение)», stopped after): «Векторная работа» → «Inna + Boris» → «Выделение» → lasso around the left face (108
+  regions) → «Сделать фотозоной» → C28, 26 colour layers + 1 zone of 28 → «Фото»: tiles, scale cards, a warmer scale, Jarvis at 20 % → the file: image
+  layer «C28 Photo 1 jarvis P20», Min = Max = 20, 49.95 x 63.9 mm.
+- Found by the walk and fixed:
+  - `showZones` called `.map` on a NodeList: the editor threw on every load (and skipped `showImage`). The node DOM of the UI tests returns arrays, so
+    no test saw it; `test_no_ui_script_uses_a_node_list_as_an_array` now checks every UI script.
+  - Slow: each tile recomputed the zone's scale curve and dots (0.3 s, ten tiles), «kinds» scanned all measurements once per kind (0.75 s), the list of
+    scales took 1.6 s. `prediction_store.collect` is now kept per state of the data (`Store.stamp()`: rows written through the store and commits by any
+    other connection), kinds never photographed are skipped (`photographed_kinds`), and a tile's key holds only the settings its kind draws from. After:
+    tile 0.05 s, kinds 0.08 s warm / 0.15-0.25 s after a change, scales 0.75 s first / 0.05 s.
+  - The header and the «Файл» tab counted colour layers only; a zone's time row in «Файл» was labelled «Чистка». The «Слои» rows cut their details
+    with «…» at 1771 and 1372 px (since 0.9.0): the details are on their own line now. A changed zone picture blanked the zone until it loaded (now swapped
+    when loaded); the «Фото» tab jumped to the top on every change (now replaced in one step, the open list of scales stays open).
+- Not changed: any edit of work 22 takes about 1.3 s (0.56 s the operation, mostly the colour state's palette at size; 0.6 s the view it returns) - as
+  before 0.22.0; a zone adds up to 0.2 s. A cold first view of work 22 takes 5-6 s (as before).
+- No RENDER_VERSION bump: no existing drawing changed under an unchanged key (the thumbnail's key now holds the zones' picture keys).
+
+- Released 2026-10-22: full suite 1794 passed (-n 12, 2 min 46 s, none skipped); backup `backups/titanium-before-0.22.0-20261022T202212Z.sqlite`
+  (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, every declared library imports;
+  8765 restarted on 0.22.0 and checked with GETs only: header v0.22.0, work 22 with no zones and 27 layers, the «Фото» tab's empty state, no console
+  messages, audit still 806. DEC-114 and DEC-115 accepted.

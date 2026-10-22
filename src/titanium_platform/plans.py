@@ -459,14 +459,17 @@ def _image_setting(index: int, name: str, p: dict, *, priority: int, dither: str
             f'{body}    </CutSetting_Img>\n')
 
 
-def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: float, layer: int, file_name: str) -> str:
+def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: float, layer: int, file_name: str, *,
+            mirror_y: bool = False) -> str:
     """A picture object filling the rectangle (x, y, w, h) mm: the PNG at ``dpi`` with that DPI in its header, W and H the size it has at
     that DPI and the transform scaling it to the rectangle (1 when the picture was drawn for it), as the operator's files store it.
-    ``picture`` is upright; it is stored bottom row first, as LightBurn stores it (its y points up: the operator's Motorcycle file holds
-    its picture upside down under a positive transform)."""
+    ``picture`` is upright. LightBurn lays row 0 of a stored picture at the smallest y of its object (its y points up: the operator's
+    Motorcycle file holds its picture upside down under a positive transform), so it is stored bottom row first; in a project with
+    ``mirror_y`` (laid out top-down, MirrorY=True) the smallest y is shown at the top and it is stored as it is (DEC-114)."""
     rows, cols = picture.shape[:2]
     native_w, native_h = cols / dpi * grayscale.MM_PER_INCH, rows / dpi * grayscale.MM_PER_INCH
-    data = base64.b64encode(grayscale.png_with_dpi(np.ascontiguousarray(picture[::-1]), dpi)).decode("ascii")
+    stored = picture if mirror_y else picture[::-1]
+    data = base64.b64encode(grayscale.png_with_dpi(np.ascontiguousarray(stored), dpi)).decode("ascii")
     return (f'    <Shape Type="Bitmap" CutIndex="{layer}" W="{native_w:.5f}" H="{native_h:.5f}" Gamma="1" Contrast="0" Brightness="0" '
             f'EnhanceAmount="0" EnhanceRadius="0" EnhanceDenoise="0" File={quoteattr(file_name)} SourceHash="0" Data="{data}">\n'
             f'        <XForm>{w / native_w:.8f} 0 0 {h / native_h:.8f} {x + w / 2:.5f} {y + h / 2:.5f}</XForm>\n    </Shape>\n')
@@ -598,14 +601,19 @@ def export_lbrn2(plan: dict) -> bytes:
         if pred is not None and any(pred.get(k) is None for k in ("confidence", "expected_delta_e", "stability")):
             raise su.ValidationError(f"layer {layer['name']} has an incomplete prediction (confidence, expected error and stability are required)")
         if layer.get("cut_type") == "Image":
-            # a grey-ramp tile (REQ-059): the layer engraves its picture, not the rectangle that marks its place on the plan
-            if p.get("min_power") is None or p.get("line_interval") is None or not layer.get("ramp"):
+            # a grey-ramp tile (REQ-059) or a photo zone of a vector work (REQ-073): the layer engraves its picture, placed on its rectangle
+            placed = layer.get("ramp") or layer.get("picture")
+            if p.get("min_power") is None or p.get("line_interval") is None or not placed:
                 raise su.ValidationError(f"layer {layer['name']} is an image layer without Min power, line interval or its picture")
-            ramp = layer["ramp"]
-            out.append(_image_setting(file_index, layer["name"], p, priority=file_index, dither=ramp.get("dither") or IMAGE_DITHER))
+            out.append(_image_setting(file_index, layer["name"], p, priority=file_index, dither=placed.get("dither") or IMAGE_DITHER))
             dpi = grayscale.image_dpi(p["line_interval"])
-            shapes.append(_bitmap(ramp["x"] + x_offset, ramp["y"] + y_offset, ramp["width"], ramp["height"], grayscale.ramp_picture(ramp, dpi), dpi,
-                                  file_index, f"{layer['name']}.png"))
+            if layer.get("ramp"):
+                pixels, own_dpi = grayscale.ramp_picture(placed, dpi), dpi
+            else:                                    # the zone's own pixels, at its own DPI (no finer than the layer's)
+                pixels = placed["pixels"]
+                own_dpi = pixels.shape[1] / placed["width"] * grayscale.MM_PER_INCH
+            shapes.append(_bitmap(placed["x"] + x_offset, placed["y"] + y_offset, placed["width"], placed["height"], pixels, own_dpi,
+                                  file_index, f"{layer['name']}.png" if layer.get("ramp") else placed["file"], mirror_y=mirror_y == "True"))
             continue
         if is_recipe(p):
             out.append(_recipe_setting(file_index, layer["name"], p))

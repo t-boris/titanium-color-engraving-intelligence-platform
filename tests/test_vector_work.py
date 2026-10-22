@@ -472,7 +472,7 @@ def test_a_file_with_markers_puts_them_on_c01_and_the_colours_after(work, job):
 
 @pytest.mark.parametrize("markers, cap", [(False, 29), (True, 28)])
 def test_more_recipes_than_the_output_layers_left_after_cleaning_and_markers_are_refused(markers, cap):
-    state = {"by_id": {"e1": {}}, "missing_regions": [], "layers": [{}] * cap}
+    state = {"by_id": {"e1": {}}, "missing_regions": [], "layers": [{}] * cap, "zones": []}
     assert vector_job._blocker_photo({"markers_enabled": markers}, state) is None
     state["layers"] = [{}] * (cap + 1)
     assert vector_job._blocker_photo({"markers_enabled": markers}, state) == f"{cap + 1} different recipes need more LightBurn layers than the {cap} available"
@@ -906,7 +906,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);

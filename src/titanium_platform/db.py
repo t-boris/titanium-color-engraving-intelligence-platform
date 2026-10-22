@@ -676,6 +676,12 @@ class Store:
         rows = self.query(sql, params)
         return rows[0] if rows else None
 
+    def stamp(self) -> tuple[int, int]:
+        """The state of the data as two counters: rows written through this store, and commits by any other connection to the file (another
+        program, another store). An equal stamp means the same data, so a result derived from it can be reused."""
+        with self._lock:
+            return self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0]
+
     def transaction(self):
         return _Tx(self)
 

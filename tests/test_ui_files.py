@@ -41,7 +41,8 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/device-character-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
                       ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js"),
                       ("/screens/experiment-cards.js", "/screens/device-view.js"), ("/screens/experiment-cards.js", "/screens/experiments.js"),
-                      ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js")]:
+                      ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js"),
+                      ("/photo-modes.js", "/screens/vector-photo.js"), ("/screens/vector-photo.js", "/screens/vector-editor.js")]:
         assert order[dep] < order[user], (dep, user)
 
 
@@ -302,3 +303,12 @@ def test_every_file_input_is_shown_through_the_russian_file_picker():
     css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
     assert ".file-field>input.file-native" in css and "opacity:0" in css   # the real input stays clickable on top
 
+
+
+def test_no_ui_script_uses_a_node_list_as_an_array():
+    """A browser's querySelectorAll returns a NodeList, which has forEach but no map, filter or find; the node DOM of the UI tests returns an
+    array, so only this check sees the mistake (0.22.0: the editor stopped drawing on its first load)."""
+    wrong = re.compile(r"querySelectorAll\([^()]*\)\s*\.\s*(map|filter|find|findIndex|some|every|reduce|includes|slice|flatMap)\b")
+    for path in UI_DIR.rglob("*.js"):
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            assert not wrong.search(line), f"{path.relative_to(UI_DIR)}:{n}: {line.strip()}"

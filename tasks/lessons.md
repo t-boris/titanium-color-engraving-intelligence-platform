@@ -131,6 +131,15 @@ Rules written after the operator's remarks, to prevent a repeat.
 - Rule: after a release, time every screen's requests on the live data (curl, GET only) and treat anything over 0.5 s as a
   defect. Derived pictures are cached by a key of all their inputs; a list computes shared data once, never per item.
 
+- Again (2026-10-22, 0.22.0, found in my own walk): the tiles of a photo zone each recomputed the zone's scale and dots (a list computing its shared data
+  per item), and every new request was over 0.5 s. Rule kept: time each new request warm and after a change, sequentially, before the release report.
+
+## The node DOM of the UI tests is not a browser
+- Mistake (2026-10-22, 0.22.0): `querySelectorAll(...).map` passed every node test (`tests/ui_dom.js` returns arrays) and threw in the browser on the
+  first load of every vector work. Found only by the walk.
+- Rule: in UI code spread a NodeList before array methods (`[...el.querySelectorAll(s)]`); `test_no_ui_script_uses_a_node_list_as_an_array` checks it.
+  A new screen is not done until it was opened in a real browser (on a copy) and its console read.
+
 ## A framework default is not a contract
 - Situation (2026-10-19): CI failed on all three jobs between two runs of the same tests: FastAPI 0.148 began reading a
   missing `bool` form field as false (an unticked HTML checkbox), and the route relied on `Form(True)`.

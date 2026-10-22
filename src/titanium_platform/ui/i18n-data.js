@@ -200,5 +200,20 @@
     [/^the picture is fully transparent: it engraves nothing, so there is nothing to predict$/i, 'Картинка полностью прозрачна: она ничего не гравирует, прогнозировать нечего'],
     [/^image layer (\d+) cannot be rendered in this upload$/i, (m) => `Слой изображения ${m[1]} в этой загрузке не отрисовать`],
     [/^titanium (\d+) not found$/i, (m) => `Титан №${m[1]} не найден`],
+    // фотозоны векторной работы (REQ-073)
+    [/^(\d+) different recipes and (\d+) photo zone\(s\) need more LightBurn layers than the (\d+) available: merge titanium colours or zones$/i,
+      (m) => `Рецептов ${m[1]} и фотозон ${m[2]}: это больше, чем ${m[3]} доступных слоёв LightBurn. Объедините цвета титана или фотозоны`],
+    [/^there is no photo zone '?([^']*)'?$/i, (m) => `Фотозоны ${m[1]} нет`],
+    [/^choose one or more regions$/i, 'Выберите одну или несколько областей'],
+    [/^say what to change in the photo zone$/i, 'Укажите, что изменить в фотозоне'],
+    [/^no grey scale is measured on this laser, lens and titanium: engrave the grey-ramp plate/i,
+      'На этом лазере, линзе и титане не измерено ни одной шкалы серого: выгравируйте пластину «Шкалы серого» (Фотогравировка → Шкалы серого), чтобы сделать фотозону'],
+    [/^there is no kind of photo engraving '?([^']*)'?$/i, (m) => `Нет такого вида фотогравировки: ${m[1]}`],
+    [/^the scale must name the titanium and settings of a measured scale$/i, 'Шкала задаётся титаном и настройками измеренной шкалы'],
+    [/^the (Min power|Max power|dots' power) must be a number$/i,
+      (m) => ({ 'min power': 'Min мощность', 'max power': 'Max мощность', "dots' power": 'Мощность точек' })[m[1].toLowerCase()] + ' — число'],
+    [/^a photo zone has no setting '?([^']*)'?$/i, (m) => `У фотозоны нет настройки «${m[1]}»`],
+    [/^«colours by the picture» must be on or off$/i, '«Цвета по картинке» — включено или выключено'],
+    [/^a lasso needs three points or more, each x and y in mm$/i, 'Лассо — три точки или больше, у каждой x и y в мм'],
   ]);
 })();

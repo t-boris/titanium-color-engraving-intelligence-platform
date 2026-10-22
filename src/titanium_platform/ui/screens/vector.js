@@ -258,12 +258,14 @@
   /** Вкладка «Файл»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043).
       Почему файл пока не создаётся, сказано здесь же, рядом с кнопкой. Слои и файлы идут строками: вкладка узкая. */
   function photoExport(j, refresh) {
-    const t = j.time;
+    const t = j.time, zones = j.zones || [];
     const layers = t.layers.map((row) => {
-      const layer = j.layers.find((l) => l.index === row.index);
-      return h('div', {class: 'vw-line'}, h('span', {}, `C${String(row.index).padStart(2, '0')} `, layer ? h('span', {class: 'sw', style: `background:rgb(${layer.srgb.join(',')})`}) : null,
-        layer ? layer.name : 'Чистка (перекрёстная заливка)'),
-        h('span', {class: 'muted small'}, [layer ? `областей ${layer.region_count}` : 'вся работа', layer ? `${num(layer.area_mm2 / 100, 2)} см²` : null,
+      const layer = j.layers.find((l) => l.index === row.index), zone = layer ? null : zones.find((z) => z.index === row.index);
+      const part = layer || zone;                                       // ни слой цвета, ни фотозона — чистка
+      return h('div', {class: 'vw-line'}, h('span', {}, `C${String(row.index).padStart(2, '0')} `,
+        layer ? h('span', {class: 'sw', style: `background:rgb(${layer.srgb.join(',')})`}) : zone && zone.picture ? h('img', {class: 'vw-ed-zone-chip', src: zone.picture, alt: ''}) : null,
+        layer ? layer.name : zone ? `Фотозона ${zone.number}: ${VectorPhoto.kindName(zone.kind)}` : 'Чистка (перекрёстная заливка)'),
+        h('span', {class: 'muted small'}, [part ? `областей ${layer ? layer.region_count : zone.regions.length}` : 'вся работа', part ? `${num(part.area_mm2 / 100, 2)} см²` : null,
           row.seconds == null ? I18N.tr(row.note) : duration(row.seconds)].filter(Boolean).join(' · ')));
     });
     const exportBtn = btn('Создать файл LightBurn', async (ev) => {
@@ -278,7 +280,9 @@
       j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе вместе с раскраской: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
       h('div', {class: 'row'}, exportBtn),
       h('details', {class: 'vw-details'}, h('summary', {}, `Слои и время по слоям (${t.layers.length})`), h('div', {class: 'vw-lines'}, layers),
-        h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length} из ${j.layer_cap}: C00 — чистка` + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками.')),
+        h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length}` + (zones.length ? `, фотозон: ${zones.length}` : '') + ` из ${j.layer_cap}: C00 — чистка`
+          + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками'
+          + (zones.length ? '; фотозоны — слои изображения после слоёв цвета, прозрачные вне своих областей.' : '.'))),
       j.exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Сохранённые файлы'), h('div', {class: 'vw-lines'}, j.exports.map((e) => h('div', {class: 'vw-line'},
         h('span', {}, `№ ${e.number} · ${e.name}`, h('div', {class: 'muted small'}, [e.variant ? `вариант раскраски № ${e.variant}` : null, `слоёв ${e.layers}`, `областей ${e.regions}`,
           duration(e.seconds), when(e.at)].filter(Boolean).join(' · '))),
@@ -303,7 +307,7 @@
       fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
-        ['Слоёв цвета', `${next.layers.length} из ${next.layer_cap} доступных`]]),
+        ['Слоёв цвета', `${next.layers.length}` + ((next.zones || []).length ? ` и фотозон ${next.zones.length}` : '') + ` из ${next.layer_cap} доступных`]]),
         h('div', {class: 'row'}, btn(next.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
           try { await put(`/plans/${next.id}/markers`, {enabled: !next.markers_enabled}); await refresh(); } catch (e) { fail(e); }
         }))));

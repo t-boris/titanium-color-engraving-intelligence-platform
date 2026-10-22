@@ -87,7 +87,7 @@ const VectorWorkspace = (() => {
     return h('article', {class: 'card vw-work-card'}, thumb,
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
-        photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}`) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
+        photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}` + (w.zones ? ` · фотозон ${w.zones}` : '')) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
         h('p', {class: 'small'}, how ? `Раскраска: ${how}` : 'Ещё не раскрашена', w.variants ? ` · вариантов ${w.variants}` : ''),
         ...VectorReview.cardLines(w),
         h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
@@ -123,7 +123,8 @@ const VectorWorkspace = (() => {
       const size = next.document.size_mm;
       const pencil = renameButton(next.id, next.name, (stored) => (actions.renamed ? actions.renamed(stored) : update({...next, name: stored})));
       fill(title, h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
-        h('p', {class: 'sub'}, `${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version} · слоёв ${next.layers.length} из ${next.layer_cap}`));
+        h('p', {class: 'sub'}, `${num(size.width, 1)} × ${num(size.height, 1)} мм · разбиение № ${next.document.version} · слоёв ${next.layers.length + (next.zones || []).length} из ${next.layer_cap}`
+          + ((next.zones || []).length ? `, из них фотозон ${next.zones.length}` : '')));
     }
     update(j);
     return {el, update};

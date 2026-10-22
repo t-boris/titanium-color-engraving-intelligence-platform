@@ -201,3 +201,37 @@ def test_a_point_of_a_kept_plate_names_the_plate_and_its_experiment(w):
     (point,) = ps.collect(w["store"], mode(w))["fills"]
     assert point.source["kind"] == "plate" and point.source["id"] == plan and point.source["pair_id"] == pid
     assert point.source["experiment"] == f"plan-{plan}"
+
+
+def test_measurements_are_read_once_per_state_of_the_data(w, tmp_path):
+    store, before = w["store"], ps._collected.cache_info()
+    pair(w, check=tonal_check())
+    first = ps.collect(store, mode(w))
+    first["points"].clear()                                                      # a caller's list is its own
+    again = ps.collect(store, mode(w))
+    assert len(again["points"]) == 3 and ps._collected.cache_info().hits == before.hits + 1
+    pair(w, check=tonal_check(power_range=(6.0, 17.0)))                              # a write through the store: read again
+    assert len(ps.collect(store, mode(w))["points"]) == 6
+    other = __import__("sqlite3").connect(store.path)                                # a commit by another connection: read again
+    other.execute("UPDATE pair SET status='Deleted' WHERE id=(SELECT max(id) FROM pair)")
+    other.commit()
+    other.close()
+    assert len(ps.collect(store, mode(w))["points"]) == 3
+
+
+def test_the_stamp_changes_with_every_write_and_never_with_a_read(store):
+    first = store.stamp()
+    store.query("SELECT count(*) FROM pair")
+    assert store.stamp() == first
+    su.save_material(store, "Grade 5 sheet", grade="Grade 5")
+    assert store.stamp() != first
+
+
+def test_the_kinds_photographed_are_those_of_accepted_tonal_profiles(w):
+    assert ps.photographed_kinds(w["store"]) == frozenset()
+    pair(w, check=tonal_check())
+    pair(w, check=tonal_check(dither="jarvis"), status="Pending")                    # awaiting acceptance: not yet
+    pair(w, check={"layers": [{"index": 1, "image": {"dither": "stucki"}}]})         # no tonal profile: nothing measured
+    assert ps.photographed_kinds(w["store"]) == {"grayscale"}
+    pair(w, check=tonal_check(dither="jarvis"))
+    assert ps.photographed_kinds(w["store"]) == {"grayscale", "jarvis"}
