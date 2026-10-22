@@ -392,3 +392,23 @@ def test_a_copy_of_the_work_keeps_its_photo_zones(world):
     view = world["client"].get(f"/api/vector/{copied}").json()
     assert [(z["number"], z["regions"], z["kind"]) for z in view["zones"]] == [(z["number"], z["regions"], z["kind"]) for z in made["zones"]]
     assert world["client"].get(view["zones"][0]["picture"]).status_code == 200
+
+
+def test_the_engraving_plan_lists_each_zone_as_its_image_layer_after_the_colour_layers(world):
+    job = create(world)
+    assert world["client"].get(f"/api/plans/{job['id']}").json()["photo_zones"] == []
+    red, yellow = of_colour(world, job, RED), of_colour(world, job, YELLOW)
+    colouring(world, job, op="photo_add", regions=red)
+    view = colouring(world, job, op="photo_add", regions=yellow)
+    colouring(world, job, op="photo_set", zone=view["zones"][1]["number"], kind="jarvis")
+    view = world["client"].get(f"/api/vector/{job['id']}").json()
+    plan = world["client"].get(f"/api/plans/{job['id']}").json()
+    assert [(z["index"], z["name"], z["regions"], z["picture"]) for z in plan["photo_zones"]] == \
+        [(z["index"], z["name"], z["regions"], z["picture"]) for z in view["zones"]]
+    assert [z["index"] for z in plan["photo_zones"]] == [layer["index"] + 1 + n for n, layer in enumerate(plan["layers"][-1:] * 2)]
+    gray, dots = (z["parameters"] for z in plan["photo_zones"])
+    assert gray["min_power"] < gray["power"] and dots["min_power"] == dots["power"] and dots["power"] == view["zones"][1]["dot_power"]
+    assert all(z["parameters"]["speed"] > 0 and z["parameters"]["line_interval"] > 0 for z in plan["photo_zones"])
+    data = world["client"].get(f"/api/plans/{job['id']}/export.lbrn2").content         # the plan's export writes them too
+    names = [layer.name for layer in lb.parse_bytes(data).layers]
+    assert [z["name"] for z in plan["photo_zones"]] == names[-2:]

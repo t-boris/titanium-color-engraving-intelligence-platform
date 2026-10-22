@@ -40,6 +40,20 @@
     });
   }
 
+  /** The photo zones of a vector work (REQ-073): an Image layer each, after the colour layers - the work's picture engraved in the zone's
+      kind on its scale, transparent outside the zone; the picture is what the zone is predicted to look like. */
+  function zoneRows(p) {
+    return (p.photo_zones || []).map((z) => {
+      const s = z.parameters, kind = VectorPhoto.kindName(z.kind);
+      const powers = !s ? '' : z.kind === 'grayscale' ? `Min ${num(s.min_power, 1)} % – Max ${num(s.power, 1)} %` : `точки ${num(s.power, 1)} %`;
+      return [h('span', {}, z.name || `Фотозона ${z.number}`, h('div', {class: 'muted small'}, `Фотозона ${z.number} · ${kind}`)),
+        s ? h('span', {}, `${powers} · ${num(s.frequency, 1)} кГц · ${num(s.speed, 0)} мм/с · Q-Pulse ${num(s.pulse_width, 0)} нс · шаг строк ${num(s.line_interval, 4)} мм · ${s.passes} проход(а)`,
+          h('div', {class: 'muted small'}, `Изображение (Image), режим «${kind}»: картинка работы в областях зоны, вне зоны прозрачна`))
+          : h('span', {class: 'alert bad small'}, I18N.tr(z.problem)),
+        z.picture ? h('img', {class: 'plan-zone-pic', src: z.picture, alt: `Фотозона ${z.number}`}) : '—', '—', '—', '—', '—', z.regions.length];
+    });
+  }
+
   /** Исходное изображение рядом с картиной полос в прогнозных цветах (REQ-012): то, что будет выгравировано, видно до экспорта. */
   function banding(p) {
     if (!PICTURED.includes(p.mode)) return null;
@@ -78,7 +92,7 @@
       const self = ev.currentTarget;
       self.disabled = true;
       try { await download(p); toast('Файл подготовлен и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); App.render(); } catch (e) { fail(e); self.disabled = false; }
-    }, 'primary', draft || ['Superseded', 'Cancelled'].includes(p.status) || !p.layers.length);
+    }, 'primary', draft || ['Superseded', 'Cancelled'].includes(p.status) || !(p.layers.length || (p.photo_zones || []).length));
     if (restored) exportBtn.hidden = true;
     const warnings = (p.warnings || []).map((w) => PhotoForm.questionedWarning(w));
     const markers = p.markers_enabled ? 'включены' : 'выключены';
@@ -123,7 +137,9 @@
         h('p', {class: 'muted small'}, 'Чистка — первый слой C00. При экспорте файл LightBurn скачивается на компьютер; он не отправляется в лазер автоматически.'),
         h('div', {class: 'row'}, toggle, exportBtn)),
       banding(p),
-      h('div', {class: 'card'}, h('h3', {}, 'Слои и параметры'), p.layers.length ? table(['Слой', 'Параметры', 'Прогнозный цвет', 'Уверенность', 'Ожидаемая ошибка ΔE', 'Стабильность', 'Стадия', 'Областей'], layerRows(p)) : h('p', {class: 'muted'}, 'Слоёв нет: экспорт недоступен.')),
+      h('div', {class: 'card'}, h('h3', {}, 'Слои и параметры'), p.layers.length || (p.photo_zones || []).length
+        ? table(['Слой', 'Параметры', 'Прогнозный цвет', 'Уверенность', 'Ожидаемая ошибка ΔE', 'Стабильность', 'Стадия', 'Областей'], [...layerRows(p), ...zoneRows(p)])
+        : h('p', {class: 'muted'}, 'Слоёв нет: экспорт недоступен.')),
       restored ? null : h('div', {class: 'card'}, h('h3', {}, 'Результат гравировки'), h('p', {class: 'muted small'}, 'После гравировки добавьте фактически запущенный файл LightBurn, фотографию RAW и укажите лазер+линзу вместе с использованной заготовкой титана. Маркеры на плате помогают совместить фотографию с файлом.'),
         link('/ingest?plan=' + p.id, 'Добавить результат гравировки')));
   }});

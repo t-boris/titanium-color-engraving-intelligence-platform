@@ -505,3 +505,9 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
 - Rule: whatever the operator picks as one thing (a selection, a zone, a layer under the pointer) is drawn as one outline - the borders with the set on
   one side only - on a dark halo so it shows on light and dark colours. Per-region marks are for per-region facts only (the far colours).
 
+## A new kind of layer appears on every screen that lists the layers
+- Mistake (2026-10-22, 0.22.0): the photo zone's Image layer reached the file, the editor's «Слои», the work's «Файл» tab and the header counts, but
+  not «План гравировки», which lists the layers and exports the same file. Found only when the goal was re-checked.
+- Rule: when the file gets a new kind of layer, grep every screen that lists layers (`layers.map`, `p.layers`, layer tables) and every count of them,
+  and walk each on a copy with the new layer present before the release.
+

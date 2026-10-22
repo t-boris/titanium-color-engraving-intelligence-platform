@@ -1051,6 +1051,16 @@ def lasso(store: Store, plan_id: int, points) -> dict:
     return {"version": plan["document_version"], "regions": ids}
 
 
+def plan_zones(store: Store, plan: dict) -> list[dict]:
+    """The photo zones of a vector work as its engraving plan lists them, after its colour layers (REQ-073): each zone's Image layer as the
+    editor shows it, with the settings the file gives it (``parameters``; None when its scale is not measured there, ``problem`` says why)."""
+    zones = pz.zones(plan.get("colouring")) if plan["mode"] == pl.MODE_VECTOR and plan.get("strategy") == "photo" else []
+    if not zones:
+        return []
+    first = 1 + int(bool(plan["markers_enabled"])) + len(plan["layers"])       # the colour layers stored with the colouring
+    return [{**_zone_shown(plan, row), "parameters": row["parameters"]} for row in _zone_rows(store, plan, _document(plan), zones, first)]
+
+
 def _zone_layers(store: Store, plan: dict, rows: list[dict]) -> list[dict]:
     """The Image layer of every photo zone for the file (:func:`photo_zones.file_layer`)."""
     return [pz.file_layer(store, plan, row["zone"], _zone_cut(plan, row["zone"]), row["index"]) for row in rows]

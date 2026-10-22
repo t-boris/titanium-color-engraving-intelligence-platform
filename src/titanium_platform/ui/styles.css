@@ -626,6 +626,7 @@ select::-ms-expand {display:none}
 .vw-ed-svg.view-original image.vw-zone-pic {display:none}
 .vw-ed-svg polyline.vw-lasso {fill:#ffd54a1a;stroke:#ffd54a;stroke-width:1.5px;stroke-dasharray:4 3;vector-effect:non-scaling-stroke;pointer-events:none}
 .vw-ed-stage.pan-ready {cursor:grab}
+.plan-zone-pic {display:block;width:72px;height:auto;border-radius:6px;background:#0b1220}
 .vw-ed-stage.pan-ready.panning {cursor:grabbing}
 .vw-ed-zone-chip {flex:none;width:18px;height:18px;border-radius:5px;object-fit:cover;background:#0b1018}
 .vw-ed-photo-acts {gap:6px}

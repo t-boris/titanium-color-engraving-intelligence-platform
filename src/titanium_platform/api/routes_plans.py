@@ -49,7 +49,9 @@ class RejectIn(BaseModel):
 
 def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
     s = store_of(request)
-    result = public_plan(plans.with_operating_points(s, _visible_plan(s, plan_id)), with_regions=regions)
+    plan = _visible_plan(s, plan_id)
+    result = public_plan(plans.with_operating_points(s, plan), with_regions=regions)
+    result["photo_zones"] = vector_job.plan_zones(s, plan)              # a vector work's photo zones: Image layers after the colours
     result["active_pairs"] = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))["n"]
     result["time"] = experiments.plan_time(plans.get_plan(s, plan_id))
     return result

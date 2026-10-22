@@ -1880,3 +1880,24 @@ Now each selected region gets its own yellow line (108 outlines for a face), thi
   (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.1
   (split.svg 868 KB in 0.05 s, view 5.3 s cold as before); the operator's open tab of work 22 reloaded (it was on 0.22.0, nothing unsaved): v0.22.1,
   six outline paths, no console messages.
+
+## 0.22.2: the engraving plan lists the photo zones (goal continued, 2026-10-22)
+Found by checking every screen that lists a work's layers against the file: «План гравировки» (`#/plans/22`) listed the 26 colour layers of work 22
+and not its zone's Image layer C28, though its own export writes it (`vector_job.export`).
+- [x] P1. `vector_job.plan_zones(store, plan)`: the zones as the editor shows them with the file's settings, numbered after the stored colour layers;
+      `GET /api/plans/{id}` returns them as `photo_zones` ([] for any other plan).
+- [x] P2. `plan.js`: a row per zone after the colour layers - layer name, «Фотозона N · kind», powers and settings, «Изображение (Image), режим …»,
+      the zone's picture in «Прогнозный цвет», regions; a zone that cannot be engraved shows the server's reason, translated. A work of zones only
+      keeps its table and export.
+- [x] P3. Tests: API (two zones, grayscale and Jarvis: names, numbers, pictures as the editor's, settings, the plan's export has them last); node
+      (rows, powers, translated reason, pictures, export enabled, zones only). Walk on the copy (8791, stopped): C28 row with the face picture, 108
+      regions; nothing cut at 1771 and 1372 px.
+
+#### Review of 0.22.2 (2026-10-22)
+- `GET /api/plans/22` on the copy: 0.07-0.1 s warm; 2.4 s the first time after a start - `colormap.references` parses 17 stored LightBurn files to
+  find their cleaning layers (2.6 s, cached per process by path and mtime) and the smoothed geometry (0.7 s): the same cost the editor's first view
+  pays (5.3 s). Not changed here; a lasting fix stores the found cleaning layer (a witness observation or a disk cache) - to propose.
+
+- Released 2026-10-22: full suite 1800 passed (-n 12, 2 min 54 s, none skipped); backup `backups/titanium-before-0.22.2-20261022T205050Z.sqlite`
+  (integrity ok, 91 pairs - latest 111, 2121 observations, 10 plans, audit 806); wheel installed with its dependencies, imports ok; 8765 on 0.22.2,
+  `/api/plans/22` 0.08 s (no zone in the live work 22 yet: `photo_zones` []); the operator's tab reloaded from 0.22.1 (nothing unsaved), no console messages.
