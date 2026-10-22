@@ -36,14 +36,14 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Mapping
 
 import cv2
 import numpy as np
 
-from . import (color, colormap, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules, prediction,
-               row_length, tasks)
+from . import (color, colormap, devices, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules,
+               plans as pl, prediction, row_length, setup as su, tasks)
 from .db import Store
 from .prediction import PredictionError
 
@@ -126,24 +126,33 @@ def _expressed(lab, kind: str, clean, nominal) -> tuple[list[float], str]:
 
 
 def _where(pair: Mapping, kept: set[int]) -> dict:
-    """Where a point was measured: the plate of a kept experiment, else the pair (a finished work)."""
+    """Where a point was measured: the plate of a kept experiment, else the pair (a finished work), and the titanium stock record."""
     plan_id = pair["plan_id"] if pair["plan_id"] in kept else None
-    return {"kind": "plate" if plan_id else "pair", "id": plan_id or pair["id"], "pair_id": pair["id"],
+    return {"kind": "plate" if plan_id else "pair", "id": plan_id or pair["id"], "pair_id": pair["id"], "material_id": pair["material_id"],
             "experiment": experiments.plan_key(plan_id) if plan_id else experiments.engraving_key(pair["engraving_id"]),
             "engraving_id": pair["engraving_id"], "title": pair["engraving_title"] or pair["lightburn_name"].rsplit(".", 1)[0],
             "photo": pair["photo_name"], "date": pair["accepted_at"]}
 
 
+def _on_titanium(store: Store, material_id: int | None) -> tuple[str, tuple]:
+    """The SQL condition and its arguments that pick the pairs engraved on the titanium of ``material_id``: every plate of it
+    (``setup.same_titanium``, DEC-110); no titanium only none."""
+    if material_id is None:
+        return "material_id IS NULL", ()
+    plates = su.same_titanium(store, material_id)
+    return f"material_id IN ({','.join('?' * len(plates))})", tuple(plates)
+
+
 def collect(store: Store, mode: Mode) -> dict:
-    """Every colour measured at ``mode`` in its image mode as curve points; the flat fills with the same settings beside them
-    (``fills``, a power curve only, DEC-100); and what was left aside: tonal profiles too weak to use."""
+    """Every colour measured at ``mode`` in its image mode, on any plate of its titanium (DEC-110), as curve points; the flat fills with
+    the same settings beside them (``fills``, a power curve only, DEC-100); and what was left aside: tonal profiles too weak to use."""
     refs = colormap.references(store)
     witness, derived, nominal = refs["witness"], refs["derived"], refs["nominal"]
     kept = experiments.kept_plan_ids(store)
+    titanium, plates = _on_titanium(store, mode.material_id)
     pairs = {r["id"]: r for r in store.query(
-        "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, lightburn_path, photo_name, accepted_at, data_json FROM pair "
-        "WHERE status='Accepted' AND device_id=? AND lens_id IS ? AND material_id IS ? ORDER BY id",
-        (mode.device_id, mode.lens_id, mode.material_id))}
+        "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, lightburn_path, photo_name, accepted_at, material_id, data_json FROM pair "
+        f"WHERE status='Accepted' AND device_id=? AND lens_id IS ? AND {titanium} ORDER BY id", (mode.device_id, mode.lens_id, *plates))}
     points, fills, weak, over_fills = [], [], 0, 0
     for row in refs["rows"]:                                 # flat fills: one colour at a power, a reference for a power curve only
         if row["pair_id"] not in pairs or mode.dither != prediction.PREDICTED_MODE:
@@ -269,7 +278,8 @@ def _materials(store: Store) -> dict[int, dict]:
 
 def scale_modes(store: Store, device_id: int | None = None, lens_id=None, material_id=None) -> list[Mode]:
     """Every grayscale mode with a clear grey -> colour measurement in an accepted check (a photo engraving or a grey ramp), optionally
-    of one laser, lens and titanium; each once, in the order first measured."""
+    of one laser, lens and titanium; each once per titanium (DEC-110), in the order first measured. A mode names the titanium asked for,
+    else the plate it was first measured on."""
     sql = "SELECT id, device_id, lens_id, material_id, data_json FROM pair WHERE status='Accepted'"
     args: list = []
     if device_id is not None:
@@ -279,9 +289,12 @@ def scale_modes(store: Store, device_id: int | None = None, lens_id=None, materi
         sql += " AND lens_id IS ?"
         args.append(lens_id)
     if material_id is not None:
-        sql += " AND material_id IS ?"
-        args.append(material_id)
+        titanium, plates = _on_titanium(store, material_id)
+        sql += " AND " + titanium
+        args += plates
+    materials = _materials(store)
     modes: list[Mode] = []
+    listed: set = set()
     for pair in store.query(sql + " ORDER BY id", tuple(args)):
         check = json.loads(pair["data_json"] or "{}").get("check") or {}
         for rep in check.get("layers", []):
@@ -291,8 +304,10 @@ def scale_modes(store: Store, device_id: int | None = None, lens_id=None, materi
                 continue
             mode = mode_of({"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
                             "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")},
-                           pair["device_id"], pair["lens_id"], pair["material_id"])
-            if mode not in modes:
+                           pair["device_id"], pair["lens_id"], pair["material_id"] if material_id is None else material_id)
+            key = (replace(mode, material_id=None), su.titanium_key(materials.get(mode.material_id)))
+            if key not in listed:
+                listed.add(key)
                 modes.append(mode)
     return modes
 
@@ -318,13 +333,25 @@ def _scale_summary(store: Store, mode: Mode, materials: Mapping, row_mm: float |
         hows[how] = hows.get(how, 0) + 1
     settings = {k: getattr(mode, k) for k in SETTINGS} | {"global_passes": mode.global_passes}
     time = engraving_time.per_area(settings)
-    return {"mode": mode.as_dict(), "material": materials.get(mode.material_id), "span": [lo, hi], "points": len(curve.points),
+    return {"mode": mode.as_dict(), "material": materials.get(mode.material_id), "titanium": _titanium(mode, materials, sources),
+            "span": [lo, hi], "points": len(curve.points),
             "engravings": len(engravings), "by_kind": hows, "reference": basis["reference"], "referenced": curve.referenced,
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "bar": [{"power": round(float(p), 2), "hex": _hex(lab)} for p, lab in zip(powers, labs) if np.isfinite(lab[0])],
             "confirmation": {k: v for k, v in grayscale.confirmation(_per_engraving(store, mode, curve.referenced)).items() if k != "rows"},
             "fills": len(basis["fills"]), "time_s_per_cm2": time["s_per_cm2"], "notes": basis["notes"], "size": dict(curve.size),
             "sizes": basis["sizes"]}
+
+
+def _titanium(mode: Mode, materials: Mapping, sources: list[dict]) -> dict:
+    """The titanium of a scale (DEC-110): its family and grade, the stock records that are it (``records``) and those its points were
+    measured on (``measured_on``, by name)."""
+    own = materials.get(mode.material_id)
+    key = su.titanium_key(own)
+    records = [i for i, m in materials.items() if su.titanium_key(m) == key] if own else []
+    measured = sorted({src.get("material_id") for src in sources if src.get("material_id") is not None})
+    return {"family": own["family"] if own else None, "grade": own["grade"] if own else None, "records": sorted(records),
+            "measured_on": [{"id": i, "name": materials[i]["name"]} for i in measured if i in materials]}
 
 
 def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[prediction.Point]:
@@ -471,6 +498,7 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
         summary = layer.image_summary() or {}
         settings = layer_settings(layer, overrides)
         item = {"index": layer.index, "name": layer.name, "dither": summary.get("dither"), "settings": settings, "refused": None}
+        mode = None
         try:
             prediction.refuse_mode(summary.get("dither"))
             dither = photo_modes.mode(summary.get("dither")).key
@@ -483,6 +511,7 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
             curve, basis = curve_for(store, mode, row_length.of_layer(layer))
         except PredictionError as exc:
             item["refused"] = str(exc)
+            item["measured_on"] = measured_on(store, mode) if mode is not None else None
             out.append(item)
             continue
         notes = list(basis["notes"])
@@ -493,6 +522,15 @@ def prepare(store: Store, data: bytes, device_id: int, lens_id: int | None, mate
         item.update(picture, mode=mode, curve=curve, reference=basis["reference"], adjustments=summary.get("adjusted") or {}, basis_notes=notes)
         out.append(item)
     return out
+
+
+def measured_on(store: Store, mode: Mode) -> list[dict] | None:
+    """The lasers, lenses and titanium on which the settings of ``mode`` are measured as a grayscale scale (``scale_modes``, one plate
+    per titanium): where a file refused for another laser, lens or titanium can be predicted. None for a dot mode: those are not searched."""
+    if mode.dither != prediction.PREDICTED_MODE:
+        return None
+    settings = {**{k: getattr(mode, k) for k in SETTINGS}, "global_passes": mode.global_passes}
+    return [{"device_id": m.device_id, "lens_id": m.lens_id, "material_id": m.material_id} for m in scale_modes(store) if m.matches(settings)]
 
 
 def _grey_for(x: float, curve: prediction.Curve, low, high, values: Mapping) -> float | None:
@@ -716,12 +754,23 @@ def with_rules(item: dict, min_power: float, max_power: float, rules: list[dict]
     return out
 
 
-def picture_time(mode: Mode, width_mm: float, height_mm: float) -> dict:
-    """How long the picture engraves at ``mode``: its whole rectangle is scanned row by row (in grayscale mode every grey fires, the
-    white at Min), at the mode's settings, one piece of scan line per row (``engraving_time.estimate``, DEC-101)."""
+def cleaning(store: Store, mode: Mode) -> dict:
+    """The cleaning a picture's file runs first on the laser of ``mode`` (``plans.clean_layer``): the scales were measured on cleaned
+    plates, so the picture is engraved on cleaned titanium too."""
+    return pl.clean_layer(devices.brief(store, mode.device_id)["passport"])
+
+
+def picture_time(mode: Mode, width_mm: float, height_mm: float, clean: dict | None) -> dict:
+    """How long the picture's file engraves at ``mode``: the cleaning ``clean`` over the picture's rectangle first, when it has one, then
+    the whole rectangle scanned row by row (in grayscale mode every grey fires, the white at Min), at the mode's settings, one piece of
+    scan line per row (``engraving_time.estimate``, DEC-101)."""
     settings = {**{k: getattr(mode, k) for k in SETTINGS}, "global_passes": mode.global_passes, "layer_type": "Image"}
     rows = (height_mm + (width_mm if settings.get("cross_hatch") else 0.0)) / mode.line_interval if mode.line_interval else None
-    return engraving_time.estimate([{"index": 0, "name": "C00", "parameters": settings, "area_mm2": width_mm * height_mm, "scan_pieces": rows}])
+    first = [] if clean is None else [{"index": pl.CLEAN_LAYER_INDEX, "name": clean["name"], "parameters": clean, "area_mm2": width_mm * height_mm,
+                                       "scan_pieces": (height_mm + (width_mm if clean.get("cross_hatch") else 0.0)) / clean["line_interval"]}]
+    index = 0 if clean is None else pl.CLEAN_LAYER_INDEX + 1
+    return engraving_time.estimate(first + [{"index": index, "name": f"C{index:02d}", "parameters": settings, "area_mm2": width_mm * height_mm,
+                                             "scan_pieces": rows}])
 
 
 def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float, rules: list[dict] | None = None) -> np.ndarray:

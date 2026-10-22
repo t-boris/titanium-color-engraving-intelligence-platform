@@ -250,7 +250,7 @@ def portrait(rows=200, cols=300) -> np.ndarray:
 
 
 def test_a_picture_is_written_as_one_grayscale_image_layer_with_the_settings_lightburn_reads():
-    data = plans.export_picture(portrait(), 50, MODE_A, name="Girl on a bike")
+    data = plans.export_picture(portrait(), 50, MODE_A, name="Girl on a bike", clean=None)
     project = lightburn.parse_bytes(data)
     (layer,) = project.layers
     summary = layer.image_summary()
@@ -270,7 +270,7 @@ def test_a_picture_is_written_as_one_grayscale_image_layer_with_the_settings_lig
 
 def test_the_picture_is_stored_as_lightburn_stores_it_and_reads_back_upright():
     picture = portrait()
-    (region,) = lightburn.parse_bytes(plans.export_picture(picture, 50, MODE_A)).layer(0).regions
+    (region,) = lightburn.parse_bytes(plans.export_picture(picture, 50, MODE_A, clean=None)).layer(0).regions
     png = region.bitmap["png"]
     stored = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
     assert np.array_equal(stored, picture[::-1])                        # bottom row first, like the operator's Motorcycle file
@@ -281,11 +281,30 @@ def test_the_picture_is_stored_as_lightburn_stores_it_and_reads_back_upright():
 
 
 def test_a_picture_finer_than_the_layer_is_reduced_to_the_layers_dpi_and_a_coarser_one_keeps_its_pixels():
-    fine = lightburn.parse_bytes(plans.export_picture(np.full((1000, 4000), 128, np.uint8), 20, MODE_A)).layer(0).regions[0]
+    fine = lightburn.parse_bytes(plans.export_picture(np.full((1000, 4000), 128, np.uint8), 20, MODE_A, clean=None)).layer(0).regions[0]
     stored = cv2.imdecode(np.frombuffer(fine.bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
     assert stored.shape == (round(5 / 25.4 * 1503), round(20 / 25.4 * 1503))
     with pytest.raises(su.ValidationError, match="needs min_power"):
-        plans.export_picture(portrait(), 50, {k: v for k, v in MODE_A.items() if k != "min_power"})
+        plans.export_picture(portrait(), 50, {k: v for k, v in MODE_A.items() if k != "min_power"}, clean=None)
+
+
+# the cleaning of a laser that reaches 48 kHz and has a 200 ns step (``plans.clean_layer``)
+CLEAN = plans.clean_layer({"repetition_rate_khz": {"min": 1, "max": 4000}, "pulse_steps": [{"pulse_width_ns": 200}, {"pulse_width_ns": 350}]})
+
+
+def test_a_picture_file_cleans_the_pictures_rectangle_first_and_engraves_the_picture_after_it():
+    project = lightburn.parse_bytes(plans.export_picture(portrait(), 50, MODE_A, name="Girl on a bike", clean=CLEAN))
+    clean, image = project.layer(0), project.layer(1)
+    assert (clean.layer_type, clean.name, clean.power, clean.speed, clean.line_interval, clean.cross_hatch) == (
+        "Scan", "CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05", 20, 2000, 0.05, True)
+    assert clean.burn_order < image.burn_order                                  # the titanium is cleaned before the picture
+    assert (image.layer_type, image.name, image.power, image.image_summary()["min_power"]) == ("Image", "C01", 30, 1)
+    (frame,), (picture,) = clean.regions, image.regions
+    xs, ys = [p[0] for p in frame.polygon], [p[1] for p in frame.polygon]
+    assert frame.kind == "rect" and (min(xs), max(xs), min(ys), max(ys)) == pytest.approx((0, 50, 0, 50 * 200 / 300), abs=1e-3)
+    assert [p for p in picture.polygon] == pytest.approx([p for p in frame.polygon], abs=1e-3)     # over the picture's rectangle
+    mode = ps.Mode(device_id=1, lens_id=None, material_id=None, speed=150, frequency=60, pulse_width=300, line_interval=0.0169, passes=1)
+    assert ps.picture_time(mode, 50, 50 * 200 / 300, CLEAN)["seconds"] == pytest.approx(et.of_project(project)["seconds"], rel=1e-6)
 
 
 # -- through the application: the scales, a picture on one, its time and its file -------------------------------------------------
@@ -339,18 +358,36 @@ def test_a_picture_on_a_scale_is_predicted_timed_and_written_for_lightburn_at_th
     answer = client.post("/api/grey-scales/picture", data={**app_world["mode"], "width_mm": 60},
                          files={"picture": ("girl.png", picture_png(), "image/png")}).json()
     assert answer["power_range"] == [2.0, 40.0] and answer["size_mm"] == {"width": 60.0, "height": 30.0}
-    # 18 cm² marked, one piece of scan line per row of the 30 mm high picture (DEC-101)
-    assert answer["time"]["seconds"] == pytest.approx(18 * 100 / (150 * 0.0169) + 30 / 0.0169 * et.TURNAROUND_S, rel=1e-6)
+    # 18 cm² marked, one piece of scan line per row of the 30 mm high picture (DEC-101), after the cleaning: 18 cm² cross-hatched at
+    # 2000 mm/s and 0.05 mm, a piece per row in both directions
+    picture = 18 * 100 / (150 * 0.0169) + 30 / 0.0169 * et.TURNAROUND_S
+    cleaning = 2 * 18 * 100 / (2000 * 0.05) + (30 + 60) / 0.05 * et.TURNAROUND_S
+    assert answer["time"]["seconds"] == pytest.approx(picture + cleaning, rel=1e-6)
     png = client.get(answer["preview"])
     assert png.status_code == 200 and png.headers["content-type"] == "image/png"
     narrower = client.get(f"/api/grey-scales/picture/{answer['cache_id']}", params={"width_mm": 60, "min_power": 10, "max_power": 30}).json()
     assert narrower["power_range"] == [10.0, 30.0] and narrower["file"].endswith("min_power=10&max_power=30&width_mm=60")
     file = client.get(narrower["file"])
     assert 'filename="girl-P10-30.lbrn2"' in file.headers["content-disposition"]
-    layer = lightburn.parse_bytes(file.content).layer(0)
+    project = lightburn.parse_bytes(file.content)
+    assert project.layer(0).name.startswith("CLEAN-CROSSHATCH-") and et.of_project(project)["seconds"] == pytest.approx(answer["time"]["seconds"])
+    layer = project.layer(1)
     assert (layer.layer_type, layer.power, layer.image_summary()["min_power"], layer.speed, layer.line_interval) == ("Image", 30, 10, 150, 0.0169)
     stored = cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
     assert stored.shape == (120, 240) and stored[0, 0] == 255 and stored[0, -1] == 0          # its own pixels: coarser than 1503 dpi
+
+
+def test_a_file_refused_on_a_titanium_where_its_mode_is_not_measured_says_where_it_is_measured(app_world):
+    client, mode = app_world["client"], app_world["mode"]
+    other = su.save_material(client.app.state.store, "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0)
+    data = plans.export_picture(portrait(), 50, {**MODE_A, "pulse_width": 300, "min_power": 2, "power": 40}, clean=CLEAN)
+    fields = {"device_id": mode["device_id"], "lens_id": mode["lens_id"]}
+    files = {"lightburn": ("girl.lbrn2", data, "application/octet-stream")}
+    (refused,) = client.post("/api/predictions/photo", data={**fields, "material_id": other["id"]}, files=files).json()["layers"]
+    assert refused["refused"].startswith("no colour has been measured at this mode")
+    assert refused["measured_on"] == [{"device_id": mode["device_id"], "lens_id": int(mode["lens_id"]), "material_id": mode["material_id"]}]
+    (shown,) = client.post("/api/predictions/photo", data={**fields, "material_id": mode["material_id"]}, files=files).json()["layers"]
+    assert shown.get("refused") is None and shown["index"] == 1                                # the picture of a cleaned file is on C01
 
 
 def test_a_colour_picture_gets_the_greys_whose_colours_come_nearest_on_the_scale(app_world):
@@ -361,7 +398,7 @@ def test_a_colour_picture_gets_the_greys_whose_colours_come_nearest_on_the_scale
     answer = client.post("/api/grey-scales/picture", data={**app_world["mode"], "width_mm": 20, "by_colour": "true"},
                          files={"picture": ("two.png", cv2.imencode(".png", wanted)[1].tobytes(), "image/png")}).json()
     assert answer["by_colour"] and answer["colour_match"]["median_de"] < 3 and answer["colour_match"]["greys_used"] == 2
-    layer = lightburn.parse_bytes(client.get(answer["file"]).content).layer(0)
+    layer = lightburn.parse_bytes(client.get(answer["file"]).content).layer(1)
     stored = cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
     left, right = int(np.median(stored[:, :10])), int(np.median(stored[:, -10:]))
     assert left > 230 and 30 < right < 160           # white-ish where gold is wanted, a darker grey where violet is

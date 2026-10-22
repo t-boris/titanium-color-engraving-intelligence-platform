@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from test_ai_colouring import Fake, sent
 from test_grey_scales import HUES, app_world, picture_png  # noqa: F401  (the measured grey-ramp plate, four scales)
-from titanium_platform import grayscale, lightburn, people, photo_work, research
+from titanium_platform import engraving_time as et, grayscale, lightburn, people, photo_work, research
 from titanium_platform.api.app import create_app
 
 
@@ -92,7 +92,10 @@ def test_the_file_is_one_grayscale_image_layer_with_the_works_settings_named_aft
     client.post(f"/api/photo-works/{work['id']}/settings", json={"min_power": 10, "max_power": 30})
     file = client.get(work["picture"]["file"])
     assert file.status_code == 200 and "filename*=UTF-8''%D0%9C%D0%BE%D1%82%D0%BE%D1%86%D0%B8%D0%BA%D0%BB-P10-30.lbrn2" in file.headers["content-disposition"]
-    layer = lightburn.parse_bytes(file.content).layer(0)
+    project = lightburn.parse_bytes(file.content)
+    clean, layer = project.layer(0), project.layer(1)
+    assert clean.name.startswith("CLEAN-CROSSHATCH-") and clean.burn_order < layer.burn_order          # cleaned first, as the scale's plates were
+    assert et.of_project(project)["seconds"] == pytest.approx(work["time"]["seconds"])                   # the time shown is the file's
     mode = work["scale"]
     assert (layer.layer_type, layer.power, layer.image_summary()["min_power"]) == ("Image", 30, 10)
     assert (layer.speed, layer.line_interval, layer.frequency_khz) == (mode["speed"], mode["line_interval"], mode["frequency"])
@@ -175,7 +178,7 @@ def model(monkeypatch):
 
 
 def stored_grey(client, work):
-    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(0)
+    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(1)
     return cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)
 
 
@@ -457,7 +460,7 @@ def test_the_file_is_the_picture_the_preview_shows_at_the_layers_resolution(app_
     plan = photo_work._work(store, work["id"])
     item = photo_work._item(store, plan)
     preview = (np.clip(photo_work._shown(item, plan)["picture"], 0, 1) * 255).round().astype(np.uint8)
-    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(0)
+    layer = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content).layer(1)
     stored = cv2.imdecode(np.frombuffer(layer.regions[0].bitmap["png"], np.uint8), cv2.IMREAD_UNCHANGED)[::-1]   # stored bottom row first
     assert stored.shape == (800, 1600) and preview.shape == (400, 800)                         # the file has twice the preview's pixels
     greys, labs = grayscale.usable_greys(item["curve"], plan["min_power"], plan["max_power"])

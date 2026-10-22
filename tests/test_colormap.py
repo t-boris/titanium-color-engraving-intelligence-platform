@@ -238,15 +238,26 @@ def test_chart_corrected_and_camera_relative_colours_of_one_recipe_are_separate_
     assert sorted(m["measurement"] for m in matches) == ["calibrated", "relative"] and all(m["repeats"] == 1 for m in matches)
 
 
-def test_two_titanium_stocks_of_one_name_and_grade_are_separate_entries(world):
-    """The titanium is its stock record: two batches of the same grade never pool into one recipe."""
+def test_plates_of_one_grade_are_one_titanium_and_another_grade_stays_apart(world):
+    """DEC-110: the titanium is its family and grade; each point still names the plate (stock record) it was measured on."""
     pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
     other = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=4)
-    batch = su.save_material(world["store"], "Grade 2 sheet", grade="Grade 2", thickness_mm=1.0, surface="brushed", batch="B-2")
+    third = pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=5)
+    batch = su.save_material(world["store"], "Small Plate", grade="grade 2", thickness_mm=2.0, surface="brushed", batch="B-2")
+    grade5 = su.save_material(world["store"], "Grade 5 sheet", grade="Grade 5")
     world["store"].execute("UPDATE pair SET material_id=? WHERE id=?", (batch["id"], other))
+    world["store"].execute("UPDATE pair SET material_id=? WHERE id=?", (grade5["id"], third))
     matches = colormap.search(world["store"], [40.0, 10.0, 30.0])["matches"]
-    assert len(matches) == 2 and {m["material_id"] for m in matches} == {world["material"]["id"], batch["id"]}
-    assert len({m["material"] for m in matches}) == 1                     # the same label: only the record tells them apart
+    assert sorted(m["repeats"] for m in matches) == [1, 2]                     # two plates of Grade 2 are one recipe, Grade 5 apart
+    assert sorted(m["titanium"] for m in matches) == ["Grade 2", "Grade 5"]
+    data = colormap.collect(world["store"])
+    assert data["options"]["materials"] == ["Grade 2", "Grade 5"]
+    assert {p["material_id"] for p in data["points"]} == {world["material"]["id"], batch["id"], grade5["id"]}
+    assert {p["material_id"] for p in colormap.collect(world["store"], material="Grade 2")["points"]} == {world["material"]["id"], batch["id"]}
+    recipes = {}
+    colormap.annotate(data["points"], recipes)
+    pooled = [p for p in data["points"] if p["titanium"] == "Grade 2"]
+    assert len({p["group"] for p in pooled}) == 2 and all(len(recipes[p["group"]]["sources"]) == 2 for p in pooled)
 
 
 # -- engraving time: every colour carries it, the map filters by it, the search prefers the faster (REQ-035, DEC-075) -----------

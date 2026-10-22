@@ -8,7 +8,7 @@ import numpy as np
 
 import synth
 from test_grey_scales import app_world, step_colour  # noqa: F401  (the measured grey-ramp plate, four scales; this module's own copy)
-from titanium_platform import color, ingest as ig, lightburn, plans
+from titanium_platform import color, ingest as ig, lightburn, plans, setup as su
 
 
 PICTURE_PX = 720          # the picture's width in the photograph, whatever its width on the titanium: the camera is moved to frame it
@@ -68,6 +68,8 @@ def test_the_file_of_a_work_names_it_and_its_photograph_is_linked_measured_and_c
     assert store.one("SELECT plan_id FROM pair WHERE id=?", (pid,))["plan_id"] == work["id"]       # found by the name in its file
     (layer,) = [rep for rep in report["layers"] if rep.get("tonal")]
     assert layer["tonal"]["evidence"] == "clear" and layer["tonal"]["power_range"] == [work["min_power"], work["max_power"]]
+    (cleaning,) = [rep for rep in report["layers"] if rep["index"] == 0]
+    assert cleaning["role"] == "pre-test cleaning witness" and layer["index"] == 1                 # the cleaning is not taken for a colour
 
     (waiting,) = client.get(f"/api/photo-works/{work['id']}/engravings").json()
     assert (waiting["pair_id"], waiting["same_scale"], waiting["check"]) == (pid, True, None) and waiting["status"] != "Accepted"
@@ -95,6 +97,32 @@ def test_the_file_of_a_work_names_it_and_its_photograph_is_linked_measured_and_c
     assert not off["check"]["confirmed"] and off["check"]["median_de"] > 6, off["check"]                # the titanium came out lighter
     assert all(b["lab"][0] > b["predicted"][0] for b in off["check"]["bands"])
     assert len(client.get(f"/api/photo-works/{work['id']}/engravings").json()) == 1                     # each work has its own photographs
+
+
+def test_a_work_on_another_plate_of_the_scales_grade_is_on_that_scale_and_its_engraving_there_counts_in_it(app_world):
+    """DEC-110: the grey-scale plate was engraved on one plate, the work goes on a smaller one of the same grade."""
+    client = app_world["client"]
+    store = client.app.state.store
+    small = su.save_material(store, "Small Plate", grade="Grade 5", thickness_mm=2.0)
+    other = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    work = create(client)
+    measured_on = work["scale"]["material_id"]
+    moved = client.post(f"/api/photo-works/{work['id']}/settings", json={"scale": {**work["scale"], "material_id": small["id"]}})
+    assert moved.status_code == 200, moved.text
+    work = moved.json()
+    assert work["scale"]["material_id"] == small["id"] and work["material"]["name"] == "Small Plate"
+    refused = client.post(f"/api/photo-works/{work['id']}/settings", json={"scale": {**work["scale"], "material_id": other["id"]}})
+    assert refused.status_code == 422 and "not measured" in refused.text                              # another grade has no such scale
+    (listed,) = [sc for sc in client.get("/api/grey-scales").json()["scales"] if sc["mode"] == {**work["scale"], "material_id": measured_on}]
+    assert small["id"] in listed["titanium"]["records"] and other["id"] not in listed["titanium"]["records"]
+    pid, report, _ = engrave(client, work)
+    assert report["problems"] == [] and store.one("SELECT material_id FROM pair WHERE id=?", (pid,))["material_id"] == small["id"]
+    accept(client, pid)
+    (done,) = client.get(f"/api/photo-works/{work['id']}/engravings").json()
+    assert done["same_scale"] and done["check"]["others"] >= 1 and done["check"]["confirmed"], done["check"]   # others: also earlier tests' works
+    (after,) = [sc for sc in client.get("/api/grey-scales").json()["scales"] if sc["mode"] == {**work["scale"], "material_id": measured_on}]
+    assert {m["name"] for m in after["titanium"]["measured_on"]} == {"Grade 5 sheet", "Small Plate"}
+    assert after["engravings"] == listed["engravings"] + 1
 
 
 def test_an_engraving_wider_than_the_scale_was_measured_is_not_checked_against_another_size_until_one_was_engraved_at_its_own(app_world):

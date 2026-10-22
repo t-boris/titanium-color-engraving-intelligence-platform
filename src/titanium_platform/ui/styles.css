@@ -927,6 +927,7 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ge-title .sub {line-height:1.35}
 .ge-body {grid-template-columns:minmax(230px,270px) minmax(0,1.5fr) minmax(420px,1fr)}
 .ge .os-head>a {white-space:nowrap;font-size:13px}
+.ge .os-head>.row {flex:none;flex-wrap:nowrap}      /* «Отменить» и «Повторить» в одну строку: сужается название работы */
 .ge-empty {grid-template-columns:minmax(0,1fr)}
 .ge .ge-scales {grid-template-columns:minmax(0,1fr);gap:8px}
 .ge .ge-scale {padding:8px 10px;gap:4px}

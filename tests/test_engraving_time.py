@@ -111,7 +111,8 @@ def test_a_file_is_timed_layer_by_layer_over_the_area_it_fills_and_the_length_it
 def test_a_picture_is_timed_over_its_whole_rectangle_and_a_missing_speed_leaves_the_total_incomplete():
     import numpy as np
     from titanium_platform import lightburn as lb, plans
-    data = plans.export_picture(np.zeros((200, 300), np.uint8), 30, {"power": 30, "min_power": 1, "speed": 150, "frequency": 60, "line_interval": 0.0169})
+    data = plans.export_picture(np.zeros((200, 300), np.uint8), 30, {"power": 30, "min_power": 1, "speed": 150, "frequency": 60, "line_interval": 0.0169},
+                                clean=None)
     t = et.of_project(lb.parse_bytes(data))
     assert t["seconds"] == pytest.approx(6.0 * 100 / (150 * 0.0169) + 20 / 0.0169 * TURN, rel=1e-6)    # 30 x 20 mm: 6 cm², a piece per row
     unknown = et.of_project(lb.parse_bytes(project('<CutSetting type="Scan"><index Value="0"/><name Value="C00"/></CutSetting>',

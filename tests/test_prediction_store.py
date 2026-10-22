@@ -99,17 +99,37 @@ def test_a_curve_with_fills_of_its_settings_names_them_and_leaves_them_out(w):
     assert any("1 flat fills with these settings are shown beside the curve and not used" in n for n in basis["notes"])
 
 
-def test_another_laser_lens_or_titanium_stock_is_another_partition(w):
+def test_another_laser_lens_or_titanium_is_another_partition(w):
     twin = devices.create_from_template(w["store"], "jpt-ydflp-e-60-m7-m-r")
     other_lens = lenses.create_lens(w["store"], "F-Theta 254", 254, 220)
-    batch = su.save_material(w["store"], "Grade 2 sheet", grade="Grade 2", batch="B")       # same grade and name, another batch
+    grade5 = su.save_material(w["store"], "Grade 5 sheet", grade="Grade 5", batch="A")      # another grade, the same name and batch
+    unnamed = su.save_material(w["store"], "Offcut")                                         # no grade: only itself
     pair(w, check=tonal_check(), device=twin["id"])
     pair(w, check=tonal_check(), lens=other_lens["id"])
     pair(w, check=tonal_check(), lens=None)                            # an unknown lens is its own partition
-    pair(w, check=tonal_check(), material=batch["id"])
+    pair(w, check=tonal_check(), material=grade5["id"])
+    pair(w, check=tonal_check(), material=unnamed["id"])
     assert ps.collect(w["store"], mode(w))["points"] == []
     with pytest.raises(pr.PredictionError, match="no colour has been measured at this mode"):
         ps.curve_for(w["store"], mode(w))
+
+
+def test_every_plate_of_one_grade_is_one_titanium_whatever_its_name_size_thickness_or_batch(w):
+    """DEC-110: the operator engraves the grey-scale plate on one plate and the work on another of the same grade."""
+    small = su.save_material(w["store"], "Small Plate", grade=" grade  2 ", batch="B", thickness_mm=2.0)
+    pair(w, check=tonal_check(), material=small["id"])
+    on_small = ps.mode_of(MODE, w["laser"]["id"], w["lens"]["id"], small["id"])
+    assert len(ps.collect(w["store"], mode(w))["points"]) == 3 == len(ps.collect(w["store"], on_small)["points"])
+    assert {src["material_id"] for p in ps.collect(w["store"], mode(w))["points"] for src in [p.source]} == {small["id"]}
+    (listed,) = ps.scale_modes(w["store"])                                           # one scale, named by the plate it was measured on
+    assert listed.material_id == small["id"]
+    (asked,) = ps.scale_modes(w["store"], material_id=w["titanium"]["id"])           # or by the titanium asked for
+    assert asked.material_id == w["titanium"]["id"]
+    pair(w, check=tonal_check(), material=w["titanium"]["id"])
+    assert len(ps.scale_modes(w["store"])) == 1                                      # measured on both plates: still one scale
+    (summary,) = ps.scales(w["store"])
+    assert summary["titanium"]["records"] == sorted([w["titanium"]["id"], small["id"]])
+    assert [m["name"] for m in summary["titanium"]["measured_on"]] == ["Grade 2 sheet", "Small Plate"] and summary["engravings"] == 2
 
 
 def test_checks_awaiting_acceptance_and_deleted_pairs_never_feed_a_curve(w):

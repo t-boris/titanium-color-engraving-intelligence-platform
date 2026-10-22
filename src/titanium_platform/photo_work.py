@@ -88,9 +88,10 @@ def _scale_data(mode: ps.Mode) -> dict:
 
 
 def measured_scale(store: Store, wanted) -> ps.Mode:
-    """The measured scale named by ``wanted``: the laser, lens, titanium and fixed settings, as the list of scales gives them."""
+    """The measured scale named by ``wanted``: the laser, lens, titanium and fixed settings, as the list of scales gives them; on any
+    plate of its titanium (DEC-110), the work keeping the plate named."""
     if isinstance(wanted, Mapping):
-        for mode in ps.scale_modes(store):
+        for mode in ps.scale_modes(store, material_id=wanted.get("material_id")):
             if (mode.device_id == wanted.get("device_id") and mode.lens_id == wanted.get("lens_id")
                     and mode.material_id == wanted.get("material_id") and mode.matches(wanted)):
                 return mode
@@ -171,7 +172,7 @@ def _summary(store: Store, plan: Mapping) -> dict:
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
             "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
-            "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": ps.picture_time(mode, width, height)}
+            "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": ps.picture_time(mode, width, height, ps.cleaning(store, mode))}
 
 
 def _shown_rule(rule: Mapping) -> dict:
@@ -257,12 +258,13 @@ def original(store: Store, plan_id: int) -> tuple[bytes, str]:
 
 
 def export(store: Store, plan_id: int) -> tuple[bytes, str]:
-    """The LightBurn file of the work (one grayscale Image layer, ``plans.export_picture``) and the name to save it under."""
+    """The LightBurn file of the work (the cleaning, then one grayscale Image layer, ``plans.export_picture``) and the name to save it under."""
     plan = _work(store, plan_id)
     item = _item(store, plan)
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     picture = ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"])
-    data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"], plan["plan_identifier"])
+    data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"], plan["plan_identifier"],
+                             clean=ps.cleaning(store, item["mode"]))
     return data, f"{plan['name']}-P{low:g}-{high:g}"
 
 
@@ -432,9 +434,10 @@ def engravings(store: Store, plan_id: int) -> list[dict]:
     """Every photograph linked to the work (its file names the work, or it was uploaded for it), the newest first: its state, the
     settings, Min and Max and row length (its width as engraved, ``row_mm``) it was engraved with and, once accepted, each grey of it
     against the colour the other engravings of those settings predict at its size (``prediction_store.engraving_check``). An engraving
-    with other settings than the work's scale is checked on its own settings and says so."""
+    with other settings than the work's scale (or on another titanium) is checked on its own settings and says so."""
     plan = _work(store, plan_id)
     work_mode = mode_of(plan)
+    plates = su.same_titanium(store, work_mode.material_id) if work_mode.material_id is not None else [None]
     out = []
     for row in store.query("SELECT id, status, device_id, lens_id, material_id, photo_name, lightburn_name, lightburn_path, created_at, accepted_at, "
                            "data_json FROM pair WHERE plan_id=? AND status!=? ORDER BY id DESC", (plan["id"], ig.ST_DELETED)):
@@ -446,8 +449,8 @@ def engravings(store: Store, plan_id: int) -> list[dict]:
             settings = {"speed": rep.get("speed"), "frequency": rep.get("frequency_khz"), "pulse_width": rep.get("pulse_width"),
                         "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes")}
             dither = (rep.get("image") or {}).get("dither") or prediction.PREDICTED_MODE
-            same = (row["device_id"], row["lens_id"], row["material_id"], dither) == (work_mode.device_id, work_mode.lens_id, work_mode.material_id,
-                                                                                      work_mode.dither) and work_mode.matches(settings)
+            same = ((row["device_id"], row["lens_id"], dither) == (work_mode.device_id, work_mode.lens_id, work_mode.dither)
+                    and row["material_id"] in plates and work_mode.matches(settings))          # any plate of the work's titanium (DEC-110)
             mode = work_mode if same else ps.mode_of(settings, row["device_id"], row["lens_id"], row["material_id"], dither)
             item.update(settings={**settings, "power_range": rep["tonal"].get("power_range"), "evidence": rep["tonal"].get("evidence")},
                         same_scale=same, mode=mode.as_dict())

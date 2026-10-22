@@ -433,6 +433,17 @@ def _cut_setting(index: int, name: str, power: float, frequency_khz: float, spee
 IMAGE_DITHER = "grayscale"
 
 
+def _clean_setting(cleaning: dict) -> str:
+    """The cleaning layer C00 (``clean_layer``), run first: its recipe with its scan controls."""
+    scan = scan_settings({"global_passes": cleaning.get("global_passes", 1), "bidirectional": cleaning.get("bidirectional", True),
+                          "cross_hatch": cleaning.get("cross_hatch", True), "scan_angle": cleaning.get("angle", 0),
+                          "angle_increment": cleaning.get("angle_increment", 0)})
+    return _cut_setting(CLEAN_LAYER_INDEX, cleaning.get("name", CLEAN_LAYER_NAME), cleaning["power"], cleaning["frequency"],
+                        cleaning["speed"], cleaning.get("pulse_width"), cleaning.get("interval", cleaning.get("line_interval")),
+                        priority=0, cross_hatch=scan["cross_hatch"], angle=scan["scan_angle"], passes=cleaning.get("passes", 1),
+                        global_passes=scan["global_passes"], bidirectional=scan["bidirectional"], angle_increment=scan["angle_increment"])
+
+
 def _image_setting(index: int, name: str, p: dict, *, priority: int, dither: str = IMAGE_DITHER) -> str:
     """An Image layer as LightBurn writes one (the operator's own files of LightBurn 1.7.01 and 2.1.04, in their order): ``CutSetting_Img``
     with Min and Max power, speed, frequency (integer Hz), Q-pulse, the line interval, the image mode and the DPI LightBurn links
@@ -461,14 +472,16 @@ def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: fl
             f'        <XForm>{w / native_w:.8f} 0 0 {h / native_h:.8f} {x + w / 2:.5f} {y + h / 2:.5f}</XForm>\n    </Shape>\n')
 
 
-def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture", identifier: str | None = None) -> bytes:
+def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture", identifier: str | None = None, *,
+                   clean: dict | None) -> bytes:
     """A LightBurn project of one picture engraved in grayscale mode with ``parameters`` (power = Max, ``min_power``, speed, frequency
-    in kHz, pulse width, line interval, passes): one Image layer C00, the picture ``width_mm`` wide at the layer's DPI, its top-left
-    corner at the origin. Written like the operator's own photo files (no mirroring, no cleaning, no markers): what it engraves is
-    the picture alone. The picture keeps its own pixels, as in those files (LightBurn resamples it to the layer's DPI when it
-    engraves); only a picture finer than that DPI is reduced to it, so the file does not carry pixels the laser never uses. With an
-    ``identifier`` (a photo work's) the Notes carry ``TCE1:<identifier>``, as a plan's file does, so that the photograph of the engraving
-    is linked to it."""
+    in kHz, pulse width, line interval, passes): the picture ``width_mm`` wide at the layer's DPI, its top-left corner at the origin,
+    no mirroring and no markers. With ``clean`` (the laser's ``clean_layer``) the titanium under the picture is cleaned first, as on
+    the plates its scale was measured on: C00 cleans the picture's rectangle and the Image layer C01 engraves the picture after it;
+    without, the Image layer is C00, like the operator's own photo files. The picture keeps its own pixels, as in those files
+    (LightBurn resamples it to the layer's DPI when it engraves); only a picture finer than that DPI is reduced to it, so the file does
+    not carry pixels the laser never uses. With an ``identifier`` (a photo work's) the Notes carry ``TCE1:<identifier>``, as a plan's
+    file does, so that the photograph of the engraving is linked to it."""
     width = float(width_mm)
     if not np.isfinite(width) or width <= 0:
         raise su.ValidationError("the width of the picture must be a positive number of millimetres")
@@ -483,8 +496,12 @@ def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name:
         target = (max(1, round(width / grayscale.MM_PER_INCH * dpi)), max(1, round(height / grayscale.MM_PER_INCH * dpi)))
         picture, own_dpi = cv2.resize(picture, target, interpolation=cv2.INTER_AREA), target[0] / width * grayscale.MM_PER_INCH
     stem = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-") or "picture"
+    index = 0 if clean is None else CLEAN_LAYER_INDEX + 1
+    cleaning = "" if clean is None else _clean_setting(clean)
+    frame = "" if clean is None else _rect(0.0, 0.0, width, height, CLEAN_LAYER_INDEX)
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">\n'
-            + _image_setting(0, "C00", parameters, priority=0) + _bitmap(0.0, 0.0, width, height, picture, own_dpi, 0, f"{stem}.png")
+            + cleaning + _image_setting(index, f"C{index:02d}", parameters, priority=index) + frame
+            + _bitmap(0.0, 0.0, width, height, picture, own_dpi, index, f"{stem}.png")
             + f'    <Notes ShowOnLoad="0" Notes={quoteattr(f"TCE1:{identifier}" if identifier else "")}/>\n</LightBurnProject>\n').encode("utf-8")
 
 
@@ -569,18 +586,9 @@ def export_lbrn2(plan: dict) -> bytes:
     out = [f'<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="{mirror_y}">\n']
     shapes = []
     if has_clean:
-        cleaning = plan.get("clean_layer") or {**CLEAN_PARAMETERS, "interval": CLEAN_PARAMETERS["line_interval"],
-                                                "global_passes": 1, "bidirectional": True, "cross_hatch": True,
-                                                "angle": 0, "angle_increment": 0}
-        cleaning_scan = scan_settings({"global_passes": cleaning.get("global_passes", 1),
-                                       "bidirectional": cleaning.get("bidirectional", True),
-                                       "cross_hatch": cleaning.get("cross_hatch", True), "scan_angle": cleaning.get("angle", 0),
-                                       "angle_increment": cleaning.get("angle_increment", 0)})
-        out.append(_cut_setting(CLEAN_LAYER_INDEX, cleaning.get("name", CLEAN_LAYER_NAME), cleaning["power"], cleaning["frequency"],
-                                cleaning["speed"], cleaning.get("pulse_width"), cleaning.get("interval", cleaning.get("line_interval")),
-                                priority=0, cross_hatch=cleaning_scan["cross_hatch"], angle=cleaning_scan["scan_angle"],
-                                passes=cleaning.get("passes", 1), global_passes=cleaning_scan["global_passes"],
-                                bidirectional=cleaning_scan["bidirectional"], angle_increment=cleaning_scan["angle_increment"]))
+        out.append(_clean_setting(plan.get("clean_layer") or {**CLEAN_PARAMETERS, "interval": CLEAN_PARAMETERS["line_interval"],
+                                                              "global_passes": 1, "bidirectional": True, "cross_hatch": True,
+                                                              "angle": 0, "angle_increment": 0}))
     for layer, file_index in zip(layers, file_indices):
         p = layer["parameters"]
         if any(k not in p or p[k] is None for k in ("power", "frequency", "speed")):

@@ -84,7 +84,7 @@ def photo_work_picture(plan_id: int, request: Request):
 
 @router.get("/photo-works/{plan_id}/export.lbrn2")
 def photo_work_file(plan_id: int, request: Request):
-    """The LightBurn file of the work: one grayscale Image layer at its scale's settings, Min and Max, the picture at its width."""
+    """The LightBurn file of the work: the cleaning, then one grayscale Image layer at its scale's settings, Min and Max, the picture at its width."""
     data, name = photo_work.export(store_of(request), plan_id)
     return Response(data, media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(name, ".lbrn2"), "Cache-Control": "no-store"})

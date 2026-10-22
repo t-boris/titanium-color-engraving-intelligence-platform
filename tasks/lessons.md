@@ -439,3 +439,24 @@ dark every edge counts as lost and was drawn in the lightest grey: white dashes 
   picked greys, rules) and look at the pictures, not only the share.
 - The plain picture «как её видит LightBurn» is the operator's own picture: nothing is added to it unless the operator asks for it.
 - A line drawn only where a test fails along an edge breaks into dashes wherever the test flickers; a line is either the whole edge or none.
+
+## The operator's examples decide the scope of a request: objects named one by one mean a choice per object
+Operator, 2026-10-22: "общую тональность ... столб сзади в синей тональности, кожа светлее, очки красные ... не напрямую, а основной цвет, вокруг которого всё
+строилось бы". I read "основной цвет" as one colour for the whole picture and prototyped a global tone; the operator: "Мне нужно не общий цвет менять ... отдельно
+разукрасить губы ... очки ... как в разукрашке". "Не напрямую" was about how a colour is given (a range of the scale around it, not one fixed grey), not about scope.
+- Rule: when the operator illustrates a wish with several objects that get different colours, the request is per object. Before prototyping, restate the scope
+  with their own examples ("фон синий, кожа светлее, очки красные - каждый объект свой цвет?") and prototype that.
+
+## A record named after a physical thing is not automatically the identity of what is measured
+Operator, 2026-10-22, on the preview refusing «Small Plate» for a mode measured on «Big Plate 150»: "должно работать для титана любого размера". Every
+measurement was partitioned by the plate record (`material_id`), so two plates of one titanium never shared a scale. The operator: every Grade 5 plate is one
+titanium; size, thickness and batch do not matter.
+- Rule: when a key partitions measurements (plate, laser, lens, size ...), check with the operator what makes two records the same for the colour, before a
+  second record of the same kind appears; say on screen which records a prediction pools.
+
+## Every file the platform writes for engraving on titanium is checked against the others for what they all carry
+Operator, 2026-10-22: "когда генеришь LightBurn file - не забывай про cleaning layer". Plates and vector works clean first on C00; the photo work's file was
+written "like the operator's own photo files" with the picture alone, so the work would be engraved on uncleaned titanium while its scale was measured on cleaned
+plates.
+- Rule: a new export path lists what every other export writes (the cleaning first, markers, the identifier in Notes, the run order) and either writes it or says
+  in its docstring and on screen why not; the conditions of the measurement the prediction rests on (cleaned plate) are the conditions of the file.

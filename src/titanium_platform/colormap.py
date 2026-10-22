@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -67,11 +68,19 @@ def _cleaning_layer(path: str, stamp: int) -> int | None:
         return None
 
 
-def _names(store: Store) -> tuple[dict[int, str], dict[int, str]]:
-    """The titles of the lasers and the names of the lenses, by record id."""
+def _names(store: Store) -> tuple[dict[int, str], dict[int, str], dict[int, tuple[str, str]]]:
+    """The titles of the lasers, the names of the lenses and the titanium of each stock record (its key and its name: the grade as the
+    first record of it spells it, with the family when that is not titanium; a record with no grade by its own name), by record id."""
     from .devices import display_title
     lasers = {r["id"]: display_title(r["name"], r["serial"]) for r in store.query("SELECT id, name, serial FROM laser_device")}
-    return lasers, {r["id"]: r["name"] for r in store.query("SELECT id, name FROM lens")}
+    titanium, spelled = {}, {}
+    for r in store.query("SELECT id, name, family, grade FROM material_profile ORDER BY id"):
+        key = su.titanium_key(r)
+        if key not in spelled:
+            grade, family = " ".join((r["grade"] or "").split()), " ".join((r["family"] or "").split())
+            spelled[key] = (grade if family.casefold() in ("", "titanium") else f"{family} {grade}") if grade else r["name"]
+        titanium[r["id"]] = (key, spelled[key])
+    return lasers, {r["id"]: r["name"] for r in store.query("SELECT id, name FROM lens")}, titanium
 
 
 def _source_of_row(row, matrix: bool = False) -> dict:
@@ -97,19 +106,25 @@ def origin_of(plan_mode: str | None, matrix: bool = False) -> str:
     return "test" if matrix or plan_mode in TEST_PLANS else "work"
 
 
-def _pair_info(source: dict, names: tuple[dict[int, str], dict[int, str]], kept: set[int]) -> dict:
+def _pair_info(source: dict, names: tuple[dict, dict, dict], kept: set[int]) -> dict:
     """Where a colour came from. The laser and lens are its records (DEC-063): ``setup`` is their key, so two units with
-    the same name stay apart, and the names are only the label. The titanium is its stock record (``material_id``)."""
+    the same name stay apart, and the names are only the label. The plate is its stock record (``material_id``, ``material`` as it was
+    named when the photograph was added); ``titanium`` is the titanium that record is (DEC-110): every plate of one grade."""
     context = source["context"]
     laser, lens = names[0].get(source["device_id"]), names[1].get(source["lens_id"])
     material = " · ".join(x for x in (context.get("titanium_name"), context.get("titanium_grade")) if x) or None
+    if source["material_id"] in names[2]:
+        titanium_key, titanium = names[2][source["material_id"]]
+    else:                                   # no stock record (or one since removed): only itself, named as the photograph's upload named it
+        titanium_key = su.titanium_key(None) if source["material_id"] is None else f"id:{source['material_id']}"
+        titanium = material
     key = experiments.plan_key(source["plan_id"]) if source["plan_id"] in kept else experiments.engraving_key(source["engraving_id"])
     return {"experiment": key, "title": source["engraving_title"] or source["lightburn_name"].rsplit(".", 1)[0], "photo": source["photo_name"],
             "date": source["date"], "laser": laser, "lens": lens, "engraving_id": source["engraving_id"],
             "origin": origin_of(source.get("plan_mode"), source.get("matrix", False)), "work_id": source["plan_id"] if source.get("plan_mode") == pl.MODE_VECTOR else None,
             "device_id": source["device_id"], "lens_id": source["lens_id"], "setup": su.setup_key(source["device_id"], source["lens_id"]),
             "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material, "material_id": source["material_id"],
-            "batch": context.get("batch")}
+            "titanium": titanium, "titanium_key": titanium_key, "batch": context.get("batch")}
 
 
 _against_clean = color.against_clean
@@ -191,9 +206,13 @@ SHOWN_PARAMETERS = ("power", "frequency", "speed", "pulse_width", "line_interval
                     "cross_hatch", "scan_angle")
 
 
+PLATE = re.compile(r"\|ti:[^|]*\|")          # the titanium stock record inside the group key of a recipe (_group)
+
+
 def _group(params: dict, info: dict, kind: str, referenced: bool, provisional: bool, task: dict, tonal: bool = False) -> str:
-    """One recipe of the search: the settings, the laser and lens records, the titanium stock record, how the colour was measured,
-    whether it is provisional and its engraving task; colours that differ in any of these are never one entry (REQ-020, REQ-029)."""
+    """The recipe of a colour on its plate: the settings, the laser and lens records, the titanium stock record, how the colour was
+    measured, whether it is provisional and its engraving task (REQ-020, REQ-029). The plate is kept in it, so the ids of palette entries
+    made from it stay (DEC-088); one entry of the map and of the search is a recipe on its titanium (``recipe``, DEC-110)."""
     basis = "chart" if kind == "calibrated" else "clean" if referenced else "as-shot"
     return "|".join((model.parameters_key(params), "tonal" if tonal else "layer", info["setup"], f"ti:{info['material_id'] or 'unknown'}",
                      basis, "provisional" if provisional else "accepted", f"task:{task['kind']}"))
@@ -307,11 +326,12 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
 
     setups, materials, kinds = {}, set(), set()
     for p in points:
+        p["recipe"] = PLATE.sub(f"|ti:{p['titanium_key']}|", p["group"])         # every plate of one titanium is one (DEC-110)
         setups[p["setup"]] = p
         kinds.add(p["task"]["kind"])
-        if p["material"]:
-            materials.add(p["material"])
-    shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["material"] == material)
+        if p["titanium"]:
+            materials.add(p["titanium"])
+    shown = [p for p in points if (setup is None or p["setup"] == setup) and (material is None or p["titanium"] == material)
              and (measurement is None or p["measurement"] == measurement) and (task is None or p["task"]["kind"] == task)]
     slower = 0
     if limit is not None:
@@ -363,13 +383,13 @@ def _provisional_points(store: Store, names, kept: set[int], nominal: list[float
 
 
 def by_recipe(points: list[dict]) -> dict[str, dict]:
-    """The points of each recipe (one entry of the search) with its evidence: the colours of each independent engraving (a
-    re-photograph counts once, DEC-021), when each was made (its latest photograph; the observation id breaks a tie), its
-    photographs, experiments and observations."""
+    """The points of each recipe on its titanium (``recipe``: one entry of the search, DEC-110) with its evidence: the colours of each
+    independent engraving (a re-photograph counts once, DEC-021), when each was made (its latest photograph; the observation id breaks a
+    tie), its photographs, experiments and observations."""
     out: dict[str, dict] = {}
     for point in points:
-        entry = out.setdefault(point["group"], {"points": [], "engravings": {}, "when": {}, "photographs": set(), "experiments": [],
-                                                "observation_ids": []})
+        entry = out.setdefault(point["recipe"], {"points": [], "engravings": {}, "when": {}, "photographs": set(), "experiments": [],
+                                                 "observation_ids": []})
         entry["points"].append(point)
         entry["engravings"].setdefault(point["engraving_id"], []).append(point["display_lab"])
         entry["when"][point["engraving_id"]] = max(entry["when"].get(point["engraving_id"], ("", 0)),
@@ -412,15 +432,17 @@ def annotate(points: list[dict], recipes: dict | None = None) -> list[dict]:
     """Give every point the confidence of its recipe, in place (REQ-045): ``trust`` (0..1, always a number: what the map draws the
     circle's diameter by), ``confidence`` (None while the recipe was engraved once), ``agreement``, ``caution`` and ``doubtful`` (the
     circle is smaller than that of one engraving, REQ-049). When ``recipes`` is a dict it receives, by group, the agreed colour and the
-    sources of each recipe engraved more than once; a recipe engraved once is its own source and is told by its point."""
-    for group, recipe in by_recipe(points).items():
+    sources of each recipe engraved more than once (under the group of each of its plates); a recipe engraved once is its own source and
+    is told by its point."""
+    for recipe in by_recipe(points).values():
         found = agreed(recipe)
         shown = {"trust": found["trust"], "confidence": found["confidence"], "agreement": agreement.shown(found),
                  "caution": "contradicted" if found["contradicted"] else None, "doubtful": agreement.doubtful(found)}
         for point in recipe["points"]:
             point.update(shown)
         if recipes is not None and found["engravings"] > 1:
-            recipes[group] = {"lab": [round(v, 1) for v in found["lab"]], "sources": sources_of(recipe, found)}
+            told = {"lab": [round(v, 1) for v in found["lab"]], "sources": sources_of(recipe, found)}
+            recipes.update({point["group"]: told for point in recipe["points"]})
     return points
 
 

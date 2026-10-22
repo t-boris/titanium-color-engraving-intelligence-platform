@@ -2,7 +2,8 @@
    Min и Max мощности — по измеренной кривой «мощность → цвет» этого режима (лазер, линза, титан, скорость, частота, импульс, шаг,
    проходы). Серый картинки задаёт мощность линейно между Min (светлый) и Max (тёмный); мощность вне измеренного диапазона не
    прогнозируется и заштрихована. Файл загружается один раз: ползунки Min и Max перерисовывают прогноз из той же загрузки.
-   Адрес: #/photo-preview; ?pair=<id> — файл принятой работы уже выбран вместе с её лазером, линзой и титаном. */
+   Адрес: #/photo-preview; ?pair=<id> — файл принятой работы уже выбран вместе с её лазером, линзой и титаном; ?work=<id> — так же файл
+   фотоработы (её шкала даёт лазер, линзу и титан). */
 'use strict';
 (() => {
   const {h, fill, btn, field, link, pill, get, form, num, swatch, labText, table} = App;
@@ -57,10 +58,10 @@
       h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))));
   }
 
-  function layerCard(layer, cacheId) {
+  function layerCard(layer, cacheId, elsewhere) {
     const head = h('div', {class: 'row'}, h('h3', {}, `Слой ${layer.name}`), pill(layer.dither ? PhotoModes.label(layer.dither) : 'режим не указан'),
       (layer.settings.overridden || []).length ? pill('настройки изменены', 'warn') : null);
-    if (layer.refused) return h('section', {class: 'card stack'}, head, h('div', {class: 'alert warn', role: 'status'}, I18N.tr(layer.refused)));
+    if (layer.refused) return h('section', {class: 'card stack'}, head, h('div', {class: 'alert warn', role: 'status'}, I18N.tr(layer.refused)), elsewhere(layer));
     const img = h('img', {class: 'pp-image', alt: `Картинка слоя ${layer.name} и её прогноз на титане`});
     const banner = h('div', {class: 'pp-banner', role: 'note'});
     const lost = h('div', {class: 'alert warn', role: 'status', hidden: true}, 'Предпросмотр больше не хранится: загрузите файл ещё раз.');
@@ -113,11 +114,19 @@
   App.register({id: 'photo-preview', async render(ctx) {
     const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
-    let preloaded = null;                       // the LightBurn file of an accepted work, opened from its experiment
+    let preloaded = null;                       // the LightBurn file of an accepted work, opened from its experiment, or of a photo work
     if (ctx.query.pair) {
       const pair = await get('/pairs/' + encodeURIComponent(ctx.query.pair));
       const blob = await get(`/pairs/${pair.id}/lightburn`);
       preloaded = {file: new File([blob], pair.lightburn_name), pair};
+    } else if (ctx.query.work) {
+      const work = (await get('/photo-works')).find((w) => String(w.id) === String(ctx.query.work));
+      if (work) {
+        const name = `${work.name}-P${work.min_power}-${work.max_power}.lbrn2`;
+        const blob = await get(`/photo-works/${work.id}/export.lbrn2`);
+        preloaded = {file: new File([blob], name),
+          pair: {device_id: work.scale.device_id, lens_id: work.scale.lens_id, material_id: work.scale.material_id, lightburn_name: name}};
+      }
     }
     const pick = App.laserLensPicker(lists, {device: preloaded ? preloaded.pair.device_id : ctx.query.device,
       lens: preloaded ? App.lensParam(preloaded.pair.lens_id) : ctx.query.lens, defaultLens: 'installed'});
@@ -143,8 +152,26 @@
       try {
         const out = await form('/predictions/photo', fd);
         fill(results, h('p', {class: 'muted small'}, `Файл «${out.file}» · слоёв изображения: ${out.layers.length}. Ползунки Min и Max перерисовывают прогноз без новой загрузки.`),
-          ...out.layers.map((layer) => layerCard(layer, out.cache_id)));
+          ...out.layers.map((layer) => layerCard(layer, out.cache_id, elsewhere)));
       } catch (e) { fill(results); error.textContent = e.message; error.hidden = false; }
+    }
+    /* Where the file's mode is measured, when the chosen laser, lens and titanium have no measurement of it: one button each switches to it. */
+    const setupLabel = (m) => {
+      const d = lists.devices.find((x) => x.id === m.device_id), l = lists.lenses.find((x) => x.id === m.lens_id), t = materials.find((x) => x.id === m.material_id);
+      return [t ? materialLabel(t) : 'титан не указан', d ? (d.title || d.name) : `лазер ${m.device_id}`, l ? App.lensLabel(l) : 'линза неизвестна'].join(' · ');
+    };
+    function switchTo(m) {
+      pick.laser.value = String(m.device_id);
+      pick.setLens(m.lens_id);
+      mat.value = m.material_id == null ? '' : String(m.material_id);
+      predict();
+    }
+    function elsewhere(layer) {
+      const found = layer.measured_on;
+      if (found == null) return null;
+      if (!found.length) return h('p', {class: 'muted small'}, 'Этот режим не измерен ни на одном титане, лазере и линзе: нужна гравировка шкалы серого с этими настройками.');
+      return h('div', {class: 'stack'}, h('p', {class: 'small'}, 'Этот режим измерен здесь:'),
+        ...found.map((m) => h('div', {class: 'row'}, h('span', {class: 'small'}, setupLabel(m)), btn('Показать на нём', () => switchTo(m), 'btn-small'))));
     }
     if (preloaded) predict();
     return h('div', {class: 'stack'},

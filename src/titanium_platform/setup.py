@@ -129,6 +129,31 @@ def list_materials(store: Store) -> list[dict]:
     return [dict(r) for r in store.query("SELECT * FROM material_profile ORDER BY id")]
 
 
+def _plain(value) -> str:
+    return " ".join((value or "").replace("|", " ").split()).casefold()
+
+
+def titanium_key(material) -> str:
+    """Which titanium a stock record is (DEC-088, DEC-110): records of the same family and grade are one titanium, whatever their names,
+    sizes, thicknesses, batches or surfaces (case and spacing do not matter); a record with no grade is only itself; no record is
+    ``unknown``. ``material`` is a row with ``id``, ``family`` and ``grade``, or None."""
+    if material is None:
+        return "unknown"
+    if not _plain(material["grade"]):
+        return f"id:{material['id']}"
+    return f"{_plain(material['family'])}/{_plain(material['grade'])}"
+
+
+def same_titanium(store: Store, material_id: int) -> list[int]:
+    """The stock records that are one titanium with ``material_id`` (:func:`titanium_key`), itself included, by id."""
+    rows = store.query("SELECT id, family, grade FROM material_profile ORDER BY id")
+    own = next((r for r in rows if r["id"] == material_id), None)
+    if own is None:
+        return [material_id]
+    key = titanium_key(own)
+    return [r["id"] for r in rows if titanium_key(r) == key]
+
+
 # -- capture setups (REQ-009, DEC-025): every photograph names the rig it was taken on ------------------------------
 LEGACY_SETUP_NAME = "Photo capture (no rig)"    # stands in for the rig of pairs uploaded before every photograph had one
 OBSERVERS = ("2°",)

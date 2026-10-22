@@ -21,6 +21,16 @@
   const value = (v, d = 2) => (v == null ? '—' : String(+(+v).toFixed(d)).replace('.', ','));
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
   const materialLabel = (m) => (m ? [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} мм` : null, m.batch].filter(Boolean).join(' · ') : 'титан не указан');
+  /** Титан шкалы (DEC-110): все пластины одной марки — один титан, какого бы размера, толщины и партии ни были; запись без марки — сама по себе. */
+  const titaniumLabel = (sc) => {
+    const m = sc.material;
+    if (!m || !m.grade) return materialLabel(m);
+    const on = ((sc.titanium || {}).measured_on || []).map((t) => t.name);
+    return `${m.family && m.family.toLowerCase() !== 'titanium' ? m.family : 'Титан'} ${m.grade}` + (on.length ? ` · измерена на ${on.join(', ')}` : '');
+  };
+  /** Шкала работы: те же лазер, линза и настройки и та же пластина или другая пластина того же титана. */
+  const sameScale = (sc, m) => modeQuery({...sc.mode, material_id: null}) === modeQuery({...m, material_id: null})
+    && (sc.mode.material_id === m.material_id || ((sc.titanium || {}).records || []).includes(m.material_id));
   const HOW = {'grey ramp': 'пластина шкал серого', 'tonal profile': 'фотогравировка'};
   const REFERENCE = {chart: ['цвета по эталонной карте', 'ok'], 'clean titanium': ['цвета относительно камеры, приведены к чистому титану', 'warn'],
     'as photographed': ['цвета относительно камеры, как сняты', 'warn']};
@@ -63,7 +73,7 @@
       h('span', {class: 'ge-bar', style: `background:${bar}`}),
       h('span', {class: 'ge-ends small'}, h('span', {}, `P ${value(sc.span[0], 1)} %`), h('span', {}, `P ${value(sc.span[1], 1)} %`)),
       h('strong', {}, settingsText(sc.mode, sc.dpi)),
-      h('span', {class: 'small muted'}, `${materialLabel(sc.material)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
+      h('span', {class: 'small muted'}, `${titaniumLabel(sc)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
       sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `измерена при ширине ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
   }
@@ -180,7 +190,7 @@
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
     fill(slots.title, settingsText(sc.mode, sc.dpi));
-    slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${materialLabel(sc.material)}`);
+    slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`);
     fill(slots.powers, low.box, high.box, widths);
     fill(slots.error, error);
     fill(slots.bar, loading());
@@ -200,7 +210,7 @@
         const unmeasured = 256 - d.greys.measured_levels;
         fill(slots.bar, greyBar(levels));
         fill(slots.scale,
-          h('p', {class: 'small muted'}, `${materialLabel(sc.material)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
+          h('p', {class: 'small muted'}, `${titaniumLabel(sc)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
             + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
           unmeasured ? h('p', {class: 'small muted'}, `Серых вне измеренных мощностей (${value(span[0], 1)}–${value(span[1], 1)} %): ${unmeasured} из 256 — заштрихованы; цвет там не прогнозируется.`) : null,
           size ? h('p', {class: 'small'}, pill(size.short, size.tone), ' ', size.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
@@ -294,6 +304,7 @@
         return;
       }
       const t = info.time;
+      const cleaning = t.layers.length > 1 ? t.layers[0] : null;      // the file cleans the titanium first (C00)
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
       const lined = info.contours_report && info.contours_report.share > 0 ? ' и контуры' : '';
       fill(out,
@@ -305,14 +316,16 @@
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
         info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
       fill(details,
-        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`,
-          h('span', {class: 'muted small'}, ' — оценка: строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.')),
+        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
+          + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
+          h('span', {class: 'muted small'}, ' — оценка: сначала чистка по прямоугольнику картинки, затем строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.')),
         info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
         matchText(info.colour_match),
         contoursText(view, info),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         rampOffer(view, info.scale_size),
-        h('p', {class: 'small'}, `Файл LightBurn: один слой-изображение C00 в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
+        h('p', {class: 'small'}, `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой (шкалы измерены на очищенных пластинах); C01 — ` : ''}`
+          + `слой-изображение в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
           + `${settingsText(view.scale, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`),
         h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))),
         info.by_colour ? h('details', {}, h('summary', {class: 'small'}, 'Исходная цветная картинка'),
@@ -499,9 +512,11 @@
       self.disabled = true;
       try { await download(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2'); } catch (e) { fail(e); } finally { self.disabled = false; }
     }, 'primary btn-small');
+    const check = h('a', {class: 'btn btn-small', href: `#/photo-preview?work=${first.id}`,
+      title: 'Файл работы в «Предпросмотре фотогравировки» — с титаном, лазером и линзой её шкалы'}, 'Файл в предпросмотре');
     const el = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'), title,
       h('div', {class: 'row', role: 'group', 'aria-label': 'Отмена и повтор'}, undo, redo),
-      h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), copy, file);
+      h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), copy, check, file);
     let shown = first;
     function update(next) {
       shown = next;
@@ -533,7 +548,7 @@
     const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
       ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
-    const chosen = () => scales.find((sc) => modeQuery(sc.mode) === modeQuery(view.scale)) || null;
+    const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     const scaleKey = (v) => `${modeQuery(v.scale)}&row_mm=${v.width_mm}`;                 // the scale is shown at the work's width
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
 

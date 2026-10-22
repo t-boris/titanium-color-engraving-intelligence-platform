@@ -46,7 +46,7 @@ def test_a_stored_file_is_read_once_per_version_and_a_missing_file_has_no_sizes(
     picture = (np.tile(np.linspace(0, 255, 64), (32, 1))).astype(np.uint8)
     path = tmp_path / "work.lbrn2"
     path.write_bytes(plans.export_picture(picture, 40.0, {"power": 30, "min_power": 1, "speed": 150, "frequency": 60, "pulse_width": 350,
-                                                           "line_interval": 0.02, "passes": 1, "global_passes": 1}, "work"))
+                                                           "line_interval": 0.02, "passes": 1, "global_passes": 1}, "work", clean=None))
     found = row_length.of_file(str(path))
     assert list(found.values()) == [pytest.approx(40.0, abs=0.01)]
     assert row_length.of_file(str(path)) is found                                                        # kept

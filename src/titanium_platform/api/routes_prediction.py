@@ -98,7 +98,7 @@ async def predict_photo(request: Request, device_id: int = Form(...), lens_id: s
     layers = []
     for item in prepared:
         if item["refused"]:
-            layers.append({k: item[k] for k in ("index", "name", "dither", "settings", "refused")})
+            layers.append({k: item[k] for k in ("index", "name", "dither", "settings", "refused", "measured_on")})
             continue
         info, _ = prediction_store.describe(item)
         layers.append({**info, "preview": f"/api/predictions/photo/{cache_id}/{item['index']}.png"})
@@ -146,7 +146,7 @@ def grey_scale(request: Request, device_id: int, lens_id: str, speed: float, fre
     return prediction_store.scale(store_of(request), mode, min_power, max_power, row_mm)
 
 
-def _picture_answer(cache_id: str, item: dict, min_power, max_power, width_mm: float) -> dict:
+def _picture_answer(store, cache_id: str, item: dict, min_power, max_power, width_mm: float) -> dict:
     """The kept picture at ``width_mm`` (its curve made for that size, DEC-107)."""
     low, high = prediction_store.check_power_range(item["settings"]["min_power"] if min_power is None else min_power,
                                                    item["settings"]["max_power"] if max_power is None else max_power)
@@ -157,7 +157,8 @@ def _picture_answer(cache_id: str, item: dict, min_power, max_power, width_mm: f
     query = f"min_power={low:g}&max_power={high:g}&width_mm={width_mm:g}"
     return {**info, "cache_id": cache_id, "by_colour": item["by_colour"], "colour_match": shown.get("colour_match"),
             "contours_report": shown.get("contours_report"),
-            "size_mm": {"width": width_mm, "height": round(height_mm, 2)}, "time": prediction_store.picture_time(item["mode"], width_mm, height_mm),
+            "size_mm": {"width": width_mm, "height": round(height_mm, 2)}, "time": prediction_store.picture_time(item["mode"], width_mm, height_mm,
+                                                                                           prediction_store.cleaning(store, item["mode"])),
             "dpi": grayscale.image_dpi(item["mode"].line_interval),
             "preview": f"/api/grey-scales/picture/{cache_id}.png?{query}", "file": f"/api/grey-scales/picture/{cache_id}.lbrn2?{query}"}
 
@@ -186,7 +187,7 @@ async def grey_picture(request: Request, device_id: int = Form(...), lens_id: st
     width = prediction_store.check_width(width_mm)
     item = prediction_store.picture_item(store_of(request), mode, prediction_store.decode_upload(data), name.rsplit(".", 1)[0], by_colour, width)
     cache_id = _cache(request).put({0: item})
-    return _picture_answer(cache_id, item, min_power, max_power, width)
+    return _picture_answer(store_of(request), cache_id, item, min_power, max_power, width)
 
 
 @router.get("/grey-scales/picture/{cache_id}.png")
@@ -201,18 +202,22 @@ def grey_picture_png(cache_id: str, request: Request, width_mm: float, min_power
 
 @router.get("/grey-scales/picture/{cache_id}.lbrn2")
 def grey_picture_file(cache_id: str, request: Request, min_power: float, max_power: float, width_mm: float):
-    """The LightBurn file of the picture: one grayscale Image layer at the scale's settings and the chosen Min and Max, the picture at the
-    chosen width (with ``by_colour`` the greys chosen keeping the drawing, DEC-108), the lost edges drawn in as the preview shows them."""
+    """The LightBurn file of the picture: the cleaning, then one grayscale Image layer at the scale's settings and the chosen Min and Max,
+    the picture at the chosen width (with ``by_colour`` the greys chosen keeping the drawing, DEC-108), the lost edges drawn in as the
+    preview shows them."""
     width = prediction_store.check_width(width_mm)
-    item = prediction_store.at_width(store_of(request), _kept_picture(request, cache_id), width)
+    s = store_of(request)
+    item = prediction_store.at_width(s, _kept_picture(request, cache_id), width)
     low, high = prediction_store.check_power_range(min_power, max_power)
     picture = prediction_store.picture_for_file(item, low, high, width)
     parameters = prediction_store.file_parameters(item["mode"], low, high)
-    return Response(plans.export_picture(picture, width, parameters, item["name"]), media_type="application/octet-stream",
+    return Response(plans.export_picture(picture, width, parameters, item["name"], clean=prediction_store.cleaning(s, item["mode"])),
+                    media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(f"{item['name']}-P{low:g}-{high:g}", ".lbrn2"), "Cache-Control": "no-store"})
 
 
 @router.get("/grey-scales/picture/{cache_id}")
 def grey_picture_info(cache_id: str, request: Request, width_mm: float, min_power: float | None = None, max_power: float | None = None):
     width = prediction_store.check_width(width_mm)
-    return _picture_answer(cache_id, prediction_store.at_width(store_of(request), _kept_picture(request, cache_id), width), min_power, max_power, width)
+    s = store_of(request)
+    return _picture_answer(s, cache_id, prediction_store.at_width(s, _kept_picture(request, cache_id), width), min_power, max_power, width)

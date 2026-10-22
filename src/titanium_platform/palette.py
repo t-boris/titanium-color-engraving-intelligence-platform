@@ -157,7 +157,7 @@ def _left_out(point: dict) -> str | None:
     return None
 
 
-PLATE = re.compile(r"\|ti:[^|]*\|")          # the titanium record inside the group key of a recipe (colormap._group)
+PLATE = colormap.PLATE          # the titanium record inside the group key of a recipe
 
 
 BASIS = re.compile(r"\|(?:chart|clean|as-shot)(\|(?:provisional|accepted)\|task:[^|]*)$")   # how a colour was measured, in the group key
@@ -181,18 +181,6 @@ def _supersede(built: list[tuple[str, dict]]) -> None:
             entry["caution"] = "superseded"
 
 
-def _same_material(store: Store, material_id: int) -> set[int]:
-    """The titanium records that are the work's material: the same family and the same grade, whatever their names, sizes,
-    thicknesses, batches or surfaces (DEC-088). Case and spacing do not matter; a record with no grade is only itself."""
-    def norm(value) -> str:
-        return " ".join((value or "").split()).casefold()
-    rows = store.query("SELECT id, family, grade FROM material_profile")
-    own = next(r for r in rows if r["id"] == material_id)
-    if not norm(own["grade"]):
-        return {material_id}
-    return {r["id"] for r in rows if norm(r["family"]) == norm(own["family"]) and norm(r["grade"]) == norm(own["grade"])}
-
-
 def _across_plates(points: list[dict], material_id: int) -> list[dict]:
     """Plates of one material are no difference (DEC-088): a recipe measured on several of them is one recipe, whose colour is the
     mean of all its independent engravings. Its points share one group, the one it has on the work's own plate when it was
@@ -206,7 +194,7 @@ def _across_plates(points: list[dict], material_id: int) -> list[dict]:
 
 def vector_palette(store: Store, device_id: int, lens_id: int | None, material_id: int, max_time_s_per_cm2: float | None = None) -> dict:
     """Every measured colour of one laser and lens on titanium of the work's material (the same family and grade, see
-    :func:`_same_material`) that fills an area, one entry per recipe, lightest first (``material_id`` is the work's own record: it
+    :func:`setup.same_titanium`) that fills an area, one entry per recipe, lightest first (``material_id`` is the work's own record: it
     must exist and its recipes keep their ids, see :func:`_across_plates`); with ``max_time_s_per_cm2`` only recipes no slower than
     that per square centimetre. ``left_out`` counts the recipes of the partition that are not in it, by reason. A colour measured
     without a titanium record is in no palette."""
@@ -216,7 +204,7 @@ def vector_palette(store: Store, device_id: int, lens_id: int | None, material_i
     limit = colormap.time_limit(max_time_s_per_cm2)
     left_out: dict[str, set] = {reason: set() for reason in ("line", "image", "other_mode", "task", "provisional", "slower")}
     area = []
-    plates = _same_material(store, material_id)
+    plates = set(su.same_titanium(store, material_id))
     on_plates = [p for p in colormap.collect(store, setup=su.setup_key(device_id, lens_id))["points"] if p["material_id"] in plates]
     for point in _across_plates(on_plates, material_id):
         reason = _left_out(point)
@@ -224,7 +212,7 @@ def vector_palette(store: Store, device_id: int, lens_id: int | None, material_i
             area.append(point)
         else:
             left_out[reason].add(point["group"])
-    built = [(group, _entry(group, recipe)) for group, recipe in colormap.by_recipe(area).items()]
+    built = [(recipe["points"][0]["group"], _entry(recipe["points"][0]["group"], recipe)) for recipe in colormap.by_recipe(area).values()]
     _supersede(built)
     entries = []
     for group, entry in built:

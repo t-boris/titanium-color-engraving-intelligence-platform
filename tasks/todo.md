@@ -1607,6 +1607,76 @@ pixels landed on distant powers (grey-blue next to tan); the plain picture puts 
 - Waiting for the operator: "new work" in photo and vector engraving offers every way of creating one, and a photo work without enough data can start a test plan
   (pictures about 50 x 50 mm at several settings, engraved and photographed, as examples) - the operator's message continues ("продолжение следует").
 
+### After 0.20.2: the main colour of the drawing, the cleaning layer in a picture's file, the preview's titanium (operator, 2026-10-22; plan to approve)
+Operator: "возможность поменять общую тональность ... оно желтоватое всё ... столб сзади в более тёмной, синей тональности, кожа чуть-чуть светлее, очки красные ...
+не напрямую, а именно основной цвет, который вокруг бы всего строился"; "когда генеришь LightBurn file - не забывай про cleaning layer"; a screenshot of
+«Предпросмотр фотогравировки» with the work's file «Inna Portrait-P1-17.lbrn2» on «Small Plate»: "в этом режиме цвет ещё не измерялся".
+Evidence (copy of the live DB, scratchpad `c3`):
+- The preview: the file's mode (150 mm/s, 60 kHz, 350 ns, 0.0254) is measured on «Big Plate 150» only (the work's scale); on «Small Plate» it never was, so the refusal
+  is right. With «Big Plate 150» the same file is predicted. The page starts with no titanium chosen and does not say where the mode is measured.
+- The cleaning: `plans.export_picture` writes the picture alone ("no mirroring, no cleaning, no markers"), for the photo work and for «Картинка на шкале». Plates and
+  vector works clean first on C00 (`plans.clean_layer`, CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05); the scales were measured on cleaned plates. The upload of a work's
+  photograph already knows a CLEAN-CROSSHATCH layer (role "pre-test cleaning witness"), and a work finds its picture layer by its tonal profile, not its index.
+- The main colour (prototype `c3/tone.py`, page `c3/page/index.html`): on the work's scale the colours form three families that a path can follow without a jump
+  (steps of at most 5 dE, lightness never rising): gold-brown-red-violet (L* 80-37), light grey-light blue-blue-violet (L* 73-37), silver grey (L* 73-45). The other
+  scales of the operator have two or three (one, P6-14, only dark grey). A main colour picks the family through it and lays the picture's middle tone on it: order 0.99
+  for every choice; the light and dark of the picture keep their order. A red that is light does not exist on this scale: its reds are dark (L* 40).
+
+Operator's answers (2026-10-22): cleaning always; the preview says where a mode is measured; the main colour both by a click on the scale and by
+lighter/darker, per part now. Then: "Мне нужно не общий цвет менять ... отдельно разукрасить губы ... очки ... как в разукрашке ... на разные темы ... может даже
+рандомально ... выделить некие объекты на фотографии и их понять, что это за объекты. И каждый объект выделять каким-то промежутком цветовой гаммы, которая
+определяет, какая мощность будет ... и вот эти все оттенки вокруг, они тоже будут подбираться" - the main colour is per object, not for the whole picture. And, with
+a screenshot of the grey-scale plate on «Big Plate 150»: "должно работать для титана любого размера"; answers: every Grade 5 plate is one titanium (batch, size and
+thickness do not matter), everywhere (scales, photo works, preview, vector palette, colour map).
+
+#### 0.20.3: the cleaning layer; one titanium per grade; the preview finds the file's titanium
+- [x] E1. A picture's LightBurn file cleans first: C00 the laser's cleaning recipe (`plans.clean_layer`) over the picture's rectangle, run first; the picture on C01.
+      The same for «Картинка на шкале». The time of the work includes the cleaning (scan pieces counted as the file's). Tests: the file's layers and order; the
+      time shown equals the file's; an upload of the work's photograph takes C00 for the cleaning and measures C01.
+- [x] G1. One titanium per grade: measurements, scales, curves, palettes and knowledge of a plate serve every plate of the same grade (a material without a grade
+      is its own titanium). Map of every place that partitions by `material_id` (subagent), one helper that gives the plates of a titanium, every filter and
+      comparison through it; render-cache keys follow. Screens that name the titanium say the grade and the plates measured. Tests: a Small Plate work predicts
+      from a Big Plate scale; a plate of another grade stays apart; a material without a grade stays apart.
+      Map (subagent, 2026-10-22) and design:
+      - The rule exists: `palette._same_material` (DEC-088, the vector palette only): the same family and grade, case and spacing aside; no grade = only itself.
+        It moves to `setup` as `titanium_key` / `same_titanium` and serves every place below. The titanium of a record is its current record (as the palette),
+        not the grade copied into an engraving when it was uploaded.
+      - Scales, curves, the preview, photo works (`prediction_store.collect`, `scale_modes`, `measured_on`; `photo_work.measured_scale`, `engravings`): the points of
+        every plate of the titanium; one scale per titanium (named by the first plate it was measured on, or by the titanium asked for); a scale says the titanium
+        and the plates it was measured on; an engraving on another plate of the work's titanium is the work's scale. Stored works keep their plate record.
+      - Colour map: recipes measured on several plates of one titanium are one recipe (confidence over all their engravings); the «Материал» filter offers titanium
+        (grade), the point still names its plate. Recipe groups keep `ti:<plate>` so palette entry ids (kept by vector works' assignments) do not change: the
+        pooling is a second key (`recipe`).
+      - Not changed: knowledge entries (`observation_key` `|ti:id:N` is stored: 549 entries, 500 on Big Plate, 49 on Small Plate, one recipe on both), findings,
+        designer proposals, application guide, research sessions - stored keys; the operator's scope ("везде") named scales, works, preview, palette, colour map.
+- [x] F1. «Предпросмотр фотогравировки»: when the chosen laser, lens and titanium have no measurement of the file's mode, it says where the mode is measured with a
+      button to switch («Показать на нём»; dot modes are not searched); a photo work's file opens in the preview from the work («Файл в предпросмотре») with its
+      titanium, laser and lens set.
+- [x] G2. README, MarkView (REQ/DEC: one titanium per grade; the cleaning in a picture's file), walk on a copy, full suite, release 0.20.3.
+
+#### Review of 0.20.3 (2026-10-22)
+- MarkView: REQ-069 / DEC-110 (one titanium per grade), REQ-070 / DEC-111 (the cleaning in a picture's file, the work's file in the preview).
+- Full suite with 12 workers: 1662 passed, nothing skipped. One new assertion (`others == 1`) depended on the order of the tests (the module's
+  plate world keeps the other tests' works); it now asks for at least one.
+- Walk on a copy of the live data (sqlite backup API, server on 8768; the live app on 8765 only read):
+  - The operator's file «Inna Portrait-P1-17.lbrn2» (no cleaning, made by 0.20.2) on «Small Plate»: predicted (16 powers, chart-corrected), as on «Big Plate 150».
+  - Work 35: the time says «из них чистка ≈ 3 мин 24 с», the file text names C00 CLEAN-CROSSHATCH-…; scale cards say «Титан Grade 5 · измерена на
+    Big Plate 150». «Файл в предпросмотре» opened the preview with the work's file (C01, Min 1, Max 17), Big Plate 150, the laser and lens, predicted;
+    switching to «Small Plate» predicted too.
+  - At 1372 px the new button squeezed «Отменить» / «Повторить» into a column: the pair is kept on one line and the work's name narrows (also at 1200 px).
+  - Colour map: the «Материал» filter offers «Grade 5» only; «Test Plate 1mm» points, uploaded when the record said «Garde 2», are Grade 5 (the record now).
+  - Vector work 22: its palette of 553 entries has the same ids and colours as on the live app.
+
+#### 0.21.0: colouring by objects ("как в разукрашке")
+- [ ] T1. Objects of the picture: the people model's parts, the lips and eyes from the face detector (lips refined by their colour inside the mouth's ellipse), the
+      glasses and other things worn, and the background split into its own objects (pole, sky ...) by region segmentation (OpenCV contrib, already a dependency);
+      the AI may name them. Prototype on «Inna Portrait» first and show the operator before building.
+- [ ] T2. Each object gets its own stretch of the scale: a main colour (a click on the scale strip) and lighter/darker; the path through it stays in its colour
+      family (steps of at most 5 dE, lightness never rising) and the object's own light and dark tones are laid around it (its middle tone on the main colour).
+      «Авто» is 0.20.2 for the whole picture.
+- [ ] T3. Themes: ready palettes over the scale's families (warm, cool, contrast ...), «Случайно», and the AI's theme from a wish ("очки красные, фон синий").
+- [ ] T4. Kept in the work, undo, the picture key, the file; tests; UI; README; MarkView; walk; release.
+
 #### 0.20.0, vector works: the size of each layer (and the photo colours added to their palette)
 Map (subagent, 2026-10-22): a vector work's colour is one palette entry per recipe (`palette._entry` = `colormap.agreed`), test-plate patches and works pooled with no size;
 the preview paints every region of a layer with its entry's colour (`vector-editor.js paint`, `vector_job._draw_thumbnail`); the export is one layer per colour, each region a

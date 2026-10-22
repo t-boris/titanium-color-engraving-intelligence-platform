@@ -37,7 +37,7 @@ const match = () => (work.by_colour ? {choice: work.colour_choice, median_de: 16
   order: work.colour_choice === 'nearest' ? null : 0.98} : null);
 const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour,
   colour_match: match(), contours_report: work.contours && work.by_colour ? {share: 0.0123} : null,
-  outside_share: 0, time: {seconds: 600}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
+  outside_share: 0, time: {seconds: 600, layers: [{index: 0, name: 'CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05', seconds: 42}, {index: 1, name: 'C01', seconds: 558}]}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
   scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0}}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
@@ -102,9 +102,10 @@ const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.ge
 """
 
 
-def run(tmp_path, query, body, work=None, engravings=()):
+def run(tmp_path, query, body, work=None, engravings=(), scales=None):
     work = {**WORK, **(work or {})}
-    (tmp_path / "data.json").write_text(json.dumps({"scales": [scale(150, [1, 30]), scale(100, [2, 25])], "scale": scale_answer(), "work": work,
+    scales = [scale(150, [1, 30]), scale(100, [2, 25])] if scales is None else scales
+    (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_answer(), "work": work,
                                                     "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings)}),
                                         encoding="utf-8")
     script = tmp_path / "screen.js"
@@ -176,6 +177,19 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_from_a_picture_a_name_a
 
 # -- a work -----------------------------------------------------------------------------------------------------------------------------
 @node
+def test_a_work_on_another_plate_of_its_scales_titanium_opens_on_that_scale_which_names_the_titanium_and_its_plates(tmp_path):
+    """DEC-110: the scale was measured on Big Plate 150 (record 3), the work is on Small Plate (record 4) of the same grade."""
+    grade5 = {"name": "Big Plate 150", "family": "Titanium", "grade": "Grade 5", "thickness_mm": 3}
+    titanium = {"family": "Titanium", "grade": "Grade 5", "records": [3, 4], "measured_on": [{"id": 3, "name": "Big Plate 150"}]}
+    scales = [{**scale(speed, span), "material": grade5, "titanium": titanium} for speed, span in ((150, [1, 30]), (100, [2, 25]))]
+    out = run(tmp_path, {"work": "7"}, """
+  out.chosen = chosen(tree);
+  out.named = tree.querySelectorAll('button.ge-scale').map((b) => b.textContent.includes('Титан Grade 5 · измерена на Big Plate 150'));
+""", work={"scale": {**mode(100), "material_id": 4}, "material": {"name": "Small Plate", "grade": "Grade 5"}}, scales=scales)
+    assert out["chosen"] == [False, True] and out["named"] == [True, True]
+
+
+@node
 def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved_and_its_prediction_shown(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   out.opened = {chosen: chosen(tree), powers: powers(tree), shown: shown(tree), width: labelled(tree, 'Ширина на титане, мм').value,
@@ -187,6 +201,8 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();
   out.saves = saves(); out.shown = shown(tree); out.size = tree.textContent.includes('для 100 × 50 мм');
+  out.cleaning = [tree.textContent.includes('из них чистка ≈ 42 с'),
+                  tree.textContent.includes('Файл LightBurn: C00 — чистка CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 по прямоугольнику картинки, первой')];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.between = tree.textContent.includes('100 мм: между измерениями 38,4 и 150 мм');
   const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Проба на ширине работы');
@@ -201,6 +217,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert opened["shown"] == "/api/photo-works/7/preview.png?v=0"
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"width_mm": 100}, {"by_colour": True}]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=3" and out["size"]
+    assert out["cleaning"] == [True, True]                                                    # the file cleans first, and its time says so
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
     assert out["refused"] == {"width": "100", "error": ["Ширина картинки должна быть от 1 до 1000 мм"]}   # refused: the work stays as it was
