@@ -19,11 +19,20 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context({});
+const docKeys = [];
+ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
+const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
 load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/photo-engraving.js']);
-const requests = [], hold = [];
+const requests = [], hold = [], past = [], future = [];
 let work = data.work, version = 0;
+const remember = () => { past.push({...work}); future.length = 0; };
+const restore = (from, to, error) => {
+  if (!from.length) return answer({error}, 422);
+  to.push({...work}); work = {...from.pop(), ai_photo: work.ai_photo}; version++;
+  return answer(view());
+};
 const same = (a, b) => ['speed', 'line_interval', 'material_id'].every((k) => a[k] === b[k]);
-const view = () => ({...work, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour, colour_match: null,
+const view = () => ({...work, undo: past.length, redo: future.length, picture: work.problem ? null : {preview: `/api/photo-works/${work.id}/preview.png?v=${version}`, by_colour: work.by_colour, colour_match: null,
   outside_share: 0, time: {seconds: 600}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: []}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
@@ -41,6 +50,7 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `/api/photo-works/${work.id}/settings`) {
     if (hold.length) await hold.shift();
     if (body.width_mm === 0) return answer({error: 'the width of the picture must be 1..1000 mm'}, 422);
+    if (Object.keys(body).some((k) => k !== 'ai_photo')) remember();
     const next = {...work, ...body};
     if (body.scale) {
       const sc = data.scales.find((s) => same(s.mode, body.scale));
@@ -53,10 +63,14 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
   if (path === `/api/photo-works/${work.id}/ai`) {
     if (hold.length) await hold.shift();
-    work = {...work, rules: data.ai_rules, ai: {wish: body.wish.trim(), note: 'платье фиолетовым, остальное как есть', photo: work.ai_photo, before: work.rules}};
+    remember();
+    work = {...work, rules: data.ai_rules, ai: {wish: body.wish.trim(), note: 'платье фиолетовым, остальное как есть', photo: work.ai_photo, fresh: body.fresh,
+      before: work.rules}};
     version++;
     return answer(view());
   }
+  if (path === `/api/photo-works/${work.id}/undo`) return restore(past, future, 'there is no earlier change of the work to undo');
+  if (path === `/api/photo-works/${work.id}/redo`) return restore(future, past, 'there is no undone change to redo');
   return answer({error: path + ' not found'}, 404);
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -259,7 +273,7 @@ def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_tar
 
 
 @node
-def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_rules_before_can_be_put_back(tmp_path):
+def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_from_the_head(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   await button(tree, 'Попросить AI').dispatch('click'); await settle();
   out.empty = {asks: asks().length, text: tree.textContent.includes('Напишите, что AI должен изменить в картинке.')};
@@ -269,13 +283,14 @@ def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_rules_before_can_be
   wish.value = ' платье сделать фиолетовым '; await button(tree, 'Попросить AI').dispatch('click'); await settle();
   out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', с картинкой'),
                rule: select(tree, 'Правило: Одежда').value, shown: shown(tree)};
-  await button(tree, 'Вернуть как было').dispatch('click'); await settle();
-  out.back = {saves: saves(), again: !!button(tree, 'Вернуть как было'), rule: select(tree, 'Правило: Одежда').value};
+  await button(tree, 'Отменить').dispatch('click'); await settle();
+  out.back = {saves: saves(), undo: requests.filter((r) => r.path.endsWith('/undo')).length, rule: select(tree, 'Правило: Одежда').value,
+              note: tree.textContent.includes('AI: '), redo: !button(tree, 'Повторить').disabled};
 """)
     assert out["empty"] == {"asks": 0, "text": True}
-    assert out["asked"] == {"asks": [{"wish": " платье сделать фиолетовым "}], "note": True, "photo": True, "rule": "colour",
+    assert out["asked"] == {"asks": [{"wish": " платье сделать фиолетовым ", "fresh": False}], "note": True, "photo": True, "rule": "colour",
                             "shown": "/api/photo-works/7/preview.png?v=2"}
-    assert out["back"] == {"saves": [{"ai_photo": True}, {"rules": []}], "again": False, "rule": "as_is"}
+    assert out["back"] == {"saves": [{"ai_photo": True}], "undo": 1, "rule": "as_is", "note": False, "redo": True}
 
 
 @node
@@ -288,3 +303,44 @@ def test_without_a_key_the_ai_button_is_off_and_says_why_while_rules_can_still_b
   out.saves = saves();
 """, work={"ai_missing": "key"})
     assert out == {"disabled": True, "text": True, "saves": [{"rules": [{"part": "clothes", "kind": "photo"}]}]}
+
+
+# -- undo and redo, the AI from the plain picture (0.19.2) --------------------------------------------------------------------------------
+@node
+def test_undo_and_redo_in_the_head_bring_the_work_back_with_its_min_and_max_and_follow_ctrl_z(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  ctx.document.body.append(tree);
+  out.start = {undo: button(tree, 'Отменить').disabled, redo: button(tree, 'Повторить').disabled, powers: powers(tree)};
+  const max = labelled(tree, 'Max мощность, % (чёрный)');
+  max.value = '25'; await max.dispatch('change'); await wait(300); await settle();
+  out.changed = {saves: saves(), powers: powers(tree), undo: button(tree, 'Отменить').disabled};
+  await button(tree, 'Отменить').dispatch('click'); await settle();
+  out.undone = {powers: powers(tree), undo: button(tree, 'Отменить').disabled, redo: button(tree, 'Повторить').disabled};
+  await press({key: 'z', ctrlKey: true, shiftKey: true}); await settle();
+  out.redone = powers(tree);
+  await press({key: 'z', metaKey: true, target: tree.querySelectorAll('textarea')[0]}); await settle();
+  out.typing = powers(tree);
+  await press({key: 'z', ctrlKey: true}); await settle();
+  out.keyed = powers(tree);
+  out.steps = requests.filter((r) => /[/](undo|redo)$/.test(r.path)).map((r) => r.path.split('/').pop());
+""")
+    assert out["start"] == {"undo": True, "redo": True, "powers": ["12", "28"]}
+    assert out["changed"] == {"saves": [{"min_power": 12, "max_power": 25}], "powers": ["12", "25"], "undo": False}
+    assert out["undone"] == {"powers": ["12", "28"], "undo": True, "redo": False}                    # the sliders follow the work
+    assert out["redone"] == ["12", "25"] and out["typing"] == ["12", "25"] and out["keyed"] == ["12", "28"]
+    assert out["steps"] == ["undo", "redo", "undo"]                                                   # Ctrl+Z in a text field is the field's
+
+
+@node
+def test_the_ai_can_start_again_from_the_picture_and_every_part_can_be_put_back_as_it_is(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  out.plainOff = button(tree, 'Все части как есть').disabled;
+  tree.querySelectorAll('textarea')[0].value = 'платье фиолетовым';
+  await button(tree, 'Заново с картинки').dispatch('click'); await settle();
+  out.asked = {asks: asks(), again: tree.textContent.includes(', заново с картинки'), plainOff: button(tree, 'Все части как есть').disabled};
+  await button(tree, 'Все части как есть').dispatch('click'); await settle();
+  out.plain = {saves: saves(), rule: select(tree, 'Правило: Одежда').value, plainOff: button(tree, 'Все части как есть').disabled};
+""")
+    assert out["plainOff"] is True
+    assert out["asked"] == {"asks": [{"wish": "платье фиолетовым", "fresh": True}], "again": True, "plainOff": False}
+    assert out["plain"] == {"saves": [{"rules": []}], "rule": "as_is", "plainOff": True}

@@ -11,6 +11,7 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
   (:mod:`picture_rules`), set by hand or proposed by the AI (:mod:`ai_picture`); whether a reduced copy of the picture may be sent to
   the AI (``ai_photo``, off until the operator allows it) and the last request to it (``ai``: the wish, whether the picture went, the AI's
   note and the rules before it, so that they can be put back);
+* the steps that can be undone and redone (``undo``, ``redo``): each holds the work's state as it decides what is engraved (:data:`STATE`);
 * when it last changed (``updated_at``).
 
 Everything shown is computed from these and the scale's measurements as they are now: the picture beside its prediction, the time
@@ -21,6 +22,7 @@ engravings are and counts towards the scale.
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 import mimetypes
@@ -44,9 +46,14 @@ IDENTIFIER_PREFIX = "TCE-P"
 THUMB_PX = 360                      # the longer side of the picture of a work in the list
 KEEP_DECODED = 2                    # decoded pictures kept in memory: the work open now and the one before
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
-DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo", "ai", "updated_at")
+DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo", "ai", "undo", "redo",
+        "updated_at")
 SETTINGS = ("scale", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai_photo")
-DEFAULTS = {"rules": [], "ai_photo": False, "ai": None}          # what a work made before the rules of parts (0.19.0) has
+DEFAULTS = {"rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": []}   # what a work made before the rules of parts (0.19.0) or undo has
+# What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
+# permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
+STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "rules", "ai")
+UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 
 _decoded: OrderedDict[str, dict] = OrderedDict()
 _lock = threading.Lock()
@@ -159,7 +166,7 @@ def _summary(store: Store, plan: Mapping) -> dict:
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "rules": [_shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_photo": plan["ai_photo"],
-            "time": ps.picture_time(mode, width, height)}
+            "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": ps.picture_time(mode, width, height)}
 
 
 def _shown_rule(rule: Mapping) -> dict:
@@ -277,7 +284,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     cols, rows = upload["size"]
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
-            "by_colour": False, "rules": [], "ai_photo": False, "ai": None, "updated_at": now()}
+            "by_colour": False, "rules": [], "ai_photo": False, "ai": None, "undo": [], "redo": [], "updated_at": now()}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_created", plan_id=plan_id)
@@ -287,8 +294,10 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
 
 def update(store: Store, plan_id: int, changes) -> None:
     """Change what the work is engraved with: ``scale`` (Min and Max then become its measured span unless they are given too),
-    ``min_power`` and ``max_power``, ``width_mm`` and ``by_colour``."""
+    ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and the ``rules`` of the parts, or whether the picture may be sent to the
+    AI (``ai_photo``). A change of what is engraved can be undone."""
     plan = _work(store, plan_id)
+    before = _here(plan)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
         raise su.ValidationError("change the scale, Min and Max power, the width, the colour choice or the rules of the parts of the work")
     if "scale" in changes:
@@ -310,10 +319,37 @@ def update(store: Store, plan_id: int, changes) -> None:
         if not isinstance(changes["ai_photo"], bool):
             raise su.ValidationError("the permission to send the photograph must be on or off")
         plan["ai_photo"] = changes["ai_photo"]
+    if _here(plan) != before:
+        _push(plan, before)
     plan["updated_at"] = now()
     with store.transaction():
         _save(store, plan, plan["id"])
         store.audit("photo_work_changed", plan_id=plan["id"], changed=sorted(changes))
+
+
+# -- undo and redo (as the vector editor's, DEC-077) ------------------------------------------------------------------------------
+def _here(plan: Mapping) -> dict:
+    return copy.deepcopy({k: plan[k] for k in STATE})
+
+
+def _push(plan: dict, before: dict) -> None:
+    """After a change: the state ``before`` it can be undone (the last UNDO_DEPTH steps), what was undone is not redone any more."""
+    plan["undo"], plan["redo"] = (plan["undo"] + [before])[-UNDO_DEPTH:], []
+
+
+def step(store: Store, plan_id: int, direction: str) -> None:
+    """Undo (``direction`` "undo") or redo ("redo") one change: the state on top of that stack comes back, the present one goes onto the
+    other. A state on a scale measured no more comes back too; the work then says that its scale must be chosen again."""
+    plan = _work(store, plan_id)
+    if not plan[direction]:
+        raise cv.ConversionError("there is no earlier change of the work to undo" if direction == "undo" else "there is no undone change to redo")
+    there = plan[direction].pop()
+    plan["redo" if direction == "undo" else "undo"].append(_here(plan))
+    plan.update(copy.deepcopy(there))
+    plan["updated_at"] = now()
+    with store.transaction():
+        _save(store, plan, plan["id"])
+        store.audit("photo_work_" + direction, plan_id=plan["id"])
 
 
 def copy_work(store: Store, plan_id: int, name=None) -> int:
@@ -329,7 +365,7 @@ def copy_work(store: Store, plan_id: int, name=None) -> int:
         data = Path(plan["image_path"]).read_bytes()
     except OSError:
         raise KeyError("the stored picture of this work is missing") from None
-    fresh = {**plan, "image_path": cv._store_image(store, data), "updated_at": now()}
+    fresh = {**plan, "image_path": cv._store_image(store, data), "undo": [], "redo": [], "updated_at": now()}
     with store.transaction():
         new_id = _save(store, fresh, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_copied", plan_id=new_id, source_plan_id=plan["id"])
@@ -406,11 +442,14 @@ def parts_picture(store: Store, plan_id: int) -> rc.Picture:
     return rc.Picture(store, _folder(plan["id"]), _parts_key(plan), draw)
 
 
-def ask_ai(store: Store, plan_id: int, wish) -> None:
+def ask_ai(store: Store, plan_id: int, wish, fresh=False) -> None:
     """Ask the AI for the rules of the parts after the operator's ``wish`` and save them in the work with the AI's note and the rules
-    before them. A refused answer changes nothing (``ai_picture.ask``)."""
+    before them; the AI sees the present rules and changes what the wish asks, or with ``fresh`` starts from the plain picture (it is not
+    told the present rules, its answer replaces them). The answer can be undone; a refused answer changes nothing (``ai_picture.ask``)."""
     plan = _work(store, plan_id)
     text = ai_picture.request(wish)
+    if not isinstance(fresh, bool):
+        raise su.ValidationError("starting again from the picture must be on or off")
     if not research.ai_available():
         raise cv.ConversionError("the AI is off: no key for the language model is set (OPENAI_API_KEY)")
     try:
@@ -421,13 +460,14 @@ def ask_ai(store: Store, plan_id: int, wish) -> None:
     item = ps.picture_item(store, mode_of(plan), upload, plan["name"], plan["by_colour"])
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     found = _parts_found(upload)
-    what = ai_picture.brief(text, found, grayscale.scale_of_greys(item["curve"], low, high), plan["rules"])
+    what = ai_picture.brief(text, found, grayscale.scale_of_greys(item["curve"], low, high), [] if fresh else plan["rules"])
     photo = ai.photo_data_url(Path(plan["image_path"]).read_bytes()) if plan["ai_photo"] else None
     rules, note = ai_picture.ask(client, what, photo, {p["part"] for p in found})
     plan = _work(store, plan_id)                             # as it is now: other changes made while the AI answered are kept
-    plan["ai"] = {"wish": text, "photo": photo is not None, "note": note, "at": now(), "before": plan["rules"]}
+    _push(plan, _here(plan))
+    plan["ai"] = {"wish": text, "photo": photo is not None, "fresh": fresh, "note": note, "at": now(), "before": plan["rules"]}
     plan["rules"] = rules
     plan["updated_at"] = now()
     with store.transaction():
         _save(store, plan, plan["id"])
-        store.audit("photo_work_ai", plan_id=plan["id"], rules=len(rules), photo=photo is not None)
+        store.audit("photo_work_ai", plan_id=plan["id"], rules=len(rules), photo=photo is not None, fresh=fresh)

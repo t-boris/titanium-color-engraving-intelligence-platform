@@ -99,5 +99,21 @@ def photo_work_parts_picture(plan_id: int, request: Request):
 def ask_photo_work_ai(plan_id: int, request: Request, body: dict | None = None):
     """Ask the AI for the rules of the parts after the operator's ``wish``; the work is returned with them (see photo_work.ask_ai)."""
     s = store_of(request)
-    photo_work.ask_ai(s, plan_id, (body or {}).get("wish"))
+    photo_work.ask_ai(s, plan_id, (body or {}).get("wish"), (body or {}).get("fresh", False))
+    return photo_work.view(s, plan_id)
+
+
+@router.post("/photo-works/{plan_id}/undo")
+def undo_photo_work(plan_id: int, request: Request):
+    """Undo the last change of what the work engraves; the work is returned as it is then."""
+    s = store_of(request)
+    photo_work.step(s, plan_id, "undo")
+    return photo_work.view(s, plan_id)
+
+
+@router.post("/photo-works/{plan_id}/redo")
+def redo_photo_work(plan_id: int, request: Request):
+    """Redo the last undone change of the work; the work is returned as it is then."""
+    s = store_of(request)
+    photo_work.step(s, plan_id, "redo")
     return photo_work.view(s, plan_id)

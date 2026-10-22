@@ -56,6 +56,7 @@ class El {
   get lastChild() { return this.childNodes[this.childNodes.length - 1] || null; }
   get options() { return this.children.filter((c) => c.localName === 'option'); }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
+  get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n.localName === 'body'; }
   set textContent(v) { this.replaceChildren(String(v)); }
   addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
   removeEventListener() {}

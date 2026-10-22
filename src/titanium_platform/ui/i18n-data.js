@@ -143,6 +143,8 @@
     [/^a target colour must be given as #rrggbb$/i, 'Цвет-цель задаётся как #rrggbb'],
     [/^describe what the AI should change in the picture$/i, 'Напишите, что AI должен изменить в картинке'],
     [/^the AI is off: no key for the language model is set \(OPENAI_API_KEY\)$/i, 'AI выключен: не задан ключ языковой модели (OPENAI_API_KEY)'],
+    [/^there is no earlier change of the work to undo$/i, 'Нет более раннего изменения работы, которое можно отменить'],
+    [/^starting again from the picture must be on or off$/i, '«Заново с картинки»: включено или выключено'],
     [/^the colour choice must be on or off$/i, 'Подбор серых под цвета — либо включён, либо выключен'],
     [/^the picture layer needs (power|min_power|speed|frequency|line_interval)$/i,
       (m) => `Слою картинки нужно значение: ${{power: 'Max мощность', min_power: 'Min мощность', speed: 'скорость', frequency: 'частота', line_interval: 'шаг строк'}[m[1]]}`],

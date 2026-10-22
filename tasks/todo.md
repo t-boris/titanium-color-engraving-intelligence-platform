@@ -1451,7 +1451,23 @@ exported file, so the photograph of the engraving finds its work (REQ-013, DEC-0
         54 %, body skin 7 %, face skin 26 % in 0.26 s; the real AI on «всё как есть, черно-белое, а кожу сделать равномерно светлой» (numbers only, 6 s) answered
         background and hair black and white (ΔE 6.0 and 6.5), body and face skin one light colour L 80 (ΔE 3.2), features kept; «Вернуть как было» put the rules back.
         Review: the instructions now tell the AI that "one tone" erases the eyes and lips inside face skin, so even light skin is a target colour.
-### 0.19.2: the engraving of a photo work checks its prediction
+### 0.19.2: undo and redo in a photo work; ask the AI again from the plain picture
+Operator, 2026-10-22, on the live 0.19.1: "Нет возможности перегенерировать с картинки, отменить действие". The audit shows four AI requests on "Inna Portrait" within a minute,
+each building on the rules before it, then the work deleted and a new one made. Plan (the vector editor's undo, DEC-077, is the model):
+- [x] U1. Server: `undo` / `redo` stacks in the work (50 steps). A step is the work's state that decides what it engraves: scale (with laser and lens), Min, Max, width, colour
+      choice, rules, the AI's last answer. Each change that alters it pushes a step and clears redo; the permission to send the picture is not a step (undo never re-enables
+      sending). `POST /photo-works/{id}/undo`, `/redo`; the view says how many steps each way. A copy starts without history. Older works get empty stacks.
+- [x] U2. AI: `POST /photo-works/{id}/ai` takes `fresh`: the AI starts from the plain picture (no current rules sent; its answer replaces them).
+- [x] U3. UI: «Отменить» / «Повторить» in the head of the work (disabled with nothing to undo or redo, Ctrl+Z / Ctrl+Shift+Z outside text fields); after a step the scale,
+      Min/Max, width, colour choice, rules and note on screen are those of the work. AI tab: «Попросить AI» (from the current rules), «Заново с картинки», «Все части как есть»;
+      «Вернуть как было» goes (undo does it and more).
+- [x] U4. Tests (API: steps of settings, rules and AI, permission not a step, no-op not a step, empty stacks refused, redo cleared by a new change, copy without history; AI fresh
+      sends no rules; UI in node: buttons, keys, the sliders follow an undo, fresh, all as is), README, version, lesson, full suite, backup, deploy, commit.
+      Done 2026-10-22: `photo_work.step`, `STATE`, `UNDO_DEPTH`; `POST .../undo`, `.../redo`; `ai` takes `fresh`; head buttons and keys; AI tab «Заново с картинки» and «Все
+      части как есть»; tests +5 API (34), +2 UI (11), the test DOM has `isConnected`; README 0.19.2, REQ-063 approved, lesson added. Checked on the copy (8768, work 26): a hand rule and
+      Max 25 undone one by one (Max back to 30 on the slider), Ctrl+Z / Ctrl+Shift+Z; the real AI asked "волосы чёрно-белые", then "кожу светлой, остальное как есть" (hair kept,
+      skin added), then «Заново с картинки» (skin only, hair as it is again); 4 steps to undo; nothing cut at 1771 px.
+### 0.19.3: the engraving of a photo work checks its prediction
 - [ ] The photograph of an engraved photo work (its file carries the identifier) is linked to the work; the work shows predicted against engraved per grey level, and the scale's
       confirmation counts it. Tests, release.
 ### 0.20.0: photo-engraving colours in the vector palette

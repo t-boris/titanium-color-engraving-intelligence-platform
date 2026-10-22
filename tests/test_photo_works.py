@@ -312,3 +312,94 @@ def test_a_change_made_while_the_ai_answers_is_kept(app_world, parts_model, mode
     model(answer)
     done = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"}).json()
     assert done["max_power"] == 30 and done["rules"][0]["part"] == "clothes"
+
+
+# -- undo and redo (0.19.2) -----------------------------------------------------------------------------------------------------------
+def settings(client, work, **changes):
+    answer = client.post(f"/api/photo-works/{work['id']}/settings", json=changes)
+    assert answer.status_code == 200, answer.text
+    return answer.json()
+
+
+def step(client, work, direction):
+    return client.post(f"/api/photo-works/{work['id']}/{direction}")
+
+
+def test_every_change_of_what_the_work_engraves_is_undone_and_redone_one_step_at_a_time(app_world, parts_model, model):
+    client = app_world["client"]
+    model(VIOLET)
+    work = create(client)
+    assert (work["undo"], work["redo"]) == (0, 0)
+    settings(client, work, max_power=30)
+    settings(client, work, width_mm=40, by_colour=True)
+    settings(client, work, rules=[{"part": "face_skin", "kind": "neutral"}])
+    asked = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"}).json()
+    assert asked["undo"] == 4 and [r["part"] for r in asked["rules"]] == ["clothes"]           # the AI left face skin as it is
+    back = step(client, work, "undo").json()                                                     # the AI's answer
+    assert (back["rules"], back["ai"], back["undo"], back["redo"]) == ([{"part": "face_skin", "kind": "neutral"}], None, 3, 1)
+    back = step(client, work, "undo").json()                                                     # the rule set by hand
+    assert back["rules"] == [] and back["picture"]["preview"] != asked["picture"]["preview"]
+    back = step(client, work, "undo").json()                                                     # width and colour choice together
+    assert (back["width_mm"], back["by_colour"], back["max_power"]) == (60, False, 30)
+    back = step(client, work, "undo").json()
+    assert (back["max_power"], back["undo"], back["redo"]) == (work["max_power"], 0, 4)
+    assert back["picture"]["preview"] == work["picture"]["preview"]                             # the work as it was made
+    refused = step(client, work, "undo")
+    assert refused.status_code == 422 and refused.json()["error"] == "there is no earlier change of the work to undo"
+    again = step(client, work, "redo").json()
+    assert (again["max_power"], again["undo"], again["redo"]) == (30, 1, 3)
+    for _ in range(3):
+        again = step(client, work, "redo").json()
+    assert again["rules"] == asked["rules"] and again["ai"]["wish"] == "платье фиолетовым" and again["redo"] == 0
+    refused = step(client, work, "redo")
+    assert refused.status_code == 422 and refused.json()["error"] == "there is no undone change to redo"
+
+
+def test_a_new_change_after_an_undo_drops_what_could_be_redone_and_a_change_to_nothing_is_no_step(app_world):
+    client = app_world["client"]
+    work = create(client)
+    settings(client, work, max_power=30)
+    assert step(client, work, "undo").json()["redo"] == 1
+    assert settings(client, work, width_mm=50)["redo"] == 0
+    same = settings(client, work, width_mm=50, rules=[{"part": "hair", "kind": "as_is"}])
+    assert same["undo"] == 1                                                                      # nothing changed: no step
+    allowed = settings(client, work, ai_photo=True)
+    assert (allowed["undo"], allowed["ai_photo"]) == (1, True)                                   # the permission is not a step
+    undone = step(client, work, "undo").json()
+    assert (undone["width_mm"], undone["ai_photo"]) == (60, True)                                # and undo does not touch it
+
+
+def test_undo_brings_back_another_scale_with_its_min_and_max(app_world):
+    client = app_world["client"]
+    work = create(client)
+    other = next(sc for sc in client.get("/api/grey-scales").json()["scales"] if sc["mode"] != work["scale"])
+    moved = settings(client, work, scale=other["mode"])
+    assert moved["scale"] == other["mode"]
+    back = step(client, work, "undo").json()
+    assert (back["scale"], back["min_power"], back["max_power"]) == (work["scale"], work["min_power"], work["max_power"])
+    assert back["picture"]["preview"] == work["picture"]["preview"]
+
+
+def test_a_copy_starts_without_history_and_the_steps_are_kept_with_the_work(app_world):
+    client = app_world["client"]
+    work = create(client)
+    settings(client, work, max_power=30)
+    made = client.post(f"/api/photo-works/{work['id']}/copy", json={}).json()
+    copied = client.get(f"/api/photo-works/{made['id']}").json()
+    assert (copied["max_power"], copied["undo"], copied["redo"]) == (30, 0, 0)
+    assert client.get(f"/api/photo-works/{work['id']}").json()["undo"] == 1
+    assert client.get("/api/photo-works").json()[1]["undo"] == 1
+
+
+def test_asked_again_from_the_picture_the_ai_is_not_told_the_present_rules(app_world, parts_model, model):
+    client = app_world["client"]
+    fake = model(VIOLET)
+    work = create(client)
+    settings(client, work, rules=[{"part": "face_skin", "kind": "neutral"}])
+    client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым"})
+    assert sent(fake.calls[-1])["current"] == [{"part": "face_skin", "kind": "neutral"}]
+    fresh = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье фиолетовым", "fresh": True}).json()
+    assert sent(fake.calls[-1])["current"] == []
+    assert [r["part"] for r in fresh["rules"]] == ["clothes"] and fresh["ai"]["fresh"] is True    # face skin as it is again
+    refused = client.post(f"/api/photo-works/{work['id']}/ai", json={"wish": "платье", "fresh": "yes"})
+    assert refused.status_code == 422 and refused.json()["error"] == "starting again from the picture must be on or off"

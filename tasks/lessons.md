@@ -398,3 +398,11 @@ Rules written after the operator's remarks, to prevent a repeat.
   vector section is: saved works, a list of them, open, copy, rename, delete, and a one-screen workspace for one work ("мне нужны работы, так же как и в векторной гравировке").
 - Rule: when the operator compares a section with another one, list what the other one has (its entry screen, what it stores, its actions, its workspace) and confirm which of them are
   meant before building; the layout alone is rarely the whole request.
+
+## A work the operator edits gets undo and redo for every change, and an AI that builds on its last answer also gets a way to start again
+- Situation (2026-10-22): 0.19.1 gave the photo work an AI that proposes rules for the parts of the picture. Each new request was sent with the current rules, so the answers built
+  on one another, and the only way back was «Вернуть как было», one step over the last answer. After four requests the operator could not get back to the plain picture, deleted
+  the work and made a new one ("Нет возможности перегенерировать с картинки, отменить действие"). The vector editor had had «Отменить» / «Повторить» for every change since DEC-077.
+- Rule: every editable work keeps undo and redo of every change that alters what it engraves (server side, as the vector editor does, with the buttons and Ctrl+Z / Ctrl+Shift+Z);
+  an AI request that refines the present state also has a way to start from the original. Before releasing an editing screen, check it against the vector editor: what can be
+  undone there must be undoable here.

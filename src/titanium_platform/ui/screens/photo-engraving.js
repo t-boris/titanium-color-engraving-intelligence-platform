@@ -10,6 +10,8 @@
 'use strict';
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, labText, duration, table, fail} = App;
+  let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
+  document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
   const PICTURES = 'image/png,image/jpeg,image/tiff,image/bmp,image/webp';
   const SPREAD_LIMIT = 5;                       // ΔE within which independent engravings agree (agreement.AGREEMENT_DE, DEC-083)
   const BAR_SEGMENTS = 64;                      // segments of the grey -> colour bar (4 grey levels each)
@@ -237,12 +239,12 @@
   const WITH_TARGET = ['colour', 'even'];
   const AI_MISSING = {library: 'AI недоступен: в окружении приложения нет библиотеки openai (как её поставить — в README). Правила частей можно задать вручную.',
     key: 'AI выключен: не задан ключ языковой модели (OPENAI_API_KEY). Правила частей можно задать вручную.'};
-  const plainRules = (rules) => JSON.stringify((rules || []).map(({part, kind, lab, range}) => ({part, kind, lab, range})));
 
-  /** Вкладка «AI» работы (REQ-062): пожелание своими словами, разрешение отправить уменьшенную картинку, «Попросить AI» и его ответ с
-      «Вернуть как было»; части картинки, найденные моделью, с правилом каждой (его можно поменять вручную), цветом-целью и тем, насколько
-      близко к нему подходят серые шкалы; части поверх картинки. Серые всегда подбираются на шкале работы, не моделью. ``save`` сохраняет
-      правила и разрешение, ``ask(wish)`` спрашивает AI; оба отдают ошибку или null. */
+  /** Вкладка «AI» работы (REQ-062): пожелание своими словами, разрешение отправить уменьшенную картинку, «Попросить AI» (от нынешних
+      правил: AI меняет то, о чём просят) и «Заново с картинки» (AI начинает с картинки без правил), его ответ; части картинки, найденные
+      моделью, с правилом каждой (его можно поменять вручную), цветом-целью и тем, насколько близко к нему подходят серые шкалы, «Все части
+      как есть»; части поверх картинки. Серые всегда подбираются на шкале работы, не моделью; любой шаг отменяет «Отменить» в шапке.
+      ``save`` сохраняет правила и разрешение, ``ask(wish, fresh)`` спрашивает AI; оба отдают ошибку или null. */
   function aiTab(id, save, ask) {
     const wish = h('textarea', {rows: 3, maxlength: 400, 'aria-label': 'Что изменить в картинке',
       placeholder: 'например: всё как есть, чёрно-белое; платье фиолетовым, ярким; кожу равномерно светлой'});
@@ -254,19 +256,29 @@
     const overlay = h('div');
     let view = null, parts = null, asking = false;
     photo.addEventListener('change', () => save({ai_photo: photo.checked}));
-    const button = btn('Попросить AI', async () => {
+    async function request(fresh) {
       if (asking) return;
       if (!wish.value.trim()) { status.textContent = 'Напишите, что AI должен изменить в картинке.'; status.hidden = false; return; }
       asking = true;
-      button.disabled = true;
+      enable();
       status.textContent = 'AI думает… обычно это до минуты.';
       status.hidden = false;
-      const failed = await ask(wish.value);
+      const failed = await ask(wish.value, fresh);
       asking = false;
       status.textContent = failed ? failed.message : '';
       status.hidden = !failed;
-      button.disabled = !!(view && view.ai_missing);
-    }, 'primary btn-small');
+      enable();
+    }
+    const button = btn('Попросить AI', () => request(false), 'primary btn-small');
+    const again = btn('Заново с картинки', () => request(true), 'btn-small');
+    button.setAttribute('title', 'AI видит нынешние правила частей и меняет то, о чём вы просите');
+    again.setAttribute('title', 'AI начинает с картинки без правил частей: его ответ заменяет их все');
+    const plain = btn('Все части как есть', () => save({rules: []}), 'btn-small');
+    plain.setAttribute('title', 'Убрать правила всех частей: картинка гравируется как есть');
+    function enable() {
+      button.disabled = again.disabled = asking || !!(view && view.ai_missing);
+      plain.disabled = !(view && view.rules.length);
+    }
     function setRule(part, kind, hex) {
       const others = view.rules.filter((r) => r.part !== part);
       save({rules: kind === 'as_is' ? others : [...others, WITH_TARGET.includes(kind) ? {part, kind, hex} : {part, kind}]});
@@ -293,13 +305,10 @@
       photo.checked = !!view.ai_photo;
       missing.textContent = AI_MISSING[view.ai_missing] || '';
       missing.hidden = !view.ai_missing;
-      button.disabled = asking || !!view.ai_missing;
+      enable();
       if (!wish.value && view.ai) wish.value = view.ai.wish;
       fill(answer, view.ai ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai.note || 'без пояснения',
-        h('span', {class: 'muted'}, ` — на «${view.ai.wish}»${view.ai.photo ? ', с картинкой' : ''}`)) : null,
-        view.ai && plainRules(view.ai.before) !== plainRules(view.rules)
-          ? h('div', {class: 'row'}, btn('Вернуть как было', () => save({rules: view.ai.before}), 'btn-small'),
-            h('span', {class: 'small muted'}, 'правила частей, какими они были до ответа AI')) : null);
+        h('span', {class: 'muted'}, ` — на «${view.ai.wish}»${view.ai.fresh ? ', заново с картинки' : ''}${view.ai.photo ? ', с картинкой' : ''}`)) : null);
       rows();
     }
     get(`/photo-works/${id}/parts`).then((found) => {
@@ -312,18 +321,20 @@
       h('p', {class: 'small'}, 'Скажите своими словами, что изменить в картинке. AI предложит правило для каждой части — фона, волос, кожи, одежды; '
         + 'серые подбираются на шкале работы по вашим измерениям, поэтому видно, что на этом титане достижимо.'),
       wish, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Отправить AI уменьшенную картинку (без этого — только числа: части и их цвета)')),
-      h('div', {class: 'row'}, button), missing, status, answer,
-      h('h4', {}, 'Части картинки'), table_, overlay,
+      h('div', {class: 'row'}, button, again), missing, status, answer,
+      h('div', {class: 'row ge-parts-head'}, h('h4', {}, 'Части картинки'), plain), table_, overlay,
       h('p', {class: 'small muted'}, 'Как есть — серые картинки; цвета фото — для каждого пикселя серый с ближайшим цветом на шкале; чёрно-белое — только серые, '
         + 'которые на титане выходят почти серыми; цвет — цель, светлое и тёмное части сохраняются; один тон — один серый на всю часть: он стирает всё внутри неё (глаза, брови и губы — часть кожи лица, '
         + 'поэтому ровную светлую кожу лучше задать цветом). '
-        + '«ΔE к цели» — медиана ΔE между желаемым цветом и тем, что даёт шкала.'));
+        + '«ΔE к цели» — медиана ΔE между желаемым цветом и тем, что даёт шкала. Ответ AI и любое изменение отменяются кнопкой «Отменить» вверху (Ctrl+Z).'));
     return {el, show};
   }
 
-  /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Шкалы серого», «Сделать копию» и «Файл LightBurn». */
-  function workHead(first) {
+  /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Отменить» и «Повторить» (``step('undo' | 'redo')``), «Шкалы серого»,
+      «Сделать копию» и «Файл LightBurn». */
+  function workHead(first, step) {
     const title = h('div', {class: 'ge-title'});
+    const undo = btn('Отменить', () => step('undo'), 'btn-small'), redo = btn('Повторить', () => step('redo'), 'btn-small');
     const copy = btn('Сделать копию', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
@@ -336,10 +347,15 @@
       try { await download(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2'); } catch (e) { fail(e); } finally { self.disabled = false; }
     }, 'primary btn-small');
     const el = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'), title,
+      h('div', {class: 'row', role: 'group', 'aria-label': 'Отмена и повтор'}, undo, redo),
       h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), copy, file);
     let shown = first;
     function update(next) {
       shown = next;
+      undo.disabled = !(next.undo > 0);
+      redo.disabled = !(next.redo > 0);
+      undo.setAttribute('title', `Отменить (Ctrl+Z); шагов: ${next.undo || 0}`);
+      redo.setAttribute('title', `Повторить (Ctrl+Shift+Z); шагов: ${next.redo || 0}`);
       const pencil = VectorWorkspace.renameButton(next.id, next.name, (stored) => update({...shown, name: stored}), '/photo-works');
       fill(title, h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
         h('p', {class: 'sub'}, `${next.image_name || 'картинка'} · ${next.image_size[0]} × ${next.image_size[1]} пикс. · ${value(next.width_mm, 1)} × ${value(next.height_mm, 1)} мм`
@@ -358,8 +374,8 @@
     const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
     const picture = workPicture(save);
-    const head = workHead(view);
-    const ai = aiTab(id, save, (wish) => send(`/photo-works/${id}/ai`, {wish}));
+    const head = workHead(view, step);
+    const ai = aiTab(id, save, (wish, fresh) => send(`/photo-works/${id}/ai`, {wish, fresh}));
     const tabs = App.tabs([['picture', 'Картинка', picture.details], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => modeQuery(sc.mode) === modeQuery(view.scale)) || null;
@@ -379,17 +395,20 @@
       ai.show(view);
       if (modeQuery(view.scale) !== shownKey) showScale();
     }
-    /** One change of the work (``path`` with ``body``): sent after those before it; the answer to the last one is shown. The promise
-        gives the error of this change, or null. */
-    function send(path, body) {
+    /** One change of the work (``path`` with ``body``): sent after those before it; the answer to the last one is shown. With ``again``
+        the scale is shown anew from the answer (an undo or redo can bring back other Min and Max on the same scale). The promise gives the
+        error of this change, or null. */
+    function send(path, body, again = false) {
       const mine = ++seq;
       error.hidden = true;
       picture.waiting();
-      queue = queue.then(() => post(path, body)).then((next) => { view = next; if (mine === seq) shown(); return null; },
+      queue = queue.then(() => post(path, body)).then((next) => { view = next; if (mine === seq) { if (again) shownKey = null; shown(); } return null; },
         (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); } return e; });
       return queue;
     }
     function save(changes) { return send(`/photo-works/${id}/settings`, changes); }
+    /** «Отменить» или «Повторить» (``kind``): работа становится такой, какой была до последнего изменения (или после отменённого). */
+    function step(kind) { return (view[kind] || 0) > 0 ? send(`/photo-works/${id}/${kind}`, {}, true) : Promise.resolve(null); }
     /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
     function pick(item) {
       if (modeQuery(item.mode) === shownKey) return;
@@ -401,7 +420,17 @@
       save({scale: item.mode});
     }
     shown();
-    return h('div', {class: 'os ge'}, head.el, h('div', {class: 'os-body ge-body'},
+    const root = h('div', {class: 'os ge'});
+    const key = (ev) => {
+      if (!root.isConnected) { if (keys === key) keys = null; return; }
+      const t = ev.target;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
+      if (document.querySelector('.modal-bg')) return;
+      const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
+    };
+    keys = key;
+    return fill(root, head.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
