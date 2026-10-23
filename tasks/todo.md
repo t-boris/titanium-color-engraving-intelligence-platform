@@ -2065,3 +2065,13 @@ Then R2-R4 of 0.24 move to 0.25.2-0.25.4 and the zone's «Раскраска» a
         Picking adds 0.06 s (0.63 s).
   - [ ] L2. Any change of a dotted work's look saves in about 0.94 s: the error diffusion of the new look at preview size.
   - [ ] L3. Opening a photo work after any write waits 1.4 s for `/api/grey-scales`, read anew after each write (then 0.06 s).
+  - [ ] L4. The first colour map after the app starts takes 4.4 s (0.3 s after): the map is gathered from every pair once. The same on
+        0.24.1 with the same data (4.43 s, measured from a worktree of 75b3260 on the copy).
+  - [ ] L5. The first picking map after the app starts takes 1.5 s after that (then 0.35 s): the grey scales and the palette of the
+        laser and lens are read once. Made by 0.25.0.
+- The full suite at first had 3 failures (`test_i18n_coverage`): the new server messages had no Russian. Translated in `i18n-data.js`;
+  the reasons a colour cannot be the dots' colour are now the server's (`dot_colours.REASONS`, plain texts), shown through `I18N.tr`
+  on the map instead of a second table in `dot-pick.js`. Then 1837 passed, none skipped (`-n 12`, 3 min 15 s).
+- Deployed 2026-10-23: commit c1efc10 pushed to main; backup `titanium-before-0.25.0-20261023T152343Z.sqlite` (integrity ok);
+  `/api/version` 0.25.0. On 8765 (reads only): `/api/colors?dots=37` 200 (5.7 s cold, then 0.35 s), work 37 shows «Цвет с карты»
+  (0.02 s warm). The tabs App and T1 had nothing unsaved and were reloaded.
