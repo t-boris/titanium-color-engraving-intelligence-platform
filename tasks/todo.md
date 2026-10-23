@@ -2134,3 +2134,10 @@ one to one, and only works 22 and 39 hold them (assignment, variants, undo, laye
 - [ ] L6. Work 39's view takes 0.61-0.64 s on the copy (5.3 s first after a start, L4) and 0.87-1.98 s on 8765 under 0.25.1: over 0.5 s
       before this change too; to measure where it goes and fix with the operator's approval, with L1-L5.
 The colour of photo zones from the colour map (D6) is 0.25.3.
+
+## BUG-005: a resized file is measured at its own size although the photograph shows the export's size (2026-10-23, awaiting approval)
+Pair 116 (work 22): the loaded file «Inna + Boris 10.lbrn2» is export 5 scaled to 89% x 85% with the Markers and CLEAN layers; the
+plate was engraved at the export's size (165 of 165 closed vectors found with the export's geometry, 120 of 158 with the file's).
+The check aligns by the plan's markers and never compares them with the file's own Markers layer, so it draws and measures the shrunken
+file without a warning. Proposed, not started: compare the file's markers (or its cleaning rectangle) with the photograph's; when they do
+not coincide, say that the file was resized or moved after the export and do not measure; name the export the photograph fits.
