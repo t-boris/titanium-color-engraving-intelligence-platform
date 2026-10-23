@@ -2158,5 +2158,8 @@ where the FILE has them, and the file's shapes are measured as they are, in phys
 - [x] S4. Verified on the copy (port 8791): pair 116 rechecked, 158 of 158 vectors found (mean edge support 0.70 against 0.43), contours on
       the engraving, placement scale [0.8895, 0.8476] offset [19.5, 19.5], the warning in the report. The three new tests fail on 0.25.2
       (the moved-only file too: a work moved on the bed was measured beside its engraving before). Full suite: 1847 passed.
-- [ ] S5. README, version 0.25.3, full suite, commit, deploy. The operator rechecks pair 116 («Повторить проверку»).
+- [x] S5. README, version 0.25.3, full suite 1847 passed, commits 64575b0 (release), a7531b4 (DEC-120), bdbda64 (untracked the foreign
+      electron folder a7531b4 swept in). Deployed 2026-10-23: backup `~/.titanium-platform/backups/titanium-before-0.25.3-20261023T231647Z.sqlite`
+      (integrity ok), wheel installed, imports ok, 8765 restarted on 0.25.3. Pair 116 rechecked on 8765: 158 of 158 vectors, placement
+      scale [0.8895, 0.8476], both warnings, status «Ready to accept»; the T2 tab reloaded. The copy on 8791 stopped.
 The colour of photo zones from the colour map (D6) moves to 0.25.4.
