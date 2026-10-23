@@ -950,6 +950,15 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ep-layer .small {overflow-wrap:anywhere}
 .ep-layer .stack {gap:2px}
 .ep-checks {display:flex;flex-direction:column;gap:6px}
+.pr-card {padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;background:#111b2a}
+.pr-card h4 {margin:4px 0 0;font-size:13px}
+.pr-causes {margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.pr-causes li {overflow-wrap:anywhere}
+.pr-causes li.pr-warn::marker {color:var(--warning)}
+.pr-causes li.pr-ok::marker {color:var(--success)}
+.pr-tones {list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
+.pr-tone {display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;font-size:12px}
+.pr-power {min-width:4.5em}
 .ep-check {display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 10px;border:1px solid var(--line-2);border-radius:10px;background:#111b2a}
 .ep-check.is-current {border-color:#6f86ff}
 .ep-check-name {max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}

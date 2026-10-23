@@ -1,6 +1,7 @@
 /* Эксперимент как один объект (REQ-028, DEC-055): фото с наложением всегда на виду, рядом результат, плата, выводы и все проверки.
    Маршрут /experiment/:ключ, где ключ plan-<id> (плата и её проверки) или eng-<id> (готовая работа и её фото).
-   Один экран без прокрутки страницы (REQ-044, DEC-080): слева фото с наложением на всю высоту, справа вкладки «Результат», «Матрица»,
+   Один экран без прокрутки страницы (REQ-044, DEC-080): слева фото с наложением на всю высоту, справа вкладки «Результат» (у принятой
+   фотогравировки — и «Прогноз и результат», prediction-review.js), «Матрица»,
    «Проверки», «Плата», «Работа», «Выводы»; прокручивается только длинная таблица внутри своей вкладки. Открытая вкладка запоминается
    браузером (удобство одного зрителя). */
 'use strict';
@@ -126,6 +127,8 @@
         h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null,
           ...Composition.layerNotes(l))));
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
+      // an accepted photo engraving: what the grey scale predicted before it against what came out (DEC-117), loaded after the rest
+      const review = images.length && pair.status === 'Accepted' ? h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Сравниваем с прогнозом…')) : null;
       fill(result,
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
         ...(check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m))),
@@ -136,11 +139,13 @@
           + `${ref.nominal_source === 'chart' ? ', по измерениям с картой' : ', значение по умолчанию'}). `
           + (Math.abs(ref.exposure_stops) >= 1 ? `Снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции; ` : '')
           + 'отношение цвета к чистому титану в линейном свете от экспозиции не зависит.')] : []),
+        review,
         layers.length ? h('div', {class: 'stack'}, h('h3', {}, `Измеренные слои · ${layers.length}`),
           h('p', {class: 'muted small'}, ref ? 'Цвет относительно чистого титана, затем слой, задача, параметры, метрики и заметки.' : 'Цвет на фото, затем слой, задача, параметры, метрики и заметки.'),
           h('div', {class: 'ep-layers'}, rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
         ...images.map((l) => h('p', {class: 'small'}, `${l.name}: тональный профиль — связь серого уровня картинки с яркостью ${num(l.tonal.rho, 2)}, `
           + `размах L* ${num(l.tonal.range_L, 0)}. `, link(`/ingest?pair=${shown}`, 'Таблица «серый → мощность → цвет»'))));
+      if (review) PredictionReview.load(shown, review, () => !!current && current.id === shown);
       fill(matrixBox, pair.matrix ? [h('h3', {}, `Матрица параметров ${pair.matrix.cols} × ${pair.matrix.rows}`),
         h('p', {class: 'muted small'}, pair.matrix.confirmed ? 'Настройки прочитаны с фотографии и подтверждены.' : 'Настройки прочитаны с фотографии и ещё не подтверждены.'),
         IngestReview.matrixGrid(pair)] : null);

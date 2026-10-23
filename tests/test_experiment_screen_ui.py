@@ -14,7 +14,7 @@ from test_vector_work import TABLES, UI
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
 SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
-           "screens/vector-workspace.js"]
+           "screens/vector-workspace.js", "screens/prediction-review.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { globalThis.__renders = (globalThis.__renders || 0) + 1; };"
         "App.go = (route) => { location.hash = '#' + route; };"
         "const __local = {}, __session = {};"
@@ -250,6 +250,99 @@ def test_checks_conclusions_and_the_two_deletions_keep_their_actions(tmp_path):
     assert "все проверки (2)" in out["question"] and out["deletedBefore"] == 0                      # asked first
     assert out["deleted"] == ["/api/pairs/70", "/api/pairs/71", "/api/plans/5"]                    # each check on its own, then the plate
 
+
+
+# -- the prediction against the result (DEC-117) ----------------------------------------------------------------------------------------
+def photo_detail(pid):
+    """An accepted photograph of one grayscale picture layer with its tonal profile."""
+    out = pair_detail(pid, layers=1)
+    out["check"]["warnings"] = []
+    out["check"]["layers"][0].update(name="C00", type="Image", image={"dither": "grayscale"}, tonal={"rho": -0.9, "range_L": 40})
+    return out
+
+
+def bands():
+    return [{"power": 1.9, "gray": 1.0, "lab": [91.2, -0.2, 6.0], "predicted": [76.2, 0.1, 7.8], "de": 15.1},
+            {"power": 9.2, "gray": 0.75, "lab": [79.0, 3.0, 38.0], "predicted": [40.0, 14.0, 4.0], "de": 52.8}]
+
+
+REVIEW = {"pair_id": 111, "photo": "IMG_3378.DNG", "accepted": True, "tolerance_de": 5.0, "layers": [{
+    "layer": 0, "name": "C00", "kind": "grayscale", "row_mm": 150.0, "reason": None, "engravings": 1, "compared": 16, "median_de": 18.7, "max_de": 59.5,
+    "within": 0.125, "median_dL": 17.1, "median_db": 0.7, "tolerance_de": 5.0, "bands": bands(), "causes": [
+        {"code": "size", "row_mm": 150.0, "measured_mm": [38.4, 100.0], "how": "outside", "from_mm": [100.0], "engravings": 1, "differs": True},
+        {"code": "plate", "own": {"id": 2, "name": "Big Plate 150", "thickness_mm": 3.0}, "used": [{"id": 3, "name": "Small Plate", "thickness_mm": 2.0}], "differs": True},
+        {"code": "cleaning", "own": True, "used": [{"pair_id": 109, "photo": "IMG_3377.DNG", "cleans": False}], "differs": True},
+        {"code": "photo", "own": {"pair_id": 111, "photo": "IMG_3378.DNG", "L": 91.2, "how": "lightest"},
+         "used": [{"pair_id": 109, "photo": "IMG_3377.DNG", "L": 76.2, "how": "lightest", "same_surface": False}],
+         "same_surface": [{"pair_id": 108, "photo": "IMG_3376.DNG", "L": 79.4, "how": "witness"}], "dL_used": 15.0, "dL_same": 11.8, "differs": True}]}]}
+OVERALL = {"tolerance_de": 5.0, "all": {"layers": 3, "engravings": 3, "tones": 47, "median_de": 13.8, "within": 0.213},
+           "size_measured": {"layers": 1, "engravings": 1, "tones": 15, "median_de": 10.2, "within": 0.4}, "layers": []}
+PORTRAIT = experiment("plan-32", kind="Работа фотогравировки", plan_id=32, engraving_id=None, main_pair_id=111,
+                      pairs=[pair_summary(111, alignment="picture", name="IMG_3378.DNG", grayscale_image=True)])
+
+
+@node
+def test_an_accepted_photo_engraving_shows_what_was_predicted_before_it_beside_what_came_out_and_why(tmp_path):
+    routes = routes_for(PORTRAIT)
+    routes.update(api(**{"/api/pairs/111": photo_detail(111), "/api/pairs/111/prediction-review": REVIEW, "/api/prediction-reviews": OVERALL}))
+    out = run(tmp_path, routes, "plan-32", """
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  const card = side.querySelectorAll('div').find((d) => has(d, 'pr-card'));
+  out.order = side.querySelectorAll('h3').map((x) => x.textContent);
+  out.text = card.textContent;
+  out.pills = card.querySelectorAll('span').filter((x) => has(x, 'pill')).map((x) => [x.textContent, x.className]);
+  out.causes = card.querySelectorAll('li').filter((li) => !has(li, 'pr-tone')).map((li) => [li.textContent, li.className]);
+  out.tones = card.querySelectorAll('li').filter((li) => has(li, 'pr-tone')).map((li) => li.textContent);
+  out.summary = card.querySelectorAll('summary').map((x) => x.textContent);
+  out.asked = ctx.requests.map((r) => r.path).filter((x) => x.includes('review'));
+""")
+    assert out["order"][:2] == ["Прогноз и результат", "Измеренные слои · 1"]                    # before the measured layers
+    assert out["asked"] == ["/api/pairs/111/prediction-review", "/api/prediction-reviews"]
+    assert "Прогноз по 1 гравировке, принятой раньше" in out["text"] and ["медиана 18,7 ΔE", "pill warn"] in out["pills"]
+    assert "Тонов сравнено: 16 · максимум 59,5 ΔE · в пределах 5 ΔE: 13 %. Вышло светлее прогноза на 17,1 L* (медианы по тонам)." in out["text"]
+    size, plate, cleaning, photo = out["causes"]
+    assert size == ["Ширина строк 150 мм — вне измеренных до неё (38,4; 100 мм): прогноз взят с ближайшей, 100 мм, без пересчёта. "
+                    "На другой ширине строки остывают иначе, и та же мощность даёт другие цвета.", "pr-warn"]
+    assert plate == ["Прогноз — по гравировкам на Small Plate (2 мм); эта — на Big Plate 150 (3 мм).", "pr-warn"]
+    assert cleaning == ["Эта гравировка — по чистке; прогноз — по гравировкам без чистки.", "pr-warn"]
+    assert photo[0] == ("Чистый титан на этом фото — IMG_3378.DNG: L* 91,2 (самый светлый тон). На фото прогноза — IMG_3377.DNG: L* 76,2 "
+                        "(самый светлый тон): это фото светлее на 15 L*. На той же пластине с той же чисткой — IMG_3376.DNG: L* 79,4 "
+                        "(свидетель чистки): это фото светлее на 11,8 L* — это свет снимка, а не металл.")
+    assert out["summary"] == ["Тона: прогноз и результат (2)"] and out["tones"][0].startswith("1,9 %") and "52,8 ΔE" in out["tones"][1]
+    assert "прогноз до них ошибался на 13,8 ΔE (медиана 47 тонов, гравировок 3); где ширина была измерена заранее — 10,2 ΔE." in out["text"]
+
+
+@node
+def test_a_photograph_without_a_picture_layer_asks_for_no_review_and_a_first_one_says_there_was_no_prediction(tmp_path):
+    routes = routes_for(MATRIX, PORTRAIT)
+    first = {**REVIEW, "layers": [{**REVIEW["layers"][0], "name": name, "reason": "first", "compared": 0, "bands": [], "causes": []}
+                                  for name in ("GREY-1", "GREY-2")]}
+    routes.update(api(**{"/api/pairs/111": photo_detail(111), "/api/pairs/111/prediction-review": first, "/api/prediction-reviews": OVERALL}))
+    out = run(tmp_path, routes, "eng-abc", """
+  out.matrixAsked = ctx.requests.map((r) => r.path).filter((x) => x.includes('review'));
+  const again = await screen('plan-32');
+  const side = again.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  out.text = side.querySelectorAll('div').find((d) => has(d, 'pr-card')).textContent;
+""")
+    assert out["matrixAsked"] == []
+    assert out["text"].count("до неё на этих настройках") == 1 and "GREY" not in out["text"]       # one line for every layer of one reason
+    assert "Прогноз: до неё на этих настройках ничего не было измерено — прогноза не было; теперь шкала этих настроек строится по ней." in out["text"]
+
+
+@node
+def test_a_prediction_from_the_same_plate_and_cleaning_puts_the_difference_on_the_photographs_light(tmp_path):
+    routes = routes_for(PORTRAIT)
+    layer = REVIEW["layers"][0]
+    photo = {**layer["causes"][3], "used": [{"pair_id": 93, "photo": "IMG_3296.DNG", "L": 65.5, "how": "lightest", "same_surface": True}],
+             "same_surface": [], "dL_used": 9.2, "dL_same": None}
+    review = {**REVIEW, "layers": [{**layer, "causes": [*layer["causes"][:3], photo]}]}
+    routes.update(api(**{"/api/pairs/111": photo_detail(111), "/api/pairs/111/prediction-review": review, "/api/prediction-reviews": OVERALL}))
+    out = run(tmp_path, routes, "plan-32", """
+  const card = tree.querySelectorAll('div').find((d) => has(d, 'pr-card'));
+  out.photo = card.querySelectorAll('li').filter((li) => !has(li, 'pr-tone'))[3].textContent;
+""")
+    assert out["photo"] == ("Чистый титан на этом фото — IMG_3378.DNG: L* 91,2 (самый светлый тон). На фото прогноза — IMG_3296.DNG: L* 65,5 "
+                            "(самый светлый тон): это фото светлее на 9,2 L*. Пластина и чистка те же — это свет снимка, а не металл.")
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
 def test_the_experiment_page_takes_the_screen_with_the_photo_filling_its_column_and_only_a_long_panel_scrolling():

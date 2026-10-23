@@ -14,7 +14,7 @@ from collections import OrderedDict
 import numpy as np
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from .. import devices, grayscale, plans, prediction, prediction_store, setup as su
+from .. import devices, grayscale, plans, prediction, prediction_review, prediction_store, setup as su
 from .common import MAX_IMAGE_BYTES, MAX_LIGHTBURN_BYTES, content_disposition, lens_param, read_upload, store_of
 
 router = APIRouter(prefix="/api")
@@ -134,6 +134,19 @@ def grey_scales(request: Request, device_id: int | None = None, lens_id: str | N
     measured powers, what measured it, whether the engravings confirm each other and its time per square centimetre."""
     lens = lens_param(lens_id) if lens_id else None
     return {"scales": prediction_store.scales(store_of(request), device_id, lens, material_id)}
+
+
+@router.get("/pairs/{pair_id}/prediction-review")
+def prediction_review_of(pair_id: int, request: Request):
+    """What the grey scale predicted for an accepted photo engraving before it was engraved and what its photograph measured, with the
+    facts the prediction rested on (DEC-117)."""
+    return prediction_review.review(store_of(request), pair_id)
+
+
+@router.get("/prediction-reviews")
+def prediction_reviews(request: Request):
+    """Every accepted photo engraving's review together: the measure a change of the model has to lower (DEC-117)."""
+    return prediction_review.summary(store_of(request))
 
 
 @router.get("/grey-scales/scale")

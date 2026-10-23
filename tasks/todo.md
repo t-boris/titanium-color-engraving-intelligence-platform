@@ -1971,3 +1971,38 @@ Proposal (needs the operator's approval: it is the editor's core): keep the pale
 on L*a*b* only, draw the zone's look once per key.
 Out: «Подтверждение» (engravings belong to the vector work) and the width (a zone's width is its box). Releases: 0.23.0 = Z1, Z2, Z4, Z5, Z6
 with «Картинка», «Шкала», kinds, dots; 0.23.1 = Z3 and «Раскраска» + «AI». Each with node and API tests, a walk on a copy, timings.
+
+## 0.24: every accepted photo engraving makes the next prediction better (operator, 2026-10-23; all four parts approved)
+The operator on «Inna Portrait-P1-30 150»: the prediction shown before engraving was much darker than the result, the yellows were
+missed; after accepting results the platform must rework its colours and settings so the next prediction is closer.
+Findings (mode 150 mm/s · 60 kHz · 350 ns · 0.0212 mm, three measurements): 38.4 mm grey ramps on Big Plate 150 (3 mm, pair 108),
+a 100 mm portrait on Small Plate (2 mm, no cleaning, pair 109), a 150 mm portrait on Big Plate 150 (cleaned, pair 111). Before 111
+the prediction at 150 mm took the nearest size, 109: median 18.7 dE, 2 of 16 tones within 5. Causes: (1) row length (DEC-107) — at
+150 mm 5.5-14.6 % gives straw and gold, at 38.4/100 mm brown, violet, blue; no power shift or affine power map carries one size to the
+other (best leaves median 10 dE); (2) another plate — the scale pools every plate of the grade (DEC-110), thickness and cleaning not
+weighed; (3) the photograph — clean titanium of the same plate and cleaning reads L* 79.4 on the ramp photo and ~91 on the portrait's
+(its Min tone over the cleaning); chart-corrected photos are taken as absolute (DEC-056) and never aligned. Witnesses of other
+chart photos: 79.3, 79.0, 79.4, 71.7.
+Order: the review first (it is also the measure), then each change of the model is kept only if it lowers the reviews' errors.
+- [x] R1. 0.24.0 «Прогноз и результат» (review of an acceptance): for each tonal layer of an accepted pair, the curve of its mode from
+      the engravings accepted BEFORE it at its own row length (curve_at, nearest size included, said so), per tone predicted vs
+      measured (swatches), median/max dE, share within the tolerance, lighter/darker and yellower/bluer on average; causes with their
+      numbers: size outside or between the measured ones, the prediction made on other plates (name, thickness), cleaning differing,
+      the photograph's clean titanium vs the nominal. GET /api/pairs/{id}/review; a card in the experiment's «Результат»; a summary of
+      every review (GET /api/reviews: median dE over all) as the baseline. DEC-117.
+- [ ] R2. 0.24.1 Photo alignment: a chart-corrected photo whose clean titanium is measured (the witness, or the Min tone of a grayscale
+      image over a cleaning layer) has its colours brought to the nominal clean titanium in linear light (as camera-relative photos
+      already are, DEC-056), for the grey scales and the review; the vector palette left as it is until the operator says (it would move
+      validated recipes). Kept only if the reviews' median dE drops. DEC-118.
+- [ ] R3. 0.24.2 Own plate: a scale curve takes the points of the work's own plate when it has any, then the same thickness, other
+      plates of the grade only when none, and says so. Kept only if the reviews' median dE drops. DEC-119.
+- [ ] R4. 0.24.3 Trust in a prediction: the photo work and the zone screen say the expected error of their prediction from the reviews
+      of the same situation (size measured / between / outside; own plate / other) and, outside or on another plate, offer
+      «Проба на ширине работы».
+Then: the zone's «Раскраска» and «AI» (planned as 0.23.1) as 0.25.0; the change latency proposal still waits for the operator.
+R1 review (0.24.0, built): prediction_review.py (review, summary cached per data state), GET /api/pairs/{id}/prediction-review and
+/api/prediction-reviews, the card in the experiment's «Результат» (prediction-review.js). On a copy of the operator's data: pair 111 median 18.7 dE,
+max 59.5, 13 % within 5, lighter by 17.1 L*; size outside (38.4; 100 mm, took 100), Small Plate 2 mm vs Big Plate 150 3 mm, no cleaning vs
+cleaning, clean titanium 91.2 vs 76.2 (prediction's photo) and 79.4 (same plate and cleaning: the photograph's light). Baseline: 3 layers
+(88, 109, 111), median 13.8 dE over 47 tones; 10.2 where the size was measured beforehand (88 vs 93: same plate and cleaning, its photograph
+9.2 L* lighter). Cold first call 1.8 s (colour references, once per process), then 0.03 s; the card loads after the rest of the tab.

@@ -522,3 +522,10 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
   or the slider Escape did nothing. The operator: «Когда нажимаешь Escape, выделения должны уходить.»
 - Rule: guard only the keys a field uses (typing, Ctrl+Z, space); Escape drops the selection and everything drawn for it except in an open dialog.
 
+
+## A prediction says what it rests on before the operator engraves by it
+- Mistake (2026-10-23): the photo work showed the look of a 150 mm portrait from the nearest measured size (a 100 mm portrait on another,
+  uncleaned plate) without a word; the result was 18.7 dE off and much lighter. The operator: «когда ты предлагал мне вариант, он выглядел
+  намного темнее, чем сейчас».
+- Rule: whenever a prediction is made from another size, another plate or another cleaning, say so where the prediction is shown, with the
+  expected error from the reviews (DEC-117); and check a new model change against the reviews' median before keeping it.
