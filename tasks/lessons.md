@@ -536,3 +536,11 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
   operator: «Мне кажется он не правильно углы подставляет».
 - Rule: wherever a pointer position becomes a fraction or a picture coordinate, check in the browser at the operator's window width that
   the measured box equals the picture's box (getBoundingClientRect of both), not only that the dot appears under the pointer.
+
+## When outlines miss the photograph, compare the engraved file with the export before the alignment
+- Mistake (2026-10-23, pair 115): the outlines of two layers lay below the plate; the alignment was right (0.1 mm), the engraved file had
+  those layers 60 mm wide at the old place because the export hid them and LightBurn's tools skip hidden layers. The operator: «Почему
+  вообще за пределы линейки что-то выходит? ... Как такое может быть?»
+- Rule: first diff the uploaded .lbrn2 against the work's exports layer by layer (bounds, XForms, hide/doOutput, MirrorX/Y); a file
+  LightBurn re-saved reflects every shape, hidden ones too, so compare files as LightBurn saved them, before any turning to the plan's axes.
+

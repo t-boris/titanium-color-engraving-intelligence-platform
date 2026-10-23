@@ -2075,3 +2075,28 @@ Then R2-R4 of 0.24 move to 0.25.2-0.25.4 and the zone's «Раскраска» a
 - Deployed 2026-10-23: commit c1efc10 pushed to main; backup `titanium-before-0.25.0-20261023T152343Z.sqlite` (integrity ok);
   `/api/version` 0.25.0. On 8765 (reads only): `/api/colors?dots=37` 200 (5.7 s cold, then 0.35 s), work 37 shows «Цвет с карты»
   (0.02 s warm). The tabs App and T1 had nothing unsaved and were reloaded.
+
+## 0.25.1 (bug, operator 2026-10-23 «опять несовпадение», «Почему вообще за пределы линейки что-то выходит?»)
+Pair 115 (work 39 «Inna Portait Mix 1», IMG_3403, `Inna_Portait_Mix_1_7.lbrn2`): the outlines of layers C11 and C18 lie below the plate,
+on the ruler, and the measured window is 132 mm wide on a 100 mm plate. 21 layers match the photograph to 0.1 mm.
+- Cause 1: the work exported 60 x 60 mm with C11 (P30 F330 V1300 I0.003) and C18 (P30 F330 V1200 I0.003) hidden in LightBurn: the export
+  writes every LightBurn tag of the file a recipe was measured on (`plans._recipe_setting`, DEC-051), the "Show" switch (`hide`) included.
+  12 recipes (58 observations) carry `hide=1`. In LightBurn the operator enlarged the work to 100 mm and put it on the plate (35 mm from
+  the field's corner); its tools skip hidden layers, so C11 and C18 stayed 60 mm wide at the old place and were engraved off the plate.
+- Cause 2: the check knows this case (REQ-050, `left_behind`) and missed it. LightBurn 2.2 saved the file with MirrorY off and reflected
+  every shape about the design, hidden ones too; the check turns the engraved file back about its moved cleaning rectangle before it
+  compares, which puts a hidden layer 110 mm away from both the export's place and the moved one. So C11 and C18 were measured on the
+  ruler and the table (L* 71) and the pair is «Ready to accept».
+- [ ] F1. Export: whether a layer is shown (`hide`) and engraved (`doOutput`) is the job's, never the recipe's. NOT DONE, waits for the
+      operator: `hide` is part of a recipe's key (`model.parameters_key` hashes every preserved tag), and all 14 recipe settings measured
+      on hidden layers have twins measured on shown ones. Exporting the layer shown alone would make a photograph of it measure the twin,
+      not the chosen recipe; leaving Show out of a recipe merges the twins and changes their palette ids (DEC-088), so works that chose
+      them (work 39: C11, C18) must be moved to the merged entry. Proposed to the operator as a decision.
+- [x] F2. Check: compare the engraved file as LightBurn saved it (before it is turned to the plan's axes) with each export turned as
+      LightBurn turns a file saved with other mirror switches (`ingest._moved_layers`, before `_normalize_project_to_plan`).
+- [x] F3. Tests: a file re-saved with MirrorY changed, resized and moved with two hidden layers left behind leaves them out (the old order
+      finds none in the same case); pair 115's own files give C11 and C18 left behind (checked on a copy, not a repository test: the
+      operator's files).
+- [ ] F4. Bug record through markview, README, SemVer 0.25.1; the full suite; deploy. Pair 115 is rechecked only with the operator's
+      consent (a write on 8765); work 39 has to be exported again so that its file has no hidden layer.
+The colour of photo zones from the colour map (D6) moves to 0.25.2.

@@ -15,9 +15,10 @@ EXPORTED = [(1, "C01 a", [(10, 10, 20, 15), (50, 40, 30, 20), (100, 90, 25, 30)]
             (6, "C06 f", [(0, 0, 150, 140), (40, 50, 20, 20), (90, 40, 30, 30)])]
 
 
-def lightburn(layers, hidden=(), output_off=(), name="project"):
+def lightburn(layers, hidden=(), output_off=(), name="project", mirror_y=False):
     """The bytes of a LightBurn file with a rectangle for each box ``(x, y, w, h)`` (its top-left corner and size, in mm)."""
-    parts = ['<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="2.0.04" MirrorX="False" MirrorY="False">']
+    parts = ['<?xml version="1.0" encoding="UTF-8"?><LightBurnProject AppVersion="2.0.04" MirrorX="False" '
+             f'MirrorY="{mirror_y}">']
     for index, title, _ in layers:
         extra = ('<hide Value="1"/>' if index in hidden else '') + ('<doOutput Value="0"/>' if index in output_off else '')
         parts.append(f'<CutSetting type="Scan"><index Value="{index}"/><name Value="{title}"/><maxPower Value="20"/><frequency Value="60000"/>'
@@ -99,7 +100,7 @@ def test_the_check_leaves_out_a_layer_left_behind_with_a_note_and_a_warning_and_
     plan = {"mode": pl.MODE_VECTOR, "exports": [{"number": 1, "path": str(tmp_path / "gone.lbrn2")}, {"number": 2, "path": str(exported)}]}
     project = parse(moved(EXPORTED, keep=(4,)), hidden=(4,))
     report = report_of(project)
-    ingest._leave_out_layers(project, plan, report)
+    ingest._leave_out_layers(project, ingest._moved_layers(project, plan), report)
     left = next(l for l in report["layers"] if l["index"] == 4)
     assert left["left_out"] == "left_behind" and left["compatible"] is False and "left behind" in left["notes"][0]
     assert all("left_out" not in l and l["compatible"] for l in report["layers"] if l["index"] != 4)
@@ -114,7 +115,7 @@ def test_a_layer_left_behind_that_is_not_hidden_is_named_without_the_reason_of_h
     exported.write_bytes(lightburn(EXPORTED))
     project = parse(moved(EXPORTED, keep=(2, 5)))
     report = report_of(project)
-    ingest._leave_out_layers(project, {"mode": pl.MODE_VECTOR, "exports": [{"number": 1, "path": str(exported)}]}, report)
+    ingest._leave_out_layers(project, ingest._moved_layers(project, {"mode": pl.MODE_VECTOR, "exports": [{"number": 1, "path": str(exported)}]}), report)
     assert report["warnings"] == ["layers C02, C05 stayed where the exported file had them while the rest of the file was resized to 50% by 60% of its "
                                   "exported size; they are not measured"]
 
@@ -137,5 +138,24 @@ def test_a_file_that_moved_nothing_or_a_plan_without_exports_leaves_every_layer_
                  {"mode": pl.MODE_PLATE, "exports": [{"number": 1, "path": str(exported)}]}):
         project = parse(moved(EXPORTED, keep=(4,))) if plan and plan["mode"] == pl.MODE_PLATE else parse(EXPORTED)
         report = report_of(project)
-        ingest._leave_out_layers(project, plan, report)
+        ingest._leave_out_layers(project, ingest._moved_layers(project, plan), report)
         assert report["warnings"] == [] and all(l.regions for l in project.layers) and not any("left_out" in l for l in report["layers"])
+
+
+def test_a_hidden_layer_left_behind_in_a_file_lightburn_saved_with_its_mirror_switch_changed_is_left_out(tmp_path):
+    """Pair 115: the work was exported with MirrorY on; LightBurn 2.2 saved it with MirrorY off, reflecting every shape about the design
+    (the hidden layers' too), and its tools then resized and moved the shown layers only. The check turns the file back to the plan's axes
+    about its moved cleaning rectangle, which would put a hidden layer neither where the export had it nor where the move puts it."""
+    exported = tmp_path / "export.lbrn2"
+    exported.write_bytes(lightburn(EXPORTED, hidden=(2, 4), mirror_y=True))
+    plan = {"mode": pl.MODE_VECTOR, "exports": [{"number": 1, "path": str(exported)}], "export_mirror_y": True}
+    turned = [(index, title, [(x, 140 - y - h, w, h) for x, y, w, h in boxes]) for index, title, boxes in EXPORTED]   # about the design
+    project = parse(moved(turned, scale=(5 / 3, 5 / 3), offset=(35, 35), keep=(2, 4)), hidden=(2, 4))
+    report = report_of(project)
+    found = ingest._moved_layers(project, plan)                   # as the check does it: before the file is turned to the plan's axes
+    assert ingest._normalize_project_to_plan(project, plan) == ["Y"]
+    ingest._leave_out_layers(project, found, report)
+    assert [l["index"] for l in report["layers"] if l.get("left_out") == "left_behind"] == [2, 4]
+    assert report["warnings"] == ["layers C02, C04 stayed where the exported file had them while the rest of the file was resized to 167% by 167% of its "
+                                  "exported size, and they are hidden in LightBurn, whose tools skip hidden layers; they are not measured"]
+    assert all(l.regions for l in project.layers if l.index not in (2, 4))

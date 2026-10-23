@@ -1559,14 +1559,28 @@ def _exported_layouts(plan: dict | None):
             continue
 
 
-def _leave_out_layers(project: lb.Project, plan: dict | None, report: dict) -> None:
+def _moved_layers(project: lb.Project, plan: dict | None) -> dict | None:
+    """What the engraved ``project`` did to the layers of the newest file the work exported that tells (``left_behind.compare``,
+    REQ-050), or None. Both files are compared as LightBurn saved them: the engraved one before it is turned to the plan's axes
+    (``_normalize_project_to_plan``), and the export turned as LightBurn turns a file it saves with other mirror switches: it reflects
+    every shape about the design, a hidden layer's too, and only then do its tools move the shown layers. Turned back about the moved
+    cleaning rectangle, a hidden layer would sit neither where the export had it nor where the move puts it."""
+    for exported in _exported_layouts(plan):
+        lb.normalize_saved_orientation(exported, mirror_x=exported.mirror_x if project.mirror_x is None else project.mirror_x,
+                                       mirror_y=exported.mirror_y if project.mirror_y is None else project.mirror_y)
+        found = left_behind.compare(project, exported)
+        if found["verdict"] != "unknown":
+            return found
+    return None
+
+
+def _leave_out_layers(project: lb.Project, moved: dict | None, report: dict) -> None:
     """Leave out of the measurement the layers the photograph cannot show where the file puts them (REQ-050): layers whose output is
     switched off in LightBurn (never engraved), and layers left behind when the rest of the file was moved or resized (LightBurn's tools
-    skip hidden layers). Each is flagged ``left_out`` with a note, its shapes are dropped from ``project`` so that neither the alignment nor
-    the coverage of other layers uses them, and the operator is told in a warning."""
+    skip hidden layers; ``moved`` is what :func:`_moved_layers` found before the file was turned to the plan's axes). Each is flagged
+    ``left_out`` with a note, its shapes are dropped from ``project`` so that neither the alignment nor the coverage of other layers uses
+    them, and the operator is told in a warning."""
     out = {layer.index: "output_off" for layer in project.layers if layer.regions and layer.output_off}
-    moved = next((found for found in (left_behind.compare(project, exported) for exported in _exported_layouts(plan))
-                  if found["verdict"] != "unknown"), None)
     if moved is not None and moved["verdict"] == "moved":
         out.update({index: "left_behind" for index in moved["left"] if index not in out})
     if not out:
@@ -2188,6 +2202,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
                   and lens_id == made_for["lens_id"] else None)
     # System plate exports put cleanup first and registration/labels next. They are real engraved operations,
     # so retain them as measured layers. Only the test-cell comparison excludes these two system layers.
+    moved = _moved_layers(project, plan)              # compared as LightBurn saved the file, before it is turned to the plan's axes
     system_plan = plan
     if system_plan is not None:
         normalized_axes = _normalize_project_to_plan(project, system_plan)
@@ -2206,7 +2221,7 @@ def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = F
             rep["role"] = "pre-test cleaning witness"
         else:
             rep["role"] = "test feature"
-    _leave_out_layers(project, plan, report)
+    _leave_out_layers(project, moved, report)
     work_layers = [layer for layer in project.layers if layer.regions]
     return _measure(store, row, pair, project, plate, plan, corners, work_layers, report, problems, finish, allow_non_raw,
                     corners_fraction, linked)
