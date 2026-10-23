@@ -529,3 +529,10 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
   намного темнее, чем сейчас».
 - Rule: whenever a prediction is made from another size, another plate or another cleaning, say so where the prediction is shown, with the
   expected error from the reviews (DEC-117); and check a new model change against the reviews' median before keeping it.
+
+## A box that turns a click into a fraction must be the picture's box
+- Mistake (found 2026-10-23, pair 113): the corner editor took fractions of its .photo frame, which a flex column stretched wider than the
+  photograph; the dots were drawn in the same frame, so they looked right while the server got every corner squeezed to the left. The
+  operator: «Мне кажется он не правильно углы подставляет».
+- Rule: wherever a pointer position becomes a fraction or a picture coordinate, check in the browser at the operator's window width that
+  the measured box equals the picture's box (getBoundingClientRect of both), not only that the dot appears under the pointer.

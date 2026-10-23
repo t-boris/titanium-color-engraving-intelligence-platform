@@ -311,7 +311,9 @@ tbody tr:last-child td {border-bottom:0}
 .overlay-controls .btn {min-width:42px}
 .corner-chooser {gap:6px}
 .corner-chooser .btn {min-height:34px;padding:6px 9px;font-size:12px}
-.photo {position:relative;display:inline-block;max-width:100%;touch-action:none}
+/* the corner frame hugs its photograph: corners are fractions of this box, so it must be the picture's box, also inside a stretching
+   flex column (a stretched frame wider than the photograph squeezed every corner towards the left edge) */
+.photo {position:relative;display:inline-block;width:fit-content;max-width:100%;touch-action:none}
 .photo img,.card img {display:block;max-width:100%;height:auto;border-radius:12px;border:1px solid var(--line-2);box-shadow:0 10px 30px #0004}
 .photo img {cursor:crosshair}
 .dot {position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;padding:0;display:block;border-radius:50%;border:2px solid #fff;

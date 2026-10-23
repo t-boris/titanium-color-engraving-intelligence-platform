@@ -24,6 +24,7 @@ const Corners = (() => {
     const fraction = (ev) => {
       // Dots are positioned against .photo, so use that same box for pointer
       // coordinates too; the image and overlay then share one frame on resize.
+      // The box is the photograph's only because .photo is as wide as its picture (width: fit-content in styles.css).
       const r = wrap.getBoundingClientRect();
       return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
     };

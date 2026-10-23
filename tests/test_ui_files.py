@@ -314,3 +314,13 @@ def test_no_ui_script_uses_a_node_list_as_an_array():
     for path in UI_DIR.rglob("*.js"):
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             assert not wrong.search(line), f"{path.relative_to(UI_DIR)}:{n}: {line.strip()}"
+
+
+def test_the_corner_frame_is_as_wide_as_its_photograph_inside_a_stretching_column():
+    """Corners are fractions of the .photo box. In the review's flex column a frame of automatic width stretched to the column, wider
+    than the photograph, and every corner reached the server squeezed towards the left edge (pair 113: the right corners at 0.785 of the
+    photograph for 0.95)."""
+    css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+    rule = re.search(r"^\.photo \{([^}]*)\}", css, re.M).group(1)
+    assert "width:fit-content" in rule and "max-width:100%" in rule and "position:relative" in rule
+    assert "wrap.getBoundingClientRect()" in _screen("corners.js")         # the box the fractions are taken in

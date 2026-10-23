@@ -1990,13 +1990,13 @@ Order: the review first (it is also the measure), then each change of the model 
       numbers: size outside or between the measured ones, the prediction made on other plates (name, thickness), cleaning differing,
       the photograph's clean titanium vs the nominal. GET /api/pairs/{id}/review; a card in the experiment's «Результат»; a summary of
       every review (GET /api/reviews: median dE over all) as the baseline. DEC-117.
-- [ ] R2. 0.24.1 Photo alignment: a chart-corrected photo whose clean titanium is measured (the witness, or the Min tone of a grayscale
+- [ ] R2. 0.24.2 Photo alignment: a chart-corrected photo whose clean titanium is measured (the witness, or the Min tone of a grayscale
       image over a cleaning layer) has its colours brought to the nominal clean titanium in linear light (as camera-relative photos
       already are, DEC-056), for the grey scales and the review; the vector palette left as it is until the operator says (it would move
       validated recipes). Kept only if the reviews' median dE drops. DEC-118.
-- [ ] R3. 0.24.2 Own plate: a scale curve takes the points of the work's own plate when it has any, then the same thickness, other
+- [ ] R3. 0.24.3 Own plate: a scale curve takes the points of the work's own plate when it has any, then the same thickness, other
       plates of the grade only when none, and says so. Kept only if the reviews' median dE drops. DEC-119.
-- [ ] R4. 0.24.3 Trust in a prediction: the photo work and the zone screen say the expected error of their prediction from the reviews
+- [ ] R4. 0.24.4 Trust in a prediction: the photo work and the zone screen say the expected error of their prediction from the reviews
       of the same situation (size measured / between / outside; own plate / other) and, outside or on another plate, offer
       «Проба на ширине работы».
 Then: the zone's «Раскраска» and «AI» (planned as 0.23.1) as 0.25.0; the change latency proposal still waits for the operator.
@@ -2006,3 +2006,8 @@ max 59.5, 13 % within 5, lighter by 17.1 L*; size outside (38.4; 100 mm, took 10
 cleaning, clean titanium 91.2 vs 76.2 (prediction's photo) and 79.4 (same plate and cleaning: the photograph's light). Baseline: 3 layers
 (88, 109, 111), median 13.8 dE over 47 tones; 10.2 where the size was measured beforehand (88 vs 93: same plate and cleaning, its photograph
 9.2 L* lighter). Cold first call 1.8 s (colour references, once per process), then 0.03 s; the card loads after the rest of the tab.
+0.24.1 (bug, operator 2026-10-23 «Я расставил углы но все равно не нашел картинку», «Мне кажется он не правильно углы подставляет»):
+pair 113 (grey scales TCE-1C844F67 on Test Plate 1mm, IMG_3385): no marker visible, automatic alignment found 0 of 3; the manual corners
+reached the server squeezed in x (right corners 0.785 instead of 0.985): the corner frame (.photo) stretched to the review's flex column
+(1268 px) while the photograph stayed 1052 px. Fixed with width:fit-content; on a copy the corners at the cleaning's edges put all 9
+ramps in place (offsets 0-15 px). No accepted pair used manual corners (only 24, deleted, and 113, not accepted).
