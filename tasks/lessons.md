@@ -557,3 +557,7 @@ so the whole photo space is stretched by 1/0.89, and a plate engraved from the s
 ruler in the photograph (20.2 px/mm) gave the markers 143 mm apart: the scaled file was engraved, the app's assumption was wrong.
 Rule: before blaming the operator's file, measure an absolute length on the photograph (ruler, marker size, plate width) in pixels and
 compare it with both candidates; a homography fitted to 4 markers absorbs any scale and proves nothing about size.
+
+## Add files to git by name, never a directory
+`git add docs/features` swept in the untracked `docs/features/electron/`, which is not ours, and it went to main in a7531b4 (untracked
+again in the next commit). Add the exact files a tool or an edit produced; check `git status --short` for `??` entries before committing.
