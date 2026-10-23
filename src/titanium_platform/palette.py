@@ -92,12 +92,17 @@ def _evidence(found: dict) -> dict:
             "confidence": found["confidence"], "expected_delta_e": math.sqrt(variance)}
 
 
+def entry_id(group: str) -> str:
+    """The id of the palette entry of the recipe ``group``: the same while the recipe is measured (DEC-088)."""
+    return hashlib.sha256(group.encode("utf-8")).hexdigest()[:12]
+
+
 def _entry(group: str, recipe: dict) -> dict:
     """One palette entry: the mean colour of a recipe's independent engravings and everything the screen shows about it."""
     first = recipe["points"][0]
     found = colormap.agreed(recipe)
     lab = found["lab"]
-    return {"id": hashlib.sha256(group.encode("utf-8")).hexdigest()[:12], "lab": lab, "srgb": color.lab_to_srgb8(lab).tolist(),
+    return {"id": entry_id(group), "lab": lab, "srgb": color.lab_to_srgb8(lab).tolist(),
             **_evidence(found), "agreement": agreement.shown(found), "caution": "contradicted" if found["contradicted"] else None,
             "basis": _basis(first), "measurement": first["measurement"], "approximate": first["approximate"],
             "referenced": first["referenced"], "engravings": len(recipe["engravings"]), "photographs": len(recipe["photographs"]),
@@ -141,7 +146,7 @@ def at_size(entry: dict, row_mm: float | None) -> dict:
                      "from_mm": [measured[i] for i in where["use"]]}}
 
 
-def _left_out(point: dict) -> str | None:
+def left_out_reason(point: dict) -> str | None:
     """Why a colour of the partition is not a colour of an area, or None when it is."""
     mode = point["parameters"].get("layer_type")
     if point["provisional"]:
@@ -192,12 +197,20 @@ def _across_plates(points: list[dict], material_id: int) -> list[dict]:
     return [{**point, "group": pick[PLATE.sub("|ti:*|", point["group"])]} for point in points]
 
 
-def vector_palette(store: Store, device_id: int, lens_id: int | None, material_id: int, max_time_s_per_cm2: float | None = None) -> dict:
+def pooled_ids(points: list[dict], material_id: int) -> dict[str, str]:
+    """The id of the palette entry each recipe of the colour map's ``points`` (one plate each, on titanium of the work's material) is
+    pooled into across the plates (:func:`_across_plates`), by the point's own group."""
+    return {point["group"]: entry_id(pooled["group"]) for point, pooled in zip(points, _across_plates(points, material_id))}
+
+
+def vector_palette(store: Store, device_id: int, lens_id: int | None, material_id: int, max_time_s_per_cm2: float | None = None,
+                   points: list[dict] | None = None) -> dict:
     """Every measured colour of one laser and lens on titanium of the work's material (the same family and grade, see
     :func:`setup.same_titanium`) that fills an area, one entry per recipe, lightest first (``material_id`` is the work's own record: it
     must exist and its recipes keep their ids, see :func:`_across_plates`); with ``max_time_s_per_cm2`` only recipes no slower than
     that per square centimetre. ``left_out`` counts the recipes of the partition that are not in it, by reason. A colour measured
-    without a titanium record is in no palette."""
+    without a titanium record is in no palette. ``points`` are the colour map's points of this laser and lens when the caller has
+    gathered them already (``colormap.collect`` of the laser and lens, unfiltered)."""
     su.resolve(store, device_id, lens_id)
     if store.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
         raise su.ValidationError("the selected titanium stock was not found; choose it again")
@@ -205,9 +218,11 @@ def vector_palette(store: Store, device_id: int, lens_id: int | None, material_i
     left_out: dict[str, set] = {reason: set() for reason in ("line", "image", "other_mode", "task", "provisional", "slower")}
     area = []
     plates = set(su.same_titanium(store, material_id))
-    on_plates = [p for p in colormap.collect(store, setup=su.setup_key(device_id, lens_id))["points"] if p["material_id"] in plates]
+    if points is None:
+        points = colormap.collect(store, setup=su.setup_key(device_id, lens_id))["points"]
+    on_plates = [p for p in points if p["material_id"] in plates]
     for point in _across_plates(on_plates, material_id):
-        reason = _left_out(point)
+        reason = left_out_reason(point)
         if reason is None:
             area.append(point)
         else:

@@ -66,8 +66,8 @@ def test_another_scale_keeps_the_picture_and_takes_its_measured_span_and_every_c
 
 
 @pytest.mark.parametrize("body, message", [
-    ({}, "change the scale, Min and Max power, the width, the colour choice, the contours, the colours of the objects, the rules of the parts, the kind of engraving or the power of its dots"),
-    ({"name": "x"}, "change the scale, Min and Max power, the width, the colour choice, the contours, the colours of the objects, the rules of the parts, the kind of engraving or the power of its dots"),
+    ({}, "change the scale, Min and Max power, the width, the colour choice, the contours, the colours of the objects, the rules of the parts, the kind of engraving, the power of its dots or their colour on the colour map"),
+    ({"name": "x"}, "change the scale, Min and Max power, the width, the colour choice, the contours, the colours of the objects, the rules of the parts, the kind of engraving, the power of its dots or their colour on the colour map"),
     ({"scale": {"speed": 999}}, "this scale is not measured: choose one of the measured scales"),
     ({"width_mm": 0}, "the width of the picture must be 1..1000 mm"),
     ({"width_mm": True}, "the width of the picture must be 1..1000 mm"),

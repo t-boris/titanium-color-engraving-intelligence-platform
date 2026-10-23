@@ -2011,3 +2011,57 @@ pair 113 (grey scales TCE-1C844F67 on Test Plate 1mm, IMG_3385): no marker visib
 reached the server squeezed in x (right corners 0.785 instead of 0.985): the corner frame (.photo) stretched to the review's flex column
 (1268 px) while the photograph stayed 1052 px. Fixed with width:fit-content; on a copy the corners at the cleaning's edges put all 9
 ramps in place (offsets 0-15 px). No accepted pair used manual corners (only 24, deleted, and 113, not accepted).
+
+## 0.25: the dots of a dot kind take any colour picked on the colour map (operator, 2026-10-23; plan approved: only recipes at a dot step, 0.0085 mm or more)
+The operator: «для таких вот вещей, как Jarvis и другие, у нас не получается выбрать цвет точки… перекидывало на карту цветов, и я
+там оттуда выбирал цвет… Я так бы мог выбрать любой бы цвет». Now a dot kind fires every dot at one power of the work's grey scale
+(`dot_power`, the slider and the strip of «Точки, %»), so the dots can only be the colours of that scale (work 37 «Inna Portrait 2»,
+Аткинсон: 150 mm/s · 60 kHz · 250 ns · 0.0212 mm, 1..30 %). A dot kind's layer is one set of settings (Min = Max), so any measured
+recipe can be its dots: its power, speed, frequency, Q-pulse, step and passes, the step being the dots' pitch (DPI = 25.4 / step).
+On a copy of the operator's data: 573 fill colours of this laser, lens and grade (Scan, 169 at 0.002 mm, 153 at 0.003, 120 at 0.0169, ...),
+153 of them at a step of 0.0085 mm or more (yellows, golds, greys, a few magenta, violet, blue, red); 348 grey-scale tones (Image).
+What the estimate is: the map's colour is a solid fill's; the dots are shown as now (the recipe's colour at the work's width,
+`palette.at_size`, DEC-107, mixed with the cleaned titanium in the share the dots strike) until «Проба этого вида» at those settings
+measures them. At a fine step (0.001-0.005 mm, 5080-25400 dpi) the dots overlap many times and the fill's colour says little about them.
+- [x] D1. State: `dot_recipe` in `photo_state` (None: the dots on the work's scale at `dot_power`, as now; else the id of an entry of
+      `palette.vector_palette` of the work's laser, lens and titanium grade, DEC-088 ids, with a copy of its settings and colour when
+      chosen). Kept in undo/redo. Choosing a power on the scale (slider, strip) or another scale returns the dots to the scale.
+      A recipe no longer in the palette: the work says so and keeps the choice; the file waits for another colour.
+- [x] D2. Dots from a recipe: the look, the close-up, the time and the LightBurn file use the recipe's settings (Image layer in the
+      kind, Min = Max = its power, its step as the layer's DPI); «Проба этого вида» engraves the ramp at those settings and its
+      photograph replaces the estimate (`_measured_dots` at the recipe's mode).
+- [x] D3. A grey-scale tone picked on the map: the work goes to that measured scale and its dots to that power (the existing settings
+      change), so every point of the map of this laser, lens and grade can be the dots' colour.
+- [x] D4. API: GET /api/photo-works/{id}/dot-colours (which points of the map can be the dots and, for the others, why: another laser or
+      lens, another grade, a line, not accepted yet, a step finer than the dots allow); POST settings with `dot_colour` (a point of the
+      map); the view says where the dots' colour comes from.
+- [x] D5. UI: in the work's «Точки» a line «Цвет точек: <swatch> со шкалы работы, 11,3 %» or «с карты цветов: <settings>», buttons
+      «Выбрать на карте цветов» and «Вернуть точки на шкалу». The map in a picking mode (#/colors?dots=<work>): a strip on top names the
+      work and its kind and leads back; the laser and lens filter set to the work's; a picked point or a found recipe shows «Точки этим
+      цветом» (or why it cannot be) and returns to the work with it.
+- [ ] D6. The same for a photo zone of a vector work (its zone screen), on the shared code, as 0.25.1.
+- [x] D7. Tests (state, file, API, node UI of both screens), a walk on a copy (8791) with timings and cut text at 1771/1372, README,
+      REQ and DEC through markview, SemVer 0.25.0.
+Then R2-R4 of 0.24 move to 0.25.2-0.25.4 and the zone's «Раскраска» and «AI» to 0.26.0.
+
+### 0.25.0 review (2026-10-23)
+- Built as planned (REQ-074, DEC-118), with these departures from the plan:
+  - D1: a recipe no longer measured keeps the colour it had when picked, marked `missing`; the file is still written at its settings
+    (they are known and exactly what was picked) and the work asks to pick again or go back to the scale. The plan said the file waits.
+  - D4: no separate endpoint. The map asks `GET /api/colors?dots={id}`: the map of the work's laser and lens plus `dots` (what each
+    shown colour gives the dots, or why not). Two parallel requests both gathered the map: 0.82 s; one request: 0.63 s.
+  - D5: the buttons are «Цвет с карты», «Другой цвет», «На шкалу» (short enough for one row at 1372 px).
+- Also: every tonal point of the map carries `image_mode` (its layer's image mode), so a tone of a dot engraving is told without
+  reading its pair again. The tones' scales are read once per request (`scale_modes`), not once per tone (0.8 s -> 0.21 s).
+  The dots of a dotted work's look are kept in memory beside its stored preview (`photo_work._looks`, 8 looks), so an open work is not
+  dithered again on each view (0.49 s -> 0.02 s).
+- Walk on the copy (8791, work 37):
+  - pick a violet fill: the look, «Точки вблизи», 1503 dpi, 1 h 42 min, file `maxPower=minPower=13.9`, 100 mm/s, 60 kHz, 300 ns,
+    0.0169 mm, `ditherMode=atkinson`;
+  - undo, width 120 then undo, «На шкалу» 0.18 s, a tone of another scale, refusal of a 0.003 mm fill;
+  - no cut text and no sideways scroll at 1771 and 1372 px on the work and the picking map.
+- Latency found on the way, none of it made by 0.25.0; to be proposed to the operator:
+  - [ ] L1. The colour map opens in 0.57 s: its film model (`/api/oxide/model`, 0.25 s) is requested only after its colours (0.3 s).
+        Picking adds 0.06 s (0.63 s).
+  - [ ] L2. Any change of a dotted work's look saves in about 0.94 s: the error diffusion of the new look at preview size.
+  - [ ] L3. Opening a photo work after any write waits 1.4 s for `/api/grey-scales`, read anew after each write (then 0.06 s).

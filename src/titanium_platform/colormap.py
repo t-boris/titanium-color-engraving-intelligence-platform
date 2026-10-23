@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, row_length, tasks
+from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, photo_modes, row_length, tasks
 from . import plans as pl
 from . import setup as su
 from .db import Store
@@ -252,12 +252,14 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
                   observations: dict | None = None) -> list[dict]:
     """A grayscale-mode image is a continuum of recipes: the grey level sets the power and the power sets the colour. Each step of
     its tonal profile is a colour with the settings of that power (DEC-056); its evidence is the observation of its image layer
-    (``observations`` by layer name), none while the check is provisional."""
+    (``observations`` by layer name), none while the check is provisional. ``image_mode`` is the layer's image mode (a
+    ``photo_modes`` key, None when not known): a step of a dot kind is dots mixed with titanium, not the colour of its power."""
     out = []
     for rep in check.get("layers", []):
         tonal = rep.get("tonal")
         if not tonal or tonal.get("evidence") != "clear" or not tonal.get("power_range"):
             continue
+        seen = photo_modes.mode((rep.get("image") or {}).get("dither"))
         for step in tonal["bins"]:
             if "power_pct" not in step:
                 continue
@@ -270,7 +272,7 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
             out.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],
                         "layer_name": f"{rep.get('name')} · серый {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
                         "referenced": referenced, "provisional": provisional, "lab": lab, "delta": None, "display_lab": display,
-                        "parameters": params, "source": "tonal", "task": task, **_time(params),
+                        "parameters": params, "source": "tonal", "image_mode": seen.key if seen else None, "task": task, **_time(params),
                         "observation_ids": [observations[rep.get("name")]] if rep.get("name") in (observations or {}) else [],
                         "group": _group(params, info, kind, referenced, provisional, task, tonal=True), **info})
     return out

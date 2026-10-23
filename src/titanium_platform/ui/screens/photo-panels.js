@@ -32,6 +32,10 @@ const PhotoPanels = (() => {
     .filter(([, v]) => v != null)).toString();
   const GRAYSCALE = 'grayscale';
   const dotted = (v) => !!v.kind && v.kind !== GRAYSCALE;                                    // a dot kind: every dot at one power
+  /** Цвет точек с карты цветов (0.25.0, DEC-118): у вида точками с выбранным на карте рецептом точки бьют на его настройках, а не на шкале. */
+  const fromMap = (v) => dotted(v) && !!v.dot_recipe;
+  /** Настройки, на которых гравируется слой: рецепт точек с карты или шкала работы. */
+  const firedSettings = (v) => (fromMap(v) ? v.dot_recipe.settings : v.scale);
   const kindName = (key) => { const t = PhotoModes.label(key); return t.charAt(0).toUpperCase() + t.slice(1); };
   const greyChip = (level) => h('span', {class: 'sw', style: `background:rgb(${level},${level},${level})`});
   const hexChip = (hex) => (hex ? h('span', {class: 'sw', style: `background:${hex}`}) : h('span', {class: 'sw ge-none', title: 'не измерено'}));
@@ -55,6 +59,16 @@ const PhotoPanels = (() => {
       long: `Шкала измерена при ширине ${mmList(size.measured_mm)}, при ${mm(size.row_mm)} — нет: цвета взяты при ${mm(size.from_mm[0])} и на этой ширине могут выйти другими.`};
     return {short: 'ширина измерений неизвестна', tone: 'warn', long: 'Неизвестно, при какой ширине измерена шкала: её файлы LightBurn недоступны.'};
   }
+  /** То же для цвета точек с карты цветов (``size`` рецепта при ширине работы, ``palette.at_size``): цвет его заливки, а не шкалы. */
+  function recipeSizeText(size) {
+    if (!size) return null;
+    if (size.how === 'measured') return {short: `цвет измерен при ширине ${mm(size.from_mm[0])}`, tone: 'ok', long: `Цвет заливки измерен при ширине ${mm(size.from_mm[0])}.`};
+    if (size.how === 'between') return {short: `${mm(size.row_mm)}: между измерениями ${mmList(size.from_mm)}`, tone: 'warn',
+      long: `При ширине ${mm(size.row_mm)} этот цвет не измерялся: он взят между измерениями при ${mmList(size.from_mm)}.`};
+    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: цвет измерен при ${mmList(size.measured_mm)}`, tone: 'warn',
+      long: `Цвет заливки измерен при ширине ${mmList(size.measured_mm)}, при ${mm(size.row_mm)} — нет: он взят при ${mm(size.from_mm[0])} и на этой ширине может выйти другим.`};
+    return {short: 'ширина измерений неизвестна', tone: 'warn', long: 'Неизвестно, при какой ширине измерен этот цвет: его файлы LightBurn недоступны.'};
+  }
   const SIZE_ABOUT = 'Цвет на титане зависит от длины строки гравировки (у картинки — от её ширины): лазер возвращается к точке через строку, '
     + 'и на коротких строках титан не успевает остыть.';
 
@@ -72,7 +86,8 @@ const PhotoPanels = (() => {
   }
 
   /** Полоса «серый → цвет» при выбранных Min и Max: слева белый (Min), справа чёрный (Max), как ступени пластины; вне измеренного — штриховка.
-      С ``dot`` ({power, pick}) — полоса цветов по мощностям шкалы для вида точками: метка на мощности точек, щелчок выбирает другую. */
+      С ``dot`` ({power, pick}) — полоса цветов по мощностям шкалы для вида точками: метка на мощности точек, щелчок выбирает другую; без
+      ``power`` (точки с карты цветов) метки нет, щелчок возвращает точки на шкалу. */
   function greyBar(levels, dot = null) {
     const at = (i) => levels[255 - Math.round(i * 255 / (BAR_SEGMENTS - 1))];
     const segments = Array.from({length: BAR_SEGMENTS}, (_, i) => at(i));
@@ -90,9 +105,11 @@ const PhotoPanels = (() => {
       const share = Math.min(1, Math.max(0, (ev.clientX - box.left) / box.width));
       dot.pick(Math.round((lo + share * (hi - lo)) * 10) / 10);
     });
-    const mark = h('span', {class: 'ge-dotmark', 'aria-hidden': 'true', style: `left:${hi > lo ? Math.min(100, Math.max(0, (dot.power - lo) / (hi - lo) * 100)) : 0}%`});
+    const onScale = dot.power != null;
+    const mark = onScale ? h('span', {class: 'ge-dotmark', 'aria-hidden': 'true', style: `left:${hi > lo ? Math.min(100, Math.max(0, (dot.power - lo) / (hi - lo) * 100)) : 0}%`}) : null;
     return h('div', {class: 'stack ge-greybar'}, h('div', {class: 'ge-markbox'}, strip, mark),
-      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, `точки: ${value(dot.power, 1)} %`), h('span', {}, `${value(hi, 1)} %`)));
+      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, onScale ? `точки: ${value(dot.power, 1)} %` : 'точки — с карты цветов'),
+        h('span', {}, `${value(hi, 1)} %`)));
   }
 
   // L, a and b each stay whole: a narrow column breaks the colour only between them
@@ -155,8 +172,10 @@ const PhotoPanels = (() => {
       ``slots`` — места экрана, которые она заполняет. ``initial`` — Min и Max (у работы — её), иначе измеренный диапазон, округлённый внутрь
       до 0,1 %, чтобы белый и чёрный оба остались в нём; ``changed(lo, hi)`` узнаёт новые Min и Max, когда их поменяли. ``rowMm`` — ширина,
       при которой показывать цвета (у работы — её ширина); без неё — ширина, измеренная больше всего, и кнопки других измеренных ширин.
-      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. ``dot`` ({power, changed(p)}) —
-      работа в виде точками: вместо Min и Max одна мощность точек, полоса — цвета по всем измеренным мощностям, щелчок по ней выбирает мощность. */
+      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. ``dot`` ({power, changed(p), recipe,
+      hex, dpi, map()}) — работа в виде точками: вместо Min и Max одна мощность точек, полоса — цвета по всем измеренным мощностям, щелчок по ней
+      выбирает мощность; ``map()`` открывает карту цветов, чтобы выбрать цвет точек там; с ``recipe`` (цвет с карты, ``hex``) вместо мощности
+      — этот цвет и кнопки «Другой цвет» и «На шкалу». */
   function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null, dot = null} = {}) {
     let span = sc.span;
     let timer = null, seq = 0, stopped = false;
@@ -182,20 +201,24 @@ const PhotoPanels = (() => {
     const high = slider('Max мощность, % (чёрный)', 'Max, %', hi0);
     let levelsShown = null;
     const dotPower = dot ? slider('Мощность точек, %', 'Точки, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }) : null;
+    const dotSource = dot && (dot.map || dot.recipe) ? dotSourceBox(dot, () => pickDot(dot.power)) : null;
     /** Мощность точек ``p``: метка на полосе сразу, работа узнаёт её (сервер проверит, что шкала там измерена). */
     function pickDot(p) {
       if (!(p >= 0 && p <= 100)) return;
       dotPower.exact.value = String(p);
       dotPower.range.value = String(p);
       dot.power = p;
+      dot.recipe = null;
       if (levelsShown) fill(slots.bar, greyBar(levelsShown, {power: p, pick: pickDot}));
       dot.changed(p);
     }
+    const dotBar = () => ({power: dot.recipe ? null : dot.power, pick: pickDot});
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
-    fill(slots.title, settingsText(sc.mode, sc.dpi));
-    slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`);
-    fill(slots.powers, ...(dot ? [dotPower.box] : [low.box, high.box]), widths);
+    const onMap = dot && dot.recipe ? ' · точки — на настройках цвета с карты цветов' : '';      // the scale stays the work's; its dots fire elsewhere
+    fill(slots.title, (onMap ? 'шкала: ' : '') + settingsText(sc.mode, sc.dpi) + onMap);
+    slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}${onMap}`);
+    fill(slots.powers, ...(dot ? [dot.recipe ? null : dotPower.box, dotSource] : [low.box, high.box]), widths);
     fill(slots.error, error);
     fill(slots.bar, loading());
     for (const tab of [slots.scale, slots.confirm, slots.points]) fill(tab, loading());
@@ -213,7 +236,7 @@ const PhotoPanels = (() => {
         const levels = d.greys.levels;
         const unmeasured = 256 - d.greys.measured_levels;
         levelsShown = levels;
-        fill(slots.bar, greyBar(levels, dot ? {power: dot.power, pick: pickDot} : null));
+        fill(slots.bar, greyBar(levels, dot ? dotBar() : null));
         fill(slots.scale,
           h('p', {class: 'small muted'}, `${titaniumLabel(sc)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
             + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
@@ -227,6 +250,22 @@ const PhotoPanels = (() => {
     function schedule() { clearTimeout(timer); timer = setTimeout(() => load(true), 250); }
     load(false);
     return {stop() { stopped = true; clearTimeout(timer); }};
+  }
+
+  /** Откуда цвет точек: на шкале — кнопка «Цвет с карты»; с карты цветов — его цвет и настройки, «Другой цвет» и «На шкалу»
+      (``back()`` возвращает точки на шкалу при прежней мощности). */
+  function dotSourceBox(dot, back) {
+    const toMap = (label) => (dot.map ? btn(label, () => dot.map(), 'btn-small') : null);
+    if (!dot.recipe) {
+      const b = toMap('Цвет с карты');
+      b.setAttribute('title', 'Открыть карту цветов и выбрать там любой измеренный цвет для точек: точки будут бить на настройках этого цвета');
+      return h('div', {class: 'row ge-dotsource'}, b);
+    }
+    const r = dot.recipe;
+    return h('div', {class: 'row ge-dotsource ge-dotsource-map'}, h('span', {class: 'small'}, 'Точки'), hexChip(dot.hex),
+      h('span', {class: 'small'}, `с карты цветов: ${value(r.settings.power, 1)} % · ${settingsText(r.settings, dot.dpi)}`),
+      r.missing ? pill('цвет больше не измерен', 'warn') : null,
+      toMap('Другой цвет'), btn('На шкалу', back, 'btn-small'));
   }
 
   // ---- работа ------------------------------------------------------------------------------------------------------------------------
@@ -243,9 +282,10 @@ const PhotoPanels = (() => {
       catch (e) { fail(e); self.disabled = false; }
     }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
     if (dots) {
+      const at = fromMap(view) ? `на настройках цвета с карты (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)`
+        : `на мощности точек ${value(view.dot_power, 1)} % и настройках шкалы`;
       return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину в виде «${kindName(view.kind)}» `
-        + `на мощности точек ${value(view.dot_power, 1)} % и настройках шкалы: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на ваших настройках, `
-        + 'и картинка покажется по измеренным тонам вместо оценки.'));
+        + `${at}: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на этих настройках, и картинка покажется по измеренным тонам вместо оценки.`));
     }
     return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину на настройках шкалы, `
       + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
@@ -365,39 +405,51 @@ const PhotoPanels = (() => {
     }
     /** Работа в виде точками: картинка рядом с точками на титане издалека (оценка по шкале), точки вблизи, мощность и файл. */
     function showDots(view, info, sc) {
-      const t = info.time, d = info.dots, name = kindName(view.kind), measured = d.measured;
+      const t = info.time, d = info.dots, name = kindName(view.kind), measured = d.measured, mapped = d.source === 'map';
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
-      const estimate = 'оценка по шкале: этот вид ещё не гравировался';
+      const estimate = mapped ? 'оценка по карте цветов: этот вид на этих настройках ещё не гравировался' : 'оценка по шкале: этот вид ещё не гравировался';
+      const source = mapped ? 'с карты цветов' : 'со шкалы';
+      const settings = settingsText(firedSettings(view), info.dpi);
       fill(out,
         h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка (как её видит LightBurn)'), h('span', {}, `${name} на титане — ${measured ? 'по измеренной пробе' : 'оценка'}`)),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Картинка и она же в виде «${name}» на титане`})));
-      const atSize = sizeText(info.scale_size);
+      const atSize = mapped ? recipeSizeText(view.dot_recipe.size) : sizeText(info.scale_size);
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
-        h('span', {class: 'row'}, 'точки ', hexChip(d.hex), ` ${value(d.power, 1)} % на титане `, hexChip(d.clean_hex)),
+        h('span', {class: 'row'}, 'точки ', hexChip(d.hex), ` ${value(d.power, 1)} % ${source} на титане `, hexChip(d.clean_hex)),
         measured ? pill(`измерено: ${measured.tones} тонов этого вида`, 'ok') : pill(estimate, 'warn'),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null);
       fill(details,
-        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %. Цвета картинки — как сфотографирована проба этого вида `
-          + `на этих настройках и этом титане: ${measured.tones} тонов. Мощность точек меняется на полосе шкалы; при другой мощности снова будет оценка, пока её не измерить.`)
-          : h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex),
+        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %${mapped ? ' на настройках цвета с карты цветов' : ''}. `
+          + `Цвета картинки — как сфотографирована проба этого вида на этих настройках и этом титане: ${measured.tones} тонов. `
+          + (mapped ? 'Другой цвет точек — «Другой цвет» над картинкой; ' : 'Мощность точек меняется на полосе шкалы; ')
+          + 'на других настройках снова будет оценка, пока их не измерить.')
+          : h('p', {}, h('strong', {}, `${name}. `), mapped
+            ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках цвета, выбранного на карте цветов: это цвет его заливки при ширине работы `, hexChip(d.hex)]
+            : [`Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex)],
             '; между точками — очищенный титан ', hexChip(d.clean_hex), `. Тон — сколько точек: они покрывают ${value(d.struck_share * 100, 0)} % картинки, `
-            + 'издалека глаз смешивает их с титаном. Мощность точек меняется на полосе шкалы: щёлкните по цвету, который нужен точкам.'),
+            + 'издалека глаз смешивает их с титаном. '
+            + (mapped ? 'Другой цвет точек — «Другой цвет» над картинкой, вернуть точки на шкалу — «На шкалу» или щелчок по полосе шкалы.'
+              : 'Мощность точек меняется на полосе шкалы: щёлкните по цвету, который нужен точкам. Любой другой измеренный цвет — «Цвет с карты».')),
         measured ? h('ul', {class: 'small'}, measured.notes.map((n) => h('li', {}, I18N.tr(n))))
-          : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки взят со шкалы, измеренной строками; '
-            + 'точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. '
+          : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. '
+            + (mapped ? 'Цвет точки взят с карты цветов — это цвет сплошной заливки этих настроек: в тёмных местах точки сливаются в такую же заливку, '
+              + 'а отдельная точка — самая короткая строка, и на титане она может выйти светлее или другого оттенка. '
+              : 'Цвет точки взят со шкалы, измеренной строками; точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. ')
             + 'Узор точек — по опубликованному алгоритму; LightBurn ставит точки своим кодом, узор может отличаться, доля точек — та же.'),
+        mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: оценка — по цвету, каким он был при выборе. '
+          + 'Выберите цвет заново («Другой цвет») или верните точки на шкалу.') : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
           h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
-            + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — со шкалы.`)),
+            + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — ${source}.`)),
         h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
           + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
           h('span', {class: 'muted small'}, ' — оценка сверху: строки на всю ширину картинки, как в градациях серого; белые места лазер в виде точками пролетает быстрее.')),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой; C01 — ` : ''}`
-          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settingsText(view.scale, info.dpi)}. `
+          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settings}${mapped ? ' — настройки цвета с карты цветов' : ''}. `
           + `Картинка — как загружена, ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле: точки ставит LightBurn.`),
         h('p', {class: 'muted small'}, 'Подбор серых под цвета, контуры и правила частей — для градаций серого: в виде точками все точки одного цвета, и картинка '
           + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));
@@ -693,6 +745,6 @@ const PhotoPanels = (() => {
     return dialog;
   }
 
-  return {value, when, materialLabel, titaniumLabel, sameScale, settingsText, modeQuery, GRAYSCALE, dotted, kindName, hexChip, mm, mmList,
+  return {value, when, materialLabel, titaniumLabel, sameScale, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList,
     sizeText, SIZE_ABOUT, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
 })();

@@ -22,7 +22,7 @@ const ctx = context({});
 const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
-load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/photo-panels.js', 'screens/photo-engraving.js']);
+load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/photo-panels.js', 'screens/dot-pick.js', 'screens/photo-engraving.js']);
 const requests = [], hold = [], past = [], future = [];
 let work = data.work, version = 0;
 const remember = () => { past.push({...work}); future.length = 0; };
@@ -40,7 +40,8 @@ const view = () => ({...work, undo: past.length, redo: future.length, picture: w
   colour_match: match(), contours_report: work.contours && work.by_colour ? {share: 0.0123} : null,
   outside_share: 0, time: {seconds: 600, layers: [{index: 0, name: 'CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05', seconds: 42}, {index: 1, name: 'C01', seconds: 558}]}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
   scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0},
-  ...(work.kind && work.kind !== 'grayscale' ? {kind: work.kind, estimate: true, dots: {power: work.dot_power, hex: '#3355aa', clean_hex: '#bbbbbb', struck_share: 0.42},
+  ...(work.kind && work.kind !== 'grayscale' ? {kind: work.kind, estimate: true, dots: {power: work.dot_recipe ? work.dot_recipe.settings.power : work.dot_power,
+    source: work.dot_recipe ? 'map' : 'scale', hex: '#3355aa', clean_hex: '#bbbbbb', struck_share: 0.42},
     closeup: `/api/photo-works/${work.id}/closeup.png?v=${version}`, closeup_mm: 4, closeup_px: 3} : {})}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
@@ -61,6 +62,7 @@ ctx.fetch = async (url, opts = {}) => {
     if (Object.keys(body).some((k) => k !== 'ai_photo')) remember();
     const next = {...work, ...body};
     if (body.kind && body.kind !== 'grayscale' && next.dot_power == null) next.dot_power = 12.5;     // where the scale's colour stands out most
+    if ('dot_power' in body) next.dot_recipe = null;                                                // a power on the scale puts the dots back on it
     if (body.scale) {
       const sc = data.scales.find((s) => same(s.mode, body.scale));
       Object.assign(next, {scale: sc.mode, min_power: sc.span[0], max_power: sc.span[1], problem: null});
@@ -618,3 +620,45 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
     assert out["themes"] == [["warm", "undefined"], ["random", "number"]]                             # «Случайно»: new colours each time
     assert out["ai"] == {"asks": [{"wish": " очки золотом "}], "note": True}
     assert out["cleared"] == {**objects_on, "colouring": {}}
+
+
+VIOLET = {"entry": "a1b2c3d4e5f6", "settings": {"power": 20, "speed": 500, "frequency": 60, "pulse_width": 300, "line_interval": 0.02, "passes": 1,
+                                                "global_passes": 1},
+          "lab": [50.0, 12.0, -25.0], "size": {"row_mm": 60, "how": "between", "measured_mm": [40, 80], "from_mm": [40, 80]}, "engravings": 2,
+          "photographs": 2, "basis": "chart", "picked_at": "2026-10-23T12:00:00", "missing": False}
+
+
+@node
+def test_a_dot_kind_takes_its_dots_colour_from_the_colour_map_and_goes_back_to_the_scale(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  out.onScale = {map: !!button(tree, 'Цвет с карты'), slider: !!labelled(tree, 'Мощность точек, %'), mark: !!tree.querySelector('.ge-dotmark'),
+                 says: tree.textContent.includes('Любой другой измеренный цвет — «Цвет с карты»')};
+  await button(tree, 'Цвет с карты').dispatch('click'); await settle();
+  out.went = [...ctx.__went];
+""", work={"kind": "jarvis", "dot_power": 12.5})
+    assert out["onScale"] == {"map": True, "slider": True, "mark": True, "says": True}
+    assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]                    # the map of the work's laser and lens
+
+
+@node
+def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_scale_at_the_power_they_had(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const text = () => tree.textContent;
+  out.mapped = {source: tree.querySelector('.ge-dotsource').textContent, slider: !!labelled(tree, 'Мощность точек, %'), mark: !!tree.querySelector('.ge-dotmark'),
+                ends: tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent, title: tree.querySelector('.ge-settings').textContent,
+                says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
+                       'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi) · проходов 1 — настройки цвета с карты цветов',
+                       '60 мм: между измерениями 40 и 80 мм', 'на настройках цвета с карты (500 мм/с'].map((t) => text().includes(t))};
+  await button(tree, 'Другой цвет').dispatch('click'); await settle();
+  out.went = [...ctx.__went];
+  await button(tree, 'На шкалу').dispatch('click'); await settle();
+  out.back = {saved: saves(), source: tree.querySelector('.ge-dotsource').textContent, slider: labelled(tree, 'Мощность точек, %').value,
+              mark: !!tree.querySelector('.ge-dotmark'), title: tree.querySelector('.ge-settings').textContent};
+""", work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
+    m = out["mapped"]
+    assert m["source"] == "Точкис карты цветов: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi) · проходов 1Другой цветНа шкалу"
+    assert not m["slider"] and not m["mark"] and m["ends"] == "1 %точки — с карты цветов30 %" and m["says"] == [True] * 6
+    assert m["title"].startswith("шкала: 100 мм/с") and m["title"].endswith("точки — на настройках цвета с карты цветов")
+    assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
+    assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Цвет с карты", "slider": "12.5", "mark": True,
+                           "title": "100 мм/с · 60 кГц · 250 нс · шаг 0,0254 мм (1000 dpi) · проходов 1"}

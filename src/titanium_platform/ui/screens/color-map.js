@@ -1,7 +1,9 @@
 /* Общая карта цветов (REQ-029, DEC-056): все измеренные цвета всех экспериментов на одном экране.
    Нужен цвет: выбираете его, и видно, где он встречался и какими настройками получен. По экспериментам ходить не нужно.
    Один экран без прокрутки страницы (REQ-044, DEC-080): слева фильтры и пояснение в складке, посередине большая карта (выбранный цвет под ней),
-   справа подбор цвета; прокручивается только список найденных рецептов внутри своей панели. Боковое меню остаётся. */
+   справа подбор цвета; прокручивается только список найденных рецептов внутри своей панели. Боковое меню остаётся.
+   С ?dots=<работа> карта выбирает цвет точек работы фотогравировки (0.25.0, DEC-118, dot-pick.js): полоса сверху, фильтр лазера и линзы —
+   работы, цвета, которые точками быть не могут, бледнее, а под выбранным цветом и найденными рецептами — «Точки этим цветом». */
 'use strict';
 const ColorMap = (() => {
   const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
@@ -87,7 +89,7 @@ const ColorMap = (() => {
   };
   const panView = (v, dx, dy, W, H) => clampView({s: v.s, tx: v.tx + dx, ty: v.ty + dy}, W, H);
 
-  function plot(points, onPick, target, picked, plane, spiral) {
+  function plot(points, onPick, target, picked, plane, spiral, faint = null) {
     if (!points.length) return h('p', {class: 'muted'}, 'Нет цветов под такие условия.');
     const P = PLANES[plane] || PLANES.ab;
     const W = 640, H = 460, pad = 34;
@@ -116,9 +118,10 @@ const ColorMap = (() => {
         add('text', {x: 5, y: -4, fill: '#8fa3c4', 'font-size': 10}, `${s.thickness_nm} нм`, holder); }));
     }
     points.slice().sort((p, q) => radius(q) - radius(p) || q.display_lab[0] - p.display_lab[0]).forEach((p) => {       // larger below, so no confident colour hides a small one
-      const r = radius(p), on = picked && picked.id === p.id;
+      const r = radius(p), on = picked && picked.id === p.id, pale = !!faint && faint(p);        // pale: cannot be what is being picked
       const c = add('circle', {cx: x(p.display_lab[P.x]), cy: y(p.display_lab[P.y]), r: on ? r + 3 : r,
-        fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': p.referenced && !p.provisional ? 1 : 0.45,
+        fill: swatch(p.display_lab).style.background || '#888', 'fill-opacity': pale ? 0.18 : p.referenced && !p.provisional ? 1 : 0.45,
+        ...(pale ? {'stroke-opacity': 0.35} : {}),
         stroke: picked && picked.id === p.id ? '#ffffff' : p.provisional ? '#c9a2ff' : !p.referenced ? '#e0b050' : p.measurement === 'calibrated' ? '#dfe7f5' : '#7d8aa3',
         'stroke-width': picked && picked.id === p.id ? 3 : 1.4, 'stroke-dasharray': p.provisional ? '6 2 1 2' : !p.referenced ? '1.5 3' : p.approximate ? '3 2' : '', style: 'cursor:pointer', ...thin});
       steady.push((s) => c.setAttribute('r', (on ? r + 3 : r) / s));        // the diameter tells the confidence, so it does not grow with the zoom
@@ -254,7 +257,10 @@ const ColorMap = (() => {
     const state = JSON.parse(sessionStorage.getItem('color-map') || '{}');
     const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', task: state.task || '', hide: !!state.hide, doubtful: !!state.doubtful,
       within: !!state.within, provisional: !!state.provisional, maxTime: state.maxTime || null, tolerance: state.tolerance ?? ''};
+    const dotsOf = ctx.query.dots || null;                 // picking the colour of a photo work's dots: the map is that of its laser and lens
+    if (dotsOf && ctx.query.setup) f.setup = ctx.query.setup;
     const q = new URLSearchParams();
+    if (dotsOf) q.set('dots', dotsOf);
     if (f.setup) q.set('setup', f.setup);
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
@@ -263,6 +269,8 @@ const ColorMap = (() => {
     if (f.hide) q.set('include_unreferenced', 'false');
     if (f.doubtful) q.set('hide_doubtful', 'true');            // REQ-049: not the colours whose circle is smaller than that of one engraving
     const data = await get('/colors' + (q.toString() ? '?' + q : ''));
+    const pick = data.dots || null;
+    if (pick) f.setup = pick.setup;                  // the server shows the work's laser and lens whatever the address says
     // the laser and lens chosen in the filter: the film model, its laws and computed settings are theirs alone
     const chosen = data.options.setups.find((o) => o.key === f.setup) || null;
     if (f.setup && !chosen) {                 // a filter remembered from before the laser and lens were keyed by their records
@@ -283,11 +291,11 @@ const ColorMap = (() => {
     const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
       fill(detail, h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
         h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
-        p.referenced ? null : pill('как снято, без привязки', 'warn')), trustLine(p),
+        p.referenced ? null : pill('как снято, без привязки', 'warn')), pick ? DotPick.action(pick, p) : null, trustLine(p),
         sourcesBlock((data.recipes && data.recipes[p.group] ? data.recipes[p.group].sources : [ONE_ENGRAVING(p)]), p.agreement, data.recipes && data.recipes[p.group] ? data.recipes[p.group].lab : null),
         where(p), filmOf(p, model),
         btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked, plane,
-      model ? model.spiral : null));
+      model ? model.spiral : null, pick ? (p) => !DotPick.can(pick, p) : null));
     async function setTarget(lab) {
       target = lab.map((v) => +(+v).toFixed(1));
       L.value = target[0]; A.value = target[1]; B.value = target[2]; chip.replaceChildren(swatch(target));
@@ -327,6 +335,7 @@ const ColorMap = (() => {
             m.approximate ? pill(m.referenced ? 'к чистому титану, условный оттенок' : 'как снят, без привязки', 'warn') : null,
             m.provisional ? pill('предварительно', 'warn') : null,
             h('span', {class: 'muted small'}, often(m))),
+          pick ? DotPick.action(pick, m) : null,
           trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab), where(m), evidence(m)))),
         r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
           btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
@@ -369,7 +378,9 @@ const ColorMap = (() => {
     // the filters in one narrow column; the long explanation is folded away
     const filters = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Фильтры')),
       h('div', {class: 'os-scroll'}, h('div', {class: 'cm-filters'},
-        select('Лазер и линза', 'setup', data.options.setups.map((o) => o.key), f.setup, Object.fromEntries(data.options.setups.map((o) => [o.key, o.label]))),
+        pick ? h('div', {class: 'f', title: 'Лазер и линза работы, для которой выбирается цвет точек'}, h('span', {}, 'Лазер и линза'),
+          h('span', {class: 'small'}, (chosen || {}).label || f.setup))
+          : select('Лазер и линза', 'setup', data.options.setups.map((o) => o.key), f.setup, Object.fromEntries(data.options.setups.map((o) => [o.key, o.label]))),
         select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         select('Задача', 'task', data.options.tasks || [], f.task, Object.fromEntries((data.options.tasks || []).map((k) => [k, Tasks.name(k)]))),
@@ -403,7 +414,7 @@ const ColorMap = (() => {
         h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance), find),
         h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».')),
       h('div', {class: 'os-scroll'}, results));
-    return h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));
+    return h('div', {class: 'os cm' + (pick ? ' cm-picking' : '')}, head, pick ? DotPick.banner(pick) : null, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));
   }
   return {render, hexToLab, zoomView, panView, clampView};
 })();

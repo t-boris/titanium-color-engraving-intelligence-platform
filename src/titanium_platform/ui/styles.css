@@ -1022,6 +1022,14 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ge-kind-head {display:flex;align-items:center;justify-content:space-between;gap:6px}
 .ge-markbox {position:relative}
 .ge-pickable {cursor:crosshair}
+/* where the dots' colour comes from (0.25.0): the scale, or a colour picked on the colour map */
+.ge-dotsource {gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
+.ge-powers .ge-dotsource-map {grid-column:1/-1}
+/* the colour map picking the colour of a photo work's dots (0.25.0, dot-pick.js) */
+.dp-banner {flex:none;display:flex;align-items:center;gap:12px;padding:10px 14px}
+.dp-banner .stack {gap:2px;flex:1;min-width:0}
+.dp-banner .btn {flex:none;white-space:nowrap}
+.dp-action {gap:8px;align-items:center;flex-wrap:wrap;margin:0}
 .ge-dotmark {position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1.5px;background:var(--text);border:1px solid var(--surface);border-radius:2px;pointer-events:none}
 .ge-closeup {margin:0;display:flex;flex-direction:column;gap:4px}
 .ge-closeup img {max-width:100%;image-rendering:pixelated;border-radius:6px;align-self:flex-start}

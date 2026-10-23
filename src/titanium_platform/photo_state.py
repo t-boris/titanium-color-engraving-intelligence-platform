@@ -10,8 +10,9 @@ A state is a mapping with :data:`SETTINGS` and the AI's last answers (missing on
 * ``colouring``: the main colours of the picture's objects (0.21.0, :mod:`objects`, :mod:`colouring`): an object's key to its
   ``power`` and ``shift``, used with ``colour_choice`` "objects";
 * ``rules``: the rules of the picture's parts (REQ-062, :mod:`picture_rules`), found by the people model (:mod:`people`);
-* ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at ``dot_power``; a dot kind engraves the
-  picture as it is (the greys chosen for colours, the contours and the rules are grayscale's and wait for it);
+* ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at ``dot_power`` on the scale, or with
+  ``dot_recipe`` at a recipe picked on the colour map (:mod:`dot_colours`, 0.25.0); a dot kind engraves the picture as it is (the greys
+  chosen for colours, the contours and the rules are grayscale's and wait for it);
 * ``ai_photo``: whether a reduced copy of the picture may be sent to the AI; ``ai`` and ``ai_theme``: its last answers.
 
 The owner keeps the rest: the picture (``upload``, as ``prediction_store.decode_upload`` makes it), the scale's mode, the width its rows
@@ -20,13 +21,14 @@ are as long as (DEC-107), and how a change is saved and undone. Nothing here rea
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Callable, Mapping
 
 import cv2
 import numpy as np
 
-from . import (ai_colouring as ai, ai_picture, color, colouring as co, conversion as cv, drawing, grayscale, objects as ob, people, photo_modes,
-               picture_rules, prediction, prediction_store as ps, research, setup as su)
+from . import (ai_colouring as ai, ai_picture, color, colouring as co, conversion as cv, dot_colours as dc, drawing, grayscale, objects as ob, people,
+               photo_modes, picture_rules, prediction, prediction_store as ps, research, setup as su)
 from .db import Store, now
 from .prediction import PredictionError
 
@@ -38,12 +40,31 @@ PART_MIN_SHARE = 0.005              # a part covering less of the picture is not
 SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "ai_photo")
 # what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
 DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE, "dot_power": None,
-            "ai_photo": False, "ai": None, "ai_theme": None}
+            "dot_recipe": None, "ai_photo": False, "ai": None, "ai_theme": None}
 
 
 def dotted(state: Mapping) -> bool:
     """Whether the picture is engraved in a dot kind: every dot at one power, the tone by how many dots there are."""
     return state["kind"] != GRAYSCALE
+
+
+def fired_at(mode: ps.Mode, state: Mapping) -> ps.Mode:
+    """The settings a dot kind's dots fire at: the scale ``mode``, or the recipe picked on the colour map (``dot_colours.fired_at``)."""
+    return dc.fired_at(mode, state.get("dot_recipe"))
+
+
+def kind_mode(mode: ps.Mode, state: Mapping) -> ps.Mode:
+    """The mode a dot kind's own tones are measured at: the settings its dots fire at (:func:`fired_at`), the kind and the dots' power."""
+    recipe = state.get("dot_recipe")
+    return replace(fired_at(mode, state), dither=state["kind"], power=recipe["settings"]["power"] if recipe else state["dot_power"])
+
+
+def dots(store: Store, state: Mapping, curve: prediction.Curve) -> dict:
+    """The dots of a dot kind: the scale's colour at ``dot_power`` on its ``curve`` (``prediction_store.dots_at``), or the colour of the
+    recipe picked on the colour map (``dot_colours.dots``); ``source`` says which."""
+    if state.get("dot_recipe"):
+        return dc.dots(store, state["dot_recipe"])
+    return {**ps.dots_at(store, state["dot_power"], curve), "source": "scale", "recipe": None}
 
 
 # -- the picture as it is engraved ------------------------------------------------------------------------------------------------
@@ -79,27 +100,29 @@ def reduced(upload: Mapping, px: int) -> tuple[np.ndarray, np.ndarray]:
 
 def dot_look(store: Store, mode: ps.Mode, grey: np.ndarray, alpha: np.ndarray, state: Mapping, width_mm: float, curve: prediction.Curve,
              measured: prediction.Curve | None = None) -> tuple[np.ndarray, dict]:
-    """The picture (``grey`` and ``alpha``) in the state's dot kind seen from a distance: the look (RGB uint8) and the dots
-    (``prediction_store.dots_at`` at the state's ``dot_power`` on the scale's ``curve``). With the ``measured`` tones of the kind each tone
-    takes its photographed colour (``prediction.render``); without, it is estimated from the scale (``prediction_store.dot_look``) with the
-    share of the picture the dots strike."""
-    dots = ps.dots_at(store, state["dot_power"], curve)
+    """The picture (``grey`` and ``alpha``) in the state's dot kind seen from a distance: the look (RGB uint8) and the dots (:func:`dots`, on
+    the scale's ``curve`` or of the picked recipe). With the ``measured`` tones of the kind each tone takes its photographed colour
+    (``prediction.render``); without, it is estimated from the dots' colour (``prediction_store.dot_look``, at the DPI they fire at) with
+    the share of the picture the dots strike."""
+    found = dots(store, state, curve)
     if measured is not None:
         rendered = prediction.render(grey, None, None, measured, None, alpha=alpha)
-        return rendered["rgb8"], {**dots, "struck_share": None, "measured": {"tones": len(measured.points), "span": list(measured.span),
-                                                                            "outside_share": rendered["outside_share"], "notes": rendered["notes"]}}
-    rgb8, share = ps.dot_look(grey, alpha, state["kind"], dots["lab"], dots["clean_lab"], width_mm, grayscale.image_dpi(mode.line_interval))
+        return rendered["rgb8"], {**found, "struck_share": None, "measured": {"tones": len(measured.points), "span": list(measured.span),
+                                                                             "outside_share": rendered["outside_share"], "notes": rendered["notes"]}}
+    dpi = grayscale.image_dpi(fired_at(mode, state).line_interval)
+    rgb8, share = ps.dot_look(grey, alpha, state["kind"], found["lab"], found["clean_lab"], width_mm, dpi)
     opaque = np.asarray(alpha) >= photo_modes.ALPHA_MIN
-    return rgb8, {**dots, "struck_share": round(float(share[opaque].mean()), 4) if opaque.any() else 0.0, "measured": None}
+    return rgb8, {**found, "struck_share": round(float(share[opaque].mean()), 4) if opaque.any() else 0.0, "measured": None}
 
 
 # -- a change of the state ----------------------------------------------------------------------------------------------------------
 def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm: float, moved: bool = False) -> None:
     """Make the ``changes`` of :data:`SETTINGS` in ``state``, each checked: Min and Max, ``by_colour`` and ``colour_choice``, ``contours``, the
     ``rules`` of the parts, the main colours of the objects (``colouring``), the ``kind`` and the power of a dot kind's dots (``dot_power``,
-    inside the scale's measured powers at ``width_mm``), whether the picture may go to the AI (``ai_photo``). ``mode`` is the scale after
-    the change; with ``moved`` the owner changed the scale or the width: a dot kind's power is kept while the scale is measured there,
-    otherwise it goes where its colour stands out most (as after a change of the kind)."""
+    inside the scale's measured powers at ``width_mm``: the dots go back onto the scale from a recipe of the colour map), whether the
+    picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
+    width: a dot kind's power is kept while the scale is measured there, otherwise it goes where its colour stands out most (as after a
+    change of the kind). The recipe of the colour map (``dot_recipe``) is the owner's to set: it picks it at its width."""
     if "min_power" in changes or "max_power" in changes:
         state["min_power"], state["max_power"] = ps.check_power_range(changes.get("min_power", state["min_power"]),
                                                                       changes.get("max_power", state["max_power"]))
@@ -129,6 +152,7 @@ def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm:
         if power is None or not lo <= power <= hi:
             raise su.ValidationError(f"the dots' power must be a number inside the scale's measured powers {lo:g}..{hi:g} % at the work's width")
         state["dot_power"] = power
+        state["dot_recipe"] = None
     elif dotted(state) and ("kind" in changes or moved):
         state["dot_power"] = ps.dot_power_at(store, mode, width_mm, state["dot_power"])
     if "ai_photo" in changes:

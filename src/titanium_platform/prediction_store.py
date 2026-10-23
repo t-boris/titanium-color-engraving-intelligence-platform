@@ -742,11 +742,12 @@ def dot_look(picture, alpha, kind: str, dot_lab, clean_lab, width_mm: float, lay
     return rgb8, share
 
 
-def dot_closeup(item: Mapping, kind: str, dot_lab, clean_lab, width_mm: float) -> np.ndarray:
+def dot_closeup(item: Mapping, kind: str, dot_lab, clean_lab, width_mm: float, fired: Mode | None = None) -> np.ndarray:
     """The dots of a dot kind dot for dot: a square of ``CLOSEUP_MM`` mm from the middle of the picture at the layer's DPI (the grid the laser
-    fires on), each fired dot in ``dot_lab`` and the titanium between in ``clean_lab``, CLOSEUP_PX screen pixels a dot. RGB uint8."""
+    fires on: of ``fired``, the settings the dots fire at when they are not the item's scale), each fired dot in ``dot_lab`` and the
+    titanium between in ``clean_lab``, CLOSEUP_PX screen pixels a dot. RGB uint8."""
     rows, cols = item["grey_full"].shape
-    dpi = grayscale.image_dpi(item["mode"].line_interval)
+    dpi = grayscale.image_dpi((fired or item["mode"]).line_interval)
     target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
     grey = cv2.resize(item["grey_full"], target, interpolation=cv2.INTER_AREA if target[0] < cols else cv2.INTER_LINEAR)
     alpha = cv2.resize(item["alpha_full"], target, interpolation=cv2.INTER_AREA if target[0] < cols else cv2.INTER_LINEAR)
@@ -917,13 +918,14 @@ def picture_time(mode: Mode, width_mm: float, height_mm: float, clean: dict | No
 
 
 def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: float, rules: list[dict] | None = None, *,
-                     transparent: bool = False) -> np.ndarray:
+                     transparent: bool = False, fired: Mode | None = None) -> np.ndarray:
     """The 8-bit upright picture written to the LightBurn file, as ``engraved`` makes the preview: the uploaded grey, or with ``by_colour``
     the greys chosen for its colours, inside each part with a rule that rule's greys, and with ``contours`` the lost edges drawn in, at the
-    layer's DPI (no finer: the laser does not engrave finer). Transparent pixels are white, so they get Min power; with ``transparent``
-    the picture is BGRA instead and they stay transparent, so the layer leaves them alone (a photo zone of a vector work, DEC-114)."""
+    layer's DPI (no finer: the laser does not engrave finer; ``fired`` is the layer's settings when they are not the item's scale, the
+    dots of a recipe of the colour map). Transparent pixels are white, so they get Min power; with ``transparent`` the picture is BGRA
+    instead and they stay transparent, so the layer leaves them alone (a photo zone of a vector work, DEC-114)."""
     rows, cols = item["grey_full"].shape
-    dpi = grayscale.image_dpi(item["mode"].line_interval)
+    dpi = grayscale.image_dpi((fired or item["mode"]).line_interval)
     target = (max(1, round(width_mm / grayscale.MM_PER_INCH * dpi)), max(1, round(width_mm * rows / cols / grayscale.MM_PER_INCH * dpi)))
     fit = (lambda a: a) if target[0] >= cols else (lambda a: cv2.resize(a, target, interpolation=cv2.INTER_AREA))
     alpha = fit(item["alpha_full"])

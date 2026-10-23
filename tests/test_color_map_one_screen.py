@@ -18,6 +18,7 @@ node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not inst
 
 # the router and the browser's storage, as the screen meets them
 GLUE = ("App.render = () => {}; App.toast = (text) => { (globalThis.__toasts = globalThis.__toasts || []).push(text); }; const __store = {};"
+        "globalThis.__went = []; App.go = (route) => { __went.push(route); };"
         "globalThis.sessionStorage = {getItem: (k) => (k in __store ? __store[k] : null), setItem: (k, v) => { __store[k] = String(v); }, removeItem: (k) => { delete __store[k]; }};"
         "globalThis.__store = __store; const __svg = document.createElementNS, __html = document.createElement; document.createElementNS = (ns, t) => { const e = __svg(ns, t); e.style = {}; return e; };"
         "document.createElement = (t) => { const e = __html(t); e.style = {}; return e; };")
@@ -26,7 +27,8 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/color-map.js', {code: 'globalThis.ColorMap = ColorMap;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'dialogs.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
+                    {code: 'globalThis.ColorMap = ColorMap;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const labelled = (root, text) => root.querySelectorAll('label').find((l) => l.querySelector('span') && l.querySelector('span').textContent === text);
@@ -328,7 +330,8 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
 
 # -- the frame -----------------------------------------------------------------------------------------------------------------------------
 def test_the_screen_is_one_screen_frame_and_only_the_found_recipes_scroll():
-    assert "h('div', {class: 'os cm'}, head, h('div', {class: 'os-body cm-body'}, filters, mapCol, search))" in SCREEN
+    assert ("h('div', {class: 'os cm' + (pick ? ' cm-picking' : '')}, head, pick ? DotPick.banner(pick) : null, "
+            "h('div', {class: 'os-body cm-body'}, filters, mapCol, search))") in SCREEN               # picking a work's dots: a strip under the head
     assert "h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается')" in SCREEN and "h('div', {class: 'os-scroll'}, results)" in SCREEN
     assert "svg.style.cssText = 'width:100%;height:100%;cursor:grab;touch-action:none;outline:none';" in SCREEN and "max-width:820px" not in SCREEN       # the box around the map sets its size
     section = CSS[CSS.index("/* === cm:"):CSS.index("/* === end cm === */")]
@@ -432,3 +435,58 @@ def test_the_wheel_zooms_a_drag_moves_the_map_circles_keep_their_size_and_a_pick
     assert out["reset"] == [0, 0, 1] and out["r2"][1:] == out["r0"][1:] and out["r2"][0] == out["r0"][0] + 3          # only the picked circle is larger
     assert out["key"][2] == 1.5 and out["keyReset"] == [0, 0, 1]
     assert "touch-action:none" in SCREEN and "{passive: false}" in SCREEN
+
+
+# -- the colour of a photo work's dots picked on the map (0.25.0, DEC-118) ----------------------------------------------------------------
+def picking():
+    fill = {"power": 20, "frequency": 60, "speed": 500, "pulse_width": 300, "line_interval": 0.02, "passes": 1}
+    world = colours([point(1, [50.0, 12.0, -25.0], group="g-fill", parameters=fill),
+                     point(2, [60.0, 5.0, 25.0], group="g-step", parameters={**fill, "speed": 600, "line_interval": 0.005}),
+                     point(3, [45.0, 10.0, 20.0], group="g-tone", source="tonal", parameters={**fill, "power": 12.5, "speed": 150, "line_interval": 0.0212})])
+    world["options"]["setups"] = [{"key": "laser:1/lens:2", "label": "JPT M7 · F-Theta 174", "device_id": 1, "lens_id": 2}]
+    world["dots"] = {"work": {"id": 37, "name": "Inna Portrait 2", "kind": "atkinson", "width_mm": 100, "device_id": 1, "lens_id": 2,
+                              "material": {"grade": "Grade 5"}, "dot_recipe": None},
+                     "step_min_mm": 0.0085, "setup": "laser:1/lens:2", "reasons": {"step": "its step is finer than 0.0085 mm: there the dots merge"},
+                     "groups": {"g-fill": {"fill": True}, "g-step": {"reason": "step"}, "g-tone": {"scale": {"speed": 150}, "power": 12.5}}}
+    return {**routes_of(world), "/api/photo-works/37/settings": {"status": 200, "json": {}}}
+
+
+@node
+def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_cannot_be_them(tmp_path):
+    out = run(tmp_path, picking(), """
+  ctx.sessionStorage.setItem('color-map', JSON.stringify({setup: 'laser:9/lens:9'}));
+  const before = ctx.requests.length;
+  tree = await ctx.ColorMap.render({query: {dots: '37', setup: 'laser:1/lens:2'}}); await tick(); await tick();
+  out.asked = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
+  out.root = tree.className;
+  out.banner = tree.querySelector('.dp-banner').textContent;
+  out.back = tree.querySelector('.dp-banner').querySelector('a').getAttribute('href');
+  const filters = tree.querySelector('.os-body').children[0];
+  out.setup = filters.querySelectorAll('div').filter((d) => has(d, 'f')).map((d) => d.textContent);
+  out.selects = filters.querySelectorAll('select').length;
+  const circle = (name) => tree.querySelectorAll('circle').find((c) => c.querySelector('title') && c.querySelector('title').textContent.startsWith(name + ' ·'));
+  out.pale = ['Test 1', 'Test 2', 'Test 3'].map((n) => circle(n).getAttribute('fill-opacity'));
+  const detail = () => tree.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
+  const action = () => detail().querySelector('.dp-action');
+  await circle('Test 2').dispatch('click'); await tick();
+  out.step = action().textContent;
+  await circle('Test 3').dispatch('click'); await tick();
+  out.tone = action().textContent;
+  await circle('Test 1').dispatch('click'); await tick();
+  out.fill = action().textContent;
+  out.under = detail().children.findIndex((c) => has(c, 'dp-action'));
+  await byText(action(), 'button', 'Точки этим цветом').dispatch('click'); await tick(); await tick();
+  out.saved = ctx.requests.filter((r) => r.path === '/api/photo-works/37/settings').map((r) => [r.method, JSON.parse(r.body)]);
+  out.went = [...ctx.__went]; out.toasts = ctx.__toasts;
+""")
+    assert out["asked"] == ["/api/colors?dots=37&setup=laser%3A1%2Flens%3A2"] and out["root"] == "os cm cm-picking"
+    assert out["banner"].startswith("Цвет точек для работы «Inna Portrait 2» · Аткинсон · 100 мм") and "на титане Grade 5" in out["banner"]
+    assert "с шагом строк от 0,0085 мм" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
+    assert out["setup"] == ["Лазер и линзаJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
+    assert out["pale"] == ["1", "0.18", "1"]                                                          # what cannot be the dots is pale
+    assert out["step"] == "Для точек этот цвет не подходит: шаг строк мельче 0,0085 мм: при таком шаге точки слипаются."            # the server's reason
+    assert out["tone"] == "Точки этим цветомТочки встанут на эту шкалу серого при 12,5 %: 150 мм/с · 60 кГц · 300 нс · шаг 0,0212 мм."
+    assert out["fill"] == "Точки этим цветомТочки будут бить на настройках этой заливки: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм; шаг строк станет шагом точек."
+    assert out["under"] == 2                                                                          # right under the picked colour
+    assert out["saved"] == [["POST", {"dot_colour": "g-fill"}]] and out["went"] == ["/photo-engraving?work=37"]
+    assert out["toasts"] == ["Цвет точек выбран: работа покажет точки этим цветом"]

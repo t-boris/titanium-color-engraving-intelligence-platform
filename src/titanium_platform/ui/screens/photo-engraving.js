@@ -16,7 +16,7 @@
 'use strict';
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, duration, table, fail} = App;
-  const {value, when, materialLabel, settingsText, modeQuery, GRAYSCALE, dotted, kindName, hexChip, mm, mmList, scaleCard, newSlots, emptySlots,
+  const {value, when, materialLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleCard, newSlots, emptySlots,
     scaleDetail, sameScale, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT} = PhotoPanels;
   let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
@@ -150,7 +150,8 @@
       ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
-    const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}`;   // at the work's width, for its kind
+    // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
+    const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
 
     function showScale() {
@@ -159,7 +160,9 @@
       shownKey = scaleKey(view);
       cards(sc);
       engraved.load(view);
-      const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p})} : null;
+      const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p}),
+        recipe: fromMap(view) ? view.dot_recipe : null, hex: view.picture && view.picture.dots ? view.picture.dots.hex : null, dpi: view.dpi,
+        map: () => go(DotPick.address(view))} : null;
       if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot});
       else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
     }
@@ -290,8 +293,9 @@
     return h('article', {class: 'card vw-work-card'}, thumb,
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
         h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
-        h('p', {class: 'small'}, settingsText(w.scale, w.dpi)),
-        dotted(w) ? h('p', {class: 'small'}, `${materialLabel(w.material)} · ${kindName(w.kind)} · точки ${value(w.dot_power, 1)} % (оценка по шкале)`)
+        h('p', {class: 'small'}, settingsText(firedSettings(w), w.dpi)),
+        dotted(w) ? h('p', {class: 'small'}, `${materialLabel(w.material)} · ${kindName(w.kind)} · `
+          + (fromMap(w) ? `точки ${value(w.dot_recipe.settings.power, 1)} % с карты цветов` : `точки ${value(w.dot_power, 1)} % (оценка по шкале)`))
           : h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : w.colour_choice === 'objects' ? 'раскраска по объектам' : 'рисунок сохранён'}` : ''}`
             + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
         h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),

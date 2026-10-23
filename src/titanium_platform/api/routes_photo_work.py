@@ -1,7 +1,8 @@
 """Photo engraving works (REQ-061, DEC-104): list, create, open, change, copy, rename, their pictures and their LightBurn file, a ramp
 plate at a work's width (DEC-107); the parts of a work's picture and the AI that proposes their rules (REQ-062, DEC-105); the kinds of
-engraving a work can take, each with the work's picture as it would come out, and the dots of a dot kind close up; the objects of a work's
-picture and their colours, by hand or from a theme (0.21.0). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
+engraving a work can take, each with the work's picture as it would come out, and the dots of a dot kind close up; the objects of a
+work's picture and their colours, by hand or from a theme (0.21.0). The colour of a dot kind's dots is picked on the colour map
+(``GET /api/colors?dots={id}``, 0.25.0). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 import json
@@ -41,8 +42,9 @@ def get_photo_work(plan_id: int, request: Request):
 
 @router.post("/photo-works/{plan_id}/settings")
 def change_photo_work(plan_id: int, body: dict, request: Request):
-    """Change the scale, Min and Max power, the width, the colour choice, the rules of the parts, the kind of engraving and its dots' power
-    or the permission to send the picture to the AI (see photo_work.update); the work is returned as it is now."""
+    """Change the scale, Min and Max power, the width, the colour choice, the rules of the parts, the kind of engraving, its dots' power or
+    their colour picked on the colour map (``dot_colour``), or the permission to send the picture to the AI (see photo_work.update); the
+    work is returned as it is now."""
     s = store_of(request)
     photo_work.update(s, plan_id, body)
     return photo_work.view(s, plan_id)
