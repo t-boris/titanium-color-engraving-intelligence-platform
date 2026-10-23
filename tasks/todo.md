@@ -2097,6 +2097,7 @@ on the ruler, and the measured window is 132 mm wide on a 100 mm plate. 21 layer
 - [x] F3. Tests: a file re-saved with MirrorY changed, resized and moved with two hidden layers left behind leaves them out (the old order
       finds none in the same case); pair 115's own files give C11 and C18 left behind (checked on a copy, not a repository test: the
       operator's files).
-- [ ] F4. Bug record through markview, README, SemVer 0.25.1; the full suite; deploy. Pair 115 is rechecked only with the operator's
+- [x] F4. Bug record through markview (BUG-004), README, SemVer 0.25.1; the full suite (1838 passed, none skipped); deployed 2026-10-23
+      (commit e75a5c9, backup titanium-before-0.25.1-20261023T192925Z.sqlite, /api/version 0.25.1; tabs App and T1 reloaded). Pair 115 is rechecked only with the operator's
       consent (a write on 8765); work 39 has to be exported again so that its file has no hidden layer.
 The colour of photo zones from the colour map (D6) moves to 0.25.2.
