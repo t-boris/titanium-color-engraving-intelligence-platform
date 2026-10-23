@@ -2117,7 +2117,7 @@ one to one, and only works 22 and 39 hold them (assignment, variants, undo, laye
       refused if an old id would remain in another form; dry run by default, `--apply` makes a backup copy and an audit entry.
 - [x] S3. Tests: the key and the stored settings leave the switches out; an export of a recipe measured on a hidden layer is shown and
       engraved and reads back with its entry's key; the tool's moves, renames, refusal and dry run.
-- [ ] S4. On a copy: the tool's dry run and apply, works 22 and 39 with no colour missing and the same colours, work 39's export with C11
+- [x] S4. On a copy: the tool's dry run and apply, works 22 and 39 with no colour missing and the same colours, work 39's export with C11
       and C18 shown; DEC through markview, README, SemVer 0.25.2, full suite; deploy: stop 8765, install, run the tool with `--apply`, start.
       Done on the copy: the dry run names work 22 (6 ids) and 39 (8 ids); without the tool the new code shows 7 and 8 regions «no longer
       measured» and blocks both exports; after it both works show the same colours, regions, layers, time and layer count as under 0.25.1
@@ -2125,6 +2125,12 @@ one to one, and only works 22 and 39 hold them (assignment, variants, undo, laye
       have their evidence again, the hidden rows (31-39, 357, 358) have none, row 611 was created for 358's evidence. DEC-119 recorded.
       Full suite: 1843 passed (`tests/test_tasks.py` now states the key invariant as: every stored observation keeps its key, except the
       2 of the fixture measured on hidden layers, which take their shown twin's key; the old algorithm still reproduces every stored key).
+      Deployed 2026-10-23: backup `~/.titanium-platform/backups/titanium-before-0.25.2-20261023T200539Z.sqlite` (integrity ok), 8765
+      stopped, the tool's dry run named the same ids as on the copy (work 22 had been edited since: more occurrences), `--apply` (its own
+      backup `titanium-before-forget-layer-switches-20261023T200607Z.sqlite`), a second dry run found nothing, 8765 started on 0.25.2.
+      Works 22 and 39: nothing missing, export not blocked; exported from a fresh copy of the data: 28 and 23 layers, none hidden or off,
+      no hide or doOutput tag. T1 and App reloaded (nothing unsaved). BUG-004's status cannot be set through markview (no bug status tool).
+      The operator: export work 39 again.
 - [ ] L6. Work 39's view takes 0.61-0.64 s on the copy (5.3 s first after a start, L4) and 0.87-1.98 s on 8765 under 0.25.1: over 0.5 s
       before this change too; to measure where it goes and fix with the operator's approval, with L1-L5.
 The colour of photo zones from the colour map (D6) is 0.25.3.
