@@ -549,3 +549,11 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
   copy's page (8791) opened in it over the operator's `#/experiment/plan-39`; it was put back at once.
 - Rule: pass the tab's full name as browser_tabs prints it (for the copy: «ТЕСТ: копия данных, порт 8791 (не настоящее приложение)»);
   never a number or a fragment that could match another tab, and check the tool's answer names the tab meant before the next step.
+
+## Check the physical scale on the photograph before saying which file was engraved
+Pair 116: I concluded that the loaded file (scaled to 89% x 85% of the export) was not the engraved one because the export's contours
+fitted the photograph and the file's did not. Wrong: the alignment maps the photograph's markers to the PLAN's positions (164 mm apart),
+so the whole photo space is stretched by 1/0.89, and a plate engraved from the scaled file looks like the export in that space. The
+ruler in the photograph (20.2 px/mm) gave the markers 143 mm apart: the scaled file was engraved, the app's assumption was wrong.
+Rule: before blaming the operator's file, measure an absolute length on the photograph (ruler, marker size, plate width) in pixels and
+compare it with both candidates; a homography fitted to 4 markers absorbs any scale and proves nothing about size.

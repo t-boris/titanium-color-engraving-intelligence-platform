@@ -2135,9 +2135,11 @@ one to one, and only works 22 and 39 hold them (assignment, variants, undo, laye
       before this change too; to measure where it goes and fix with the operator's approval, with L1-L5.
 The colour of photo zones from the colour map (D6) is 0.25.3.
 
-## BUG-005: a resized file is measured at its own size although the photograph shows the export's size (2026-10-23, awaiting approval)
-Pair 116 (work 22): the loaded file «Inna + Boris 10.lbrn2» is export 5 scaled to 89% x 85% with the Markers and CLEAN layers; the
-plate was engraved at the export's size (165 of 165 closed vectors found with the export's geometry, 120 of 158 with the file's).
-The check aligns by the plan's markers and never compares them with the file's own Markers layer, so it draws and measures the shrunken
-file without a warning. Proposed, not started: compare the file's markers (or its cleaning rectangle) with the photograph's; when they do
-not coincide, say that the file was resized or moved after the export and do not measure; name the export the photograph fits.
+## BUG-006 (BUG-005 was my wrong reading of the same pair): the alignment takes the markers' positions from the plan, not from the file (2026-10-23, awaiting approval)
+Pair 116 (work 22): the operator scaled the whole export, markers included, to the 153 x 153 mm plate (89% x 85% of the 172 x 180.5 mm
+export) and engraved that file «Inna + Boris 10.lbrn2». The ruler on the photograph (20.2 px/mm) puts the markers 143 mm apart, as the file
+has them (145 mm), not 164 mm as the plan. The check maps the photograph's markers to the plan's positions, so the photo space is stretched
+by 1/0.89 x 1/0.85 and the file's shapes, drawn without that stretch, land beside the engraving: 120 of 158 vectors «found» by coincidence,
+38 «uncertain», wrong colours. Proposed, not started: align the photograph to the file's own Markers layer (the plan supplies only the
+marker templates), or carry the file's shapes through the scale and offset `left_behind.compare` already finds for the followed layers;
+the hidden layers that stayed behind (C12, C15) remain left out. BUG-005 should be closed as mistaken.
