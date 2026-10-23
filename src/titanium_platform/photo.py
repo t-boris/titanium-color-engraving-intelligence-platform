@@ -498,8 +498,8 @@ def homography_from_markers(found: dict[int, np.ndarray], markers: dict, x_offse
         raise PhotoError(f"fewer than three registration markers detected; missing {missing}")
     img_pts, plan_pts = [], []
     for m in usable:
-        x, y, s = m["x"] + x_offset, m["y"] + y_offset, m["size"]
-        plan_pts += [(x, y), (x + s, y), (x + s, y + s), (x, y + s)]
+        x, y, s, t = m["x"] + x_offset, m["y"] + y_offset, m["size"], m.get("height", m["size"])    # a scaled file's marker (BUG-006)
+        plan_pts += [(x, y), (x + s, y), (x + s, y + t), (x, y + t)]
         img_pts += found[m["id"]].tolist()
     h, _ = cv2.findHomography(np.array(img_pts, np.float32), np.array(plan_pts, np.float32), 0)
     if h is None:

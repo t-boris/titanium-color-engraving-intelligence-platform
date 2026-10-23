@@ -307,7 +307,7 @@ def snap_marker_features(img_bgr: np.ndarray, markers: dict, label_rects: list[d
                      [0., scale_y, observed["top_px"] - scale_y * y0],
                      [0., 0., 1.]]
         bounds = [marker["x"] + dx, marker["y"] + dy,
-                  marker["x"] + marker["size"] + dx, marker["y"] + marker["size"] + dy]
+                  marker["x"] + marker["size"] + dx, marker["y"] + marker.get("height", marker["size"]) + dy]
         results[f"aruco:{marker['id']}"] = {"bounds_mm": bounds,
                                              "pixel_transform": transform, **observed,
                                              "method": "visible marker border"}
@@ -474,8 +474,8 @@ def _template_candidates(img_bgr: np.ndarray, markers: dict) -> list[dict]:
 
 
 def _file_corners(marker: dict, dx: float, dy: float) -> np.ndarray:
-    x, y, s = marker["x"] + dx, marker["y"] + dy, marker["size"]
-    return np.array([(x, y), (x+s, y), (x+s, y+s), (x, y+s)], np.float32)
+    x, y, s, t = marker["x"] + dx, marker["y"] + dy, marker["size"], marker.get("height", marker["size"])   # a scaled file's marker (BUG-006)
+    return np.array([(x, y), (x+s, y), (x+s, y+t), (x, y+t)], np.float32)
 
 
 def _fit(matches: list[dict], by_id: dict, dx: float, dy: float) -> np.ndarray | None:

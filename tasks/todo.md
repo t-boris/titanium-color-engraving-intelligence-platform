@@ -2135,11 +2135,28 @@ one to one, and only works 22 and 39 hold them (assignment, variants, undo, laye
       before this change too; to measure where it goes and fix with the operator's approval, with L1-L5.
 The colour of photo zones from the colour map (D6) is 0.25.3.
 
-## BUG-006 (BUG-005 was my wrong reading of the same pair): the alignment takes the markers' positions from the plan, not from the file (2026-10-23, awaiting approval)
+## 0.25.3: the photograph is aligned to the file as it was engraved, scaled or moved (BUG-006, approved 2026-10-23 «Так и сделай»)
 Pair 116 (work 22): the operator scaled the whole export, markers included, to the 153 x 153 mm plate (89% x 85% of the 172 x 180.5 mm
-export) and engraved that file «Inna + Boris 10.lbrn2». The ruler on the photograph (20.2 px/mm) puts the markers 143 mm apart, as the file
-has them (145 mm), not 164 mm as the plan. The check maps the photograph's markers to the plan's positions, so the photo space is stretched
-by 1/0.89 x 1/0.85 and the file's shapes, drawn without that stretch, land beside the engraving: 120 of 158 vectors «found» by coincidence,
-38 «uncertain», wrong colours. Proposed, not started: align the photograph to the file's own Markers layer (the plan supplies only the
-marker templates), or carry the file's shapes through the scale and offset `left_behind.compare` already finds for the followed layers;
-the hidden layers that stayed behind (C12, C15) remain left out. BUG-005 should be closed as mistaken.
+export) and engraved that file. The ruler on the photograph (20.2 px/mm) puts the markers 143 mm apart, as the file has them (145 mm), not
+164 mm as the plan. The check mapped the photograph's markers to the plan's positions, stretched the photo space by 1/0.89 x 1/0.85 and drew
+the file's shapes without the stretch: 120 of 158 vectors «found» by coincidence, 38 «uncertain», wrong colours, no warning.
+Design: the engraved file's cleaning rectangle is the plan's extent as the file has it (the invariant `normalize_saved_orientation` already
+uses). Its size against the extent gives the scale per axis, its position the offset. The plan's marker geometry (extent, ArUco, QR,
+labels) is scaled about the extent's corner to the file's size before the alignment, so the markers found in the photograph are mapped to
+where the FILE has them, and the file's shapes are measured as they are, in physical millimetres. The hidden layers that stayed behind
+(C12, C15) remain left out (REQ-050). A plate still demands the same size (a scaled plate is a real mismatch).
+- [x] S1. `ingest._plan_as_engraved(plan, plate, work_layers)`: for a marked plan that is not a plate, with one cleaning rectangle in the
+      file: the scaled copy of the plan's markers (`size` and a new `height` for ArUco, rects per axis) and the placement
+      `{"scale": [sx, sy], "offset_mm": [dx, dy]}`; unchanged otherwise. `_align` takes the file offset from the cleaning rectangle for
+      every marked plan (today only for a plate); `photo.homography_from_markers` and `registration` honour `height`.
+- [x] S2. The report: `alignment.file_placement`; a warning when the scale is not 1 («the file is W% by H% of the export: the photograph
+      is aligned to the file's own markers and the engraving is measured at that size»), translated in `i18n-rest.js`.
+- [x] S3. Tests: a synthetic vector work whose engraved file is the export scaled 0.89 x 0.85 and moved (markers and cleaning
+      rectangle included), photographed at that size: the markers align, every closed vector is found, the colours are sampled on the
+      shapes, the placement and the warning are reported; a file at the export's size is unchanged; a plate of another size still refuses.
+      These tests must fail on 0.25.2.
+- [x] S4. Verified on the copy (port 8791): pair 116 rechecked, 158 of 158 vectors found (mean edge support 0.70 against 0.43), contours on
+      the engraving, placement scale [0.8895, 0.8476] offset [19.5, 19.5], the warning in the report. The three new tests fail on 0.25.2
+      (the moved-only file too: a work moved on the bed was measured beside its engraving before). Full suite: 1847 passed.
+- [ ] S5. README, version 0.25.3, full suite, commit, deploy. The operator rechecks pair 116 («Повторить проверку»).
+The colour of photo zones from the colour map (D6) moves to 0.25.4.

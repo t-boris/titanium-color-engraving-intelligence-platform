@@ -1330,7 +1330,7 @@ def _plate_corners_with_orientation(img_bgr, corners, area, expected, markers, d
                     image_center = np.asarray(found[marker["id"]], np.float32).mean(axis=0)
                     file_center = cv2.perspectiveTransform(image_center[None, None], h)[0, 0]
                     wanted = np.array([marker["x"] + dx + marker["size"] / 2,
-                                       marker["y"] + dy + marker["size"] / 2])
+                                       marker["y"] + dy + marker.get("height", marker["size"]) / 2])
                     errors.append(float(np.linalg.norm(file_center - wanted)))
                 if len(errors) >= 2:
                     scored.append((float(np.median(errors)), h))
@@ -1777,6 +1777,45 @@ def _by_markers(img_bgr, markers: dict, expected: str | None, area, dx: float, d
     return matched.image_to_mm
 
 
+def _plan_as_engraved(plan: dict | None, plate, work_layers: list) -> tuple[dict | None, dict | None]:
+    """The plan with its marker geometry (extent, ArUco, QR, labels) scaled to the size the engraved file gives it, and the placement
+    ``{"scale": [sx, sy], "offset_mm": [dx, dy]}`` of the plan's extent in the file; the plan itself and None when nothing says the size.
+
+    The operator may scale the whole file of a work in LightBurn to the plate at hand, markers included (BUG-006: 172 mm scaled to a
+    153 mm plate). The photograph then shows the markers where the file has them, and a homography fitted to four markers absorbs any
+    scale, so the markers must be looked for at the file's size, or every shape is measured beside its engraving. The file's cleaning
+    rectangle is the plan's extent as the file has it (the invariant ``lightburn.normalize_saved_orientation`` uses): its size against the
+    extent is the scale on each axis, its corner the offset. The geometry is scaled about the extent's corner, so ``plans.export_offset``
+    of the copy is that of the plan and ``_align`` adds the file offset as it does for a plate. A plate is left alone: its definition is
+    the plate's size, and ``_align`` refuses a cleaning rectangle of another size."""
+    markers = (plan or {}).get("markers") if plate is None and plan is not None and plan.get("markers_enabled", True) else None
+    clean = next((layer for layer in work_layers if layer.name.startswith("CLEAN-CROSSHATCH-") and len(layer.regions) == 1), None)
+    if not markers or clean is None:
+        return plan, None
+    ext = markers["extent"]
+    ew, eh = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
+    cx, cy, cw, ch = _bbox(clean.regions)
+    if min(ew, eh, cw, ch) < 1:
+        return plan, None
+    sx, sy = cw / ew, ch / eh
+    placement = {"scale": [round(sx, 4), round(sy, 4)], "offset_mm": [round(cx - ext["min_x"], 4), round(cy - ext["min_y"], 4)]}
+    if abs(sx - 1) < .001 and abs(sy - 1) < .001:
+        return plan, placement
+    X = lambda x: ext["min_x"] + sx * (x - ext["min_x"])
+    Y = lambda y: ext["min_y"] + sy * (y - ext["min_y"])
+    rect = lambda r: {**r, "x": X(r["x"]), "y": Y(r["y"]), "width": sx * r["width"], "height": sy * r["height"]}
+    scaled = {**markers, "extent": {**ext, "max_x": X(ext["max_x"]), "max_y": Y(ext["max_y"])},
+              "aruco": [{**m, "x": X(m["x"]), "y": Y(m["y"]), "size": sx * m["size"], "height": sy * m["size"],
+                         "rects": [rect(r) for r in m.get("rects", [])]} for m in markers.get("aruco", [])]}
+    if markers.get("qr"):
+        qr = markers["qr"]
+        scaled["qr"] = {**qr, "x": X(qr["x"]), "y": Y(qr["y"]), "size": (sx + sy) / 2 * qr["size"], "rects": [rect(r) for r in qr.get("rects", [])]}
+    out = {**plan, "markers": scaled}
+    if plan.get("marker_labels"):
+        out["marker_labels"] = [rect(r) for r in plan["marker_labels"]]
+    return out, placement
+
+
 def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers, report,
            prefer_corners: bool = False, linked: bool = False, placed_layers: list | None = None) -> tuple:
     """Returns (image->mm homography, dx, dy). Raises PhotoError instead of guessing (REQ-003).
@@ -1799,18 +1838,17 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
     marked = plan if plan is not None and plan.get("markers") and plan.get("markers_enabled", True) else None
     if marked is not None:
         ext = marked["markers"]["extent"]
-        if plate is not None:
-            clean = next((layer for layer in work_layers if layer.name.startswith("CLEAN-CROSSHATCH-") and
-                          len(layer.regions) == 1), None)
-            if clean is not None:
-                # LightBurn lets the operator move the complete job on its bed.
-                # Its cleaning rectangle has the same physical size as the plate
-                # extent, so it locates the plan's markers in the *saved file*.
-                cx, cy, cw, ch = _bbox(clean.regions)
-                ew, eh = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
-                if abs(cw - ew) > .05 or abs(ch - eh) > .05:
-                    raise ph.PhotoError("the cleaning rectangle size differs from the plate definition")
-                dx, dy = cx - ext["min_x"], cy - ext["min_y"]
+        clean = next((layer for layer in work_layers if layer.name.startswith("CLEAN-CROSSHATCH-") and
+                      len(layer.regions) == 1), None)
+        if clean is not None:
+            # LightBurn lets the operator move the complete job on its bed. Its cleaning rectangle has the same physical
+            # size as the plate extent, so it locates the plan's markers in the *saved file*. A work's plan reaches here
+            # scaled to the file's size (``_plan_as_engraved``, BUG-006); a plate's must be the plate's size.
+            cx, cy, cw, ch = _bbox(clean.regions)
+            ew, eh = ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"]
+            if abs(cw - ew) > .05 or abs(ch - eh) > .05:
+                raise ph.PhotoError("the cleaning rectangle size differs from the plate definition")
+            dx, dy = cx - ext["min_x"], cy - ext["min_y"]
         report["alignment"]["file_offset_mm"] = [round(dx, 4), round(dy, 4)]
         area =(ext["min_x"] + dx, ext["min_y"] + dy, ext["max_x"] - ext["min_x"], ext["max_y"] - ext["min_y"])
         expected = plate["experiment_id"] if plate is not None else (marked["markers"].get("identifier") or marked.get("plan_identifier"))
@@ -2243,6 +2281,13 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
         return finish(False)
     height, width = img_bgr.shape[:2]
     report["image_size"] = [width, height]
+    plan, placement = _plan_as_engraved(plan, plate, work_layers)     # the markers at the size the file gives them (BUG-006)
+    if placement is not None:
+        report["alignment"]["file_placement"] = placement
+        if placement["scale"] != [1, 1]:
+            w, hh = (round(100 * v) for v in placement["scale"])
+            report["warnings"].append(f"the file is {w}% by {hh}% of the export: the photograph is aligned to the file's own markers "
+                                      "and the engraving is measured at that size")
     anchor = None
     if pair.get("anchor"):
         request = pair["anchor"]

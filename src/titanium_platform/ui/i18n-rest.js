@@ -82,6 +82,8 @@
     [/^layers (.+) stayed where the exported file had them while the rest of the file was resized to (\d+)% by (\d+)% of its exported size(, and they are hidden in LightBurn, whose tools skip hidden layers)?; they are not measured$/i,
       (m) => `Слои ${m[1]} остались там, где их оставил экспортированный файл, пока остальной файл был уменьшен до ${m[2]} % × ${m[3]} % от экспортированного размера`
         + `${m[4] ? ' (они скрыты в LightBurn, и его инструменты скрытые слои пропускают)' : ''}; они не измеряются`],
+    [/^the file is (\d+)% by (\d+)% of the export: the photograph is aligned to the file's own markers and the engraving is measured at that size$/i,
+      (m) => `Файл составляет ${m[1]} % × ${m[2]} % от выгрузки: фотография совмещена с метками самого файла, гравировка измерена в этом размере`],
     [/^output is switched off in LightBurn: this layer was not engraved and is not measured$/i, 'В LightBurn выключен вывод слоя: его не гравировали, он не измеряется'],
     [/^left behind: its shapes stayed where the exported file had them while the rest of the file was moved, so the photograph cannot show them there; not measured$/i,
       'Слой остался на старом месте: его фигуры стоят там, где их оставил экспортированный файл, пока остальной файл сдвинули, поэтому фото не может показать их там; не измеряется'],
