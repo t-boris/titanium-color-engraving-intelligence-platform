@@ -2101,3 +2101,30 @@ on the ruler, and the measured window is 132 mm wide on a 100 mm plate. 21 layer
       (commit e75a5c9, backup titanium-before-0.25.1-20261023T192925Z.sqlite, /api/version 0.25.1; tabs App and T1 reloaded). Pair 115 is rechecked only with the operator's
       consent (a write on 8765); work 39 has to be exported again so that its file has no hidden layer.
 The colour of photo zones from the colour map (D6) moves to 0.25.2.
+
+## 0.25.2: a layer's Show and Output switches are not part of a recipe (operator's choice 2026-10-23, «Не часть рецепта»)
+Why: the export writes every LightBurn tag of the file a recipe was measured on, Show (`hide`) included, so a work's layer came out hidden
+(BUG-004); and the key counts the switch, so the same settings measured on a hidden and on a shown layer are two recipes. On the operator's
+data: 58 observations (14 settings) carry `hide=1`; their knowledge rows (11) are all `measured`, none questioned or approved, 10 have a
+twin row with the same full key once the switch is left out (rows 6 to 14 are the same observations' rows from before the parser kept
+`hide`, without evidence since). In the palette one hidden variant pools with its shown twin (602 entries become 601): 12 entry ids change
+one to one, and only works 22 and 39 hold them (assignment, variants, undo, layers, layer keys
+`e<id>`, exports and what they promised). No finding, proposal or other table names them.
+- [x] S1. `lightburn.LAYER_SWITCH_TAGS = ("hide", "doOutput")`: `recipe_settings` drops them (new observations do not store them),
+      `model.parameters_key` leaves them out (stored observations key as their shown twins), `plans.JOB_TAGS` never writes them.
+- [x] S2. `tools/forget_layer_switches.py`: the palette ids of every laser, lens and titanium keyed with the switches (as 0.25.1) and
+      without; each old id that changed maps to one new id (refused otherwise); every plan's stored ids (exact or `e<id>`) are replaced,
+      refused if an old id would remain in another form; dry run by default, `--apply` makes a backup copy and an audit entry.
+- [x] S3. Tests: the key and the stored settings leave the switches out; an export of a recipe measured on a hidden layer is shown and
+      engraved and reads back with its entry's key; the tool's moves, renames, refusal and dry run.
+- [ ] S4. On a copy: the tool's dry run and apply, works 22 and 39 with no colour missing and the same colours, work 39's export with C11
+      and C18 shown; DEC through markview, README, SemVer 0.25.2, full suite; deploy: stop 8765, install, run the tool with `--apply`, start.
+      Done on the copy: the dry run names work 22 (6 ids) and 39 (8 ids); without the tool the new code shows 7 and 8 regions «no longer
+      measured» and blocks both exports; after it both works show the same colours, regions, layers, time and layer count as under 0.25.1
+      (compared with the ids renamed), and their exports have 0 hidden layers (2 before). A second run finds nothing. Knowledge: rows 6-14
+      have their evidence again, the hidden rows (31-39, 357, 358) have none, row 611 was created for 358's evidence. DEC-119 recorded.
+      Full suite: 1843 passed (`tests/test_tasks.py` now states the key invariant as: every stored observation keeps its key, except the
+      2 of the fixture measured on hidden layers, which take their shown twin's key; the old algorithm still reproduces every stored key).
+- [ ] L6. Work 39's view takes 0.61-0.64 s on the copy (5.3 s first after a start, L4) and 0.87-1.98 s on 8765 under 0.25.1: over 0.5 s
+      before this change too; to measure where it goes and fix with the operator's approval, with L1-L5.
+The colour of photo zones from the colour map (D6) is 0.25.3.

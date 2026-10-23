@@ -274,15 +274,19 @@ def changed_processing(items: list[dict]) -> dict:
 
 
 EXECUTION_ORDER_TAGS = ("priority",)
+# The layer's "Show" and "Output" switches: whether LightBurn draws the layer and whether it engraves it. They are the job's, as the run
+# order is: the same settings measured on a hidden layer are the same recipe, and a job writes its layers shown and engraved (BUG-004).
+LAYER_SWITCH_TAGS = ("hide", "doOutput")
 
 
 def recipe_settings(settings: dict | None) -> dict:
     """The settings of a layer that belong to its engraving recipe.
 
     The order in which LightBurn runs the layers is a property of the job, not of one layer: the same recipe in
-    another file with another priority is the same recipe (DEC-051). Everything else is kept.
+    another file with another priority is the same recipe (DEC-051). So are the layer's Show and Output switches
+    (:data:`LAYER_SWITCH_TAGS`). Everything else is kept.
     """
-    return {tag: value for tag, value in (settings or {}).items() if tag not in EXECUTION_ORDER_TAGS}
+    return {tag: value for tag, value in (settings or {}).items() if tag not in EXECUTION_ORDER_TAGS and tag not in LAYER_SWITCH_TAGS}
 
 
 def _node(el: ET.Element):

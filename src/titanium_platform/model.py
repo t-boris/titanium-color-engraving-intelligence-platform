@@ -49,8 +49,16 @@ def parameters_key(p: dict) -> str:
 
     Legacy rows with no additional LightBurn metadata keep their original readable key. For imported
     files, line/fill mode, scan controls, and preserved source settings prevent unlike operations from
-    being averaged together even when their six numeric settings happen to match.
+    being averaged together even when their six numeric settings happen to match. The Show and Output
+    switches of the layer a recipe was measured on are not part of it (``lightburn.LAYER_SWITCH_TAGS``):
+    observations stored before 0.25.2 keep them, and key as the same settings measured on a shown layer.
     """
+    return _parameters_key(p, lightburn.LAYER_SWITCH_TAGS)
+
+
+def _parameters_key(p: dict, ignored: tuple[str, ...]) -> str:
+    """:func:`parameters_key` with the preserved settings ``ignored`` left out; ``tools/forget_layer_switches.py`` leaves none out, as
+    0.25.1 and before did, to find what each recipe was called then."""
     base = "|".join("?" if p.get(k) is None else f"{float(p[k]):g}" for k in
                     ("power", "frequency", "speed", "pulse_width", "line_interval", "passes"))
     controls = {k: p[k] for k in ("layer_type", "global_passes", "bidirectional", "cross_hatch", "scan_angle", "angle_increment") if k in p}
@@ -60,8 +68,8 @@ def parameters_key(p: dict) -> str:
                  "globalRepeat", "bidir", "crossHatch", "angle", "anglePerPass"}
         extra = {}
         for tag, value in source.items():
-            if tag in known:
-                continue  # normalized equivalents are already represented above
+            if tag in known or tag in ignored:
+                continue  # normalized equivalents are already represented above; the layer's switches are the job's
             extra[tag] = _normalized_setting(value)
         if extra:
             controls["source_settings"] = extra

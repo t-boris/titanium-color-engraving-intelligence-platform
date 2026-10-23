@@ -544,3 +544,8 @@ A selection (and a zone, and a hover) outlined every region on its own: 108 thin
 - Rule: first diff the uploaded .lbrn2 against the work's exports layer by layer (bounds, XForms, hide/doOutput, MirrorX/Y); a file
   LightBurn re-saved reflects every shape, hidden ones too, so compare files as LightBurn saved them, before any turning to the plan's axes.
 
+## Name a browser tab by its full name, never by a number
+- Mistake (2026-10-23): `tab: "3"` in the MarkView browser tools picked the operator's App tab, not the third tab in the list, and the
+  copy's page (8791) opened in it over the operator's `#/experiment/plan-39`; it was put back at once.
+- Rule: pass the tab's full name as browser_tabs prints it (for the copy: «ТЕСТ: копия данных, порт 8791 (не настоящее приложение)»);
+  never a number or a fragment that could match another tab, and check the tool's answer names the tab meant before the next step.

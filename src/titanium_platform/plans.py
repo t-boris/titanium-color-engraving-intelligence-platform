@@ -23,7 +23,7 @@ from xml.sax.saxutils import escape, quoteattr
 import cv2
 import numpy as np
 
-from . import grayscale, lenses, setup as su, tasks, vectorize
+from . import grayscale, lenses, lightburn as lb, setup as su, tasks, vectorize
 from .db import Store, now
 
 MODE_PLATE = "Calibration plate"
@@ -48,11 +48,12 @@ CLEAN_LAYER_NAME = "CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05"
 SCAN_DEFAULTS = {"global_passes": 1, "bidirectional": True, "cross_hatch": False,
                  "scan_angle": 0.0, "angle_increment": 0.0}
 # LightBurn tags a knowledge recipe keeps as numbers and controls (model.parameters_key reads those, not the tags) and tags
-# that belong to the job, not to the recipe: where the layer sits, what it is called, when it runs (DEC-051), and the
-# picture settings of image objects that lightburn.parse_bytes files under the layer.
+# that belong to the job, not to the recipe: where the layer sits, what it is called, when it runs (DEC-051), the picture
+# settings of image objects that lightburn.parse_bytes files under the layer, and whether it is shown and engraved: a job's
+# layers are (a recipe measured on a hidden layer must not hide the job's, whose tools then skip it, BUG-004).
 RECIPE_NUMBER_TAGS = ("maxPower", "speed", "frequency", "QPulseWidth", "interval", "numPasses", "passes", "globalRepeat",
                       "bidir", "crossHatch", "angle", "anglePerPass")
-JOB_TAGS = ("index", "name", "priority", "bitmaps")
+JOB_TAGS = ("index", "name", "priority", "bitmaps", *lb.LAYER_SWITCH_TAGS)
 
 
 def clean_layer(passport: dict) -> dict:
@@ -529,8 +530,9 @@ def _setting_xml(tag: str, value, indent: str) -> str:
 
 def _recipe_setting(index: int, name: str, p: dict) -> str:
     """A layer written with its knowledge recipe in full (REQ-012): the LightBurn mode, the six numbers, the scan controls
-    and every other setting the measured file had, sub-layers included. Only the colour index, the name and the run order
-    (priority, DEC-051) are the job's, so the layer read back has the recipe key of the entry it came from."""
+    and every other setting the measured file had, sub-layers included. Only the colour index, the name, the run order
+    (priority, DEC-051) and the Show and Output switches are the job's, so the layer read back is shown and engraved and has the
+    recipe key of the entry it came from."""
     mode = p.get("layer_type") or "Scan"
     if mode == "Image":
         raise su.ValidationError(f"layer {name} uses a recipe measured on an image layer: LightBurn does not engrave vector shapes with it")

@@ -15,7 +15,7 @@ import obs
 import recipes
 import synth
 from titanium_platform import (application_guide, capability_plates as cp, colormap, conversion as cv, devices, db, experiment_library,
-                               experiments, ingest as ig, knowledge as kn, lenses, model, plans as pl, tasks)
+                               experiments, ingest as ig, knowledge as kn, lenses, lightburn as lb, model, plans as pl, tasks)
 from titanium_platform import setup as su
 from titanium_platform.api.app import UI_DIR, create_app
 from titanium_platform.db import Store, now
@@ -93,14 +93,26 @@ def test_a_plan_states_its_layer_tasks_only_when_someone_stated_them():
 
 
 # -- keys of existing records stay exactly as they were (REQ-020 AC8, the approach of DEC-051) ----------------------------
+def key_now(o: dict, key: str) -> str:
+    """The fixture's ``key`` of observation ``o`` as it is now: the same, except that a layer's Show and Output switches left the recipe
+    (DEC-119), so an observation measured on a hidden layer has the key of the same settings measured on a shown one."""
+    if not set(o["parameters"].get("source_settings") or {}) & set(lb.LAYER_SWITCH_TAGS):
+        return key
+    shown = {**o["parameters"], "source_settings": lb.recipe_settings(o["parameters"]["source_settings"])}
+    return key.replace(o["parameters_key"], model.parameters_key(shown), 1)
+
+
 def test_the_key_of_every_existing_observation_is_the_key_it_had_before_tasks():
     assert len(FIXTURE["observations"]) > 100
+    switched = [o["id"] for o in FIXTURE["observations"] if key_now(o, o["parameters_key"]) != o["parameters_key"]]
+    assert len(switched) == 2                                                    # measured on hidden layers; every other key is as it was
     for o in FIXTURE["observations"]:
         derived = tasks.derive_from_parameters(o["parameters"], o["evidence"]["role"])
         stated_same = tasks.explicit(tasks.derive_from_parameters(o["parameters"])["kind"], "operator")   # stated, as the mode implies anyway
-        assert model.parameters_key(o["parameters"]) == o["parameters_key"]
+        assert model._parameters_key(o["parameters"], ()) == o["parameters_key"]                          # the key before DEC-119
+        assert model.parameters_key(o["parameters"]) == key_now(o, o["parameters_key"])
         for task in (None, derived, stated_same):
-            assert model.observation_key(o["parameters"], o["context"], task) == o["observation_key"], o["id"]
+            assert model.observation_key(o["parameters"], o["context"], task) == key_now(o, o["observation_key"]), o["id"]
     text = tasks.explicit("text", "operator")
     scan = next(o for o in FIXTURE["observations"] if o["parameters"].get("layer_type") == "Scan")
     assert model.observation_key(scan["parameters"], scan["context"], text) != scan["observation_key"]
@@ -121,7 +133,7 @@ def test_rows_accepted_before_tasks_keep_null_and_their_knowledge_key(store):
         row = rows[o["id"]]
         assert row["task_kind"] is None and tasks.of_observation(row)["basis"] == "derived"
         test_feature = (o["evidence"]["role"] or "test feature") == "test feature"
-        assert model.knowledge_key_of(row) == (o["observation_key"] if o["model_eligible"] and test_feature else None)
+        assert model.knowledge_key_of(row) == (key_now(o, o["observation_key"]) if o["model_eligible"] and test_feature else None)
 
 
 def test_a_new_task_kind_changes_no_existing_record(monkeypatch):
