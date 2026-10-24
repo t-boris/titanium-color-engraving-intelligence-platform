@@ -1,3 +1,44 @@
+# Electron: desktop workshop and laboratory exchange (goal set 2026-10-24)
+
+Specification `docs/features/electron` read in full (REQ-080..087, DEC-021..041, Q-001..009, F-001, implementation/plan.md) with
+the main feature's REQ-043/DEC-020. Commits go straight to `main` and CI is off (project CLAUDE.md, operator 2026-10-19): the
+goal's branch / pull request / CI / merge steps are replaced by commits to `main` and the local suite (`-n 12`, none skipped).
+Answers given on 2026-10-24 are recorded as accepted decisions DEC-042..DEC-048 (electron) and DEC-121 (main feature).
+Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
+
+## Stage A — local laboratory exchange (REQ-083/084/085), 0.29.0
+- [ ] A1 Golden local snapshot of colormap / palette / curves / scales before the refactor
+- [ ] A2 `lab_format.py` + `schemas/lab-v1.schema.json`: JCS, strict decoder, line framing, incremental hash, limits, safety
+- [ ] A3 Tables `portable_id`, `derived_value`, `lab_export`, `lab_source`, `lab_release`, `lab_withdrawal`; `identity.py`, `derived.py`
+- [ ] A4 `evidence.py`: Local / Published sources; colormap.collect and prediction_store._collected split into gather + transform
+- [ ] A5 DEC-045: tonal curves by engraving (count and Lab), algorithm version raised, changed numbers recorded
+- [ ] A6 `lab_export.py`: selection, closure, privacy preview, terms (DEC-042), streaming writer
+- [ ] A7 `lab_import.py`: staging, validation, progress, cancel, atomic activation, no-op / conflict, disconnect, withdrawals
+- [ ] A8 Pinned sources in vector and photo works; update with preview and route back; frozen result on algorithm mismatch
+- [ ] A9 `lab_transfer.py`: transfer experiment from a foreign recipe
+- [ ] A10 UI: Моя лаборатория, Подключённые лаборатории, Карточка, source picker, Проверить у себя; ru/en
+- [ ] A11 Tests: fixtures, negative fixtures, privacy markers, parity 1e-6, counting, constant memory; benchmark on M2 Ultra
+- [ ] A12 Release 0.29.0: suite, version, README, commit, push, tag, backup, deploy, read-only check
+
+## Stage B — safety and desktop (REQ-080/081/082), 0.30.0
+- [ ] B1 Schema version stamp, migration registry, pre-migration backup, newer-schema refusal, workshop lock
+- [ ] B2 Full backup / restore (DB + files + labs + manifest); path resolver for another folder
+- [ ] B3 Host / Origin checks; desktop session secret and cookie; upload limits
+- [ ] B4 Core for packaging: cli ready line, watchdog, Windows fonts, certifi, network settings, diagnostics export
+- [ ] B5 `desktop/` Electron Forge shell: launcher screen, sidecar lifecycle, isolation, updates from GitHub Releases
+- [ ] B6 PyInstaller onedir sidecar; macOS build signed (DEC-044); `--smoke`
+- [ ] B7 LAN (DEC-047): workshop CA, TLS server, pairing, devices, revoke
+- [ ] B8 Manual `desktop.yml` for Windows x64 build + smoke; GitHub pre-release (DEC-048)
+- [ ] B9 Release 0.30.0
+
+## Stage C — cloud (REQ-086/087), 0.31.0
+- [ ] C1 Neon project + Neon Auth; schema, RLS, `app_api` role (DEC-043)
+- [ ] C2 Vercel Python API: DEC-028 endpoints + invitations + withdraw; chunked publish, finalize, idempotency
+- [ ] C3 Desktop sign-in through the system browser and loopback callback
+- [ ] C4 In-app catalogue, private labs, publish, connect, update checks
+- [ ] C5 Cloud smoke and e2e A→B with workshop A stopped
+- [ ] C6 Release 0.31.0; spec reconciled (DEC-027/028, F-001); final checklist
+
 # Vector work: photograph -> gapless colour regions -> titanium colours -> LightBurn (operator, 2026-10-19)
 
 Requirements REQ-033 (split), REQ-034 (colouring, recolouring, file), REQ-035 (engraving time); decisions DEC-073 (all measured
