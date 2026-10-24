@@ -1,20 +1,21 @@
 /* Векторная работа из фотографии, разбиение (REQ-042, DEC-074, DEC-076; выбор алгоритма и общий раздел с цветами — фича
-   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, плотность областей (I-2: ползунок и число областей, которое он
-   даст), сглаживание, лица — всё на виду, как
+   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, плотность, сглаживание, лица — всё на виду, как
    часть раздела «Цвета и разбиение» (vector-colours.js). Найденные важные области (лицо, глаза, губы) нарисованы поверх
    картинки в сворачиваемом блоке: оператор убирает найденную область или добавляет свою — тянет прямоугольник или эллипс
-   по картинке (координаты — пиксели рабочей картинки). У глаза, губ и отмеченной области своя детальность, у отмеченной — свой
-   вид (глаз, губы, другое), а границу любой области можно сдвинуть или нарисовать заново (I-3). Изменения областей и настроек
-   применяются кнопкой «Разбить заново»: разбиение пересчитывается, раскраска начинается заново; если изменились только
-   детальность, границы или вид областей, цвета вне изменённых областей остаются прежними. */
+   по картинке (координаты — пиксели рабочей картинки). Изменения областей и настроек применяются кнопкой «Разбить заново»:
+   разбиение пересчитывается, раскраска начинается заново. */
+/* vector-detail-and-colour-control: the density is a slider beside the number of regions it would give, counted by the server before the
+   split (I-2, its DEC-093). An eye, the lips and a marked area have a detail of their own, a marked area its kind (eye, lips, other), and
+   any area's boundary can be moved or drawn again (I-3, its DEC-094); when only the detail, boundary or kind of areas changed, the colours
+   outside the changed areas stay as they were after «Разбить заново». */
 'use strict';
 const VectorSplit = (() => {
   const {h, fill, btn, field, post, fail, toast, confirmBox} = App;
   const NS = 'http://www.w3.org/2000/svg';
   const DENSITY = {min: 30, max: 250, step: 5};                     // vector_job.DENSITY
-  const LEVELS = {coarse: 70, medium: 100, fine: 150};                // прежние уровни детальности — точки той же шкалы
+  const LEVELS = {coarse: 70, medium: 100, fine: 150};                // the former levels of detail, points of the same scale
   const KIND = {face: 'Лицо', eye: 'Глаз', lips: 'Губы', manual: 'Отмечено вручную'};
-  const FINE = ['eye', 'lips', 'manual'];                                            // faces.FINE_KINDS: у них своя детальность
+  const FINE = ['eye', 'lips', 'manual'];                                            // faces.FINE_KINDS: these have a detail of their own
   const DETAILS = [['fine', 'мелко'], ['finer', 'очень мелко'], ['finest', 'максимально'], ['face', 'как у лица']];   // faces.DETAILS
   const MARKED = [['eye', 'глаз'], ['lips', 'губы'], ['manual', 'другое']];           // vector_job.MARKED_KINDS
   /** Алгоритмы разбиения и чем они отличаются: что получается на картинке и сколько это стоит (DEC-082 фичи
@@ -56,8 +57,8 @@ const VectorSplit = (() => {
     input.addEventListener('input', () => { readout.textContent = say(input.value); clearTimeout(timer); timer = setTimeout(pump, 120); });
     return h('div', {class: 'vw-slider'}, input, readout);
   }
-  /** Плотность областей (I-2): сколько крупных участков ложится по длинной стороне картинки, независимо от числа цветов. Сколько областей
-      это даст, сервер считает с теми же настройками, работа не меняется (``count``); запросы по одному, берётся последнее положение. */
+  /** The density (I-2): how many coarse superpixels lie along the picture's longer side, apart from the number of colours. The server counts
+      the regions it would give with the same settings, the work unchanged (``count``); one request at a time, for the last position. */
   function densityControl(j, settings) {
     const s = j.split, start = s.density || LEVELS[s.detail] || LEVELS.medium;
     const input = h('input', {type: 'range', min: String(DENSITY.min), max: String(DENSITY.max), step: String(DENSITY.step), value: String(start),
@@ -87,14 +88,14 @@ const VectorSplit = (() => {
     return el;
   };
 
-  /** Граница области без прочего: эллипс или многоугольник. */
+  /** An area's boundary alone: an ellipse or a polygon. */
   const outline = (a) => (a.ellipse ? {ellipse: a.ellipse} : {polygon: a.polygon});
-  /** Область, сдвинутая на (dx, dy) пикселей. */
+  /** An area moved by (dx, dy) pixels. */
   function moved(a, dx, dy) {
     if (a.ellipse) return {ellipse: {...a.ellipse, center: [a.ellipse.center[0] + dx, a.ellipse.center[1] + dy]}};
     return {polygon: a.polygon.map(([x, y]) => [x + dx, y + dy])};
   }
-  /** Лежит ли точка внутри области (эллипс с поворотом или многоугольник). */
+  /** Whether a point lies inside an area (a turned ellipse or a polygon). */
   function inside(a, [x, y]) {
     if (a.ellipse) {
       const e = a.ellipse, t = -(e.angle || 0) * Math.PI / 180, dx = x - e.center[0], dy = y - e.center[1];
@@ -108,7 +109,7 @@ const VectorSplit = (() => {
     }
     return hit;
   }
-  /** Изменения найденной области в одном виде, чтобы сравнивать их с сохранёнными. */
+  /** A detected area's changes in one form, to compare them with the saved ones. */
   const norm = (c) => ({number: c.number, detail: c.detail || null, ellipse: c.ellipse || null, polygon: c.polygon || null});
 
   /** Фигура области в пикселях картинки: эллипс или многоугольник. */
@@ -127,13 +128,13 @@ const VectorSplit = (() => {
     const W = doc.image_px.width, H = doc.image_px.height;
     const manual = s.manual.map((a) => ({...a}));
     const removed = new Set(s.removed);
-    const adjusted = new Map((s.adjusted || []).map((c) => [c.number, {...c}]));   // найденные области с детальностью или границей оператора
-    let editing = null;                                                           // область, чью границу правят: {found: номер} или {manual: индекс}
+    const adjusted = new Map((s.adjusted || []).map((c) => [c.number, {...c}]));   // detected areas with the operator's detail or boundary
+    let editing = null;                                                           // the area whose boundary is edited: {found: number} or {manual: index}
     const colours = h('input', {type: 'number', step: '1', min: '2', max: String(j.layer_cap), value: s.n_colors, 'aria-label': 'Число цветов'});
     const algorithm = picker(s.algorithm || 'slic');
     const settings = () => ({n_colors: +colours.value, algorithm: algorithm.select.value, density: +density.input.value, faces: faces.checked,
       manual, removed: [...removed], adjusted: [...adjusted.values()].sort((a, b) => a.number - b.number)});
-    /** Найденная область такой, какой её разобьют: с детальностью и границей оператора. */
+    /** A detected area as the split will use it: with the operator's detail and boundary. */
     const effective = (a) => {
       const c = adjusted.get(a.number) || {};
       return {...a, ...(c.ellipse || c.polygon ? {ellipse: undefined, polygon: undefined, ...outline(c)} : {}), detail: c.detail};
@@ -163,7 +164,7 @@ const VectorSplit = (() => {
     const areasTitle = h('summary', {});
     let areasKey = null;                                               // the areas as last drawn: a change of them recounts the regions
 
-    /** Детальность области — выбор из четырёх; у лица своей нет. */
+    /** An area's detail, one of four; a face has none of its own. */
     const detailPicker = (value, set) => {
       const select = h('select', {'aria-label': 'Детальность области'}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
       select.addEventListener('change', () => { set(select.value); draw(); });
@@ -210,8 +211,8 @@ const VectorSplit = (() => {
       fill(list, rows.length ? rows : h('p', {class: 'muted small'}, 'Важных областей нет. Потяните по картинке, чтобы отметить свою.'));
     }
 
-    // тянуть по картинке: прямоугольник или эллипс в пикселях рабочей картинки — новая область или новая граница выделенной;
-    // внутри выделенной области — сдвиг её границы
+    // dragging on the picture: a rectangle or an ellipse in pixels of the working picture, a new area or the edited area's new boundary;
+    // dragging inside the edited area moves its boundary
     let start = null, ghost = null, grabbed = null;
     const at = (ev) => {
       const r = overlay.getBoundingClientRect();
@@ -254,7 +255,7 @@ const VectorSplit = (() => {
     for (const el of [colours, algorithm.select]) el.addEventListener('change', () => density.recount());
     draw();
 
-    // разбить заново: раскраска, её варианты и шаги отмены начинаются заново — сначала об этом спрашивается (I-8)
+    // split again: the colouring, its variants and its undo steps start anew, so the operator is asked first (I-8)
     const run = btn('Разбить заново', () => confirmBox('Разбить картинку заново?', RESET, 'Разбить заново', async () => {
       try {
         await post(`/vector/${j.id}/split`, settings());

@@ -157,7 +157,7 @@
       const name = {brightness: 'Яркость', contrast: 'Контраст', gamma: 'Гамма'}[m[1]] || m[1];
       return `${name} картинки — число от ${m[2].replace('.', ',')} до ${m[3].replace('.', ',')}`;
     }],
-    // поправка ширины точки вида точками (0.28.0)
+    // the dot width correction of a dot kind (0.28.0)
     [/^the dot width correction is a width of the laser's dot from (\S+) to (\S+) mm, or none to switch it off$/i,
       (m) => `Поправка ширины точки — ширина точки лазера от ${m[1].replace('.', ',')} до ${m[2].replace('.', ',')} мм; пустое поле её выключает`],
     // цвет точек с карты цветов (0.25.0, DEC-118)

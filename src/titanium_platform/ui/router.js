@@ -58,8 +58,8 @@ Object.assign(App, (() => {
     }).catch(() => { versionAsked = false; });
   }
 
-  // Открытая страница после обновления сервера остаётся на старых скриптах: версия сервера сверяется с той, с которой страница загрузилась,
-  // когда окно снова в фокусе, когда вкладку снова видно и раз в пять минут; новая версия показывает полосу «перезагрузите страницу».
+  // An open page keeps its old scripts after the server is updated: the server's version is compared with the one the page loaded with
+  // when the window is focused again, when the tab is visible again and every five minutes; a new version shows a «reload» banner.
   const VERSION_CHECK_MS = 5 * 60 * 1000;
   let updateBanner = null;
   function checkVersion() {

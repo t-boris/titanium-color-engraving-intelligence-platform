@@ -135,9 +135,9 @@
   const DOT_WIDTH_ABOUT = 'Поправка ширины точки LightBurn (Dot Width Correction): точка лазера шире пикселя картинки, и без поправки '
     + 'картинка выходит темнее; LightBurn уменьшает каждую точку на эту ширину. Пишется в слой файла и в «Пробу этого вида»; тона вида, '
     + 'измеренные при одной ширине точки, к другой не подходят. Только в видах точками.';
-  /** Поправка ширины точки вида точками (0.28.0): флажок и ширина точки лазера в мм, сохраняются в работе через ``save({dot_width})``.
-      Ширина включает поправку, пустое поле или снятый флажок её выключают; флажок на пустом поле ждёт ширину. В градациях серого
-      поправки нет: поле скрыто, ширина ждёт в работе. */
+  /** The dot width correction of a dot kind (0.28.0): a check box and the laser's dot width in mm, saved in the work by ``save({dot_width})``.
+      A width turns the correction on, an empty field or a cleared box turns it off; a ticked box on an empty field waits for a width. In
+      greyscale there is no correction: the field is hidden and the width waits in the work. */
   function dotWidthBox(save) {
     const on = h('input', {type: 'checkbox', 'aria-label': 'Поправка ширины точки'});
     const width = h('input', {type: 'number', min: '0.001', max: '0.2', step: '0.001', 'aria-label': 'Ширина точки лазера, мм'});

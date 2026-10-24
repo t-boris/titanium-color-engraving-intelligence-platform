@@ -492,7 +492,7 @@ const Lettering = (() => {
     /** The points of a path in the work's mm: relative to the inscription's place, turned with it. */
     const absolute = (t) => (t.points || []).map((p) => { const [u, v] = turn(p, t.rotation); return [t.x + u, t.y + v]; });
 
-    // --- мышь: тащить надпись, ручки, точки пути; рисовать путь щелчками или от руки -------------------------------------------------
+    // --- mouse: drag an inscription, its handles, a path's points; draw a path by clicks or freehand --------------------------------
     /** Pointer down at ``mm``: true when the layer takes the gesture (an inscription, a handle, a path being drawn: a press may start a
         freehand stroke of it). */
     function down(ev, mm) {

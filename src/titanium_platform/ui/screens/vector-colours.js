@@ -12,7 +12,7 @@ const VectorColours = (() => {
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['contrast', 'Контраст соседей'], ['random', 'Случайно']];
   const MODE = {...Object.fromEntries(MODES), artistic: 'Художественно', fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};   // the old mode only names variants saved with it
-  /** Группы палитры для «Художественно» (vector-detail I-6): из каких измеренных цветов раскладываются оттенки. */
+  /** Palette groups for «Художественно» (vector-detail I-6): the measured colours its hues are laid out from. */
   const SUBSETS = [['all', 'все цвета'], ['warm', 'тёплые'], ['cool', 'холодные'], ['bright', 'яркие']];
   const SUBSET = Object.fromEntries(SUBSETS);
   /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
@@ -125,7 +125,7 @@ const VectorColours = (() => {
     }));
   }
 
-  /** «Художественно» (DEC-079): каждый раз новая раскладка оттенков из выбранной группы палитры, светлые места остаются светлыми. */
+  /** «Художественно» (DEC-079): each press a new layout of hues from the chosen palette group; light places stay light. */
   function artisticRow(run) {
     const group = h('select', {'aria-label': 'Из каких цветов'}, SUBSETS.map(([v, name]) => h('option', {value: v}, name)));
     return h('div', {class: 'row'}, btn(MODE.artistic, () => run({op: 'assign', mode: 'artistic', subset: group.value}), 'btn-small'),

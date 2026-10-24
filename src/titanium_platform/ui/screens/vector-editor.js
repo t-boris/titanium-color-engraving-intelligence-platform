@@ -720,12 +720,12 @@ const VectorEditor = (() => {
       return seen.size === wanted.size;
     }
 
-    /** Исходный цвет выделения для подбора: средний Lab исходных цветов выделенных областей (окно выбора ставит ближайшие к нему первыми). */
+    /** The selection's source colour for choosing: the mean Lab of the selected regions' source colours (the window lists the nearest first). */
     function selectionLab(ids) {
       const labs = ids.map((rid) => (lookup(rid, colourOf.get(rid)).c || {}).lab).filter(Boolean);
       return labs.length ? [0, 1, 2].map((i) => labs.reduce((t, l) => t + l[i], 0) / labs.length) : [50, 0, 0];
     }
-    /** Цвет титана, общий для всех выделенных областей, или null: окно выбора отмечает его как текущий. */
+    /** The titanium colour all selected regions share, or null: the window marks it as the current one. */
     function commonEntry(ids) {
       const found = new Set(ids.map((rid) => lookup(rid, colourOf.get(rid)).entryId || null));
       return found.size === 1 ? [...found][0] : null;
