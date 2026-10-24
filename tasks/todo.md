@@ -2279,7 +2279,7 @@ Survey: BUG-001..006 are fixed in code (0.5.2, 0.18.2, 0.21.1, 0.25.1-0.25.3); M
 - [x] T. Tests for criteria that were built but unproven: inscriptions REQ-001..REQ-005, photo-zone-dots REQ-001/REQ-002, REQ-047 c1-c7.
 - [x] A3. Font window: a bulk download of a kind with no script, a family chosen before it is downloaded is downloaded and chosen
       (REQ-001 c2, found by the tests of T).
-- [ ] R. MarkView decisions and ticked criteria, issue #32, README, 0.28.0, full suite -n 12, walk on a copy (8791), deploy after a backup, report.
+- [x] R. MarkView decisions and ticked criteria, issue #32, README, 0.28.0, full suite -n 12, walk on a copy (8791), deploy after a backup, report.
 Not taken (operator or real data needed): Electron; Q-026..Q-029; acceptance of proposed DECs; DEC-088 automatic re-measure; REQ-053 crit. 5/6;
 REQ-052 crit. 4 (LightBurn on the real file); a text path from the picture's contours; editable LightBurn text.
 
@@ -2296,3 +2296,7 @@ Review of 0.28.0 (2026-10-24):
   1.6-2.8 s; a rebuild 5-6 s.
 - Not taken: Electron; Q-026..Q-029 and photo-zone-dots Q-001; acceptance of proposed DECs; DEC-088 automatic re-measure;
   REQ-053 crit. 5/6; REQ-052 crit. 4; a text path from the picture's contours; editable LightBurn text.
+- Released: full suite 2015 passed (none skipped), main pushed, tag v0.28.0, issue #32 commented and closed (no open issues left).
+  Deployed: backup titanium-before-0.28.0-20261024T122028Z.sqlite (integrity ok), wheel into ~/.titanium-platform-app, 8765 restarted,
+  /api/version 0.28.0; read only: vector 22/39/40/41 and photo 35/37 open (work 22 warm 0.67-0.89 s), export of 22 2.7 s (photo zones'
+  pictures 1.95 s as before, the join 0.22 s), app.log clean. Open pages need a reload (Cmd+R) to get the 0.28.0 screens.
