@@ -78,11 +78,16 @@ async function openWorkshop(folder) {
   return {ok: true, port: ready.port};
 }
 
-function openMain(ready) {
-  const origin = sidecar.url();
+/** The core's pages get the shell's Content-Security-Policy (guards.csp): the main window and the smoke window alike. */
+function installPolicy(origin) {
   session.defaultSession.webRequest.onHeadersReceived({urls: [origin + '/*']}, (details, callback) => {
     callback({responseHeaders: {...details.responseHeaders, 'Content-Security-Policy': [guards.csp(origin)]}});
   });
+}
+
+function openMain(ready) {
+  const origin = sidecar.url();
+  installPolicy(origin);
   mainWindow = new BrowserWindow({width: 1440, height: 920, title: 'Лазерная мастерская', show: false,
     webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js')}});
   mainWindow.webContents.on('will-navigate', (event, url) => { if (!guards.navigationAllowed(url, origin)) { event.preventDefault(); if (guards.windowOpenDecision(url) === 'external') shell.openExternal(url); } });
@@ -139,18 +144,26 @@ async function checkForUpdates(origin) {
   if (answer.response === 0) shell.openExternal(latest.url);
 }
 
-/** `--smoke`: start the core on a temporary workshop, load the session address in a hidden window, ask /api/health, exit 0 or 1. */
+/** `--smoke`: start the core on a temporary workshop, load the session address in a hidden window under the shell's policy, wait for
+ *  the interface to draw itself (the policy once blocked its inline start and left the window empty), ask /api/health, exit 0 or 1. */
 async function smoke() {
   const folder = fs.mkdtempSync(path.join(app.getPath('temp'), 'titanium-smoke-'));
   const where = coreCommand({resourcesPath: app.isPackaged ? process.resourcesPath : null, repoRoot: REPO_ROOT});
   sidecar = new Sidecar({spawn, command: where.command, args: where.args, env: where.env || {}, dataDir: folder, parentPid: process.pid, onLog: (l) => console.log('[core]', l)});
   try {
     await sidecar.start();
-    const win = new BrowserWindow({show: false, webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false}});
+    installPolicy(sidecar.url());
+    const win = new BrowserWindow({show: false, webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js')}});
+    const blocked = [];
+    win.webContents.on('console-message', (event, level, message) => { if (level >= 2) blocked.push(message); });
     await win.loadURL(sidecar.bootstrapUrl());
+    const drawn = await win.webContents.executeJavaScript(
+      "new Promise((resolve) => { const t0 = Date.now(); (function look() { const app = document.getElementById('app'); " +
+      "if (app && app.children.length > 0) return resolve(app.children.length); if (Date.now() - t0 > 15000) return resolve(0); setTimeout(look, 100); })(); })");
+    if (!drawn) throw new Error(`the interface drew nothing in 15 s${blocked.length ? ': ' + blocked.slice(0, 3).join(' | ') : ''}`);
     const health = await win.webContents.executeJavaScript("fetch('/api/health').then(r => r.json())");
     if (!health || health.status !== 'ok') throw new Error(`health answered ${JSON.stringify(health)}`);
-    console.log(JSON.stringify({smoke: 'ok', port: sidecar.port, packaged: where.packaged}));
+    console.log(JSON.stringify({smoke: 'ok', port: sidecar.port, packaged: where.packaged, ui: drawn}));
     await sidecar.stop();
     app.exit(0);
   } catch (error) {

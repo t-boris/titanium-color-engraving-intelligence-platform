@@ -30,3 +30,17 @@ def test_the_shell_declares_only_the_approved_dependencies_and_isolates_its_wind
     assert "Content-Security-Policy" in main
     preload = (ROOT / "desktop" / "src" / "preload.js").read_text(encoding="utf-8")
     assert "contextBridge.exposeInMainWorld" in preload and "require('node:fs')" not in preload
+
+
+def test_the_ui_page_has_no_inline_script_because_the_shells_policy_forbids_them():
+    """desktop/src/guards.js gives the core's pages a Content-Security-Policy whose script-src has no 'unsafe-inline'; an inline
+    <script> (the start of the application once was one) is blocked there and leaves the shell's window empty. Every script of
+    index.html is a file of its own, and no element carries an inline handler."""
+    import re
+    html = (Path(__file__).parent.parent / "src" / "titanium_platform" / "ui" / "index.html").read_text(encoding="utf-8")
+    inline = [m for m in re.finditer(r"<script\b([^>]*)>", html) if "src=" not in m.group(1)]
+    assert inline == [], [m.group(0) for m in inline]
+    assert not re.search(r"\son[a-z]+=", html) and "javascript:" not in html
+    assert '<script src="/boot.js"></script>' in html and html.index("/boot.js") > html.rindex("/screens/")
+    guards = (Path(__file__).parent.parent / "desktop" / "src" / "guards.js").read_text(encoding="utf-8")
+    assert "script-src 'self'" in guards and "script-src 'self' ${origin} 'unsafe-inline'" not in guards
