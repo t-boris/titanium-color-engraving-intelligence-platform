@@ -2258,3 +2258,7 @@ Review (2026-10-24). Walked on a copy of the data (database and files, every sto
 - Memory: the app process grows to about 2 GB after work on the 150 mm zone; main (0.26.0) does the same (1.9 GB for the same steps), the
   tone memo adds about 0.1 GB. Not changed; reported to the operator.
 - Full suite: 1909 passed, none skipped (-n 12, 3 min).
+- Deployed 2026-10-24 06:25 UTC: backup `~/.titanium-platform/backups/titanium-before-0.27.0-20261024T062524Z.sqlite` (integrity ok), the
+  0.27.0 wheel in `~/.titanium-platform-app` (imports checked), the app restarted on 8765; work 41 zone 2 read as before (Jarvis 12.8 %,
+  tone as it is, no recipe). Tabs T1 and T2 reloaded (v0.27.0, «Яркость», «Цвет с карты» on T2), consoles clean. Nothing was changed in
+  the live data.
