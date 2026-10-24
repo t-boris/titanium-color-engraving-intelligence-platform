@@ -86,8 +86,9 @@ def request(op: dict) -> tuple[str, str | None, bool]:
     return style, text, free
 
 
-def touching(document: dict) -> list[list]:
-    """Pairs of source colours that border one another, ``[a, b, share]`` with the share of all such borders by length, longest first."""
+def touching(document: dict, limit: int | None = MAX_PAIRS) -> list[list]:
+    """Pairs of source colours that border one another, ``[a, b, share]`` with the share of all such borders by length, longest first;
+    the ``limit`` longest (None: every pair)."""
     colour_of = {r["id"]: r["color"] for r in document["regions"]}
     length: dict[tuple[int, int], float] = {}
     for arc in document["arcs"]:
@@ -98,7 +99,7 @@ def touching(document: dict) -> list[list]:
         key = (min(a, b), max(a, b))
         length[key] = length.get(key, 0.0) + float(np.hypot(*np.diff(pts, axis=0).T).sum())
     total = sum(length.values()) or 1.0
-    return [[a, b, round(v / total, 4)] for (a, b), v in sorted(length.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_PAIRS]]
+    return [[a, b, round(v / total, 4)] for (a, b), v in sorted(length.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]]
 
 
 def brief(style: str, text: str | None, free_lightness: bool, *, free: list[dict], fixed: dict[str, object], touches: list[list],

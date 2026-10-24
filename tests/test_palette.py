@@ -2,6 +2,8 @@
 as far as the palette reaches (REQ-058, DEC-089 of vector-detail-and-colour-control); the palette takes every plate of the material (REQ-057, DEC-088)."""
 import itertools
 
+import math
+
 import pytest
 
 import obs
@@ -311,9 +313,86 @@ def test_no_mode_offers_an_entry_the_operator_kept_to_another_colour_while_other
     assert set(chosen(only).values()) == {"e0"}
 
 
+# -- Contrast and Artistic (vector-detail-and-colour-control I-6, DEC-079) -----------------------------------------------------------------
+def titanium_world(n=8, m=24, seed=3):
+    """``n`` source colours of a picture in close tones, ``m`` entries spread over titanium's hues and lightness, and the borders between
+    the source colours (each touching the next two, with different lengths), as segment would give them."""
+    import random
+    rng = random.Random(seed)
+    srcs = sources(*[[35 + 4 * i, rng.uniform(-8, 8), rng.uniform(-4, 12)] for i in range(n)], pixels=[rng.randint(50, 500) for _ in range(n)])
+    pal = []
+    for j in range(m):
+        hue, chroma = math.radians(360 * j / m), rng.uniform(4, 45)
+        pal.append(entry(f"e{j}", [rng.uniform(25, 85), chroma * math.cos(hue), chroma * math.sin(hue)], rng.uniform(1, 9)))
+    borders = [[i, i + k, rng.uniform(0.01, 0.2)] for i in range(n) for k in (1, 2) if i + k < n]
+    return srcs, pal, borders
+
+
+def apart(result, borders) -> float:
+    """The mean delta E between the titanium colours of touching source colours, weighted by the length of their border."""
+    lab = {c["index"]: c["entry_lab"] for c in result["colours"]}
+    return sum(w * color.delta_e(lab[a], lab[b]) for a, b, w in borders) / sum(w for _, _, w in borders)
+
+
+@pytest.mark.parametrize("seed", [3, 11, 29])
+def test_contrast_tells_neighbours_apart_better_than_closest_and_is_the_same_every_time(seed):
+    srcs, pal, borders = titanium_world(seed=seed)
+    closest = palette.assign(srcs, pal, "closest", tolerance_de=3)
+    first = palette.assign(srcs, pal, "contrast", tolerance_de=3, borders=borders)
+    again = palette.assign(srcs, pal, "contrast", tolerance_de=3, borders=list(reversed(borders)))
+    assert apart(first, borders) > apart(closest, borders) * 1.05
+    assert chosen(first) == chosen(again) and {c["how"] for c in first["colours"]} == {"contrast"}
+    assert first["totals"]["recipes"] == len(srcs)                                   # each colour its own entry (DEC-089)
+    score = lambda r: apart(r, borders) - palette.CONTRAST_FIDELITY * r["totals"]["mean_delta_e"]   # noqa: E731
+    assert score(first) > score(closest)                                              # the trade it makes, not contrast at any price
+
+
+def test_contrast_keeps_the_operators_choices_and_without_borders_is_closest():
+    srcs, pal, borders = titanium_world()
+    kept = palette.assign(srcs, pal, "contrast", tolerance_de=3, borders=borders, keep={2: "e5", 4: "e9"})
+    assert chosen(kept)[2] == "e5" and chosen(kept)[4] == "e9" and len(set(chosen(kept).values())) == len(srcs)
+    plain = palette.assign(srcs, pal, "contrast", tolerance_de=3)
+    assert chosen(plain) == chosen(palette.assign(srcs, pal, "closest", tolerance_de=3))
+
+
+def test_artistic_keeps_the_lightness_order_and_each_seed_arranges_the_hues_anew():
+    srcs, pal, _ = titanium_world(n=6, m=30)
+    runs = [palette.assign(srcs, pal, "artistic", tolerance_de=3, seed=seed) for seed in range(1, 6)]
+    for r in runs:
+        assert lightness_kept(r, srcs, pal) and r["lightness_order"] == "kept" and r["subset"] == "all"
+        assert len(set(chosen(r).values())) == len(srcs) and {c["how"] for c in r["colours"]} == {"artistic"}
+    assert len({tuple(sorted(chosen(r).items())) for r in runs}) >= 4                  # seeds give different arrangements
+    assert chosen(runs[0]) == chosen(palette.assign(srcs, pal, "artistic", tolerance_de=3, seed=1))   # and a seed the same one
+
+
+@pytest.mark.parametrize("subset", ["warm", "cool", "bright"])
+def test_artistic_draws_only_from_the_chosen_group_of_the_palette(subset):
+    from titanium_platform import colouring
+    srcs, pal, _ = titanium_world(n=5, m=36)
+    group = palette.subset_of(pal, subset)
+    assert 0 < len(group) < len(pal)
+    r = palette.assign(srcs, pal, "artistic", tolerance_de=3, seed=4, subset=subset)
+    assert set(chosen(r).values()) <= {e["id"] for e in group} and lightness_kept(r, srcs, pal)
+    for e in group:
+        chroma, hue = math.hypot(*e["lab"][1:]), math.degrees(math.atan2(e["lab"][2], e["lab"][1])) % 360
+        assert chroma >= colouring.COLOURED
+        if subset != "bright":
+            low, high = colouring.WARM_HUE if subset == "warm" else colouring.COOL_HUE
+            assert low <= hue <= high
+
+
+def test_artistic_with_a_small_group_shares_entries_in_lightness_order_and_an_empty_group_is_refused():
+    srcs, pal, _ = titanium_world(n=8, m=36)
+    small = [e for e in pal if e["id"] in {e["id"] for e in palette.subset_of(pal, "warm")}][:3]
+    r = palette.assign(srcs, small + [entry("grey", [50, 0, 0], 2.0)], "artistic", tolerance_de=3, seed=2, subset="warm")
+    assert len(set(chosen(r).values())) == len(small) and lightness_kept(r, srcs, small)
+    with pytest.raises(su.ValidationError, match="no measured colour of this palette is cool: choose another group of colours"):
+        palette.assign(srcs, small + [entry("grey", [50, 0, 0], 2.0)], "artistic", tolerance_de=3, subset="cool")
+
+
 def test_the_modes_of_older_versions_are_refused_by_assign():
     for gone in ("fewer_layers", "most_colours"):
-        with pytest.raises(su.ValidationError, match="must be closest, tonality or random"):
+        with pytest.raises(su.ValidationError, match="must be closest, tonality, random, contrast or artistic"):
             palette.assign(sources([50, 0, 0]), [entry("a", [50, 0, 0], 1.0)], gone, tolerance_de=3)
 
 
@@ -344,7 +423,8 @@ def test_a_work_holds_at_most_29_colours_and_never_more_recipes():
 
 
 @pytest.mark.parametrize("args, message", [
-    ({"mode": "nearest"}, "the recolouring mode must be closest, tonality or random"),
+    ({"mode": "nearest"}, "the recolouring mode must be closest, tonality, random, contrast or artistic"),
+    ({"mode": "artistic", "subset": "pastel"}, "the group of colours must be all, warm, cool or bright"),
     ({"source_colours": []}, "give the source colours to recolour"),
     ({"source_colours": [{"index": 0, "lab": [50, 0]}]}, "each source colour needs its index, a Lab colour and a pixel count"),
     ({"source_colours": [[0, [50, 0, 0], 10], [0, [60, 0, 0], 10]]}, "two source colours have the same index"),

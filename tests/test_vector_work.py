@@ -1027,6 +1027,41 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
     assert not any((href or "").startswith("/api") for href in out["links"])        # nothing on this screen navigates to the API
 
 
+def test_contrast_and_artistic_recolour_the_work_as_variants_and_artistic_takes_a_new_arrangement_each_time(work, job):
+    """vector-detail-and-colour-control I-6: both are whole-work variants that keep the operator's choices; each press of Artistic draws
+    a new seed within its group of colours, and the variant says which group; a group that is not a group is refused."""
+    c, j = work, job
+    a, blue_e = areas(c, j), by_rgb(j, BLUE)["entry_id"]
+    j = colouring(c, j, op="set_colour", colour=by_rgb(j, GREEN)["index"], entry_id=blue_e)            # the operator's own choice
+    for mode in ("contrast", "artistic", "artistic"):
+        j = colouring(c, j, op="assign", mode=mode, **({"subset": "all"} if mode == "artistic" else {}))
+        assert j["colouring"]["mode"] == mode and by_rgb(j, GREEN)["entry_id"] == blue_e and by_rgb(j, GREEN)["status"] == "hand"
+    modes = [(v["mode"], v["seed"], v.get("subset")) for v in j["variants"]]
+    assert modes[-3:] == [("contrast", 0, None), ("artistic", 1, "all"), ("artistic", 2, "all")]
+    assert colouring(c, j, op="assign", mode="closest")["colouring"].get("subset") is None
+    r = c["client"].post(f"/api/vector/{j['id']}/colouring", json={"op": "assign", "mode": "artistic", "subset": "pastel"})
+    assert r.status_code == 422 and "group of colours" in r.text
+    assert a                                                                                             # the split is untouched
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_colour_step_sends_contrast_and_artistic_with_its_group_and_names_their_variants(work, job, tmp_path):
+    c, j = work, job
+    colouring(c, j, op="assign", mode="artistic", subset="warm")
+    out = run_screen(tmp_path, j, routes_of(c, j), """
+  await byText(tree, 'button', 'Контраст соседей').dispatch('click'); await tick();
+  const group = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Из каких цветов');
+  out.groups = group.querySelectorAll('option').map((o) => [o.value, o.textContent]);
+  group.value = 'cool'; await group.dispatch('change');
+  await byText(tree, 'button', 'Художественно').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => JSON.parse(r.body));
+  out.variants = tree.querySelectorAll('strong').map((s) => s.textContent).filter((t) => t.startsWith('№ '));
+""")
+    assert out["groups"] == [["all", "все цвета"], ["warm", "тёплые"], ["cool", "холодные"], ["bright", "яркие"]]
+    assert out["posted"] == [{"op": "assign", "mode": "contrast"}, {"op": "assign", "mode": "artistic", "subset": "cool"}]
+    assert any(v.endswith("Художественно · тёплые (вариант 1)") for v in out["variants"])
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_a_region_clicked_with_the_brush_is_painted_with_the_colour_picked_from_the_palette(work, job, tmp_path):
     out = run_screen(tmp_path, job, routes_of(work, job), """

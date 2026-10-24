@@ -10,8 +10,11 @@
 const VectorColours = (() => {
   const {h, fill, btn, field, pill, fail, modal, table, num, labText, agreed, CAUTION, steadiness, STEADY, originText, sourcesBlock} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
-  const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['random', 'Случайно']];
-  const MODE = {...Object.fromEntries(MODES), fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};      // the old mode only names variants saved with it
+  const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['contrast', 'Контраст соседей'], ['random', 'Случайно']];
+  const MODE = {...Object.fromEntries(MODES), artistic: 'Художественно', fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};   // the old mode only names variants saved with it
+  /** Группы палитры для «Художественно» (vector-detail I-6): из каких измеренных цветов раскладываются оттенки. */
+  const SUBSETS = [['all', 'все цвета'], ['warm', 'тёплые'], ['cool', 'холодные'], ['bright', 'яркие']];
+  const SUBSET = Object.fromEntries(SUBSETS);
   /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
   const STYLES = [
     ['realistic', 'Реалистично', 'Как на фото, насколько позволяет палитра: близкие цвета, соседние области остаются различимыми.'],
@@ -25,6 +28,7 @@ const VectorColours = (() => {
   const STATUS = {automatic: ['подобран автоматически', 'ok'], hand: ['выбран вручную', 'ok'], accepted: ['выбран вручную', 'ok'],
     missing: ['цвета титана больше нет среди измерений', 'bad'], excluded: ['не гравируется', '']};
   const HOW = {fastest_within_tolerance: 'самый быстрый в пределах допуска', nearest: 'ближайший', tonality: 'по тональности', random: 'случайно',
+    contrast: 'отличается от соседей', artistic: 'художественно, светлота по порядку',
     cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора', ai: 'выбор AI'};
   const stability = (e) => (e.stability && e.stability.assessed ? 'дисперсия ' + num(e.stability.variance) : 'не оценено');
   /** Уверенность в цвете настройки (REQ-045): число, сколько гравировок совпали и пометка, если автоматика цвет не берёт. */
@@ -109,7 +113,8 @@ const VectorColours = (() => {
     if (!j.variants.length) return h('p', {class: 'muted small'}, 'Вариантов пока нет');
     return h('div', {class: 'vw-variants'}, [...j.variants].reverse().map((v) => {
       const elsewhere = v.version != null && v.version !== j.document.version, current = v.number === j.colouring.variant;
-      const way = v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'random' ? ` (вариант ${v.seed})` : '');
+      const way = v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
+        + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : '');
       return h('div', {class: 'vw-variant' + (current ? ' current' : '')},
         h('div', {class: 'vw-variant-main'}, h('strong', {}, `№ ${v.number} · ${way}`),
           h('span', {class: 'small muted'}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
@@ -118,6 +123,14 @@ const VectorColours = (() => {
           : elsewhere ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}: вернуть можно отменой`)
             : btn('Вернуть', () => run({op: 'restore', variant: v.number})));
     }));
+  }
+
+  /** «Художественно» (DEC-079): каждый раз новая раскладка оттенков из выбранной группы палитры, светлые места остаются светлыми. */
+  function artisticRow(run) {
+    const group = h('select', {'aria-label': 'Из каких цветов'}, SUBSETS.map(([v, name]) => h('option', {value: v}, name)));
+    return h('div', {class: 'row'}, btn(MODE.artistic, () => run({op: 'assign', mode: 'artistic', subset: group.value}), 'btn-small'),
+      h('label', {class: 'row small'}, 'из ', group),
+      h('span', {class: 'muted small'}, 'новая раскладка оттенков при каждом нажатии, порядок светлоты как на оригинале'));
   }
 
   /** Раскраска с помощью AI: стиль, своё описание, свободная светлота, разрешение на фото и кнопка. Блок собирается один раз, поля не
@@ -199,7 +212,7 @@ const VectorColours = (() => {
     show(j);
     const colours = h('div', {class: 'stack vw-colours'}, intro, empty, bar,
       h('div', {class: 'vw-modes'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'),
-        h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}), 'btn-small')))),
+        h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}), 'btn-small'))), artisticRow(run)),
       h('div', {class: 'row'}, btn('Подробно по цветам…', () => modal('Подробно по цветам', rows, [{label: 'Закрыть', run: (m) => m.close()}]))));
     const saved = h('div', {class: 'stack'}, h('h4', {}, 'Варианты раскраски'),
       h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept);

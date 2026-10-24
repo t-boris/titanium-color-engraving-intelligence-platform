@@ -36,7 +36,15 @@ layers as it has colours, up to 29, and fewer only when the palette has fewer):
   source colour its own entry), or, with more colours than entries, never falls and every entry is used by a run of neighbouring
   colours; chosen by dynamic programming to minimise the pixel-weighted delta E; among equal totals the faster;
 * ``random``: entries drawn with a seeded generator, deterministic per seed; a new seed gives another variant. Each
-  source colour gets its own entry while the palette has enough of them.
+  source colour gets its own entry while the palette has enough of them;
+* ``contrast`` (vector-detail-and-colour-control I-6, its DEC-091): neighbours told apart. It starts from ``closest`` and then swaps the entries of
+  two colours, or gives a colour an entry no colour uses, while that raises the mean delta E between the titanium colours of
+  neighbouring source colours, weighted by the length of their shared border (``borders``), less twice the pixel-weighted mean delta E
+  to the source colours (``CONTRAST_FIDELITY``); deterministic, each colour its own entry as in ``closest``;
+* ``artistic`` (I-6, DEC-079 and DEC-092 of vector-detail-and-colour-control): the hues arranged anew for every seed within a chosen group of the
+  palette (``subset``: all, warm, cool or bright colours), the lightness order of the source colours kept as ``tonality`` keeps it.
+  Every source colour is given a target hue drawn by the seed from the hues of the group; among the entries in lightness order it takes
+  the one nearest its own L* and the target hue (``ARTISTIC_HUE`` L* units per degree).
 
 The entries of the operator's kept choices are not offered to the other colours while others remain. The modes ``fewer_layers``
 (DEC-074) and ``most_colours`` (DEC-087) are gone: more layers is what every mode does now.
@@ -62,12 +70,16 @@ import re
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from . import agreement, color, colormap, model, prediction, setup as su, tasks
+from . import agreement, color, colormap, colouring, model, prediction, setup as su, tasks
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
 MAX_COLOURS = 29                  # LightBurn's 30 output layers less the cleaning layer, which always comes first (DEC-073)
-MODES = ("closest", "tonality", "random")
+MODES = ("closest", "tonality", "random", "contrast", "artistic")
+SUBSETS = ("all", "warm", "cool", "bright")   # the groups of the palette Artistic draws from
+CONTRAST_FIDELITY = 2.0           # what a delta E to the source colour costs Contrast against a delta E between neighbours: a move must
+                                  # part neighbours twice as much as it strays (on spread palettes neighbours twice as apart, the source error doubled)
+ARTISTIC_HUE = 0.2                # the L* units Artistic counts for each degree of hue between an entry and its target hue
 
 
 def _basis(point: dict) -> str:
@@ -420,6 +432,107 @@ def _spread(free: list[dict], kept: dict[int, str], candidates: list[dict], dist
     return {s["index"]: (options[k], "tonality") for s, k in zip(order, reversed(picks))}
 
 
+def _contrast(sources: list[dict], kept: dict[int, str], by_id: dict, candidates: list[dict], distance, tolerance: float, colour_of,
+              borders) -> dict[int, tuple[dict, str]]:
+    """Closest first, then better told apart from its neighbours (see the module): a pass over the free colours in index order gives a colour
+    the unused entry (while there are no more colours than entries) or swaps it with another colour's entry, whichever raises the score
+    most, and passes repeat until none does. The score is the border-weighted mean delta E between neighbouring colours (each as it is
+    engraved at its own size, ``colour_of``) less ``CONTRAST_FIDELITY`` times the pixel-weighted mean delta E to the sources."""
+    free = sorted((s for s in sources if s["index"] not in kept), key=lambda s: s["index"])
+    start = _closest(free, kept, candidates, distance, tolerance)
+    pool = _pool(kept, candidates)
+    at, known = {s["index"] for s in free}, {s["index"] for s in sources}
+    weight: dict[tuple[int, int], float] = {}
+    for a, b, share in borders or ():
+        if a != b and a in known and b in known and (a in at or b in at):
+            weight[(a, b)] = weight[(b, a)] = weight.get((a, b), 0.0) + float(share)
+    if not weight or not free:
+        return {i: (e, "contrast") for i, (e, _) in start.items()}
+    total_w = sum(weight.values()) / 2
+    total_p = sum(max(s["pixels"], 1.0) for s in free)
+    near = {i: [(j, w) for (x, j), w in weight.items() if x == i] for i in at}
+    by_index = {s["index"]: s for s in sources}
+    ids = [e["id"] for e in pool]
+    lab = {s["index"]: np.array([colour_of(s, e) for e in pool], float) for s in free}
+    fixed = {k: np.asarray(colour_of(by_index[k], by_id[e]), float) for k, e in kept.items()}
+    fid = {s["index"]: np.array([max(s["pixels"], 1.0) * distance(s, e) for e in pool]) / total_p for s in free}
+    cur = {i: ids.index(e["id"]) for i, (e, _) in start.items()}
+
+    def colour(j: int, entry: int | None = None) -> np.ndarray:
+        return fixed[j] if j in fixed else lab[j][cur[j] if entry is None else entry]
+
+    def part(i: int, e: int, skip: int | None = None) -> float:
+        """What colour ``i`` with entry ``e`` adds to the score, the border with ``skip`` left out."""
+        apart = sum(w * float(np.linalg.norm(lab[i][e] - colour(j))) for j, w in near[i] if j != skip)
+        return apart / total_w - CONTRAST_FIDELITY * fid[i][e]
+
+    for _ in range(100):                                                   # a bound only: each move raises the score
+        moved = False
+        for i in at:
+            used = set(cur.values())
+            best, move = 1e-9, None
+            if len(free) <= len(pool):
+                here = part(i, cur[i])
+                for e in range(len(pool)):
+                    gain = part(i, e) - here if e not in used else 0.0
+                    if gain > best:
+                        best, move = gain, ("give", e)
+            for j in at:
+                if j == i or cur[j] == cur[i]:
+                    continue
+                w = weight.get((i, j), 0.0)
+                now = part(i, cur[i], j) + part(j, cur[j], i) + w * float(np.linalg.norm(lab[i][cur[i]] - lab[j][cur[j]])) / total_w
+                then = part(i, cur[j], j) + part(j, cur[i], i) + w * float(np.linalg.norm(lab[i][cur[j]] - lab[j][cur[i]])) / total_w
+                if then - now > best:
+                    best, move = then - now, ("swap", j)
+            if move is not None:
+                if move[0] == "give":
+                    cur[i] = move[1]
+                else:
+                    cur[i], cur[move[1]] = cur[move[1]], cur[i]
+                moved = True
+        if not moved:
+            break
+    return {i: (pool[e], "contrast") for i, e in cur.items()}
+
+
+def _hue(lab) -> tuple[float, float]:
+    """The chroma and the hue (degrees) of a Lab colour."""
+    return math.hypot(lab[1], lab[2]), math.degrees(math.atan2(lab[2], lab[1])) % 360.0
+
+
+def subset_of(candidates: list[dict], subset: str) -> list[dict]:
+    """The entries of a group of the palette Artistic draws from: all of them; the warm ones (red to yellow) or the cool ones (green-blue to
+    violet), coloured enough to have a hue, as the colouring of a photo work names them (:mod:`colouring`); or the bright ones: the
+    more chromatic half of the coloured entries."""
+    if subset == "all":
+        return list(candidates)
+    hued = [(e, *_hue(e["lab"])) for e in candidates]
+    coloured = [(e, c, h) for e, c, h in hued if c >= colouring.COLOURED]
+    if subset == "bright":
+        floor = float(np.median([c for _, c, _ in coloured])) if coloured else math.inf
+        return [e for e, c, _ in coloured if c >= floor]
+    low, high = colouring.WARM_HUE if subset == "warm" else colouring.COOL_HUE
+    return [e for e, _, h in coloured if low <= h <= high]
+
+
+def _artistic(sources: list[dict], kept: dict[int, str], by_id: dict, candidates: list[dict], colour_of, seed: int) -> tuple[dict, bool]:
+    """The lightness order kept as in ``tonality`` (DEC-079), each colour drawn to a target hue the seed gives it among the hues of the
+    group, so that every seed arranges the hues anew; the second value says whether the order was kept (the kept choices may break it)."""
+    rng = random.Random(seed)
+    hues = sorted(h for c, h in (_hue(e["lab"]) for e in candidates) if c >= colouring.COLOURED)
+    target = {s["index"]: rng.choice(hues) for s in sorted(sources, key=lambda s: s["index"])} if hues else {}
+
+    def cost(s, e) -> float:
+        looks = colour_of(s, e)
+        chroma, hue = _hue(looks)
+        gap = 90.0 if not hues or chroma < colouring.COLOURED else min(abs(hue - target[s["index"]]), 360.0 - abs(hue - target[s["index"]]))
+        return abs(s["lab"][0] - looks[0]) + ARTISTIC_HUE * gap
+
+    chosen, order_kept = _tonality(sources, kept, by_id, candidates, cost)
+    return {i: (e, "artistic") for i, (e, _) in chosen.items()}, order_kept
+
+
 def automatic(entry: dict, limit: float | None, include_as_shot: bool) -> bool:
     """Whether the automatic modes may choose an entry: not cautioned (its colour changes under the same settings, or a better
     measurement of them exists, DEC-083), no slower than ``limit`` seconds per square centimetre (an unknown time is slower than
@@ -444,16 +557,19 @@ def choosable(entries, limit: float | None, include_as_shot: bool) -> tuple[list
 
 
 def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: float, seed: int = 0, max_time: float | None = None,
-           keep: dict | None = None, include_as_shot: bool = False, size_of=None) -> dict:
+           keep: dict | None = None, include_as_shot: bool = False, size_of=None, borders=None, subset: str = "all") -> dict:
     """Give each source colour an entry of ``palette`` by ``mode`` (see the module). ``max_time`` leaves slower entries (and
     those with no time per area) out of the automatic choice, and so do colours measured as photographed unless
     ``include_as_shot``; ``keep`` holds the operator's choices, which every mode keeps. ``size_of(index, entry)`` gives the row length
     (mm) a source colour is engraved at with an entry (DEC-107): its distance to the entry is then to the entry's colour at that length
-    (:func:`at_size`); without it, to the entry's own colour.
+    (:func:`at_size`); without it, to the entry's own colour. ``borders`` (``[a, b, share]`` per pair of source colours that touch, the
+    share of the border length) is what ``contrast`` tells apart; ``subset`` the group of the palette ``artistic`` draws from.
     Each colour lists its entry, its delta E to the source, whether that is within the tolerance and the entry's time per
     square centimetre; the totals give the number of distinct recipes and the pixel-weighted mean delta E."""
     if mode not in MODES:
-        raise su.ValidationError("the recolouring mode must be closest, tonality or random")
+        raise su.ValidationError("the recolouring mode must be closest, tonality, random, contrast or artistic")
+    if subset not in SUBSETS:
+        raise su.ValidationError("the group of colours must be all, warm, cool or bright")
     sources = [_source(item) for item in source_colours or []]
     if not sources:
         raise su.ValidationError("give the source colours to recolour")
@@ -490,10 +606,18 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
         return cache[key]
 
     order_kept = None
+    if mode == "artistic" and free:
+        candidates = subset_of(candidates, subset)
+        if not candidates:
+            raise su.ValidationError(f"no measured colour of this palette is {subset}: choose another group of colours")
     if mode == "closest":
         chosen = _closest(free, kept, candidates, distance, tolerance) if free else {}
     elif mode == "tonality":
         chosen, order_kept = _tonality(sources, kept, by_id, candidates, distance) if free else ({}, True)
+    elif mode == "contrast":
+        chosen = _contrast(sources, kept, by_id, candidates, distance, tolerance, lambda s, e: looks(s, e)["lab"], borders) if free else {}
+    elif mode == "artistic":
+        chosen, order_kept = _artistic(sources, kept, by_id, candidates, lambda s, e: looks(s, e)["lab"], seed) if free else ({}, True)
     else:
         chosen = _random(free, kept, candidates, seed) if free else {}
     chosen.update({index: (by_id[entry_id], "kept") for index, entry_id in kept.items()})
@@ -516,9 +640,11 @@ def assign(source_colours, palette: list[dict], mode: str, *, tolerance_de: floa
               "mean_time_s_per_cm2": None if None in times else float(np.average(times, weights=weights))}
     out = {"mode": mode, "tolerance_de": tolerance, "max_time_s_per_cm2": limit, "include_as_shot": include_as_shot, "cautioned": cautioned,
            "keep": {str(k): v for k, v in kept.items()}, "colours": colours, "totals": totals}
-    if mode == "random":
+    if mode in ("random", "artistic"):
         out["seed"] = seed
-    if mode == "tonality":
+    if mode == "artistic":
+        out["subset"] = subset
+    if mode in ("tonality", "artistic"):
         out["lightness_order"] = "kept" if order_kept else "broken_by_kept_choices"
     return out
 

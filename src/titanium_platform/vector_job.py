@@ -626,8 +626,14 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
     indexes = {str(p["index"]) for p in document["palette"]}
     keep = {i: g["entry_id"] for i, g in colouring["groups"].items() if g["entry_id"] in by_id and i in indexes}
     colour_rows = _row_lengths(plan, document)[1]
+    borders = _memo(("borders", plan["document_path"]), lambda: ai.touching(document, None)) if mode == "contrast" else None
+    subset = colouring.get("subset") or "all"
+    if mode == "artistic":
+        out["subset"] = subset
+    else:
+        out.pop("subset", None)
     result = palette.assign(_sources(document), entries, mode, tolerance_de=plan["threshold"], seed=seed, max_time=settings["max_time"],
-                            keep=keep, include_as_shot=settings["include_as_shot"],
+                            keep=keep, include_as_shot=settings["include_as_shot"], borders=borders, subset=subset,
                             size_of=lambda index, entry: colour_rows(index, _angle(entry)))     # each colour at its own size (DEC-107)
     out["assignment"] = {str(c["index"]): c["entry_id"] for c in result["colours"]}
     out["how"] = {str(c["index"]): c["how"] for c in result["colours"]}
@@ -654,6 +660,7 @@ def _add_variant(store: Store, plan: dict, document: dict, entries: list[dict]) 
     plan["colouring"]["variant"] = number
     state = _state(plan, document, entries, _inscribed(store, plan, entries))
     plan["variants"].append({"number": number, "mode": plan["colouring"]["mode"], "seed": plan["colouring"]["seed"], "at": now(),
+                             **({"subset": plan["colouring"]["subset"]} if plan["colouring"].get("subset") else {}),
                              "version": plan["document_version"], "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
 
 
@@ -1390,7 +1397,8 @@ def photo_view(store: Store, plan: dict) -> dict:
         settings={"tolerance_de": plan["threshold"], **settings},
         outside=state["outside"], missing={"regions": len(state["missing_regions"])}, totals=state["totals"],
         variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"]),
-                   **({"ai": v["colouring"]["ai"]} if v["colouring"].get("ai") else {})} for v in plan["variants"]],
+                   **({"ai": v["colouring"]["ai"]} if v["colouring"].get("ai") else {}),
+                   **({"subset": v["subset"]} if v.get("subset") else {})} for v in plan["variants"]],
         ai={"available": _ai_missing() is None, "missing": _ai_missing(), "styles": list(ai.STYLES), "photo_allowed": bool(plan.get("ai_photo")),
             "photo_px": ai.PHOTO_PX, "max_text": ai.MAX_TEXT},
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
@@ -1576,7 +1584,8 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
     """One operation of the colour editor, recorded in the history; every one but ``undo`` and ``redo`` can be undone, and
     a new one clears what was undone (editor DEC-077).
 
-    ``{"op": "assign", "mode"}`` recolours automatically (closest, tonality, random: a new seed each time) and
+    ``{"op": "assign", "mode", "subset"?}`` recolours automatically (closest, tonality, contrast; random and artistic with a new seed each
+    time, artistic within a ``subset`` of the palette: all, warm, cool or bright) and
     adds a variant; ``{"op": "ai_colour", "style", "text"?, "free_lightness"?}`` lets the language model choose the colours
     in a style (:func:`_ai_colour`) and adds a variant; ``{"op": "restore", "variant"}`` brings back one made on the current version of the split;
     ``{"op": "settings", "tolerance_de", "max_time", "include_as_shot"}`` changes the choice and recolours with the current
@@ -1624,9 +1633,12 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
     if kind == "assign":
         mode = op.get("mode")
         if mode not in palette.MODES:
-            raise cv.ConversionError("the recolouring mode must be closest, tonality or random")
-        seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == "random"), default=0) if mode == "random" else 0
-        return {"colouring": _automatic(plan, document, entries, mode, seed, current)}
+            raise cv.ConversionError("the recolouring mode must be closest, tonality, random, contrast or artistic")
+        if mode == "artistic" and op.get("subset", "all") not in palette.SUBSETS:
+            raise cv.ConversionError("the group of colours must be all, warm, cool or bright")
+        seeded = mode in ("random", "artistic")              # a new arrangement each time, the earlier ones kept as variants
+        seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == mode), default=0) if seeded else 0
+        return {"colouring": _automatic(plan, document, entries, mode, seed, {**current, "subset": op.get("subset", "all")})}
     if kind == "ai_colour":
         return {"colouring": _ai_colour(store, plan, document, entries, op)}
     if kind == "restore":
