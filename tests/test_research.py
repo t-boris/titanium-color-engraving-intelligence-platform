@@ -310,3 +310,22 @@ def test_the_research_tools_require_the_pulse_width_of_a_plate():
     for name in ("preview_test", "create_test", "replace_pending_test"):
         spec = next(s for s in research.TOOL_SPECS if s["name"] == name)
         assert spec["parameters"]["properties"]["settings"]["required"] == ["pulse_width"]
+
+
+def test_a_key_without_the_client_library_is_a_message_in_the_chat_and_in_the_explanation_not_a_server_error(tmp_path, monkeypatch):
+    """The app environment once lacked ``openai`` (a wheel installed without its dependencies): with a key set, the chat and the designer's
+    explanation answered a bare 500. They now say what is missing and what to do, as the AI colouring does; nothing is stored."""
+    import sys
+    monkeypatch.setattr(research, "_api_key", lambda: "test-key")
+    monkeypatch.setitem(sys.modules, "openai", None)                  # `from openai import OpenAI` raises ImportError, as without the library
+    app = create_app(tmp_path / "data")
+    with TestClient(app, raise_server_exceptions=False) as client:
+        laser, _, material = hardware(app.state.store)
+        sid = research.create_session(app.state.store, laser["id"], material["id"], "line", "видимая линия")["id"]
+        asked = client.post(f"/api/research/sessions/{sid}/messages", json={"message": "Что проверить дальше?"})
+        assert asked.status_code == 422 and asked.json()["error"].startswith("the AI could not be started on this computer")
+        assert "openai" not in asked.json()["error"]
+        assert client.get(f"/api/research/sessions/{sid}").json()["messages"] == []
+    app.state.store.close()
+    with pytest.raises(research.ResearchError, match="install the app's dependencies"):
+        research.proposal_explainer()

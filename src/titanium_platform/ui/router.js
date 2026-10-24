@@ -57,6 +57,30 @@ Object.assign(App, (() => {
       for (const el of document.querySelectorAll('.app-version')) el.textContent = appVersion ? 'v' + appVersion : '';
     }).catch(() => { versionAsked = false; });
   }
+
+  // Открытая страница после обновления сервера остаётся на старых скриптах: версия сервера сверяется с той, с которой страница загрузилась,
+  // когда окно снова в фокусе, когда вкладку снова видно и раз в пять минут; новая версия показывает полосу «перезагрузите страницу».
+  const VERSION_CHECK_MS = 5 * 60 * 1000;
+  let updateBanner = null;
+  function checkVersion() {
+    if (!appVersion) return Promise.resolve();
+    return get('/version').then((data) => {
+      const now = data && data.version ? String(data.version) : null;
+      if (now && now !== appVersion) showUpdate(now);
+    }).catch(() => {});
+  }
+  function showUpdate(version) {
+    const text = `Приложение обновлено до v${version} — перезагрузите страницу, чтобы работать в новой версии.`;
+    if (updateBanner) { updateBanner.querySelector('.update-text').textContent = text; return; }
+    updateBanner = h('div', {class: 'update-banner', role: 'status'}, h('span', {class: 'update-text'}, text),
+      btn('Перезагрузить', () => location.reload(), 'btn-small primary'));
+    document.body.append(updateBanner);
+  }
+  function watchVersion() {
+    addEventListener('focus', checkVersion);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'hidden') checkVersion(); });
+    setInterval(checkVersion, VERSION_CHECK_MS);
+  }
   function setMenu(open) {
     if (!sidebar) return;
     if (open) sidebar.classList.add('is-open'); else sidebar.classList.remove('is-open');
@@ -132,8 +156,9 @@ Object.assign(App, (() => {
       if (ev.key === 'Escape' && menuOpen()) { setMenu(false); (window.innerWidth > 1000 ? railButton : menuButton).focus(); }
     });
     addEventListener('hashchange', () => { const options = nextNavigationOptions || {}; nextNavigationOptions = null; render(options); });
+    watchVersion();
     render();
   };
   const go = (route, options = {}) => { nextNavigationOptions = options; location.hash = '#' + route; };
-  return {screens, register, render, start, go};
+  return {screens, register, render, start, go, checkVersion};
 })());

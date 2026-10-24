@@ -539,3 +539,22 @@ def test_an_accepted_proposal_links_to_its_plate_the_photograph_of_it_and_the_me
     measured = result["measured"][0]
     assert measured["pair_id"] == pid and measured["comparable"] and color.delta_e(measured["lab"], (80.0, -10.0, 33.0)) < 2.5
     assert measured["target_check"]["target_id"] == 1 and measured["target_check"]["within_tolerance"] is True
+
+
+def test_a_key_without_the_client_library_refuses_the_explanation_with_a_message_and_keeps_the_proposal(tmp_path, monkeypatch):
+    import sys
+    from fastapi.testclient import TestClient
+    from titanium_platform import research
+    from titanium_platform.api.app import create_app
+    monkeypatch.setattr(research, "_api_key", lambda: "test-key")
+    monkeypatch.setitem(sys.modules, "openai", None)                  # the library is not installed in this environment
+    app = create_app(tmp_path / "data")
+    with TestClient(app, raise_server_exceptions=False) as client:
+        store = app.state.store
+        w = obs.setup(store)
+        seed_measurements(store, w)
+        p = client.post("/api/designer/propose", json={"device_id": w["device"]["id"], "lens_id": w["lens"]["id"], **GROUP}).json()
+        refused = client.post(f"/api/designer/proposals/{p['id']}/explanation")
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["error"].startswith("the AI could not be started on this computer")
+        assert client.get(f"/api/designer/proposals/{p['id']}").json()["explanation"] is None

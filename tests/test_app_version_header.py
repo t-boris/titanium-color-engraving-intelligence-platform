@@ -71,3 +71,60 @@ def test_the_server_reports_the_version_the_package_has(tmp_path):
     from titanium_platform.api.app import create_app
     with TestClient(create_app(tmp_path)) as client:
         assert client.get("/api/version").json()["version"] == __version__
+
+
+UPDATE_HARNESS = """
+const {context, load, El} = require(%(dom)s);
+const answers = {'/api/version': {status: 200, json: {version: '1.0.0', data_dir: '/x'}}};
+const ctx = context(answers);
+const root = new El('div'); root.setAttribute('id', 'app'); ctx.document.body.append(root);
+ctx.document.getElementById = (id) => (id === 'app' ? root : null);
+ctx.document.querySelectorAll = (s) => ctx.document.body.querySelectorAll(s);
+let reloaded = 0;
+ctx.location.reload = () => { reloaded += 1; };
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'router.js']);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const banners = () => ctx.document.body.querySelectorAll('div').filter((el) => (el.className || '').split(' ').includes('update-banner'));
+(async () => {
+  const App = ctx.App;
+  App.register({id: 'experiments', render: async () => ctx.document.createElement('div')});
+  const out = {};
+  await App.render(); for (let i = 0; i < 5; i++) await tick();
+  await App.checkVersion();
+  out.same = banners().length;
+  answers['/api/version'] = {status: 200, json: {version: '1.1.0', data_dir: '/x'}};
+  await App.checkVersion(); await App.checkVersion();
+  out.after = banners().map((b) => [b.getAttribute('role'), b.textContent]);
+  await App.render(); for (let i = 0; i < 5; i++) await tick();
+  out.kept = banners().length;
+  out.header = root.querySelectorAll('span').filter((el) => (el.className || '').split(' ').includes('app-version')).map((t) => t.textContent);
+  banners()[0].querySelectorAll('button')[0].dispatch('click');
+  out.reloaded = reloaded;
+  answers['/api/version'] = {status: 500, json: {error: 'down'}};
+  await App.checkVersion();
+  out.down = banners().length;
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+
+
+@node
+def test_a_newer_server_version_shows_one_banner_that_reloads_the_page_and_survives_navigation(tmp_path):
+    """After a deploy an open page still runs the old scripts (lessons: «a fix that is deployed does not reach a page that is already open»):
+    the version the page loaded with is compared with the server's, and a newer one shows a single banner with «Перезагрузить»."""
+    script = tmp_path / "update.js"
+    script.write_text(UPDATE_HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "ui": json.dumps(str(UI) + "/"),
+                                        "tables": json.dumps(TABLES)}, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout)
+    assert out["same"] == 0
+    assert len(out["after"]) == 1 and out["after"][0][0] == "status" and "v1.1.0" in out["after"][0][1] and "Перезагрузить" in out["after"][0][1]
+    assert out["kept"] == 1 and out["header"] == ["v1.0.0"]          # the header keeps the version the page runs
+    assert out["reloaded"] == 1 and out["down"] == 1
+
+
+def test_the_version_is_checked_again_on_focus_on_a_visible_tab_and_every_five_minutes():
+    assert "addEventListener('focus', checkVersion)" in ROUTER and "visibilitychange" in ROUTER
+    assert "VERSION_CHECK_MS = 5 * 60 * 1000" in ROUTER and "setInterval(checkVersion, VERSION_CHECK_MS)" in ROUTER and "watchVersion();" in ROUTER
+    assert ".update-banner {position:fixed;" in CSS

@@ -35,6 +35,22 @@ def test_the_image_layer_summary_names_the_family_and_reads_the_tags_of_the_othe
     assert layer.unknown_settings == []                                  # nothing the system now reads is reported as unknown
 
 
+def test_the_review_screen_shows_every_setting_the_summary_reads_from_an_image_layer():
+    """REQ-054 criteria 2 and 3: the line interval, the dot width and the tags of the other modes (overscan included) are read, and each one
+    the file states appears on the review screen's card of image layers, so nothing read stays out of sight."""
+    from pathlib import Path
+    data = project(ramp_png(), mode="halftone").replace(b'<maxPower Value="25"/>', b'<maxPower Value="25"/><overscan Value="1"/>')
+    summary = lb.parse_bytes(data).layer(0).image_summary()
+    assert summary["overscan"] is True and summary["line_interval_mm"]
+    card = (Path(pm.__file__).parent / "ui" / "screens" / "ingest-review.js").read_text(encoding="utf-8")
+    card = card[card.index("'Слои-изображения'"):card.index("PhotoModes.get(i.dither) ?")]
+    shown = ("dpi", "line_interval_mm", "dot_width_mm", "dot_correction", "cleanup_pass", "passes", "min_power", "max_power", "cells_per_inch",
+             "halftone_angle", "negative", "pass_through", "overscan")
+    assert set(shown) | {"dither", "kind", "family", "sub_layers", "processing", "adjusted"} == set(summary)
+    assert [key for key in shown if f"i.{key}" not in card] == []
+    assert "интервал строк" in card and "(overscan) включён" in card
+
+
 GREY = np.array([[0.0, 0.25, 0.5, 0.75, 1.0]])
 OPAQUE = np.ones_like(GREY)
 

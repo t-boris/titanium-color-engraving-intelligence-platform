@@ -653,12 +653,14 @@ const IngestReview = (() => {
           const i = l.image, t = l.tonal;
           return h('div', {class: 'stack'},
             h('p', {}, `${l.name}: ${i.kind === 'depth' ? 'глубина (3D-слайс)' : 'фотогравировка'}, режим «${PhotoModes.label(i.dither)}»`
-              + (i.dpi ? `, ${num(i.dpi, 0)} DPI` : '') + (i.dot_width_mm != null ? `, ширина точки ${num(i.dot_width_mm, 3)} мм` : '')
+              + (i.dpi ? `, ${num(i.dpi, 0)} DPI` : '') + (i.line_interval_mm ? `, интервал строк ${num(i.line_interval_mm, 4)} мм` : '')
+              + (i.dot_width_mm != null ? `, ширина точки ${num(i.dot_width_mm, 3)} мм` : '')
               + (i.dot_correction ? ', поправка точки включена' : '') + (i.cleanup_pass ? ', есть проход очистки' : '')
               + (i.passes ? `, проходов ${num(i.passes, 0)}` : '')
               + (i.min_power != null ? `, Min ${num(i.min_power, 1)}%` : '') + (i.max_power != null ? `, Max ${num(i.max_power, 1)}%` : '')
               + (i.cells_per_inch ? `, ${num(i.cells_per_inch, 0)} линий на дюйм, угол ${num(i.halftone_angle, 0)}°` : '')
-              + (i.negative ? ', негатив' : '') + (i.pass_through ? ', без растрирования LightBurn (pass-through)' : '') + '.'),
+              + (i.negative ? ', негатив' : '') + (i.pass_through ? ', без растрирования LightBurn (pass-through)' : '')
+              + (i.overscan ? ', перебег за края строки (overscan) включён' : '') + '.'),
             PhotoModes.get(i.dither) ? h('p', {class: 'small muted'}, `${PhotoModes.get(i.dither).controls} Важные настройки: ${PhotoModes.get(i.dither).settings}. `
               + `Результат ${PhotoModes.PREDICT[PhotoModes.get(i.dither).predict]}.`)
               : h('p', {class: 'small muted'}, 'Этот режим версия не знает: описание не придумывается, настройки слоя сохранены как есть.'),

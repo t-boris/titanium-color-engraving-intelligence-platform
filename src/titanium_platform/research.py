@@ -388,6 +388,16 @@ def openai_client():
     return OpenAI(api_key=key, timeout=90.0, max_retries=1)
 
 
+def started_client():
+    """:func:`openai_client` for a screen: None without a key, and a client library that is missing or broken (a wheel installed without
+    its dependencies) is the operator's message with what to do, not a server error; the library's own text names paths."""
+    try:
+        return openai_client()
+    except Exception:
+        raise ResearchError("the AI could not be started on this computer: a library it needs is missing or broken, install the app's "
+                            "dependencies (see README)") from None
+
+
 EXPLAIN_INSTRUCTIONS = """Ты помогаешь оператору лазерной гравировки по титану понять предложенный эксперимент.
 Предложение уже рассчитано офлайн-алгоритмом по измерениям; ты его не меняешь и не выбираешь параметры.
 Ответь по-русски обычным текстом, до 1800 знаков: что проверяет плата, почему выбран каждый набор (по полю rationale),
@@ -399,7 +409,7 @@ EXPLAIN_INSTRUCTIONS = """Ты помогаешь оператору лазер�
 def proposal_explainer(client=None):
     """An explainer for ``designer.attach_explanation`` (REQ-006, DEC-013): it sends a brief of the proposal to the model the
     researcher uses and returns its plain text. None without a client and without a key: the proposal stays as it is."""
-    client = client if client is not None else openai_client()
+    client = client if client is not None else started_client()
     if client is None:
         return None
 
@@ -600,7 +610,7 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
     session = get_session(store, session_id)
     if session["status"] != "active":
         raise ResearchError("исследование закрыто")
-    client = client if client is not None else openai_client()
+    client = client if client is not None else started_client()
     if client is None:
         raise ResearchError("OPENAI_API_KEY не найден в окружении или локальном .env.local")
     if session["memory"] is None and session["message_count"] >= MEMORY_INTERVAL:
