@@ -679,6 +679,37 @@ def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in
 
 
 @node
+def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
+    """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Как есть» on the photo work screen."""
+    out = run(tmp_path, {"work": "7"}, """
+  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', C = 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее',
+        G = 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее';
+  const range = (label) => input(tree, (i) => i.getAttribute('aria-label') === label && i.getAttribute('type') === 'range');
+  const both = () => [B, C, G].map((label) => [range(label).value, labelled(tree, label).value]);
+  out.start = {sliders: [B, C, G].map((label) => [range(label).getAttribute('min'), range(label).getAttribute('max')]), values: both(),
+               reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+  for (const step of ['5', '10', '15', '20']) { range(B).value = step; await range(B).dispatch('input'); await wait(60); }
+  out.dragging = {values: both(), saves: saves().length};
+  await wait(350); await settle();
+  out.paused = {values: both(), saves: saves().length, reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+  range(G).value = '1.5'; await range(G).dispatch('input'); await wait(350); await settle();
+  out.gamma = {values: both(), shown: shown(tree)};
+  await button(tree, 'Как есть').dispatch('click'); await settle();
+  out.reset = {values: both(), reset: button(tree, 'Как есть').disabled, shown: shown(tree)};
+  out.saves = saves();
+""")
+    assert out["start"] == {"sliders": [["-100", "100"], ["-100", "100"], ["0.2", "5"]], "values": [["0", "0"], ["0", "0"], ["1", "1"]],
+                            "reset": True, "shown": "/api/photo-works/7/preview.png?v=0"}
+    assert out["dragging"] == {"values": [["20", "20"], ["0", "0"], ["1", "1"]], "saves": 0}                # the number follows, nothing sent yet
+    assert out["paused"] == {"values": [["20", "20"], ["0", "0"], ["1", "1"]], "saves": 1, "reset": False,
+                             "shown": "/api/photo-works/7/preview.png?v=1"}                              # one change, the forecast follows
+    assert out["gamma"] == {"values": [["20", "20"], ["0", "0"], ["1.5", "1.5"]], "shown": "/api/photo-works/7/preview.png?v=2"}
+    assert out["reset"] == {"values": [["0", "0"], ["0", "0"], ["1", "1"]], "reset": True, "shown": "/api/photo-works/7/preview.png?v=3"}
+    assert out["saves"] == [{"tone": {"brightness": 20, "contrast": 0, "gamma": 1}}, {"tone": {"brightness": 20, "contrast": 0, "gamma": 1.5}},
+                            {"tone": {"brightness": 0, "contrast": 0, "gamma": 1}}]
+
+
+@node
 def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_grayscale_hides_it(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   const box = () => tree.querySelector('.ge-dotwidth');

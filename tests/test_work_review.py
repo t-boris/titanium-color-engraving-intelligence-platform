@@ -3,12 +3,15 @@ the engraving measured; the conclusion kept in the work; the layers whose titani
 replacement proposed. The engraved file is matched to the promise by settings, never by layer number."""
 import json
 
+import cv2
 import pytest
 
 import obs
-from test_vector_work import PAPER, YELLOW, by_rgb, colouring, job, lab, palette_ids, picture, work    # noqa: F401  (fixtures)
+import synth
+from test_supplied_settings import CELLS, JOB
+from test_vector_work import PAPER, YELLOW, by_rgb, colouring, create, job, lab, palette_ids, picture, work    # noqa: F401  (fixtures)
 from test_vector_list import pixels, share, works
-from titanium_platform import color, conversion as cv, plans as pl, setup as su, work_errors, work_review as wr
+from titanium_platform import color, conversion as cv, ingest, plans as pl, setup as su, work_errors, work_review as wr
 from titanium_platform.db import now
 
 
@@ -66,6 +69,22 @@ def test_a_difference_is_beyond_only_past_the_larger_of_the_visible_limit_and_th
     quiet = wr.review(promise, engraved, chart_residual=gap + 1)
     assert quiet["limit"] == gap + 1 and quiet["rows"][0]["beyond"] is False                # a photograph this uncertain convicts nothing
     assert wr.review(promise, engraved, chart_residual=wr.POOR_CHART_DE + 1)["notes"] == [{"code": "poor_chart", "residual": wr.POOR_CHART_DE + 1}]
+
+
+def test_the_visible_limit_is_5_de_a_smaller_chart_residual_keeps_it_and_a_difference_exactly_at_it_is_not_beyond():
+    """REQ-047 crit. 3: a layer is beyond when ΔE exceeds the larger of 5 and the chart residual; a row carries both colours."""
+    assert wr.VISIBLE_DE == 5.0
+    promise = [layer(1, lab_=(70, 0, 0)), layer(2, power=30, lab_=(60, 10, 10))]
+    engraved = [seen(1, lab_=(65, 0, 0)), seen(2, power=30, lab_=(60, 10, 15.25))]                    # ΔE 5 exactly, and 5.25
+    plain = wr.review(promise, engraved)
+    assert plain["limit"] == 5.0 and [row["delta_e"] for row in plain["rows"]] == [5.0, 5.25]
+    assert [row["beyond"] for row in plain["rows"]] == [False, True]                                    # at the limit is not beyond it
+    small = wr.review(promise, engraved, chart_residual=3.6)
+    assert small["limit"] == 5.0 and [row["beyond"] for row in small["rows"]] == [False, True]          # a good chart does not lower it
+    first = plain["rows"][0]
+    assert (first["promised_lab"], first["got_lab"]) == ([70.0, 0.0, 0.0], [65.0, 0.0, 0.0])
+    assert first["promised_srgb"] == promise[0]["srgb"] and first["got_srgb"] == [int(v) for v in color.lab_to_srgb8([65, 0, 0])]
+    assert (first["dL"], first["dC"], first["dh"]) == (-5.0, 0.0, None)
 
 
 def test_one_shift_of_lightness_on_most_layers_is_called_systematic_and_not_blamed_on_the_recipes():
@@ -166,6 +185,13 @@ def test_an_export_keeps_what_every_layer_promised_apart_from_the_work_that_may_
     assert {"power", "frequency", "speed", "line_interval"} <= set(first["settings"]) and first["lab"] and first["region_ids"] and first["area_mm2"] > 0
     shown = work["client"].get(f"/api/vector/{job['id']}").json()
     assert all("promised" not in e for e in shown["exports"])                              # the screen gets the list of files, not their promises
+    # REQ-047 crit. 1: per layer the colour the preview showed and its basis, as the palette measured the layer's recipe
+    entries = {e["id"]: e for e in work["client"].get("/api/vector-palette", params={"device_id": work["w"]["setup"][0], "lens_id": work["w"]["setup"][1],
+                                                                                     "material_id": work["ti"]}).json()["entries"]}
+    layers = {layer["index"]: layer for layer in shown["layers"]}
+    for promised in export["promised"]:
+        assert promised["basis"] and promised["basis"] == entries[promised["entry_id"]]["basis"]
+        assert promised["lab"] == pytest.approx(layers[promised["index"]]["lab"]) and promised["srgb"] == layers[promised["index"]]["srgb"]
 
 
 def test_the_photograph_of_an_engraving_is_set_against_the_promise_by_settings_and_the_conclusion_goes_into_the_work(work, job):
@@ -282,6 +308,42 @@ def test_deleting_the_only_photograph_of_an_engraving_takes_its_review_out_of_th
     assert pl.get_plan(c["store"], j["id"]).get("reviews") == []
 
 
+def test_the_review_stays_while_another_photograph_of_the_same_engraving_is_still_accepted(work, job):
+    """REQ-047 crit. 5: one review per engraving; deleting a photograph removes it only when it was the engraving's last."""
+    c, j = work, job
+    exported(c, j)
+    first = engrave(c, j)
+    work_errors.after_acceptance(c["store"], first)
+    second = engrave(c, j, labs={0: [10.0, 0.0, 0.0]})                                         # a second photograph of eng-1
+    work_errors.after_acceptance(c["store"], second)
+    assert [r["pair_id"] for r in pl.get_plan(c["store"], j["id"])["reviews"]] == [second]
+    assert c["client"].delete(f"/api/pairs/{first}").status_code == 204
+    assert [r["pair_id"] for r in pl.get_plan(c["store"], j["id"])["reviews"]] == [second]           # eng-1 is still photographed
+    assert c["client"].delete(f"/api/pairs/{second}").status_code == 204
+    assert pl.get_plan(c["store"], j["id"])["reviews"] == []
+
+
+def test_measuring_a_photograph_again_through_the_api_replaces_the_review_of_its_engraving(work, job, monkeypatch):
+    """REQ-047 crit. 5: the re-measure route puts the review of the new measurement in place of the old one. What ``ingest.remeasure_pair``
+    does when the new measurement comes out whole (the old pair deleted, the same engraving accepted again) is done here directly: a
+    vector work's own photograph is not synthesised."""
+    c, j = work, job
+    plan = exported(c, j)
+    old = engrave(c, j)
+    work_errors.after_acceptance(c["store"], old)
+    darker = [plan["layers"][0]["lab"][0] - 9, *plan["layers"][0]["lab"][1:]]
+
+    def remeasured(store, pair_id, on_accepted=None):
+        store.execute("UPDATE pair SET status='Deleted' WHERE id=?", (pair_id,))
+        return {"pair_id": pair_id, "status": "replaced", "replaced_by": engrave(c, j, labs={0: darker}), "reason": None, "layers": []}
+    monkeypatch.setattr(ingest, "remeasure_pair", remeasured)
+    answer = c["client"].post(f"/api/pairs/{old}/remeasure")
+    assert answer.status_code == 200 and answer.json()["status"] == "replaced"
+    (review,) = pl.get_plan(c["store"], j["id"])["reviews"]
+    assert review["pair_id"] == answer.json()["replaced_by"] and review["engraving_id"] == "eng-1"
+    assert review["rows"][0]["dL"] == pytest.approx(-9) and review["summary"]["beyond_layers"] == 1
+
+
 def test_a_copy_of_a_work_starts_without_the_photographs_of_the_engraving_of_the_first(work, job):
     c, j = work, job
     exported(c, j)
@@ -322,6 +384,27 @@ def test_a_layer_whose_titanium_colour_moved_since_the_operator_saw_it_is_listed
     assert by_rgb(undone, PAPER)["entry_id"] == fast and len(undone["attention"]["layers"][0]["proposals"]) == 2    # undone: both colours again
 
 
+def test_a_proposed_replacement_changes_nothing_in_the_work_until_the_operator_applies_it(work, job):
+    """REQ-047 crit. 7: nothing is applied by the system; showing the proposal, counting the works again and listing them leave the colouring,
+    its steps and the file's promise as they were."""
+    c, j = work, job
+    ids = palette_ids(c)
+    fast, exact = ids[(round(lab(PAPER)[0] - 2), 3000)], ids[(round(lab(PAPER)[0]), 500)]
+    j = colouring(c, j, op="set_colour", colour=by_rgb(j, PAPER)["index"], entry_id=fast)
+    exported(c, j)
+    moved(c, j, fast)
+    before = pl.get_plan(c["store"], j["id"])
+    view = c["client"].get(f"/api/vector/{j['id']}").json()
+    assert any(p["entry_id"] == exact for p in view["attention"]["layers"][0]["proposals"])           # proposed ...
+    work_errors.after_change(c["store"], c["w"]["setup"][0], c["w"]["setup"][1])
+    assert next(w for w in works(c) if w["id"] == j["id"])["attention"]["proposals"] >= 1
+    again = c["client"].get(f"/api/vector/{j['id']}").json()
+    after = pl.get_plan(c["store"], j["id"])
+    assert by_rgb(again, PAPER)["entry_id"] == fast and again["undo"] == view["undo"]                     # ... and not applied
+    assert after["colouring"] == before["colouring"] and len(after["undo"]) == len(before["undo"]) and after["redo"] == before["redo"]
+    assert [e["promised"] for e in after["exports"]] == [e["promised"] for e in before["exports"]]
+
+
 def test_the_list_of_works_counts_the_drifted_layers_from_what_the_work_stored_and_new_measurements_refresh_it(work, job):
     c, j = work, job
     ids = palette_ids(c)
@@ -339,6 +422,50 @@ def test_the_list_of_works_counts_the_drifted_layers_from_what_the_work_stored_a
         view = colouring(c, view, op="set_colour", colour=colour["index"], entry_id=exact)
     work_errors.after_change(c["store"], c["w"]["setup"][0], c["w"]["setup"][1])
     assert next(w for w in works(c) if w["id"] == j["id"])["attention"]["layers"] == 0
+
+
+def photographed_plate(c) -> int:
+    """A calibration plate engraved with the works' laser and lens on Grade 5 titanium (its colours are no colour of the Grade 2 works) and
+    photographed: a real pair, waiting for its check."""
+    store, w = c["store"], c["w"]
+    store.set_setting("allow_non_raw_photos", True)                                         # tests use PNG renders; real use requires RAW
+    rod = su.save_material(store, "Grade 5 rod", grade="Grade 5", thickness_mm=1, surface="brushed")["id"]
+    plan = pl.get_plan(store, pl.create_plate_series(store, w["setup"][0], "10 20", "40 80", "900", 5, 4, 1, **JOB)[0]["plan_id"])
+    photo = synth.plate_photo(plan, CELLS, gains=(0.9, 0.97, 1.08))
+    return ingest.create_pair(store, device_id=w["setup"][0], lens_id=w["setup"][1], stand_id=w["stand"]["id"], lightburn_name="plate.lbrn2",
+                              lightburn_bytes=pl.export_lbrn2(plan), photo_name="plate.png", photo_bytes=cv2.imencode(".png", photo)[1].tobytes(),
+                              context={"material_id": rod})
+
+
+def test_accepting_measuring_again_and_deleting_a_photograph_through_the_api_count_again_every_work_of_its_laser_and_lens(work, job):
+    """REQ-047 crit. 6: the routes, not only ``after_change``, refresh the drifted layers the list of works shows, for every work of the laser
+    and lens (here a plate's photograph that belongs to none of them); a work never exported has no count."""
+    c, client = work, work["client"]
+    fast = palette_ids(c)[(round(lab(PAPER)[0] - 2), 3000)]
+    first = colouring(c, job, op="set_colour", colour=by_rgb(job, PAPER)["index"], entry_id=fast)
+    second = create(c).json()
+    second = colouring(c, second, op="set_colour", colour=by_rgb(second, PAPER)["index"], entry_id=fast)
+    never = create(c).json()
+    for j in (first, second):
+        exported(c, j)
+        moved(c, j, fast)
+
+    def counted() -> dict:
+        return {w["id"]: None if w["attention"] is None else w["attention"]["layers"] for w in works(c) if w["id"] in (first["id"], second["id"], never["id"])}
+    assert counted() == {first["id"]: None, second["id"]: None, never["id"]: None}                # nothing counted since the files were made
+    pair = photographed_plate(c)
+    assert client.post(f"/api/pairs/{pair}/check", json={}).json()["status"] == "Ready to accept"
+    assert client.post(f"/api/pairs/{pair}/review-masks").status_code == 200
+    accepted = client.post(f"/api/pairs/{pair}/accept")
+    assert accepted.status_code == 200 and accepted.json()["work_review"] is None                     # the plate is no work's
+    assert counted() == {first["id"]: 1, second["id"]: 1, never["id"]: None}
+    moved(c, first, fast, shift=-14.0)                                                                  # its file promised what the recipe gives now
+    again = client.post(f"/api/pairs/{pair}/remeasure").json()
+    assert again["status"] == "replaced", again
+    assert counted() == {first["id"]: 0, second["id"]: 1, never["id"]: None}
+    moved(c, second, fast, shift=-14.0)
+    assert client.delete(f"/api/pairs/{again['replaced_by']}").status_code == 204
+    assert counted() == {first["id"]: 0, second["id"]: 0, never["id"]: None}
 
 
 def test_a_work_exported_before_the_counts_were_kept_gets_them_once_when_the_app_starts(work, job):

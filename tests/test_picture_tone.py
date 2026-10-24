@@ -72,6 +72,23 @@ def test_the_tone_lightens_or_darkens_the_dots_in_the_look_and_in_the_file_alike
     assert np.array_equal(filed(client, work), plain)
 
 
+def test_a_tone_change_that_was_undone_is_redone_with_its_dots_its_look_and_its_file(app_world):  # noqa: F811
+    """photo-zone-dots REQ-002 crit. 6: each change of the tone of a photo work is undone and redone."""
+    client = app_world["client"]
+    work = settings(client, create(client), kind="jarvis")
+    plain = filed(client, work)
+    lighter = settings(client, work, tone={"brightness": 20})
+    toned = filed(client, work)
+    undone = client.post(f"/api/photo-works/{work['id']}/undo").json()
+    assert (undone["tone"], undone["tone_used"]) == (AS_IT_IS, False) and undone["picture"]["preview"] == work["picture"]["preview"]
+    assert np.array_equal(filed(client, work), plain)
+    redone = client.post(f"/api/photo-works/{work['id']}/redo").json()
+    assert (redone["tone"], redone["tone_used"]) == ({**AS_IT_IS, "brightness": 20.0}, True)
+    assert redone["picture"]["preview"] == lighter["picture"]["preview"] and redone["picture"]["closeup"] == lighter["picture"]["closeup"]
+    assert redone["picture"]["dots"]["struck_share"] == lighter["picture"]["dots"]["struck_share"] and np.array_equal(filed(client, work), toned)
+    assert (redone["undo"], redone["redo"]) == (undone["undo"] + 1, 0)
+
+
 def test_grayscale_takes_the_tone_while_its_own_greys_are_engraved_and_keeps_it_while_they_are_chosen_for_colours(app_world):  # noqa: F811
     client = app_world["client"]
     work = create(client)

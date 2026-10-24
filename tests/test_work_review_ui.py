@@ -2,6 +2,7 @@
 file promised against what the engraving measured, the layers whose colour moved with a replacement offered, run in node over the small DOM
 of the other screen tests with the server's real answers."""
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -103,6 +104,35 @@ def test_a_review_whose_promise_was_lost_says_so_instead_of_calling_it_another_f
 
 
 @node
+def test_a_file_whose_layers_match_none_of_the_works_says_it_is_another_file_and_lists_both_sides(work, job, tmp_path):
+    """REQ-047 crit. 2: layers that match nothing are listed on both sides, and a file that matches no layer says so."""
+    c, j = work, job
+    plan = exported(c, j)
+    other = {n: {**p["settings"], "speed": p["settings"]["speed"] * 2} for n, p in enumerate(plan["exports"][-1]["promised"])}
+    pair = engrave(c, j, settings=other)
+    work_errors.after_acceptance(c["store"], pair)
+    payload = c["client"].get(f"/api/vector/{j['id']}").json()
+    listed = next(w for w in c["client"].get("/api/vector").json() if w["id"] == j["id"])
+    report = c["client"].get(f"/api/pairs/{pair}/report").json()
+    out = run(tmp_path, {"job": payload, "listed": listed, "report": report}, """
+  const view = VR.view(data.job, run);
+  out.text = view.textContent;
+  out.alerts = view.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('alert')).map((d) => d.textContent);
+  out.sides = view.querySelectorAll('summary').map((s) => s.textContent);
+  out.pictures = view.querySelectorAll('img').length;
+  out.card = VR.cardLines(data.listed).map((l) => l.textContent);
+  out.report = VR.reportCard(data.report.work_review).textContent;
+""")
+    n = len(plan["layers"])
+    assert out["alerts"] == ["Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в "
+                             "LightBurn или сделали не из этой работы): сравнивать нечего."]
+    assert out["sides"] == [f"Обещаны, но на фото не найдены ({n})", f"Есть на фото, но не в файле работы ({n})"] and out["pictures"] == 0
+    assert "Совпало слоёв" not in out["text"]
+    assert out["card"] == ["Фото IMG_1.DNG: слои не совпали с файлом этой работы"]
+    assert "Ни один слой этого файла не совпал по настройкам с файлом работы." in out["report"]
+
+
+@node
 def test_a_moved_layer_is_listed_with_the_replacement_and_the_button_sends_an_ordinary_edit(work, job, tmp_path):
     c, j = work, job
     ids = palette_ids(c)
@@ -117,12 +147,15 @@ def test_a_moved_layer_is_listed_with_the_replacement_and_the_button_sends_an_or
   const view = VR.view(data.job, run);
   out.text = view.textContent;
   out.label = VR.tabLabel(data.job);
+  await tick();
+  out.idle = ran.slice();
   await byText(view, 'button', 'Заменить').dispatch('click'); await tick();
   out.one = ran.splice(0);
   await view.querySelectorAll('button').find((b) => b.textContent.startsWith('Применить все замены')).dispatch('click'); await tick(); await tick();
   out.all = ran.splice(0);
 """)
     assert "ушёл от обещанного" in out["text"] and out["label"] == "Результат · ⚠ 1"
+    assert out["idle"] == []                                                         # REQ-047 crit. 7: shown, nothing applied until pressed
     assert out["one"] == [{"op": "set_colour", "colour": proposal["colour"], "entry_id": exact}]
     assert [op["colour"] for op in out["all"]] == [proposal["colour"], 99] and all(op["entry_id"] == exact for op in out["all"])
     assert "Выгравированный файл не меняется" in out["text"]
@@ -143,6 +176,28 @@ def test_the_list_and_the_report_carry_the_conclusion(work, job, tmp_path):
 """)
     assert any("Результат гравировки (IMG_1.DNG)" in line for line in out["lines"])
     assert f"Вывод по работе «{job['name']}»" in out["card"] and out["link"] == [f"#/vector?plan={j['id']}"] and out["none"] is None
+
+
+@node
+def test_the_card_of_a_work_in_the_list_warns_of_the_layers_whose_colour_moved_and_says_nothing_when_none_did(work, job, tmp_path):
+    """REQ-047 crit. 6: the counts kept after new measurements are shown in the list of works."""
+    c, j = work, job
+    fast = palette_ids(c)[(round(lab(PAPER)[0] - 2), 3000)]
+    j = colouring(c, j, op="set_colour", colour=by_rgb(j, PAPER)["index"], entry_id=fast)
+    exported(c, j)
+    work_errors.after_change(c["store"], c["w"]["setup"][0], c["w"]["setup"][1])
+    still = next(w for w in c["client"].get("/api/vector").json() if w["id"] == j["id"])
+    moved(c, j, fast)
+    work_errors.after_change(c["store"], c["w"]["setup"][0], c["w"]["setup"][1])
+    listed = next(w for w in c["client"].get("/api/vector").json() if w["id"] == j["id"])
+    out = run(tmp_path, {"listed": listed, "still": still}, """
+  out.lines = VR.cardLines(data.listed).map((p) => [p.className, p.textContent]);
+  out.still = VR.cardLines(data.still).map((p) => p.textContent);
+""")
+    share = math.floor(listed["attention"]["area_share"] * 100 + 0.5)                                    # as Math.round rounds it
+    assert listed["attention"]["layers"] == 1 and still["attention"]["layers"] == 0
+    assert out["lines"] == [["small vw-bad", f"⚠ Цвет 1 слоёв ушёл от обещанного файлом ({share} % площади)"]]
+    assert out["still"] == []
 
 
 UPLOAD = """
