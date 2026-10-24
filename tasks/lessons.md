@@ -159,6 +159,13 @@ Rules written after the operator's remarks, to prevent a repeat.
   idea..ready. After writing a decision that closes a feature, run `markview_list_features`, and if the stage did not move, say so to the
   operator and name what moves it (the app); never claim "closed" on the strength of a decision file, and never hand-edit the stage or
   `.dde/state.db` to make the list look right.
+- Superseded for the stage line (2026-10-24): «Не забывай обновлять статусы в MarkView, каждый фичинг, которыми ты работаешь.» MarkView reads
+  the implementation stages from branches and pull requests, and work goes straight to `main` (project CLAUDE.md), so nothing moves them.
+  Rule now: at the start of work on a feature set `status: implementing` on the first status line of its `overview.md` (a script, one line,
+  as 11b11fa did), and at its release `implemented` once every criterion it claims is ticked with a test; never `verified` (the operator's
+  walk). While working: record each new decision with `markview_add_decision` (proposed) when it is made, tick a criterion when its test
+  passes, commit these with the code, and run `markview_list_features` to confirm. Never touch `.dde/state.db`. Decision ids are per feature
+  (vector-detail has its own DEC-090): cite them with the feature's name.
 
 ## Committing another feature's specification is not building it
 - Remark (2026-10-19): "Пока я не вижу, чтобы ты векторную работу перенес на третье место, и не вижу, где можно выбрать алгоритмы по разбивке."

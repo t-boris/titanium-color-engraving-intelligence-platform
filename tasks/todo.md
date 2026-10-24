@@ -2262,3 +2262,19 @@ Review (2026-10-24). Walked on a copy of the data (database and files, every sto
   0.27.0 wheel in `~/.titanium-platform-app` (imports checked), the app restarted on 8765; work 41 zone 2 read as before (Jarvis 12.8 %,
   tone as it is, no recipe). Tabs T1 and T2 reloaded (v0.27.0, «Яркость», «Цвет с карты» on T2), consoles clean. Nothing was changed in
   the live data.
+
+## 0.28.0: everything left in MarkView that can be built, Electron excluded (operator, 2026-10-24; plan approved)
+Operator: «Пройдись по всем MarkView Issues, Features и Bugs, выбери те, которые ты можешь сделать, и сделай их все, кроме ... Electron».
+Survey: BUG-001..006 are fixed in code (0.5.2, 0.18.2, 0.21.1, 0.25.1-0.25.3); MarkView keeps their status itself. Built here:
+- [ ] V1. REQ-047 crit. 8: an old file's promise is reconstructed only while the work's colouring and split are the file's; after a recolouring the review claims nothing.
+- [ ] V2. Vector work: «Разбить заново» warns before it resets the colouring (I-8); «Цвет выделенному…» in the editor's selection (I-5 gap).
+- [ ] V3. Same-recipe neighbours joined into one shape in the LightBurn file and the time (I-7), the stored split untouched.
+- [ ] V4. Recolouring modes «Контраст соседей» and «Художественно» with a palette subset (I-6, DEC-079).
+- [ ] V5. Region density as a slider with the region count before the rebuild (I-2).
+- [ ] V6. Eyes: detail per area, moved/resized boundaries, a manual area's kind; the colours outside a changed area stay (I-3).
+- [ ] A1. Inscriptions: Enter / double click end a path (REQ-003), freehand path, warning where letters crowd on a tight bend of a path.
+- [ ] B1. «Приложение обновлено» banner; AI client failures as messages in the research chat and the explainer; overscan and line interval
+      shown (REQ-054 crit. 3); dot width correction of a dot kind written to the file (K2).
+- [ ] R. MarkView decisions and ticked criteria, issue #32, README, 0.28.0, full suite -n 12, walk on a copy (8791), deploy after a backup, report.
+Not taken (operator or real data needed): Electron; Q-026..Q-029; acceptance of proposed DECs; DEC-088 automatic re-measure; REQ-053 crit. 5/6;
+REQ-052 crit. 4 (LightBurn on the real file); a text path from the picture's contours; editable LightBurn text.

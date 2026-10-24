@@ -2,7 +2,7 @@
 type: feature
 id: vector-detail-and-colour-control
 title: Vector Detail and Colour Control
-status: ready
+status: implementing
 owner: Boris Tsekinovsky
 created: 2026-10-19
 provenance: Created from the quick feature intake
@@ -69,8 +69,8 @@ Made by the AI where the request left a choice open; correct them in the discuss
 - [x] Navigation starts with Experiments, Color Map, Vector Work; existing vector-work URLs remain valid.
 - [ ] Global density can be decreased or increased independently of the source-colour count. Preview shows the resulting region count; a detailed reference image produces fewer regions at low density than at high density with other settings unchanged.
 - [ ] Each detected or manually marked eye has its own detail override and editable boundary. Changing an eye override preserves geometry outside that boundary; missing detections can be added manually.
-- [ ] Smoothing produces continuous tangents along curved boundaries except at intentional corners and multi-region junctions. Shared borders remain identical, holes survive, and rasterized uncovered and doubly covered areas each remain below 0.5%. Export preserves the previewed geometry.
-- [ ] Selecting a region exposes every eligible measured palette colour for the selected laser, lens and titanium. Applying a colour updates that region, its recipe, layer count and time estimate.
+- [x] Smoothing produces continuous tangents along curved boundaries except at intentional corners and multi-region junctions. Shared borders remain identical, holes survive, and rasterized uncovered and doubly covered areas each remain below 0.5%. Export preserves the previewed geometry.
+- [x] Selecting a region exposes every eligible measured palette colour for the selected laser, lens and titanium. Applying a colour updates that region, its recipe, layer count and time estimate.
 - [ ] Contrast and Artistic modes produce previewable, reproducible whole-work variants using eligible recipes and existing filters, preserving manual choices. Contrast improves the shared-border-length-weighted mean ΔE between neighbouring regions over Closest on a reference fixture; Artistic offers distinct seeded hue arrangements within a chosen measured palette subset while preserving the source image's lightness order for automatically assigned colours.
-- [ ] After colouring, each connected component of included regions sharing a border and the same recipe becomes one region without internal seams. Holes remain; corner-touching, disconnected, excluded or differently configured regions stay separate.
+- [x] After colouring, each connected component of included regions sharing a border and the same recipe becomes one region without internal seams. Holes remain; corner-touching, disconnected, excluded or differently configured regions stay separate.
 - [ ] Recolouring and its automatic merges form one undoable operation. Density and eye changes require an explicit rebuild with a notice that colouring and variants reset; the smoothness of borders is a live slider that redraws the picture without resetting anything (REQ-052). Reload and LightBurn export retain the accepted result and existing layer limits.

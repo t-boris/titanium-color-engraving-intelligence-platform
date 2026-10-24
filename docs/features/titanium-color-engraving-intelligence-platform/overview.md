@@ -2,7 +2,7 @@
 type: feature
 id: titanium-color-engraving-intelligence-platform
 title: Titanium Color Engraving Intelligence Platform
-status: implemented
+status: implementing
 owner: Boris Tsekinovsky
 created: 2026-10-14
 provenance: Created from the new-project intake

@@ -1447,7 +1447,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
 
 
 def _joined(geometry: dict, layer_of: dict[str, str]) -> dict:
-    """The split as the file writes it (feature vector-detail-and-colour-control, I-7): every set of regions on one layer (``layer_of``,
+    """The split as the file writes it (feature vector-detail-and-colour-control, I-7, its DEC-090): every set of regions on one layer (``layer_of``,
     region id to layer key) connected through shared borders is one region, its inner borders dropped and its holes kept
     (:func:`segment.merge_groups`); a touch at a corner only joins nothing. The stored split, the editor, the undo steps and the variants
     keep every region, so painting one of them again, or undoing the colouring, gives the borders back."""
