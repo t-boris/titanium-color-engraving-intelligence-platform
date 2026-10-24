@@ -28,9 +28,9 @@ test('the core command is the packaged binary when it is there, else the develop
   const dev = coreCommand({resourcesPath: null, repoRoot: '/repo', platform: 'darwin', exists: () => false, env: {}});
   const own = coreCommand({resourcesPath: null, repoRoot: '/repo', platform: 'darwin', exists: () => false, env: {TCE_CORE_PYTHON: '/py'}});
   assert.equal(own.command, '/py');
-  assert.equal(dev.command, '/repo/.venv/bin/python');
+  assert.equal(dev.command, path.join('/repo', '.venv', 'bin', 'python'));
   assert.deepEqual(dev.args, ['-m', 'titanium_platform']);
-  assert.equal(dev.env.PYTHONPATH, '/repo/src');
+  assert.equal(dev.env.PYTHONPATH, path.join('/repo', 'src'));
   const win = coreCommand({resourcesPath: 'C:\\App\\resources', repoRoot: 'C:\\repo', platform: 'win32', exists: () => false, env: {}});
   assert.ok(win.command.endsWith(path.join('.venv', 'Scripts', 'python.exe')));
   assert.deepEqual(coreArgs('/w', 42), ['--desktop', '--port', '0', '--parent-pid', '42', '--data-dir', '/w']);

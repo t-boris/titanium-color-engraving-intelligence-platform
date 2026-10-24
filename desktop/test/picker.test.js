@@ -6,10 +6,12 @@ const os = require('node:os');
 const path = require('node:path');
 const picker = require('../src/workshop-picker');
 
+/** A fake file tree keyed by POSIX paths; the code under test joins paths with the platform's separator, so lookups are normalised. */
 function tree(files) {
-  const exists = (p) => Object.prototype.hasOwnProperty.call(files, p) || Object.keys(files).some((k) => k.startsWith(p + '/'));
-  const readdir = (p) => Object.keys(files).filter((k) => path.dirname(k) === p).map((k) => path.basename(k));
-  const stat = (p) => ({isDirectory: () => files[p] === 'dir' || Object.keys(files).some((k) => k.startsWith(p + '/'))});
+  const posix = (p) => String(p).replace(/\\/g, '/');
+  const exists = (p) => Object.prototype.hasOwnProperty.call(files, posix(p)) || Object.keys(files).some((k) => k.startsWith(posix(p) + '/'));
+  const readdir = (p) => Object.keys(files).filter((k) => path.posix.dirname(k) === posix(p)).map((k) => path.posix.basename(k));
+  const stat = (p) => ({isDirectory: () => files[posix(p)] === 'dir' || Object.keys(files).some((k) => k.startsWith(posix(p) + '/'))});
   return {exists, readdir, stat};
 }
 
