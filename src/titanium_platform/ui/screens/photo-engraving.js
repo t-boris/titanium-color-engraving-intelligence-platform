@@ -21,6 +21,7 @@
   let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
   const PICTURES = 'image/png,image/jpeg,image/tiff,image/bmp,image/webp';
+  const PREVIEW_GAP = 8;                     // px of white between the picture and its look in the preview (prediction.GAP)
   /** Файл с сервера сохраняется на компьютер; ошибка сервера показывается переведённой, без перехода на адрес API. */
   async function download(path, fallbackName) {
     let res;
@@ -140,15 +141,20 @@
     const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
     const base = `/photo-works/${id}`;
+    // надписи: прогноз сервера уже рисует их врезанными, слой поверх прогноза — ручки и контур (inscriptions-in-works, REQ-005)
+    let tab = null;
+    const lettering = Lettering.create(view, {act: async (op) => !(await send(`${base}/texts`, op)), palette: () => get(`${base}/palette`),
+      size: (v) => ({width: v.width_mm, height: v.height_mm}), drawn: false, open: () => tab === 'texts'});
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
-      {ramp: `${base}/width-ramp`, original: `/api${base}/picture`});
+      {ramp: `${base}/width-ramp`, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     const head = workHead(view, step);
     const ai = aiTab(base, save, (wish, fresh) => send(`${base}/ai`, {wish, fresh}));
     const colour = colourTab(base, save, (path, body) => send(path, body));
     const engraved = engravingsBlock(id);
     const tabs = App.tabs([['picture', 'Картинка', picture.details], ['colour', 'Раскраска', colour.el], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
       ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
-      ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab'});
+      ['points', 'Точки', slots.points], ['texts', 'Надписи', lettering.el]],
+    {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab', onSelect: (id) => { tab = id; lettering.opened(); }});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
@@ -168,6 +174,7 @@
     }
     function shown() {
       head.update(view);
+      lettering.update(view);
       picture.show(view, chosen());
       colour.show(view);
       ai.show(view);
@@ -202,8 +209,9 @@
     const key = (ev) => {
       if (!root.isConnected) { if (keys === key) keys = null; return; }
       const t = ev.target;
-      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
       if (document.querySelector('.modal-bg')) return;
+      if (ev.key === 'Escape' && tab === 'texts' && lettering.escape()) return;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
     };

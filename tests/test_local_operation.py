@@ -1,6 +1,8 @@
 """The application works without internet access (REQ-043 AC1): the browser UI loads nothing from the network, the server
 opens no outbound connection in its core workflows, and the only adapters that may reach a network service (the optional
-AI researcher and the designer's explanation, REQ-006) are off without an OpenAI key.
+AI researcher and the designer's explanation, REQ-006) are off without an OpenAI key; Google Fonts are fetched only when the
+operator asks for them (feature inscriptions-in-works, DEC-001): the fonts of this computer and the operator's own are listed and
+an inscription is laid out without network.
 
 The scans are static; every exception is named in an allowlist with the reason it is not a network resource or request."""
 import ast
@@ -10,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from titanium_platform import colormap, experiments, research
+from titanium_platform import colormap, experiments, fonts, lettering, research
 from titanium_platform import ingest as ig
 from titanium_platform.api.app import UI_DIR
 
@@ -23,12 +25,18 @@ UI_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace: a name passed to cr
 SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into generated SVG files",
                "http://{args.host}:{args.port}": "the local address the launcher prints for the operator's browser",
                "https://docs.lightburnsoftware.com/latest/Reference/CutSettingsEditor/ImageMode/": "a source cited in the docstring of dots.py",
-               "https://forum.lightburnsoftware.com/t/halftone-questions-angle/16438": "a source cited in the docstring of dots.py"}
+               "https://forum.lightburnsoftware.com/t/halftone-questions-angle/16438": "a source cited in the docstring of dots.py",
+               "https://fonts.google.com/metadata/fonts": "Google's list of families, fetched only when the operator asks (fonts.py)",
+               "https://api.github.com/repos/google/fonts/git/trees/main?recursive=1": "the files of Google's families, fetched only when the "
+                                                                                      "operator asks (fonts.py)",
+               "https://raw.githubusercontent.com/google/fonts/main/": "a Google family's font files, downloaded only when the operator "
+                                                                       "chooses it (fonts.py)"}
 # Modules that can open a network connection; ``urllib.parse`` only builds strings and is not among them.
 NETWORK_MODULES = ("socket", "ssl", "http.client", "urllib.request", "urllib3", "requests", "httpx", "aiohttp", "ftplib", "smtplib",
                    "websocket", "websockets", "openai", "anthropic")
 # (file, module) pairs allowed to import one, and why.
-NETWORK_IMPORTS = {("research.py", "openai"): "the optional AI researcher and proposal explanation; built only with OPENAI_API_KEY"}
+NETWORK_IMPORTS = {("research.py", "openai"): "the optional AI researcher and proposal explanation; built only with OPENAI_API_KEY",
+                   ("fonts.py", "urllib.request"): "Google Fonts, fetched only when the operator asks for a family or many (DEC-001)"}
 
 
 def test_the_ui_loads_no_script_style_font_or_data_from_the_network():
@@ -107,3 +115,11 @@ def test_a_plate_is_made_photographed_checked_accepted_and_found_on_the_colour_m
     assert ig.accept_pair(store, pid)
     assert {p["layer_name"] for p in colormap.collect(store)["points"]} >= set(CELLS)
     assert [e["status"] for e in experiments.list_experiments(store)] == ["accepted"]
+
+
+def test_the_fonts_are_listed_and_an_inscription_is_laid_out_without_network(store, offline):
+    listed = fonts.families(store.data_dir)
+    assert listed["families"] and listed["google"]["listed"] is False                     # Google is not asked unless the operator asks
+    face = fonts.described(next(iter(fonts.faces(store.data_dir).values())))
+    found = lettering.geometry(store.data_dir, lettering.checked({"text": "HOH", "font": face, "x": 30, "y": 20}), {"width": 60, "height": 40})
+    assert found["letters"].area > 0

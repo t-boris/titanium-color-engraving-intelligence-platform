@@ -2,7 +2,8 @@
 plate at a work's width (DEC-107); the parts of a work's picture and the AI that proposes their rules (REQ-062, DEC-105); the kinds of
 engraving a work can take, each with the work's picture as it would come out, and the dots of a dot kind close up; the objects of a
 work's picture and their colours, by hand or from a theme (0.21.0). The colour of a dot kind's dots is picked on the colour map
-(``GET /api/colors?dots={id}``, 0.25.0). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
+(``GET /api/colors?dots={id}``, 0.25.0). The inscriptions of a work and the titanium colours they are engraved in (feature
+inscriptions-in-works). A work is deleted as every plan is (``DELETE /api/plans/{id}``)."""
 from __future__ import annotations
 
 import json
@@ -48,6 +49,21 @@ def change_photo_work(plan_id: int, body: dict, request: Request):
     s = store_of(request)
     photo_work.update(s, plan_id, body)
     return photo_work.view(s, plan_id)
+
+
+@router.post("/photo-works/{plan_id}/texts")
+def change_photo_work_texts(plan_id: int, body: dict, request: Request):
+    """Add, change, copy or take away an inscription (``op``: text_add, text_set, text_copy, text_delete, see photo_work.text); the work is
+    returned as it is now."""
+    s = store_of(request)
+    photo_work.text(s, plan_id, body)
+    return photo_work.view(s, plan_id)
+
+
+@router.get("/photo-works/{plan_id}/palette")
+def photo_work_palette(plan_id: int, request: Request):
+    """The titanium colours an inscription of the work is engraved in: every measured colour of its laser, lens and titanium."""
+    return photo_work.palette_of(store_of(request), plan_id)
 
 
 @router.post("/photo-works/{plan_id}/copy", status_code=201)
@@ -107,7 +123,7 @@ def photo_work_picture(plan_id: int, request: Request):
 @router.get("/photo-works/{plan_id}/export.lbrn2")
 def photo_work_file(plan_id: int, request: Request):
     """The LightBurn file of the work: the cleaning, then one Image layer in its kind at its scale's settings (Min and Max, or the dots' power), the
-    picture at its width."""
+    picture at its width, then the letters of its inscriptions on a layer of each titanium colour."""
     data, name = photo_work.export(store_of(request), plan_id)
     return Response(data, media_type="application/octet-stream",
                     headers={"Content-Disposition": content_disposition(name, ".lbrn2"), "Cache-Control": "no-store"})

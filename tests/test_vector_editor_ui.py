@@ -50,7 +50,7 @@ def test_the_editor_sends_every_operation_of_the_contract_and_asks_the_server_fo
 def test_undo_and_redo_answer_ctrl_z_and_ctrl_shift_z_only_while_the_editor_is_on_screen_and_no_field_has_the_focus():
     assert "document.addEventListener('keydown'" in EDITOR and "if (current) current.key(ev)" in EDITOR
     assert "(ev.ctrlKey || ev.metaKey)" in EDITOR and "ev.code === 'KeyZ'" in EDITOR and "z && !ev.shiftKey ? 'undo' : 'redo'" in EDITOR
-    assert "if (!el.isConnected)" in EDITOR and "/^(INPUT|TEXTAREA|SELECT)$/" in EDITOR and "if (ev.key === 'Escape') return dropSelection();" in EDITOR
+    assert "if (!el.isConnected)" in EDITOR and "/^(INPUT|TEXTAREA|SELECT)$/" in EDITOR and "if (ev.key === 'Escape') return sideTab === 'texts' && lettering.escape() ? undefined : dropSelection();" in EDITOR
 
 
 def test_the_editor_fills_elements_through_app_fill_and_never_through_replaceChildren():
@@ -93,7 +93,7 @@ def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one
 
 # -- the screen in node ----------------------------------------------------------------------------------------------------------
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-gaps.js"]
 GLUE = ("const __screens = {}, __renders = []; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { __renders.push(1); };"
         "globalThis.__screens = __screens; globalThis.__renders = __renders; globalThis.__went = []; App.go = (route) => { __went.push(route); };")
 HARNESS = """
@@ -101,7 +101,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'filepick.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

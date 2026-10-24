@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "titanium-color-engraving-platform"
-version = "0.25.3"
+version = "0.26.0"
 description = "Local closed-loop platform that learns laser parameter to titanium color relations and produces LightBurn engraving plans."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,9 @@ dependencies = [
   "rawpy>=0.21",
   "openai>=2.16,<4",
   "mcp>=1.12,<2",
+  "fonttools>=4.67",
+  "uharfbuzz>=0.57",
+  "shapely>=2.2",
 ]
 
 [project.optional-dependencies]

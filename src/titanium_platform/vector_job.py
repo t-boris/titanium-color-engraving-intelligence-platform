@@ -36,8 +36,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import shapely
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -446,8 +447,9 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 regions."""
 DEFAULT_DETAIL = "medium"
 PHOTO_OPS = ("photo_add", "photo_remove", "photo_set", "photo_delete")     # the photo zones (REQ-073, :mod:`photo_zones`)
+TEXT_OPS = lettering.OPS                                                  # the inscriptions (feature inscriptions-in-works)
 COLOURING_OPS = ("assign", "ai_colour", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
-                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo") + PHOTO_OPS
+                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo") + PHOTO_OPS + TEXT_OPS
 MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
 UNDO_DEPTH = 50                                      # steps kept to undo and redo together
@@ -548,7 +550,7 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
     plan["history"] = [{"version": 1, "op": {"op": "split", **_split_op(split)}, "at": now(), "path": plan["document_path"]}]
     entries = _palette(store, {"device_id": device_id, "lens_id": lens_id, "material_id": material_id})
     plan["colouring"] = _automatic(plan, document, entries, "closest", 0, _empty_colouring())
-    _add_variant(plan, document, entries)
+    _add_variant(store, plan, document, entries)
     with store.transaction():
         plan_id = cv.save_plan(store, None, name=name.strip(), mode=pl.MODE_VECTOR, status=cv.ST_DRAFT, device_id=device_id, lens_id=lens_id,
                                markers=markers, identifier=identifier, band_count=None, data=plan)
@@ -586,9 +588,10 @@ def resplit(store: Store, plan_id: int, params: dict) -> None:
     zones = _carried_zones(store, plan, old, document)
     with store.transaction():
         _new_version(store, plan, document, {"op": "split", **_split_op(plan["split"])})
-        plan["colouring"] = _automatic(plan, document, entries, "closest", 0, {**_empty_colouring(), "photo": zones})
+        plan["colouring"] = _automatic(plan, document, entries, "closest", 0, {**_empty_colouring(), "photo": zones,
+                                                                              "texts": copy.deepcopy(_texts(plan["colouring"]))})
         plan["variants"], plan["undo"], plan["redo"] = [], [], []
-        _add_variant(plan, document, entries)
+        _add_variant(store, plan, document, entries)
         _photo_refresh(store, plan, document, entries)
 
 
@@ -644,12 +647,12 @@ def _carried_zones(store: Store, plan: dict, old: dict, new: dict) -> list[dict]
     return [pz.settle(store, plan, zone, pz.width_of(loops, zone["regions"])) for zone in carried]
 
 
-def _add_variant(plan: dict, document: dict, entries: list[dict]) -> None:
+def _add_variant(store: Store, plan: dict, document: dict, entries: list[dict]) -> None:
     """The current colouring, just made by an automatic mode, becomes a numbered variant that can be restored on the
     version of the split it was made on."""
     number = 1 + max((v["number"] for v in plan["variants"]), default=0)
     plan["colouring"]["variant"] = number
-    state = _state(plan, document, entries)
+    state = _state(plan, document, entries, _inscribed(store, plan, entries))
     plan["variants"].append({"number": number, "mode": plan["colouring"]["mode"], "seed": plan["colouring"]["seed"], "at": now(),
                              "version": plan["document_version"], "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
 
@@ -686,7 +689,69 @@ def _row_lengths(plan: dict, document: dict):
     return of, of_colour
 
 
-def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
+# -- inscriptions (feature inscriptions-in-works, REQ-004, DEC-003) ------------------------------------------------------------------
+TRIM_LEFT = 1e-6                     # a region the inscriptions cover all but this share of is not engraved
+
+
+def _texts(colouring: dict | None) -> list[dict]:
+    """The inscriptions of a colouring, the lowest first: a later one lies over the earlier ones."""
+    return (colouring or {}).get("texts") or []
+
+
+def _inscribed(store: Store, plan: dict, entries: list[dict]) -> dict:
+    """The work's inscriptions laid out on it (:func:`lettering.inscribed`) with the measured colours of its laser, lens and titanium."""
+    return lettering.inscribed(store.data_dir, _texts(plan["colouring"]), plan["size_mm"], {e["id"] for e in entries})
+
+
+def _region_shapes(plan: dict) -> dict:
+    """Every region as a polygon of its loops at the work's smoothing (what the file writes), to cut the inscriptions into."""
+    mm = float(plan.get("smoothing_mm", 0.0))
+    return _memo(("region-shapes", plan["document_path"], mm),
+                 lambda: {rid: lettering.polygon(loops) for rid, loops in _zone_loops(plan).items()})
+
+
+def _trimmed(plan: dict, region_ids, cut) -> dict[str, dict]:
+    """The regions the inscriptions' ``cut`` takes a part of: what is left of each (``shapes``: closed loops in mm, outline then holes) and
+    the share of the region it is."""
+    if cut is None or cut.is_empty:
+        return {}
+    known = _region_shapes(plan)
+    ids = [r for r in region_ids if r in known and not known[r].is_empty]
+    if not ids:
+        return {}
+    polygons = np.array([known[r] for r in ids], dtype=object)
+    shapely.prepare(cut)
+    out = {}
+    hit = shapely.intersects(polygons, cut)
+    for rid, whole in zip(np.array(ids, dtype=object)[hit], polygons[hit]):
+        left = lettering.minus(whole, cut)
+        share = left.area / whole.area if whole.area > 0 else 0.0
+        if share < 1.0 - 1e-9:                   # touching its border only takes nothing
+            out[rid] = {"shapes": lettering.shapes(left), "share": share}
+    return out
+
+
+def _under(plan: dict, region_ids, cut) -> float:
+    """How much of the regions (mm²) lies under the inscriptions' ``cut``."""
+    if cut is None or cut.is_empty:
+        return 0.0
+    known = _region_shapes(plan)
+    return float(sum(shapely.intersection(known[r], cut).area for r in region_ids if r in known))
+
+
+def _text_op(store: Store, plan: dict, entries: list[dict], colouring: dict, op: dict) -> dict:
+    """The inscriptions after an operation (:func:`lettering.operate`), on a copy of the colouring that is returned. A new inscription
+    takes the darkest measured colour, the one that stands out most on clean titanium."""
+    by_id = {e["id"]: e for e in entries}
+    try:
+        colouring["texts"] = lettering.operate(store.data_dir, _texts(colouring), op, plan["size_mm"], lambda e: e in by_id,
+                                               lambda: lettering.darkest(entries))
+    except su.ValidationError as exc:
+        raise cv.ConversionError(str(exc)) from None
+    return colouring
+
+
+def _state(plan: dict, document: dict, entries: list[dict], inscribed: dict | None = None) -> dict:
     """Every source colour and region with its titanium colour and status, the colours beyond the delta E tolerance, the
     regions whose titanium colour is no longer measured, the layers of the file and the totals of the current colouring.
 
@@ -696,8 +761,14 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
 
     A layer's titanium colour is its recipe's in rows as long as the layer's (DEC-107, ``palette.at_size``): ``by_id`` holds the entry of
     each layer at its size (with ``size``) and every other entry as measured, and a colour's delta E is to the colour of its layer (to its
-    entry at the length of its own regions while it has none). ``nearest_delta_e`` compares every candidate at the colour's own length."""
+    entry at the length of its own regions while it has none). ``nearest_delta_e`` compares every candidate at the colour's own length.
+
+    The inscriptions (``inscribed``, :func:`_inscribed`) cut into the regions under them: a region keeps what lies outside their cut
+    (``trimmed``: its shapes and the share of it left; one wholly under it is not engraved), and the letters and backings join the layer
+    of their titanium colour (``texts`` of a layer, the shapes in ``text_shapes``). A layer's area and row length are of what it engraves."""
     measured = {e["id"]: e for e in entries}
+    cut = (inscribed or {}).get("cut")
+    trimmed = _trimmed(plan, [r["id"] for r in document["regions"]], cut)
     colouring, settings, tolerance = plan["colouring"], plan["colour_settings"], plan["threshold"]
     candidates = palette.choosable(entries, settings["max_time"], settings["include_as_shot"])[0]
     excluded_colours, excluded_regions = set(colouring["excluded_colours"]), set(colouring["excluded_regions"])
@@ -741,14 +812,32 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
                 missing_regions.append(region["id"])
                 continue
             entry_id = c["entry_id"]
-        layer = used.setdefault(entry_id, {"entry_id": entry_id, "region_ids": [], "pixels": 0})
+        share = trimmed[region["id"]]["share"] if region["id"] in trimmed else 1.0
+        if share <= TRIM_LEFT:                  # wholly under an inscription: nothing of it is engraved
+            continue
+        layer = used.setdefault(entry_id, {"entry_id": entry_id, "region_ids": [], "pixels": 0, "area_mm2": 0.0})
         layer["region_ids"].append(region["id"])
         layer["pixels"] += region["pixels"]
+        layer["area_mm2"] += region["pixels"] * px_area * share
         placed.append((region, entry_id))
+    text_shapes: dict[str, list] = {}
+    for entry_id, parts in lettering.by_colour((inscribed or {}).get("rows", ())).items():
+        layer = used.setdefault(entry_id, {"entry_id": entry_id, "region_ids": [], "pixels": 0, "area_mm2": 0.0})
+        layer["texts"] = list(dict.fromkeys(text_id for text_id, _ in parts))
+        layer["area_mm2"] += sum(shape.area for _, shape in parts)
+        text_shapes[entry_id] = [shape for _, shape in parts]
+    loops = _loops_by_region(plan, document)
     by_id = dict(measured)
     for entry_id, layer in used.items():                 # each layer in the colour its recipe gives at the length of its rows
         entry = measured[entry_id]
-        layer["row_mm"] = rows(layer["region_ids"], _angle(entry))
+        cut_here = [r for r in layer["region_ids"] if r in trimmed]
+        if cut_here or entry_id in text_shapes:          # the rows of what is left of its regions and of its letters
+            layer["row_mm"] = row_length.of_shapes([loops[r] for r in layer["region_ids"] if r not in trimmed and r in loops]
+                                                   + [shape for r in cut_here for shape in trimmed[r]["shapes"]]
+                                                   + [shape for found in text_shapes.get(entry_id, ()) for shape in lettering.shapes(found)],
+                                                   _angle(entry))
+        else:
+            layer["row_mm"] = rows(layer["region_ids"], _angle(entry))
         seen = palette.at_size(entry, layer["row_mm"])
         by_id[entry_id] = {**entry, "lab": seen["lab"], "srgb": seen["srgb"], "size": seen["size"]}
     weighted = sum(region["pixels"] * color.delta_e(region["lab"], by_id[entry_id]["lab"]) for region, entry_id in placed)
@@ -766,16 +855,16 @@ def _state(plan: dict, document: dict, entries: list[dict]) -> dict:
     outside = [c for c in colours if c["outside_tolerance"] and c["status"] != "excluded" and c["open_regions"]]
     total = sum(p["pixels"] for p in document["palette"]) or 1
     layers = sorted(used.values(), key=lambda layer: (-by_id[layer["entry_id"]]["lab"][0], layer["entry_id"]))
-    for layer in layers:
-        layer["area_mm2"] = layer["pixels"] * px_area
+    texts = (inscribed or {}).get("rows", [])
     return {"colours": colours, "layers": layers, "by_id": by_id, "missing_regions": missing_regions, "zones": pz.zones(colouring),
+            "texts": texts, "trimmed": trimmed, "text_shapes": text_shapes, "cut": cut,
             "outside": {"colours": len(outside), "regions": sum(c["open_regions"] for c in outside),
                         "share": sum(open_pixels[c["index"]] for c in outside) / total, "indexes": [c["index"] for c in outside]},
             "totals": {"recipes": len(layers), "regions": sum(len(layer["region_ids"]) for layer in layers),
                        "mean_delta_e": round(weighted / weight, 2) if weight else None,
                        "within_tolerance": sum(1 for c in colours if c["delta_e"] is not None and c["delta_e"] <= tolerance),
                        "colours": len(colours), "seconds": _seconds(plan, layers, by_id), "zones": len(pz.zones(colouring)),
-                       "zone_regions": len(zoned)}}
+                       "zone_regions": len(zoned), "texts": len(texts)}}
 
 
 def _seconds(plan: dict, layers: list[dict], by_id: dict) -> float | None:
@@ -795,6 +884,9 @@ def _blocker_photo(plan: dict, state: dict, zones: list[dict] | None = None) -> 
     if state["missing_regions"]:
         return (f"{len(state['missing_regions'])} region(s) have a titanium colour that is no longer measured on this laser, lens and "
                 "titanium stock: choose another before export")
+    blocked = lettering.text_blocker(state.get("texts") or [])
+    if blocked:
+        return blocked
     if not state["layers"] and not state["zones"]:
         return "every region is excluded: there is nothing to engrave"
     cap = photo_cap(plan["markers_enabled"])
@@ -811,8 +903,8 @@ def _blocker_photo(plan: dict, state: dict, zones: list[dict] | None = None) -> 
 
 def _photo_refresh(store: Store, plan: dict, document: dict, entries: list[dict]) -> dict:
     """Store the layers of the current colouring and set the status: ready when it can be exported."""
-    state = _state(plan, document, entries)
-    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
+    state = _state(plan, document, entries, _inscribed(store, plan, entries))
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state), state["cut"])
     plan["layers"] = _export_layers(store, plan, state)
     plan["regions"], plan["weak"] = [], []
     plan["counts"] = {"colours": len(document["palette"]), "regions": len(document["regions"])}    # for the list of works (:func:`listing`)
@@ -845,7 +937,7 @@ def _export_layers(store: Store, plan: dict, state: dict) -> list[dict]:
         out.append({"index": first + n, "name": _layer_name(first + n, entry), "entry_id": entry["id"], "parameters": _recipe(store, entry),
                     "mode": entry["mode"], "cut_type": entry["mode"] or "Scan", "prediction": _prediction(entry), "knowledge_id": None,
                     "stage": None, "questioned": False, "basis": entry["basis"], "lab": entry["lab"], "srgb": entry["srgb"],
-                    "time_s_per_cm2": entry["time_s_per_cm2"], "regions": [], "region_ids": layer["region_ids"],
+                    "time_s_per_cm2": entry["time_s_per_cm2"], "regions": [], "region_ids": layer["region_ids"], "texts": layer.get("texts", []),
                     "area_mm2": round(layer["area_mm2"], 3), "layer_keys": [f"e{entry['id']}"], "size": entry.get("size")})
     return out
 
@@ -879,18 +971,20 @@ def _zone_loops(plan: dict) -> dict[str, list]:
     return _memo(("zone-loops", plan["document_path"], mm), lambda: {r["id"]: r["loops"] for r in seg.regions_as_loops(_geometry(plan))})
 
 
-def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], first: int) -> list[dict]:
+def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], first: int, cut=None) -> list[dict]:
     """Every photo zone with what the screen, the time and the file need, its layer numbered from ``first``: how wide it is (the length of its
     rows, DEC-107), its area and box, its scale's curve at that width with the dots of a dot kind (their measured tones when that kind was
     photographed), the settings and the time of its layer; or why it cannot be engraved (``problem``: its scale is not measured there). The
-    row's zone has every setting (``photo_zones.full``)."""
+    row's zone has every setting (``photo_zones.full``). What the inscriptions ``cut`` out of a zone is not engraved by it: its area and time
+    leave it out."""
     loops = _zone_loops(plan)
     rows = []
     for n, zone in enumerate(pz.full(z) for z in zones):
         width = pz.width_of(loops, zone["regions"])
         mode = pz.mode_of(plan, zone)
         box = pz.box_of(loops, zone["regions"], grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)[0]
-        row = {"zone": zone, "number": zone["number"], "index": first + n, "width_mm": width, "area_mm2": pz.area_of(document, zone["regions"]),
+        area = pz.area_of(document, zone["regions"]) - _under(plan, zone["regions"], cut)
+        row = {"zone": zone, "number": zone["number"], "index": first + n, "width_mm": width, "area_mm2": area,
                "box": box, "curve": None, "measured": None, "dots": None, "parameters": None, "time": None, "problem": None}
         try:
             curve = pz.curve(store, plan, zone, width)[0]
@@ -898,7 +992,7 @@ def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], firs
             if pz.dotted(zone):
                 row["dots"] = ps.dots_at(store, p["power"], curve)
                 row["measured"] = pz.measured_dots(store, plan, zone, zone["kind"], p["power"], width)
-            row.update(curve=curve, parameters=p, time=pz.time_layer(plan, zone, document, loops, first + n, p))
+            row.update(curve=curve, parameters=p, time={**pz.time_layer(plan, zone, document, loops, first + n, p), "area_mm2": area})
         except PredictionError as exc:
             row["problem"] = str(exc)
         rows.append(row)
@@ -1176,9 +1270,20 @@ def plan_zones(store: Store, plan: dict) -> list[dict]:
     return [{**_zone_shown(plan, row), "parameters": row["parameters"]} for row in _zone_rows(store, plan, _document(plan), zones, first)]
 
 
-def _zone_layers(store: Store, plan: dict, rows: list[dict]) -> list[dict]:
-    """The Image layer of every photo zone for the file (:func:`photo_zones.file_layer`)."""
-    return [pz.file_layer(store, plan, row["zone"], _zone_cut(plan, row["zone"]), row["index"]) for row in rows]
+def _zone_layers(store: Store, plan: dict, rows: list[dict], cut=None) -> list[dict]:
+    """The Image layer of every photo zone for the file (:func:`photo_zones.file_layer`), transparent where the inscriptions ``cut`` it."""
+    return [pz.file_layer(store, plan, row["zone"], _uncut(_zone_cut(plan, row["zone"]), cut), row["index"]) for row in rows]
+
+
+def _uncut(found: dict, cut) -> dict:
+    """A zone's picture (:func:`_zone_cut`) transparent where the inscriptions cut the work (DEC-003): there the file engraves nothing of it."""
+    if cut is None or cut.is_empty:
+        return found
+    cols, rows = found["size"]
+    hole = lettering.hole(cut, found["box"], found["px_per_mm"], (cols, rows)).astype(np.float32)
+    small = found["alpha"].shape[::-1]
+    shown = hole if small == (cols, rows) else cv2.resize(hole, small, interpolation=cv2.INTER_AREA)
+    return {**found, "alpha_full": found["alpha_full"] * (1.0 - hole), "alpha": found["alpha"] * (1.0 - shown)}
 
 
 # -- reading and the file ------------------------------------------------------------------------------------------------------
@@ -1237,11 +1342,12 @@ def photo_view(store: Store, plan: dict) -> dict:
     the file with the estimated time of the whole job, and the exported files. The geometry itself is in :func:`split_svg`."""
     document = _document(plan)
     entries = _palette(store, plan)
-    state = _state(plan, document, entries)
+    state = _state(plan, document, entries, _inscribed(store, plan, entries))
     by_id, colouring, settings = state["by_id"], plan["colouring"], plan["colour_settings"]
-    used = {c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
+    used = ({c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
+            | {t[k] for t in _texts(colouring) for k in lettering.ENTRIES if t[k] in by_id})
     layers = _export_layers(store, plan, state)
-    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state), state["cut"])
     hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
               "unresolved", "ai_photo", "counts")
     out = {k: v for k, v in plan.items() if k not in hidden}
@@ -1267,6 +1373,7 @@ def photo_view(store: Store, plan: dict) -> dict:
         undo=len(plan["undo"]), redo=len(plan.get("redo", [])),
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         zones=[_zone_shown(plan, row) for row in zones], zone_kinds=list(pz.KINDS),
+        texts=[lettering.shown_row(row, by_id) for row in state["texts"]], text_defaults=lettering.DEFAULTS,
         time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), layer_cap=photo_cap(plan["markers_enabled"]),
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
@@ -1282,16 +1389,25 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     region a closed Path made of the shared borders with its holes (REQ-043); kept in the job with the colouring it came from."""
     document = _document(plan)
     entries = _palette(store, plan)
-    state = _state(plan, document, entries)
-    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state))
+    state = _state(plan, document, entries, _inscribed(store, plan, entries))
+    zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state), state["cut"])
     blocker = _blocker_photo(plan, state, zones)
     if blocker is not None:
         raise cv.ConversionError(blocker)
     layers = _export_layers(store, plan, state)
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
-    regions = [{**r, "layer_key": key[r["id"]]} for r in seg.regions_as_loops(_geometry(plan)) if r["id"] in key]
+    regions = []
+    for r in seg.regions_as_loops(_geometry(plan)):
+        if r["id"] not in key:
+            continue
+        if r["id"] in state["trimmed"]:          # cut by an inscription: what is left of it, as straight pieces
+            regions += [{"id": r["id"], "loops": shape, "strokes": [], "layer_key": key[r["id"]]} for shape in state["trimmed"][r["id"]]["shapes"]]
+        else:
+            regions.append({**r, "layer_key": key[r["id"]]})
+    for entry_id, found in state["text_shapes"].items():        # the letters and backings on the layer of their colour
+        regions += [{"id": None, "loops": shape, "strokes": [], "layer_key": f"e{entry_id}"} for part in found for shape in lettering.shapes(part)]
     plan["export_mirror_y"] = EXPORT_MIRROR_Y
-    data = pl.export_lbrn2({**plan, "layers": layers + _zone_layers(store, plan, zones), "vector_document": {"regions": regions}})
+    data = pl.export_lbrn2({**plan, "layers": layers + _zone_layers(store, plan, zones, state["cut"]), "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
     plan["layers"] = layers
@@ -1444,7 +1560,7 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
         _snapshot(plan)
         plan.update(changes)
         if kind in ("assign", "settings", "ai_colour"):
-            _add_variant(plan, document, entries)
+            _add_variant(store, plan, document, entries)
     with store.transaction():
         if kind in MERGE_OPS:                    # the new version is the history's entry of the operation
             _new_version(store, plan, document, {**op, "keeper": keeper})
@@ -1464,14 +1580,15 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
         seed = 1 + max((v["seed"] for v in plan["variants"] if v["mode"] == "random"), default=0) if mode == "random" else 0
         return {"colouring": _automatic(plan, document, entries, mode, seed, current)}
     if kind == "ai_colour":
-        return {"colouring": _ai_colour(plan, document, entries, op)}
+        return {"colouring": _ai_colour(store, plan, document, entries, op)}
     if kind == "restore":
         variant = next((v for v in plan["variants"] if v["number"] == op.get("variant")), None)
         if variant is None:
             raise cv.ConversionError("there is no such variant of the colouring")
         if variant["version"] != plan["document_version"]:
             raise cv.ConversionError("this variant of the colouring belongs to another version of the split")
-        return {"colouring": {**copy.deepcopy(variant["colouring"]), "photo": copy.deepcopy(pz.zones(current))}}   # the zones stay as they are
+        return {"colouring": {**copy.deepcopy(variant["colouring"]), "photo": copy.deepcopy(pz.zones(current)),        # the zones and the
+                              "texts": copy.deepcopy(_texts(current))}}                                                # inscriptions stay
     if kind == "settings":
         settings = {"max_time": colormap.time_limit(op.get("max_time")), "include_as_shot": bool(op.get("include_as_shot"))}
         threshold = cv._threshold(store, plan["device_id"], plan["lens_id"], op.get("tolerance_de", plan["threshold"]))
@@ -1480,10 +1597,12 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
                 "colouring": _automatic(ruled, document, entries, current["mode"] or "closest", current["seed"], current)}
     if kind in PHOTO_OPS:
         return {"colouring": _photo_op(store, plan, document, copy.deepcopy(current), kind, op)}
+    if kind in TEXT_OPS:
+        return {"colouring": _text_op(store, plan, entries, copy.deepcopy(current), op)}
     return {"colouring": _choose(copy.deepcopy(current), plan, document, entries, kind, op)}
 
 
-def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dict:
+def _ai_colour(store: Store, plan: dict, document: dict, entries: list[dict], op: dict) -> dict:
     """The colouring after the model chose a measured colour for every source colour the operator has not decided (REQ-050, DEC-084),
     computed without changing the job. The operator's own choices of colours stay, excluded colours are left out of what the model sees,
     and an answer that breaks a rule of :mod:`ai_colouring` is refused here, so that nothing is left behind. The model sees numbers only;
@@ -1508,6 +1627,7 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
     if not free:
         raise cv.ConversionError("every colour of the picture is chosen by hand or left out: there is nothing for the AI to colour")
     base = _automatic(plan, document, entries, "closest", 0, current)          # what the model does not decide: left-out colours
+    inscribed = _inscribed(store, plan, entries)
     total = sum(p["pixels"] for p in document["palette"]) or 1
     sources = [{"index": p["index"], "lab": [round(v, 1) for v in p["lab"]], "share": round(p["pixels"] / total, 4)} for p in free]
     cap = photo_cap(plan["markers_enabled"]) - len(pz.zones(current))          # each photo zone takes a layer of its own
@@ -1516,7 +1636,7 @@ def _ai_colour(plan: dict, document: dict, entries: list[dict], op: dict) -> dic
 
     def recipes(chosen: dict) -> int:
         trial = {**copy.deepcopy(base), "mode": "ai", "assignment": {**base["assignment"], **{str(i): e for i, e in chosen.items()}}}
-        return len(_state({**plan, "colouring": trial}, document, entries)["layers"])
+        return len(_state({**plan, "colouring": trial}, document, entries, inscribed)["layers"])
 
     def check(answer) -> dict:
         return ai.validate(answer, free={s["index"] for s in free}, palette=by_id, lightness={s["index"]: s["lab"][0] for s in free},
@@ -1783,7 +1903,7 @@ def _painted(plan: dict) -> dict[str, list[int]] | None:
     return {region: layer["srgb"] for layer in layers for region in layer["region_ids"]}
 
 
-def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None, zones: list[tuple[dict, rc.Picture]] = ()) -> bytes:
+def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None, zones: list[tuple[dict, rc.Picture]] = (), texts: list = ()) -> bytes:
     photo = is_photo(plan)
     document = _geometry(plan) if photo else _document(plan)
     size = document["size_mm"]
@@ -1805,6 +1925,10 @@ def _draw_thumbnail(plan: dict, painted: dict[str, list[int]] | None, zones: lis
                 cv2.polylines(canvas, [np.round(np.asarray(stroke) * big).astype(np.int32)], False, colour, width)
     for box, picture in zones:                            # a photo zone: its picture as it will come out, transparent outside it
         _paste(canvas, cv2.cvtColor(cv2.imdecode(np.frombuffer(picture.png(), np.uint8), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA), box, big)
+    origin = {"x": 0.0, "y": 0.0}
+    for shape, rgb in texts:                              # an inscription: its cut left clean, its backing and letters in their colours
+        cover = lettering.coverage(shape, origin, big, (canvas.shape[1], canvas.shape[0]), supersample=1)[..., None]
+        canvas[:] = (canvas * (1 - cover) + np.asarray(rgb, np.float32) * cover).round().astype(np.uint8)
     small = cv2.resize(canvas, (cols, rows), interpolation=cv2.INTER_AREA)
     return cv2.imencode(".png", cv2.cvtColor(small, cv2.COLOR_RGB2BGR))[1].tobytes()
 
@@ -1834,11 +1958,31 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     if painted is not None and pz.zones(plan["colouring"]):          # its photo zones as they will come out (REQ-073)
         rows = _zone_rows(store, plan, _document(plan), pz.zones(plan["colouring"]), 0)
         zones = [(row["box"], _zone_picture(store, plan, row)) for row in rows if not row["problem"]]
+    texts = _text_paint(store, plan) if painted is not None else []
     key = rc.key_of({"kind": "vector-thumbnail", "plan": plan["id"], "px": THUMB_PX, "version": plan["document_version"],
                      "document": rc.file_stamp(plan["document_path"]), "smoothing_mm": plan.get("smoothing_mm", 0.0),
                      "painted": None if painted is None else rc.text_digest(json.dumps(painted, sort_keys=True)),
-                     "zones": [picture.key for _, picture in zones]})
-    return rc.Picture(store, f"vector-{plan['id']}", key, lambda: _draw_thumbnail(plan, painted, zones))
+                     "zones": [picture.key for _, picture in zones],
+                     "texts": rc.text_digest(json.dumps([[lettering.svg_d(shape), rgb] for shape, rgb in texts]))})
+    return rc.Picture(store, f"vector-{plan['id']}", key, lambda: _draw_thumbnail(plan, painted, zones, texts))
+
+
+def _text_paint(store: Store, plan: dict) -> list[tuple]:
+    """The inscriptions of a work as its thumbnail draws them, in order: the cut of each in the colour of what is not engraved, then its
+    backing and letters in the colours of their layers as the last colouring stored them. An inscription that cannot be drawn (its font is
+    gone) is left out."""
+    colours = {layer.get("entry_id"): layer["srgb"] for layer in plan.get("layers") or [] if layer.get("srgb")}
+    out = []
+    for spec in _texts(plan["colouring"]):
+        try:
+            found = lettering.geometry(store.data_dir, spec, plan["size_mm"])
+        except su.ValidationError:
+            continue
+        out.append((found["cut"], list(THUMB_BACKGROUND)))
+        for shape, key in ((found["backing"], "backing_entry_id"), (found["letters"], "entry_id")):
+            if shape is not None and not shape.is_empty and colours.get(spec[key]):
+                out.append((shape, list(colours[spec[key]])))
+    return out
 
 
 def copy_work(store: Store, plan_id: int, name=None) -> int:

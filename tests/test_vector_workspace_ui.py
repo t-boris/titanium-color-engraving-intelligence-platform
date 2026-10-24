@@ -23,7 +23,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -147,7 +147,7 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]
     assert out["back"] == "#/vector" and out["copied"] == "#/vector?plan=88" and out["afterFile"] == ["vw-tab-panel-file"]
-    assert out["editorTabs"] == ["Кисть", "Слои", "Цвета", "Фото"]
+    assert out["editorTabs"] == ["Кисть", "Слои", "Цвета", "Фото", "Надписи"]
 
 
 def has_class(classes: str, name: str) -> bool:

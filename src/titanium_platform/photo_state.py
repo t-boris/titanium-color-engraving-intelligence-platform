@@ -68,16 +68,18 @@ def dots(store: Store, state: Mapping, curve: prediction.Curve) -> dict:
 
 
 # -- the picture as it is engraved ------------------------------------------------------------------------------------------------
-def item(store: Store, mode: ps.Mode, upload: dict, state: Mapping, name: str, width_mm: float) -> dict:
+def item(store: Store, mode: ps.Mode, upload: dict, state: Mapping, name: str, width_mm: float, whole: dict | None = None) -> dict:
     """The picture prepared on the scale ``mode`` at ``width_mm``; in a dot kind as it is (its greys are not chosen, its parts not ruled).
-    The objects and the people model's scores are found once per decoded picture and kept with it."""
+    The objects and the people model's scores are found once per decoded picture and kept with it: on ``whole`` when the picture is a part
+    of it (transparent under inscriptions), so the objects and parts are the same with and without them."""
     toned = not dotted(state)
+    found = upload if whole is None else whole
     out = ps.picture_item(store, mode, upload, name, toned and state["by_colour"], width_mm, state["colour_choice"], toned and state["contours"],
                           state["colouring"])
     if toned and state["by_colour"] and state["colour_choice"] == "objects" and state["colouring"]:
-        out["objects"] = objects(upload)
+        out["objects"] = objects(found)
     if toned and state["rules"]:
-        out["part_scores"] = ps.part_scores(upload)
+        out["part_scores"] = ps.part_scores(found)
     return out
 
 

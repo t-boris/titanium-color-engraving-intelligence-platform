@@ -2163,3 +2163,45 @@ where the FILE has them, and the file's shapes are measured as they are, in phys
       (integrity ok), wheel installed, imports ok, 8765 restarted on 0.25.3. Pair 116 rechecked on 8765: 158 of 158 vectors, placement
       scale [0.8895, 0.8476], both warnings, status «Ready to accept»; the T2 tab reloaded. The copy on 8791 stopped.
 The colour of photo zones from the colour map (D6) moves to 0.25.4.
+
+## 0.26.0: inscriptions in works (feature inscriptions-in-works, REQ-001..REQ-005, DEC-001..DEC-003; goal 2026-10-23)
+Operator: text in a rich set of fonts seen as it writes, stretched, rotated, bent, on a circle or any path, in a chosen colour, cut into
+the picture (photo engraving: the place is cut out; vector work: the vectors are trimmed). Answers 2026-10-23: fonts Mac + own + Google;
+fontTools, uharfbuzz, shapely approved; English, Russian, Hebrew and others; letters cut with a gap, a backing optional.
+Design: an inscription is an object of the work (vector: `colouring["texts"]`, photo work: state key `texts`); letters, cut and backing
+are computed from it (memoised) and applied where the work is drawn, timed and written (DEC-003).
+- [x] I1. `fonts.py`: catalogue of the Mac's fonts, own files (data/fonts/own) and Google Fonts (metadata listed, a family downloaded to
+      data/fonts/google when shown or chosen, bulk download in the background); faces with scripts, kind, named instances; cache by file
+      stamps; routes (list, preview SVG, own upload, Google download and status).
+- [x] I2. `lettering.py`: the spec checked; runs by direction shaped with HarfBuzz; glyph outlines (variable axes applied) flattened in mm;
+      lines, alignment, spacing, stretch, rotation; arc, circle and path (smooth through points), letters upright or bent; polygons union
+      (shapely); cut (gap) and backing (rect, oval, outline; colour or clean titanium); clipped to the work; SVG paths; memo.
+- [x] I3. Vector work: ops text_add / text_set / text_delete in the colour editor (undo, variants keep texts); layers, areas, row lengths
+      and time with the letters; regions trimmed by the cut in the file; photo zones transparent under it; blockers; view with the
+      texts' paths. Tests: file read back (no overlap, areas), undo, layers, blockers.
+- [x] I4. Photo work: state `texts` (undo, cache keys), ops route; the look, preview and thumbnail with the cut and the letters; the
+      file (picture transparent under the cut, text layers after C01, y as the picture); time. Tests incl. read back.
+  Done in I4 beyond the plan: the picture is transparent on every pixel the cut touches (`lettering.hole`; the vector work's photo zones
+  too), so nothing of it falls into the gap; the objects and parts are found on the whole picture (`photo_state.item(whole=)`); a width
+  change scales the inscriptions with the picture, the gap kept in mm (DEC-004); the inscription layers are timed with their scan pieces
+  (`engraving_time.loop_pieces`) so the time shown is the file's; a missing or unreadable font is `fonts.FontError`; Google Fonts is in
+  the network allowlist of `test_local_operation` (fetched only when the operator asks) and fonts work offline (new test).
+- [x] I5. UI `lettering.js`: the «Надписи» tab (list, fields, layout, colour via VectorColours, gap, backing), the font window (search,
+      filters, previews, own fonts, Google), the overlay on the picture (select, drag, turn, size, draw and edit a path); in the vector
+      editor and the photo work (a stage of the look in mm). Node UI tests; translations of new server messages.
+  Walk on a copy of the data (port 8791, tab «ТЕСТ: копия данных, порт 8791 (не настоящее приложение)»; work 40 vector, work 37 photo):
+  add, type (Cyrillic + Hebrew), font window (350 Mac families; Google list 2294 families in 2 s; Lobster downloaded on sight; Hebrew
+  filter), colours, circle + oval backing, path of 5 clicks, drag (14.1 x 21.2 mm for the pointer's travel), turn about the anchor
+  (30.0 deg for a 30 deg gesture), size (radius and height x1.15), undo/redo, LightBurn files of both works (photo: cleaning, picture,
+  C02 with the 7 letters), console clean. Found and fixed during the walk (each with a test first):
+  - lines below the first on a curve kept the first line's spacing (crowded or squeezed in the middle of a circle): every line now runs
+    on its own parallel curve (`along`: 1 - b·k on arcs and circles, the turn of the path on a path), the backing holds every line, and
+    `overflow` says when a line is longer than its own circle or letters reach past the centre (arcs too);
+  - 9 Mac faces (Corsiva Hebrew, New Peninim MT, Raanana, Mishafi Gold) state sCapHeight -1: the scale went negative and HarfBuzz
+    swallowed 378 «math domain error»s in the pen; a cap not stated is now unknown and measured on the letters (catalogue version 2);
+  - a family opened on its first face (Thin, Light, Condensed Light): the catalogue now names its regular face (`fonts._regular`);
+  - missing Hebrew letters were named in visual order (reversed); the font window opens on the script of the text, previews all its
+    lines, and the filters sit on one row; the duplicate «нет букв» warning is gone.
+  Seen, not changed (not this feature): a window opened on one screen stays open when the address is changed by hand or by a script.
+- [ ] I6. README (dependencies, deploy import check), SemVer 0.26.0, full suite (-n 12), deploy after a backup, walk on a copy of the real
+      works 22/40 and 35 in a browser (console read), report what is and is not built.

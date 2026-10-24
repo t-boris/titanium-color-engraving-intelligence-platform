@@ -19,7 +19,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'filepick.js', 'tasks.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'filepick.js', 'tasks.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js',
   'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);

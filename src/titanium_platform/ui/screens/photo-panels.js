@@ -335,9 +335,10 @@ const PhotoPanels = (() => {
       подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
       ``save`` (DEC-108). Владелец (работа или фотозона векторной работы) задаёт ``ramp`` — адрес «Пробы на ширине работы» (без него её нет),
       ``original`` — адрес исходной цветной картинки, ``width`` — меняется ли ширина (у зоны она — по её областям), ``objects`` — есть ли
-      «Раскраска по объектам» (у зоны — с 0.23.1) и ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
-      первой, затем картинка в нуле). */
-  function workPicture(save, chooseKind, {ramp = null, original = null, width: widthFree = true, objects = true, layer = null} = {}) {
+      «Раскраска по объектам» (у зоны — с 0.23.1), ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
+      первой, затем картинка в нуле) и ``stage(el, cols)`` — что положить поверх прогноза (надписи работы): ``el`` — картинка рядом с
+      прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. */
+  function workPicture(save, chooseKind, {ramp = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
     const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
     kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em', disabled: !widthFree,
@@ -379,6 +380,7 @@ const PhotoPanels = (() => {
       fill(out,
         h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Прогноз на титане')),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
+      if (stage) stage(out.querySelector('.pp-stage'), info.picture && info.picture.shown_width);
       const atSize = sizeText(info.scale_size);
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
@@ -414,6 +416,7 @@ const PhotoPanels = (() => {
       fill(out,
         h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка (как её видит LightBurn)'), h('span', {}, `${name} на титане — ${measured ? 'по измеренной пробе' : 'оценка'}`)),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Картинка и она же в виде «${name}» на титане`})));
+      if (stage) stage(out.querySelector('.pp-stage'), info.shown && info.shown.width);
       const atSize = mapped ? recipeSizeText(view.dot_recipe.size) : sizeText(info.scale_size);
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),

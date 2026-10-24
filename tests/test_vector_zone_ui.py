@@ -17,7 +17,7 @@ const ctx = context({});
 const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
-load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/photo-panels.js', 'screens/vector-zone.js']);
+load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/lettering.js', 'screens/photo-panels.js', 'screens/vector-zone.js']);
 const requests = [], past = [], future = [];
 let zone = data.zone, version = 0, refuse = null;
 const base = '/api/vector/9/photo/1';

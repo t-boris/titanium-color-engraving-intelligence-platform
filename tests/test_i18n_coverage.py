@@ -26,20 +26,20 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "titanium_platform"
 UI = ROOT / "ui"
 SOURCES = sorted(ROOT.rglob("*.py"))                  # the package and its api/ routes
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
-               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError",
+               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError", "FontError",
                "KeyError"}                             # a record that is not found: the API answers 404 with its message
 HTTP_ERRORS = {"HTTPException"}                        # HTTPException(status, {"error": text, ...}) or HTTPException(status, text)
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why", "questions", "worth",
                   "warnings"}                                                    # <name>.append(text) / <x>["name"].append(text)
 RETURN_FUNCTIONS = {"attribution_note", "automatic_stage", "supported_stage", "removal_doubt",
-                    "_kinetics_note", "_blocker_photo"}                          # return "text" or (stage, "text")
+                    "_kinetics_note", "_blocker_photo", "_why_not_engraved", "text_blocker"}   # return "text" or (stage, "text")
 NOTE_KEYS = {"note", "statement", "rationale",                                   # row["note"] = "text" or {"note": "text"}; findings, proposals
              "measurement", "refused"}                                           # how a layer was sampled; why an anchoring was refused
 REASON_ARGS = {"_event": 5, "_record": 3,          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
                "refuse": 0}                        # anchoring's refuse(REASON)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-gaps.js"]
 PLACEHOLDER = "7"
 HOLE = "\x00"                                      # where a wrapper embeds another server message
 LIST_SEPARATOR = "; "                              # several server messages in one are joined with it
@@ -53,6 +53,9 @@ INNER_OF = {
         ("returned", "supported_stage"), ("returned", "automatic_stage")),
     # why a photo zone of a vector work cannot be engraved: the message of its scale's curve, kept in the zone's row (REQ-073)
     "photo zone 7 cannot be engraved: ": (("raised", "PredictionError"),),
+    # why an inscription cannot be engraved: its font is gone or unreadable (fonts.FontError), or a reason of lettering._why_not_engraved,
+    # kept in its row
+    "inscription 7 cannot be engraved: ": (("raised", "FontError"), ("returned", "_why_not_engraved")),
 }
 # Messages that end in a dynamic part after a colon which is data, not a server message: it is shown as it is.
 DATA_TAILS = {
@@ -60,6 +63,8 @@ DATA_TAILS = {
     "cannot decode RAW file: ": "the RAW library's own error text",
     "unknown engraving task: ": "the task key that was sent",
     "settings unknown to this version are kept with the recipe but not interpreted: ": "the LightBurn setting tags of the layer",
+    "Google Fonts could not be reached: ": "the network library's own error text",
+    "the font 7 could not be downloaded from Google Fonts: ": "the network library's own error text",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.

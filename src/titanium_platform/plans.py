@@ -477,7 +477,7 @@ def _bitmap(x: float, y: float, w: float, h: float, picture: np.ndarray, dpi: fl
 
 
 def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name: str = "picture", identifier: str | None = None, *,
-                   clean: dict | None, dither: str = IMAGE_DITHER) -> bytes:
+                   clean: dict | None, dither: str = IMAGE_DITHER, vectors: list[dict] = ()) -> bytes:
     """A LightBurn project of one picture engraved in the image mode ``dither`` (grayscale unless another kind is given: LightBurn makes
     the dots of a dot kind itself) with ``parameters`` (power = Max, ``min_power``, speed, frequency
     in kHz, pulse width, line interval, passes): the picture ``width_mm`` wide at the layer's DPI, its top-left corner at the origin,
@@ -486,7 +486,10 @@ def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name:
     without, the Image layer is C00, like the operator's own photo files. The picture keeps its own pixels, as in those files
     (LightBurn resamples it to the layer's DPI when it engraves); only a picture finer than that DPI is reduced to it, so the file does
     not carry pixels the laser never uses. With an ``identifier`` (a photo work's) the Notes carry ``TCE1:<identifier>``, as a plan's
-    file does, so that the photograph of the engraving is linked to it."""
+    file does, so that the photograph of the engraving is linked to it. ``vectors`` are filled layers engraved after the picture (an
+    inscription's letters, feature inscriptions-in-works): each its ``index`` (after the picture's), ``name``, recipe ``parameters`` and
+    ``shapes`` (closed loops in the picture's mm, y down, outline then holes); the project's y points up, so they are written reflected
+    over the picture's height, as the picture is stored bottom row first. A BGRA ``picture`` leaves its transparent pixels alone."""
     width = float(width_mm)
     if not np.isfinite(width) or width <= 0:
         raise su.ValidationError("the width of the picture must be a positive number of millimetres")
@@ -504,9 +507,16 @@ def export_picture(picture: np.ndarray, width_mm: float, parameters: dict, name:
     index = 0 if clean is None else CLEAN_LAYER_INDEX + 1
     cleaning = "" if clean is None else _clean_setting(clean)
     frame = "" if clean is None else _rect(0.0, 0.0, width, height, CLEAN_LAYER_INDEX)
+    settings, paths = [], []
+    for layer in vectors:
+        if not index < layer["index"] < MAX_LAYERS:
+            raise su.ValidationError(f"the engraving would exceed LightBurn's {MAX_LAYERS} output layers (colors 00–29); T1/T2 are not output layers")
+        settings.append(_recipe_setting(layer["index"], layer["name"], layer["parameters"]))
+        regions = [{"loops": [[[x, height - y] for x, y in loop] for loop in shape], "strokes": [], "layer_key": "v"} for shape in layer["shapes"]]
+        paths += vectorize.to_lbrn2_shapes({"regions": regions}, {"v": layer["index"]})
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.0.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">\n'
-            + cleaning + _image_setting(index, f"C{index:02d}", parameters, priority=index, dither=dither) + frame
-            + _bitmap(0.0, 0.0, width, height, picture, own_dpi, index, f"{stem}.png")
+            + cleaning + _image_setting(index, f"C{index:02d}", parameters, priority=index, dither=dither) + "".join(settings) + frame
+            + _bitmap(0.0, 0.0, width, height, picture, own_dpi, index, f"{stem}.png") + "".join(paths)
             + f'    <Notes ShowOnLoad="0" Notes={quoteattr(f"TCE1:{identifier}" if identifier else "")}/>\n</LightBurnProject>\n').encode("utf-8")
 
 

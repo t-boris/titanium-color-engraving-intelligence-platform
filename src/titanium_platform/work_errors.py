@@ -91,7 +91,7 @@ def refresh_work(store: Store, plan_id: int) -> dict | None:
     if plan is None:
         return None
     entries = vj._palette(store, plan)
-    state = vj._state(plan, vj._document(plan), entries)
+    state = vj._state(plan, vj._document(plan), entries, vj._inscribed(store, plan, entries))
     found = vj._attention(plan, state, entries, plan["colour_settings"])
     attention = None if found is None else wr.attention_of(found, now())
     keep = lambda a: None if a is None else {k: v for k, v in a.items() if k != "checked_at"}      # noqa: E731

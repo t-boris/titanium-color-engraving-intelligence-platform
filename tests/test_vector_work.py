@@ -898,7 +898,7 @@ def test_the_neighbours_of_a_split_are_the_relation_merging_uses_and_follow_its_
 # -- the screen, run in node over a small DOM with the server's real answers --------------------------------------------------
 UI = Path(__file__).resolve().parents[1] / "src" / "titanium_platform" / "ui"
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-gaps.js"]
 GLUE = ("const __screens = {}, __renders = []; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { __renders.push(1); };"
         "globalThis.__screens = __screens; globalThis.__renders = __renders;")
 HARNESS = """
@@ -906,7 +906,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);

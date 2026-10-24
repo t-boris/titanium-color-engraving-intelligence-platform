@@ -204,13 +204,17 @@ def scan_pieces(regions, interval: float, angle_deg: float = 0.0) -> float:
     0 = along x). A line enters and leaves a shape at two edges, and an edge is crossed by one line per interval of its extent across
     the lines, so the pieces are the summed extent of every edge (holes included) over twice the interval: exact on average, with no
     line drawn. A picture's rectangle gives its rows."""
+    return loop_pieces([[list(r.polygon)] + [list(hole) for hole in r.holes] for r in regions if _filled(r)], interval, angle_deg)
+
+
+def loop_pieces(shapes, interval: float, angle_deg: float = 0.0) -> float:
+    """:func:`scan_pieces` of filled shapes given as loops of points in mm, each shape its outline and then its holes."""
     a = math.radians(angle_deg)
     nx, ny = -math.sin(a), math.cos(a)
     extent = 0.0
-    for region in regions:
-        if not _filled(region):
-            continue
-        for loop in [list(region.polygon)] + [list(hole) for hole in region.holes]:
+    for shape in shapes:
+        for loop in shape:
+            loop = list(loop)
             extent += sum(abs((x2 - x1) * nx + (y2 - y1) * ny) for (x1, y1), (x2, y2) in zip(loop, loop[1:] + loop[:1]))
     return extent / (2 * interval)
 

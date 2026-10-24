@@ -11,8 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __version__, capability_results, findings, research, work_errors
 from ..db import open_store
-from . import (routes_devices, routes_findings, routes_lenses, routes_palette, routes_photo_work, routes_plans, routes_prediction, routes_research,
-               routes_setup, routes_vector, routes_work)
+from . import (routes_devices, routes_findings, routes_fonts, routes_lenses, routes_palette, routes_photo_work, routes_plans, routes_prediction,
+               routes_research, routes_setup, routes_vector, routes_work)
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -77,7 +77,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
 
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
-              routes_findings.router):
+              routes_findings.router, routes_fonts.router):
         app.include_router(r)
 
     @app.exception_handler(404)

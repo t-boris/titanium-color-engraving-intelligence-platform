@@ -138,7 +138,7 @@ function context(routes) {
       json: async () => r.json, text: async () => (r.text ?? JSON.stringify(r.json)), blob: async () => ({size: (r.text || '').length})};
   }
   const ctx = {document, fetch, requests, DOMParser: class { parseFromString(text) { return parseXml(text); } }, URL: {createObjectURL: () => 'blob:x', revokeObjectURL() {}},
-    URLSearchParams, console, setTimeout, clearTimeout, Promise, window: {scrollY: 0, scrollTo() {}, innerHeight: 800}, location: {hash: ''}};
+    URLSearchParams, console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, window: {scrollY: 0, scrollTo() {}, innerHeight: 800}, location: {hash: ''}};
   vm.createContext(ctx);
   return ctx;
 }

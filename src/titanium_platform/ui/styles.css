@@ -1073,3 +1073,42 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 @media (max-width:1100px) {
   .ge-work>.ge-stage {min-height:60vh}
 }
+
+/* === lt: Надписи в работах (inscriptions-in-works): вкладка «Надписи», окно шрифтов, слой надписей над картинкой === */
+.lt-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px 8px}
+.lt-num input {width:100%}
+.lt-text {width:100%;min-height:58px;resize:vertical;font:inherit}
+.lt-item {width:100%;border:1px solid transparent;background:none;color:inherit;text-align:left;cursor:pointer}
+.lt-item.picked {border-color:var(--accent);background:var(--accent-soft)}
+.lt-none {background:repeating-linear-gradient(45deg,#d32f2f 0 3px,#ffffff 3px 6px)}
+.vw-swatch.lt-clean {background:#e6e6e6;background-image:linear-gradient(135deg,transparent 46%,#7a869a 46% 54%,transparent 54%)}
+.lt-swatches {max-height:26vh}
+/* the layer over the picture: drawn always, taken by the pointer only while «Надписи» is open */
+.vw-ed-svg .lt-layer {pointer-events:none}
+.vw-ed-svg.show-texts .lt-layer {pointer-events:auto}
+.vw-ed-svg.show-texts .lt-text {cursor:move}
+.lt-over {position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);pointer-events:none;overflow:visible}
+.lt-over.open {pointer-events:auto}
+.lt-over.open .lt-text {cursor:move}
+.lt-layer path.lt-outline {fill:none;stroke:#ffd54a;stroke-width:1.5px;stroke-opacity:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.lt-layer .lt-frame {fill:none;stroke:#7fe3ff;stroke-width:1px;stroke-dasharray:5 4;vector-effect:non-scaling-stroke;pointer-events:none}
+.lt-layer .lt-guide {fill:none;stroke:#7fe3ff;stroke-width:1px;stroke-opacity:.8;vector-effect:non-scaling-stroke;pointer-events:none}
+.lt-layer .lt-drawn {fill:none;stroke:#ffd54a;stroke-width:1.5px;stroke-dasharray:4 3;vector-effect:non-scaling-stroke;pointer-events:none}
+.lt-layer .lt-stem {stroke:#7fe3ff;stroke-width:1px;vector-effect:non-scaling-stroke;pointer-events:none}
+.lt-layer .lt-handle {fill:#ffffff;stroke:#0b1220;stroke-width:1.5px;vector-effect:non-scaling-stroke;cursor:grab}
+.lt-layer .lt-handle[data-handle=rotate] {cursor:alias}
+.lt-layer .lt-handle[data-handle=size] {cursor:nwse-resize}
+.lt-layer circle.lt-point {fill:#ffd54a;stroke:#0b1220;stroke-width:1px;vector-effect:non-scaling-stroke}
+/* the font window */
+.modal:has(.lt-font-window) {width:min(980px,100%)}
+.lt-grow {flex:1;min-width:180px}
+.lt-filters select {flex:1;width:auto;min-width:10em}
+.lt-fonts {display:flex;flex-direction:column;gap:4px;max-height:52vh;overflow:auto;padding-right:4px}
+.lt-font {display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--surface)}
+.lt-font:hover {border-color:var(--line-2);background:var(--surface-2)}
+.lt-font.picked {border-color:var(--accent);background:var(--accent-soft)}
+.lt-font-head {display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.lt-font-head select {max-width:14em}
+.lt-preview {display:block;height:44px;max-width:100%;object-fit:contain;object-position:left center;background:#f4f1ea;border-radius:6px;padding:4px 8px}
+.lt-star {border:none;background:none;color:var(--warning);font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+/* === end lt === */

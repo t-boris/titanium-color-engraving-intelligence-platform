@@ -175,7 +175,10 @@ const VectorEditor = (() => {
     const farNote = h('p', {class: 'small muted'});
     const coloursBox = h('div', {class: 'vw-ed-list'}), colourMerge = h('div', {});
     const photo = VectorPhoto.create(j, {act: (op) => act(op), select: (ids) => selectOnly(ids), outline: (ids) => (ids ? setHot(ids) : refreshHover())});
-    // панель на четыре вкладки, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085), фотозоны (REQ-073)
+    // надписи врезаются в картинку: слой рисует врезку цветом чистого титана, подложку и буквы их цветами (inscriptions-in-works)
+    const lettering = Lettering.create(j, {act: (op) => act(op), palette: () => palette(j), size: (v) => v.document.size_mm, scale: () => frame().s,
+      drawn: true, clean: EXCLUDED, open: () => sideTab === 'texts'});
+    // панель на пять вкладок, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085), фотозоны (REQ-073), надписи
     const sideTabs = App.tabs([
       ['brush', 'Кисть', h('div', {class: 'vw-ed-pane'},
         h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Инструмент'),
@@ -187,10 +190,13 @@ const VectorEditor = (() => {
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
-      ['photo', 'Фото', h('div', {class: 'vw-ed-pane'}, selectionSlots.photo, photo.el)]],
+      ['photo', 'Фото', h('div', {class: 'vw-ed-pane'}, selectionSlots.photo, photo.el)],
+      ['texts', 'Надписи', lettering.el]],
       {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab', onSelect: (id) => {
         sideTab = id;
         syncSvgClass();
+        lettering.opened();
+        if (id === 'texts') { hover = null; tip.hidden = true; setHot([]); }
         (id === 'photo' ? selectionSlots.photo : selectionSlots.brush).append(selectionBox);
         if (ready && id === 'photo') setTool('select');       // on «Фото» a click selects (the brush is on «Кисть», out of sight)
       }});
@@ -240,7 +246,7 @@ const VectorEditor = (() => {
       borders.forEach((b, i) => { for (const rid of b.sides) { if (!bordersOf.has(rid)) bordersOf.set(rid, []); bordersOf.get(rid).push(i); } });
       lines = svgEl('g', {class: 'vw-outlines'});
       for (const kind of ['vw-zone', 'vw-hot', 'vw-sel']) lines.append(svgEl('path', {class: `vw-outline vw-halo ${kind}`}), svgEl('path', {class: `vw-outline ${kind}`}));
-      next.append(lines);
+      next.append(lettering.layer, lines);                    // the inscriptions over the regions, the outlines (no pointer) over all
       if (svg) svg.remove();
       stage.prepend(next);
       svg = next;
@@ -286,7 +292,7 @@ const VectorEditor = (() => {
 
     function syncSvgClass() {
       if (svg) svg.setAttribute('class', ['vw-ed-svg', state.view === 'original' ? 'view-original' : '', state.far ? 'show-far' : '',
-        sideTab === 'photo' ? 'show-zones' : ''].filter(Boolean).join(' '));
+        sideTab === 'photo' ? 'show-zones' : '', sideTab === 'texts' ? 'show-texts' : ''].filter(Boolean).join(' '));
     }
 
     /** The outline of a set of regions as one shape: the borders with a region of the set on one side only (none between two of them). */
@@ -359,6 +365,7 @@ const VectorEditor = (() => {
       vb = {x: clamp(x, Math.min(0, W - w), Math.max(0, W - w)), y: clamp(y, Math.min(0, H - hh), Math.max(0, H - hh)), w, h: hh};
       if (svg) svg.setAttribute('viewBox', [vb.x, vb.y, vb.w, vb.h].map((v) => +v.toFixed(4)).join(' '));
       fill(zoomLabel, `${Math.round(W / vb.w * 100)} %`);
+      if (sideTab === 'texts') lettering.redraw();             // the handles keep their size on screen
     }
 
     // экранная точка → точка картинки (мм) при preserveAspectRatio «meet»
@@ -376,7 +383,7 @@ const VectorEditor = (() => {
     const fit = () => setBox(0, 0, j.document.size_mm.width);
 
     // --- мышь: колесо — масштаб, перетаскивание дальше 4 px — сдвиг, а не щелчок ---------------------------------------------
-    let drag = null, dragged = false;
+    let drag = null, dragged = false, lettered = false;
     stage.addEventListener('wheel', (ev) => {
       ev.preventDefault();
       const f = frame();
@@ -388,10 +395,16 @@ const VectorEditor = (() => {
       if (ev.button > 1) return;
       if (ev.button === 1) ev.preventDefault();               // средняя кнопка — сдвиг, а не автопрокрутка страницы
       dragged = false;
-      const lasso = ev.button === 0 && state.tool === 'select' && !spaceHeld;
+      if (ev.button === 0 && !spaceHeld && lettering.down(ev, toMm(ev))) {     // «Надписи»: надпись, её ручка или точка пути
+        lettered = true;
+        try { stage.setPointerCapture(ev.pointerId); } catch (_) { /* указатель уже отпущен */ }
+        return;
+      }
+      const lasso = ev.button === 0 && state.tool === 'select' && !spaceHeld && sideTab !== 'texts';
       drag = {x: ev.clientX, y: ev.clientY, vb: {...vb}, s: frame().s, pointer: ev.pointerId, moving: false, lasso, points: [], line: null};
     });
     stage.addEventListener('pointermove', (ev) => {
+      if (lettered) return lettering.move(ev, toMm(ev));
       if (drag) {
         const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
         if (!drag.moving && Math.hypot(dx, dy) > 4) {
@@ -404,9 +417,14 @@ const VectorEditor = (() => {
         if (drag.moving && drag.lasso) return drag.cancelled ? undefined : extendLasso(ev);
         if (drag.moving) return setBox(drag.vb.x - dx / drag.s, drag.vb.y - dy / drag.s, drag.vb.w);
       }
-      hoverAt(ev);
+      if (sideTab !== 'texts') hoverAt(ev);
     });
     const endDrag = (ev) => {
+      if (lettered) {
+        lettered = false;
+        if (lettering.up(ev, ev && ev.clientX != null ? toMm(ev) : null)) dragged = true;
+        return;
+      }
       if (drag && drag.moving) {
         dragged = true;
         stage.classList.remove('panning');
@@ -455,6 +473,7 @@ const VectorEditor = (() => {
     stage.addEventListener('pointerleave', () => { if (!drag) setHover(null); });
     stage.addEventListener('click', (ev) => {
       if (dragged) { dragged = false; return; }               // конец перетаскивания — не щелчок
+      if (sideTab === 'texts') return lettering.click(ev, toMm(ev));      // на «Надписях» щелчок не красит области
       const path = ev.target && ev.target.closest ? ev.target.closest('path[data-region]') : null;
       if (path) clickRegion(path.getAttribute('data-region'), ev);
     });
@@ -760,7 +779,8 @@ const VectorEditor = (() => {
             'aria-label': `Сделать активным цвет слоя ${l.name || key}`, onClick: () => setActive(l.entry_id)}),
           l.index != null ? h('strong', {}, `C${String(l.index).padStart(2, '0')}`) : null,
           sizeNote(l.size),
-          h('span', {class: 'muted'}, `${area(l.area_mm2)} · областей ${count} · ${rate == null || l.area_mm2 == null ? 'время не оценено' : duration(rate * l.area_mm2 / 100)}`)),
+          h('span', {class: 'muted'}, `${area(l.area_mm2)} · областей ${count}` + ((l.texts || []).length ? ` · надписей ${l.texts.length}` : '')
+            + ` · ${rate == null || l.area_mm2 == null ? 'время не оценено' : duration(rate * l.area_mm2 / 100)}`)),
         () => regionsOf(l));
       }) : h('p', {class: 'small muted'}, 'Слоёв цвета нет: всё исключено.'),
       (j.zones || []).map((z) => outlineOnHover(h('div', {class: 'vw-ed-item vw-ed-zone-row'},
@@ -853,12 +873,13 @@ const VectorEditor = (() => {
       loadNear();
       syncPanel();
       photo.update(j);
+      lettering.update(j);
     }
 
     const editor = {el, update, key(ev) {
       if (!el.isConnected) { if (current === editor) current = null; return; }
       if (document.querySelector('.modal-bg')) return;
-      if (ev.key === 'Escape') return dropSelection();        // in a field too: Escape means nothing there (a power, a checkbox, the slider)
+      if (ev.key === 'Escape') return sideTab === 'texts' && lettering.escape() ? undefined : dropSelection();   // in a field too: Escape means nothing there
       const t = ev.target;
       if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';

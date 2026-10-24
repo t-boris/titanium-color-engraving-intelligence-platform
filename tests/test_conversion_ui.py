@@ -85,7 +85,7 @@ def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_the
 
 def test_the_colouring_step_offers_every_operation_the_server_knows():
     from titanium_platform import vector_job
-    colours = source("screens/vector-colours.js") + source("screens/vector-editor.js") + source("screens/vector-photo.js")
+    colours = source("screens/vector-colours.js") + source("screens/vector-editor.js") + source("screens/vector-photo.js") + source("screens/lettering.js")
     for op in vector_job.COLOURING_OPS:
         assert f"'{op}'" in colours, op
     for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Включить цвета без привязки"):
