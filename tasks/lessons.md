@@ -595,3 +595,7 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **Deploy.** The wheel of this project is `titanium_color_engraving_platform-<v>-py3-none-any.whl` (the distribution name, not the
   import name); the live database is `~/.titanium-platform/titanium.sqlite` (other `*.sqlite*` files there are empty leftovers). Take the
   file by name, never by a glob with `head -1`, and check the backup's size before restarting the server.
+- **Build.** The core's `__version__` comes from the package metadata; the editable install in `.venv` keeps the metadata of the
+  version at install time (it said 0.3.1 while `pyproject.toml` said 0.31.0), so a PyInstaller build from the venv reports the old
+  version. Before a desktop build: `uv pip install --python .venv/bin/python -e . --no-deps` (the venv has no pip), and read the version
+  in the core's smoke line, not only `"smoke": "ok"`.
