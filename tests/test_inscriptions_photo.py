@@ -9,11 +9,12 @@ import pytest
 import shapely
 from shapely.geometry import Polygon
 
+import recipes
 from test_grey_scales import app_world  # noqa: F401  (the world of the photo zones' tests is made from it)
 from test_photo_works import create as make_work
 from test_vector_photo_zones import world  # noqa: F401
 from titanium_platform import color, engraving_time as et, fonts, lettering, lightburn as lb, photo_modes, photo_state, photo_work
-from titanium_platform import prediction, prediction_store as ps
+from titanium_platform import model, palette, prediction, prediction_store as ps, row_length, vector_job
 
 K = 10.0                                    # raster pixels per mm the file's picture is laid over
 
@@ -88,8 +89,10 @@ def test_an_inscription_takes_the_darkest_colour_and_its_layer_follows_the_pictu
     assert client.get("/api/photo-works").status_code == 200
 
 
-@pytest.mark.parametrize("kind", ["grayscale", "jarvis"])
+@pytest.mark.parametrize("kind", photo_work.KINDS)
 def test_the_file_leaves_the_picture_out_under_the_cut_and_engraves_the_letters_after_it(world, kind):
+    """inscriptions-in-works REQ-005 c1: the Image layer's picture is transparent under the cut (LightBurn skips it) in grayscale and in
+    every dot kind, and the same as without the inscription everywhere else."""
     work = make_work(world["client"])
     if kind != "grayscale":
         settings(world, work, kind=kind)
@@ -196,3 +199,141 @@ def test_the_objects_of_the_picture_are_found_on_the_whole_picture_not_the_one_c
     plan = {**photo_work._work(world["store"], work["id"]), "by_colour": True, "colour_choice": "objects", "colouring": {"o1": {"power": 10}}}
     item = photo_work._item(world["store"], plan)
     assert seen == [1.0] and float(item["alpha"].min()) == 0.0                                    # found on the whole, engraved with the cut
+
+
+def palette_of(world, work) -> list[dict]:
+    return photo_work._palette(world["store"], photo_work._work(world["store"], work["id"]))
+
+
+def test_the_file_keeps_the_cleaning_and_the_picture_and_lays_the_backing_and_the_letters_after_them_with_their_full_recipes(world, monkeypatch):
+    """inscriptions-in-works REQ-005 c2: the cleaning stays on C00 and the picture on C01 as without the inscription; the backing and the
+    letters follow, on a layer of each recipe (the lightest first), with every setting of their recipe (here one with cross-hatch, angles,
+    two passes and a sub-layer), laid where the screen and the look draw them. Letters that overlap are one shape there (REQ-002 c6)."""
+    client, store, passport = world["client"], world["store"], world["laser"]["passport"]
+    work = make_work(client)
+    plain = read_file(world, work)
+    entries = palette_of(world, work)
+    light, dark = max(entries, key=lambda e: e["lab"][0]), min(entries, key=lambda e: e["lab"][0])
+    full = recipes.recipes(passport)["Gold fill"]
+    stored = vector_job._recipe
+    monkeypatch.setattr(vector_job, "_recipe", lambda store_, entry: full if entry["id"] == dark["id"] else stored(store_, entry))
+    view = add(world, work, text="HH O", spacing_mm=-1.5, height_mm=10, x=25, y=20, backing="rect", padding_mm=2, backing_entry_id=light["id"])
+    text, shape = view["texts"][0], found(world, work, view)
+    size = photo_work.size_mm(photo_work._work(store, work["id"]))
+    project = read_file(world, work)
+    assert [(layer["index"], layer["entry_id"]) for layer in view["text_layers"]] == [(2, light["id"]), (3, dark["id"])]
+    assert [(layer.index, layer.name, layer.layer_type) for layer in project.layers] == [
+        (0, plain.layer(0).name, "Scan"), (1, "C01", "Image"), *[(layer["index"], layer["name"], "Scan") for layer in view["text_layers"]]]
+    for index in (0, 1):                                                                         # the cleaning and the picture as they were
+        assert recipes.parameters(project.layer(index), passport) == recipes.parameters(plain.layer(index), passport)
+    assert [r.as_dict() for r in project.layer(0).regions] == [r.as_dict() for r in plain.layer(0).regions]
+    assert [r.as_dict() for r in project.layer(1).regions] == [r.as_dict() for r in plain.layer(1).regions]
+    backing, letters = project.layer(2), project.layer(3)
+    assert model.parameters_key(recipes.parameters(letters, passport)) == model.parameters_key(full)          # every setting of the recipe
+    assert (letters.cross_hatch, letters.passes, letters.scan_angle) == (True, 2, 45.0)
+    own = stored(store, light)
+    assert {k: recipes.parameters(backing, passport)[k] for k in own} == own
+    # laid where the screen draws them, as closed Path shapes
+    assert text["shown"]["letters"] == lettering.svg_d(shape["letters"]) and text["shown"]["backing"] == lettering.svg_d(shape["backing"])
+    for layer, part in ((backing, shape["backing"]), (letters, shape["letters"])):
+        assert layer.regions and all(r.kind == "path" and r.closed for r in layer.regions)
+        assert shapely.symmetric_difference(read_back(layer, size), part).area < 0.005 * part.area
+    # «HH» overlap: one shape, and no shape of the layer over another
+    assert len(shape["letters"].geoms) == 2 and len(letters.regions) == 2
+    assert sum(Polygon(r.polygon, r.holes).area for r in letters.regions) == pytest.approx(read_back(letters, size).area, rel=1e-6)
+    # and where the look draws them: the letters in their colour, the backing in its own beside them
+    look = rgb_of(client.get(f"/api/photo-works/{work['id']}/thumb.png"))
+    k = look.shape[1] / size["width"]
+    x0, y0, x1, y1 = shape["letters"].bounds
+    y = int((y0 + y1) / 2 * k)
+    assert np.abs(look[y, int((x0 + 0.7) * k)].astype(int) - text["srgb"]).max() <= 3                   # in the first stem
+    assert np.abs(look[y, int((x0 - 1.2) * k)].astype(int) - text["backing_srgb"]).max() <= 3           # on the backing beside it
+
+
+def test_the_letters_are_seen_in_their_recipes_colour_at_their_size_and_as_large_as_they_are(world, monkeypatch):
+    """inscriptions-in-works REQ-005 c3: the predicted looks (in grayscale and in a dot kind) and the list's thumbnail show the cut as clean
+    titanium and the letters in the colour their recipe takes at their size (the length of their rows, DEC-107: here a recipe measured
+    at two sizes), as large as they are."""
+    client, store = world["client"], world["store"]
+    work = make_work(client)
+    real = photo_work._palette
+    dark = min(palette_of(world, work), key=lambda e: e["lab"][0])
+    sizes = [{"row_mm": 1.0, "lab": [75.0, 5.0, 40.0]}, {"row_mm": 30.0, "lab": [40.0, 30.0, -40.0]}]
+    monkeypatch.setattr(photo_work, "_palette", lambda store_, plan: [{**e, "sizes": sizes} if e["id"] == dark["id"] else e for e in real(store_, plan)])
+    clean = color.lab_to_srgb8(np.asarray([ps.clean_titanium(store)], float))[0]
+    size = photo_work.size_mm(photo_work._work(store, work["id"]))
+    add(world, work, text="H", height_mm=8, x=20, y=15, gap_mm=1.5)
+    colours = []
+    for height in (8, 24):
+        view = texts(world, work, op="text_set", id="t1", changes={"height_mm": height})
+        text, shape = view["texts"][0], found(world, work, view)
+        row = row_length.of_shapes(lettering.shapes(shape["letters"]), 0.0)
+        expected = palette.at_size({**dark, "sizes": sizes}, row)["srgb"]
+        assert text["srgb"] == expected == view["text_layers"][0]["srgb"], height                        # the colour at their size
+        colours.append(expected)
+        x0, y0, x1, y1 = shape["letters"].bounds
+        for address in ("thumb.png", "kinds/grayscale.png", "kinds/jarvis.png"):
+            look = rgb_of(client.get(f"/api/photo-works/{work['id']}/{address}"))
+            rows, cols = look.shape[:2]
+            k = cols / size["width"]
+            y = int((y0 + y1) / 2 * k)
+            assert np.abs(look[y, int((x0 + 0.08 * (x1 - x0)) * k)].astype(int) - expected).max() <= 3, (height, address)   # in a stem
+            assert np.abs(look[y, int((x0 - 0.75) * k)].astype(int) - clean).max() <= 3, (height, address)                  # the gap: clean
+            cut = lettering.mask(shape["cut"], {"x": 0.0, "y": 0.0}, k, (cols, rows)).astype(bool)
+            ys, xs = np.nonzero(cut & (np.abs(look.astype(int) - expected).max(axis=2) <= 8))
+            assert (xs.min() / k, ys.min() / k, (xs.max() + 1) / k, (ys.max() + 1) / k) == pytest.approx((x0, y0, x1, y1), abs=1.5 / k), (height, address)
+    assert colours[0] != colours[1] and dark["srgb"] not in colours                                      # another size, another colour
+
+
+def test_the_time_adds_the_fill_time_of_the_letters_and_the_backing_to_the_pictures(world):
+    """inscriptions-in-works REQ-005 c4: the work's time is the picture's (its cleaning and its Image layer, as without the inscription) and
+    the fill time of the letters' and the backing's layers, each as the file is timed; the list says the same."""
+    client = world["client"]
+    work = make_work(client)
+    plain = {row["index"]: row["seconds"] for row in work["time"]["layers"]}
+    light = max(palette_of(world, work), key=lambda e: e["lab"][0])["id"]
+    view = add(world, work, backing="rect", padding_mm=2, backing_entry_id=light)
+    timed = {row["index"]: row["seconds"] for row in view["time"]["layers"]}
+    assert {i: timed[i] for i in plain} == plain                                                   # the picture's time as it was
+    added = [layer["index"] for layer in view["text_layers"]]
+    assert added == [2, 3] and set(timed) == set(plain) | set(added) and all(timed[i] > 0 for i in added)
+    assert view["time"]["seconds"] == pytest.approx(work["time"]["seconds"] + timed[2] + timed[3])
+    filed = {row["index"]: row["seconds"] for row in et.of_project(read_file(world, work))["layers"]}
+    assert all(timed[i] == pytest.approx(filed[i], rel=1e-5) for i in timed)                       # each layer as the file is timed
+    listed = next(w for w in client.get("/api/photo-works").json() if w["id"] == work["id"])
+    assert listed["time"]["seconds"] == pytest.approx(view["time"]["seconds"])
+    smaller = texts(world, work, op="text_set", id="t1", changes={"height_mm": 4, "padding_mm": 1})
+    assert smaller["time"]["seconds"] < view["time"]["seconds"]                                     # less to fill, less time
+
+
+def photo_outputs(world, work) -> dict:
+    """What a photo work shows, times and writes: its view (time, inscriptions, picture), its LightBurn file and its pictures drawn afresh
+    (not taken from the cache): the preview, the list's thumbnail and its looks in grayscale and in a dot kind."""
+    store, plan_id = world["store"], work["id"]
+    view = world["client"].get(f"/api/photo-works/{plan_id}").json()
+    return {"view": {k: view[k] for k in ("time", "texts", "text_layers", "export_blocked", "texts_count", "picture")},
+            "file": world["client"].get(f"/api/photo-works/{plan_id}/export.lbrn2").content,
+            "preview": photo_work.preview(store, plan_id).draw(), "thumbnail": photo_work.thumbnail(store, plan_id).draw(),
+            "grayscale": photo_work.kind_picture(store, plan_id, "grayscale").draw(),
+            "jarvis": photo_work.kind_picture(store, plan_id, "jarvis").draw()}
+
+
+def test_a_work_without_inscriptions_writes_draws_and_times_as_without_the_inscriptions_code(world, monkeypatch):
+    """inscriptions-in-works REQ-005 c5 and REQ-003 c6 (a photo work): a work without inscriptions writes the same file, byte for byte, and
+    draws and times the same as with the inscriptions' part taken out (no picture cut, no layers, nothing painted); an inscription added
+    and taken away again leaves nothing behind."""
+    work = make_work(world["client"])
+    plain = photo_outputs(world, work)
+    assert plain["view"]["texts"] == [] and plain["view"]["text_layers"] == [] and plain["view"]["export_blocked"] is None
+    with monkeypatch.context() as patch:
+        patch.setattr(photo_work, "_text_state", lambda store, plan: None)
+        patch.setattr(photo_work, "_cut_upload", lambda store, plan: photo_work._upload(plan))
+        patch.setattr(photo_work, "_holed", lambda picture, texts, width_mm: picture)
+        patch.setattr(photo_work, "_paint", lambda store, texts: [])
+        patch.setattr(lettering, "inscribed", None)                                             # nothing of the inscriptions runs
+        without = photo_outputs(world, work)
+    assert without == plain
+    add(world, work)
+    assert photo_outputs(world, work)["file"] != plain["file"]
+    texts(world, work, op="text_delete", id="t1")
+    assert photo_outputs(world, work) == plain

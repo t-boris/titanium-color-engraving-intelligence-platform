@@ -153,3 +153,35 @@ def test_many_google_families_are_downloaded_in_the_background(client, google):
     assert next(f for f in client.get("/api/fonts").json()["families"] if f["family"] == "Gamma")["downloaded"] is True
     refused = client.post("/api/fonts/google/download", json={"script": "klingon"})
     assert refused.json()["error"] == "unknown script 'klingon'"
+
+
+def finished(client) -> dict:
+    for _ in range(100):
+        status = client.get("/api/fonts/google/status").json()
+        if not status["running"]:
+            return status
+        time.sleep(0.05)
+    raise AssertionError("the download did not end")
+
+
+def downloaded(client) -> set[str]:
+    return {f["family"] for f in client.get("/api/fonts").json()["families"] if f["source"] == "google" and f["downloaded"]}
+
+
+def test_the_google_families_of_a_category_are_downloaded_in_the_background_with_or_without_a_script(client, google):
+    """inscriptions-in-works REQ-001 c2: a bulk download by category (Google's «Handwriting», «Serif» ...), alone or within a script."""
+    assert client.post("/api/fonts/google/download", json={"kind": "handwriting"}).json()["total"] == 1      # the progress: done of total
+    assert finished(client) == {"running": False, "done": 1, "total": 1, "failed": [], "current": None, "error": None}
+    assert downloaded(client) == {"Beta Hand"}                                                       # only the handwriting family
+    assert client.post("/api/fonts/google/download", json={"script": "latin", "kind": "serif"}).json()["total"] == 1
+    assert finished(client)["done"] == 1 and downloaded(client) == {"Beta Hand", "Gamma"}           # Latin and serif: Gamma, not Alpha
+    assert client.post("/api/fonts/google/download", json={"kind": "handwriting"}).json()["total"] == 0     # downloaded already
+    finished(client)
+    assert client.post("/api/fonts/google/download", json={"kind": "gothic"}).json()["error"] == "unknown kind of font 'gothic'"
+
+
+def test_the_preview_of_an_empty_text_draws_the_sample(client):
+    """inscriptions-in-works REQ-001 c4: while the inscription has no text, each font shows the sample."""
+    face = next(f for f in client.get("/api/fonts").json()["families"] if f["family"] == "Test Sans")["faces"][0]["id"]
+    preview = lambda **params: client.get("/api/fonts/preview.svg", params={"face": face, **params}).text    # noqa: E731
+    assert preview(text="") == preview() == preview(text="Надпись Abc") != preview(text="HOH")

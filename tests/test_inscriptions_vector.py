@@ -8,10 +8,11 @@ import pytest
 import shapely
 from shapely.geometry import Polygon
 
+import recipes
 from test_grey_scales import app_world  # noqa: F401  (the world of the photo zones' tests is made from it)
 from test_vector_photo_zones import colouring, create, mask_of, of_colour, refused, struck, world  # noqa: F401
 from test_vector_work import RED
-from titanium_platform import fonts, lettering, lightburn as lb, plans as pl, vector_job
+from titanium_platform import fonts, lettering, lightburn as lb, plans as pl, row_length, vector_job
 
 
 def face(store, family="Test Sans"):
@@ -188,3 +189,146 @@ def test_the_thumbnail_draws_the_inscription(world):
     x, y = (stem[0] + 0.7) * k, (stem[1] + stem[3]) / 2 * k                                      # inside the left stem of the H
     colour = next(layer["srgb"] for layer in view["layers"] if layer["entry_id"] == view["texts"][0]["entry_id"])
     assert np.abs(picture[int(y), int(x)].astype(int) - colour).max() <= 3
+
+
+def view_of(world, job) -> dict:
+    return world["client"].get(f"/api/vector/{job['id']}").json()
+
+
+def seconds(view) -> dict[int, float]:
+    return {row["index"]: row["seconds"] for row in view["time"]["layers"]}
+
+
+def test_an_inscription_in_a_colour_no_region_has_opens_a_layer_of_its_own_within_the_layer_cap(world, monkeypatch):
+    """inscriptions-in-works REQ-004 c2: the letters of a recipe no region of the work has go to a new layer of that recipe, which counts
+    against the layers the file holds; in a recipe of the regions they share its layer; the backing likewise. The layers' shapes are
+    closed Paths, written with the recipe's settings as its regions' layer is."""
+    job = create(world)
+    darkest = lettering.darkest(vector_job._palette(world["store"], pl.get_plan(world["store"], job["id"])))
+    colour = min((c for c in view_of(world, job)["colours"] if c["entry_id"] != darkest), key=lambda c: c["pixels"])
+    entry = colour["entry_id"]
+    passport = world["laser"]["passport"]
+    _, project = read_back(world, job)                                                  # how the file writes that recipe for its regions
+    of_regions = next(layer for layer in project.layers if layer.index == next(l["index"] for l in view_of(world, job)["layers"] if l["entry_id"] == entry))
+    alone = colouring(world, job, op="exclude_colour", colour=colour["index"])         # no region has its recipe any more
+    assert entry not in {layer["entry_id"] for layer in alone["layers"]}
+    monkeypatch.setattr(vector_job, "photo_cap", lambda markers: len(alone["layers"]))    # the file holds just the layers there are
+    assert alone["export_blocked"] is None
+    view = add(world, job, entry_id=entry)
+    (opened,) = [layer for layer in view["layers"] if layer["entry_id"] == entry]
+    assert opened["texts"] == ["t1"] and opened["region_count"] == 0 and len(view["layers"]) == len(alone["layers"]) + 1
+    n = len(view["layers"])
+    assert view["export_blocked"] == f"{n} different recipes need more LightBurn layers than the {n - 1} available"
+    assert world["client"].get(f"/api/vector/{job['id']}/export.lbrn2").status_code == 422
+    monkeypatch.setattr(vector_job, "photo_cap", lambda markers: n)                       # room for it: the letters on a layer of their own
+    view = view_of(world, job)
+    assert view["export_blocked"] is None
+    plan, project = read_back(world, job)
+    found = lettering.geometry(world["store"].data_dir, view["texts"][0], plan["size_mm"])
+    layer = next(layer for layer in project.layers if layer.index == opened["index"])
+    recipe = vector_job._recipe(world["store"], next(e for e in vector_job._palette(world["store"], plan) if e["id"] == entry))
+    assert layer.name == opened["name"] and layer.layer_type == "Scan"
+    assert {k: recipes.parameters(layer, passport)[k] for k in recipe} == recipe                         # the recipe's settings
+    assert recipes.parameters(layer, passport) == recipes.parameters(of_regions, passport)                 # written as for its regions
+    assert layer.regions and all(r.kind == "path" and r.closed for r in layer.regions)       # closed Path shapes
+    assert shapely.symmetric_difference(shapes_of(plan, layer), found["letters"]).area < 0.01 * found["letters"].area   # its letters only
+    shared = colouring(world, job, op="text_set", id="t1", changes={"entry_id": darkest})    # a recipe of regions: their layer
+    assert len(shared["layers"]) == len(alone["layers"]) and "t1" in next(l for l in shared["layers"] if l["entry_id"] == darkest)["texts"]
+    monkeypatch.setattr(vector_job, "photo_cap", lambda markers: len(alone["layers"]))
+    assert view_of(world, job)["export_blocked"] is None
+    # the backing likewise: in the colour no region has, on a new layer of that recipe, which needs room within the cap
+    backed = colouring(world, job, op="text_set", id="t1", changes={"backing": "rect", "padding_mm": 2, "backing_entry_id": entry})
+    (own,) = [layer for layer in backed["layers"] if layer["entry_id"] == entry]
+    assert own["texts"] == ["t1"] and own["region_count"] == 0 and len(backed["layers"]) == n
+    assert backed["export_blocked"] == f"{n} different recipes need more LightBurn layers than the {n - 1} available"
+    monkeypatch.setattr(vector_job, "photo_cap", lambda markers: n)
+    plan, project = read_back(world, job)
+    shape = lettering.geometry(world["store"].data_dir, backed["texts"][0], plan["size_mm"])
+    layer = next(layer for layer in project.layers if layer.index == own["index"])
+    assert recipes.parameters(layer, passport) == recipes.parameters(of_regions, passport)
+    assert layer.regions and all(r.kind == "path" and r.closed for r in layer.regions)
+    assert shapely.symmetric_difference(shapes_of(plan, layer), shape["backing"]).area < 0.01 * shape["backing"].area   # the backing only
+
+
+def test_the_time_leaves_out_the_cut_part_of_the_regions_and_the_row_length_of_a_layer_includes_its_letters(world):
+    """inscriptions-in-works REQ-004 c4: each layer's area and time are of what it engraves: its regions less what the inscription's cut
+    takes from them, plus its letters; the length of the scan rows its colour is predicted at counts the letters (as the file is scanned)."""
+    job = create(world)
+    before = view_of(world, job)
+    regions = {layer["index"]: layer["region_ids"] for layer in pl.get_plan(world["store"], job["id"])["layers"]}
+    after = add(world, job, text="HHHHHH", height_mm=10, gap_mm=0.5)
+    text = after["texts"][0]
+    plan = pl.get_plan(world["store"], job["id"])
+    found = lettering.geometry(world["store"].data_dir, text, plan["size_mm"])
+    shapes = vector_job._region_shapes(plan)
+    was, now = {layer["index"]: layer for layer in before["layers"]}, {layer["index"]: layer for layer in after["layers"]}
+    assert set(was) == set(now)
+    letters_at = next(i for i, layer in now.items() if layer["entry_id"] == text["entry_id"])
+    cut_off = 0.0
+    for index, layer in was.items():
+        under = sum(shapely.intersection(shapes[r], found["cut"]).area for r in regions[index])
+        cut_off += under
+        area = layer["area_mm2"] - under + (found["letters"].area if index == letters_at else 0.0)
+        assert now[index]["area_mm2"] == pytest.approx(area, rel=0.01, abs=0.05), index
+        assert seconds(after)[index] == pytest.approx(seconds(before)[index] * area / layer["area_mm2"], rel=0.01, abs=0.01), index
+    assert cut_off > 20                                                                          # the cut took a good part of the regions
+    assert after["time"]["seconds"] == pytest.approx(sum(seconds(after).values()))
+    # the row length: the letters' layer read back from the file as LightBurn scans it, with and without its letters
+    _, project = read_back(world, job)
+    layer = next(layer for layer in project.layers if layer.index == letters_at)
+    dx, dy = pl.export_offset(plan)
+    letter = lambda r: found["letters"].buffer(0.01).contains(Polygon(np.asarray(r.polygon) - [dx, dy]))     # noqa: E731
+    with_letters = row_length.of_layer(layer)
+    without = row_length.of_regions([r for r in layer.regions if not letter(r)], layer.scan_angle or 0.0)
+    assert any(letter(r) for r in layer.regions) and with_letters - without > 3                  # the letters lengthen its rows
+    assert now[letters_at]["size"]["row_mm"] == pytest.approx(with_letters, abs=0.06)
+    assert was[letters_at]["size"]["row_mm"] == pytest.approx(without, abs=0.6)                    # before them: its regions' (the cut aside)
+
+
+def outputs(world, job) -> dict:
+    """What a work shows, times and writes: its view's colours, layers, totals and time, its LightBurn file, its list picture (drawn
+    afresh, not taken from the cache) and the editor's picture of its regions."""
+    client = world["client"]
+    view = view_of(world, job)
+    keep = ("colours", "entries", "layers", "totals", "time", "outside", "missing", "zones", "texts", "export_blocked", "layer_cap")
+    return {"view": {k: view[k] for k in keep}, "file": client.get(f"/api/vector/{job['id']}/export.lbrn2").content,
+            "thumbnail": vector_job.thumbnail(world["store"], job["id"]).draw(),
+            "regions": client.get(f"/api/vector/{job['id']}/split.svg").content}
+
+
+def test_a_work_without_inscriptions_draws_times_and_writes_as_without_the_inscriptions_code(world, monkeypatch):
+    """inscriptions-in-works REQ-003 c6: a vector work without inscriptions shows, times and writes exactly what it does with the
+    inscriptions' part of the work taken out (nothing laid out, cut or drawn: the work before inscriptions), byte for byte; an inscription
+    added and taken away again leaves nothing behind."""
+    job = create(world)
+    plain = outputs(world, job)
+    assert plain["view"]["texts"] == [] and plain["view"]["export_blocked"] is None
+    with monkeypatch.context() as patch:
+        patch.setattr(vector_job, "_inscribed", lambda store, plan, entries: None)
+        patch.setattr(vector_job, "_text_paint", lambda store, plan: [])
+        patch.setattr(lettering, "inscribed", None)                                             # nothing of the inscriptions runs
+        without = outputs(world, job)
+    assert without == plain
+    assert add(world, job)["texts"] and outputs(world, job) != plain
+    colouring(world, job, op="text_delete", id="t1")
+    assert outputs(world, job) == plain
+
+
+def test_an_inscription_beyond_the_edge_says_so_and_the_file_engraves_it_up_to_the_edge(world):
+    """inscriptions-in-works REQ-004 c5: an inscription that runs off the work says it is cut off there, and the file's letters end at the
+    work's edge (the file is written: only a gone font or an unmeasured colour blocks it)."""
+    job = create(world)
+    width = pl.get_plan(world["store"], job["id"])["size_mm"]["width"]
+    view = add(world, job, text="HHHHHH", x=width - 8)
+    text = view["texts"][0]
+    assert text["shown"]["clipped"] is True and text["problem"] is None and view["export_blocked"] is None
+    plan, project = read_back(world, job)
+    clipped = lettering.geometry(world["store"].data_dir, text, plan["size_mm"])
+    whole = lettering.geometry(world["store"].data_dir, text, None)                              # the same inscription, not cut off
+    assert whole["letters"].bounds[2] > width + 5 and clipped["letters"].bounds[2] <= width + 1e-6
+    index = next(layer["index"] for layer in view["layers"] if layer["entry_id"] == text["entry_id"])
+    engraved = shapes_of(plan, next(layer for layer in project.layers if layer.index == index))
+    assert engraved.bounds[2] <= width + 0.01
+    letters = engraved.intersection(whole["cut"])                                                 # under the cut the layer has its letters only
+    assert shapely.symmetric_difference(letters, clipped["letters"]).area < 0.01 * clipped["letters"].area
+    assert clipped["letters"].area < 0.8 * whole["letters"].area

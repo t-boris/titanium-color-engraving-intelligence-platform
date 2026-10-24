@@ -2,12 +2,15 @@
 straight, on an arc, around a circle or along a path, turned and placed, with the gap and the backing it cuts into a picture. Measured on
 the test font of ``font_kit``, whose letters are rectangles of known area (cap height 700 of 1000 units)."""
 import math
+import re
 
 import numpy as np
 import pytest
 import shapely
+from shapely import affinity
+from shapely.geometry import Polygon
 
-from font_kit import AREA, CAP, make_font
+from font_kit import AREA, CAP, KERN, make_font, make_shaping_font
 from titanium_platform import fonts, lettering as L, setup as su
 
 WORK = {"width": 100.0, "height": 80.0}
@@ -39,6 +42,20 @@ def test_the_letter_height_is_the_height_of_the_capitals_and_the_area_is_the_fon
     assert ((x0 + x1) / 2, (y0 + y1) / 2) == pytest.approx((50, 40))                                 # a line stands with its middle on (x, y)
     ring = geo(data, text="O", height_mm=7)["letters"]
     assert ring.area == pytest.approx(mm2(AREA["O"])) and len(ring.geoms[0].interiors) == 1          # the hole of the O stays open
+
+
+def test_neighbouring_letters_that_overlap_are_one_shape_engraved_once(data):
+    """inscriptions-in-works REQ-002 c6: letters that overlap, side by side (a negative spacing) or one line over the next (a line spacing
+    under the letter height), are one closed shape whose area counts their common part once."""
+    # an H is drawn 0.5..5.5 mm of its 6 mm advance: 2 mm less spacing lays the second one's left stem on the first one's right stem
+    side = geo(data, size=None, text="HH", spacing_mm=-2)["letters"]
+    assert len(side.geoms) == 1 and side.area == pytest.approx(2 * mm2(AREA["H"]) - 1 * 7)          # the shared stem, 1 x 7 mm, once
+    # a line 10 mm at 50 %: the lower H's stems reach 2 mm into the upper one's
+    lines = geo(data, size=None, text="H\nH", line_pct=50)["letters"]
+    assert len(lines.geoms) == 1 and lines.area == pytest.approx(2 * mm2(AREA["H"]) - 2 * 1 * 2)
+    assert all(ring.is_closed for p in (side.geoms[0], lines.geoms[0]) for ring in (p.exterior, *p.interiors))
+    apart = geo(data, size=None, text="HH")["letters"]
+    assert len(apart.geoms) == 2 and apart.area == pytest.approx(2 * mm2(AREA["H"]))                # apart, each one its own shape
 
 
 def test_a_font_that_does_not_state_its_cap_height_is_measured_on_its_h(data):
@@ -98,6 +115,44 @@ def test_the_letters_of_several_scripts_and_right_to_left(data):
     assert L.runs("אב 12 גד") == [(" גד", "rtl"), ("12", "ltr"), ("אב ", "rtl")]           # left to right as seen; digits left to right
 
 
+def shaped(data, text, **spec):
+    """The text in the shaping font of ``font_kit`` (its kerning pair H O, its ligature HH and two Arabic letters), nothing clipped."""
+    make_shaping_font(fonts.own_dir(data) / "Shaping.ttf")
+    return L.geometry(data, L.checked({"font": face(data, "Shaping Sans"), "x": 50, "y": 40, "height_mm": 7, "text": text, **spec}), None)
+
+
+def test_the_kerning_and_the_ligatures_of_the_font_are_applied(data):
+    """inscriptions-in-works REQ-002 c2: the text is shaped with the font's kerning (GPOS kern) and ligatures (GSUB liga)."""
+    width = lambda g: g["letters"].bounds[2] - g["letters"].bounds[0]          # noqa: E731
+    # an H is drawn 50..550 of its 600 units, an O 50..650 of its 700: «OH» spans 1200 units, 12 mm at capitals of 7 mm (100 units a mm)
+    assert width(shaped(data, "OH")) == pytest.approx(12.0)                                           # no pair O H: as the advances lay them
+    assert width(shaped(data, "HO")) == pytest.approx(12.0 + KERN / 100)                              # the pair H O kerned 0.5 mm closer
+    assert width(geo(data, size=None, text="HO")) == pytest.approx(12.0)                              # a font without that pair: not closer
+    assert width(shaped(data, "HO", width_pct=200)) == pytest.approx(2 * (12.0 + KERN / 100))         # the kerning stretched with the width
+    pair = shaped(data, "HH")["letters"]                                                              # HH is the font's ligature H_H
+    assert len(pair.geoms) == 1 and pair.area == pytest.approx(mm2(AREA["H_H"])) and pair.bounds[2] - pair.bounds[0] == pytest.approx(11.0)
+    three = shaped(data, "HHH")
+    assert three["letters"].area == pytest.approx(mm2(AREA["H_H"] + AREA["H"])) and three["missing"] == []      # the ligature, then an H
+    assert geo(data, size=None, text="HH")["letters"].area == pytest.approx(2 * mm2(AREA["H"]))       # without the ligature: two Hs
+
+
+def test_arabic_is_written_right_to_left_and_a_line_of_both_directions_keeps_each_run_in_its_own(data):
+    """inscriptions-in-works REQ-002 c2: Arabic, like Hebrew, is set right to left; a Latin run inside it stays left to right."""
+    arabic = shaped(data, "اب")["letters"].geoms                                          # alef typed first, then beh
+    alef, beh = max(arabic, key=lambda p: p.area), min(arabic, key=lambda p: p.area)
+    assert (alef.area, beh.area) == (pytest.approx(mm2(AREA["ا"])), pytest.approx(mm2(AREA["ب"])))
+    assert alef.centroid.x > beh.centroid.x                                                         # the first letter typed on the right
+    letter = {AREA["O"]: "O", AREA["H"]: "H", AREA["ا"]: "alef", AREA["ب"]: "beh"}
+
+    def seen(text):                                                                                  # the letters from left to right
+        found = sorted(shaped(data, text)["letters"].geoms, key=lambda p: p.centroid.x)
+        return [letter[round(p.area / mm2(1))] for p in found]
+    assert L.runs("OH اب") == [("OH ", "ltr"), ("اب", "rtl")]
+    assert seen("OH اب") == ["O", "H", "beh", "alef"]                                              # a Latin line, then the Arabic run
+    assert L.runs("اب HO") == [("HO", "ltr"), ("اب ", "rtl")]
+    assert seen("اب HO") == ["H", "O", "beh", "alef"]                                              # an Arabic line: the Latin run on its left
+
+
 def test_an_arc_a_circle_and_a_path(data):
     up = geo(data, text="H" * 10, layout="arc", bend=100)
     radius = (600 * 10 * 7 / CAP) / math.pi                                   # the line's advance (60 mm) makes a half circle
@@ -121,6 +176,72 @@ def test_an_arc_a_circle_and_a_path(data):
     assert curve[0] == pytest.approx([20, 60]) and curve[-1] == pytest.approx([60, 60])               # the path's points are relative to (x, y)
     near = [min(math.dist((p.centroid.x, p.centroid.y), q) for q in curve) for p in path["letters"].geoms]
     assert max(near) < 7.0
+
+
+def headings(points) -> np.ndarray:
+    """The direction (radians) of every step of a polyline, unwrapped."""
+    steps = np.diff(np.asarray(points, np.float64), axis=0)
+    return np.unwrap(np.arctan2(steps[:, 1], steps[:, 0]))
+
+
+def test_a_path_is_a_smooth_curve_through_the_operators_points(data):
+    """inscriptions-in-works REQ-002 c4: the path runs through every point the operator placed, smooth: it bends a little at every step
+    instead of turning at the points as the line through them does."""
+    clicked = [[0, 0], [20, -10], [40, 0], [60, 10]]
+    guide = np.asarray(geo(data, text="H", layout="path", points=clicked, x=20, y=60)["guide"])
+    for px, py in clicked:
+        assert min(math.dist(q, (20 + px, 60 + py)) for q in guide) < 1e-3                  # through each point (the guide is rounded to µm)
+    assert np.degrees(np.abs(np.diff(headings(clicked)))).max() > 50                          # the line through the points turns 53° at once
+    assert np.degrees(np.abs(np.diff(headings(guide)))).max() < 2.5                            # the curve: no corner, a little at every step
+    assert np.hypot(*np.diff(guide, axis=0).T).max() < 0.3                                     # in steps of a quarter of a millimetre
+
+
+def straight_h(data):
+    return geo(data, size=None, text="H")["letters"]
+
+
+def turned_back(letter, up):
+    """``letter`` turned about its middle so that ``up`` (a unit vector in the work, y down) points up again."""
+    phi = math.atan2(up[1], up[0]) - math.atan2(-1.0, 0.0)
+    return affinity.rotate(letter, -phi, origin=(letter.centroid.x, letter.centroid.y), use_radians=True)
+
+
+def test_an_upright_letter_on_a_curve_is_turned_to_it_at_its_middle_and_keeps_its_shape(data):
+    """inscriptions-in-works REQ-002 c5: an upright letter is the straight letter turned so that it stands square on the curve where its
+    middle is: on a circle and on a path drawn as a half circle its up is the radius through its middle, its foot on the curve."""
+    h = straight_h(data)
+    mid = h.centroid
+    laid = {"circle": (geo(data, size=None, text="HHHH", layout="circle", radius_mm=20, start_deg=0), (50, 40), 20, 1e-9),
+            "path": (geo(data, size=None, text="HHHH", layout="path", x=50, y=10,
+                         points=[[30 * math.sin(a), 30 - 30 * math.cos(a)] for a in np.linspace(-math.pi / 2, math.pi / 2, 61)]), (50, 40), 30, 1e-3)}
+    for name, (g, centre, radius, tol) in laid.items():
+        assert len(g["letters"].geoms) == 4, name
+        for letter in g["letters"].geoms:
+            out = np.array([letter.centroid.x - centre[0], letter.centroid.y - centre[1]])
+            assert np.linalg.norm(out) == pytest.approx(radius + 3.5, abs=1e-3), name                 # its foot on the curve, 3.5 mm under its middle
+            back = turned_back(letter, out / np.linalg.norm(out))
+            straight = affinity.translate(h, letter.centroid.x - mid.x, letter.centroid.y - mid.y)
+            assert back.symmetric_difference(straight).area < tol * straight.area, name                 # the straight letter, only turned
+
+
+def test_every_point_of_a_bent_letter_follows_the_curve(data):
+    """inscriptions-in-works REQ-002 c5: a letter bent with a circle is the straight text with every point carried onto the circle: its
+    length along the line becomes the length along the circle and its height the distance outside it. Unbent (each point of the outline
+    read back as its angle times the radius and its distance from the circle), the bent text is the straight one."""
+    radius, centre = 20.0, (50.0, 40.0)
+    bent = geo(data, size=None, text="HHHH", layout="circle", radius_mm=radius, start_deg=0, letters="bent")["letters"]
+
+    def unbent(ring):
+        p = np.asarray(ring.coords)
+        dx, dy = p[:, 0] - centre[0], p[:, 1] - centre[1]
+        return np.column_stack([radius * np.arctan2(dx, -dy), radius - np.hypot(dx, dy)])     # along the circle from the top; y down
+    flat = shapely.union_all([Polygon(unbent(p.exterior), [unbent(r) for r in p.interiors]) for p in bent.geoms])
+    line = geo(data, size=None, text="HHHH", x=0, y=-3.5)["letters"]                           # the same text straight, its baseline at y 0
+    assert flat.bounds == pytest.approx((-11.5, -7.0, 11.5, 0.0), abs=1e-6)                    # centred on the start angle, on the circle
+    assert flat.symmetric_difference(line).area < 1e-6 * line.area
+    assert bent.area > line.area * 1.1                                                        # bent outside the circle: wider at the top
+    upright = geo(data, size=None, text="HHHH", layout="circle", radius_mm=radius, start_deg=0)["letters"]
+    assert upright.area == pytest.approx(line.area)                                            # upright letters are not bent: as straight
 
 
 def circumcentre(a, b, c):
@@ -300,6 +421,28 @@ def test_the_font_window_draws_the_text_and_the_missing_letters_red(data):
     svg = L.preview_svg(data, face(data)["face"], "HО")
     assert svg.startswith("<svg") and 'fill="#1f1f1f"' in svg and 'fill="#d32f2f"' in svg
     assert 'fill="#d32f2f"' not in L.preview_svg(data, face(data)["face"], "HП")
+
+
+def test_the_font_window_draws_the_outline_the_file_gets_and_the_sample_while_the_text_is_empty(data):
+    """inscriptions-in-works REQ-001 c4: the text drawn in the font window is the outline of the letters the file gets (the geometry the
+    work cuts and engraves), filled as fonts are (non-zero), point for point; an empty text shows the sample."""
+    svg = L.preview_svg(data, face(data)["face"], "HOП", height_mm=10)
+    d = re.search(r'<path fill="#1f1f1f" fill-rule="nonzero" d="([^"]*)"/>', svg).group(1)
+    rings = [np.array(re.findall(r"[ML]([-\d.]+) ([-\d.]+)", part), np.float64) for part in d.split("Z") if part.strip()]
+    lo, hi = np.vstack(rings).min(axis=0), np.vstack(rings).max(axis=0)
+    xs, ys = (a.ravel() for a in np.meshgrid(np.arange(lo[0] - 0.3, hi[0] + 0.3, 0.0173), np.arange(lo[1] - 0.3, hi[1] + 0.3, 0.0173)))
+    winding = np.zeros(xs.size, int)
+    for ring in rings:                                     # each contour adds its turn (+1 or -1) to the points inside it
+        turn = 1 if np.dot(ring[:, 0], np.roll(ring[:, 1], -1)) > np.dot(ring[:, 1], np.roll(ring[:, 0], -1)) else -1
+        winding += turn * shapely.contains_xy(Polygon(ring), xs, ys)
+    letters = geo(data, size=None, text="HOП", height_mm=10)["letters"]
+    x0, y0, x1, y1 = letters.bounds
+    dx, dy = (x0 + x1 - lo[0] - hi[0]) / 2, (y0 + y1 - lo[1] - hi[1]) / 2               # the window's drawing laid on the work's
+    drawn, engraved = winding != 0, shapely.contains_xy(letters, xs + dx, ys + dy)
+    assert drawn.sum() > 100_000 and (drawn != engraved).sum() == 0
+    assert drawn.sum() * 0.0173 ** 2 == pytest.approx(mm2(AREA["H"] + AREA["O"] + AREA["П"], height=10), rel=0.01)
+    sample = L.preview_svg(data, face(data)["face"], L.SAMPLE)
+    assert L.preview_svg(data, face(data)["face"], "") == sample and L.preview_svg(data, face(data)["face"], None) == sample
 
 
 def test_the_mask_of_a_shape_on_a_picture(data):

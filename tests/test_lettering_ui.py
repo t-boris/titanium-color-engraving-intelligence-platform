@@ -3,10 +3,12 @@ the font window and the layer of inscriptions over the picture. Static checks of
 fields, limits, choices, scripts and kinds), then the screens run in node over the small DOM of the other screen tests with inscriptions
 shaped as the API sends them: each change of an inscription is one operation of its work, a drag on the picture moves, turns or sizes it
 about its frame's anchor, a path is drawn with clicks, the font window lists, filters, previews and downloads fonts."""
+import copy
 import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from shapely.geometry import box
@@ -72,7 +74,7 @@ def test_the_font_window_names_every_script_kind_and_source_of_the_catalogue():
         assert set(re.findall(r"(\w+): '", body)) == set(keys), group
     assert "`/api/fonts/preview.svg?face=${encodeURIComponent(faceId)}&text=${encodeURIComponent(sampleText())}&height=10`" in LETTERING
     for call in ("get('/fonts')", "post('/fonts/google/family', {family})", "post('/fonts/google/index')", "get('/fonts/google/status')",
-                 "post('/fonts/google/download', {script: script.value, kind: kind.value || null})", "form('/fonts/own', fd)",
+                 "post('/fonts/google/download', {script: script.value || null, kind: kind.value || null})", "form('/fonts/own', fd)",
                  "del(`/fonts/own/${encodeURIComponent(x.id)}`)"):
         assert call in LETTERING, call
     letters = re.search(r"const LETTERS_OF = \[(.*?)\];", LETTERING, re.S).group(1)
@@ -203,6 +205,102 @@ def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_ba
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}},
                           {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": "e11"}},
                           {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": None}}]
+
+
+def answered(base: dict, **fields) -> dict:
+    """The work as the server answers a change of t1: its fields changed and t1 laid out again (another outline, a guide on a curve)."""
+    out = copy.deepcopy(base)
+    shown = {**SHOWN, "letters": "M20 5 L30 5 L30 9 L20 9 Z", "cut": "M19.7 4.7 L30.3 4.7 L30.3 9.3 L19.7 9.3 Z",
+             "backing": "M18 3 L32 3 L32 11 L18 11 Z", "guide": [[18.0, 9.0], [25.0, 7.0], [32.0, 9.0]], "area_mm2": 40.0, "backing_mm2": 72.0}
+    out["texts"][0] = {**out["texts"][0], **fields, "backing_srgb": [205, 198, 182], "shown": shown}
+    return out
+
+
+@node
+def test_every_field_of_the_panel_sends_its_change_and_the_picture_shows_the_answer_at_once(tmp_path):
+    """inscriptions-in-works REQ-003 c2: the stretch, spacing, line spacing, rotation, place, the layout's parameters (bend, radius, start
+    angle, inside, offset along the path, reversed path), the alignment, the letters on a curve, the gap and the backing (its shape and
+    margin, its corners) each send their change as one operation of the work, and the picture draws the inscription as the server answers
+    at once: its new outline, its backing and the curve it is laid on."""
+    r = editor_routes()
+    base = r["/api/vector/7"]["json"]
+    base["texts"][0]["points"] = [[0.0, 0.0], [10.0, 0.0]]
+    fields = {"backing": "rect", "backing_entry_id": "e11", "width_pct": 150.0}
+    r["/api/vector/7/colouring"] = {"status": 200, "json": answered(base, layout="circle", **fields)}
+    r["/x/arc"] = {"status": 200, "json": answered(base, layout="arc", **fields)}
+    r["/x/path"] = {"status": 200, "json": answered(base, layout="path", **fields)}
+    out = run_editor(tmp_path, r, OPEN + """
+  await item(0).dispatch('click'); await tick(); await wait(5);
+  const painted = () => drawnText('t1').childNodes.map((p) => [p.getAttribute('class'), p.getAttribute('d'), p.getAttribute('fill')]);
+  const guide = () => (svg().querySelectorAll('polyline').find((p) => p.classList.contains('lt-guide')) || {getAttribute: () => null}).getAttribute('points');
+  const settle = async () => { await tick(); await tick(); await tick(); };
+  const set = async (label, value) => { const f = field(label); f.value = value; await f.dispatch('change'); await settle(); };
+  const press = async (label, name) => { await byText(group(label), 'button', name).dispatch('click'); await settle(); };
+  const tick_ = async (label) => { const f = field(label); f.checked = true; await f.dispatch('change'); await settle(); };
+  const visible = () => tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for') && !d.hidden).map((d) => d.getAttribute('data-for'));
+  out.before = [painted(), guide(), visible()];
+  await set('Ширина, %', '150');
+  out.after = [painted(), guide(), visible(), field('Ширина, %').value];
+  for (const [label, value] of [['Интервал между буквами, мм', '0.5'], ['Между строками, %', '120'], ['Поворот, °', '30'], ['x, мм', '20'],
+    ['y, мм', '10'], ['Радиус круга, мм', '15'], ['Где на круге, °', '90'], ['Зазор вокруг букв, мм', '0.5'], ['Поле подложки, мм', '2'],
+    ['Скругление углов, мм', '1']]) await set(label, value);
+  await tick_('Внутри круга (читается против часовой)');
+  await press('Выравнивание', 'Справа');
+  await press('Буквы на кривой', 'Гнутся по кривой');
+  await press('Подложка', 'Овал');
+  data.routes['/api/vector/7/colouring'] = data.routes['/x/arc'];
+  await press('Расположение', 'Дугой');
+  out.arc = visible();
+  await set('Изгиб, %', '-30');
+  data.routes['/api/vector/7/colouring'] = data.routes['/x/path'];
+  await press('Расположение', 'По пути');
+  out.path = visible();
+  await set('Место на пути, %', '25');
+  await tick_('Путь в обратную сторону');
+  out.ops = textOps();
+""")
+    assert out["before"] == [[["lt-cut", SHOWN["cut"], "#e6e6e6"], ["lt-letters", SHOWN["letters"], "rgb(60,70,200)"],
+                              ["lt-outline", SHOWN["letters"], "none"]], None, []]
+    shown = answered(view() | {"texts": [text("t1")]})["texts"][0]["shown"]
+    assert out["after"] == [[["lt-cut", shown["cut"], "#e6e6e6"], ["lt-backing", shown["backing"], "rgb(205,198,182)"],
+                             ["lt-letters", shown["letters"], "rgb(60,70,200)"], ["lt-outline", shown["letters"], "none"]],   # as answered
+                            "18,9 25,7 32,9", ["circle", "circle", "curved", "backed", "backed"], "150"]
+    assert out["arc"] == ["arc", "curved", "backed", "backed"] and out["path"] == ["path", "curved", "backed", "backed"]
+    change = lambda **c: {"op": "text_set", "id": "t1", "changes": c}          # noqa: E731
+    assert out["ops"] == [change(width_pct=150), change(spacing_mm=0.5), change(line_pct=120), change(rotation=30), change(x=20), change(y=10),
+                          change(radius_mm=15), change(start_deg=90), change(gap_mm=0.5), change(padding_mm=2), change(corner_mm=1),
+                          change(inside=True), change(align="right"), change(letters="bent"), change(backing="oval"),
+                          change(layout="arc"), change(bend=-30), change(layout="path"), change(offset_pct=25), change(flip=True)]
+
+
+@node
+def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyond_the_edge_is_cut_there(tmp_path):
+    """inscriptions-in-works REQ-004 c5: the message that blocks the file names the inscription and why (its font is gone, its colour no
+    longer measured), in Russian, beside the export and in the tab; the chosen inscription says so too, and one that runs off the work is
+    said to be cut off at its edge."""
+    gone = "the font 'Gone Sans' is not on this computer any more: choose another font"
+    unmeasured = "its titanium colour is no longer measured on this laser, lens and titanium stock: choose another"
+    r = editor_routes()
+    j = r["/api/vector/7"]["json"]
+    j["texts"] = [text("t1", problem=gone, shown={**SHOWN, "clipped": True}), text("t2", problem=unmeasured, srgb=None)]
+    j["export_blocked"] = f"inscription 1 cannot be engraved: {gone}"
+    out = run_editor(tmp_path, r, OPEN + """
+  const alerts = () => pane.querySelectorAll('p').filter((p) => p.classList.contains('alert')).map((p) => [p.className, p.textContent]);
+  out.list = alerts();
+  out.pills = [0, 1].map((n) => item(n).querySelectorAll('span').filter((s) => s.classList.contains('pill')).map((s) => s.textContent));
+  await item(0).dispatch('click'); await tick();
+  out.first = alerts();
+  await item(1).dispatch('click'); await tick();
+  out.second = alerts();
+""")
+    blocked = "Надпись 1 не выгравировать: Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"
+    assert out["list"] == [["alert warn small", blocked]]
+    assert out["text"].count(blocked) == 2                                          # in the tab and beside the export
+    assert out["pills"] == [["не выгравировать"], ["не выгравировать"]]                  # each one in the list
+    assert out["first"] == [["alert warn small", blocked], ["alert bad", "Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"],
+                            ["alert warn", "Часть надписи выходит за край работы: там она обрезана."]]
+    assert out["second"] == [["alert warn small", blocked],
+                             ["alert bad", "Её цвет титана больше не измерен на этом лазере, линзе и партии титана: выберите другой"]]
 
 
 @node
@@ -378,6 +476,182 @@ def test_the_font_window_lists_filters_previews_downloads_and_chooses_a_face(tmp
     assert out["own"] == ["My Hand"] and out["remove"] and out["found"] == ["Arial"]
     assert out["hand"] == "/api/fonts/preview.svg?face=o1&text=HOH&height=10"              # a family opens on its regular face, not its thinnest
     assert out["closed"] and out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"font": {"face": "f2", "family": "Arial", "style": "Bold"}}}]
+
+
+FONT_WINDOW = """
+  await item(0).dispatch('click'); await tick();
+  const openFonts = async () => { await byText(pane, 'button', 'Шрифт: Arial Regular…').dispatch('click'); await wait(5); };
+  const win = () => ctx.document.body.querySelector('.modal');
+  const rows = () => win().querySelectorAll('div').filter((d) => d.classList.contains('lt-font')).map((d) => d.getAttribute('data-family'));
+  const row = (family) => win().querySelectorAll('div').find((d) => d.classList.contains('lt-font') && d.getAttribute('data-family') === family);
+  const choose = (label, value) => { const s = win().querySelectorAll('select').find((x) => x.getAttribute('aria-label') === label); s.value = value; return s.dispatch('change'); };
+  const asked = () => ctx.requests.filter((r) => r.path === '/api/fonts/google/family').map((r) => JSON.parse(r.body).family);
+"""
+BIG = {"family": "Big Serif", "source": "google", "kind": "serif", "scripts": ["latin"], "downloaded": False, "popularity": 300, "faces": [],
+       "size": 5 * 1024 * 1024}
+
+
+@node
+def test_a_google_family_seen_in_the_list_is_downloaded_by_itself_and_a_large_one_waits_for_its_button(tmp_path):
+    """inscriptions-in-works REQ-001 c2: a Google family not downloaded yet is downloaded when its row comes into view (up to 2 MB; a
+    larger one by its button), and then shows the text in its font."""
+    r = editor_routes()
+    r["/api/fonts"]["json"] = {**FONTS, "families": FONTS["families"] + [BIG]}
+    out = run_editor(tmp_path, r, OPEN + FONT_WINDOW + """
+  const watched = [];                         // the rows the window waits to see (a browser tells it when they scroll into view)
+  ctx.IntersectionObserver = class { constructor(seen) { this.seen = seen; ctx.__observer = this; } observe(el) { watched.push(el); } unobserve() {} disconnect() {} };
+  await openFonts();
+  out.watched = watched.map((el) => el.getAttribute('data-family'));
+  out.before = asked();
+  await ctx.__observer.seen(watched.map((el) => ({isIntersecting: true, target: el}))); await wait(10);
+  out.after = asked();
+  out.noto = row('Noto Sans Hebrew').querySelector('img').getAttribute('src');
+  out.big = row('Big Serif').querySelectorAll('button').map((b) => b.textContent).filter((t) => t.startsWith('Скачать'));
+""")
+    assert out["watched"] == ["Noto Sans Hebrew", "Big Serif"]                    # the families without their files
+    assert out["before"] == []                                                     # nothing is downloaded before it is seen
+    assert out["after"] == ["Noto Sans Hebrew"]                                    # seen: the small one downloaded at once
+    assert out["noto"] == "/api/fonts/preview.svg?face=g1&text=HOH&height=10"      # and drawn in its regular face
+    assert out["big"] == ["Скачать (5.0 МБ)"]                                      # the large one waits for its button
+
+
+@node
+def test_a_google_family_chosen_before_it_is_downloaded_is_downloaded_and_chosen(tmp_path):
+    """inscriptions-in-works REQ-001 c2: «downloaded when it is chosen»: a click on the row of a family not downloaded yet, even one too large
+    to come by itself, downloads it and chooses it once it is here; «Выбрать» gives the inscription that font."""
+    r = editor_routes()
+    r["/api/fonts"]["json"] = {**FONTS, "families": FONTS["families"] + [BIG]}
+    r["/api/fonts/google/family"]["json"] = {"faces": [{"face": "b0", "family": "Big Serif", "style": "Regular"},
+                                                       {"face": "b1", "family": "Big Serif", "style": "Bold"}]}
+    out = run_editor(tmp_path, r, OPEN + FONT_WINDOW + """
+  await openFonts();
+  out.before = [asked(), row('Big Serif').getAttribute('aria-selected')];
+  await row('Big Serif').dispatch('click'); await wait(10);
+  out.after = [asked(), row('Big Serif').getAttribute('aria-selected'), row('Arial').getAttribute('aria-selected')];
+  out.drawn = row('Big Serif').querySelector('img').getAttribute('src');
+  await row('Big Serif').dispatch('click'); await wait(10);
+  out.again = asked();                                    // a family already here is only chosen
+  await byText(win(), 'button', 'Выбрать').dispatch('click'); await tick();
+  out.ops = textOps();
+""")
+    assert out["before"] == [[], "false"]
+    assert out["after"] == [["Big Serif"], "true", "false"]                       # downloaded and chosen in place of Arial
+    assert out["drawn"] == "/api/fonts/preview.svg?face=b0&text=HOH&height=10"
+    assert out["again"] == ["Big Serif"]
+    assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"font": {"face": "b0", "family": "Big Serif", "style": "Regular"}}}]
+
+
+@node
+def test_a_bulk_download_of_a_script_and_a_kind_shows_its_progress_until_it_ends(tmp_path):
+    """inscriptions-in-works REQ-001 c2: every Google family of a script, narrowed to a category, is downloaded in the background; the
+    window shows how many are done until it ends and then lists them downloaded."""
+    status = lambda done, running=True, failed=(): {"running": running, "done": done, "total": 3, "failed": list(failed),   # noqa: E731
+                                                    "current": "Noto Sans Hebrew" if running else None, "error": None}
+    r = editor_routes()
+    r["/api/fonts/google/download"] = {"status": 200, "json": status(0)}
+    r["/api/fonts/google/status"] = {"status": 200, "json": status(1)}
+    r["/x/fonts-after"] = {"status": 200, "json": {**FONTS, "google": {**FONTS["google"], "downloaded": 2, "download": status(3, False, ["Gamma"])}}}
+    r["/x/status-after"] = {"status": 200, "json": status(3, False, ["Gamma"])}
+    out = run_editor(tmp_path, r, OPEN + FONT_WINDOW + """
+  const every = ctx.setInterval;
+  ctx.setInterval = (fn, ms) => every(fn, ms === 1000 ? 15 : ms);        // the window asks for the progress every second: here sooner
+  const polls = () => ctx.requests.filter((x) => x.path === '/api/fonts/google/status').length;
+  await openFonts();
+  await choose('Письменность', 'hebrew'); await choose('Вид шрифта', 'sans');
+  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Скачать все Google'));
+  out.label = bulk().textContent;
+  await bulk().dispatch('click'); await tick();
+  out.started = [win().textContent.includes('скачано 0 из 3…'), bulk().disabled];
+  out.sent = ctx.requests.filter((x) => x.path === '/api/fonts/google/download').map((x) => JSON.parse(x.body));
+  await wait(60);
+  out.running = [win().textContent.includes('скачано 1 из 3…'), bulk().disabled];
+  data.routes['/api/fonts/google/status'] = data.routes['/x/status-after'];
+  data.routes['/api/fonts'] = data.routes['/x/fonts-after'];
+  await wait(60);
+  out.ended = [win().textContent.includes('скачано 3 из 3, не скачались: 1'), bulk().disabled];
+  const before = polls();
+  await wait(60);
+  out.stopped = polls() === before;                                        // no more asking once it ended
+  ctx.setInterval = every;
+""")
+    assert out["label"] == "Скачать все Google: Иврит, без засечек"
+    assert out["sent"] == [{"script": "hebrew", "kind": "sans"}]
+    assert out["started"] == [True, True] and out["running"] == [True, True]            # its progress shown, no second one meanwhile
+    assert out["ended"] == [True, False] and out["stopped"] is True
+
+
+@node
+def test_a_bulk_download_by_a_category_alone_is_offered_in_the_font_window(tmp_path):
+    """inscriptions-in-works REQ-001 c2: a bulk download by category, with any script; with neither chosen there is nothing to download."""
+    out = run_editor(tmp_path, editor_routes(), OPEN + FONT_WINDOW + """
+  await openFonts();
+  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Скачать все Google'));
+  await choose('Письменность', ''); await choose('Вид шрифта', '');
+  out.none = [bulk().textContent, bulk().disabled];
+  await choose('Вид шрифта', 'handwriting');
+  out.label = bulk().textContent;
+  out.disabled = bulk().disabled;
+  await bulk().dispatch('click'); await tick();
+  out.sent = ctx.requests.filter((x) => x.path === '/api/fonts/google/download').map((x) => JSON.parse(x.body));
+""")
+    assert out["none"] == ["Скачать все Google выбранной письменности или вида", True]
+    assert out["label"] == "Скачать все Google: рукописные" and out["disabled"] is False
+    assert out["sent"] == [{"script": None, "kind": "handwriting"}]
+
+
+@node
+def test_the_kind_filter_narrows_the_list_and_favourites_stay_marked_when_the_window_opens_again(tmp_path):
+    """inscriptions-in-works REQ-001 c3: the filter by kind (serif, sans serif, handwriting ...) and the favourites, which this browser
+    keeps: a star marks a family, «Избранные» lists the marked ones, and the next window shows them marked still."""
+    out = run_editor(tmp_path, editor_routes(), OPEN + FONT_WINDOW + """
+  const kept = new Map();                     // the browser's storage of this screen
+  ctx.localStorage = {getItem: (k) => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => { kept.set(k, String(v)); }};
+  const star = (family) => row(family).querySelectorAll('button').find((b) => b.classList.contains('lt-star'));
+  await openFonts();
+  const offered = (label) => win().querySelectorAll('select').find((x) => x.getAttribute('aria-label') === label).querySelectorAll('option')
+    .map((o) => [o.value, o.textContent]);
+  out.offered = {scripts: offered('Письменность'), kinds: offered('Вид шрифта')};
+  out.kinds = {};
+  for (const kind of ['handwriting', 'sans', 'serif', '']) { await choose('Вид шрифта', kind); out.kinds[kind || 'any'] = rows(); }
+  await star('My Hand').dispatch('click');
+  out.marked = ['My Hand', 'Arial'].map((f) => [star(f).getAttribute('aria-pressed'), star(f).textContent]);
+  out.kept = kept.get('lt.fav');
+  await choose('Откуда шрифты', 'fav');
+  out.favourites = rows();
+  await byText(win(), 'button', 'Отмена').dispatch('click'); await tick();
+  out.closed = !win();
+  await openFonts();
+  out.again = ['My Hand', 'Arial'].map((f) => star(f).getAttribute('aria-pressed'));
+  await star('My Hand').dispatch('click');
+  out.unmarked = [star('My Hand').getAttribute('aria-pressed'), kept.get('lt.fav')];
+""")
+    scripts = dict(out["offered"]["scripts"])
+    assert list(scripts)[1:] == list(fonts.SCRIPTS)                                 # every script the catalogue tells apart
+    assert {k: scripts[k] for k in ("latin", "cyrillic", "hebrew", "arabic", "greek")} == {
+        "latin": "Латиница", "cyrillic": "Кириллица", "hebrew": "Иврит", "arabic": "Арабский", "greek": "Греческий"}
+    assert [k for k, _ in out["offered"]["kinds"]][1:] == list(fonts.KINDS)
+    assert dict(out["offered"]["kinds"])["serif"] == "С засечками" and dict(out["offered"]["kinds"])["monospace"] == "Моноширинные"
+    assert out["kinds"] == {"handwriting": ["My Hand"], "sans": ["Arial", "Noto Sans Hebrew"], "serif": [],
+                            "any": ["Arial", "My Hand", "Noto Sans Hebrew"]}
+    assert out["marked"] == [["true", "★"], ["false", "☆"]] and json.loads(out["kept"]) == ["My Hand"]
+    assert out["favourites"] == ["My Hand"]
+    assert out["closed"] and out["again"] == ["true", "false"]                     # still marked in the next window
+    assert out["unmarked"] == ["false", "[]"]
+
+
+@node
+def test_an_inscription_without_text_shows_the_sample_in_every_font(tmp_path):
+    """inscriptions-in-works REQ-001 c4: while the inscription's text is empty, each font draws the sample (the server's own sample)."""
+    r = editor_routes()
+    r["/api/vector/7"]["json"]["texts"][0]["text"] = ""
+    out = run_editor(tmp_path, r, OPEN + FONT_WINDOW + """
+  await openFonts();
+  out.sample = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Образец текста').value;
+  out.previews = ['Arial', 'My Hand'].map((f) => row(f).querySelector('img').getAttribute('src'));
+""")
+    assert re.search(r"const SAMPLE = '([^']+)';", LETTERING).group(1) == lettering.SAMPLE == out["sample"]
+    sample = quote(lettering.SAMPLE, safe="-_.!~*'()")                                # as encodeURIComponent writes it
+    assert out["previews"] == [f"/api/fonts/preview.svg?face=f1&text={sample}&height=10", f"/api/fonts/preview.svg?face=o1&text={sample}&height=10"]
 
 
 # -- the photo work in node --------------------------------------------------------------------------------------------------------------

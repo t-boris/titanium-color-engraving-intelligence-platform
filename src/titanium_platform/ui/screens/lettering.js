@@ -86,6 +86,7 @@ const Lettering = (() => {
     const favourites = new Set(storage.read('lt.fav') || []);
     let chosen = current ? {family: current.family, face: current.face} : null, shownCount = PAGE, polling = null;
     const queue = [], loading = new Set();
+    let awaited = null;                         // a Google family chosen before its files were here: chosen when they arrive
     const text = h('input', {type: 'text', value: (sample || '').split('\n').join(' ').slice(0, 60) || SAMPLE, 'aria-label': 'Образец текста'});
     const search = h('input', {type: 'search', placeholder: 'Название шрифта', 'aria-label': 'Найти шрифт по названию'});
     const option = (value, label) => h('option', {value}, label);
@@ -134,6 +135,7 @@ const Lettering = (() => {
         // Google names a family's upright normal face «Regular»; the catalogue gives it as ``regular`` (fonts._regular)
         if (f) Object.assign(f, {downloaded: true, faces: got.faces.map((x) => ({id: x.face, style: x.style})),
           regular: (got.faces.find((x) => x.style === 'Regular') || got.faces[0]).face});
+        if (f && awaited === family) { chosen = {family, face: f.regular}; awaited = null; }
       } catch (e) { toast(e.message, 'bad'); }
       render(false);
     }
@@ -154,7 +156,7 @@ const Lettering = (() => {
             download(f.family).finally(() => loading.delete(f.family)); }, 'btn-small'))
         : h('img', {class: 'lt-preview', src: preview(faceOf().id), alt: `${sampleText()} шрифтом ${f.family}`, loading: 'lazy'});
       const el = h('div', {class: 'lt-font' + (on ? ' picked' : ''), role: 'option', 'aria-selected': on ? 'true' : 'false', 'data-family': f.family,
-        onClick: () => { if (!f.faces.length) return; chosen = {family: f.family, face: faceOf().id}; render(false); }},
+        onClick: () => { if (f.faces.length) chosen = {family: f.family, face: faceOf().id}; else fetchChosen(f); render(false); }},
       h('div', {class: 'lt-font-head'}, star, h('strong', {}, f.family), h('span', {class: 'pill'}, SOURCES[f.source] || f.source),
         h('span', {class: 'small muted'}, [KINDS[f.kind] || f.kind, f.scripts.map((s) => SCRIPTS[s] || s).join(', ')].filter(Boolean).join(' · ')),
         h('span', {class: 'spacer'}), styles,
@@ -162,6 +164,14 @@ const Lettering = (() => {
       shown);
       if (!f.faces.length && observer) observer.observe(el);
       return el;
+    }
+
+    /** A Google family chosen before it is downloaded is downloaded now, whatever its size, and chosen once it is here (REQ-001). */
+    function fetchChosen(f) {
+      awaited = f.family;
+      if (loading.has(f.family) || queue.includes(f.family)) return;
+      loading.add(f.family);
+      download(f.family).finally(() => loading.delete(f.family));
     }
 
     function render(reset = true) {
@@ -181,14 +191,15 @@ const Lettering = (() => {
           self.disabled = true;
           try { await post('/fonts/google/index'); await reload(); } catch (e) { fail(e); render(false); }
         }), g.listed ? h('span', {class: 'muted'}, `семейств Google: ${g.families}`) : h('span', {class: 'muted'}, 'нужен интернет; шрифты этого Mac и свои работают без него')),
-        g.listed ? h('div', {class: 'row'}, btn(script.value ? `Скачать все Google: ${SCRIPTS[script.value]}` + (kind.value ? `, ${KINDS[kind.value].toLowerCase()}` : '')
-          : 'Скачать все Google выбранной письменности', () => bulk(), '', !script.value || !!s.running),
+        g.listed ? h('div', {class: 'row'}, btn(script.value || kind.value
+          ? 'Скачать все Google: ' + [SCRIPTS[script.value], kind.value && KINDS[kind.value].toLowerCase()].filter(Boolean).join(', ')
+          : 'Скачать все Google выбранной письменности или вида', () => bulk(), '', !(script.value || kind.value) || !!s.running),
         s.running ? h('span', {}, `скачано ${s.done} из ${s.total}…`) : s.total ? h('span', {class: 'muted'}, `скачано ${s.done} из ${s.total}`
           + (s.failed && s.failed.length ? `, не скачались: ${s.failed.length}` : '')) : null) : null);
     }
 
     async function bulk() {
-      try { catalogue.google.download = await post('/fonts/google/download', {script: script.value, kind: kind.value || null}); } catch (e) { return fail(e); }
+      try { catalogue.google.download = await post('/fonts/google/download', {script: script.value || null, kind: kind.value || null}); } catch (e) { return fail(e); }
       showGoogle();
       clearInterval(polling);
       polling = setInterval(async () => {
