@@ -20,7 +20,8 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
   its step the dots' pitch, and its colour at the work's width); a dot kind is shown from the dots' colour (the scale's at that power or
   the recipe's, the cleaned titanium between the dots) until that kind has been photographed at those settings (a ramp of «Проба этого
   вида», ``width_ramp``, or an engraving), then from its measured tones; its picture is engraved as uploaded (the greys chosen for
-  colours, the contours and the rules of parts are grayscale's and wait for it);
+  colours, the contours and the rules of parts are grayscale's and wait for it); LightBurn's dot width correction of a dot kind
+  (``dot_width``, 0.28.0, ``photo_state.DOT_WIDTH_MM``: off by default), written to its layer, its ramp and the mode its tones are measured at;
 * the picture's brightness, contrast and gamma (``tone``, 0.27.0, :func:`photo_state.toned`): its greys in that tone are what a dot kind
   dithers and what grayscale engraves while the picture's own greys are engraved; the look, the close-up and the file take them alike;
 * the steps that can be undone and redone (``undo``, ``redo``): each holds the work's state as it decides what is engraved (:data:`STATE`);
@@ -67,14 +68,14 @@ GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS
 TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
-        "colouring", "kind", "dot_power", "dot_recipe", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts")
+        "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts")
 SETTINGS = ("scale", "width_mm", "dot_colour", *st.SETTINGS)        # ``dot_colour``: a point of the colour map picked for the dots
 # what a work made before the rules of parts (0.19.0), undo, the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
 DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
 STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind",
-         "dot_power", "dot_recipe", "tone", "ai", "ai_theme", "texts")
+         "dot_power", "dot_recipe", "dot_width", "tone", "ai", "ai_theme", "texts")
 UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 KEEP_LOOKS = 8                      # what the dots of the works' last looks are (their share above all), so an open work is not dithered again
 KEEP_CUT = 2                        # pictures cut by their inscriptions kept in memory, as the decoded ones
@@ -374,7 +375,8 @@ def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
             "dpi": grayscale.image_dpi(fired.line_interval) if fired.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
-            "kind": plan["kind"], "dot_power": plan["dot_power"], "dot_recipe": plan["dot_recipe"], "colouring": plan["colouring"],
+            "kind": plan["kind"], "dot_power": plan["dot_power"], "dot_recipe": plan["dot_recipe"], "dot_width": plan["dot_width"],
+            "colouring": plan["colouring"],
             "tone": st.tone_of(plan), "tone_used": st.tone_used(plan) is not None,
             "rules": [st.shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_theme": plan["ai_theme"], "ai_photo": plan["ai_photo"],
             "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": _time(store, plan, fired, texts), "texts_count": len(plan["texts"])}
@@ -603,7 +605,7 @@ def export(store: Store, plan_id: int) -> tuple[bytes, str]:
     """The LightBurn file of the work (the cleaning, then one Image layer in the work's kind, ``plans.export_picture``) and the name to
     save it under. A dot kind's layer fires every dot at the dots' power (Min = Max) and the settings they fire at (the scale's, or the
     recipe's picked on the colour map, whose step is the layer's DPI) and carries the picture as uploaded, in the work's tone: LightBurn
-    makes the dots.
+    makes the dots, corrected by the work's dot width when it has one.
     The picture is transparent under its inscriptions' cut, and their letters follow on a layer of each titanium colour (DEC-003); an
     inscription that cannot be engraved refuses the file."""
     plan = _work(store, plan_id)
@@ -616,7 +618,8 @@ def export(store: Store, plan_id: int) -> tuple[bytes, str]:
         power = st.dots(store, plan, item["curve"])["power"]
         fired = st.fired_at(item["mode"], plan)
         picture = _holed(ps.picture_for_file(item, power, power, plan["width_mm"], fired=fired), texts, plan["width_mm"])
-        data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(fired, power, power), plan["name"], plan["plan_identifier"],
+        parameters = {**ps.file_parameters(fired, power, power), "dot_width": st.dot_width_used(plan)}
+        data = pl.export_picture(picture, plan["width_mm"], parameters, plan["name"], plan["plan_identifier"],
                                  clean=ps.cleaning(store, item["mode"]), dither=plan["kind"], vectors=vectors)
         return data, f"{plan['name']}-{plan['kind']}-P{power:g}"
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
@@ -649,7 +652,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
             "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE,
-            "dot_power": None, "dot_recipe": None, "tone": dict(st.TONE), "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
+            "dot_power": None, "dot_recipe": None, "dot_width": None, "tone": dict(st.TONE), "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
             "texts": []}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
@@ -663,7 +666,8 @@ def update(store: Store, plan_id: int, changes) -> None:
     ``min_power`` and ``max_power``, ``width_mm``, ``by_colour`` and how (``colour_choice``), ``contours``, the main colours of the
     picture's objects (``colouring``: an object's key to its ``power`` and ``shift``) and the ``rules`` of the parts, the ``kind`` of
     engraving and the power of a dot kind's dots (``dot_power``, inside the scale's measured powers at the work's width;
-    kept through another kind, scale or width while the scale is measured there, otherwise where its colour stands out most), the colour
+    kept through another kind, scale or width while the scale is measured there, otherwise where its colour stands out most), their
+    ``dot_width`` (LightBurn's correction, ``photo_state.dot_width_in``: a width in mm or None, off), the colour
     of a dot kind's dots picked on the colour map (``dot_colour``, a point's group, ``dot_colours.picked``: a tone of a grey scale puts the
     dots on that scale at its power, a fill makes them fire at its settings, kept as ``dot_recipe`` and its colour taken again when the
     width changes; another scale or a power on the scale puts them back on the scale), or whether the picture may be sent to the AI
@@ -768,8 +772,8 @@ RAMP_MARGIN_MM = 19.0                # what a grey-ramp plate adds to its widest
 def width_ramp(store: Store, plan_id: int) -> dict:
     """A grey-ramp plate of one ramp as wide as the work, at its scale's settings, Min and Max: engraved and photographed before the
     picture, it measures the scale at the size the picture is engraved at (the colour depends on the length of the rows, DEC-107). In a
-    dot kind the ramp is engraved in that kind at the dots' power («Проба этого вида»): its photograph measures the kind's tones, which
-    then replace the estimate from the scale. A plate is made for the lens on the laser now, so the work's lens must be on it."""
+    dot kind the ramp is engraved in that kind at the dots' power and dot width («Проба этого вида»): its photograph measures the kind's
+    tones there, which then replace the estimate from the scale. A plate is made for the lens on the laser now, so the work's lens must be on it."""
     plan = _work(store, plan_id)
     mode = mode_of(plan)
     lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
@@ -780,7 +784,8 @@ def width_ramp(store: Store, plan_id: int) -> dict:
     fired = st.kind_mode(mode, plan) if dotted else mode            # a dot kind at the settings and power its dots fire at
     fixed = {k: v for k, v in {"speed": fired.speed, "frequency": fired.frequency, "pulse_width": fired.pulse_width, "line_interval": fired.line_interval,
                                "passes": fired.passes, "global_passes": fired.global_passes}.items() if v is not None}
-    powers = {"dither": plan["kind"]} if dotted else {"min_power": plan["min_power"], "max_power": plan["max_power"]}
+    powers = ({"dither": plan["kind"], **({"dot_width": fired.dot_width} if fired.dot_width is not None else {})} if dotted
+              else {"min_power": plan["min_power"], "max_power": plan["max_power"]})
     settings = {**fixed, "power": fired.power if dotted else plan["max_power"], "max_width_mm": min(cp.PLATE_MAX_MM, width + RAMP_MARGIN_MM),
                 "scales": {"rows": {"axis": "width", "values": [width]}, "columns": {"axis": "speed", "values": [fired.speed]}, **powers}}
     made = cp.create(store, plan["device_id"], mode.material_id, "grey_scales", settings)

@@ -132,6 +132,31 @@
     return {el, update};
   }
 
+  const DOT_WIDTH_ABOUT = 'Поправка ширины точки LightBurn (Dot Width Correction): точка лазера шире пикселя картинки, и без поправки '
+    + 'картинка выходит темнее; LightBurn уменьшает каждую точку на эту ширину. Пишется в слой файла и в «Пробу этого вида»; тона вида, '
+    + 'измеренные при одной ширине точки, к другой не подходят. Только в видах точками.';
+  /** Поправка ширины точки вида точками (0.28.0): флажок и ширина точки лазера в мм, сохраняются в работе через ``save({dot_width})``.
+      Ширина включает поправку, пустое поле или снятый флажок её выключают; флажок на пустом поле ждёт ширину. В градациях серого
+      поправки нет: поле скрыто, ширина ждёт в работе. */
+  function dotWidthBox(save) {
+    const on = h('input', {type: 'checkbox', 'aria-label': 'Поправка ширины точки'});
+    const width = h('input', {type: 'number', min: '0.001', max: '0.2', step: '0.001', 'aria-label': 'Ширина точки лазера, мм'});
+    const given = () => (width.value === '' ? null : Number(width.value));
+    on.addEventListener('change', () => {
+      if (!on.checked) save({dot_width: null});
+      else if (given() != null) save({dot_width: given()});
+    });
+    width.addEventListener('change', () => { on.checked = given() != null; save({dot_width: given()}); });
+    const el = h('label', {class: 'ge-power ge-dotwidth', title: DOT_WIDTH_ABOUT}, on, h('span', {class: 'small'}, 'Поправка ширины точки'), width,
+      h('span', {class: 'small'}, 'мм'));
+    function show(view) {
+      el.hidden = !dotted(view) || !!view.problem;
+      on.checked = view.dot_width != null;
+      if (view.dot_width != null) width.value = String(view.dot_width);
+    }
+    return {el, show};
+  }
+
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
       сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
   async function workScreen(id) {
@@ -148,6 +173,7 @@
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
       {ramp: `${base}/width-ramp`, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     const head = workHead(view, step);
+    const dotWidth = dotWidthBox(save);
     const ai = aiTab(base, save, (wish, fresh) => send(`${base}/ai`, {wish, fresh}));
     const colour = colourTab(base, save, (path, body) => send(path, body));
     const engraved = engravingsBlock(id);
@@ -176,6 +202,7 @@
       head.update(view);
       lettering.update(view);
       picture.show(view, chosen());
+      dotWidth.show(view);
       colour.show(view);
       ai.show(view);
       if (scaleKey(view) !== shownKey) showScale();
@@ -220,7 +247,7 @@
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
-        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, slots.error, error, slots.bar, picture.out, picture.foot)),
+        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, dotWidth.el, slots.error, error, slots.bar, picture.out, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 

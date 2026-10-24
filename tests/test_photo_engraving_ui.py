@@ -676,3 +676,36 @@ def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in
   out.said = tree.textContent.includes('Картинка изменена: яркость -15 %, контраст 0 %, гамма 1.');
 """, work={"kind": "jarvis", "dot_power": 12.5, "tone": {"brightness": -15, "contrast": 0, "gamma": 1}, "tone_used": True})
     assert out["under"] == ["ge-work", 1] and out["saves"] == [{"tone": {"brightness": -15, "contrast": 0, "gamma": 1}}] and out["said"]
+
+
+@node
+def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_grayscale_hides_it(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const box = () => tree.querySelector('.ge-dotwidth');
+  const tick = () => input(box(), (i) => i.getAttribute('type') === 'checkbox');
+  const width = () => labelled(tree, 'Ширина точки лазера, мм');
+  out.first = [box().hidden, tick().checked, width().value];
+  tick().checked = true; await tick().dispatch('change'); await settle();
+  out.empty = saves().length;
+  width().value = '0.02'; await width().dispatch('change'); await settle();
+  out.on = [tick().checked, width().value];
+  out.ramp = tree.textContent.includes('на мощности точек 12,5 %, с поправкой ширины точки 0,02 мм и настройках шкалы');
+  tick().checked = false; await tick().dispatch('change'); await settle();
+  out.off = [tick().checked, width().value];
+  tick().checked = true; await tick().dispatch('change'); await settle();
+  out.waits = saves().length;
+  width().value = '0.025'; await width().dispatch('change'); await settle();
+  width().value = ''; await width().dispatch('change'); await settle();
+  out.saves = saves();
+  await button(tree, 'Отменить').dispatch('click'); await settle();
+  out.undone = [tick().checked, width().value];
+  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
+  await dialog().querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Градации серого').dispatch('click'); await settle();
+  out.grey = box().hidden;
+""", work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None})
+    assert out["first"] == [False, False, ""] and out["empty"] == 0                       # off; a tick on an empty field waits for the width
+    assert out["on"] == [True, "0.02"] and out["ramp"]                                    # a width switches it on; the ramp is engraved with it
+    assert out["off"] == [False, "0.02"]                                                  # untick: off, the width stays in the field
+    assert out["waits"] == 3                                                              # a tick with the width in the field sends it
+    assert out["saves"] == [{"dot_width": 0.02}, {"dot_width": None}, {"dot_width": 0.02}, {"dot_width": 0.025}, {"dot_width": None}]
+    assert out["undone"] == [True, "0.025"] and out["grey"]

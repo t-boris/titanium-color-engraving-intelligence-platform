@@ -880,7 +880,8 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
     its width value; a column is as wide as its widest ramp and its ramps start at its left edge.
 
     With ``scales.dither`` a dot kind of LightBurn (0.21.0), the ramps are engraved in that kind at the plate's one power: LightBurn
-    makes the dots of each step, so each step is one share of dots at that power and the photograph measures the kind's tonal profile."""
+    makes the dots of each step, so each step is one share of dots at that power and the photograph measures the kind's tonal profile;
+    with ``scales.dot_width`` (mm) LightBurn corrects the width of those dots, and the profile is measured at that dot width."""
     supplied = values.get("scales") or {}
     dither = supplied.get("dither") or plans.IMAGE_DITHER
     kind = photo_modes.mode(dither)
@@ -897,6 +898,13 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
         high = float(supplied.get("max_power", values["power"]))
     except (TypeError, ValueError):
         raise su.ValidationError("Min и Max мощность должны быть числами") from None
+    dot_width = supplied.get("dot_width")
+    if dot_width is not None:
+        lo, hi = photo_modes.DOT_WIDTH_MM
+        if dither == plans.IMAGE_DITHER or isinstance(dot_width, bool) or not isinstance(dot_width, (int, float)) \
+                or not lo <= dot_width <= hi:
+            raise su.ValidationError(f"поправка ширины точки — только в виде точками, от {lo:g} до {hi:g} мм")
+        dot_width = float(dot_width)
     if dither != plans.IMAGE_DITHER:
         low = high = float(values["power"])            # every dot fires at the layer's power
         if not 0 < high <= 100:
@@ -932,6 +940,8 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
             x, tile = column_x[col], ramp_width(r_value, c_value)
             params = _process({**values, rows_key: r_value, cols_key: c_value, "power": high})
             params["min_power"] = low
+            if dot_width is not None:
+                params["dot_width"] = dot_width
             name = f"GREY-{r_meta['short']}{r_value:g}-{c_meta['short']}{c_value:g}"
             ramp = {"x": x, "y": y, "width": tile, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": dither}
             layer = _layer(len(layers) + 1, name, params, [_rect(x, y, tile, GREY_TILE_HEIGHT)], mode="Image",
@@ -949,7 +959,7 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
                             "sample_area_mm2": round(sum(cell["width"] for cell in cells) * GREY_TILE_HEIGHT, 2),
                             "scales": {"rows": {"axis": rows_key, "values": row_values}, "columns": {"axis": cols_key, "values": col_values},
                                        "min_power": low, "max_power": high, "steps": len(greys), "step_mm": round(narrowest / len(greys), 3),
-                                       "dither": dither}}
+                                       "dither": dither, **({"dot_width": dot_width} if dot_width is not None else {})}}
 
 
 FILL_DEFAULT_WIDTHS_MM = (5.0, 20.0, 50.0, 100.0)

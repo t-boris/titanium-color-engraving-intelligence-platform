@@ -30,6 +30,9 @@ STRIKE_MIN = 0.05      # a pixel is "engraved over" when dots cover at least thi
 ALPHA_MIN = 0.5        # a pixel less opaque than this is empty (forum reports: fully transparent pixels are not engraved)
 THRESHOLD_CUT = 0.5    # grey at which threshold mode and pass-through turn from white to black (LightBurn has no level setting)
 WHITE = 0.5 / 255      # a grey this close to white is white: one level of an 8-bit picture
+# the width LightBurn's dot width correction takes (``dotWidth`` with ``useDotCorrection``), mm: the operator's files set 0.008..0.05 mm,
+# never wider than their line interval; LightBurn shrinks each dot of its dithering by it
+DOT_WIDTH_MM = (0.001, 0.2)
 
 POWER, DOTS, EDGES, DEPTH = "power", "dots", "edges", "depth"
 CURVE, PROFILE, NONE = "curve", "profile", "none"      # what a prediction of the mode rests on: power -> colour, grey -> colour, nothing

@@ -13,6 +13,9 @@ A state is a mapping with :data:`SETTINGS` and the AI's last answers (missing on
 * ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at ``dot_power`` on the scale, or with
   ``dot_recipe`` at a recipe picked on the colour map (:mod:`dot_colours`, 0.25.0); a dot kind engraves the picture as it is (the greys
   chosen for colours, the contours and the rules are grayscale's and wait for it);
+* ``dot_width``: LightBurn's dot width correction of a dot kind (K2 of 0.21.0, :data:`DOT_WIDTH_MM`): the width of the laser's dot in mm,
+  by which LightBurn shrinks the dots of its dithering, or None (off, the default); written to the dot kind's layer and part of the mode
+  its tones are measured at (:func:`kind_mode`), kept and waiting in grayscale;
 * ``tone``: the picture's brightness, contrast and gamma (0.27.0, :data:`TONE`), applied to its greys before they become power or dots
   (:func:`toned`, the formulas of ``prediction.adjust_grey``): in a dot kind, and in grayscale while its own greys are engraved
   (``by_colour`` off); the look, the close-up and the file all take the toned greys, so LightBurn's own adjustments stay at their defaults;
@@ -42,15 +45,18 @@ GRAYSCALE = prediction.PREDICTED_MODE
 KINDS = tuple(key for key, kind in photo_modes.MODES.items() if kind.family != photo_modes.DEPTH)
 MAX_COLOURED = 32                   # main colours a state keeps at most: one per object
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
-SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "tone", "ai_photo")
+SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "dot_width", "tone",
+            "ai_photo")
+DOT_WIDTH_MM = photo_modes.DOT_WIDTH_MM       # the dot width LightBurn's correction takes, mm
 # the picture's greys as they are: LightBurn's defaults of its three adjustments (``lightburn.BITMAP_DEFAULTS``) under the screen's names
 TONE = {"brightness": 0.0, "contrast": 0.0, "gamma": 1.0}
 TONE_LIMITS = {"brightness": (-100.0, 100.0), "contrast": (-100.0, 100.0), "gamma": (0.2, 5.0)}      # % , %, the exponent
 TONE_DIGITS = {"brightness": 1, "contrast": 1, "gamma": 2}
 KEEP_TONED = 2                      # toned pictures kept in memory: the tone shown now and the one before
-# what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1), the kinds and objects (0.21.0) or the tone (0.27.0) has
+# what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1), the kinds and objects (0.21.0), the tone (0.27.0) or the
+# dot width (0.28.0) has
 DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE, "dot_power": None,
-            "dot_recipe": None, "tone": dict(TONE), "ai_photo": False, "ai": None, "ai_theme": None}
+            "dot_recipe": None, "dot_width": None, "tone": dict(TONE), "ai_photo": False, "ai": None, "ai_theme": None}
 _toned: OrderedDict[tuple, tuple[dict, dict]] = OrderedDict()
 _lock = threading.Lock()
 
@@ -65,10 +71,17 @@ def fired_at(mode: ps.Mode, state: Mapping) -> ps.Mode:
     return dc.fired_at(mode, state.get("dot_recipe"))
 
 
+def dot_width_used(state: Mapping) -> float | None:
+    """The width LightBurn corrects the dots by (mm): the state's ``dot_width`` in a dot kind, None in grayscale or with the correction off."""
+    return state.get("dot_width") if dotted(state) else None
+
+
 def kind_mode(mode: ps.Mode, state: Mapping) -> ps.Mode:
-    """The mode a dot kind's own tones are measured at: the settings its dots fire at (:func:`fired_at`), the kind and the dots' power."""
+    """The mode a dot kind's own tones are measured at: the settings its dots fire at (:func:`fired_at`), the kind, the dots' power and
+    the dot width LightBurn corrects them by (:func:`dot_width_used`)."""
     recipe = state.get("dot_recipe")
-    return replace(fired_at(mode, state), dither=state["kind"], power=recipe["settings"]["power"] if recipe else state["dot_power"])
+    return replace(fired_at(mode, state), dither=state["kind"], power=recipe["settings"]["power"] if recipe else state["dot_power"],
+                   dot_width=dot_width_used(state))
 
 
 def dots(store: Store, state: Mapping, curve: prediction.Curve) -> dict:
@@ -117,6 +130,17 @@ def toned(upload: dict, state: Mapping) -> dict:
         while len(_toned) > KEEP_TONED:
             _toned.popitem(last=False)
     return out
+
+
+def dot_width_in(value) -> float | None:
+    """A dot width given by hand: None switches the correction off, a width is checked and kept to a thousandth of a mm."""
+    if value is None:
+        return None
+    number = None if isinstance(value, bool) else ps._number(value)
+    lo, hi = DOT_WIDTH_MM
+    if number is None or not lo <= round(number, 3) <= hi:
+        raise su.ValidationError(f"the dot width correction is a width of the laser's dot from {lo:g} to {hi:g} mm, or none to switch it off")
+    return round(float(number), 3)
 
 
 def tone_in(state: Mapping, tone) -> dict:
@@ -188,8 +212,9 @@ def dot_look(store: Store, mode: ps.Mode, grey: np.ndarray, alpha: np.ndarray, s
 def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm: float, moved: bool = False) -> None:
     """Make the ``changes`` of :data:`SETTINGS` in ``state``, each checked: Min and Max, ``by_colour`` and ``colour_choice``, ``contours``, the
     ``rules`` of the parts, the main colours of the objects (``colouring``), the ``kind`` and the power of a dot kind's dots (``dot_power``,
-    inside the scale's measured powers at ``width_mm``: the dots go back onto the scale from a recipe of the colour map), the picture's
-    ``tone`` (:func:`tone_in`), whether the picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
+    inside the scale's measured powers at ``width_mm``: the dots go back onto the scale from a recipe of the colour map), their
+    ``dot_width`` (:data:`DOT_WIDTH_MM`, rounded to 0.001 mm as LightBurn shows it, or None: off), the picture's ``tone`` (:func:`tone_in`),
+    whether the picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
     width: a dot kind's power is kept while the scale is measured there, otherwise it goes where its colour stands out most (as after a
     change of the kind). The recipe of the colour map (``dot_recipe``) is the owner's to set: it picks it at its width."""
     if "min_power" in changes or "max_power" in changes:
@@ -224,6 +249,8 @@ def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm:
         state["dot_recipe"] = None
     elif dotted(state) and ("kind" in changes or moved):
         state["dot_power"] = ps.dot_power_at(store, mode, width_mm, state["dot_power"])
+    if "dot_width" in changes:
+        state["dot_width"] = dot_width_in(changes["dot_width"])
     if "tone" in changes:
         state["tone"] = tone_in(state, changes["tone"])
     if "ai_photo" in changes:

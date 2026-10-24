@@ -282,8 +282,9 @@ const PhotoPanels = (() => {
       catch (e) { fail(e); self.disabled = false; }
     }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
     if (dots) {
-      const at = fromMap(view) ? `на настройках цвета с карты (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)`
-        : `на мощности точек ${value(view.dot_power, 1)} % и настройках шкалы`;
+      const corrected = view.dot_width != null ? `, с поправкой ширины точки ${value(view.dot_width, 3)} мм` : '';
+      const at = fromMap(view) ? `на настройках цвета с карты (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)${corrected}`
+        : `на мощности точек ${value(view.dot_power, 1)} %${corrected} и настройках шкалы`;
       return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину в виде «${kindName(view.kind)}» `
         + `${at}: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на этих настройках, и картинка покажется по измеренным тонам вместо оценки.`));
     }

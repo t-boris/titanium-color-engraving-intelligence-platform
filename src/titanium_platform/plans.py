@@ -448,11 +448,15 @@ def _clean_setting(cleaning: dict) -> str:
 def _image_setting(index: int, name: str, p: dict, *, priority: int, dither: str = IMAGE_DITHER) -> str:
     """An Image layer as LightBurn writes one (the operator's own files of LightBurn 1.7.01 and 2.1.04, in their order): ``CutSetting_Img``
     with Min and Max power, speed, frequency (integer Hz), Q-pulse, the line interval, the image mode and the DPI LightBurn links
-    to that interval. ``maxPower2`` repeats Max, as on every other layer this writer makes."""
+    to that interval. ``maxPower2`` repeats Max, as on every other layer this writer makes. With ``dot_width`` (mm, a dot kind's) LightBurn
+    corrects the dot width of its dithering: ``dotWidth`` and ``useDotCorrection`` just before the interval, as those files carry them."""
     interval = float(p["line_interval"])
+    dot_width = p.get("dot_width")
     tags = [("minPower", f"{float(p['min_power']):.10g}"), ("maxPower", f"{float(p['power']):.10g}"), ("maxPower2", f"{float(p['power']):.10g}"),
             ("speed", f"{float(p['speed']):.10g}"), ("frequency", str(round(float(p["frequency"]) * 1000))),
-            ("QPulseWidth", None if p.get("pulse_width") is None else f"{float(p['pulse_width']):.10g}"), ("interval", f"{interval:.10g}"),
+            ("QPulseWidth", None if p.get("pulse_width") is None else f"{float(p['pulse_width']):.10g}"),
+            ("dotWidth", None if dot_width is None else f"{float(dot_width):.10g}"), ("useDotCorrection", None if dot_width is None else "1"),
+            ("interval", f"{interval:.10g}"),
             ("numPasses", str(int(p.get("passes") or 1))), ("globalRepeat", str(int(p.get("global_passes") or 1))), ("priority", str(priority)),
             ("tabCount", "1"), ("tabCountMax", "1"), ("ditherMode", dither), ("dpi", str(grayscale.image_dpi(interval)))]
     body = "".join(f'        <{tag} Value="{value}"/>\n' for tag, value in tags if value is not None)
