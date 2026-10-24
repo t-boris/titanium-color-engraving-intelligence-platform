@@ -87,10 +87,9 @@ function openMain(ready) {
     webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js')}});
   mainWindow.webContents.on('will-navigate', (event, url) => { if (!guards.navigationAllowed(url, origin)) { event.preventDefault(); if (guards.windowOpenDecision(url) === 'external') shell.openExternal(url); } });
   mainWindow.webContents.setWindowOpenHandler(({url}) => { if (guards.windowOpenDecision(url) === 'external') shell.openExternal(url); return {action: 'deny'}; });
-  mainWindow.once('ready-to-show', () => { mainWindow.show(); if (pickerWindow) { pickerWindow.close(); } });
+  mainWindow.once('ready-to-show', () => { mainWindow.show(); if (pickerWindow) { pickerWindow.close(); } checkForUpdates(origin); });
   mainWindow.on('closed', () => { mainWindow = null; app.quit(); });
   mainWindow.loadURL(sidecar.bootstrapUrl());
-  if (settings.updateChecks) checkForUpdates();
 }
 
 /** The core died on its own: once, it is started again on the same workshop; the second time the user is told. */
@@ -119,7 +118,18 @@ async function onCoreDeath(decision, {code, signal, logTail}) {
   if (answer.response === 0) { sidecar.deaths = 0; sidecar.stopping = false; onCoreDeath('restart', {code, signal, logTail}); } else app.quit();
 }
 
-async function checkForUpdates() {
+/** Whether the workshop allows update checks: the core's network setting (REQ-080, DEC-059), asked with the window's session cookie once
+    the session is open; the shell's own setting only when the core cannot be asked. */
+async function updateChecksAllowed(origin) {
+  try {
+    const response = await session.defaultSession.fetch(origin + '/api/network');
+    if (response.ok) return !!(await response.json()).update_checks;
+  } catch (error) { /* the core is not reachable: fall back to the shell's setting */ }
+  return !!settings.updateChecks;
+}
+
+async function checkForUpdates(origin) {
+  if (!(await updateChecksAllowed(origin))) return;
   const latest = await updater.fetchLatest(app.getVersion());
   if (!latest || !latest.newer || !mainWindow) return;
   const answer = await dialog.showMessageBox(mainWindow, {type: 'info', title: 'Есть новая версия',
