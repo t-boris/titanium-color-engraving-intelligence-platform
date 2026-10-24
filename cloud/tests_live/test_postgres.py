@@ -15,7 +15,7 @@ from titanium_cloud.settings import Settings
 
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(repository="postgres", database_url=APP_URL, chunk_bytes=CHUNK, auth_base_url=AUTH_BASE)
+    return Settings(repository="postgres", database_url=APP_URL, chunk_bytes=CHUNK, auth_base_url=AUTH_BASE, oauth_client_id="desktop-client-test")
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +35,6 @@ def cleanup(who):
         conn.execute(f"UPDATE release SET previous_release_id = NULL WHERE lab_id IN ({labs})", (accounts,))
         conn.execute(f"DELETE FROM release WHERE lab_id IN ({labs})", (accounts,))
         conn.execute("DELETE FROM lab WHERE owner_id = ANY(%s)", (accounts,))
-        conn.execute("DELETE FROM auth_handoff WHERE expires_at < now()")        # the handoff tests spend their codes; this sweeps expired ones
         conn.commit()
 
 

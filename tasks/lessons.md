@@ -584,3 +584,14 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   operator reads on the screen and in the translations. Before a commit, grep the added lines of the diff for Cyrillic inside `//`, `/*`
   and `*` comment lines.
 
+## 2026-10-24 — a sign-in design built on a fake of the provider (electron, DEC-058 → DEC-060)
+
+- **Pattern.** The handoff sign-in was designed, built and merged against a fake Neon Auth that accepted a bare session token as a
+  cookie. The real service accepts only its HMAC-signed HttpOnly cookie, so the design could not work, and the deployed API ran it for
+  an afternoon. Found only by an end-to-end emulation against production after the merge.
+- **Rule.** Before designing anything against a third-party auth or API, probe the real service for the exact calls the design relies on
+  (here: `GET /token` with the value a page can actually read) and record the answers in the spec note; a fake may only mirror what was
+  observed, never what the docs seem to promise. Make the production emulation part of the stage's definition of done, not an afterthought.
+- **Deploy.** The wheel of this project is `titanium_color_engraving_platform-<v>-py3-none-any.whl` (the distribution name, not the
+  import name); the live database is `~/.titanium-platform/titanium.sqlite` (other `*.sqlite*` files there are empty leftovers). Take the
+  file by name, never by a glob with `head -1`, and check the backup's size before restarting the server.
