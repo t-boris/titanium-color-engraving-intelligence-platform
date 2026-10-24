@@ -27,5 +27,10 @@
     [/^the folder is not empty: choose an empty folder, or ask explicitly to replace what is there$/i,
       'Папка не пуста: выберите пустую папку или явно попросите заменить то, что в ней'],
     [/^choose the backup folder$/i, 'Выберите папку резервной копии'],
+    // диагностика (diagnostics.py)
+    [/^choose the folder the diagnostics file is written to$/i, 'Выберите папку, куда записать файл диагностики'],
+    [/^a diagnostics file cannot be written inside the workshop: choose another folder$/i,
+      'Файл диагностики нельзя записать внутрь мастерской: выберите другую папку'],
+    [/^there is no diagnostics file (.+)$/i, (m) => `Файла диагностики ${m[1]} нет`],
   ]);
 })();

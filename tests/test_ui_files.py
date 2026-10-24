@@ -83,7 +83,7 @@ def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_eve
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
     assert nav[:3] == ["/experiments", "/colors", "/vector"] and len(icons) == len(nav) == len(set(nav))
-    assert nav[3:] == ["/photo-engraving", "/designer", "/findings", "/devices", "/setup", "/research", "/labs"]   # REQ-059: photo engraving fourth; electron: labs last
+    assert nav[3:] == ["/photo-engraving", "/designer", "/findings", "/devices", "/setup", "/research", "/labs", "/workshop"]   # REQ-059: photo engraving fourth; electron: labs, then the workshop
     assert "vector: 'vector'" in router and "App.register({id: 'vector'" in _screen("vector.js")
     vector_icon = '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>'
     assert vector_icon in icons_block(router, 2)                                                           # the vector icon moved with its entry

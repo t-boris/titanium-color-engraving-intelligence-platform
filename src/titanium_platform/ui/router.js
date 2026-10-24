@@ -7,10 +7,10 @@ Object.assign(App, (() => {
   // непрерывная фотогравировка полосами и прогноз по файлу LightBurn открываются из раздела «Фотогравировка», их адреса прежние
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/photo-engraving', 'Фотогравировка'],
     ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь'],
-    ['/labs', 'Лаборатории']];
+    ['/labs', 'Лаборатории'], ['/workshop', 'Мастерская']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', vector: 'vector', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
-    findings: 'findings', devices: 'devices', research: 'research', labs: 'labs'};
+    findings: 'findings', devices: 'devices', research: 'research', labs: 'labs', workshop: 'workshop'};
   const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors',
     artwork: '/vector', 'vector-zone': '/vector', photo: '/photo-engraving', 'photo-preview': '/photo-engraving'};
   let token = 0;
@@ -36,7 +36,8 @@ Object.assign(App, (() => {
     '<path d="M3 12h4l2-6 3 12 2-8 2 4h5"/>',
     '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
     '<path d="M12 2v3m0 14v3M4.9 4.9 7 7m10 10 2.1 2.1M2 12h3m14 0h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="6"/><path d="m9 12 2 2 4-4"/>',
-    '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M3 20h18M7 13h10"/><circle cx="18" cy="6" r="2.5"/><path d="m16.5 7.5-2 2"/>'];
+    '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M3 20h18M7 13h10"/><circle cx="18" cy="6" r="2.5"/><path d="m16.5 7.5-2 2"/>',
+    '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/><path d="M15 7.5V5h2v4"/>'];
   function icon(i) {
     const el = h('span', {class: 'nav-icon', 'aria-hidden': 'true'});
     el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + ICONS[i] + '</svg>';

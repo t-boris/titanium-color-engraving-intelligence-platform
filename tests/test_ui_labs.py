@@ -74,7 +74,7 @@ def test_the_menu_has_laboratories_with_an_icon_of_its_own_and_the_screens_are_l
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[-1] == "/labs" and "['/labs', 'Лаборатории']" in router and "labs: 'labs'" in router and len(icons) == len(nav)
+    assert nav[-2:] == ["/labs", "/workshop"] and "['/labs', 'Лаборатории']" in router and "labs: 'labs'" in router and len(icons) == len(nav)
     scripts = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
     order = {s: i for i, s in enumerate(scripts)}
     assert order["/i18n-labs.js"] < order["/i18n-gaps.js"] < order["/app.js"]

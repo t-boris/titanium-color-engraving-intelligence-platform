@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse
 
-from .. import __version__, backup, migrations
+from .. import __version__, backup, diagnostics, migrations
 from .. import setup as su
 from .common import store_of
 
@@ -22,6 +24,45 @@ def workshop(request: Request):
     return {"data_dir": str(store.data_dir), "app": __version__, "schema": migrations.version(store.conn), "schema_known": migrations.CURRENT,
             "lock": migrations.holder(store.data_dir), "disk": {"free_bytes": usage.free, "total_bytes": usage.total},
             "backup_dir": store.get_setting(BACKUP_DIR), "default_backup_dir": str(store.data_dir / migrations.BACKUPS)}
+
+
+def _backup_folders(store) -> list[str]:
+    """The kept backup folder and the default one, in that order, without repeats."""
+    return list(dict.fromkeys(f for f in (store.get_setting(BACKUP_DIR), str(Path.home() / "titanium-backups")) if f))
+
+
+@router.get("/recovery-copies")
+def recovery_copies(request: Request):
+    """The copies of the database the application made by itself before changing its schema (``backups/`` beside the data), the newest first."""
+    store = store_of(request)
+    folder = store.data_dir / migrations.BACKUPS
+    out = []
+    if folder.is_dir():
+        for path in folder.glob("*.sqlite"):
+            if path.is_file():
+                stat = path.stat()
+                out.append({"name": path.name, "path": str(path), "bytes": stat.st_size,
+                            "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+                            "kind": "schema" if path.name.startswith("schema-before-") else "release" if path.name.startswith("titanium-before-") else "other"})
+    return sorted(out, key=lambda c: c["modified_at"], reverse=True)
+
+
+@router.post("/diagnostics", status_code=201)
+def export_diagnostics(request: Request, body: dict | None = None):
+    """The diagnostics zip (``diagnostics``) into ``target_dir``, by default the backup folder, with the address it is fetched from when it
+    lies in one of the backup folders."""
+    store = store_of(request)
+    target = (body or {}).get("target_dir") or _backup_folders(store)[0]
+    made = diagnostics.export(store, target)
+    kept = Path(made["path"]).parent in [Path(f).expanduser() for f in _backup_folders(store)]
+    return {**made, "download": f"/api/workshop/diagnostics/{made['name']}" if kept else None}
+
+
+@router.get("/diagnostics/{name}")
+def diagnostics_file(request: Request, name: str):
+    """One diagnostics file written into a backup folder, by its name."""
+    path = diagnostics.find(_backup_folders(store_of(request)), name)
+    return FileResponse(path, media_type="application/zip", filename=path.name)
 
 
 @router.put("/backup-dir")
@@ -46,8 +87,7 @@ def make_backup(request: Request, body: dict | None = None):
 def backups(request: Request):
     """Every backup under the kept backup folder and the default one, the newest first."""
     store = store_of(request)
-    folders = [store.get_setting(BACKUP_DIR), str(Path.home() / "titanium-backups")]
-    return backup.listing(dict.fromkeys(f for f in folders if f))
+    return backup.listing(_backup_folders(store))
 
 
 @router.post("/backups/inspect")
