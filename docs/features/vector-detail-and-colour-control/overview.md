@@ -2,7 +2,7 @@
 type: feature
 id: vector-detail-and-colour-control
 title: Vector Detail and Colour Control
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-19
 provenance: Created from the quick feature intake

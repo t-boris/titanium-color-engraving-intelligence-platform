@@ -2,7 +2,7 @@
 type: feature
 id: inscriptions-in-works
 title: Inscriptions in works
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-24
 provenance: "Created by an AI agent through MarkView from Operator goal, 2026-10-23 (voice-typed): «Я хотел бы добавить в возможности лазерной мастерской надписи ...»; answers the same day: fonts Mac + own + Google, libraries fontTools, uharfbuzz, shapely approved, languages English, Russian, Hebrew and others, letters cut with a gap and an optional backing"

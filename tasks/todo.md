@@ -2266,15 +2266,33 @@ Review (2026-10-24). Walked on a copy of the data (database and files, every sto
 ## 0.28.0: everything left in MarkView that can be built, Electron excluded (operator, 2026-10-24; plan approved)
 Operator: «Пройдись по всем MarkView Issues, Features и Bugs, выбери те, которые ты можешь сделать, и сделай их все, кроме ... Electron».
 Survey: BUG-001..006 are fixed in code (0.5.2, 0.18.2, 0.21.1, 0.25.1-0.25.3); MarkView keeps their status itself. Built here:
-- [ ] V1. REQ-047 crit. 8: an old file's promise is reconstructed only while the work's colouring and split are the file's; after a recolouring the review claims nothing.
-- [ ] V2. Vector work: «Разбить заново» warns before it resets the colouring (I-8); «Цвет выделенному…» in the editor's selection (I-5 gap).
-- [ ] V3. Same-recipe neighbours joined into one shape in the LightBurn file and the time (I-7), the stored split untouched.
-- [ ] V4. Recolouring modes «Контраст соседей» and «Художественно» with a palette subset (I-6, DEC-079).
-- [ ] V5. Region density as a slider with the region count before the rebuild (I-2).
-- [ ] V6. Eyes: detail per area, moved/resized boundaries, a manual area's kind; the colours outside a changed area stay (I-3).
-- [ ] A1. Inscriptions: Enter / double click end a path (REQ-003), freehand path, warning where letters crowd on a tight bend of a path.
-- [ ] B1. «Приложение обновлено» banner; AI client failures as messages in the research chat and the explainer; overscan and line interval
+- [x] V1. REQ-047 crit. 8: an old file's promise is reconstructed only while the work's colouring and split are the file's; after a recolouring the review claims nothing.
+- [x] V2. Vector work: «Разбить заново» warns before it resets the colouring (I-8); «Цвет выделенному…» in the editor's selection (I-5 gap).
+- [x] V3. Same-recipe neighbours joined into one shape in the LightBurn file and the time (I-7), the stored split untouched.
+- [x] V4. Recolouring modes «Контраст соседей» and «Художественно» with a palette subset (I-6, DEC-079).
+- [x] V5. Region density as a slider with the region count before the rebuild (I-2).
+- [x] V6. Eyes: detail per area, moved/resized boundaries, a manual area's kind; the colours outside a changed area stay (I-3).
+- [x] A1. Inscriptions: Enter / double click end a path (REQ-003), freehand path, warning where letters crowd on a tight bend of a path.
+- [x] B1. «Приложение обновлено» banner; AI client failures as messages in the research chat and the explainer; overscan and line interval
       shown (REQ-054 crit. 3); dot width correction of a dot kind written to the file (K2).
+- [x] A2. Inscriptions: a new one takes the last font used (after a reload from the work's undo); its colours in the editor's colour window, vector and photo work.
+- [x] T. Tests for criteria that were built but unproven: inscriptions REQ-001..REQ-005, photo-zone-dots REQ-001/REQ-002, REQ-047 c1-c7.
+- [x] A3. Font window: a bulk download of a kind with no script, a family chosen before it is downloaded is downloaded and chosen
+      (REQ-001 c2, found by the tests of T).
 - [ ] R. MarkView decisions and ticked criteria, issue #32, README, 0.28.0, full suite -n 12, walk on a copy (8791), deploy after a backup, report.
 Not taken (operator or real data needed): Electron; Q-026..Q-029; acceptance of proposed DECs; DEC-088 automatic re-measure; REQ-053 crit. 5/6;
 REQ-052 crit. 4 (LightBurn on the real file); a text path from the picture's contours; editable LightBurn text.
+
+Review of 0.28.0 (2026-10-24):
+- Built: V1-V6, A1-A3, B1 above, each with its tests; vector-detail's eight criteria and every inscriptions criterion ticked; the three
+  features worked on (vector-detail, inscriptions, the platform) set to implemented. DEC-090..DEC-094 of vector-detail are proposed.
+- Walk on a copy of the data (database and files, 207 stored paths rewritten, none left pointing at the live folder; port 8791, stopped):
+  work 22 density 60 / 100 / 200 -> 150 / 301 / 719 regions, the count in about 1.9 s, again from memory in 0.4 s; work 40: the rebuild
+  warning, one eye at «максимально» with a moved boundary, the preview's 367 regions = the split's 367, centres kept, 99.997 % of the
+  pixels outside the eye unchanged, 45 -> 64 regions inside it; Contrast and Artistic (warm, twice: two variants); a region painted like
+  its neighbour: 339 -> 338 shapes in the file, undo 339; an inscription's colour window (626 colours), a freehand path ended by Enter
+  (5 points); dotWidth 0.05 / useDotCorrection 1 in photo work 37's file, none when off; the update banner. Console and server log clean.
+- Timings not met: the vector screen of work 22 takes 0.67-0.74 s (as in 0.27.0, REQ-047 crit. 9 open); a recolouring of work 40 takes
+  1.6-2.8 s; a rebuild 5-6 s.
+- Not taken: Electron; Q-026..Q-029 and photo-zone-dots Q-001; acceptance of proposed DECs; DEC-088 automatic re-measure;
+  REQ-053 crit. 5/6; REQ-052 crit. 4; a text path from the picture's contours; editable LightBurn text.
