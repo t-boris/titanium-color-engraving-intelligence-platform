@@ -796,38 +796,76 @@ def merge_regions(document: dict, ids: Iterable[str]) -> tuple[dict, str]:
     colour left without a region leaves the palette.
     """
     chosen = set(ids)
-    members = [r for r in document["regions"] if r["id"] in chosen]
-    if len(chosen) < 2 or len(members) != len(chosen):
+    if len(chosen) < 2 or sum(r["id"] in chosen for r in document["regions"]) != len(chosen):
         raise RuntimeError("a merge of regions needs two or more regions of the document")
-    keeper = max(members, key=lambda r: r["pixels"])               # max keeps the first of the largest
-    interior = {i for i, arc in enumerate(document["arcs"]) if arc["left"] in chosen and arc["right"] in chosen}
-    loops = _merged_loops(document, members, interior)
+    doc, keepers = merge_groups(document, [chosen])
+    return doc, keepers[0]
+
+
+def merge_groups(document: dict, groups: Iterable[Iterable[str]], *, strict: bool = True) -> tuple[dict, list[str | None]]:
+    """A new document in which each of several disjoint connected sets of regions is one region, as :func:`merge_regions` makes one,
+    in a single pass (one copy of the document however many sets there are), and the id each set kept (in the order of ``groups``).
+    With ``strict`` off, a set whose loops do not chain into one region (a set that is not connected) stays as it was and its id is
+    None; with it on, that raises like :func:`merge_regions`."""
+    by_id = {r["id"]: r for r in document["regions"]}
+    sets = [set(g) for g in groups]
+    owner: dict[str, int] = {}
+    for n, members in enumerate(sets):
+        if len(members) < 2 or any(i not in by_id for i in members):
+            raise RuntimeError("a merge of regions needs two or more regions of the document")
+        for i in members:
+            if i in owner:
+                raise RuntimeError("a region can be merged into one region only")
+            owner[i] = n
+    arcs = document["arcs"]
+    interior = {i for i, arc in enumerate(arcs) if arc["left"] in owner and arc["right"] in owner and owner[arc["left"]] == owner[arc["right"]]}
+    keepers: list[str | None] = [None] * len(sets)
+    loops: dict[int, list[list[int]]] = {}
+    for n, members in enumerate(sets):
+        rows = [r for r in document["regions"] if r["id"] in members]
+        try:
+            loops[n] = _merged_loops(document, rows, interior)
+        except RuntimeError:
+            if strict:
+                raise
+            interior -= {i for i in interior if owner[arcs[i]["left"]] == n}
+            for i in members:
+                del owner[i]
+            continue
+        keepers[n] = max(rows, key=lambda r: r["pixels"])["id"]          # max keeps the first of the largest
+    keeper_of = {i: keepers[n] for i, n in owner.items()}
     doc = copy.deepcopy(document)
-    renumber, arcs = {}, []
+    renumber, kept_arcs = {}, []
     for i, arc in enumerate(doc["arcs"]):
         if i in interior:
             continue
-        renumber[i] = len(arcs)
-        arc["id"] = len(arcs)
-        arc["left"], arc["right"] = (keeper["id"] if side in chosen else side for side in (arc["left"], arc["right"]))
-        arcs.append(arc)
-    doc["arcs"] = arcs
-    total = sum(m["pixels"] for m in members)
+        renumber[i] = len(kept_arcs)
+        arc["id"] = len(kept_arcs)
+        arc["left"], arc["right"] = (keeper_of.get(side, side) for side in (arc["left"], arc["right"]))
+        kept_arcs.append(arc)
+    doc["arcs"] = kept_arcs
     palette = {p["index"]: p for p in doc["palette"]}
+    totals: dict[int, list[int]] = {}
+    for r in document["regions"]:
+        if r["id"] in owner:
+            total = totals.setdefault(owner[r["id"]], [0, 0])
+            total[0] += r["pixels"]
+            total[1] += r["pixels"] if r["important"] else 0
     kept = []
     for r in doc["regions"]:
-        if r["id"] in chosen and r["id"] != keeper["id"]:
+        n = owner.get(r["id"])
+        if n is not None and r["id"] != keepers[n]:
             palette[r["color"]]["pixels"] -= r["pixels"]
-            palette[keeper["color"]]["pixels"] += r["pixels"]
+            palette[by_id[keepers[n]]["color"]]["pixels"] += r["pixels"]
             continue
-        if r["id"] == keeper["id"]:
-            r.update(pixels=total, important=2 * sum(m["pixels"] for m in members if m["important"]) >= total, loops=loops)
+        if n is not None:
+            r.update(pixels=totals[n][0], important=2 * totals[n][1] >= totals[n][0], loops=loops[n])
         r["loops"] = [[renumber[ref] if ref >= 0 else ~renumber[~ref] for ref in loop] for loop in r["loops"]]
         kept.append(r)
     doc["regions"] = kept
     used = {r["color"] for r in kept}
     doc["palette"] = [p for p in doc["palette"] if p["index"] in used]
-    return doc, keeper["id"]
+    return doc, keepers
 
 
 def _arc_of(ref: int) -> int:

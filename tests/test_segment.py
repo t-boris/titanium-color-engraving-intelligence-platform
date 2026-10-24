@@ -568,6 +568,43 @@ def lightburn_round_trip(doc) -> None:
     assert cov["uncovered"] < 0.005 and cov["overlap"] < 0.005
 
 
+def test_several_sets_merged_in_one_pass_give_what_merging_them_one_after_another_gives():
+    """vector-detail-and-colour-control I-7: the file joins every same-layer set at once; one pass equals the merges one by one."""
+    doc = sg.segment(photo_like(), 50.0, 12, use_faces=False)
+    rng = np.random.default_rng(11)
+    groups, taken = [], set()
+    while len(groups) < 6:
+        ids = connected_set(doc, rng, int(rng.integers(2, 5)))
+        if taken.isdisjoint(ids):
+            groups.append(ids)
+            taken |= set(ids)
+    at_once, keepers = sg.merge_groups(doc, groups)
+    one_by_one = doc
+    for ids in groups:
+        one_by_one, _ = sg.merge_regions(one_by_one, ids)
+    outline = lambda d: sorted((r["id"], round(outline_area(r["loops"]), 6), len(r["loops"])) for r in sg.regions_as_loops(d))   # noqa: E731
+    assert outline(at_once) == outline(one_by_one) and keepers == [sg.merge_regions(doc, ids)[1] for ids in groups]
+    planar(at_once)
+    lightburn_round_trip(at_once)
+    with pytest.raises(RuntimeError):
+        sg.merge_groups(doc, [groups[0], [groups[0][0], groups[1][0]]])                      # a region in two sets
+
+
+def test_a_set_that_is_not_connected_stays_as_it_was_when_the_merge_is_not_strict():
+    doc = sg.segment(shapes(), 60.0, 7, use_faces=False)
+    near = sg.neighbours(doc)
+    a, b = next((x["id"], y["id"]) for x in doc["regions"] for y in doc["regions"] if x["id"] < y["id"] and y["id"] not in near[x["id"]])
+    joined = connected_set(doc, np.random.default_rng(3), 2)
+    if {a, b} & set(joined):
+        a, b = next((x["id"], y["id"]) for x in doc["regions"] for y in doc["regions"]
+                    if x["id"] < y["id"] and y["id"] not in near[x["id"]] and not {x["id"], y["id"]} & set(joined))
+    merged, keepers = sg.merge_groups(doc, [[a, b], joined], strict=False)
+    assert keepers[0] is None and keepers[1] in joined
+    assert {a, b} <= {r["id"] for r in merged["regions"]} and len(merged["regions"]) == len(doc["regions"]) - 1
+    with pytest.raises(RuntimeError):
+        sg.merge_groups(doc, [[a, b]])
+
+
 def test_a_merge_is_deterministic_and_leaves_its_input_unchanged():
     doc = sg.segment(photo_like(), 50.0, 9, use_faces=False)
     before = json.dumps(doc)

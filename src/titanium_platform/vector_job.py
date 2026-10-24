@@ -1420,7 +1420,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     layers = _export_layers(store, plan, state)
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
     regions = []
-    for r in seg.regions_as_loops(_geometry(plan)):
+    for r in seg.regions_as_loops(_joined(_geometry(plan), {k: v for k, v in key.items() if k not in state["trimmed"]})):
         if r["id"] not in key:
             continue
         if r["id"] in state["trimmed"]:          # cut by an inscription: what is left of it, as straight pieces
@@ -1444,6 +1444,31 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
                                        "parameters": row["parameters"]} for row in zones]})
     cv._persist(store, plan, ST_EXPORTED, plan["markers_enabled"])
     return plan["name"], data
+
+
+def _joined(geometry: dict, layer_of: dict[str, str]) -> dict:
+    """The split as the file writes it (feature vector-detail-and-colour-control, I-7): every set of regions on one layer (``layer_of``,
+    region id to layer key) connected through shared borders is one region, its inner borders dropped and its holes kept
+    (:func:`segment.merge_groups`); a touch at a corner only joins nothing. The stored split, the editor, the undo steps and the variants
+    keep every region, so painting one of them again, or undoing the colouring, gives the borders back."""
+    near = seg.neighbours(geometry)
+    parent = {r: r for r in layer_of}
+
+    def root(r: str) -> str:
+        while parent[r] != r:
+            parent[r] = parent[parent[r]]
+            r = parent[r]
+        return r
+
+    for r, layer in layer_of.items():
+        for other in near.get(r, ()):
+            if layer_of.get(other) == layer:
+                parent[root(other)] = root(r)
+    groups: dict[str, list[str]] = {}
+    for r in layer_of:
+        groups.setdefault(root(r), []).append(r)
+    joined = [g for g in groups.values() if len(g) > 1]
+    return seg.merge_groups(geometry, joined, strict=False)[0] if joined else geometry
 
 
 # -- the colour editor: checks ---------------------------------------------------------------------------------------------

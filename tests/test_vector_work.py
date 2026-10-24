@@ -425,6 +425,37 @@ def test_the_file_cleans_first_has_one_layer_per_recipe_with_its_full_settings_a
     assert c["client"].get(f"/api/plans/{j['id']}/export.lbrn2").status_code == 200          # the plan screen exports it the same way
 
 
+def test_neighbours_of_one_recipe_are_one_shape_in_the_file_and_the_split_keeps_them_apart(work, job):
+    """vector-detail-and-colour-control I-7: after colouring, regions of one layer that share a border are written as one closed shape without
+    the border between them, holes kept; regions of other layers stay apart; the stored split, the editor and undo keep every region."""
+    c, j = work, job
+    a, paper_e = areas(c, j), by_rgb(j, PAPER)["entry_id"]
+
+    def written(job_) -> tuple[dict, dict]:
+        """The colour layers of the work's file by name, and the work's layers by name."""
+        project = lb.parse_bytes(c["client"].get(f"/api/vector/{job_['id']}/export.lbrn2").content)
+        layers = {x["name"]: x for x in pl.get_plan(c["store"], job_["id"])["layers"]}
+        return {layer.name: layer.regions for layer in project.layers if layer.name in layers}, layers
+
+    before, _ = written(j)
+    assert len(before) >= 2 and sum(map(len, before.values())) == len(document_of(c, j)["regions"])   # one shape per region so far
+    j = colouring(c, j, op="paint", region=a["ring"], scope="region", entry_id=paper_e)          # the red ring takes the paper's colour
+    after, layers = written(j)
+    name = next(n for n, x in layers.items() if x["entry_id"] == paper_e)
+    assert {a["paper"], a["ring"], a["inner"]} <= set(layers[name]["region_ids"])               # the work keeps every region of the layer
+    (shape,) = after[name]                                                                     # paper outside, the ring, paper inside: one shape
+    assert shape.closed and len(shape.holes) >= 1                                              # the other colours inside it stay holes
+    assert all(len(after[n]) == len(before[n]) for n in after if n != name and n in before)     # the other layers are as they were
+    doc = document_of(c, j)
+    assert {a["paper"], a["ring"], a["inner"]} <= {r["id"] for r in doc["regions"]}            # the split is untouched
+    size = doc["size_mm"]
+    cov = sg.coverage([[p.polygon] + p.holes for regions in after.values() for p in regions], size["width"], size["height"], 16)
+    assert cov["overlap"] < 0.005 and cov["uncovered"] < 0.005
+    j = colouring(c, j, op="undo")                                                             # undo gives the borders back
+    again, _ = written(j)
+    assert sorted(map(len, again.values())) == sorted(map(len, before.values()))
+
+
 def test_the_file_says_mirror_y_so_that_lightburn_shows_the_picture_upright_and_a_resaved_file_is_read_against_it(work, job):
     """The picture is laid out top-down; LightBurn's galvo canvas shows such a layout upside down unless the file says MirrorY, as for the
     plates (platform REQ-052, DEC-094). The operator had to flip every exported work by hand."""
