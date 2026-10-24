@@ -148,6 +148,28 @@ def test_a_text_that_does_not_fit_its_circle_or_arc_is_said_so(data):
     assert not geo(data, text="HH\nHH", layout="path", points=[[0, 0], [10, 0]], line_pct=100)["overflow"]
 
 
+def test_letters_that_crowd_on_a_tight_bend_of_a_path_are_named_by_their_line(data):
+    # an H is 5 mm wide in a 6 mm advance and 7 mm tall: upright on the inside of a bend of radius R their tops meet below R ≈ 42 mm
+    valley = [[10 * math.sin(a), 10 * math.cos(a) - 10] for a in np.linspace(-math.pi / 2, math.pi / 2, 31)]     # a U of 10 mm (y down)
+    assert geo(data, text="HHHHHH", layout="path", points=valley)["crowded"] == [1]
+    # bent, a letter is narrower at its top on the inside of a bend but stays apart from its neighbours until its top passes the centre
+    assert geo(data, text="HHHHHH", layout="path", points=valley, letters="bent")["crowded"] == []
+    tight = [[5 * math.sin(a), 5 * math.cos(a) - 5] for a in np.linspace(-math.pi / 2, math.pi / 2, 31)]
+    assert geo(data, text="HHHHHH", layout="path", points=tight, letters="bent")["crowded"] == [1]       # 7 mm letters in a U of 5 mm
+    hill = [[30 * math.sin(a), 30 - 30 * math.cos(a)] for a in np.linspace(-math.pi / 2, math.pi / 2, 61)]
+    assert geo(data, text="HHHHHH", layout="path", points=hill)["crowded"] == []                           # on the outside they spread
+    wide = [[100 * math.sin(a), 100 * math.cos(a) - 100] for a in np.linspace(-0.4, 0.4, 31)]
+    assert geo(data, text="HHHHHH", layout="path", points=wide)["crowded"] == []                           # a gentle bend leaves them apart
+    # 3 mm letters: the second line runs 4.3 mm under the first, so on a hill of 3 mm it passes the centre and its letters pile up where
+    # the run stops; the first line stands free on the outside
+    small_hill = [[3 * math.sin(a), 3 - 3 * math.cos(a)] for a in np.linspace(-math.pi / 2, math.pi / 2, 31)]
+    assert geo(data, text="HH\nHHHH", layout="path", points=small_hill, height_mm=3, line_pct=100)["crowded"] == [2]
+    # letters that overlap on a straight line already (a negative spacing) are the font's look, not a crowd
+    assert geo(data, text="HHHHHH", layout="path", points=[[0, 0], [40, 0]], spacing_mm=-2)["crowded"] == []
+    assert geo(data, text="HHHHHH", layout="circle", radius_mm=8)["crowded"] == []                       # a circle says «overflow» instead
+    assert L.shown(geo(data, text="HHHHHH", layout="path", points=valley))["crowded"] == [1]
+
+
 def test_a_backing_on_a_curve_holds_every_line(data):
     for spec in ({"layout": "circle", "radius_mm": 30}, {"layout": "circle", "radius_mm": 25, "inside": True}, {"layout": "arc", "bend": 40}):
         g = geo(data, text="HHHH\nHHHHHH", line_pct=100, backing="rect", padding_mm=1, backing_entry_id="e1", **spec)

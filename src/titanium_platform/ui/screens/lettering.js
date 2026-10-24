@@ -31,9 +31,35 @@ const Lettering = (() => {
   const AUTO_BYTES = 2 * 1024 * 1024;         // семейство Google не больше этого скачивается само, когда видно в списке
   const TYPE_MS = 700;                        // текст надписи уходит на сервер, когда его перестали набирать на столько
   const HANDLE_PX = 7;                        // радиус ручек на экране
+  const MAX_POINTS = 400;                     // the most points of a path the server takes (lettering.MAX_POINTS)
+  // A path drawn freehand keeps no wiggle smaller than STROKE_PX on screen (the hand's tremor and the pointer's step, which the operator
+  // cannot place on purpose) or than a tenth of the letters' height (the server lays the letters on a smooth curve through the points:
+  // a bump that small in their baseline does not change how they stand). The tolerance doubles until the stroke fits MAX_POINTS.
+  const STROKE_PX = 2;
+  const STROKE_OF_HEIGHT = 0.1;
   const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
   const round = (v, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  /** The points of a polyline that keep it within ``tol`` of every point dropped (Douglas–Peucker, by the distance to the segment between
+      the points kept): the first and the last always stay. */
+  function simplify(pts, tol) {
+    if (pts.length < 3) return pts.slice();
+    const keep = new Uint8Array(pts.length);
+    keep[0] = keep[pts.length - 1] = 1;
+    const stack = [[0, pts.length - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      const [ax, ay] = pts[a], dx = pts[b][0] - ax, dy = pts[b][1] - ay, len2 = dx * dx + dy * dy;
+      let far = -1, worst = tol;
+      for (let i = a + 1; i < b; i++) {
+        const px = pts[i][0] - ax, py = pts[i][1] - ay, k = len2 ? clamp((px * dx + py * dy) / len2, 0, 1) : 0;
+        const d = Math.hypot(px - k * dx, py - k * dy);
+        if (d > worst) { worst = d; far = i; }
+      }
+      if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, b]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  }
   const svgEl = (tag, attrs = {}) => {
     const el = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
@@ -355,7 +381,7 @@ const Lettering = (() => {
         parts.layout.el,
         h('div', {class: 'lt-grid', 'data-for': 'arc'}, parts.bend.el),
         h('div', {class: 'lt-grid', 'data-for': 'circle'}, parts.radius.el, parts.start.el), h('div', {'data-for': 'circle'}, parts.inside.el),
-        h('div', {class: 'stack', 'data-for': 'path'}, h('div', {class: 'row'}, parts.drawPath, h('span', {class: 'small muted'}, 'щелчками по картинке, затем «Готово»')),
+        h('div', {class: 'stack', 'data-for': 'path'}, h('div', {class: 'row'}, parts.drawPath, h('span', {class: 'small muted'}, 'щелчками или ведя мышью по картинке; Enter или двойной щелчок — готово')),
           h('div', {class: 'lt-grid'}, parts.offset.el), parts.flip.el),
         h('div', {'data-for': 'curved'}, parts.letters.el),
         h('div', {class: 'lt-grid'}, parts.rotation.el, parts.x.el, parts.y.el),
@@ -406,6 +432,8 @@ const Lettering = (() => {
         t.problem ? h('p', {class: 'alert bad'}, I18N.tr(t.problem)) : null,
         s && s.clipped ? h('p', {class: 'alert warn'}, 'Часть надписи выходит за край работы: там она обрезана.') : null,
         s && s.overflow ? h('p', {class: 'alert warn'}, 'Надпись не помещается на дуге или окружности: строка длиннее своей окружности или буквы заходят за центр. Увеличьте радиус (у дуги — уменьшите изгиб), уменьшите буквы или число строк.') : null,
+        s && s.crowded && s.crowded.length ? h('p', {class: 'alert warn'}, `Буквы налезают друг на друга на крутом изгибе пути (${s.crowded.length > 1 ? 'строки' : 'строка'} ${s.crowded.join(', ')}): `
+          + 'сделайте изгиб плавнее, уменьшите буквы, прибавьте интервал между ними или поверните путь в обратную сторону.') : null,
         s && s.empty && !t.problem ? h('p', {class: 'alert warn'}, 'У надписи нет букв, которые гравируются: введите текст.') : null,
         s ? h('p', {class: 'muted'}, `Буквы ${num(s.area_mm2, 1)} мм²` + (s.backing_mm2 ? ` · подложка ${num(s.backing_mm2, 1)} мм²` : '')
           + (t.srgb ? '' : ' · цвет букв не выбран')) : null);
@@ -452,7 +480,8 @@ const Lettering = (() => {
         }
       }
       if (path) {
-        marks.append(svgEl('polyline', {class: 'lt-drawn', points: path.points.map((c) => c.join(',')).join(' ')}));
+        path.line = svgEl('polyline', {class: 'lt-drawn', points: drawnPoints()});
+        marks.append(path.line);
         for (const [x, y] of path.points) marks.append(svgEl('circle', {class: 'lt-point', cx: x, cy: y, r: handleR() * 0.7}));
       }
       layer.append(marks);
@@ -463,11 +492,12 @@ const Lettering = (() => {
     /** The points of a path in the work's mm: relative to the inscription's place, turned with it. */
     const absolute = (t) => (t.points || []).map((p) => { const [u, v] = turn(p, t.rotation); return [t.x + u, t.y + v]; });
 
-    // --- мышь: тащить надпись, ручки, точки пути; рисовать путь щелчками ----------------------------------------------------------
-    /** Pointer down at ``mm``: true when the layer takes the gesture (an inscription, a handle, a path being drawn). */
+    // --- мышь: тащить надпись, ручки, точки пути; рисовать путь щелчками или от руки -------------------------------------------------
+    /** Pointer down at ``mm``: true when the layer takes the gesture (an inscription, a handle, a path being drawn: a press may start a
+        freehand stroke of it). */
     function down(ev, mm) {
       if (!o.open()) return false;
-      if (path) return true;
+      if (path) { path.stroke = {points: [mm], moved: false}; return true; }
       const target = ev.target && ev.target.closest ? ev.target : null;
       const handle = target && target.closest('[data-handle]');
       const hit = target && target.closest('[data-text]');
@@ -480,6 +510,13 @@ const Lettering = (() => {
       return true;
     }
     function move(ev, mm) {
+      if (path && path.stroke) {
+        const s = path.stroke;
+        s.moved = s.moved || Math.hypot(mm[0] - s.points[0][0], mm[1] - s.points[0][1]) * pxPerMm() > 3;
+        s.points.push(mm);
+        if (path.line) path.line.setAttribute('points', drawnPoints());
+        return true;
+      }
       if (!drag) return false;
       drag.at = mm;
       drag.moved = drag.moved || Math.hypot(mm[0] - drag.start[0], mm[1] - drag.start[1]) * pxPerMm() > 3;
@@ -511,6 +548,14 @@ const Lettering = (() => {
       return clamp(Math.hypot(d.at[0] - a[0], d.at[1] - a[1]) / Math.max(1e-6, Math.hypot(d.start[0] - a[0], d.start[1] - a[1])), 0.05, 20);
     };
     function up(ev, mm) {
+      if (path && path.stroke) {
+        const s = path.stroke;
+        path.stroke = null;
+        if (!s.moved) { draw(); return false; }            // a press without a move: its click places a point
+        if (mm) s.points.push(mm);
+        addPoints(strokePoints(s.points));
+        return true;                                       // the end of the stroke is not a click
+      }
       if (!drag) return false;
       const d = drag;
       drag = null;
@@ -542,30 +587,67 @@ const Lettering = (() => {
       const [x0, y0] = pts[0];
       return {x: round(x0, 3), y: round(y0, 3), points: pts.map(([x, y]) => turn([x - x0, y - y0], -rotation).map((v) => round(v, 3)))};
     }
-    /** A click at ``mm`` while the tab is open: a point of the path being drawn, or a click beside every inscription leaves the one chosen. */
+    /** A click at ``mm`` while the tab is open: a point of the path being drawn (the second click of a double click ends the path: its
+        first click placed the last point), or a click beside every inscription leaves the one chosen. */
     function click(ev, mm) {
       if (!o.open()) return false;
-      if (path) { path.points.push(mm.map((v) => round(v, 3))); draw(); return true; }
+      if (path) {
+        if (ev.detail >= 2) finishPath();
+        else addPoints([mm]);
+        return true;
+      }
       const hit = ev.target && ev.target.closest ? ev.target.closest('[data-text]') : null;
       if (!hit && selected && !(ev.target && ev.target.closest && ev.target.closest('[data-handle]'))) select(null);
       return true;
     }
+    /** The path being drawn on the picture: its points so far and the stroke under the pointer. */
+    const drawnPoints = () => path.points.concat(path.stroke ? path.stroke.points : []).map((c) => c.join(',')).join(' ');
+    /** Points (mm) added to the path being drawn; one on its last point (within a pixel on screen) is no new point. */
+    function addPoints(pts) {
+      for (const p of pts) {
+        const q = p.map((v) => round(v, 3)), last = path.points[path.points.length - 1];
+        if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) * pxPerMm() >= 1) path.points.push(q);
+      }
+      draw();
+    }
+    /** The samples of a freehand stroke as points of the path: simplified (STROKE_PX, STROKE_OF_HEIGHT) to what the path has room for. */
+    function strokePoints(samples) {
+      const t = spec(), room = Math.max(2, MAX_POINTS - path.points.length);
+      let tol = Math.max(STROKE_PX / Math.max(1e-6, pxPerMm()), t ? t.height_mm * STROKE_OF_HEIGHT : 0), pts = simplify(samples, tol);
+      while (pts.length > room) { tol *= 2; pts = simplify(samples, tol); }
+      return pts;
+    }
+    /** Enter while a path is drawn ends it, as «Готово» does; in a field Enter stays the field's (a new line of the text). */
+    function pathKey(ev) {
+      if (!path || ev.key !== 'Enter') return;
+      if (!el.isConnected) return stopPath();
+      const t = ev.target;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;
+      if (document.querySelector('.modal-bg')) return;
+      ev.preventDefault();                                 // a focused «Готово» would start a new path on its own Enter
+      finishPath();
+    }
     function startPath() {
       if (path) return finishPath();
-      path = {points: []};
-      toast('Щёлкайте по картинке точками пути; «Готово» во вкладке — путь готов, Esc — отменить');
+      path = {points: [], stroke: null, line: null};
+      document.addEventListener('keydown', pathKey);
+      toast('Щёлкайте по картинке точками пути или ведите мышью с нажатой кнопкой; Enter, двойной щелчок или «Готово» — путь готов, Esc — отменить');
       renderFields();
       draw();
     }
+    function stopPath() {
+      path = null;
+      document.removeEventListener('keydown', pathKey);
+    }
     function finishPath() {
       const pts = path ? path.points : [];
-      path = null;
+      stopPath();
       if (pts.length < 2) { toast('Путь — две точки или больше'); renderFields(); return draw(); }
       change({layout: 'path', rotation: 0, ...placed(pts)});
     }
     /** Escape: a path being drawn is dropped; otherwise the chosen inscription is left. */
     function escape() {
-      if (path) { path = null; renderFields(); draw(); return true; }
+      if (path) { stopPath(); renderFields(); draw(); return true; }
       if (drag) { drag = null; draw(); return true; }
       if (selected) { select(null); return true; }
       return false;
@@ -612,7 +694,7 @@ const Lettering = (() => {
     }
     function opened() {
       if (photoSvg) photoSvg.setAttribute('class', 'lt-over' + (o.open() ? ' open' : ''));
-      if (!o.open() && path) path = null;
+      if (!o.open() && path) stopPath();
       draw();
     }
 

@@ -22,7 +22,7 @@ SCRIPTS = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_tex
 
 FRAME = {"anchor": [12.0, 7.0], "corners": [[10.0, 5.0], [14.0, 5.0], [14.0, 9.0], [10.0, 9.0]], "rotation": 0.0}
 SHOWN = {"letters": "M10 5 L14 5 L14 9 L10 9 Z", "backing": "", "cut": "M9.7 4.7 L14.3 4.7 L14.3 9.3 L9.7 9.3 Z", "guide": None,
-         "frame": FRAME, "missing": "", "clipped": False, "overflow": False, "area_mm2": 16.0, "backing_mm2": 0.0, "empty": False}
+         "frame": FRAME, "missing": "", "clipped": False, "overflow": False, "crowded": [], "area_mm2": 16.0, "backing_mm2": 0.0, "empty": False}
 FONT = {"face": "f1", "family": "Arial", "style": "Regular"}
 
 
@@ -34,7 +34,7 @@ def text(tid, **over) -> dict:
 
 def test_the_shown_inscription_of_these_tests_has_the_keys_the_server_sends():
     geom = {"letters": box(10, 5, 14, 9), "backing": None, "cut": box(9.7, 4.7, 14.3, 9.3), "guide": None, "frame": FRAME, "missing": [],
-            "clipped": False, "overflow": False}
+            "clipped": False, "overflow": False, "crowded": []}
     assert set(lettering.shown(geom)) == set(SHOWN)
     assert set(text("t1")) == set(lettering.FIELDS) | {"id", "shown", "srgb", "backing_srgb", "problem"}
 
@@ -226,6 +226,65 @@ def test_a_path_is_drawn_with_clicks_on_the_picture_its_first_point_the_place_an
 
 
 @node
+def test_a_path_ends_with_enter_or_a_double_click_and_is_drawn_freehand_by_a_drag(tmp_path):
+    # the stage is 100 × 100 px, the work 40 × 20 mm: 2.5 px a mm, the picture 25 px from the top
+    out = run_editor(tmp_path, editor_routes(), OPEN + """
+  await item(1).dispatch('click'); await tick();
+  const again = () => byText(pane, 'button', 'Нарисовать путь заново');
+  const line = () => svg().querySelectorAll('polyline').find((p) => p.classList.contains('lt-drawn'));
+  await again().dispatch('click'); await tick();
+  for (const [x, y] of [[25, 50], [50, 50]]) await stage.dispatch('click', {clientX: x, clientY: y, detail: 1});
+  await ctx.document.dispatch('keydown', {key: 'Enter', code: 'Enter'}); await tick();
+  out.afterEnter = textOps().length;
+  await ctx.document.dispatch('keydown', {key: 'Enter', code: 'Enter'}); await tick();      // the drawing is over: Enter does nothing more
+  out.afterSecondEnter = textOps().length;
+  await again().dispatch('click'); await tick();
+  await stage.dispatch('click', {clientX: 25, clientY: 50, detail: 1});
+  await stage.dispatch('click', {clientX: 75, clientY: 62.5, detail: 1});
+  await stage.dispatch('click', {clientX: 75, clientY: 62.5, detail: 2}); await tick();     // the second click of a double click ends it
+  await again().dispatch('click'); await tick();
+  await stage.dispatch('pointerdown', {clientX: 25, clientY: 50, button: 0});                // freehand: press, drag an L with a tremor, release
+  for (let x = 26; x <= 50; x += 1) await stage.dispatch('pointermove', {clientX: x, clientY: 50 + (x % 2) * 0.2});
+  for (let y = 51; y <= 75; y += 1) await stage.dispatch('pointermove', {clientX: 50, clientY: y});
+  out.stroke = line().getAttribute('points').split(' ').length;
+  await stage.dispatch('pointerup', {clientX: 50, clientY: 75});
+  await stage.dispatch('click', {clientX: 50, clientY: 75, detail: 1});                     // the end of the drag is not a point
+  out.simplified = line().getAttribute('points');
+  await stage.dispatch('click', {clientX: 75, clientY: 75, detail: 1});                     // clicks go on adding points
+  await ctx.document.dispatch('keydown', {key: 'Enter', code: 'Enter'}); await tick();
+  await again().dispatch('click'); await tick();
+  await stage.dispatch('click', {clientX: 25, clientY: 50, detail: 1});
+  const ta = pane.querySelectorAll('textarea')[0];
+  await ctx.document.dispatch('keydown', {key: 'Enter', code: 'Enter', target: ta}); await tick();   // Enter in the text is a new line
+  out.stillDrawing = !!line();
+  await ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: tree}); await tick();
+  out.ops = textOps();
+""")
+    path = lambda pts: {"op": "text_set", "id": "t2", "changes": {"layout": "path", "rotation": 0, "x": 10, "y": 10, "points": pts}}   # noqa: E731
+    assert out["afterEnter"] == 1 and out["afterSecondEnter"] == 1
+    assert out["stroke"] > 40 and out["simplified"] == "10,10 20,10 20,20"                    # the tremor (0.08 mm) is gone, the corner kept
+    assert out["stillDrawing"] is True
+    assert out["ops"] == [path([[0, 0], [10, 0]]), path([[0, 0], [20, 5]]), path([[0, 0], [10, 0], [10, 10], [20, 10]])]
+
+
+def test_a_freehand_path_is_simplified_within_the_servers_limit_of_points():
+    assert re.search(r"const MAX_POINTS = (\d+);", LETTERING).group(1) == str(lettering.MAX_POINTS)
+    assert "ev.detail >= 2" in LETTERING and "document.addEventListener('keydown', pathKey)" in LETTERING
+    assert "document.removeEventListener('keydown', pathKey)" in LETTERING
+
+
+@node
+def test_letters_crowding_on_a_bend_of_a_path_are_warned_about_by_their_line(tmp_path):
+    r = editor_routes()
+    r["/api/vector/7"]["json"]["texts"][1]["shown"] = {**SHOWN, "crowded": [1, 2]}
+    out = run_editor(tmp_path, r, OPEN + """
+  await item(1).dispatch('click'); await tick();
+  out.alerts = pane.querySelectorAll('p').filter((p) => p.classList.contains('alert')).map((p) => p.textContent);
+""")
+    assert any("строки 1, 2" in a and "изгиб" in a for a in out["alerts"]), out["alerts"]
+
+
+@node
 def test_the_font_window_lists_filters_previews_downloads_and_chooses_a_face(tmp_path):
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   await item(0).dispatch('click'); await tick();
@@ -336,3 +395,25 @@ def test_a_photo_work_lays_its_inscriptions_over_the_look_and_a_drag_there_moves
     assert sent["op"] == "text_set" and sent["id"] == "t1"
     assert sent["changes"] == {"x": pytest.approx(30 + 10 / s, abs=2e-3), "y": pytest.approx(15 + 5 / s, abs=2e-3)}
     assert float(out["x"]) == pytest.approx(30 + 10 / s, abs=2e-3) and out["undone"] == "30"
+
+
+@node
+def test_a_path_on_a_photo_work_is_drawn_freehand_and_ends_with_enter(tmp_path):
+    # 100 × 100 px shows 122 × 30 mm of the preview: 100/122 px a mm, the strip 37.7 px from the top; a V drawn by a drag
+    out = run_photo(tmp_path, """
+  ctx.document.body.append(tree);
+  const over = () => tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').startsWith('lt-over'));
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'ge-tab-texts').dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.classList.contains('lt-item')).dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.textContent === 'Нарисовать путь').dispatch('click'); await settle();
+  await over().dispatch('pointerdown', {clientX: 70, clientY: 45, button: 0});
+  for (let i = 1; i <= 20; i++) await over().dispatch('pointermove', {clientX: 70 + i, clientY: 45 + (i <= 10 ? i : 20 - i)});
+  await over().dispatch('pointerup', {clientX: 90, clientY: 45});
+  await over().dispatch('click', {clientX: 90, clientY: 45, detail: 1}); await settle();     // the end of the stroke is not a point
+  await press({key: 'Enter', code: 'Enter'}); await settle();
+  out.sent = requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body);
+""")
+    s = 100 / 122
+    (sent,) = out["sent"]
+    assert sent["op"] == "text_set" and sent["changes"]["layout"] == "path"
+    assert sent["changes"]["points"] == [[0, 0], [pytest.approx(10 / s, abs=2e-3), pytest.approx(10 / s, abs=2e-3)], [pytest.approx(20 / s, abs=2e-3), 0]]

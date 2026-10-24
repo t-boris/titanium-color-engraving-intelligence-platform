@@ -427,6 +427,7 @@ def _lines(face: dict, spec: dict, *, notdef: bool = False) -> dict:
 # over it (the lines below the first are at negative heights), the length along the curve under a length x along that line (``along``),
 # both measured from the curve's anchor: a line runs on the curve parallel to it at its height, so its letters keep their spacing on it.
 TIGHT = 0.05                    # the least share of its length a line keeps on a curve: a line past the centre (overflow) is not spread
+CROWD_SHARE = 0.05              # neighbours on a path crowd when they overlap by more than this share of the smaller beyond their overlap straight
 
 
 class _Straight:
@@ -708,9 +709,10 @@ def _memo_key(spec: dict, face: dict, size_mm: dict | None) -> str:
 def geometry(data_dir: Path, spec: dict, size_mm: dict | None) -> dict:
     """What an inscription engraves and cuts, in the work's mm (module docstring): ``letters``, ``backing`` (None without a backing
     colour), ``cut``; the characters its font lacks (``missing``), whether a part of it fell outside the work (``clipped``), whether the
-    text does not fit its arc or circle (``overflow``), the curve it is laid on (``guide``: points in mm, for the screen) and the frame of the
-    text for the handles on the screen (``frame``: the anchor, the four corners of its box and the rotation). ``size_mm`` None: nothing
-    is clipped (the font window). Kept by everything it is computed from."""
+    text does not fit its arc or circle (``overflow``), the lines whose letters crowd on a tight bend of a path (``crowded``), the curve
+    it is laid on (``guide``: points in mm, for the screen) and the frame of the text for the handles on the screen (``frame``: the anchor,
+    the four corners of its box and the rotation). ``size_mm`` None: nothing is clipped (the font window). Kept by everything it is
+    computed from."""
     face = fonts.resolve(data_dir, spec["font"]) if spec.get("font") else default_face(data_dir)
     key = _memo_key(spec, face, size_mm)
     with _lock:
@@ -736,9 +738,10 @@ def _geometry(face: dict, spec: dict, size_mm: dict | None) -> dict:
         lo = hi = np.zeros(2)
     centre = (float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2)) if isinstance(curve, (_Straight, _Arc)) else (0.0, 0.0)
     to_work = _transform(spec, centre)
-    letters = shapely.union_all([g for g in (_glyph_shape([to_work(r) for r in rings]) for rings in shapes) if g is not None and not g.is_empty]) \
-        if shapes else MultiPolygon()
+    glyphs = [_glyph_shape([to_work(r) for r in rings]) for rings in shapes]
+    letters = shapely.union_all([g for g in glyphs if g is not None and not g.is_empty]) if shapes else MultiPolygon()
     letters = _polygons(letters)
+    crowded = _crowded(curve, laid, glyphs, letters)
     # the backing: a rectangle or an oval about the lines' outlines (bent with them), or the letters' outline widened
     backing_shape = None
     if spec["backing"] != "none" and not letters.is_empty:
@@ -769,12 +772,12 @@ def _geometry(face: dict, spec: dict, size_mm: dict | None) -> dict:
         clipped = cut.area < whole - 1e-6
     spans = [curve.along([a, a + w], -n * laid["line_step"]) for n, (a, w) in enumerate(zip(starts, laid["widths"]))]
     return {"letters": letters, "backing": backing, "cut": cut, "missing": laid["missing"], "clipped": clipped, "overflow": _overflow(curve, laid),
-            "guide": _guide(curve, to_work, spans), "frame": _frame(spec, to_work, lo, hi, centre, curve)}
+            "crowded": crowded, "guide": _guide(curve, to_work, spans), "frame": _frame(spec, to_work, lo, hi, centre, curve)}
 
 
 def _overflow(curve, laid: dict) -> bool:
     """Whether a text does not fit on its arc or circle: a line longer than the circle it runs on (its ends overlap), or letters reaching
-    past the centre. A path is the operator's drawing and is not looked at."""
+    past the centre. A path is looked at letter by letter (:func:`_crowded`)."""
     k = getattr(curve, "k", 0.0)
     if not k:
         return False
@@ -782,6 +785,36 @@ def _overflow(curve, laid: dict) -> bool:
     if heights and float((1.0 - np.concatenate(heights) * k).min()) <= 0.0:
         return True
     return any(w > 2 * math.pi * (1.0 + n * laid["line_step"] * k) / abs(k) for n, w in enumerate(laid["widths"]))
+
+
+def _crowded(curve, laid: dict, glyphs: list, letters) -> list[int]:
+    """The lines of a text on a path (numbered from 1) whose letters crowd on a tight bend: its letters on the curve overlap one another
+    (the sum of their areas less the area of their union) by more than ``CROWD_SHARE`` of its smallest letter beyond what they overlap
+    written straight, so letters a font joins by design are no crowd. Upright letters meet on the inside of a bend tighter than about their
+    height over the gap between them; bent ones when their tops pass the bend's centre and meet the letters across it, or where a line under
+    the first runs past it. ``glyphs``: the letters as placed, in the work (the turn to it keeps their areas); ``letters``: their union,
+    which tells at once that no line crowds when all the letters together overlap less than that. An arc and a circle say ``overflow``
+    instead (:func:`_overflow`)."""
+    if not isinstance(curve, _Path):
+        return []
+    lines: dict[int, list] = {}
+    for g, placed in zip(laid["glyphs"], glyphs):
+        if placed is not None and not placed.is_empty:
+            lines.setdefault(g["line"], []).append((g["contours"], placed))
+    areas = [p.area for line in lines.values() for _, p in line]
+    if len(areas) < 2 or sum(areas) - letters.area <= CROWD_SHARE * min(areas):     # a line overlaps no more than all the letters do
+        return []
+    crowded = []
+    for n in sorted(lines):
+        contours, placed = zip(*lines[n])
+        least = max(CROWD_SHARE * min(p.area for p in placed), 1e-9)
+        overlap = sum(p.area for p in placed) - shapely.union_all(placed).area
+        if len(placed) < 2 or overlap <= least:
+            continue
+        straight = [s for s in (_glyph_shape(c) for c in contours) if s is not None]
+        if overlap - (sum(s.area for s in straight) - shapely.union_all(straight).area) > least:
+            crowded.append(n + 1)
+    return crowded
 
 
 def _guide(curve, to_work, spans: list) -> list[list[float]] | None:
@@ -912,6 +945,7 @@ def shown(geom: dict) -> dict:
     areas and what to warn about."""
     return {"letters": svg_d(geom["letters"]), "backing": svg_d(geom["backing"]), "cut": svg_d(geom["cut"]), "guide": geom["guide"],
             "frame": geom["frame"], "missing": "".join(geom["missing"]), "clipped": geom["clipped"], "overflow": geom["overflow"],
+            "crowded": geom["crowded"],
             "area_mm2": round(geom["letters"].area, 3), "backing_mm2": round(geom["backing"].area, 3) if geom["backing"] is not None else 0.0,
             "empty": geom["letters"].is_empty}
 
