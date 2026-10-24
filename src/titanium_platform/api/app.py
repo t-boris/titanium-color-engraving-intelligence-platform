@@ -13,6 +13,7 @@ from .. import __version__, capability_results, findings, lab_import, research, 
 from ..db import open_store
 from . import (routes_devices, routes_findings, routes_fonts, routes_labs, routes_lenses, routes_palette, routes_photo_work, routes_plans,
                routes_prediction, routes_research, routes_setup, routes_vector, routes_work, routes_workshop)
+from . import security
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -62,6 +63,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
     capability_results.backfill_findings(app.state.store)
     lab_import.reconcile(app.state.store)          # what an interrupted connection of a laboratory release left (electron REQ-084)
     install_error_handlers(app)
+    security.install(app)                           # Host, Origin and body checks; the desktop session cookie (electron DEC-046)
 
     @app.exception_handler(research.ResearchError)
     async def research_error(_, exc):

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'">
+<title>Запуск мастерской</title>
+<style>
+  body { font: 15px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 32px; color: #1d1d1f; background: #f5f5f7; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p.lead { margin: 0 0 20px; color: #555; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 14px; }
+  .choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #eee; }
+  .choice:first-child { border-top: 0; }
+  .folder { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #444; word-break: break-all; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c8c8cc; background: #fff; cursor: pointer; }
+  button.primary { background: #0a60ff; color: #fff; border-color: #0a60ff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .status { min-height: 1.4em; margin-top: 12px; color: #b00020; }
+  .status.busy { color: #555; }
+  pre { white-space: pre-wrap; font-size: 12px; background: #1d1d1f; color: #ddd; padding: 12px; border-radius: 8px; max-height: 240px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>Запуск мастерской</h1>
+<p class="lead">Данные мастерской хранятся в папке на этом компьютере и не зависят от приложения. Вход не требуется.</p>
+<div class="card" id="known"><em>Ищем мастерские…</em></div>
+<div class="card">
+  <div class="actions">
+    <button type="button" id="open-existing">Открыть папку мастерской…</button>
+    <button type="button" id="create-new">Создать новую мастерскую…</button>
+  </div>
+  <div class="status" id="status" role="status"></div>
+  <pre id="log" hidden></pre>
+</div>
+<script src="picker.js"></script>
+</body>
+</html>

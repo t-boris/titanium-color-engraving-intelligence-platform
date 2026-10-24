@@ -23,7 +23,8 @@ URL = re.compile(r"""https?://[^\s"'`)<>]+|(?<=["'(`])//[A-Za-z0-9-]+(?:\.[A-Za-
 UI_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace: a name passed to createElementNS and xmlns, never fetched"}
 # URLs that may appear in the server code, and why no request is made to them.
 SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into generated SVG files",
-               "http://{args.host}:{args.port}": "the local address the launcher prints for the operator's browser",
+               "http://{host}:{bound}": "the local address the launcher prints for the operator's browser",
+               "http://{LOOPBACK}:{outcome[": "the loopback address of the core the --smoke check starts and asks itself (electron REQ-080)",
                "https://docs.lightburnsoftware.com/latest/Reference/CutSettingsEditor/ImageMode/": "a source cited in the docstring of dots.py",
                "https://forum.lightburnsoftware.com/t/halftone-questions-angle/16438": "a source cited in the docstring of dots.py",
                "https://fonts.google.com/metadata/fonts": "Google's list of families, fetched only when the operator asks (fonts.py)",
@@ -40,7 +41,10 @@ NETWORK_MODULES = ("socket", "ssl", "http.client", "urllib.request", "urllib3", 
                    "websocket", "websockets", "openai", "anthropic")
 # (file, module) pairs allowed to import one, and why.
 NETWORK_IMPORTS = {("research.py", "openai"): "the optional AI researcher and proposal explanation; built only with OPENAI_API_KEY",
-                   ("fonts.py", "urllib.request"): "Google Fonts, fetched only when the operator asks for a family or many (DEC-001)"}
+                   ("fonts.py", "urllib.request"): "Google Fonts, fetched only when the operator asks for a family or many (DEC-001)",
+                   ("fonts.py", "ssl"): "the certificate store (certifi) for those Google Fonts fetches in the packaged core (electron REQ-080)",
+                   ("cli.py", "socket"): "binding the loopback port the core serves on (electron DEC-046)",
+                   ("cli.py", "urllib.request"): "the --smoke check asking its own loopback core for /api/health (electron REQ-080)"}
 
 
 def test_the_ui_loads_no_script_style_font_or_data_from_the_network():

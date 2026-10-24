@@ -1,8 +1,13 @@
+import os
+
 import pytest
 
 from font_kit import make_font
 from titanium_platform import fonts
 from titanium_platform.db import Store
+
+
+os.environ.setdefault("TCE_ALLOWED_HOSTS", "testserver")        # the test client's host name passes the local API guard (api.security)
 
 
 @pytest.fixture

@@ -25,12 +25,15 @@ import json
 import logging
 import os
 import re
+import ssl
+import sys
 import threading
 import time
 import urllib.request
 from collections import OrderedDict
 from pathlib import Path
 
+import certifi
 import uharfbuzz as hb
 from fontTools.ttLib import TTCollection, TTFont
 
@@ -40,7 +43,9 @@ logging.getLogger("fontTools").setLevel(logging.ERROR)        # the Mac's own fo
 
 MAC, OWN, GOOGLE = "mac", "own", "google"
 SOURCES = (MAC, OWN, GOOGLE)
-MAC_DIRS = ("/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts", "~/Library/Fonts")
+# the fonts installed on this computer (the source is still called «mac» for the screens): the Mac's folders, or Windows' (electron REQ-080)
+MAC_DIRS = (("C:/Windows/Fonts", os.path.join(os.environ.get("LOCALAPPDATA", "~"), "Microsoft", "Windows", "Fonts")) if sys.platform == "win32"
+            else ("/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts", "~/Library/Fonts"))
 SUFFIXES = (".ttf", ".otf", ".ttc")
 MAX_OWN_BYTES = 64 * 1024 * 1024
 # a script is covered when every one of its sample letters is in the font
@@ -396,7 +401,8 @@ def remove_own(data_dir: Path, face_id: str) -> None:
 # -- Google Fonts --------------------------------------------------------------------------------------------------------------------
 def _get(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "titanium-platform"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:           # noqa: S310 - fixed https addresses
+    context = ssl.create_default_context(cafile=certifi.where())       # the packaged core has no system certificates (electron REQ-080)
+    with urllib.request.urlopen(request, timeout=TIMEOUT_S, context=context) as response:           # noqa: S310 - fixed https addresses
         return response.read()
 
 

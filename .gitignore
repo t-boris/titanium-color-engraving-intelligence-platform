@@ -9,3 +9,5 @@ build/
 /data/
 .env.local
 docs/research/
+desktop/node_modules/
+desktop/out/

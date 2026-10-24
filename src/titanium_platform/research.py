@@ -359,6 +359,8 @@ def _api_key() -> str | None:
     env = os.environ.get("OPENAI_API_KEY", "").strip()
     if env:
         return env
+    if os.environ.get("TCE_DESKTOP"):          # under the desktop shell only the environment counts: no developer file is read
+        return None
     paths = [Path.cwd() / ".env.local", Path(__file__).resolve().parents[2] / ".env.local"]
     for path in paths:
         if path.is_file():
