@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .auth import Verifier
 from .errors import ApiError
-from .handoff import router as handoff_router
+from .signin import router as signin_router
 from .repository import InMemoryRepository
 from .routes import router
 from .settings import Settings
@@ -26,7 +26,7 @@ def create_app(settings: Settings | None = None, *, repository: InMemoryReposito
     app.state.verifier = verifier
     app.state.memory = repository or (InMemoryRepository() if settings.repository == "memory" else None)
     app.include_router(router)
-    app.include_router(handoff_router)
+    app.include_router(signin_router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, exc: ApiError):

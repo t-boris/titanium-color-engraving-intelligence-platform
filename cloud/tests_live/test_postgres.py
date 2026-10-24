@@ -106,12 +106,10 @@ def test_rls_keeps_another_owners_laboratory_and_uploads_out_of_reach(client, mi
     assert client.get(f"/labs/{lab['id']}").json()["name"] == lab["name"]
 
 
-def test_the_api_role_inserts_reads_and_deletes_handoffs_but_never_changes_one(client):
-    """The handoff tests of the contract ran above through the Postgres repository; here the role's grants: no UPDATE on auth_handoff."""
+def test_the_handoff_table_of_migration_0002_is_gone(client):
+    """DEC-060: the desktop signs in through Neon Auth's OAuth provider and the service keeps nothing of a sign-in (migration 0003)."""
     anon = as_app_api(None)
     try:
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            changed(anon, "UPDATE auth_handoff SET state='taken over' WHERE false")
-        assert count(anon, "SELECT count(*) FROM auth_handoff WHERE expires_at < now() - interval '1 day'") == 0     # expired rows are swept
+        assert count(anon, "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='auth_handoff'") == 0
     finally:
         anon[0].close()

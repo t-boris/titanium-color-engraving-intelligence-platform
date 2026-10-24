@@ -22,7 +22,6 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
   .alert { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); margin-top: 12px; }
   .alert.bad { border-color: var(--bad); color: var(--bad); }
-  .alert.ok { border-color: var(--ok); color: var(--ok); }
   .divider { text-align: center; color: var(--muted); margin: 18px 0 6px; font-size: 0.85rem; }
   [hidden] { display: none !important; }
 </style>
@@ -31,11 +30,11 @@
 <main>
   <div class="card">
     <h1>Вход в облако лабораторий</h1>
-    <p class="muted">Приложение «Титан» ждёт вас на этом компьютере. Войдите здесь, и браузер вернёт вас в приложение; пароль приложению не передаётся.</p>
+    <p class="muted">Приложение «Титан» ждёт вас на этом компьютере. Войдите здесь, затем разрешите приложению доступ, и браузер вернёт вас в приложение; пароль приложению не передаётся.</p>
 
     <div id="busy" class="alert" hidden>Проверяем вход…</div>
     <div id="error" class="alert bad" role="alert" hidden></div>
-    <div id="done" class="alert ok" hidden>Вход выполнен. Вернитесь в приложение: эту страницу можно закрыть.</div>
+    <div id="orphan" class="alert" hidden>Эта страница открывается из приложения «Титан»: нажмите «Войти» на экране «Лаборатории», и приложение откроет её само.</div>
 
     <section id="known" hidden>
       <p>Вы уже вошли как <strong id="known-name"></strong>.</p>
@@ -45,7 +44,7 @@
       </div>
     </section>
 
-    <section id="forms">
+    <section id="forms" hidden>
       <div id="social" class="row" hidden></div>
       <div id="social-divider" class="divider" hidden>или по электронной почте</div>
       <form id="email-form" autocomplete="on">
@@ -62,7 +61,7 @@
       </form>
     </section>
   </div>
-  <p class="muted">Облако хранит только опубликованные выпуски лабораторий и аккаунты их авторов. Вход действует семь дней; выйти можно в приложении.</p>
+  <p class="muted">Облако хранит только опубликованные выпуски лабораторий и аккаунты их авторов. Приложение остаётся в системе, пока вы не выйдете из него на экране «Лаборатории».</p>
 </main>
 <script id="config" type="application/json">__CONFIG__</script>
 <script>
@@ -71,7 +70,15 @@
   const cfg = JSON.parse(document.getElementById('config').textContent);
   const $ = (id) => document.getElementById(id);
   const PROVIDERS = {google: 'Войти через Google', github: 'Войти через GitHub', vercel: 'Войти через Vercel'};
+  const RETURNED = '&returned=1';
   let signingUp = false;
+
+  // The signed authorization request Neon Auth put in the query; given back exactly as received (a social round trip appends a marker).
+  const raw = location.search.slice(1);
+  const returned = raw.endsWith(RETURNED);
+  const oauthQuery = returned ? raw.slice(0, -RETURNED.length) : raw;
+  const params = new URLSearchParams(oauthQuery);
+  const inFlow = params.has('client_id') && params.has('state') && params.has('redirect_uri');
 
   const show = (id, on) => { $(id).hidden = !on; };
   const error = (text) => { $('error').textContent = text; show('error', !!text); };
@@ -87,25 +94,23 @@
     return data;
   }
 
-  async function handoff(sessionToken) {
+  /** Neon Auth resumes the authorization request for a signed-in browser: it answers with the next address (the consent page). */
+  async function resume() {
     busy(true);
-    const response = await fetch('/auth/handoff', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({state: cfg.state, challenge: cfg.challenge, session_token: sessionToken})});
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'передать вход приложению не удалось');
-    show('forms', false); show('known', false); show('done', true);
-    location.replace(cfg.callback + '?state=' + encodeURIComponent(cfg.state) + '&code=' + encodeURIComponent(data.code));
+    const data = await auth('/oauth2/continue', {selected: true, oauth_query: oauthQuery});
+    if (!data || !data.url) throw new Error('служба входа не продолжила вход');
+    location.assign(data.url);
   }
 
-  async function finish(sessionToken) {
-    try { await handoff(sessionToken); }
-    catch (e) { error(e.message); busy(false); }
+  function next(data) {
+    if (data && data.redirect && data.url) { location.assign(data.url); return true; }
+    return false;
   }
 
   async function currentSession() {
     try {
       const data = await auth('/get-session', null, 'GET');
-      return data && data.session && data.session.token ? data : null;
+      return data && data.session && data.user ? data : null;
     } catch (e) { return null; }
   }
 
@@ -116,14 +121,12 @@
     try {
       const email = $('email').value.trim(), password = $('password').value;
       const data = signingUp
-        ? await auth('/sign-up/email', {name: $('name').value.trim() || email.split('@')[0], email, password})
-        : await auth('/sign-in/email', {email, password});
-      if (!data || !data.token) {
-        busy(false);
-        error(signingUp ? 'Аккаунт создан: подтвердите почту по письму и войдите.' : 'Служба входа не вернула сеанс: попробуйте ещё раз.');
-        return;
-      }
-      await handoff(data.token);
+        ? await auth('/sign-up/email', {name: $('name').value.trim() || email.split('@')[0], email, password, oauth_query: oauthQuery})
+        : await auth('/sign-in/email', {email, password, oauth_query: oauthQuery});
+      if (next(data)) return;
+      if (data && data.token) return resume();
+      busy(false);
+      error(signingUp ? 'Аккаунт создан: подтвердите почту по письму и войдите.' : 'Служба входа не вернула сеанс: попробуйте ещё раз.');
     } catch (e) { error(e.message); busy(false); }
   });
 
@@ -144,10 +147,10 @@
       error('');
       busy(true);
       try {
-        const back = new URL(location.href);
-        back.searchParams.set('returned', '1');
-        const data = await auth('/sign-in/social', {provider, callbackURL: back.toString()});
+        const back = location.origin + location.pathname + '?' + oauthQuery + RETURNED;        // this page again, with the same request
+        const data = await auth('/sign-in/social', {provider, callbackURL: back, oauth_query: oauthQuery});
         if (data && data.url) location.assign(data.url);
+        else if (data && data.redirect === false && data.token) resume();
         else throw new Error('служба входа не дала адрес провайдера');
       } catch (e) { error(e.message); busy(false); }
     });
@@ -157,9 +160,8 @@
   show('social-divider', (cfg.providers || []).length > 0);
 
   $('continue').addEventListener('click', async () => {
-    const found = await currentSession();
-    if (found) finish(found.session.token);
-    else { show('known', false); show('forms', true); error('Сеанс уже закончился: войдите снова.'); }
+    try { await resume(); }
+    catch (e) { error(e.message); busy(false); show('known', false); show('forms', true); }
   });
   $('other').addEventListener('click', async () => {
     try { await auth('/sign-out', {}); } catch (e) { /* the cookie is the provider's: signing out is best effort */ }
@@ -167,13 +169,16 @@
   });
 
   (async () => {
+    if (!inFlow) { show('orphan', true); return; }
     busy(true);
     const found = await currentSession();
     busy(false);
-    if (found && cfg.returned) return finish(found.session.token);
+    if (found && returned) { try { return await resume(); } catch (e) { error(e.message); busy(false); } }
     if (found) {
       $('known-name').textContent = (found.user && (found.user.name || found.user.email)) || 'пользователь';
-      show('forms', false); show('known', true);
+      show('known', true);
+    } else {
+      show('forms', true);
     }
   })();
 })();

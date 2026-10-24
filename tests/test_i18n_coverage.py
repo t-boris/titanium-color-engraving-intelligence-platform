@@ -71,6 +71,9 @@ DATA_TAILS = {
     "the sign-in service could not be reached: ": "the network library's own error text (cloud_http.py)",
     "the cloud refused the request: ": "the cloud service's own message (cloud/titanium_cloud, translated by i18n-cloud.js when known) or its HTTP status",
     "the sign-in service refused the request: ": "the sign-in service's own message or its HTTP status",
+    "the sign-in service answered with an error: ": "the OAuth error of the sign-in service, as the browser brought it (cloud_session.py)",
+    "the sign-in service refused the code: ": "the OAuth error of the token endpoint (cloud_session.py)",
+    "the sign-in service did not renew the sign-in: ": "the OAuth error of the token endpoint (cloud_session.py)",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.

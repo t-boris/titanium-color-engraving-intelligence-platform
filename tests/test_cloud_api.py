@@ -71,7 +71,7 @@ def who() -> dict:
 # -- the application -----------------------------------------------------------------------------------------------------------------
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(repository="memory", chunk_bytes=CHUNK, auth_base_url=AUTH_BASE)
+    return Settings(repository="memory", chunk_bytes=CHUNK, auth_base_url=AUTH_BASE, oauth_client_id="desktop-client-test")
 
 
 @pytest.fixture()
@@ -431,74 +431,61 @@ def test_the_catalogue_shows_what_the_release_file_declares(client, mint, who, a
     assert made["release"]["id"] == manifest["release_id"] and made["release"]["number"] == manifest["release_number"]
 
 
-# -- the sign-in handoff (handoff.py) -------------------------------------------------------------------------------------------------
-def pkce() -> tuple[str, str]:
-    import base64
-    verifier = secrets.token_urlsafe(48)
-    return verifier, base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+# -- the sign-in pages (signin.py) ----------------------------------------------------------------------------------------------------
+def test_the_sign_in_pages_carry_no_external_script_and_the_return_forwards_to_the_loopback_port_of_the_state_only(client):
+    request = {"client_id": "desktop-client-test", "state": secrets.token_urlsafe(24) + ".8765", "redirect_uri": "http://testserver/auth/return",
+               "scope": "openid profile email offline_access", "resource": "http://testserver", "sig": "x", "exp": "1"}
+    for path, title in (("/signin", "Вход в облако лабораторий"), ("/consent", "Разрешить доступ приложению?")):
+        page = client.get(path, params=request)
+        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and page.headers["cache-control"] == "no-store"
+        assert "<script src=" not in page.text and 'href="http' not in page.text and title in page.text, path
+        assert AUTH_BASE in page.text and "connect-src 'self' " + AUTH_BASE in page.headers["content-security-policy"]
+    assert '"providers": ["google"]' in client.get("/signin").text                       # the page itself tells an orphan visit apart
+    assert client.get("/auth/config").json() == {"auth_base_url": AUTH_BASE, "client_id": "desktop-client-test", "resource": "http://testserver",
+                                                 "redirect_uri": "http://testserver/auth/return", "scopes": "openid profile email offline_access",
+                                                 "providers": ["google"]}
+    state = secrets.token_urlsafe(24) + ".8765"
+    back = client.get("/auth/return", params={"state": state, "code": "the-code"}, follow_redirects=False)
+    assert back.status_code == 302 and back.headers["location"] == f"http://127.0.0.1:8765/api/cloud/callback?state={state}&code=the-code"
+    assert back.headers["cache-control"] == "no-store"
+    denied = client.get("/auth/return", params={"state": state, "error": "access_denied", "error_description": "The user denied"}, follow_redirects=False)
+    assert denied.headers["location"] == f"http://127.0.0.1:8765/api/cloud/callback?state={state}&error=access_denied&error_description=The+user+denied"
+    assert client.get("/auth/return", params={"state": "x" * 24 + ".1", "code": "c", "error": "e"}, follow_redirects=False).headers["location"].startswith("http://127.0.0.1:1/")
+    for bad in ("", "no-port-here-at-all-xxxxxxx", "short.8765", "x" * 24 + ".0", "x" * 24 + ".70000", "x" * 24 + ".8765.evil", state + ".1",
+                "abc</script>" + "x" * 20 + ".1", "x" * 24 + ".8765?x=1", "x" * 140 + ".8765"):
+        refused = client.get("/auth/return", params={"state": bad, "code": "c"}, follow_redirects=False)
+        assert refused.status_code == 400 and "Не удалось вернуться в приложение" in refused.text and "location" not in refused.headers, bad
+    assert client.get("/auth/return", params={"state": state}, follow_redirects=False).status_code == 400                # neither code nor error
+    assert client.get("/auth/return", params={"state": state, "code": "c" * 600}, follow_redirects=False).status_code == 400
 
 
-def test_the_signin_page_is_served_for_the_desktops_loopback_callback_only_and_carries_no_external_script(client):
-    verifier, challenge = pkce()
-    state = secrets.token_urlsafe(24)
-    good = {"state": state, "challenge": challenge, "callback": "http://127.0.0.1:8765/api/cloud/callback"}
-    page = client.get("/signin", params=good)
-    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and page.headers["cache-control"] == "no-store"
-    assert "<script src=" not in page.text and 'href="http' not in page.text and "Вход в облако лабораторий" in page.text
-    assert state in page.text and challenge in page.text and AUTH_BASE in page.text and '"providers": ["google"]' in page.text
-    assert "connect-src 'self' " + AUTH_BASE in page.headers["content-security-policy"]
-    assert client.get("/signin", params={**good, "callback": "http://localhost:8765/api/cloud/callback"}).status_code == 200
-    assert client.get("/signin", params={**good, "callback": "http://[::1]:8765/api/cloud/callback"}).status_code == 200
-    for bad in ("https://evil.example/api/cloud/callback", "http://127.0.0.1:8765/api/other", "http://127.0.0.1/api/cloud/callback",
-                "http://127.0.0.1:8765/api/cloud/callback?x=1", "http://192.168.1.20:8765/api/cloud/callback", "http://127.0.0.1.evil.example:1/api/cloud/callback"):
-        refused = client.get("/signin", params={**good, "callback": bad})
-        assert refused.status_code == 422 and refused.json()["code"] == "callback", bad
-    assert client.get("/signin", params={**good, "state": "short"}).status_code == 422
-    assert client.get("/signin", params={**good, "challenge": "not base64url!"}).status_code == 422
-    # the page's data is JSON, never markup: a state cannot close the script element
-    assert client.get("/signin", params={**good, "state": "abc</script><b>" + "x" * 20}).status_code == 422
-    assert client.get("/auth/config").json() == {"auth_base_url": AUTH_BASE, "providers": ["google"], "handoff_lifetime_s": 120}
+def test_without_a_client_id_or_neon_auth_there_are_no_sign_in_pages(verifier):
+    for settings in (Settings(repository="memory", chunk_bytes=CHUNK), Settings(repository="memory", chunk_bytes=CHUNK, auth_base_url=AUTH_BASE),
+                     Settings(repository="memory", chunk_bytes=CHUNK, oauth_client_id="desktop-client-test")):
+        with TestClient(create_app(settings, verifier=verifier)) as bare:
+            assert bare.get("/auth/config").json() == {"auth_base_url": None, "client_id": None, "resource": None, "redirect_uri": None,
+                                                       "scopes": "openid profile email offline_access", "providers": []}
+            for path in ("/signin", "/consent", "/auth/return?state=" + "x" * 24 + ".1&code=c"):
+                refused = bare.get(path, follow_redirects=False)
+                assert refused.status_code == 503 and refused.json()["code"] == "no_auth", path
 
 
-def test_without_neon_auth_configured_there_is_no_signin_page(verifier):
-    with TestClient(create_app(Settings(repository="memory", chunk_bytes=CHUNK), verifier=verifier)) as bare:
-        assert bare.get("/auth/config").json() == {"auth_base_url": None, "providers": [], "handoff_lifetime_s": 120}
-        verifier_, challenge = pkce()
-        refused = bare.get("/signin", params={"state": secrets.token_urlsafe(24), "challenge": challenge, "callback": "http://127.0.0.1:1/api/cloud/callback"})
-        assert refused.status_code == 503 and refused.json()["code"] == "no_auth"
-        assert bare.post("/auth/handoff", json={"state": secrets.token_urlsafe(24), "challenge": challenge, "session_token": "s"}).status_code == 503
-
-
-def test_a_handoff_code_is_exchanged_once_with_the_right_verifier_and_state(client):
-    verifier, challenge = pkce()
-    state = secrets.token_urlsafe(24)
-    made = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"})
-    assert made.status_code == 201 and made.json()["expires_in_s"] == 120 and len(made.json()["code"]) > 30
-    code = made.json()["code"]
-    assert client.post("/auth/handoff/exchange", json={"state": state, "code": "no-such-code", "verifier": verifier}).status_code == 404
-    other, _ = pkce()
-    wrong = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": other})
-    assert wrong.status_code == 401 and wrong.json()["code"] == "bad_verifier"
-    spent = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier})       # a wrong try spent it
-    assert spent.status_code == 404 and spent.json()["code"] == "unknown_code"
-    # a fresh handoff, the right verifier but another state: refused and spent; the right state: the token, once
-    code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"}).json()["code"]
-    assert client.post("/auth/handoff/exchange", json={"state": secrets.token_urlsafe(24), "code": code, "verifier": verifier}).status_code == 401
-    code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"}).json()["code"]
-    got = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier})
-    assert got.status_code == 200 and got.json() == {"session_token": "neon-session-token"}
-    assert client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier}).status_code == 404
-    assert client.post("/auth/handoff", json={"state": state, "challenge": "short", "session_token": "x"}).status_code == 422
-    assert client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": ""}).status_code == 422
-
-
-def test_an_expired_handoff_code_is_gone(verifier, settings):
-    app = create_app(Settings(repository=settings.repository, database_url=settings.database_url, chunk_bytes=CHUNK, auth_base_url=AUTH_BASE,
-                              handoff_lifetime_s=-5), verifier=verifier)
-    with TestClient(app) as client:
-        pkce_verifier, challenge = pkce()
-        state = secrets.token_urlsafe(24)
-        code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "t"}).json()["code"]
-        gone = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": pkce_verifier})
-        assert gone.status_code == 410 and gone.json()["code"] == "expired"
-        assert client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": pkce_verifier}).status_code == 404
+def test_the_verifier_accepts_the_issuers_and_audiences_named_and_no_other(keys, mint):
+    """Two kinds of tokens reach the service: the desktop's OAuth access tokens (issuer the Neon Auth base URL, audience the service's
+    address, as a list with the userinfo endpoint) and the JWT plugin's (issuer and audience the host), so each setting names several."""
+    both = Verifier(jwks=keys["jwks"], issuer=(ISSUER, AUTH_BASE), audience=(ISSUER, "https://labs.test"))
+    now = int(time.time())
+    oauth = jwt.encode({"sub": "acc-oauth", "iss": AUTH_BASE, "aud": ["https://labs.test", AUTH_BASE + "/oauth2/userinfo"], "iat": now, "exp": now + 60,
+                        "client_id": "desktop-client-test", "scope": "openid offline_access"}, keys["ed"], algorithm="EdDSA", headers={"kid": "ed-1"})
+    plugin = jwt.encode({"sub": "acc-browser", "iss": ISSUER, "aud": ISSUER, "iat": now, "exp": now + 60}, keys["ed"], algorithm="EdDSA", headers={"kid": "ed-1"})
+    assert both.account_id(oauth) == "acc-oauth" and both.account_id(plugin) == "acc-browser"
+    from titanium_cloud.errors import Unauthorized
+    for wrong in ({"iss": "https://elsewhere.test", "aud": "https://labs.test"}, {"iss": AUTH_BASE, "aud": ["https://other-api.test"]}, {"iss": AUTH_BASE}):
+        token = jwt.encode({"sub": "acc-x", "iat": now, "exp": now + 60, **wrong}, keys["ed"], algorithm="EdDSA", headers={"kid": "ed-1"})
+        with pytest.raises(Unauthorized):
+            both.account_id(token)
+    one = Verifier(jwks=keys["jwks"], issuer=ISSUER)
+    assert one.account_id(plugin) == "acc-browser" and one.account_id(mint("acc-rsa")) == "acc-rsa"
+    settings = Settings.from_environment({"NEON_AUTH_ISSUER": f"{ISSUER}, {AUTH_BASE}", "NEON_AUTH_AUDIENCE": "", "CLOUD_OAUTH_CLIENT_ID": " id ",
+                                          "CLOUD_RESOURCE": "https://labs.test/"})
+    assert settings.issuer == (ISSUER, AUTH_BASE) and settings.audience is None and settings.oauth_client_id == "id" and settings.resource == "https://labs.test"

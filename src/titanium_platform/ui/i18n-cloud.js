@@ -1,4 +1,4 @@
-/* Сообщения облака лабораторий (electron REQ-086, REQ-087, DEC-058): вход и выход, каталог, подключение из облака, публикация, приглашения,
+/* Сообщения облака лабораторий (electron REQ-086, REQ-087, DEC-058, DEC-060): вход и выход, каталог, подключение из облака, публикация, приглашения,
    проверка обновлений (cloud_http.py, cloud_session.py, cloud_client.py, api/routes_cloud.py). Отказ самого облака приходит вложенным:
    «the cloud refused the request: …» — вложенная часть переводится по известным сообщениям службы (cloud/). Загружается перед i18n-gaps.js. */
 'use strict';
@@ -14,10 +14,6 @@
     [/^the token (is not a JWT|names no account|was not signed by a known key)$/i, 'токен входа не принят: войдите снова'],
     [/^the token is not valid: .*$/i, 'токен входа недействителен: войдите снова'],
     [/^the token's algorithm .* is not accepted$/i, 'токен входа подписан неподдерживаемым способом'],
-    [/^there is no such sign-in code: it was used, or it never existed$/i, 'такого кода входа нет: он уже использован или не существовал'],
-    [/^the sign-in code expired: sign in again$/i, 'код входа устарел: войдите снова'],
-    [/^the sign-in code does not belong to this application$/i, 'код входа принадлежит другому запуску приложения'],
-    [/^the callback must be the application's own loopback address$/i, 'обратный адрес должен быть адресом самого приложения'],
     [/^there is no such (laboratory|release|publication|invitation|member)$/i, (m) => `такой ${{laboratory: 'лаборатории', release: 'выпуска', publication: 'публикации', invitation: 'приглашения', member: 'участника'}[m[1]]} нет`],
     [/^(this|the) laboratory is private$/i, 'лаборатория закрытая: нужно приглашение'],
     [/^only the owner of the laboratory may do this$/i, 'это может сделать только владелец лаборатории'],
@@ -65,8 +61,14 @@
     [/^the cloud does not offer sign-in: it is not configured for it$/i, 'Облако не предлагает вход: вход на нём не настроен'],
     [/^this sign-in is not expected: start it again from the application$/i, 'Приложение не ждало этот вход: начните вход заново из приложения'],
     [/^the sign-in code is missing$/i, 'Кода входа нет'],
-    [/^the cloud gave no session for this sign-in: sign in again$/i, 'Облако не выдало сеанс для этого входа: войдите снова'],
-    [/^the sign-in service knows no session for this sign-in: sign in again$/i, 'Служба входа не знает сеанса этого входа: войдите снова'],
+    [/^the sign-in service named no account for this sign-in: sign in again$/i, 'Служба входа не назвала аккаунт для этого входа: войдите снова'],
+    [/^the sign-in service names another issuer than the cloud does$/i, 'Служба входа называет не того издателя, что облако: вход невозможен'],
+    [/^the discovery document of the sign-in service is not as expected$/i, 'Описание службы входа не такое, как ожидалось: вход невозможен'],
+    [/^the sign-in was cancelled at the sign-in service$/i, 'Вход отменён в службе входа'],
+    [/^the sign-in service answered with an error: (.*)$/i, (m) => `Служба входа ответила ошибкой: ${m[1]}`],
+    [/^the sign-in service refused the code: (.*)$/i, (m) => `Служба входа не приняла код входа: ${m[1]}`],
+    [/^the sign-in service did not renew the sign-in: (.*)$/i, (m) => `Служба входа не продлила вход: ${m[1]}`],
+    [/^the sign-in service gave no refresh token: sign in again$/i, 'Служба входа не выдала токен продления: войдите снова'],
     [/^sign in to the cloud first$/i, 'Сначала войдите в облако'],
     [/^the cloud sign-in expired: sign in again$/i, 'Вход в облако истёк: войдите снова'],
     [/^the sign-in service gave no token: sign in again$/i, 'Служба входа не выдала токен: войдите снова'],

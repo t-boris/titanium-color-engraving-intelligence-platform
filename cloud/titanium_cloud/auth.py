@@ -1,4 +1,6 @@
-"""Who is asking (DEC-040, DEC-058): a Bearer JWT issued by Neon Auth, verified against its JWKS; the token's subject is the account id.
+"""Who is asking (DEC-040, DEC-058, DEC-060): a Bearer JWT issued by Neon Auth, verified against its JWKS; the token's subject is the
+account id. Two kinds arrive: the desktop's OAuth access tokens (issuer Neon Auth's base URL, audience this service's address) and
+the JWT plugin's tokens of a browser session (issuer and audience Neon Auth's host), so the settings may name several of each.
 Neon Auth signs with EdDSA (Ed25519) today and may rotate to other keys, so the key is chosen by ``kid``, RS256, ES256 and EdDSA are
 accepted, and an unknown ``kid`` refreshes the cached key set once. Public routes need no token; a token that is present must be valid."""
 from __future__ import annotations
@@ -36,7 +38,7 @@ class Verifier:
                  fetch: Callable[[str], dict] = _fetch, ttl_s: int = TTL_S):
         if not jwks_url and jwks is None:
             raise ValueError("a JWKS address or key set is required")
-        self.url, self.issuer, self.audience, self.fetch, self.ttl_s = jwks_url, issuer, audience, fetch, ttl_s
+        self.url, self.issuer, self.audience, self.fetch, self.ttl_s = jwks_url, _names(issuer), _names(audience), fetch, ttl_s
         self._keys: dict[str, jwt.PyJWK] = {}
         self._loaded_at = 0.0
         self._lock = threading.Lock()
@@ -91,6 +93,14 @@ class Verifier:
         if not isinstance(subject, str) or not subject.strip():
             raise Unauthorized("the token names no account", "bad_token")
         return subject
+
+
+def _names(value) -> list[str] | None:
+    """One accepted name or several (an issuer, an audience): a list for PyJWT, None when nothing is to be checked."""
+    if value is None:
+        return None
+    names = [value] if isinstance(value, str) else [str(v) for v in value if v]
+    return names or None
 
 
 def bearer(authorization: str | None) -> str | None:

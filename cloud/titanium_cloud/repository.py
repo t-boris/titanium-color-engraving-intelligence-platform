@@ -16,23 +16,18 @@ from .errors import Conflict, Gone, Invalid, NotFound
 
 STATES = ("uploading", "finalized", "failed", "expired")
 
-
 def now() -> datetime:
     return datetime.now(timezone.utc)
-
 
 def stamp(moment: datetime | None = None) -> str:
     moment = moment or now()
     return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-
 def moment(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
-
 def new_id() -> str:
     return str(uuid.uuid4())
-
 
 class Repository(Protocol):
     """Every operation the routes need; ``viewer`` is the account id of the caller or None."""
@@ -62,10 +57,7 @@ class Repository(Protocol):
     def accept_invitation(self, token_hash: str, account: str) -> dict: ...
     def members(self, lab_id: str) -> list[dict]: ...
     def remove_member(self, lab_id: str, account: str) -> bool: ...
-    def create_handoff(self, fields: Mapping) -> None: ...
-    def take_handoff(self, code_hash: str) -> dict | None: ...
     def close(self) -> None: ...
-
 
 # -- in memory --------------------------------------------------------------------------------------------------------------------
 class InMemoryRepository:
@@ -82,28 +74,9 @@ class InMemoryRepository:
         self._invitations: dict[str, dict] = {}
         self._members: dict[tuple[str, str], dict] = {}
         self._idempotency: dict[tuple[str, str, str], tuple[int, Any]] = {}
-        self._handoffs: dict[str, dict] = {}
 
     def close(self) -> None:
         pass
-
-    # -- the sign-in handoff (handoff.py): rows of no account, taken once ----------------------------------------------------------
-    def create_handoff(self, fields):
-        with self.lock:
-            self._purge_handoffs()
-            self._handoffs[fields["code_hash"]] = {"created_at": stamp(), **fields}
-
-    def take_handoff(self, code_hash):
-        """The handoff of ``code_hash``, removed; an expired one is returned too (the route tells the difference), as in Postgres."""
-        with self.lock:
-            found = self._handoffs.pop(code_hash, None)
-            self._purge_handoffs()
-            return dict(found) if found else None
-
-    def _purge_handoffs(self):
-        gone = [key for key, row in self._handoffs.items() if moment(row["expires_at"]) < now()]
-        for key in gone:
-            del self._handoffs[key]
 
     def role(self, lab: Mapping, viewer: str | None) -> str | None:
         if viewer is not None and lab["owner_id"] == viewer:
@@ -251,7 +224,6 @@ class InMemoryRepository:
         with self.lock:
             return self._members.pop((lab_id, account), None) is not None
 
-
 def _accept(invitation: dict | None, account: str, members: dict) -> dict:
     """The one-time semantics of an invitation, shared by the in-memory store and the SQL function."""
     if invitation is None:
@@ -267,7 +239,6 @@ def _accept(invitation: dict | None, account: str, members: dict) -> dict:
                                 {"lab_id": invitation["lab_id"], "account_id": account, "via_invitation": invitation["id"], "created_at": stamp()})
     return dict(member)
 
-
 # -- Postgres ---------------------------------------------------------------------------------------------------------------------
 LAB_COLUMNS = "id, owner_id, origin_lab_id, name, author, description, url, visibility, created_at"
 RELEASE_COLUMNS = ("id, lab_id, number, content_sha256, file_sha256, manifest, lab_record AS lab, byte_size, chunk_count, chunk_bytes, counts, terms, "
@@ -275,7 +246,6 @@ RELEASE_COLUMNS = ("id, lab_id, number, content_sha256, file_sha256, manifest, l
 PUBLICATION_COLUMNS = ("id, lab_id, owner_id, idempotency_key, release_id, release_number, expected_previous_release_id, file_sha256, byte_size, "
                        "chunk_count, chunk_bytes, state, failure, created_at, expires_at")
 INVITATION_COLUMNS = "id, lab_id, token_hash, created_by, created_at, expires_at, accepted_by, accepted_at, revoked_at"
-
 
 def _plain(row: Mapping | None) -> dict | None:
     """A row as the API gives it: UUIDs and times as strings, memoryviews as bytes."""
@@ -291,7 +261,6 @@ def _plain(row: Mapping | None) -> dict | None:
             value = value.tobytes()
         out[key] = value
     return out
-
 
 class PostgresRepository:
     """One connection per request as ``app_api`` with the caller's account set for the policies."""
@@ -482,14 +451,3 @@ class PostgresRepository:
         with self._tx():
             return self.conn.execute("DELETE FROM membership WHERE lab_id=%s AND account_id=%s", (lab_id, account)).rowcount > 0
 
-    def create_handoff(self, fields):
-        with self._tx():
-            self.conn.execute("DELETE FROM auth_handoff WHERE expires_at < now()")
-            self.conn.execute("INSERT INTO auth_handoff(code_hash, state, challenge, session_token, expires_at) VALUES (%s,%s,%s,%s,%s)",
-                              (fields["code_hash"], fields["state"], fields["challenge"], fields["session_token"], moment(fields["expires_at"])))
-
-    def take_handoff(self, code_hash):
-        """The handoff of ``code_hash`` with its row deleted in the same transaction, expired or not (the route tells the difference)."""
-        with self._tx():
-            return _plain(self.conn.execute("DELETE FROM auth_handoff WHERE code_hash=%s RETURNING code_hash, state, challenge, session_token, "
-                                            "created_at, expires_at", (code_hash,)).fetchone())

@@ -11,6 +11,7 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 from dataclasses import dataclass
 from typing import Callable, Literal
 
@@ -77,9 +78,10 @@ def _urllib_transport(method: str, url: str, data: bytes | None, headers: dict, 
 transport: Transport = _urllib_transport     # a test puts an in-process fake here
 
 
-def request(method: str, url: str, *, body=None, raw: bytes | None = None, headers: dict | None = None, timeout: float = TIMEOUT_S,
+def request(method: str, url: str, *, body=None, raw: bytes | None = None, form: dict | None = None, headers: dict | None = None,
+            timeout: float = TIMEOUT_S,
             where: Literal["the cloud", "the sign-in service"] = "the cloud") -> Response:
-    """One call. ``body`` is sent as JSON, ``raw`` as octets. A network failure is a :class:`CloudError` naming ``where``; an answer,
+    """One call. ``body`` is sent as JSON, ``form`` url-encoded (the token endpoint of the sign-in service), ``raw`` as octets. A network failure is a :class:`CloudError` naming ``where``; an answer,
     whatever its status, is returned for the caller to judge (:func:`expect`)."""
     if not switched_on:
         raise CloudError("the cloud of laboratories is switched off in the network settings of this workshop", 0, "switched_off")
@@ -88,6 +90,9 @@ def request(method: str, url: str, *, body=None, raw: bytes | None = None, heade
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         sent["Content-Type"] = "application/json"
+    elif form is not None:
+        data = urlencode(form).encode("ascii")
+        sent["Content-Type"] = "application/x-www-form-urlencoded"
     elif raw is not None:
         sent["Content-Type"] = "application/octet-stream"
     try:

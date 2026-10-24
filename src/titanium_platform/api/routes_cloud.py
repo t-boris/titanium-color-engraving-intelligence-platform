@@ -1,7 +1,8 @@
 """The cloud of laboratories over the local API (feature electron, REQ-086, REQ-087, DEC-058): the sign-in owned by the core
 (:mod:`cloud_session`), the catalogue, connecting a release from the cloud, publishing, withdrawals, invitations, members and the check
 for updates (:mod:`cloud_client`). Everything under ``/api/cloud`` is the workshop's own computer's (refused to a tablet on the LAN);
-``GET /api/cloud/callback`` is the one address the browser reaches without the desktop session cookie, while its sign-in is pending."""
+``GET /api/cloud/callback`` is the one address the browser reaches without the desktop session cookie, while its sign-in is pending
+(the sign-in itself is Neon Auth's OAuth provider, DEC-060)."""
 from __future__ import annotations
 
 import html
@@ -23,10 +24,11 @@ main{{max-width:420px;margin:12vh auto;padding:24px;background:#fff;border:1px s
 p{{margin:8px 0}}.muted{{color:#5f6b76;font-size:.92rem}}@media (prefers-color-scheme:dark){{body{{background:#0d1117;color:#e6edf3}}
 main{{background:#161b22;border-color:#3a434d}}.muted{{color:#9aa7b4}}}}</style></head><body><main><h1>{title}</h1><p>{text}</p>{detail}</main></body></html>"""
 REASONS = {"unknown_state": "Приложение не ждало этот вход: начните вход заново с экрана «Лаборатории».",
-           "expired": "Код входа устарел: начните вход заново с экрана «Лаборатории».",
-           "unknown_code": "Код входа уже использован или неизвестен: начните вход заново.",
-           "bad_verifier": "Код входа принадлежит другому запуску приложения: начните вход заново.",
-           "unreachable": "Облако сейчас недоступно: проверьте подключение к интернету и попробуйте снова.",
+           "denied": "Вход отменён: вы не разрешили приложению доступ к облаку. Если передумаете, нажмите «Войти» ещё раз.",
+           "provider_error": "Служба входа ответила ошибкой: начните вход заново с экрана «Лаборатории».",
+           "bad_code": "Код входа не принят службой входа (он уже использован или принадлежит другому запуску): начните вход заново.",
+           "no_session": "Служба входа не назвала аккаунт: начните вход заново.",
+           "unreachable": "Служба входа или облако сейчас недоступны: проверьте подключение к интернету и попробуйте снова.",
            "switched_off": "Облако выключено в настройках сети этой мастерской."}
 
 
@@ -59,11 +61,11 @@ def signin(request: Request):
 
 
 @router.get("/callback")
-def callback(request: Request, state: str = "", code: str = ""):
-    """Where the cloud's sign-in page sends the browser back: the code is exchanged and the browser sees a small page; the
-    application learns of the sign-in by asking ``/account``."""
+def callback(request: Request, state: str = "", code: str = "", error: str = "", error_description: str = ""):
+    """Where the cloud's ``/auth/return`` sends the browser back from the sign-in service: the code is exchanged (or the refusal
+    shown) and the browser sees a small page; the application learns of the sign-in by asking ``/account``."""
     try:
-        cloud_session.complete(store_of(request), state, code)
+        cloud_session.complete(store_of(request), state, code, error or None, error_description or None)
     except CloudError as exc:
         reason = REASONS.get(exc.code, "Вход не выполнен. Вернитесь в приложение и попробуйте снова.")
         return _page("Вход не выполнен", reason, str(exc), status=422)

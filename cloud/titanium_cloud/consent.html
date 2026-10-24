@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Доступ приложения к облаку лабораторий</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1f23; --muted: #5f6b76; --line: #d5dbe1; --accent: #1f6feb; --bad: #b42318; --card: #fff; --bg: #f3f5f7; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #9aa7b4; --line: #3a434d; --accent: #58a6ff; --bad: #ff7b72; --card: #161b22; --bg: #0d1117; } }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 420px; margin: 6vh auto; padding: 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  p { margin: 8px 0; }
+  ul { margin: 8px 0; padding-left: 20px; }
+  .muted { color: var(--muted); font-size: 0.92rem; }
+  button { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .alert { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); margin-top: 12px; }
+  .alert.bad { border-color: var(--bad); color: var(--bad); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Разрешить доступ приложению?</h1>
+    <div id="busy" class="alert" hidden>Проверяем запрос…</div>
+    <div id="error" class="alert bad" role="alert" hidden></div>
+    <div id="orphan" class="alert" hidden>Эта страница открывается из приложения «Титан» после входа: нажмите «Войти» на экране «Лаборатории».</div>
+    <section id="ask" hidden>
+      <p>Приложение <strong id="client-name">…</strong> на вашем компьютере просит от вашего имени:</p>
+      <ul id="scopes"></ul>
+      <p class="muted">Доступ выдаётся к <span id="resource"></span>; после согласия браузер вернёт вас в приложение через <span id="return-host"></span>. Отозвать доступ можно, выйдя из облака в приложении.</p>
+      <div class="row">
+        <button type="button" class="primary" id="accept">Разрешить</button>
+        <button type="button" id="deny">Отклонить</button>
+      </div>
+    </section>
+  </div>
+</main>
+<script id="config" type="application/json">__CONFIG__</script>
+<script>
+(() => {
+  'use strict';
+  const cfg = JSON.parse(document.getElementById('config').textContent);
+  const $ = (id) => document.getElementById(id);
+  const SCOPES = {openid: 'знать, кто вы (идентификатор аккаунта)', profile: 'ваше имя', email: 'вашу электронную почту',
+                  offline_access: 'оставаться в системе без повторного входа (до выхода из приложения)'};
+  const oauthQuery = location.search.slice(1);
+  const params = new URLSearchParams(oauthQuery);
+  const inFlow = params.has('client_id') && params.has('state') && params.has('redirect_uri');
+
+  const show = (id, on) => { $(id).hidden = !on; };
+  const error = (text) => { $('error').textContent = text; show('error', !!text); };
+  const busy = (on) => { show('busy', on); for (const b of document.querySelectorAll('button')) b.disabled = on; };
+  const message = (data, fallback) => (data && (data.message || data.error_description || (data.error && (data.error.message || data.error)))) || fallback;
+  const host = (url) => { try { return new URL(url).host; } catch (e) { return url || '—'; } };
+
+  async function auth(path, body, method = 'POST') {
+    const response = await fetch(cfg.auth_base_url + path, {method, credentials: 'include',
+      headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
+    let data = null;
+    try { data = await response.json(); } catch (e) { data = null; }
+    if (!response.ok) throw new Error(message(data, 'служба входа ответила ошибкой ' + response.status));
+    return data;
+  }
+
+  async function answer(accept) {
+    error('');
+    busy(true);
+    try {
+      const data = await auth('/oauth2/consent', {accept, oauth_query: oauthQuery});
+      if (data && data.url) location.assign(data.url);
+      else throw new Error('служба входа не дала адрес возврата');
+    } catch (e) { error(e.message); busy(false); }
+  }
+  $('accept').addEventListener('click', () => answer(true));
+  $('deny').addEventListener('click', () => answer(false));
+
+  (async () => {
+    if (!inFlow) { show('orphan', true); return; }
+    for (const scope of (params.get('scope') || '').split(' ').filter(Boolean)) {
+      const li = document.createElement('li');
+      li.textContent = SCOPES[scope] || scope;
+      $('scopes').appendChild(li);
+    }
+    $('resource').textContent = host(params.get('resource') || cfg.resource);
+    $('return-host').textContent = host(params.get('redirect_uri'));
+    busy(true);
+    try {
+      const data = await auth('/oauth2/public-client?client_id=' + encodeURIComponent(params.get('client_id')), null, 'GET');
+      $('client-name').textContent = (data && data.client_name) || params.get('client_id');
+      if (params.get('client_id') !== cfg.client_id) error('Это не приложение «Титан»: запрос пришёл от другого клиента. Разрешайте доступ, только если знаете его.');
+    } catch (e) {
+      $('client-name').textContent = params.get('client_id');
+      error('Сеанс не найден: вернитесь к входу и войдите снова.');
+    }
+    busy(false);
+    show('ask', true);
+  })();
+})();
+</script>
+</body>
+</html>

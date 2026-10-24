@@ -15,7 +15,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
 import labworld  # noqa: E402
-from cloud_fakes import CLOUD_BASE, World  # noqa: E402
+from cloud_fakes import AUTH_BASE, CLOUD_BASE, World  # noqa: E402
 from test_cloud_api import keys, mint, verifier  # noqa: E402,F401  (fixtures)
 from titanium_platform import cloud_session, lab_export  # noqa: E402
 from titanium_platform.api import security  # noqa: E402
@@ -41,8 +41,9 @@ def workshop(folder: Path, build: bool = False) -> TestClient:
 def signed_in(client: TestClient, world: World, account: str, name: str = "") -> dict:
     started = client.post("/api/cloud/signin")
     assert started.status_code == 201, started.text
-    state, code = world.handoff(started.json()["url"], account, name)
-    page = TestClient(client.app, base_url="http://127.0.0.1").get("/api/cloud/callback", params={"state": state, "code": code})
+    back = world.browser(started.json()["url"], account, name)                     # sign-in, consent, the cloud's /auth/return
+    assert back.startswith("http://127.0.0.1:80/api/cloud/callback?state=") and ".80&code=" in back
+    page = TestClient(client.app, base_url="http://127.0.0.1").get(back)
     assert page.status_code == 200 and "Вход выполнен, вернитесь в приложение" in page.text and "<script" not in page.text
     return client.get("/api/cloud/account").json()
 
@@ -65,15 +66,19 @@ def test_under_the_desktop_shell_the_callback_passes_without_the_cookie_only_whi
         refused = bare.get("/api/cloud/callback", params={"state": "not-pending-state-xx", "code": "c"})
         assert refused.status_code == 403 and refused.json()["error"] == "open the workshop from the application"
         started = desktop.post("/api/cloud/signin").json()
-        assert started["url"].startswith(f"{CLOUD_BASE}/signin?") and "callback=http%3A%2F%2F127.0.0.1%3A80%2Fapi%2Fcloud%2Fcallback" in started["url"]
+        assert started["url"].startswith(f"{AUTH_BASE}/oauth2/authorize?") and started["state"].endswith(".80")   # the port the browser used
         state = started["state"]
         assert bare.post("/api/cloud/callback", params={"state": state, "code": "c"}).status_code == 403          # GET only
         assert bare.get("/api/cloud/callback", params={"state": state, "code": "c", "extra": "1"}).status_code != 403
         # a wrong code: the page says so in Russian, and the state is spent: the address no longer passes the guard
         again = desktop.post("/api/cloud/signin").json()
         wrong = bare.get("/api/cloud/callback", params={"state": again["state"], "code": "not-a-code"})
-        assert wrong.status_code == 422 and "Вход не выполнен" in wrong.text and "Код входа уже использован или неизвестен" in wrong.text
+        assert wrong.status_code == 422 and "Вход не выполнен" in wrong.text and "Код входа не принят службой входа" in wrong.text
         assert bare.get("/api/cloud/callback", params={"state": again["state"], "code": "not-a-code"}).status_code == 403
+        # the operator declined on the consent page: the page says so, nothing is signed in
+        declined = desktop.post("/api/cloud/signin").json()
+        shown = bare.get("/api/cloud/callback", params={"state": declined["state"], "error": "access_denied", "error_description": "The user denied"})
+        assert shown.status_code == 422 and "Вход отменён" in shown.text
         assert desktop.get("/api/cloud/account").json()["signed_in"] is False
         # the real thing
         account = signed_in(desktop, world, "acc-desktop", "Настольная")
