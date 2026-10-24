@@ -5,6 +5,7 @@ import math
 
 import numpy as np
 import pytest
+import shapely
 
 from font_kit import AREA, CAP, make_font
 from titanium_platform import fonts, lettering as L, setup as su
@@ -57,6 +58,32 @@ def test_width_spacing_rotation_and_lines(data):
     assert turned[3] - turned[1] == pytest.approx(width(plain)) and turned[2] - turned[0] == pytest.approx(7.0)
     two = geo(data, text="H\nH", line_pct=100)["letters"]
     assert two.area == pytest.approx(2 * mm2(AREA["H"])) and two.bounds[3] - two.bounds[1] == pytest.approx(10 + 7)   # 1000 units a line
+
+
+def test_alignment_and_line_spacing_change_the_outline_as_named(data):
+    def lines(**spec):
+        letters = sorted(geo(data, text="HHH\nH", **spec)["letters"].geoms, key=lambda p: p.centroid.y)
+        return letters[:3], letters[3]                                   # the first line above (y down), then the second
+    for align, edge in (("left", lambda b: b[0]), ("right", lambda b: b[2]), ("center", lambda b: (b[0] + b[2]) / 2)):
+        first, second = lines(align=align)
+        assert edge(second.bounds) == pytest.approx(edge(shapely.union_all(first).bounds)), align
+    assert lines(align="left")[1].bounds[0] < lines(align="center")[1].bounds[0] < lines(align="right")[1].bounds[0]
+    for pct in (50, 100, 150):                                           # a line is 1000 units: 10 mm at 7 mm capitals, times line_pct
+        letters = geo(data, text="H\nH", line_pct=pct)["letters"]
+        assert letters.bounds[3] - letters.bounds[1] == pytest.approx(10 * pct / 100 + 7), pct
+
+
+def test_a_negative_bend_bends_the_other_way_and_the_offset_moves_the_text_along_its_path(data):
+    def sag(bend):                                                      # how much lower (y down) the baseline's ends are than its middle
+        guide = np.asarray(geo(data, text="H" * 10, layout="arc", bend=bend)["guide"])
+        return (guide[0][1] + guide[-1][1]) / 2 - guide[len(guide) // 2][1]
+    # the line's 60 mm make a half circle at 100 %; the guide runs a tenth of the line further at each end: 0.6 π each side of the middle
+    half = 60 / math.pi * (1 - math.cos(0.6 * math.pi))
+    assert sag(100) == pytest.approx(half, rel=1e-3) and sag(-100) == pytest.approx(-half, rel=1e-3)           # bowed up, bowed down
+    assert sag(-40) == pytest.approx(-sag(40)) and 0 < sag(40) < sag(100)
+    for pct, x in ((0, 20), (25, 35), (50, 50), (100, 80)):                                    # a straight path of 60 mm from x = 20
+        letter = geo(data, text="H", layout="path", points=[[0, 0], [60, 0]], x=20, y=60, offset_pct=pct)["letters"]
+        assert letter.centroid.x == pytest.approx(x) and letter.centroid.y == pytest.approx(60 - 3.5), pct    # the text's middle there
 
 
 def test_the_letters_of_several_scripts_and_right_to_left(data):
@@ -237,6 +264,27 @@ def test_the_operations_of_a_works_list(data):
     texts = L.operate(data, texts, {"op": "text_delete", "id": "t1"}, WORK, ok, lambda: "e1")
     assert [t["id"] for t in texts] == ["t2"]
     assert L.operate(data, texts, {"op": "text_add"}, WORK, ok, lambda: "e1")[-1]["id"] == "t3"       # a name is never given twice
+
+
+def test_a_new_inscription_takes_the_font_of_the_inscription_changed_last(data):
+    ok = lambda entry: True                               # noqa: E731
+    run = lambda texts, op, earlier=(): L.operate(data, texts, op, WORK, ok, lambda: "e1", earlier)     # noqa: E731
+    font = lambda texts, earlier=(): run(texts, {"op": "text_add"}, earlier)[-1]["font"]              # noqa: E731
+    serif, bold = face(data, family="Other Serif"), face(data, style="Bold")
+    default = fonts.described(L.default_face(data))
+    assert font([]) == default                                                                       # the first one of a work
+    one = run([], {"op": "text_add", "text": {"font": serif}})
+    two = run(one, {"op": "text_add", "text": {"font": bold}})
+    assert font(two) == bold                                                                         # no step kept: the newest one's
+    moved = run(two, {"op": "text_set", "id": "t1", "changes": {"x": 10}})
+    undo = [one, two]                                                                                # the lists before each change
+    assert font(moved, undo) == serif                                                                # t1 was moved last, t2 is newer
+    assert font(moved, undo + [moved]) == serif                                                      # a step that left them as they were
+    gone = run(moved, {"op": "text_delete", "id": "t1"})
+    assert font(gone, undo + [moved]) == bold                                                        # the one changed last is gone
+    assert run(moved, {"op": "text_add", "text": {"font": bold}}, undo)[-1]["font"] == bold          # a font given is the font
+    missing = [{**one[0], "font": {"face": "x", "family": "Gone", "style": "Regular"}}]
+    assert font(missing) == default                                                                  # a font no more on this computer
 
 
 def test_a_moved_font_is_found_by_its_family_and_style(data):

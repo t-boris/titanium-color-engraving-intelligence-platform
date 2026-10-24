@@ -115,6 +115,16 @@ def test_inscriptions_are_changed_copied_and_undone_with_the_colouring(world):
     refused(world, job, {"op": "text_add", "text": {"height_mm": 0}}, "the letter height (mm) of an inscription must be a number from 0.3 to 500")
 
 
+def test_a_new_inscription_takes_the_font_of_the_one_changed_last_also_after_a_reload(world):
+    job = create(world)
+    add(world, job, font=face(world["store"], "Other Serif"))
+    add(world, job)                                                                              # t2 in Test Sans, the newest
+    colouring(world, job, op="text_set", id="t1", changes={"x": 20})                             # t1 changed last
+    colouring(world, job, op="assign", mode="tonality")                                          # a step that changes no inscription
+    fresh = colouring(world, job, op="text_add")                                                 # no font sent: the screen was reloaded
+    assert fresh["texts"][-1]["font"]["family"] == "Other Serif"
+
+
 def test_an_automatic_recolouring_a_variant_restored_and_a_new_split_keep_the_inscriptions(world):
     job = create(world)
     add(world, job)

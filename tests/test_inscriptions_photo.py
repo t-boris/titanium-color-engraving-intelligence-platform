@@ -157,6 +157,17 @@ def test_inscriptions_are_undone_copied_with_the_work_and_keep_their_place_when_
     assert refused.status_code == 422 and refused.json()["error"] == "there is no inscription 't9'"
 
 
+def test_a_new_inscription_takes_the_font_of_the_one_changed_last_also_after_a_reload(world):
+    """inscriptions-in-works REQ-003: the photo work's undo tells which inscription was changed last."""
+    work = make_work(world["client"])
+    add(world, work, font=face(world["store"], "Other Serif"))
+    add(world, work, x=20)                                                                       # t2 in Test Sans, the newest
+    texts(world, work, op="text_set", id="t1", changes={"x": 25})                                # t1 changed last
+    settings(world, work, width_mm=60)                                                           # a step that changes no inscription
+    fresh = texts(world, work, op="text_add")                                                    # no font sent: the screen was reloaded
+    assert fresh["texts"][-1]["font"]["family"] == "Other Serif"
+
+
 def test_an_inscription_that_cannot_be_engraved_says_why_and_refuses_the_file(world):
     client, store = world["client"], world["store"]
     work = make_work(client)

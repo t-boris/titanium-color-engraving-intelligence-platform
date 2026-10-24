@@ -256,9 +256,11 @@ const Lettering = (() => {
   /** Надписи работы ``view``. ``o.act(op)`` отправляет операцию (true — принята), ``o.palette()`` — измеренные цвета титана работы,
       ``o.size(view)`` — размер работы в мм, ``o.scale()`` — экранных пикселей на мм картинки редактора (у фотогравировки слой знает это
       сам, :func:`attach`), ``o.drawn`` — слой рисует надписи сам (векторная работа), ``o.clean`` — цвет чистого титана для врезки,
-      ``o.open()`` — открыта ли вкладка. */
+      ``o.open()`` — открыта ли вкладка. ``o.pick(title, lab, entryId, onPick)``: the host's window of measured colours (the editor's,
+      vector-colours.js: ΔE to ``lab``, time, where each colour is known from); a host without it shows the colours here to click. */
   function create(view, o) {
     let selected = null, entries = null, paletteError = null, drag = null, path = null, typing = null, built = null;
+    let last = null;                          // the inscription chosen or changed last on this screen: a new one takes its font
     const layer = svgEl('g', {class: 'lt-layer'});
     const marks = svgEl('g', {class: 'lt-marks'});
     const list = h('div', {class: 'vw-ed-list lt-list'});
@@ -279,8 +281,11 @@ const Lettering = (() => {
       const ok = await o.act(op);
       return ok;
     }
+    /** A new inscription in the middle of the work, in the font of the inscription chosen or changed last here; before any (after a reload)
+        the server takes the font of the work's inscription changed last (lettering.last_font). */
     async function add() {
-      if (await act({op: 'text_add', text: {}})) {
+      const like = texts().find((t) => t.id === (selected || last));
+      if (await act({op: 'text_add', text: like && like.font ? {font: like.font} : {}})) {
         const all = texts();
         if (all.length) select(all[all.length - 1].id);
       }
@@ -289,6 +294,7 @@ const Lettering = (() => {
 
     function select(id) {
       selected = id;
+      if (id) last = id;
       built = null;
       render();
     }
@@ -335,9 +341,10 @@ const Lettering = (() => {
       return {key, input, el: h('label', {class: 'row small'}, input, h('span', {}, label))};
     }
 
-    function swatches(label, key, allowNone) {
-      const box = h('div', {class: 'vw-swatches lt-swatches', role: 'group', 'aria-label': label});
-      return {key, box, el: h('div', {class: 'stack'}, h('span', {class: 'small'}, label), box), allowNone};
+    /** A colour of the inscription (``key``): the backing (``allowNone``) may stay clean titanium. */
+    function colourPart(label, key, allowNone) {
+      const box = h('div', {class: o.pick ? 'row' : 'vw-swatches lt-swatches', role: 'group', 'aria-label': label});
+      return {key, label, box, el: h('div', {class: 'stack'}, h('span', {class: 'small'}, label), box), allowNone};
     }
 
     function build() {
@@ -362,12 +369,12 @@ const Lettering = (() => {
         flip: flag('Путь в обратную сторону', 'flip'),
         rotation: number('Поворот, °', 'rotation', '1'),
         x: number('x, мм', 'x', '0.1'), y: number('y, мм', 'y', '0.1'),
-        colour: swatches('Цвет букв', 'entry_id', false),
+        colour: colourPart('Цвет букв', 'entry_id', false),
         gap: number('Зазор вокруг букв, мм', 'gap_mm', '0.05', {min: '0', max: '20'}),
         backing: choice('Подложка', 'backing', BACKINGS),
         padding: number('Поле подложки, мм', 'padding_mm', '0.1', {min: '0'}),
         corner: number('Скругление углов, мм', 'corner_mm', '0.1', {min: '0'}),
-        backingColour: swatches('Цвет подложки', 'backing_entry_id', true),
+        backingColour: colourPart('Цвет подложки', 'backing_entry_id', true),
         drawPath: btn('Нарисовать путь', () => startPath()),
         info: h('div', {class: 'small stack'}),
       };
@@ -393,14 +400,33 @@ const Lettering = (() => {
       return parts;
     }
 
-    function fillSwatches(part, value) {
+    /** A colour's field: with the host's window (``o.pick``) the colour chosen and «Выбрать…», which opens it; without one every measured
+        colour to click. */
+    function fillColour(part, value) {
       if (!entries) return fill(part.box, h('p', {class: paletteError ? 'alert bad small' : 'muted small'}, paletteError || 'Загрузка цветов…'));
       const title = (e) => `${labText(e.lab)}` + (e.time_s_per_cm2 == null ? '' : ` · ${num(e.time_s_per_cm2, 1)} с/см²`);
-      fill(part.box, part.allowNone ? h('button', {type: 'button', class: 'vw-swatch lt-clean' + (value == null ? ' picked' : ''), title: 'Чистый титан: подложка не гравируется',
-        'aria-label': 'Чистый титан', 'aria-pressed': value == null ? 'true' : 'false', onClick: () => change({[part.key]: null})}) : null,
-      entries.map((e) => h('button', {type: 'button', class: 'vw-swatch' + (String(e.id) === String(value) ? ' picked' : ''), style: `background:${rgb(e.srgb)}`,
-        'data-entry': e.id, title: title(e), 'aria-label': title(e), 'aria-pressed': String(e.id) === String(value) ? 'true' : 'false',
-        onClick: () => change({[part.key]: e.id})})));
+      const clean = part.allowNone ? h('button', {type: 'button', class: 'vw-swatch lt-clean' + (value == null ? ' picked' : ''), title: 'Чистый титан: подложка не гравируется',
+        'aria-label': 'Чистый титан', 'aria-pressed': value == null ? 'true' : 'false', onClick: () => change({[part.key]: null})}) : null;
+      if (!o.pick) {
+        return fill(part.box, clean, entries.map((e) => h('button', {type: 'button', class: 'vw-swatch' + (String(e.id) === String(value) ? ' picked' : ''),
+          style: `background:${rgb(e.srgb)}`, 'data-entry': e.id, title: title(e), 'aria-label': title(e), 'aria-pressed': String(e.id) === String(value) ? 'true' : 'false',
+          onClick: () => change({[part.key]: e.id})})));
+      }
+      if (!entries.length) return fill(part.box, clean, h('span', {class: 'small muted'}, 'Измеренных цветов титана для этой работы нет.'));
+      const now = entries.find((e) => String(e.id) === String(value));
+      fill(part.box, clean, now ? h('span', {class: 'vw-swatch picked', style: `background:${rgb(now.srgb)}`, 'data-entry': now.id, 'aria-hidden': 'true'}) : null,
+        h('span', {class: 'small'}, now ? title(now) : value == null ? (part.allowNone ? '' : 'цвет не выбран') : 'этого цвета нет среди измеренных'),
+        btn('Выбрать…', () => choose(part)));
+    }
+    /** The window of measured colours for a colour of the chosen inscription. ΔE is to the letters' colour: alternatives near it for the
+        letters, how far a backing stands from them for the backing; while the letters have none, to the darkest measured colour, the one a
+        new inscription takes. */
+    function choose(part) {
+      const t = spec();
+      if (!t || !entries || !entries.length) return;
+      const letters = entries.find((e) => String(e.id) === String(t.entry_id));
+      o.pick(`${part.label} надписи № ${texts().indexOf(t) + 1} (ΔE — до ${letters ? 'цвета букв' : 'самого тёмного измеренного цвета'})`, (letters || entries[0]).lab,
+        t[part.key], (id) => act({op: 'text_set', id: t.id, changes: {[part.key]: id}}));
     }
 
     function renderFields(paletteOnly = false) {
@@ -408,8 +434,8 @@ const Lettering = (() => {
       if (!t) { built = null; return fill(fields, texts().length ? h('p', {class: 'small muted'}, 'Выберите надпись в списке или на картинке.') : null); }
       if (!built) { built = build(); fill(fields, built.el); }
       const p = built;
-      fillSwatches(p.colour, t.entry_id);
-      fillSwatches(p.backingColour, t.backing_entry_id);
+      fillColour(p.colour, t.entry_id);
+      fillColour(p.backingColour, t.backing_entry_id);
       if (paletteOnly) return;
       const focused = document.activeElement;
       if (focused !== p.text && !typing) p.text.value = t.text;
@@ -503,7 +529,7 @@ const Lettering = (() => {
       const hit = target && target.closest('[data-text]');
       const t = handle ? spec() : hit ? texts().find((x) => x.id === hit.getAttribute('data-text')) : null;
       if (!t || !t.shown) return false;
-      if (t.id !== selected) { selected = t.id; built = null; renderList(); renderFields(); }
+      if (t.id !== selected) { selected = last = t.id; built = null; renderList(); renderFields(); }
       const kind = handle ? handle.getAttribute('data-handle') : 'move';
       drag = {kind, start: mm, t, index: handle ? Number(handle.getAttribute('data-index')) : null, moved: false, at: mm};
       draw();

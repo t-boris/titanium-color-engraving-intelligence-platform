@@ -169,7 +169,8 @@
     // надписи: прогноз сервера уже рисует их врезанными, слой поверх прогноза — ручки и контур (inscriptions-in-works, REQ-005)
     let tab = null;
     const lettering = Lettering.create(view, {act: async (op) => !(await send(`${base}/texts`, op)), palette: () => get(`${base}/palette`),
-      size: (v) => ({width: v.width_mm, height: v.height_mm}), drawn: false, open: () => tab === 'texts'});
+      size: (v) => ({width: v.width_mm, height: v.height_mm}), drawn: false, open: () => tab === 'texts',
+      pick: (title, lab, entryId, onPick) => VectorColours.pickFrom(() => get(`${base}/palette`), title, lab, entryId, onPick)});
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
       {ramp: `${base}/width-ramp`, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     const head = workHead(view, step);

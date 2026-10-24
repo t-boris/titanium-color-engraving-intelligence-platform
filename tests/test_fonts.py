@@ -2,10 +2,13 @@
 ``font_kit``, see ``conftest``), the operator's own font files and Google Fonts (here a fake Google: its metadata, its repository's tree
 and its files are served by the test), with the routes the font window uses."""
 import json
+import os
 import time
 
 import pytest
 from fastapi.testclient import TestClient
+
+from fontTools.ttLib import TTFont
 
 from font_kit import make_font
 from titanium_platform import fonts
@@ -51,6 +54,43 @@ def test_the_catalogue_lists_this_computers_fonts_by_family(client):
     assert [f["style"] for f in sans["faces"]] == ["Regular", "Bold"]                         # the lightest first
     assert sans["regular"] == sans["faces"][0]["id"]
     assert listed["google"]["listed"] is False and "cyrillic" in listed["scripts"]
+
+
+def test_hidden_system_fonts_fonts_without_outlines_and_unreadable_files_are_left_out(tmp_path, monkeypatch):
+    folder = tmp_path / "mac"
+    make_font(folder / "Hidden.ttf", family=".Hidden UI")              # macOS hides its system fonts by a name with a dot
+    make_font(folder / "LastResort.ttf", family="LastResort")          # the font macOS draws a missing letter with
+    bitmap = TTFont(str(make_font(tmp_path / "outlined.ttf", family="Bitmap Only")))
+    del bitmap["glyf"], bitmap["loca"]                                  # no outlines: nothing to engrave
+    bitmap.save(str(folder / "Bitmap.ttf"))
+    (folder / "Broken.ttf").write_bytes(b"not a font")
+    make_font(folder / "Shown.ttf", family="Shown Sans")
+    monkeypatch.setattr(fonts, "MAC_DIRS", (str(folder),))
+    with TestClient(create_app(tmp_path / "data")) as c:
+        listed = c.get("/api/fonts").json()["families"]
+    assert [f["family"] for f in listed if f["source"] == "mac"] == ["Shown Sans"]
+
+
+def test_a_second_listing_reads_only_new_or_changed_font_files(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    folder = fonts.own_dir(data)
+    make_font(folder / "A.ttf", family="Alpha One")
+    changed = make_font(folder / "B.ttf", family="Beta Two")
+    read, real = [], fonts._faces_of
+    monkeypatch.setattr(fonts, "_faces_of", lambda source, root, path: read.append(path.name) or real(source, root, path))
+
+    def listing():
+        fonts._forget(data)                                             # the listing kept in memory for a few seconds is let go
+        return {f["family"]: f["style"] for f in fonts.faces(data).values() if f["source"] == "own"}
+
+    assert listing() == {"Alpha One": "Regular", "Beta Two": "Regular"} and {"A.ttf", "B.ttf"} <= set(read)
+    read.clear()
+    assert listing() == {"Alpha One": "Regular", "Beta Two": "Regular"} and read == []      # from the catalogue on disk, no file read
+    make_font(folder / "C.ttf", family="Gamma Three")
+    make_font(changed, family="Beta Two", style="Bold", weight=700)
+    stat = changed.stat()
+    os.utime(changed, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))               # changed: its stamp is not the one kept
+    assert listing() == {"Alpha One": "Regular", "Beta Two": "Bold", "Gamma Three": "Regular"} and sorted(read) == ["B.ttf", "C.ttf"]
 
 
 def test_a_family_opens_on_its_regular_face(client, tmp_path):

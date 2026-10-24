@@ -43,9 +43,11 @@ const VectorColours = (() => {
   /** Выбор цвета титана из палитры (REQ-051): у каждого цвета видно, откуда он известен (тесты и работы) и насколько он стабилен; порядок и фильтр
       по повтору; взамен ненадёжного цвета предлагаются более стабильные, ближайшие к нему. Ближайшие к исходному цвету — первыми; снятые без
       привязки — с пунктиром. */
-  async function pick(j, title, sourceLab, current, onPick) {
+  const pick = (j, ...rest) => pickFrom(() => palette(j), ...rest);
+  /** The same window over any list of measured colours (``load``: a promise of them), as the photo work's inscriptions need it. */
+  async function pickFrom(load, title, sourceLab, current, onPick) {
     let entries;
-    try { entries = await palette(j); } catch (e) { return fail(e); }
+    try { entries = await load(); } catch (e) { return fail(e); }
     const now = entries.find((e) => e.id === current) || null;
     let chosen = now, order = 'near', repeatedOnly = false;
     const near = (a, b) => de(a.lab, sourceLab) - de(b.lab, sourceLab);
@@ -219,5 +221,5 @@ const VectorColours = (() => {
     return {colours, variants: saved, ai: ai.el, editor, update(next) { show(next); ai.update(next); editor.update(next); }};
   }
 
-  return {parts, styleName: (style) => STYLE[style] || style};
+  return {parts, pickFrom, styleName: (style) => STYLE[style] || style};
 })();

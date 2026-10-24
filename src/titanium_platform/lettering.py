@@ -162,11 +162,12 @@ def _new_id(texts: list[dict]) -> str:
     return f"t{1 + max((int(t['id'][1:]) for t in texts), default=0)}"
 
 
-def operate(data_dir: Path, texts: list[dict] | None, op: dict, size_mm: dict, colour_ok, default_entry) -> list[dict]:
+def operate(data_dir: Path, texts: list[dict] | None, op: dict, size_mm: dict, colour_ok, default_entry, earlier=()) -> list[dict]:
     """The work's inscriptions after one operation, a new list (the old one is not changed):
 
     * ``{"op": "text_add", "text": {...}}`` a new inscription (fields not given take the defaults; it stands in the middle of the work, in the
-      default font, in ``default_entry()``'s colour unless given);
+      last font used (:func:`last_font`, ``earlier``: the work's lists of inscriptions before its last changes, the latest last, as its undo
+      keeps them), in ``default_entry()``'s colour unless given);
     * ``{"op": "text_set", "id", "changes": {...}}`` changes fields of one;
     * ``{"op": "text_copy", "id"}`` a copy of one, a little to the right and down;
     * ``{"op": "text_delete", "id"}`` takes one away.
@@ -181,7 +182,7 @@ def operate(data_dir: Path, texts: list[dict] | None, op: dict, size_mm: dict, c
         spec = {"x": round(size_mm["width"] / 2, 3), "y": round(size_mm["height"] / 2, 3), "height_mm": _default_height(size_mm), **given}
         spec.pop("id", None)
         if spec.get("font") is None:
-            spec["font"] = fonts.described(default_face(data_dir))
+            spec["font"] = _new_font(data_dir, texts, earlier)
         if spec.get("entry_id") is None:
             spec["entry_id"] = default_entry()
         made = {**checked(spec), "id": _new_id(texts)}
@@ -226,6 +227,31 @@ def scaled(texts: list[dict] | None, factor: float) -> list[dict]:
         spec["points"] = [[round(x * factor, 4), round(y * factor, 4)] for x, y in spec["points"]]
         out.append(spec)
     return out
+
+
+def last_font(texts: list[dict], earlier=()) -> dict | None:
+    """The font of the work's inscription changed last: going back through ``earlier`` (the work's lists of inscriptions before its last
+    changes, the latest last), the first list in which an inscription of ``texts`` is missing or different names the ones changed then (the
+    later of them in the list); without such a list (no step of undo kept, or none changed an inscription that is still here) the newest
+    inscription's. None for a work without inscriptions."""
+    for before in reversed(list(earlier)):
+        was = {t.get("id"): t for t in before or []}
+        changed = [t for t in texts if was.get(t["id"]) != t]
+        if changed:
+            return changed[-1]["font"]
+    return texts[-1]["font"] if texts else None
+
+
+def _new_font(data_dir: Path, texts: list[dict], earlier) -> dict:
+    """The font a new inscription takes when none is given: the last font used in the work (:func:`last_font`) while it is on this
+    computer, else :func:`default_face`."""
+    font = last_font(texts, earlier)
+    if font is not None:
+        try:
+            return fonts.described(fonts.resolve(data_dir, font))
+        except fonts.FontError:
+            pass
+    return fonts.described(default_face(data_dir))
 
 
 def _check_colours(spec: dict, colour_ok) -> None:

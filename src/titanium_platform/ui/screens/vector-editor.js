@@ -177,7 +177,8 @@ const VectorEditor = (() => {
     const photo = VectorPhoto.create(j, {act: (op) => act(op), select: (ids) => selectOnly(ids), outline: (ids) => (ids ? setHot(ids) : refreshHover())});
     // надписи врезаются в картинку: слой рисует врезку цветом чистого титана, подложку и буквы их цветами (inscriptions-in-works)
     const lettering = Lettering.create(j, {act: (op) => act(op), palette: () => palette(j), size: (v) => v.document.size_mm, scale: () => frame().s,
-      drawn: true, clean: EXCLUDED, open: () => sideTab === 'texts'});
+      drawn: true, clean: EXCLUDED, open: () => sideTab === 'texts',
+      pick: tools.pick ? (title, lab, entryId, onPick) => tools.pick(j, title, lab, entryId, onPick) : null});
     // панель на пять вкладок, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085), фотозоны (REQ-073), надписи
     const sideTabs = App.tabs([
       ['brush', 'Кисть', h('div', {class: 'vw-ed-pane'},

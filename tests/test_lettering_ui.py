@@ -18,6 +18,7 @@ from titanium_platform.api.app import UI_DIR
 
 LETTERING = (UI_DIR / "screens" / "lettering.js").read_text(encoding="utf-8")
 PHOTO = (UI_DIR / "screens" / "photo-engraving.js").read_text(encoding="utf-8")
+EDITOR = (UI_DIR / "screens" / "vector-editor.js").read_text(encoding="utf-8")
 SCRIPTS = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
 
 FRAME = {"anchor": [12.0, 7.0], "corners": [[10.0, 5.0], [14.0, 5.0], [14.0, 9.0], [10.0, 9.0]], "rotation": 0.0}
@@ -61,7 +62,8 @@ def test_the_panel_offers_every_field_of_an_inscription_within_the_servers_limit
         assert f"flag('" in LETTERING and f"', '{flag}')" in LETTERING, flag
     for op in lettering.OPS:
         assert f"op: '{op}'" in LETTERING, op
-    assert "swatches('Цвет букв', 'entry_id', false)" in LETTERING and "swatches('Цвет подложки', 'backing_entry_id', true)" in LETTERING
+    assert "colourPart('Цвет букв', 'entry_id', false)" in LETTERING and "colourPart('Цвет подложки', 'backing_entry_id', true)" in LETTERING
+    assert "pick: tools.pick ? (title, lab, entryId, onPick) => tools.pick(j, title, lab, entryId, onPick) : null" in EDITOR
 
 
 def test_the_font_window_names_every_script_kind_and_source_of_the_catalogue():
@@ -145,9 +147,12 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
   out.height = field('Высота букв, мм').value;
   field('Высота букв, мм').value = '12'; await field('Высота букв, мм').dispatch('change'); await tick();
   await wait(5);
-  out.swatches = group('Цвет букв').querySelectorAll('button').map((b) => b.getAttribute('data-entry') + ':' + b.getAttribute('aria-pressed'));
-  out.backingSwatches = group('Цвет подложки').querySelectorAll('button').map((b) => b.getAttribute('aria-label').split(' ')[0]);
-  await group('Цвет букв').querySelectorAll('button')[1].dispatch('click'); await tick();
+  out.colour = group('Цвет букв').querySelectorAll('span').filter((x) => x.getAttribute('data-entry')).map((x) => x.getAttribute('data-entry'));
+  out.backingButtons = group('Цвет подложки').querySelectorAll('button').map((b) => b.textContent || b.getAttribute('aria-label'));
+  await byText(group('Цвет букв'), 'button', 'Выбрать…').dispatch('click'); await tick(); await tick();
+  const dialog = ctx.document.body.querySelector('.modal');
+  await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e12').dispatch('click');
+  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
   await byText(group('Расположение'), 'button', 'По кругу').dispatch('click'); await tick();
   out.hidden = tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for')).map((d) => d.getAttribute('data-for') + ':' + d.hidden);
   await byText(pane, 'button', 'Копия').dispatch('click'); await tick();
@@ -162,8 +167,8 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
     assert out["items"][0].startswith("№ 1HOH") and "Arial" in out["items"][0] and "не выгравировать" in out["items"][1]
     assert out["picked"] == "true" and out["height"] == "4"
     assert out["marks"] == ["lt-frame:", "lt-handle:rotate", "lt-handle:size"]
-    assert out["swatches"] == ["e14:true", "e12:false", "e13:false", "e11:false"]                    # darkest first, its colour chosen
-    assert out["backingSwatches"][0] == "Чистый"
+    assert out["colour"] == ["e14"]                                                                  # the colour chosen, then «Выбрать…»
+    assert out["backingButtons"] == ["Чистый титан", "Выбрать…"]
     assert out["hidden"] == ["arc:true", "circle:true", "circle:true", "path:true", "curved:true", "backed:true", "backed:true"]
     assert out["ops"] == [{"op": "text_add", "text": {}}, {"op": "text_set", "id": "t1", "changes": {"height_mm": 12}},
                           {"op": "text_set", "id": "t1", "changes": {"entry_id": "e12"}}, {"op": "text_set", "id": "t1", "changes": {"layout": "circle"}},
@@ -171,6 +176,53 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
                           {"op": "text_set", "id": "t1", "changes": {"text": "HOH\nвторая"}}]
     assert "Надпись 2 не выгравировать: В её шрифте нет букв «Ж»: выберите шрифт, в котором они есть" in out["text"]
     assert "надписей 1" in out["text"]                                       # the layer that engraves it says so among the layers
+
+
+@node
+def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_backing_may_stay_clean_titanium(tmp_path):
+    out = run_editor(tmp_path, editor_routes(), OPEN + """
+  await item(0).dispatch('click'); await tick(); await wait(5);
+  const choose = async (label, entry) => {
+    await byText(group(label), 'button', 'Выбрать…').dispatch('click'); await tick(); await tick();
+    const dialog = ctx.document.body.querySelector('.modal');
+    const swatch = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
+    const seen = {text: dialog.textContent, letters: swatch('e14').getAttribute('title'), now: dialog.textContent.includes('Сейчас:')};
+    await swatch(entry).dispatch('click');
+    await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+    return seen;
+  };
+  out.letters = await choose('Цвет букв', 'e13');
+  out.backing = await choose('Цвет подложки', 'e11');
+  await group('Цвет подложки').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Чистый титан').dispatch('click'); await tick();
+  out.ops = textOps();
+""")
+    assert "Цвет букв надписи № 1 (ΔE — до цвета букв)" in out["letters"]["text"] and out["letters"]["now"] is True
+    assert "Цвет подложки надписи № 1 (ΔE — до цвета букв)" in out["backing"]["text"] and out["backing"]["now"] is False   # clean titanium now
+    assert "ΔE 0.00" in out["letters"]["letters"] and "ΔE 0.00" in out["backing"]["letters"]          # ΔE to the letters' colour (e14)
+    assert "«Откуда» — из каких тестов и работ цвет известен" in out["letters"]["text"]                # the editor's window, as it is
+    assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}},
+                          {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": "e11"}},
+                          {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": None}}]
+
+
+@node
+def test_a_new_inscription_takes_the_font_of_the_one_chosen_or_changed_last(tmp_path):
+    routes_ = editor_routes()
+    routes_["/api/vector/7"]["json"]["texts"][1]["font"] = HEBREW = {"face": "g1", "family": "Noto Sans Hebrew", "style": "Regular"}
+    out = run_editor(tmp_path, routes_, OPEN + """
+  const added = () => textOps().filter((op) => op.op === 'text_add').map((op) => op.text);
+  const add = async () => { await byText(pane, 'button', 'Добавить надпись').dispatch('click'); await tick(); };
+  const escape = async () => { await ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: tree}); await tick(); };
+  await add();                                                      // none chosen yet: the server takes the work's last font
+  await escape();                                                   // (the answer here is the same work: the last one in it is chosen)
+  await item(0).dispatch('click'); await tick();
+  await escape();                                                   // left, but chosen last
+  await add();                                                      // then the harness's answer chooses its last inscription, t2
+  await escape();
+  await add();
+  out.added = added();
+""")
+    assert out["added"] == [{}, {"font": FONT}, {"font": HEBREW}]
 
 
 @node
@@ -417,3 +469,53 @@ def test_a_path_on_a_photo_work_is_drawn_freehand_and_ends_with_enter(tmp_path):
     (sent,) = out["sent"]
     assert sent["op"] == "text_set" and sent["changes"]["layout"] == "path"
     assert sent["changes"]["points"] == [[0, 0], [pytest.approx(10 / s, abs=2e-3), pytest.approx(10 / s, abs=2e-3)], [pytest.approx(20 / s, abs=2e-3), 0]]
+
+
+@node
+def test_typing_makes_one_step_of_undo_per_pause_and_ctrl_shift_z_redoes_it(tmp_path):
+    out = run_photo(tmp_path, """
+  ctx.document.body.append(tree);
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'ge-tab-texts').dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.classList.contains('lt-item')).dispatch('click'); await settle();
+  const ta = () => tree.querySelectorAll('textarea').find((t) => t.classList.contains('lt-text'));
+  const sent = () => requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body.changes.text);
+  const type = async (text) => { for (let n = 4; n <= text.length; n++) { ta().value = text.slice(0, n); await ta().dispatch('input'); await wait(60); } };
+  await type('HOH 2026');                                           // a letter every 60 ms: one pause at the end
+  out.whileTyping = sent();
+  await wait(800); await settle();
+  out.afterPause = sent();
+  await type('HOH 2026!');
+  await wait(800); await settle();
+  out.typed = [sent(), ta().value];
+  await press({key: 'z', code: 'KeyZ', ctrlKey: true}); await settle();
+  out.undone = [ta().value, requests.filter((r) => r.path.endsWith('/undo')).length];
+  await press({key: 'z', code: 'KeyZ', ctrlKey: true, shiftKey: true}); await settle();
+  out.redone = [ta().value, requests.filter((r) => r.path.endsWith('/redo')).length];
+""")
+    assert out["whileTyping"] == []
+    assert out["afterPause"] == ["HOH 2026"]                                       # five letters typed, one change
+    assert out["typed"] == [["HOH 2026", "HOH 2026!"], "HOH 2026!"]
+    assert out["undone"] == ["HOH 2026", 1] and out["redone"] == ["HOH 2026!", 1]   # one step back is the last pause's typing
+
+
+@node
+def test_a_photo_works_inscription_takes_its_colours_in_the_editors_window_over_the_works_own_palette(tmp_path):
+    # the photo work passes the editor's window (vector-colours.js, pickFrom) over its own measured colours (/photo-works/{id}/palette)
+    out = run_photo(tmp_path, """
+  ctx.document.body.append(tree);
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'ge-tab-texts').dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.classList.contains('lt-item')).dispatch('click'); await settle();
+  const group = (label) => tree.querySelectorAll('div').find((d) => d.getAttribute('aria-label') === label);
+  out.letters = group('Цвет букв').querySelectorAll('button').map((b) => b.textContent);
+  await group('Цвет букв').querySelectorAll('button').find((b) => b.textContent === 'Выбрать…').dispatch('click'); await settle();
+  const dialog = ctx.document.body.querySelector('.modal');
+  out.text = dialog.textContent;
+  out.swatches = dialog.querySelectorAll('button').map((b) => b.getAttribute('data-entry')).filter(Boolean);
+  await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e13').dispatch('click');
+  await dialog.querySelectorAll('button').find((b) => b.textContent === 'Применить').dispatch('click'); await settle();
+  out.ops = requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body);
+""")
+    assert out["letters"] == ["Выбрать…"]                                                  # no squares to click in the tab any more
+    assert "Цвет букв надписи № 1 (ΔE — до цвета букв)" in out["text"] and "«Откуда» — из каких тестов и работ цвет известен" in out["text"]
+    assert sorted(set(out["swatches"])) == sorted(e["id"] for e in PALETTE)
+    assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}}]

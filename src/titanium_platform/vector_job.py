@@ -846,11 +846,12 @@ def _under(plan: dict, region_ids, cut) -> float:
 
 def _text_op(store: Store, plan: dict, entries: list[dict], colouring: dict, op: dict) -> dict:
     """The inscriptions after an operation (:func:`lettering.operate`), on a copy of the colouring that is returned. A new inscription
-    takes the darkest measured colour, the one that stands out most on clean titanium."""
+    takes the darkest measured colour, the one that stands out most on clean titanium, and the last font used (its undo tells which
+    inscription was changed last)."""
     by_id = {e["id"]: e for e in entries}
     try:
         colouring["texts"] = lettering.operate(store.data_dir, _texts(colouring), op, plan["size_mm"], lambda e: e in by_id,
-                                               lambda: lettering.darkest(entries))
+                                               lambda: lettering.darkest(entries), [_texts(s["colouring"]) for s in plan["undo"]])
     except su.ValidationError as exc:
         raise cv.ConversionError(str(exc)) from None
     return colouring

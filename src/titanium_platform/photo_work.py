@@ -315,14 +315,16 @@ def _pieces(layer: dict) -> float | None:
 
 def text(store: Store, plan_id: int, op) -> None:
     """One operation on the work's inscriptions (``lettering.operate``: ``text_add``, ``text_set``, ``text_copy``, ``text_delete``), one step
-    of undo. A new inscription takes the darkest measured colour of the work's titanium."""
+    of undo. A new inscription takes the darkest measured colour of the work's titanium and the last font used (its undo tells which
+    inscription was changed last)."""
     plan = _work(store, plan_id)
     if not isinstance(op, Mapping):
         raise su.ValidationError("an edit must name its operation")
     before = _here(plan)
     entries = _palette(store, plan)
     ids = {e["id"] for e in entries}
-    plan["texts"] = lettering.operate(store.data_dir, plan["texts"], dict(op), size_mm(plan), lambda e: e in ids, lambda: lettering.darkest(entries))
+    plan["texts"] = lettering.operate(store.data_dir, plan["texts"], dict(op), size_mm(plan), lambda e: e in ids, lambda: lettering.darkest(entries),
+                                      [s.get("texts") or [] for s in plan["undo"]])
     if _here(plan) != before:
         _push(plan, before)
     plan["updated_at"] = now()
