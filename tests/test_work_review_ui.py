@@ -10,7 +10,7 @@ import pytest
 
 from test_vector_work import GLUE, PAPER, TABLES, UI, by_rgb, colouring, job, lab, palette_ids, work    # noqa: F401  (fixtures)
 from test_work_review import engrave, exported, moved
-from titanium_platform import work_errors
+from titanium_platform import conversion as cv, work_errors
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 HARNESS = """
@@ -81,6 +81,25 @@ def test_a_work_with_nothing_to_compare_says_what_to_do_and_a_file_never_made_pr
   out.text = view.textContent;
 """)
     assert "Фото результата по этой работе ещё не принято" in out["text"] and "Файл из этой работы ещё не создавали" in out["text"]
+
+
+@node
+def test_a_review_whose_promise_was_lost_says_so_instead_of_calling_it_another_file(work, job, tmp_path):
+    c, j = work, job
+    plan = exported(c, j)
+    pair = engrave(c, j)
+    del plan["exports"][-1]["promised"]
+    cv._persist(c["store"], plan, plan["status"], plan["markers_enabled"])
+    colouring(c, j, op="assign", mode="random")
+    work_errors.after_acceptance(c["store"], pair)
+    payload = c["client"].get(f"/api/vector/{j['id']}").json()
+    listed = next(w for w in c["client"].get("/api/vector").json() if w["id"] == j["id"])
+    out = run(tmp_path, {"job": payload, "listed": listed}, """
+  out.text = VR.view(data.job, run).textContent;
+  out.card = VR.cardLines(data.listed).map((l) => l.textContent).join(' ');
+""")
+    assert "уже не восстановить, поэтому сравнения нет" in out["text"] and "Это другой файл" not in out["text"]
+    assert "обещанное файлом не сохранилось" in out["card"]
 
 
 @node

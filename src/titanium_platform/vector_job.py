@@ -1908,7 +1908,8 @@ def _last_review(data: dict) -> dict | None:
     last = reviews[0]
     return {"engraving_id": last["engraving_id"], "photo_name": last["photo_name"], "reviewed_at": last["reviewed_at"],
             "matched": last["summary"]["matched"], "engraved": last["summary"]["engraved"], "mean_delta_e": last["summary"]["mean_delta_e"],
-            "area_share_beyond": last["summary"]["area_share_beyond"], "beyond_layers": last["summary"]["beyond_layers"]}
+            "area_share_beyond": last["summary"]["area_share_beyond"], "beyond_layers": last["summary"]["beyond_layers"],
+            "promise_lost": bool(last.get("promise_lost"))}
 
 
 def listing(store: Store) -> list[dict]:

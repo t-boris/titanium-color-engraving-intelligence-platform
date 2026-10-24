@@ -22,6 +22,8 @@ const VectorReview = (() => {
   const NOTE = {
     poor_chart: (n) => `Карта на этом фото прочитана неточно (ошибка ${num(n.residual, 1)} ΔE), поэтому меньшие различия ошибками не считаются.`,
     systematic: (n) => `Почти все слои сместились в одну сторону (медиана ΔL ${signed(n.dL)}): похоже на экспозицию фото или партию титана, а не на рецепты.`};
+  const LOST = 'Файл создан до того, как работа стала запоминать обещанные цвета, а после него работу перекрасили или разбили заново: что он обещал, '
+    + 'уже не восстановить, поэтому сравнения нет. Измеренные слои фото перечислены ниже; следующий файл из работы запомнит свои цвета.';
   const shown = new Map();                       // какую гравировку работы показывать: удобство одного зрителя, не состояние работы
 
   // ---- результат гравировки -----------------------------------------------------------------------------------------------------
@@ -68,7 +70,8 @@ const VectorReview = (() => {
       return [
         h('p', {class: 'small'}, `Фото ${r.photo_name} · ${when(r.reviewed_at)} · ` + (r.export_number ? `файл № ${r.export_number}` : 'работа ещё не выгружалась')),
         r.approximate ? h('div', {class: 'alert warn'}, 'Файл создан до того, как работа стала запоминать обещанные цвета, поэтому «обещано» взято из слоёв работы такими, как они сохранены сейчас.') : null,
-        t.matched === 0 ? h('div', {class: 'alert warn'}, 'Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в LightBurn '
+        r.promise_lost ? h('div', {class: 'alert warn'}, LOST)
+        : t.matched === 0 ? h('div', {class: 'alert warn'}, 'Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в LightBurn '
           + 'или сделали не из этой работы): сравнивать нечего.')
           : h('p', {}, `Совпало слоёв ${t.matched} из ${t.promised} обещанных. Средняя разница ${num(t.mean_delta_e, 1)} ΔE по площади; заметно отличаются ${t.beyond_layers} слоёв `
             + `(${percent(t.area_share_beyond)} площади). Порог ${num(r.limit, 1)} ΔE.`),
@@ -142,6 +145,7 @@ const VectorReview = (() => {
     if (w.review) {
       lines.push(h('p', {class: 'small'}, w.review.matched
         ? `Результат гравировки (${w.review.photo_name}): ΔE ${num(w.review.mean_delta_e, 1)}, заметно отличаются ${w.review.beyond_layers} из ${w.review.matched} слоёв`
+        : w.review.promise_lost ? `Фото ${w.review.photo_name}: обещанное файлом не сохранилось, сравнения нет`
         : `Фото ${w.review.photo_name}: слои не совпали с файлом этой работы`));
     }
     return lines;
@@ -153,7 +157,7 @@ const VectorReview = (() => {
     const s = wr.review.summary;
     return h('div', {class: 'card stack'}, h('h3', {}, `Вывод по работе «${wr.work}»`),
       s.matched ? h('p', {}, `Совпало слоёв ${s.matched} из ${s.promised} обещанных; средняя разница ${num(s.mean_delta_e, 1)} ΔE; заметно отличаются ${s.beyond_layers} слоёв `
-        + `(${percent(s.area_share_beyond)} площади).`) : h('p', {}, 'Ни один слой этого файла не совпал по настройкам с файлом работы.'),
+        + `(${percent(s.area_share_beyond)} площади).`) : h('p', {}, wr.review.promise_lost ? LOST : 'Ни один слой этого файла не совпал по настройкам с файлом работы.'),
       ...wr.review.notes.map((n) => h('p', {class: 'small muted'}, (NOTE[n.code] || (() => n.code))(n))),
       h('div', {class: 'row'}, link('/vector?plan=' + wr.plan_id, 'Открыть работу: сравнение и замены')));
   }

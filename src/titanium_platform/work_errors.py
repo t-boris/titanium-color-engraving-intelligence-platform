@@ -49,14 +49,19 @@ def _engraved(store: Store, pair_id: int) -> list[dict]:
     return out
 
 
-def _promise_for(plan: dict, engraved: list[dict]) -> tuple[int | None, list[dict], bool]:
+def _promise_for(plan: dict, engraved: list[dict]) -> tuple[int | None, list[dict] | None, bool]:
     """The export whose layers the engraved file matches best (the latest on a tie): its number, its promise and whether the promise is
-    exact. A work exported before promises were kept, or never exported, is set against its layers as it last stored them (approximate)."""
+    only reconstructed. A work exported before promises were kept is set against its layers as it last stored them (approximate) while
+    its colouring and split are still the ones its last file was made from (:func:`work_review.baseline_of`); after a recolouring or a
+    new split the promise is lost and is None, and a work never exported is set against its layers as they are (approximate)."""
     kept = [(e["number"], e["promised"]) for e in plan["exports"] if e.get("promised")]
     best = max(kept, key=lambda k: (len(wr.match(k[1], engraved)), k[0]), default=None)
     if best is not None:
         return best[0], best[1], False
-    return (plan["exports"][-1]["number"] if plan["exports"] else None), wr.promised_layers(plan.get("layers") or []), True
+    if not plan["exports"]:
+        return None, wr.promised_layers(plan.get("layers") or []), True
+    promise, approximate = wr.baseline_of(plan)
+    return plan["exports"][-1]["number"], promise, approximate
 
 
 def review_pair(store: Store, pair_id: int) -> dict | None:
@@ -68,9 +73,9 @@ def review_pair(store: Store, pair_id: int) -> dict | None:
     engraved = _engraved(store, pair_id)
     number, promise, approximate = _promise_for(plan, engraved)
     residual = ((pair.get("check") or {}).get("chart") or {}).get("residual")
-    found = wr.review(promise, engraved, chart_residual=residual)
+    found = wr.review(promise or [], engraved, chart_residual=residual)
     return {"engraving_id": pair["engraving_id"], "pair_id": pair_id, "photo_name": pair["photo_name"], "reviewed_at": now(),
-            "export_number": number, "approximate": approximate, "chart_residual": residual, **found}
+            "export_number": number, "approximate": approximate, "promise_lost": promise is None, "chart_residual": residual, **found}
 
 
 def record(store: Store, pair_id: int) -> dict | None:

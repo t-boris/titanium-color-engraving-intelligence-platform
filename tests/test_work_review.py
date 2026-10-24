@@ -215,6 +215,22 @@ def test_a_work_exported_before_promises_were_kept_is_reviewed_against_its_layer
     assert review["approximate"] is True and review["export_number"] == 1 and review["summary"]["matched"] == len(plan["layers"])
 
 
+def test_the_review_of_a_file_made_before_promises_were_kept_claims_nothing_once_the_work_was_recoloured(work, job):
+    c, j = work, job
+    plan = exported(c, j)
+    pair = engrave(c, j)
+    del plan["exports"][-1]["promised"]
+    cv._persist(c["store"], plan, plan["status"], plan["markers_enabled"])
+    colouring(c, j, op="assign", mode="random")                                              # recoloured since the file: its promise is lost
+    review = work_errors.review_pair(c["store"], pair)
+    assert review["promise_lost"] is True and review["approximate"] is False and review["export_number"] == 1
+    assert review["rows"] == [] and review["not_engraved"] == [] and review["summary"]["matched"] == 0
+    assert len(review["unmatched"]) == len(plan["layers"])                                    # what the photograph measured is still listed
+    colouring(c, j, op="undo")                                                                # the file's colouring again: reconstructed
+    again = work_errors.review_pair(c["store"], pair)
+    assert again["promise_lost"] is False and again["approximate"] is True and again["summary"]["matched"] == len(plan["layers"])
+
+
 def test_a_file_made_before_promises_were_kept_is_reconstructed_from_the_layers_while_the_colouring_is_unchanged(work, job):
     c, j = work, job
     plan = exported(c, j)
