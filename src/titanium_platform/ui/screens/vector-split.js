@@ -1,5 +1,6 @@
 /* Векторная работа из фотографии, разбиение (REQ-042, DEC-074, DEC-076; выбор алгоритма и общий раздел с цветами — фича
-   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, детальность, сглаживание, лица — всё на виду, как
+   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, плотность областей (I-2: ползунок и число областей, которое он
+   даст), сглаживание, лица — всё на виду, как
    часть раздела «Цвета и разбиение» (vector-colours.js). Найденные важные области (лицо, глаза, губы) нарисованы поверх
    картинки в сворачиваемом блоке: оператор убирает найденную область или добавляет свою — тянет прямоугольник или эллипс
    по картинке (координаты — пиксели рабочей картинки). Изменения областей и настроек применяются кнопкой «Разбить заново»:
@@ -8,7 +9,8 @@
 const VectorSplit = (() => {
   const {h, fill, btn, field, post, fail, toast, confirmBox} = App;
   const NS = 'http://www.w3.org/2000/svg';
-  const DETAIL = [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']];
+  const DENSITY = {min: 30, max: 250, step: 5};                     // vector_job.DENSITY
+  const LEVELS = {coarse: 70, medium: 100, fine: 150};                // прежние уровни детальности — точки той же шкалы
   const KIND = {face: 'Лицо', eye: 'Глаз', lips: 'Губы', manual: 'Отмечено вручную'};
   /** Алгоритмы разбиения и чем они отличаются: что получается на картинке и сколько это стоит (DEC-082 фичи
       vector-detail-and-colour-control; числа — портрет работы 22 на 1200 пикселях, 28 цветов, крупно, с лицами и без). Детальность — не алгоритм:
@@ -49,6 +51,31 @@ const VectorSplit = (() => {
     input.addEventListener('input', () => { readout.textContent = say(input.value); clearTimeout(timer); timer = setTimeout(pump, 120); });
     return h('div', {class: 'vw-slider'}, input, readout);
   }
+  /** Плотность областей (I-2): сколько крупных участков ложится по длинной стороне картинки, независимо от числа цветов. Сколько областей
+      это даст, сервер считает с теми же настройками, работа не меняется (``count``); запросы по одному, берётся последнее положение. */
+  function densityControl(j, settings) {
+    const s = j.split, start = s.density || LEVELS[s.detail] || LEVELS.medium;
+    const input = h('input', {type: 'range', min: String(DENSITY.min), max: String(DENSITY.max), step: String(DENSITY.step), value: String(start),
+      'aria-label': 'Плотность областей'});
+    const readout = h('output', {class: 'vw-slider-value'}, String(start));
+    const count = h('p', {class: 'small vw-density-count'}, `сейчас областей: ${j.document.regions}`);
+    let asked = null, busy = false, timer = null;
+    async function pump() {
+      if (busy) return;
+      busy = true;
+      try {
+        while (JSON.stringify(settings()) !== asked) {
+          asked = JSON.stringify(settings());
+          fill(count, 'считаю, сколько будет областей…');
+          const r = await post(`/vector/${j.id}/split/preview`, settings());
+          if (JSON.stringify(settings()) === asked) fill(count, `будет областей: ${r.regions} (сейчас ${j.document.regions}) · наименьшая ${App.num(r.min_area_mm2, 2)} мм²`);
+        }
+      } catch (e) { fail(e); fill(count, `сейчас областей: ${j.document.regions}`); asked = null; } finally { busy = false; }
+    }
+    const recount = () => { clearTimeout(timer); timer = setTimeout(pump, 400); };
+    input.addEventListener('input', () => { readout.textContent = input.value; recount(); });
+    return {input, count, recount, el: h('div', {class: 'vw-slider'}, input, readout)};
+  }
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -73,7 +100,9 @@ const VectorSplit = (() => {
     const removed = new Set(s.removed);
     const colours = h('input', {type: 'number', step: '1', min: '2', max: String(j.layer_cap), value: s.n_colors, 'aria-label': 'Число цветов'});
     const algorithm = picker(s.algorithm || 'slic');
-    const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === s.detail}, l)));
+    const settings = () => ({n_colors: +colours.value, algorithm: algorithm.select.value, density: +density.input.value, faces: faces.checked,
+      manual, removed: [...removed]});
+    const density = densityControl(j, settings);
     const smoothing = smoothness(j, smooth || (async () => {}));
     const faces = h('input', {type: 'checkbox', checked: s.faces});
     const tool = h('select', {'aria-label': 'Форма новой области'}, h('option', {value: 'rect'}, 'Прямоугольник'), h('option', {value: 'ellipse'}, 'Эллипс'));
@@ -82,8 +111,12 @@ const VectorSplit = (() => {
     const list = h('div', {class: 'stack'});
     const pending = h('p', {class: 'muted small', hidden: true}, 'Изменения областей применятся после «Разбить заново».');
     const areasTitle = h('summary', {});
+    let areasKey = null;                                               // the areas as last drawn: a change of them recounts the regions
 
     function draw() {
+      const key = JSON.stringify([manual, [...removed].sort(), faces.checked]);
+      if (areasKey !== null && key !== areasKey) density.recount();
+      areasKey = key;
       overlay.replaceChildren();
       j.areas.detected.forEach((a) => {
         if (!faces.checked) return;
@@ -129,13 +162,13 @@ const VectorSplit = (() => {
       if (area) { manual.push(area); draw(); }
     });
     faces.addEventListener('change', draw);
+    for (const el of [colours, algorithm.select]) el.addEventListener('change', () => density.recount());
     draw();
 
     // разбить заново: раскраска, её варианты и шаги отмены начинаются заново — сначала об этом спрашивается (I-8)
     const run = btn('Разбить заново', () => confirmBox('Разбить картинку заново?', RESET, 'Разбить заново', async () => {
       try {
-        await post(`/vector/${j.id}/split`, {n_colors: +colours.value, algorithm: algorithm.select.value, detail: detail.value,
-          faces: faces.checked, manual, removed: [...removed]});
+        await post(`/vector/${j.id}/split`, settings());
         toast('Картинка разбита заново; цвета подобраны заново', 'ok');
         reload();
       } catch (e) { fail(e); }
@@ -145,7 +178,9 @@ const VectorSplit = (() => {
     return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Разбиение'),
       h('div', {class: 'vw-split-fields'}, field('Алгоритм разбиения', algorithm.select),
         field('Число цветов', colours, `2–${j.layer_cap}: чистка — первый слой` + (j.markers_enabled ? ', ещё один — маркеры' : '')),
-        field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'), field('Гладкость линий', smoothing, 'ползунок перерисовывает границы сразу; области и цвета не меняются')),
+        field('Плотность областей', density.el, 'меньше — крупнее и меньше областей, больше — мелче; 70, 100 и 150 — прежние «крупно», «средне» и «детально»'),
+        field('Гладкость линий', smoothing, 'ползунок перерисовывает границы сразу; области и цвета не меняются')),
+      density.count,
       h('div', {class: 'vw-split-actions'}, h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run),
       algorithm.hint,
       h('p', {class: 'small'}, `Алгоритм ${algorithmName(doc.algorithm)} · цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')

@@ -155,6 +155,46 @@ def test_the_split_settings_and_important_areas_are_used_when_the_picture_is_spl
     assert c["client"].get(f"/api/vector/{j['id']}").json()["document"]["version"] == 2
 
 
+def test_the_least_region_follows_the_density_through_the_three_levels_of_detail():
+    """vector-detail-and-colour-control I-2: the levels are points of the density scale, and between and beyond them the least region
+    shrinks steadily as the density grows."""
+    for across, share in vector_job.DETAIL.values():
+        assert vector_job.least_share(across) == share
+    lo, hi = vector_job.DENSITY
+    shares = [vector_job.least_share(d) for d in range(lo, hi + 1, 5)]
+    assert all(a > b for a, b in zip(shares, shares[1:]))
+    assert vector_job.density_of({"detail": "fine"}) == 150 and vector_job.density_of({"density": 40, "detail": "fine"}) == 40
+
+
+def test_a_lower_density_gives_fewer_regions_with_the_same_colours_and_the_preview_counts_them_without_changing_the_work(work):
+    """vector-detail-and-colour-control I-2 (overview criterion 2): density apart from the number of colours, the count before the split."""
+    from test_segment import photo_like
+    c = work
+    ok, png = cv2.imencode(".png", cv2.cvtColor(photo_like(320, 400, seed=2), cv2.COLOR_RGB2BGR))
+    data = {"device_id": c["w"]["setup"][0], "lens_id": c["w"]["setup"][1], "material_id": c["ti"], "name": "Detailed", "width_mm": 60,
+            "strategy": "photo", "n_colors": 5, "threshold": 6, "faces": "false"}
+    j = c["client"].post("/api/vector", data=data, files={"image": ("photo.png", png.tobytes(), "image/png")}).json()
+    url = f"/api/vector/{j['id']}"
+    before = c["client"].get(url).json()
+    counts = {}
+    for density in (40, 200):
+        r = c["client"].post(f"{url}/split/preview", json={"n_colors": 5, "density": density, "faces": False})
+        assert r.status_code == 200, r.text
+        counts[density] = r.json()
+    assert counts[40]["regions"] < counts[200]["regions"] and counts[40]["colours"] == counts[200]["colours"] == 5
+    assert counts[40]["min_area_mm2"] > counts[200]["min_area_mm2"] and counts[40]["density"] == 40
+    after = c["client"].get(url).json()
+    assert after["document"] == before["document"] and after["split"] == before["split"]                 # the work is as it was
+    split = c["client"].post(f"{url}/split", json={"n_colors": 5, "density": 40, "faces": False}).json()
+    assert split["document"]["regions"] == counts[40]["regions"] and split["split"]["density"] == 40       # the split gives what was counted
+    assert pl.get_plan(c["store"], j["id"])["history"][-1]["op"]["density"] == 40
+    for bad in (29, 251, 99.5, True, "100"):
+        r = c["client"].post(f"{url}/split/preview", json={"n_colors": 5, "density": bad})
+        assert r.status_code == 422 and "density must be a whole number from 30 to 250" in r.json()["error"], bad
+    old = c["client"].post(f"{url}/split", json={"n_colors": 5, "detail": "coarse", "faces": False}).json()   # a level is still a density
+    assert old["split"]["density"] == 70
+
+
 def test_the_splitting_algorithm_is_chosen_when_the_work_is_made_and_when_it_is_split_again(work, job):
     """Feature vector-detail-and-colour-control, DEC-076, DEC-082: slic, tonal, planes or seeds; a level of detail is not an algorithm."""
     c, j = work, job
@@ -1063,6 +1103,32 @@ def test_the_colour_step_sends_contrast_and_artistic_with_its_group_and_names_th
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_density_slider_counts_the_regions_it_would_give_and_split_again_takes_it(work, job, tmp_path):
+    """vector-detail-and-colour-control I-2: the slider asks the server for the count once it stops (the last position only), the work is
+    unchanged until «Разбить заново»."""
+    routes = routes_of(work, job)
+    routes[f"/api/vector/{job['id']}/split/preview"] = {"status": 200, "json": {"density": 60, "regions": 17, "colours": 5, "min_area_mm2": 2.5}}
+    out = run_screen(tmp_path, job, routes, """
+  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Плотность областей');
+  out.initial = [slider.getAttribute('min'), slider.getAttribute('max'), slider.value];
+  const count = () => tree.querySelectorAll('p').find((p) => (p.className || '').includes('vw-density-count')).textContent;
+  out.before = count();
+  for (const v of ['90', '75', '60']) { slider.value = v; await slider.dispatch('input'); }
+  await new Promise((r) => setTimeout(r, 500)); await tick(); await tick();
+  out.after = count();
+  out.previews = ctx.requests.filter((r) => r.path.endsWith('/split/preview')).map((r) => JSON.parse(r.body));
+  await byText(tree, 'button', 'Разбить заново').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.split = ctx.requests.filter((r) => r.path.endsWith('/split') && r.method === 'POST').map((r) => JSON.parse(r.body));
+""")
+    regions = work["client"].get(f"/api/vector/{job['id']}").json()["document"]["regions"]
+    assert out["initial"] == ["30", "250", "100"] and out["before"] == f"сейчас областей: {regions}"
+    assert [p["density"] for p in out["previews"]] == [60] and out["previews"][0]["n_colors"] == 5
+    assert out["after"].startswith(f"будет областей: 17 (сейчас {regions})")
+    assert len(out["split"]) == 1 and out["split"][0]["density"] == 60
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_a_region_clicked_with_the_brush_is_painted_with_the_colour_picked_from_the_palette(work, job, tmp_path):
     out = run_screen(tmp_path, job, routes_of(work, job), """
   const picture = tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
@@ -1107,7 +1173,7 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
     assert out["beforeConfirm"] == 0 and "раскраска начнётся сначала" in out["warning"] and "Надписи и фотозоны перенесутся" in out["warning"]
     (path, body), = out["posted"]
     assert path == f"/api/vector/{job['id']}/split" and body["manual"] == [{"polygon": [[24, 18], [120, 18], [120, 72], [24, 72]]}]
-    assert body["n_colors"] == 5 and body["detail"] == "medium" and body["faces"] is True and body["removed"] == []
+    assert body["n_colors"] == 5 and body["density"] == 100 and body["faces"] is True and body["removed"] == []      # medium detail is density 100
     r = work["client"].post(f"/api/vector/{job['id']}/split", json=body)            # the server takes what the screen sends
     assert r.status_code == 200 and r.json()["split"]["manual"][0]["polygon"][0] == [24, 18]
 
@@ -1122,7 +1188,7 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
   const hint = () => tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
   out.hints = {};
   for (const [value] of out.options) { select.value = value; await select.dispatch('change'); out.hints[value] = hint(); }
-  out.detail = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Детальность').options.map((o) => o.value);
+  out.detail = tree.querySelectorAll('select').filter((s) => s.getAttribute('aria-label') === 'Детальность').length;
   select.value = 'planes'; await select.dispatch('change');
   await byText(tree, 'button', 'Разбить заново').dispatch('click');
   await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
@@ -1134,7 +1200,7 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
                                                                                                    ("planes", "Крупные плоскости"), ("seeds", "SEEDS")))
     assert "лица" in hints["slic"] and "светотени" in hints["tonal"] and "дольше остальных" in hints["tonal"]                  # what it looks like, what it costs
     assert "на 40 % меньше" in hints["planes"] and "быстрее" in hints["seeds"] and "Близок к «Мозаике»" in hints["seeds"]
-    assert out["detail"] == ["coarse", "medium", "fine"]                              # detail levels are not offered as algorithms
+    assert out["detail"] == 0                                                          # a density slider, not levels among the algorithms
     (path, body), = out["posted"]
     assert path == f"/api/vector/{job['id']}/split" and body["algorithm"] == "planes" and body["n_colors"] == 5
     r = work["client"].post(f"/api/vector/{job['id']}/split", json=body)               # the server takes what the screen sends
@@ -1259,7 +1325,7 @@ def test_the_slider_sends_the_last_position_once_and_the_editor_redraws_the_bord
     out = run_screen(tmp_path, j, routes, """
   const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Гладкость линий, мм');
   out.initial = [slider.getAttribute('type'), slider.getAttribute('min'), slider.getAttribute('max'), slider.getAttribute('step'), slider.value];
-  const readout = tree.querySelectorAll('output').find((o) => o.className === 'vw-slider-value');
+  const readout = slider.parentNode.querySelector('output');                           // its own readout (the density slider has one too)
   out.readoutBefore = readout.textContent;
   const geometryBefore = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
   for (const v of ['0.3', '0.6', '0.9', '1.2']) { slider.value = v; await slider.dispatch('input'); }

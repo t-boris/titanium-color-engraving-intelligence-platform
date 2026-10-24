@@ -106,10 +106,16 @@ def edit_vector_job(plan_id: int, op: dict, request: Request):
 
 @router.post("/vector/{plan_id}/split")
 def split_vector_job(plan_id: int, body: dict, request: Request):
-    """Split a photograph job's picture again (see vector_job.resplit): ``n_colors``, ``detail``, ``tolerance_mm``,
-    ``faces``, ``manual`` areas in picture pixels and ``removed`` detected areas."""
+    """Split a photograph job's picture again (see vector_job.resplit): ``n_colors``, ``density`` (or a level of ``detail``),
+    ``tolerance_mm``, ``faces``, ``manual`` areas in picture pixels and ``removed`` detected areas."""
     vector_job.resplit(store_of(request), plan_id, body)
     return _view(request, plan_id)
+
+
+@router.post("/vector/{plan_id}/split/preview")
+def preview_vector_split(plan_id: int, body: dict, request: Request):
+    """How many regions the same settings as ``/split`` would make, the work unchanged (see vector_job.split_preview)."""
+    return vector_job.split_preview(store_of(request), plan_id, body)
 
 
 @router.post("/vector/{plan_id}/smoothing")

@@ -446,6 +446,29 @@ of the picture's area. On the operator's 150 mm portrait (12 colours, one face f
 (least region 15, 7.5 and 3 mm²); the medium level keeps flat areas calm while the face, eyes and lips keep their finer
 regions."""
 DEFAULT_DETAIL = "medium"
+DENSITY = (30, 250)
+"""The density of a split (vector-detail-and-colour-control I-2, its DEC-093): the coarse superpixels along the picture's longer side, any whole number in
+this range, independent of the number of colours; the three levels of detail are 70, 100 and 150 of it. The least region follows the
+density (:func:`least_share`), so that a lower density gives fewer and larger regions."""
+
+
+def least_share(density: int) -> float:
+    """The least region, as a share of the picture's area, at a density: the share of a level of detail at its density, and between and
+    beyond them along the straight line through the levels on logarithmic scales (log share against log density), as a slider needs it."""
+    levels = sorted(DETAIL.values())
+    for across, share in levels:
+        if density == across:
+            return share
+    x = [math.log(across) for across, _ in levels]
+    y = [math.log(share) for _, share in levels]
+    k = 0 if density < levels[1][0] else 1                         # the segment it lies on, or the nearest one beyond the ends
+    t = (math.log(density) - x[k]) / (x[k + 1] - x[k])
+    return math.exp(y[k] + t * (y[k + 1] - y[k]))
+
+
+def density_of(split: dict) -> int:
+    """The density a split was made at: its own, or that of its level of detail (works split before 0.28.0)."""
+    return int(split.get("density") or DETAIL[split.get("detail") or DEFAULT_DETAIL][0])
 PHOTO_OPS = ("photo_add", "photo_remove", "photo_set", "photo_delete")     # the photo zones (REQ-073, :mod:`photo_zones`)
 TEXT_OPS = lettering.OPS                                                  # the inscriptions (feature inscriptions-in-works)
 COLOURING_OPS = ("assign", "ai_colour", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
@@ -472,9 +495,14 @@ def _split_settings(params: dict, markers: bool, detected: int) -> dict:
     algorithm = params.get("algorithm") or seg.DEFAULT_ALGORITHM
     if algorithm not in seg.ALGORITHMS:
         raise cv.ConversionError("the splitting algorithm must be slic, tonal, planes or seeds")
-    detail = params.get("detail") or DEFAULT_DETAIL
-    if detail not in DETAIL:
-        raise cv.ConversionError("the level of detail must be coarse, medium or fine")
+    density = params.get("density")
+    if density is None:
+        detail = params.get("detail") or DEFAULT_DETAIL
+        if detail not in DETAIL:
+            raise cv.ConversionError("the level of detail must be coarse, medium or fine")
+        density = DETAIL[detail][0]
+    if isinstance(density, bool) or not isinstance(density, int) or not DENSITY[0] <= density <= DENSITY[1]:
+        raise cv.ConversionError(f"the density must be a whole number from {DENSITY[0]} to {DENSITY[1]}")
     try:
         smoothing = float(params.get("tolerance_mm", seg.TOLERANCE_MM))
     except (TypeError, ValueError):
@@ -490,14 +518,15 @@ def _split_settings(params: dict, markers: bool, detected: int) -> dict:
     removed = params.get("removed") or []
     if not isinstance(removed, list) or any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < detected for i in removed):
         raise cv.ConversionError("a removed area must be one of the areas found in the picture")
-    return {"n_colors": n, "algorithm": algorithm, "detail": detail, "tolerance_mm": smoothing, "faces": bool(params.get("faces", True)),
+    return {"n_colors": n, "algorithm": algorithm, "density": density, "tolerance_mm": smoothing, "faces": bool(params.get("faces", True)),
             "manual": manual, "removed": sorted(set(removed))}
 
 
 def _segment(plan: dict, picture: np.ndarray) -> dict:
     """Split the job's picture with its settings; the faces found once in it are used unless removed or switched off."""
     s, found = plan["split"], plan["detected"]
-    across, share = DETAIL[s["detail"]]
+    across = density_of(s)
+    share = least_share(across)
     size = plan["size_mm"]
     areas = [a for i, a in enumerate(found["areas"]) if i not in s["removed"]] if s["faces"] else []
     document = seg.segment(picture, size["width"], s["n_colors"], important=areas + s["manual"], use_faces=False,
@@ -560,8 +589,8 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
 
 def _split_op(split: dict) -> dict:
     """What the history records of a split: its settings and how many areas were marked or removed."""
-    return {**{k: split[k] for k in ("n_colors", "algorithm", "detail", "tolerance_mm", "faces")}, "manual": len(split["manual"]),
-            "removed": len(split["removed"])}
+    return {**{k: split[k] for k in ("n_colors", "algorithm", "tolerance_mm", "faces")}, "density": density_of(split),
+            "manual": len(split["manual"]), "removed": len(split["removed"])}
 
 
 def is_photo(plan: dict) -> bool:
@@ -593,6 +622,22 @@ def resplit(store: Store, plan_id: int, params: dict) -> None:
         plan["variants"], plan["undo"], plan["redo"] = [], [], []
         _add_variant(store, plan, document, entries)
         _photo_refresh(store, plan, document, entries)
+
+
+def split_preview(store: Store, plan_id: int, params: dict) -> dict:
+    """How many regions and colours the picture would be split into with these settings (the ones «Разбить заново» takes), the work left as
+    it is: the density slider shows the count before the split is made. Each answer is kept for its picture and settings."""
+    plan = _photo_job(store, plan_id)
+    if not isinstance(params, dict):
+        raise cv.ConversionError("the split settings must be an object")
+    split = _split_settings(params, plan["markers_enabled"], len(plan["detected"]["areas"]))
+
+    def count() -> dict:
+        document = _segment({**plan, "split": split}, _source_rgb(Path(plan["image_path"]).read_bytes()))
+        return {"regions": len(document["regions"]), "colours": len(document["palette"]), "min_area_mm2": document["min_area_mm2"]}
+
+    key = json.dumps({k: v for k, v in split.items() if k != "tolerance_mm"}, sort_keys=True)
+    return {"density": split["density"], **_memo(("split-preview", plan["image_path"], key), count)}
 
 
 # -- colouring -------------------------------------------------------------------------------------------------------------

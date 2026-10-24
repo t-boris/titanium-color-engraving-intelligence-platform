@@ -67,7 +67,7 @@ Made by the AI where the request left a choice open; correct them in the discuss
 ## Acceptance Criteria
 
 - [x] Navigation starts with Experiments, Color Map, Vector Work; existing vector-work URLs remain valid.
-- [ ] Global density can be decreased or increased independently of the source-colour count. Preview shows the resulting region count; a detailed reference image produces fewer regions at low density than at high density with other settings unchanged.
+- [x] Global density can be decreased or increased independently of the source-colour count. Preview shows the resulting region count; a detailed reference image produces fewer regions at low density than at high density with other settings unchanged.
 - [ ] Each detected or manually marked eye has its own detail override and editable boundary. Changing an eye override preserves geometry outside that boundary; missing detections can be added manually.
 - [x] Smoothing produces continuous tangents along curved boundaries except at intentional corners and multi-region junctions. Shared borders remain identical, holes survive, and rasterized uncovered and doubly covered areas each remain below 0.5%. Export preserves the previewed geometry.
 - [x] Selecting a region exposes every eligible measured palette colour for the selected laser, lens and titanium. Applying a colour updates that region, its recipe, layer count and time estimate.
