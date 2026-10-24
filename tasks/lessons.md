@@ -574,3 +574,13 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   whose only scale is nearly black, wrote «я не могу выбрать цвет … ничего такого сделать не могу».
 - Rule: a feature promised for "the next release" twice is either built in the next one or written in the release report as not built, with
   what the operator can do meanwhile (here: switch the zone's scale); never carried silently a third time.
+
+## Comments are in English, also in a file whose comments are Russian (0.28.0, 2026-10-24)
+
+- The operator's global rule is "always English in files or comments". The UI scripts carry many Russian comments from earlier releases;
+  matching them is not a reason to write new Russian comments. In 0.28.0 thirty new comments in seven UI files were written in Russian
+  and had to be translated afterwards (commit "chore(ui): the comments added in 0.28.0 ... are in English").
+- Rule: every new or rewritten comment, docstring and JSDoc is English, whatever the file around it. Russian stays only in strings the
+  operator reads on the screen and in the translations. Before a commit, grep the added lines of the diff for Cyrillic inside `//`, `/*`
+  and `*` comment lines.
+
