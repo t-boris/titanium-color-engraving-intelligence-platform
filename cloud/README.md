@@ -37,6 +37,14 @@ Owner only (token of the laboratory's owner): `POST /labs`, `POST /labs/{id}/pub
 
 Any signed-in account: `POST /invitations/{token}/accept`.
 
+Sign-in handoff, no token (`titanium_cloud/handoff.py`; the desktop's side is `titanium_platform/cloud_session.py`): `GET /auth/config`
+(Neon Auth's address and the social providers), `GET /signin?state&challenge&callback` (the self-contained Russian page that signs the
+operator in with Neon Auth from the browser; `callback` must be `http://127.0.0.1:<port>/api/cloud/callback` or `localhost`),
+`POST /auth/handoff` `{state, challenge, session_token}` → `{code}` kept `CLOUD_HANDOFF_LIFETIME_S` (120 s) as a hash,
+`POST /auth/handoff/exchange` `{state, code, verifier}` → `{session_token}` once, when `S256(verifier)` is the challenge; any outcome
+spends the code (404 unknown or spent, 410 expired, 401 wrong verifier or state). The desktop then asks Neon Auth itself for a JWT
+(`GET <auth>/token` with the session cookie), so a handoff grants nothing by itself.
+
 Status codes: 401 no or invalid token; 403 signed in but not the owner; 404 unknown, or a private laboratory the caller may not see
 (never a hint that it exists); 409 the expected previous release is not the latest, the origin is taken, a key is reused, a finalized
 publication is changed; 410 an expired publication, a spent or revoked invitation; 413 a chunk above `CLOUD_CHUNK_BYTES` or a release
@@ -60,6 +68,9 @@ The Vercel project (`titanium-labs-api`, root directory `cloud`) needs:
 | `NEON_AUTH_ISSUER` | the issuer the tokens carry (Neon Auth's base URL); unset = not checked |
 | `NEON_AUTH_AUDIENCE` | optional; unset = not checked |
 | `PUBLIC_BASE_URL` | optional, for invitation links (`{base}/invitations/{token}`) |
+| `NEON_AUTH_BASE_URL` | Neon Auth's base URL (`…/<database>/auth`), called by the sign-in page from the browser; unset = no sign-in page (503) |
+| `CLOUD_OAUTH_PROVIDERS` | optional; the social providers switched on in Neon Auth, offered on the sign-in page (default `google`) |
+| `CLOUD_HANDOFF_LIFETIME_S` | optional; how long a sign-in code waits for the desktop (120 s) |
 | `CLOUD_REPOSITORY` | `postgres` (the default when `DATABASE_URL` is set); `memory` for a local run without a database |
 | `CLOUD_CHUNK_BYTES`, `CLOUD_UPLOAD_LIFETIME_S`, `CLOUD_INVITATION_LIFETIME_S` | optional; 1 MiB, one day, fourteen days |
 | `NEON_AUTH_JWKS_JSON` | a JWKS inline instead of a URL (tests and the local smoke) |
@@ -79,7 +90,10 @@ connects as `app_api`, which can only read and write through the policies, keyed
 repository inside every transaction. Cross-table checks (`cloud_owns_lab`, `cloud_is_member`, `cloud_can_read_lab`, …) are
 `SECURITY DEFINER` functions, so a policy never recurses into another policy. Chunks of public releases are readable by everyone;
 the chunks of an unfinished publication only by its owner. `cloud_accept_invitation` is the one write a non-owner makes, inside a
-definer function that checks the token's hash, expiry and that it is unused.
+definer function that checks the token's hash, expiry and that it is unused. `auth_handoff` (migration 0002) belongs to no account:
+its rows are the sign-in handoffs of the last two minutes, under the hash of their code, deleted when taken or expired; the service's
+own policy lets `app_api` insert, read and delete them. The service's origin (`https://titanium-labs-api.vercel.app`) must be a trusted
+domain of Neon Auth, or the browser page's calls to it are refused with `INVALID_ORIGIN`.
 
 ## Tests
 

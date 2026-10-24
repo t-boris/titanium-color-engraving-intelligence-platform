@@ -109,3 +109,18 @@ def test_the_parent_watchdog_sees_a_living_and_a_dead_process():
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()
     assert not cli._parent_alive(gone.pid) or sys.platform == "win32"
+
+
+def test_the_cloud_sign_in_callback_passes_the_desktop_guard_only_as_a_get_for_a_pending_state(desktop):
+    """The return from the cloud's sign-in page (electron REQ-086) is the one address the browser reaches without the session cookie."""
+    desktop.app.state.guard.callback_check = lambda state: state == "pending-state"
+    bare = TestClient(desktop.app, base_url="http://127.0.0.1")
+    assert bare.get("/api/cloud/account").status_code == 403
+    assert bare.get("/api/cloud/callback", params={"state": "other-state", "code": "c"}).status_code == 403
+    assert bare.get("/api/cloud/callback").status_code == 403
+    assert bare.get("/api/cloud/callback?state=pending-state&state=other-state&code=c").status_code == 403       # one state, not two
+    assert bare.post("/api/cloud/callback", params={"state": "pending-state", "code": "c"}).status_code == 403
+    passed = bare.get("/api/cloud/callback", params={"state": "pending-state", "code": "c"})
+    assert passed.status_code != 403 and "Вход не выполнен" in passed.text                                     # the route refuses on its own: nothing pending in cloud_session
+    desktop.app.state.guard.callback_check = None
+    assert bare.get("/api/cloud/callback", params={"state": "pending-state", "code": "c"}).status_code == 403

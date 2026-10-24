@@ -3,7 +3,8 @@
    опубликованного. «Подключённые лаборатории»: файл .tcelab читается и показывается прежде, чем подключается; подключение идёт в фоне с
    ходом чтения и отменой; у каждой лаборатории карточка: выпуски, различия, отзывы, палитра и шкалы каждой измеренной установки, «Проверить у
    себя» (перенос рецепта на свой лазер) и сделанные переносы. Всё, что пришло из чужого выпуска, показывается только текстом (узлы h()).
-   Адрес: #/labs, ?tab=own|sources, ?source=<id> — карточка лаборатории. */
+   Облако (REQ-086, REQ-087; labs-cloud.js): блок «Облако» на «Моей лаборатории», вкладка «Каталог лабораторий», проверка обновлений
+   подключённых из облака лабораторий. Адрес: #/labs, ?tab=own|sources|catalogue, ?source=<id> — карточка лаборатории. */
 'use strict';
 (() => {
   const {h, fill, btn, field, link, pill, get, post, put, del, form, go, toast, fail, modal, confirmBox, facts, table, num, labText, swatch, agreed, CAUTION} = App;
@@ -18,8 +19,8 @@
     credentials: 'ключи и пароли', email: 'почта', serial: 'серийные номера', batch: 'партии', surface: 'обработка поверхности',
     free_text_settings: 'настройки свободным текстом'};
   const TARGET = {release: 'выпуск', measurement: 'измерение', tone_profile: 'тональный профиль'};
-  const PHASE = {waiting: 'ожидание', checking: 'проверка файла', building: 'сборка снимка', activating: 'подключение', done: 'подключено',
-    unchanged: 'уже подключено', failed: 'не подключено', cancelled: 'отменено'};
+  const PHASE = {waiting: 'ожидание', downloading: 'загрузка из облака', checking: 'проверка файла', building: 'сборка снимка', activating: 'подключение',
+    done: 'подключено', unchanged: 'уже подключено', failed: 'не подключено', cancelled: 'отменено'};
   const STATUS = {connected: ['подключена', 'ok'], disconnected: ['отключена', 'warn']};
   const termsName = (t) => (t ? (t.name && t.name.ru) || t.id || '—' : '—');
   const termsOf = (list, id) => list.find((t) => t.id === id) || {id};
@@ -62,6 +63,20 @@
       lasers.length ? lasers.map((l) => l.el) : h('p', {class: 'muted small'}, 'Лазеров пока нет: добавьте лазер в разделе «Лазеры».'), err, save);
   }
 
+  /** What «Подготовка публикации» shows of a preview: the same for a file and for the cloud. */
+  function previewBody(p) {
+    return [facts([['Фотографий', p.photographs], ['Гравировок', p.engravings], ['Измерений', p.measurements], ['Тональных профилей', p.tone_profiles],
+      ['Установок (лазер и линза)', p.setups], ['Титана', p.materials]]),
+    h('p', {class: 'small'}, h('strong', {}, 'Публично: '), `${p.public.name || 'название не задано'}; автор ${p.public.author || 'не задан'}`
+        + (p.public.organization ? `, ${p.public.organization}` : '') + '; лазеры: '
+        + (Object.values(p.public.lasers || {}).map((l) => l.public_name).join(', ') || 'нет')),
+    Object.keys(p.tokenised || {}).length ? h('details', {class: 'small'}, h('summary', {}, 'Настройки, которые станут токенами'),
+      h('ul', {}, Object.entries(p.tokenised).map(([tag, values]) => h('li', {}, `${tag}: ${values.join(', ')}`)))) : h('p', {class: 'small muted'}, 'Текстовых настроек, которые пришлось бы заменить токенами, нет.'),
+    h('p', {class: 'small muted'}, 'Никогда не публикуется: ' + (p.never || []).map((k) => NEVER[k] || k).join(', ') + '.'),
+    p.ready ? h('p', {class: 'alert ok'}, 'Выпуск можно записать.') : h('p', {class: 'alert warn'}, p.photographs
+      ? 'Перед публикацией укажите публичное название лаборатории и автора.' : 'Публиковать нечего: принятых фотографий ещё нет.')];
+  }
+
   function previewCard(terms, exports, written) {
     const out = h('div', {class: 'stack'});
     const termsSelect = h('select', {'aria-label': 'Условия использования'}, terms.map((t) => h('option', {value: t.id}, `${termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
@@ -74,16 +89,7 @@
         const p = await post('/labs/own/preview', {selection: null});
         ready = p.ready;
         write.disabled = !ready;
-        fill(out, facts([['Фотографий', p.photographs], ['Гравировок', p.engravings], ['Измерений', p.measurements], ['Тональных профилей', p.tone_profiles],
-          ['Установок (лазер и линза)', p.setups], ['Титана', p.materials]]),
-        h('p', {class: 'small'}, h('strong', {}, 'Публично: '), `${p.public.name || 'название не задано'}; автор ${p.public.author || 'не задан'}`
-            + (p.public.organization ? `, ${p.public.organization}` : '') + '; лазеры: '
-            + (Object.values(p.public.lasers || {}).map((l) => l.public_name).join(', ') || 'нет')),
-        Object.keys(p.tokenised || {}).length ? h('details', {class: 'small'}, h('summary', {}, 'Настройки, которые станут токенами'),
-          h('ul', {}, Object.entries(p.tokenised).map(([tag, values]) => h('li', {}, `${tag}: ${values.join(', ')}`)))) : h('p', {class: 'small muted'}, 'Текстовых настроек, которые пришлось бы заменить токенами, нет.'),
-        h('p', {class: 'small muted'}, 'Никогда не публикуется: ' + (p.never || []).map((k) => NEVER[k] || k).join(', ') + '.'),
-        ready ? h('p', {class: 'alert ok'}, 'Выпуск можно записать.') : h('p', {class: 'alert warn'}, p.photographs
-          ? 'Перед публикацией укажите публичное название лаборатории и автора.' : 'Публиковать нечего: принятых фотографий ещё нет.'));
+        fill(out, previewBody(p));
       } catch (e) { fill(out, h('p', {class: 'alert bad'}, e.message)); } finally { self.disabled = false; }
     });
     const write = btn('Записать выпуск', async (ev) => {
@@ -103,8 +109,8 @@
         + 'Сначала посмотрите, что в него войдёт; выпуск не меняется после записи.'),
       h('div', {class: 'row'}, prepare, field('Условия использования', termsSelect), write), out, result,
       exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Записанные выпуски'),
-        table(['Дата', 'Выпуск', 'Содержимое', 'Условия', 'Размер', 'Файл'], exports.map((e) => [when(e.created_at), short(e.content_sha256), countsText(e.counts),
-          termsName(termsOf(terms, (e.terms || {}).id)), mb(e.bytes || 0),
+        table(['Дата', 'Выпуск', 'Содержимое', 'Условия', 'Размер', 'Облако', 'Файл'], exports.map((e) => [when(e.created_at), short(e.content_sha256), countsText(e.counts),
+          termsName(termsOf(terms, (e.terms || {}).id)), mb(e.bytes || 0), e.published ? pill(`№ ${e.published.release_number} · ${day(e.published.published_at)}`, 'ok') : h('span', {class: 'muted'}, '—'),
           e.file ? h('a', {href: `/api/labs/own/releases/${encodeURIComponent(e.release_id)}/file`, download: ''}, 'Скачать') : h('span', {class: 'muted'}, 'файл не сохранён')]), '', true))
         : h('p', {class: 'muted small'}, 'Выпусков ещё нет.'));
   }
@@ -144,7 +150,8 @@
     const el = h('div', {class: 'stack'});
     async function show() {
       const data = await get('/labs/own');
-      fill(el, publicForm(data.public, show), previewCard(data.terms, data.exports, show), withdrawalCard(data.exports, data.withdrawals, show));
+      fill(el, publicForm(data.public, show), previewCard(data.terms, data.exports, show), await LabsCloud.ownCard(data.terms, show),
+        withdrawalCard(data.exports, data.withdrawals, show));
     }
     await show();
     return el;
@@ -178,39 +185,41 @@
       h('div', {class: 'row'}, connect, forget), progress);
   }
 
-  /** The connection in the background: the job polled every 300 ms with a bar of bytes read; «Отменить» asks the server to stop. */
-  function connectJob(token, box, done) {
+  /** A job in the background (a connection from a file or from the cloud, a publication): `start()` starts it, then it is polled at
+      `jobs`/<id> every 300 ms with a bar of bytes; «Отменить» asks the server to stop. Resolves with the final job, null when it did not start. */
+  function followJob({start, jobs = '/labs/jobs', box, done, label = 'Подключение выпуска', phases = PHASE, success = null}) {
     return new Promise((resolve) => {
       let job = null, timer = null;
       const bar = h('div', {class: 'lab-bar'}, h('div', {class: 'lab-bar-fill'}));
-      const label = h('span', {class: 'small'});
-      const cancel = btn('Отменить', async () => { if (job) { try { await post(`/labs/jobs/${job.id}/cancel`, {}); } catch (e) { fail(e); } } }, 'btn-small');
-      const meter = h('div', {role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': 'Подключение выпуска'}, bar);
+      const text = h('span', {class: 'small'});
+      const cancel = btn('Отменить', async () => { if (job) { try { await post(`${jobs}/${job.id}/cancel`, {}); } catch (e) { fail(e); } } }, 'btn-small');
+      const meter = h('div', {role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': label}, bar);
       box.hidden = false;
-      fill(box, h('div', {class: 'row'}, label, h('span', {class: 'spacer'}), cancel), meter);
+      fill(box, h('div', {class: 'row'}, text, h('span', {class: 'spacer'}), cancel), meter);
       const show = () => {
         const percent = job.total ? Math.round(job.read / job.total * 100) : 0;
         bar.firstChild.setAttribute('style', `width:${percent}%`);
         meter.setAttribute('aria-valuenow', String(percent));
-        label.textContent = `${PHASE[job.phase] || job.phase} · ${mb(job.read || 0)} из ${mb(job.total || 0)} (${percent} %)`;
+        text.textContent = `${phases[job.phase] || PHASE[job.phase] || job.phase} · ${mb(job.read || 0)} из ${mb(job.total || 0)} (${percent} %)`;
       };
       const finish = () => {
         clearInterval(timer);
         cancel.disabled = true;
         if (job.error) fill(box, h('p', {class: 'alert bad', role: 'alert'}, I18N.tr(job.error.message)));
+        else if (success) { fill(box, h('p', {class: 'alert ok'}, success(job))); done(job.result, job); }
         else {
           fill(box, h('p', {class: 'alert ok'}, job.phase === 'unchanged' ? 'Этот выпуск уже был подключён: ничего не изменилось.' : 'Лаборатория подключена: её выпуск можно выбирать источником новых работ.'));
           toast(job.phase === 'unchanged' ? 'Выпуск уже подключён' : 'Лаборатория подключена', 'ok');
-          done(job.result);
+          done(job.result, job);
         }
         resolve(job);
       };
       const poll = async () => {
-        try { job = await get(`/labs/jobs/${job.id}`); } catch (e) { clearInterval(timer); fill(box, h('p', {class: 'alert bad'}, e.message)); return resolve(null); }
+        try { job = await get(`${jobs}/${job.id}`); } catch (e) { clearInterval(timer); fill(box, h('p', {class: 'alert bad'}, e.message)); return resolve(null); }
         show();
         if (job.done) finish();
       };
-      post(`/labs/files/${encodeURIComponent(token)}/connect`, {}).then((started) => {
+      start().then((started) => {
         job = started;
         show();
         if (job.done) return finish();
@@ -218,6 +227,9 @@
       }).catch((e) => { fill(box, h('p', {class: 'alert bad', role: 'alert'}, e.message)); resolve(null); });
     });
   }
+
+  /** The connection of a read file in the background. */
+  const connectJob = (token, box, done) => followJob({start: () => post(`/labs/files/${encodeURIComponent(token)}/connect`, {}), box, done});
 
   function fileCard(connected) {
     const input = h('input', {type: 'file', accept: '.tcelab', 'aria-label': 'Файл выпуска лаборатории'});
@@ -257,8 +269,8 @@
     const el = h('div', {class: 'stack'});
     async function show() {
       const list = await get('/labs/sources');
-      fill(el, list.length ? h('div', {class: 'vw-works'}, list.map(sourceCard))
-        : h('div', {class: 'card empty'}, h('h3', {}, 'Подключённых лабораторий нет'), h('p', {class: 'muted'}, 'Подключите файл .tcelab другой лаборатории: её цвета и шкалы станут источником новых работ.')));
+      fill(el, await LabsCloud.automaticNotices(show), LabsCloud.updatesCard(list, show), list.length ? h('div', {class: 'vw-works'}, list.map(sourceCard))
+        : h('div', {class: 'card empty'}, h('h3', {}, 'Подключённых лабораторий нет'), h('p', {class: 'muted'}, 'Подключите лабораторию из каталога облака или из файла .tcelab: её цвета и шкалы станут источником новых работ.')));
     }
     await show();
     return h('div', {class: 'stack'}, fileCard(show), el);
@@ -386,6 +398,7 @@
         h('div', {}, h('h2', {}, h('span', {class: 'lab-name'}, card.name), ' ', pill(status, tone)),
           h('p', {class: 'sub'}, [lab.description, cur ? `автор: ${(cur.attribution || {}).name || '—'}` : null, lab.url ? `ссылка: ${lab.url}` : null].filter(Boolean).join(' · '))),
         h('span', {class: 'spacer'}), toggle),
+      LabsCloud.sourceCard(card, reload),
       h('div', {class: 'card stack'}, h('h3', {}, 'Выпуски'), releasesTable(card, reload)),
       h('div', {class: 'card stack'}, h('h3', {}, 'Отзывы лаборатории'), withdrawalsTable(card.withdrawal_list || [])),
       h('div', {class: 'card stack'}, h('h3', {}, 'Палитра и шкалы текущего выпуска'),
@@ -400,12 +413,15 @@
 
   App.register({id: 'labs', async render(ctx) {
     if (ctx.query.source) return sourceScreen(encodeURIComponent(ctx.query.source));
-    const [own, sources] = await Promise.all([ownTab(), sourcesList()]);
-    const tabs = App.tabs([['own', 'Моя лаборатория', own], ['sources', 'Подключённые лаборатории', sources]],
-      {initial: ctx.query.tab === 'sources' ? 'sources' : 'own', remember: ctx.query.tab ? null : 'labs.tab', label: 'Лаборатории', prefix: 'labs-tab'});
+    const [own, sources, catalogue] = await Promise.all([ownTab(), sourcesList(), LabsCloud.catalogueTab()]);
+    const tabs = App.tabs([['own', 'Моя лаборатория', own], ['sources', 'Подключённые лаборатории', sources], ['catalogue', 'Каталог лабораторий', catalogue]],
+      {initial: ['sources', 'catalogue'].includes(ctx.query.tab) ? ctx.query.tab : 'own', remember: ctx.query.tab ? null : 'labs.tab', label: 'Лаборатории', prefix: 'labs-tab'});
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Лаборатории'),
-        h('p', {class: 'sub'}, 'Переносимые результаты: выпуск своей лаборатории файлом .tcelab и подключённые выпуски других мастерских как источник измерений для новых работ.'))),
+        h('p', {class: 'sub'}, 'Переносимые результаты: выпуск своей лаборатории файлом .tcelab или в облако и подключённые выпуски других мастерских — из каталога облака или из файла — '
+          + 'как источник измерений для новых работ.'))),
       tabs.list, h('div', {class: 'labs-panels'}, tabs.panels));
   }});
+
+  LabsCloud.install({followJob, previewBody, countsText, termsName, differencesDialog, mb});
 })();

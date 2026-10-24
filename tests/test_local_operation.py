@@ -37,7 +37,11 @@ SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into gen
                "https://creativecommons.org/licenses/by/4.0/": "the text of a release's usage terms, a link the screen shows (lab_format.py, "
                                                                "electron DEC-042); never fetched",
                "https://creativecommons.org/licenses/by-nc/4.0/": "the text of a release's usage terms, a link the screen shows (lab_format.py, "
-                                                                  "electron DEC-042); never fetched"}
+                                                                  "electron DEC-042); never fetched",
+               "https://titanium-labs-api.vercel.app": "the production cloud of laboratories, the default of the setting cloud.api_url "
+                                                       "(cloud_session.py, electron REQ-086, DEC-058); reached only when the operator signs in, "
+                                                       "publishes, connects from the catalogue or checks for updates, and never when the network "
+                                                       "switch \"cloud\" is off"}
 # Modules that can open a network connection; ``urllib.parse`` only builds strings and is not among them.
 NETWORK_MODULES = ("socket", "ssl", "http.client", "urllib.request", "urllib3", "requests", "httpx", "aiohttp", "ftplib", "smtplib",
                    "websocket", "websockets", "openai", "anthropic")
@@ -48,7 +52,12 @@ NETWORK_IMPORTS = {("research.py", "openai"): "the optional AI researcher and pr
                    ("cli.py", "socket"): "binding the loopback port the core serves on (electron DEC-046)",
                    ("cli.py", "urllib.request"): "the --smoke check asking its own loopback core for /api/health (electron REQ-080)",
                    ("lan.py", "socket"): "the addresses of this computer and the LAN port the tablet server binds, only when the operator "
-                                         "switched the local network on (electron REQ-082, DEC-047)"}
+                                         "switched the local network on (electron REQ-082, DEC-047)",
+                   ("cloud_http.py", "urllib.request"): "the cloud of laboratories and its sign-in service, called only on the operator's action "
+                                                        "(or the automatic check for updates the operator allowed) and never when the network "
+                                                        "switch \"cloud\" is off (electron REQ-086, DEC-058)",
+                   ("cloud_http.py", "ssl"): "the certificate store (certifi) for those cloud calls in the packaged core (electron REQ-086)",
+                   ("cloud_http.py", "socket"): "the timeout error type of those cloud calls; no socket is opened here (electron REQ-086)"}
 
 
 def test_the_ui_loads_no_script_style_font_or_data_from_the_network():

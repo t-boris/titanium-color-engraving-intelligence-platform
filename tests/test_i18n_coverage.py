@@ -27,7 +27,8 @@ UI = ROOT / "ui"
 SOURCES = sorted(ROOT.rglob("*.py"))                  # the package and its api/ routes
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
                "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError", "FontError", "LabImportError",
-               "KeyError"}                             # a record that is not found: the API answers 404 with its message
+               "KeyError",                             # a record that is not found: the API answers 404 with its message
+               "CloudError"}                           # the cloud of laboratories refused, is off or unreachable (cloud_http.py, 422)
 HTTP_ERRORS = {"HTTPException"}                        # HTTPException(status, {"error": text, ...}) or HTTPException(status, text)
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:
 APPEND_TARGETS = {"problems", "notes", "limitations", "diffs", "missing", "why", "questions", "worth",
@@ -39,7 +40,7 @@ NOTE_KEYS = {"note", "statement", "rationale",                                  
 REASON_ARGS = {"_event": 5, "_record": 3,          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
                "refuse": 0}                        # anchoring's refuse(REASON)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-lettering.js", "i18n-labs.js", "i18n-workshop.js", "i18n-lan.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-labs.js", "i18n-workshop.js", "i18n-lan.js", "i18n-cloud.js", "i18n-gaps.js"]
 PLACEHOLDER = "7"
 HOLE = "\x00"                                      # where a wrapper embeds another server message
 LIST_SEPARATOR = "; "                              # several server messages in one are joined with it
@@ -66,6 +67,10 @@ DATA_TAILS = {
     "Google Fonts could not be reached: ": "the network library's own error text",
     "the release cannot be written: ": "the release format's own description of the value it refuses (lab_format.FormatError)",
     "the font 7 could not be downloaded from Google Fonts: ": "the network library's own error text",
+    "the cloud could not be reached: ": "the network library's own error text (cloud_http.py)",
+    "the sign-in service could not be reached: ": "the network library's own error text (cloud_http.py)",
+    "the cloud refused the request: ": "the cloud service's own message (cloud/titanium_cloud, translated by i18n-cloud.js when known) or its HTTP status",
+    "the sign-in service refused the request: ": "the sign-in service's own message or its HTTP status",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.

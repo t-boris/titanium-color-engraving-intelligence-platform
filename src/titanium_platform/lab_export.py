@@ -222,9 +222,16 @@ def withdrawals(store: Store) -> list[dict]:
 
 
 def exports(store: Store) -> list[dict]:
-    """The releases this workshop wrote, newest first."""
-    return [{**dict(r), "manifest": json.loads(r["manifest_json"])}
-            for r in store.query("SELECT release_id, content_sha256, created_at, manifest_json, bytes FROM lab_export ORDER BY created_at DESC, release_id")]
+    """The releases this workshop wrote, newest first, each with the cloud publication it became when it was published there
+    (``published``: the cloud laboratory, the release number and when; None for a file export)."""
+    out = []
+    for r in store.query("SELECT e.release_id, e.content_sha256, e.created_at, e.manifest_json, e.bytes, p.lab_id, p.release_number, p.published_at, "
+                         "p.api_url FROM lab_export e LEFT JOIN lab_publication p ON p.release_id = e.release_id AND p.state = 'finalized' "
+                         "ORDER BY e.created_at DESC, e.release_id"):
+        row = dict(r)
+        published = {k: row.pop(k) for k in ("lab_id", "release_number", "published_at", "api_url")}
+        out.append({**row, "manifest": json.loads(row["manifest_json"]), "published": published if published["lab_id"] else None})
+    return out
 
 
 def _experiment_kind(plan_mode: str | None) -> str:

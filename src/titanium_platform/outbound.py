@@ -2,19 +2,22 @@
 
 * ``ai``: the AI researcher and the designer's explanation (``research.py``); off, the key is not even read and the features say so;
 * ``google_fonts``: fetching Google's family list and font files when the operator asks (``fonts.py``); off, the request is refused;
-* ``update_checks``: whether the desktop shell may ask GitHub Releases for a newer version (DEC-048); the shell reads it here.
+* ``update_checks``: whether the desktop shell may ask GitHub Releases for a newer version (DEC-048); the shell reads it here, and the
+  automatic check for newer releases of laboratories connected from the cloud follows it too (``cloud_client.automatic_checks``);
+* ``cloud``: the cloud of laboratories (``cloud_http.py``; REQ-086, DEC-058): the catalogue, publishing, invitations and the sign-in;
+  off, no call is made and the screen says so.
 
 Nothing else leaves this computer: there is no telemetry. The switches are a setting of the workshop; they are applied to the modules
 when the application starts and whenever they are changed, so that every workflow sees them without passing the store around.
 """
 from __future__ import annotations
 
-from . import fonts, research
+from . import cloud_http, fonts, research
 from . import setup as su
 from .db import Store
 
 SETTING = "network"
-DEFAULTS = {"ai": True, "google_fonts": True, "update_checks": False}
+DEFAULTS = {"ai": True, "google_fonts": True, "update_checks": False, "cloud": True}
 
 
 def get(store: Store) -> dict:
@@ -36,4 +39,5 @@ def apply(store: Store) -> dict:
     chosen = get(store)
     research.switched_on = chosen["ai"]
     fonts.network_allowed = chosen["google_fonts"]
+    cloud_http.switched_on = chosen["cloud"]
     return chosen

@@ -23,12 +23,16 @@ os.environ.setdefault("TCE_ALLOWED_HOSTS", "testserver")
 
 
 def load_env(path: Path) -> None:
-    """KEY=VALUE lines of an environment file outside the repository into os.environ (values are never printed)."""
+    """KEY=VALUE lines of an environment file outside the repository into os.environ (values are never printed); a value may be quoted
+    as a shell would quote it, since the same file is sourced by the shell."""
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
             key, sep, value = line.partition("=")
             if sep and key.strip() and not line.lstrip().startswith("#"):
-                os.environ.setdefault(key.strip(), value.strip())
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                    value = value[1:-1]
+                os.environ.setdefault(key.strip(), value)
 
 
 load_env(Path.home() / ".titanium-cloud.env")

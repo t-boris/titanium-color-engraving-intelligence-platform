@@ -278,6 +278,13 @@ CREATE TABLE IF NOT EXISTS pair_row_length (pair_id INTEGER NOT NULL REFERENCES 
 -- Releases this workshop wrote: what was chosen and the manifest.
 CREATE TABLE IF NOT EXISTS lab_export (release_id TEXT PRIMARY KEY, content_sha256 TEXT NOT NULL, created_at TEXT NOT NULL,
     manifest_json TEXT NOT NULL, selection_json TEXT NOT NULL, bytes INTEGER NOT NULL);
+-- A publication of the own laboratory to the cloud (REQ-086, cloud_client.py): the idempotency key is kept before anything is sent,
+-- so that a retry after a crash continues the same reservation; ``state`` is reserved, exported, uploading, finalized or failed, and a
+-- finalized row says which release of the cloud the export ``release_id`` became.
+CREATE TABLE IF NOT EXISTS lab_publication (id INTEGER PRIMARY KEY AUTOINCREMENT, idempotency_key TEXT NOT NULL UNIQUE, api_url TEXT NOT NULL,
+    lab_id TEXT NOT NULL, publication_id TEXT, release_id TEXT, release_number INTEGER, expected_previous_release_id TEXT, chunk_bytes INTEGER,
+    visibility TEXT NOT NULL, terms TEXT NOT NULL, selection_json TEXT NOT NULL, state TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL, published_at TEXT);
 -- Connected laboratories and their releases (REQ-084). A release never changes: its identity and hash are fixed and a newer one is
 -- another row; ``status`` says whether it is the one in use (active), kept for saved works (kept) or gone from disk (removed).
 CREATE TABLE IF NOT EXISTS lab_source (id INTEGER PRIMARY KEY AUTOINCREMENT, origin_lab_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,

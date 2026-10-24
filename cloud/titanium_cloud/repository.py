@@ -62,6 +62,8 @@ class Repository(Protocol):
     def accept_invitation(self, token_hash: str, account: str) -> dict: ...
     def members(self, lab_id: str) -> list[dict]: ...
     def remove_member(self, lab_id: str, account: str) -> bool: ...
+    def create_handoff(self, fields: Mapping) -> None: ...
+    def take_handoff(self, code_hash: str) -> dict | None: ...
     def close(self) -> None: ...
 
 
@@ -80,9 +82,28 @@ class InMemoryRepository:
         self._invitations: dict[str, dict] = {}
         self._members: dict[tuple[str, str], dict] = {}
         self._idempotency: dict[tuple[str, str, str], tuple[int, Any]] = {}
+        self._handoffs: dict[str, dict] = {}
 
     def close(self) -> None:
         pass
+
+    # -- the sign-in handoff (handoff.py): rows of no account, taken once ----------------------------------------------------------
+    def create_handoff(self, fields):
+        with self.lock:
+            self._purge_handoffs()
+            self._handoffs[fields["code_hash"]] = {"created_at": stamp(), **fields}
+
+    def take_handoff(self, code_hash):
+        """The handoff of ``code_hash``, removed; an expired one is returned too (the route tells the difference), as in Postgres."""
+        with self.lock:
+            found = self._handoffs.pop(code_hash, None)
+            self._purge_handoffs()
+            return dict(found) if found else None
+
+    def _purge_handoffs(self):
+        gone = [key for key, row in self._handoffs.items() if moment(row["expires_at"]) < now()]
+        for key in gone:
+            del self._handoffs[key]
 
     def role(self, lab: Mapping, viewer: str | None) -> str | None:
         if viewer is not None and lab["owner_id"] == viewer:
@@ -460,3 +481,15 @@ class PostgresRepository:
     def remove_member(self, lab_id, account):
         with self._tx():
             return self.conn.execute("DELETE FROM membership WHERE lab_id=%s AND account_id=%s", (lab_id, account)).rowcount > 0
+
+    def create_handoff(self, fields):
+        with self._tx():
+            self.conn.execute("DELETE FROM auth_handoff WHERE expires_at < now()")
+            self.conn.execute("INSERT INTO auth_handoff(code_hash, state, challenge, session_token, expires_at) VALUES (%s,%s,%s,%s,%s)",
+                              (fields["code_hash"], fields["state"], fields["challenge"], fields["session_token"], moment(fields["expires_at"])))
+
+    def take_handoff(self, code_hash):
+        """The handoff of ``code_hash`` with its row deleted in the same transaction, expired or not (the route tells the difference)."""
+        with self._tx():
+            return _plain(self.conn.execute("DELETE FROM auth_handoff WHERE code_hash=%s RETURNING code_hash, state, challenge, session_token, "
+                                            "created_at, expires_at", (code_hash,)).fetchone())

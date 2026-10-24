@@ -15,7 +15,11 @@ The secret is per launch and never written anywhere by the core.
 A request that arrives through the LAN server (``lan.Entry`` marks it) is another matter: it must carry the cookie of a paired device
 (``lan.authenticate``), except the pairing page, the pairing call and the CA download, which is all an unpaired tablet may reach (a page
 request without the cookie is sent to ``/pair``); the desktop session address is never opened from the network; and what belongs to
-the workshop's own computer (the network and backup screens) is refused even to a paired device.
+the workshop's own computer (the network and backup screens, the cloud) is refused even to a paired device.
+
+One more request comes from the operator's browser without the desktop cookie: the return from the cloud's sign-in page,
+``GET /api/cloud/callback?state&code`` (cloud_session.py, REQ-086). It is let through only while a sign-in with that ``state`` is
+pending in this process (``callback_check``); the route then spends the state, so the address works once.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import FastAPI
 
@@ -40,7 +44,8 @@ LAN_MARK = "tce.lan"                          # lan.MARK: set on the scope of a 
 DEVICE_COOKIE = "tce_device"                  # lan.COOKIE
 PAIR_PAGE = "/pair"
 LAN_OPEN = {PAIR_PAGE, "/api/lan/pair", "/api/lan/ca"}            # what an unpaired tablet may reach
-LAN_OWNER_ONLY = ("/api/lan", "/api/network", "/api/workshop")      # the workshop's own computer only, paired or not
+LAN_OWNER_ONLY = ("/api/lan", "/api/network", "/api/workshop", "/api/cloud")      # the workshop's own computer only, paired or not
+CALLBACK_PATH = "/api/cloud/callback"                              # cloud_session.CALLBACK_PATH: the return from the cloud's sign-in page
 
 
 @dataclass
@@ -53,6 +58,7 @@ class Guard:
     spent: bool = False                                # the bootstrap address was used once
     lan_hosts: set[str] = field(default_factory=set)   # the names of this computer on the network (lan.Lan keeps them)
     device_check: Callable[[str], bool] | None = None  # whether a device token is a paired, unrevoked device (lan.Lan sets it)
+    callback_check: Callable[[str], bool] | None = None  # whether a cloud sign-in with this state is pending (cloud_session.pending)
 
     @classmethod
     def from_environment(cls) -> "Guard":
@@ -96,6 +102,14 @@ class Guard:
         """Whether the request carries the cookie of a paired device of the local network."""
         token = _cookie(cookie_header, DEVICE_COOKIE)
         return bool(token) and self.device_check is not None and bool(self.device_check(token))
+
+    def callback_ok(self, method: str, path: str, query: bytes | str) -> bool:
+        """Whether this is the return from the cloud's sign-in page for a sign-in that is pending right now."""
+        if method != "GET" or path != CALLBACK_PATH or self.callback_check is None:
+            return False
+        text = query.decode("latin-1") if isinstance(query, bytes) else (query or "")
+        states = parse_qs(text).get("state") or []
+        return len(states) == 1 and bool(self.callback_check(states[0]))
 
     def bootstrap(self, path: str) -> bool:
         """Whether ``path`` is the shell's one-time session address with the right secret; it is spent by this call."""
@@ -152,7 +166,7 @@ class LocalGuard:
                 cookie = f"{COOKIE}={self.guard.cookie}; Path=/; HttpOnly; SameSite=Strict"
                 return await _respond(send, 303, [(b"location", b"/"), (b"set-cookie", cookie.encode("latin-1"))], b"")
             return await _refuse(send, 403, "this session address is not valid", "forbidden")
-        if not self.guard.session_ok(headers.get("cookie")):
+        if not self.guard.session_ok(headers.get("cookie")) and not self.guard.callback_ok(method, path, scope.get("query_string", b"")):
             return await _refuse(send, 403, "open the workshop from the application", "forbidden")
         return await self.app(scope, receive, send)
 

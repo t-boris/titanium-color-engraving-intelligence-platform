@@ -1,7 +1,7 @@
 /* Сеть (feature electron, REQ-082, DEC-047; REQ-080). Доступ с планшета по локальной сети: отдельный сервер с шифрованием и собственным центром
    сертификации мастерской (отпечаток и сертификат для установки на планшете), код сопряжения на пять минут с обратным отсчётом, список
    подключённых планшетов с отзывом. И переключатели того, куда приложение вообще может обращаться: AI-исследователь, Google Fonts, проверка
-   обновлений — больше никуда ничего не отправляется. Имена планшетов показываются только текстом (узлы h()). Адрес: #/network */
+   обновлений, облако лабораторий (и его адрес, REQ-086) — больше никуда ничего не отправляется. Имена планшетов показываются только текстом (узлы h()). Адрес: #/network */
 'use strict';
 (() => {
   const {h, btn, field, pill, get, post, put, toast, fail, modal, confirmBox, table} = App;
@@ -95,9 +95,26 @@
   const SWITCHES = [
     ['ai', 'AI-исследователь и пояснения планировщика', 'обращаются к OpenAI только с ключом и только когда вы их вызываете'],
     ['google_fonts', 'Шрифты Google Fonts', 'список семейств и файлы шрифтов загружаются только когда вы их запрашиваете'],
-    ['update_checks', 'Проверка обновлений в настольном приложении', 'спрашивает у GitHub Releases, вышла ли новая версия; ничего не скачивает и не ставит']];
+    ['update_checks', 'Проверка обновлений в настольном приложении', 'спрашивает у GitHub Releases, вышла ли новая версия; ничего не скачивает и не ставит; '
+      + 'разрешает и автоматическую проверку новых выпусков лабораторий из облака'],
+    ['cloud', 'Облако лабораторий', 'каталог, публикация выпусков, приглашения и вход; обращается к облаку только когда вы входите, публикуете или проверяете обновления']];
 
-  function outboundCard(net) {
+  /** The address of the cloud (cloud.api_url): the production service unless the operator names another, for example one under test. */
+  function cloudAddress(cloud) {
+    if (!cloud) return null;
+    const input = h('input', {placeholder: cloud.default, 'aria-label': 'Адрес облака лабораторий'});
+    input.value = cloud.custom ? cloud.api_url : '';
+    const save = btn('Сохранить', async () => {
+      try {
+        const saved = await put('/cloud/settings', {api_url: input.value.trim()});
+        input.value = saved.custom ? saved.api_url : '';
+        toast(saved.custom ? 'Адрес облака сохранён' : 'Адрес облака: стандартный', 'ok');
+      } catch (e) { fail(e); }
+    }, 'btn-small');
+    return h('div', {class: 'toolbar cloud-address'}, field('Адрес облака лабораторий', input, `пусто — стандартный адрес ${cloud.default}; https, или http только для 127.0.0.1`), save);
+  }
+
+  function outboundCard(net, cloud) {
     const row = ([key, label, help]) => {
       const box = h('input', {type: 'checkbox', class: 'switch', 'aria-label': label});
       box.checked = !!net[key];
@@ -109,15 +126,15 @@
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Внешние службы'),
       h('p', {class: 'small muted'}, 'Всё, к чему приложение может обращаться за пределами этого компьютера. Больше никуда оно ничего не отправляет: телеметрии нет.'),
-      SWITCHES.map(row));
+      SWITCHES.map(row), cloudAddress(cloud));
   }
 
   App.register({id: 'network', async render() {
     stopCountdown();
-    const [st, net] = await Promise.all([get('/lan'), get('/network')]);
+    const [st, net, cloud] = await Promise.all([get('/lan'), get('/network'), get('/cloud/settings').catch(() => null)]);
     const reload = () => App.render({preserveScroll: true});
     return h('div', {class: 'stack'},
       h('div', {}, h('h2', {}, 'Сеть'), h('p', {class: 'sub'}, 'Планшет в мастерской по локальной сети и то немногое, к чему приложение обращается за её пределами.')),
-      lanCard(st, reload), codeCard(st, reload), certificateCard(st), devicesCard(st, reload), outboundCard(net));
+      lanCard(st, reload), codeCard(st, reload), certificateCard(st), devicesCard(st, reload), outboundCard(net, cloud));
   }});
 })();

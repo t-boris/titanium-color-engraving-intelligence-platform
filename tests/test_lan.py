@@ -265,11 +265,11 @@ def test_a_port_that_cannot_be_opened_leaves_the_network_off_with_the_reason(tmp
 
 # -- the switches of what may be reached outside this computer ---------------------------------------------------------------------
 def test_the_network_switches_are_kept_and_applied_to_the_ai_and_google_fonts(owner, monkeypatch):
-    assert owner.get("/api/network").json() == {"ai": True, "google_fonts": True, "update_checks": False}
+    assert owner.get("/api/network").json() == {"ai": True, "google_fonts": True, "update_checks": False, "cloud": True}
     assert owner.put("/api/network", json={"ai": "yes"}).status_code == 422
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     assert research.ai_available() is True
-    assert owner.put("/api/network", json={"ai": False, "update_checks": True}).json() == {"ai": False, "google_fonts": True, "update_checks": True}
+    assert owner.put("/api/network", json={"ai": False, "update_checks": True}).json() == {"ai": False, "google_fonts": True, "update_checks": True, "cloud": True}
     assert research.ai_available() is False and research.openai_client() is None
     assert owner.put("/api/network", json={"ai": True}).json()["ai"] is True and research.ai_available() is True
     data_dir = owner.app.state.store.data_dir

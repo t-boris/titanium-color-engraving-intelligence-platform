@@ -9,10 +9,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, capability_results, findings, lab_import, lan, outbound, research, work_errors
+from .. import __version__, capability_results, cloud_session, findings, lab_import, lan, outbound, research, work_errors
 from ..db import open_store
-from . import (routes_devices, routes_findings, routes_fonts, routes_labs, routes_lan, routes_lenses, routes_palette, routes_photo_work,
-               routes_plans, routes_prediction, routes_research, routes_setup, routes_vector, routes_work, routes_workshop)
+from . import (routes_cloud, routes_devices, routes_findings, routes_fonts, routes_labs, routes_lan, routes_lenses, routes_palette,
+               routes_photo_work, routes_plans, routes_prediction, routes_research, routes_setup, routes_vector, routes_work, routes_workshop)
 from . import security
 from .common import install_error_handlers
 
@@ -66,6 +66,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
     lab_import.reconcile(app.state.store)          # what an interrupted connection of a laboratory release left (electron REQ-084)
     install_error_handlers(app)
     security.install(app)                           # Host, Origin and body checks; the desktop session cookie (electron DEC-046)
+    app.state.guard.callback_check = cloud_session.pending   # the return from the cloud's sign-in page, while a sign-in waits (REQ-086)
     app.state.lan = lan.Lan(app, app.state.store)   # the local network for tablets: certificates, pairing, the TLS server (electron REQ-082)
     outbound.apply(app.state.store)                 # the operator's switches of what may be reached outside this computer
 
@@ -84,8 +85,8 @@ def create_app(data_dir: str | Path) -> FastAPI:
 
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
-              routes_findings.router, routes_fonts.router, routes_labs.router, routes_workshop.router, routes_lan.router, routes_lan.settings_router,
-              routes_lan.pages):
+              routes_findings.router, routes_fonts.router, routes_labs.router, routes_cloud.router, routes_workshop.router, routes_lan.router,
+              routes_lan.settings_router, routes_lan.pages):
         app.include_router(r)
 
     @app.exception_handler(404)

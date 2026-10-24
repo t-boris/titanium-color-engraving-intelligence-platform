@@ -27,7 +27,8 @@ def own(request: Request):
     """What the owner enters for publication, what can be chosen, the releases written so far and the withdrawals declared."""
     store = store_of(request)
     exports = [{"release_id": r["release_id"], "created_at": r["created_at"], "bytes": r["bytes"], "content_sha256": r["content_sha256"],
-                "counts": r["manifest"]["counts"], "terms": r["manifest"]["usage_terms"], "file": (_exports_dir(request) / f"{r['release_id']}.tcelab").is_file()}
+                "counts": r["manifest"]["counts"], "terms": r["manifest"]["usage_terms"], "file": (_exports_dir(request) / f"{r['release_id']}.tcelab").is_file(),
+                "published": r["published"]}
                for r in lab_export.exports(store)]
     return {"public": lab_export.public_info(store), "choices": lab_export.choices(store), "exports": exports,
             "withdrawals": lab_export.withdrawals(store), "terms": [{"id": k, **v} for k, v in lf.USAGE_TERMS.items()]}

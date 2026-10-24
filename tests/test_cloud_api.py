@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import secrets
 import sys
 import time
 import uuid
@@ -31,7 +32,8 @@ from titanium_platform import lab_export, lab_format as lf, lab_import  # noqa: 
 from titanium_platform.db import Store  # noqa: E402
 
 CHUNK = 16 * 1024                       # small chunks, so that a test release takes several
-ISSUER = "https://auth.test"
+ISSUER = "https://auth.test"            # as Neon Auth's: the host alone, not the …/<database>/auth base
+AUTH_BASE = "https://auth.test/titanium_labs/auth"
 
 
 # -- keys and tokens ---------------------------------------------------------------------------------------------------------------
@@ -69,7 +71,7 @@ def who() -> dict:
 # -- the application -----------------------------------------------------------------------------------------------------------------
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(repository="memory", chunk_bytes=CHUNK)
+    return Settings(repository="memory", chunk_bytes=CHUNK, auth_base_url=AUTH_BASE)
 
 
 @pytest.fixture()
@@ -427,3 +429,76 @@ def test_the_catalogue_shows_what_the_release_file_declares(client, mint, who, a
     assert made["release"]["content_sha256"] == manifest["content_sha256"] and made["release"]["counts"] == manifest["counts"]
     assert made["release"]["usage_terms"] == manifest["usage_terms"] and made["release"]["schema_version"] == manifest["schema_version"]
     assert made["release"]["id"] == manifest["release_id"] and made["release"]["number"] == manifest["release_number"]
+
+
+# -- the sign-in handoff (handoff.py) -------------------------------------------------------------------------------------------------
+def pkce() -> tuple[str, str]:
+    import base64
+    verifier = secrets.token_urlsafe(48)
+    return verifier, base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def test_the_signin_page_is_served_for_the_desktops_loopback_callback_only_and_carries_no_external_script(client):
+    verifier, challenge = pkce()
+    state = secrets.token_urlsafe(24)
+    good = {"state": state, "challenge": challenge, "callback": "http://127.0.0.1:8765/api/cloud/callback"}
+    page = client.get("/signin", params=good)
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and page.headers["cache-control"] == "no-store"
+    assert "<script src=" not in page.text and 'href="http' not in page.text and "Вход в облако лабораторий" in page.text
+    assert state in page.text and challenge in page.text and AUTH_BASE in page.text and '"providers": ["google"]' in page.text
+    assert "connect-src 'self' " + AUTH_BASE in page.headers["content-security-policy"]
+    assert client.get("/signin", params={**good, "callback": "http://localhost:8765/api/cloud/callback"}).status_code == 200
+    assert client.get("/signin", params={**good, "callback": "http://[::1]:8765/api/cloud/callback"}).status_code == 200
+    for bad in ("https://evil.example/api/cloud/callback", "http://127.0.0.1:8765/api/other", "http://127.0.0.1/api/cloud/callback",
+                "http://127.0.0.1:8765/api/cloud/callback?x=1", "http://192.168.1.20:8765/api/cloud/callback", "http://127.0.0.1.evil.example:1/api/cloud/callback"):
+        refused = client.get("/signin", params={**good, "callback": bad})
+        assert refused.status_code == 422 and refused.json()["code"] == "callback", bad
+    assert client.get("/signin", params={**good, "state": "short"}).status_code == 422
+    assert client.get("/signin", params={**good, "challenge": "not base64url!"}).status_code == 422
+    # the page's data is JSON, never markup: a state cannot close the script element
+    assert client.get("/signin", params={**good, "state": "abc</script><b>" + "x" * 20}).status_code == 422
+    assert client.get("/auth/config").json() == {"auth_base_url": AUTH_BASE, "providers": ["google"], "handoff_lifetime_s": 120}
+
+
+def test_without_neon_auth_configured_there_is_no_signin_page(verifier):
+    with TestClient(create_app(Settings(repository="memory", chunk_bytes=CHUNK), verifier=verifier)) as bare:
+        assert bare.get("/auth/config").json() == {"auth_base_url": None, "providers": [], "handoff_lifetime_s": 120}
+        verifier_, challenge = pkce()
+        refused = bare.get("/signin", params={"state": secrets.token_urlsafe(24), "challenge": challenge, "callback": "http://127.0.0.1:1/api/cloud/callback"})
+        assert refused.status_code == 503 and refused.json()["code"] == "no_auth"
+        assert bare.post("/auth/handoff", json={"state": secrets.token_urlsafe(24), "challenge": challenge, "session_token": "s"}).status_code == 503
+
+
+def test_a_handoff_code_is_exchanged_once_with_the_right_verifier_and_state(client):
+    verifier, challenge = pkce()
+    state = secrets.token_urlsafe(24)
+    made = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"})
+    assert made.status_code == 201 and made.json()["expires_in_s"] == 120 and len(made.json()["code"]) > 30
+    code = made.json()["code"]
+    assert client.post("/auth/handoff/exchange", json={"state": state, "code": "no-such-code", "verifier": verifier}).status_code == 404
+    other, _ = pkce()
+    wrong = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": other})
+    assert wrong.status_code == 401 and wrong.json()["code"] == "bad_verifier"
+    spent = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier})       # a wrong try spent it
+    assert spent.status_code == 404 and spent.json()["code"] == "unknown_code"
+    # a fresh handoff, the right verifier but another state: refused and spent; the right state: the token, once
+    code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"}).json()["code"]
+    assert client.post("/auth/handoff/exchange", json={"state": secrets.token_urlsafe(24), "code": code, "verifier": verifier}).status_code == 401
+    code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "neon-session-token"}).json()["code"]
+    got = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier})
+    assert got.status_code == 200 and got.json() == {"session_token": "neon-session-token"}
+    assert client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": verifier}).status_code == 404
+    assert client.post("/auth/handoff", json={"state": state, "challenge": "short", "session_token": "x"}).status_code == 422
+    assert client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": ""}).status_code == 422
+
+
+def test_an_expired_handoff_code_is_gone(verifier, settings):
+    app = create_app(Settings(repository=settings.repository, database_url=settings.database_url, chunk_bytes=CHUNK, auth_base_url=AUTH_BASE,
+                              handoff_lifetime_s=-5), verifier=verifier)
+    with TestClient(app) as client:
+        pkce_verifier, challenge = pkce()
+        state = secrets.token_urlsafe(24)
+        code = client.post("/auth/handoff", json={"state": state, "challenge": challenge, "session_token": "t"}).json()["code"]
+        gone = client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": pkce_verifier})
+        assert gone.status_code == 410 and gone.json()["code"] == "expired"
+        assert client.post("/auth/handoff/exchange", json={"state": state, "code": code, "verifier": pkce_verifier}).status_code == 404

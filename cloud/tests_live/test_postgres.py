@@ -9,13 +9,13 @@ import pytest
 
 from conftest import APP_URL, OWNER_URL
 from test_cloud_api import *  # noqa: F401,F403  (the fixtures and the tests of the contract)
-from test_cloud_api import CHUNK, auth, new_lab, published, reserve
+from test_cloud_api import AUTH_BASE, CHUNK, auth, new_lab, published, reserve
 from titanium_cloud.settings import Settings
 
 
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(repository="postgres", database_url=APP_URL, chunk_bytes=CHUNK)
+    return Settings(repository="postgres", database_url=APP_URL, chunk_bytes=CHUNK, auth_base_url=AUTH_BASE)
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +35,7 @@ def cleanup(who):
         conn.execute(f"UPDATE release SET previous_release_id = NULL WHERE lab_id IN ({labs})", (accounts,))
         conn.execute(f"DELETE FROM release WHERE lab_id IN ({labs})", (accounts,))
         conn.execute("DELETE FROM lab WHERE owner_id = ANY(%s)", (accounts,))
+        conn.execute("DELETE FROM auth_handoff WHERE expires_at < now()")        # the handoff tests spend their codes; this sweeps expired ones
         conn.commit()
 
 
@@ -103,3 +104,14 @@ def test_rls_keeps_another_owners_laboratory_and_uploads_out_of_reach(client, mi
         for api in (anon, other, me):
             api[0].close()
     assert client.get(f"/labs/{lab['id']}").json()["name"] == lab["name"]
+
+
+def test_the_api_role_inserts_reads_and_deletes_handoffs_but_never_changes_one(client):
+    """The handoff tests of the contract ran above through the Postgres repository; here the role's grants: no UPDATE on auth_handoff."""
+    anon = as_app_api(None)
+    try:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            changed(anon, "UPDATE auth_handoff SET state='taken over' WHERE false")
+        assert count(anon, "SELECT count(*) FROM auth_handoff WHERE expires_at < now() - interval '1 day'") == 0     # expired rows are swept
+    finally:
+        anon[0].close()

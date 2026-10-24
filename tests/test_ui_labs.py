@@ -16,7 +16,7 @@ node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not inst
 HELPERS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "filepick.js", "tasks.js"]
 SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js",
            "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-review.js",
-           "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js", "screens/labs.js"]
+           "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js", "screens/labs-cloud.js", "screens/labs.js"]
 FORM_DATA = "globalThis.FormData = class { constructor() { this.items = []; } append(k, v) { this.items.push([k, typeof v === 'object' && v ? v.name : String(v)]); } };"
 HARNESS = """
 const fs = require('fs');
@@ -79,7 +79,7 @@ def test_the_menu_has_laboratories_with_an_icon_of_its_own_and_the_screens_are_l
     order = {s: i for i, s in enumerate(scripts)}
     assert order["/i18n-labs.js"] < order["/i18n-gaps.js"] < order["/app.js"]
     assert order["/screens/lab-source.js"] < order["/screens/photo-engraving.js"] and order["/screens/lab-source.js"] < order["/screens/vector.js"]
-    assert order["/screens/photo-panels.js"] < order["/screens/labs.js"]
+    assert order["/screens/photo-panels.js"] < order["/screens/labs-cloud.js"] < order["/screens/labs.js"]
     labs = (UI_DIR / "screens" / "labs.js").read_text(encoding="utf-8")
     source = (UI_DIR / "screens" / "lab-source.js").read_text(encoding="utf-8")
     assert "App.register({id: 'labs'" in labs and "innerHTML" not in labs and "innerHTML" not in source      # release text is never markup

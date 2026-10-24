@@ -406,6 +406,7 @@ def sources(store: Store) -> list[dict]:
         out.append({"id": s["id"], "origin_lab_id": s["origin_lab_id"], "name": s["name"], "origin": s["origin"], "url": s["url"],
                     "status": s["status"], "connected_at": s["connected_at"], "disconnected_at": s["disconnected_at"],
                     "update_checks": s["update_checks"], "last_checked_at": s["last_checked_at"],
+                    "last_check": json.loads(s["last_check_json"]) if s["last_check_json"] else None,
                     "current": None if current is None else _release_row(current), "kept": kept, "withdrawals": withdrawn,
                     "release_withdrawn": bool(current is not None and _release_withdrawn(store, s["id"], current["release_id"]))})
     return out
