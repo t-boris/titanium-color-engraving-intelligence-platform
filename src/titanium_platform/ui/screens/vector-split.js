@@ -3,8 +3,10 @@
    даст), сглаживание, лица — всё на виду, как
    часть раздела «Цвета и разбиение» (vector-colours.js). Найденные важные области (лицо, глаза, губы) нарисованы поверх
    картинки в сворачиваемом блоке: оператор убирает найденную область или добавляет свою — тянет прямоугольник или эллипс
-   по картинке (координаты — пиксели рабочей картинки). Изменения областей и настроек применяются кнопкой «Разбить заново»:
-   разбиение пересчитывается, раскраска начинается заново. */
+   по картинке (координаты — пиксели рабочей картинки). У глаза, губ и отмеченной области своя детальность, у отмеченной — свой
+   вид (глаз, губы, другое), а границу любой области можно сдвинуть или нарисовать заново (I-3). Изменения областей и настроек
+   применяются кнопкой «Разбить заново»: разбиение пересчитывается, раскраска начинается заново; если изменились только
+   детальность, границы или вид областей, цвета вне изменённых областей остаются прежними. */
 'use strict';
 const VectorSplit = (() => {
   const {h, fill, btn, field, post, fail, toast, confirmBox} = App;
@@ -12,6 +14,9 @@ const VectorSplit = (() => {
   const DENSITY = {min: 30, max: 250, step: 5};                     // vector_job.DENSITY
   const LEVELS = {coarse: 70, medium: 100, fine: 150};                // прежние уровни детальности — точки той же шкалы
   const KIND = {face: 'Лицо', eye: 'Глаз', lips: 'Губы', manual: 'Отмечено вручную'};
+  const FINE = ['eye', 'lips', 'manual'];                                            // faces.FINE_KINDS: у них своя детальность
+  const DETAILS = [['fine', 'мелко'], ['finer', 'очень мелко'], ['finest', 'максимально'], ['face', 'как у лица']];   // faces.DETAILS
+  const MARKED = [['eye', 'глаз'], ['lips', 'губы'], ['manual', 'другое']];           // vector_job.MARKED_KINDS
   /** Алгоритмы разбиения и чем они отличаются: что получается на картинке и сколько это стоит (DEC-082 фичи
       vector-detail-and-colour-control; числа — портрет работы 22 на 1200 пикселях, 28 цветов, крупно, с лицами и без). Детальность — не алгоритм:
       она есть у каждого. Ключ метода хранится в работе: SLIC — «Мозаика», как и раньше. */
@@ -82,6 +87,30 @@ const VectorSplit = (() => {
     return el;
   };
 
+  /** Граница области без прочего: эллипс или многоугольник. */
+  const outline = (a) => (a.ellipse ? {ellipse: a.ellipse} : {polygon: a.polygon});
+  /** Область, сдвинутая на (dx, dy) пикселей. */
+  function moved(a, dx, dy) {
+    if (a.ellipse) return {ellipse: {...a.ellipse, center: [a.ellipse.center[0] + dx, a.ellipse.center[1] + dy]}};
+    return {polygon: a.polygon.map(([x, y]) => [x + dx, y + dy])};
+  }
+  /** Лежит ли точка внутри области (эллипс с поворотом или многоугольник). */
+  function inside(a, [x, y]) {
+    if (a.ellipse) {
+      const e = a.ellipse, t = -(e.angle || 0) * Math.PI / 180, dx = x - e.center[0], dy = y - e.center[1];
+      const u = dx * Math.cos(t) - dy * Math.sin(t), v = dx * Math.sin(t) + dy * Math.cos(t);
+      return (u / e.axes[0]) ** 2 + (v / e.axes[1]) ** 2 <= 1;
+    }
+    let hit = false;
+    const p = a.polygon;
+    for (let i = 0, k = p.length - 1; i < p.length; k = i++) {
+      if ((p[i][1] > y) !== (p[k][1] > y) && x < (p[k][0] - p[i][0]) * (y - p[i][1]) / (p[k][1] - p[i][1]) + p[i][0]) hit = !hit;
+    }
+    return hit;
+  }
+  /** Изменения найденной области в одном виде, чтобы сравнивать их с сохранёнными. */
+  const norm = (c) => ({number: c.number, detail: c.detail || null, ellipse: c.ellipse || null, polygon: c.polygon || null});
+
   /** Фигура области в пикселях картинки: эллипс или многоугольник. */
   function shape(area, cls) {
     if (area.ellipse) {
@@ -98,10 +127,30 @@ const VectorSplit = (() => {
     const W = doc.image_px.width, H = doc.image_px.height;
     const manual = s.manual.map((a) => ({...a}));
     const removed = new Set(s.removed);
+    const adjusted = new Map((s.adjusted || []).map((c) => [c.number, {...c}]));   // найденные области с детальностью или границей оператора
+    let editing = null;                                                           // область, чью границу правят: {found: номер} или {manual: индекс}
     const colours = h('input', {type: 'number', step: '1', min: '2', max: String(j.layer_cap), value: s.n_colors, 'aria-label': 'Число цветов'});
     const algorithm = picker(s.algorithm || 'slic');
     const settings = () => ({n_colors: +colours.value, algorithm: algorithm.select.value, density: +density.input.value, faces: faces.checked,
-      manual, removed: [...removed]});
+      manual, removed: [...removed], adjusted: [...adjusted.values()].sort((a, b) => a.number - b.number)});
+    /** Найденная область такой, какой её разобьют: с детальностью и границей оператора. */
+    const effective = (a) => {
+      const c = adjusted.get(a.number) || {};
+      return {...a, ...(c.ellipse || c.polygon ? {ellipse: undefined, polygon: undefined, ...outline(c)} : {}), detail: c.detail};
+    };
+    const adjust = (number, change) => {
+      const c = {number, ...(adjusted.get(number) || {}), ...change};
+      if (!c.detail || c.detail === 'fine') delete c.detail;
+      if (c.detail || c.ellipse || c.polygon) adjusted.set(number, c); else adjusted.delete(number);
+    };
+    const edited = () => (editing == null ? null : 'found' in editing ? effective(j.areas.detected[editing.found]) : manual[editing.manual]);
+    const reshape = (area) => {
+      if ('found' in editing) adjust(editing.found, {ellipse: undefined, polygon: undefined, ...area});
+      else manual[editing.manual] = {...manual[editing.manual], ellipse: undefined, polygon: undefined, ...area};
+      for (const a of [adjusted.get(editing.found), manual[editing.manual]]) {
+        if (a) for (const k of ['ellipse', 'polygon']) if (a[k] === undefined) delete a[k];
+      }
+    };
     const density = densityControl(j, settings);
     const smoothing = smoothness(j, smooth || (async () => {}));
     const faces = h('input', {type: 'checkbox', checked: s.faces});
@@ -110,32 +159,60 @@ const VectorSplit = (() => {
       'aria-label': 'Важные области поверх картинки; тяните, чтобы отметить свою'});
     const list = h('div', {class: 'stack'});
     const pending = h('p', {class: 'muted small', hidden: true}, 'Изменения областей применятся после «Разбить заново».');
+    const editHint = h('p', {class: 'small', hidden: true});
     const areasTitle = h('summary', {});
     let areasKey = null;                                               // the areas as last drawn: a change of them recounts the regions
 
+    /** Детальность области — выбор из четырёх; у лица своей нет. */
+    const detailPicker = (value, set) => {
+      const select = h('select', {'aria-label': 'Детальность области'}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
+      select.addEventListener('change', () => { set(select.value); draw(); });
+      return select;
+    };
+    const isEditing = (which) => editing != null && JSON.stringify(editing) === JSON.stringify(which);
+    const borderButton = (which) => btn(isEditing(which) ? 'Готово' : 'Граница', () => { editing = isEditing(which) ? null : which; draw(); });
+
     function draw() {
-      const key = JSON.stringify([manual, [...removed].sort(), faces.checked]);
+      const key = JSON.stringify([manual, [...removed].sort(), faces.checked, settings().adjusted]);
       if (areasKey !== null && key !== areasKey) density.recount();
       areasKey = key;
+      if (editing && (('found' in editing && (!faces.checked || removed.has(editing.found))) || ('manual' in editing && !manual[editing.manual]))) editing = null;
       overlay.replaceChildren();
       j.areas.detected.forEach((a) => {
         if (!faces.checked) return;
-        overlay.append(shape(a, removed.has(a.number) ? 'vw-area removed' : 'vw-area ' + a.kind));
+        overlay.append(shape(effective(a), (removed.has(a.number) ? 'vw-area removed' : 'vw-area ' + a.kind) + (isEditing({found: a.number}) ? ' editing' : '')));
       });
-      manual.forEach((a) => overlay.append(shape(a, 'vw-area manual')));
-      const changed = manual.length !== s.manual.length || removed.size !== s.removed.length || [...removed].some((n) => !s.removed.includes(n));
+      manual.forEach((a, i) => overlay.append(shape(a, 'vw-area manual' + (isEditing({manual: i}) ? ' editing' : ''))));
+      const was = JSON.stringify((s.adjusted || []).map(norm)), now = JSON.stringify(settings().adjusted.map(norm));
+      const changed = JSON.stringify(manual) !== JSON.stringify(s.manual) || removed.size !== s.removed.length
+        || [...removed].some((n) => !s.removed.includes(n)) || was !== now;
       pending.hidden = !changed;
+      editHint.hidden = editing == null;
+      fill(editHint, 'Тяните внутри выделенной области, чтобы сдвинуть её, или рядом с ней, чтобы нарисовать её границу заново (форма — как у новой области). «Готово» — закончить.');
       fill(areasTitle, `Важные области: лица, глаза, губы и отмеченные вручную (найдено ${faces.checked ? j.areas.detected.length : 0}, отмечено ${manual.length}, убрано ${removed.size})`);
-      const rows = (faces.checked ? j.areas.detected : []).map((a) => h('div', {class: 'row'},
-        h('span', {}, `${KIND[a.kind]} · найдено`, a.score == null ? '' : ` (оценка ${App.num(a.score)})`, removed.has(a.number) ? ' · убрано' : ''),
-        removed.has(a.number) ? btn('Вернуть', () => { removed.delete(a.number); draw(); }) : btn('Убрать', () => { removed.add(a.number); draw(); })));
-      manual.forEach((a, i) => rows.push(h('div', {class: 'row'}, h('span', {}, `${KIND.manual} № ${i + 1}`),
-        btn('Убрать', () => { manual.splice(i, 1); draw(); }))));
+      const rows = (faces.checked ? j.areas.detected : []).map((a) => {
+        const gone = removed.has(a.number), changedHere = adjusted.has(a.number);
+        return h('div', {class: 'row'},
+          h('span', {}, `${KIND[a.kind]} · найдено`, a.score == null ? '' : ` (оценка ${App.num(a.score)})`, gone ? ' · убрано' : changedHere ? ' · изменено' : ''),
+          !gone && FINE.includes(a.kind) ? detailPicker(effective(a).detail, (v) => adjust(a.number, {detail: v})) : null,
+          !gone ? borderButton({found: a.number}) : null,
+          !gone && changedHere ? btn('Как найдено', () => { adjusted.delete(a.number); draw(); }) : null,
+          gone ? btn('Вернуть', () => { removed.delete(a.number); draw(); }) : btn('Убрать', () => { removed.add(a.number); draw(); }));
+      });
+      manual.forEach((a, i) => {
+        const kind = h('select', {'aria-label': 'Что это за область'}, MARKED.map(([v, l]) => h('option', {value: v, selected: v === (a.kind || 'manual')}, l)));
+        kind.addEventListener('change', () => { manual[i] = {...manual[i], kind: kind.value}; draw(); });
+        rows.push(h('div', {class: 'row'}, h('span', {}, `Отмечено вручную № ${i + 1}`), kind,
+          detailPicker(a.detail, (v) => { manual[i] = {...manual[i], detail: v === 'fine' ? undefined : v}; if (!manual[i].detail) delete manual[i].detail; }),
+          borderButton({manual: i}),
+          btn('Убрать', () => { manual.splice(i, 1); if (editing && 'manual' in editing) editing = null; draw(); })));
+      });
       fill(list, rows.length ? rows : h('p', {class: 'muted small'}, 'Важных областей нет. Потяните по картинке, чтобы отметить свою.'));
     }
 
-    // тянуть по картинке: прямоугольник или эллипс в пикселях рабочей картинки
-    let start = null, ghost = null;
+    // тянуть по картинке: прямоугольник или эллипс в пикселях рабочей картинки — новая область или новая граница выделенной;
+    // внутри выделенной области — сдвиг её границы
+    let start = null, ghost = null, grabbed = null;
     const at = (ev) => {
       const r = overlay.getBoundingClientRect();
       return [Math.min(W, Math.max(0, (ev.clientX - r.left) / r.width * W)), Math.min(H, Math.max(0, (ev.clientY - r.top) / r.height * H))];
@@ -146,20 +223,32 @@ const VectorSplit = (() => {
       return tool.value === 'ellipse' ? {ellipse: {center: [(x0 + x1) / 2, (y0 + y1) / 2], axes: [(x1 - x0) / 2, (y1 - y0) / 2], angle: 0}}
         : {polygon: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]};
     };
-    overlay.addEventListener('pointerdown', (ev) => { start = at(ev); overlay.setPointerCapture(ev.pointerId); ev.preventDefault(); });
+    const drawn = (p) => {
+      if (!grabbed) return areaOf(start, p);
+      const [dx, dy] = [p[0] - start[0], p[1] - start[1]];
+      return dx || dy ? moved(grabbed, dx, dy) : null;
+    };
+    overlay.addEventListener('pointerdown', (ev) => {
+      start = at(ev);
+      const area = edited();
+      grabbed = area && inside(area, start) ? outline(area) : null;
+      overlay.setPointerCapture(ev.pointerId); ev.preventDefault();
+    });
     overlay.addEventListener('pointermove', (ev) => {
       if (!start) return;
-      const area = areaOf(start, at(ev));
+      const area = drawn(at(ev));
       if (ghost) ghost.remove();
-      ghost = area ? shape(area, 'vw-area manual') : null;
+      ghost = area ? shape(area, 'vw-area manual editing') : null;
       if (ghost) overlay.append(ghost);
     });
     overlay.addEventListener('pointerup', (ev) => {
       if (!start) return;
-      const area = areaOf(start, at(ev));
-      start = null;
+      const area = drawn(at(ev));
+      start = null; grabbed = null;
       if (ghost) { ghost.remove(); ghost = null; }
-      if (area) { manual.push(area); draw(); }
+      if (!area) return;
+      if (editing) reshape(area); else manual.push(area);
+      draw();
     });
     faces.addEventListener('change', draw);
     for (const el of [colours, algorithm.select]) el.addEventListener('change', () => density.recount());
@@ -189,8 +278,9 @@ const VectorSplit = (() => {
         h('div', {class: 'grid g2'},
           h('figure', {}, h('div', {class: 'vw-stage'}, h('img', {src: `/api/plans/${j.id}/source-image`, alt: 'Исходная картинка'}), overlay),
             h('figcaption', {class: 'muted small'}, 'Картинка делится на цветные области без зазоров: общая граница двух областей — одна линия; лица, глаза, губы и отмеченные области делятся мельче. ',
-              'Лицо — голубое, глаза и губы — жёлтые, отмеченные вручную — зелёные, убранные — пунктир. Потяните по картинке, чтобы отметить свою область.')),
-          h('div', {class: 'stack'}, field('Новая область', tool), list, pending))));
+              'Лицо — голубое, глаза и губы — жёлтые, отмеченные вручную — зелёные, убранные — пунктир, выделенная — толще. Потяните по картинке, чтобы отметить свою область. ',
+              'У глаза, губ и отмеченной области своя детальность; если изменить только её, границу или вид области, цвета вне изменённых областей после «Разбить заново» останутся прежними.')),
+          h('div', {class: 'stack'}, field('Новая область', tool), list, editHint, pending))));
   }
 
   return {card, ALGORITHMS, picker, name: algorithmName};

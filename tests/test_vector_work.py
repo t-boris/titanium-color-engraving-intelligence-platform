@@ -247,6 +247,52 @@ def test_faces_found_once_can_be_removed_and_the_picture_split_without_them(work
     assert [a["removed"] for a in r["areas"]["detected"]] == [False, True, True, True] and r["document"]["important_regions"] <= fine
 
 
+def a_face(monkeypatch):
+    box = [[100.0, 40.0], [160.0, 40.0], [160.0, 110.0], [100.0, 110.0]]
+    found = faces.FaceSearch(faces.face_areas(box, [[115.0, 65.0], [145.0, 65.0]], [[118.0, 95.0], [142.0, 95.0]], 0.9), 1)
+    monkeypatch.setattr(faces, "important_areas", lambda img, **kw: found)
+
+
+def test_an_eye_found_or_marked_takes_its_own_detail_and_boundary_and_only_that_keeps_the_colours_of_the_split(work, monkeypatch):
+    """vector-detail-and-colour-control I-3 (overview criterion 3): a detected eye's detail and boundary (``adjusted``), a missing eye marked
+    by hand with a kind and a detail; a change of areas alone keeps the colour centres, any other clusters anew."""
+    a_face(monkeypatch)
+    c = work
+    j = create(c).json()
+    url = f"/api/vector/{j['id']}"
+    given = []
+    real = sg.segment
+    monkeypatch.setattr(vector_job.seg, "segment", lambda *a, **kw: given.append(kw.get("centres")) or real(*a, **kw))
+    centres = json.loads(Path(pl.get_plan(c["store"], j["id"])["document_path"]).read_text())["centres"]
+    eye = j["areas"]["detected"][1]
+    moved = {**eye["ellipse"], "center": [eye["ellipse"]["center"][0] + 3, eye["ellipse"]["center"][1] - 2]}
+    body = {"n_colors": 5, "adjusted": [{"number": 1, "detail": "finest", "ellipse": moved}, {"number": 2, "detail": None}]}
+    preview = c["client"].post(f"{url}/split/preview", json=body).json()
+    r = c["client"].post(f"{url}/split", json=body)
+    assert r.status_code == 200, r.text
+    again = r.json()
+    assert again["split"]["adjusted"] == [{"number": 1, "detail": "finest", "ellipse": moved}]          # a change of nothing is dropped
+    assert again["areas"]["detected"][1]["ellipse"] == eye["ellipse"]                                      # shown as found, changed by the split
+    assert given == [centres, centres] and preview["regions"] == again["document"]["regions"]
+    assert pl.get_plan(c["store"], j["id"])["history"][-1]["op"]["adjusted"] == 1
+    plan = pl.get_plan(c["store"], j["id"])
+    assert json.loads(Path(plan["document_path"]).read_text())["important"][1]["ellipse"] == moved
+    marked = {"kind": "eye", "detail": "finer", "polygon": [[10, 10], [40, 10], [40, 30], [10, 30]]}
+    r = c["client"].post(f"{url}/split", json={**body, "manual": [marked]}).json()
+    assert r["split"]["manual"][0]["kind"] == "eye" and r["split"]["manual"][0]["detail"] == "finer" and given[-1] is None
+    c["client"].post(f"{url}/split", json={**body, "manual": [marked], "n_colors": 4})
+    assert given[-1] is None                                                                               # other colours: clustered anew
+    square = [[1, 1], [9, 1], [9, 9], [1, 9]]
+    for bad, message in [({"adjusted": [{"number": 9, "detail": "fine"}]}, "an adjusted area must be one of the areas found"),
+                         ({"adjusted": [{"number": 1, "detail": "fine"}, {"number": 1, "detail": "finer"}]}, "each once"),
+                         ({"adjusted": [{"number": 0, "detail": "finer"}]}, "only an eye, the lips or a marked area takes a detail"),
+                         ({"adjusted": [{"number": 1, "detail": "huge"}]}, "the detail of an area must be face, fine, finer or finest"),
+                         ({"adjusted": [{"number": 1, "ellipse": {"center": [1, 2]}}]}, "an important area must be an ellipse or a polygon"),
+                         ({"manual": [{"kind": "face", "polygon": square}]}, "a marked area is an eye, the lips or another area")]:
+        answer = c["client"].post(f"{url}/split", json={"n_colors": 5, **bad})
+        assert answer.status_code == 422 and message in answer.json()["error"], bad
+
+
 def test_the_face_search_is_on_unless_the_form_says_no_whatever_fastapi_does_with_a_missing_flag(work):
     # FastAPI 0.148 reads a missing bool form field as false; the route reads the flag itself (left out: searched)
     c = work
@@ -1126,6 +1172,48 @@ def test_the_density_slider_counts_the_regions_it_would_give_and_split_again_tak
     assert [p["density"] for p in out["previews"]] == [60] and out["previews"][0]["n_colors"] == 5
     assert out["after"].startswith(f"будет областей: 17 (сейчас {regions})")
     assert len(out["split"]) == 1 and out["split"][0]["density"] == 60
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_an_eye_is_given_a_detail_and_moved_and_a_missing_one_marked_and_split_again_sends_them(work, tmp_path, monkeypatch):
+    """vector-detail-and-colour-control I-3 on the screen: a detail per eye, the boundary moved by dragging inside it, a marked eye."""
+    a_face(monkeypatch)
+    j = create(work).json()
+    out = run_screen(tmp_path, j, routes_of(work, j), """
+  const row = (start) => tree.querySelectorAll('div').filter((d) => d.className === 'row' && d.textContent.startsWith(start))[0];
+  const eye = row('Глаз · найдено');
+  out.details = eye.querySelector('select').options.map((o) => [o.value, o.textContent]);
+  out.faceSelects = row('Лицо · найдено').querySelectorAll('select').length;
+  eye.querySelector('select').value = 'finest'; await eye.querySelector('select').dispatch('change');
+  await row('Глаз · найдено').querySelectorAll('button').find((b) => b.textContent === 'Граница').dispatch('click');
+  const overlay = tree.querySelectorAll('svg').find((s) => s.getAttribute('class') === 'vw-areas');
+  out.editing = overlay.querySelectorAll('ellipse').filter((e) => (e.getAttribute('class') || '').includes('editing')).length;
+  await overlay.dispatch('pointerdown', {clientX: 48, clientY: 36, pointerId: 1});
+  await overlay.dispatch('pointermove', {clientX: 53, clientY: 40});
+  await overlay.dispatch('pointerup', {clientX: 53, clientY: 40});
+  await row('Глаз · найдено').querySelectorAll('button').find((b) => b.textContent === 'Готово').dispatch('click');
+  await overlay.dispatch('pointerdown', {clientX: 5, clientY: 5, pointerId: 1});
+  await overlay.dispatch('pointermove', {clientX: 20, clientY: 20});
+  await overlay.dispatch('pointerup', {clientX: 20, clientY: 20});
+  const kind = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Что это за область');
+  out.kinds = kind.options.map((o) => o.value);
+  kind.value = 'eye'; await kind.dispatch('change');
+  out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Изменения областей применятся')).hidden;
+  out.changed = row('Глаз · найдено').textContent.includes('изменено');
+  await byText(tree, 'button', 'Разбить заново').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.path.endsWith('/split') && r.method === 'POST').map((r) => JSON.parse(r.body));
+""")
+    assert out["details"] == [["fine", "мелко"], ["finer", "очень мелко"], ["finest", "максимально"], ["face", "как у лица"]]
+    assert out["faceSelects"] == 0 and out["editing"] == 1 and out["kinds"] == ["eye", "lips", "manual"] and out["pending"] and out["changed"]
+    body, = out["posted"]
+    found = j["areas"]["detected"][1]["ellipse"]
+    (change,) = body["adjusted"]
+    assert change["number"] == 1 and change["detail"] == "finest" and change["ellipse"]["axes"] == found["axes"]
+    assert change["ellipse"]["center"] == pytest.approx([found["center"][0] + 12, found["center"][1] + 7.2])    # 5 and 4 % of 240 × 180
+    assert body["manual"][0]["kind"] == "eye" and body["manual"][0]["polygon"] == [[12, 9], [48, 9], [48, 36], [12, 36]]
+    r = work["client"].post(f"/api/vector/{j['id']}/split", json=body)                    # the server takes what the screen sends
+    assert r.status_code == 200 and r.json()["split"]["adjusted"][0]["detail"] == "finest"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

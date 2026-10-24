@@ -542,6 +542,7 @@ select::-ms-expand {display:none}
 .vw-area.eye, .vw-area.lips {stroke:#f2ce8b}
 .vw-area.manual {stroke:#7de0ba}
 .vw-area.removed {stroke:#a0acc0;stroke-dasharray:6 4}
+.vw-area.editing {stroke-width:5}
 .vw-swatches {display:flex;flex-wrap:wrap;gap:4px;max-height:48vh;overflow:auto}
 .vw-swatch {position:relative;flex:none;width:24px;height:24px;padding:0;border:1px solid #ffffff38;border-radius:5px;cursor:pointer}
 .vw-swatch.as-shot {opacity:.6;border:2px dashed #ffffffc0}

@@ -4,12 +4,16 @@ Method (every step deterministic, so the same picture and settings give a byte-i
 
 1. The picture in Lab (:func:`color.srgb8_to_lab`) is smoothed edge-preservingly (bilateral filter).
 2. Superpixels (``cv2.ximgproc``) follow its edges: coarse over the picture, finer in faces and finest in eyes, lips
-   and areas the operator marks (:mod:`faces`); each finer level is a run of the algorithm of its own inside its area. Four
+   and areas the operator marks (:mod:`faces`); faces are a run of the algorithm of its own inside their area, and every eye, the lips
+   and every marked area a run inside its own box at its own ``detail`` (``faces.DETAILS``), the finer one where two overlap. Four
    algorithms differ in the kind of picture they give (``ALGORITHMS``): SLIC patches of an even size (the default), a fine
    grid of tiny cells so that the colour classes alone decide the shapes ("tonal"), graph segmentation into flat planes
    ("planes") and SEEDS.
 3. The mean Lab of every superpixel is clustered into at most ``n_colors`` colours by a seeded k-means weighted by pixels;
-   superpixels of faces and of the finest areas weigh more, so that their distinct colours keep clusters of their own.
+   superpixels of faces and of the finest areas weigh more, so that their distinct colours keep clusters of their own. Every
+   superpixel then takes the colour of the nearest centre. A split given the ``centres`` of an earlier one (the same picture,
+   algorithm, density and number of colours) takes them as they are instead of clustering anew, so that a change of one area
+   (vector-detail-and-colour-control I-3) leaves every superpixel outside it, and so its colour, as it was.
 4. A region is a 4-connected area of one colour, so two neighbours never share a colour in a fresh split. Regions under
    the minimum area merge into the neighbour of the nearest colour (smallest first); inside important areas (eyes,
    lips, marked areas) only specks smaller than a finest superpixel do.
@@ -32,7 +36,8 @@ The document is a JSON-serialisable dict; coordinates are millimetres from the p
     {"version": 1, "kind": "segments", "size_mm": {"width", "height"}, "px_mm", "image_px": {"width", "height"},
      "n_colors",                                          # colours asked for; the palette never has more
      "min_area_mm2", "tolerance_mm", "seed", "superpixels",  # coarse superpixels along the longer side
-     "superpixel_px": {"coarse", "face", "fine"},
+     "superpixel_px": {"coarse", "face", "fine"},       # "fine": at the default detail of an area
+     "centres": [[L, a, b], ...],                         # the colour centres every superpixel took the nearest of
      "faces": {"searched", "found", "error"},             # found == 0: no face in the picture (or not searched)
      "important": [area, ...],                            # detected and manual areas used, in pixels (see faces)
      "palette": [{"index", "lab": [L, a, b], "srgb": [r, g, b], "pixels"}],   # lightest first; indexes may have gaps
@@ -74,7 +79,7 @@ TOLERANCE_MM = 0.08
 SMOOTH_COLOR, SMOOTH_SPACE = 6.0, 2.0   # bilateral filter: Lab difference and pixel distance
 SUPERPIXELS_ACROSS = 150                # coarse superpixels along the longer side of the picture, unless asked otherwise
 MIN_SUPERPIXELS_ACROSS = 10
-LEVEL_SCALE = (1.0, 0.6, 0.35)          # superpixel size of the picture, of faces, of eyes, lips and marked areas
+LEVEL_SCALE = (1.0, faces.DETAILS["face"], faces.DETAILS[faces.DEFAULT_DETAIL])   # superpixel size of the picture, of faces, of fine areas
 MIN_SUPERPIXEL_PX = 3
 SLIC_ITERATIONS = 10
 ALGORITHMS = ("slic", "tonal", "planes", "seeds")   # the algorithms a split can use (feature vector-detail-and-colour-control, DEC-082)
@@ -86,7 +91,7 @@ PLANES_SCALE = 150.0                    # graph segmentation: above ~500 a face 
 PLANES_SIGMA = 0.6
 ARC_SIGMA_PX = 1.2                      # an arc is low-passed along its length first: pixel steps are no detail
 CHAIKIN_ROUNDS = 2
-FINE_KINDS = ("eye", "lips", "manual")
+FINE_KINDS = faces.FINE_KINDS
 SEAM_PX = 0.6                           # width of the preview's hairline in source pixels (see to_svg)
 STEP = ((1, 0), (0, 1), (-1, 0), (0, -1))     # directions right, down, left, up; (d + 3) % 4 turns left on screen
 _ONE_BIT = {1: 0, 2: 1, 4: 2, 8: 3}
@@ -177,22 +182,24 @@ def _listed(names) -> str:
     return ", ".join(names[:-1]) + " or " + names[-1]
 
 
-def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int], algorithm: str = DEFAULT_ALGORITHM) -> np.ndarray:
-    """Superpixel numbers 0..n-1: superpixels of the whole picture, then of each finer level inside its own area, by the
-    chosen algorithm (``ALGORITHMS``)."""
+def _superpixels(lab: np.ndarray, levels: np.ndarray, sizes: list[int], fine: list[tuple[np.ndarray, int]],
+                 algorithm: str = DEFAULT_ALGORITHM) -> np.ndarray:
+    """Superpixel numbers 0..n-1: superpixels of the whole picture, then of the faces inside their area, then of every fine area
+    (``fine``: its pixels and its superpixel size, coarser first, so that the finer one wins where two overlap) inside its own box, by
+    the chosen algorithm (``ALGORITHMS``). An area's superpixels depend only on the picture inside its box, so a change of one area
+    leaves those of the others as they were."""
     make = _ALGORITHM[algorithm]
     labels = make(lab, sizes[0]).astype(np.int64)
     h, w = levels.shape
-    for level in (1, 2):
-        mask = levels == level
+    for mask, size in [(levels == 1, sizes[1])] + fine:
         if not mask.any():
             continue
         ys, xs = np.nonzero(mask)
-        pad = 2 * sizes[level]
+        pad = 2 * size
         y0, y1 = max(0, ys.min() - pad), min(h, ys.max() + 1 + pad)
         x0, x1 = max(0, xs.min() - pad), min(w, xs.max() + 1 + pad)
         inside = mask[y0:y1, x0:x1]
-        sub = make(np.ascontiguousarray(lab[y0:y1, x0:x1]), sizes[level]).astype(np.int64) + labels.max() + 1
+        sub = make(np.ascontiguousarray(lab[y0:y1, x0:x1]), size).astype(np.int64) + labels.max() + 1
         labels[y0:y1, x0:x1][inside] = sub[inside]
     _, numbers = np.unique(labels, return_inverse=True)
     return numbers.reshape(levels.shape)
@@ -216,7 +223,7 @@ def _kmeans(points: np.ndarray, weights: np.ndarray, k: int, seed: int) -> tuple
         centres = np.array(centres)
         assign = None
         for _ in range(KMEANS_ITERATIONS):
-            new = np.stack([((points - c) ** 2).sum(axis=1) for c in centres], axis=1).argmin(axis=1)
+            new = _nearest(points, centres)
             if assign is not None and (new == assign).all():
                 break
             assign = new
@@ -229,13 +236,22 @@ def _kmeans(points: np.ndarray, weights: np.ndarray, k: int, seed: int) -> tuple
     return best[1], best[2]
 
 
-def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], n_colors: int, seed: int, algorithm: str = DEFAULT_ALGORITHM):
-    """Colour class of every pixel and the Lab of every class, from the clustered superpixels."""
-    sp = _superpixels(smooth, levels, sizes, algorithm)
+def _nearest(points: np.ndarray, centres: np.ndarray) -> np.ndarray:
+    """The nearest centre of every point (the lower number on a tie)."""
+    return np.stack([((points - c) ** 2).sum(axis=1) for c in centres], axis=1).argmin(axis=1)
+
+
+def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], fine: list, n_colors: int, seed: int,
+             algorithm: str = DEFAULT_ALGORITHM, centres: np.ndarray | None = None):
+    """Colour class of every pixel and the Lab of every class: every superpixel takes the nearest of the centres, clustered from the
+    superpixels or given (``centres`` of an earlier split)."""
+    sp = _superpixels(smooth, levels, sizes, fine, algorithm)
     n = int(sp.max()) + 1
     flat = sp.ravel()
     pixels = np.bincount(flat, minlength=n).astype(float)
     mean = np.stack([np.bincount(flat, weights=smooth[..., c].ravel(), minlength=n) for c in range(3)], axis=1) / pixels[:, None]
+    if centres is not None:
+        return _nearest(mean, centres)[sp].astype(np.int32), centres
     level = np.zeros(n, np.uint8)
     level[flat] = levels.ravel()
     weights = pixels.copy()
@@ -252,8 +268,8 @@ def _classes(smooth: np.ndarray, levels: np.ndarray, sizes: list[int], n_colors:
             break
         step += 0.5
     same = same.ravel()
-    centres, assign = _kmeans(points, np.bincount(same, weights=weights, minlength=len(points)), n_colors, seed)
-    return assign[same][sp].astype(np.int32), centres
+    centres, _ = _kmeans(points, np.bincount(same, weights=weights, minlength=len(points)), n_colors, seed)
+    return _nearest(mean, centres)[sp].astype(np.int32), centres
 
 
 def _components(classes: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
@@ -509,13 +525,15 @@ def _palette(classes: np.ndarray, lab: np.ndarray, k: int) -> tuple[np.ndarray, 
 
 def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = (), use_faces: bool = True,
             min_area_mm2: float = MIN_AREA_MM2, tolerance_mm: float = TOLERANCE_MM, seed: int = 0,
-            superpixels: int = SUPERPIXELS_ACROSS, algorithm: str = DEFAULT_ALGORITHM) -> dict:
+            superpixels: int = SUPERPIXELS_ACROSS, algorithm: str = DEFAULT_ALGORITHM, centres: Iterable | None = None) -> dict:
     """Split an RGB uint8 picture ``width_mm`` wide into at most ``n_colors`` gapless colour regions (module docstring).
 
     ``important`` lists areas the operator marked (or detected areas handed back to keep them, see
     :func:`faces.check_area`), in pixels of this picture; ``use_faces`` adds the faces, eyes and lips found in it.
     ``superpixels`` is the number of coarse superpixels along the longer side: fewer follow only the larger edges.
-    ``algorithm`` makes them: ``slic`` (the default), ``tonal``, ``planes`` or ``seeds`` (``ALGORITHMS``).
+    ``algorithm`` makes them: ``slic`` (the default), ``tonal``, ``planes`` or ``seeds`` (``ALGORITHMS``). ``centres`` are the colour
+    centres of an earlier split of the same picture with the same algorithm, superpixels and number of colours, taken instead of
+    clustering anew (step 3).
     """
     img = np.asarray(image_rgb)
     if img.ndim != 3 or img.shape[2] != 3 or img.dtype != np.uint8 or not img.size:
@@ -525,6 +543,10 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     superpixels = _whole(superpixels, "the number of superpixels across the picture", MIN_SUPERPIXELS_ACROSS)
     if algorithm not in ALGORITHMS:
         raise SegmentError("the algorithm must be " + _listed(ALGORITHMS))
+    if centres is not None:
+        centres = np.asarray(centres, np.float64)
+        if centres.ndim != 2 or centres.shape[1] != 3 or not 1 <= len(centres) <= n_colors or not np.isfinite(centres).all():
+            raise SegmentError("the colour centres must be at most n_colors finite Lab triples")
     h, w = img.shape[:2]
     px_mm = _number(width_mm, "the work width", positive=True) / w
     min_area, tolerance = _number(min_area_mm2, "the minimum area"), _number(tolerance_mm, "the tolerance")
@@ -537,15 +559,21 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     levels = _levels(areas, (h, w))
     coarse = max(MIN_SUPERPIXEL_PX, round(max(h, w) / superpixels))
     sizes = [max(MIN_SUPERPIXEL_PX, round(coarse * scale)) for scale in LEVEL_SCALE]
+    runs = sorted(((faces.area_mask(a, (h, w)), max(MIN_SUPERPIXEL_PX, round(coarse * faces.DETAILS[a.get("detail") or faces.DEFAULT_DETAIL])))
+                   for a in areas if a["kind"] in FINE_KINDS), key=lambda run: -run[1])        # coarser first: the finer wins an overlap
+    speck = np.zeros((h, w))                       # a finest superpixel's area at every pixel of a fine area: smaller specks merge
+    for mask, size in runs:
+        speck[mask] = size ** 2
 
     lab = color.srgb8_to_lab(img).astype(np.float32)
     smooth = cv2.bilateralFilter(lab, 0, SMOOTH_COLOR, SMOOTH_SPACE)
-    classes, class_lab = _classes(smooth, levels, sizes, n_colors, seed, algorithm)
+    classes, class_lab = _classes(smooth, levels, sizes, runs, n_colors, seed, algorithm, centres)
     region, of_class = _components(classes, len(class_lab))
     fine = (levels == 2).ravel()
     area = np.bincount(region.ravel(), minlength=len(of_class))
     inside = np.bincount(region.ravel(), weights=fine, minlength=len(of_class))
-    keep = (2 * inside >= area) & (area >= min(min_area / px_mm ** 2, sizes[2] ** 2))
+    least = np.bincount(region.ravel(), weights=speck.ravel(), minlength=len(of_class)) / np.maximum(inside, 1)
+    keep = (2 * inside >= area) & (area >= np.minimum(min_area / px_mm ** 2, least))
     classes = _merge_small(region, of_class, class_lab, min_area / px_mm ** 2, keep)[region]
     index, palette = _palette(classes, lab, len(class_lab))
     region, of_class = _components(index[classes], len(palette))
@@ -562,6 +590,7 @@ def segment(image_rgb, width_mm: float, n_colors: int, *, important: Iterable = 
     return {"version": VERSION, "kind": "segments", "size_mm": {"width": float(width_mm), "height": h * px_mm}, "px_mm": px_mm,
             "image_px": {"width": w, "height": h}, "n_colors": n_colors, "min_area_mm2": min_area, "tolerance_mm": tolerance,
             "seed": seed, "superpixels": superpixels, "algorithm": algorithm, "superpixel_px": dict(zip(("coarse", "face", "fine"), sizes)),
+            "centres": [[float(v) for v in c] for c in class_lab],
             "faces": {"searched": bool(use_faces), "found": search.faces, "error": search.error},
             "important": areas, "palette": palette, "regions": regions, "arcs": arc_list}
 

@@ -12,6 +12,9 @@ An area is a dict in pixels of the searched image (x right, y down, from the ima
      "polygon": [[x, y], ...]}                                                   # the face box, turned with the picture
     {..., "ellipse": {"center": [x, y], "axes": [a, b], "angle": degrees}}       # semi-axes; angle of the first axis
 
+An eye, the lips or a marked area may carry ``"detail"`` (``DETAILS``, vector-detail-and-colour-control I-3): how finely the split divides it,
+as a share of the picture's coarse superpixel; without it, ``fine``. A face is divided as a face (its DEC-094).
+
 Eyes are ellipses around the eye landmarks, sized by the distance between the eyes; the lips are an ellipse spanning the
 mouth corners whose height is proportional to the mouth width. Detection never raises: a missing model, an unusable
 image or an OpenCV error gives no areas and the reason.
@@ -28,6 +31,9 @@ import numpy as np
 
 MODEL = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 KINDS = ("face", "eye", "lips", "manual")
+FINE_KINDS = ("eye", "lips", "manual")         # divided finer than a face, each by its own detail
+DETAILS = {"face": 0.6, "fine": 0.35, "finer": 0.2, "finest": 0.12}   # superpixel size of an area against the picture's coarse one
+DEFAULT_DETAIL = "fine"
 SOURCES = ("detected", "manual")
 SCORE_THRESHOLD = 0.6          # OpenCV's demo keeps 0.9; turned and greyscale portraits score lower
 NMS_THRESHOLD = 0.3
@@ -172,6 +178,13 @@ def check_area(area) -> dict:
         if not math.isfinite(score):
             raise ValueError("the score of an important area must be a finite number")
     out = {"kind": kind, "source": source, "score": score}
+    detail = area.get("detail")
+    if detail is not None:
+        if kind not in FINE_KINDS:
+            raise ValueError("only an eye, the lips or a marked area takes a detail of its own")
+        if detail not in DETAILS:
+            raise ValueError(f"the detail of an important area must be one of {', '.join(DETAILS)}")
+        out["detail"] = detail
     if ("polygon" in area) == ("ellipse" in area):
         raise ValueError("an important area is either an ellipse or a polygon")
     if "polygon" in area:

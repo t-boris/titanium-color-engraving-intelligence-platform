@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
-from titanium_platform import faces, lightburn as lb, segment as sg, vectorize as vz
+from titanium_platform import faces, lightburn as lb, photo_zones as pz, segment as sg, vectorize as vz
 
 SVG = "{http://www.w3.org/2000/svg}"
 PAPER, RED, YELLOW, BLUE = (235, 230, 215), (200, 40, 40), (240, 200, 40), (30, 40, 200)
@@ -258,6 +258,51 @@ def test_eyes_get_finer_regions_than_the_rest_of_the_face(monkeypatch):
     in_face, face_median = counted(doc, 440, 640, 60, 180)                          # the same blots, face only
     assert in_eye > 1.3 * in_face and eye_median < face_median
     assert any(r["important"] for r in doc["regions"]) and not all(r["important"] for r in doc["regions"])
+
+
+def raster(doc):
+    """The region index and the palette colour of every pixel of the working picture."""
+    index = pz.labels(doc, {r["id"]: r["loops"] for r in sg.regions_as_loops(doc)})
+    return index, np.array([r["color"] for r in doc["regions"]])[index]
+
+
+def test_an_eye_given_a_finer_detail_gets_more_regions_and_the_split_outside_it_stays_as_it_was():
+    """vector-detail-and-colour-control I-3 (overview criterion 3): an eye's own detail, the colour centres of the split kept, so that
+    the borders and colours outside the changed eye are those of the split before (clustered anew, a fifth of them changed colour)."""
+    img = photo_like(300, 450, seed=4)
+    eye = {"kind": "eye", "source": "manual", "score": None, "ellipse": {"center": [140, 150], "axes": [60, 45], "angle": 20}}
+    other = {"kind": "eye", "source": "manual", "score": None, "ellipse": {"center": [320, 150], "axes": [55, 40], "angle": 0}}
+    split = {"use_faces": False, "min_area_mm2": 0.05, "superpixels": 25}                # coarse enough for the details to differ
+    before = sg.segment(img, 45.0, 8, important=[eye, other], **split)
+    assert sg.segment(img, 45.0, 8, important=[eye, other], **split, centres=before["centres"]) == before
+    after = sg.segment(img, 45.0, 8, important=[{**eye, "detail": "finest"}, other], **split, centres=before["centres"])
+    assert [a.get("detail") for a in after["important"]] == ["finest", None] and len(after["regions"]) > len(before["regions"])
+    margin = 2 * before["superpixel_px"]["coarse"]
+    near = faces.area_mask({**eye, "ellipse": {**eye["ellipse"], "axes": [60 + margin, 45 + margin]}}, img.shape[:2])
+    (index0, colour0), (index1, colour1) = raster(before), raster(after)
+    lab0, lab1 = ({p["index"]: p["lab"] for p in d["palette"]} for d in (before, after))
+    same = {i: min(lab1, key=lambda k: sum((a - b) ** 2 for a, b in zip(lab0[i], lab1[k]))) for i in lab0}
+    outside = ~near
+    assert (np.vectorize(same.get)(colour0) == colour1)[outside].mean() >= 0.995
+    for axis in (0, 1):                                                                 # the borders between pixels, outside the eye
+        edge0, edge1 = (np.diff(index, axis=axis) != 0 for index in (index0, index1))
+        keep = outside[:-1, :] & outside[1:, :] if axis == 0 else outside[:, :-1] & outside[:, 1:]
+        assert (edge0 == edge1)[keep].mean() >= 0.995
+    inside = faces.area_mask(eye, img.shape[:2])
+    assert len(np.unique(index1[inside])) > len(np.unique(index0[inside]))              # more regions inside the eye
+
+
+def test_a_detail_is_one_of_four_and_only_an_eye_the_lips_or_a_marked_area_has_one():
+    eye = {"kind": "eye", "ellipse": {"center": [10, 10], "axes": [5, 4], "angle": 0}}
+    assert [faces.check_area({**eye, "detail": d})["detail"] for d in faces.DETAILS] == list(faces.DETAILS)
+    assert "detail" not in faces.check_area(eye)
+    for area, message in [({**eye, "detail": "huge"}, "the detail of an important area must be one of"),
+                          ({**eye, "kind": "face", "detail": "fine"}, "only an eye, the lips or a marked area")]:
+        with pytest.raises(ValueError, match=message):
+            faces.check_area(area)
+    for centres in ([[50, 0]], [[50, 0, 0]] * 9, [[float("nan"), 0, 0]]):
+        with pytest.raises(sg.SegmentError, match="colour centres"):
+            sg.segment(shapes(), 60.0, 8, use_faces=False, centres=centres)
 
 
 def test_a_picture_without_a_face_is_split_normally_and_says_so():
