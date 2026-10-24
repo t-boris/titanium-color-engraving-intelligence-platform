@@ -2203,5 +2203,12 @@ are computed from it (memoised) and applied where the work is drawn, timed and w
   - missing Hebrew letters were named in visual order (reversed); the font window opens on the script of the text, previews all its
     lines, and the filters sit on one row; the duplicate «нет букв» warning is gone.
   Seen, not changed (not this feature): a window opened on one screen stays open when the address is changed by hand or by a script.
-- [ ] I6. README (dependencies, deploy import check), SemVer 0.26.0, full suite (-n 12), deploy after a backup, walk on a copy of the real
+- [x] I6. README (dependencies, deploy import check), SemVer 0.26.0, full suite (-n 12), deploy after a backup, walk on a copy of the real
       works 22/40 and 35 in a browser (console read), report what is and is not built.
+      Full suite 1894 passed (-n 12, 3 min 30 s), none skipped. Commits 2eb7e0b (spec, DEC-005 added from the walk) and 095ba9f
+      (release), pushed. Deployed 2026-10-24: backup `~/.titanium-platform/backups/titanium-before-0.26.0-20261024T022814Z.sqlite`
+      (integrity ok), wheel installed with fonttools 4.67.0, uharfbuzz 0.57.0, shapely 2.2.0, every import ok, 8765 restarted on
+      0.26.0 (350 Mac families; Google not listed until the operator asks). Works 40, 22, 37, 35 read on 8765 (200, no traceback);
+      tabs T1 and T2 reloaded, «Надписи» there, console clean. No inscription was added to the live data. The copy on 8791 stopped.
+  Not built: a path drawn freehand or taken from the picture's contours (points only); no warning where letters crowd in a tight bend
+  of a path; letters go to LightBurn as outlines, not as editable text. DEC-004 and DEC-005 await the operator.
