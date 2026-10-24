@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import migrations
+
 SCHEMA_RELEASE = "0.4.0"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lens (
@@ -324,8 +326,7 @@ class ImmutableError(RuntimeError):
     """An attempt to change a stored measurement was rejected (REQ-001)."""
 
 
-class MigrationError(RuntimeError):
-    """An older database cannot be migrated as it is; it was left unchanged and the message says why."""
+MigrationError = migrations.MigrationError      # an older database cannot be migrated as it is; it was left unchanged
 
 
 def open_store(data_dir: str | Path, program: str = "titanium-platform") -> "Store":
@@ -344,18 +345,25 @@ class Store:
         (self.data_dir / "files").mkdir(parents=True, exist_ok=True)
         self.path = self.data_dir / "titanium.sqlite"
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.execute("PRAGMA journal_mode = WAL")
-        if self._needs_rebuild():
-            try:
+        migrations.acquire(self.data_dir)                 # one program at a time on a workshop (electron REQ-080, REQ-081)
+        self._held = True
+        self.conn = self._copy = None
+        try:
+            self.conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            if self._needs_rebuild():
                 self._migrate_from_profiles()
-            except BaseException:
+            plan = migrations.prepare(self.conn, self.data_dir, self._copy)   # a newer schema is refused; an older one gets its recovery copy first
+            self.conn.executescript(SCHEMA)
+            self._migrate()
+            migrations.finish(self.conn, plan)
+        except BaseException:
+            if self.conn is not None:
                 self.conn.close()
-                raise
-        self.conn.executescript(SCHEMA)
-        self._migrate()
+            self.close()
+            raise
 
     def _columns(self, table: str) -> dict[str, sqlite3.Row]:
         return {row["name"]: row for row in self.conn.execute(f"PRAGMA table_info({table})")}
@@ -491,7 +499,7 @@ class Store:
         mapping = self._profile_setups()
         self._check_mappable(mapping)
         rules, discarded = self._rules_by_setup(mapping)
-        backup = self._backup()
+        backup = self._copy = self._backup()
         sequences = {r["name"]: r["seq"] for r in self.conn.execute("SELECT name, seq FROM sqlite_sequence")} \
             if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='sqlite_sequence'").fetchone() else {}
         self.conn.execute("CREATE TEMP TABLE profile_setup (profile_id INTEGER PRIMARY KEY, device_id INTEGER, lens_id INTEGER)")
@@ -695,7 +703,11 @@ class Store:
         return copied
 
     def close(self) -> None:
-        self.conn.close()
+        if self.conn is not None:
+            self.conn.close()
+        if getattr(self, "_held", False):
+            self._held = False
+            migrations.release(self.data_dir)
 
     # -- low level -------------------------------------------------------------------------
     def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
