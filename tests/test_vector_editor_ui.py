@@ -527,6 +527,23 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
     assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
 
 
+@node
+def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selected_region(tmp_path):
+    out = run_editor(tmp_path, routes(), """
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await path('r1').dispatch('click');
+  await path('r3').dispatch('click', {shiftKey: true});
+  await byText(section('Выделение'), 'button', 'Цвет выделенному…').dispatch('click'); await tick(); await tick();
+  const dialog = ctx.document.body.querySelector('.modal');
+  out.title = dialog.textContent;
+  await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e13').dispatch('click');
+  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+  out.posted = posted();
+""")
+    assert "Цвет титана для выделенных областей (2)" in out["title"]
+    assert out["posted"] == [{"op": "paint", "scope": "region", "regions": ["r1", "r3"], "entry_id": "e13"}]
+
+
 def test_the_wording_of_leaving_an_area_unengraved_and_the_new_styles_are_present():
     assert "'Не гравировать'" in EDITOR and "'Гравировать'" in EDITOR and "'Исключить'" not in EDITOR and "'Исключить'" not in COLOURS
     assert "excluded: ['не гравируется', '']" in COLOURS and "steady-stable" in CSS and "steady-doubtful" in CSS and ".vw-better" in CSS

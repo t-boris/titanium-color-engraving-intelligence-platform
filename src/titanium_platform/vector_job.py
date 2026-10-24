@@ -1730,11 +1730,15 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
     the colour goes back to the automatic choice); ``fill`` every region :func:`_reach` finds from it. A region or colour
     painted with a titanium colour is included again, and with the scope ``colour`` so is every region of the colour that
     was excluded one by one (editor DEC-079), as the hover outlines them. A region painted with the scope ``region`` or ``fill`` leaves
-    its photo zone (REQ-073: the brush gives it a colour); the scope ``colour`` leaves the zones as they are."""
-    region = _region_id(document, op.get("region"))
+    its photo zone (REQ-073: the brush gives it a colour); the scope ``colour`` leaves the zones as they are. With the scope ``region``,
+    ``regions`` (a list) paints every region of the editor's selection in one step instead of the one ``region``."""
     scope, entry = op.get("scope"), op.get("entry_id")
     if scope not in SCOPES:
         raise cv.ConversionError("the scope must be region, colour or fill")
+    many = op.get("regions") if scope == "region" and "regions" in op else None
+    if many is not None and (not isinstance(many, list) or not many):
+        raise cv.ConversionError("choose the regions to paint")
+    region = None if many is not None else _region_id(document, op.get("region"))
     if entry is not None:
         _entry_id({e["id"]: e for e in entries}, entry)
     if scope == "colour":
@@ -1748,7 +1752,8 @@ def _paint(colouring: dict, plan: dict, document: dict, entries: list[dict], op:
         colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i != index]
         painted = inside
     else:
-        painted = {region} if scope == "region" else set(_reach(document, colouring, region, _similarity(op.get("similarity_de"))))
+        painted = ({_region_id(document, r) for r in many} if many is not None else {region} if scope == "region"
+                   else set(_reach(document, colouring, region, _similarity(op.get("similarity_de")))))
         colouring["photo"] = [z for z in ({**z, "regions": [r for r in z["regions"] if r not in painted]} for z in pz.zones(colouring))
                               if z["regions"]]
         for r in painted:

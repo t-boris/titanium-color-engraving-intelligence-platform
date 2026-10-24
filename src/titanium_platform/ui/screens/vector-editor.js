@@ -720,6 +720,17 @@ const VectorEditor = (() => {
       return seen.size === wanted.size;
     }
 
+    /** Исходный цвет выделения для подбора: средний Lab исходных цветов выделенных областей (окно выбора ставит ближайшие к нему первыми). */
+    function selectionLab(ids) {
+      const labs = ids.map((rid) => (lookup(rid, colourOf.get(rid)).c || {}).lab).filter(Boolean);
+      return labs.length ? [0, 1, 2].map((i) => labs.reduce((t, l) => t + l[i], 0) / labs.length) : [50, 0, 0];
+    }
+    /** Цвет титана, общий для всех выделенных областей, или null: окно выбора отмечает его как текущий. */
+    function commonEntry(ids) {
+      const found = new Set(ids.map((rid) => lookup(rid, colourOf.get(rid)).entryId || null));
+      return found.size === 1 ? [...found][0] : null;
+    }
+
     function syncSelection() {
       const ids = [...state.selection];
       const link = ids.length > 1 ? connected(ids) : null;
@@ -734,6 +745,8 @@ const VectorEditor = (() => {
           : h('p', {class: 'small muted'}, 'Инструмент «Выделение»: щелчок выбирает область, Shift+щелчок добавляет или убирает, обвести мышью — лассо '
             + '(с Shift добавляет, с Alt убирает), Esc снимает выделение.'),
         ids.length ? h('div', {class: 'row'},
+          tools.pick ? btn('Цвет выделенному…', () => tools.pick(j, `Цвет титана для выделенных областей (${ids.length})`, selectionLab(ids), commonEntry(ids),
+            (entryId) => act({op: 'paint', scope: 'region', regions: ids, entry_id: entryId})), 'primary') : null,
           btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2 || link === false || checking),
           btn('Не гравировать', () => act({op: 'exclude_region', regions: ids})), btn('Гравировать', () => act({op: 'include_region', regions: ids})),
           btn('Снять выделение', clearSelection)) : null,

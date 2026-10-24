@@ -550,6 +550,23 @@ def test_the_brush_paints_one_region_or_its_whole_source_colour_and_includes_wha
     assert [h["op"]["op"] for h in pl.get_plan(c["store"], j["id"])["history"][-3:]] == ["paint"] * 3
 
 
+def test_the_editors_selection_is_painted_in_one_step_and_undone_in_one(work, job):
+    """vector-detail-and-colour-control I-5: a colour applied to the selection paints every selected region, includes them, takes them out
+    of photo zones, and is one step of the history and of undo."""
+    c, j = work, job
+    a, blue_e = areas(c, j), by_rgb(j, BLUE)["entry_id"]
+    j = colouring(c, j, op="exclude_region", region=a["inner"])
+    before = j["undo"]
+    j = colouring(c, j, op="paint", scope="region", regions=[a["inner"], a["ring"]], entry_id=blue_e)
+    assert j["colouring"]["regions"] == {a["inner"]: blue_e, a["ring"]: blue_e} and j["colouring"]["excluded_regions"] == []
+    assert j["undo"] == before + 1 and pl.get_plan(c["store"], j["id"])["history"][-1]["op"]["op"] == "paint"
+    j = colouring(c, j, op="undo")
+    assert j["colouring"]["regions"] == {} and j["colouring"]["excluded_regions"] == [a["inner"]]
+    for bad in ([], "r1", ["nowhere"]):
+        r = c["client"].post(f"/api/vector/{j['id']}/colouring", json={"op": "paint", "scope": "region", "regions": bad, "entry_id": blue_e})
+        assert r.status_code == 422, bad
+
+
 def test_painting_a_source_colour_includes_again_every_area_of_it_that_was_excluded(work, job):
     """Editor REQ-045, DEC-079: every area of the colour shows the colour afterwards, as the hover outline says."""
     c, j = work, job
@@ -1014,9 +1031,14 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
   out.drawn = overlay.querySelectorAll('polygon').map((p) => p.getAttribute('class'));
   out.pending = tree.textContent.includes('Изменения областей применятся после');
   await byText(tree, 'button', 'Разбить заново').dispatch('click');
+  out.beforeConfirm = ctx.requests.filter((r) => r.method === 'POST').length;
+  const box = ctx.document.body.querySelector('.modal');
+  out.warning = box.textContent;
+  await byText(box, 'button', 'Разбить заново').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
 """)
     assert out["drawn"] == ["vw-area manual"] and out["pending"]
+    assert out["beforeConfirm"] == 0 and "раскраска начнётся сначала" in out["warning"] and "Надписи и фотозоны перенесутся" in out["warning"]
     (path, body), = out["posted"]
     assert path == f"/api/vector/{job['id']}/split" and body["manual"] == [{"polygon": [[24, 18], [120, 18], [120, 72], [24, 72]]}]
     assert body["n_colors"] == 5 and body["detail"] == "medium" and body["faces"] is True and body["removed"] == []
@@ -1037,6 +1059,7 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
   out.detail = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Детальность').options.map((o) => o.value);
   select.value = 'planes'; await select.dispatch('change');
   await byText(tree, 'button', 'Разбить заново').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
 """)
     assert out["options"] == [["slic", "Мозаика"], ["tonal", "По тонам"], ["planes", "Крупные плоскости"], ["seeds", "SEEDS"]] and out["selected"] == "slic"
