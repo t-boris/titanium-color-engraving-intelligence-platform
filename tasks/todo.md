@@ -22,9 +22,12 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
   a pinned photo work keeps its exported file as its confirmed result; `tests/test_lab_sources.py`)
 - [x] A9 `lab_transfer.py`: transfer experiment from a foreign recipe (a one-cell plate with the complete recipe on the own laser,
   `plans.create_plates` takes a cell recipe and plan data; `tests/test_lab_transfer.py` photographs it and compares by ΔE)
-- [ ] A10 UI: Моя лаборатория, Подключённые лаборатории, Карточка, source picker, Проверить у себя; ru/en
-- [ ] A11 Tests: fixtures, negative fixtures, privacy markers, parity 1e-6, counting, constant memory; benchmark on M2 Ultra
-- [ ] A12 Release 0.29.0: suite, version, README, commit, push, tag, backup, deploy, read-only check
+- [x] A10 UI: Моя лаборатория, Подключённые лаборатории, Карточка, source picker, Проверить у себя; ru/en
+  (`screens/labs.js`, `screens/lab-source.js`, NAV «Лаборатории»; `tests/test_ui_labs.py`)
+- [x] A11 Tests: fixtures, negative fixtures, privacy markers, parity 1e-6, counting, constant memory; benchmark on M2 Ultra
+  (`tests/test_lab_memory.py`; `tools/bench_tcelab.py` → `docs/features/electron/benchmarks/`: 10k measurements connect in 2.1 s,
+  progress every 0.06 s; 50k in 12 s; reading and snapshot building flat in memory, export ≈1.8 KB per measurement; max_bytes 64 MiB)
+- [x] A12 Release 0.29.0: suite 2106 passed none skipped (-n 12, 2:56), version, README, commit, push, tag v0.29.0, backup, deploy, read-only check
 
 ## Stage B — safety and desktop (REQ-080/081/082), 0.30.0
 - [ ] B1 Schema version stamp, migration registry, pre-migration backup, newer-schema refusal, workshop lock
