@@ -41,11 +41,11 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
 - [x] B9 Release 0.30.0: suite 2149 passed none skipped (-n 12, 3:18), commits 8427528 + 5fa8068, tag v0.30.0, backup titanium-before-0.30.0-20261024T171253Z.sqlite (integrity ok), deployed on 8765 (/api/version 0.30.0, schema stamp 1, workshop.lock held, LAN CA made and LAN off, Host check 421)
 
 ## Stage C — cloud (REQ-086/087), 0.31.0
-- [ ] C1 Neon project + Neon Auth; schema, RLS, `app_api` role (DEC-043)
-- [ ] C2 Vercel Python API: DEC-028 endpoints + invitations + withdraw; chunked publish, finalize, idempotency
+- [x] C1 Neon project `titanium-labs` + Neon Auth (Better Auth, Google shared provider, trusted domain https://titanium-labs-api.vercel.app); schema 0001 applied, RLS, `app_api` role (DEC-043, DEC-058); ids and secrets in ~/.titanium-cloud.env
+- [x] C2 Vercel Python API (ed37a05, `cloud/`): catalogue, publications (reserve, 1 MiB chunks, finalize), withdraw, invitations, members, idempotency; deployed at https://titanium-labs-api.vercel.app (env DATABASE_URL app_api, NEON_AUTH_JWKS_URL, NEON_AUTH_ISSUER/AUDIENCE = the Neon Auth host, CLOUD_REPOSITORY=postgres); cloud/tests_live 14 passed on Neon
 - [ ] C3 Desktop sign-in through the system browser and loopback callback
 - [ ] C4 In-app catalogue, private labs, publish, connect, update checks
-- [ ] C5 Cloud smoke and e2e A→B with workshop A stopped
+- [x] C5 Cloud smoke against production passed (docs/features/electron/cloud-smoke-2026-10-24-production.md): publish → anonymous manifest and chunks → connect into a second workshop with the author's store closed → palette equal → withdraw listed; the smoke lab «Smoke laboratory» (c9197ac4…) stays in the public catalogue until the owner decides (no delete endpoint by design)
 - [ ] C6 Release 0.31.0; spec reconciled (DEC-027/028, F-001); final checklist
 
 # Vector work: photograph -> gapless colour regions -> titanium colours -> LightBurn (operator, 2026-10-19)
