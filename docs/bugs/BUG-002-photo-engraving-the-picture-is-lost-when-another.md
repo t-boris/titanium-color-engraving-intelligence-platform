@@ -2,10 +2,11 @@
 type: bug
 id: BUG-002
 title: "Photo engraving: the picture is lost when another scale is chosen"
-status: open
+status: fixed
 severity: medium
 reporter: Boris Tsekinovsky
 created: 2026-10-22
+updated: 2026-10-24
 provenance: Created by an AI agent through MarkView
 ---
 
@@ -32,3 +33,10 @@ The picture block is rebuilt empty: 'Файл не выбран', no prediction;
 ## Environment
 
 Лазерная мастерская 0.18.1, operator's app on 127.0.0.1:8765; reported by the operator 2026-10-22 ("когда я выбираю картинку, а потом меняю шкалу, то он картинку удаляет")
+
+## Resolution
+
+Fixed in 0.18.2 (09d34c1): one picture block serves the whole screen; the picture stays when another scale is chosen and
+its prediction follows the scale, Min/Max, the width and the colour choice by itself. Tests: `tests/test_photo_engraving_ui.py`.
+
+Verified 2026-10-24 on 0.28.0: the tests named pass (70 passed), and the full suite passes (2015 passed, none skipped).

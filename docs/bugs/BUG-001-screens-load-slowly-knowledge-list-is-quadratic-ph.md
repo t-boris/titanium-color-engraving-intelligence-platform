@@ -2,10 +2,11 @@
 type: bug
 id: BUG-001
 title: "Screens load slowly: knowledge list is quadratic, photographs are re-rendered from RAW on every request"
-status: open
+status: fixed
 severity: high
 reporter: Boris Tsekinovsky
 created: 2026-10-19
+updated: 2026-10-24
 provenance: Created by an AI agent through MarkView
 ---
 
@@ -32,3 +33,13 @@ A local screen opens in well under a second: the knowledge list in under 0.5 s, 
 ## Environment
 
 titanium-platform 0.5.1 installed wheel, port 8765, macOS, data dir ~/.titanium-platform (measured 2026-10-19 with curl, GET only)
+
+## Resolution
+
+Fixed in 0.5.2 (PR #29): the knowledge list reads the summaries and events of a setup once (c9d9235); drawn photographs and
+overlays are cached on disk with an ETag, and the lists ask for small sizes (a6ddfe3); `titanium-platform warm-cache` draws the screens'
+default pictures ahead (8424062). Tests: `tests/test_knowledge.py`, `tests/test_render_cache.py`.
+
+Verified 2026-10-24 on 0.28.0: the tests named pass (70 passed), and the full suite passes (2015 passed, none skipped). Measured on the live app (GET only): the knowledge list 0.16 s (was 6.8 s), the experiments list 0.30 s with
+thumbnails of about 290 KB in 2-3 ms each (were 2 MB in 0.6-1.0 s), an overlay already drawn 5-7 ms (was 3.3 s every time). A picture
+never drawn before still takes 3.7-4.6 s once, while its RAW is decoded; afterwards it comes from the cache.

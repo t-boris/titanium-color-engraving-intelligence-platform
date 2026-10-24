@@ -2,10 +2,11 @@
 type: bug
 id: BUG-003
 title: «Новая работа» does not ask which kind of engraving
-status: open
+status: fixed
 severity: high
 reporter: Boris Tsekinovsky
 created: 2026-10-22
+updated: 2026-10-24
 provenance: Created by an AI agent through MarkView
 ---
 
@@ -32,3 +33,10 @@ The first dialog has no question about the kind; it opens only after «Созд�
 ## Environment
 
 titanium-platform 0.21.0, port 8765, operator's data
+
+## Resolution
+
+Fixed in 0.21.1 (ffd3065): «Новая работа» asks which kind of engraving as its second step, with the picture in each kind
+(REQ-071); «Назад» keeps the picture, and leaving the step deletes the work it made. Tests: `tests/test_photo_engraving_ui.py`.
+
+Verified 2026-10-24 on 0.28.0: the tests named pass (70 passed), and the full suite passes (2015 passed, none skipped).

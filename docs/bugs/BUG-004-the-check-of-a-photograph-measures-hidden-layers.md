@@ -2,10 +2,11 @@
 type: bug
 id: BUG-004
 title: The check of a photograph measures hidden layers left behind in a file LightBurn re-saved with its mirror switch changed
-status: open
+status: fixed
 severity: high
 reporter: Boris Tsekinovsky
 created: 2026-10-23
+updated: 2026-10-24
 provenance: Created by an AI agent through MarkView
 ---
 
@@ -32,3 +33,14 @@ The hidden layers are measured beside the plate (ruler, table), their outlines a
 ## Environment
 
 0.25.0 on the operator's data, LightBurn 2.2.00, JCZFiber
+
+## Resolution
+
+Fixed in 0.25.1 (e75a5c9): the engraved file and the work's exports are compared as LightBurn saved them, before the
+engraved one is turned to the plan's axes, so a hidden layer left behind is named and not measured beside the plate. The part left open
+there (the export hid the layers of recipes measured on hidden layers) was fixed in 0.25.2 (586fd38) by the operator's decision DEC-119 of
+titanium-color-engraving-intelligence-platform: a layer's Show and Output switches are not part of its recipe, the export writes every
+layer shown and engraved, and `tools/forget_layer_switches.py` moved the colours works 22 and 39 had chosen to the recipes' new ids.
+Tests: `tests/test_left_behind.py`, `tests/test_layer_switches.py`.
+
+Verified 2026-10-24 on 0.28.0: the tests named pass (70 passed), and the full suite passes (2015 passed, none skipped).

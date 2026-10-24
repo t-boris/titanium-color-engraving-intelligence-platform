@@ -2,10 +2,11 @@
 type: bug
 id: BUG-006
 title: The alignment maps the photograph's markers to the plan's positions, so a file scaled to fit a smaller plate is measured beside its engraving
-status: open
+status: fixed
 severity: high
 reporter: Boris Tsekinovsky
 created: 2026-10-23
+updated: 2026-10-24
 provenance: Created by an AI agent through MarkView
 ---
 
@@ -18,3 +19,11 @@ Pair 116: the operator scaled the whole export, markers included, to a 153 × 15
 ## Environment
 
 Unknown
+
+## Resolution
+
+Fixed in 0.25.3 (64575b0): a file scaled or moved in LightBurn to the plate at hand, markers and cleaning rectangle
+included, has the plan's marker geometry scaled to its size before the alignment, so its shapes are measured on the engraving in the
+plate's millimetres; the file's size against the export is reported and warned about. Tests: `tests/test_scaled_file.py`.
+
+Verified 2026-10-24 on 0.28.0: the tests named pass (70 passed), and the full suite passes (2015 passed, none skipped).
