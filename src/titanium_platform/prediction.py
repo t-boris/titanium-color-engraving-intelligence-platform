@@ -30,6 +30,7 @@ import numpy as np
 
 from . import agreement, color, lightburn as lb, photo_modes
 
+ALGORITHM = "2"            # 2: the photographs of one engraving are one engraving: averaged first, counted once (electron DEC-045)
 PREDICTED_MODE = "grayscale"
 POWER_AXIS, TONE_AXIS = "power", "darkness"      # what a curve runs over: the power engraved with, or the darkness (%) of the grey
 NOT_PREDICTED = {"3dslice": "3D slicing engraves depth in repeated passes, not a tone",
@@ -111,8 +112,29 @@ class Curve:
 
 
 def _engraving_of(source: Mapping) -> tuple:
-    """One engraving is one photographed pair: its layers are not independent of each other, two pairs are."""
+    """One engraving is what was engraved once (electron DEC-045): its layers and its re-photographs are not independent of each other,
+    two engravings are. A source that does not name its engraving is its photographed pair."""
+    if source.get("engraving_id") is not None:
+        return ("engraving", source["engraving_id"])
     return ("pair", source["pair_id"]) if source.get("pair_id") is not None else (source.get("kind"), source.get("id"))
+
+
+def _engravings_mean(points: Iterable[Point]) -> np.ndarray:
+    """The colour of points at one power: each engraving's colours averaged first, then the engravings (DEC-045)."""
+    by: dict[tuple, list] = {}
+    for p in points:
+        by.setdefault(_engraving_of(p.source), []).append(p.lab)
+    return np.mean([np.mean(labs, axis=0) for labs in by.values()], axis=0)
+
+
+def per_engraving(points: Iterable[Point]) -> list[Point]:
+    """``points`` with the colours of each engraving at one power averaged into one point (DEC-045), in the order first measured; the
+    point keeps the source of the first."""
+    at: dict[tuple, list[Point]] = {}
+    for p in points:
+        at.setdefault((_engraving_of(p.source), round(p.power, 6), p.referenced), []).append(p)
+    return [group[0] if len(group) == 1 else replace(group[0], lab=tuple(float(v) for v in np.mean([p.lab for p in group], axis=0)))
+            for group in at.values()]
 
 
 def disagreement(points: Iterable[Point], powers: Iterable[float]) -> list[dict]:
@@ -140,7 +162,7 @@ def disagreement(points: Iterable[Point], powers: Iterable[float]) -> list[dict]
 
 def curve(points: Iterable[Point], prefer_referenced: bool = True, axis: str = POWER_AXIS) -> Curve:
     """The curve of one mode. When both kinds exist only the preferred one is used (referenced by default, DEC-062) and the others are
-    counted in ``left_out``. Points at the same power are averaged in Lab and keep all their sources."""
+    counted in ``left_out``. Points at the same power are averaged in Lab, each engraving's first (DEC-045), and keep all their sources."""
     points = list(points)
     if not points:
         raise PredictionError("no colour has been measured at this mode: there is nothing to predict from")
@@ -151,7 +173,7 @@ def curve(points: Iterable[Point], prefer_referenced: bool = True, axis: str = P
         if p.referenced == use:
             at.setdefault(round(p.power, 6), []).append(p)
     powers = sorted(at)
-    labs = np.array([np.mean([p.lab for p in at[k]], axis=0) for k in powers])
+    labs = np.array([_engravings_mean(at[k]) for k in powers])
     spread = disagreement([p for k in powers for p in at[k]], powers)
     rows = tuple({"power": k, "lab": [float(v) for v in lab], "referenced": use, "sources": [dict(p.source) for p in at[k]], **extent}
                  for k, lab, extent in zip(powers, labs, spread))

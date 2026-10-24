@@ -41,6 +41,15 @@ def test_the_local_results_are_as_recorded(tmp_path):
     assert results(tmp_path / "data") == json.loads(GOLDEN.read_text())
 
 
+def test_re_photographs_of_one_engraving_are_one_engraving():
+    """electron DEC-045: p8 re-photographs p7. The check of either is the check of their engraving against the other engravings only,
+    and the curve counts the two photographs once."""
+    recorded = json.loads(GOLDEN.read_text())
+    assert recorded["checks"]["p7"] == recorded["checks"]["p8"]
+    assert recorded["checks"]["p7"]["others"] == 1 and not recorded["checks"]["p7"]["confirmed"]
+    assert {point["engravings"] for point in recorded["curves"]["grey@None"]["points"]} == {2}
+
+
 if __name__ == "__main__" and "--write" in sys.argv:
     import tempfile
     with tempfile.TemporaryDirectory() as folder:

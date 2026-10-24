@@ -139,10 +139,11 @@ def compare(own: list[prediction.Point], others: list[prediction.Point], toleran
     at each of its powers inside that curve's span, the grey of the picture it was measured at, the colour it measured, the colour the
     others predict there and the distance (CIE76) between them; their median and largest, and the share within ``tolerance``. Nothing is
     compared without others, nor when the others measured no size near it or around it (``size`` says which sizes they measured): a
-    colour at another size is not a prediction of this one."""
+    colour at another size is not a prediction of this one. The photographs of one engraving are one colour at each power (DEC-045)."""
     out = {"compared": 0, "median_de": None, "max_de": None, "within": None, "bands": [], "size": None}
     if not own or not others:
         return out
+    own = prediction.per_engraving(own)
     curve = prediction.curve_at(others, own[0].source.get("row_mm"))
     out["size"] = dict(curve.size)
     if curve.size["how"] == prediction.OUTSIDE:
@@ -164,7 +165,7 @@ def compare(own: list[prediction.Point], others: list[prediction.Point], toleran
 
 
 def confirmation(points: Iterable[prediction.Point], tolerance: float = 5.0) -> dict:
-    """Do the engravings of a scale confirm each other? Each engraving (one photographed pair) is compared with the curve built from
+    """Do the engravings of a scale confirm each other? Each engraving (its photographs together, DEC-045) is compared with the curve built from
     every OTHER engraving of the same kind at its own size (``compare``): at each of its powers inside that curve's span, the distance
     (CIE76) between what it measured and what the others predict. With one engraving, or none other near its size, nothing is
     confirmed yet, and that is said."""

@@ -391,8 +391,9 @@ def _per_engraving(store: Store, mode: Mode, referenced: bool) -> list[predictio
 
 
 def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5.0) -> dict:
-    """One photographed engraving at ``mode`` against the curve of every other engraving there at its own size, as the scale's
+    """The engraving of a photographed pair at ``mode`` against the curve of every other engraving there at its own size, as the scale's
     confirmation compares them (``grayscale.compare``): each grey it was measured at, the colour predicted there and the colour engraved.
+    Its re-photographs are the same engraving: they are compared with it, never with each other (electron DEC-045).
     ``reason`` says why nothing is compared: the engraving gave no clear colours at this mode (``no_points``), its photograph has no
     colour chart while the scale's colours are chart-corrected or the other way round (``kind``), no other engraving measured this mode
     yet (``alone``), the others measured no size near or around its own (``other_size``: ``size`` names theirs), or its powers lie
@@ -402,10 +403,11 @@ def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5
         return {"reason": "no_points", "compared": 0, "bands": []}
     curve, _ = curve_for(store, mode)
     points = _per_engraving(store, mode, curve.referenced)
-    own = [p for p in points if p.source["pair_id"] == pair_id]
+    engraving = prediction._engraving_of(found[0].source)
+    own = [p for p in points if prediction._engraving_of(p.source) == engraving]
     if not own:
         return {"reason": "kind", "compared": 0, "bands": []}
-    others = [p for p in points if p.source["pair_id"] != pair_id]
+    others = [p for p in points if prediction._engraving_of(p.source) != engraving]
     out = {**grayscale.compare(own, others, tolerance), "referenced": curve.referenced, "tolerance_de": tolerance,
            "row_mm": own[0].source.get("row_mm")}
     out["others"] = (out["size"] or {}).get("engravings", 0)        # the other engravings the prediction was made from, at its size
