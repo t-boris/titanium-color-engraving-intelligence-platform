@@ -2,7 +2,7 @@
 type: feature
 id: photo-zone-dots-and-picture-tone
 title: Photo zone dots and picture tone
-status: ready
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-24
 provenance: Created by an AI agent through MarkView from Operator request 2026-10-24 (work 41, photo zone 2)
