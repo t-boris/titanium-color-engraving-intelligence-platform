@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import evidence_source as es, lab_export, lab_format as lf, lab_import
+from .. import evidence_source as es, lab_export, lab_format as lf, lab_import, lab_transfer
 from .. import setup as su
 from .common import content_disposition, store_of
 
@@ -145,6 +145,23 @@ def release_palette(request: Request, body: dict):
 def release_scales(request: Request, body: dict):
     """The grey scales a photo work would take from ``release_id`` with its ``laser`` and ``lens`` (release identities)."""
     return es.release_scales(store_of(request), body)
+
+
+@router.post("/transfers", status_code=201)
+def transfer(request: Request, body: dict):
+    """«Проверить у себя»: a test plate of one colour of a connected release on the own laser (see lab_transfer.create)."""
+    return lab_transfer.create(store_of(request), body)
+
+
+@router.get("/transfers")
+def transfers(request: Request, release_id: str | None = None):
+    """Every transfer experiment with what it measured against the release's colour; of one release when given."""
+    return lab_transfer.listing(store_of(request), release_id)
+
+
+@router.get("/transfers/{plan_id}")
+def transfer_of(request: Request, plan_id: int):
+    return lab_transfer.compare(store_of(request), plan_id)
 
 
 @router.delete("/releases/{release_id}")

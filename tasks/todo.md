@@ -20,7 +20,8 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
 - [x] A8 Pinned sources in vector and photo works; update with preview and route back; frozen result on algorithm mismatch
   (`evidence_source.py`; the colour map of a pinned work's dots is its source's; the cleaning and the limits are the own laser's;
   a pinned photo work keeps its exported file as its confirmed result; `tests/test_lab_sources.py`)
-- [ ] A9 `lab_transfer.py`: transfer experiment from a foreign recipe
+- [x] A9 `lab_transfer.py`: transfer experiment from a foreign recipe (a one-cell plate with the complete recipe on the own laser,
+  `plans.create_plates` takes a cell recipe and plan data; `tests/test_lab_transfer.py` photographs it and compares by ΔE)
 - [ ] A10 UI: Моя лаборатория, Подключённые лаборатории, Карточка, source picker, Проверить у себя; ru/en
 - [ ] A11 Tests: fixtures, negative fixtures, privacy markers, parity 1e-6, counting, constant memory; benchmark on M2 Ultra
 - [ ] A12 Release 0.29.0: suite, version, README, commit, push, tag, backup, deploy, read-only check

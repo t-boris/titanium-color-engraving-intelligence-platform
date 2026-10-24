@@ -75,6 +75,13 @@
       'Рампа измеряет собственную шкалу мастерской, а работа использует шкалу выпуска лаборатории: проверьте настройки выпуска на этом лазере переносом («Проверить у себя»)'],
     [/^the layer (.+?) has settings this laser cannot take: (.+)$/is,
       (m) => `Слой «${m[1]}»: настройки, которые этот лазер не может выполнить: ${m[2].split('; ').map((x) => I18N.tr(x)).join('; ')}`],
+    // перенос рецепта («Проверить у себя»)
+    [/^choose a colour of a connected laboratory release to check on this laser$/i,
+      'Выберите цвет подключённого выпуска лаборатории, чтобы проверить его на этом лазере'],
+    [/^choose a colour of this release's palette to check on this laser$/i, 'Выберите цвет из палитры этого выпуска, чтобы проверить его на этом лазере'],
+    [/^choose the laser of this workshop the colour is checked on$/i, 'Выберите лазер этой мастерской, на котором проверяется цвет'],
+    [/^choose the titanium of this workshop the colour is checked on$/i, 'Выберите титан этой мастерской, на котором проверяется цвет'],
+    [/^there is no transfer experiment (\d+)$/i, (m) => `Переноса ${m[1]} нет`],
     // условия и состояние источника работы
     [/^the colours and curves are another laboratory's measurements on its laser: the same colour on this laser is not promised$/i,
       'Цвета и кривые — измерения другой лаборатории на её лазере: тот же цвет на этом лазере не обещан'],

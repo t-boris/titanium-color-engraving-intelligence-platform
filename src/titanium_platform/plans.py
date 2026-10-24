@@ -280,7 +280,8 @@ def preview_series(setup: dict, powers_text: str, frequencies_text: str, speeds_
 def _plate_layers(grid: dict) -> list[dict]:
     layers = []
     for i, cell in enumerate(grid["cells"], start=1):
-        layers.append({"index": i, "name": cell["id"], "parameters": cell["parameters"], "regions": [cell["geometry"]], "cell_id": cell["id"],
+        layers.append({"index": i, "name": cell["id"], "parameters": cell.get("recipe") or cell["parameters"], "regions": [cell["geometry"]],
+                       "cell_id": cell["id"],
                        "lightburn_settings": grid.get("lightburn_settings", scan_settings()),
                        "prediction": None, "knowledge_id": None, "stage": None, "questioned": False,
                        "operating_point": cell.get("operating_point")})
@@ -290,7 +291,9 @@ def _plate_layers(grid: dict) -> list[dict]:
 def create_plates(store: Store, device_id: int, series: list[dict], cell_w: float, cell_h: float, gap: float,
                   proposal_id: int | None = None) -> list[dict]:
     """One plate (and one EngravingPlan) per item of ``series`` = [{speed, powers, frequencies, pulse_width, line_interval,
-    passes, proposed?}] on the laser with the lens installed on it now, atomically.
+    passes, proposed?, recipe?, data?}] on the laser with the lens installed on it now, atomically. ``recipe`` is a complete recipe its
+    cells are engraved with (every setting of it is written, :func:`is_recipe`; its six numbers are the cell's), ``data`` more of the
+    plan's own record (a transfer experiment's source, feature electron REQ-085).
 
     Markers are mandatory (REQ-003). ``proposed`` is an optional set of (power, frequency) pairs the Experiment
     Designer actually chose; the other cells of the Cartesian grid are marked as intersections, not
@@ -313,10 +316,12 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
             cell["proposed"] = chosen is None or meta is not None
             cell["reason"] = (meta or {}).get("reason")
             cell["target_id"] = (meta or {}).get("target_id")
-        grids.append((item["speed"], grid))
+            if item.get("recipe") is not None:
+                cell["recipe"] = {**item["recipe"], **{k: p[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")}}
+        grids.append((item["speed"], grid, item.get("data") or {}))
     out = []
     with store.transaction():
-        for speed, item in grids:
+        for speed, item, extra in grids:
             ident = new_identifier()
             markers = marker_geometry(ident, item["geometry"]["width"], item["geometry"]["height"])
             plate_id = store.execute(
@@ -327,7 +332,7 @@ def create_plates(store: Store, device_id: int, series: list[dict], cell_w: floa
                          "process_settings": {k: process[k] for k in ("pulse_width", "line_interval", "passes")},
                          "lightburn_settings": item["lightburn_settings"], "work_field": item["work_field"],
                          # its cells are filled areas measured for their colour; Fill mode says so by itself (REQ-020)
-                         "engraving_task": tasks.plan_task("fill", basis=tasks.DERIVED)}
+                         "engraving_task": tasks.plan_task("fill", basis=tasks.DERIVED), **extra}
             plan_id = store.execute(
                 "INSERT INTO plan(name,mode,status,device_id,lens_id,plate_id,markers,plan_identifier,band_count,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (f"Plate {ident} (speed {speed:g})", MODE_PLATE, "Ready to export", device_id, setup["lens_id"], plate_id, 1, ident, None,
