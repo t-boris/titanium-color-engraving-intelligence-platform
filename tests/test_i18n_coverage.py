@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "titanium_platform"
 UI = ROOT / "ui"
 SOURCES = sorted(ROOT.rglob("*.py"))                  # the package and its api/ routes
 USER_ERRORS = {"ValidationError", "IngestError", "ConversionError", "DesignerError", "KnowledgeError", "ProtectedError", "PhotoError", "LightBurnError",
-               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError", "FontError",
+               "VectorizeError", "PredictionError", "ResearchError", "ImmutableError", "ZoneError", "FontError", "LabImportError",
                "KeyError"}                             # a record that is not found: the API answers 404 with its message
 HTTP_ERRORS = {"HTTPException"}                        # HTTPException(status, {"error": text, ...}) or HTTPException(status, text)
 # Messages also reach the screen as DATA, not only as raised errors. These are the sites that produce such text:

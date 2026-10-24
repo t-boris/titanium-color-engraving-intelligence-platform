@@ -234,7 +234,8 @@ def _walk_text(value, where: str) -> None:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Now in UTC with microseconds, so that two releases made in one second still follow each other in their text order."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 # -- schema -------------------------------------------------------------------------------------------------------------------------
@@ -539,6 +540,10 @@ def read(stream, *, policy: ResourcePolicy = DEFAULT_POLICY, progress: Callable[
     yield "lab", lab
     counts = {}
     for section in SECTIONS:
+        if cancelled is not None and cancelled():          # at every section too, so that a small release can be cancelled
+            raise Cancelled()
+        if progress is not None:
+            progress(total)
         line, text = nxt()
         digest.update(line)
         if text != f',"{section}":[':

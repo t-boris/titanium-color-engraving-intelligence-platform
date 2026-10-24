@@ -41,6 +41,7 @@ and undo.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import mimetypes
 import threading
@@ -53,9 +54,9 @@ import cv2
 import numpy as np
 import shapely
 
-from . import (capability_plates as cp, color, conversion as cv, devices, dot_colours as dc, drawing, engraving_time, grayscale, ingest as ig,
-               lettering, objects as ob, palette, people, photo_modes, photo_state as st, plans as pl, prediction, prediction_store as ps,
-               render_cache as rc, row_length, setup as su, vector_job as vj)
+from . import (capability_plates as cp, color, conversion as cv, devices, dot_colours as dc, drawing, engraving_time, evidence_source as es, grayscale,
+               ingest as ig, lettering, objects as ob, palette, people, photo_modes, photo_state as st, plans as pl, prediction,
+               prediction_store as ps, render_cache as rc, row_length, setup as su, vector_job as vj)
 from .db import Store, now
 from .prediction import PredictionError
 from .vector_job import COPY_SUFFIX
@@ -68,10 +69,11 @@ GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS
 TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
-        "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts")
+        "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts",
+        "evidence_source", "source_versions")
 SETTINGS = ("scale", "width_mm", "dot_colour", *st.SETTINGS)        # ``dot_colour``: a point of the colour map picked for the dots
 # what a work made before the rules of parts (0.19.0), undo, the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
-DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": []}
+DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": [], "evidence_source": None, "source_versions": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
 STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind",
@@ -101,10 +103,26 @@ def _folder(plan_id: int) -> str:
 
 
 def mode_of(plan: Mapping) -> ps.Mode:
-    """The scale a work is engraved on."""
+    """The scale a work is engraved on, with the laser and lens of its source: its own, or its pinned laboratory release's."""
     scale = plan["scale"]
-    return ps.mode_of({**{k: scale.get(k) for k in ps.SETTINGS}, "global_passes": scale.get("global_passes")}, plan["device_id"],
-                      plan["lens_id"], scale.get("material_id"))
+    device_id, lens_id = es.setup_of(plan)
+    return ps.mode_of({**{k: scale.get(k) for k in ps.SETTINGS}, "global_passes": scale.get("global_passes")}, device_id, lens_id,
+                      scale.get("material_id"))
+
+
+def _cleaning(store: Store, plan: Mapping) -> dict | None:
+    """The cleaning the work's file runs first: of the laser that engraves it, the work's own also when its scale is a laboratory
+    release's (``prediction_store.cleaning``)."""
+    return ps.cleaning(store, replace(mode_of(plan), device_id=plan["device_id"]))
+
+
+def _ev(store: Store, plan: Mapping) -> Store:
+    """The store the work's curves and colours are read from: the workshop's, or the snapshot of the laboratory release the work is pinned
+    to (feature electron, REQ-085). A pinned work that keeps its confirmed result has no prediction, and says why."""
+    evidence = es.of(store, plan)
+    if evidence.frozen is not None:
+        raise PredictionError(evidence.frozen)
+    return evidence.store
 
 
 def _scale_data(mode: ps.Mode) -> dict:
@@ -144,7 +162,7 @@ def _upload(plan: Mapping) -> dict:
 def _item(store: Store, plan: Mapping) -> dict:
     """The work's picture prepared on its scale at its width (``photo_state.item``), transparent under its inscriptions (:func:`_cut_upload`);
     its objects and parts are those of the whole picture."""
-    return st.item(store, mode_of(plan), _cut_upload(store, plan), plan, plan["name"], plan["width_mm"], whole=_upload(plan))
+    return st.item(_ev(store, plan), mode_of(plan), _cut_upload(store, plan), plan, plan["name"], plan["width_mm"], whole=_upload(plan))
 
 
 def _shown(item: dict, plan: Mapping) -> dict:
@@ -181,7 +199,7 @@ def _palette(store: Store, plan: Mapping) -> list[dict]:
     material = plan["scale"].get("material_id")
     if material is None:
         return []
-    return palette.vector_palette(store, plan["device_id"], plan["lens_id"], material)["entries"]
+    return palette.vector_palette(_ev(store, plan), *es.setup_of(plan), material)["entries"]
 
 
 def palette_of(store: Store, plan_id: int) -> list[dict]:
@@ -223,7 +241,7 @@ def _text_state(store: Store, plan: Mapping) -> dict | None:
     found = lettering.inscribed(store.data_dir, plan["texts"], size_mm(plan), {e["id"] for e in entries})
     by_id = {e["id"]: e for e in entries}
     groups = lettering.by_colour(found["rows"])
-    first = (0 if ps.cleaning(store, mode_of(plan)) is None else pl.CLEAN_LAYER_INDEX + 1) + 1        # after the picture's layer
+    first = (0 if _cleaning(store, plan) is None else pl.CLEAN_LAYER_INDEX + 1) + 1        # after the picture's layer
     layers = []
     for n, entry_id in enumerate(sorted(groups, key=lambda e: (-by_id[e]["lab"][0], e))):
         entry, index = by_id[entry_id], first + n
@@ -231,18 +249,18 @@ def _text_state(store: Store, plan: Mapping) -> dict | None:
         loops = lettering.shapes(shape)
         seen = palette.at_size(entry, row_length.of_shapes(loops, vj._angle(entry)))
         by_id[entry_id] = {**entry, "lab": seen["lab"], "srgb": seen["srgb"], "size": seen["size"]}
-        layers.append({"index": index, "name": vj._layer_name(index, entry), "entry_id": entry_id, "parameters": vj._recipe(store, entry),
+        layers.append({"index": index, "name": vj._layer_name(index, entry), "entry_id": entry_id, "parameters": vj._recipe(store, plan, entry),
                        "shapes": loops, "area_mm2": round(shape.area, 3), "srgb": seen["srgb"],
                        "texts": list(dict.fromkeys(text_id for text_id, _ in groups[entry_id]))})
     return {**found, "layers": layers, "by_id": by_id, "problem": lettering.text_blocker(found["rows"])}
 
 
-def _paint(store: Store, texts: dict | None) -> list[tuple]:
+def _paint(store: Store, plan: Mapping, texts: dict | None) -> list[tuple]:
     """The inscriptions as a look of the work draws them, in order: each one's cut in the colour of cleaned titanium (``True``: the picture
     beside the look is left white there), then its backing and letters in the colours of their layers."""
     if not texts:
         return []
-    clean = [int(v) for v in np.clip(color.lab_to_srgb8(np.asarray([ps.clean_titanium(store)], np.float64)), 0, 255).round()[0]]
+    clean = [int(v) for v in np.clip(color.lab_to_srgb8(np.asarray([ps.clean_titanium(_ev(store, plan))], np.float64)), 0, 255).round()[0]]
     out = []
     for row in texts["rows"]:
         if row["geometry"] is None:
@@ -293,7 +311,7 @@ def _holed(picture: np.ndarray, texts: dict | None, width_mm: float) -> np.ndarr
 def _time(store: Store, plan: Mapping, fired: ps.Mode, texts: dict | None) -> dict:
     """How long the work's file engraves: the picture (``prediction_store.picture_time``), then its inscriptions' layers over their area."""
     size = size_mm(plan)
-    time = ps.picture_time(fired, size["width"], size["height"], ps.cleaning(store, mode_of(plan)))
+    time = ps.picture_time(fired, size["width"], size["height"], _cleaning(store, plan))
     if not texts or not texts["layers"]:
         return time
     more = engraving_time.estimate([{**{k: layer[k] for k in ("index", "name", "parameters", "area_mm2")}, "scan_pieces": _pieces(layer)}
@@ -342,7 +360,7 @@ def _measured_dots(store: Store, plan: Mapping) -> prediction.Curve | None:
     """The tones of the work's dot kind at the settings its dots fire at and its titanium, as photographs of that kind measured them (a
     ramp of «Проба этого вида» or an engraving in that kind), at the work's width; None until that kind was photographed there."""
     try:
-        return ps.curve_for(store, st.kind_mode(mode_of(plan), plan), plan["width_mm"])[0]
+        return ps.curve_for(_ev(store, plan), st.kind_mode(mode_of(plan), plan), plan["width_mm"])[0]
     except PredictionError:
         return None
 
@@ -353,7 +371,7 @@ def _dot_look(store: Store, plan: Mapping, curve: prediction.Curve, px: int | No
     uint8) and the dots (``photo_state.dot_look``, with the ``measured`` tones of the kind, ``_measured_dots``), in the work's tone."""
     upload = st.toned(_cut_upload(store, plan), plan)
     grey, alpha = st.reduced(upload, px) if px else (upload["picture"], upload["alpha"])
-    rgb8, dots = st.dot_look(store, mode_of(plan), grey, alpha, plan, plan["width_mm"], curve, measured)
+    rgb8, dots = st.dot_look(_ev(store, plan), mode_of(plan), grey, alpha, plan, plan["width_mm"], curve, measured)
     return grey, rgb8, dots
 
 
@@ -365,7 +383,8 @@ def _material(store: Store, material_id: int | None) -> dict | None:
 def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
     """What the list of works and the head of an open work say: the name, the size, the scale, Min and Max, the time (its inscriptions'
     layers included, ``texts``: :func:`_text_state`) and the dates."""
-    texts = _text_state(store, plan) if texts is None else texts
+    frozen = es.of(store, plan).frozen          # a pinned work that keeps its confirmed result: nothing is read from its source
+    texts = None if frozen else _text_state(store, plan) if texts is None else texts
     cols, rows = plan["image_size"]
     width = plan["width_mm"]
     height = width * rows / cols
@@ -373,7 +392,7 @@ def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
     fired = st.fired_at(mode, plan) if _dotted(plan) else mode        # a dot kind's layer: its dots' settings
     return {"id": plan["id"], "name": plan["name"], "identifier": plan["plan_identifier"], "created_at": plan["created_at"],
             "updated_at": plan.get("updated_at") or plan["created_at"], "image_name": plan["image_name"], "image_size": [cols, rows],
-            "scale": mode.as_dict(), "material": _material(store, mode.material_id),
+            "scale": mode.as_dict(), "material": None if frozen else _material(_ev(store, plan), mode.material_id),
             "dpi": grayscale.image_dpi(fired.line_interval) if fired.line_interval else None,
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
@@ -381,7 +400,8 @@ def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
             "colouring": plan["colouring"],
             "tone": st.tone_of(plan), "tone_used": st.tone_used(plan) is not None,
             "rules": [st.shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_theme": plan["ai_theme"], "ai_photo": plan["ai_photo"],
-            "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": _time(store, plan, fired, texts), "texts_count": len(plan["texts"])}
+            "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": None if frozen else _time(store, plan, fired, texts),
+            "texts_count": len(plan["texts"]), "source": es.shown(store, plan)}
 
 
 def listing(store: Store) -> list[dict]:
@@ -394,9 +414,14 @@ def view(store: Store, plan_id: int) -> dict:
     """An open work: its summary and the picture beside its predicted look with what is said about it (as the scales' picture says it,
     ``prediction_store.describe``), or, when its scale is no longer measured, why there is no prediction (``problem``)."""
     plan = _work(store, plan_id)
-    texts = _text_state(store, plan)
+    frozen = es.of(store, plan).frozen
+    texts = None if frozen else _text_state(store, plan)
     out = {**_summary(store, plan, texts), "ai_missing": st.ai_missing(), **_texts_shown(texts)}
-    paint = _paint(store, texts)
+    if frozen:
+        kept = plan["evidence_source"].get("confirmed")
+        return {**out, "picture": None, "problem": frozen, "confirmed": None if not kept else {
+            "name": kept["name"], "at": kept["at"], "file": f"/api/photo-works/{plan['id']}/export.lbrn2"}}
+    paint = _paint(store, plan, texts)
     try:
         item = _item(store, plan)
         if _dotted(plan):
@@ -468,8 +493,8 @@ def _dot_view(store: Store, plan: Mapping, item: dict, out: dict, paint: list = 
 def preview(store: Store, plan_id: int) -> rc.Picture:
     """The picture beside its predicted look (``prediction.side_by_side``), at preview size."""
     plan = _work(store, plan_id)
-    curve, _ = ps.curve_for(store, mode_of(plan), plan["width_mm"])
-    paint = _paint(store, _text_state(store, plan))
+    curve, _ = ps.curve_for(_ev(store, plan), mode_of(plan), plan["width_mm"])
+    paint = _paint(store, plan, _text_state(store, plan))
     measured = _measured_dots(store, plan) if _dotted(plan) else None
 
     def draw() -> bytes:
@@ -486,11 +511,11 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     """The work in the list: its predicted look on the titanium, or the picture as LightBurn sees it while its scale is not measured."""
     plan = _work(store, plan_id)
     try:
-        curve = ps.curve_for(store, mode_of(plan), plan["width_mm"])[0]
+        curve = ps.curve_for(_ev(store, plan), mode_of(plan), plan["width_mm"])[0]
     except PredictionError:
         curve = None
     measured = _measured_dots(store, plan) if curve is not None and _dotted(plan) else None
-    paint = _paint(store, _text_state(store, plan)) if curve is not None else []
+    paint = _paint(store, plan, _text_state(store, plan)) if curve is not None else []
 
     def draw() -> bytes:
         upload = st.toned(_upload(plan), plan)
@@ -526,10 +551,10 @@ def closeup(store: Store, plan_id: int) -> rc.Picture:
     plan = _work(store, plan_id)
     if not _dotted(plan):
         raise su.ValidationError("a work in grayscale has no dots to show")
-    curve, _ = ps.curve_for(store, mode_of(plan), plan["width_mm"])
+    curve, _ = ps.curve_for(_ev(store, plan), mode_of(plan), plan["width_mm"])
 
     def draw() -> bytes:
-        dots = st.dots(store, plan, curve)
+        dots = st.dots(_ev(store, plan), plan, curve)
         return prediction.to_png(ps.dot_closeup(_item(store, plan), plan["kind"], dots["lab"], dots["clean_lab"], plan["width_mm"],
                                                 st.fired_at(mode_of(plan), plan)))
     return rc.Picture(store, _folder(plan["id"]), _key("photo-work-closeup", plan, curve), draw)
@@ -542,12 +567,12 @@ def kinds(store: Store, plan_id: int) -> dict:
     plan = _work(store, plan_id)
     mode = mode_of(plan)
     try:
-        curve = ps.curve_for(store, mode, plan["width_mm"])[0]
-        power = _dot_power(store, mode, plan["width_mm"], plan["dot_power"])
+        curve = ps.curve_for(_ev(store, plan), mode, plan["width_mm"])[0]
+        power = _dot_power(_ev(store, plan), mode, plan["width_mm"], plan["dot_power"])
     except PredictionError as exc:
         return {"kind": plan["kind"], "kinds": [], "problem": str(exc)}
-    dots = st.dots(store, {**plan, "dot_power": power}, curve)
-    paint = _paint(store, _text_state(store, plan))
+    dots = st.dots(_ev(store, plan), {**plan, "dot_power": power}, curve)
+    paint = _paint(store, plan, _text_state(store, plan))
     out = []
     for key in KINDS:
         shown = {**plan, "kind": key, "dot_power": power}
@@ -563,10 +588,12 @@ def kinds(store: Store, plan_id: int) -> dict:
     return {"kind": plan["kind"], "kinds": out, "problem": None}
 
 
-def dot_setup(store: Store, plan_id: int) -> str:
-    """The laser and lens of the work's scale as the colour map keys them: the map the colour of its dots is picked on."""
-    mode = mode_of(_work(store, plan_id))
-    return su.setup_key(mode.device_id, mode.lens_id)
+def dot_map(store: Store, plan_id: int) -> tuple[Store, str]:
+    """The map the colour of the work's dots is picked on: the measurements of its source and the laser and lens of its scale as the colour
+    map keys them."""
+    plan = _work(store, plan_id)
+    mode = mode_of(plan)
+    return _ev(store, plan), su.setup_key(mode.device_id, mode.lens_id)
 
 
 def dot_colours(store: Store, plan_id: int, points: list[dict]) -> dict:
@@ -576,8 +603,8 @@ def dot_colours(store: Store, plan_id: int, points: list[dict]) -> dict:
     plan = _work(store, plan_id)
     mode = mode_of(plan)
     return {"work": {"id": plan["id"], "name": plan["name"], "kind": plan["kind"], "width_mm": plan["width_mm"], "device_id": mode.device_id,
-                     "lens_id": mode.lens_id, "material": _material(store, mode.material_id), "dot_recipe": plan["dot_recipe"]},
-            **dc.options(store, mode, plan["width_mm"], points)}
+                     "lens_id": mode.lens_id, "material": _material(_ev(store, plan), mode.material_id), "dot_recipe": plan["dot_recipe"]},
+            **dc.options(_ev(store, plan), mode, plan["width_mm"], points)}
 
 
 def kind_picture(store: Store, plan_id: int, kind: str) -> rc.Picture:
@@ -586,10 +613,10 @@ def kind_picture(store: Store, plan_id: int, kind: str) -> rc.Picture:
     if kind not in KINDS:
         raise KeyError(f"no kind of engraving {kind!r}")
     mode = mode_of(plan)
-    curve = ps.curve_for(store, mode, plan["width_mm"])[0]
-    shown = {**plan, "kind": kind, "dot_power": _dot_power(store, mode, plan["width_mm"], plan["dot_power"])}
+    curve = ps.curve_for(_ev(store, plan), mode, plan["width_mm"])[0]
+    shown = {**plan, "kind": kind, "dot_power": _dot_power(_ev(store, plan), mode, plan["width_mm"], plan["dot_power"])}
     measured = _measured_dots(store, shown) if _dotted(shown) else None
-    paint = _paint(store, _text_state(store, plan))
+    paint = _paint(store, plan, _text_state(store, plan))
 
     def draw() -> bytes:
         if _dotted(shown):
@@ -609,25 +636,61 @@ def export(store: Store, plan_id: int) -> tuple[bytes, str]:
     recipe's picked on the colour map, whose step is the layer's DPI) and carries the picture as uploaded, in the work's tone: LightBurn
     makes the dots, corrected by the work's dot width when it has one.
     The picture is transparent under its inscriptions' cut, and their letters follow on a layer of each titanium colour (DEC-003); an
-    inscription that cannot be engraved refuses the file."""
+    inscription that cannot be engraved refuses the file. The file of a work pinned to a laboratory release is kept as its confirmed result:
+    when the work cannot be calculated again (``evidence_source``), that file is given."""
     plan = _work(store, plan_id)
+    if es.of(store, plan).frozen is not None:
+        return _confirmed(plan)
+    data, name = _export(store, plan)
+    if es.pin_of(plan) is not None:
+        _confirm(store, plan, data, name)
+    return data, name
+
+
+def _own_limits(store: Store, plan: Mapping, parameters: Mapping, vectors: list[dict]) -> None:
+    """A pinned work's picture layer (the release's settings) and its inscriptions' layers checked against the own laser that engraves them."""
+    if es.pin_of(plan) is not None:
+        es.own_limits(store, plan["device_id"], [(plan["name"], parameters)] + [(v["name"], v["parameters"]) for v in vectors])
+
+
+def _confirm(store: Store, plan: dict, data: bytes, name: str) -> None:
+    """Keep the file of a pinned work as its confirmed result."""
+    digest = hashlib.sha256(data).hexdigest()
+    path = store.data_dir / "files" / f"photo-work-confirmed-{digest[:16]}.lbrn2"
+    if not path.is_file():
+        path.write_bytes(data)
+    plan["evidence_source"]["confirmed"] = {"path": str(path), "name": name, "sha256": digest, "at": now()}
+    with store.transaction():
+        _save(store, plan, plan["id"])
+
+
+def _confirmed(plan: Mapping) -> tuple[bytes, str]:
+    kept = plan["evidence_source"].get("confirmed")
+    if not kept or not Path(kept["path"]).is_file():
+        raise su.ValidationError("this work cannot be calculated again and no file of it was confirmed: update its source to calculate it")
+    return Path(kept["path"]).read_bytes(), kept["name"]
+
+
+def _export(store: Store, plan: dict) -> tuple[bytes, str]:
     texts = _text_state(store, plan)
     if texts and texts["problem"]:
         raise su.ValidationError(texts["problem"])
     vectors = [{k: layer[k] for k in ("index", "name", "parameters", "shapes")} for layer in texts["layers"]] if texts else []
     item = _item(store, plan)
     if _dotted(plan):
-        power = st.dots(store, plan, item["curve"])["power"]
+        power = st.dots(_ev(store, plan), plan, item["curve"])["power"]
         fired = st.fired_at(item["mode"], plan)
         picture = _holed(ps.picture_for_file(item, power, power, plan["width_mm"], fired=fired), texts, plan["width_mm"])
         parameters = {**ps.file_parameters(fired, power, power), "dot_width": st.dot_width_used(plan)}
+        _own_limits(store, plan, parameters, vectors)
         data = pl.export_picture(picture, plan["width_mm"], parameters, plan["name"], plan["plan_identifier"],
-                                 clean=ps.cleaning(store, item["mode"]), dither=plan["kind"], vectors=vectors)
+                                 clean=_cleaning(store, plan), dither=plan["kind"], vectors=vectors)
         return data, f"{plan['name']}-{plan['kind']}-P{power:g}"
     low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
     picture = _holed(ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"]), texts, plan["width_mm"])
+    _own_limits(store, plan, ps.file_parameters(item["mode"], low, high), vectors)
     data = pl.export_picture(picture, plan["width_mm"], ps.file_parameters(item["mode"], low, high), plan["name"], plan["plan_identifier"],
-                             clean=ps.cleaning(store, item["mode"]), vectors=vectors)
+                             clean=_cleaning(store, plan), vectors=vectors)
     return data, f"{plan['name']}-P{low:g}-{high:g}"
 
 
@@ -637,30 +700,92 @@ def _save(store: Store, plan: Mapping, plan_id: int | None = None, *, name: str 
                         data={k: plan[k] for k in DATA})
 
 
-def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None) -> int:
-    """A new work of an uploaded picture: on ``scale`` (a measured one) or on the best measured scale, at its measured Min and Max."""
+def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None, source=None) -> int:
+    """A new work of an uploaded picture: on ``scale`` (a measured one) or on the best measured scale, at its measured Min and Max. With
+    ``source`` (a connected laboratory release, its laser and lens, and ``device_id`` and ``lens_id`` of the own laser it is engraved with,
+    feature electron REQ-085) the scales are that release's."""
     upload = ps.decode_upload(data)
     width = ps.check_width(width_mm)
+    pin, own = None, None
+    if source is not None:
+        pin = es.pin(store, source, with_material=False)
+        own = _own_setup(store, source)
+    reading = _ev(store, {"evidence_source": pin, "device_id": None, "lens_id": None}) if pin else store
     if scale is not None:
-        mode = measured_scale(store, scale)
+        mode = measured_scale(reading, scale)
     else:
-        found = ps.scales(store)
+        found = [s for s in ps.scales(reading) if pin is None or (s["mode"]["device_id"], s["mode"]["lens_id"]) == es.setup_of({"evidence_source": pin})]
         if not found:
             raise su.ValidationError("no grayscale scale is measured yet: engrave the grey-scale plate and add its photograph first")
         mode = ps.Mode(**found[0]["mode"])
+    if pin is not None and (mode.device_id, mode.lens_id) != es.setup_of({"evidence_source": pin}):
+        raise su.ValidationError("this scale was measured with another laser or lens of the laboratory release: change the work's source to use it")
     title = name.strip() if isinstance(name, str) and name.strip() else (Path(file_name or "").stem or "picture")
-    low, high = _span(store, mode, width)
+    low, high = _span(reading, mode, width)
     cols, rows = upload["size"]
-    plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
+    device_id, lens_id = own if pin else (mode.device_id, mode.lens_id)
+    plan = {"device_id": device_id, "lens_id": lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
             "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE,
             "dot_power": None, "dot_recipe": None, "dot_width": None, "tone": dict(st.TONE), "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
-            "texts": []}
+            "texts": [], "evidence_source": pin, "source_versions": []}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
         store.audit("photo_work_created", plan_id=plan_id)
     _remember(plan["image_path"], upload)
     return plan_id
+
+
+SOURCE_STEPS = 11                    # the powers between Min and Max a source update compares the scale at
+
+
+def source_change(store: Store, plan_id: int, request: Mapping | None, confirm: bool = False) -> dict:
+    """Update the source of a work pinned to a laboratory release (feature electron REQ-085), an explicit step: to the release ``request``
+    names (by default the current release of its laboratory with the same laser and lens), or back to the source it had before
+    (``{"back": true}``). Without ``confirm`` nothing changes and the preview says what would: whether the new source measures the work's
+    scale at its width, and the colour of the scale before and after at powers from Min to Max with their ΔE. Confirmed, the work keeps
+    its settings, forgets the file confirmed with the earlier source and keeps that source to go back to."""
+    plan = _work(store, plan_id)
+    back = isinstance(request, Mapping) and bool(request.get("back"))
+    new = es.previous_pin(plan) if back else es.next_pin(store, plan, request, with_material=False)
+    trial = {**plan, "evidence_source": new}
+    powers = np.linspace(plan["min_power"], plan["max_power"], SOURCE_STEPS)
+    curves = []
+    for work in (plan, trial):
+        try:
+            curves.append(ps.curve_for(_ev(store, work), mode_of(work), plan["width_mm"])[0].lab_at(powers))
+        except PredictionError as exc:
+            curves.append(str(exc))
+    rows = []
+    if not isinstance(curves[0], str) and not isinstance(curves[1], str):
+        for power, a, b in zip(powers, *curves):
+            known = bool(np.isfinite(a).all() and np.isfinite(b).all())
+            rows.append({"power": round(float(power), 3), "before": st.hex_of(a) if np.isfinite(a).all() else None,
+                         "after": st.hex_of(b) if np.isfinite(b).all() else None,
+                         "delta_e": round(color.delta_e(a, b), 3) if known else None})
+    changes = [r["delta_e"] for r in rows if r["delta_e"] is not None]
+    preview = {"from": es.shown(store, plan), "to": es.summary(store, new), "back": back, "steps": rows,
+               "max_delta_e": max(changes, default=None), "problem": curves[1] if isinstance(curves[1], str) else None}
+    if not confirm:
+        return preview
+    plan["source_versions"] = es.moved(plan, new, back)
+    plan["evidence_source"] = new if back else {k: v for k, v in new.items() if k != "confirmed"}
+    plan["updated_at"] = now()
+    with store.transaction():
+        _save(store, plan, plan["id"])
+        store.audit("photo_work_source", plan_id=plan["id"], release_id=new["release_id"], back=back)
+    return preview
+
+
+def _own_setup(store: Store, source: Mapping) -> tuple[int, int | None]:
+    """The own laser and lens a work on a laboratory release's scale is engraved with (``source["device_id"]``, ``source["lens_id"]``)."""
+    device = store.one("SELECT id FROM laser_device WHERE id=?", (source.get("device_id"),)) if isinstance(source.get("device_id"), int) else None
+    if device is None:
+        raise su.ValidationError("choose the laser of this workshop the work is engraved with")
+    lens_id = source.get("lens_id")
+    if lens_id is not None and store.one("SELECT 1 FROM lens WHERE id=?", (lens_id,)) is None:
+        raise su.ValidationError("choose a lens of this workshop or none")
+    return device["id"], lens_id
 
 
 def update(store: Store, plan_id: int, changes) -> None:
@@ -687,20 +812,24 @@ def update(store: Store, plan_id: int, changes) -> None:
     if "dot_colour" in changes:
         if not _dotted({"kind": changes.get("kind", plan["kind"])}):
             raise su.ValidationError("the dots' colour is picked for a dot kind: choose one of them first")
-        picked = dc.picked(store, mode_of(plan), plan["width_mm"], changes["dot_colour"])
+        picked = dc.picked(_ev(store, plan), mode_of(plan), plan["width_mm"], changes["dot_colour"])
         recipe = picked.pop("dot_recipe", None)
         changes = {**{k: v for k, v in changes.items() if k != "dot_colour"}, **picked}
     if "scale" in changes:
-        mode = measured_scale(store, changes["scale"])
-        plan.update(scale=_scale_data(mode), device_id=mode.device_id, lens_id=mode.lens_id, dot_recipe=None)
+        mode = measured_scale(_ev(store, plan), changes["scale"])
+        if es.pin_of(plan) is None:                  # an own work is engraved with the laser and lens of its scale
+            plan.update(device_id=mode.device_id, lens_id=mode.lens_id)
+        elif (mode.device_id, mode.lens_id) != es.setup_of(plan):
+            raise su.ValidationError("this scale was measured with another laser or lens of the laboratory release: change the work's source to use it")
+        plan.update(scale=_scale_data(mode), dot_recipe=None)
         if "min_power" not in changes and "max_power" not in changes:
-            plan["min_power"], plan["max_power"] = _span(store, mode, plan["width_mm"])
-    st.change(store, plan, {k: v for k, v in changes.items() if k not in ("scale", "width_mm")}, mode_of(plan), plan["width_mm"],
+            plan["min_power"], plan["max_power"] = _span(_ev(store, plan), mode, plan["width_mm"])
+    st.change(_ev(store, plan), plan, {k: v for k, v in changes.items() if k not in ("scale", "width_mm")}, mode_of(plan), plan["width_mm"],
               moved=bool({"scale", "width_mm"} & set(changes)))
     if recipe is not None:
         plan["dot_recipe"] = recipe
     elif "width_mm" in changes and plan["dot_recipe"]:
-        plan["dot_recipe"] = dc.at_width(store, mode_of(plan), plan["dot_recipe"], plan["width_mm"])
+        plan["dot_recipe"] = dc.at_width(_ev(store, plan), mode_of(plan), plan["dot_recipe"], plan["width_mm"])
     if _here(plan) != before:
         _push(plan, before)
     plan["updated_at"] = now()
@@ -777,6 +906,9 @@ def width_ramp(store: Store, plan_id: int) -> dict:
     dot kind the ramp is engraved in that kind at the dots' power and dot width («Проба этого вида»): its photograph measures the kind's
     tones there, which then replace the estimate from the scale. A plate is made for the lens on the laser now, so the work's lens must be on it."""
     plan = _work(store, plan_id)
+    if es.pin_of(plan) is not None:
+        raise su.ValidationError("a ramp measures this workshop's own scale, and this work uses a laboratory release's scale: check the release's "
+                                 "settings on this laser with a transfer experiment («Проверить у себя»)")
     mode = mode_of(plan)
     lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
     if lens.get("id") != plan["lens_id"]:
@@ -827,7 +959,7 @@ def engravings(store: Store, plan_id: int) -> list[dict]:
                         same_scale=same, mode=mode.as_dict())
             if row["status"] == ig.ST_ACCEPTED:
                 try:
-                    item["check"] = ps.engraving_check(store, mode, row["id"])
+                    item["check"] = ps.engraving_check(store, mode, row["id"])          # an own engraving, against the own measurements
                 except PredictionError:
                     item["check"] = {"reason": "no_points", "compared": 0, "bands": []}
                 for band in item["check"]["bands"]:
@@ -870,7 +1002,7 @@ def objects_of(store: Store, plan_id: int) -> dict:
     """The objects of the work's picture to colour at the work's Min and Max (``photo_state.objects_listed``) and the address of the
     picture with them tinted."""
     plan = _work(store, plan_id)
-    return {**st.objects_listed(store, mode_of(plan), _upload(plan), plan, plan["width_mm"]),
+    return {**st.objects_listed(_ev(store, plan), mode_of(plan), _upload(plan), plan, plan["width_mm"]),
             "picture": f"/api/photo-works/{plan['id']}/objects.png?v={_objects_key(plan)[:16]}"}
 
 
@@ -889,7 +1021,7 @@ def colour_theme(store: Store, plan_id: int, name, seed=0) -> None:
     the work then chooses its greys for the objects (one step to undo)."""
     st.theme_checked(name, seed)
     plan = _work(store, plan_id)
-    update(store, plan_id, st.theme(store, mode_of(plan), _upload(plan), plan, plan["width_mm"], name, seed))
+    update(store, plan_id, st.theme(_ev(store, plan), mode_of(plan), _upload(plan), plan, plan["width_mm"], name, seed))
 
 
 def _picture_bytes(plan: Mapping):
@@ -900,7 +1032,7 @@ def ai_theme(store: Store, plan_id: int, wish) -> None:
     """Ask the AI for the main colours of the picture's objects after the operator's ``wish`` (``photo_state.ai_theme``) and colour the
     work with them, keeping its note (one step to undo); a refused answer changes nothing."""
     plan = _work(store, plan_id)
-    changes, answer = st.ai_theme(store, mode_of(plan), _upload(plan), plan, plan["width_mm"], wish, _picture_bytes(plan))
+    changes, answer = st.ai_theme(_ev(store, plan), mode_of(plan), _upload(plan), plan, plan["width_mm"], wish, _picture_bytes(plan))
     plan = _work(store, plan_id)                             # as it is now: other changes made while the AI answered are kept
     _push(plan, _here(plan))
     plan.update({**changes, "updated_at": now(), "ai_theme": answer})
@@ -913,7 +1045,7 @@ def ask_ai(store: Store, plan_id: int, wish, fresh=False) -> None:
     """Ask the AI for the rules of the parts after the operator's ``wish`` (``photo_state.ai_rules``) and save them in the work with the
     AI's note and the rules before them. The answer can be undone; a refused answer changes nothing (``ai_picture.ask``)."""
     plan = _work(store, plan_id)
-    rules, answer = st.ai_rules(store, mode_of(plan), _upload(plan), plan, plan["width_mm"], plan["name"], wish, fresh, _picture_bytes(plan))
+    rules, answer = st.ai_rules(_ev(store, plan), mode_of(plan), _upload(plan), plan, plan["width_mm"], plan["name"], wish, fresh, _picture_bytes(plan))
     plan = _work(store, plan_id)                             # as it is now: other changes made while the AI answered are kept
     _push(plan, _here(plan))
     plan["ai"] = {**answer, "before": plan["rules"]}

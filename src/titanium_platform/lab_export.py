@@ -182,6 +182,51 @@ def _public_link(item: Mapping, key: str) -> str | None:
 
 
 # -- what is chosen ---------------------------------------------------------------------------------------------------------------
+WITHDRAWN_KINDS = {"release": None, "measurement": "observation", "tone_profile": "tonal"}   # what can be withdrawn: its portable_id kind
+
+
+def withdraw(store: Store, target_kind: str, target_id: str, reason: str, replacement_release_id: str | None = None) -> dict:
+    """Withdraw a published release, measurement or tonal profile (REQ-084): the statement, with its reason and replacement, goes out
+    with every later release of this laboratory; what was published is not changed."""
+    if target_kind not in WITHDRAWN_KINDS:
+        raise su.ValidationError("only a release, a measurement or a tonal profile can be withdrawn")
+    reason = " ".join(str(reason or "").split())
+    if not reason:
+        raise su.ValidationError("give the reason of the withdrawal")
+    if len(reason) > 500:
+        raise su.ValidationError("the reason of the withdrawal is longer than 500 characters")
+    try:
+        lf.check_text(reason, "reason")
+    except lf.FormatError:
+        raise su.ValidationError("the reason of the withdrawal may hold only plain text: no links, scripts or file paths") from None
+    kind = WITHDRAWN_KINDS[target_kind]
+    published = (store.one("SELECT 1 FROM lab_export WHERE release_id=?", (target_id,)) if kind is None else
+                 store.one("SELECT 1 FROM portable_id WHERE kind=? AND uuid=?", (kind, target_id)))
+    if published is None:
+        raise su.ValidationError("this laboratory never published what is to be withdrawn")
+    if replacement_release_id is not None and store.one("SELECT 1 FROM lab_export WHERE release_id=?", (replacement_release_id,)) is None:
+        raise su.ValidationError("the replacement must be a release of this laboratory")
+    listed = withdrawals(store)
+    if any(w["target_kind"] == target_kind and w["target_id"] == target_id for w in listed):
+        raise su.ValidationError("this is withdrawn already")
+    item = {"id": str(uuid.uuid4()), "kind": "withdrawal", "target_kind": target_kind, "target_id": target_id, "reason": reason,
+            "replacement_release_id": replacement_release_id, "declared_at": lf.utc_now()}
+    store.set_setting(WITHDRAWALS, listed + [item])
+    store.audit("lab_withdrawn", target_kind=target_kind, target_id=target_id)
+    return item
+
+
+def withdrawals(store: Store) -> list[dict]:
+    """What this laboratory withdrew, as it goes out with every later release."""
+    return list(store.get_setting(WITHDRAWALS) or [])
+
+
+def exports(store: Store) -> list[dict]:
+    """The releases this workshop wrote, newest first."""
+    return [{**dict(r), "manifest": json.loads(r["manifest_json"])}
+            for r in store.query("SELECT release_id, content_sha256, created_at, manifest_json, bytes FROM lab_export ORDER BY created_at DESC, release_id")]
+
+
 def _experiment_kind(plan_mode: str | None) -> str:
     return "test" if plan_mode in colormap.TEST_PLANS else "vector_work" if plan_mode == pl.MODE_VECTOR else "other"
 
@@ -503,6 +548,8 @@ def export(store: Store, path: str | Path, selection: Mapping | None, terms: str
     public = public_info(store)
     if not public["name"] or not public["author"]:
         raise su.ValidationError("enter the laboratory's public name and the author before publishing")
+    if release_id is not None and store.one("SELECT 1 FROM lab_export WHERE release_id=?", (release_id,)) is not None:
+        raise su.ValidationError("a release with this identity was published already: a release never changes")
     pairs = _pairs(store, selection)
     if not pairs:
         raise su.ValidationError("nothing is chosen: choose a laser, a titanium or an experiment with accepted photographs")

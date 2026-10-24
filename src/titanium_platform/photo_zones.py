@@ -42,8 +42,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (color, conversion as cv, dot_colours as dc, engraving_time, grayscale, photo_modes, photo_state as st, prediction,
-               prediction_store as ps, render_cache as rc)
+from . import (color, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, grayscale, photo_modes, photo_state as st,
+               prediction, prediction_store as ps, render_cache as rc)
 from .db import Store
 from .prediction import PredictionError
 
@@ -96,10 +96,12 @@ def find(colouring: Mapping, number) -> dict:
 
 
 def mode_of(plan: Mapping, zone: Mapping) -> ps.Mode:
-    """The grey scale a zone is engraved on: the work's laser and lens, the zone's titanium and settings."""
+    """The grey scale a zone is engraved on: the laser and lens of the work's source (its own, or its pinned laboratory release's), the
+    zone's titanium and settings."""
     scale = zone["scale"]
-    return ps.mode_of({**{k: scale.get(k) for k in ps.SETTINGS}, "global_passes": scale.get("global_passes")}, plan["device_id"],
-                      plan["lens_id"], scale.get("material_id"))
+    device_id, lens_id = es.setup_of(plan)
+    return ps.mode_of({**{k: scale.get(k) for k in ps.SETTINGS}, "global_passes": scale.get("global_passes")}, device_id, lens_id,
+                      scale.get("material_id"))
 
 
 def fired(plan: Mapping, zone: Mapping) -> ps.Mode:
@@ -149,7 +151,8 @@ def best_scale(store: Store, plan: Mapping, width_mm: float) -> ps.Mode:
     """The scale a first zone takes: of the work's laser, lens and titanium, measured at the zone's width, the best measured as the list
     of scales orders them (chart-referenced colours, then more engravings, then more points)."""
     ranked = []
-    for mode in ps.scale_modes(store, plan["device_id"], plan["lens_id"], plan["material_id"]):
+    device_id, lens_id = es.setup_of(plan)
+    for mode in ps.scale_modes(store, device_id, lens_id, es.material_of(plan)):
         try:
             curve = ps.curve_for(store, mode, width_mm)[0]
         except PredictionError:
@@ -230,7 +233,8 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         wanted = changes["scale"]
         if not isinstance(wanted, Mapping):
             raise ZoneError("the scale must name the titanium and settings of a measured scale")
-        mode = ps.measured_mode(store, {**wanted, "device_id": plan["device_id"], "lens_id": plan["lens_id"]})
+        device_id, lens_id = es.setup_of(plan)
+        mode = ps.measured_mode(store, {**wanted, "device_id": device_id, "lens_id": lens_id})
         out["scale"] = scale_data(mode)
         try:
             out["min_power"], out["max_power"] = ps.measured_span(store, mode, width_mm)

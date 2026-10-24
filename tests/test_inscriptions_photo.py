@@ -216,7 +216,7 @@ def test_the_file_keeps_the_cleaning_and_the_picture_and_lays_the_backing_and_th
     light, dark = max(entries, key=lambda e: e["lab"][0]), min(entries, key=lambda e: e["lab"][0])
     full = recipes.recipes(passport)["Gold fill"]
     stored = vector_job._recipe
-    monkeypatch.setattr(vector_job, "_recipe", lambda store_, entry: full if entry["id"] == dark["id"] else stored(store_, entry))
+    monkeypatch.setattr(vector_job, "_recipe", lambda store_, plan_, entry: full if entry["id"] == dark["id"] else stored(store_, plan_, entry))
     view = add(world, work, text="HH O", spacing_mm=-1.5, height_mm=10, x=25, y=20, backing="rect", padding_mm=2, backing_entry_id=light["id"])
     text, shape = view["texts"][0], found(world, work, view)
     size = photo_work.size_mm(photo_work._work(store, work["id"]))
@@ -231,7 +231,7 @@ def test_the_file_keeps_the_cleaning_and_the_picture_and_lays_the_backing_and_th
     backing, letters = project.layer(2), project.layer(3)
     assert model.parameters_key(recipes.parameters(letters, passport)) == model.parameters_key(full)          # every setting of the recipe
     assert (letters.cross_hatch, letters.passes, letters.scan_angle) == (True, 2, 45.0)
-    own = stored(store, light)
+    own = stored(store, photo_work._work(store, work["id"]), light)
     assert {k: recipes.parameters(backing, passport)[k] for k in own} == own
     # laid where the screen draws them, as closed Path shapes
     assert text["shown"]["letters"] == lettering.svg_d(shape["letters"]) and text["shown"]["backing"] == lettering.svg_d(shape["backing"])
@@ -329,7 +329,7 @@ def test_a_work_without_inscriptions_writes_draws_and_times_as_without_the_inscr
         patch.setattr(photo_work, "_text_state", lambda store, plan: None)
         patch.setattr(photo_work, "_cut_upload", lambda store, plan: photo_work._upload(plan))
         patch.setattr(photo_work, "_holed", lambda picture, texts, width_mm: picture)
-        patch.setattr(photo_work, "_paint", lambda store, texts: [])
+        patch.setattr(photo_work, "_paint", lambda store, plan, texts: [])
         patch.setattr(lettering, "inscribed", None)                                             # nothing of the inscriptions runs
         without = photo_outputs(world, work)
     assert without == plain

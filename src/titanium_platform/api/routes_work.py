@@ -231,10 +231,10 @@ def all_colors(request: Request, setup: str | None = None, material: str | None 
     engraving (REQ-049). With ``dots`` (a photo work in a dot kind, 0.25.0; with ``zone``, that photo zone of the vector work ``dots``,
     0.27.0) the map picks the colour of its dots: it is the map of the work's laser and lens, and ``dots`` tells what each colour gives
     the dots or why it cannot (``photo_work.dot_colours``, ``vector_job.zone_dot_colours``), from the same points the map shows."""
-    store = store_of(request)
-    if dots is not None:
-        setup = photo_work.dot_setup(store, dots) if zone is None else vector_job.zone_dot_setup(store, dots, zone)
-    data = colormap.collect(store, include_unreferenced=include_unreferenced, setup=setup, material=material,
+    store = measured = store_of(request)
+    if dots is not None:       # the work's source: the workshop's measurements or its pinned laboratory release's (feature electron)
+        measured, setup = photo_work.dot_map(store, dots) if zone is None else vector_job.zone_dot_map(store, dots, zone)
+    data = colormap.collect(measured, include_unreferenced=include_unreferenced, setup=setup, material=material,
                             measurement=measurement, include_provisional=include_provisional, task=task or None,
                             max_time_s_per_cm2=max_time_s_per_cm2)
     data["recipes"] = {}

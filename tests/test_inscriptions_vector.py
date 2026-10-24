@@ -226,7 +226,7 @@ def test_an_inscription_in_a_colour_no_region_has_opens_a_layer_of_its_own_withi
     plan, project = read_back(world, job)
     found = lettering.geometry(world["store"].data_dir, view["texts"][0], plan["size_mm"])
     layer = next(layer for layer in project.layers if layer.index == opened["index"])
-    recipe = vector_job._recipe(world["store"], next(e for e in vector_job._palette(world["store"], plan) if e["id"] == entry))
+    recipe = vector_job._recipe(world["store"], plan, next(e for e in vector_job._palette(world["store"], plan) if e["id"] == entry))
     assert layer.name == opened["name"] and layer.layer_type == "Scan"
     assert {k: recipes.parameters(layer, passport)[k] for k in recipe} == recipe                         # the recipe's settings
     assert recipes.parameters(layer, passport) == recipes.parameters(of_regions, passport)                 # written as for its regions

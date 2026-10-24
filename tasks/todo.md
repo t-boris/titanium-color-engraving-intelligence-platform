@@ -15,8 +15,11 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
   parity by construction)
 - [x] A5 DEC-045: tonal curves by engraving (count and Lab), `prediction.ALGORITHM` 2, changed numbers recorded in the golden record
 - [x] A6 `lab_export.py`: selection, closure, privacy preview, terms (DEC-042), streaming writer
-- [ ] A7 `lab_import.py`: staging, validation, progress, cancel, atomic activation, no-op / conflict, disconnect, withdrawals
-- [ ] A8 Pinned sources in vector and photo works; update with preview and route back; frozen result on algorithm mismatch
+- [x] A7 `lab_import.py`: staging, validation, progress, cancel, atomic activation, no-op / conflict, disconnect, withdrawals
+  (`api/routes_labs.py`, `tests/test_lab_import.py`, `tests/test_lab_api.py`)
+- [x] A8 Pinned sources in vector and photo works; update with preview and route back; frozen result on algorithm mismatch
+  (`evidence_source.py`; the colour map of a pinned work's dots is its source's; the cleaning and the limits are the own laser's;
+  a pinned photo work keeps its exported file as its confirmed result; `tests/test_lab_sources.py`)
 - [ ] A9 `lab_transfer.py`: transfer experiment from a foreign recipe
 - [ ] A10 UI: Моя лаборатория, Подключённые лаборатории, Карточка, source picker, Проверить у себя; ru/en
 - [ ] A11 Tests: fixtures, negative fixtures, privacy markers, parity 1e-6, counting, constant memory; benchmark on M2 Ultra

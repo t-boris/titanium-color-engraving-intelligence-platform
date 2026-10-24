@@ -16,21 +16,24 @@ Names are labels: a laser is named as its owner published it, an engraving ``E00
 release labels it. The snapshot is written once, by :class:`Builder`, and read only from then on (:func:`open_snapshot`)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
 from pathlib import Path
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from . import colormap, lab_format as lf, plans as pl
 from .db import Store
 
 RECORDS = """
-CREATE TABLE IF NOT EXISTS release_record (uuid TEXT PRIMARY KEY, kind TEXT NOT NULL, local_id INTEGER, seq INTEGER);
+CREATE TABLE IF NOT EXISTS release_record (uuid TEXT PRIMARY KEY, kind TEXT NOT NULL, local_id INTEGER, seq INTEGER, layer INTEGER,
+    digest TEXT);
 CREATE TABLE IF NOT EXISTS release_withdrawal (id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, target_id TEXT NOT NULL,
     reason TEXT NOT NULL, replacement_release_id TEXT, declared_at TEXT NOT NULL);
 """
 RELEASE = "lab.release"             # setting of a snapshot: the manifest and the laboratory record it was built from
+VERSION = "1"                       # how a release is laid out in a snapshot; a snapshot of another version is built again from its file
 PUBLISHED_WORK = "Published work"   # an experiment of a release that was neither a test nor a vector work
 MODE_OF = {"test": pl.MODE_PLATE, "vector_work": pl.MODE_VECTOR, "other": PUBLISHED_WORK}
 ROLE_OF = {"test_feature": "test feature", "cleaning_witness": colormap.WITNESS, "service": colormap.SERVICE[0]}
@@ -74,9 +77,9 @@ class Builder:
         self.when = "1970-01-01T00:00:00.000000Z"
 
     # -- references --------------------------------------------------------------------------------------------------------------
-    def _register(self, record_id: str, kind: str, local: int | None, seq: int | None) -> None:
+    def _register(self, record_id: str, kind: str, local: int | None, seq: int | None, layer: int | None = None) -> None:
         try:
-            self.conn.execute("INSERT INTO release_record(uuid, kind, local_id, seq) VALUES (?,?,?,?)", (record_id, kind, local, seq))
+            self.conn.execute("INSERT INTO release_record(uuid, kind, local_id, seq, layer) VALUES (?,?,?,?,?)", (record_id, kind, local, seq, layer))
         except sqlite3.IntegrityError:
             raise lf.FormatError("duplicate_id", f"the id {record_id} is used twice") from None
 
@@ -90,7 +93,10 @@ class Builder:
 
     # -- records -------------------------------------------------------------------------------------------------------------------
     def add(self, section: str, record: Mapping) -> None:
+        """Write one record; its digest (of its canonical form) tells a later release whether it changed."""
         getattr(self, "_" + section)(record)
+        digest = hashlib.sha256(lf.canonical(record).encode()).hexdigest()
+        self.conn.execute("UPDATE release_record SET digest=? WHERE uuid=?", (digest, record["id"]))
 
     def _equipment(self, r: Mapping) -> None:
         laser, lens = r["laser"], r["lens"]
@@ -108,6 +114,9 @@ class Builder:
                                                              lens.get("expansion") if lens.get("expansion") is not None else 1.0, self.when,
                                                              lens.get("spot_diameter_um")))
         self._register(r["id"], "setup", None, r["seq"])
+        for record_id, kind, local in ((laser["id"], "laser", laser_id), (None if lens is None else lens["id"], "lens", lens_id)):
+            if record_id is not None:            # a laser or lens of several setups is one record; its UUID names it for a work's source
+                self.conn.execute("INSERT OR IGNORE INTO release_record(uuid, kind, local_id) VALUES (?,?,?)", (record_id, kind, local))
         self.setups[r["id"]] = (laser_id, lens_id)
 
     def _materials(self, r: Mapping) -> None:
@@ -190,7 +199,7 @@ class Builder:
         self.conn.execute("UPDATE pair SET data_json=json_insert(data_json, '$.check.layers[#]', json(?)) WHERE id=?", (json.dumps(rep), pair_id))
         self.conn.execute("INSERT OR IGNORE INTO pair_row_length(pair_id, layer_index, row_mm) VALUES (?,?,?)",
                           (pair_id, r["layer"]["index"], _float(r["row_mm"])))
-        self._register(r["id"], "tone_profile", None, r["seq"])
+        self._register(r["id"], "tone_profile", pair_id, r["seq"], r["layer"]["index"])
 
     def _provenance(self, r: Mapping) -> None:
         self._register(r["id"], "provenance", None, r["seq"])
@@ -201,7 +210,8 @@ class Builder:
     # -- the end -------------------------------------------------------------------------------------------------------------------
     def start(self, manifest: Mapping, lab: Mapping) -> None:
         self.when = manifest["created_at"]
-        self.store.conn.execute("INSERT INTO setting(key, value_json) VALUES (?,?)", (RELEASE, json.dumps({"manifest": dict(manifest), "lab": dict(lab)})))
+        self.store.conn.execute("INSERT INTO setting(key, value_json) VALUES (?,?)",
+                                (RELEASE, json.dumps({"manifest": dict(manifest), "lab": dict(lab), "version": VERSION})))
 
     def finish(self) -> None:
         self.conn.execute("COMMIT")
@@ -233,11 +243,48 @@ def build(folder: str | Path, stream, **read_options) -> dict:
     return manifest
 
 
-def open_snapshot(folder: str | Path) -> Store:
-    """The snapshot in ``folder`` for reading: nothing written through it reaches the file."""
+def open_snapshot(folder: str | Path, hidden: Iterable[str] = ()) -> Store:
+    """The snapshot in ``folder`` for reading: nothing written through it reaches the file. The measurements and tonal profiles whose
+    UUIDs are ``hidden`` (withdrawn by their owner) are left out of what this connection sees, the file keeping them as published: a
+    temporary view named ``observation`` stands before the table for every query of this connection only."""
     store = Store(folder)
+    hidden = list(hidden)
+    if hidden:
+        conn = store.conn
+        conn.execute("CREATE TEMP TABLE hidden_record (uuid TEXT PRIMARY KEY)")
+        conn.executemany("INSERT OR IGNORE INTO temp.hidden_record(uuid) VALUES (?)", [(u,) for u in hidden])
+        conn.execute("CREATE TEMP VIEW observation AS SELECT o.* FROM main.observation o WHERE NOT EXISTS ("
+                     "SELECT 1 FROM main.release_record r JOIN temp.hidden_record h ON h.uuid=r.uuid WHERE "
+                     "(r.kind='measurement' AND r.local_id=o.id) OR (r.kind='tone_profile' AND r.local_id=o.pair_id AND r.layer=o.layer_index))")
     store.conn.execute("PRAGMA query_only = ON")
     return store
+
+
+def differences(old: Store, new: Store) -> dict:
+    """What a newer release of a laboratory adds, changes and removes against an older one, by record UUID and digest; counts by kind and
+    the first few UUIDs of each. Both are read in UUID order, so memory does not grow with the releases."""
+    out = {"added": {}, "changed": {}, "removed": {}, "examples": {"added": [], "changed": [], "removed": []}}
+
+    def note(what, kind, record_id):
+        out[what][kind] = out[what].get(kind, 0) + 1
+        if len(out["examples"][what]) < 20:
+            out["examples"][what].append(record_id)
+
+    sql = "SELECT uuid, kind, digest FROM release_record ORDER BY uuid"
+    a, b = old.conn.execute(sql), new.conn.execute(sql)
+    x, y = a.fetchone(), b.fetchone()
+    while x is not None or y is not None:
+        if y is None or (x is not None and x["uuid"] < y["uuid"]):
+            note("removed", x["kind"], x["uuid"])
+            x = a.fetchone()
+        elif x is None or y["uuid"] < x["uuid"]:
+            note("added", y["kind"], y["uuid"])
+            y = b.fetchone()
+        else:
+            if x["digest"] != y["digest"]:
+                note("changed", y["kind"], y["uuid"])
+            x, y = a.fetchone(), b.fetchone()
+    return out
 
 
 def release_of(store: Store) -> dict:

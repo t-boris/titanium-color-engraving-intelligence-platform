@@ -24,16 +24,22 @@ def list_photo_works(request: Request):
 
 @router.post("/photo-works", status_code=201)
 async def create_photo_work(request: Request, width_mm: float = Form(...), name: str | None = Form(None), scale: str | None = Form(None),
-                            picture: UploadFile = File(None)):
+                            source: str | None = Form(None), picture: UploadFile = File(None)):
     """A new work of an uploaded picture (PNG, JPEG ...) ``width_mm`` wide; ``scale`` (JSON, as the list of scales gives a scale's mode)
-    is optional: without it the best measured scale is taken. The work is returned as it opens."""
+    is optional: without it the best measured scale is taken. ``source`` (JSON: a connected laboratory release, its laser and lens, and
+    the own laser and lens the work is engraved with, feature electron) takes the scales from that release. The work is returned as it
+    opens."""
     file_name, data = await read_upload(picture, MAX_IMAGE_BYTES, "picture")
     try:
         wanted = None if scale in (None, "") else json.loads(scale)
     except ValueError:
         raise su.ValidationError("this scale is not measured: choose one of the measured scales") from None
+    try:
+        chosen = None if source in (None, "") else json.loads(source)
+    except ValueError:
+        raise su.ValidationError("choose a laboratory release, its laser, lens and titanium") from None
     s = store_of(request)
-    return photo_work.view(s, photo_work.create(s, data, file_name, name, width_mm, wanted))
+    return photo_work.view(s, photo_work.create(s, data, file_name, name, width_mm, wanted, chosen))
 
 
 @router.get("/photo-works/{plan_id}")
@@ -69,6 +75,16 @@ def photo_work_palette(plan_id: int, request: Request):
 @router.post("/photo-works/{plan_id}/copy", status_code=201)
 def copy_photo_work(plan_id: int, request: Request, body: dict | None = None):
     return {"id": photo_work.copy_work(store_of(request), plan_id, (body or {}).get("name"))}
+
+
+@router.post("/photo-works/{plan_id}/source")
+def photo_work_source(plan_id: int, request: Request, body: dict | None = None):
+    """Preview, or with ``confirm`` make, an update of the laboratory release a work is pinned to (``release_id``, ``laser``, ``lens``;
+    by default its laboratory's current release), or go back to its earlier source (``back``): see photo_work.source_change."""
+    body = dict(body or {})
+    s = store_of(request)
+    preview = photo_work.source_change(s, plan_id, body, confirm=bool(body.pop("confirm", False)))
+    return {**preview, "work": photo_work.view(s, plan_id)}
 
 
 @router.post("/photo-works/{plan_id}/rename")

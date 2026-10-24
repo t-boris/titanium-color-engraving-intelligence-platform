@@ -39,14 +39,22 @@ async def create_vector_job(request: Request, device_id: int = Form(...), lens_i
                             grey_threshold: float | None = Form(None), tolerance_mm: float | None = Form(None), min_area_mm2: float = Form(0.2),
                             markers: bool = Form(False), clean: bool = Form(False), task: str | None = Form(None),
                             goals: str | None = Form(None), detail: str | None = Form(None), faces: str | None = Form(None),
-                            algorithm: str | None = Form(None), max_time: float | None = Form(None), include_as_shot: bool = Form(False), image: UploadFile = File(None)):
+                            algorithm: str | None = Form(None), max_time: float | None = Form(None), include_as_shot: bool = Form(False),
+                            source: str | None = Form(None), image: UploadFile = File(None)):
     """Trace an uploaded image with a strategy (color, fill, text, line) at a width in mm for one laser, lens and titanium
     stock. ``palette`` is a JSON list of sRGB colours for the colour strategy (else ``n_colors`` are found in the image).
     ``task`` and ``goals`` (a JSON object) are the job's main engraving task (REQ-020); empty: the one its strategy serves.
     The ``photo`` strategy splits a photograph into ``n_colors`` regions by an ``algorithm`` (slic, the default, tonal, planes or seeds) at a
     level of ``detail`` with ``faces`` first, smoothed by ``tolerance_mm`` (``faces`` left out: searched); it always cleans first, and ``threshold``, ``max_time`` (s/cm²) and ``include_as_shot``
-    rule its automatic colouring."""
+    rule its automatic colouring; ``source`` (JSON: a connected laboratory release with its laser, lens and titanium, feature electron)
+    takes its colours from that release. A traced job takes the workshop's own measurements."""
     _, data = await read_upload(image, MAX_IMAGE_BYTES, "image")
+    try:
+        chosen = None if source in (None, "") else json.loads(source)
+    except ValueError:
+        raise su.ValidationError("choose a laboratory release, its laser, lens and titanium") from None
+    if chosen is not None and strategy != vector_job.PHOTO:
+        raise su.ValidationError("a traced work takes the workshop's own measurements: a laboratory release colours a photograph work")
     if strategy == vector_job.PHOTO:
         pid = vector_job.start_photo(store_of(request), device_id, lens_param(lens_id), material_id, data, width_mm, name, threshold=threshold,
                                      n_colors=n_colors, detail=detail or vector_job.DEFAULT_DETAIL,
@@ -54,7 +62,7 @@ async def create_vector_job(request: Request, device_id: int = Form(...), lens_i
                                      tolerance_mm=segment.TOLERANCE_MM if tolerance_mm is None else tolerance_mm,
                                      use_faces=form_flag(faces, True, "face search"),
                                      markers=markers, max_time=max_time, include_as_shot=include_as_shot, task=task or None,
-                                     goals=task_goals(goals))
+                                     goals=task_goals(goals), source=chosen)
         return _view(request, pid)
     try:
         colours = None if palette in (None, "") else [[int(v) for v in rgb] for rgb in json.loads(palette)]
@@ -89,6 +97,16 @@ def vector_engraved(plan_id: int, engraving: str, request: Request, promised: bo
 def copy_vector_job(plan_id: int, request: Request, body: dict | None = None):
     """A work of its own made from this one, to try something else on (see vector_job.copy_work); ``name`` is optional."""
     return {"id": vector_job.copy_work(store_of(request), plan_id, (body or {}).get("name"))}
+
+
+@router.post("/vector/{plan_id}/source")
+def vector_source(plan_id: int, request: Request, body: dict | None = None):
+    """Preview, or with ``confirm`` make, an update of the laboratory release a photograph work is pinned to (``release_id``, ``laser``,
+    ``lens``, ``material``; by default its laboratory's current release), or go back to its earlier source (``back``): see
+    vector_job.source_change."""
+    body = dict(body or {})
+    preview = vector_job.source_change(store_of(request), plan_id, body, confirm=bool(body.pop("confirm", False)))
+    return {**preview, "work": _view(request, plan_id)}
 
 
 @router.post("/vector/{plan_id}/rename")

@@ -4,7 +4,6 @@ palettes, the tonal curves, the scales and the engraving checks made from the re
 by record through the release's UUIDs."""
 from __future__ import annotations
 
-import json
 import math
 import shutil
 import sys

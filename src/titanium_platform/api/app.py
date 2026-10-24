@@ -9,10 +9,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, capability_results, findings, research, work_errors
+from .. import __version__, capability_results, findings, lab_import, research, work_errors
 from ..db import open_store
-from . import (routes_devices, routes_findings, routes_fonts, routes_lenses, routes_palette, routes_photo_work, routes_plans, routes_prediction,
-               routes_research, routes_setup, routes_vector, routes_work)
+from . import (routes_devices, routes_findings, routes_fonts, routes_labs, routes_lenses, routes_palette, routes_photo_work, routes_plans,
+               routes_prediction, routes_research, routes_setup, routes_vector, routes_work)
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -60,6 +60,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
     app = FastAPI(title="Laser Workshop", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
     app.state.store = open_store(data_dir)          # a database the migration refuses ends the start with exit code 2
     capability_results.backfill_findings(app.state.store)
+    lab_import.reconcile(app.state.store)          # what an interrupted connection of a laboratory release left (electron REQ-084)
     install_error_handlers(app)
 
     @app.exception_handler(research.ResearchError)
@@ -77,7 +78,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
 
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
-              routes_findings.router, routes_fonts.router):
+              routes_findings.router, routes_fonts.router, routes_labs.router):
         app.include_router(r)
 
     @app.exception_handler(404)

@@ -92,6 +92,8 @@ def public_plan(plan: dict, with_regions: bool = False) -> dict:
             item["regions"] = regions
         layers.append(item)
     out["layers"] = layers
+    if isinstance(out.get("evidence_source"), dict):        # a pinned work's kept palette is a server file
+        out["evidence_source"] = {k: v for k, v in out["evidence_source"].items() if k != "palette_path"}
     markers = out.get("markers")
     if markers:  # the marker rectangles are file geometry; the UI needs only where they are
         out["markers"] = {"identifier": markers["identifier"], "extent": markers["extent"], "settings": markers["settings"],

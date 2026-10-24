@@ -38,7 +38,7 @@ import cv2
 import numpy as np
 import shapely
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, dot_colours as dc, engraving_time, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -591,11 +591,14 @@ def _segment(plan: dict, picture: np.ndarray, centres: list | None = None) -> di
 def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: int, image_bytes: bytes, width_mm: float, name: str, *,
                 threshold=None, n_colors: int = 12, detail: str = DEFAULT_DETAIL, tolerance_mm: float = seg.TOLERANCE_MM,
                 algorithm: str = seg.DEFAULT_ALGORITHM, use_faces: bool = True, markers: bool = False, max_time: float | None = None, include_as_shot: bool = False,
-                task: str | None = None, goals: dict | None = None) -> int:
+                task: str | None = None, goals: dict | None = None, source: dict | None = None) -> int:
     """Split a photograph into colour regions for one laser, lens and titanium stock and colour every source colour
-    automatically: the fastest measured colour within the delta E tolerance (DEC-075), else the nearest (editor DEC-001)."""
+    automatically: the fastest measured colour within the delta E tolerance (DEC-075), else the nearest (editor DEC-001). With ``source``
+    (a connected laboratory release with the laser, lens and titanium it measured, feature electron REQ-085) the colours are that release's:
+    the work is pinned to it and keeps the palette it was made with."""
     if not (name or "").strip():
         raise cv.ConversionError("give the plan a name")
+    pin = None if source is None else es.pin(store, source)
     setup = su.resolve(store, device_id, lens_id)
     material = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))
     if material is None:
@@ -625,11 +628,14 @@ def start_photo(store: Store, device_id: int, lens_id: int | None, material_id: 
                            "material": {k: material[k] for k in ("id", "name", "family", "grade", "batch", "thickness_mm", "surface")}},
             "markers": cv._plan_markers(identifier, markers, size["width"], size["height"], store),
             "marker_layer": pl.marker_layer_settings(store) if markers else None, "clean_layer": pl.clean_layer(setup["device"]["passport"]),
-            "colouring": None, "variants": [], "undo": [], "redo": [], "exports": [], "regions": [], "layers": [], "weak": []}
+            "colouring": None, "variants": [], "undo": [], "redo": [], "exports": [], "regions": [], "layers": [], "weak": [],
+            "evidence_source": pin, "source_versions": []}
     document = _segment(plan, picture)
     plan["document_path"], plan["document_version"] = _write_document(store, document), 1
     plan["history"] = [{"version": 1, "op": {"op": "split", **_split_op(split)}, "at": now(), "path": plan["document_path"]}]
-    entries = _palette(store, {"device_id": device_id, "lens_id": lens_id, "material_id": material_id})
+    entries = _palette(store, {"device_id": device_id, "lens_id": lens_id, "material_id": material_id, "evidence_source": pin})
+    if pin is not None:
+        pin.update(_kept(store, plan, entries))
     plan["colouring"] = _automatic(plan, document, entries, "closest", 0, _empty_colouring())
     _add_variant(store, plan, document, entries)
     with store.transaction():
@@ -694,9 +700,24 @@ def split_preview(store: Store, plan_id: int, params: dict) -> dict:
 
 
 # -- colouring -------------------------------------------------------------------------------------------------------------
+def _ev(store: Store, plan: dict) -> Store:
+    """The store the job's measured colours and curves are read from: the workshop's, or the snapshot of the laboratory release the job is
+    pinned to (feature electron, REQ-085). A pinned job that keeps its confirmed result is refused with the reason."""
+    return es.require(es.of(store, plan))
+
+
+def _kept(store: Store, plan: dict, entries: list[dict]) -> dict:
+    """The palette a pinned job is confirmed with, kept with every entry's complete recipe (``evidence_source.keep_palette``)."""
+    return es.keep_palette(store, entries, {e["id"]: _recipe(store, plan, e) for e in entries})
+
+
 def _palette(store: Store, plan: dict) -> list[dict]:
-    """Every measured colour of the job's laser, lens and titanium stock that fills an area (DEC-073)."""
-    return palette.vector_palette(store, plan["device_id"], plan["lens_id"], plan["material_id"])["entries"]
+    """Every measured colour that fills an area (DEC-073) of the job's laser, lens and titanium stock, or of the laser, lens and titanium
+    of the laboratory release it is pinned to; a pinned job that cannot be calculated again keeps the palette it was confirmed with."""
+    evidence = es.of(store, plan)
+    if evidence.frozen is not None:
+        return es.kept_palette(evidence.pin)
+    return palette.vector_palette(evidence.store, evidence.device_id, evidence.lens_id, evidence.material_id)["entries"]
 
 
 def _empty_colouring() -> dict:
@@ -748,7 +769,7 @@ def _carried_zones(store: Store, plan: dict, old: dict, new: dict) -> list[dict]
     new_raster = pz.labels(new, {r["id"]: r["loops"] for r in seg.regions_as_loops(new)})
     carried = pz.carried(old, old_raster, new, new_raster, zones)
     loops = {r["id"]: r["loops"] for r in seg.regions_as_loops(seg.smoothed(new, float(plan.get("smoothing_mm", 0.0))))}
-    return [pz.settle(store, plan, zone, pz.width_of(loops, zone["regions"])) for zone in carried]
+    return [pz.settle(_ev(store, plan), plan, zone, pz.width_of(loops, zone["regions"])) for zone in carried]
 
 
 def _add_variant(store: Store, plan: dict, document: dict, entries: list[dict]) -> None:
@@ -1026,10 +1047,13 @@ def _prediction(entry: dict) -> dict | None:
     return {"lab": entry["lab"], "confidence": entry["confidence"], "expected_delta_e": entry["expected_delta_e"], "stability": entry["stability"]}
 
 
-def _recipe(store: Store, entry: dict) -> dict:
+def _recipe(store: Store, plan: dict, entry: dict) -> dict:
     """The complete settings of a palette colour's recipe as its observations store them, sub-layers and every LightBurn
-    tag included (the palette shows only the main ones); all observations of one recipe share them."""
-    row = store.one("SELECT parameters_json FROM observation WHERE id=?", (entry["observation_ids"][0],)) if entry["observation_ids"] else None
+    tag included (the palette shows only the main ones); all observations of one recipe share them. A kept palette carries them."""
+    if entry.get("recipe") is not None:
+        return entry["recipe"]
+    evidence = _ev(store, plan)
+    row = evidence.one("SELECT parameters_json FROM observation WHERE id=?", (entry["observation_ids"][0],)) if entry["observation_ids"] else None
     return json.loads(row["parameters_json"]) if row else entry["parameters"]
 
 
@@ -1040,7 +1064,7 @@ def _export_layers(store: Store, plan: dict, state: dict) -> list[dict]:
     out = []
     for n, layer in enumerate(state["layers"]):
         entry = state["by_id"][layer["entry_id"]]
-        out.append({"index": first + n, "name": _layer_name(first + n, entry), "entry_id": entry["id"], "parameters": _recipe(store, entry),
+        out.append({"index": first + n, "name": _layer_name(first + n, entry), "entry_id": entry["id"], "parameters": _recipe(store, plan, entry),
                     "mode": entry["mode"], "cut_type": entry["mode"] or "Scan", "prediction": _prediction(entry), "knowledge_id": None,
                     "stage": None, "questioned": False, "basis": entry["basis"], "lab": entry["lab"], "srgb": entry["srgb"],
                     "time_s_per_cm2": entry["time_s_per_cm2"], "regions": [], "region_ids": layer["region_ids"], "texts": layer.get("texts", []),
@@ -1082,7 +1106,9 @@ def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], firs
     rows, DEC-107), its area and box, its scale's curve at that width with the dots of a dot kind (their measured tones when that kind was
     photographed), the settings and the time of its layer; or why it cannot be engraved (``problem``: its scale is not measured there). The
     row's zone has every setting (``photo_zones.full``). What the inscriptions ``cut`` out of a zone is not engraved by it: its area and time
-    leave it out."""
+    leave it out. The zones of a pinned job that keeps its confirmed result are not calculated again: their problem says why."""
+    source = es.of(store, plan)
+    evidence = source.store
     loops = _zone_loops(plan)
     rows = []
     for n, zone in enumerate(pz.full(z) for z in zones):
@@ -1092,11 +1118,13 @@ def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], firs
         row = {"zone": zone, "number": zone["number"], "index": first + n, "width_mm": width, "area_mm2": area,
                "box": box, "curve": None, "measured": None, "dots": None, "parameters": None, "time": None, "problem": None}
         try:
-            curve = pz.curve(store, plan, zone, width)[0]
-            p = pz.parameters(store, plan, zone, width)
+            if source.frozen is not None:
+                raise PredictionError(source.frozen)
+            curve = pz.curve(evidence, plan, zone, width)[0]
+            p = pz.parameters(evidence, plan, zone, width)
             if pz.dotted(zone):
-                row["dots"] = st.dots(store, {**zone, "dot_power": p["power"]}, curve)
-                row["measured"] = pz.measured_dots(store, plan, zone, zone["kind"], p["power"], width)
+                row["dots"] = st.dots(evidence, {**zone, "dot_power": p["power"]}, curve)
+                row["measured"] = pz.measured_dots(evidence, plan, zone, zone["kind"], p["power"], width)
             row.update(curve=curve, parameters=p, time={**pz.time_layer(plan, zone, document, loops, first + n, p), "area_mm2": area})
         except PredictionError as exc:
             row["problem"] = str(exc)
@@ -1141,6 +1169,7 @@ def _photo_op(store: Store, plan: dict, document: dict, colouring: dict, kind: s
     zones = copy.deepcopy(pz.zones(colouring))
     loops = _zone_loops(plan)
     try:
+        evidence = _ev(store, plan)
         if kind in ("photo_add", "photo_remove"):
             ids = _region_list(document, op.get("regions"))
             chosen = set(ids)
@@ -1149,21 +1178,21 @@ def _photo_op(store: Store, plan: dict, document: dict, colouring: dict, kind: s
                 if zone is not target and chosen & set(zone["regions"]):
                     zone["regions"] = [r for r in zone["regions"] if r not in chosen]
                     if zone["regions"]:
-                        pz.settle(store, plan, zone, pz.width_of(loops, zone["regions"]))
+                        pz.settle(evidence, plan, zone, pz.width_of(loops, zone["regions"]))
             if kind == "photo_add":
                 if target is None:
-                    zones.append(pz.new_zone(store, plan, {"photo": zones}, ids, pz.width_of(loops, ids)))
+                    zones.append(pz.new_zone(evidence, plan, {"photo": zones}, ids, pz.width_of(loops, ids)))
                 else:
                     inside = set(target["regions"]) | chosen
                     target["regions"] = [r["id"] for r in document["regions"] if r["id"] in inside]
-                    pz.settle(store, plan, target, pz.width_of(loops, target["regions"]))
+                    pz.settle(evidence, plan, target, pz.width_of(loops, target["regions"]))
                 colouring["excluded_regions"] = [r for r in colouring["excluded_regions"] if r not in chosen]
         elif kind == "photo_set":
             zone = pz.find({"photo": zones}, op.get("zone"))
             changes = {k: v for k, v in op.items() if k not in ("op", "zone")}
             if not changes:
                 raise cv.ConversionError("say what to change in the photo zone")
-            zones[zones.index(zone)] = pz.changed(store, plan, zone, changes, pz.width_of(loops, zone["regions"]))
+            zones[zones.index(zone)] = pz.changed(evidence, plan, zone, changes, pz.width_of(loops, zone["regions"]))
         else:
             zones.remove(pz.find({"photo": zones}, op.get("zone")))
     except (pz.ZoneError, PredictionError, su.ValidationError) as exc:
@@ -1209,7 +1238,7 @@ def _zone_picture(store: Store, plan: dict, row: dict) -> rc.Picture:
     zone = row["zone"]
 
     def draw() -> bytes:
-        return pz.to_png(pz.look(store, plan, zone, _zone_cut(plan, zone), row["curve"])[0])
+        return pz.to_png(pz.look(_ev(store, plan), plan, zone, _zone_cut(plan, zone), row["curve"])[0])
     return rc.Picture(store, f"vector-{plan['id']}", pz.key(plan, zone, row["curve"], row["measured"]), draw)
 
 
@@ -1217,12 +1246,13 @@ def zone_kinds(store: Store, plan_id: int, number) -> dict:
     """«Вид» of a photo zone: every kind that colours titanium with the zone as it would come out in it (the tiles), the one it has
     marked; a dot kind at the zone's dots' power, estimated from the scale until that kind was photographed there."""
     plan, zone, row = _zone_of_work(store, plan_id, number)
+    evidence = _ev(store, plan)
     width, curve = row["width_mm"], row["curve"]
-    power = ps.dot_power_at(store, pz.mode_of(plan, zone), width, zone.get("dot_power"))
-    dots = st.dots(store, {**zone, "dot_power": power}, curve)
+    power = ps.dot_power_at(evidence, pz.mode_of(plan, zone), width, zone.get("dot_power"))
+    dots = st.dots(evidence, {**zone, "dot_power": power}, curve)
     out = []
     for kind in pz.KINDS:
-        measured = pz.measured_dots(store, plan, zone, kind, power, width) if kind != pz.GRAYSCALE else None
+        measured = pz.measured_dots(evidence, plan, zone, kind, power, width) if kind != pz.GRAYSCALE else None
         shown = {**zone, "kind": kind, "dot_power": power}
         entry = {"key": kind, "family": pz.photo_modes.MODES[kind].family, "basis": pz.photo_modes.MODES[kind].basis,
                  "estimate": kind != pz.GRAYSCALE and measured is None,
@@ -1239,14 +1269,15 @@ def zone_kinds(store: Store, plan_id: int, number) -> dict:
 def zone_kind_picture(store: Store, plan_id: int, number, kind: str) -> rc.Picture:
     """The photo zone as it would come out in ``kind`` (:func:`zone_kinds`), the longer side ``photo_zones.TILE_PX``."""
     plan, zone, row = _zone_of_work(store, plan_id, number)
+    evidence = _ev(store, plan)
     if kind not in pz.KINDS:
         raise KeyError(f"no kind of engraving {kind!r}")
-    power = ps.dot_power_at(store, pz.mode_of(plan, zone), row["width_mm"], zone.get("dot_power"))
+    power = ps.dot_power_at(evidence, pz.mode_of(plan, zone), row["width_mm"], zone.get("dot_power"))
     shown = {**zone, "kind": kind, "dot_power": power}
-    measured = pz.measured_dots(store, plan, zone, kind, power, row["width_mm"]) if kind != pz.GRAYSCALE else None
+    measured = pz.measured_dots(evidence, plan, zone, kind, power, row["width_mm"]) if kind != pz.GRAYSCALE else None
 
     def draw() -> bytes:
-        return pz.to_png(pz.look(store, plan, shown, _zone_cut(plan, zone), row["curve"], px=pz.TILE_PX)[0])
+        return pz.to_png(pz.look(evidence, plan, shown, _zone_cut(plan, zone), row["curve"], px=pz.TILE_PX)[0])
     return rc.Picture(store, f"vector-{plan['id']}", pz.key(plan, shown, row["curve"], measured, px=pz.TILE_PX), draw)
 
 
@@ -1257,6 +1288,7 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
     its changes are steps of, and whether the AI may run and see the picture (the work's permission, DEC-084); the zone's picture beside its
     predicted look with what is said about it, or why there is none (``problem``: its scale is not measured at its width)."""
     plan, row = _zone_found(store, plan_id, number)
+    evidence = _ev(store, plan)
     zone = row["zone"]
     mode = pz.mode_of(plan, zone)
     base = f"/api/vector/{plan['id']}/photo/{zone['number']}"
@@ -1269,21 +1301,21 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
         return {**out, "picture": None}
     found = _zone_cut(plan, zone)
     width = found["box"]["width"]
-    sizes = ps.curve_for(store, mode, width)[1]["sizes"]
+    sizes = ps.curve_for(evidence, mode, width)[1]["sizes"]
     common = {"scale_size": dict(row["curve"].size), "scale_sizes": sizes, "time": out["time"], "dpi": out["dpi"],
               "size_mm": {"width": round(found["box"]["width"], 2), "height": round(found["box"]["height"], 2)}}
     key = _zone_preview_key(plan, row)
     if pz.dotted(zone):
         state = {**zone, "dot_power": zone["dot_power"] if zone.get("dot_recipe") else row["parameters"]["power"]}
         grey = st.toned(found, state)["picture"]
-        rgb8, dots = st.dot_look(store, mode, grey, found["alpha"], state, width, row["curve"], row["measured"])
+        rgb8, dots = st.dot_look(evidence, mode, grey, found["alpha"], state, width, row["curve"], row["measured"])
         _keep(store, plan, key, lambda: pz.side_by_side(grey, rgb8, found["alpha"]))
         rows, cols = found["picture"].shape
         out["picture"] = {**common, "kind": zone["kind"], "dots": dots, "estimate": row["measured"] is None, "span": list(row["curve"].span),
                           "shown": {"width": cols, "height": rows}, "preview": f"{base}/preview.png?v={key[:16]}",
                           "closeup": f"{base}/closeup.png?v={key[:16]}", "closeup_mm": ps.CLOSEUP_MM, "closeup_px": ps.CLOSEUP_PX}
         return out
-    shown = st.engraved(st.item(store, mode, found, zone, f"zone {zone['number']}", width), zone)
+    shown = st.engraved(st.item(evidence, mode, found, zone, f"zone {zone['number']}", width), zone)
     info, rgb8 = ps.predicted(shown, *ps.check_power_range(zone["min_power"], zone["max_power"]))
     _keep(store, plan, key, lambda: pz.side_by_side(shown["picture"], rgb8, found["alpha"]))
     out["picture"] = {**info, **common, "by_colour": zone["by_colour"], "colour_choice": zone["colour_choice"], "contours": zone["contours"],
@@ -1292,10 +1324,11 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
     return out
 
 
-def zone_dot_setup(store: Store, plan_id: int, number) -> str:
-    """The laser and lens of the work as the colour map keys them: the map the colour of a zone's dots is picked on (0.27.0)."""
+def zone_dot_map(store: Store, plan_id: int, number) -> tuple[Store, str]:
+    """The map the colour of a zone's dots is picked on (0.27.0): the measurements of the work's source and its laser and lens as the colour
+    map keys them."""
     plan, _ = _zone_found(store, plan_id, number)
-    return su.setup_key(plan["device_id"], plan["lens_id"])
+    return _ev(store, plan), su.setup_key(*es.setup_of(plan))
 
 
 def zone_dot_colours(store: Store, plan_id: int, number, points: list[dict]) -> dict:
@@ -1303,14 +1336,15 @@ def zone_dot_colours(store: Store, plan_id: int, number, points: list[dict]) -> 
     kind, width, laser and lens and titanium) and each colour of the map's ``points`` with what it gives the dots or why it cannot
     (``dot_colours.options`` on the zone's scale at its width)."""
     plan, row = _zone_found(store, plan_id, number)
+    evidence = _ev(store, plan)
     zone = row["zone"]
     mode = pz.mode_of(plan, zone)
-    material = store.one("SELECT id, name, family, grade, batch, thickness_mm FROM material_profile WHERE id=?", (mode.material_id,)) \
+    material = evidence.one("SELECT id, name, family, grade, batch, thickness_mm FROM material_profile WHERE id=?", (mode.material_id,)) \
         if mode.material_id else None
     return {"work": {"id": plan["id"], "name": plan["name"], "zone": zone["number"], "kind": zone["kind"], "width_mm": round(row["width_mm"], 2),
                      "device_id": mode.device_id, "lens_id": mode.lens_id, "material": dict(material) if material else None,
                      "dot_recipe": zone["dot_recipe"]},
-            **dc.options(store, mode, row["width_mm"], points)}
+            **dc.options(evidence, mode, row["width_mm"], points)}
 
 
 def _zone_preview_key(plan: dict, row: dict) -> str:
@@ -1336,9 +1370,9 @@ def zone_preview(store: Store, plan_id: int, number) -> rc.Picture:
         if pz.dotted(zone):
             state = {**zone, "dot_power": zone["dot_power"] if zone.get("dot_recipe") else row["parameters"]["power"]}
             grey = st.toned(found, state)["picture"]
-            rgb8 = st.dot_look(store, mode, grey, found["alpha"], state, width, row["curve"], row["measured"])[0]
+            rgb8 = st.dot_look(_ev(store, plan), mode, grey, found["alpha"], state, width, row["curve"], row["measured"])[0]
             return pz.to_png(pz.side_by_side(grey, rgb8, found["alpha"]))
-        shown = st.engraved(st.item(store, mode, found, zone, f"zone {zone['number']}", width), zone)
+        shown = st.engraved(st.item(_ev(store, plan), mode, found, zone, f"zone {zone['number']}", width), zone)
         _, rgb8 = ps.predicted(shown, *ps.check_power_range(zone["min_power"], zone["max_power"]))
         return pz.to_png(pz.side_by_side(shown["picture"], rgb8, found["alpha"]))
     return rc.Picture(store, f"vector-{plan['id']}", _zone_preview_key(plan, row), draw)
@@ -1353,7 +1387,7 @@ def zone_closeup(store: Store, plan_id: int, number) -> rc.Picture:
     def draw() -> bytes:
         found = _zone_cut(plan, zone)
         dots = row["dots"]
-        item = st.item(store, pz.mode_of(plan, zone), found, zone, f"zone {zone['number']}", found["box"]["width"])
+        item = st.item(_ev(store, plan), pz.mode_of(plan, zone), found, zone, f"zone {zone['number']}", found["box"]["width"])
         return prediction.to_png(ps.dot_closeup(item, zone["kind"], dots["lab"], dots["clean_lab"], found["box"]["width"], pz.fired(plan, zone)))
     return rc.Picture(store, f"vector-{plan['id']}", rc.key_of({"kind": "vector-photo-zone-closeup", "of": pz.key(plan, zone, row["curve"], None)}), draw)
 
@@ -1401,7 +1435,7 @@ def plan_zones(store: Store, plan: dict) -> list[dict]:
 
 def _zone_layers(store: Store, plan: dict, rows: list[dict], cut=None) -> list[dict]:
     """The Image layer of every photo zone for the file (:func:`photo_zones.file_layer`), transparent where the inscriptions ``cut`` it."""
-    return [pz.file_layer(store, plan, row["zone"], _uncut(_zone_cut(plan, row["zone"]), cut), row["index"]) for row in rows]
+    return [pz.file_layer(_ev(store, plan), plan, row["zone"], _uncut(_zone_cut(plan, row["zone"]), cut), row["index"]) for row in rows]
 
 
 def _uncut(found: dict, cut) -> dict:
@@ -1464,6 +1498,43 @@ def _attention(plan: dict, state: dict, entries: list[dict], settings: dict) -> 
                              {layer["entry_id"] for layer in state["layers"]}, approximate)
 
 
+def _used(state: dict, colouring: dict) -> set[str]:
+    """The titanium colours a photograph job uses: of its colours, its regions and its inscriptions."""
+    by_id = state["by_id"]
+    return ({c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
+            | {t[k] for t in _texts(colouring) for k in lettering.ENTRIES if t[k] in by_id})
+
+
+def source_change(store: Store, plan_id: int, request: dict | None, confirm: bool = False) -> dict:
+    """Update the source of a photograph job pinned to a laboratory release (feature electron REQ-085), an explicit step: to the release
+    ``request`` names (by default the current release of its laboratory with the same laser, lens and titanium), or back to the source it
+    had before (``{"back": true}``). Without ``confirm`` nothing changes and the preview says what would: each colour the job uses with
+    its colour before and after and their ΔE or that it is not measured there any more, and every photo zone whose scale the new source
+    does not measure. Confirmed, the job keeps its choices (a colour gone is shown missing), records the step in its history and keeps the
+    earlier source to go back to."""
+    plan = _photo_job(store, plan_id)
+    back = isinstance(request, dict) and bool(request.get("back"))
+    new = es.previous_pin(plan) if back else es.next_pin(store, plan, request)
+    trial = {**plan, "evidence_source": new}
+    document = _document(plan)
+    before, after = _palette(store, plan), _palette(store, trial)
+    state = _state(plan, document, before, _inscribed(store, plan, before))
+    zones = []
+    for row in _zone_rows(store, trial, document, state["zones"], _first_zone(plan, state), state["cut"]):
+        zones.append({"zone": row["number"], "problem": row["problem"]})
+    preview = {"from": es.shown(store, plan), "to": es.summary(store, new), "back": back, **es.compared(before, after, _used(state, plan["colouring"])),
+               "zones": zones}
+    if not confirm:
+        return preview
+    plan["source_versions"] = es.moved(plan, new, back)
+    plan["evidence_source"] = new if back else {**new, **_kept(store, trial, after)}
+    plan["history"].append({"version": plan["document_version"], "op": {"op": "source", "release_id": new["release_id"], "back": back}, "at": now()})
+    with store.transaction():
+        _photo_refresh(store, plan, document, after)
+        store.audit("vector_work_source", plan_id=plan["id"], release_id=new["release_id"], back=back)
+    return preview
+
+
 def photo_view(store: Store, plan: dict) -> dict:
     """A photograph job as its screen shows it: the split's settings, counts and important areas, every source colour
     with its titanium colour and status, the colours beyond the tolerance (``outside``) and the regions whose colour is no
@@ -1473,16 +1544,15 @@ def photo_view(store: Store, plan: dict) -> dict:
     entries = _palette(store, plan)
     state = _state(plan, document, entries, _inscribed(store, plan, entries))
     by_id, colouring, settings = state["by_id"], plan["colouring"], plan["colour_settings"]
-    used = ({c["entry_id"] for c in state["colours"] if c["entry_id"]} | {e for e in colouring["regions"].values() if e in by_id}
-            | {t[k] for t in _texts(colouring) for k in lettering.ENTRIES if t[k] in by_id})
+    used = _used(state, colouring)
     layers = _export_layers(store, plan, state)
     zones = _zone_rows(store, plan, document, state["zones"], _first_zone(plan, state), state["cut"])
     hidden = ("document_path", "history", "exports", "undo", "redo", "variants", "colouring", "detected", "regions", "weak", "layers",
-              "unresolved", "ai_photo", "counts")
+              "unresolved", "ai_photo", "counts", "evidence_source", "source_versions")
     out = {k: v for k, v in plan.items() if k not in hidden}
     found = plan["detected"]
     out.update(
-        strategy=PHOTO,
+        strategy=PHOTO, source=es.shown(store, plan),
         split={**plan["split"], "algorithm": plan["split"].get("algorithm", seg.DEFAULT_ALGORITHM),   # made before the choice: slic
                "adjusted": plan["split"].get("adjusted", [])},                                       # made before 0.28.0: none
         document={**{k: document[k] for k in ("size_mm", "px_mm", "image_px", "n_colors", "min_area_mm2", "tolerance_mm", "superpixels",
@@ -1526,6 +1596,9 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     if blocker is not None:
         raise cv.ConversionError(blocker)
     layers = _export_layers(store, plan, state)
+    pictures = _zone_layers(store, plan, zones, state["cut"])
+    if es.pin_of(plan) is not None:              # the release's settings on the own laser (feature electron REQ-085)
+        es.own_limits(store, plan["device_id"], [(layer["name"], layer["parameters"]) for layer in layers + pictures])
     key = {region: layer["layer_keys"][0] for layer in layers for region in layer["region_ids"]}
     regions = []
     for r in seg.regions_as_loops(_joined(_geometry(plan), {k: v for k, v in key.items() if k not in state["trimmed"]})):
@@ -1538,7 +1611,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     for entry_id, found in state["text_shapes"].items():        # the letters and backings on the layer of their colour
         regions += [{"id": None, "loops": shape, "strokes": [], "layer_key": f"e{entry_id}"} for part in found for shape in lettering.shapes(part)]
     plan["export_mirror_y"] = EXPORT_MIRROR_Y
-    data = pl.export_lbrn2({**plan, "layers": layers + _zone_layers(store, plan, zones, state["cut"]), "vector_document": {"regions": regions}})
+    data = pl.export_lbrn2({**plan, "layers": layers + pictures, "vector_document": {"regions": regions}})
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
     plan["layers"] = layers
