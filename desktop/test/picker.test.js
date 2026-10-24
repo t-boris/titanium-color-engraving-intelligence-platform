@@ -31,7 +31,7 @@ test('a folder is a workshop, empty, missing or something else', () => {
 
 test('the start screen offers the last workshop, the console application one and recent ones, each once, only when they exist', () => {
   const fsx = tree({'/home/.titanium-platform/titanium.sqlite': 'file', '/last/titanium.sqlite': 'file', '/gone': 'dir'});
-  const settings = {lastWorkshop: '/last', recentWorkshops: ['/last', '/gone', '/home/.titanium-platform']};
+  const settings = {lastWorkshop: '/last', recentWorkshops: ['/last', '/gone', path.join('/home', '.titanium-platform')]};
   const offered = picker.choices({settings, home: '/home', exists: fsx.exists, readdir: fsx.readdir, stat: fsx.stat});
   assert.deepEqual(offered.map((c) => [c.folder, c.why]), [['/last', 'last'], [path.join('/home', '.titanium-platform'), 'console']]);
   const none = picker.choices({settings: picker.DEFAULTS, home: '/elsewhere', exists: () => false, readdir: () => [], stat: () => ({isDirectory: () => true})});
