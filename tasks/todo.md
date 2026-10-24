@@ -2212,3 +2212,49 @@ are computed from it (memoised) and applied where the work is drawn, timed and w
       tabs T1 and T2 reloaded, «Надписи» there, console clean. No inscription was added to the live data. The copy on 8791 stopped.
   Not built: a path drawn freehand or taken from the picture's contours (points only); no warning where letters crowd in a tight bend
   of a path; letters go to LightBurn as outlines, not as editable text. DEC-004 and DEC-005 await the operator.
+
+## 0.27.0: the dots of a photo zone take a colour of the colour map; brightness, contrast and gamma of the picture (operator, 2026-10-24)
+The operator, on «Яня портрет - 1» (work 41), photo zone 2 in Jarvis: «я не могу выбрать цвет … не могу сделать темнее, светлее».
+Found (read only on 8765): the zone's dots sit on its scale 128 mm/s · 60 kHz · 300 ns, measured 6.1..14.3 %, where every power is
+nearly black (L* 4..7): the strip under «Точки, %» offers only blacks, and the zone has no «Цвет с карты» (D6 of 0.25, postponed four
+times). Nothing anywhere makes a picture lighter or darker before LightBurn turns it into dots.
+Answers 2026-10-24: brightness, contrast and gamma (LightBurn's three names); for the dot kinds and for grayscale when «Подобрать серые
+под цвета» is off (the picture's own greys); the dots' colour of a zone picked on the colour map as a photo work's (button on the zone
+screen and on the zone's card in «Фото»).
+Design: the tone is part of the state (`tone`: brightness -100..100 %, contrast -100..100 %, gamma 0.2..5; default 0, 0, 1) and is
+applied to the picture's greys (`prediction.adjust_grey`, the formulas already used for LightBurn files) before anything is drawn,
+dithered or written: the look, the close-up, the tiles and the file's picture show the same greys; LightBurn's own adjustments stay at
+their defaults, so nothing is applied twice. Grayscale with colours chosen by the picture keeps the tone and does not use it.
+- [x] T1. `photo_state`: `tone` (DEFAULTS, SETTINGS, checked in `change` by `tone_in`), `tone_used(state)`, `toned(upload, state)` (picture
+      and grey_full adjusted, memoised by the upload and the tone; a toned upload keeps `untoned`, so nothing is toned twice).
+- [x] T2. Photo work: tone kept and undone (DATA, STATE; an older undo step reads the default); the picture toned where it is cut
+      (`_cut_upload` callers), keys of every picture with the tone, the file's picture toned; layer text.
+- [x] T3. Photo zone: tone in its settings (copied to a new zone, undone with the editor); look, preview, close-up, tiles and file
+      layer toned; key with the tone.
+- [x] T4. Photo zone dots from the colour map (D6): `dot_colour` in `photo_zones.changed` (`dot_colours.picked`: a tone of a scale
+      moves the zone to that scale and power, a fill keeps `dot_recipe`); a power or a scale returns the dots to the scale; a new width
+      takes the recipe's colour there (`at_width`); the file layer, its DPI, the time, the dots, the measured tones and the key at the
+      recipe's settings. API `/api/colors?dots=<work>&zone=<n>`.
+- [x] T5. UI: «Яркость», «Контраст», «Гамма» and «Как есть» in the shared picture panel (photo work and zone screen), off with a note in
+      grayscale with colours by the picture, hidden while nothing can be predicted; the zone screen's «Цвет с карты» / «Другой цвет» / «На шкалу»; the colour map's picking
+      strip and «Точки этим цветом» for a zone (back to where it was opened: the zone screen or the editor); the zone's card in «Фото»:
+      the dots' colour and «Цвет с карты».
+- [x] T6. Tests first for each (state, file read back, undo, API, node UI of both screens and the card), translations of new server texts.
+- [x] T7. Walk on a copy (8791) of work 41 zone 2 and photo work 37: pick a colour on the map, move the sliders, compare the preview
+      with the file read back, timings warm, console; README, MarkView REQ/DEC, 0.27.0, full suite (-n 12), deploy after a backup, report.
+
+Review (2026-10-24). Walked on a copy of the data (database and files, every stored path rewritten into the copy, port 8791, tab «ТЕСТ:
+копия данных, порт 8791 (не настоящее приложение)»), then the copy stopped:
+- Work 41 zone 2: «Цвет с карты» opened the map for the zone (170 fills and 314 scale tones of laser 1 / lens 2 can be the dots); a blue
+  fill (60 % · 250 mm/s · 300 kHz · 2 ns, step 0.01 mm) came back to the zone screen with «Другой цвет» / «На шкалу», the time 56 min;
+  from the editor's card a scale tone moved the zone to 150 mm/s · 250 ns at 14.38 % and came back to the editor's «Фото». The file read
+  back: Image layer, Jarvis, Min = Max = the fill's power, its speed, frequency, pulse, step, DPI 25.4/step; LightBurn's Bitmap settings 0/0/1.
+- Tone on the zone: brightness +20 → struck dots 44.9 % → 24.8 %, gamma 0.7 → 34.6 %; the file's greys = adjust_grey(plain) ±1. One
+  request per slider drag (1.5 s on the 150 mm zone, the same as an old dot-power change); the map in picking mode 0.52 s warm.
+- Work 37 (grayscale, greys by colour): sliders off with the note, the file unchanged; with own greys the file = toned ±0; Jarvis
+  brightness +20 → 37 % struck against 56 %; six undos back to as it was. Console and server log clean.
+- Found on the way: the sliders were 30 px wide (label, slider and number in a 190 px cell) → each name with its number above a full-width
+  slider; the tone was shown while the scale is not measured → hidden, like the power sliders.
+- Memory: the app process grows to about 2 GB after work on the 150 mm zone; main (0.26.0) does the same (1.9 GB for the same steps), the
+  tone memo adds about 0.1 GB. Not changed; reported to the operator.
+- Full suite: 1909 passed, none skipped (-n 12, 3 min).

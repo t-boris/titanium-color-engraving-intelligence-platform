@@ -2,7 +2,8 @@
    на измеренной шкале или видом точками (Джарвис и другие) — вместо плоских цветов титана, и картина выходит частью векторной, частью
    фотогравировкой. Вкладка «Фото» редактора: каждая фотозона с видом гравировки (плитки зоны в каждом виде — щелчок выбирает), шкалой
    серого (палитрой: у каждой измеренной шкалы полоса её цветов, щелчок выбирает), Min и Max или мощностью точек и «Цветами по картинке»;
-   «Открыть» показывает зону на своём экране, как работу фотогравировки (vector-zone.js, 0.23.0). Каждое изменение — одно действие
+   цвет точек — со шкалы или с карты цветов («Цвет с карты», 0.27.0); «Открыть» показывает зону на своём экране, как работу фотогравировки
+   (vector-zone.js, 0.23.0), там же яркость, контраст и гамма картинки. Каждое изменение — одно действие
    редактора: оно отменяется и повторяется, как любое другое. Картинку зоны на рисунке работы показывает редактор (vector-editor.js). */
 'use strict';
 const VectorPhoto = (() => {
@@ -21,7 +22,10 @@ const VectorPhoto = (() => {
   const layerOf = (zone) => (zone.index == null ? '' : `C${String(zone.index).padStart(2, '0')}`);
   /** Что зона выжжет — коротко, для заголовка и строки слоя. */
   const zoneSummary = (zone) => [layerOf(zone), kindName(zone.kind),
-    dotted(zone) ? `точки ${value(zone.dot_power)} %` : `${value(zone.min_power)}–${value(zone.max_power)} %`].filter(Boolean).join(' · ');
+    !dotted(zone) ? `${value(zone.min_power)}–${value(zone.max_power)} %`
+      : zone.dot_recipe ? `точки ${value(zone.dot_recipe.settings.power)} % с карты цветов` : `точки ${value(zone.dot_power)} %`,
+    zone.tone_used ? `яркость ${value(zone.tone.brightness, 0)} %, контраст ${value(zone.tone.contrast, 0)} %, гамма ${value(zone.tone.gamma, 2)}` : null]
+    .filter(Boolean).join(' · ');
   const CHOICE = {drawing: 'рисунок сохранён', nearest: 'ближайший цвет', objects: 'раскраска по объектам'};
   /** Как подобраны серые зоны (0.23.0) — коротко, как у работы фотогравировки; у вида точками — ничего: точка бьёт на одной мощности. */
   const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'серые самой картинки'
@@ -140,11 +144,24 @@ const VectorPhoto = (() => {
     function powers(zone) {
       const number = (label, start, min, max) => h('input', {type: 'number', step: '0.1', min, max, value: start, 'aria-label': label});
       if (dotted(zone)) {
+        const swatches = zone.dots ? h('span', {class: 'small muted'}, h('span', {class: 'sw', style: `background:${zone.dots.hex}`}), ' точка на ',
+          h('span', {class: 'sw', style: `background:${zone.dots.clean_hex}`}), ' чистом титане') : null;
+        const recipe = zone.dot_recipe;
+        const toMap = btn(recipe ? 'Другой цвет' : 'Цвет с карты', () => go(DotPick.zoneAddress(j, zone.number, 'editor')), 'btn-small');
+        toMap.setAttribute('title', `Открыть карту цветов и выбрать там любой измеренный цвет для точек фотозоны ${zone.number}: точки будут бить на настройках этого цвета`);
+        if (recipe) {
+          const back = btn('На шкалу', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: zone.dot_power}), 'btn-small');
+          back.setAttribute('title', `Вернуть точки на шкалу зоны при ${value(zone.dot_power)} %`);
+          return h('div', {class: 'vp-powers'},
+            h('p', {class: 'small'}, `Точки с карты цветов: ${value(recipe.settings.power)} % · ${settingsText(recipe.settings)} · ${stepText(recipe.settings)}`),
+            h('div', {class: 'row small'}, swatches, toMap, back),
+            recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: выберите другой или верните точки на шкалу.') : null,
+            h('p', {class: 'small muted'}, 'Каждая точка бьёт на настройках этого цвета; тон — сколько точек. В файле Min = Max.'));
+        }
         const power = number(`Мощность точек фотозоны ${zone.number}, %`, zone.dot_power, zone.span ? zone.span[0] : 0, zone.span ? zone.span[1] : 100);
         power.addEventListener('change', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: Number(power.value)}));
-        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power),
-          zone.dots ? h('span', {class: 'small muted'}, h('span', {class: 'sw', style: `background:${zone.dots.hex}`}), ' точка на ',
-            h('span', {class: 'sw', style: `background:${zone.dots.clean_hex}`}), ' чистом титане') : null,
+        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power), swatches,
+          h('div', {class: 'row small'}, toMap, h('span', {class: 'muted'}, 'любой измеренный цвет этого лазера и титана')),
           h('p', {class: 'small muted'}, 'Каждая точка бьёт на этой мощности; тон — сколько точек. В файле Min = Max.'));
       }
       const low = number(`Min мощность фотозоны ${zone.number}, %`, zone.min_power, 0, 100);

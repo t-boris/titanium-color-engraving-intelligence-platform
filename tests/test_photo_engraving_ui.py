@@ -363,12 +363,13 @@ def test_changes_are_sent_one_after_another_in_their_order_and_the_last_one_is_s
 @node
 def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be_chosen(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.opened = {chosen: chosen(tree), text: tree.textContent, sliders: tree.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'range' && !i.closest('li.ge-object')).length};
+  out.opened = {chosen: chosen(tree), text: tree.textContent, sliders: tree.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'range' && !i.closest('li.ge-object')
+    && !i.closest('.ge-tone')).length, tone: tree.querySelector('.ge-tone').hidden};
   await tree.querySelectorAll('button.ge-scale')[1].dispatch('click'); await settle(); await wait(300); await settle();
   out.saves = saves(); out.chosen = chosen(tree); out.powers = powers(tree); out.shown = shown(tree);
 """, work={"scale": {**mode(999)}, "problem": "no colour has been measured at this mode: there is nothing to predict from"})
     opened = out["opened"]
-    assert opened["chosen"] == [False, False] and opened["sliders"] == 0
+    assert opened["chosen"] == [False, False] and opened["sliders"] == 0 and opened["tone"]               # nothing to predict: no powers, no tone
     assert "В этом режиме цвет ещё не измерялся" in opened["text"] and "Шкала этой работы не измерена: выберите шкалу слева." in opened["text"]
     assert out["saves"] == [{"scale": mode(100)}] and out["chosen"] == [False, True] and out["powers"] == ["2", "25"]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=1"
@@ -662,3 +663,16 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
     assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
     assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Цвет с карты", "slider": "12.5", "mark": True,
                            "title": "100 мм/с · 60 кГц · 250 нс · шаг 0,0254 мм (1000 dpi) · проходов 1"}
+
+
+@node
+def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in_its_details(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее';
+  const brightness = labelled(tree, B);
+  const work = tree.querySelector('.ge-tone').parentNode; out.under = [work.className, work.children.indexOf(tree.querySelector('.ge-tone')) - work.children.indexOf(tree.querySelector('.ge-inputs'))];
+  brightness.value = '-15'; await brightness.dispatch('change'); await wait(350); await settle();
+  out.saves = saves();
+  out.said = tree.textContent.includes('Картинка изменена: яркость -15 %, контраст 0 %, гамма 1.');
+""", work={"kind": "jarvis", "dot_power": 12.5, "tone": {"brightness": -15, "contrast": 0, "gamma": 1}, "tone_used": True})
+    assert out["under"] == ["ge-work", 1] and out["saves"] == [{"tone": {"brightness": -15, "contrast": 0, "gamma": 1}}] and out["said"]

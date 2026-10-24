@@ -220,7 +220,7 @@
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
-        h('div', {class: 'ge-work'}, picture.inputs, slots.powers, slots.error, error, slots.bar, picture.out, picture.foot)),
+        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, slots.error, error, slots.bar, picture.out, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 

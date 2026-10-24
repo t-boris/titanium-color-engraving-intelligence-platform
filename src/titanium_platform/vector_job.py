@@ -38,7 +38,7 @@ import cv2
 import numpy as np
 import shapely
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, engraving_time, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, color, colormap, conversion as cv, dot_colours as dc, engraving_time, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -981,8 +981,7 @@ def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], firs
     rows = []
     for n, zone in enumerate(pz.full(z) for z in zones):
         width = pz.width_of(loops, zone["regions"])
-        mode = pz.mode_of(plan, zone)
-        box = pz.box_of(loops, zone["regions"], grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)[0]
+        box = pz.box_of(loops, zone["regions"], pz.layer_dpi(plan, zone))[0]
         area = pz.area_of(document, zone["regions"]) - _under(plan, zone["regions"], cut)
         row = {"zone": zone, "number": zone["number"], "index": first + n, "width_mm": width, "area_mm2": area,
                "box": box, "curve": None, "measured": None, "dots": None, "parameters": None, "time": None, "problem": None}
@@ -990,7 +989,7 @@ def _zone_rows(store: Store, plan: dict, document: dict, zones: list[dict], firs
             curve = pz.curve(store, plan, zone, width)[0]
             p = pz.parameters(store, plan, zone, width)
             if pz.dotted(zone):
-                row["dots"] = ps.dots_at(store, p["power"], curve)
+                row["dots"] = st.dots(store, {**zone, "dot_power": p["power"]}, curve)
                 row["measured"] = pz.measured_dots(store, plan, zone, zone["kind"], p["power"], width)
             row.update(curve=curve, parameters=p, time={**pz.time_layer(plan, zone, document, loops, first + n, p), "area_mm2": area})
         except PredictionError as exc:
@@ -1015,6 +1014,7 @@ def _zone_shown(plan: dict, row: dict) -> dict:
             "width_mm": round(row["width_mm"], 2), "area_mm2": round(row["area_mm2"], 2), "box": {k: round(v, 4) for k, v in row["box"].items()},
             "span": None if curve is None else [round(float(v), 2) for v in curve.span], "referenced": None if curve is None else curve.referenced,
             "dots": row["dots"], "estimate": pz.dotted(zone) and row["measured"] is None, "problem": row["problem"],
+            "tone_used": st.tone_used(zone) is not None,
             "name": None if row["parameters"] is None else pz.layer_name(row["index"], zone, row["parameters"]),
             "picture": None if row["problem"] else f"/api/vector/{plan['id']}/photo/{zone['number']}.png?v={key[:16]}"}
 
@@ -1089,8 +1089,8 @@ def _zone_of_work(store: Store, plan_id: int, number) -> tuple[dict, dict, dict]
 
 
 def _zone_cut(plan: dict, zone: dict) -> dict:
-    mode = pz.mode_of(plan, zone)
-    return pz.cut(plan, _zone_loops(plan), zone, grayscale.image_dpi(mode.line_interval) if mode.line_interval else None)
+    """The zone's picture (:func:`photo_zones.cut`) at its layer's DPI, as uploaded: the zone's tone is applied where it is drawn."""
+    return pz.cut(plan, _zone_loops(plan), zone, pz.layer_dpi(plan, zone))
 
 
 def zone_picture(store: Store, plan_id: int, number) -> rc.Picture:
@@ -1113,7 +1113,7 @@ def zone_kinds(store: Store, plan_id: int, number) -> dict:
     plan, zone, row = _zone_of_work(store, plan_id, number)
     width, curve = row["width_mm"], row["curve"]
     power = ps.dot_power_at(store, pz.mode_of(plan, zone), width, zone.get("dot_power"))
-    dots = ps.dots_at(store, power, curve)
+    dots = st.dots(store, {**zone, "dot_power": power}, curve)
     out = []
     for kind in pz.KINDS:
         measured = pz.measured_dots(store, plan, zone, kind, power, width) if kind != pz.GRAYSCALE else None
@@ -1125,7 +1125,7 @@ def zone_kinds(store: Store, plan_id: int, number) -> dict:
         if kind == pz.GRAYSCALE:
             entry.update(min_power=zone["min_power"], max_power=zone["max_power"])
         else:
-            entry.update(power=power, hex=dots["hex"], clean_hex=dots["clean_hex"])
+            entry.update(power=dots["power"], hex=dots["hex"], clean_hex=dots["clean_hex"], source=dots["source"])
         out.append(entry)
     return {"zone": zone["number"], "kind": zone["kind"], "kinds": out}
 
@@ -1154,7 +1154,7 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
     zone = row["zone"]
     mode = pz.mode_of(plan, zone)
     base = f"/api/vector/{plan['id']}/photo/{zone['number']}"
-    out = {**_zone_shown(plan, row), "scale": mode.as_dict(), "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
+    out = {**_zone_shown(plan, row), "scale": mode.as_dict(), "dpi": pz.layer_dpi(plan, zone),
            "time": None if row["time"] is None else engraving_time.estimate([row["time"]]), "ai_missing": st.ai_missing(),
            "ai_photo": bool(plan.get("ai_photo")),
            "work": {"id": plan["id"], "name": plan["name"], "device_id": plan["device_id"], "lens_id": plan["lens_id"], "material_id": plan["material_id"],
@@ -1168,9 +1168,10 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
               "size_mm": {"width": round(found["box"]["width"], 2), "height": round(found["box"]["height"], 2)}}
     key = _zone_preview_key(plan, row)
     if pz.dotted(zone):
-        state = {**zone, "dot_power": row["parameters"]["power"]}
-        rgb8, dots = st.dot_look(store, mode, found["picture"], found["alpha"], state, width, row["curve"], row["measured"])
-        _keep(store, plan, key, lambda: pz.side_by_side(found["picture"], rgb8, found["alpha"]))
+        state = {**zone, "dot_power": zone["dot_power"] if zone.get("dot_recipe") else row["parameters"]["power"]}
+        grey = st.toned(found, state)["picture"]
+        rgb8, dots = st.dot_look(store, mode, grey, found["alpha"], state, width, row["curve"], row["measured"])
+        _keep(store, plan, key, lambda: pz.side_by_side(grey, rgb8, found["alpha"]))
         rows, cols = found["picture"].shape
         out["picture"] = {**common, "kind": zone["kind"], "dots": dots, "estimate": row["measured"] is None, "span": list(row["curve"].span),
                           "shown": {"width": cols, "height": rows}, "preview": f"{base}/preview.png?v={key[:16]}",
@@ -1183,6 +1184,27 @@ def zone_view(store: Store, plan_id: int, number) -> dict:
                       "colour_match": shown.get("colour_match"), "rules_report": shown.get("rules_report"),
                       "contours_report": shown.get("contours_report"), "preview": f"{base}/preview.png?v={key[:16]}"}
     return out
+
+
+def zone_dot_setup(store: Store, plan_id: int, number) -> str:
+    """The laser and lens of the work as the colour map keys them: the map the colour of a zone's dots is picked on (0.27.0)."""
+    plan, _ = _zone_found(store, plan_id, number)
+    return su.setup_key(plan["device_id"], plan["lens_id"])
+
+
+def zone_dot_colours(store: Store, plan_id: int, number, points: list[dict]) -> dict:
+    """For the colour map picking the colour of a zone's dots, as a photo work's (``photo_work.dot_colours``): the work and the zone (its
+    kind, width, laser and lens and titanium) and each colour of the map's ``points`` with what it gives the dots or why it cannot
+    (``dot_colours.options`` on the zone's scale at its width)."""
+    plan, row = _zone_found(store, plan_id, number)
+    zone = row["zone"]
+    mode = pz.mode_of(plan, zone)
+    material = store.one("SELECT id, name, family, grade, batch, thickness_mm FROM material_profile WHERE id=?", (mode.material_id,)) \
+        if mode.material_id else None
+    return {"work": {"id": plan["id"], "name": plan["name"], "zone": zone["number"], "kind": zone["kind"], "width_mm": round(row["width_mm"], 2),
+                     "device_id": mode.device_id, "lens_id": mode.lens_id, "material": dict(material) if material else None,
+                     "dot_recipe": zone["dot_recipe"]},
+            **dc.options(store, mode, row["width_mm"], points)}
 
 
 def _zone_preview_key(plan: dict, row: dict) -> str:
@@ -1206,9 +1228,10 @@ def zone_preview(store: Store, plan_id: int, number) -> rc.Picture:
         found = _zone_cut(plan, zone)
         mode, width = pz.mode_of(plan, zone), found["box"]["width"]
         if pz.dotted(zone):
-            state = {**zone, "dot_power": row["parameters"]["power"]}
-            rgb8 = st.dot_look(store, mode, found["picture"], found["alpha"], state, width, row["curve"], row["measured"])[0]
-            return pz.to_png(pz.side_by_side(found["picture"], rgb8, found["alpha"]))
+            state = {**zone, "dot_power": zone["dot_power"] if zone.get("dot_recipe") else row["parameters"]["power"]}
+            grey = st.toned(found, state)["picture"]
+            rgb8 = st.dot_look(store, mode, grey, found["alpha"], state, width, row["curve"], row["measured"])[0]
+            return pz.to_png(pz.side_by_side(grey, rgb8, found["alpha"]))
         shown = st.engraved(st.item(store, mode, found, zone, f"zone {zone['number']}", width), zone)
         _, rgb8 = ps.predicted(shown, *ps.check_power_range(zone["min_power"], zone["max_power"]))
         return pz.to_png(pz.side_by_side(shown["picture"], rgb8, found["alpha"]))
@@ -1225,7 +1248,7 @@ def zone_closeup(store: Store, plan_id: int, number) -> rc.Picture:
         found = _zone_cut(plan, zone)
         dots = row["dots"]
         item = st.item(store, pz.mode_of(plan, zone), found, zone, f"zone {zone['number']}", found["box"]["width"])
-        return prediction.to_png(ps.dot_closeup(item, zone["kind"], dots["lab"], dots["clean_lab"], found["box"]["width"]))
+        return prediction.to_png(ps.dot_closeup(item, zone["kind"], dots["lab"], dots["clean_lab"], found["box"]["width"], pz.fired(plan, zone)))
     return rc.Picture(store, f"vector-{plan['id']}", rc.key_of({"kind": "vector-photo-zone-closeup", "of": pz.key(plan, zone, row["curve"], None)}), draw)
 
 

@@ -1025,6 +1025,17 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 /* where the dots' colour comes from (0.25.0): the scale, or a colour picked on the colour map */
 .ge-dotsource {gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
 .ge-powers .ge-dotsource-map {grid-column:1/-1}
+/* the brightness, contrast and gamma of the picture (0.27.0): each name with its number above a slider as wide as its column, the three in
+   one row with «Как есть» at its end; one under another on a narrow screen */
+.ge-tone {grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:6px 16px}
+.ge-tone .ge-power {display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px}
+.ge-tone .ge-power>.small {grid-row:1;grid-column:1}
+.ge-tone .ge-power input[type=number] {grid-row:1;grid-column:2;width:4.5em}
+.ge-tone .ge-power input[type=range] {grid-row:2;grid-column:1/-1;width:100%;min-width:0}
+.ge-tone .ge-tone-note {grid-column:1/-1;margin:0}
+@media (max-width:700px) {
+  .ge-tone {grid-template-columns:1fr}
+}
 /* the colour map picking the colour of a photo work's dots (0.25.0, dot-pick.js) */
 .dp-banner {flex:none;display:flex;align-items:center;gap:12px;padding:10px 14px}
 .dp-banner .stack {gap:2px;flex:1;min-width:0}

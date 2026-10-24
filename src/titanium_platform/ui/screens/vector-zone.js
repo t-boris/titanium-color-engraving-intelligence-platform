@@ -1,14 +1,15 @@
 /* Фотозона векторной работы на своём экране (0.23.0, DEC-116): то же, что работа фотогравировки (photo-engraving.js), теми же панелями
    (photo-panels.js) — шкалы слева, картинка зоны рядом с прогнозом посередине, вкладки справа; вид гравировки, Min и Max или мощность
    точек, подбор серых («Сохранить рисунок», «Ближайший цвет») и контуры. Картинка зоны — картинка работы в её областях, прозрачная вне их;
-   ширина — по её областям (строки длиной с зону), шкалы — лазера, линзы и титана работы. Каждое изменение — шаг редактора векторной
-   работы: «Отменить» и «Повторить» (Ctrl+Z, Ctrl+Shift+Z) здесь — её; шаг, который убрал зону, возвращает к работе.
+   ширина — по её областям (строки длиной с зону), шкалы — лазера, линзы и титана работы. Цвет точек вида точками — со шкалы или с карты
+   цветов («Цвет с карты», 0.27.0, как у работы фотогравировки), яркость, контраст и гамма картинки — над ней. Каждое изменение — шаг
+   редактора векторной работы: «Отменить» и «Повторить» (Ctrl+Z, Ctrl+Shift+Z) здесь — её; шаг, который убрал зону, возвращает к работе.
    Адрес: #/vector-zone?work=<id>&zone=<номер>; открывается кнопкой «Открыть» на карточке зоны во вкладке «Фото» редактора. */
 'use strict';
 (() => {
   const {h, fill, btn, get, post, go, toast} = App;
-  const {value, GRAYSCALE, dotted, kindName, settingsText, modeQuery, sameScale, scaleCard, newSlots, emptySlots, scaleDetail, workPicture,
-    kindChooser} = PhotoPanels;
+  const {value, GRAYSCALE, dotted, fromMap, firedSettings, kindName, settingsText, modeQuery, sameScale, scaleCard, newSlots, emptySlots, scaleDetail,
+    workPicture, kindChooser} = PhotoPanels;
   let keys = null;                                     // клавиши открытой зоны (Ctrl+Z, Ctrl+Shift+Z) — отмена и повтор векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
 
@@ -46,7 +47,8 @@
     /** Что сказать о слое зоны в файле работы. */
     const layer = (info) => (dotted(view)
       ? `Файл LightBurn работы: слой ${view.name} — изображение в режиме «${kindName(view.kind)}»: мощность ${value(info.dots.power, 1)} % (Min = Max — каждая точка `
-        + `бьёт на ней), ${settingsText(view.scale, info.dpi)}. Картинка работы — на месте зоны, вне её областей прозрачна: точки ставит LightBurn.`
+        + `бьёт на ней), ${settingsText(firedSettings(view), info.dpi)}${fromMap(view) ? ' — настройки цвета с карты цветов' : ''}. `
+        + 'Картинка работы — на месте зоны, вне её областей прозрачна: точки ставит LightBurn.'
       : `Файл LightBurn работы: слой ${view.name} — изображение в режиме градаций серого после слоёв цвета: Min ${value(info.power_range[0], 1)} %, `
         + `Max ${value(info.power_range[1], 1)} %, ${settingsText(view.scale, info.dpi)}. Картинка — на месте зоны, вне её областей прозрачна.`);
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})), {width: false, objects: false, layer});
@@ -54,7 +56,8 @@
     const tabs = App.tabs([['picture', 'Картинка', picture.details], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'vz.zone.tab', label: 'Картинка и шкала', prefix: 'vz-tab'});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
-    const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}`;   // at the zone's width, for its kind
+    // at the zone's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
+    const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
     const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
 
     function showScale() {
@@ -62,7 +65,9 @@
       const sc = chosen();
       shownKey = scaleKey(view);
       cards(sc);
-      const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p})} : null;
+      const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p}),
+        recipe: fromMap(view) ? view.dot_recipe : null, hex: view.picture && view.picture.dots ? view.picture.dots.hex : null, dpi: view.dpi,
+        map: () => go(DotPick.zoneAddress(view.work, view.number))} : null;
       if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot});
       else { detail = null; emptySlots(slots, 'Шкала этой зоны не измерена: выберите шкалу слева.'); }
     }
@@ -122,7 +127,7 @@
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала зоны (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Шкал серого на этом лазере, линзе и титане нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Зона на шкале'), slots.title),
-        h('div', {class: 'ge-work'}, picture.inputs, slots.powers, slots.error, error, slots.bar, picture.out, picture.foot)),
+        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, slots.error, error, slots.bar, picture.out, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 

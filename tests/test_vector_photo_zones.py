@@ -430,7 +430,8 @@ def test_a_zone_chooses_its_greys_as_a_photo_work_does_and_its_picture_its_file_
     job = create(world)
     red, yellow = of_colour(world, job, RED), of_colour(world, job, YELLOW)
     zone = colouring(world, job, op="photo_add", regions=red + yellow)["zones"][0]
-    assert {k: zone[k] for k in pz.DEFAULTS} == {"colour_choice": "drawing", "contours": False, "rules": [], "colouring": {}, "ai": None, "ai_theme": None}
+    assert {k: zone[k] for k in pz.DEFAULTS} == {"colour_choice": "drawing", "contours": False, "rules": [], "colouring": {}, "dot_recipe": None,
+                                                 "tone": {"brightness": 0.0, "contrast": 0.0, "gamma": 1.0}, "ai": None, "ai_theme": None}
     drawn, filed = png(world, zone["picture"]), zone_grey(world, job)
     nearest = colouring(world, job, op="photo_set", zone=1, colour_choice="nearest")["zones"][0]
     assert nearest["colour_choice"] == "nearest" and nearest["picture"] != zone["picture"]

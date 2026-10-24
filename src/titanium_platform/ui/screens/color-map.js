@@ -2,8 +2,9 @@
    Нужен цвет: выбираете его, и видно, где он встречался и какими настройками получен. По экспериментам ходить не нужно.
    Один экран без прокрутки страницы (REQ-044, DEC-080): слева фильтры и пояснение в складке, посередине большая карта (выбранный цвет под ней),
    справа подбор цвета; прокручивается только список найденных рецептов внутри своей панели. Боковое меню остаётся.
-   С ?dots=<работа> карта выбирает цвет точек работы фотогравировки (0.25.0, DEC-118, dot-pick.js): полоса сверху, фильтр лазера и линзы —
-   работы, цвета, которые точками быть не могут, бледнее, а под выбранным цветом и найденными рецептами — «Точки этим цветом». */
+   С ?dots=<работа> карта выбирает цвет точек работы фотогравировки (0.25.0, DEC-118, dot-pick.js), с &zone=<номер> — фотозоны векторной
+   работы (0.27.0): полоса сверху, фильтр лазера и линзы — работы, цвета, которые точками быть не могут, бледнее, а под выбранным цветом и
+   найденными рецептами — «Точки этим цветом». */
 'use strict';
 const ColorMap = (() => {
   const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
@@ -261,6 +262,7 @@ const ColorMap = (() => {
     if (dotsOf && ctx.query.setup) f.setup = ctx.query.setup;
     const q = new URLSearchParams();
     if (dotsOf) q.set('dots', dotsOf);
+    if (dotsOf && ctx.query.zone) q.set('zone', ctx.query.zone);           // a photo zone of the vector work ``dots``
     if (f.setup) q.set('setup', f.setup);
     if (f.material) q.set('material', f.material);
     if (f.measurement) q.set('measurement', f.measurement);
@@ -269,7 +271,7 @@ const ColorMap = (() => {
     if (f.hide) q.set('include_unreferenced', 'false');
     if (f.doubtful) q.set('hide_doubtful', 'true');            // REQ-049: not the colours whose circle is smaller than that of one engraving
     const data = await get('/colors' + (q.toString() ? '?' + q : ''));
-    const pick = data.dots || null;
+    const pick = data.dots ? {...data.dots, from: ctx.query.from || null} : null;     // ``from``: where the map was opened, to go back to
     if (pick) f.setup = pick.setup;                  // the server shows the work's laser and lens whatever the address says
     // the laser and lens chosen in the filter: the film model, its laws and computed settings are theirs alone
     const chosen = data.options.setups.find((o) => o.key === f.setup) || null;

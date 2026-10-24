@@ -101,7 +101,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'filepick.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'filepick.js', 'hardware.js', 'photo-modes.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/dot-pick.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -758,3 +758,34 @@ def test_escape_drops_the_selection_a_lasso_being_drawn_and_the_line_under_the_p
     assert out["drawing"] == 1 and out["lasso"] == [0, 0, []]                      # the lasso is gone and asks nothing
     assert out["next"] == ["r3"] and out["modal"] == ["r3"]                        # a dialog keeps its Escape
 
+
+
+@node
+def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_colour_from_the_map(tmp_path):
+    dotted = {**ZONE, "kind": "jarvis", "dot_power": 20, "by_colour": False, "name": "C02 Photo 1 jarvis P20",
+              "dots": {"power": 20, "hex": "#445566", "clean_hex": "#ccbbaa"}}
+    plain = zone_routes()
+    plain["/api/vector/7"]["json"].update(zones=[dotted], device_id=1, lens_id=2)                       # the work's laser and lens, as the job has them
+    out = run_editor(tmp_path, plain, """
+  await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
+  const zone = section('Фотозоны');
+  out.plain = [!!byText(zone, 'button', 'Цвет с карты'), !byText(zone, 'button', 'На шкалу'), !!byLabel(zone, 'input', 'Мощность точек фотозоны 1, %')];
+  await byText(zone, 'button', 'Цвет с карты').dispatch('click');
+  out.went = [...ctx.__went];
+""")
+    assert out["plain"] == [True, True, True] and out["went"] == ["/colors?dots=7&zone=1&setup=laser%3A1%2Flens%3A2&from=editor"]
+    recipe = {"entry": "e-violet", "settings": {"power": 30, "speed": 500, "frequency": 60, "pulse_width": 300, "line_interval": 0.02, "passes": 1},
+              "missing": False}
+    mapped = zone_routes()
+    mapped["/api/vector/7"]["json"]["zones"] = [{**dotted, "dot_recipe": recipe, "tone": {"brightness": 20, "contrast": 0, "gamma": 1}, "tone_used": True}]
+    out = run_editor(tmp_path, mapped, """
+  await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
+  const zone = section('Фотозоны');
+  out.card = zone.textContent;
+  out.buttons = [!!byText(zone, 'button', 'Другой цвет'), !byLabel(zone, 'input', 'Мощность точек фотозоны 1, %')];
+  await byText(zone, 'button', 'На шкалу').dispatch('click'); await tick();
+  out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
+""")
+    assert "Точки с карты цветов: 30 % · 500 мм/с · 60 кГц · 300 нс · шаг 0.02 мм" in out["card"] and out["buttons"] == [True, True]
+    assert "Джарвис · точки 30 % с карты цветов · яркость 20 %, контраст 0 %, гамма 1" in out["card"]
+    assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «На шкалу»: the scale's power puts it back

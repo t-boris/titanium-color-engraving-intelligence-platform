@@ -151,6 +151,12 @@
     [/^the dots' power (\S+) % lies outside the measured powers (\S+)\.\.(\S+) % of the scale at this width: choose it inside them$/i,
       (m) => `Мощность точек ${m[1]} % вне измеренных мощностей шкалы при этой ширине (${m[2]}–${m[3]} %): выберите мощность на полосе шкалы`],
     [/^a work in grayscale has no dots to show$/i, 'У работы в градациях серого нет точек, чтобы показать их вблизи'],
+    // яркость, контраст и гамма картинки (0.27.0)
+    [/^the tone of the picture is its brightness, contrast and gamma$/i, 'Тон картинки — её яркость, контраст и гамма'],
+    [/^the picture's (\S+) must be a number from (\S+) to (\S+)$/i, (m) => {
+      const name = {brightness: 'Яркость', contrast: 'Контраст', gamma: 'Гамма'}[m[1]] || m[1];
+      return `${name} картинки — число от ${m[2].replace('.', ',')} до ${m[3].replace('.', ',')}`;
+    }],
     // цвет точек с карты цветов (0.25.0, DEC-118)
     [/^the dots' colour is picked for a dot kind: choose one of them first$/i, 'Цвет точек выбирается для вида точками: сначала выберите такой вид'],
     [/^pick a colour of the colour map for the dots$/i, 'Выберите на карте цветов цвет для точек'],

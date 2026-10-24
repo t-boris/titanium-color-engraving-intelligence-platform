@@ -331,13 +331,67 @@ const PhotoPanels = (() => {
       : 'на титане не теряется ни одна граница картинки — обводить нечего.');
   }
 
+  const TONE = {brightness: 0, contrast: 0, gamma: 1};          // the picture's greys as they are (photo_state.TONE)
+  const TONE_ABOUT = 'Яркость, контраст и гамма картинки — те же, что в LightBurn, но применяются здесь, к серым картинки до того, как они станут '
+    + 'мощностью или точками: прогноз и файл LightBurn получают одну и ту же картинку, а в самом LightBurn эти настройки остаются нулевыми. '
+    + 'Яркость сдвигает все тона, контраст разводит светлое и тёмное, гамма меняет средние тона (меньше 1 — светлее, больше 1 — темнее), не трогая '
+    + 'белое и чёрное. В виде точками светлее — меньше точек, темнее — больше.';
+  const TONE_OFF = 'При подборе серых под цвета яркость задают цвета картинки: яркость, контраст и гамма сохранены и вернутся, когда подбор выключен '
+    + 'или выбран вид точками.';
+
+  /** Яркость, контраст и гамма картинки (0.27.0): три ползунка и «Как есть»; каждое изменение уходит через ``save({tone})`` после паузы.
+      Пока ползунок двигают или изменение в пути, ответ сервера их не сдвигает; потом они встают, как у работы. В градациях серого с
+      подбором серых под цвета они выключены (серые берутся не из картинки); пока прогноза нет (шкала не измерена), их не видно, как и
+      ползунков мощности. */
+  function toneSliders(save) {
+    let timer = null, busy = 0, last = null;
+    const one = (key, label, short, min, max, step) => {
+      const range = h('input', {type: 'range', min, max, step, value: TONE[key], 'aria-label': label});
+      const exact = h('input', {type: 'number', min, max, step: 'any', value: TONE[key], 'aria-label': label});
+      range.addEventListener('input', () => { exact.value = range.value; later(); });
+      exact.addEventListener('change', () => { range.value = exact.value; later(); });
+      return {key, range, exact, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+    };
+    const all = [one('brightness', 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', 'Яркость', -100, 100, 1),
+      one('contrast', 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее', 'Контраст', -100, 100, 1),
+      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.2, 5, 0.05)];
+    const toneOf = (view) => ({...TONE, ...(view.tone || {})});
+    const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); } };
+    async function send(tone) {
+      busy += 1;
+      await save({tone});
+      busy -= 1;
+      if (!busy && !timer && last) set(toneOf(last));
+    }
+    function later() {
+      clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; send(Object.fromEntries(all.map((s) => [s.key, +s.exact.value]))); }, 300);
+    }
+    const reset = btn('Как есть', () => { clearTimeout(timer); timer = null; set(TONE); send({...TONE}); }, 'btn-small');
+    reset.setAttribute('title', 'Яркость 0, контраст 0, гамма 1: картинка как загружена');
+    const note = h('p', {class: 'small muted ge-tone-note', hidden: true}, TONE_OFF);
+    const el = h('div', {class: 'ge-powers ge-tone', role: 'group', 'aria-label': 'Яркость, контраст и гамма картинки', title: TONE_ABOUT},
+      all.map((s) => s.box), h('div', {class: 'row'}, reset), note);
+    function show(view) {
+      last = view;
+      el.hidden = !!view.problem;
+      const tone = toneOf(view), off = !dotted(view) && !!view.by_colour;
+      if (!timer && !busy) set(tone);
+      for (const s of all) { s.range.disabled = off; s.exact.disabled = off; }
+      reset.disabled = off || all.every((s) => tone[s.key] === TONE[s.key]);
+      note.hidden = !off;
+    }
+    return {el, show};
+  }
+
   /** Картинка работы на её шкале: ширина, подбор серых и контуры над картинкой, картинка рядом с прогнозом посередине, время под ней,
       подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
       ``save`` (DEC-108). Владелец (работа или фотозона векторной работы) задаёт ``ramp`` — адрес «Пробы на ширине работы» (без него её нет),
       ``original`` — адрес исходной цветной картинки, ``width`` — меняется ли ширина (у зоны она — по её областям), ``objects`` — есть ли
       «Раскраска по объектам» (у зоны — с 0.23.1), ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
       первой, затем картинка в нуле) и ``stage(el, cols)`` — что положить поверх прогноза (надписи работы): ``el`` — картинка рядом с
-      прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. */
+      прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. ``tone`` — яркость, контраст и гамма картинки (0.27.0),
+      владелец ставит их под ``inputs``. */
   function workPicture(save, chooseKind, {ramp = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
     const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
     kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
@@ -354,8 +408,17 @@ const PhotoPanels = (() => {
     choice.addEventListener('change', () => save({colour_choice: choice.value}));
     contours.addEventListener('change', () => save({contours: contours.checked}));
     const waiting = () => fill(out, h('p', {class: 'muted ge-placeholder'}, 'Считаем прогноз…'));
+    const tone = toneSliders(save);
+    /** Что сказать о тоне картинки в подробностях: только когда он её меняет. */
+    const toneText = (view) => {
+      if (!view.tone_used) return null;
+      const t = view.tone;
+      return h('p', {class: 'small'}, `Картинка изменена: яркость ${value(t.brightness, 0)} %, контраст ${value(t.contrast, 0)} %, гамма ${value(t.gamma, 2)}. `
+        + 'Прогноз и файл LightBurn — с этими изменениями; в LightBurn яркость, контраст и гамма остаются нулевыми, чтобы не применить их дважды.');
+    };
     function show(view, sc) {
       const dots = dotted(view);
+      tone.show(view);
       fill(kind, `Вид: ${kindName(view.kind || GRAYSCALE)}`);
       width.value = String(view.width_mm);
       byColour.checked = !!view.by_colour;
@@ -393,6 +456,7 @@ const PhotoPanels = (() => {
         info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
         matchText(info.colour_match),
         contoursText(view, info),
+        toneText(view),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой (шкалы измерены на очищенных пластинах); C01 — ` : ''}`
@@ -450,6 +514,7 @@ const PhotoPanels = (() => {
         h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
           + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
           h('span', {class: 'muted small'}, ' — оценка сверху: строки на всю ширину картинки, как в градациях серого; белые места лазер в виде точками пролетает быстрее.')),
+        toneText(view),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой; C01 — ` : ''}`
           + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settings}${mapped ? ' — настройки цвета с карты цветов' : ''}. `
@@ -462,7 +527,7 @@ const PhotoPanels = (() => {
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
-    return {inputs, out, foot, details, show, waiting};
+    return {inputs, tone: tone.el, out, foot, details, show, waiting};
   }
 
   const OBJECT_NAMES = {background: 'Фон', hair: 'Волосы', face_skin: 'Кожа лица', body_skin: 'Кожа тела', clothes: 'Одежда', other: 'Другое (очки…)',

@@ -17,7 +17,7 @@ const ctx = context({});
 const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
-load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/lettering.js', 'screens/photo-panels.js', 'screens/vector-zone.js']);
+load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/dot-pick.js', 'screens/lettering.js', 'screens/photo-panels.js', 'screens/vector-zone.js']);
 const requests = [], past = [], future = [];
 let zone = data.zone, version = 0, refuse = null;
 const base = '/api/vector/9/photo/1';
@@ -93,8 +93,8 @@ KINDS = {"zone": 1, "kind": "grayscale", "kinds": [
     for k in KIND_KEYS]}
 
 
-def run(tmp_path, body, query=None):
-    (tmp_path / "data.json").write_text(json.dumps({"zone": ZONE, "work": WORK, "scales": [scale(150, [1, 30]), scale(100, [2, 25])],
+def run(tmp_path, body, query=None, **zone):
+    (tmp_path / "data.json").write_text(json.dumps({"zone": {**ZONE, **zone}, "work": WORK, "scales": [scale(150, [1, 30]), scale(100, [2, 25])],
                                                     "scale": scale_answer(), "kinds": KINDS}), encoding="utf-8")
     script = tmp_path / "zone.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
@@ -202,3 +202,54 @@ def test_the_kind_of_a_zone_is_chosen_from_its_picture_in_each_kind_and_a_dot_ki
     assert out["pictures"][6] == "/api/vector/9/photo/1/kinds/jarvis.png?v=1"
     assert out["kind"] == "Вид: Джарвис" and out["dot"] == "12.5" and out["layer"] and out["closeup"]
     assert out["saves"] == [{"kind": "jarvis"}]
+
+
+RECIPE = {"entry": "e-violet", "settings": {"power": 20, "speed": 500, "frequency": 60, "pulse_width": 300, "line_interval": 0.02, "passes": 1,
+                                            "global_passes": 1}, "lab": [45, 15, -30], "size": {"row_mm": 24.5, "how": "unknown", "measured_mm": [], "from_mm": []},
+          "missing": False}
+
+
+@node
+def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_goes_back_on_the_scale(tmp_path):
+    out = run(tmp_path, """
+  out.offered = !!button(tree, 'Цвет с карты') && !button(tree, 'На шкалу');
+  await button(tree, 'Цвет с карты').dispatch('click'); await settle();
+  out.went = [...ctx.__went];
+  zone = {...zone, dot_recipe: RECIPE_JSON}; version++;
+  const max = labelled(tree, 'Мощность точек, %');
+  max.value = '13'; await max.dispatch('change'); await wait(300); await settle();
+  out.mapped = [!!button(tree, 'Другой цвет'), !!button(tree, 'На шкалу'), !labelled(tree, 'Мощность точек, %'),
+                tree.textContent.includes('с карты цветов: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi)'),
+                tree.textContent.includes('Файл LightBurn работы: слой C03 — изображение в режиме «Джарвис»: мощность 13 % (Min = Max — каждая точка бьёт на ней), 500 мм/с')];
+  await button(tree, 'На шкалу').dispatch('click'); await wait(300); await settle();
+  out.saves = saves();
+""".replace("RECIPE_JSON", json.dumps(RECIPE)), kind="jarvis", dot_power=12.5)
+    assert out["offered"] and out["went"] == ["/colors?dots=9&zone=1&setup=laser%3A1%2Flens%3A2"]
+    assert out["mapped"] == [True, True, True, True, True]
+    assert out["saves"] == [{"dot_power": 13}, {"dot_power": 13}]                              # «На шкалу»: back on the scale at its power
+
+
+@node
+def test_the_brightness_contrast_and_gamma_of_a_zone_are_saved_from_three_sliders_and_wait_while_its_greys_are_chosen_for_colours(tmp_path):
+    out = run(tmp_path, """
+  const slider = (name) => labelled(tree, name);
+  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', C = 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее',
+        G = 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее';
+  out.start = [slider(B).value, slider(C).value, slider(G).value, button(tree, 'Как есть').disabled, !!slider(B).disabled];
+  slider(B).value = '20'; await slider(B).dispatch('change');
+  slider(G).value = '1.5'; await slider(G).dispatch('change'); await wait(350); await settle();
+  out.after = [slider(B).value, slider(G).value, button(tree, 'Как есть').disabled];
+  await button(tree, 'Как есть').dispatch('click'); await settle();
+  out.reset = [slider(B).value, slider(G).value];
+  const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label'));
+  colour.checked = true; await colour.dispatch('change'); await settle();
+  const note = tree.querySelectorAll('p').find((p) => (p.className || '').includes('ge-tone-note'));
+  out.off = [!!slider(B).disabled, !!slider(G).disabled, button(tree, 'Как есть').disabled, note.hidden];
+  out.saves = saves();
+""")
+    assert out["start"] == ["0", "0", "1", True, False]
+    assert out["after"] == ["20", "1.5", False]                                               # one save after a pause, the sliders as saved
+    assert out["reset"] == ["0", "1"]
+    assert out["off"] == [True, True, True, False]
+    assert out["saves"] == [{"tone": {"brightness": 20, "contrast": 0, "gamma": 1.5}}, {"tone": {"brightness": 0, "contrast": 0, "gamma": 1}},
+                            {"by_colour": True}]

@@ -561,3 +561,9 @@ compare it with both candidates; a homography fitted to 4 markers absorbs any sc
 ## Add files to git by name, never a directory
 `git add docs/features` swept in the untracked `docs/features/electron/`, which is not ours, and it went to main in a7531b4 (untracked
 again in the next commit). Add the exact files a tool or an edit produced; check `git status --short` for `??` entries before committing.
+
+## A capability postponed again and again reaches the operator as "I can't"
+- Situation (2026-10-24): «Цвет с карты» for photo zones (D6 of 0.25.0) was moved to the next release four times; the operator, on a zone
+  whose only scale is nearly black, wrote «я не могу выбрать цвет … ничего такого сделать не могу».
+- Rule: a feature promised for "the next release" twice is either built in the next one or written in the release report as not built, with
+  what the operator can do meanwhile (here: switch the zone's scale); never carried silently a third time.

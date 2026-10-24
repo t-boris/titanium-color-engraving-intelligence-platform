@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
-               photo_work, plans, setup as su, tasks, work_errors)
+               photo_work, plans, setup as su, tasks, vector_job, work_errors)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, picture_response, public_pair, public_plan, read_upload,
                      refresh_after_change, store_of)
 from .common import content_disposition
@@ -222,18 +222,18 @@ def create_plates(body: PlatesIn, request: Request):
 @router.get("/colors")
 def all_colors(request: Request, setup: str | None = None, material: str | None = None, measurement: str | None = None,
                include_unreferenced: bool = True, include_provisional: bool = True, task: str | None = None,
-               max_time_s_per_cm2: float | None = None, hide_doubtful: bool = False, dots: int | None = None):
+               max_time_s_per_cm2: float | None = None, hide_doubtful: bool = False, dots: int | None = None, zone: int | None = None):
     """The general colour map: every measured colour of every kept experiment (REQ-029); those without a clean reference are
     flagged, those of checks awaiting acceptance are marked provisional (DEC-045); of one engraving task when given (REQ-020).
     Every colour carries the estimated engraving time of its recipe; ``max_time_s_per_cm2`` leaves out slower ones (REQ-035), and the
     confidence of its recipe (``trust``, ``confidence``, ``agreement``, ``caution``, REQ-045). ``recipes`` tells, by ``group``, where the colour
     of each recipe engraved more than once is known from; ``hide_doubtful`` leaves out the colours whose circle is smaller than that of one
-    engraving (REQ-049). With ``dots`` (a photo work in a dot kind, 0.25.0) the map picks the colour of its dots: it is the map of the
-    work's laser and lens, and ``dots`` tells what each colour gives the dots or why it cannot (``photo_work.dot_colours``), from the
-    same points the map shows."""
+    engraving (REQ-049). With ``dots`` (a photo work in a dot kind, 0.25.0; with ``zone``, that photo zone of the vector work ``dots``,
+    0.27.0) the map picks the colour of its dots: it is the map of the work's laser and lens, and ``dots`` tells what each colour gives
+    the dots or why it cannot (``photo_work.dot_colours``, ``vector_job.zone_dot_colours``), from the same points the map shows."""
     store = store_of(request)
     if dots is not None:
-        setup = photo_work.dot_setup(store, dots)
+        setup = photo_work.dot_setup(store, dots) if zone is None else vector_job.zone_dot_setup(store, dots, zone)
     data = colormap.collect(store, include_unreferenced=include_unreferenced, setup=setup, material=material,
                             measurement=measurement, include_provisional=include_provisional, task=task or None,
                             max_time_s_per_cm2=max_time_s_per_cm2)
@@ -241,7 +241,8 @@ def all_colors(request: Request, setup: str | None = None, material: str | None 
     colormap.annotate(data["points"], data["recipes"])   # the confidence of each recipe: the map draws a circle by it (REQ-045)
     data["counts"]["doubtful"] = sum(p["doubtful"] for p in data["points"])
     if dots is not None:
-        data["dots"] = photo_work.dot_colours(store, dots, data["points"])
+        data["dots"] = photo_work.dot_colours(store, dots, data["points"]) if zone is None else \
+            vector_job.zone_dot_colours(store, dots, zone, data["points"])
     return colormap.hide_doubtful(data) if hide_doubtful else data
 
 

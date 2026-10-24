@@ -13,6 +13,9 @@ A state is a mapping with :data:`SETTINGS` and the AI's last answers (missing on
 * ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`), whose dots all fire at ``dot_power`` on the scale, or with
   ``dot_recipe`` at a recipe picked on the colour map (:mod:`dot_colours`, 0.25.0); a dot kind engraves the picture as it is (the greys
   chosen for colours, the contours and the rules are grayscale's and wait for it);
+* ``tone``: the picture's brightness, contrast and gamma (0.27.0, :data:`TONE`), applied to its greys before they become power or dots
+  (:func:`toned`, the formulas of ``prediction.adjust_grey``): in a dot kind, and in grayscale while its own greys are engraved
+  (``by_colour`` off); the look, the close-up and the file all take the toned greys, so LightBurn's own adjustments stay at their defaults;
 * ``ai_photo``: whether a reduced copy of the picture may be sent to the AI; ``ai`` and ``ai_theme``: its last answers.
 
 The owner keeps the rest: the picture (``upload``, as ``prediction_store.decode_upload`` makes it), the scale's mode, the width its rows
@@ -21,6 +24,8 @@ are as long as (DEC-107), and how a change is saved and undone. Nothing here rea
 from __future__ import annotations
 
 import re
+import threading
+from collections import OrderedDict
 from dataclasses import replace
 from typing import Callable, Mapping
 
@@ -37,10 +42,17 @@ GRAYSCALE = prediction.PREDICTED_MODE
 KINDS = tuple(key for key, kind in photo_modes.MODES.items() if kind.family != photo_modes.DEPTH)
 MAX_COLOURED = 32                   # main colours a state keeps at most: one per object
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
-SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "ai_photo")
-# what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
+SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "tone", "ai_photo")
+# the picture's greys as they are: LightBurn's defaults of its three adjustments (``lightburn.BITMAP_DEFAULTS``) under the screen's names
+TONE = {"brightness": 0.0, "contrast": 0.0, "gamma": 1.0}
+TONE_LIMITS = {"brightness": (-100.0, 100.0), "contrast": (-100.0, 100.0), "gamma": (0.2, 5.0)}      # % , %, the exponent
+TONE_DIGITS = {"brightness": 1, "contrast": 1, "gamma": 2}
+KEEP_TONED = 2                      # toned pictures kept in memory: the tone shown now and the one before
+# what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1), the kinds and objects (0.21.0) or the tone (0.27.0) has
 DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE, "dot_power": None,
-            "dot_recipe": None, "ai_photo": False, "ai": None, "ai_theme": None}
+            "dot_recipe": None, "tone": dict(TONE), "ai_photo": False, "ai": None, "ai_theme": None}
+_toned: OrderedDict[tuple, tuple[dict, dict]] = OrderedDict()
+_lock = threading.Lock()
 
 
 def dotted(state: Mapping) -> bool:
@@ -67,18 +79,73 @@ def dots(store: Store, state: Mapping, curve: prediction.Curve) -> dict:
     return {**ps.dots_at(store, state["dot_power"], curve), "source": "scale", "recipe": None}
 
 
+# -- the tone of the picture (0.27.0) -----------------------------------------------------------------------------------------------
+def tone_of(state: Mapping) -> dict:
+    """The state's brightness, contrast and gamma; a state made before them has the picture's greys as they are."""
+    return {**TONE, **(state.get("tone") or {})}
+
+
+def tone_used(state: Mapping) -> dict | None:
+    """The tone the picture's greys are engraved with: None when it leaves them as they are, or in grayscale with the greys chosen for
+    the picture's colours (``by_colour``), which do not come from its greys; the tone is kept there and waits."""
+    tone = tone_of(state)
+    if tone == TONE or (not dotted(state) and state["by_colour"]):
+        return None
+    return tone
+
+
+def toned(upload: dict, state: Mapping) -> dict:
+    """The picture (``upload``, as ``prediction_store.decode_upload`` or a photo zone's cut makes it) with its greys in the state's tone
+    (:func:`tone_used`, ``prediction.adjust_grey``), at preview and at full size; the colours, the opacity and what was found in it are
+    the picture's. A toned picture remembers the one it was made from (``untoned``), so toning it again starts from that: a picture is
+    never toned twice. Kept in memory for the last few tones."""
+    raw = upload.get("untoned", upload)
+    tone = tone_used(state)
+    if tone is None:
+        return raw
+    key = (id(raw), tuple(tone[k] for k in TONE))
+    with _lock:
+        known = _toned.get(key)
+        if known is not None and known[0] is raw:
+            _toned.move_to_end(key)
+            return known[1]
+    adjust = lambda grey: prediction.adjust_grey(grey, tone["gamma"], tone["contrast"], tone["brightness"]).astype(np.float32)  # noqa: E731
+    out = {**raw, "picture": adjust(raw["picture"]), "grey_full": adjust(raw["grey_full"]), "untoned": raw, "tone": tone}
+    with _lock:
+        _toned[key] = (raw, out)
+        _toned.move_to_end(key)
+        while len(_toned) > KEEP_TONED:
+            _toned.popitem(last=False)
+    return out
+
+
+def tone_in(state: Mapping, tone) -> dict:
+    """A tone given by hand (any of brightness, contrast and gamma; the others stay as the state has them), checked and rounded."""
+    if not isinstance(tone, Mapping) or not tone or not set(tone) <= set(TONE):
+        raise su.ValidationError("the tone of the picture is its brightness, contrast and gamma")
+    out = tone_of(state)
+    for name, value in tone.items():
+        number = None if isinstance(value, bool) else ps._number(value)
+        lo, hi = TONE_LIMITS[name]
+        if number is None or not lo <= number <= hi:
+            raise su.ValidationError(f"the picture's {name} must be a number from {lo:g} to {hi:g}")
+        out[name] = round(float(number), TONE_DIGITS[name])
+    return out
+
+
 # -- the picture as it is engraved ------------------------------------------------------------------------------------------------
 def item(store: Store, mode: ps.Mode, upload: dict, state: Mapping, name: str, width_mm: float, whole: dict | None = None) -> dict:
-    """The picture prepared on the scale ``mode`` at ``width_mm``; in a dot kind as it is (its greys are not chosen, its parts not ruled).
-    The objects and the people model's scores are found once per decoded picture and kept with it: on ``whole`` when the picture is a part
-    of it (transparent under inscriptions), so the objects and parts are the same with and without them."""
-    toned = not dotted(state)
-    found = upload if whole is None else whole
-    out = ps.picture_item(store, mode, upload, name, toned and state["by_colour"], width_mm, state["colour_choice"], toned and state["contours"],
-                          state["colouring"])
-    if toned and state["by_colour"] and state["colour_choice"] == "objects" and state["colouring"]:
+    """The picture prepared on the scale ``mode`` at ``width_mm``, its greys in the state's tone (:func:`toned`); in a dot kind as it is
+    otherwise (its greys are not chosen, its parts not ruled). The objects and the people model's scores are found once per decoded
+    picture and kept with it: on ``whole`` when the picture is a part of it (transparent under inscriptions), so the objects and parts are
+    the same with and without them, and with and without the tone."""
+    toned_ = not dotted(state)
+    found = upload.get("untoned", upload) if whole is None else whole
+    out = ps.picture_item(store, mode, toned(upload, state), name, toned_ and state["by_colour"], width_mm, state["colour_choice"],
+                          toned_ and state["contours"], state["colouring"])
+    if toned_ and state["by_colour"] and state["colour_choice"] == "objects" and state["colouring"]:
         out["objects"] = objects(found)
-    if toned and state["rules"]:
+    if toned_ and state["rules"]:
         out["part_scores"] = ps.part_scores(found)
     return out
 
@@ -121,8 +188,8 @@ def dot_look(store: Store, mode: ps.Mode, grey: np.ndarray, alpha: np.ndarray, s
 def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm: float, moved: bool = False) -> None:
     """Make the ``changes`` of :data:`SETTINGS` in ``state``, each checked: Min and Max, ``by_colour`` and ``colour_choice``, ``contours``, the
     ``rules`` of the parts, the main colours of the objects (``colouring``), the ``kind`` and the power of a dot kind's dots (``dot_power``,
-    inside the scale's measured powers at ``width_mm``: the dots go back onto the scale from a recipe of the colour map), whether the
-    picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
+    inside the scale's measured powers at ``width_mm``: the dots go back onto the scale from a recipe of the colour map), the picture's
+    ``tone`` (:func:`tone_in`), whether the picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
     width: a dot kind's power is kept while the scale is measured there, otherwise it goes where its colour stands out most (as after a
     change of the kind). The recipe of the colour map (``dot_recipe``) is the owner's to set: it picks it at its width."""
     if "min_power" in changes or "max_power" in changes:
@@ -157,6 +224,8 @@ def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm:
         state["dot_recipe"] = None
     elif dotted(state) and ("kind" in changes or moved):
         state["dot_power"] = ps.dot_power_at(store, mode, width_mm, state["dot_power"])
+    if "tone" in changes:
+        state["tone"] = tone_in(state, changes["tone"])
     if "ai_photo" in changes:
         if not isinstance(changes["ai_photo"], bool):
             raise su.ValidationError("the permission to send the photograph must be on or off")

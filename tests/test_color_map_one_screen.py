@@ -490,3 +490,33 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
     assert out["under"] == 2                                                                          # right under the picked colour
     assert out["saved"] == [["POST", {"dot_colour": "g-fill"}]] and out["went"] == ["/photo-engraving?work=37"]
     assert out["toasts"] == ["Цвет точек выбран: работа покажет точки этим цветом"]
+
+
+@node
+@pytest.mark.parametrize("opened", [None, "editor"])
+def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_was_opened(tmp_path, opened):
+    routes = picking()
+    world = routes["/api/colors"]["json"]
+    world["dots"]["work"] = {**world["dots"]["work"], "id": 41, "name": "Яня портрет - 1", "zone": 2, "kind": "jarvis", "width_mm": 150}
+    routes["/api/vector/41/photo/2/settings"] = {"status": 200, "json": {}}
+    query = {"dots": "41", "zone": "2", "setup": "laser:1/lens:2", **({"from": opened} if opened else {})}
+    out = run(tmp_path, routes, f"""
+  const before = ctx.requests.length;
+  tree = await ctx.ColorMap.render({{query: {json.dumps(query)}}}); await tick(); await tick();
+  out.asked = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
+  const banner = tree.querySelector('.dp-banner');
+  out.banner = banner.querySelector('strong').textContent;
+  out.back = [banner.querySelector('a').getAttribute('href'), banner.querySelector('a').textContent];
+  const circle = tree.querySelectorAll('circle').find((c) => c.querySelector('title') && c.querySelector('title').textContent.startsWith('Test 1 ·'));
+  await circle.dispatch('click'); await tick();
+  const action = tree.querySelectorAll('div').find((d) => has(d, 'cm-detail')).querySelector('.dp-action');
+  await byText(action, 'button', 'Точки этим цветом').dispatch('click'); await tick(); await tick();
+  out.saved = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
+  out.went = [...ctx.__went]; out.toasts = ctx.__toasts;
+""")
+    back = "/vector?plan=41" if opened else "/vector-zone?work=41&zone=2"
+    assert out["asked"] == ["/api/colors?dots=41&zone=2&setup=laser%3A1%2Flens%3A2"]
+    assert out["banner"] == "Цвет точек для фотозоны 2 работы «Яня портрет - 1» · Джарвис · 150 мм"
+    assert out["back"] == [f"#{back}", "← К работе без изменений" if opened else "← К зоне без изменений"]
+    assert out["saved"] == [["/api/vector/41/photo/2/settings", {"dot_colour": "g-fill"}]] and out["went"] == [back]
+    assert out["toasts"] == ["Цвет точек выбран: зона покажет точки этим цветом"]

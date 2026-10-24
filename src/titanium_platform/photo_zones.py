@@ -9,7 +9,10 @@ carry it like any other choice of the operator (editor DEC-077). It holds
 * ``regions``: the ids of the split's regions it covers;
 * ``kind``: grayscale or one of LightBurn's dot kinds (:data:`KINDS`, as a photo work offers them);
 * ``scale``: the titanium and the fixed settings of a measured grey scale (as a photo work keeps it); the laser and lens are the work's;
-* ``min_power`` and ``max_power`` (grayscale: white and black) and ``dot_power`` (a dot kind fires every dot at it);
+* ``min_power`` and ``max_power`` (grayscale: white and black) and ``dot_power`` (a dot kind fires every dot at it), or ``dot_recipe``: the
+  dots' colour picked on the colour map (0.27.0, :mod:`dot_colours`, as a photo work's, DEC-118): they fire at its settings, its step their
+  pitch, at its colour at the zone's width;
+* ``tone``: the picture's brightness, contrast and gamma (0.27.0, ``photo_state.toned``), as a photo work's;
 * ``by_colour``: the greys are chosen so that the titanium colours follow the picture's colours, as the vector colours follow it; off,
   the picture's own greys are engraved;
 * how the greys are chosen (:data:`GREYS`, 0.23.0, DEC-116), as a photo work chooses them (:mod:`photo_state`): keeping the drawing, the
@@ -32,7 +35,6 @@ import json
 import math
 import threading
 from collections import OrderedDict
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Mapping
@@ -40,16 +42,19 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import color, conversion as cv, engraving_time, grayscale, photo_modes, photo_state as st, prediction, prediction_store as ps, render_cache as rc
+from . import (color, conversion as cv, dot_colours as dc, engraving_time, grayscale, photo_modes, photo_state as st, prediction,
+               prediction_store as ps, render_cache as rc)
 from .db import Store
 from .prediction import PredictionError
 
 GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS                    # every kind of photo engraving that colours titanium, as a photo work offers them
 GREYS = ("colour_choice", "contours", "rules", "colouring")
-SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "by_colour", *GREYS)
+SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "dot_recipe", "by_colour", "tone", *GREYS)
+# what the operator changes: the settings, the dots' colour picked on the colour map (``dot_colour``: a point's group) instead of the recipe
+CHANGES = tuple(k for k in SETTINGS if k != "dot_recipe") + ("dot_colour",)
 ANSWERS = ("ai", "ai_theme")
-DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, *ANSWERS)}      # what a zone made before 0.23.0 lacks
+DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, "dot_recipe", "tone", *ANSWERS)}      # what a zone made before 0.23.0 or 0.27.0 lacks
 LASSO_SHARE = 0.5           # a region is inside a lasso (or an old zone, after a new split) when at least this share of it is
 FILE_PX_PER_MM = 20.0       # the zone's picture in the file has this many pixels a mm (fewer when the layer's DPI is lower): its
                             # transparent edge follows the smoothed borders to 0.05 mm, and a zone of a whole 150 mm work stays under 9 Mpx
@@ -95,6 +100,18 @@ def mode_of(plan: Mapping, zone: Mapping) -> ps.Mode:
     scale = zone["scale"]
     return ps.mode_of({**{k: scale.get(k) for k in ps.SETTINGS}, "global_passes": scale.get("global_passes")}, plan["device_id"],
                       plan["lens_id"], scale.get("material_id"))
+
+
+def fired(plan: Mapping, zone: Mapping) -> ps.Mode:
+    """The settings the zone's layer fires at: its scale's, or in a dot kind with dots picked on the colour map that recipe's."""
+    mode = mode_of(plan, zone)
+    return st.fired_at(mode, zone) if dotted(zone) else mode
+
+
+def layer_dpi(plan: Mapping, zone: Mapping) -> float | None:
+    """The DPI of the zone's layer: its step's (:func:`fired`)."""
+    step = fired(plan, zone).line_interval
+    return grayscale.image_dpi(step) if step else None
 
 
 def scale_data(mode: ps.Mode) -> dict:
@@ -162,12 +179,16 @@ def new_zone(store: Store, plan: Mapping, colouring: Mapping, region_ids: list[s
 
 def settle(store: Store, plan: Mapping, zone: dict, width_mm: float) -> dict:
     """After its regions or scale changed: a dot kind's power falls back to the default when the scale is not measured there at the zone's
-    width (as a photo work's does). A zone whose scale is no longer measured is kept as it is: the view says why it cannot be shown."""
+    width (as a photo work's does), and dots picked on the colour map take their colour at the zone's new width (``dot_colours.at_width``).
+    A zone whose scale is no longer measured is kept as it is: the view says why it cannot be shown."""
     if dotted(zone):
         try:
             zone["dot_power"] = ps.dot_power_at(store, mode_of(plan, zone), width_mm, zone.get("dot_power"))
         except PredictionError:
             pass
+    recipe = zone.get("dot_recipe")
+    if recipe and recipe["size"]["row_mm"] != round(float(width_mm), 1):                 # ``palette.at_size`` keeps the length to 0.1 mm
+        zone["dot_recipe"] = dc.at_width(store, mode_of(plan, zone), recipe, width_mm)
     return zone
 
 
@@ -183,10 +204,12 @@ def _number(value, what: str) -> float:
 
 
 def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_mm: float) -> dict:
-    """The zone with the operator's ``changes`` of its photo engraving (any of :data:`SETTINGS`), checked; the zone is not changed. A new
+    """The zone with the operator's ``changes`` of its photo engraving (any of :data:`CHANGES`), checked; the zone is not changed. A new
     scale brings Min and Max to its span at the zone's width; a dot kind's power must lie in the scale's measured powers there; how the
-    greys are chosen (:data:`GREYS`) is checked as a photo work's (``photo_state.change``)."""
-    unknown = sorted(set(changes) - set(SETTINGS))
+    greys are chosen (:data:`GREYS`) and the tone are checked as a photo work's (``photo_state.change``). The dots' colour picked on the
+    colour map (``dot_colour``, ``dot_colours.picked``, as a photo work's): a tone of a grey scale moves the zone to that scale at that
+    power, a fill keeps its recipe (``dot_recipe``); another scale or a power on the scale puts the dots back on the scale."""
+    unknown = sorted(set(changes) - set(CHANGES))
     if unknown:
         raise ZoneError(f"a photo zone has no setting {unknown[0]!r}")
     out = full(copy.deepcopy(dict(zone)))
@@ -194,6 +217,15 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         if changes["kind"] not in KINDS:
             raise ZoneError(f"there is no kind of photo engraving {changes['kind']!r}")
         out["kind"] = changes["kind"]
+    recipe = None
+    if "dot_colour" in changes:
+        if not dotted(out):
+            raise ZoneError("the dots' colour is picked for a dot kind: choose one of them first")
+        picked = dc.picked(store, mode_of(plan, out), width_mm, changes["dot_colour"])
+        recipe = picked.pop("dot_recipe", None)
+        changes = {**{k: v for k, v in changes.items() if k != "dot_colour"}, **picked}
+    if "scale" in changes or ("dot_power" in changes and changes["dot_power"] is not None):
+        out["dot_recipe"] = None
     if "scale" in changes:
         wanted = changes["scale"]
         if not isinstance(wanted, Mapping):
@@ -215,7 +247,7 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         if not isinstance(changes["by_colour"], bool):
             raise ZoneError("«colours by the picture» must be on or off")
         out["by_colour"] = changes["by_colour"]
-    greys = {k: changes[k] for k in GREYS if k in changes}
+    greys = {k: changes[k] for k in (*GREYS, "tone") if k in changes}
     if greys:
         st.change(store, out, greys, mode_of(plan, out), width_mm)
     if "dot_power" in changes and changes["dot_power"] is not None:
@@ -227,6 +259,8 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         if not lo <= power <= hi:
             raise ZoneError(f"the dots' power {power:g} % lies outside the measured powers {lo:g}..{hi:g} % of the scale at this width: choose it inside them")
         out["dot_power"] = power
+    if recipe is not None:
+        out["dot_recipe"] = recipe
     return settle(store, plan, out, width_mm)
 
 
@@ -393,11 +427,12 @@ def curve(store: Store, plan: Mapping, zone: Mapping, width_mm: float) -> tuple[
 
 
 def measured_dots(store: Store, plan: Mapping, zone: Mapping, kind: str, power: float, width_mm: float) -> prediction.Curve | None:
-    """The tones of a dot kind at ``power`` on the zone's settings as photographs of that kind measured them, or None until it was."""
+    """The tones of a dot kind at ``power`` on the zone's settings (or at the recipe its dots were picked on the colour map from) as
+    photographs of that kind measured them, or None until it was."""
     if kind not in ps.photographed_kinds(store):
         return None
     try:
-        return ps.curve_for(store, replace(mode_of(plan, zone), dither=kind, power=power), width_mm)[0]
+        return ps.curve_for(store, st.kind_mode(mode_of(plan, zone), {**zone, "kind": kind, "dot_power": power}), width_mm)[0]
     except PredictionError:
         return None
 
@@ -411,8 +446,9 @@ def look(store: Store, plan: Mapping, zone: Mapping, found: Mapping, scale_curve
     """The zone (:func:`full`) as it will come out on the titanium, RGBA uint8 (transparent outside it), at preview size or with the longer
     side ``px``, in its own kind or in ``kind``; with what is said about it. Grayscale on the scale at Min..Max with the greys the zone
     engraves (``photo_state.engraved``: chosen for the picture's colours with ``by_colour``, its parts' rules, its contours), hatched where no
-    power was measured; a dot kind from its measured tones, else estimated from the scale (``prediction_store.dot_look``). The objects and
-    the people model's scores the greys need are found once and kept with the cut ``found``."""
+    power was measured; a dot kind from its measured tones, else estimated from the dots' colour (the scale's or the recipe's picked on the
+    colour map, ``prediction_store.dot_look``). Both in the zone's tone. The objects and the people model's scores the greys need are found
+    once and kept with the cut ``found``."""
     kind = kind or zone["kind"]
     shown = _reduced(found, px) if px else found
     width = found["box"]["width"]
@@ -426,7 +462,8 @@ def look(store: Store, plan: Mapping, zone: Mapping, found: Mapping, scale_curve
                                              "contours_report": engraved.get("contours_report")}
     power = ps.dot_power_at(store, mode, width, zone.get("dot_power"))
     measured = measured_dots(store, plan, zone, kind, power, width)
-    rgb8, dots = st.dot_look(store, mode, shown["picture"], shown["alpha"], {**zone, "kind": kind, "dot_power": power}, width, scale_curve, measured)
+    state = {**zone, "kind": kind, "dot_power": power}
+    rgb8, dots = st.dot_look(store, mode, st.toned(shown, state)["picture"], shown["alpha"], state, width, scale_curve, measured)
     return _rgba(rgb8, shown["alpha"]), {"dots": dots, "estimate": measured is None, "notes": [] if measured is None else dots["measured"]["notes"]}
 
 
@@ -437,17 +474,17 @@ def digest(curve_: prediction.Curve | None) -> str | None:
 def key(plan: Mapping, zone: Mapping, scale_curve: prediction.Curve | None, measured: prediction.Curve | None, *, kind: str | None = None,
         px: int | None = None) -> str:
     """The key of a picture of the zone (:func:`full`): everything it is drawn from (the picture, the split and its smoothing, the zone's
-    regions, scale and the settings of its kind, the scale's measured points and, for a dot kind, its measured tones). A dot kind does not
-    draw from Min, Max and how the greys are chosen, nor grayscale from the dots' power: changing one leaves the tiles of the other kinds as
-    they are; the objects' colours count while the objects are coloured."""
+    regions, scale and the settings of its kind, the tone it is drawn in, the scale's measured points and, for a dot kind, its measured
+    tones). A dot kind does not draw from Min, Max and how the greys are chosen, nor grayscale from the dots' power and colour: changing one
+    leaves the tiles of the other kinds as they are; the objects' colours count while the objects are coloured."""
     engraving = kind or zone["kind"]
     objects = zone["colour_choice"] == "objects"
     drawn_by = (("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", *(("colouring",) if objects else ()))
-                if engraving == GRAYSCALE else ("dot_power",))
+                if engraving == GRAYSCALE else ("dot_power", "dot_recipe"))
     return rc.key_of({"kind": "vector-photo-zone", "image": rc.file_stamp(plan["image_path"]), "document": rc.file_stamp(plan["document_path"]),
                       "smoothing_mm": plan.get("smoothing_mm", 0.0), "size": plan["size_mm"],
                       "zone": {k: zone[k] for k in ("regions", "scale", *drawn_by)}, "engraving": engraving, "px": px,
-                      "curve": digest(scale_curve), "dots_curve": digest(measured)})
+                      "tone": st.tone_used({**zone, "kind": engraving}), "curve": digest(scale_curve), "dots_curve": digest(measured)})
 
 
 def side_by_side(grey: np.ndarray, rgb8: np.ndarray, alpha: np.ndarray) -> np.ndarray:
@@ -469,24 +506,28 @@ def layer_name(index: int, zone: Mapping, parameters: Mapping) -> str:
 
 
 def parameters(store: Store, plan: Mapping, zone: Mapping, width_mm: float) -> dict:
-    """The settings of the zone's Image layer: the scale's, with Min and Max (grayscale) or every dot at the dots' power (Min = Max)."""
+    """The settings of the zone's Image layer: the scale's, with Min and Max (grayscale) or every dot at the dots' power (Min = Max), or at
+    the settings and power of the recipe its dots were picked on the colour map from."""
     mode = mode_of(plan, zone)
     if zone["kind"] == GRAYSCALE:
         low, high = ps.check_power_range(zone["min_power"], zone["max_power"])
+    elif zone.get("dot_recipe"):
+        low = high = float(zone["dot_recipe"]["settings"]["power"])
     else:
         low = high = ps.dot_power_at(store, mode, width_mm, zone.get("dot_power"))
-    return {**ps.file_parameters(mode, low, high), "layer_type": "Image", "dither": zone["kind"]}
+    return {**ps.file_parameters(fired(plan, zone), low, high), "layer_type": "Image", "dither": zone["kind"]}
 
 
 def file_layer(store: Store, plan: Mapping, zone: Mapping, found: Mapping, index: int) -> dict:
     """The zone (:func:`full`) as a layer of the work's file (``plans.export_lbrn2``): an Image layer in the zone's kind with its scale's
     settings and its picture placed on its box, BGRA, transparent outside the zone (DEC-114). Grayscale engraves the greys the preview shows
     (``photo_state.item``: chosen for the picture's colours with ``by_colour``, its parts' rules, its contours); a dot kind the picture's own
-    greys, and LightBurn makes the dots."""
+    greys, and LightBurn makes the dots. Both in the zone's tone, at the DPI of the settings the layer fires at."""
     width = found["box"]["width"]
     p = parameters(store, plan, zone, width)
     item = st.item(store, mode_of(plan, zone), found, zone, f"zone {zone['number']}", width)
-    pixels = ps.picture_for_file(item, p["min_power"], p["power"], width, None if dotted(zone) else zone["rules"], transparent=True)
+    pixels = ps.picture_for_file(item, p["min_power"], p["power"], width, None if dotted(zone) else zone["rules"], transparent=True,
+                                 fired=fired(plan, zone))
     return {"index": index, "name": layer_name(index, zone, p), "cut_type": "Image", "parameters": p, "prediction": None, "regions": [],
             "layer_keys": [], "zone": zone["number"],
             "picture": {**found["box"], "pixels": pixels, "dither": zone["kind"], "file": f"photo-zone-{zone['number']}.png"}}

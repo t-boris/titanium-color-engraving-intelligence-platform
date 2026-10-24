@@ -21,6 +21,8 @@ A work is a row of ``plan`` of its own mode (``plans.MODE_PHOTO_WORK``). The las
   the recipe's, the cleaned titanium between the dots) until that kind has been photographed at those settings (a ramp of «Проба этого
   вида», ``width_ramp``, or an engraving), then from its measured tones; its picture is engraved as uploaded (the greys chosen for
   colours, the contours and the rules of parts are grayscale's and wait for it);
+* the picture's brightness, contrast and gamma (``tone``, 0.27.0, :func:`photo_state.toned`): its greys in that tone are what a dot kind
+  dithers and what grayscale engraves while the picture's own greys are engraved; the look, the close-up and the file take them alike;
 * the steps that can be undone and redone (``undo``, ``redo``): each holds the work's state as it decides what is engraved (:data:`STATE`);
 * when it last changed (``updated_at``).
 
@@ -65,14 +67,14 @@ GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS
 TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
-        "colouring", "kind", "dot_power", "dot_recipe", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts")
+        "colouring", "kind", "dot_power", "dot_recipe", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts")
 SETTINGS = ("scale", "width_mm", "dot_colour", *st.SETTINGS)        # ``dot_colour``: a point of the colour map picked for the dots
 # what a work made before the rules of parts (0.19.0), undo, the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
 DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
 STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind",
-         "dot_power", "dot_recipe", "ai", "ai_theme", "texts")
+         "dot_power", "dot_recipe", "tone", "ai", "ai_theme", "texts")
 UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 KEEP_LOOKS = 8                      # what the dots of the works' last looks are (their share above all), so an open work is not dithered again
 KEEP_CUT = 2                        # pictures cut by their inscriptions kept in memory, as the decoded ones
@@ -162,7 +164,7 @@ def _key(kind: str, plan: Mapping, curve: prediction.Curve, measured: prediction
                       "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"],
                       "colour_choice": plan["colour_choice"], "contours": plan["contours"], "rules": plan["rules"],
                       "colouring": plan["colouring"] if plan["colour_choice"] == "objects" else None, "engraving": plan["kind"], "dot_power": plan["dot_power"] if _dotted(plan) else None,
-                      "dot_recipe": plan.get("dot_recipe") if _dotted(plan) else None})
+                      "dot_recipe": plan.get("dot_recipe") if _dotted(plan) else None, "tone": st.tone_used(plan)})
 
 
 # -- inscriptions (feature inscriptions-in-works, REQ-005, DEC-003) ---------------------------------------------------------------
@@ -345,8 +347,8 @@ def _measured_dots(store: Store, plan: Mapping) -> prediction.Curve | None:
 def _dot_look(store: Store, plan: Mapping, curve: prediction.Curve, px: int | None = None,
               measured: prediction.Curve | None = None) -> tuple[np.ndarray, np.ndarray, dict]:
     """The work in its dot kind seen from a distance at preview size, or with the longer side ``px``: the picture's grey, the look (RGB
-    uint8) and the dots (``photo_state.dot_look``, with the ``measured`` tones of the kind, ``_measured_dots``)."""
-    upload = _cut_upload(store, plan)
+    uint8) and the dots (``photo_state.dot_look``, with the ``measured`` tones of the kind, ``_measured_dots``), in the work's tone."""
+    upload = st.toned(_cut_upload(store, plan), plan)
     grey, alpha = st.reduced(upload, px) if px else (upload["picture"], upload["alpha"])
     rgb8, dots = st.dot_look(store, mode_of(plan), grey, alpha, plan, plan["width_mm"], curve, measured)
     return grey, rgb8, dots
@@ -373,6 +375,7 @@ def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
             "min_power": plan["min_power"], "max_power": plan["max_power"], "width_mm": width, "height_mm": round(height, 2),
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
             "kind": plan["kind"], "dot_power": plan["dot_power"], "dot_recipe": plan["dot_recipe"], "colouring": plan["colouring"],
+            "tone": st.tone_of(plan), "tone_used": st.tone_used(plan) is not None,
             "rules": [st.shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_theme": plan["ai_theme"], "ai_photo": plan["ai_photo"],
             "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": _time(store, plan, fired, texts), "texts_count": len(plan["texts"])}
 
@@ -486,7 +489,7 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     paint = _paint(store, _text_state(store, plan)) if curve is not None else []
 
     def draw() -> bytes:
-        upload = _upload(plan)
+        upload = st.toned(_upload(plan), plan)
         if curve is None:
             rgb8 = np.repeat((np.clip(upload["picture"], 0, 1) * 255).round().astype(np.uint8)[..., None], 3, axis=-1)
         elif _dotted(plan):
@@ -498,7 +501,8 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
         scale = min(1.0, THUMB_PX / max(rows, cols))
         small = cv2.resize(rgb8, (max(1, round(cols * scale)), max(1, round(rows * scale))), interpolation=cv2.INTER_AREA) if scale < 1 else rgb8
         return prediction.to_png(small)
-    key = rc.key_of({"kind": "photo-work-thumbnail", "px": THUMB_PX, "image": rc.file_stamp(plan["image_path"]), "unmeasured": True}) \
+    key = rc.key_of({"kind": "photo-work-thumbnail", "px": THUMB_PX, "image": rc.file_stamp(plan["image_path"]), "unmeasured": True,
+                     "tone": st.tone_used(plan)}) \
         if curve is None else _key("photo-work-thumbnail", plan, curve, measured, paint)
     return rc.Picture(store, _folder(plan["id"]), key, draw)
 
@@ -598,7 +602,8 @@ def kind_picture(store: Store, plan_id: int, kind: str) -> rc.Picture:
 def export(store: Store, plan_id: int) -> tuple[bytes, str]:
     """The LightBurn file of the work (the cleaning, then one Image layer in the work's kind, ``plans.export_picture``) and the name to
     save it under. A dot kind's layer fires every dot at the dots' power (Min = Max) and the settings they fire at (the scale's, or the
-    recipe's picked on the colour map, whose step is the layer's DPI) and carries the picture as uploaded: LightBurn makes the dots.
+    recipe's picked on the colour map, whose step is the layer's DPI) and carries the picture as uploaded, in the work's tone: LightBurn
+    makes the dots.
     The picture is transparent under its inscriptions' cut, and their letters follow on a layer of each titanium colour (DEC-003); an
     inscription that cannot be engraved refuses the file."""
     plan = _work(store, plan_id)
@@ -644,7 +649,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     plan = {"device_id": mode.device_id, "lens_id": mode.lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
             "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE,
-            "dot_power": None, "dot_recipe": None, "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
+            "dot_power": None, "dot_recipe": None, "tone": dict(st.TONE), "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
             "texts": []}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))
@@ -716,7 +721,7 @@ def step(store: Store, plan_id: int, direction: str) -> None:
         raise cv.ConversionError("there is no earlier change of the work to undo" if direction == "undo" else "there is no undone change to redo")
     there = plan[direction].pop()
     plan["redo" if direction == "undo" else "undo"].append(_here(plan))
-    plan.update(copy.deepcopy(there))
+    plan.update(copy.deepcopy({**{k: DEFAULTS[k] for k in STATE if k in DEFAULTS}, **there}))     # a step kept before a setting existed
     plan["updated_at"] = now()
     with store.transaction():
         _save(store, plan, plan["id"])
