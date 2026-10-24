@@ -30,14 +30,14 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
 - [x] A12 Release 0.29.0: suite 2106 passed none skipped (-n 12, 2:56), version, README, commit, push, tag v0.29.0, backup, deploy, read-only check
 
 ## Stage B — safety and desktop (REQ-080/081/082), 0.30.0
-- [ ] B1 Schema version stamp, migration registry, pre-migration backup, newer-schema refusal, workshop lock
-- [ ] B2 Full backup / restore (DB + files + labs + manifest); path resolver for another folder
-- [ ] B3 Host / Origin checks; desktop session secret and cookie; upload limits
-- [ ] B4 Core for packaging: cli ready line, watchdog, Windows fonts, certifi, network settings, diagnostics export
-- [ ] B5 `desktop/` Electron Forge shell: launcher screen, sidecar lifecycle, isolation, updates from GitHub Releases
-- [ ] B6 PyInstaller onedir sidecar; macOS build signed (DEC-044); `--smoke`
+- [x] B1 Schema version stamp, migration registry, pre-migration backup, newer-schema refusal, workshop lock (07e8a42; DEC-056; tests/test_migrations.py)
+- [x] B2 Full backup / restore (DB + files + labs + manifest); path resolver for another folder (07e8a42; tests/test_backup.py; the workshop screen follows)
+- [x] B3 Host / Origin checks; desktop session secret and cookie; upload limits (60c3dbc; DEC-057; tests/test_api_security.py)
+- [ ] B4 Core for packaging: cli ready line, watchdog, Windows fonts, certifi (60c3dbc); network settings and diagnostics export (in progress)
+- [x] B5 `desktop/` Electron Forge shell: launcher screen, sidecar lifecycle, isolation, update check from GitHub Releases (60c3dbc; 16 node tests; applying an update waits for signed builds)
+- [ ] B6 PyInstaller onedir sidecar and `--smoke` (60c3dbc); signed macOS build verified on 60c3dbc (Developer ID 3M68DG8S7N, hardened runtime, codesign --verify --deep --strict valid, spctl «Unnotarized Developer ID», packaged app --smoke ok, zip 254 MB); final build after the LAN merge pending
 - [ ] B7 LAN (DEC-047): workshop CA, TLS server, pairing, devices, revoke
-- [ ] B8 Manual `desktop.yml` for Windows x64 build + smoke; GitHub pre-release (DEC-048)
+- [ ] B8 Manual `desktop.yml` for Windows x64 build + smoke (60c3dbc); GitHub pre-release (DEC-048) pending
 - [ ] B9 Release 0.30.0
 
 ## Stage C — cloud (REQ-086/087), 0.31.0
