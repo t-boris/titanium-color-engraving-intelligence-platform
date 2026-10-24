@@ -64,6 +64,7 @@ DATA_KEYS = ("rephoto_of", "correction_of", "masks_reviewed", "file_confirmation
              "matrix", "lens_choice", "linked_plan_id", "work_task", "layer_tasks", "supplied_settings")
 # The six settings a comparable layer needs (REQ-015): the LightBurn tag each is read from and the field of a layer report
 # that holds the value read from the file.
+TONAL_PROFILE_ALGORITHM = "1"     # how a tonal profile is measured from a photograph; a release names it (electron REQ-083)
 REQUIRED_SETTINGS = {"power": ("maxPower", "power"), "frequency": ("frequency", "frequency_khz"), "speed": ("speed", "speed"),
                      "pulse_width": ("QPulseWidth", "pulse_width"), "line_interval": ("interval", "line_interval"),
                      "passes": ("numPasses", "passes")}

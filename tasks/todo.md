@@ -9,12 +9,12 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
 ## Stage A — local laboratory exchange (REQ-083/084/085), 0.29.0
 - [x] A1 Golden local snapshot of colormap / palette / curves / scales before the refactor (`tests/labworld.py`, `test_evidence_golden.py`)
 - [x] A2 `lab_format.py` + `schemas/tcelab-1.schema.json`: JCS, strict decoder, line framing, incremental hash, limits, safety
-- [ ] A3 Tables `portable_id`, `pair_row_length`, `lab_export`, `lab_source`, `lab_release`, `lab_withdrawal`
-- [ ] A4 A connected release is a snapshot store with the main schema (`lab_snapshot.py`): colormap, palette and prediction_store run on it
+- [x] A3 Tables `portable_id`, `pair_row_length`, `lab_export`, `lab_source`, `lab_release`, `lab_withdrawal`
+- [x] A4 A connected release is a snapshot store with the main schema (`lab_snapshot.py`): colormap, palette and prediction_store run on it
   unchanged; row lengths from `pair_row_length` where the LightBurn file is not kept (changed from the gather/transform split: smaller change,
   parity by construction)
 - [x] A5 DEC-045: tonal curves by engraving (count and Lab), `prediction.ALGORITHM` 2, changed numbers recorded in the golden record
-- [ ] A6 `lab_export.py`: selection, closure, privacy preview, terms (DEC-042), streaming writer
+- [x] A6 `lab_export.py`: selection, closure, privacy preview, terms (DEC-042), streaming writer
 - [ ] A7 `lab_import.py`: staging, validation, progress, cancel, atomic activation, no-op / conflict, disconnect, withdrawals
 - [ ] A8 Pinned sources in vector and photo works; update with preview and route back; frozen result on algorithm mismatch
 - [ ] A9 `lab_transfer.py`: transfer experiment from a foreign recipe

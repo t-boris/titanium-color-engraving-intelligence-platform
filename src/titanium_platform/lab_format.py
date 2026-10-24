@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping
+from urllib.parse import urlsplit
 
 FORMAT = "tcelab"
 SCHEMA_MAJOR, SCHEMA_MINOR = 1, 0
@@ -207,10 +208,16 @@ def check_text(value: str, where: str, multiline: bool = False) -> None:
 
 
 def check_url(value: str, where: str) -> None:
-    """A link a release may show (never fetched): https, a host name, no credentials, at most 512 characters."""
-    if len(value) > 512 or not re.fullmatch(r"https://[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d{1,5})?(?:/[^\s<>\"'`\\]*)?", value):
+    """A link a release may show (never fetched): https, a host name with a domain, no credentials, at most 512 characters."""
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError:
+        parts, port = None, None
+    if (len(value) > 512 or parts is None or parts.scheme != "https" or not re.fullmatch(r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}", parts.hostname or "")
+            or re.search(r"[\s<>\"'`\\]", value) or (port is not None and not 0 < port < 65536)):
         raise FormatError("url", f"{where}: only an https link to a named host is allowed")
-    if "@" in value.split("/", 3)[2]:
+    if parts.username is not None or parts.password is not None:
         raise FormatError("url", f"{where}: a link with credentials is not allowed")
     check_text(value, where)
 
@@ -252,15 +259,14 @@ def validate(value: Any, rule: Mapping, where: str = "$", strict: bool = True, r
         name = rule["$ref"].rsplit("/", 1)[-1]
         return validate(value, root["$defs"][name], where, strict, root)
     if "anyOf" in rule:
-        problems = []
         for option in rule["anyOf"]:
             try:
                 validate(value, option, where, strict, root)
                 break
-            except FormatError as exc:
-                problems.append(str(exc))
+            except FormatError:
+                continue
         else:
-            raise FormatError("schema", problems[0] if len(problems) == 1 else f"{where}: matches none of the allowed forms")
+            raise FormatError("schema", f"{where}: matches none of the allowed forms")
     kinds = rule.get("type")
     if kinds is not None:
         kinds = [kinds] if isinstance(kinds, str) else kinds

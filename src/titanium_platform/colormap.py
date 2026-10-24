@@ -25,7 +25,8 @@ centimetre, or per centimetre of path for a Line-mode recipe, labelled an estima
 slower than a time per square centimetre, and within the delta E tolerance the search puts the fastest recipe first.
 
 A measured colour keeps the row length of its layer (``row_mm``, DEC-107): the length the laser marks along a scan row through it, read
-from the pair's stored LightBurn file (:mod:`row_length`), so that a palette gives a recipe's colour at the size it is engraved at.
+from the pair's stored LightBurn file (:mod:`row_length`; the snapshot of a connected release stores it instead), so that a palette
+gives a recipe's colour at the size it is engraved at.
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ from . import plans as pl
 from . import setup as su
 from .db import Store
 
+ALGORITHM = "1"                           # how the evidence of the map is gathered; a release names it (electron REQ-083)
 DEFAULT_CLEAN = [68.0, 0.0, 2.0]          # cleaned titanium when no photograph with a chart has measured it yet
 SERVICE = ("registration, QR and engraved labels",)
 WITNESS = "pre-test cleaning witness"
@@ -162,6 +164,8 @@ def references(store: Store) -> dict:
     for row in rows:
         if row["pair_id"] in witness or (row["plan_id"] and row["plan_status"] != "Restored") or row["pair_id"] in derived:
             continue
+        if not row["lightburn_path"]:
+            continue                  # no stored file: a connected release publishes its witness as such (electron REQ-083)
         try:
             stamp = Path(row["lightburn_path"]).stat().st_mtime_ns
         except OSError:
@@ -291,6 +295,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     refs = references(store)
     rows, witness, derived, nominal = refs["rows"], refs["witness"], refs["derived"], refs["nominal"]
     kept, names = experiments.kept_plan_ids(store), _names(store)
+    lengths = row_length.recorded(store)
 
     points = []
     observations: dict[int, dict[str, int]] = {}
@@ -314,7 +319,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "provisional": False, "lab": lab, "delta": delta,
                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
                        "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **_time(params),
-                       "row_mm": row_length.of_file(row["lightburn_path"]).get(row["layer_index"]), **info})
+                       "row_mm": row_length.of_pair(lengths, row["pair_id"], row["lightburn_path"]).get(row["layer_index"]), **info})
     first_row = {}
     for row in rows:
         first_row.setdefault(row["pair_id"], row)

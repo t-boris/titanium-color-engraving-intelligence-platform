@@ -39,7 +39,7 @@ NOTE_KEYS = {"note", "statement", "rationale",                                  
 REASON_ARGS = {"_event": 5, "_record": 3,          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
                "refuse": 0}                        # anchoring's refuse(REASON)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-lettering.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-labs.js", "i18n-gaps.js"]
 PLACEHOLDER = "7"
 HOLE = "\x00"                                      # where a wrapper embeds another server message
 LIST_SEPARATOR = "; "                              # several server messages in one are joined with it
@@ -64,6 +64,7 @@ DATA_TAILS = {
     "unknown engraving task: ": "the task key that was sent",
     "settings unknown to this version are kept with the recipe but not interpreted: ": "the LightBurn setting tags of the layer",
     "Google Fonts could not be reached: ": "the network library's own error text",
+    "the release cannot be written: ": "the release format's own description of the value it refuses (lab_format.FormatError)",
     "the font 7 could not be downloaded from Google Fonts: ": "the network library's own error text",
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the

@@ -32,6 +32,7 @@ from . import lightburn as lb, render_cache as rc
 
 ROWS = 512                       # scan rows sampled across a layer's shapes
 FILLS = ("Scan", "Scan+Cut")     # layer types that fill their shapes row by row (an Offset fill follows the outlines instead)
+ALGORITHM = "1"                  # how a row length is measured; a release names it (electron REQ-083)
 KEEP_FILES = 256                 # row lengths of the stored files read last, kept in memory
 
 _files: OrderedDict[str, dict[int, float | None]] = OrderedDict()
@@ -121,6 +122,20 @@ def of_layer(layer: lb.Layer) -> float | None:
 def of_project(project: lb.Project) -> dict[int, float | None]:
     """The row length of every layer of a parsed file, by layer index."""
     return {layer.index: of_layer(layer) for layer in project.layers}
+
+
+def recorded(store) -> dict[int, dict[int, float | None]]:
+    """The row lengths stored with pairs whose LightBurn file is not kept, by pair id and layer index: the snapshot of a connected
+    laboratory release, which publishes every row length with its layer (electron REQ-083). Empty in a workshop of its own."""
+    out: dict[int, dict[int, float | None]] = {}
+    for row in store.query("SELECT pair_id, layer_index, row_mm FROM pair_row_length"):
+        out.setdefault(row["pair_id"], {})[row["layer_index"]] = row["row_mm"]
+    return out
+
+
+def of_pair(known: dict[int, dict[int, float | None]], pair_id: int, path: str | None) -> dict[int, float | None]:
+    """The row lengths of a pair's layers: those stored with it (``recorded``), else read from its LightBurn file (``of_file``)."""
+    return known[pair_id] if pair_id in known else of_file(path)
 
 
 def of_file(path: str | None) -> dict[int, float | None]:

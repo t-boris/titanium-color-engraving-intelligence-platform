@@ -80,6 +80,9 @@ def valid_lab(lab) -> bool:
     return all(np.isfinite([L, a, b])) and 0 <= L <= 100 and -128 <= a <= 127 and -128 <= b <= 127
 
 
+AGAINST_CLEAN_ALGORITHM = "1"      # how a camera-relative colour is expressed against clean titanium; a release names it
+
+
 def against_clean(lab, clean, nominal) -> list[float]:
     """The colour as it would look next to nominal clean titanium: its ratio to the clean surface of the *same* photograph, per
     channel in linear light (exposure and illuminant cancel), applied to the nominal clean titanium (DEC-056)."""

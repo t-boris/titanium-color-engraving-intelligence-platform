@@ -30,7 +30,11 @@ SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into gen
                "https://api.github.com/repos/google/fonts/git/trees/main?recursive=1": "the files of Google's families, fetched only when the "
                                                                                       "operator asks (fonts.py)",
                "https://raw.githubusercontent.com/google/fonts/main/": "a Google family's font files, downloaded only when the operator "
-                                                                       "chooses it (fonts.py)"}
+                                                                       "chooses it (fonts.py)",
+               "https://creativecommons.org/licenses/by/4.0/": "the text of a release's usage terms, a link the screen shows (lab_format.py, "
+                                                               "electron DEC-042); never fetched",
+               "https://creativecommons.org/licenses/by-nc/4.0/": "the text of a release's usage terms, a link the screen shows (lab_format.py, "
+                                                                  "electron DEC-042); never fetched"}
 # Modules that can open a network connection; ``urllib.parse`` only builds strings and is not among them.
 NETWORK_MODULES = ("socket", "ssl", "http.client", "urllib.request", "urllib3", "requests", "httpx", "aiohttp", "ftplib", "smtplib",
                    "websocket", "websockets", "openai", "anthropic")

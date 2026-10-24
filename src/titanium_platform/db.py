@@ -256,6 +256,39 @@ CREATE TABLE IF NOT EXISTS audit (
 """
 
 
+# Portable laboratories (electron REQ-083..085), created by ``Store._migrate`` in a workshop of any age.
+LAB_SCHEMA = """
+-- A portable identity is a UUID given once to a local record and kept in every later release (DEC-024): ``kind`` names the record
+-- (laser, lens, material, setup, plan, engraving, pair, observation, tonal), ``local_key`` its key here.
+CREATE TABLE IF NOT EXISTS portable_id (kind TEXT NOT NULL, local_key TEXT NOT NULL, uuid TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
+    PRIMARY KEY (kind, local_key));
+-- The row length of a measured layer where its LightBurn file is not kept: the snapshot of a connected release (``row_length.recorded``).
+CREATE TABLE IF NOT EXISTS pair_row_length (pair_id INTEGER NOT NULL REFERENCES pair(id), layer_index INTEGER NOT NULL, row_mm REAL,
+    PRIMARY KEY (pair_id, layer_index));
+-- Releases this workshop wrote: what was chosen and the manifest.
+CREATE TABLE IF NOT EXISTS lab_export (release_id TEXT PRIMARY KEY, content_sha256 TEXT NOT NULL, created_at TEXT NOT NULL,
+    manifest_json TEXT NOT NULL, selection_json TEXT NOT NULL, bytes INTEGER NOT NULL);
+-- Connected laboratories and their releases (REQ-084). A release never changes: its identity and hash are fixed and a newer one is
+-- another row; ``status`` says whether it is the one in use (active), kept for saved works (kept) or gone from disk (removed).
+CREATE TABLE IF NOT EXISTS lab_source (id INTEGER PRIMARY KEY AUTOINCREMENT, origin_lab_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+    origin TEXT NOT NULL, url TEXT, status TEXT NOT NULL, current_release_id TEXT, update_checks TEXT NOT NULL DEFAULT 'manual',
+    connected_at TEXT NOT NULL, disconnected_at TEXT, last_checked_at TEXT, last_check_json TEXT);
+CREATE TABLE IF NOT EXISTS lab_release (release_id TEXT PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES lab_source(id),
+    origin_lab_id TEXT NOT NULL, release_number INTEGER, content_sha256 TEXT NOT NULL, schema_version TEXT NOT NULL,
+    manifest_json TEXT NOT NULL, lab_json TEXT NOT NULL, compatibility_json TEXT NOT NULL, verified INTEGER NOT NULL DEFAULT 0,
+    retrieved_at TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS lab_release_identity BEFORE UPDATE OF release_id, source_id, origin_lab_id, release_number, content_sha256,
+    schema_version, manifest_json, lab_json ON lab_release BEGIN SELECT RAISE(ABORT, 'a laboratory release never changes'); END;
+-- What the owners of connected laboratories withdrew, as this workshop learned it; kept for ever.
+CREATE TABLE IF NOT EXISTS lab_withdrawal (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER NOT NULL REFERENCES lab_source(id),
+    target_kind TEXT NOT NULL, target_id TEXT NOT NULL, reason TEXT NOT NULL, replacement_release_id TEXT, declared_at TEXT NOT NULL,
+    learned_at TEXT NOT NULL, learned_from TEXT NOT NULL, UNIQUE (source_id, target_kind, target_id));
+CREATE TRIGGER IF NOT EXISTS lab_withdrawal_kept BEFORE UPDATE ON lab_withdrawal
+    BEGIN SELECT RAISE(ABORT, 'a withdrawal is kept as it was learned'); END;
+CREATE TRIGGER IF NOT EXISTS lab_withdrawal_not_deleted BEFORE DELETE ON lab_withdrawal
+    BEGIN SELECT RAISE(ABORT, 'a withdrawal is kept as it was learned'); END;
+"""
+
 REBUILT = ("plate", "plan", "pair", "observation", "knowledge", "target_color", "proposal")   # had profile_id before 0.4.0
 SNAPSHOT_LENS = {      # where a record of 0.3.1 remembered the lens it was made with: its column and the JSON paths of the lens id
     "plate": ("lens_json", ("$.id",)), "plan": ("data_json", ("$.lens.id", "$.experiment.lens.id")), "pair": ("hardware_json", ("$.lens.id",))}
@@ -373,6 +406,7 @@ class Store:
         self.conn.execute("CREATE TABLE IF NOT EXISTS proposal_event (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                           "proposal_id INTEGER NOT NULL REFERENCES proposal(id), at TEXT NOT NULL, from_status TEXT, "
                           "to_status TEXT NOT NULL, reason TEXT NOT NULL, note TEXT, finding_id INTEGER REFERENCES finding(id))")
+        self.conn.executescript(LAB_SCHEMA)
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):
             known = self.conn.execute("SELECT engraving_title FROM pair WHERE engraving_id=? AND engraving_title IS NOT NULL LIMIT 1",

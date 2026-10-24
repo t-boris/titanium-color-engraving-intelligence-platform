@@ -74,6 +74,7 @@ from . import agreement, color, colormap, colouring, model, prediction, setup as
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
+ALGORITHM = "1"                   # how a palette is made from the evidence; a release names it (electron REQ-083)
 MAX_COLOURS = 29                  # LightBurn's 30 output layers less the cleaning layer, which always comes first (DEC-073)
 MODES = ("closest", "tonality", "random", "contrast", "artistic")
 SUBSETS = ("all", "warm", "cool", "bright")   # the groups of the palette Artistic draws from

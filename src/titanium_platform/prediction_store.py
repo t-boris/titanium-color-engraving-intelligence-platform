@@ -24,7 +24,8 @@ runs over the darkness of the grey. A profile of a picture lying over vector fil
 dots (DEC-095).
 
 Every point and fill keeps the row length it was measured at (``source["row_mm"]``, DEC-107): the length the laser marks along a scan
-row through it, derived from the pair's stored LightBurn file (``row_length``; nothing is written to the database), so that a curve is
+row through it, derived from the pair's stored LightBurn file (``row_length``; nothing is written to the database; the snapshot of a connected release
+stores it, as it keeps no file), so that a curve is
 made for the size of what it predicts (``curve_for(..., row_mm)``, ``prediction.curve_at``).
 
 A chart-corrected colour is referenced. A camera-relative colour is expressed against the clean titanium of its own photograph
@@ -159,6 +160,7 @@ def _collected(store: Store, mode: Mode, stamp: tuple[int, int]) -> dict:
     refs = colormap.references(store)
     witness, derived, nominal = refs["witness"], refs["derived"], refs["nominal"]
     kept = experiments.kept_plan_ids(store)
+    lengths = row_length.recorded(store)
     titanium, plates = _on_titanium(store, mode.material_id)
     pairs = {r["id"]: r for r in store.query(
         "SELECT id, plan_id, engraving_id, engraving_title, lightburn_name, lightburn_path, photo_name, accepted_at, material_id, data_json FROM pair "
@@ -180,7 +182,7 @@ def _collected(store: Store, mode: Mode, stamp: tuple[int, int]) -> dict:
         lab, reference = _expressed(json.loads(row["lab_json"]), kind, clean["lab"] if clean else None, nominal)
         source = {**_where(pairs[row["pair_id"]], kept), "layer": row["layer_index"], "layer_name": evidence.get("layer_name"),
                   "how": "flat fill", "reference": reference, "observation_id": row["id"],
-                  "row_mm": row_length.of_file(pairs[row["pair_id"]]["lightburn_path"]).get(row["layer_index"])}
+                  "row_mm": row_length.of_pair(lengths, row["pair_id"], pairs[row["pair_id"]]["lightburn_path"]).get(row["layer_index"])}
         fills.append(prediction.Point(params["power"], lab, source, kind == "calibrated"))
     for pair_id, pair in pairs.items():                      # tonal profiles of photo engravings and grey ramps
         check = json.loads(pair["data_json"] or "{}").get("check") or {}
@@ -204,7 +206,7 @@ def _collected(store: Store, mode: Mode, stamp: tuple[int, int]) -> dict:
                 over_fills += 1                              # the colour there is the fill mixed with the dots (DEC-095)
                 continue
             values = prediction.adjustments_of(tonal.get("adjustments"))["values"]
-            row_mm = row_length.of_file(pair["lightburn_path"]).get(rep["index"])
+            row_mm = row_length.of_pair(lengths, pair_id, pair["lightburn_path"]).get(rep["index"])
             for step in tonal["bins"]:
                 grey = prediction.adjust_grey(step["gray"], values["Gamma"], values["Contrast"], values["Brightness"])
                 power = float(prediction.grey_to_power(grey, *tonal["power_range"])) if mode.dither == prediction.PREDICTED_MODE else float(100.0 * (1.0 - grey))
