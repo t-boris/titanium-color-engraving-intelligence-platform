@@ -39,7 +39,7 @@ NOTE_KEYS = {"note", "statement", "rationale",                                  
 REASON_ARGS = {"_event": 5, "_record": 3,          # _event(store, id, type, from, to, REASON, ...), _record(store, id, to, REASON, ...)
                "refuse": 0}                        # anchoring's refuse(REASON)
 TABLES = ["i18n.js", "i18n-more.js", "i18n-device.js", "i18n-rest.js", "i18n-photo.js", "i18n-tasks.js", "i18n-data.js", "i18n-findings.js",
-          "i18n-palette.js", "i18n-lettering.js", "i18n-labs.js", "i18n-workshop.js", "i18n-gaps.js"]
+          "i18n-palette.js", "i18n-lettering.js", "i18n-labs.js", "i18n-workshop.js", "i18n-lan.js", "i18n-gaps.js"]
 PLACEHOLDER = "7"
 HOLE = "\x00"                                      # where a wrapper embeds another server message
 LIST_SEPARATOR = "; "                              # several server messages in one are joined with it

@@ -23,6 +23,7 @@ dependencies = [
   "uharfbuzz>=0.57",
   "shapely>=2.2",
   "certifi>=2024.2.2",
+  "cryptography>=42",
 ]
 
 [project.optional-dependencies]

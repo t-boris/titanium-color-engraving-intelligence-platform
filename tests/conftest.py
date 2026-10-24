@@ -8,6 +8,7 @@ from titanium_platform.db import Store
 
 
 os.environ.setdefault("TCE_ALLOWED_HOSTS", "testserver")        # the test client's host name passes the local API guard (api.security)
+os.environ.setdefault("TCE_LAN_BIND", "127.0.0.1")              # a LAN server a test starts listens on loopback only (lan.py)
 
 
 @pytest.fixture

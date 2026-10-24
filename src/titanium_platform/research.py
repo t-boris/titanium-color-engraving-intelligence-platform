@@ -355,7 +355,12 @@ def save_insight(store: Store, session_id: int, purpose: str, claim: str,
             "evidence_pair_ids": ids}
 
 
+switched_on = True                            # the operator's network setting (outbound.py): off, no key is read and the AI features say so
+
+
 def _api_key() -> str | None:
+    if not switched_on:
+        return None
     env = os.environ.get("OPENAI_API_KEY", "").strip()
     if env:
         return env

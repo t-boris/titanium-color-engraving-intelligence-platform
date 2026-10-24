@@ -399,7 +399,12 @@ def remove_own(data_dir: Path, face_id: str) -> None:
 
 
 # -- Google Fonts --------------------------------------------------------------------------------------------------------------------
+network_allowed = True                        # the operator's network setting (outbound.py): off, Google Fonts are not fetched
+
+
 def _get(url: str) -> bytes:
+    if not network_allowed:
+        raise su.ValidationError("Google Fonts are switched off in the network settings of this workshop")
     request = urllib.request.Request(url, headers={"User-Agent": "titanium-platform"})
     context = ssl.create_default_context(cafile=certifi.where())       # the packaged core has no system certificates (electron REQ-080)
     with urllib.request.urlopen(request, timeout=TIMEOUT_S, context=context) as response:           # noqa: S310 - fixed https addresses
@@ -425,6 +430,8 @@ def google_index(data_dir: Path, fetch: bool = True, refresh: bool = False) -> d
         raw = _get(GOOGLE_METADATA).decode("utf-8")
         meta = json.loads(raw[raw.index("{"):])["familyMetadataList"]
         tree = json.loads(_get(GOOGLE_TREE).decode("utf-8"))["tree"]
+    except su.ValidationError:
+        raise
     except Exception as exc:
         raise su.ValidationError(f"Google Fonts could not be reached: {type(exc).__name__}") from None
     folders: dict[str, list] = {}
@@ -462,6 +469,8 @@ def download(data_dir: Path, family: str) -> list[dict]:
             continue
         try:
             data = _get(GOOGLE_RAW + urllib.request.quote(repo_path))
+        except su.ValidationError:
+            raise
         except Exception as exc:
             raise su.ValidationError(f"the font {family!r} could not be downloaded from Google Fonts: {type(exc).__name__}") from None
         tmp = target.with_suffix(target.suffix + ".part")

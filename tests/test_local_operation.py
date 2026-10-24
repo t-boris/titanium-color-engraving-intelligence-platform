@@ -25,6 +25,8 @@ UI_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace: a name passed to cr
 SERVER_URLS = {"http://www.w3.org/2000/svg": "the SVG namespace written into generated SVG files",
                "http://{host}:{bound}": "the local address the launcher prints for the operator's browser",
                "http://{LOOPBACK}:{outcome[": "the loopback address of the core the --smoke check starts and asks itself (electron REQ-080)",
+               "https://{address}:{port}": "the address of this workshop on the local network, shown for the tablet to open (lan.py, electron "
+                                           "REQ-082); nothing is fetched",
                "https://docs.lightburnsoftware.com/latest/Reference/CutSettingsEditor/ImageMode/": "a source cited in the docstring of dots.py",
                "https://forum.lightburnsoftware.com/t/halftone-questions-angle/16438": "a source cited in the docstring of dots.py",
                "https://fonts.google.com/metadata/fonts": "Google's list of families, fetched only when the operator asks (fonts.py)",
@@ -44,7 +46,9 @@ NETWORK_IMPORTS = {("research.py", "openai"): "the optional AI researcher and pr
                    ("fonts.py", "urllib.request"): "Google Fonts, fetched only when the operator asks for a family or many (DEC-001)",
                    ("fonts.py", "ssl"): "the certificate store (certifi) for those Google Fonts fetches in the packaged core (electron REQ-080)",
                    ("cli.py", "socket"): "binding the loopback port the core serves on (electron DEC-046)",
-                   ("cli.py", "urllib.request"): "the --smoke check asking its own loopback core for /api/health (electron REQ-080)"}
+                   ("cli.py", "urllib.request"): "the --smoke check asking its own loopback core for /api/health (electron REQ-080)",
+                   ("lan.py", "socket"): "the addresses of this computer and the LAN port the tablet server binds, only when the operator "
+                                         "switched the local network on (electron REQ-082, DEC-047)"}
 
 
 def test_the_ui_loads_no_script_style_font_or_data_from_the_network():

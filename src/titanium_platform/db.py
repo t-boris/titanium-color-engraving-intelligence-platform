@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS capture_setup (
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS device (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+);
 CREATE TABLE IF NOT EXISTS plate (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_id TEXT NOT NULL UNIQUE,

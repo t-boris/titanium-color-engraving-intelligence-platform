@@ -9,10 +9,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, capability_results, findings, lab_import, research, work_errors
+from .. import __version__, capability_results, findings, lab_import, lan, outbound, research, work_errors
 from ..db import open_store
-from . import (routes_devices, routes_findings, routes_fonts, routes_labs, routes_lenses, routes_palette, routes_photo_work, routes_plans,
-               routes_prediction, routes_research, routes_setup, routes_vector, routes_work, routes_workshop)
+from . import (routes_devices, routes_findings, routes_fonts, routes_labs, routes_lan, routes_lenses, routes_palette, routes_photo_work,
+               routes_plans, routes_prediction, routes_research, routes_setup, routes_vector, routes_work, routes_workshop)
 from . import security
 from .common import install_error_handlers
 
@@ -40,11 +40,13 @@ async def lifespan(app: FastAPI):
     scheduler = findings.Scheduler(app.state.store)
     app.state.analysis_scheduler = scheduler
     scheduler.start_if_enabled()
+    app.state.lan.start_if_enabled()               # the LAN server for tablets, only when the operator switched it on (electron REQ-082)
     counting = threading.Thread(target=_count_works, args=(app.state.store,), name="work-attention", daemon=True)
     counting.start()
     try:
         yield
     finally:
+        app.state.lan.stop()
         scheduler.stop()
         counting.join(30.0)
 
@@ -64,6 +66,8 @@ def create_app(data_dir: str | Path) -> FastAPI:
     lab_import.reconcile(app.state.store)          # what an interrupted connection of a laboratory release left (electron REQ-084)
     install_error_handlers(app)
     security.install(app)                           # Host, Origin and body checks; the desktop session cookie (electron DEC-046)
+    app.state.lan = lan.Lan(app, app.state.store)   # the local network for tablets: certificates, pairing, the TLS server (electron REQ-082)
+    outbound.apply(app.state.store)                 # the operator's switches of what may be reached outside this computer
 
     @app.exception_handler(research.ResearchError)
     async def research_error(_, exc):
@@ -80,7 +84,8 @@ def create_app(data_dir: str | Path) -> FastAPI:
 
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
-              routes_findings.router, routes_fonts.router, routes_labs.router, routes_workshop.router):
+              routes_findings.router, routes_fonts.router, routes_labs.router, routes_workshop.router, routes_lan.router, routes_lan.settings_router,
+              routes_lan.pages):
         app.include_router(r)
 
     @app.exception_handler(404)

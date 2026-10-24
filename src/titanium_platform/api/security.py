@@ -1,15 +1,21 @@
-"""The guard of the local API (feature electron, DEC-046, REQ-080): the application serves one workshop on this computer, in a browser
-or under the desktop shell, and an unrelated web page must not be able to read or change it.
+"""The guard of the local API (feature electron, DEC-046, REQ-080, REQ-082): the application serves one workshop on this computer, in a
+browser, under the desktop shell or to a paired tablet on the local network, and an unrelated web page must not be able to read or
+change it.
 
-In both run modes every request's ``Host`` must name this computer (a loopback name, an IP address, or a host the operator allowed
-with ``TCE_ALLOWED_HOSTS``), so that a page that rebinds its own name to this address is refused; a request that changes something and
-comes from another site (``Origin`` not this host, or ``Sec-Fetch-Site: cross-site``) is refused; a body larger than any upload the
-application takes is refused before it is read.
+In every run mode a request's ``Host`` must name this computer (a loopback name, an IP address, a host the operator allowed with
+``TCE_ALLOWED_HOSTS``, or one of the names the workshop's LAN certificate covers), so that a page that rebinds its own name to this
+address is refused; a request that changes something and comes from another site (``Origin`` not this host, or
+``Sec-Fetch-Site: cross-site``) is refused; a body larger than any upload the application takes is refused before it is read.
 
 Under the desktop shell (``TCE_SESSION_SECRET`` set, ``titanium-platform --desktop``) the shell opens its window once at
 ``/session/<secret>``: that address sets the session cookie (HttpOnly, SameSite=Strict) and is spent; every other request without the
 cookie is refused with 403, so that a browser on this computer, or a page a browser opens, cannot use the workshop the shell runs.
 The secret is per launch and never written anywhere by the core.
+
+A request that arrives through the LAN server (``lan.Entry`` marks it) is another matter: it must carry the cookie of a paired device
+(``lan.authenticate``), except the pairing page, the pairing call and the CA download, which is all an unpaired tablet may reach (a page
+request without the cookie is sent to ``/pair``); the desktop session address is never opened from the network; and what belongs to
+the workshop's own computer (the network and backup screens) is refused even to a paired device.
 """
 from __future__ import annotations
 
@@ -19,6 +25,7 @@ import json
 import os
 import secrets
 from dataclasses import dataclass, field
+from typing import Callable
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI
@@ -29,15 +36,23 @@ MAX_BODY_BYTES = 601 * 1024 * 1024            # above the largest upload the app
 COOKIE = "tce_session"
 SESSION_PATH = "/session/"
 SECRET_ENV, HOSTS_ENV = "TCE_SESSION_SECRET", "TCE_ALLOWED_HOSTS"
+LAN_MARK = "tce.lan"                          # lan.MARK: set on the scope of a request the LAN server received
+DEVICE_COOKIE = "tce_device"                  # lan.COOKIE
+PAIR_PAGE = "/pair"
+LAN_OPEN = {PAIR_PAGE, "/api/lan/pair", "/api/lan/ca"}            # what an unpaired tablet may reach
+LAN_OWNER_ONLY = ("/api/lan", "/api/network", "/api/workshop")      # the workshop's own computer only, paired or not
 
 
 @dataclass
 class Guard:
-    """What the guard checks against: the hosts allowed besides loopback and IP addresses, and the desktop session when there is one."""
+    """What the guard checks against: the hosts allowed besides loopback and IP addresses, the desktop session when there is one, and
+    how a device of the local network is recognised."""
     allowed_hosts: frozenset[str] = frozenset()
     secret: str | None = None                          # the shell's bootstrap secret; None in browser mode
     cookie: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     spent: bool = False                                # the bootstrap address was used once
+    lan_hosts: set[str] = field(default_factory=set)   # the names of this computer on the network (lan.Lan keeps them)
+    device_check: Callable[[str], bool] | None = None  # whether a device token is a paired, unrevoked device (lan.Lan sets it)
 
     @classmethod
     def from_environment(cls) -> "Guard":
@@ -50,11 +65,12 @@ class Guard:
         return self.secret is not None
 
     def host_allowed(self, host: str | None) -> bool:
-        """A loopback name, an IP address (a rebinding page cannot send one) or an allowed host, with or without a port."""
+        """A loopback name, an IP address (a rebinding page cannot send one), an allowed host or a name of this computer on the network,
+        with or without a port."""
         name = _hostname(host)
         if not name:
             return False
-        if name in LOOPBACK or name in self.allowed_hosts:
+        if name in LOOPBACK or name in self.allowed_hosts or name in self.lan_hosts:
             return True
         try:
             ipaddress.ip_address(name.strip("[]"))
@@ -74,11 +90,12 @@ class Guard:
     def session_ok(self, cookie_header: str | None) -> bool:
         if not self.desktop:
             return True
-        for part in (cookie_header or "").split(";"):
-            name, _, value = part.strip().partition("=")
-            if name == COOKIE and hmac.compare_digest(value, self.cookie):
-                return True
-        return False
+        return hmac.compare_digest(_cookie(cookie_header, COOKIE), self.cookie)
+
+    def device_ok(self, cookie_header: str | None) -> bool:
+        """Whether the request carries the cookie of a paired device of the local network."""
+        token = _cookie(cookie_header, DEVICE_COOKIE)
+        return bool(token) and self.device_check is not None and bool(self.device_check(token))
 
     def bootstrap(self, path: str) -> bool:
         """Whether ``path`` is the shell's one-time session address with the right secret; it is spent by this call."""
@@ -88,6 +105,14 @@ class Guard:
             return False
         self.spent = True
         return True
+
+
+def _cookie(header: str | None, name: str) -> str:
+    for part in (header or "").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == name:
+            return value
+    return ""
 
 
 def _hostname(host: str | None) -> str:
@@ -113,12 +138,15 @@ class LocalGuard:
         host = headers.get("host")
         if not self.guard.host_allowed(host):
             return await _refuse(send, 421, "this address does not name this computer", "misdirected")
-        if scope["method"].upper() in UNSAFE and not self.guard.origin_allowed(headers.get("origin"), host, headers.get("sec-fetch-site")):
+        method = scope["method"].upper()
+        if method in UNSAFE and not self.guard.origin_allowed(headers.get("origin"), host, headers.get("sec-fetch-site")):
             return await _refuse(send, 403, "a request from another site cannot change this workshop", "forbidden")
         length = headers.get("content-length")
         if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
             return await _refuse(send, 413, f"the request is larger than {MAX_BODY_BYTES // (1024 * 1024)} MB", "too_large")
         path = scope.get("path", "")
+        if scope.get(LAN_MARK):
+            return await self._from_network(scope, receive, send, headers, method, path)
         if self.guard.desktop and path.startswith(SESSION_PATH):
             if self.guard.bootstrap(path):
                 cookie = f"{COOKIE}={self.guard.cookie}; Path=/; HttpOnly; SameSite=Strict"
@@ -126,6 +154,21 @@ class LocalGuard:
             return await _refuse(send, 403, "this session address is not valid", "forbidden")
         if not self.guard.session_ok(headers.get("cookie")):
             return await _refuse(send, 403, "open the workshop from the application", "forbidden")
+        return await self.app(scope, receive, send)
+
+    async def _from_network(self, scope, receive, send, headers: dict, method: str, path: str):
+        """A request the LAN server received: a paired device's cookie instead of the desktop session; the pairing page, call and CA
+        download open to everyone on the network; the owner's screens refused."""
+        if path.startswith(SESSION_PATH):
+            return await _refuse(send, 403, "the desktop session is not opened from the network", "forbidden")
+        if path in LAN_OPEN:
+            return await self.app(scope, receive, send)
+        if not self.guard.device_ok(headers.get("cookie")):
+            if method == "GET" and not path.startswith("/api/"):
+                return await _respond(send, 303, [(b"location", PAIR_PAGE.encode())], b"")
+            return await _refuse(send, 403, "pair this tablet with the workshop first: open /pair on it", "forbidden")
+        if path.startswith(LAN_OWNER_ONLY):
+            return await _refuse(send, 403, "this is done on the workshop's own computer, not from a device on the network", "forbidden")
         return await self.app(scope, receive, send)
 
 
