@@ -22,7 +22,7 @@ const ctx = context({});
 const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
-load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/lettering.js', 'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/photo-panels.js', 'screens/dot-pick.js', 'screens/photo-engraving.js']);
+load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/lettering.js', 'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/photo-panels.js', 'screens/dot-pick.js', 'screens/lab-source.js', 'screens/photo-engraving.js']);
 const requests = [], hold = [], past = [], future = [];
 let work = data.work, version = 0;
 const remember = () => { past.push({...work}); future.length = 0; };

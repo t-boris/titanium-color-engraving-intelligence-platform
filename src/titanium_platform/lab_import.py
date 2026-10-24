@@ -171,8 +171,10 @@ class Job:
                 "done": self.finished is not None}
 
 
-def start(store: Store, token: str, *, origin: str = "file", url: str | None = None, verified: bool = False, wait: bool = False) -> dict:
-    """Connect the staged release ``token`` in the background (with ``wait``, before returning); the job's status. One at a time."""
+def start(store: Store, token: str, *, origin: str = "file", url: str | None = None, verified: bool = False, wait: bool = False,
+          policy: lf.ResourcePolicy = lf.DEFAULT_POLICY) -> dict:
+    """Connect the staged release ``token`` in the background (with ``wait``, before returning); the job's status. One at a time.
+    ``policy`` is the release's resource limits (``tools/bench_tcelab.py`` measures beyond the default ones)."""
     folder = _staged(store, token)
     if not _running.acquire(blocking=False):
         raise su.ValidationError("another laboratory release is being connected: wait until it ends")
@@ -181,7 +183,7 @@ def start(store: Store, token: str, *, origin: str = "file", url: str | None = N
 
     def work():
         try:
-            job.result = run(store, folder, job, origin=origin, url=url, verified=verified)
+            job.result = run(store, folder, job, origin=origin, url=url, verified=verified, policy=policy)
             job.phase = "unchanged" if job.result["unchanged"] else "done"
         except lf.Cancelled:
             job.phase, job.error = "cancelled", {"code": "cancelled", "message": "the connection was cancelled: nothing was connected"}

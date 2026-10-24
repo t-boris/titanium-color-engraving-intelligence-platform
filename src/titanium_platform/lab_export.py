@@ -540,9 +540,10 @@ def _collect_tokens(value, tag, out: dict) -> None:
 
 def export(store: Store, path: str | Path, selection: Mapping | None, terms: str, *, release_id: str | None = None,
            release_number: int | None = None, progress: Callable[[str, int], None] | None = None,
-           cancelled: Callable[[], bool] | None = None) -> dict:
+           cancelled: Callable[[], bool] | None = None, policy: lf.ResourcePolicy = lf.DEFAULT_POLICY) -> dict:
     """Write a release of ``selection`` under the usage ``terms`` (DEC-042) to ``path`` and return its manifest. ``release_id`` and
-    ``release_number`` come from the cloud when it reserved them; a file export makes its own id and has no number (DEC-024)."""
+    ``release_number`` come from the cloud when it reserved them; a file export makes its own id and has no number (DEC-024). ``policy``
+    is the release's resource limits (``tools/bench_tcelab.py`` measures beyond the default ones)."""
     if terms not in lf.USAGE_TERMS:
         raise su.ValidationError("choose usage terms from the approved list")
     public = public_info(store)
@@ -564,7 +565,7 @@ def export(store: Store, path: str | Path, selection: Mapping | None, terms: str
                 "attribution": {"name": public["author"], "organization": public["organization"], "url": public["author_url"]}}
     lab = {"id": own["origin_lab_id"], "name": public["name"], "description": public["description"], "url": public["url"]}
     try:
-        written = lf.write(path, manifest, lab, release.sections(), progress=progress, cancelled=cancelled)
+        written = lf.write(path, manifest, lab, release.sections(), policy=policy, progress=progress, cancelled=cancelled)
     except lf.FormatError as exc:
         raise su.ValidationError(f"the release cannot be written: {exc}") from exc
     store.execute("INSERT INTO lab_export(release_id, content_sha256, created_at, manifest_json, selection_json, bytes) VALUES (?,?,?,?,?,?)",

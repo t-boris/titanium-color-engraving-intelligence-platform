@@ -28,6 +28,9 @@
   function startForm(lists, materials, ctx) {
     const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { loadPalette(); loadRules(); }});
     const stock = h('select', {'aria-label': 'Титан'}, materials.map((m) => h('option', {value: m.id}, material(m))));
+    // feature electron, REQ-085: a photograph work may take its colours from a connected laboratory release instead of the own measurements;
+    // the own measurements are the default, a laboratory is never chosen for the operator
+    const source = LabSource.picker('vector', {onChange: () => loadPalette()});
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
     const name = h('input', {placeholder: 'Название работы'}), width = h('input', {type: 'number', step: 'any', min: '0', value: 60});
     const strategy = h('select', {'aria-label': 'Стратегия'}, STRATEGIES.map(([id, label]) => h('option', {value: id}, label)));
@@ -66,7 +69,7 @@
     const stockHint = h('span', {class: 'small muted'});      // «Фото» takes every plate of this grade (palette.vector_palette), the others this plate only
     const photo = () => strategy.value === 'photo';
     const switchFields = () => {
-      photoFields.hidden = !photo(); traceFields.hidden = photo();
+      photoFields.hidden = !photo(); traceFields.hidden = photo(); source.el.hidden = !photo();
       tolLabel.textContent = photo() ? 'Сглаживание границ, мм' : 'Точность контура, мм';
       stockHint.textContent = photo() ? 'цвета — измерения титана этой марки с любой его пластины'
         : 'рецепты — только измеренные на этой заготовке';
@@ -81,13 +84,19 @@
     async function loadPalette() {
       if (!stock.value) return fill(info);
       if (photo()) {
+        const src = source.value(), asked = JSON.stringify(src);
         let p;
-        try { p = await get(`/vector-palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
+        try { p = src ? await post('/labs/palette', src) : await get(`/vector-palette?${pick.query()}&material_id=${stock.value}`); }
+        catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
+        if (asked !== JSON.stringify(source.value())) return;      // the source changed meanwhile
         const asShotCount = p.entries.filter((e) => e.basis === 'as-shot').length;
+        const whose = src ? `лаборатории «${p.source.lab_name}» (${LabSource.releaseName(p.source)}; ${LabSource.setupName(p.source)})`
+          : 'этого лазера, линзы и титана этой марки (с любой плиты)';
         return fill(info, p.entries.length
-          ? h('p', {class: 'muted small'}, `Измеренных цветов заливки этого лазера, линзы и титана этой марки (с любой плиты): ${p.entries.length}`,
-            asShotCount ? `, из них без привязки к эталону: ${asShotCount}` : '', '. Каждому цвету картинки достанется самый быстрый цвет в пределах допуска ΔE.')
-          : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: разбить можно, раскрасить будет нечем.'));
+          ? h('p', {class: 'muted small'}, `Измеренных цветов заливки ${whose}: ${p.entries.length}`,
+            asShotCount ? `, из них без привязки к эталону: ${asShotCount}` : '', '. Каждому цвету картинки достанется самый быстрый цвет в пределах допуска ΔE.',
+            src && p.conditions && p.conditions.length ? ' ' + p.conditions.map((c) => I18N.tr(c)).join(' ') : '')
+          : h('div', {class: 'alert warn'}, `У ${whose} нет измеренных цветов заливки: разбить можно, раскрасить будет нечем.`));
       }
       let palette;
       try { palette = await get(`/vector/palette?${pick.query()}&material_id=${stock.value}`); } catch (e) { return fill(info, h('p', {class: 'alert bad'}, e.message)); }
@@ -137,6 +146,7 @@
       if (photo()) {
         fd.append('n_colors', colours.value); fd.append('algorithm', algorithm.select.value); fd.append('detail', detail.value); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
         if (maxTime.value !== '') fd.append('max_time', maxTime.value);
+        if (source.value()) fd.append('source', JSON.stringify(source.value()));
       } else {
         fd.append('clean', clean.checked);
         if (grey.value !== '') fd.append('grey_threshold', grey.value);
@@ -158,7 +168,7 @@
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Новая векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')), h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
         field('Лазер', pick.laser), field('Линза', pick.lens, 'цвета и рецепты — измерения этого лазера с этой линзой'),
-        h('label', {class: 'f'}, h('span', {}, 'Титан'), stock, stockHint), field('Изображение', App.filePick(img, 'Выбрать изображение')),
+        h('label', {class: 'f'}, h('span', {}, 'Титан'), stock, stockHint), source.el, field('Изображение', App.filePick(img, 'Выбрать изображение')),
         field('Название работы', name), field('Ширина работы, мм', width),
         field('Стратегия', strategy, 'фото — цветные области по картинке; заливка, текст и линии — по тёмному силуэту'),
         h('div', {class: 'f'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), thr, thrHint), rememberRow),
@@ -342,10 +352,13 @@
     const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {}), review = h('div', {class: 'stack'});
     let shown = null, queue = Promise.resolve(), parts = null, frame = null;
     const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }});
+    // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step returns the whole work
+    const banner = LabSource.banner(`/vector/${j.id}`, 'vector', (work) => show(work));
     function show(next) {
       const resplit = !shown || next.document.version !== shown.document.version;
       shown = next;
       head.update(next);
+      banner.update(next);
       fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
@@ -371,7 +384,7 @@
     }
     show(j);
     parts = VectorColours.parts(j, run, permit);
-    frame = VectorWorkspace.frame({head: head.el, editor: parts.editor, initial: 'colours', items: [
+    frame = VectorWorkspace.frame({head: [head.el, banner.el], editor: parts.editor, initial: 'colours', items: [
       ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
       ['review', VectorReview.tabLabel(j), review], ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
     return frame.el;

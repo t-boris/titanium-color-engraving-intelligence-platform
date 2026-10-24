@@ -92,7 +92,7 @@ class FormatError(ValueError):
 class ResourcePolicy:
     """The resources one release may use (REQ-083): bytes of the file and of one line, records per section, bins per profile, nesting and
     lengths of text. The defaults are DEC-024's starting limits; ``docs/features/electron/benchmarks`` records what was measured."""
-    max_bytes: int = 16 * 1024 * 1024
+    max_bytes: int = 64 * 1024 * 1024            # 50 000 measurements measured at 29 MB (benchmarks/tcelab-2026-10-24)
     max_line_bytes: int = 256 * 1024
     max_records: Mapping[str, int] = field(default_factory=lambda: {"equipment": 1000, "materials": 1000, "captures": 50_000,
                                                                      "measurements": 50_000, "tone_profiles": 5_000, "provenance": 10_000})

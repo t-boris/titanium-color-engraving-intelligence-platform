@@ -1,0 +1,77 @@
+{
+  "measured_at": "2026-10-24T16:09:19+00:00",
+  "hardware": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.12.2",
+    "app": "0.28.0",
+    "model": "Mac14,14",
+    "cpu": "Apple M2 Ultra",
+    "memory_bytes": "137438953472"
+  },
+  "policy": "unlimited",
+  "runs": [
+    {
+      "measurements": 10000,
+      "captures": 1000,
+      "file_bytes": 5771834,
+      "prepare": {
+        "seconds": 0.12,
+        "peak_mb": 0.0
+      },
+      "export": {
+        "seconds": 2.63,
+        "peak_mb": 18.3
+      },
+      "read": {
+        "seconds": 1.13,
+        "peak_mb": 0.0
+      },
+      "build_snapshot": {
+        "seconds": 1.86,
+        "peak_mb": 0.2,
+        "snapshot_bytes": 8695808
+      },
+      "connect": {
+        "seconds": 2.13,
+        "peak_mb": 2.1,
+        "phase": "done",
+        "error": null,
+        "progress_updates": 256,
+        "longest_gap_between_progress_s": 0.06
+      },
+      "temporary_disk_bytes": 36632420
+    },
+    {
+      "measurements": 50000,
+      "captures": 5000,
+      "file_bytes": 28902058,
+      "prepare": {
+        "seconds": 0.61,
+        "peak_mb": 0.0
+      },
+      "export": {
+        "seconds": 7.88,
+        "peak_mb": 91.5
+      },
+      "read": {
+        "seconds": 5.43,
+        "peak_mb": 0.0
+      },
+      "build_snapshot": {
+        "seconds": 9.5,
+        "peak_mb": 0.7,
+        "snapshot_bytes": 42504192
+      },
+      "connect": {
+        "seconds": 11.96,
+        "peak_mb": 2.1,
+        "phase": "done",
+        "error": null,
+        "progress_updates": 1320,
+        "longest_gap_between_progress_s": 0.06
+      },
+      "temporary_disk_bytes": 179644484
+    }
+  ]
+}

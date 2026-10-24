@@ -174,6 +174,8 @@
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
       {ramp: `${base}/width-ramp`, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     const head = workHead(view, step);
+    // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step brings the work anew
+    const banner = LabSource.banner(base, 'photo', (next) => { view = next; shownKey = null; shown(); });
     const dotWidth = dotWidthBox(save);
     const ai = aiTab(base, save, (wish, fresh) => send(`${base}/ai`, {wish, fresh}));
     const colour = colourTab(base, save, (path, body) => send(path, body));
@@ -201,6 +203,7 @@
     }
     function shown() {
       head.update(view);
+      banner.update(view);
       lettering.update(view);
       picture.show(view, chosen());
       dotWidth.show(view);
@@ -244,7 +247,7 @@
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
     };
     keys = key;
-    return fill(root, head.el, h('div', {class: 'os-body ge-body'},
+    return fill(root, head.el, banner.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
@@ -266,7 +269,32 @@
       const file = fileIn.files && fileIn.files[0];
       if (file && !name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '');
     });
-    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width),
+    // feature electron, REQ-085: the scales may come from a connected laboratory release; the own measurements are the default and a laboratory is
+    // never chosen for the operator. With a release the own laser and lens the work is engraved with are asked, and the release's scale chosen.
+    const source = LabSource.picker('photo', {onChange: switchSource});
+    const own = h('div', {class: 'stack', hidden: true});
+    const scaleSelect = h('select', {'aria-label': 'Шкала выпуска'});
+    let pick = null, releaseScales = [];
+    async function switchSource(src) {
+      own.hidden = !src;
+      releaseScales = [];
+      if (!src) return;
+      try {
+        if (!pick) {
+          pick = App.laserLensPicker(await App.hardwareLists());
+          fill(own, h('div', {class: 'grid g2'}, field('Свой лазер', pick.laser, 'на нём гравируется работа'), field('Своя линза', pick.lens),
+            field('Шкала выпуска', scaleSelect, 'первая — лучшая измеренная')));
+        }
+        const asked = JSON.stringify(src);
+        const offered = await post('/labs/scales', src);
+        if (asked !== JSON.stringify(source.value())) return;      // the source changed meanwhile
+        releaseScales = offered.scales || [];
+        fill(scaleSelect, releaseScales.map((sc, i) => h('option', {value: String(i)}, settingsText(sc.mode, sc.dpi) + (sc.span ? ` · ${value(sc.span[0], 1)}–${value(sc.span[1], 1)} %` : ''))));
+        scaleSelect.disabled = !releaseScales.length;
+        if (!releaseScales.length) fill(scaleSelect, h('option', {value: ''}, 'выпуск не измерил шкал серого с этой установкой'));
+      } catch (e) { fail(e); }
+    }
+    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width), source.el, own,
       h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
         : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
         + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'));
@@ -279,7 +307,12 @@
         fd.append('picture', file, file.name);
         fd.append('name', name.value);
         fd.append('width_mm', width.value);
-        if (scale) fd.append('scale', JSON.stringify(scale));
+        const src = source.value();
+        if (src) {
+          fd.append('source', JSON.stringify({...src, device_id: pick.deviceId(), lens_id: pick.lensId()}));
+          const sc = releaseScales[+scaleSelect.value];
+          if (sc) fd.append('scale', JSON.stringify(sc.mode));
+        } else if (scale) fd.append('scale', JSON.stringify(scale));
         const made = await form('/photo-works', fd);
         m.close();
         kindStep(made.id);

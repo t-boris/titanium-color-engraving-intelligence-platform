@@ -220,3 +220,37 @@ def build(store: Store, files: Path) -> dict:
     store.execute("UPDATE pair SET status='Deleted' WHERE id=?", (gone,))
     return {"laser": a, "lens": l1, "other": other["id"], "m1": m1, "m2": m2, "m5": m5, "m0": m0, "plate": plate, "work": work,
             "pairs": {"p1": p1, "p5": p5, "p7": p7, "p8": p8, "p13": p13}}
+
+
+def bulk(store: Store, files: Path, measurements: int, per_capture: int = 10) -> dict:
+    """A workshop of ``measurements`` area-fill measurements on one laser, lens and titanium, ``per_capture`` layers per photograph, written
+    in one transaction: the size a release of it is measured at (``tools/bench_tcelab.py``, the constant-memory test)."""
+    w = World(store, files)
+    laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
+    lens = lenses.create_lens(store, "Bench lens", 174, 170)
+    lenses.install(store, laser["id"], lens["id"])
+    stand = su.save_capture_setup(store, "Bench rig", "cam", "LED", "90", "ColorChecker Classic")["id"]
+    material = su.save_material(store, "Bench sheet", grade="Grade 2")["id"]
+    bars = [{"index": i, "name": f"bar {i}", "parameters": {"power": i, "frequency": 60, "speed": 900, "pulse_width": 200, "line_interval": 0.025,
+             "passes": 1}, "shapes": [[[(0.0, 4.0 * i), (30.0, 4.0 * i), (30.0, 4.0 * i + 3), (0.0, 4.0 * i + 3)]]]} for i in range(1, per_capture + 1)]
+    path = w.picture_file("bench", 30.0, vectors=bars)
+    pairs = (measurements + per_capture - 1) // per_capture
+    context = json.dumps({"material_id": material, "titanium_name": "Bench sheet", "titanium_grade": "Grade 2"})
+    with store.transaction():
+        for n in range(pairs):
+            pair = store.execute(
+                "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,"
+                "context_json,data_json,created_at,accepted_at) VALUES ('Accepted',?,?,?,?,?,?,?,?,?,?,'{}',?,?)",
+                (laser["id"], lens["id"], stand, material, f"eng-{n}", "bench.lbrn2", path, f"bench-{n}.DNG", str(files / f"bench-{n}.DNG"),
+                 context, _t(0), _t(0))).lastrowid
+            rows = []
+            for i in range(1, min(per_capture, measurements - n * per_capture) + 1):
+                power = 1.0 + (n * per_capture + i) % 90
+                lab = [70.0 - power / 3, (power % 17) - 8.0, (power % 23) - 11.0]
+                rows.append((pair, i, laser["id"], lens["id"], f"eng-{n}", json.dumps(lab), json.dumps({**FILL, "power": power}), "markers",
+                             "{}", 1, 1, "bench", json.dumps({"role": "test feature", "layer_name": f"C{i:02d}",
+                                                              "color_measurement": {"mode": "reference_chart_corrected"}}), _t(0)))
+            store.conn.executemany(
+                "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
+                "model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    return {"laser": laser["id"], "lens": lens["id"], "material": material, "pairs": pairs}
