@@ -37,8 +37,8 @@ Plan: `/Users/boris/.claude/plans/distributed-frolicking-koala.md`.
 - [x] B5 `desktop/` Electron Forge shell: launcher screen, sidecar lifecycle, isolation, update check from GitHub Releases (60c3dbc; 16 node tests; applying an update waits for signed builds)
 - [ ] B6 PyInstaller onedir sidecar and `--smoke` (60c3dbc); signed macOS build verified on 60c3dbc (Developer ID 3M68DG8S7N, hardened runtime, codesign --verify --deep --strict valid, spctl «Unnotarized Developer ID», packaged app --smoke ok, zip 254 MB); final build after the LAN merge pending
 - [x] B7 LAN (DEC-047, DEC-059): workshop CA, TLS server, pairing, devices, revoke (e939b3f; tests/test_lan.py); firewall and pairing on a real Windows machine remain the owner's (REQ-082 c6)
-- [ ] B8 Manual `desktop.yml` for Windows x64 build + smoke (60c3dbc); GitHub pre-release (DEC-048) pending
-- [ ] B9 Release 0.30.0
+- [ ] B8 Manual `desktop.yml` for Windows x64 build + smoke (60c3dbc; run 40115108108 on v0.30.0 in progress); GitHub pre-release v0.30.0 created (internal beta; macOS zip sha256 710bd61f…, docs/features/electron/builds/0.30.0-macos-arm64.md); Windows installer to attach when the run ends
+- [x] B9 Release 0.30.0: suite 2149 passed none skipped (-n 12, 3:18), commits 8427528 + 5fa8068, tag v0.30.0, backup titanium-before-0.30.0-20261024T171253Z.sqlite (integrity ok), deployed on 8765 (/api/version 0.30.0, schema stamp 1, workshop.lock held, LAN CA made and LAN off, Host check 421)
 
 ## Stage C — cloud (REQ-086/087), 0.31.0
 - [ ] C1 Neon project + Neon Auth; schema, RLS, `app_api` role (DEC-043)
