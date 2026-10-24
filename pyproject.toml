@@ -35,7 +35,7 @@ titanium-research-mcp = "titanium_platform.mcp_server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-titanium_platform = ["ui/*", "ui/screens/*", "models/*"]
+titanium_platform = ["ui/*", "ui/screens/*", "models/*", "schemas/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

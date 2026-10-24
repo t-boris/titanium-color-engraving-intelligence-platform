@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/t-boris/titanium-color-engraving-intelligence-platform/schemas/tcelab-1.schema.json",
+  "title": "Titanium colour engraving laboratory release (.tcelab) 1.x",
+  "description": "The allowlist of a portable laboratory release (electron DEC-024): numbers, identities and public names only. The file layout (one canonical JSON line per record, content hash) is described in titanium_platform/lab_format.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest", "lab", "equipment", "materials", "captures", "measurements", "tone_profiles", "provenance"],
+  "properties": {
+    "manifest": {"$ref": "#/$defs/manifest"},
+    "lab": {"$ref": "#/$defs/lab"},
+    "equipment": {"type": "array", "items": {"$ref": "#/$defs/equipment"}},
+    "materials": {"type": "array", "items": {"$ref": "#/$defs/material"}},
+    "captures": {"type": "array", "items": {"$ref": "#/$defs/capture"}},
+    "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
+    "tone_profiles": {"type": "array", "items": {"$ref": "#/$defs/tone_profile"}},
+    "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "format": "uuid"},
+    "seq": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "num": {"type": ["number", "null"]},
+    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "lab3": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number", "minimum": -200, "maximum": 200}},
+    "task": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "basis"],
+      "properties": {
+        "kind": {"enum": ["text", "line", "fill", "tonal_image", "color_image", "mark", "cleaning", "deep", "relief", "cutting"]},
+        "basis": {"enum": ["explicit", "derived"]}
+      }
+    },
+    "setting": {"type": ["number", "string", "boolean", "null", "object", "array"]},
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "schema_version", "origin_lab_id", "release_id", "release_number", "created_at", "producer",
+                   "algorithm_versions", "content_sha256", "counts", "capabilities", "usage_terms", "attribution"],
+      "properties": {
+        "format": {"const": "tcelab"},
+        "schema_version": {"type": "string", "pattern": "[0-9]{1,4}\\.[0-9]{1,4}"},
+        "origin_lab_id": {"$ref": "#/$defs/id"},
+        "release_id": {"$ref": "#/$defs/id"},
+        "release_number": {"type": ["integer", "null"], "minimum": 1},
+        "created_at": {"type": "string", "format": "date-time"},
+        "producer": {
+          "type": "object", "additionalProperties": false, "required": ["name", "version"],
+          "properties": {"name": {"type": "string", "pattern": "[a-z0-9-]{1,64}"}, "version": {"type": "string", "pattern": "[0-9A-Za-z.+-]{1,32}"}}
+        },
+        "algorithm_versions": {
+          "type": "object", "additionalProperties": {"type": "string", "pattern": "[0-9A-Za-z.+-]{1,16}"},
+          "required": ["evidence", "palette", "prediction", "row_length", "tonal_profile", "against_clean"]
+        },
+        "content_sha256": {"type": "string", "pattern": "[0-9a-f]{64}"},
+        "counts": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "equipment": {"type": "integer", "minimum": 0}, "materials": {"type": "integer", "minimum": 0},
+            "captures": {"type": "integer", "minimum": 0}, "measurements": {"type": "integer", "minimum": 0},
+            "tone_profiles": {"type": "integer", "minimum": 0}, "provenance": {"type": "integer", "minimum": 0}
+          }
+        },
+        "capabilities": {
+          "type": "object", "additionalProperties": false, "required": ["required", "optional"],
+          "properties": {
+            "required": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "[a-z][a-z0-9_]{0,40}"}},
+            "optional": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "[a-z][a-z0-9_]{0,40}"}}
+          }
+        },
+        "usage_terms": {
+          "type": "object", "additionalProperties": false, "required": ["id", "version"],
+          "properties": {"id": {"type": "string", "pattern": "[A-Za-z0-9.-]{1,40}"}, "version": {"type": "string", "pattern": "[0-9A-Za-z.]{1,10}"}}
+        },
+        "attribution": {
+          "type": "object", "additionalProperties": false, "required": ["name"],
+          "properties": {
+            "name": {"$ref": "#/$defs/name"},
+            "organization": {"type": ["string", "null"], "maxLength": 200},
+            "url": {"type": ["string", "null"], "format": "uri"}
+          }
+        }
+      }
+    },
+    "lab": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "name": {"$ref": "#/$defs/name"},
+        "description": {"type": ["string", "null"], "maxLength": 2000},
+        "url": {"type": ["string", "null"], "format": "uri"}
+      }
+    },
+    "equipment": {
+      "description": "One laser and lens: the partition a recipe is measured in. Unknown values are null; the serial number and private descriptions are never in it.",
+      "type": "object", "additionalProperties": false, "required": ["id", "seq", "laser", "lens"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "laser": {
+          "type": "object", "additionalProperties": false, "required": ["id", "public_name"],
+          "properties": {
+            "id": {"$ref": "#/$defs/id"},
+            "public_name": {"$ref": "#/$defs/name"},
+            "manufacturer": {"type": ["string", "null"], "maxLength": 100},
+            "model": {"type": ["string", "null"], "maxLength": 100},
+            "rated_power_w": {"$ref": "#/$defs/num"},
+            "wavelength_nm": {"$ref": "#/$defs/num"},
+            "source_type": {"type": ["string", "null"], "maxLength": 40}
+          }
+        },
+        "lens": {
+          "type": ["object", "null"], "additionalProperties": false, "required": ["id"],
+          "properties": {
+            "id": {"$ref": "#/$defs/id"},
+            "focal_length_mm": {"$ref": "#/$defs/num"},
+            "field_mm": {"$ref": "#/$defs/num"},
+            "expansion": {"$ref": "#/$defs/num"},
+            "spot_diameter_um": {"$ref": "#/$defs/num"}
+          }
+        }
+      }
+    },
+    "material": {
+      "type": "object", "additionalProperties": false, "required": ["id", "seq", "family", "grade"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "family": {"type": "string", "minLength": 1, "maxLength": 60},
+        "grade": {"type": ["string", "null"], "maxLength": 60},
+        "thickness_mm": {"$ref": "#/$defs/num"},
+        "surface": {"type": ["string", "null"], "maxLength": 100},
+        "batch": {"type": ["string", "null"], "maxLength": 100}
+      }
+    },
+    "capture": {
+      "description": "One photograph of one engraving: re-photographs of an engraving share its engraving_id and never count as independent engravings.",
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "seq", "engraving_id", "equipment_id", "material_id", "measured_at", "basis", "experiment", "over_fills", "batch_known"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "engraving_id": {"$ref": "#/$defs/id"},
+        "equipment_id": {"$ref": "#/$defs/id"},
+        "material_id": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+        "measured_at": {"type": "string", "format": "date-time"},
+        "basis": {"enum": ["chart", "relative"]},
+        "experiment": {
+          "type": ["object", "null"], "additionalProperties": false, "required": ["id", "kind", "kept"],
+          "properties": {"id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["test", "vector_work", "other"]}, "kept": {"type": "boolean"}}
+        },
+        "over_fills": {"type": "boolean"},
+        "batch_known": {"type": "boolean"}
+      }
+    },
+    "parameters": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "power": {"$ref": "#/$defs/num"}, "frequency": {"$ref": "#/$defs/num"}, "speed": {"$ref": "#/$defs/num"},
+        "pulse_width": {"$ref": "#/$defs/num"}, "line_interval": {"$ref": "#/$defs/num"},
+        "passes": {"type": ["integer", "null"], "minimum": 0}, "global_passes": {"type": ["integer", "null"], "minimum": 0},
+        "layer_type": {"type": ["string", "null"], "pattern": "[A-Za-z]{1,20}"},
+        "bidirectional": {"type": ["boolean", "null"]}, "cross_hatch": {"type": ["boolean", "null"]},
+        "scan_angle": {"$ref": "#/$defs/num"}, "angle_increment": {"$ref": "#/$defs/num"}, "grayscale": {"type": ["boolean", "null"]},
+        "source_settings": {"type": "object", "additionalProperties": {"$ref": "#/$defs/setting"}}
+      }
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "seq", "capture_id", "layer", "lab", "kind", "model_eligible", "repeat_eligible", "matrix", "task", "parameters", "row_mm"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "capture_id": {"$ref": "#/$defs/id"},
+        "layer": {
+          "type": "object", "additionalProperties": false, "required": ["index", "label", "role"],
+          "properties": {
+            "index": {"type": "integer", "minimum": -1, "maximum": 999},
+            "label": {"type": "string", "pattern": "C-?[0-9]{2,3}|clean"},
+            "role": {"enum": ["test_feature", "cleaning_witness", "service"]}
+          }
+        },
+        "lab": {"$ref": "#/$defs/lab3"},
+        "kind": {"enum": ["calibrated", "relative"]},
+        "model_eligible": {"type": "boolean"},
+        "repeat_eligible": {"type": "boolean"},
+        "matrix": {"type": "boolean"},
+        "task": {"$ref": "#/$defs/task"},
+        "parameters": {"$ref": "#/$defs/parameters"},
+        "row_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "transfer_of": {"type": ["object", "null"], "additionalProperties": false, "required": ["release_id", "measurement_id"],
+                        "properties": {"release_id": {"$ref": "#/$defs/id"}, "measurement_id": {"$ref": "#/$defs/id"}}}
+      }
+    },
+    "tone_profile": {
+      "description": "The colour photographed at each grey level of one image layer: numbers only, no picture and no mask.",
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "seq", "capture_id", "layer", "measurement_id", "image", "settings", "power_range", "adjustments", "measured_by",
+                   "evidence", "task", "row_mm", "bins"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "capture_id": {"$ref": "#/$defs/id"},
+        "layer": {
+          "type": "object", "additionalProperties": false, "required": ["index", "label"],
+          "properties": {"index": {"type": "integer", "minimum": 0, "maximum": 999}, "label": {"type": "string", "pattern": "C[0-9]{2,3}"}}
+        },
+        "measurement_id": {"type": ["string", "null"], "format": "uuid"},
+        "image": {
+          "type": "object", "additionalProperties": false, "required": ["dither"],
+          "properties": {
+            "dither": {"type": "string", "pattern": "[a-z0-9]{1,20}"},
+            "dot_correction": {"type": ["boolean", "null"]},
+            "dot_width_mm": {"$ref": "#/$defs/num"}
+          }
+        },
+        "settings": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "power": {"$ref": "#/$defs/num"}, "speed": {"$ref": "#/$defs/num"}, "frequency_khz": {"$ref": "#/$defs/num"},
+            "pulse_width": {"$ref": "#/$defs/num"}, "pulse_width_effective": {"$ref": "#/$defs/num"},
+            "line_interval": {"$ref": "#/$defs/num"}, "passes": {"type": ["integer", "null"]}, "global_passes": {"type": ["integer", "null"]},
+            "type": {"type": ["string", "null"], "pattern": "[A-Za-z]{1,20}"}
+          }
+        },
+        "power_range": {"type": ["array", "null"], "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+        "adjustments": {"type": "object", "additionalProperties": {"$ref": "#/$defs/setting"}},
+        "measured_by": {"enum": ["tonal profile", "grey ramp"]},
+        "evidence": {"enum": ["clear", "weak"]},
+        "task": {"anyOf": [{"$ref": "#/$defs/task"}, {"type": "null"}]},
+        "row_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "bins": {
+          "type": "array", "minItems": 1, "maxItems": 256,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["gray", "L", "a", "b"],
+            "properties": {
+              "gray": {"type": "number", "minimum": 0, "maximum": 1},
+              "L": {"type": "number", "minimum": -200, "maximum": 200}, "a": {"type": "number", "minimum": -200, "maximum": 200},
+              "b": {"type": "number", "minimum": -200, "maximum": 200},
+              "n": {"type": ["integer", "null"], "minimum": 0},
+              "power_pct": {"type": ["number", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "description": "A statement about published results: a withdrawal of a release or a measurement, with its reason and replacement.",
+      "type": "object", "additionalProperties": false, "required": ["id", "seq", "kind", "target_kind", "target_id", "reason", "declared_at"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "seq": {"$ref": "#/$defs/seq"},
+        "kind": {"enum": ["withdrawal"]},
+        "target_kind": {"enum": ["release", "measurement", "tone_profile"]},
+        "target_id": {"$ref": "#/$defs/id"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+        "replacement_release_id": {"type": ["string", "null"], "format": "uuid"},
+        "declared_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}
