@@ -11,3 +11,4 @@ build/
 docs/research/
 desktop/node_modules/
 desktop/out/
+cloud/.vercel/
