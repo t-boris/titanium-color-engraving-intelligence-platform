@@ -60,7 +60,19 @@ Feature: `docs/features/photo-engraving-quality` (MarkView).
       Done: `knowledge` proposals (next / around / unmeasured dot kind) with the copies' changes and the plate's size; buttons on
       the work, the zone, «Эксперименты» and «Выводы»; `POST /api/photo-knowledge/plate`, `POST /api/pairs/{id}/next-variations`.
       On the live copy no variations plate is photographed yet: every proposal says to make the first from a work or zone.
-- [ ] 9 Release 0.33.0, deploy, read-only check on the live data
+- [x] 9 Release 0.33.0, deploy, read-only check on the live data
+      Done: commit 416a921 on main, tag v0.33.0, GitHub pre-release with the signed macOS arm64 zip (260 348 825 bytes, sha256
+      53712839…35a0; codesign strict ok, unnotarized; packaged smoke ok, core 0.33.0, ui 2). Suite 2242 passed, none skipped (-n 12,
+      2:58); desktop 16 passed. The 8765 server is not running (the operator works in the desktop application): no wheel deploy.
+
+## Review (2026-10-24, 0.33.0)
+- Read-only check on a fresh copy of the live database (integrity ok): knowledge of 3 titanium stocks in 0.09 s; 34 photo layers
+  judged in the last 40 accepted checks. Works 35 and 37 (grayscale) have Max 17 % and 30 % past their scales' turn (14.5 % and
+  12.6 %): the steps are refused and «Взять лучшие настройки» brings Max inside. Zone 2 of work 41 (Jarvis 12.5 %) is offered the best
+  photographed Jarvis (25 %, score 0.6, pair 118). No variations plate is photographed yet, so every proposal asks for the first one
+  from a work or zone; the 0.32.0 plate handed over (plan 42 on the copy) is that first plate once photographed.
+- DEC-004 is proposed (knowledge read on demand; the fill; the strongest measured lever; proposals). REQ-003..REQ-005 criteria ticked;
+  the feature is `implemented`. BUG-007 stays `fixed` until the operator confirms the AI answers in the desktop window.
 
 # Electron: desktop workshop and laboratory exchange (goal set 2026-10-24)
 
