@@ -8,7 +8,12 @@ step of power there; the steps stay on the process's prior until the 8-copy plat
 - [x] UI test for a work on Jarvis photo dots; the tests of the colour-map dots unchanged.
 - [x] Rehearsal on the live copy (zone 2, Atkinson on photo 149): no «с карты цветов» left on the zone screen, no console errors.
 - [x] BUG-008 `status: fixed` with a Resolution.
-- [ ] Full suite, desktop tests, build, tag v0.35.3, GitHub pre-release, back up the live DB, install the desktop app if it is not running.
+- [x] Full suite, desktop tests, build, tag v0.35.3, GitHub pre-release, back up the live DB, install the desktop app if it is not running.
+
+Done 2026-10-25: commit bae556d; suite 2315 passed, none skipped (3:59), desktop 16 passed; zip 260 424 582 bytes, sha256 44c7144c…cc6b,
+the same digest on GitHub (pre-release v0.35.3); codesign strict ok, unnotarized; packaged smoke ok, core 0.35.3. The app was not
+running; backup `~/.titanium-platform/backups/titanium-before-0.35.3-20261025T184837Z.sqlite`, integrity ok; 0.35.2 moved to the
+scratchpad (`old-0.35.2.app`), 0.35.3 in /Applications, not opened.
 
 # A kind that failed is never «the best» — 0.35.2 (2026-10-25, operator chose «Тёмные точки другого вида»)
 
