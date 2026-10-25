@@ -41,7 +41,7 @@ const view = () => ({...work, undo: past.length, redo: future.length, picture: w
   outside_share: 0, time: {seconds: 600, layers: [{index: 0, name: 'CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05', seconds: 42}, {index: 1, name: 'C01', seconds: 558}]}, size_mm: {width: work.width_mm, height: work.width_mm / 2}, power_range: [work.min_power, work.max_power], dpi: 1000, notes: [],
   scale_size: {row_mm: work.width_mm, how: 'between', measured_mm: [38.4, 150], from_mm: [38.4, 150], unknown_points: 0},
   ...(work.kind && work.kind !== 'grayscale' ? {kind: work.kind, estimate: true, dots: {power: work.dot_recipe ? work.dot_recipe.settings.power : work.dot_power,
-    source: work.dot_recipe ? 'map' : 'scale', hex: '#3355aa', clean_hex: '#bbbbbb', struck_share: 0.42},
+    source: work.dot_recipe ? work.dot_recipe.source || 'map' : 'scale', recipe: work.dot_recipe || null, hex: '#3355aa', clean_hex: '#bbbbbb', struck_share: 0.42},
     closeup: `/api/photo-works/${work.id}/closeup.png?v=${version}`, closeup_mm: 4, closeup_px: 3} : {})}});
 const answer = (json, status = 200) => ({ok: status < 300, status, headers: {get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null)}, json: async () => json});
 ctx.fetch = async (url, opts = {}) => {
@@ -802,6 +802,31 @@ def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the
             "по фото станет видно, какая лучше. Плата 65 × 45 мм: 4 копии по 18 × 12 мм, под каждой полоска серого.") in says
     assert out["saves"] == [{"dot_settings": {**JARVIS, "power": 17.5}}, {"dot_width": 0.01}, {"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "jarvis"}] and out["went"] == ["/experiment/plan-33"]
+
+
+# the dots of a photographed Jarvis engraving standing in for Atkinson (photo_knowledge.recipe, DEC-006)
+JARVIS_DOTS = {"entry": "photo:149:C20", "source": "photo", "settings": {**JARVIS, "power": 25.0, "speed": 125.0, "line_interval": 0.01},
+               "lab": [36.3, -1.6, 5.0], "size": None, "engravings": 1, "photographs": 1, "basis": "picture", "missing": False,
+               "picked_at": "2026-10-25T18:00:00", "photo": {"pair_id": 149, "layer": "C20", "kind": "jarvis", "score": 0.26, "findings": []}}
+
+
+@node
+def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_colour_map(tmp_path):
+    """BUG-008: a work whose dots come from photo 149 (Jarvis) says so on the dots line, the scale's title, the bar, the foot and the file."""
+    out = run(tmp_path, {"work": "7"}, """
+  out.source = tree.querySelector('.ge-dotsource').textContent;
+  out.ends = tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent;
+  out.title = tree.querySelector('.ge-settings').textContent;
+  out.text = tree.textContent;
+""", work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
+    assert out["source"].startswith("Точкипо фото № 149 (Джарвис): 25 % · 125 мм/с")
+    assert out["ends"] == "1 %точки — по фото № 149 (Джарвис)30 %"
+    assert out["title"].endswith("точки — на настройках точек по фото № 149 (Джарвис)")
+    text = out["text"]
+    assert "с карты цветов" not in text.replace("Цвет с карты", "") and "оценка по шкале" not in text
+    assert "оценка по фото № 149 (Джарвис): этот вид на этих настройках ещё не гравировался" in text
+    assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Джарвис), где сфотографированы точки этих настроек." in text
+    assert "— настройки точек по фото № 149 (Джарвис)." in text
 
 
 # a kind whose every engraving on the titanium came out a negative (DEC-006): the dots of another kind stand in for its best

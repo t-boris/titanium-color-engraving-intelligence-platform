@@ -37,6 +37,7 @@ const PhotoPanels = (() => {
   /** Настройки, на которых гравируется слой: рецепт точек с карты или шкала работы. */
   const firedSettings = (v) => (fromMap(v) ? v.dot_recipe.settings : v.scale);
   const kindName = (key) => { const t = PhotoModes.label(key); return t.charAt(0).toUpperCase() + t.slice(1); };
+  const {fromPhoto, recipeFrom} = PhotoQuality;                    // where a recipe's dots come from (BUG-008)
   const greyChip = (level) => h('span', {class: 'sw', style: `background:rgb(${level},${level},${level})`});
   const hexChip = (hex) => (hex ? h('span', {class: 'sw', style: `background:${hex}`}) : h('span', {class: 'sw ge-none', title: 'не измерено'}));
 
@@ -108,7 +109,7 @@ const PhotoPanels = (() => {
     const onScale = dot.power != null;
     const mark = onScale ? h('span', {class: 'ge-dotmark', 'aria-hidden': 'true', style: `left:${hi > lo ? Math.min(100, Math.max(0, (dot.power - lo) / (hi - lo) * 100)) : 0}%`}) : null;
     return h('div', {class: 'stack ge-greybar'}, h('div', {class: 'ge-markbox'}, strip, mark),
-      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, onScale ? `точки: ${value(dot.power, 1)} %` : 'точки — с карты цветов'),
+      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, onScale ? `точки: ${value(dot.power, 1)} %` : `точки — ${dot.from || 'с карты цветов'}`),
         h('span', {}, `${value(hi, 1)} %`)));
   }
 
@@ -212,10 +213,10 @@ const PhotoPanels = (() => {
       if (levelsShown) fill(slots.bar, greyBar(levelsShown, {power: p, pick: pickDot}));
       dot.changed(p);
     }
-    const dotBar = () => ({power: dot.recipe ? null : dot.power, pick: pickDot});
+    const dotBar = () => ({power: dot.recipe ? null : dot.power, pick: pickDot, from: dot.recipe ? recipeFrom(dot.recipe) : null});
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
-    const onMap = dot && dot.recipe ? ' · точки — на настройках цвета с карты цветов' : '';      // the scale stays the work's; its dots fire elsewhere
+    const onMap = dot && dot.recipe ? ` · точки — на настройках ${fromPhoto(dot.recipe) ? `точек ${recipeFrom(dot.recipe)}` : 'цвета с карты цветов'}` : '';      // the scale stays the work's; its dots fire elsewhere
     fill(slots.title, (onMap ? 'шкала: ' : '') + settingsText(sc.mode, sc.dpi) + onMap);
     slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}${onMap}`);
     fill(slots.powers, ...(dot ? [dot.recipe ? null : dotPower.box, dotSource] : [low.box, high.box]), widths);
@@ -263,7 +264,7 @@ const PhotoPanels = (() => {
     }
     const r = dot.recipe;
     return h('div', {class: 'row ge-dotsource ge-dotsource-map'}, h('span', {class: 'small'}, 'Точки'), hexChip(dot.hex),
-      h('span', {class: 'small'}, `с карты цветов: ${value(r.settings.power, 1)} % · ${settingsText(r.settings, dot.dpi)}`),
+      h('span', {class: 'small'}, `${recipeFrom(r)}: ${value(r.settings.power, 1)} % · ${settingsText(r.settings, dot.dpi)}`),
       r.missing ? pill('цвет больше не измерен', 'warn') : null,
       toMap('Другой цвет'), btn('На шкалу', back, 'btn-small'));
   }
@@ -283,7 +284,7 @@ const PhotoPanels = (() => {
     }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
     if (dots) {
       const corrected = view.dot_width != null ? `, с поправкой ширины точки ${value(view.dot_width, 3)} мм` : '';
-      const at = fromMap(view) ? `на настройках цвета с карты (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)${corrected}`
+      const at = fromMap(view) ? `на настройках ${fromPhoto(view.dot_recipe) ? `точек ${recipeFrom(view.dot_recipe)}` : 'цвета с карты'} (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)${corrected}`
         : `на мощности точек ${value(view.dot_power, 1)} %${corrected} и настройках шкалы`;
       return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину в виде «${kindName(view.kind)}» `
         + `${at}: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на этих настройках, и картинка покажется по измеренным тонам вместо оценки.`));
@@ -497,37 +498,42 @@ const PhotoPanels = (() => {
     /** Работа в виде точками: картинка рядом с точками на титане издалека (оценка по шкале), точки вблизи, мощность и файл. */
     function showDots(view, info, sc) {
       const t = info.time, d = info.dots, name = kindName(view.kind), measured = d.measured, mapped = d.source === 'map';
+      const photo = d.source === 'photo', from = photo ? recipeFrom(d.recipe) : null;
+      const shot = photo && d.recipe.photo ? `фото № ${d.recipe.photo.pair_id} (${kindName(d.recipe.photo.kind)})` : null;     // the photograph of the dots
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
-      const estimate = mapped ? 'оценка по карте цветов: этот вид на этих настройках ещё не гравировался' : 'оценка по шкале: этот вид ещё не гравировался';
-      const source = mapped ? 'с карты цветов' : 'со шкалы';
+      const estimate = mapped ? 'оценка по карте цветов: этот вид на этих настройках ещё не гравировался'
+        : photo ? `оценка${shot ? ' по ' + shot : ''}: этот вид на этих настройках ещё не гравировался` : 'оценка по шкале: этот вид ещё не гравировался';
+      const source = mapped ? 'с карты цветов' : photo ? from : 'со шкалы';
       const settings = settingsText(firedSettings(view), info.dpi);
       fill(out,
         h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка (как её видит LightBurn)'), h('span', {}, `${name} на титане — ${measured ? 'по измеренной пробе' : 'оценка'}`)),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Картинка и она же в виде «${name}» на титане`})));
       if (stage) stage(out.querySelector('.pp-stage'), info.shown && info.shown.width);
-      const atSize = mapped ? recipeSizeText(view.dot_recipe.size) : sizeText(info.scale_size);
+      const atSize = mapped ? recipeSizeText(view.dot_recipe.size) : photo ? null : sizeText(info.scale_size);    // photo dots: measured on a picture
       fill(foot,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
         h('span', {class: 'row'}, 'точки ', hexChip(d.hex), ` ${value(d.power, 1)} % ${source} на титане `, hexChip(d.clean_hex)),
         measured ? pill(`измерено: ${measured.tones} тонов этого вида`, 'ok') : pill(estimate, 'warn'),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null);
       fill(details,
-        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %${mapped ? ' на настройках цвета с карты цветов' : ''}. `
+        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %${mapped ? ' на настройках цвета с карты цветов' : photo ? ` на настройках точек ${from}` : ''}. `
           + `Цвета картинки — как сфотографирована проба этого вида на этих настройках и этом титане: ${measured.tones} тонов. `
-          + (mapped ? 'Другой цвет точек — «Другой цвет» над картинкой; ' : 'Мощность точек меняется на полосе шкалы; ')
+          + (mapped || photo ? 'Другой цвет точек — «Другой цвет» над картинкой; ' : 'Мощность точек меняется на полосе шкалы; ')
           + 'на других настройках снова будет оценка, пока их не измерить.')
           : h('p', {}, h('strong', {}, `${name}. `), mapped
             ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках цвета, выбранного на карте цветов: это цвет его заливки при ширине работы `, hexChip(d.hex)]
-            : [`Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex)],
+            : photo ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках точек ${from}: это цвет точек на том фото `, hexChip(d.hex)]
+              : [`Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex)],
             '; между точками — очищенный титан ', hexChip(d.clean_hex), `. Тон — сколько точек: они покрывают ${value(d.struck_share * 100, 0)} % картинки, `
             + 'издалека глаз смешивает их с титаном. '
-            + (mapped ? 'Другой цвет точек — «Другой цвет» над картинкой, вернуть точки на шкалу — «На шкалу» или щелчок по полосе шкалы.'
+            + (mapped || photo ? 'Другой цвет точек — «Другой цвет» над картинкой, вернуть точки на шкалу — «На шкалу» или щелчок по полосе шкалы.'
               : 'Мощность точек меняется на полосе шкалы: щёлкните по цвету, который нужен точкам. Любой другой измеренный цвет — «Цвет с карты».')),
         measured ? h('ul', {class: 'small'}, measured.notes.map((n) => h('li', {}, I18N.tr(n))))
           : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. '
             + (mapped ? 'Цвет точки взят с карты цветов — это цвет сплошной заливки этих настроек: в тёмных местах точки сливаются в такую же заливку, '
               + 'а отдельная точка — самая короткая строка, и на титане она может выйти светлее или другого оттенка. '
+              : photo ? `Цвет точки — ${shot ? `как на ${shot}, где сфотографированы точки этих настроек` : 'по ближайшей сфотографированной гравировке'}. `
               : 'Цвет точки взят со шкалы, измеренной строками; точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. ')
             + 'Узор точек — по опубликованному алгоритму; LightBurn ставит точки своим кодом, узор может отличаться, доля точек — та же.'),
         mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: оценка — по цвету, каким он был при выборе. '
@@ -544,7 +550,7 @@ const PhotoPanels = (() => {
         toneText(view),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой; C01 — ` : ''}`
-          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settings}${mapped ? ' — настройки цвета с карты цветов' : ''}. `
+          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settings}${mapped ? ' — настройки цвета с карты цветов' : photo ? ` — настройки точек ${from}` : ''}. `
           + `Картинка — как загружена, ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле: точки ставит LightBurn.`),
         h('p', {class: 'muted small'}, 'Подбор серых под цвета, контуры и правила частей — для градаций серого: в виде точками все точки одного цвета, и картинка '
           + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));

@@ -47,7 +47,7 @@
     /** Что сказать о слое зоны в файле работы. */
     const layer = (info) => (dotted(view)
       ? `Файл LightBurn работы: слой ${view.name} — изображение в режиме «${kindName(view.kind)}»: мощность ${value(info.dots.power, 1)} % (Min = Max — каждая точка `
-        + `бьёт на ней), ${settingsText(firedSettings(view), info.dpi)}${fromMap(view) ? ' — настройки цвета с карты цветов' : ''}. `
+        + `бьёт на ней), ${settingsText(firedSettings(view), info.dpi)}${!fromMap(view) ? '' : PhotoQuality.fromPhoto(view.dot_recipe) ? ` — настройки точек ${PhotoQuality.recipeFrom(view.dot_recipe)}` : ' — настройки цвета с карты цветов'}. `
         + 'Картинка работы — на месте зоны, вне её областей прозрачна: точки ставит LightBurn.'
       : `Файл LightBurn работы: слой ${view.name} — изображение в режиме градаций серого после слоёв цвета: Min ${value(info.power_range[0], 1)} %, `
         + `Max ${value(info.power_range[1], 1)} %, ${settingsText(view.scale, info.dpi)}. Картинка — на месте зоны, вне её областей прозрачна.`);

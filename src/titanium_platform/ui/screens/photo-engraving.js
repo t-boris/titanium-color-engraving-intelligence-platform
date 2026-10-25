@@ -386,7 +386,7 @@
         h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
         h('p', {class: 'small'}, settingsText(firedSettings(w), w.dpi)),
         dotted(w) ? h('p', {class: 'small'}, `${materialLabel(w.material)} · ${kindName(w.kind)} · `
-          + (fromMap(w) ? `точки ${value(w.dot_recipe.settings.power, 1)} % с карты цветов` : `точки ${value(w.dot_power, 1)} % (оценка по шкале)`))
+          + (fromMap(w) ? `точки ${value(w.dot_recipe.settings.power, 1)} % ${PhotoQuality.recipeFrom(w.dot_recipe)}` : `точки ${value(w.dot_power, 1)} % (оценка по шкале)`))
           : h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : w.colour_choice === 'objects' ? 'раскраска по объектам' : 'рисунок сохранён'}` : ''}`
             + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
         h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),

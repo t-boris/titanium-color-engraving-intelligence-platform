@@ -26,8 +26,7 @@ const VectorPhoto = (() => {
       : zone.dot_recipe ? `точки ${value(zone.dot_recipe.settings.power)} % ${recipeFrom(zone.dot_recipe)}` : `точки ${value(zone.dot_power)} %`,
     zone.tone_used ? `яркость ${value(zone.tone.brightness, 0)} %, контраст ${value(zone.tone.contrast, 0)} %, гамма ${value(zone.tone.gamma, 2)}` : null]
     .filter(Boolean).join(' · ');
-  /** Откуда точки зоны: с карты цветов или со сфотографированной фотогравировки (её вид, когда он другой, DEC-006). */
-  const recipeFrom = (r) => (r.source === 'photo' && r.photo ? `по фото № ${r.photo.pair_id} (${kindName(r.photo.kind)})` : 'с карты цветов');
+  const {recipeFrom} = PhotoQuality;                    // where the zone's dots come from: the colour map or a photograph (BUG-008)
   const CHOICE = {drawing: 'рисунок сохранён', nearest: 'ближайший цвет', objects: 'раскраска по объектам'};
   /** Как подобраны серые зоны (0.23.0) — коротко, как у работы фотогравировки; у вида точками — ничего: точка бьёт на одной мощности. */
   const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'серые самой картинки'

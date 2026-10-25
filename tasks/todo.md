@@ -1,3 +1,15 @@
+# Photo dots named by their photograph — 0.35.3 (2026-10-25, BUG-008)
+
+The Stop hook listed BUG-008 among what is open. Checked first whether «Темнее/Светлее» for dots could rest on measurements already in
+the workshop: the colour map has fills at the dots' own settings (125 mm/s · 60 kHz · 200 ns · 0.01 mm) only at 25 %, so it measures no
+step of power there; the steps stay on the process's prior until the 8-copy plate is photographed.
+
+- [x] `PhotoQuality.recipeFrom` / `fromPhoto`; the photo panels, the zone screen, the work list and the editor's «Фото» tab use them.
+- [x] UI test for a work on Jarvis photo dots; the tests of the colour-map dots unchanged.
+- [x] Rehearsal on the live copy (zone 2, Atkinson on photo 149): no «с карты цветов» left on the zone screen, no console errors.
+- [x] BUG-008 `status: fixed` with a Resolution.
+- [ ] Full suite, desktop tests, build, tag v0.35.3, GitHub pre-release, back up the live DB, install the desktop app if it is not running.
+
 # A kind that failed is never «the best» — 0.35.2 (2026-10-25, operator chose «Тёмные точки другого вида»)
 
 Found on the live copy after 0.35.1: choosing Atkinson for zone 2 of work 41 filled in photo 147 (10.2 %, dots L* 92, a negative,
