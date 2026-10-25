@@ -30,7 +30,15 @@ Feature: `docs/features/photo-engraving-quality` (MarkView).
       size (`variation_window`), «Подобрать настройки: 8 копий» on photo works and zones, the plate dialog with an uploaded picture,
       default copies by `photo_quality.variants_around` (DEC-003); the tone measures of `photo_quality.tone` (DEC-001) are in, the detail
       measure is written but not yet run on photographs (step 4). Tests: `tests/test_photo_variations.py` (19), UI tests extended.
-- [ ] 3 Release 0.32.0 (key + plate), desktop build, deploy; the first plate made in the workshop and handed over with screen steps
+- [x] 3 Release 0.32.0 (key + plate), desktop build, deploy; the first plate made in the workshop and handed over with screen steps
+      Done: tag v0.32.0 on bc2173e (source as f26ca47), GitHub pre-release with the signed macOS arm64 zip (263 129 428 bytes,
+      sha256 03218762…6479; codesign strict ok, unnotarized; packaged smoke ok, core 0.32.0, ui 2). The copy window chooses the most
+      grey steps (f26ca47; on zone 2 of work 41 the widest-spread window was inside the dark lens). BUG-007 set fixed with its
+      resolution. The plate cannot be written while 0.31.1 holds the workshop: the operator creates it in 0.32.0 through the plate
+      dialog with the cut picture (~/Downloads/yana-zone2-18mm.png, 18 mm at 20 px/mm), centre Jarvis 25 % 125 mm/s 60 kHz 200 ns
+      0.01 mm (pair 118); on a copy of the live database this gives plan 42, 90.4 × 65.2 mm, 16 layers, copies «1 J P25 V125 F60
+      PW200 I.01», «2 J P20», «3 J P30», «4 J V175», «5 J I.0169», «6 J D.01», «7 A», «8 S». The 8765 server is not running (the
+      operator works in the desktop application): no wheel deploy for 0.32.0.
 - [ ] 4 `photo_quality.py`: tone (distinguishable levels, darkness, contrast, shadows/highlights kept, dot gain), detail at
       0.2/0.4/0.8 mm, grain, scan-direction blur — from the check (new photographs) and backfilled for accepted ones
 - [ ] 5 Conclusions after every photograph for every photo layer, with the setting to change for darker/lighter/sharper/softer;

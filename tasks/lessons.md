@@ -605,8 +605,10 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **What happened.** `python -m build --wheel` ran first and left `src/titanium_color_engraving_platform.egg-info` (git-ignored, so
   `git status` does not show it). PyInstaller then bundled that egg-info instead of the editable install's dist-info; the core's smoke
   still said 0.32.0, but `desktop/forge.config.js` looks for a dist-info and refused the package ("the built core says null").
-- **Rule.** Build the desktop core and the shell first, the wheel last, and remove `src/*.egg-info` after the wheel; before a core
-  build, `ls src/*.egg-info` must find nothing and `.venv/.../site-packages` must hold `titanium_color_engraving_platform-<v>.dist-info`.
+- **Second source.** `uv pip install --python .venv/bin/python -e . --no-deps` (the step that refreshes the version) writes the same
+  `src/*.egg-info` while it builds the editable wheel, and the spec runs with `PYTHONPATH=../src`, where importlib finds it first.
+- **Rule.** Remove `src/*.egg-info` immediately before PyInstaller (after the editable refresh and after any wheel), build the core and
+  the shell, the wheel last; check that `dist/titanium-core/_internal` holds `titanium_color_engraving_platform-<v>.dist-info`.
 
 ## Look at the picture a plate will engrave before handing the plate over (0.32.0, 2026-10-24)
 
