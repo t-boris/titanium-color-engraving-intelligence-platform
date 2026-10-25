@@ -2825,12 +2825,33 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
     return ids
 
 
+def original_pairs(store: Store) -> dict[int, int]:
+    """Every pair -> the first measurement of its photograph: a re-measure is a revision with ``correction_of`` its source."""
+    source = {r["id"]: r["c"] for r in store.query("SELECT id, json_extract(data_json,'$.correction_of') AS c FROM pair")}
+    out = {}
+    for pair_id in source:
+        at, seen = pair_id, set()
+        while source.get(at) is not None and at not in seen:
+            seen.add(at)
+            at = source[at]
+        out[pair_id] = at
+    return out
+
+
+def first_accepted(store: Store) -> dict[int, str | None]:
+    """Every pair -> when its photograph was first accepted (else first added). A re-measure revises the measurement of the same
+    photograph and does not make it newer, so engravings keep their order by date through a re-measure and a re-check."""
+    dates = {r["id"]: r["accepted_at"] or r["created_at"] for r in store.query("SELECT id, accepted_at, created_at FROM pair")}
+    return {pair_id: dates.get(first) or dates.get(pair_id) for pair_id, first in original_pairs(store).items()}
+
+
 def delete_pair(store: Store, pair_id: int) -> None:
     """Remove a pair from active use (DEC-047) and rebuild the knowledge its observations fed."""
-    from . import knowledge, model
+    from . import exclusions, knowledge, model
     row = store.one("SELECT * FROM pair WHERE id=?", (pair_id,))
     if row is None or row["status"] == ST_DELETED:
         raise KeyError(f"pair {pair_id} not found")
+    taken_out = exclusions.excluded_ids(store)           # a measurement the operator took out fed no knowledge: nothing of it leaves
     observations = store.query("SELECT * FROM observation WHERE pair_id=?", (pair_id,))
     # Pair and measurement rows remain in the immutable audit history. Marking the pair Deleted
     # removes it from active lists, color learning, and reports; uploaded file copies are purged.
@@ -2845,7 +2866,7 @@ def delete_pair(store: Store, pair_id: int) -> None:
     rc.remove_pair(store, pair_id)                  # the pictures drawn from the purged photograph go with it
     removed: dict[tuple, dict[str, list[int]]] = {}
     for o in observations:
-        key = model.knowledge_key_of(o)
+        key = None if o["id"] in taken_out else model.knowledge_key_of(o)
         if key is not None:
             removed.setdefault((o["device_id"], o["lens_id"]), {}).setdefault(key, []).append(o["id"])
     for (device_id, lens_id), keys in removed.items():

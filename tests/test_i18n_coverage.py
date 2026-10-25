@@ -52,6 +52,8 @@ INNER_OF = {
     "flag cleared by the operator: ": (("listed", "_breaks_thresholds"), ("returned", "removal_doubt")),
     "a removed photograph took away the evidence of this stage: what remains supports only 7: ": (
         ("returned", "supported_stage"), ("returned", "automatic_stage")),
+    "measurements the operator took out took away the evidence of this stage: what remains supports only 7: ": (
+        ("returned", "supported_stage"), ("returned", "automatic_stage")),
     # why a photo zone of a vector work cannot be engraved: the message of its scale's curve, kept in the zone's row (REQ-073)
     "photo zone 7 cannot be engraved: ": (("raised", "PredictionError"),),
     # why an inscription cannot be engraved: its font is gone or unreadable (fonts.FontError), or a reason of lettering._why_not_engraved,

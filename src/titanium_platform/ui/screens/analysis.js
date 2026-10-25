@@ -261,10 +261,20 @@
         lab ? h('span', {class: 'muted small'}, labText(lab)) : null,
         x.delta_e != null ? h('span', {class: 'small', title: 'ΔE до планового цвета'}, `ΔE ${num(x.delta_e, 1)}`)
           : x.path_distance != null ? h('span', {class: 'small', title: 'Отклонение от цветового пути'}, `от пути ${num(x.path_distance, 1)}`) : null,
-        t.label ? pill(t.label, t.kind) : null];
+        t.label ? pill(t.label, t.kind) : null, x.taken_out ? pill('убрано из расчёта оператором', 'warn') : null];
     };
+    // a layer the operator took out of every calculation (act-on-findings REQ-001): dimmed, said why, «Вернуть» on its line
+    const takenOut = (x) => h('p', {class: 'small'}, `Убрано из расчёта оператором ${new Date(x.taken_out.created_at).toLocaleString('ru-RU')}`
+      + (x.taken_out.note ? ` («${x.taken_out.note}»)` : '') + ': этот слой не считается в рецепте, на карте цветов, в палитре и в работах.');
+    const giveBack = (x) => btn('Вернуть', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await post(`/exclusions/${x.taken_out.id}/revoke`, {}); toast('Слой снова считается', 'ok'); App.render({preserveScroll: true}); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
     return App.list({id: `analysis-elements:${r.pair_id}`, items: r.rows, key: (x) => x.observation_id ?? x.layer_index, row,
-      details: (x) => detailBody(x, false), search: (x) => x.name || `Слой ${x.layer_index}`,
+      details: (x) => [x.taken_out ? takenOut(x) : null, detailBody(x, false)], search: (x) => x.name || `Слой ${x.layer_index}`,
+      rowClass: (x) => (x.taken_out ? 'excluded' : ''), actions: (x) => (x.taken_out ? [giveBack(x)] : []),
       filters: r.rows.some((x) => trouble(x).level) ? [{key: 'problem', label: 'Итог', test: (x, v) => trouble(x).kind === v,
         options: [['bad', 'Вне допуска'], ['warn', 'Не измерены'], ['ok', 'Без замечаний']]}] : [],
       sorts: [['worst', 'Сначала худшие', worst], ['order', 'По порядку', (a, b) => a.layer_index - b.layer_index]],

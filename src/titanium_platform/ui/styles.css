@@ -1191,6 +1191,16 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .fd-mark textarea {min-width:min(420px, 100%)}
 @media (max-width:760px) {.lst-main .fd-where {max-width:none}}
 .fd-recheck:empty {display:none}
+/* «Что сделать» in an opened finding and «Убрано оператором» (act-on-findings): a button and its line side by side */
+.fd-remedies {padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#162036}
+.fd-remedies h4 {margin:0}
+.fd-remedy {display:flex;gap:10px;align-items:baseline}
+.fd-remedy .btn {flex:0 0 auto}
+.fd-excluded summary {cursor:pointer;font-weight:600}
+.fd-excluded[open] summary {margin-bottom:10px}
+.fd-change>div {display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.fd-remedy-preview p>span {white-space:nowrap}
+@media (max-width:760px) {.fd-remedy {flex-direction:column;gap:4px}}
 /* compact lists inside the narrow panels: the list's own bar stays in view while its panel scrolls; vector swatches and grey-scale bars
    at line size; an excluded colour dimmed as it was */
 .os-scroll .lst-bar {position:sticky;top:-10px;z-index:2;padding:6px 0;background:#111826}

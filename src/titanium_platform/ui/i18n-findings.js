@@ -74,6 +74,17 @@
     [/^the photographs were measured again, but the conclusions could not be drawn: (.+)$/i,
       (m) => 'Фотографии перемерены, но выводы не пересчитаны: ' + m[1]],
     [/^the re-check stopped: (.+)$/i, (m) => 'Перепроверка прервалась: ' + m[1]],
+    // the operator's decisions on what a finding is about (act-on-findings)
+    [re('observation # not found'), (m) => `Наблюдение № ${m[1]} не найдено`],
+    [re('observation # is already taken out of the calculations'), (m) => `Наблюдение № ${m[1]} уже убрано из расчёта`],
+    [re('observation # counts toward no recipe: there is nothing to take out'),
+      (m) => `Наблюдение № ${m[1]} не входит ни в один рецепт: убирать нечего`],
+    [/^no measurement counts toward this recipe now$/i, 'Сейчас в этот рецепт не входит ни одно измерение'],
+    [/^this recipe rests on one engraving: there is no older one to leave out$/i,
+      'Рецепт держится на одной гравировке: более старых, которые можно перестать считать, нет'],
+    [re('exclusion # not found'), (m) => `Решение № ${m[1]} не найдено`],
+    [re('exclusion # was already undone'), (m) => `Решение № ${m[1]} уже отменено`],
+    [/^this finding offers no action (\S+)$/i, (m) => `У этого вывода нет действия «${m[1]}»`],
     [re('analysis run (\\S+) not found'), (m) => `Расчёт № ${m[1]} не найден`],
     [re('titanium stock # not found'), (m) => `Заготовка титана № ${m[1]} не найдена`],
     // предложение планировщика: вопрос, ценность, причины наборов

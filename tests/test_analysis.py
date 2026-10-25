@@ -211,8 +211,8 @@ SCREEN_GLUE = ("const __screens = {}, __session = {}; App.register = (d) => { __
                "globalThis.__screens = __screens;")
 
 
-def run_screen(tmp_path, pair_id, report, body) -> dict:
-    routes = {f"/api/pairs/{pair_id}/report": {"status": 200, "json": report}}
+def run_screen(tmp_path, pair_id, report, body, routes=None) -> dict:
+    routes = {f"/api/pairs/{pair_id}/report": {"status": 200, "json": report}, **(routes or {})}
     (tmp_path / "data.json").write_text(json.dumps({"id": pair_id, "routes": routes}), encoding="utf-8")
     script = tmp_path / "analysis.js"
     script.write_text(SCREEN % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
@@ -258,3 +258,33 @@ def test_the_measured_elements_are_a_short_list_out_of_tolerance_and_largest_del
     assert out["chips"] == ["Все · 25", "Вне допуска · 2", "Без замечаний · 23"]                   # no element went unmeasured: no chip for it
     assert len(out["open"]) == 1 and "Плановый цвет" in out["open"][0] and "ΔE 8.0" in out["open"][0] and "Прочитанные параметры слоя" in out["open"][0]
     assert out["outside"] == ["B09", "B16"] and out["ordered"] == ["B01", "B02", "B03"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_layer_the_operator_took_out_says_so_on_its_line_and_gives_it_back(store, w, tmp_path):
+    """act-on-findings REQ-001: the photo page marks a measured layer the operator took out of every calculation, says why under its line
+    and offers «Вернуть», which undoes the decision."""
+    from titanium_platform import exclusions
+    plan_id = cv.create_continuous(store, *w["setup"], "tonal", ramp(), 50, 3, "T")
+    layers = pl.get_plan(store, plan_id)["layers"]
+    pair = accepted_pair(store, w, plan_id, {l["index"]: (l["prediction"]["lab"][0], 0, 0) for l in layers})
+    second = next(r for r in an.report_for_pair(store, pair)["rows"] if r["name"] == "B02")
+    x = exclusions.exclude_measurement(store, second["observation_id"], note="блик")["exclusion"]
+    report = an.report_for_pair(store, pair)
+    assert [r["taken_out"]["id"] if r["taken_out"] else None for r in sorted(report["rows"], key=lambda r: r["layer_index"])] == [None, x["id"], None]
+    out = run_screen(tmp_path, pair, report, """
+  const panel = tree.querySelectorAll('section').find((s) => s.querySelector('h3') && s.querySelector('h3').textContent === 'Измеренные элементы');
+  const list = panel.querySelector('.lst');
+  const line = list.querySelectorAll('.lst-row').find((r) => r.querySelector('.lst-text').textContent === 'B02');
+  out.cls = line.className;
+  out.main = line.querySelector('.lst-main').textContent;
+  out.buttons = list.querySelectorAll('.lst-act').map((a) => a.querySelectorAll('button').map((b) => b.textContent)).filter((b) => b.length);
+  await line.querySelector('.lst-main').dispatch('click'); await tick();
+  out.open = list.querySelectorAll('.lst-det').find((d) => !d.hidden).querySelector('p').textContent;
+  await line.querySelector('.lst-act').querySelector('button').dispatch('click'); await tick(); await tick();
+  out.sent = ctx.requests.filter((r) => r.path === '/api/exclusions/%(id)s/revoke').map((r) => r.method);
+""" % {"id": x["id"]}, routes={f"/api/exclusions/{x['id']}/revoke": {"status": 200, "json": {"exclusion": {"id": x["id"]}, "run_id": 9}}})
+    assert "excluded" in out["cls"] and out["main"].endswith("убрано из расчёта оператором")
+    assert out["buttons"] == [["Вернуть"]]                                          # only the taken-out line has an action
+    assert out["open"].startswith("Убрано из расчёта оператором ") and "(«блик»): этот слой не считается в рецепте" in out["open"]
+    assert out["sent"] == ["POST"]

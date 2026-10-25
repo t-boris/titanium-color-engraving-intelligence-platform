@@ -87,7 +87,7 @@ def create_app(data_dir: str | Path) -> FastAPI:
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
               routes_photo_knowledge.router,
-              routes_findings.router, routes_recheck.router, routes_fonts.router, routes_labs.router, routes_cloud.router, routes_workshop.router, routes_lan.router,
+              routes_findings.router, routes_findings.exclusions_router, routes_recheck.router, routes_fonts.router, routes_labs.router, routes_cloud.router, routes_workshop.router, routes_lan.router,
               routes_lan.settings_router, routes_lan.pages):
         app.include_router(r)
 

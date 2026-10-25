@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from . import agreement, color, lightburn, tasks
+from . import agreement, color, exclusions, ingest, lightburn, tasks
 from .db import Store
 
 
@@ -86,18 +86,21 @@ def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> 
     """Chart-gated observations of one laser and one lens record (DEC-063); an unknown lens (None) is a partition of its own.
 
     Only test features: a cleaning witness or a marker and label layer accepted as eligible by an older version is still
-    left out (DEC-027, DEC-028)."""
+    left out (DEC-027, DEC-028), and so is a measurement the operator took out (act-on-findings DEC-004)."""
     out = []
+    taken_out, first = exclusions.excluded_ids(store), ingest.first_accepted(store)
     rows = store.query(
         "SELECT o.*,p.photo_name,p.lightburn_name,p.accepted_at,p.created_at AS pair_created_at,p.material_id "
         "FROM observation o JOIN pair p ON p.id=o.pair_id WHERE o.device_id=? AND o.lens_id IS ? AND p.status='Accepted' "
         f"AND o.model_eligible=1 AND {TEST_FEATURE_SQL} ORDER BY o.id", (device_id, lens_id))
     for r in rows:
+        if r["id"] in taken_out:
+            continue
         out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "layer_index": r["layer_index"], "lab": json.loads(r["lab_json"]),
                     "parameters": json.loads(r["parameters_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
                     "context": json.loads(r["context_json"]), "alignment": r["alignment_method"], "task": tasks.of_observation(r),
                     "source": {"photo_name": r["photo_name"], "lightburn_name": r["lightburn_name"],
-                               "accepted_at": r["accepted_at"], "created_at": r["pair_created_at"],
+                               "accepted_at": r["accepted_at"], "first_accepted_at": first.get(r["pair_id"]), "created_at": r["pair_created_at"],
                                "material_id": r["material_id"]}})
     return out
 
@@ -117,8 +120,11 @@ def _by_engraving(obs: list[dict]) -> dict[str, list[dict]]:
 
 
 def _when(group: list[dict]) -> tuple:
-    """When an engraving was made: its latest accepted photograph (else the pair's creation), the observation id breaking a tie."""
-    return max(((o.get("source") or {}).get("accepted_at") or (o.get("source") or {}).get("created_at") or "", o["id"]) for o in group)
+    """When an engraving was made: its latest photograph, dated by that photograph's first acceptance (a re-measure does not make it
+    newer; else the pair's acceptance or creation), the observation id breaking a tie."""
+    def date(source: dict) -> str:
+        return source.get("first_accepted_at") or source.get("accepted_at") or source.get("created_at") or ""
+    return max((date(o.get("source") or {}), o["id"]) for o in group)
 
 
 def summarize(obs: list[dict]) -> dict:

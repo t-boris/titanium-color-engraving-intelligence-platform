@@ -152,7 +152,8 @@ def test_a_tampered_backup_and_a_non_empty_folder_are_refused_and_replacing_sets
         backup.restore(tmp / "other.tcelab", tmp / "nowhere")
 
 
-def test_the_workshop_api_makes_lists_inspects_and_restores_backups(tmp_path):
+def test_the_workshop_api_makes_lists_inspects_and_restores_backups(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))      # the listing also reads ~/titanium-backups: the operator's own backups stay out
     with TestClient(create_app(tmp_path / "live")) as client:
         store = client.app.state.store
         labworld.build(store, tmp_path / "live" / "files")

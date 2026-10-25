@@ -53,6 +53,7 @@ ROUTES = {
                                                           "options": {"kinds": [], "tasks": [], "setups": [], "stocks": []}}},
     "/api/photo-knowledge/everywhere": {"status": 200, "json": EVERYWHERE},
     "/api/recheck/latest": {"status": 200, "json": None},
+    "/api/exclusions": {"status": 200, "json": {"exclusions": [], "active": 0}},
 }
 
 
@@ -313,3 +314,122 @@ def test_the_last_recheck_report_lists_the_photographs_and_the_changed_findings_
                               "изменилсяНестабильноСтало нестабильно"]
     assert out["reason"] == "Новое измерение читает меньше слоёв, чем принятоеОткрыть фото"
     assert out["hash"] == "#/findings?state=attention&sort=newest"
+
+
+# -- acting on a finding (feature act-on-findings) ------------------------------------------------------------------------------
+ANOMALY = {**finding(7, "anomaly", "observation", "Наблюдение № 3063 отстоит на 84.1 ΔE", deviation=84.1), "key": "anomaly:photo:41:3",
+           "evidence": {"pair_ids": [136], "observation_ids": [3063], "knowledge_id": 496},
+           "remedies": [{"action": "exclude_measurement", "observation_id": 3063}, {"action": "remeasure", "pair_id": 136},
+                        {"action": "count_from_latest"}]}
+REMEDY_PREVIEW = {"action": "exclude_measurement", "kind": "measurement", "device_id": 1, "lens_id": 2, "recipe_key": "k",
+                  "observation": {"id": 3063, "pair_id": 136, "layer_index": 3, "layer_name": "C03", "photo_name": "a.CR3", "lab": [40.0, 9.2, -21.4]},
+                  "leaving": {"observation_ids": [3063], "pair_ids": [136], "engraving_ids": ["e1"]},
+                  "before": {"lab": [75.4, 10.2, 54.9], "engravings": 3, "observations": 3, "confidence": 0.11, "contradicted": True},
+                  "after": {"lab": [76.0, 10.0, 55.0], "engravings": 2, "observations": 2, "confidence": 0.33, "contradicted": False}, "delta_e": 0.7}
+DECIDED = {"exclusion": {"id": 5, "kind": "measurement", "active": True}, "preview": REMEDY_PREVIEW, "run_id": 64}
+REMEDY_ROUTES = {**LIST_ROUTES, "/api/analysis/runs/latest": {"status": 200, "json": {**PAGE, "findings": [ANOMALY]}},
+                 "/api/analysis/findings/7/remedy": {"status": 200, "json": REMEDY_PREVIEW}}
+
+
+@node
+def test_an_opened_anomaly_starts_with_what_can_be_done_each_with_a_line_on_what_it_does(tmp_path):
+    out = run(tmp_path, """
+  const list = panel('Выводы');
+  await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  const open = list.querySelectorAll('.lst-det').find((d) => !d.hidden);
+  const block = open.querySelector('.fd-remedies');
+  out.first = open.firstChild === block || open.querySelector('div') === block;
+  out.head = block.querySelector('h4').textContent;
+  out.lines = block.querySelectorAll('.fd-remedy').map((r) => [r.querySelector('button').textContent, r.querySelector('span').textContent]);
+""", routes=REMEDY_ROUTES)
+    assert out["head"] == "Что сделать" and out["first"]
+    assert [button for button, _ in out["lines"]] == ["Убрать измерение", "Перемерить фото", "Считать с последней гравировки"]
+    assert out["lines"][0][1].startswith("Этот слой этой фотографии перестанет считаться в рецепте, на карте цветов, в палитре и в работах.")
+    assert out["lines"][1][1].startswith("Измерить фотографию заново так, как приложение измеряет сейчас")
+    assert out["lines"][2][1].startswith("Цвет рецепта — по самой новой гравировке. Старые остаются в истории, но не считаются")
+
+
+@node
+def test_taking_a_measurement_out_shows_what_leaves_and_the_colour_before_and_after_then_decides_with_the_note(tmp_path):
+    out = run(tmp_path, """
+  ctx.document.body.append(tree);
+  const list = panel('Выводы');
+  await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  await list.querySelector('.fd-remedies').querySelectorAll('button').find((b) => b.textContent === 'Убрать измерение').dispatch('click'); await tick(); await tick();
+  const modal = ctx.document.body.querySelector('.modal');
+  out.title = modal.querySelector('h3').textContent;
+  out.leaving = modal.querySelector('p').textContent;
+  out.change = modal.querySelector('.fd-change').textContent;
+  out.buttons = modal.querySelectorAll('button').map((b) => b.textContent);
+  out.asked = ctx.requests.filter((r) => r.path === '/api/analysis/findings/7/remedy').map((r) => r.body);
+  modal.querySelector('textarea').value = 'блик на фото';
+  data.routes['/api/analysis/findings/7/remedy'] = {status: 200, json: %(decided)s};
+  await modal.querySelectorAll('button').find((b) => b.textContent === 'Убрать измерение').dispatch('click'); await tick(); await tick();
+  out.sent = ctx.requests.filter((r) => r.path === '/api/analysis/findings/7/remedy').map((r) => r.body);
+  out.toast = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
+  out.closed = !ctx.document.body.querySelector('.modal');
+  tree.remove();
+""" % {"decided": json.dumps(DECIDED)}, routes=REMEDY_ROUTES)
+    assert out["title"] == "Убрать измерение?"
+    assert out["leaving"] == "Перестанет считаться: фото № 136, слой «C03» L 40.0 · a 9.2 · b -21.4"
+    assert out["change"] == ("Цвет рецептасейчас: L 75.4 · a 10.2 · b 54.9 · гравировок: 3станет: L 76.0 · a 10.0 · b 55.0 · гравировок: 2"
+                             "сдвиг ΔE 0.7")
+    assert out["buttons"] == ["×", "Отмена", "Убрать измерение"]
+    assert out["asked"] == ['{"action":"exclude_measurement"}']
+    assert out["sent"][-1] == '{"action":"exclude_measurement","note":"блик на фото","confirm":true}'
+    assert out["toast"] == ["Готово · измерение убрано из расчёта · расчёт № 64 Вернуть ×"] and out["closed"]
+
+
+@node
+def test_measuring_the_photograph_again_from_the_finding_shows_each_layer_before_and_after_its_own_first(tmp_path):
+    remeasured = {"pair_id": 136, "status": "replaced", "replaced_by": 151, "reason": None,
+                  "layers": [{"layer_index": 1, "name": "C01", "before": [50, 0, 0], "after": [50, 0, 5], "delta_e": 5.0},
+                             {"layer_index": 3, "name": "C03", "before": [40, 9, -21], "after": [74, 10, 54], "delta_e": 82.0},
+                             {"layer_index": 2, "name": "C02", "before": [60, 0, 0], "after": [60, 0, 0], "delta_e": 0.0}]}
+    out = run(tmp_path, """
+  ctx.document.body.append(tree);
+  const list = panel('Выводы');
+  await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  await list.querySelector('.fd-remedies').querySelectorAll('button').find((b) => b.textContent === 'Перемерить фото').dispatch('click'); await tick(); await tick();
+  out.sent = ctx.requests.filter((r) => r.path === '/api/pairs/136/remeasure').map((r) => r.method);
+  const modal = ctx.document.body.querySelector('.modal');
+  out.title = modal.querySelector('h3').textContent;
+  out.text = modal.querySelector('p').textContent;
+  out.rows = modal.querySelectorAll('.lst-main').map((r) => r.textContent);
+  tree.remove();
+""", routes={**REMEDY_ROUTES, "/api/pairs/136/remeasure": {"status": 200, "json": remeasured}})
+    assert out["sent"] == ["POST"] and out["title"] == "Фото перемерено"
+    assert out["text"] == "Фото № 136 перемерено; новое измерение — фото № 151."
+    assert out["rows"] == ["этот выводСлой «C03»→ΔE 82.0", "Слой «C01»→ΔE 5.0", "Слой «C02»→ΔE 0.0"]
+
+
+EXCLUSIONS = {"active": 2, "exclusions": [
+    {"id": 6, "kind": "older_engravings", "active": True, "created_at": "2026-10-25T13:00:00+00:00", "note": None, "observations_out": 2,
+     "settings": {"power": 13.3, "frequency": 60, "speed": 117, "pulse_width": 300, "line_interval": 0.0169, "passes": 1},
+     "kept": {"title": "Big Plate", "lab": [60, 20, 0]}, "before": {"lab": [55, 5, 0], "engravings": 3}, "after": {"lab": [60, 20, 0], "engravings": 1}},
+    {"id": 5, "kind": "measurement", "active": True, "created_at": "2026-10-25T12:00:00+00:00", "note": "блик", "observations_out": 1, "pair_id": 151,
+     "original_pair_id": 136, "layer_index": 3, "observation": {"layer_name": "C03", "lab": [40, 9, -21]},
+     "before": {"lab": [75.4, 10.2, 54.9], "engravings": 3}, "after": {"lab": [76, 10, 55], "engravings": 2}}]}
+
+
+@node
+def test_what_the_operator_took_out_is_one_short_list_with_vernut_on_each_line(tmp_path):
+    out = run(tmp_path, """
+  const block = tree.querySelector('.fd-excluded');
+  out.summary = block.querySelector('summary').textContent;
+  out.rows = block.querySelectorAll('.lst-main').map((r) => r.textContent);
+  await block.querySelectorAll('.lst-act')[1].querySelector('button').dispatch('click'); await tick(); await tick();
+  out.sent = ctx.requests.filter((r) => r.path === '/api/exclusions/5/revoke').map((r) => r.method);
+  out.toast = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
+""", routes={**LIST_ROUTES, "/api/exclusions": {"status": 200, "json": EXCLUSIONS},
+             "/api/exclusions/5/revoke": {"status": 200, "json": {"exclusion": {"id": 5, "active": False}, "run_id": 65}}})
+    assert out["summary"] == "Убрано оператором: 2"
+    assert out["rows"][0].startswith("Рецепт 13.3 % · 60 кГц · 117 мм/с · 300 нс · шаг 0.0169 мм · 1 пр. — с последней гравировки «Big Plate»25.10.2026")
+    assert out["rows"][1].startswith("Измерение: фото № 151, слой «C03»25.10.2026") and out["rows"][1].endswith("✎ блик")
+    assert out["sent"] == ["POST"] and out["toast"] == ["Снова считается · расчёт № 65 ×"]
+
+
+@node
+def test_without_exclusions_the_findings_show_no_such_block(tmp_path):
+    out = run(tmp_path, "  out.block = !!tree.querySelector('.fd-excluded');\n", routes=LIST_ROUTES)
+    assert out["block"] is False

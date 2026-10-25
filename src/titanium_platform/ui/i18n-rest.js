@@ -109,6 +109,11 @@
     [/^a removed photograph took away the evidence of this stage: what remains supports only (\w+): (.+)$/i,
       (m) => `Удалённая фотография унесла основания этой стадии; стадия сохранена, запись помечена «под вопросом». `
         + `Оставшиеся данные подтверждают только «${STAGE[m[1]] || m[1]}»: ${I18N.tr(m[2])}`],
+    [/^measurements the operator took out took away the evidence of this stage: no eligible observation is left$/i,
+      'Измерения, убранные оператором из расчёта, унесли основания этой стадии: подходящих наблюдений не осталось. Стадия сохранена, запись помечена «под вопросом».'],
+    [/^measurements the operator took out took away the evidence of this stage: what remains supports only (\w+): (.+)$/i,
+      (m) => `Измерения, убранные оператором из расчёта, унесли основания этой стадии; стадия сохранена, запись помечена «под вопросом». `
+        + `Оставшиеся данные подтверждают только «${STAGE[m[1]] || m[1]}»: ${I18N.tr(m[2])}`],
     [/^no eligible observation is left$/i, 'подходящих наблюдений не осталось'],
   ]);
 

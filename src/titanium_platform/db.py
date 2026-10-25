@@ -436,6 +436,12 @@ class Store:
         # «Перепроверить все работы» (DEC-089): each re-check with its backup and its report, kept after a restart.
         self.conn.execute("CREATE TABLE IF NOT EXISTS recheck_run (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, "
                           "finished_at TEXT, status TEXT NOT NULL, backup_path TEXT, report_json TEXT NOT NULL)")
+        # The operator's exclusions (act-on-findings DEC-001, DEC-003): measurements taken out of every calculation by a decision kept
+        # beside them, never by changing them; «Вернуть» sets revoked_at and the record stays.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS operator_exclusion (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, "
+                          "device_id INTEGER NOT NULL, lens_id INTEGER, original_pair_id INTEGER, layer_index INTEGER, recipe_key TEXT NOT NULL, "
+                          "engraving_ids_json TEXT, kept_engraving_id TEXT, finding_key TEXT, note TEXT, detail_json TEXT NOT NULL, "
+                          "created_at TEXT NOT NULL, revoked_at TEXT)")
         self.conn.executescript(LAB_SCHEMA)
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):

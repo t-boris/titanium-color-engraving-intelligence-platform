@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from . import model, setup as su
+from . import exclusions, model, setup as su
 from .db import Store, now
 
 STAGES = ["measured", "candidate", "repeated", "validated", "production"]
@@ -65,8 +65,13 @@ def supported_stage(summary: dict | None, rules: dict) -> tuple[str | None, str]
     return "measured", "single observation"
 
 
-def removal_doubt(supported: str | None, why: str) -> str:
-    """Why an entry is questioned after observations left active use (DEC-066 item 3)."""
+def removal_doubt(supported: str | None, why: str, taken_out: bool = False) -> str:
+    """Why an entry is questioned after observations left active use (DEC-066 item 3): with a removed photograph, or ``taken_out`` by
+    the operator from every calculation (act-on-findings DEC-004)."""
+    if taken_out:
+        if supported is None:
+            return "measurements the operator took out took away the evidence of this stage: no eligible observation is left"
+        return f"measurements the operator took out took away the evidence of this stage: what remains supports only {supported}: {why}"
     if supported is None:
         return "a removed photograph took away the evidence of this stage: no eligible observation is left"
     return f"a removed photograph took away the evidence of this stage: what remains supports only {supported}: {why}"
@@ -112,8 +117,9 @@ def refresh(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
     return changes
 
 
-def after_removal(store: Store, device_id: int, lens_id: int | None, removed: dict[str, list[int]]) -> list[dict]:
-    """Rebuild the knowledge of one laser and lens after observations left active use with their deleted pair (DEC-047).
+def after_removal(store: Store, device_id: int, lens_id: int | None, removed: dict[str, list[int]], taken_out: bool = False) -> list[dict]:
+    """Rebuild the knowledge of one laser and lens after observations left active use with their deleted pair (DEC-047), or because
+    the operator took them out of every calculation (``taken_out``, act-on-findings DEC-004).
 
     ``removed`` maps the key of every affected entry to the ids of its observations that left. Counts and statistics are
     derived on every read, so they follow at once; the stages are refreshed as after any change, which never lowers one.
@@ -132,7 +138,7 @@ def after_removal(store: Store, device_id: int, lens_id: int | None, removed: di
             needed = "validated" if row["stage"] == "production" else row["stage"]
             if supported is not None and _rank(supported) >= _rank(needed):
                 continue
-            doubt = {"reason": removal_doubt(supported, why), "observation_ids": sorted(gone)}
+            doubt = {"reason": removal_doubt(supported, why, taken_out), "observation_ids": sorted(gone)}
             store.execute("UPDATE knowledge SET questioned=1, doubt_json=?, updated_at=? WHERE id=?", (json.dumps(doubt), now(), row["id"]))
             _event(store, row["id"], "questioned", row["stage"], row["stage"], doubt["reason"], doubt["observation_ids"])
             changes.append({"id": row["id"], "key": key, "questioned": True})
@@ -159,6 +165,7 @@ def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events
     if summaries is None:
         summaries = model.knowledge_summaries(store, d["device_id"], d["lens_id"])
     d["summary"] = summaries.get(d["parameters_key"])
+    d["counted_from"] = exclusions.of_recipe(store, d["device_id"], d["lens_id"], d["parameters_key"])   # act-on-findings REQ-002
     return d
 
 

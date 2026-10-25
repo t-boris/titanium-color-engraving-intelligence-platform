@@ -378,6 +378,30 @@ def test_the_knowledge_page_of_a_production_colour_offers_the_manual_demotion_an
     assert "Понизить вручную" in out["buttons"] and "Утвердить для производства" not in out["buttons"]
 
 
+@node
+def test_a_recipe_counted_from_its_newest_engraving_says_from_which_and_offers_to_undo_it(tmp_path):
+    """act-on-findings REQ-002: the knowledge page of a recipe the operator counts from its newest engraving names that engraving, how many
+    older ones do not count, and offers to undo the decision."""
+    routes = knowledge_routes()
+    record = routes["/api/knowledge/5"]["json"]
+    record["counted_from"] = {"id": 6, "kind": "older_engravings", "engraving_ids": ["e1", "e2"], "note": "старые до чистки линзы",
+                              "created_at": "2026-10-25T12:00:00+00:00",
+                              "kept": {"engraving_id": "e3", "title": "Big Plate", "pair_ids": [140], "when": "2026-10-24T09:00:00+00:00", "lab": [40, 2, -16]}}
+    out = run(tmp_path, {**routes, "/api/exclusions/6/revoke": {"status": 200, "json": {"exclusion": {"id": 6}, "run_id": 70}}},
+              {"id": "knowledge", "arg": 5}, """
+  out.line = tree.querySelectorAll('div').filter((d) => has(d, 'alert') && d.textContent.startsWith('Считается')).map((d) => d.textContent);
+  ctx.document.body.append(tree);
+  await tree.querySelectorAll('button').find((b) => b.textContent === 'Отменить «с последней гравировки»').dispatch('click'); await tick();
+  const modal = ctx.document.body.querySelector('.modal');
+  out.text = modal.querySelector('p').textContent;
+  await modal.querySelectorAll('button').find((b) => b.textContent === 'Отменить «с последней гравировки»').dispatch('click'); await tick(); await tick();
+  out.sent = ctx.requests.filter((r) => r.path === '/api/exclusions/6/revoke').map((r) => r.method);
+""")
+    assert out["line"] == ["Считается с гравировки «Big Plate» от 24.10.2026 (фото № 140); старых не считается: 2. "
+                           "Решение оператора от 25.10.2026: «старые до чистки линзы»."]
+    assert out["text"].startswith("Старые гравировки этого рецепта снова будут считаться") and out["sent"] == ["POST"]
+
+
 # -- the frame ---------------------------------------------------------------------------------------------------------------------------
 def test_the_model_and_knowledge_pages_are_built_on_the_shared_one_screen_frame():
     assert "'os lm'" in COLOURS and "'os-head lm-head'" in COLOURS and "'os-body lm-body'" in COLOURS and "App.tabs(view.tabs" in COLOURS

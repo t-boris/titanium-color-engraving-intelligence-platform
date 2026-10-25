@@ -5,10 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from .. import designer, findings
+from .. import designer, exclusions, findings
 from .common import store_of
 
 router = APIRouter(prefix="/api/analysis")
+exclusions_router = APIRouter(prefix="/api/exclusions")
 
 
 class ScheduleIn(BaseModel):
@@ -18,6 +19,12 @@ class ScheduleIn(BaseModel):
 class MarkIn(BaseModel):
     action: str
     note: str | None = None
+
+
+class RemedyIn(BaseModel):
+    action: str
+    note: str | None = None
+    confirm: bool = False
 
 
 class FindingProposalIn(BaseModel):
@@ -67,6 +74,14 @@ def mark_finding(finding_id: int, body: MarkIn, request: Request):
     return findings.mark(store_of(request), finding_id, body.action, body.note)
 
 
+@router.post("/findings/{finding_id}/remedy")
+def remedy(finding_id: int, body: RemedyIn, request: Request):
+    """«Убрать измерение» or «Считать с последней гравировки» (feature act-on-findings): without ``confirm`` what it would change, with
+    it the decision, after which the knowledge, the findings and the works are recalculated once; refused while every work is being
+    re-checked."""
+    return findings.remedy(store_of(request), finding_id, body.action, body.note, body.confirm)
+
+
 @router.get("/findings/{finding_id}/history")
 def finding_history(finding_id: int, request: Request):
     return findings.history(store_of(request), finding_id)
@@ -94,3 +109,15 @@ def put_schedule(body: ScheduleIn, request: Request):
 def _schedule(request: Request) -> dict:
     scheduler = getattr(request.app.state, "analysis_scheduler", None)
     return findings.schedule(store_of(request)) | {"running": bool(scheduler and scheduler.running)}
+
+
+@exclusions_router.get("")
+def list_exclusions(request: Request, include_revoked: bool = False):
+    """The operator's exclusions, newest first, with the number in force (act-on-findings REQ-005)."""
+    return exclusions.listing(store_of(request), include_revoked)
+
+
+@exclusions_router.post("/{exclusion_id}/revoke")
+def revoke_exclusion(exclusion_id: int, request: Request):
+    """«Вернуть»: the measurements of the decision count again, recalculated once."""
+    return exclusions.revoke(store_of(request), exclusion_id)

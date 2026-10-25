@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Mapping
 
-from . import (__version__, color, colormap, experiments, ingest, lab_format as lf, palette, photo_modes, plans as pl, prediction,
+from . import (__version__, color, colormap, exclusions, experiments, ingest, lab_format as lf, palette, photo_modes, plans as pl, prediction,
                row_length, tasks)
 from . import setup as su
 from .db import Store, now
@@ -295,10 +295,13 @@ class _Layers:
         self.roles: dict[int, str] = {}
         self.tonal: list[str] = []
         self.capabilities = {"measurements"}
+        taken_out = exclusions.excluded_ids(store)          # the operator took them out of every calculation: not published (act-on-findings DEC-004)
         for row in _observations(store, ids, "id, pair_id, layer_index, json_extract(evidence_json, '$.layer_name') AS name, "
                                              "json_extract(evidence_json, '$.role') AS role", "pair_id, layer_index, id"):
             names = lowest.setdefault(row["pair_id"], {})
             names[row["name"]] = min(names.get(row["name"], row["layer_index"]), row["layer_index"])
+            if row["id"] in taken_out:
+                continue
             self.first.setdefault(row["pair_id"], {}).setdefault(row["name"], row["id"])
             self.roles[row["id"]] = _role(row, explicit, refs["derived"], witnessed)
         self.observations = sorted(self.roles)
@@ -514,7 +517,8 @@ def preview(store: Store, selection: Mapping | None = None) -> dict:
     published."""
     pairs = _pairs(store, selection)
     ids = [p["id"] for p in pairs]
-    measured = sum(1 for _ in _observations(store, ids, "id", "id"))
+    taken_out = exclusions.excluded_ids(store)
+    measured = sum(1 for row in _observations(store, ids, "id", "id") if row["id"] not in taken_out)
     profiles = sum(1 for _, check in _checks(store, ids) for rep in check.get("layers", []) if rep.get("tonal"))
     tokens: dict[str, set] = {}
     for row in _observations(store, ids, "parameters_json", "id"):

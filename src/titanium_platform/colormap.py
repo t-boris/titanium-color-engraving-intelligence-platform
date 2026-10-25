@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import agreement, color, engraving_time, experiments, ingest, lightburn as lb, model, photo_modes, row_length, tasks
+from . import agreement, color, engraving_time, exclusions, experiments, ingest, lightburn as lb, model, photo_modes, row_length, tasks
 from . import plans as pl
 from . import setup as su
 from .db import Store
@@ -51,13 +51,17 @@ PENDING = ("Accepted", "Deleted")         # statuses that are not a check awaiti
 
 
 def _rows(store: Store):
-    return store.query(
+    """Every measured layer of every photograph not deleted, but those the operator took out of every calculation (act-on-findings
+    DEC-004)."""
+    taken_out = exclusions.excluded_ids(store)
+    rows = store.query(
         "SELECT o.id, o.pair_id, o.layer_index, o.lab_json, o.parameters_json, o.model_eligible, o.alignment_method, o.evidence_json, "
         "o.task_kind, p.plan_id, p.engraving_id, p.engraving_title, p.photo_name, p.lightburn_name, p.accepted_at, p.created_at AS pair_created, "
         "p.device_id, p.lens_id, p.material_id, "
         "p.hardware_json, p.context_json AS pair_context, p.lightburn_path, pl.status AS plan_status, pl.mode AS plan_mode "
         "FROM observation o JOIN pair p ON p.id=o.pair_id LEFT JOIN plan pl ON pl.id=p.plan_id "
         "WHERE p.status!='Deleted' ORDER BY o.pair_id, o.layer_index")
+    return [r for r in rows if r["id"] not in taken_out] if taken_out else rows
 
 
 @lru_cache(maxsize=64)
@@ -85,9 +89,11 @@ def _names(store: Store) -> tuple[dict[int, str], dict[int, str], dict[int, tupl
     return lasers, {r["id"]: r["name"] for r in store.query("SELECT id, name FROM lens")}, titanium
 
 
-def _source_of_row(row, matrix: bool = False) -> dict:
-    return {"plan_id": row["plan_id"], "engraving_id": row["engraving_id"], "engraving_title": row["engraving_title"],
-            "lightburn_name": row["lightburn_name"], "photo_name": row["photo_name"], "date": row["accepted_at"] or row["pair_created"],
+def _source_of_row(row, first: dict[int, str | None], matrix: bool = False) -> dict:
+    """Where a measured layer came from; its date is its photograph's first acceptance (``ingest.first_accepted``: a re-measure does not
+    move it)."""
+    return {"plan_id": row["plan_id"], "engraving_id": row["engraving_id"], "engraving_title": row["engraving_title"], "lightburn_name": row["lightburn_name"],
+            "photo_name": row["photo_name"], "date": first.get(row["pair_id"]) or row["accepted_at"] or row["pair_created"],
             "context": json.loads(row["pair_context"] or "{}"), "device_id": row["device_id"], "lens_id": row["lens_id"],
             "material_id": row["material_id"], "plan_mode": row["plan_mode"], "matrix": matrix}
 
@@ -295,7 +301,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
     refs = references(store)
     rows, witness, derived, nominal = refs["rows"], refs["witness"], refs["derived"], refs["nominal"]
     kept, names = experiments.kept_plan_ids(store), _names(store)
-    lengths = row_length.recorded(store)
+    lengths, first = row_length.recorded(store), ingest.first_accepted(store)
 
     points = []
     observations: dict[int, dict[str, int]] = {}
@@ -307,7 +313,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
             continue
         if evidence.get("layer_name") in _tonal_layers(checks[row["pair_id"]]):
             continue          # a grayscale image layer is a continuum of colours: its grey steps are its points, its median is no colour (REQ-059)
-        info = _pair_info(_source_of_row(row, bool(evidence.get("matrix_cell"))), names, kept)
+        info = _pair_info(_source_of_row(row, first, bool(evidence.get("matrix_cell"))), names, kept)
         lab = json.loads(row["lab_json"])
         kind = _kind(evidence, row["model_eligible"])
         ref = witness.get(row["pair_id"])
@@ -327,7 +333,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         check = checks[pair_id]
         kind = "calibrated" if (check.get("color_measurement") or {}).get("mode") == "reference_chart_corrected" else "relative"
         ref = witness.get(pair_id)
-        points += _tonal_points(pair_id, check, _pair_info(_source_of_row(row), names, kept), kind, ref["lab"] if ref else None, nominal, False,
+        points += _tonal_points(pair_id, check, _pair_info(_source_of_row(row, first), names, kept), kind, ref["lab"] if ref else None, nominal, False,
                                 observations.get(pair_id))
     points += _provisional_points(store, names, kept, nominal)
 

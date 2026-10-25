@@ -7,6 +7,9 @@
    finding has no new data (DEC-001). Photo engraving is a tab of its own.
    «Перепроверить все работы» (REQ-004, DEC-089): a full backup, every accepted photograph measured again, the findings drawn once; the
    progress on the screen, a stop between photographs, the report of the last re-check (after a restart too).
+   Acting on a finding (act-on-findings): an opened finding of the latest run starts with «Что сделать» — take the measurement out,
+   measure its photograph again, count the recipe from its newest engraving, confirm a questioned entry; each decision shows what it
+   changes first, and «Убрано оператором N» lists the decisions with «Вернуть».
    Адрес: #/findings?run=&state=&kind=&task=&setup=&material=&sort=&tab=&finding= */
 'use strict';
 (() => {
@@ -16,7 +19,8 @@
   const KIND_ONE = {improvement: 'Улучшение', unstable: 'Нестабильно', anomaly: 'Аномалия', gap: 'Пробел', hypothesis: 'Гипотеза AI'};
   const BASIS = {measured: ['Измерено', 'ok'], exploratory: ['Исследовательская аномалия, не вывод', 'warn'],
     hypothesis: ['Гипотеза AI, не измерение', 'bad']};
-  const TRIGGER = {acceptance: 'после принятия фотографии', manual: 'по кнопке', schedule: 'по расписанию', recheck: 'после перепроверки всех работ'};
+  const TRIGGER = {acceptance: 'после принятия фотографии', manual: 'по кнопке', schedule: 'по расписанию', recheck: 'после перепроверки всех работ',
+    operator: 'после решения оператора'};
   const STATES = [['attention', 'Требуют внимания'], ['acknowledged', 'Учтённые'], ['hidden', 'Скрытые']];
   const SORTS = [['important', 'Сначала важные'], ['newest', 'Сначала новые'], ['delta', 'Больший ΔE'], ['setup', 'По лазеру и титану']];
   const STAGE = {measured: 'измерено', candidate: 'кандидат', repeated: 'повторено', validated: 'валидировано', production: 'производственное'};
@@ -184,6 +188,138 @@
     }, 'btn-small');
     return h('div', {class: 'stack fd-mark'}, status ? h('p', {class: 'small muted'}, status) : null,
       h('div', {class: 'toolbar'}, field('Заметка оператора', note), save));
+  }
+
+  // -- what can be done about a finding (act-on-findings REQ-001..REQ-004) ---------------------------------------------------
+  const REMEDY = {
+    exclude_measurement: ['Убрать измерение', 'Этот слой этой фотографии перестанет считаться в рецепте, на карте цветов, в палитре и в работах. '
+      + 'Фотография и её другие слои остаются; «Вернуть» отменит.'],
+    remeasure: ['Перемерить фото', 'Измерить фотографию заново так, как приложение измеряет сейчас (около полуминуты). Если новое измерение '
+      + 'не получится целиком, останется старое.'],
+    count_from_latest: ['Считать с последней гравировки', 'Цвет рецепта — по самой новой гравировке. Старые остаются в истории, но не считаются; '
+      + 'гравировки, сделанные позже, считаются как обычно.'],
+    confirm_questioned: ['Подтвердить запись', 'Снять с записи знания пометку «под вопросом»: стадия не меняется.'],
+  };
+  const DECIDED = {exclude_measurement: 'измерение убрано из расчёта', count_from_latest: 'рецепт считается с последней гравировки'};
+  const layerName = (name, index) => (name ? `«${I18N.name(name)}»` : `№ ${index}`);
+  const engravingText = (e) => `${e.title || 'гравировка'} · ${when(e.when)} · фото № ${e.pair_ids.join(', ')}`;
+
+  /** The recipe's colour before and after a decision, as the knowledge will derive it. */
+  function colourChange(p) {
+    const side = (c) => (c ? h('span', {}, swatch(c.lab), labText(c.lab), ` · гравировок: ${c.engravings}`)
+      : h('span', {class: 'muted'}, 'измерений в рецепте не останется'));
+    return h('div', {class: 'stack small fd-change'}, h('strong', {}, 'Цвет рецепта'), h('div', {}, 'сейчас: ', side(p.before)),
+      h('div', {}, 'станет: ', side(p.after)), p.delta_e != null ? h('div', {class: 'muted'}, `сдвиг ΔE ${num(p.delta_e, 1)}`) : null);
+  }
+
+  /** What leaves the calculation: one layer of one photograph, or the older engravings of a recipe. */
+  function leaving(p) {
+    if (p.action === 'exclude_measurement') {
+      const o = p.observation;
+      return h('p', {}, 'Перестанет считаться: ', link('/analysis/' + o.pair_id, `фото № ${o.pair_id}`), `, слой ${layerName(o.layer_name, o.layer_index)} `,
+        h('span', {}, swatch(o.lab), labText(o.lab)));
+    }
+    return h('div', {class: 'stack small'}, h('div', {}, 'Останется: ', swatch(p.kept.lab), ' ', engravingText(p.kept)),
+      h('div', {}, `Перестанут считаться (${p.older.length}):`),
+      h('ul', {}, p.older.slice(0, 6).map((e) => h('li', {}, swatch(e.lab), ' ', engravingText(e)))),
+      p.older.length > 6 ? h('div', {class: 'muted'}, `и ещё ${p.older.length - 6}`) : null);
+  }
+
+  /** «Вернуть»: the measurements of a decision count again; the screen is drawn again with the new run. */
+  async function revoke(id) {
+    try {
+      const r = await post(`/exclusions/${id}/revoke`, {});
+      toast('Снова считается' + (r.run_id ? ` · расчёт № ${r.run_id}` : ''), 'ok');
+      App.render({preserveScroll: true});
+    } catch (e) { fail(e); }
+  }
+
+  /** A decision: what it changes first (REQ-004), a note, then the decision and the screen with the new run and «Вернуть». */
+  async function decide(f, action) {
+    const preview = await post(`/analysis/findings/${f.id}/remedy`, {action});
+    const note = h('textarea', {rows: '2', maxlength: '2000', placeholder: 'Почему (необязательно)'});
+    App.modal(REMEDY[action][0] + '?', h('div', {class: 'stack fd-remedy-preview'}, leaving(preview), colourChange(preview),
+      h('p', {class: 'muted small'}, 'Сами измерения не меняются: решение хранится отдельно, «Вернуть» его отменит. После решения пересчитаются '
+        + 'знание, выводы и работы.'), field('Заметка', note)),
+    [{label: 'Отмена', run: (m) => m.close()},
+      {label: REMEDY[action][0], cls: 'primary', run: async (m) => {
+        const r = await post(`/analysis/findings/${f.id}/remedy`, {action, note: note.value, confirm: true});
+        m.close();
+        toast([`Готово · ${DECIDED[action]}${r.run_id ? ` · расчёт № ${r.run_id}` : ''} `, btn('Вернуть', () => revoke(r.exclusion.id), 'btn-small')], 'ok');
+        App.render({preserveScroll: true});
+      }}]);
+  }
+
+  /** «Перемерить фото» from the finding (REQ-003): busy while it measures, then every layer's colour before and after (the finding's layer
+      first), or why the old measurement was kept; the screen is drawn again when the result is closed. */
+  async function remeasure(f, pairId, control) {
+    control.disabled = true;
+    control.textContent = 'Перемеряю… (около полуминуты)';
+    let out;
+    try { out = await post(`/pairs/${pairId}/remeasure`); }
+    catch (e) { fail(e); control.disabled = false; control.textContent = REMEDY.remeasure[0]; return; }
+    const own = f.kind === 'anomaly' ? Number(String(f.key).split(':')[3]) : null;
+    const body = out.status !== 'replaced' ? h('p', {}, 'Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''))
+      : h('div', {class: 'stack'}, h('p', {}, `Фото № ${pairId} перемерено; новое измерение — `, link('/analysis/' + out.replaced_by, `фото № ${out.replaced_by}`), '.'),
+        App.list({items: out.layers, key: (l) => String(l.layer_index), className: 'fd-remeasured',
+          row: (l) => [l.layer_index === own ? pill('этот вывод', 'warn') : null, h('span', {class: 'lst-text'}, `Слой ${layerName(l.name, l.layer_index)}`),
+            l.before ? swatch(l.before) : null, '→', l.after ? swatch(l.after) : null,
+            h('span', {class: 'small'}, l.delta_e != null ? `ΔE ${num(l.delta_e, 1)}` : 'нет пары')],
+          details: (l) => facts([['Было', l.before ? labText(l.before) : '—'], ['Стало', l.after ? labText(l.after) : '—']]),
+          sorts: [['delta', 'Больший сдвиг', (a, b) => (b.layer_index === own) - (a.layer_index === own) || (b.delta_e ?? -1) - (a.delta_e ?? -1)],
+            ['order', 'По порядку слоёв', (a, b) => a.layer_index - b.layer_index]]}).el);
+    App.modal(out.status === 'replaced' ? 'Фото перемерено' : 'Фото не перемерено', body, [{label: 'Закрыть', run: (m) => m.close()}],
+      () => App.render({preserveScroll: true}));
+  }
+
+  /** «Подтвердить запись» of a questioned knowledge entry, then a new run so the finding goes. */
+  function confirmEntry(kid) {
+    App.modal('Подтвердить запись?', h('p', {}, `Запись знания № ${kid} перестанет быть «под вопросом»; стадия не меняется. `, link('/knowledge/' + kid, 'Открыть запись')),
+      [{label: 'Отмена', run: (m) => m.close()},
+        {label: 'Подтвердить', cls: 'primary', run: async (m) => {
+          await post(`/knowledge/${kid}/confirm-questioned`, {});
+          const r = await post('/analysis/runs');
+          m.close();
+          toast(`Запись подтверждена · расчёт № ${r.id}`, 'ok');
+          App.render({preserveScroll: true});
+        }}]);
+  }
+
+  /** «Что сделать»: one button per remedy the finding offers, each with a line on what it does; nothing for a finding with none. */
+  function remedyBlock(f) {
+    const offered = (f.remedies || []).filter((r) => REMEDY[r.action]);
+    if (!offered.length) return null;
+    const button = (r) => btn(REMEDY[r.action][0], async (ev) => {
+      const self = ev.currentTarget;
+      if (r.action === 'remeasure') { await remeasure(f, r.pair_id, self); return; }
+      self.disabled = true;
+      try { if (r.action === 'confirm_questioned') confirmEntry(r.knowledge_id); else await decide(f, r.action); }
+      catch (e) { fail(e); } finally { self.disabled = false; }
+    }, 'btn-small');
+    return h('div', {class: 'stack fd-remedies'}, h('h4', {}, 'Что сделать'),
+      offered.map((r) => h('div', {class: 'fd-remedy'}, button(r), h('span', {class: 'muted small'}, REMEDY[r.action][1]))));
+  }
+
+  /** «Убрано оператором N» (REQ-005): the decisions in force as a short list, each with «Вернуть»; nothing when there is none. */
+  function exclusionsBlock(x) {
+    if (!x || !x.active) return null;
+    const what = (e) => (e.kind === 'measurement'
+      ? `Измерение: фото № ${e.pair_id ?? e.original_pair_id}, слой ${layerName((e.observation || {}).layer_name, e.layer_index)}`
+      : `Рецепт ${settings(e.settings || {})} — с последней гравировки${e.kept && e.kept.title ? ` «${e.kept.title}»` : ''}`);
+    const shown = (e) => (e.kind === 'measurement' ? (e.observation || {}).lab : (e.after || {}).lab);
+    const list = App.list({items: x.exclusions, key: (e) => String(e.id), search: (e) => `${what(e)} ${e.note || ''}`,
+      row: (e) => [shown(e) ? swatch(shown(e)) : null, h('span', {class: 'lst-text', title: what(e)}, what(e)), h('span', {class: 'muted small'}, when(e.created_at)),
+        e.note ? h('span', {class: 'muted small fd-note', title: e.note}, '✎ ' + e.note) : null],
+      details: (e) => h('div', {class: 'stack small'}, facts([['Что не считается', what(e)],
+        ['Наблюдений вне расчёта', String(e.observations_out ?? '—')],
+        ['Цвет рецепта при решении', [e.before ? h('span', {}, swatch(e.before.lab), ' ', labText(e.before.lab)) : '—', ' → ',
+          e.after ? h('span', {}, swatch(e.after.lab), ' ', labText(e.after.lab)) : 'измерений не осталось']],
+        ['Решение', when(e.created_at)], ['Заметка', e.note || '—']]),
+        e.kind === 'measurement' && e.pair_id ? h('p', {}, link('/analysis/' + e.pair_id, 'Открыть фото')) : null),
+      actions: (e) => [btn('Вернуть', () => revoke(e.id), 'btn-small')],
+      filters: [{key: 'kind', label: 'Что', options: [['measurement', 'Измерения'], ['older_engravings', 'Рецепты']], test: (e, v) => e.kind === v}],
+      sorts: [['newest', 'Сначала новые', (a, b) => b.id - a.id]], className: 'fd-excluded-list'});
+    return h('details', {class: 'card fd-fold fd-excluded'}, h('summary', {}, `Убрано оператором: ${x.active}`), list.el);
   }
 
   /** One line of the list: pinned, kind, the statement, laser and titanium, ΔE, new or changed, its mark, a note. */
@@ -370,7 +506,7 @@
         const r = await get(`/analysis/runs/${cur.run || 'latest'}?` + new URLSearchParams(params).toString());
         return {items: r.findings, total: r.matched, counts: r.counts, options: r.options};
       },
-      key: (f) => f.key, row, details: (f, list) => [markBlock(f, list.refresh), findingCard(f)], actions: (f, list) => markButtons(f, list.refresh,
+      key: (f) => f.key, row, details: (f, list) => [remedyBlock(f), markBlock(f, list.refresh), findingCard(f)], actions: (f, list) => markButtons(f, list.refresh,
         () => list.open(f.key).then((det) => { const note = det && det.querySelector('textarea'); if (note) note.focus(); })),
       filters: [{key: 'state', label: 'Состояние', options: STATES, keepEmpty: true},
         {key: 'kind', label: 'Вид', options: KINDS.map((k) => [k, KIND[k]])},
@@ -390,7 +526,7 @@
       const f = await get(`/analysis/findings/${id}`);
       App.fill(box, [h('div', {class: 'row'}, h('h3', {}, `Вывод № ${f.id}`), h('span', {class: 'muted small'}, `из расчёта № ${f.run_id}`),
         h('span', {class: 'spacer'}), markButtons(f, show, () => box.querySelector('textarea').focus()), btn('Закрыть', () => { box.remove(); close(); }, 'btn-small')),
-        markBlock(f, show), findingCard(f)]);
+        remedyBlock(f), markBlock(f, show), findingCard(f)]);
     };
     try { await show(); } catch (e) { App.fill(box, h('div', {class: 'alert bad'}, e.message || String(e))); }
     return box;
@@ -411,8 +547,8 @@
 
   App.register({id: 'findings', async render(ctx) {
     const cur = {...ctx.query};
-    const [runs, schedule, goals, lastRecheck] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'), get('/application-goals'),
-      get('/recheck/latest')]);
+    const [runs, schedule, goals, lastRecheck, excluded] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'), get('/application-goals'),
+      get('/recheck/latest'), get('/exclusions')]);
     goalNames = Object.fromEntries(goals.map((g) => [g.id, g.name]));
     const run = cur.run ? (runs.find((r) => String(r.id) === cur.run) || await get(`/analysis/runs/${cur.run}?limit=1`).then((r) => r.run)) : runs[0] || null;
     // the list keeps its choices in the address without drawing the screen again; another run draws it again
@@ -435,6 +571,7 @@
         h('p', {class: 'sub'}, 'Что показала накопленная работа: улучшения, нестабильность, аномалии, пробелы и гипотезы AI. Измеренное отделено от гипотез.')),
         h('span', {class: 'spacer'}), link('/designer', 'Планировщик экспериментов')),
       runLine(run, runs, schedule, cur, route, recheckBox),
+      exclusionsBlock(excluded),
       tabs ? [tabs.list, ...tabs.panels] : findings);
   }});
 })();

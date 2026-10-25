@@ -253,7 +253,8 @@ def test_a_later_run_recalculates_while_earlier_findings_stay_readable_with_thei
 
     assert second["previous_run_id"] == first["id"] and (first["trigger"], second["trigger"]) == ("manual", "acceptance")
     assert (first["inputs"]["eligible_observations"], second["inputs"]["eligible_observations"]) == (2, 4)
-    assert fd.findings_of(store, first["id"]) == before                       # the earlier run is not rewritten
+    as_run = lambda page: {**page, "findings": [{k: v for k, v in f.items() if k != "remedies"} for f in page["findings"]]}  # noqa: E731
+    assert as_run(fd.findings_of(store, first["id"])) == as_run(before)       # the earlier run is not rewritten (what can be done is today's)
     unstable = one(before["findings"], "variance")
     history = fd.history(store, unstable["id"])
     assert [h["run_id"] for h in history] == [second["id"], first["id"]] and history[1]["run_trigger"] == "manual"

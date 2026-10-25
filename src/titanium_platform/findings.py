@@ -34,11 +34,11 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from . import color, designer, devices, model, setup as su, tasks
+from . import color, designer, devices, exclusions, ingest, model, setup as su, tasks
 from .db import Store, now
 
 KINDS = ("improvement", "unstable", "anomaly", "gap", "hypothesis")
-TRIGGERS = ("acceptance", "manual", "schedule", "recheck")
+TRIGGERS = ("acceptance", "manual", "schedule", "recheck", "operator")
 STATES = ("attention", "acknowledged", "hidden")
 SORTS = ("important", "newest", "delta", "setup")
 MARK_ACTIONS = ("acknowledge", "hide", "reopen", "pin", "unpin", "note")
@@ -60,19 +60,6 @@ def _lock(store: Store) -> threading.Lock:
 
 def _entry_id(device_id: int, lens_id: int | None, key: str) -> str:
     return f"{device_id}:{'unknown' if lens_id is None else lens_id}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"
-
-
-def _original_pairs(store: Store) -> dict[int, int]:
-    """Every pair -> the first measurement of its photograph: a re-measure is a revision with ``correction_of`` its source."""
-    source = {r["id"]: r["c"] for r in store.query("SELECT id, json_extract(data_json,'$.correction_of') AS c FROM pair")}
-    out = {}
-    for pair_id in source:
-        at, seen = pair_id, set()
-        while source.get(at) is not None and at not in seen:
-            seen.add(at)
-            at = source[at]
-        out[pair_id] = at
-    return out
 
 
 def _stock_key(key: str) -> str:
@@ -164,7 +151,7 @@ def _partitions(store: Store) -> list[tuple[int, int | None]]:
 
 def _analyse(store: Store, previous) -> tuple[list[dict], dict]:
     names = _Names(store)
-    originals = _original_pairs(store)
+    originals = ingest.original_pairs(store)
     before = json.loads(previous["summary_json"]) if previous else {}
     previous_entries = before.get("entries", {})
     previous_keys = {r["key"] for r in store.query("SELECT key FROM finding WHERE run_id=?", (previous["id"],))} if previous else set()
@@ -566,14 +553,54 @@ def mark(store: Store, finding_id: int, action: str, note: str | None = None) ->
 
 
 def get_finding(store: Store, finding_id: int) -> dict:
-    """One finding with its mark and state (a link to it opens it, REQ-002)."""
+    """One finding with its mark and state (a link to it opens it, REQ-002) and what can be done about it."""
     row = store.one("SELECT * FROM finding WHERE id=?", (finding_id,))
     if row is None:
         raise KeyError(f"finding {finding_id} not found")
     f = _public(row)
     f["setup"] = su.setup_key(f["device_id"], f["lens_id"])
     f["stock_key"] = "unknown" if f["material_id"] is None else str(f["material_id"])
+    latest = get_run(store)
+    f["remedies"] = remedies(f) if latest is not None and latest["id"] == f["run_id"] else []
     return _with_mark(f, store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],)))
+
+
+# -- what can be done about a finding (feature act-on-findings) -------------------------------------------------------------------
+REMEDIES = ("exclude_measurement", "count_from_latest")       # decided here; «Перемерить фото» and «Подтвердить запись» have their own routes
+
+
+def remedies(f: dict) -> list[dict]:
+    """The actions a finding of the latest run offers on its substance, in the order «Что сделать» shows them: take the measurement
+    out and re-measure its photograph (an anomaly), count the recipe from its newest engraving (an anomaly, an unstable or questioned
+    recipe of two or more engravings), confirm a questioned knowledge entry. A gap keeps its «Предложить эксперимент»."""
+    sub, evidence = f.get("subkind"), f.get("evidence") or {}
+    out = []
+    if f["kind"] == "anomaly" and sub == "observation" and evidence.get("observation_ids"):
+        out.append({"action": "exclude_measurement", "observation_id": evidence["observation_ids"][0]})
+        out.append({"action": "remeasure", "pair_id": evidence["pair_ids"][0]})
+    if sub in ("observation", "variance", "questioned") and ((f.get("samples") or {}).get("engravings") or 0) >= 2 \
+            and (f.get("recipe") or {}).get("key"):
+        out.append({"action": "count_from_latest"})
+    if sub == "questioned" and evidence.get("knowledge_id") is not None:
+        out.append({"action": "confirm_questioned", "knowledge_id": evidence["knowledge_id"]})
+    return out
+
+
+def remedy(store: Store, finding_id: int, action: str, note: str | None = None, confirm: bool = False) -> dict:
+    """A remedy of a finding: without ``confirm`` what it would change (REQ-004), with it the decision, made and recalculated once."""
+    f = get_finding(store, finding_id)
+    offered = {r["action"]: r for r in f["remedies"]}
+    if action not in REMEDIES or action not in offered:
+        raise su.ValidationError(f"this finding offers no action {action}")
+    if action == "exclude_measurement":
+        observation_id = offered[action]["observation_id"]
+        if not confirm:
+            return exclusions.preview_measurement(store, observation_id)
+        return exclusions.exclude_measurement(store, observation_id, note, f["key"])
+    key = f["recipe"]["key"]
+    if not confirm:
+        return exclusions.preview_latest(store, f["device_id"], f["lens_id"], key)
+    return exclusions.count_from_latest(store, f["device_id"], f["lens_id"], key, note, f["key"])
 
 
 _KIND_RANK = {"anomaly": 0, "unstable": 1, "gap": 2, "hypothesis": 3, "improvement": 4}
@@ -582,7 +609,7 @@ _KIND_RANK = {"anomaly": 0, "unstable": 1, "gap": 2, "hypothesis": 3, "improveme
 def _same_finding(store: Store):
     """A key as today's runs write it: a run before DEC-002 named an anomaly by its observation, today it is the photograph (its first
     measurement) and the layer."""
-    originals = _original_pairs(store)
+    originals = ingest.original_pairs(store)
 
     def key(k: str) -> str:
         if not k.startswith("anomaly:observation:"):
@@ -633,10 +660,12 @@ def findings_of(store: Store, run_id: int, kind: str | None = None, task: str | 
     if sort is not None and sort not in SORTS:
         raise su.ValidationError(f"unknown finding order {sort}")
     run = get_run(store, run_id)
+    latest = get_run(store)["id"] == run_id         # a remedy acts on the data as it is now: offered on the latest run only
     marks = _marks(store)
     rows = [_with_mark(_public(r), marks.get(r["key"])) for r in store.query("SELECT * FROM finding WHERE run_id=? ORDER BY id", (run_id,))]
     setups, stocks = {}, {}
     for f in rows:
+        f["remedies"] = remedies(f) if latest else []
         f["setup"] = su.setup_key(f["device_id"], f["lens_id"])
         f["stock_key"] = "unknown" if f["material_id"] is None else str(f["material_id"])
         setups.setdefault(f["setup"], {"key": f["setup"], "device": f["context"]["device"], "lens": f["context"]["lens"]})

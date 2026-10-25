@@ -1,3 +1,53 @@
+# Actions that fix what a finding says — 0.35.0 (operator 2026-10-25; plan approved)
+
+Operator, on an anomaly «Наблюдение № 3063 отстоит на 84.1 ΔE от согласованного цвета своего рецепта»: «Что можно сделать с этими
+выводами? Нужны же какие-то actions, например, этот цвет убрать или заменить на последнюю версию.» Answers: «Убрать измерение»
+(this layer of this photo stops counting, «Вернуть» undoes it, it holds through a re-measure); «Считать с последней гравировки»
+(older engravings stay in the history, do not count; later ones count); «Перемерить фото» from the finding; photo-engraving scores
+keep detail everywhere (no change). Plan: ~/.claude/plans/serene-popping-rabbit.md.
+
+## Steps
+- [x] 0. MarkView feature `act-on-findings`: requirements (draft), decisions (proposed); status implementing.
+- [x] 1. `operator_exclusion` table, `exclusions.py` (excluded_ids, exclude_measurement, count_from_latest, preview, revoke, listing,
+      one recalculation, audit, re-check guard), `ingest.original_pairs`; every measurement reader leaves them out (model, colormap,
+      oxide, experiment library, lab export) + tests.
+- [x] 2. Remedies per finding kind in `findings_of`; routes `POST /analysis/findings/{id}/remedy`, `GET /exclusions`,
+      `POST /exclusions/{id}/revoke` + tests.
+- [x] 3. Screens: «Что сделать» in an opened finding with a confirm preview, «Убрано оператором N» list with «Вернуть», re-measure from a
+      finding; the excluded layer on the photo page; «Считается с гравировки» on a knowledge entry + node tests.
+- [x] 4. Rehearsal on a copy of the live workshop (paths rewritten): observation 3063, a contradicted recipe, «Вернуть», findings
+      before/after. Found and fixed: an engraving was dated by its re-measured pair (DEC-005).
+- [ ] 5. README, 0.35.0, full suite -n 12 + desktop tests, release, reinstall, report.
+
+## Review (2026-10-25, 0.35.0)
+- Rehearsal on a copy of the live workshop (`sqlite3 mode=ro .backup` + files, 1.2 GB; 271 stored paths rewritten with
+  `files.rebase_all`), in code and then on the screens (server on 8796, a MarkView tab of its own):
+  - «Убрать измерение» on anomaly 1949 (observation 3063, photo 136, layer C09, knowledge 496): preview «сейчас L 75.4 a 10.2 b 54.9,
+    гравировок 3 → станет то же, гравировок 2, ΔE 0.0»; applied in 4.5 s (run 65, trigger `operator`); knowledge 496 lost 3063 (its
+    colour came from the other two), the colour map has no point of 3063, the anomaly is gone; the photo page shows C09 dimmed with
+    «убрано из расчёта оператором» and «Вернуть».
+  - «Считать с последней гравировки» on anomaly 2042 (observation 3057, knowledge 490, 5 engravings, contradicted): keeps «Boris Test
+    102 2» (photo 150, 24.10 23:52 UTC), 4 older ones out (8 observations); colour L 75.4 a 7.0 b 46.0 → L 80.0 a 4.5 b 41.6, ΔE 6.8;
+    applied in 8.4 s; the anomalies of 3057, 3260 and 3301 went; the knowledge page says «Считается с гравировки «Boris Test 102 2» от
+    24.10.2026 (фото № 150); старых не считается: 4» with «Отменить».
+  - «Отменить» and «Вернуть»: knowledge 490 back to 5 engravings, 496 back to 3, both anomalies back; audit holds 2 added and 2 revoked.
+  - «Перемерить фото» from anomaly 3063: busy about 30 s, then 29 layers before → after (ΔE 0.0 each: the same method as the re-check),
+    the finding's layer first; run 73 after closing. No console errors.
+  - Findings 101 → 91 on the first decision: 10 of the 11 «improvement: the expected error fell» compare with the previous run and go
+    with any recalculation (as in 0.34.0); one hypothesis (photo check 144) was added on the live data after run 64.
+  - None of the 32 «под вопросом» findings of the live data offers «с последней гравировки»: their entries have no eligible
+    observation left after the re-check (samples 0); they offer «Подтвердить запись».
+- Defect found by the rehearsal and fixed (DEC-005, proposed): the date of an engraving was the acceptance of the pair that measured it;
+  a re-measure is a new pair accepted now, so after the live re-check every photograph read 25.10 16:05–16:13, and «Перемерить фото»
+  on an old photograph would have made it «the newest». `ingest.first_accepted` dates a photograph by its first measurement's
+  acceptance; `model._when` and the colour map's point date use it. Test: re-measuring the older of two photographs keeps the newer one
+  as «последняя», the colour map keeps the first date, and a decision made before a re-measure keeps the re-measured layer out (the
+  test fails with the old dating: it kept the re-measured pair).
+- `tests/test_backup.py`: the workshop API test listed the operator's real backup in `~/titanium-backups` (made by the live re-check at
+  15:57 UTC); it now points HOME at its own folder. The backup itself is untouched.
+- Suite 2309 passed, none skipped (-n 12, 3:45); desktop 16 passed. REQ-001..REQ-005 criteria ticked; DEC-001, DEC-003..DEC-005
+  proposed; overview implemented.
+
 # Findings you can manage, no long lists anywhere, re-check all works — 0.34.0 (operator 2026-10-25; plan approved)
 
 Operator: «Выводы — очень длинный лист, не могу их удалять, менять, сортировать, видеть … избегать длиннющие листы … почему нет

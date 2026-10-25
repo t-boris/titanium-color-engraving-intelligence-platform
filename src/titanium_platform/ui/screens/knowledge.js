@@ -33,11 +33,25 @@ const KnowledgeView = (() => {
       acts.push(decision('Понизить вручную', [field('Новая стадия', to), field('Причина', why)],
         () => post(`/knowledge/${kid}/demote`, {confirm: true, to_stage: to.value, reason: why.value}), 'danger'));
     }
+    if (k.counted_from) {
+      acts.push(decision('Отменить «с последней гравировки»', [h('p', {}, 'Старые гравировки этого рецепта снова будут считаться; знание, выводы и работы '
+        + 'пересчитаются.')], () => post(`/exclusions/${k.counted_from.id}/revoke`, {})));
+    }
     if (k.questioned) {
       acts.push(decision('Подтвердить запись', [h('div', {class: 'alert warn'}, I18N.tr(k.doubt.reason)),
         h('p', {class: 'small'}, 'Наблюдения-основания: ' + k.doubt.observation_ids.join(', '))], () => post(`/knowledge/${kid}/confirm-questioned`)));
     }
     return acts;
+  }
+
+  /** The operator's «Считать с последней гравировки» on this recipe (act-on-findings REQ-002): which engraving it counts from, how many older
+      ones do not count. */
+  function countedFrom(x) {
+    const kept = x.kept || {};
+    const at = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '—');
+    return h('div', {class: 'alert warn small'}, `Считается с гравировки${kept.title ? ` «${kept.title}»` : ''} от ${at(kept.when)}`
+      + (kept.pair_ids ? ` (фото № ${kept.pair_ids.join(', ')})` : '') + `; старых не считается: ${(x.engraving_ids || []).length}. `
+      + `Решение оператора от ${at(x.created_at)}` + (x.note ? `: «${x.note}»` : '') + '.');
   }
 
   async function render(kid) {
@@ -63,7 +77,8 @@ const KnowledgeView = (() => {
             ['Совпали по цвету', s ? App.agreed(s.agreement) + (s.caution ? ` · ${App.CAUTION[s.caution]}` : '') : '—'],
             ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
             ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']]),
-          s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null, h('div', {class: 'row'}, actions(k, kid)))),
+          s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null,
+          k.counted_from ? countedFrom(k.counted_from) : null, h('div', {class: 'row'}, actions(k, kid)))),
         h('div', {class: 'kn-right'},
           h('section', {class: 'os-col kn-history'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'История'), pill(k.history.length)), h('div', {class: 'os-scroll'}, history)),
           s ? h('section', {class: 'os-col kn-evidence'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наблюдения-основания'), pill(ids.length)),

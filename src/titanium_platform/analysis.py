@@ -16,7 +16,7 @@ import json
 
 import numpy as np
 
-from . import capability_results, color, designer, ingest, model, plans as pl, setup as su, tasks
+from . import capability_results, color, designer, exclusions, ingest, model, plans as pl, setup as su, tasks
 from .db import Store
 
 
@@ -59,6 +59,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
     checked = {rep["index"]: rep for rep in (pair.get("check") or {}).get("layers", [])}
     scale = tasks.photo_scale((pair.get("check") or {}).get("alignment"))
     witness = next((o["lab"] for o in obs if o["evidence"].get("role") == tasks.WITNESS), None)
+    taken_out = exclusions.of_pair(store, pair_id)          # layers the operator took out of every calculation (act-on-findings REQ-001)
     rows = []
     for o in obs:
         role = o["evidence"].get("role", "test feature")
@@ -70,7 +71,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict:
                "alignment": o["alignment"], "knowledge": None, "role": role,
                "submeasurements": o["evidence"].get("submeasurements", []), "line_metrics": o["evidence"].get("line_metrics"),
                "measured_lab_against_clean": (checked.get(o["layer_index"]) or {}).get("measured_lab_against_clean"),
-               "task": o["task"]}
+               "task": o["task"], "taken_out": taken_out.get(o["layer_index"])}
         # every quality metric with its method and basis, and what the task needs that a photograph cannot give (REQ-020)
         row["metrics"] = tasks.quality_metrics(
             o["task"]["kind"], lab=o["lab"], against_clean=row["measured_lab_against_clean"],

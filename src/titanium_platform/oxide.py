@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import color
+from . import color, exclusions
 from .db import Store, now
 
 WAVELENGTHS = np.arange(400, 701, 10)
@@ -190,7 +190,10 @@ def calibrated_observations(store: Store, partition: tuple[int, int | None] | No
         "p.engraving_title, o.engraving_id FROM observation o JOIN pair p ON p.id = o.pair_id WHERE p.status = 'Accepted' AND o.layer_index >= 0 "
         "AND o.model_eligible = 1 " + where + "ORDER BY o.id", args)
     out = []
+    taken_out = exclusions.excluded_ids(store)          # the operator took them out of every calculation (act-on-findings DEC-004)
     for r in rows:
+        if r["id"] in taken_out:
+            continue
         evidence = json.loads(r["evidence_json"] or "{}")
         if (evidence.get("color_measurement") or {}).get("mode") != "reference_chart_corrected":
             continue
