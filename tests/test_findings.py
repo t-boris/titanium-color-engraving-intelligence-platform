@@ -115,7 +115,8 @@ def test_an_observation_beyond_the_tolerance_from_its_recipe_mean_is_an_explorat
 
     assert [f["evidence"]["observation_ids"] for f in anomalies] == [[far]]
     f = anomalies[0]
-    assert f["basis"] == "exploratory" and f["key"] == f"anomaly:observation:{far}"
+    far_pair = store.one("SELECT pair_id FROM observation WHERE id=?", (far,))["pair_id"]
+    assert f["basis"] == "exploratory" and f["key"] == f"anomaly:photo:{far_pair}:1"            # the photograph and its layer (DEC-002)
     assert f["compares"]["rule"] == "tolerance" and f["compares"]["delta_e"] == pytest.approx(19.0)     # from the agreed colour 51, not the mean 55.75
     assert f["compares"]["reference_lab"] == pytest.approx([51.0, 0, 0]) and len(f["evidence"]["recipe_observation_ids"]) == 4
 
@@ -431,3 +432,141 @@ def test_recipes_on_a_single_engraving_are_proposed_for_a_repeat(store, w):
     assert proposal["questions"][0].startswith("Do recipes measured on a single engraving") and proposal["stock"]["material_id"] == w["stock"]["id"]
     assert fd.propose_for(store, gap["id"], size=2)["id"] == proposal["id"]
     assert len(ds.create_plates(store, proposal["id"], 5, 4, 1)) >= 1
+
+
+# -- the operator's marks (feature findings-you-can-manage-short-lists-re-check: REQ-003, DEC-001, DEC-002) ---------------------
+def anomaly_workshop(store, w):
+    """Three agreeing engravings and one far from them: one anomaly; returns the far observation."""
+    su.save_rules(store, *w["setup"], delta_tolerance=10.0)
+    for lab in ((50, 0, 0), (51, 0, 0), (52, 0, 0)):
+        add(store, w, lab, power=30)
+    return add(store, w, (70, 0, 0), power=30)
+
+
+def latest(store, **kw):
+    return fd.findings_of(store, fd.get_run(store)["id"], **kw)
+
+
+def remeasure_by_hand(store, observation_id, lab):
+    """What a re-measure leaves: the old pair deleted, a revision (``correction_of`` it) with a new observation of the same layer."""
+    o = store.one("SELECT * FROM observation WHERE id=?", (observation_id,))
+    old = store.one("SELECT * FROM pair WHERE id=?", (o["pair_id"],))
+    store.execute("UPDATE pair SET status='Deleted' WHERE id=?", (old["id"],))
+    new_pair = store.execute(
+        "INSERT INTO pair(status,device_id,lens_id,stand_id,material_id,engraving_id,lightburn_name,lightburn_path,photo_name,photo_path,"
+        "context_json,data_json,created_at) VALUES ('Accepted',?,?,?,?,?,'a.lbrn2','/x','p.raw','/y',?,?,?)",
+        (old["device_id"], old["lens_id"], old["stand_id"], old["material_id"], old["engraving_id"], old["context_json"],
+         json.dumps({"correction_of": old["id"]}), now())).lastrowid
+    return store.execute(
+        "INSERT INTO observation(pair_id,layer_index,device_id,lens_id,engraving_id,lab_json,parameters_json,alignment_method,context_json,"
+        "model_eligible,repeat_eligible,eligibility_reason,evidence_json,created_at,task_kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (new_pair, o["layer_index"], o["device_id"], o["lens_id"], o["engraving_id"], json.dumps(list(lab)), o["parameters_json"],
+         o["alignment_method"], o["context_json"], o["model_eligible"], o["repeat_eligible"], "test", o["evidence_json"], now(),
+         o["task_kind"])).lastrowid
+
+
+def test_a_hidden_finding_stays_hidden_in_later_runs_until_a_new_photograph_bears_on_it(store, w):
+    anomaly_workshop(store, w)
+    fd.run_analysis(store, "manual")
+    f = one(latest(store)["findings"], "observation")
+    assert f["state"] == "attention" and f["mark"] == {"status": None, "pinned": False, "note": None, "status_at": None, "changed": False}
+
+    assert fd.mark(store, f["id"], "hide")["status"] == "hidden"
+    fd.run_analysis(store, "manual")
+    again = one(latest(store)["findings"], "observation")
+    assert again["id"] != f["id"] and again["state"] == "hidden" and not again["mark"]["changed"]
+    assert [g["kind"] for g in latest(store, state="attention")["findings"] if g["kind"] == "anomaly"] == []
+    assert [g["key"] for g in latest(store, state="hidden")["findings"]] == [f["key"]]
+
+    add(store, w, (51.5, 0, 0), power=30)                     # a new engraving of the recipe: new data for the finding
+    fd.run_analysis(store, "manual")
+    back = one(latest(store)["findings"], "observation")
+    assert back["state"] == "attention" and back["mark"]["changed"] and back["mark"]["status"] == "hidden"
+    assert [g["key"] for g in latest(store, state="attention")["findings"] if g["kind"] == "anomaly"] == [f["key"]]
+
+
+def test_an_anomaly_keeps_its_key_and_its_mark_when_its_photograph_is_measured_again(store, w):
+    far = anomaly_workshop(store, w)
+    fd.run_analysis(store, "manual")
+    f = one(latest(store)["findings"], "observation")
+    fd.mark(store, f["id"], "acknowledge")
+
+    remeasured = remeasure_by_hand(store, far, (70.3, 0, 0))   # today's measurement reads it 0.3 ΔE further
+    fd.run_analysis(store, "manual")
+
+    g = one(latest(store)["findings"], "observation")
+    assert g["evidence"]["observation_ids"] == [remeasured] and g["key"] == f["key"]
+    assert g["state"] == "acknowledged" and not g["mark"]["changed"]
+
+
+def test_a_mark_lapses_when_the_kind_changes_or_the_delta_e_moves_by_one(store, w):
+    base = {"kind": "anomaly", "subkind": "observation", "independent_engravings": 4, "photographs": 4, "recipes": None, "delta_e": 19.0}
+    assert not fd.changed_since(base, base | {"delta_e": 19.9})
+    assert fd.changed_since(base, base | {"delta_e": 20.0}) and fd.changed_since(base, base | {"delta_e": 18.0})
+    assert fd.changed_since(base, base | {"kind": "gap"}) and fd.changed_since(base, base | {"photographs": 5})
+    assert fd.changed_since(base, base | {"delta_e": None})
+
+
+def test_pinned_findings_come_first_and_a_note_and_pin_outlast_runs_and_reopening(store, w):
+    other = su.save_material(store, "Grade 5 sheet", grade="Grade 5")
+    add(store, w, (50, 0, 0), power=30)
+    add(store, w, (40, 0, 0), power=30, material_id=other["id"], layer_type="Cut")
+    fd.run_analysis(store, "manual")
+    found = latest(store, sort="important")["findings"]
+    last = found[-1]
+
+    fd.mark(store, last["id"], "pin")
+    fd.mark(store, last["id"], "note", "проверить на новом листе ")
+    fd.mark(store, last["id"], "hide")
+    fd.mark(store, last["id"], "reopen")
+    fd.run_analysis(store, "manual")
+
+    now_found = latest(store, sort="important")["findings"]
+    first = now_found[0]
+    assert first["key"] == last["key"] and first["state"] == "attention"
+    assert first["mark"] == {"status": None, "pinned": True, "note": "проверить на новом листе", "status_at": first["mark"]["status_at"],
+                             "changed": False}
+    marked = [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='finding_marked' ORDER BY id")]
+    assert [m["mark"] for m in marked] == ["pin", "note", "hide", "reopen"] and {m["key"] for m in marked} == {last["key"]}
+
+
+def test_states_kinds_sort_and_paging_with_the_counts_each_filter_would_show(store, w):
+    anomaly_workshop(store, w)
+    other = su.save_material(store, "Grade 5 sheet", grade="Grade 5")
+    add(store, w, (40, 0, 0), power=30, material_id=other["id"], layer_type="Cut")
+    run_id = fd.run_analysis(store, "manual")["id"]
+    everything = fd.findings_of(store, run_id)
+    gap = next(f for f in everything["findings"] if f["kind"] == "gap")
+    fd.mark(store, gap["id"], "acknowledge")
+
+    page = fd.findings_of(store, run_id, state="attention", sort="delta", offset=0, limit=2)
+    rest = fd.findings_of(store, run_id, state="attention", sort="delta", offset=2, limit=2)
+
+    total = everything["total"]
+    assert page["matched"] == total - 1 and len(page["findings"]) == 2 and page["total"] == total
+    assert page["findings"][0]["kind"] == "anomaly"                          # the largest ΔE first (19 ΔE from the agreed colour)
+    assert {f["id"] for f in page["findings"]}.isdisjoint({f["id"] for f in rest["findings"]})
+    assert page["counts"]["state"] == {"": total, "attention": total - 1, "acknowledged": 1, "hidden": 0}
+    assert page["counts"]["kind"]["anomaly"] == 1 and page["counts"]["kind"][""] == total - 1     # kinds among those needing attention
+    assert all(f["first_run_id"] == run_id for f in page["findings"])
+    with pytest.raises(su.ValidationError):
+        fd.findings_of(store, run_id, state="forgotten")
+
+
+def test_the_api_marks_a_finding_reads_one_and_pages_a_run(tmp_path):
+    app = create_app(tmp_path / "data")
+    store = app.state.store
+    w = obs.setup(store)
+    w["stock"] = su.save_material(store, "Grade 2 sheet", grade="Grade 2")
+    anomaly_workshop(store, w)
+    fd.run_analysis(store, "manual")
+    with TestClient(app) as client:
+        page = client.get("/api/analysis/runs/latest", params={"state": "attention", "sort": "important", "limit": 1}).json()
+        assert len(page["findings"]) == 1 and page["matched"] >= 2 and page["counts"]["state"]["attention"] == page["matched"]
+        fid = page["findings"][0]["id"]
+        assert client.post(f"/api/analysis/findings/{fid}/mark", json={"action": "hide"}).json()["status"] == "hidden"
+        assert client.get(f"/api/analysis/findings/{fid}").json()["state"] == "hidden"
+        assert client.get("/api/analysis/runs/latest", params={"state": "hidden"}).json()["matched"] == 1
+        bad = client.post(f"/api/analysis/findings/{fid}/mark", json={"action": "delete"})
+        assert bad.status_code == 422 and bad.json()["kind"] == "invalid"
+        assert client.get("/api/analysis/findings/999999").status_code == 404

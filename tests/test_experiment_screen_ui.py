@@ -13,7 +13,7 @@ from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
-SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
+SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
            "screens/vector-workspace.js", "screens/prediction-review.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { globalThis.__renders = (globalThis.__renders || 0) + 1; };"
         "App.go = (route) => { location.hash = '#' + route; };"
@@ -125,7 +125,7 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
   out.full = photo.querySelector('a').getAttribute('href');
   out.caption = photo.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('IMG_3305.DNG'));
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
-  out.layers = side.querySelectorAll('div').filter((d) => has(d, 'ep-layer')).length;
+  out.layers = side.querySelectorAll('div').filter((d) => has(d, 'lst-row')).length;
   out.layersHeading = side.querySelectorAll('h3').map((h) => h.textContent);
   out.alerts = side.querySelectorAll('div').filter((d) => has(d, 'alert')).map((d) => d.textContent);
 """)
@@ -137,6 +137,99 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
     assert "проверка №59" in out["caption"] and "цвет по эталонной карте" in out["caption"]
     assert out["layers"] == 10 and out["layersHeading"][0] == "Измеренные слои · 10" and "Матрица параметров 1 × 10" in out["layersHeading"]
     assert len(out["alerts"]) == 1
+
+
+def uneven(pid, count):
+    """A matrix of ``count`` measured cells whose samples vary each by its own amount (L* ±0 … ±2.4); cell 3 is not comparable, cell 5
+    has a note."""
+    out = pair_detail(pid, matrix=True, layers=count)
+    for i, cell in enumerate(out["check"]["layers"]):
+        cell["spread"] = {"L": round(0.1 * (i * 7 % count), 1), "chroma": 0.5, "L_range": [40.0, 50.0]}
+    out["check"]["layers"][3].update(compatible=False, notes=["pulse width is missing from this LightBurn layer"])
+    out["check"]["layers"][5]["notes"] = ["12% of the sampled area is engraved again by a later layer and is not sampled"]
+    return out
+
+
+@node
+def test_the_measured_layers_of_a_matrix_are_a_short_list_worst_first_a_page_at_a_time_with_the_card_under_a_line(tmp_path):
+    """findings-you-can-manage-short-lists-re-check REQ-005: a hundred layers are not a hundred cards. A line per layer, the not comparable
+    and the noted first, then the most uneven sample; twenty lines; the card (task, settings, metrics, notes) under a line on a click; the
+    order chosen is kept while the screen is drawn again."""
+    routes = routes_for(MATRIX)
+    routes.update(api(**{"/api/pairs/59": uneven(59, 25)}))
+    out = run(tmp_path, routes, "eng-abc", """
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  const list = side.querySelector('.lst');
+  const keys = (l) => l.querySelectorAll('.lst-row').map((r) => r.getAttribute('data-key'));
+  const lines = () => list.querySelectorAll('.lst-main');
+  out.heading = side.querySelectorAll('h3')[0].textContent;
+  out.keys = keys(list);
+  out.count = list.querySelector('.lst-count').textContent;
+  out.more = list.querySelector('.lst-foot').querySelector('button').textContent;
+  out.lines = lines().slice(0, 3).map((m) => m.textContent);
+  out.swatches = lines().filter((m) => m.querySelector('.sw')).length;
+  out.chips = list.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  out.openBefore = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).length;
+  await lines()[2].dispatch('click'); await tick();
+  out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  const order = list.querySelector('select'); order.value = 'order'; await order.dispatch('change'); await tick();
+  out.ordered = keys(list).slice(0, 3);
+  const again = await screen(data.key);
+  out.kept = keys(again.querySelectorAll('aside').find((s) => has(s, 'ep-side')).querySelector('.lst')).slice(0, 3);
+""")
+    assert out["heading"] == "Измеренные слои · 25"
+    assert len(out["keys"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5"
+    # not comparable, then noted, then the most uneven sample first: cells 7 (±2.4), 14 (±2.3), 21 (±2.2), 10 (±2.0), …
+    assert out["keys"][:6] == ["3", "5", "7", "14", "21", "10"]
+    assert "не сопоставим" in out["lines"][0] and "замечаний: 1" in out["lines"][1] and "±2.4 L*" in out["lines"][2]
+    assert "L 40.5 · a 21.0 · b -21.0" in out["lines"][2] and out["swatches"] == 20               # the colour of each line
+    assert out["chips"] == ["Все · 25", "Не сопоставимы · 1", "С замечаниями · 1", "Без замечаний · 23"]
+    assert out["openBefore"] == 0 and len(out["open"]) == 1
+    card = out["open"][0]
+    assert "Заливка · по слою LightBurn" in card and "1950 кГц" in card and "Разброс цвета в пробе: L* ±2.4" in card
+    assert out["ordered"] == ["0", "1", "2"] and out["kept"] == ["0", "1", "2"]
+
+
+def composed(pid, count):
+    """A matrix whose file has ``count`` fill layers, the area of each growing with its index, and one picture layer over them."""
+    out = pair_detail(pid, matrix=True, layers=2)
+    fills = [{"index": i, "name": f"C{i:02d}", "type": "Cut", "kind": "fill", "engraves": True, "hidden": False, "area_mm2": 10.0 + i,
+              "visible_percent": 100.0 - i * 0.5} for i in range(count)]
+    picture = {"index": count, "name": "Фото", "type": "Image", "kind": "photo", "mode": "jarvis", "engraves": True, "hidden": False,
+               "area_mm2": 5.0, "visible_percent": 100.0, "opaque_percent": 80.0, "struck_percent": 41.5, "dot_density_percent": None}
+    out["check"]["composition"] = {"px_per_mm": 10, "marked_mm2": 2000.0, "cleaning_layer": None, "layers": fills + [picture], "lines": [],
+                                   "share": {"fill_only": 99.0, "photo_only": 0.5, "both": 0.5}, "mixed": True, "picture_over_fills": False}
+    return out
+
+
+@node
+def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_picture_covers_under_its_line(tmp_path):
+    """findings-you-can-manage-short-lists-re-check REQ-005: «Состав работы» of a matrix plate had a row per layer (a hundred); now a line
+    per layer, twenty at a time, in the file's order or by area, the kinds as chips, and the picture's coverage under its line."""
+    routes = routes_for(MATRIX)
+    routes.update(api(**{"/api/pairs/59": composed(59, 100)}))
+    out = run(tmp_path, routes, "eng-abc", """
+  const card = tree.querySelectorAll('div').find((d) => has(d, 'card') && (d.querySelector('h3') || {}).textContent === 'Состав работы');
+  const list = card.querySelector('.lst');
+  const keys = () => list.querySelectorAll('.lst-row').map((r) => r.getAttribute('data-key'));
+  out.tables = card.querySelectorAll('table').length;
+  out.keys = keys(); out.count = list.querySelector('.lst-count').textContent;
+  out.first = list.querySelectorAll('.lst-main')[0].textContent;
+  out.chips = list.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  const order = list.querySelector('select'); order.value = 'area'; await order.dispatch('change'); await tick();
+  out.byArea = keys().slice(0, 2);
+  await list.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('фотогравировка')).dispatch('click'); await tick();
+  out.photo = keys();
+  await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+""")
+    assert out["tables"] == 0
+    assert len(out["keys"]) == 20 and out["keys"][:2] == ["0", "1"] and out["count"] == "показано 20 из 101"
+    assert "C00" in out["first"] and "заливка" in out["first"] and "10 мм²" in out["first"] and "видно 100.0%" in out["first"]
+    assert out["chips"] == ["Все · 101", "заливка · 100", "фотогравировка · 1"]
+    assert out["byArea"] == ["99", "98"]
+    assert out["photo"] == ["100"] and len(out["open"]) == 1
+    assert "картинка непрозрачна на 80.0%" in out["open"][0] and "гравирует 41.5%" in out["open"][0]
 
 
 @node

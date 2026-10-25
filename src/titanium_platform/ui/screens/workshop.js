@@ -5,7 +5,7 @@
    Адрес: #/workshop. */
 'use strict';
 (() => {
-  const {h, fill, btn, field, pill, get, post, put, toast, modal, facts, table} = App;
+  const {h, fill, btn, field, pill, get, post, put, toast, modal, facts} = App;
   const CONFIRM_WORD = 'overwrite';                       // the word the API expects before the open workshop is replaced
   const mb = (bytes) => (bytes == null ? '—' : bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1).replace('.', ',')} ГБ`
     : `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',')} МБ`);
@@ -13,6 +13,9 @@
   const errorBox = () => h('p', {class: 'alert bad', role: 'alert', hidden: true});
   const showError = (box, e) => { box.textContent = e.message || String(e); box.hidden = false; };
   const KIND = {schema: 'перед сменой схемы', release: 'перед обновлением версии', other: 'копия базы'};
+  const PAGE = 10;                                        // backups are listed by pages of ten (DEC-090), the newest first
+  const newest = (at) => (p, q) => String(at(q) || '').localeCompare(String(at(p) || ''));
+  const oldest = (at) => (p, q) => String(at(p) || '').localeCompare(String(at(q) || ''));
 
   // ---- the workshop itself -------------------------------------------------------------------------------------------------------
 
@@ -94,7 +97,7 @@
     return modal('Заменить открытую мастерскую', body, [{label: 'Закрыть', run: (d) => d.close()}]);
   }
 
-  function backupsCard(w, list, refresh, notice) {
+  function backupsCard(w, backups, refresh, notice) {
     const err = errorBox();
     const result = h('div', {class: 'stack'}, notice);
     const progress = h('p', {class: 'muted small', hidden: true}, 'Идёт запись резервной копии: база копируется целиком, затем файлы работ, выпуски и шрифты…');
@@ -107,25 +110,41 @@
         refresh(h('p', {class: 'alert ok'}, `Резервная копия записана: ${made.path} · файлов ${Object.keys(made.files || {}).length} · ${mb(made.bytes)}.`));
       } catch (e) { showError(err, e); } finally { self.disabled = false; progress.hidden = true; }
     }, 'primary');
-    const rows = list.map((b) => {
-      const man = b.manifest || {};
-      return [when(man.created_at), mb(man.bytes), man.app ? `${man.app} · схема ${man.schema}` : '—',
-        `${man.files ?? '—'} файлов${b.complete ? '' : ' · неполная'}`, h('span', {class: 'small muted'}, b.path),
-        h('div', {class: 'row'}, btn('Проверить', () => inspectDialog(b)), btn('Восстановить…', () => restoreDialog(b, w, () => refresh())),
-          btn('Заменить открытую мастерскую…', () => replaceDialog(b, w, () => refresh()), 'danger'))];
-    });
+    // a backup a line: when, size, version, files and its folder; the checks and restores at the end of the line
+    const created = (b) => (b.manifest || {}).created_at;
+    const listed = backups.length ? App.list({id: 'workshop-backups', items: backups, key: (b) => b.path, page: PAGE,
+      row: (b) => {
+        const man = b.manifest || {};
+        return [h('span', {}, when(man.created_at)), h('span', {}, mb(man.bytes)), h('span', {class: 'muted'}, man.app ? `${man.app} · схема ${man.schema}` : '—'),
+          h('span', {class: 'muted'}, `${man.files ?? '—'} файлов`), b.complete ? null : pill('неполная', 'bad'), h('span', {class: 'lst-text small muted', title: b.path}, b.path)];
+      },
+      actions: (b) => [btn('Проверить', () => inspectDialog(b)), btn('Восстановить…', () => restoreDialog(b, w, () => refresh())),
+        btn('Заменить открытую мастерскую…', () => replaceDialog(b, w, () => refresh()), 'danger')],
+      search: (b) => `${when(created(b))} ${b.path}`,
+      filters: [{key: 'state', label: 'Полнота', options: [['complete', 'полные'], ['partial', 'неполные']], test: (b, v) => (v === 'complete') === !!b.complete}],
+      sorts: [['new', 'Сначала новые', newest(created)], ['old', 'Сначала старые', oldest(created)]]}).el
+      : h('p', {class: 'muted'}, 'Резервных копий пока нет.');
     return h('div', {class: 'card stack'}, h('h3', {}, 'Резервные копии'),
       h('p', {class: 'small muted'}, 'Полная копия мастерской: база с незавершёнными записями журнала, файлы работ и фотографий, подключённые выпуски, собственные выпуски и шрифты, '
         + 'с описанием и хешем каждого файла. Описание записывается последним: незавершённая копия никогда не считается копией.'),
       h('div', {class: 'row'}, make), progress, err, result,
-      table(['Сделана', 'Размер', 'Версия', 'Содержимое', 'Папка', ''], rows, 'Резервных копий пока нет.', true));
+      listed);
   }
 
   function recoveryCard(copies) {
+    // dozens pile up over the releases: a copy a line, the newest first, ten at a time; the full path under a line
+    const listed = copies.length ? App.list({id: 'workshop-recovery', items: copies, key: (c) => c.path, page: PAGE,
+      row: (c) => [h('span', {}, when(c.modified_at)), h('span', {class: 'lst-text'}, c.name), h('span', {class: 'muted'}, mb(c.bytes)), pill(KIND[c.kind] || c.kind)],
+      details: (c) => facts([['Файл', c.path], ['Записана', when(c.modified_at)], ['Размер', mb(c.bytes)], ['Почему', KIND[c.kind] || c.kind]]),
+      search: (c) => `${when(c.modified_at)} ${c.name}`,
+      filters: [{key: 'kind', label: 'Почему', options: Object.entries(KIND), test: (c, v) => c.kind === v}],
+      sorts: [['new', 'Сначала новые', newest((c) => c.modified_at)], ['old', 'Сначала старые', oldest((c) => c.modified_at)],
+        ['size', 'Сначала большие', (p, q) => q.bytes - p.bytes]]}).el
+      : h('p', {class: 'muted'}, 'Таких копий нет.');
     return h('div', {class: 'card stack'}, h('h3', {}, 'Копии перед сменой схемы'),
       h('p', {class: 'small muted'}, 'Прежде чем изменить устройство своей базы, приложение само записывает её копию в папку backups рядом с данными и проверяет её целостность; '
         + 'только после этого схема меняется. Это не полная резервная копия (без файлов работ): она нужна, чтобы вернуться к прежней версии приложения, если смена схемы не удалась.'),
-      table(['Записана', 'Файл', 'Размер', 'Почему'], copies.map((c) => [when(c.modified_at), c.name, mb(c.bytes), KIND[c.kind] || c.kind]), 'Таких копий нет.', true));
+      listed);
   }
 
   function diagnosticsCard() {
@@ -151,10 +170,10 @@
   App.register({id: 'workshop', async render() {
     const root = h('div', {class: 'stack'});
     const draw = async (notice = null) => {                 // ``notice``: the result of the last action, kept through the redraw
-      const [w, list, copies] = await Promise.all([get('/workshop'), get('/workshop/backups'), get('/workshop/recovery-copies')]);
+      const [w, backups, copies] = await Promise.all([get('/workshop'), get('/workshop/backups'), get('/workshop/recovery-copies')]);
       fill(root, h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Мастерская'),
         h('p', {class: 'sub'}, 'Данные этой мастерской, их схема и резервные копии. Восстановление в другую папку не трогает открытую мастерскую; её замена — отдельный явный выбор.'))),
-      workshopCard(w, () => draw()), backupsCard(w, list, draw, notice), recoveryCard(copies), diagnosticsCard());
+      workshopCard(w, () => draw()), backupsCard(w, backups, draw, notice), recoveryCard(copies), diagnosticsCard());
     };
     await draw();
     return root;

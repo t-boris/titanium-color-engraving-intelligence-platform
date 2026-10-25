@@ -1040,7 +1040,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -1456,3 +1456,54 @@ def test_a_work_can_be_made_when_every_measured_colour_of_the_titanium_changed_u
         assert j["entries"] and {e["caution"] for e in j["entries"].values()} == {"contradicted"} and not any(e["automatic"] for e in j["entries"].values())
         assert all(c["entry_id"] in j["entries"] for c in j["colours"] if c["status"] == "automatic")
     store.close()
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_their_lines(work, tmp_path):
+    """DEC-090: 36 regions of a traced work show 30 lines (pages of 30: they are edited in the list) with the box for a merge, status, task, area
+    and group; their actions on the line; the task select, the group and the recipe only under a line opened by a click; a sort brings the
+    regions without data first. The history of 22 edits shows 20 versions, the newest first."""
+    data = {"device_id": work["w"]["setup"][0], "lens_id": work["w"]["setup"][1], "material_id": work["ti"], "name": "Trace", "width_mm": 50,
+            "strategy": "fill", "threshold": 8}
+    r = work["client"].post("/api/vector", data=data, files={"image": ("a.png", picture(), "image/png")})
+    assert r.status_code == 201, r.text
+    j = work["client"].get(f"/api/vector/{r.json()['id']}").json()
+    assert j["strategy"] != "photo" and j["regions"]
+    first = j["regions"][0]
+    j["regions"] = [{**first, "id": f"r{i}", "area_mm2": float(i), "status": "weak" if i % 9 == 0 else "matched"} for i in range(1, 37)]
+    j["history"] = [{"version": v, "op": {"op": "set_tolerance"}, "at": f"2026-10-{v:02d}T10:00:00"} for v in range(1, 23)]
+    out = run_screen(tmp_path, j, {f"/api/vector/{j['id']}": {"status": 200, "json": j}}, """
+  const card = (title) => tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === title);
+  const regions = card('Области: 36'), history = card('История правок');
+  const mains = (root) => root.querySelectorAll('.lst-main');
+  out.lines = mains(regions).length; out.count = regions.querySelector('.lst-count').textContent;
+  out.first = mains(regions)[0].textContent;
+  out.actions = regions.querySelectorAll('.lst-act')[0].querySelectorAll('button').map((b) => b.textContent);
+  out.taskBefore = regions.querySelectorAll('select').filter((s) => (s.getAttribute('aria-label') || '').startsWith('Задача области')).length;
+  const box = regions.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Выбрать r1'); box.checked = true; await box.dispatch('change');
+  out.openAfterBox = regions.querySelectorAll('.lst-det').filter((d) => !d.hidden).length;
+  let stopped = false;                                       // the small DOM bubbles anyway: that the box stops its click is what a browser obeys
+  await box.dispatch('click', {stopPropagation() { stopped = true; }}); await tick();
+  out.boxStops = stopped;
+  await mains(regions)[1].dispatch('click'); await tick();
+  const opened = regions.querySelectorAll('.lst-det').filter((d) => !d.hidden);
+  out.opened = opened.map((d) => d.textContent);
+  out.taskAfter = opened[0].querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
+  const sort = regions.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  sort.value = 'weak'; await sort.dispatch('change'); await tick();
+  out.weakFirst = mains(regions).slice(0, 5).map((m) => m.querySelector('strong').textContent);
+  out.chips = regions.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  out.history = mains(history).slice(0, 3).map((m) => m.textContent);
+  out.historyCount = history.querySelector('.lst-count').textContent;
+  out.revert = history.querySelectorAll('.lst-act')[0].querySelectorAll('button').map((b) => b.textContent);
+""")
+    assert out["lines"] == 30 and out["count"] == "показано 30 из 36"
+    assert out["first"].startswith("r1Есть рецепт") and "1.00 мм²" in out["first"] and f"группа {first['layer_key']}" in out["first"]
+    assert out["actions"][:2] == ["Удалить", "Исключить (без рецепта)"]
+    assert out["taskBefore"] == 0 and out["openAfterBox"] == 0 and out["boxStops"] is True         # the box marks the region, it does not open the line
+    (opened,) = out["opened"]
+    assert "Контур · 2.00 мм²" in opened and "Перенести" in opened and out["taskAfter"] == ["Задача области r2"]
+    assert out["weakFirst"] == ["r9", "r18", "r27", "r36", "r1"]
+    assert out["chips"] == ["Все · 36", "Есть рецепт · 32", "Мало данных · 4"]
+    assert out["history"][0].startswith("v22") and out["history"][1].startswith("v21") and out["historyCount"] == "показано 20 из 22"
+    assert out["revert"] == ["Вернуть эту версию"]

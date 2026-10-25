@@ -13,6 +13,7 @@
   const DETAIL = [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']];
   const TASKS = [['color', 'Цвет'], ['fill', 'Заливка'], ['text', 'Текст'], ['line', 'Линия'], ['tonal', 'Тон']];
   const STATUS = {matched: ['Есть рецепт', 'ok'], chosen: ['Рецепт выбран вручную', 'ok'], weak: ['Мало данных', 'bad'], excluded: ['Без рецепта: исключена', '']};
+  const WEAK_FIRST = {weak: 0, excluded: 1, chosen: 2, matched: 3};             // «Сначала без данных»: what still keeps the file from export first
   const MODE = {Scan: 'заливка (Fill)', Cut: 'линия (Line)', OffsetFill: 'заливка по контуру (Offset Fill)', 'Offset Fill': 'заливка по контуру (Offset Fill)'};
   const OPS = {trace: 'обводка изображения', set_task: 'задача области', set_layer: 'группа настроек области', delete: 'удаление области',
     merge: 'объединение областей', set_tolerance: 'точность контура', revert: 'возврат к версии', set_settings: 'настройки группы',
@@ -232,25 +233,41 @@
     const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: j.document.tolerance_mm, 'aria-label': 'Точность контура, мм'});
     const thr = h('input', {type: 'number', step: 'any', min: '0', value: j.threshold, 'aria-label': 'Порог ΔE'});
 
-    const rows = j.regions.map((r) => {
-      const pr = r.prediction;
-      const [label, kind] = STATUS[r.status];
-      const task = h('select', {'aria-label': 'Задача области ' + r.id, style: 'min-width:130px', onChange: (ev) => run({op: 'set_task', region: r.id, task: ev.target.value})},
-        TASKS.filter(([t]) => r.outline === 'closed' || t === 'line').map(([t, l]) => h('option', {value: t, selected: t === r.task}, l)));
-      const group = h('input', {value: r.layer_key, style: 'min-width:90px;width:90px', 'aria-label': 'Группа настроек области ' + r.id});
-      return [h('input', {type: 'checkbox', 'aria-label': 'Выбрать ' + r.id, onChange: (ev) => { if (ev.target.checked) selected.add(r.id); else selected.delete(r.id); }}),
-        h('span', {}, swatch(r.lab), r.id, h('div', {class: 'muted small'}, r.outline === 'closed' ? `контур · ${num(r.area_mm2, 2)} мм²` : 'центральная линия')),
-        task,
-        h('span', {class: 'row'}, group, btn('Перенести', () => run({op: 'set_layer', region: r.id, layer_key: group.value}))),
-        r.knowledge_id ? h('span', {}, link('/knowledge/' + r.knowledge_id, 'K' + r.knowledge_id), ` · ${MODE[r.mode] || r.mode || 'режим не записан'}`,
-          h('div', {class: 'muted small'}, params(r.parameters))) : '—',
-        pr ? h('span', {}, swatch(pr.lab), `уверенность ${num(pr.confidence)} · ожидаемая ошибка ΔE ${num(pr.expected_delta_e)} · ${stability(pr.stability)}`,
-          h('div', {class: 'muted small'}, (r.task === 'tonal' ? 'разница светлоты ' : 'ΔE до цвета области ') + num(r.distance) + ' · ошибка совпадения ' + num(r.match_error))) : '—',
-        h('span', {}, pill(label, kind), r.note ? h('div', {class: 'small'}, I18N.tr(r.note)) : null, r.target_sent ? h('div', {}, pill('цвет передан планировщику')) : null),
-        h('span', {class: 'row'}, btn('Удалить', () => run({op: 'delete', region: r.id}), 'danger'),
-          r.status === 'excluded' ? btn('Вернуть', () => run({op: 'include', region: r.id})) : btn('Исключить (без рецепта)', () => run({op: 'exclude', region: r.id})),
-          r.status === 'weak' && r.kind === 'fill' && !r.target_sent ? btn('Планировщику', () => run({op: 'to_designer', region: r.id})) : null)];
-    });
+    // the regions as a short list (DEC-090): a line each — the box for a merge, its colour, status, task, size, group and recipe; the
+    // actions on the line; the task, the group and the recipe and prediction under it on a click; pages of 30, so editing stays on a page
+    const order = new Map(j.regions.map((r, i) => [r.id, i]));
+    const byOrder = (a, b) => order.get(a.id) - order.get(b.id);
+    const regions = App.list({id: 'vw.job.regions', items: j.regions, page: 30, key: (r) => r.id,
+      row: (r) => [VectorEditor.inRow(h('input', {type: 'checkbox', checked: selected.has(r.id), 'aria-label': 'Выбрать ' + r.id,
+          onChange: (ev) => { if (ev.target.checked) selected.add(r.id); else selected.delete(r.id); }})),
+        swatch(r.lab), h('strong', {}, r.id), pill(...STATUS[r.status]),
+        h('span', {class: 'lst-text muted small'}, [(TASKS.find(([t]) => t === r.task) || [r.task, r.task])[1],
+          r.outline === 'closed' ? `${num(r.area_mm2, 2)} мм²` : 'центральная линия', `группа ${r.layer_key}`, r.knowledge_id ? 'K' + r.knowledge_id : 'без рецепта'].join(' · ')),
+        r.target_sent ? pill('цвет передан планировщику') : null],
+      actions: (r) => [btn('Удалить', () => run({op: 'delete', region: r.id}), 'danger'),
+        r.status === 'excluded' ? btn('Вернуть', () => run({op: 'include', region: r.id})) : btn('Исключить (без рецепта)', () => run({op: 'exclude', region: r.id})),
+        r.status === 'weak' && r.kind === 'fill' && !r.target_sent ? btn('Планировщику', () => run({op: 'to_designer', region: r.id})) : null],
+      details: (r) => {
+        const pr = r.prediction;
+        const task = h('select', {'aria-label': 'Задача области ' + r.id, style: 'min-width:130px', onChange: (ev) => run({op: 'set_task', region: r.id, task: ev.target.value})},
+          TASKS.filter(([t]) => r.outline === 'closed' || t === 'line').map(([t, l]) => h('option', {value: t, selected: t === r.task}, l)));
+        const group = h('input', {value: r.layer_key, style: 'min-width:90px;width:90px', 'aria-label': 'Группа настроек области ' + r.id});
+        return h('div', {class: 'stack small'},
+          h('div', {class: 'toolbar'}, field('Задача', task), field('Группа настроек', group),
+            btn('Перенести', () => run({op: 'set_layer', region: r.id, layer_key: group.value}))),
+          h('div', {}, r.outline === 'closed' ? `Контур · ${num(r.area_mm2, 2)} мм²` : 'Центральная линия'),
+          r.knowledge_id ? h('div', {}, 'Рецепт ', link('/knowledge/' + r.knowledge_id, 'K' + r.knowledge_id), ` · ${MODE[r.mode] || r.mode || 'режим не записан'} · ${params(r.parameters)}`)
+            : h('div', {class: 'muted'}, 'Рецепта нет'),
+          pr ? h('div', {}, swatch(pr.lab), ` Прогноз (REQ-002): уверенность ${num(pr.confidence)} · ожидаемая ошибка ΔE ${num(pr.expected_delta_e)} · ${stability(pr.stability)}`,
+            h('div', {class: 'muted'}, (r.task === 'tonal' ? 'разница светлоты ' : 'ΔE до цвета области ') + num(r.distance) + ' · ошибка совпадения ' + num(r.match_error))) : null,
+          r.note ? h('div', {}, I18N.tr(r.note)) : null);
+      },
+      search: (r) => [r.id, r.layer_key, r.knowledge_id ? 'K' + r.knowledge_id : ''].join(' '),
+      filters: [{key: 'status', label: 'Данные', options: Object.entries(STATUS).map(([k, [text]]) => [k, text]), test: (r, v) => r.status === v},
+        {key: 'task', label: 'Задача', select: true, options: TASKS, test: (r, v) => r.task === v}],
+      sorts: [['order', 'По порядку', byOrder], ['weak', 'Сначала без данных', (a, b) => (WEAK_FIRST[a.status] ?? 9) - (WEAK_FIRST[b.status] ?? 9) || byOrder(a, b)],
+        ['area', 'Больше площадь', (a, b) => (b.area_mm2 ?? 0) - (a.area_mm2 ?? 0) || byOrder(a, b)]],
+      empty: 'Нет областей под такой выбор.'});
 
     const groups = j.groups.map((g) => [g.key, g.kind === 'line' ? 'линия' : g.kind ? 'заливка' : '—',
       g.knowledge_id ? h('span', {}, link('/knowledge/' + g.knowledge_id, 'K' + g.knowledge_id), g.chosen ? ' · выбран вручную' : ' · ближайший') : 'нет рецепта',
@@ -263,8 +280,12 @@
       try { await download(`/vector/${id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл подготовлен, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); } catch (e) { fail(e); self.disabled = false; }
     }, 'primary', !!j.export_blocked);
 
-    const history = [...j.history].reverse().map((e) => [`v${e.version}`, OPS[e.op.op] || e.op.op, e.at.replace('T', ' ').slice(0, 16),
-      DOCUMENT_OPS.includes(e.op.op) && e.version !== j.document.version ? btn('Вернуть эту версию', () => run({op: 'revert', version: e.version})) : '']);
+    // the history of edits as a short list: the newest first, a version a line, «Вернуть эту версию» on the line
+    const history = App.list({id: 'vw.job.history', items: j.history.map((e, pos) => ({...e, pos})), key: (e) => String(e.pos),
+      row: (e) => [h('strong', {}, `v${e.version}`), h('span', {class: 'lst-text'}, OPS[e.op.op] || e.op.op), h('span', {class: 'muted small'}, e.at.replace('T', ' ').slice(0, 16))],
+      actions: (e) => (DOCUMENT_OPS.includes(e.op.op) && e.version !== j.document.version ? [btn('Вернуть эту версию', () => run({op: 'revert', version: e.version}))] : []),
+      search: (e) => `v${e.version} ${OPS[e.op.op] || e.op.op}`,
+      sorts: [['new', 'Сначала новые', (a, b) => b.pos - a.pos], ['old', 'Сначала старые', (a, b) => a.pos - b.pos]], empty: 'Правок пока нет'});
 
     const heading = h('h2', {}, 'Векторная работа · ' + j.name);
     const pencil = VectorWorkspace.renameButton(j.id, j.name, (stored) => { j.name = stored; fill(heading, 'Векторная работа · ' + stored); });
@@ -288,7 +309,7 @@
         btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => { try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); } })),
       j.weak.length ? weakSummary(j.weak) : null,
       h('div', {class: 'card'}, h('h3', {}, `Области: ${j.regions.length}`),
-        table(['', 'Область', 'Задача', 'Группа настроек', 'Рецепт', 'Прогноз (REQ-002)', 'Данные', ''], rows)),
+        regions.el),
       h('div', {class: 'card'}, h('h3', {}, 'Группы настроек'), h('p', {class: 'muted small'}, 'Одна группа — один рецепт; одинаковые рецепты разных групп выводятся в один слой LightBurn.'),
         table(['Группа', 'Нужно', 'Рецепт', '', 'Областей', 'Подходящих рецептов', ''], groups)),
       h('div', {class: 'card stack'}, h('h3', {}, 'Экспорт'),
@@ -301,7 +322,7 @@
         j.exports.length ? table(['Файл', 'Версия документа', 'Слоёв', 'Областей', 'Когда', ''], j.exports.map((e) => [
           `№ ${e.number} · ${e.name}`, `v${e.document_version}`, `${e.layers}`, `${e.regions}`, e.at.replace('T', ' ').slice(0, 16),
           saveButton(`/vector/${id}/exports/${e.number}`, 'Скачать', e.name)])) : null),
-      h('div', {class: 'card'}, h('h3', {}, 'История правок'), table(['Версия', 'Действие', 'Когда', ''], history)));
+      h('div', {class: 'card'}, h('h3', {}, 'История правок'), history.el));
   }
 
   const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`

@@ -61,6 +61,19 @@
     [/^no filled regions are measured on this laser and lens yet: choose the pulse width, line interval and passes in the experiment designer$/i,
       'Для этого лазера с этой линзой ещё не измерено ни одной заливки: задайте длительность импульса, шаг линий и проходы в планировщике'],
     [re('finding # not found'), (m) => `Вывод № ${m[1]} не найден`],
+    // the operator's marks and the short list of findings (findings-you-can-manage-short-lists-re-check)
+    [/^unknown finding action (\S+)$/i, (m) => `Неизвестное действие с выводом: ${m[1]}`],
+    [/^unknown finding state (\S+)$/i, (m) => `Неизвестное состояние выводов: ${m[1]}`],
+    [/^unknown finding order (\S+)$/i, (m) => `Неизвестный порядок выводов: ${m[1]}`],
+    // «Перепроверить все работы» (REQ-004, DEC-089)
+    [re('re-check # not found'), (m) => `Перепроверка № ${m[1]} не найдена`],
+    [/^every work is being re-checked: wait until it ends or stop it$/i, 'Идёт перепроверка всех работ: дождитесь её конца или остановите её'],
+    [/^every work is being re-checked already: wait until it ends$/i, 'Перепроверка всех работ уже идёт: дождитесь её конца'],
+    [/^the backup could not be made, so nothing was measured again: (.+)$/i,
+      (m) => 'Резервная копия не сделана, поэтому ничего не перемерено: ' + I18N.tr(m[1])],
+    [/^the photographs were measured again, but the conclusions could not be drawn: (.+)$/i,
+      (m) => 'Фотографии перемерены, но выводы не пересчитаны: ' + m[1]],
+    [/^the re-check stopped: (.+)$/i, (m) => 'Перепроверка прервалась: ' + m[1]],
     [re('analysis run (\\S+) not found'), (m) => `Расчёт № ${m[1]} не найден`],
     [re('titanium stock # not found'), (m) => `Заготовка титана № ${m[1]} не найдена`],
     // предложение планировщика: вопрос, ценность, причины наборов

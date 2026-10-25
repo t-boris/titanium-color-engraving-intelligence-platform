@@ -63,10 +63,24 @@
     }), h('span', {class: 'muted small'}, 'Модель только объясняет предложение и называет гипотезы; наборы параметров и данные она не меняет.')));
   }
 
-  function proposalCard(prop, reload) {
+  /** The parameter sets of a proposal (up to 40), a set a line: its number, settings, reason, target and whether it is measured; why it was
+      chosen, its utility, target and measured result under the line (REQ-022 AC5); in the planner's order or by utility, twenty at a time (DEC-090). */
+  function setsList(prop) {
     const results = new Map((prop.results || []).map((r) => [r.index, r]));
-    const rows = prop.parameters.map((x, i) => [params(x), pill(REASON[x.reason] || x.reason), x.rationale ? I18N.tr(x.rationale) : '—', num(x.utility),
-      x.target_id ? 'цель № ' + x.target_id + (x.estimated_distance_to_target != null ? ` (прогноз ΔE ${num(x.estimated_distance_to_target)})` : '') : '—', outcome(prop, results.get(i))]);
+    const sets = prop.parameters.map((set, i) => ({set, i, result: results.get(i)}));
+    const measured = ({result}) => (result && result.measured ? result.measured.length : 0);
+    const target = (x) => (x.target_id ? 'цель № ' + x.target_id + (x.estimated_distance_to_target != null ? ` (прогноз ΔE ${num(x.estimated_distance_to_target)})` : '') : '—');
+    return App.list({items: sets, key: (s) => s.i,
+      row: (s) => [h('span', {class: 'muted small'}, `№ ${s.i + 1}`), h('span', {class: 'lst-text'}, params(s.set)), pill(REASON[s.set.reason] || s.set.reason),
+        s.set.target_id ? h('span', {class: 'small'}, 'цель № ' + s.set.target_id) : null, measured(s) ? pill(`измерен: фото ${measured(s)}`, 'ok') : null],
+      details: ({set: x, result}) => facts([['Почему выбран', x.rationale ? I18N.tr(x.rationale) : '—'], ['Полезность', num(x.utility)], ['Цель', target(x)],
+        ['Результат', outcome(prop, result)]]),
+      filters: [{key: 'reason', label: 'Причина', options: Object.entries(REASON), test: (s, v) => s.set.reason === v},
+        ...(sets.some(measured) ? [{key: 'measured', label: 'Измерен', options: [['yes', 'измерены'], ['no', 'ещё нет']], test: (s, v) => (measured(s) > 0) === (v === 'yes')}] : [])],
+      sorts: [['order', 'По порядку'], ['utility', 'Сначала полезные', (a, b) => (b.set.utility ?? -1) - (a.set.utility ?? -1)]]}).el;
+  }
+
+  function proposalCard(prop, reload) {
     const settings = prop.group ? ` · импульс ${prop.group.pulse_width} нс · шаг ${prop.group.line_interval} мм · проходов ${prop.group.passes}` : '';
     const [statusText, statusKind] = STATUS[prop.status] || [prop.status, ''];
     const setup = prop.setup ? `${prop.setup.device} · ${App.lensLabel(prop.setup.lens)}` : null;
@@ -74,7 +88,7 @@
       : 'все заготовки, измеренные с этими настройками: ' + (prop.stock.measured.map((s) => `${stockName(s)} (${s.sets})`).join(', ') || 'пока нет');
     const history = prop.status_history.length ? h('details', {class: 'small'}, h('summary', {}, 'История статуса'), table(['Когда', 'Статус', 'Основание'],
       prop.status_history.map((e) => [when(e.at), (STATUS[e.to_status] || [e.to_status])[0], h('span', {}, I18N.tr(e.reason), e.note ? ` — «${e.note}»` : null,
-        e.finding_id ? h('span', {}, ' · ', link('/findings', 'вывод № ' + e.finding_id)) : null)]), '', true)) : null;
+        e.finding_id ? h('span', {}, ' · ', link('/findings?finding=' + e.finding_id, 'вывод № ' + e.finding_id)) : null)]), '', true)) : null;
     const actions = prop.status === 'proposed' ? h('div', {class: 'row'}, btn('Принять и создать платы', () => plateDialog(prop, reload), 'primary'),
       btn('Отклонить', () => rejectDialog(prop, reload), 'danger')) : null;
     return h('div', {class: 'card stack'},
@@ -82,9 +96,9 @@
       (prop.questions || []).length ? h('div', {}, h('h4', {}, 'Вопрос'), h('ul', {}, prop.questions.map((q) => h('li', {}, I18N.tr(q))))) : null,
       (prop.worth || []).length ? h('div', {}, h('h4', {}, 'Чем ценен результат'), h('ul', {}, prop.worth.map((w) => h('li', {}, I18N.tr(w))))) : null,
       facts([['Задача', prop.task ? TASK[prop.task] || prop.task : null], ['Лазер и линза', setup], ['Титан', stock],
-        ['По выводам анализа', prop.origins.length ? h('span', {}, prop.origins.map((o) => link('/findings', '№ ' + o.finding_id))) : null]]),
+        ['По выводам анализа', prop.origins.length ? h('span', {}, prop.origins.map((o) => link('/findings?finding=' + o.finding_id, '№ ' + o.finding_id))) : null]]),
       h('p', {class: 'muted small'}, `Подпись состояния базы: ${prop.base_signature}. Тот же состав данных и то же зерно дают то же предложение.`),
-      table(['Набор параметров', 'Причина', 'Почему выбран', 'Полезность', 'Цель', 'Результат'], rows),
+      h('h4', {}, `Наборы параметров · ${prop.parameters.length}`), setsList(prop),
       actions, platesBlock(prop), explanationBlock(prop, reload), history);
   }
 

@@ -1,5 +1,5 @@
-"""Analysis runs and their findings (REQ-022): run now, the periodic schedule, filtered findings with their history, and a
-proposal of the Experiment Designer for a gap."""
+"""Analysis runs and their findings (REQ-022): run now, the periodic schedule, filtered, sorted and paged findings with their history
+and the operator's marks (feature findings-you-can-manage-short-lists-re-check), and a proposal of the Experiment Designer for a gap."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
@@ -13,6 +13,11 @@ router = APIRouter(prefix="/api/analysis")
 
 class ScheduleIn(BaseModel):
     interval_hours: float
+
+
+class MarkIn(BaseModel):
+    action: str
+    note: str | None = None
 
 
 class FindingProposalIn(BaseModel):
@@ -33,19 +38,33 @@ def run_now(request: Request):
 
 @router.get("/runs/{run_id}")
 def run_findings(run_id: str, request: Request, kind: str | None = None, task: str | None = None, setup: str | None = None,
-                 material: str | None = None):
-    """The findings of one run (``latest`` for the newest), filtered by kind, task, laser + lens and titanium stock."""
+                 material: str | None = None, state: str | None = None, sort: str | None = None, offset: int = 0, limit: int | None = None):
+    """The findings of one run (``latest`` for the newest), filtered by the operator's state, kind, task, laser + lens and titanium
+    stock, sorted, and one page of them when ``limit`` is given; with the counts each filter would show."""
     s = store_of(request)
     run = findings.get_run(s, None if run_id == "latest" else _run_id(run_id))
     if run is None:
-        return {"run": None, "findings": [], "total": 0, "options": {"kinds": [], "tasks": [], "setups": [], "stocks": []}}
-    return findings.findings_of(s, run["id"], kind=kind or None, task=task or None, setup=setup or None, material=material or None)
+        return {"run": None, "findings": [], "matched": 0, "total": 0, "counts": {"state": {}, "kind": {}},
+                "options": {"kinds": [], "tasks": [], "setups": [], "stocks": []}}
+    return findings.findings_of(s, run["id"], kind=kind or None, task=task or None, setup=setup or None, material=material or None,
+                                state=state or None, sort=sort or None, offset=offset, limit=limit)
 
 
 def _run_id(text: str) -> int:
     if not text.isdigit():
         raise KeyError(f"analysis run {text} not found")
     return int(text)
+
+
+@router.get("/findings/{finding_id}")
+def get_finding(finding_id: int, request: Request):
+    return findings.get_finding(store_of(request), finding_id)
+
+
+@router.post("/findings/{finding_id}/mark")
+def mark_finding(finding_id: int, body: MarkIn, request: Request):
+    """«Учтено», «Скрыть», «Вернуть», «Закрепить», «Открепить» or a note; kept by the finding's key across runs (DEC-001)."""
+    return findings.mark(store_of(request), finding_id, body.action, body.note)
 
 
 @router.get("/findings/{finding_id}/history")

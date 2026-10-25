@@ -638,3 +638,39 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **What happened.** A query joined `device` for the laser's name and returned nothing: `device` holds the sync tokens of
   devices; lasers are `laser_device` (what `pair.device_id` references).
 - **Rule.** Read the `REFERENCES` of the column in `db.py` before joining on it.
+
+## No long lists: every list is compact and manageable (operator, 2026-10-25)
+
+- **What happened.** The «Выводы» screen showed every finding of a run as a full card, one after another: 103 cards (45 anomalies,
+  32 questioned entries, …), then the photo-engraving section below them. The operator could not delete, change or sort them, could
+  not see what mattered, and never scrolled to the bottom. Nor could they re-check all existing works after the measurement changed.
+- **Rule.** A screen that lists many items shows one compact row per item or per group (with a count), details on demand, sorting,
+  filters, paging and per-item actions. Its default view shows what still needs attention. Count the items a screen would show on the
+  live data before shipping it. Anything derived from the measurement gets a way to re-derive it for everything already accepted.
+
+## The audit table of a "no long lists" round misses lists: sweep the screens on the live data (0.34.0, 2026-10-25)
+
+- **What happened.** The plan's table named the long lists found by reading the screens' code; four agents converted every one of them
+  and their tests passed. A sweep of the screens on a copy of the live workshop (every container with more than 25 visible children)
+  then found two more: «Состав работы» of a matrix experiment (a 100-row table in `composition.js`, a module no agent owned) and the
+  vector editor's palette (639 squares, 1787 px of scrolling in a 281 px column).
+- **Rule.** Before calling a screen free of long lists, open every screen on a copy of the live data and count the visible children
+  of every container (script in the browser, `location.hash` per screen, results kept in `window` and read afterwards: one call that
+  awaits the whole sweep times out after 45 s). Shared modules that several screens embed (`composition.js`) go into somebody's brief.
+
+## Comments are in English: the second time (0.34.0, 2026-10-25)
+
+- **What happened.** The rule of 0.28.0 was broken again: new Russian comments in `list.js` and `findings.js` (mine, rewritten before
+  the release) and in seven other files from the four agents (mixed «Карточка … The layers are …» JSDoc, a translated comment moved
+  with its line). The agents' briefs did not repeat the rule.
+- **Rule.** Every agent brief that writes code says "comments, docstrings and JSDoc in English, also where the file's old comments are
+  Russian". Before the commit, scan the added comment lines of the diff and the new files for Cyrillic outside «…» quotes.
+
+## Tick an acceptance criterion only against its own words: the second time (0.34.0, 2026-10-25)
+
+- **What happened.** REQ-002 says the chips «Требуют внимания · Учтённые · Скрытые · Все» show their counts; `App.list` hid the chips
+  at zero, so «Учтённые» and «Скрытые» did not exist until something was marked. REQ-003 says each row has «Заметка»; the note was only
+  inside the opened row. Both were found while reading the criteria one by one before ticking them, after the suite had passed.
+- **Rule.** As in 0.33.0, and earlier: read the criteria word by word while building the screen, not only before ticking; a missing
+  button or chip is cheaper to add then than after the release suite.
+

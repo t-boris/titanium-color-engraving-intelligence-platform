@@ -35,18 +35,30 @@ const VectorEditor = (() => {
   /** Длина строк слоя (DEC-107) — короткая отметка «↔ 13,3 мм» в строке слоя; цветом предупреждения, когда цвет рецепта при такой длине
       не измерен; полный текст — в подсказке. */
   function sizeNote(size) {
+    const says = sizeSays(size);
+    // on a line of the layers' list: muted when the colour was measured at this length, in the warning colour when it was not
+    return says ? h('span', {class: 'vw-rows ' + (size.how === 'measured' ? 'muted' : 'warn vw-bad'), title: says, 'aria-label': says}, `↔ ${num(size.row_mm, 1)} мм`) : null;
+  }
+  function sizeSays(size) {
     if (!size || size.row_mm == null) return null;
     const rows = `строки ${num(size.row_mm, 1)} мм`;
-    const says = size.how === 'measured' ? `${rows}: цвет рецепта измерен при ${mmList(size.from_mm)}`
+    return size.how === 'measured' ? `${rows}: цвет рецепта измерен при ${mmList(size.from_mm)}`
       : size.how === 'between' ? `${rows}: цвет взят между измерениями при ${mmList(size.from_mm)}`
         : size.how === 'outside' ? `${rows}: цвет рецепта измерен при ${mmList(size.measured_mm)}, при такой длине — нет; на титане может выйти другим`
           : `${rows}: при какой длине измерен цвет рецепта, неизвестно`;
-    return h('span', {class: 'vw-rows' + (size.how === 'measured' ? '' : ' warn'), title: says, 'aria-label': says}, `↔ ${num(size.row_mm, 1)} мм`);
   }
+  /** A control on a line of a list (a box to tick, a swatch to press) works by itself: its click, Enter or Space does not open the line. */
+  function inRow(el) {
+    el.addEventListener('click', (ev) => ev.stopPropagation());
+    el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') ev.stopPropagation(); });
+    return el;
+  }
+  const titled = (el, text) => { el.title = text; return el; };
   const SIZE_ABOUT = 'Цвет на титане зависит от длины строк заливки (DEC-107): лазер возвращается к точке через строку, и на коротких строках титан '
     + 'не успевает остыть. Цвет слоя взят при длине его строк: измеренный, между двумя измеренными или — вне измеренных размеров — у ближайшего, '
     + 'и тогда на титане он может выйти другим. Пластина «Размер заливки» измеряет рецепты при нужных ширинах.';
   const de = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);       // CIE76, как на сервере
+  const PALETTE_PAGE = 60;                         // squares of the palette shown at once, the nearest first
   const duration = (s) => (s == null ? 'не оценено' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
     : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
   const area = (mm2) => (mm2 == null ? '—' : mm2 >= 100 ? `${num(mm2 / 100, 2)} см²` : `${num(mm2, 1)} мм²`);
@@ -59,6 +71,13 @@ const VectorEditor = (() => {
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
     return el;
   };
+
+  /** How a list of source colours is narrowed and sorted: the editor's «Цвета» and the window «Подробно по цветам» (DEC-090). */
+  const COLOUR_FILTER = {key: 'state', label: 'Какие цвета', options: [['far', 'вне допуска'], ['hand', 'вручную'], ['excluded', 'не гравируются'], ['missing', 'нет цвета титана']],
+    test: (c, v) => (v === 'far' ? !!c.outside_tolerance : v === 'hand' ? c.status === 'hand' || c.status === 'accepted' : c.status === v)};
+  const byIndex = (a, b) => Number(a.index) - Number(b.index);
+  const COLOUR_SORTS = [['order', 'По номеру', byIndex], ['far', 'Сначала дальние (ΔE)', (a, b) => (b.delta_e ?? -1) - (a.delta_e ?? -1) || byIndex(a, b)],
+    ['area', 'Больше площадь', (a, b) => (b.pixels ?? 0) - (a.pixels ?? 0) || byIndex(a, b)]];
 
   /** Рисунок границ меняют версия разбиения и гладкость линий (REQ-052): области и цвета при этом те же. */
   const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;
@@ -127,6 +146,7 @@ const VectorEditor = (() => {
     let paths = new Map(), colourOf = new Map(), byColour = new Map(), byEntry = new Map();
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
+    let paletteShown = PALETTE_PAGE;
     let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
     let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null, ready = false;
     let zonePics = null;                                     // <g> с картинками фотозон под областями
@@ -170,10 +190,26 @@ const VectorEditor = (() => {
     const activeBox = h('div', {class: 'vw-ed-active'});
     const paletteHead = h('h4', {}, 'Палитра'), paletteNote = h('p', {class: 'small muted'});
     const grid = h('div', {class: 'vw-swatches vw-ed-palette', role: 'group', 'aria-label': 'Измеренные цвета титана'});
-    const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}), layerMerge = h('div', {}), layersAbout = h('div', {});
+    const paletteFoot = h('div', {class: 'lst-foot'});
+    // the layers and the source colours are short lists (DEC-090): one line each, what it is and its other actions under it on a click,
+    // search and sort; pages of 30, so that a work's colours (29 at most) are edited on one page
+    const layerList = App.list({id: 'vw.ed.layers', items: [], page: 30, key: (x) => x.key, row: layerRow, details: layerDetails, search: (x) => x.search,
+      sorts: [['order', 'По порядку', (a, b) => a.pos - b.pos], ['area', 'Больше площадь', (a, b) => (b.area ?? -1) - (a.area ?? -1) || a.pos - b.pos],
+        ['time', 'Дольше гравировка', (a, b) => (b.seconds ?? -1) - (a.seconds ?? -1) || a.pos - b.pos]],
+      empty: 'Слоёв цвета нет: всё исключено.'});
+    const colourList = App.list({id: 'vw.ed.colours', items: [], page: 30, key: (c) => String(c.index), row: colourRow, details: colourDetails,
+      rowClass: (c) => (c.status === 'excluded' ? 'excluded' : ''),
+      actions: colourActions, search: (c) => `№ ${Number(c.index) + 1}`, filters: [COLOUR_FILTER], sorts: COLOUR_SORTS, empty: 'Нет исходных цветов под такой выбор.'});
+    const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}, layerList.el), layerMerge = h('div', {}), layersAbout = h('div', {});
     const farBox = h('input', {type: 'checkbox', onChange: (ev) => { state.far = ev.target.checked; syncSvgClass(); }});
     const farNote = h('p', {class: 'small muted'});
-    const coloursBox = h('div', {class: 'vw-ed-list'}), colourMerge = h('div', {});
+    const coloursBox = h('div', {class: 'vw-ed-list'}, h('p', {class: 'small muted'}, 'Исходный цвет — цвет области на вашей картинке; справа цвет титана, которым он '
+      + 'будет выгравирован. «Заменить» выбирает другой цвет титана: у каждого видно, откуда он известен (тесты и работы) и насколько стабилен. По щелчку на строке — '
+      + 'откуда известен цвет, «Автоматически» и «Не гравировать»: все области этого цвета уйдут из файла, останется только чистка.'), colourList.el);
+    const colourMerge = h('div', {});
+    let layerRegions = new Map();                            // the key of a layer's line -> the regions it outlines on the picture
+    outlineRows(layerList, (key) => (layerRegions.get(key) || (() => []))());
+    outlineRows(colourList, (key) => byColour.get(Number(key)) || []);
     const photo = VectorPhoto.create(j, {act: (op) => act(op), select: (ids) => selectOnly(ids), outline: (ids) => (ids ? setHot(ids) : refreshHover())});
     // надписи врезаются в картинку: слой рисует врезку цветом чистого титана, подложку и буквы их цветами (inscriptions-in-works)
     const lettering = Lettering.create(j, {act: (op) => act(op), palette: () => palette(j), size: (v) => v.document.size_mm, scale: () => frame().s,
@@ -187,7 +223,7 @@ const VectorEditor = (() => {
           h('p', {class: 'small muted'}, 'Alt+щелчок кистью — пипетка.'), scopeBox),
         selectionSlots.brush,
         h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
-        h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid))],
+        h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid, paletteFoot))],
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
@@ -684,10 +720,20 @@ const VectorEditor = (() => {
       fill(paletteNote, 'Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты). ',
         ref ? `Ближайшие к исходному цвету № ${ref.index + 1} — первыми. ` : 'Наведите на область — ближайшие к её исходному цвету встанут первыми. ',
         'Пунктир — сняты без привязки к эталону, точка — автоматика их не берёт.');
+      fill(paletteFoot);
       if (!entries) return fill(grid, h('p', {class: paletteError ? 'alert bad' : 'muted small'}, paletteError || 'Загрузка палитры…'));
       const d = (e) => (ref ? de(e.lab, ref.lab) : null);
       const sorted = [...entries].sort(ref ? (a, b) => d(a) - d(b) : (a, b) => b.lab[0] - a.lab[0]);
-      fill(grid, sorted.map((e) => {
+      // the nearest first, a page at a time (DEC-090): hundreds of squares are not scrolled through; the chosen colour stays in view
+      const shown = sorted.slice(0, paletteShown);
+      const chosen = sorted.find((e) => same(e.id, state.active));
+      if (chosen && !shown.includes(chosen)) shown.push(chosen);
+      const rest = sorted.length - Math.min(paletteShown, sorted.length);
+      if (rest > 0) {
+        fill(paletteFoot, h('span', {class: 'muted small'}, `показано ${Math.min(paletteShown, sorted.length)} из ${sorted.length}`),
+          btn(`Показать ещё ${Math.min(PALETTE_PAGE, rest)}`, () => { paletteShown += PALETTE_PAGE; renderPalette(); syncActive(); }, 'btn-small'));
+      }
+      fill(grid, shown.map((e) => {
         const title = [d(e) == null ? null : `ΔE ${num(d(e))}`, seconds(e.time_s_per_cm2), e.basis === 'as-shot' ? 'снят без привязки' : null,
           e.automatic ? null : 'автоматика не берёт', e.sources ? `${STEADY[steadiness(e)][0]}; ${originText(e.sources)}` : null].filter(Boolean).join(' · ');
         return h('button', {type: 'button', class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (same(e.id, state.active) ? ' picked' : ''),
@@ -773,34 +819,71 @@ const VectorEditor = (() => {
       redoBtn.setAttribute('title', `Повторить (Ctrl+Shift+Z); шагов: ${j.redo || 0}`);
     }
 
-    function outlineOnHover(row, ids) {
-      row.addEventListener('mouseenter', () => setHot(ids()));
-      row.addEventListener('mouseleave', refreshHover);
-      return row;
+    /** While the pointer is over a line of ``list``, the regions ``regionsOf(its key)`` are outlined on the picture (the list draws its lines
+        anew, so the list itself listens). */
+    function outlineRows(list, regionsOf) {
+      let over = null;
+      list.el.addEventListener('mouseover', (ev) => {
+        const line = ev.target && ev.target.closest ? ev.target.closest('.lst-row') : null;
+        const key = line ? line.getAttribute('data-key') : null;
+        if (key === over) return;
+        over = key;
+        if (key == null) refreshHover(); else setHot(regionsOf(key));
+      });
+      list.el.addEventListener('mouseleave', () => { over = null; refreshHover(); });
+    }
+
+    /** The colour layers, then the photo zones, as the lines of the layers' list: what each sorts and is searched by. */
+    function layerItems() {
+      const layers = j.layers || [];
+      const regionsOf = (l) => (Array.isArray(l.regions) ? l.regions : byEntry.get(String(l.entry_id)) || []);
+      const items = [...layers.map((l, pos) => {
+        const e = j.entries[l.entry_id] || l, rate = e.time_s_per_cm2 ?? l.time_s_per_cm2;
+        const name = l.index != null ? `C${String(l.index).padStart(2, '0')}` : '';
+        return {key: 'layer:' + l.entry_id, pos, layer: l, regions: () => regionsOf(l), area: l.area_mm2,
+          seconds: rate == null || l.area_mm2 == null ? null : rate * l.area_mm2 / 100, search: `${name} ${l.name || ''}`};
+      }), ...(j.zones || []).map((z, i) => ({key: 'zone:' + z.number, pos: layers.length + i, zone: z, regions: () => z.regions, area: z.area_mm2,
+        seconds: null, search: `Фотозона ${z.number} ${VectorPhoto.zoneSummary(z)}`}))];
+      layerRegions = new Map(items.map((x) => [x.key, x.regions]));
+      return items;
+    }
+
+    /** A layer on one line: the box that marks it for a merge, its colour (a press makes it the active colour), C01, the length of its rows,
+        then its area, regions, inscriptions and time; a photo zone: its picture, its number, kind, area and regions. */
+    function layerRow(x) {
+      if (x.zone) {
+        const z = x.zone;
+        return [z.picture ? h('img', {class: 'vw-ed-zone-chip', src: z.picture, alt: ''}) : h('span', {class: 'sw'}),
+          h('strong', {}, `Фотозона ${z.number}`), h('span', {class: 'lst-text muted'}, `${VectorPhoto.zoneSummary(z)} · ${area(z.area_mm2)} · областей ${z.regions.length}`)];
+      }
+      const l = x.layer, key = String(l.entry_id), e = j.entries[l.entry_id] || l;
+      const count = Array.isArray(l.regions) ? l.regions.length : (l.region_count ?? x.regions().length);
+      return [inRow(h('input', {type: 'checkbox', checked: state.layers.has(key), 'aria-label': `Отметить слой ${l.name || key}`,
+          onChange: (ev) => { mark(state.layers, key, ev.target.checked); syncLayerMerge(); }})),
+        inRow(h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(l.srgb || e.srgb)}`, title: 'Сделать активным цветом',
+          'aria-label': `Сделать активным цвет слоя ${l.name || key}`, onClick: () => setActive(l.entry_id)})),
+        l.index != null ? h('strong', {}, `C${String(l.index).padStart(2, '0')}`) : null,
+        sizeNote(l.size),
+        h('span', {class: 'lst-text muted'}, `${area(l.area_mm2)} · областей ${count}` + ((l.texts || []).length ? ` · надписей ${l.texts.length}` : '')
+          + ` · ${x.seconds == null ? 'время не оценено' : duration(x.seconds)}`)];
+    }
+
+    /** What a layer's line opens: the layer's name in the file, its recipe, the length of its rows and where its colour is known from. */
+    function layerDetails(x) {
+      if (x.zone) {
+        return h('p', {class: 'small muted'}, `Фотозона ${x.zone.number}: ${VectorPhoto.zoneSummary(x.zone)}. Вид, шкала и мощности — во вкладке «Фото».`);
+      }
+      const l = x.layer, e = j.entries[l.entry_id] || null, says = sizeSays(l.size);
+      return h('div', {class: 'stack small'}, l.name ? h('div', {}, l.name) : null,
+        e && e.parameters ? h('div', {class: 'muted'}, `рецепт: ${params(e.parameters)}`) : null,
+        says ? h('div', {class: l.size.how === 'measured' ? 'muted' : 'vw-bad'}, says) : null,
+        e && e.sources ? h('div', {class: 'muted'}, pill(...STEADY[steadiness(e)]), ' ', `${originText(e.sources)} · ${App.agreed(e.agreement)}`) : null);
     }
 
     function renderLayers() {
       const layers = j.layers || [];
-      const regionsOf = (l) => (Array.isArray(l.regions) ? l.regions : byEntry.get(String(l.entry_id)) || []);
-      fill(layersBox, layers.length ? layers.map((l) => {
-        const key = String(l.entry_id), e = j.entries[l.entry_id] || l;
-        const rate = e.time_s_per_cm2 ?? l.time_s_per_cm2;
-        const count = Array.isArray(l.regions) ? l.regions.length : (l.region_count ?? regionsOf(l).length);
-        return outlineOnHover(h('div', {class: 'vw-ed-item'},
-          h('input', {type: 'checkbox', checked: state.layers.has(key), 'aria-label': `Отметить слой ${l.name || key}`,
-            onChange: (ev) => { mark(state.layers, key, ev.target.checked); syncLayerMerge(); }}),
-          h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(l.srgb || e.srgb)}`, title: 'Сделать активным цветом',
-            'aria-label': `Сделать активным цвет слоя ${l.name || key}`, onClick: () => setActive(l.entry_id)}),
-          l.index != null ? h('strong', {}, `C${String(l.index).padStart(2, '0')}`) : null,
-          sizeNote(l.size),
-          h('span', {class: 'muted'}, `${area(l.area_mm2)} · областей ${count}` + ((l.texts || []).length ? ` · надписей ${l.texts.length}` : '')
-            + ` · ${rate == null || l.area_mm2 == null ? 'время не оценено' : duration(rate * l.area_mm2 / 100)}`)),
-        () => regionsOf(l));
-      }) : h('p', {class: 'small muted'}, 'Слоёв цвета нет: всё исключено.'),
-      (j.zones || []).map((z) => outlineOnHover(h('div', {class: 'vw-ed-item vw-ed-zone-row'},
-        z.picture ? h('img', {class: 'vw-ed-zone-chip', src: z.picture, alt: ''}) : h('span', {class: 'sw'}),
-        h('strong', {}, `Фотозона ${z.number}`), h('span', {class: 'muted'}, `${VectorPhoto.zoneSummary(z)} · ${area(z.area_mm2)} · областей ${z.regions.length}`)),
-      () => z.regions)));
+      layerList.items = layerItems();
+      layerList.refresh();
       const away = layers.filter((l) => l.size && l.size.how !== 'measured').length;
       fill(layersAbout, away ? h('details', {class: 'small alert warn'},
         h('summary', {}, `${away} из ${layers.length} слоёв: цвет при длине их строк (↔) не измерен`), h('p', {}, SIZE_ABOUT)) : null);
@@ -818,33 +901,49 @@ const VectorEditor = (() => {
           () => { state.layers = new Set(); renderLayers(); }), 'primary')));
     }
 
+    /** A source colour on one line: the box that marks it for a merge, the colour (a press puts the palette in order by it), the titanium
+        colour it is engraved with, its number, ΔE, whether it is beyond the tolerance or chosen by hand, and its regions. */
+    function colourRow(c) {
+      const k = Number(c.index), e = c.entry_id == null ? null : j.entries[c.entry_id];
+      const excluded = c.status === 'excluded', byHand = c.status === 'hand' || c.status === 'accepted';
+      return [inRow(h('input', {type: 'checkbox', checked: state.colours.has(k), 'aria-label': `Отметить исходный цвет № ${k + 1}`,
+          onChange: (ev) => { mark(state.colours, k, ev.target.checked); syncColourMerge(); }})),
+        inRow(h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(c.srgb)}`, title: `${labText(c.lab)} · палитра — по этому цвету`,
+          'aria-label': `Исходный цвет № ${k + 1}: поставить палитру по нему`, onClick: () => setRef(k)})),
+        '→', e ? chip(e.srgb, labText(e.lab)) : h('span', {class: 'muted'}, excluded ? 'не гравируется' : 'нет цвета'),
+        h('strong', {}, `№ ${k + 1}`),
+        c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`),
+        c.outside_tolerance ? pill('вне допуска', 'bad') : null,
+        byHand ? pill('вручную') : c.status === 'missing' ? pill('цвета титана больше нет', 'bad') : null,
+        h('span', {class: 'lst-text muted'}, `областей ${c.regions}`)];
+    }
+
+    /** The action of a source colour's line: another titanium colour, or for a colour left out, engrave it again. */
+    function colourActions(c) {
+      const k = Number(c.index);
+      if (c.status === 'excluded') return [titled(btn('Гравировать', () => act({op: 'include_colour', colour: k})), 'Вернуть области этого цвета в файл')];
+      return tools.pick ? [titled(btn('Заменить', () => tools.pick(j, `Цвет группы № ${k + 1}`, c.lab, c.entry_id, (entryId) => act({op: 'set_colour', colour: k, entry_id: entryId}))),
+        'Выбрать другой цвет титана: видно, откуда он известен и насколько стабилен')] : [];
+    }
+
+    /** What a source colour's line opens: where its titanium colour is known from and its recipe; the choice back to the automatic one and
+        leaving the colour out of the file. */
+    function colourDetails(c) {
+      const k = Number(c.index), e = c.entry_id == null ? null : j.entries[c.entry_id];
+      const excluded = c.status === 'excluded', byHand = c.status === 'hand' || c.status === 'accepted';
+      return h('div', {class: 'stack small'},
+        h('div', {class: 'muted'}, `Исходный цвет № ${k + 1}: ${labText(c.lab)} · областей ${c.regions}`),
+        e && !excluded ? h('div', {class: 'muted'}, pill(...STEADY[steadiness(e)]), ' ', `${originText(e.sources)} · ${App.agreed(e.agreement)}`) : null,
+        e && !excluded && e.parameters ? h('div', {class: 'muted'}, `рецепт: ${params(e.parameters)}`) : null,
+        byHand || !excluded ? h('div', {class: 'row'},
+          byHand ? titled(btn('Автоматически', () => act({op: 'set_colour', colour: k, entry_id: null})), 'Вернуть выбор цвета автоматике') : null,
+          excluded ? null : titled(btn('Не гравировать', () => act({op: 'exclude_colour', colour: k})), 'Все области этого цвета не попадут в файл: останется только чистка'))
+          : null);
+    }
+
     function renderColours() {
-      const tip = (el, text) => { el.title = text; return el; };
-      fill(coloursBox, h('p', {class: 'small muted'}, 'Исходный цвет — цвет области на вашей картинке; справа цвет титана, которым он будет выгравирован. «Заменить» выбирает другой '
-        + 'цвет титана: у каждого видно, откуда он известен (тесты и работы) и насколько стабилен. «Не гравировать» убирает все области этого цвета из файла: останется только чистка.'),
-      ...j.colours.map((c) => {
-        const k = Number(c.index), e = c.entry_id == null ? null : j.entries[c.entry_id];
-        const excluded = c.status === 'excluded', byHand = c.status === 'hand' || c.status === 'accepted';
-        const choose = () => tools.pick(j, `Цвет группы № ${k + 1}`, c.lab, c.entry_id, (entryId) => act({op: 'set_colour', colour: k, entry_id: entryId}));
-        return outlineOnHover(h('div', {class: 'vw-ed-item' + (excluded ? ' excluded' : '')},
-          h('input', {type: 'checkbox', checked: state.colours.has(k), 'aria-label': `Отметить исходный цвет № ${k + 1}`,
-            onChange: (ev) => { mark(state.colours, k, ev.target.checked); syncColourMerge(); }}),
-          h('button', {type: 'button', class: 'vw-swatch', style: `background:${rgb(c.srgb)}`, title: `${labText(c.lab)} · палитра — по этому цвету`,
-            'aria-label': `Исходный цвет № ${k + 1}: поставить палитру по нему`, onClick: () => setRef(k)}),
-          '→', e ? chip(e.srgb, labText(e.lab)) : h('span', {class: 'muted'}, excluded ? 'не гравируется' : 'нет цвета'),
-          h('strong', {}, `№ ${k + 1}`),
-          c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`),
-          c.outside_tolerance ? pill('вне допуска', 'bad') : null,
-          byHand ? pill('вручную') : c.status === 'missing' ? pill('цвета титана больше нет', 'bad') : null,
-          h('span', {class: 'muted'}, `областей ${c.regions}`),
-          h('span', {class: 'spacer'}),
-          tools.pick && !excluded ? tip(btn('Заменить', choose), 'Выбрать другой цвет титана: видно, откуда он известен и насколько стабилен') : null,
-          byHand ? tip(btn('Автоматически', () => act({op: 'set_colour', colour: k, entry_id: null})), 'Вернуть выбор цвета автоматике') : null,
-          excluded ? tip(btn('Гравировать', () => act({op: 'include_colour', colour: k})), 'Вернуть области этого цвета в файл')
-            : tip(btn('Не гравировать', () => act({op: 'exclude_colour', colour: k})), 'Все области этого цвета не попадут в файл: останется только чистка'),
-          e && !excluded ? h('div', {class: 'vw-ed-origin small muted'}, pill(...STEADY[steadiness(e)]), ' ', `${originText(e.sources)} · ${App.agreed(e.agreement)}`) : null),
-        () => byColour.get(k) || []);
-      }));
+      colourList.items = j.colours;
+      colourList.refresh();
       syncColourMerge();
     }
 
@@ -916,5 +1015,5 @@ const VectorEditor = (() => {
     return editor;
   }
 
-  return {create, splitSvg, palette, rgb, chip, params, seconds, de, duration, area, BASIS};
+  return {create, splitSvg, palette, rgb, chip, params, seconds, de, duration, area, BASIS, COLOUR_FILTER, COLOUR_SORTS, inRow};
 })();

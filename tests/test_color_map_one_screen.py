@@ -27,7 +27,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
                     {code: 'globalThis.ColorMap = ColorMap;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -326,6 +326,31 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
     assert out["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)" and out["rows"] == 3
     assert out["once"] == ["Среди найденных рецептов сомнительных (при повторах цвет менялся): 2; они помечены. "]
     assert out["hidden"] == ["2 рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. Показать и их"] and out["shown"] is False
+
+
+@node
+def test_the_engravings_of_every_found_recipe_are_folded_and_those_of_the_picked_colour_stay_open(tmp_path):
+    """REQ-005 (DEC-090): no long list by default. A search shows up to twelve recipes; each keeps the engravings it is known from
+    folded under its card, while the one colour picked on the map shows them open (REQ-049)."""
+    match = {**SEARCH["matches"][0], **TRUSTED, "id": "p1", "distance": 0.4, "within_tolerance": True, "repeats": 3, "sources": RECIPES["g-three"]["sources"]}
+    world = colours([TRUSTED])
+    world["recipes"] = RECIPES
+    routes = {"/api/colors": {"status": 200, "json": world},
+              "/api/colors/search": {"status": 200, "json": {**SEARCH, "matches": [match, {**match, "id": "p9", "sources": RECIPES["g-two"]["sources"]}]}}}
+    out = run(tmp_path, routes, """
+  const [, middle, right] = tree.querySelector('.os-body').children;
+  await middle.querySelectorAll('circle')[0].dispatch('click');
+  const detail = middle.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
+  out.picked = detail.querySelectorAll('details').map((d) => d.hasAttribute('open'));
+  await byText(detail, 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  const list = right.children.find((c) => has(c, 'os-scroll'));
+  out.found = list.querySelectorAll('article').map((a) => a.querySelectorAll('details')
+    .map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.querySelectorAll('li').length]));
+""")
+    assert out["picked"] == [True]
+    assert out["found"] == [[[False, "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)", 3]],
+                            [[False, "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)", 2]]]      # folded, still all there
+    assert "limit: '12'" in SCREEN                                                                       # a short list by itself: no pages needed
 
 
 # -- the frame -----------------------------------------------------------------------------------------------------------------------------

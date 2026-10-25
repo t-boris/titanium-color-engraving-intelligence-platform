@@ -342,7 +342,7 @@ def test_the_screen_offers_the_styles_sends_the_choice_and_remembers_the_permiss
   const go = byText(block, 'button', 'Раскрасить с помощью AI');
   out.disabled = go.disabled;
   out.current = block.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Сейчас раскрашено AI'));
-  out.variants = tree.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-variant')).map((d) => d.textContent);
+  out.variants = tree.querySelectorAll('div').find((d) => d.classList.contains('vw-variants')).querySelectorAll('.lst-main').map((d) => d.textContent);   // a line each
   select.value = 'cubism'; await select.dispatch('change');
   out.hint = block.querySelectorAll('span').map((s) => s.textContent).find((t) => t.startsWith('Плоские грани'));
   boxes[0].checked = true;

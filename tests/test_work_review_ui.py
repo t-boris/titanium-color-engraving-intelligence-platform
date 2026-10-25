@@ -19,7 +19,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context({});
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-review.js', {code: 'globalThis.VR = VectorReview;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-review.js', {code: 'globalThis.VR = VectorReview;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const VR = ctx.VR, ran = [];
@@ -205,7 +205,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'filepick.js', 'tasks.js', 'screens/ingest-upload.js', {code: 'globalThis.IU = IngestUpload;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'filepick.js', 'tasks.js', 'screens/ingest-upload.js', {code: 'globalThis.IU = IngestUpload;'}]);
 (async () => {
   const out = {};
   const tree = await ctx.IU.render({query: data.query}, data.lists, data.materials, []);

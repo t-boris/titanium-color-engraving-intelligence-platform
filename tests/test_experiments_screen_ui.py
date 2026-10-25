@@ -25,8 +25,9 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'tasks.js', {code: %(glue)s}, 'screens/experiment-cards.js',
-  'screens/plate-dialog.js', 'screens/experiments.js', {code: 'globalThis.ExperimentCards = ExperimentCards;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s},
+  'screens/experiment-cards.js', 'screens/device-view.js', 'screens/plate-dialog.js', 'screens/experiments.js',
+  {code: 'globalThis.ExperimentCards = ExperimentCards; globalThis.DeviceView = DeviceView;'}]);
 for (const [k, v] of Object.entries(data.store || {})) ctx.sessionStorage.setItem(k, v);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -34,6 +35,11 @@ const has = (el, cls) => (el.className || '').split(' ').includes(cls);
 const kids = (el) => el.children.map((c) => c.className);
 const P = (root, ...sels) => sels.reduce((el, s) => el && el.querySelector(s), root);        // the stub has no descendant selectors
 const topLink = (a) => P(a, '.dashboard-item-top', 'a').textContent;
+const titles = (root) => root.querySelectorAll('.lst-text').map((t) => t.textContent);               // the lines of the shared list
+const chips = (root) => root.querySelectorAll('.lst-chip').map((c) => c.textContent);
+const chip = (root, text) => root.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith(text));
+const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
+const selectOf = (root, label) => root.querySelectorAll('.lst-select').find((l) => l.querySelector('span').textContent === label).querySelector('select');
 (async () => {
   const out = {};
   const tree = await ctx.__screens.experiments.render({query: data.query || {}});
@@ -92,11 +98,12 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
   out.columns = kids(body); out.right = kids(q(tree, '.ex-right'));
   const list = q(tree, '.ex-list');
   out.listParts = kids(list); out.listHead = list.querySelector('.os-col-head').textContent; out.pills = P(list, '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);
-  const filters = q(list, '.ex-filters');
-  out.filters = filters.children.map((el) => [el.localName, el.getAttribute('aria-label')]);
   const scroll = q(list, '.os-scroll');
-  out.cardsInScroll = scroll.querySelectorAll('article').length; out.cardsInList = list.querySelectorAll('article').length;
-  out.cardTitles = scroll.querySelectorAll('article').map(topLink);
+  out.toolbar = [q(scroll, '.lst-search') != null, chips(scroll), labelled(scroll, 'Состояние эксперимента') != null,
+    selectOf(scroll, 'Задача').options.map((o) => o.textContent), selectOf(scroll, 'Порядок').options.map((o) => [o.value, o.textContent]), q(scroll, '.lst-count').textContent];
+  out.rowsInScroll = scroll.querySelectorAll('.lst-row').length; out.rowsInList = list.querySelectorAll('.lst-row').length; out.cards = list.querySelectorAll('article').length;
+  out.cardTitles = titles(scroll);
+  out.open = scroll.querySelectorAll('.lst-act').map((a) => [a.textContent, a.querySelector('a').getAttribute('href')]);
   const task = q(tree, '.ex-task');
   out.task = {head: P(task, '.os-col-head', 'h3').textContent, labels: task.querySelectorAll('label').map((l) => l.querySelector('span').textContent),
     next: byText(task, 'button', 'Создать следующий тест') != null, details: task.querySelectorAll('details').map((d) => d.textContent),
@@ -111,9 +118,14 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
     assert out["top"] == ["os-head ex-head", "os-body ex-body"] and out["title"] == "Эксперименты"
     assert out["actions"] == [["AI-исследователь", "#/research", False], ["Карта цветов", "#/colors", False], ["Создать плату", None, True], ["Добавить работу и фото", "#/ingest", False]]
     assert out["columns"] == ["os-col ex-list", "ex-right"] and out["right"] == ["os-col ex-task", "os-col ex-find"]
-    assert out["listParts"] == ["os-col-head", "ex-filters", "os-scroll"] and out["listHead"].startswith("Эксперименты") and out["pills"] == ["3", "1 к проверке"]
-    assert out["filters"] == [["input", "Поиск эксперимента"], ["select", "Состояние эксперимента"], ["select", "Задача гравировки"]]    # in the list column, not above it
-    assert out["cardsInScroll"] == out["cardsInList"] == 3 and out["cardTitles"] == ["Плата текста", "Тест Q-Pulse", "Шаг строк"]       # only the list scrolls
+    assert out["listParts"] == ["os-col-head", "os-scroll"] and out["listHead"].startswith("Эксперименты") and out["pills"] == ["3", "1 к проверке"]
+    search, states, state_group, tasks, orders, count = out["toolbar"]                                  # the shared list's search, filters and order, in the list column
+    assert search and state_group and states == ["Все · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"]
+    assert tasks == ["все задачи · 3", "Надписи · 3"] and count == "показано 3 из 3"
+    assert orders == [["recent", "Сначала недавние"], ["review", "Сначала к проверке"], ["title", "По названию"]]
+    assert out["rowsInScroll"] == out["rowsInList"] == 3 and out["cards"] == 0                           # one line each; the cards open under a line
+    assert out["cardTitles"] == ["Плата текста", "Тест Q-Pulse", "Шаг строк"]                             # the most recently active first, as the server sends
+    assert out["open"] == [["Открыть", "#/experiment/plan-3"], ["Открыть", "#/experiment/eng-a"], ["Открыть", "#/experiment/eng-b"]]
     assert out["task"]["head"] == "Рабочая задача" and out["task"]["labels"][:2] == ["Что хотим сделать", "На каком материале"] and out["task"]["inScroll"] >= 2
     assert out["task"]["next"] is True and "Laser A" not in out["task"]["result"] and "Разборчивые буквы выбранного размера" in out["task"]["result"]
     assert out["task"]["details"] == [out["task"]["details"][0]] and out["task"]["details"][0].startswith("Основание вывода и параметры")
@@ -125,32 +137,64 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
 
 
 @node
-def test_the_filters_sit_in_the_list_column_remember_their_choice_and_reload_the_screen(tmp_path):
+def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_their_choice_for_the_session(tmp_path):
+    routes = {**ROUTES, "/api/experiments": {"status": 200, "json": [*ROUTES["/api/experiments"]["json"][:2],
+                                                                      experiment("eng-b", "Шаг строк", "needs_review", tasks=["line", "fill"])]}}
     out = run(tmp_path, """
-  const filters = tree.querySelector('.ex-filters');
-  const search = filters.querySelector('input'); const state = filters.querySelectorAll('select')[0]; const taskSelect = filters.querySelectorAll('select')[1];
-  search.value = 'Q-Pulse'; await search.dispatch('change');
-  out.search = ctx.__store['experiment-search']; out.afterSearch = ctx.__renders.length;
-  state.value = 'accepted'; await state.dispatch('change');
-  out.status = ctx.__store['experiment-status']; out.afterStatus = ctx.__renders.length;
-  taskSelect.value = 'text'; await taskSelect.dispatch('change');
-  out.task = ctx.__store['experiment-task']; out.afterTask = ctx.__renders.length;
-  out.states = state.querySelectorAll('option').map((o) => [o.value, o.textContent]);
-""")
-    assert out["search"] == "Q-Pulse" and out["status"] == "accepted" and out["task"] == "text"
-    assert (out["afterSearch"], out["afterStatus"], out["afterTask"]) == (1, 2, 3)                      # each choice rebuilds the screen
-    assert out["states"] == [["all", "Все"], ["needs_review", "Нужна проверка"], ["plate_ready", "Ждут фото"], ["accepted", "Приняты"]]
+  const scroll = P(tree, '.ex-list', '.os-scroll');
+  const search = scroll.querySelector('.lst-search');
+  search.value = 'q-pulse'; await search.dispatch('input'); await tick();
+  out.searched = titles(scroll); out.chipsSearched = chips(scroll);
+  search.value = ''; await search.dispatch('input'); await tick();
+  await chip(scroll, 'Нужна проверка').dispatch('click'); await tick();
+  out.state = titles(scroll);
+  await chip(scroll, 'Все').dispatch('click'); await tick();
+  out.tasks = selectOf(scroll, 'Задача').options.map((o) => [o.value, o.textContent]);
+  const task = selectOf(scroll, 'Задача'); task.value = 'text'; await task.dispatch('change'); await tick();
+  out.task = titles(scroll);
+  const order = selectOf(scroll, 'Порядок'); order.value = 'title'; await order.dispatch('change'); await tick();
+  out.ordered = titles(scroll);
+  out.kept = JSON.parse(ctx.__store['list:experiments']); out.renders = ctx.__renders.length;
+""", routes=routes)
+    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["Все · 1", "Приняты · 1"]      # the search reads the title; the counts follow it
+    assert out["state"] == ["Шаг строк"]
+    assert out["tasks"] == [["", "все задачи · 3"], ["text", "Надписи · 2"], ["line", "Линии · 1"], ["fill", "Заливка · 1"]]    # only the tasks the experiments have
+    assert out["task"] == ["Плата текста", "Тест Q-Pulse"] and out["ordered"] == ["Плата текста", "Тест Q-Pulse"]
+    assert out["kept"] == {"sort": "title", "filters": {"status": "", "task": "text"}, "search": "", "shown": 20}
+    assert out["renders"] == 0                                                                                 # a choice narrows the list, the screen stays
 
 
 @node
 def test_a_remembered_filter_narrows_the_list_and_an_empty_result_says_so_inside_the_list(tmp_path):
-    accepted = run(tmp_path, "out.titles = P(tree, '.ex-list', '.os-scroll').querySelectorAll('article').map(topLink);",
-                   store={"experiment-status": "accepted"})
+    accepted = run(tmp_path, "out.titles = titles(P(tree, '.ex-list', '.os-scroll'));",
+                   store={"list:experiments": json.dumps({"filters": {"status": "accepted"}})})
     assert accepted["titles"] == ["Тест Q-Pulse"]
-    nothing = run(tmp_path, "const s = P(tree, '.ex-list', '.os-scroll'); out.cards = s.querySelectorAll('article').length; out.text = s.textContent;"
-                            "out.pills = P(tree, '.ex-list').querySelectorAll('.pill').map((p) => p.textContent); out.page = kids(tree);", store={"experiment-search": "нет такого"})
-    assert nothing["cards"] == 0 and nothing["text"] == "Ничего не найдено: измените поиск, состояние или лазер." and nothing["pills"] == ["3", "1 к проверке"]
+    nothing = run(tmp_path, "const s = P(tree, '.ex-list', '.os-scroll'); out.rows = s.querySelectorAll('.lst-row').length; out.text = s.querySelector('.lst-empty').textContent;"
+                            "out.pills = P(tree, '.ex-list', '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);"
+                            "out.page = kids(tree);", store={"list:experiments": json.dumps({"search": "нет такого"})})
+    assert nothing["rows"] == 0 and nothing["text"] == "Ничего не найдено: измените поиск, состояние или лазер." and nothing["pills"] == ["3", "1 к проверке"]
     assert nothing["page"] == ["os-head ex-head", "os-body ex-body"]                                       # the frame stays whole
+    none = run(tmp_path, "out.text = P(tree, '.ex-list', '.os-scroll').querySelector('.lst-empty').textContent;",
+               routes={**ROUTES, "/api/experiments": {"status": 200, "json": []}})
+    assert none["text"] == "Экспериментов пока нет. Создайте плату или добавьте работу и фото."
+
+
+@node
+def test_a_long_list_shows_one_page_of_twenty_lines_and_the_rest_on_request(tmp_path):
+    many = [experiment(f"eng-{i}", f"Плата {i:02d}", "accepted", last_activity=f"2026-10-{i:02d}T10:00:00") for i in range(1, 26)]
+    out = run(tmp_path, """
+  const scroll = P(tree, '.ex-list', '.os-scroll');
+  out.first = titles(scroll); out.count = scroll.querySelector('.lst-count').textContent;
+  const more = scroll.querySelector('.lst-foot').querySelector('button');
+  out.more = more.textContent;
+  await more.dispatch('click'); await tick();
+  out.all = titles(scroll).length; out.after = scroll.querySelector('.lst-foot').querySelector('button');
+  await scroll.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.card = [scroll.querySelectorAll('article').length, topLink(scroll.querySelector('article')), scroll.querySelector('article').querySelector('img').getAttribute('src')];
+""", routes={**ROUTES, "/api/experiments": {"status": 200, "json": many[::-1]}})
+    assert len(out["first"]) == 20 and out["first"][:2] == ["Плата 25", "Плата 24"] and out["count"] == "показано 20 из 25"
+    assert out["more"] == "Показать ещё 5" and out["all"] == 25 and out["after"] is None
+    assert out["card"] == [1, "Плата 25", "/api/pairs/7/photo.png?visibility=lifted&size=480"]           # the card opens under its line, built then
 
 
 @node
@@ -200,13 +244,26 @@ def test_without_a_laser_the_screen_offers_to_add_one_and_does_not_offer_a_plate
 
 
 @node
-def test_the_experiment_cards_keep_the_list_api_the_laser_page_uses(tmp_path):
+def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keeps_its_own_choice(tmp_path):
     out = run(tmp_path, """
-  const list = ctx.ExperimentCards.list(data.routes['/api/experiments'].json, '');
-  out.list = list.className; out.cards = list.children.map((c) => c.className);
-  out.empty = ctx.ExperimentCards.list([], 'Пусто').textContent; out.api = Object.keys(ctx.ExperimentCards);
+  const all = data.routes['/api/experiments'].json;
+  const card = ctx.DeviceView.experimentsCard(all, {id: 1, name: 'Laser A', lens: {id: 5, name: 'F-Theta', focal_length_mm: 174}}, [{id: 5, name: 'F-Theta', focal_length_mm: 174}]);
+  const panel = card.querySelectorAll('section').find((s) => s.textContent.startsWith('Эксперименты этого лазера'));
+  out.head = panel.querySelector('.dashboard-panel-head').textContent;
+  out.toolbar = [panel.querySelector('.lst-search') != null, chips(panel), selectOf(panel, 'Задача').options.map((o) => o.textContent),
+    selectOf(panel, 'Порядок').options.map((o) => o.textContent)];
+  await chip(panel, 'Приняты').dispatch('click'); await tick();
+  out.accepted = titles(panel);
+  out.kept = [JSON.parse(ctx.__store['list:laser-experiments']).filters, ctx.__store['list:experiments'] || null];
+  out.api = Object.keys(ctx.ExperimentCards);
+  out.empty = ctx.ExperimentCards.list([], {empty: 'Пусто'}).querySelector('.lst-empty').textContent;
 """)
-    assert out["list"] == "dashboard-list" and out["cards"] == ["dashboard-item exp-card"] * 3 and out["empty"] == "Пусто" and out["api"] == ["card", "list", "layers"]
+    assert out["head"] == "Эксперименты этого лазера3Открыть в общем списке"
+    search, states, tasks, orders = out["toolbar"]
+    assert search and states == ["Все · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"] and tasks == ["все задачи · 3", "Надписи · 3"]
+    assert orders == ["Сначала недавние", "Сначала к проверке", "По названию"]
+    assert out["accepted"] == ["Тест Q-Pulse"] and out["kept"][0] == {"status": "accepted", "task": ""} and out["kept"][1] is None   # its own choice, not the screen's
+    assert out["api"] == ["card", "list", "layers"] and out["empty"] == "Пусто"
 
 
 # -- «Создать плату»: the plate dialog ---------------------------------------------------------------------------------------------
@@ -217,7 +274,7 @@ const {context, load, El} = require(%(dom)s);
 Object.defineProperty(El.prototype, 'style', {get() { return this._style || (this._style = {}); }});
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'tasks.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
 const card = (input) => {                                                   // whether the card around an input is shown
@@ -323,11 +380,13 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
 
 def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_other_tests_and_screens_rely_on():
     for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskPanel,",
-                 "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown", "panel('Выводы для материала', latest.size, insightCards,",
-                 "sessionStorage.getItem('experiment-search')", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, materials, reload)"):
+                 "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown, {id: 'experiments',",
+                 "panel('Выводы для материала', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, materials, reload)"):
         assert part in SCREEN, part
     assert "{class: 'dashboard-hero'" not in SCREEN and "{class: 'experiment-dashboard'" not in SCREEN and "exp-columns" not in SCREEN     # the old page frame is gone
-    assert "return {card, list, layers};" in CARDS                                                                    # the laser page keeps using the same list
+    assert "return {card, list, layers};" in CARDS and "App.list({id, items: experiments" in CARDS                  # the laser page keeps using the same list
+    for gone in ("'experiment-search'", "'experiment-status'", "'experiment-task'"):                                      # the filters are the shared list's
+        assert gone not in SCREEN, gone
 
 
 # -- what the laboratory proposes for each kind of photo engraving (photo-engraving-quality REQ-005) ---------------------------------------

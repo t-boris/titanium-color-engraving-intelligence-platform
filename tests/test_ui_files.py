@@ -1,4 +1,5 @@
 """The browser UI is plain files served by the same process: check that what index.html loads really exists."""
+import json
 import re
 import shutil
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from test_vector_work import GLUE, TABLES
 from titanium_platform.api.app import UI_DIR, create_app
 
 SCRIPTS = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
@@ -133,6 +135,65 @@ def test_the_designer_shows_the_question_reasons_status_and_result_of_a_proposal
     # a photograph of a plate made for a proposal links back to it (REQ-022 AC5)
     assert "r.proposal ? link(`/designer?device=${r.proposal.device_id}" in _screen("analysis.js")
     assert "exp.plate.proposal ? h('p'" in _screen("experiment.js")
+
+
+DESIGNER = """
+const fs = require('fs');
+const {context, load} = require(%(dom)s);
+const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
+const ctx = context(data.routes);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/designer.js']);
+const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0)); };
+const texts = (root) => root.querySelectorAll('.lst-main').map((m) => m.textContent);
+(async () => {
+  const out = {};
+  const tree = await ctx.__screens.designer.render({query: {}});
+  await tick();
+  const sets = tree.querySelectorAll('.lst')[0];
+  out.first = texts(sets); out.count = sets.querySelector('.lst-count').textContent; out.more = sets.querySelector('.lst-foot').textContent;
+  out.chips = sets.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  const order = sets.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  order.value = 'utility'; await order.dispatch('change'); await tick();
+  out.useful = texts(sets).slice(0, 2);
+  await sets.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('измерены')).dispatch('click'); await tick();
+  out.measured = texts(sets);
+  await sets.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  const open = sets.querySelectorAll('.lst-det').find((d) => !d.hidden);
+  out.details = [open.querySelectorAll('dt').map((d) => d.textContent), open.querySelectorAll('a').map((a) => a.getAttribute('href'))];
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_designer_lists_the_parameter_sets_of_a_proposal_twenty_at_a_time_with_reasons_and_results_under_a_line(tmp_path):
+    """REQ-005 of findings-you-can-manage-short-lists-re-check (DEC-090): a proposal of up to 40 sets is a short list, a set a line."""
+    reasons = ["gap", "uncertainty", "target"]
+    sets = [{"power": 10 + i, "frequency": 100, "speed": 500, "pulse_width": 200, "line_interval": 0.025, "passes": 1, "reason": reasons[i % 3],
+             "rationale": "the largest gap in coverage", "utility": i / 100, "target_id": 4 if i % 3 == 2 else None} for i in range(25)]
+    prop = {"id": 3, "seed": 1729, "status": "accepted", "parameters": sets, "group": None, "setup": None, "stock": None, "status_history": [], "questions": [],
+            "worth": [], "origins": [], "base_signature": "abc", "plates": [], "boards": [{"id": 1}], "notes": [], "unaddressed_targets": [], "explanation_available": False,
+            "results": [{"index": 0, "plate_id": 1, "measured": [{"lab": [50, 0, 0], "pair_id": 9, "comparable": True}]}], "created_at": "2026-10-25T10:00:00"}
+    ok = lambda body: {"status": 200, "json": body}                                                   # noqa: E731
+    routes = {"/api/devices": ok([{"id": 1, "name": "JPT", "title": "JPT 60", "lens": {"id": 2}, "passport": {"pulse_steps": [{"pulse_width_ns": 200}]}}]),
+              "/api/lenses": ok([{"id": 2, "name": "F-Theta", "focal_length_mm": 174}]), "/api/color-model": ok({"targets": [], "samples": [{}]}),
+              "/api/designer/proposals": ok([{"id": 3, "status": "accepted", "created_at": "2026-10-25T10:00:00"}]), "/api/materials": ok([]),
+              "/api/designer/proposals/3": ok(prop)}
+    (tmp_path / "data.json").write_text(json.dumps({"routes": routes}), encoding="utf-8")
+    script = tmp_path / "designer.js"
+    script.write_text(DESIGNER % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+                                  "ui": json.dumps(str(UI_DIR) + "/"), "tables": json.dumps(TABLES), "glue": json.dumps(GLUE)}, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout)
+    assert len(out["first"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5"
+    assert out["first"][0].startswith("№ 110.0% · 100 кГц") and out["first"][0].endswith("Пробел в покрытииизмерен: фото 1")   # the planner's order
+    assert out["chips"][:4] == ["Все · 25", "Целевой цвет · 8", "Высокая неопределённость · 8", "Пробел в покрытии · 9"]
+    assert out["chips"][4:] == ["Все · 25", "измерены · 1", "ещё нет · 24"]
+    assert out["useful"][0].startswith("№ 2534.0%") and out["useful"][1].startswith("№ 2433.0%")
+    assert out["measured"] == [out["first"][0]]
+    labels, links = out["details"]
+    assert labels == ["Почему выбран", "Полезность", "Цель", "Результат"] and links == ["#/analysis/9"]
 
 
 def test_an_accepted_photo_engraving_links_to_its_preview_and_a_finished_work_offers_its_file():

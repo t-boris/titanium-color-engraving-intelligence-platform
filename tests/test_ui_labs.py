@@ -13,7 +13,7 @@ from test_vector_work import GLUE, TABLES, UI, job, routes_of, work    # noqa: F
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "filepick.js", "tasks.js"]
+HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
 SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js",
            "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-review.js",
            "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js", "screens/labs-cloud.js", "screens/labs.js"]
@@ -142,6 +142,7 @@ def test_an_open_pinned_vector_work_shows_its_source_and_updates_it_only_through
   await byText(banner, 'button', 'Обновить источник').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = dialog.textContent;
+  out.colours = [dialog.querySelectorAll('.lst-main').map((m) => m.textContent), dialog.querySelectorAll('.lst-chip').map((c) => c.textContent)];
   out.beforeConfirm = sent().filter(([, path]) => path.endsWith('/source'));
   await byText(dialog, 'button', 'Подтвердить').dispatch('click'); await tick();
   out.afterConfirm = sent().filter(([, path]) => path.endsWith('/source'));
@@ -157,6 +158,8 @@ def test_an_open_pinned_vector_work_shows_its_source_and_updates_it_only_through
     assert "Работа перейдёт на источник: Лаборатория <b>Север</b>, выпуск от 2026-10-23 · 0123456789ab" in out["dialog"]
     assert "изменятся: 1; пропадут: 1; наибольшая разница ΔE 2.0" in out["dialog"] and "в новом источнике не измерен" in out["dialog"]
     assert "зона 1: шкала измерена в новом источнике" in out["dialog"]
+    colours, chips = out["colours"]                                                                        # a colour a line, the lost and the largest changes first
+    assert "в новом источнике не измерен" in colours[0] and colours[1].endswith("ΔE 2.0") and chips == ["Все · 2", "пропадут · 1", "изменятся · 1"]
     assert out["afterConfirm"][-1] == ["POST", f"/api/vector/{job['id']}/source", {"confirm": True}]
     assert "0123456789ab" in out["updated"] and "прежних источников: 2" in out["updated"] and "более новый выпуск" not in out["updated"]   # drawn from the returned work
 
@@ -187,7 +190,7 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
   out.setups = tree.querySelectorAll('div').filter((d) => d.classList.contains('lab-setup-card')).map((d) => [d.querySelector('strong').textContent, d.querySelectorAll('button').map((b) => b.textContent)]);
   await byText(tree, 'button', 'Палитра').dispatch('click'); await tick();
   out.palette = sent();
-  const colour = tree.querySelector('.lab-colour');
+  const colour = tree.querySelector('.lab-colours').querySelector('.lst-row');                // a colour is a line of the short list
   out.colour = colour.textContent;
   await byText(colour, 'button', 'Проверить у себя').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
@@ -209,3 +212,64 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
     assert out["dialogSelects"] == ["Свой лазер", "Свой титан"]
     assert out["transfer"] == ["POST", "/api/labs/transfers", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "entry_id": "e1", "device_id": 1, "material_id": 3}]
     assert out["notice"] == ["#/plans/77"]
+
+
+@node
+def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their_filters_and_orders(tmp_path):
+    """REQ-005 of findings-you-can-manage-short-lists-re-check (DEC-090): a line per release, colour and transfer; details under a line."""
+    release = lambda i, **more: {"release_id": f"r-{i}", "release_number": i, "created_at": f"2026-10-{i:02d}T09:00:00Z", "content_sha256": f"{i:02d}cdef0123456789ffff",   # noqa: E731
+                                 "verified": True, "status": "kept", "withdrawn": False, "works": [], **more}
+    card = {"id": 4, "name": "Север", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 3, "withdrawals": 0, "release_withdrawn": False,
+            "lab": {"name": "Север"}, "current": release(3), "withdrawal_list": [],
+            "releases": [release(1, status="removed"), release(3, works=[{"plan_id": 12, "name": "Портрет", "mode": "vector"}]), release(2, withdrawn=True)]}
+    entries = [{"id": f"e{i}", "lab": [20 + i * 2, 0, 0], "srgb": [0, 0, 0], "basis": ["chart", "clean", "as-shot"][i % 3], "engravings": i % 4 + 1,
+                "agreement": {"engravings": 1, "agreeing": 1, "differing": 0}, "caution": "contradicted" if i % 5 == 0 else None,
+                "recipe": {"power": 40, "frequency": 30, "speed": 500, "passes": 1}, "observation_ids": [i]} for i in range(25)]
+    transfers = [{"plan_id": 70 + i, "name": f"Перенос {i}", "identifier": f"TCE-{70 + i}", "source": {"lab": [50, 0, 0]}, "own_material": {"name": "Small Plate"},
+                  "recipe": {"power": 40, "frequency": 30, "speed": 500, "passes": 1}, "created_at": f"2026-10-2{i}T10:00:00",
+                  "measurements": [{"lab": [51, 0, 0], "pair_id": 90 + i, "delta_e": 1.5, "measured_at": "2026-10-24T10:00:00"}] if i == 1 else [],
+                  "mean_delta_e": 1.5 if i == 1 else None} for i in range(3)]
+    routes = {"/api/labs/sources/4": ok(card), "/api/labs/choices": ok(CHOICES), "/api/labs/palette": ok({"source": SOURCE, "conditions": [], "entries": entries}),
+              "/api/labs/transfers": ok(transfers)}
+    out = run(tmp_path, routes, """
+  const tree = await ctx.__screens.labs.render({query: {source: '4'}});
+  await tick();
+  const card = (title) => tree.querySelectorAll('.card').find((c) => c.querySelector('h3') && c.querySelector('h3').textContent === title);
+  const lines = (root) => root.querySelectorAll('.lst-main').map((m) => m.textContent);
+  const releases = card('Выпуски');
+  out.releases = [lines(releases), releases.querySelectorAll('.lst-row').map((r) => r.querySelectorAll('button').map((b) => b.textContent))];
+  out.releaseChips = releases.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  await releases.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  const open = releases.querySelectorAll('.lst-det').find((d) => !d.hidden);
+  out.releaseDetails = [open.querySelectorAll('dt').map((d) => d.textContent), open.querySelectorAll('a').map((a) => a.getAttribute('href'))];
+  await byText(tree, 'button', 'Палитра').dispatch('click'); await tick();
+  const palette = tree.querySelector('.lab-colours');
+  out.palette = [palette.querySelectorAll('.lst-row').length, palette.querySelector('.lst-count').textContent, palette.querySelector('.lst-foot').textContent];
+  out.paletteChips = palette.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  const order = palette.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  out.orders = order.options.map((o) => o.textContent);
+  order.value = 'light'; await order.dispatch('change'); await tick();
+  out.lightest = palette.querySelector('strong').textContent;
+  await palette.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('с оговоркой')).dispatch('click'); await tick();
+  out.cautious = palette.querySelectorAll('.lst-row').map((r) => r.querySelector('strong').textContent);
+  const done = card('Проверено у себя');
+  out.transfers = [lines(done), done.querySelectorAll('.lst-act').map((a) => a.querySelector('a').getAttribute('href'))];
+  await done.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('измерены')).dispatch('click'); await tick();
+  await done.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.transferDetails = done.querySelectorAll('.lst-det').find((d) => !d.hidden).querySelectorAll('a').map((a) => a.getAttribute('href'));
+""")
+    lines, buttons = out["releases"]
+    assert [x[:16] for x in lines] == ["2026-10-03 09:00", "2026-10-02 09:00", "2026-10-01 09:00"]                    # the newest first
+    assert "текущий" in lines[0] and "работ: 1" in lines[0] and "отозван" in lines[1] and "файлы удалены" in lines[2]
+    assert buttons == [["Различия", "Удалить файлы"], ["Различия", "Удалить файлы"], ["Различия"]]
+    assert out["releaseChips"] == ["Все · 3", "на компьютере · 2", "файлы удалены · 1"]
+    assert out["releaseDetails"] == [["Хеш", "Подпись", "Файлы", "Работы"], ["#/vector?plan=12"]]
+    assert out["palette"] == [20, "показано 20 из 25", "Показать ещё 5"]
+    assert out["paletteChips"] == ["Все · 25", "по эталонной карте · 9", "относительно чистого титана · 8", "как снято, без привязки · 8",
+                                   "Все · 25", "без оговорок · 20", "с оговоркой · 5"]
+    assert out["orders"] == ["Как в выпуске", "Сначала светлые", "Сначала тёмные", "Больше гравировок"]
+    assert out["lightest"] == "L 68.0 · a 0.0 · b 0.0"
+    assert out["cautious"] == ["L 60.0 · a 0.0 · b 0.0", "L 50.0 · a 0.0 · b 0.0", "L 40.0 · a 0.0 · b 0.0", "L 30.0 · a 0.0 · b 0.0", "L 20.0 · a 0.0 · b 0.0"]
+    transfers, plans = out["transfers"]
+    assert [x.split(" · ")[0] for x in transfers] == ["Перенос 2", "Перенос 1", "Перенос 0"] and "средняя ΔE 1.5" in transfers[1] and "ждёт фото" in transfers[0]
+    assert plans == ["#/plans/72", "#/plans/71", "#/plans/70"] and out["transferDetails"] == ["#/analysis/91"]

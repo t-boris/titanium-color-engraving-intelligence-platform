@@ -8,7 +8,7 @@
    Каждое действие возвращает работу целиком; вкладки обновляются на месте, редактор сохраняет масштаб, инструмент и выделение. */
 'use strict';
 const VectorColours = (() => {
-  const {h, fill, btn, field, pill, fail, modal, table, num, labText, agreed, CAUTION, steadiness, STEADY, originText, sourcesBlock} = App;
+  const {h, fill, btn, field, pill, fail, modal, facts, num, labText, agreed, CAUTION, steadiness, STEADY, originText, sourcesBlock} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
   const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['contrast', 'Контраст соседей'], ['random', 'Случайно']];
   const MODE = {...Object.fromEntries(MODES), artistic: 'Художественно', fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};   // the old mode only names variants saved with it
@@ -42,89 +42,119 @@ const VectorColours = (() => {
 
   /** Выбор цвета титана из палитры (REQ-051): у каждого цвета видно, откуда он известен (тесты и работы) и насколько он стабилен; порядок и фильтр
       по повтору; взамен ненадёжного цвета предлагаются более стабильные, ближайшие к нему. Ближайшие к исходному цвету — первыми; снятые без
-      привязки — с пунктиром. */
+      привязки — с пунктиром. The colours are a short list (DEC-090): a line each with its square, ΔE and steadiness, pages of 30; the square
+      chooses the colour, the line opens what it is and where it is known from. */
   const pick = (j, ...rest) => pickFrom(() => palette(j), ...rest);
   /** The same window over any list of measured colours (``load``: a promise of them), as the photo work's inscriptions need it. */
   async function pickFrom(load, title, sourceLab, current, onPick) {
     let entries;
     try { entries = await load(); } catch (e) { return fail(e); }
     const now = entries.find((e) => e.id === current) || null;
-    let chosen = now, order = 'near', repeatedOnly = false;
+    let chosen = now;
     const near = (a, b) => de(a.lab, sourceLab) - de(b.lab, sourceLab);
     const compare = {near, fast: (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || near(a, b),
       stable: (a, b) => RANK[steadiness(b)] - RANK[steadiness(a)] || trustOf(b) - trustOf(a) || near(a, b)};
-    const detail = h('div', {class: 'stack small'}), grid = h('div', {class: 'vw-swatches', role: 'group', 'aria-label': 'Измеренные цвета титана'}), better = h('div', {});
+    const better = h('div', {}), choice = h('p', {class: 'small'});
     const swatchOf = (e, text) => h('button', {type: 'button',
       class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (chosen && e.id === chosen.id ? ' picked' : ''),
-      style: `background:rgb(${e.srgb.join(',')})`, 'data-entry': e.id, title: text, 'aria-label': text, onClick: () => { chosen = e; paint(); }});
+      style: `background:rgb(${e.srgb.join(',')})`, 'data-entry': e.id, title: text, 'aria-label': text, onClick: () => choose(e)});
     const text = (e) => `${labText(e.lab)} · ΔE ${num(de(e.lab, sourceLab))} · ${STEADY[steadiness(e)][0]} · ${originText(e.sources)} · ${seconds(e.time_s_per_cm2)}`;
+    const detail = (e) => h('div', {class: 'stack small'},
+      h('div', {}, chip(e.srgb), ' ', labText(e.lab), ` · ΔE ${num(de(e.lab, sourceLab))} до исходного цвета`,
+        now && now.id !== e.id ? ` · ΔE ${num(de(e.lab, now.lab))} до текущего` : ''),
+      h('div', {}, pill(...STEADY[steadiness(e)]), ' ', `Уверенность ${e.confidence == null ? 'не оценена' : num(e.confidence)} · ${agreed(e.agreement)}`,
+        e.caution ? [' ', pill(CAUTION[e.caution], 'warn')] : null),
+      h('div', {class: 'muted'}, `${BASIS[e.basis] || ''} · гравировок ${e.engravings}, фото ${e.photographs} · ${seconds(e.time_s_per_cm2)}`),
+      h('div', {class: 'muted'}, params(e.parameters)),
+      e.automatic ? null : h('div', {class: 'muted'}, e.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[e.caution]}; выбрать вручную можно.`
+        : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.'),
+      sourcesBlock(e.sources || [], e.agreement, e.lab, true),
+      chosen && chosen.id === e.id ? null : h('div', {}, btn('Выбрать этот цвет', () => choose(e), 'btn-small')));
+    const colours = App.list({items: entries, page: 30, key: (e) => String(e.id), open: now ? String(now.id) : null,
+      row: (e) => [swatchOf(e, text(e)), h('span', {class: 'lst-text'}, `ΔE ${num(de(e.lab, sourceLab))} · ${STEADY[steadiness(e)][0]}`),
+        h('span', {class: 'muted small'}, seconds(e.time_s_per_cm2))],
+      details: detail, search: (e) => [labText(e.lab), originText(e.sources), ...(e.sources || []).map((s) => s.title)].join(' '),
+      filters: [{key: 'steady', label: 'Повтор', options: [['stable', 'проверены повтором'], ['single', 'одна гравировка'], ['doubtful', 'сомнительные']],
+        test: (e, v) => steadiness(e) === v}],
+      sorts: ORDERS.map(([k, name]) => [k, name, compare[k]]), empty: 'Нет цветов под такой фильтр.'});
+    function choose(e) { chosen = e; paint(); colours.refresh(); }
     function paint() {
-      const shown = entries.filter((e) => !repeatedOnly || steadiness(e) === 'stable').sort(compare[order]);
-      fill(grid, shown.length ? shown.map((e) => swatchOf(e, text(e))) : h('p', {class: 'muted small'}, 'Нет цветов под такой фильтр.'));
       const stabler = now && steadiness(now) !== 'stable'
         ? entries.filter((e) => e.id !== now.id && steadiness(e) === 'stable').sort((a, b) => de(a.lab, now.lab) - de(b.lab, now.lab)).slice(0, BETTER) : [];
       fill(better, now && steadiness(now) !== 'stable' ? h('div', {class: 'stack small vw-better'},
         h('strong', {}, 'Стабильнее и похоже на текущий цвет'),
         stabler.length ? h('div', {class: 'vw-swatches'}, stabler.map((e) => swatchOf(e, `ΔE ${num(de(e.lab, now.lab))} до текущего · ${text(e)}`)))
           : h('span', {class: 'muted'}, 'Цветов, проверенных повтором, в палитре нет.')) : null);
-      fill(detail, chosen ? [
-        h('div', {}, chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} до исходного цвета`,
-          now && now.id !== chosen.id ? ` · ΔE ${num(de(chosen.lab, now.lab))} до текущего` : ''),
-        h('div', {}, pill(...STEADY[steadiness(chosen)]), ' ', `Уверенность ${chosen.confidence == null ? 'не оценена' : num(chosen.confidence)} · ${agreed(chosen.agreement)}`,
-          chosen.caution ? [' ', pill(CAUTION[chosen.caution], 'warn')] : null),
-        h('div', {class: 'muted'}, `${BASIS[chosen.basis] || ''} · гравировок ${chosen.engravings}, фото ${chosen.photographs} · ${seconds(chosen.time_s_per_cm2)}`),
-        h('div', {class: 'muted'}, params(chosen.parameters)),
-        chosen.automatic ? null : h('div', {class: 'muted'}, chosen.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[chosen.caution]}; выбрать вручную можно.`
-          : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.'),
-        sourcesBlock(chosen.sources || [], chosen.agreement, chosen.lab, true)]
+      fill(choice, chosen ? ['Выбран: ', chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} до исходного цвета · ${STEADY[steadiness(chosen)][0]}`]
         : h('span', {class: 'muted'}, 'Выберите цвет'));
     }
-    const sorter = h('select', {'aria-label': 'Порядок цветов'}, ORDERS.map(([v, name]) => h('option', {value: v}, name)));
-    sorter.addEventListener('change', () => { order = sorter.value; paint(); });
-    const filter = h('input', {type: 'checkbox', 'aria-label': 'Только цвета, проверенные повтором'});
-    filter.addEventListener('change', () => { repeatedOnly = filter.checked; paint(); });
     paint();
     modal(title, h('div', {class: 'stack'},
       h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Зелёная точка — цвет проверен повтором, красная — гравировки расходятся; `
-        + 'у остальных одна гравировка. «Откуда» — из каких тестов и работ цвет известен.'),
+        + 'у остальных одна гравировка. «Откуда» — из каких тестов и работ цвет известен. Квадрат выбирает цвет, строка открывает, откуда он известен.'),
       now ? h('p', {class: 'small'}, 'Сейчас: ', chip(now.srgb), ' ', pill(...STEADY[steadiness(now)]), ` ${originText(now.sources)}`) : null,
-      h('div', {class: 'row'}, h('label', {class: 'row small'}, 'Порядок ', sorter), h('label', {class: 'row small'}, filter, h('span', {}, 'Только проверенные повтором'))),
-      better, grid, detail), [{label: 'Отмена', run: (m) => m.close()},
+      better, colours.el, choice), [{label: 'Отмена', run: (m) => m.close()},
       {label: 'Применить', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
   }
 
-  /** Подробная таблица: каждый исходный цвет с цветом титана, рецептом, данными и действиями над цветом целиком. */
-  function colourRows(j, run) {
-    return j.colours.map((c) => {
-      const e = c.entry_id == null ? null : j.entries[c.entry_id];
-      const [label, kind] = STATUS[c.status] || [null, ''];
-      const actions = [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id})))];
-      if (c.status === 'hand' || c.status === 'accepted') actions.push(btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null})));
-      actions.push(c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index})) : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index})));
-      return [h('span', {}, chip(c.srgb, labText(c.lab)), `№ ${c.index + 1}`, h('div', {class: 'muted small'}, `областей ${c.regions}`)),
-        h('span', {}, e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null, c.how && HOW[c.how] ? h('div', {class: 'muted small'}, HOW[c.how]) : null),
-        e ? h('span', {class: 'small'}, params(e.parameters)) : '—', e ? BASIS[e.basis] || '—' : '—',
-        e ? h('span', {}, originText(e.sources), h('div', {class: 'muted small'}, `фото ${e.photographs}`)) : '—', c.delta_e == null ? '—' : h('span', {}, num(c.delta_e), c.outside_tolerance ? [' ', pill('вне допуска', 'bad')] : null),
-        e ? confidence(e) : '—', e ? stability(e) : '—', e ? seconds(e.time_s_per_cm2) : '—',
-        h('span', {class: 'row'}, actions)];
-    });
+  /** «Подробно по цветам» as a short list (DEC-090): a line per source colour — its colour and number, the titanium colour, how it was chosen,
+      the recipe and ΔE, with the actions on the whole colour; how the titanium colour was measured, where it is known from, its confidence,
+      stability and time open under the line. Pages of 30: every colour of a work is edited on one page. */
+  function colourTable(run) {
+    let j = null;
+    const titanium = (c) => (c.entry_id == null ? null : j.entries[c.entry_id]);
+    const list = App.list({id: 'vw.colour-table', items: [], page: 30, key: (c) => String(c.index),
+      row: (c) => {
+        const e = titanium(c), [label, kind] = STATUS[c.status] || [null, ''];
+        return [chip(c.srgb, labText(c.lab)), h('strong', {}, `№ ${c.index + 1}`), '→', e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null,
+          h('span', {class: 'lst-text small'}, e ? params(e.parameters) : '—'),
+          c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`), c.outside_tolerance ? pill('вне допуска', 'bad') : null,
+          h('span', {class: 'muted small'}, `областей ${c.regions}`)];
+      },
+      actions: (c) => [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id}))),
+        c.status === 'hand' || c.status === 'accepted' ? btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null})) : null,
+        c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index})) : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index}))],
+      details: (c) => {
+        const e = titanium(c);
+        return facts([['Исходный цвет', `${labText(c.lab)} · областей ${c.regions}`],
+          ['Цвет титана', e ? h('span', {}, chip(e.srgb), ' ', labText(e.lab), c.how && HOW[c.how] ? ` · ${HOW[c.how]}` : '') : STATUS[c.status] ? STATUS[c.status][0] : '—'],
+          ['Рецепт', e ? params(e.parameters) : null], ['Как измерен', e ? BASIS[e.basis] || '—' : null],
+          ['Откуда', e ? `${originText(e.sources)} · фото ${e.photographs}` : null], ['Уверенность', e ? confidence(e) : null],
+          ['Стабильность', e ? stability(e) : null], ['Время', e ? seconds(e.time_s_per_cm2) : null]]);
+      },
+      search: (c) => [`№ ${c.index + 1}`, titanium(c) ? params(titanium(c).parameters) : '', titanium(c) ? originText(titanium(c).sources) : ''].join(' '),
+      filters: [VectorEditor.COLOUR_FILTER],
+      sorts: [...VectorEditor.COLOUR_SORTS, ['fast', 'Быстрее', (a, b) => ((titanium(a) || {}).time_s_per_cm2 ?? Infinity) - ((titanium(b) || {}).time_s_per_cm2 ?? Infinity)
+        || a.index - b.index]],
+      empty: 'Нет исходных цветов под такой выбор.'});
+    const el = h('div', {class: 'vw-wide stack'}, h('p', {class: 'muted small'}, 'Строка — исходный цвет и цвет титана, которым он будет выгравирован, его рецепт и ΔE. '
+      + 'По щелчку на строке — как измерен цвет титана, откуда он известен, уверенность, стабильность и время.'), list.el);
+    return {el, show(next) { j = next; list.items = j.colours; list.refresh(); }};
   }
 
-  /** Варианты раскраски списком (вкладка узкая); вариант другой версии разбиения сервер не вернёт, пока отмена не вернёт ту версию. */
-  function variants(j, run) {
-    if (!j.variants.length) return h('p', {class: 'muted small'}, 'Вариантов пока нет');
-    return h('div', {class: 'vw-variants'}, [...j.variants].reverse().map((v) => {
-      const elsewhere = v.version != null && v.version !== j.document.version, current = v.number === j.colouring.variant;
-      const way = v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
-        + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : '');
-      return h('div', {class: 'vw-variant' + (current ? ' current' : '')},
-        h('div', {class: 'vw-variant-main'}, h('strong', {}, `№ ${v.number} · ${way}`),
-          h('span', {class: 'small muted'}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
-            + (v.totals.seconds == null ? 'время не оценено' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`)),
-        current ? pill('текущий', 'ok')
-          : elsewhere ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}: вернуть можно отменой`)
-            : btn('Вернуть', () => run({op: 'restore', variant: v.number})));
-    }));
+  /** The colouring variants as a list (the tab is narrow); a variant of another split version cannot be restored until undo brings that
+      version back. A short list
+      (DEC-090): a line per variant — its number and way, mean ΔE and «текущий» or «Вернуть»; its totals open under the line; the newest first. */
+  function variantList(run) {
+    let j = null;
+    const way = (v) => (v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
+      + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : ''));
+    const elsewhere = (v) => v.version != null && v.version !== j.document.version;
+    const current = (v) => v.number === j.colouring.variant;
+    const list = App.list({id: 'vw.variants', items: [], key: (v) => String(v.number), className: 'vw-variants',
+      row: (v) => [h('strong', {class: 'lst-text'}, `№ ${v.number} · ${way(v)}`), h('span', {class: 'muted small'}, `ΔE ${num(v.totals.mean_delta_e)}`),
+        current(v) ? pill('текущий', 'ok') : elsewhere(v) ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}`) : null],
+      actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Вернуть', () => run({op: 'restore', variant: v.number}))]),
+      details: (v) => h('div', {class: 'stack small'},
+        h('div', {}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
+          + (v.totals.seconds == null ? 'время не оценено' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`),
+        elsewhere(v) ? h('div', {class: 'muted'}, `На разбиении № ${v.version}: вернуть можно отменой.`) : null),
+      search: (v) => `№ ${v.number} ${way(v)}`,
+      sorts: [['new', 'Сначала новые', (a, b) => b.number - a.number],
+        ['de', 'Меньше ΔE', (a, b) => (a.totals.mean_delta_e ?? Infinity) - (b.totals.mean_delta_e ?? Infinity) || b.number - a.number],
+        ['fast', 'Быстрее', (a, b) => (a.totals.seconds ?? Infinity) - (b.totals.seconds ?? Infinity) || b.number - a.number]],
+      empty: 'Вариантов пока нет'});
+    return {el: list.el, show(next) { j = next; list.items = j.variants; list.refresh(); }};
   }
 
   /** «Художественно» (DEC-079): each press a new layout of hues from the chosen palette group; light places stay light. */
@@ -199,7 +229,8 @@ const VectorColours = (() => {
   function parts(j, run, permit) {
     const editor = VectorEditor.create(j, run, {pick});
     const ai = aiBlock(j, run, permit);
-    const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {}), rows = h('div', {class: 'vw-wide'}), kept = h('div', {});
+    const intro = h('p', {class: 'muted small'}), empty = h('div', {}), bar = h('div', {});
+    const detailed = colourTable(run), kept = variantList(run), rows = detailed.el;
     let settings = null;
     function show(next) {
       j = next;
@@ -208,8 +239,8 @@ const VectorColours = (() => {
       fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: раскрасить нечем.'));
       const key = JSON.stringify(j.settings);
       if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // поля не сбрасываются, пока настройки те же
-      fill(rows, table(['Исходный цвет', 'Цвет титана', 'Рецепт', 'Как измерен', 'Откуда', 'ΔE', 'Уверенность', 'Стабильность', 'Время', ''], colourRows(j, run)));
-      fill(kept, variants(j, run));
+      detailed.show(j);
+      kept.show(j);
     }
     show(j);
     const colours = h('div', {class: 'stack vw-colours'}, intro, empty, bar,
@@ -217,7 +248,7 @@ const VectorColours = (() => {
         h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}), 'btn-small'))), artisticRow(run)),
       h('div', {class: 'row'}, btn('Подробно по цветам…', () => modal('Подробно по цветам', rows, [{label: 'Закрыть', run: (m) => m.close()}]))));
     const saved = h('div', {class: 'stack'}, h('h4', {}, 'Варианты раскраски'),
-      h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept);
+      h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept.el);
     return {colours, variants: saved, ai: ai.el, editor, update(next) { show(next); ai.update(next); editor.update(next); }};
   }
 

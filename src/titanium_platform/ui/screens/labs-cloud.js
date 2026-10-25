@@ -18,6 +18,9 @@
   let shared = null;                 // labs.js: {followJob, previewBody, countsText, termsName, differencesDialog, mb}
   const accountText = (a) => (a ? [a.name, a.email].filter(Boolean).join(' · ') : '');
   const releaseLine = (r) => `№ ${r.number} от ${day(r.created_at)} · ${short(r.content_sha256)}`;
+  // the orders of the short lists (DEC-090): by an ISO date, the newest or the oldest first
+  const newest = (at) => (p, q) => String(at(q) || '').localeCompare(String(at(p) || ''));
+  const oldest = (at) => (p, q) => String(at(p) || '').localeCompare(String(at(q) || ''));
 
   // ---- the sign-in ---------------------------------------------------------------------------------------------------------------
 
@@ -123,26 +126,39 @@
         toast('Приглашение создано', 'ok');
       } catch (e) { fail(e); } finally { self.disabled = false; }
     }, 'btn-small');
-    const rows = own.invitations.map((i) => [when(i.created_at), when(i.expires_at),
-      i.revoked_at ? pill('отозвано', 'bad') : i.accepted_by ? h('span', {}, pill('принято', 'ok'), ' ', h('span', {class: 'small cloud-account'}, i.accepted_by)) : pill('ждёт'),
-      i.revoked_at || i.accepted_by ? null : btn('Отозвать', () => confirmBox('Отозвать приглашение?', 'Ссылка перестанет действовать.', 'Отозвать',
-        async () => { await del(`/cloud/invitations/${encodeURIComponent(i.id)}`); toast('Приглашение отозвано', 'ok'); reload(); }), 'danger btn-small')]);
-    const members = own.members.map((m) => [h('span', {class: 'cloud-account'}, m.account_id), when(m.created_at),
-      btn('Исключить', () => confirmBox('Исключить участника?', 'Он перестанет видеть закрытую лабораторию и скачивать её выпуски; то, что он уже подключил, у него остаётся.',
-        'Исключить', async () => { await del(`/cloud/members/${encodeURIComponent(m.account_id)}`); toast('Участник исключён', 'ok'); reload(); }), 'danger btn-small')]);
+    // every invitation stays listed (accepted, revoked or waiting) and members come and go: both are short lists, the newest first
+    const state = (i) => (i.revoked_at ? 'revoked' : i.accepted_by ? 'accepted' : 'waiting');
+    const invitations = own.invitations.length ? App.list({id: 'cloud-invitations', items: own.invitations, key: (i) => i.id,
+      row: (i) => [h('span', {}, when(i.created_at)), h('span', {class: 'muted small'}, `действует до ${when(i.expires_at)}`),
+        i.revoked_at ? pill('отозвано', 'bad') : i.accepted_by ? [pill('принято', 'ok'), h('span', {class: 'small cloud-account lst-text'}, i.accepted_by)] : pill('ждёт')],
+      actions: (i) => [i.revoked_at || i.accepted_by ? null : btn('Отозвать', () => confirmBox('Отозвать приглашение?', 'Ссылка перестанет действовать.', 'Отозвать',
+        async () => { await del(`/cloud/invitations/${encodeURIComponent(i.id)}`); toast('Приглашение отозвано', 'ok'); reload(); }), 'danger btn-small')],
+      filters: [{key: 'state', label: 'Состояние приглашения', options: [['waiting', 'ждут'], ['accepted', 'приняты'], ['revoked', 'отозваны']], test: (i, v) => state(i) === v}],
+      sorts: [['new', 'Сначала новые', newest((i) => i.created_at)], ['old', 'Сначала старые', oldest((i) => i.created_at)]]}).el
+      : h('p', {class: 'muted'}, 'Приглашений нет');
+    const members = own.members.length ? App.list({id: 'cloud-members', items: own.members, key: (m) => m.account_id,
+      row: (m) => [h('span', {class: 'cloud-account lst-text'}, m.account_id), h('span', {class: 'muted small'}, `с ${when(m.created_at)}`)],
+      actions: (m) => [btn('Исключить', () => confirmBox('Исключить участника?', 'Он перестанет видеть закрытую лабораторию и скачивать её выпуски; то, что он уже подключил, у него остаётся.',
+        'Исключить', async () => { await del(`/cloud/members/${encodeURIComponent(m.account_id)}`); toast('Участник исключён', 'ok'); reload(); }), 'danger btn-small')],
+      search: (m) => m.account_id,
+      sorts: [['new', 'Сначала новые', newest((m) => m.created_at)], ['old', 'Сначала старые', oldest((m) => m.created_at)]]}).el
+      : h('p', {class: 'muted'}, 'Участников нет');
     return h('div', {class: 'stack'}, h('h4', {}, 'Приглашения и участники'),
       h('p', {class: 'small muted'}, own.lab.visibility === 'private' ? 'Закрытую лабораторию видят только приглашённые: ссылка приглашения действует один раз и ограниченное время.'
         : 'Лаборатория открытая: её видят все и без приглашения. Приглашение всё же можно создать — так лаборатория появится у получателя среди его.'),
       h('div', {class: 'row'}, invite), made,
-      table(['Создано', 'Действует до', 'Состояние', ''], rows, 'Приглашений нет', true),
-      table(['Участник', 'С', ''], members, 'Участников нет', true));
+      h('p', {class: 'small'}, h('strong', {}, 'Приглашения')), invitations,
+      h('p', {class: 'small'}, h('strong', {}, 'Участники')), members);
   }
 
   function labBlock(own, reload) {
     const lab = own.lab;
     return h('div', {class: 'stack'}, h('h4', {}, 'Лаборатория в облаке: ', h('span', {class: 'lab-name'}, lab.name), ' ', pill(VISIBILITY[lab.visibility] || lab.visibility)),
-      table(['№', 'Опубликован', 'Содержимое', 'Условия', 'Размер'], own.releases.map((r) => [String(r.number), when(r.published_at), shared.countsText(r.counts),
-        shared.termsName(r.usage_terms), shared.mb(r.byte_size)]), 'Выпусков в облаке ещё нет', true),
+      own.releases.length ? App.list({id: 'cloud-releases', items: own.releases, key: (r) => r.id || r.number,
+        row: (r) => [h('span', {}, `№ ${r.number}`), h('span', {class: 'muted'}, when(r.published_at)), h('span', {class: 'lst-text small'}, shared.countsText(r.counts)),
+          h('span', {class: 'muted small'}, shared.termsName(r.usage_terms)), h('span', {class: 'muted small'}, shared.mb(r.byte_size))],
+        sorts: [['new', 'Сначала новые', (p, q) => q.number - p.number], ['old', 'Сначала старые', (p, q) => p.number - q.number]]}).el
+        : h('p', {class: 'muted'}, 'Выпусков в облаке ещё нет'),
       invitationsBlock(own, reload));
   }
 
@@ -182,19 +198,40 @@
     }, 'primary btn-small');
   }
 
-  function labCard(lab, reload) {
+  /** What a laboratory of the catalogue says of itself, under its line: author, description, link, the latest release, what is here. */
+  function labDetails(lab) {
     const latest = lab.latest_release, c = lab.connected;
-    const progress = h('div', {class: 'stack', hidden: true});
-    const connect = latest && !lab.own ? connectButton(latest, c, c ? (c.newer ? `Подключить выпуск № ${latest.number}` : 'Подключить снова') : 'Подключить', progress, reload) : null;
-    return h('article', {class: 'card stack cloud-lab'},
-      h('h3', {}, h('span', {class: 'lab-name'}, lab.name), ' ', pill(VISIBILITY[lab.visibility] || lab.visibility), lab.own ? [' ', pill('ваша лаборатория', 'ok')] : null,
-        c ? [' ', pill(c.status === 'connected' ? 'подключена' : 'отключена', c.status === 'connected' ? 'ok' : 'warn')] : null, c && c.newer ? [' ', pill('есть новый выпуск', 'warn')] : null),
+    return h('div', {class: 'stack'},
       facts([['Автор', lab.author], ['Описание', lab.description], ['Ссылка', lab.url ? h('span', {class: 'lab-url'}, lab.url) : null],
         ['Выпуск', latest ? releaseLine(latest) : 'выпусков ещё нет'], ['Содержимое', latest ? shared.countsText(latest.counts) : null],
         ['Условия', latest ? shared.termsName(latest.usage_terms) : null], ['Размер', latest ? shared.mb(latest.byte_size) : null],
         ['У вас', c ? `${c.status === 'connected' ? 'подключена' : 'отключена'}${c.current_release_number == null ? '' : `, выпуск № ${c.current_release_number}`}` : null]]),
-      lab.own ? h('p', {class: 'small muted'}, 'Результаты этой лаборатории уже здесь: это выпуски вашей мастерской.') : null,
-      connect ? h('div', {class: 'row'}, connect, c ? btn('Открыть', () => App.go(`/labs?tab=sources&source=${c.source_id}`), 'btn-small') : null) : null, progress);
+      lab.own ? h('p', {class: 'small muted'}, 'Результаты этой лаборатории уже здесь: это выпуски вашей мастерской.') : null);
+  }
+
+  /** The catalogue, a laboratory a line (name, visibility, whether it is the own one or connected here, its latest release), «Подключить»
+      (and «Открыть» when it is connected) at the end; a connection goes into ``progress``, which outlives the redraw after it. */
+  function catalogueList(labs, progress, reload) {
+    return App.list({id: 'labs-catalogue', items: labs, key: (lab) => lab.id,
+      row: (lab) => {
+        const latest = lab.latest_release, c = lab.connected;
+        return [h('span', {class: 'lab-name lst-text'}, lab.name), pill(VISIBILITY[lab.visibility] || lab.visibility), lab.own ? pill('ваша лаборатория', 'ok') : null,
+          c ? pill(c.status === 'connected' ? 'подключена' : 'отключена', c.status === 'connected' ? 'ok' : 'warn') : null, c && c.newer ? pill('есть новый выпуск', 'warn') : null,
+          h('span', {class: 'muted small'}, latest ? releaseLine(latest) : 'выпусков ещё нет')];
+      },
+      details: labDetails,
+      actions: (lab) => {
+        const latest = lab.latest_release, c = lab.connected;
+        if (!latest || lab.own) return [];
+        return [connectButton(latest, c, c ? (c.newer ? `Подключить выпуск № ${latest.number}` : 'Подключить снова') : 'Подключить', progress, reload),
+          c ? btn('Открыть', () => App.go(`/labs?tab=sources&source=${c.source_id}`), 'btn-small') : null];
+      },
+      search: (lab) => [lab.name, lab.author, lab.description].filter(Boolean).join(' '),
+      filters: [{key: 'here', label: 'У вас', options: [['connected', 'подключены'], ['new', 'не подключены']],
+        test: (lab, v) => (v === 'connected' ? !!lab.connected : !lab.connected && !lab.own)},
+      {key: 'visibility', label: 'Видимость', options: Object.entries(VISIBILITY), test: (lab, v) => lab.visibility === v}],
+      sorts: [['catalogue', 'Как в каталоге'], ['name', 'По названию', (p, q) => String(p.name).localeCompare(String(q.name), 'ru')],
+        ['recent', 'Сначала свежие выпуски', newest((lab) => (lab.latest_release || {}).created_at)]]}).el;
   }
 
   function acceptBlock(signedIn, reload) {
@@ -217,11 +254,12 @@
 
   async function catalogueTab() {
     const el = h('div', {class: 'stack'});
+    const progress = h('div', {class: 'stack cloud-progress', hidden: true});        // the same node in every redraw: a connection's end stays shown
     async function show() {
       let cat;
       try { cat = await get('/cloud/catalogue'); } catch (e) { return fill(el, h('div', {class: 'card'}, h('p', {class: 'alert bad', role: 'alert'}, e.message))); }
       fill(el, h('p', {class: 'small muted'}, `Облако: ${cat.api_url}` + (cat.signed_in ? '' : ' · без входа показываются только открытые лаборатории')),
-        cat.labs.length ? h('div', {class: 'vw-works'}, cat.labs.map((lab) => labCard(lab, show)))
+        progress, cat.labs.length ? catalogueList(cat.labs, progress, show)
           : h('div', {class: 'card empty'}, h('h3', {}, 'В каталоге пока нет лабораторий'), h('p', {class: 'muted'}, 'Опубликованные выпуски появятся здесь; закрытые лаборатории — после приглашения.')),
         acceptBlock(cat.signed_in, show));
     }

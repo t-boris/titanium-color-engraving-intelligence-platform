@@ -107,15 +107,24 @@ const LabSource = (() => {
       {label: 'Подтвердить', cls: 'primary', run: async (m) => { await confirm(); m.close(); }}]);
   }
 
+  /** What the step does to the colours of a vector work: a colour a line (was → will be, ΔE), the colours that go missing and the largest
+      changes first, by pages (a work may hold dozens of colours, DEC-090). */
   function vectorPreview(p) {
     const entries = p.entries || [];
-    const rows = entries.map((e) => [chipOf(e.before), chipOf(e.after),
-      e.missing ? pill('в новом источнике не измерен', 'bad') : e.delta_e == null ? '—' : e.delta_e > 0 ? num(e.delta_e, 1) : pill('без изменений', 'ok')]);
+    const change = (e) => (e.missing ? 'missing' : e.delta_e > 0 ? 'changed' : 'same');
+    const colours = entries.length ? App.list({items: entries,
+      row: (e) => [chipOf(e.before), h('span', {class: 'muted'}, '→'), chipOf(e.after),
+        e.missing ? pill('в новом источнике не измерен', 'bad') : e.delta_e == null ? h('span', {class: 'muted'}, 'ΔE —')
+          : e.delta_e > 0 ? h('span', {}, `ΔE ${num(e.delta_e, 1)}`) : pill('без изменений', 'ok')],
+      filters: [{key: 'change', label: 'Что станет с цветом', options: [['missing', 'пропадут'], ['changed', 'изменятся'], ['same', 'без изменений']],
+        test: (e, v) => change(e) === v}],
+      sorts: [['largest', 'Сначала большие изменения', (a, b) => (b.missing ? 1 : 0) - (a.missing ? 1 : 0) || (b.delta_e ?? -1) - (a.delta_e ?? -1)],
+        ['work', 'Как в работе']]}).el : h('p', {class: 'muted'}, 'Работа пока не использует цвета источника');
     const zones = p.zones || [];
     return h('div', {class: 'stack'},
       h('p', {class: 'small'}, `Цветов в работе: ${entries.length}; изменятся: ${p.changed || 0}; пропадут: ${p.missing || 0}`
         + (p.max_delta_e != null ? `; наибольшая разница ΔE ${num(p.max_delta_e, 1)}` : '') + '.'),
-      table(['Было', 'Станет', 'ΔE'], rows, 'Работа пока не использует цвета источника', true),
+      colours,
       zones.length ? h('div', {}, h('p', {class: 'small'}, 'Фотозоны:'),
         h('ul', {class: 'small'}, zones.map((z) => h('li', {}, `зона ${z.zone}: `, z.problem ? I18N.tr(z.problem) : 'шкала измерена в новом источнике')))) : null);
   }

@@ -242,6 +242,35 @@
     ];
   }
 
+  // -- the measured elements as a short list (findings-you-can-manage-short-lists-re-check, REQ-005, DEC-090) ----------------------
+  // A parameter matrix has a hundred elements: one line each (colour, name, ΔE to the planned colour, a problem), the worst first, the
+  // measurements and settings under the line on a click, twenty at a time.
+
+  /** What is wrong with an element: out of the saved ΔE tolerance before not measured on the photograph before nothing. */
+  const trouble = (row) => (row.within_tolerance === false ? {level: 2, kind: 'bad', label: 'вне допуска'}
+    : !row.measured_lab ? {level: 1, kind: 'warn', label: 'не измерен'} : {level: 0, kind: 'ok', label: null});
+  // how far the element is from what was planned: ΔE to the planned colour, else the distance from the planned colour path
+  const deviation = (row) => row.delta_e ?? row.path_distance ?? null;
+
+  /** The elements of the report; the pair keeps the order, filter, search and pages for the session. */
+  function elementList(r) {
+    const worst = (a, b) => trouble(b).level - trouble(a).level || (deviation(b) ?? -1) - (deviation(a) ?? -1) || a.layer_index - b.layer_index;
+    const row = (x) => {
+      const lab = x.measured_lab_against_clean || x.measured_lab, t = trouble(x);
+      return [lab ? swatch(lab) : null, h('span', {class: 'lst-text', title: x.name || ''}, x.name || `Слой ${x.layer_index}`),
+        lab ? h('span', {class: 'muted small'}, labText(lab)) : null,
+        x.delta_e != null ? h('span', {class: 'small', title: 'ΔE до планового цвета'}, `ΔE ${num(x.delta_e, 1)}`)
+          : x.path_distance != null ? h('span', {class: 'small', title: 'Отклонение от цветового пути'}, `от пути ${num(x.path_distance, 1)}`) : null,
+        t.label ? pill(t.label, t.kind) : null];
+    };
+    return App.list({id: `analysis-elements:${r.pair_id}`, items: r.rows, key: (x) => x.observation_id ?? x.layer_index, row,
+      details: (x) => detailBody(x, false), search: (x) => x.name || `Слой ${x.layer_index}`,
+      filters: r.rows.some((x) => trouble(x).level) ? [{key: 'problem', label: 'Итог', test: (x, v) => trouble(x).kind === v,
+        options: [['bad', 'Вне допуска'], ['warn', 'Не измерены'], ['ok', 'Без замечаний']]}] : [],
+      sorts: [['worst', 'Сначала худшие', worst], ['order', 'По порядку', (a, b) => a.layer_index - b.layer_index]],
+      empty: 'Под поиск и фильтр элементов нет.'});
+  }
+
   function genericDashboard(r) {
     const m = r.metrics || {};
     let values;
@@ -253,12 +282,6 @@
       [num(m.max_delta_e, 1), 'максимальный ΔE'], [r.tolerance == null ? '—' : num(r.tolerance, 1), 'допуск ΔE']];
     else values = [[r.rows.length, 'измеренных слоёв'], [r.photos?.length || 1, 'фото запуска'],
       [r.rows.filter((row) => row.measured_lab).length, 'участков с цветом'], ['—', 'плановый цвет']];
-    const layers = r.rows.map((row) => h('button', {type: 'button', class: 'analysis-module', onClick: () => showElement(row, false)},
-      h('strong', {}, row.name || `Слой ${row.layer_index}`),
-      h('span', {}, row.measured_lab ? [swatch(row.measured_lab_against_clean || row.measured_lab), labText(row.measured_lab_against_clean || row.measured_lab)] : 'На фото не измерено'),
-      row.measured_lab && Tasks.colourBasis(row.metrics) ? h('small', {class: 'muted'}, Tasks.colourBasis(row.metrics)) : null,
-      row.task ? h('small', {}, Tasks.label(row.task)) : null,
-      h('small', {}, settingsLabel(row.parameters))));
     const ref = r.clean_reference;
     return [h('div', {class: 'analysis-kpi-grid'}, ...values.map(([value, label]) => kpi(value, label))),
       ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
@@ -267,7 +290,7 @@
         + (Math.abs(ref.exposure_stops) >= 1 ? `; снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции` : '')
         + '. Отношение цвета к чистому титану в линейном свете от экспозиции не зависит; значение «как снято» сохранено как свидетельство.')] : []),
       ...(r.target_checks?.length ? [targetCard(r.target_checks)] : []),
-      card('Измеренные элементы', h('div', {class: 'analysis-modules'}, ...layers)),
+      card('Измеренные элементы', elementList(r).el),
       r.limitations?.length ? h('details', {class: 'analysis-footnote'}, h('summary', {}, `Ограничения измерений (${r.limitations.length})`),
         ...r.limitations.map((text) => h('p', {}, I18N.tr(text)))) : null];
   }

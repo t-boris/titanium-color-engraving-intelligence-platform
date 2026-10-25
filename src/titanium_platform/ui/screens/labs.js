@@ -29,6 +29,9 @@
     r.line_interval == null ? null : `шаг ${num(r.line_interval, 4)} мм`, `проходов ${r.passes ?? 1}`, r.global_passes > 1 ? `глобально ${r.global_passes}×` : null,
     r.cross_hatch ? 'крест' : null, r.scan_angle == null ? null : `угол ${num(r.scan_angle, 0)}°`].filter(Boolean).join(' · ') : 'рецепт не записан');
   const safeLink = (url) => (url ? h('span', {class: 'lab-url'}, url) : null);      // a laboratory's link is shown as text, never followed from here
+  // the orders of the short lists (DEC-090): by an ISO date, the newest or the oldest first
+  const newest = (at) => (p, q) => String(at(q) || '').localeCompare(String(at(p) || ''));
+  const oldest = (at) => (p, q) => String(at(p) || '').localeCompare(String(at(q) || ''));
 
   // ---- «Моя лаборатория» ---------------------------------------------------------------------------------------------------------
 
@@ -77,6 +80,20 @@
       ? 'Перед публикацией укажите публичное название лаборатории и автора.' : 'Публиковать нечего: принятых фотографий ещё нет.')];
   }
 
+  /** The written releases, a line each, the newest first: when, the hash, what it holds, whether it went to the cloud; its file at the end. */
+  function exportsList(terms, exports) {
+    const created = (e) => e.created_at;
+    return App.list({id: 'labs-exports', items: exports, key: (e) => e.release_id,
+      row: (e) => [h('span', {}, when(e.created_at)), h('span', {class: 'muted'}, short(e.content_sha256)), h('span', {class: 'lst-text small'}, countsText(e.counts)),
+        e.published ? pill(`облако № ${e.published.release_number}`, 'ok') : null],
+      details: (e) => facts([['Выпуск', short(e.content_sha256)], ['Содержимое', countsText(e.counts)], ['Условия', termsName(termsOf(terms, (e.terms || {}).id))],
+        ['Размер', mb(e.bytes || 0)], ['Облако', e.published ? `№ ${e.published.release_number} · ${day(e.published.published_at)}` : 'не опубликован']]),
+      actions: (e) => [e.file ? h('a', {class: 'btn btn-small', href: `/api/labs/own/releases/${encodeURIComponent(e.release_id)}/file`, download: ''}, 'Скачать')
+        : h('span', {class: 'muted small'}, 'файл не сохранён')],
+      filters: [{key: 'cloud', label: 'Облако', options: [['yes', 'в облаке'], ['no', 'только файлом']], test: (e, v) => !!e.published === (v === 'yes')}],
+      sorts: [['new', 'Сначала новые', newest(created)], ['old', 'Сначала старые', oldest(created)]]}).el;
+  }
+
   function previewCard(terms, exports, written) {
     const out = h('div', {class: 'stack'});
     const termsSelect = h('select', {'aria-label': 'Условия использования'}, terms.map((t) => h('option', {value: t.id}, `${termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
@@ -108,10 +125,7 @@
       h('p', {class: 'small muted'}, 'Выпуск — файл .tcelab с числовыми результатами всех принятых фотографий: измеренные цвета, рецепты, тональные профили, установки и титан. '
         + 'Сначала посмотрите, что в него войдёт; выпуск не меняется после записи.'),
       h('div', {class: 'row'}, prepare, field('Условия использования', termsSelect), write), out, result,
-      exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Записанные выпуски'),
-        table(['Дата', 'Выпуск', 'Содержимое', 'Условия', 'Размер', 'Облако', 'Файл'], exports.map((e) => [when(e.created_at), short(e.content_sha256), countsText(e.counts),
-          termsName(termsOf(terms, (e.terms || {}).id)), mb(e.bytes || 0), e.published ? pill(`№ ${e.published.release_number} · ${day(e.published.published_at)}`, 'ok') : h('span', {class: 'muted'}, '—'),
-          e.file ? h('a', {href: `/api/labs/own/releases/${encodeURIComponent(e.release_id)}/file`, download: ''}, 'Скачать') : h('span', {class: 'muted'}, 'файл не сохранён')]), '', true))
+      exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Записанные выпуски'), exportsList(terms, exports))
         : h('p', {class: 'muted small'}, 'Выпусков ещё нет.'));
   }
 
@@ -253,23 +267,37 @@
 
   // ---- the connected laboratories ------------------------------------------------------------------------------------------------
 
-  function sourceCard(s) {
-    const [status, tone] = STATUS[s.status] || [s.status, ''];
+  const releaseLine = (cur) => `${cur.release_number != null ? `№ ${cur.release_number} · ` : ''}${releaseName(cur)}`;
+
+  /** What a connected laboratory holds, under its line: the current release, its signature, terms and author, since when it is here. */
+  function sourceDetails(s) {
     const cur = s.current;
-    return h('article', {class: 'card stack lab-source'},
-      h('h3', {}, h('span', {class: 'lab-name'}, s.name), pill(status, tone), s.release_withdrawn ? pill('выпуск отозван владельцем', 'bad') : null),
-      cur ? h('p', {class: 'small'}, `${cur.release_number != null ? `№ ${cur.release_number} · ` : ''}${releaseName(cur)} · ${countsText(cur.counts)}`)
-        : h('p', {class: 'small muted'}, 'Текущего выпуска нет: файлы удалены.'),
-      cur ? h('p', {class: 'small'}, verifiedPill(cur.verified), ` · условия: ${termsName(cur.terms)} · автор: ${(cur.attribution || {}).name || '—'}`) : null,
-      h('p', {class: 'small muted'}, `подключена ${when(s.connected_at)} · выпусков на компьютере: ${s.kept} · отзывов: ${s.withdrawals}`),
-      h('div', {class: 'row'}, btn('Открыть', () => go(`/labs?tab=sources&source=${s.id}`), 'primary btn-small')));
+    return h('div', {class: 'stack small'},
+      cur ? h('p', {}, `${releaseLine(cur)} · ${countsText(cur.counts)}`) : h('p', {class: 'muted'}, 'Текущего выпуска нет: файлы удалены.'),
+      cur ? h('p', {}, verifiedPill(cur.verified), ` · условия: ${termsName(cur.terms)} · автор: ${(cur.attribution || {}).name || '—'}`) : null,
+      h('p', {class: 'muted'}, `подключена ${when(s.connected_at)} · выпусков на компьютере: ${s.kept} · отзывов: ${s.withdrawals}`));
+  }
+
+  /** The connected laboratories, a line each (name, state, current release), «Открыть» at the end; the details under a line. */
+  function connectedList(list) {
+    return App.list({id: 'labs-sources', items: list, key: (s) => s.id,
+      row: (s) => {
+        const [status, tone] = STATUS[s.status] || [s.status, ''];
+        return [h('span', {class: 'lab-name lst-text'}, s.name), pill(status, tone), s.release_withdrawn ? pill('выпуск отозван владельцем', 'bad') : null,
+          h('span', {class: 'muted small'}, s.current ? releaseLine(s.current) : 'текущего выпуска нет')];
+      },
+      details: sourceDetails,
+      actions: (s) => [btn('Открыть', () => go(`/labs?tab=sources&source=${s.id}`), 'primary btn-small')],
+      search: (s) => s.name,
+      filters: [{key: 'status', label: 'Состояние', options: Object.entries(STATUS).map(([k, [text]]) => [k, text]), test: (s, v) => s.status === v}],
+      sorts: [['name', 'По названию', (p, q) => String(p.name).localeCompare(String(q.name), 'ru')], ['recent', 'Сначала недавно подключённые', newest((s) => s.connected_at)]]}).el;
   }
 
   async function sourcesList() {
     const el = h('div', {class: 'stack'});
     async function show() {
       const list = await get('/labs/sources');
-      fill(el, await LabsCloud.automaticNotices(show), LabsCloud.updatesCard(list, show), list.length ? h('div', {class: 'vw-works'}, list.map(sourceCard))
+      fill(el, await LabsCloud.automaticNotices(show), LabsCloud.updatesCard(list, show), list.length ? connectedList(list)
         : h('div', {class: 'card empty'}, h('h3', {}, 'Подключённых лабораторий нет'), h('p', {class: 'muted'}, 'Подключите лабораторию из каталога облака или из файла .tcelab: её цвета и шкалы станут источником новых работ.')));
     }
     await show();
@@ -288,16 +316,23 @@
     }).catch(fail);
   }
 
-  function releasesTable(card, reload) {
-    const rows = card.releases.map((r) => [when(r.created_at), r.release_number == null ? '—' : String(r.release_number), short(r.content_sha256),
-      h('span', {}, r.status === 'removed' ? pill('файлы удалены', '') : pill('на компьютере', 'ok'), ' ', verifiedPill(r.verified), r.withdrawn ? [' ', pill('отозван', 'bad')] : null,
-        card.current && card.current.release_id === r.release_id ? [' ', pill('текущий', 'ok')] : null),
-      r.works.length ? h('span', {class: 'small'}, r.works.map((w, i) => [i ? ', ' : null, link(w.mode === 'photo_work' ? `/photo-engraving?work=${w.plan_id}` : `/vector?plan=${w.plan_id}`, w.name)])) : h('span', {class: 'muted'}, '—'),
-      h('span', {class: 'row'}, btn('Различия', () => differencesDialog(r), 'btn-small'),
+  /** The releases of one laboratory, a line each, the newest first: when, its number and hash, whether it is the current one, withdrawn or
+      removed; the signature and the works that use it under the line; «Различия» and «Удалить файлы» at the end. */
+  function releasesList(card, reload) {
+    const created = (r) => r.created_at;
+    const works = (r) => (r.works.length ? h('span', {}, r.works.map((w, i) => [i ? ', ' : null,
+      link(w.mode === 'photo_work' ? `/photo-engraving?work=${w.plan_id}` : `/vector?plan=${w.plan_id}`, w.name)])) : 'ни одна работа его не использует');
+    return App.list({id: 'labs-releases', items: card.releases, key: (r) => r.release_id, empty: 'Выпусков нет',
+      row: (r) => [h('span', {}, when(r.created_at)), h('span', {class: 'muted'}, r.release_number == null ? '№ —' : `№ ${r.release_number}`),
+        h('span', {class: 'lst-text muted small'}, short(r.content_sha256)), card.current && card.current.release_id === r.release_id ? pill('текущий', 'ok') : null,
+        r.withdrawn ? pill('отозван', 'bad') : null, r.status === 'removed' ? pill('файлы удалены', '') : null, r.works.length ? pill(`работ: ${r.works.length}`) : null],
+      details: (r) => facts([['Хеш', r.content_sha256], ['Подпись', verifiedPill(r.verified)], ['Файлы', r.status === 'removed' ? 'удалены' : 'на компьютере'], ['Работы', works(r)]]),
+      actions: (r) => [btn('Различия', () => differencesDialog(r), 'btn-small'),
         r.status === 'removed' ? null : btn('Удалить файлы', () => confirmBox(`Удалить файлы выпуска ${short(r.content_sha256)}?`,
           'Запись о выпуске останется; его файлы исчезнут с компьютера. Пока выпуск использует сохранённая работа, он не удаляется.',
-          'Удалить', async () => { await del(`/labs/releases/${encodeURIComponent(r.release_id)}`); toast('Файлы выпуска удалены', 'ok'); reload(); }), 'danger btn-small'))]);
-    return table(['Дата', '№', 'Хеш', 'Состояние', 'Работы', ''], rows, 'Выпусков нет', true);
+          'Удалить', async () => { await del(`/labs/releases/${encodeURIComponent(r.release_id)}`); toast('Файлы выпуска удалены', 'ok'); reload(); }), 'danger btn-small')],
+      filters: [{key: 'files', label: 'Файлы', options: [['kept', 'на компьютере'], ['removed', 'файлы удалены']], test: (r, v) => (r.status === 'removed') === (v === 'removed')}],
+      sorts: [['new', 'Сначала новые', newest(created)], ['old', 'Сначала старые', oldest(created)]]}).el;
   }
 
   function withdrawalsTable(list) {
@@ -325,16 +360,22 @@
       }}]);
   }
 
+  /** The colours of fill of a setup, a line each (colour, basis, engravings, agreement, recipe), «Проверить у себя» at the end; in the
+      release's order or by lightness or engravings, by basis and concern, twenty at a time. */
   function paletteList(request, offered, made) {
-    const entry = (e) => h('li', {class: 'lab-colour'},
-      h('div', {class: 'row'}, swatch(e.lab), h('strong', {}, labText(e.lab)), pill(BASIS[e.basis] || e.basis || '—'),
+    const lightness = (e) => (e.lab ? +e.lab[0] : 0);
+    const colours = offered.entries.length ? App.list({items: offered.entries, key: (e) => e.id, className: 'lab-colours',
+      row: (e) => [swatch(e.lab), h('strong', {}, labText(e.lab)), pill(BASIS[e.basis] || e.basis || '—'),
         pill(`гравировок ${e.engravings}`), pill(agreed(e.agreement), e.caution || (e.agreement && e.agreement.differing) ? 'warn' : 'ok'),
-        e.caution ? pill(CAUTION[e.caution] || e.caution, 'warn') : null, h('span', {class: 'spacer'}),
-        btn('Проверить у себя', () => transferDialog(request, e, made).catch(fail), 'btn-small')),
-      h('p', {class: 'small muted'}, recipeText(e.recipe)));
+        e.caution ? pill(CAUTION[e.caution] || e.caution, 'warn') : null, h('span', {class: 'lst-text small muted'}, recipeText(e.recipe))],
+      actions: (e) => [btn('Проверить у себя', () => transferDialog(request, e, made).catch(fail), 'btn-small')],
+      filters: [{key: 'basis', label: 'Основа измерения', options: Object.entries(BASIS), test: (e, v) => e.basis === v},
+        {key: 'caution', label: 'Оговорки', options: [['none', 'без оговорок'], ['some', 'с оговоркой']], test: (e, v) => !e.caution === (v === 'none')}],
+      sorts: [['release', 'Как в выпуске'], ['light', 'Сначала светлые', (p, q) => lightness(q) - lightness(p)], ['dark', 'Сначала тёмные', (p, q) => lightness(p) - lightness(q)],
+        ['engravings', 'Больше гравировок', (p, q) => (q.engravings || 0) - (p.engravings || 0)]]}).el : null;
     return h('div', {class: 'stack'},
       h('p', {class: 'small'}, `Цветов заливки: ${offered.entries.length}` + (offered.conditions && offered.conditions.length ? '. ' + offered.conditions.map((c) => I18N.tr(c)).join(' ') : '')),
-      offered.entries.length ? h('ul', {class: 'stack lab-colours'}, offered.entries.map(entry)) : h('p', {class: 'muted small'}, 'Цветов заливки с этой установкой в выпуске нет.'));
+      colours || h('p', {class: 'muted small'}, 'Цветов заливки с этой установкой в выпуске нет.'));
   }
 
   function scalesList(offered) {
@@ -362,19 +403,31 @@
     return h('div', {class: 'card stack lab-setup-card'}, h('div', {class: 'row'}, h('strong', {}, setupName(setup)), pill(`фото ${setup.photographs}`), h('span', {class: 'spacer'}), palette, scales), out);
   }
 
+  /** The transfer plates made from a release, a line each (the release's colour, the plate, the measured ΔE), the newest first; the recipe,
+      the own titanium and every measurement under the line; the plate at the end. */
+  function transfersList(list) {
+    const measured = (t) => t.measurements.length > 0;
+    return App.list({id: 'labs-transfers', items: list, key: (t) => t.plan_id,
+      row: (t) => [swatch(t.source.lab), h('span', {class: 'lst-text'}, `${t.name} · ${t.identifier}`),
+        measured(t) ? pill(`измерений ${t.measurements.length} · средняя ΔE ${num(t.mean_delta_e, 1)}`, t.mean_delta_e <= 5 ? 'ok' : 'warn') : pill('ждёт фото', 'warn'),
+        h('span', {class: 'muted small'}, day(t.created_at))],
+      details: (t) => h('div', {class: 'stack small'},
+        h('p', {}, `цвет выпуска ${labText(t.source.lab)} · ${[t.own_material.name, t.own_material.grade].filter(Boolean).join(' · ')} · ${when(t.created_at)}`),
+        h('p', {class: 'muted'}, recipeText(t.recipe)),
+        measured(t) ? h('p', {}, t.measurements.map((m, i) => [i ? ' · ' : null, swatch(m.lab), link(`/analysis/${m.pair_id}`, `ΔE ${num(m.delta_e, 1)}`), ` (${day(m.measured_at)})`]))
+          : h('p', {class: 'muted'}, 'Фото пластины ещё не принято: гравируйте её и добавьте фотографию в «Эксперименты».')),
+      actions: (t) => [h('a', {class: 'btn btn-small', href: `#/plans/${t.plan_id}`}, 'Открыть')],
+      filters: [{key: 'measured', label: 'Измерено', options: [['yes', 'измерены'], ['no', 'ждут фото']], test: (t, v) => measured(t) === (v === 'yes')}],
+      sorts: [['new', 'Сначала новые', newest((t) => t.created_at)], ['delta', 'Сначала большая ΔE', (p, q) => (q.mean_delta_e ?? -1) - (p.mean_delta_e ?? -1)]]}).el;
+  }
+
   async function transfersBlock(releaseId) {
     const el = h('div', {class: 'stack'});
     const notice = h('div', {});
     async function show() {
       let list;
       try { list = await get(`/labs/transfers?release_id=${encodeURIComponent(releaseId)}`); } catch (e) { return fill(el, h('p', {class: 'alert bad'}, e.message)); }
-      fill(el, list.length ? h('ul', {class: 'stack lab-transfers'}, list.map((t) => h('li', {class: 'stack'},
-        h('div', {class: 'row'}, link(`/plans/${t.plan_id}`, `${t.name} · ${t.identifier}`), swatch(t.source.lab), h('span', {class: 'small'}, `цвет выпуска ${labText(t.source.lab)}`),
-          h('span', {class: 'small muted'}, ` · ${[t.own_material.name, t.own_material.grade].filter(Boolean).join(' · ')} · ${when(t.created_at)}`)),
-        h('p', {class: 'small muted'}, recipeText(t.recipe)),
-        t.measurements.length ? h('p', {class: 'small'}, pill(`измерений ${t.measurements.length} · средняя ΔE ${num(t.mean_delta_e, 1)}`, t.mean_delta_e <= 5 ? 'ok' : 'warn'), ' ',
-          t.measurements.map((m, i) => [i ? ' · ' : null, swatch(m.lab), link(`/analysis/${m.pair_id}`, `ΔE ${num(m.delta_e, 1)}`), ` (${day(m.measured_at)})`]))
-          : h('p', {class: 'small muted'}, 'Фото пластины ещё не принято: гравируйте её и добавьте фотографию в «Эксперименты».')))) : h('p', {class: 'muted small'}, 'Переносов с этого выпуска ещё нет.'));
+      fill(el, list.length ? transfersList(list) : h('p', {class: 'muted small'}, 'Переносов с этого выпуска ещё нет.'));
     }
     await show();
     return {el: h('div', {class: 'stack'}, notice, el), made: (plate) => {
@@ -399,7 +452,7 @@
           h('p', {class: 'sub'}, [lab.description, cur ? `автор: ${(cur.attribution || {}).name || '—'}` : null, lab.url ? `ссылка: ${lab.url}` : null].filter(Boolean).join(' · '))),
         h('span', {class: 'spacer'}), toggle),
       LabsCloud.sourceCard(card, reload),
-      h('div', {class: 'card stack'}, h('h3', {}, 'Выпуски'), releasesTable(card, reload)),
+      h('div', {class: 'card stack'}, h('h3', {}, 'Выпуски'), releasesList(card, reload)),
       h('div', {class: 'card stack'}, h('h3', {}, 'Отзывы лаборатории'), withdrawalsTable(card.withdrawal_list || [])),
       h('div', {class: 'card stack'}, h('h3', {}, 'Палитра и шкалы текущего выпуска'),
         choice ? h('div', {class: 'stack'}, h('p', {class: 'small muted'}, 'Каждая установка, измеренная выпуском: её цвета заливки с рецептами и шкалы серого. Цвет показан с Lab и основой измерения; '

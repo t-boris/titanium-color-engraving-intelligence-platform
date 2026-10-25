@@ -16,7 +16,7 @@
 'use strict';
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, duration, table, fail} = App;
-  const {value, when, materialLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleCard, newSlots, emptySlots,
+  const {value, when, materialLabel, titaniumLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleCard, newSlots, emptySlots,
     scaleDetail, sameScale, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT} = PhotoPanels;
   let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
@@ -157,13 +157,33 @@
     return {el, show};
   }
 
+  /** The measured grey scales as a short list (DEC-090): a line a scale — its colour bar, its settings and «выбрана» on the chosen one — the
+      best first (the server's order: scales a recipe refers to, then the most engraved and measured), pages of 20. A line opens the scale's
+      card (its titanium, engravings, widths, confirmation); pressing the card chooses the scale. ``chosen()`` is the scale chosen now: the list
+      opens on it. */
+  function scaleList(id, scales, chosen, choose) {
+    const key = (sc) => modeQuery(sc.mode);
+    const rank = new Map(scales.map((sc, i) => [sc, i]));
+    const best = (a, b) => rank.get(a) - rank.get(b);
+    const bar = (sc) => (sc.bar.length ? `linear-gradient(to right, ${sc.bar.map((b) => b.hex).join(', ')})` : 'none');
+    const now = chosen();
+    return App.list({id, items: scales, key, open: now ? key(now) : null, className: 'ge-scale-list',
+      row: (sc) => [h('span', {class: 'ge-bar', style: `background:${bar(sc)}`}),
+        h('span', {class: 'lst-text', title: `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`}, settingsText(sc.mode, sc.dpi)),
+        sc === chosen() ? pill('выбрана', 'ok') : null],
+      details: (sc) => scaleCard(sc, sc === chosen(), () => choose(sc)),
+      search: (sc) => `${settingsText(sc.mode, sc.dpi)} ${titaniumLabel(sc)}`,
+      sorts: [['best', 'Лучшие первыми', best], ['fast', 'Быстрее', (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || best(a, b)],
+        ['wide', 'Шире диапазон мощности', (a, b) => (b.span[1] - b.span[0]) - (a.span[1] - a.span[0]) || best(a, b)]],
+      empty: 'Нет шкал под такой поиск.'});
+  }
+
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
       сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
   async function workScreen(id) {
     const [first, {scales}] = await Promise.all([get('/photo-works/' + id), get('/grey-scales')]);
-    let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve();
+    let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve(), current = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
-    const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
     const base = `/photo-works/${id}`;
     // надписи: прогноз сервера уже рисует их врезанными, слой поверх прогноза — ручки и контур (inscriptions-in-works, REQ-005)
@@ -187,7 +207,9 @@
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
-    const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
+    current = chosen();
+    const list = scaleList('ge.work.scales', scales, () => current, (item) => pick(item));
+    const cards = (sc) => { current = sc; list.refresh(); };
 
     function showScale() {
       if (detail) detail.stop();
@@ -249,7 +271,7 @@
     keys = key;
     return fill(root, head.el, banner.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
-        h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
+        h('div', {class: 'os-scroll'}, scales.length ? list.el : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
         h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, dotWidth.el, slots.error, error, slots.bar, picture.out, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
@@ -418,19 +440,20 @@
           h('div', {class: 'os-scroll stack'}, h('p', {}, 'Шкала появляется, когда принята фотография гравировки в режиме градаций серого: пластины «Шкалы серого» '
             + 'или вашей фотогравировки (слой-изображение в файле LightBurn).'), kindsBlock()))));
     }
-    const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
     const tabs = App.tabs([['confirm', 'Подтверждение', slots.confirm], ['points', 'Точки', slots.points], ['kinds', 'Виды', kindsBlock()]],
       {initial: 'confirm', remember: 'ge.tab', label: 'Шкала', prefix: 'ge-tab'});
+    current = scales.find((sc) => modeQuery(sc.mode) === wanted) || scales[0];
+    const list = scaleList('ge.scales', scales, () => current, (sc) => choose(sc));
     const choose = (sc) => {
       if (detail) detail.stop();
       current = sc;
-      fill(list, scales.map((item) => scaleCard(item, item === sc, () => choose(item))));
+      list.refresh();
       detail = scaleDetail(sc, slots);
     };
-    choose(scales.find((sc) => modeQuery(sc.mode) === wanted) || scales[0]);
+    choose(current);
     return h('div', {class: 'os ge'}, head, h('div', {class: 'os-body ge-body'},
-      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Измеренные шкалы (${scales.length})`)), h('div', {class: 'os-scroll'}, list)),
+      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Измеренные шкалы (${scales.length})`)), h('div', {class: 'os-scroll'}, list.el)),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Серый → цвет'), slots.title),
         h('div', {class: 'ge-work'}, slots.powers, slots.error, slots.bar, h('div', {class: 'ge-table'}, slots.scale))),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));

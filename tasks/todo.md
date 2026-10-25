@@ -1,3 +1,53 @@
+# Findings you can manage, no long lists anywhere, re-check all works — 0.34.0 (operator 2026-10-25; plan approved)
+
+Operator: «Выводы — очень длинный лист, не могу их удалять, менять, сортировать, видеть … избегать длиннющие листы … почему нет
+возможности перепроверить все существующие работы и сделать из них выводы». Answers: «удалить» = hide until it changes; per finding
+«Учтено», «Скрыть», a note, «Закрепить наверху»; «Перепроверить все работы» = backup, re-measure every accepted photo, one
+recalculation, a report; every screen with a long list in this round. Plan: ~/.claude/plans/serene-popping-rabbit.md.
+
+Live counts (read only): latest run 63 = 95 findings (45 anomalies, 32 questioned, 10 gaps, 5 improvements, 3 hypotheses) + ~18
+photo-kind cards; colour model 669 rows; matrix experiment/analysis 100 layer cards; recovery copies 70; experiments 25 (twice).
+
+## Steps
+- [x] 0. MarkView feature `findings-you-can-manage-short-lists-re-check`: requirements (draft) and decisions (proposed); status implementing.
+- [x] 1. `ui/list.js` → `App.list` (one-line rows, details on click, search, filter chips with counts, sort, paging 20, actions) + tests.
+- [x] 2. Findings server: `finding_mark` table, mark route, hide/acknowledge until it changes (snapshot), stable anomaly key, `state`/`sort`/
+      paging/counts in `findings_of`, trigger `recheck`, deep link by id + tests.
+- [x] 3. Findings screen: run line + fold, tabs Выводы | Фотогравировка, state and kind chips, `App.list` rows with actions, details under the row.
+- [x] 4. Re-check job: `recheck.py`, `recheck_run` table, routes, full backup first, one recalculation, report, cancel, 409 guards + tests.
+- [x] 5. Re-check UI on «Выводы»: confirm, progress «k из N», report.
+- [x] 6. Long lists → `App.list`: colour model (669), experiment layers (100), analysis layers (100), recovery copies (70), experiments +
+      laser page (25), plan layers (24), vector work lists (20–28), grey scales (~19), RAW «Все слои» (26), colour-map search fold closed,
+      ingest review / jobView / designer sets / labs lists.
+      Done by four parallel agents (colours; experiment, analysis, ingest; experiments, workshop, labs, designer; plan, vector, grey
+      scales) and integrated; also the RAW «Варианты», «Состав работы» (100 rows on a matrix plate) and the editor's palette (60 of 639
+      squares, «Показать ещё»), found by the sweep of step 7. `App.list` gained: a field, box or link in a line works by itself,
+      `rowClass`, `open(key)` (the «Заметка» row action of a finding).
+- [x] 7. Rehearsal of the re-check on a copy of the workshop with every stored path rewritten; default row counts per screen on the copy.
+      Done: see the review below.
+- [ ] 8. README, 0.34.0, full suite -n 12 + desktop tests, release, reinstall the desktop app, report.
+
+## Review (2026-10-25, 0.34.0)
+- Rehearsal on a copy of the live workshop (`sqlite3 mode=ro .backup` + files, 1.2 GB; 209 stored paths rewritten with
+  `files.rebase_all` first), through `recheck.start` as the button does: backup 1.2 GB, then 31 accepted photographs re-measured,
+  all 31 replaced, none kept, none failed; 16 min 22 s in all (the preview said ≈ 13 min: `SECONDS_PER_PHOTO` raised from 25 to 32).
+  Colour moved by 1 ΔE or more on 6 photographs (largest 11.2 on both photographs of «Inna + Boris 9_backup», 4 layers each; 3.4 «deploma», 2.4 «Van Gogh», 2.0
+  «Soccer Players», 1.4 «Inna + Boris = <3»); the material tests and grey scales did not move. Findings run 63 → 64 (trigger
+  `recheck`): 95 → 101; appeared 10, gone 4, changed 2. All 14 appeared/gone are «improvement: the expected error fell from … to …»
+  (they compare with the previous run, so they move with every recalculation); the anomaly keys of the old run (by observation)
+  were matched to the new ones (by photograph and layer): none of the 45 anomalies was reported as gone and come back.
+- The screens on that copy (server on 8791, browser): «Выводы» opens on «Требуют внимания · 101», 20 lines; a line opens its card;
+  «Скрыть» moves it to «Скрытые · 1» with a toast; the re-check report fold shows the backup, the 31 photographs (20 lines) and the
+  findings diff. Default lines per screen: colour model 20 (of 669), experiments 20, analysis 20 (of 100), experiment result 20 and
+  composition 20 (of 100; the composition was still a 100-row table — converted), plan 20, vector work 21/20/2 (of 29), labs 3. The
+  editor's palette was 639 squares (1787 px of scrolling in its column) — now the 60 nearest, 164 px. No other container on these
+  screens holds more than 25 visible items.
+- Suite 2288 passed, none skipped (-n 12, 3:37); desktop 16 passed. REQ-001..REQ-005 criteria ticked against their own words (the
+  state chips are now shown at zero, «Заметка» is a row action and the note text shows on its row); the feature is `implemented`.
+  The requirements (draft) and DEC-001, DEC-002, DEC-089, DEC-090 (proposed) wait for the operator.
+- Left for the operator: the real «Перепроверить все работы» on the live workshop is their button (≈ 17 min, 1.2 GB backup into
+  `~/titanium-backups` unless the backup folder is set).
+
 # Photo engraving: measured quality, best settings per mode, experiments that converge (goal set 2026-10-24)
 
 Operator's goal (2026-10-24): every kind of engraving gets the attention colour gets; photo engraving (dot modes such as Atkinson, Jarvis,
@@ -434,14 +484,14 @@ measured evidence: today one dark photo engraving and no plate at these settings
       image, a coverage mask (predicted / outside the measured span / no evidence), the share of pixels outside, the curve used with the
       provenance of every point, and whether the colours are referenced or camera-relative. Dithered modes (Stucki, Jarvis, threshold) are
       refused with a reason; only grayscale mode is predicted.
-- [ ] 3. API: `POST /predictions/photo` takes a LightBurn file (the picture and the settings are inside) and optional overrides
+- [x] 3. API: `POST /predictions/photo` takes a LightBurn file (the picture and the settings are inside) and optional overrides
       (min_power, max_power, speed, frequency, pulse width, line interval) -> JSON (curve, coverage, flags) + `/predictions/photo/{id}.png`
       (preview, side by side with the picture, hatched where not predicted). Nothing is stored except a short-lived cache of the upload.
-- [ ] 4. UI: screen "Предпросмотр фотогравировки": upload the LightBurn file, per image layer the picture next to the predicted look; sliders
+- [x] 4. UI: screen "Предпросмотр фотогравировки": upload the LightBurn file, per image layer the picture next to the predicted look; sliders
       for Min/Max power that re-render; the curve table (grey -> power -> colour, source of each point); a plain statement of what the
       prediction rests on (which plates / pairs, referenced or camera-relative) and what it does not know (powers outside the span).
       A link from an accepted photo engraving's experiment page ("как будет выглядеть при других Min/Max").
-- [ ] 5. Tests: curve from synthetic observations (interpolation, span limits, flags), render of a synthetic picture, refusal of dithered
+- [x] 5. Tests: curve from synthetic observations (interpolation, span limits, flags), render of a synthetic picture, refusal of dithered
       modes, API round trip, i18n coverage.
 - [ ] 6. Real check: the Inna file through the screen; the prediction against its own photograph (self-consistency) and the picture's
       5.5 % of pixels outside the span reported.
@@ -986,7 +1036,7 @@ message and the README dependency step go into the same release. SemVer: a new c
       screen as one viewport (header with undo/redo and file, tabs Разбиение/Цвета/AI/Файл on the left, picture in the middle, layers and
       variants on the right, only long lists scroll inside their panel). Check on screen at 1421x951 and a smaller window.
 - [x] 4. Spec (DEC-085, REQ-053, REQ-054), README (0.9.0 section, dependency step of the deploy recipe), version 0.9.0, tag.
-- [ ] 5. Full suite once, backup, wheel, install, import every declared dependency from the app environment, one AI call from it on a copy,
+- [x] 5. Full suite once, backup, wheel, install, import every declared dependency from the app environment, one AI call from it on a copy,
       deploy, look at the real app.
 
 ### Measured on screen (copy of the data on 8796, window 1421 x 951, work 22: 28 colours, 16 layers)

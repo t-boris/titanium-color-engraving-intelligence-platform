@@ -6,7 +6,7 @@ import json
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import analysis, conversion, designer, ingest, knowledge, photo, prediction, render_cache, setup as su, vectorize
+from .. import analysis, conversion, designer, ingest, knowledge, photo, prediction, recheck, render_cache, setup as su, vectorize
 from ..db import ImmutableError, Store
 
 MAX_LIGHTBURN_BYTES = 100 * 1024 * 1024
@@ -38,6 +38,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ImmutableError)
     async def immutable(_, exc):
         return JSONResponse({"error": str(exc), "kind": "immutable"}, status_code=409)
+
+    @app.exception_handler(recheck.Busy)
+    async def busy(_, exc):
+        return JSONResponse({"error": str(exc), "kind": "busy"}, status_code=409)
 
     @app.exception_handler(KeyError)
     async def missing(_, exc):

@@ -63,7 +63,8 @@ const DeviceView = (() => {
   }
 
   // The experiments of this laser are the one experiment list filtered by it (REQ-028): no list of plates, engravings or
-  // photographs of its own. Beside it, the lookup of a measured result by its settings.
+  // photographs of its own; the same short list with the same search, filters and order as the experiments screen (DEC-090).
+  // Beside it, the lookup of a measured result by its settings.
   function experimentsCard(experiments, device, lenses) {
     const byLens = new Map();
     for (const item of experiments) {          // the lens of each work is its lens record (lens_id), not a stored snapshot
@@ -113,7 +114,7 @@ const DeviceView = (() => {
       h('section', {class: 'card dashboard-panel'},
         h('div', {class: 'dashboard-panel-head'}, h('h3', {}, 'Эксперименты этого лазера'), pill(experiments.length),
           link('/experiments?device=' + device.id, 'Открыть в общем списке')),
-        experiments.length ? ExperimentCards.list(experiments, '')
+        experiments.length ? ExperimentCards.list(experiments, {id: 'laser-experiments', empty: 'Ничего не найдено: измените поиск, состояние или задачу.'})
           : h('div', {class: 'empty'}, h('p', {}, 'Экспериментов для этого лазера пока нет.'), link('/experiments', 'Создать эксперимент'))));
   }
   return {passportCard, stepsCard, documentsCard, capabilityResultsCard, experimentsCard, g};

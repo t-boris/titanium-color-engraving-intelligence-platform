@@ -29,6 +29,51 @@
     return sides ? h('p', {class: 'small'}, `Рамка закрывает края, мм (ориентировочно): ${sides}. Скрытое не измеряется.`) : null;
   }
 
+  // -- the measured layers as a short list (findings-you-can-manage-short-lists-re-check, REQ-005, DEC-090) -------------------------
+  // A parameter matrix has a hundred layers: one line each (colour, name, how uneven the sample is, a problem), the worst first, the
+  // card of the layer under its line on a click, twenty at a time.
+
+  /** What is wrong with a measured layer: «не сопоставим» (kept as a measurement, left out of the model) before notes before nothing. */
+  function trouble(l) {
+    const notes = (l.notes || []).map((n) => I18N.tr(n));
+    const remarks = notes.length + (l.covered_by || []).length;
+    if (l.compatible === false) return {level: 2, kind: 'bad', label: 'не сопоставим', notes};
+    return remarks ? {level: 1, kind: 'warn', label: `замечаний: ${remarks}`, notes} : {level: 0, kind: 'ok', label: null, notes};
+  }
+  // how uneven the colour of the sample is (L*); a picture layer varies by its own tones, so it has none
+  const unevenness = (l) => (l.image || !l.spread ? null : l.spread.L);
+
+  /** The card of one layer under its line: the colour (also as shot), the task, the settings, the metrics and the notes (REQ-020). */
+  function layerCard(l) {
+    return h('div', {class: 'stack small'},
+      h('div', {}, l.measured_lab_against_clean
+        ? [swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean), h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`)]
+        : [swatch(l.measured_lab), labText(l.measured_lab)], ' ', Tasks.badge(l.task)),
+      Tasks.colourBasis(l.metrics) ? h('div', {class: 'muted small'}, Tasks.colourBasis(l.metrics)) : null,
+      h('div', {class: 'small muted'}, params(l)),
+      Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null,
+      ...Composition.layerNotes(l));
+  }
+
+  /** The measured layers of one check. ``pairId`` keeps the order, filter, search and pages for the session while the screen is drawn
+      again (the overlay switched, another check and back). */
+  function layerList(layers, pairId) {
+    const problems = new Map(layers.map((l) => [l, trouble(l)]));
+    const worst = (a, b) => problems.get(b).level - problems.get(a).level || (unevenness(b) ?? -1) - (unevenness(a) ?? -1) || a.index - b.index;
+    const row = (l) => {
+      const lab = l.measured_lab_against_clean || l.measured_lab, t = problems.get(l), spread = unevenness(l);
+      return [swatch(lab), h('span', {class: 'lst-text', title: I18N.name(l.name)}, I18N.name(l.name)), h('span', {class: 'muted small'}, labText(lab)),
+        spread != null ? h('span', {class: 'small', title: 'Разброс светлоты в пробе'}, `±${num(spread, 1)} L*`) : null,
+        t.label ? h('span', {title: t.notes.join(' · ')}, pill(t.label, t.kind)) : null];
+    };
+    return App.list({id: `ep-layers:${pairId}`, items: layers, key: (l) => l.index, row, details: layerCard,
+      search: (l) => `${I18N.name(l.name)} ${l.name}`,
+      filters: layers.some((l) => problems.get(l).level) ? [{key: 'problem', label: 'Замечания', test: (l, v) => problems.get(l).kind === v,
+        options: [['bad', 'Не сопоставимы'], ['warn', 'С замечаниями'], ['ok', 'Без замечаний']]}] : [],
+      sorts: [['worst', 'Сначала худшие', worst], ['order', 'По порядку', (a, b) => a.index - b.index]],
+      empty: 'Под поиск и фильтр слоёв нет.'});
+  }
+
   App.register({id: 'experiment', async render(ctx) {
     const key = decodeURIComponent(ctx.arg || '');
     const exp = await get('/experiments/' + encodeURIComponent(key));
@@ -113,19 +158,6 @@
       const check = pair.check || {};
       const layers = (check.layers || []).filter((l) => l.measured_lab);
       const ref = check.clean_reference;
-      // REQ-020: у каждого слоя — его задача; у каждой метрики — способ (подсказка) и основание измерения
-      // one compact card per layer (a table of five columns does not fit the side panel): colour, name and task on the first line,
-      // the settings on the second, the metrics and notes below
-      const rows = layers.map((l) => h('div', {class: 'ep-layer'},
-        h('div', {class: 'ep-layer-top'},
-          h('span', {}, l.measured_lab_against_clean
-            ? [swatch(l.measured_lab_against_clean), labText(l.measured_lab_against_clean), h('span', {class: 'muted small'}, ` · как снято: ${labText(l.measured_lab)}`)]
-            : [swatch(l.measured_lab), labText(l.measured_lab)]),
-          h('strong', {}, I18N.name(l.name)), Tasks.badge(l.task)),
-        Tasks.colourBasis(l.metrics) ? h('div', {class: 'muted small'}, Tasks.colourBasis(l.metrics)) : null,
-        h('div', {class: 'small muted'}, params(l)),
-        h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null,
-          ...Composition.layerNotes(l))));
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
       // each photographed photo engraving judged as a picture, and the copies of a «Подобрать настройки» plate side by side
       // (photo-engraving-quality REQ-003, DEC-001, DEC-003)
@@ -139,7 +171,7 @@
         ...(check.problems || []).map((m) => h('div', {class: 'alert bad', role: 'alert'}, I18N.tr(m))),
         ...(check.warnings || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m))),
         frameNote(check),
-        ...(check.composition ? [Composition.card(check)] : []),
+        ...(check.composition ? [Composition.card(check, pair.id)] : []),
         ...(ref ? [h('div', {class: 'alert ok', role: 'status'},
           `Цвета приведены к чистому титану этой же фотографии (слой очистки: L* ${num(ref.lab[0], 1)} как снято, принят за L* ${num(ref.nominal[0], 0)}`
           + `${ref.nominal_source === 'chart' ? ', по измерениям с картой' : ', значение по умолчанию'}). `
@@ -148,8 +180,9 @@
         review,
         quality,
         layers.length ? h('div', {class: 'stack'}, h('h3', {}, `Измеренные слои · ${layers.length}`),
-          h('p', {class: 'muted small'}, ref ? 'Цвет относительно чистого титана, затем слой, задача, параметры, метрики и заметки.' : 'Цвет на фото, затем слой, задача, параметры, метрики и заметки.'),
-          h('div', {class: 'ep-layers'}, rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
+          h('p', {class: 'muted small'}, (ref ? 'Цвет относительно чистого титана' : 'Цвет на фото')
+            + ', разброс светлоты в пробе и замечания. Нажмите на слой: задача, параметры, метрики и заметки.'),
+          layerList(layers, shown).el) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),
         ...images.map((l) => h('p', {class: 'small'}, `${l.name}: тональный профиль — связь серого уровня картинки с яркостью ${num(l.tonal.rho, 2)}, `
           + `размах L* ${num(l.tonal.range_L, 0)}. `, link(`/ingest?pair=${shown}`, 'Таблица «серый → мощность → цвет»'))));
       if (review) PredictionReview.load(shown, review, () => !!current && current.id === shown);

@@ -23,7 +23,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -164,11 +164,17 @@ def test_the_colour_table_opens_in_a_window_and_the_ai_tab_says_when_the_library
   await byText(tree, 'button', 'Подробно по цветам…').dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.window = dialog.textContent; out.wide = dialog.querySelectorAll('div').some((d) => has(d, 'vw-wide'));
+  out.lines = dialog.querySelectorAll('.lst-main').length;
+  await dialog.querySelector('.lst-main').dispatch('click'); await tick();                       // a colour's line opens its titanium colour
+  out.opened = dialog.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   const ai = tree.querySelectorAll('div').find((d) => d.className === 'stack vw-ai');
   out.disabled = byText(ai, 'button', 'Раскрасить с помощью AI').disabled;
   out.reason = ai.querySelectorAll('p').filter((p) => p.className === 'alert warn' && !p.hidden).map((p) => p.textContent);
 """)
-    assert "Исходный цвет" in out["window"] and "Цвет титана" in out["window"] and out["wide"] is True
+    assert "исходный цвет и цвет титана" in out["window"] and "Изменить" in out["window"] and out["wide"] is True
+    assert out["lines"] == len(view["colours"]) and "показано" in out["window"]                  # one line per source colour (DEC-090)
+    (opened,) = out["opened"]
+    assert opened.startswith("Исходный цвет") and "Цвет титана" in opened and "Рецепт" in opened
     assert out["disabled"] is True and len(out["reason"]) == 1 and "библиотека" in out["reason"][0] and "OPENAI_API_KEY" not in out["reason"][0]
 
 

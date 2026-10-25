@@ -1,7 +1,13 @@
 /* Выводы (REQ-022): что показала накопленная работа и что проверить дальше. Вопрос оператора к экрану — «что изменилось
    и где не хватает данных?». Каждый вывод показывает основания со ссылками, лазер с линзой, титан и задачу, число
    независимых гравировок и фотографий, неопределённость и ясную пометку: измерено, исследовательская аномалия или гипотеза AI.
-   История вывода — тот же вывод в прежних расчётах; прежние расчёты не меняются. Адрес: #/findings?run=&kind=&task=&setup=&material= */
+   История вывода — тот же вывод в прежних расчётах; прежние расчёты не меняются.
+   The findings are a short list (findings-you-can-manage-short-lists-re-check, REQ-002, REQ-003): one line per finding, opened on
+   «Требуют внимания»; a finding can be acknowledged, hidden, pinned to the top and given a note. «Учтено» and «скрыто» hold while the
+   finding has no new data (DEC-001). Photo engraving is a tab of its own.
+   «Перепроверить все работы» (REQ-004, DEC-089): a full backup, every accepted photograph measured again, the findings drawn once; the
+   progress on the screen, a stop between photographs, the report of the last re-check (after a restart too).
+   Адрес: #/findings?run=&state=&kind=&task=&setup=&material=&sort=&tab=&finding= */
 'use strict';
 (() => {
   const {h, btn, field, link, pill, get, post, put, toast, fail, num, labText, swatch, facts} = App;
@@ -10,7 +16,9 @@
   const KIND_ONE = {improvement: 'Улучшение', unstable: 'Нестабильно', anomaly: 'Аномалия', gap: 'Пробел', hypothesis: 'Гипотеза AI'};
   const BASIS = {measured: ['Измерено', 'ok'], exploratory: ['Исследовательская аномалия, не вывод', 'warn'],
     hypothesis: ['Гипотеза AI, не измерение', 'bad']};
-  const TRIGGER = {acceptance: 'после принятия фотографии', manual: 'по кнопке', schedule: 'по расписанию'};
+  const TRIGGER = {acceptance: 'после принятия фотографии', manual: 'по кнопке', schedule: 'по расписанию', recheck: 'после перепроверки всех работ'};
+  const STATES = [['attention', 'Требуют внимания'], ['acknowledged', 'Учтённые'], ['hidden', 'Скрытые']];
+  const SORTS = [['important', 'Сначала важные'], ['newest', 'Сначала новые'], ['delta', 'Больший ΔE'], ['setup', 'По лазеру и титану']];
   const STAGE = {measured: 'измерено', candidate: 'кандидат', repeated: 'повторено', validated: 'валидировано', production: 'производственное'};
   const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
   const taskName = (t) => (t ? Tasks.name(t) : 'задача не определена');     // задачи — общий словарь (REQ-020, tasks.js)
@@ -133,7 +141,7 @@
     const [basis, basisKind] = BASIS[f.basis] || [f.basis, ''];
     const c = f.context || {};
     const recipe = f.recipe && f.recipe.lab ? h('p', {class: 'small'}, swatch(f.recipe.lab), ' ', labText(f.recipe.lab), ' · ', settings(f.recipe.parameters)) : null;
-    return h('article', {class: 'card stack finding'},
+    return h('article', {class: 'stack finding'},
       h('div', {class: 'row'}, pill(KIND_ONE[f.kind] || f.kind), pill(basis, basisKind), f.new ? pill('новое в этом расчёте', 'ok') : null,
         h('span', {class: 'spacer'}), proposeButton(f)),
       h('p', {}, h('strong', {}, I18N.tr(f.statement))),
@@ -144,18 +152,65 @@
       evidence(f), historyBlock(f));
   }
 
+  // -- the operator's marks (REQ-003): «Учтено», «Скрыть» / «Вернуть», «Закрепить», a note; ``done`` reads the findings again
+  const mark = (f, action, note) => post(`/analysis/findings/${f.id}/mark`, note === undefined ? {action} : {action, note});
+  const DONE = {acknowledge: 'Отмечено «учтено»: вывод вернётся в «Требуют внимания», когда у него появятся новые данные.',
+    hide: 'Скрыто до новых данных: вывод можно найти в «Скрытых».', reopen: 'Вывод снова требует внимания.'};
+  function markButtons(f, done, openNote) {
+    const act = (action, text) => btn(text, async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await mark(f, action); if (DONE[action]) toast(DONE[action], 'ok'); await done(); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
+    return [f.state === 'attention' ? act('acknowledge', 'Учтено') : act('reopen', 'Вернуть'),
+      f.state !== 'hidden' ? act('hide', 'Скрыть') : null,
+      btn('Заметка', () => openNote(), 'btn-small'),
+      act(f.mark.pinned ? 'unpin' : 'pin', f.mark.pinned ? 'Открепить' : 'Закрепить')];
+  }
+
+  function markBlock(f, done) {
+    const m = f.mark;
+    const was = m.status === 'hidden' ? 'скрыт' : 'отмечен «учтено»';
+    const status = m.changed ? `Был ${was} ${when(m.status_at)}; с тех пор появились новые данные, вывод снова требует внимания.`
+      : m.status ? `${m.status === 'hidden' ? 'Скрыт' : 'Отмечен «учтено»'} ${when(m.status_at)}: вернётся, когда появятся новые данные.` : null;
+    const note = h('textarea', {rows: '2', maxlength: '2000', placeholder: 'Что сделано, что проверить…'});
+    note.value = m.note || '';
+    const save = btn('Сохранить заметку', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await mark(f, 'note', note.value); toast('Заметка сохранена', 'ok'); await done(); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
+    return h('div', {class: 'stack fd-mark'}, status ? h('p', {class: 'small muted'}, status) : null,
+      h('div', {class: 'toolbar'}, field('Заметка оператора', note), save));
+  }
+
+  /** One line of the list: pinned, kind, the statement, laser and titanium, ΔE, new or changed, its mark, a note. */
+  function row(f) {
+    const c = f.context || {};
+    return [f.mark.pinned ? h('span', {title: 'Закреплён наверху', 'aria-label': 'Закреплён наверху'}, '📌') : null,
+      h('span', {class: 'fd-kind fd-' + f.kind}, KIND_ONE[f.kind] || f.kind),
+      h('span', {class: 'lst-text', title: I18N.tr(f.statement)}, I18N.tr(f.statement)),
+      h('span', {class: 'muted small fd-where'}, `${c.device || 'лазер № ' + f.device_id} · ${stockName(c.stock)}`),
+      f.deviation != null ? h('span', {class: 'small'}, `ΔE ${num(f.deviation, 1)}`) : null,
+      f.mark.changed ? pill('изменился', 'warn') : f.new ? pill('новое', 'ok') : null,
+      f.state === 'hidden' ? pill('скрыт') : f.state === 'acknowledged' ? pill('учтён') : null,
+      f.mark.note ? h('span', {class: 'muted small fd-note', title: f.mark.note}, '✎ ' + f.mark.note) : null];
+  }
+
   function rulesAlerts(run) {
     const MISSING = {variance_threshold: 'порог дисперсии — нестабильность не оценивается', delta_tolerance: 'допуск ΔE — аномалии судятся по трём стандартным отклонениям, достижение целевых цветов не оценивается'};
     return (run.inputs.unset_rules || []).map((u) => h('div', {class: 'alert warn small'}, `${setupName(u)}: не сохранены ${u.missing.map((m) => MISSING[m]).join('; ')}. `,
       link('/setup', 'Правила оценки')));
   }
 
-  function scheduleCard(schedule) {
+  function scheduleBlock(schedule) {
     const hours = h('input', {type: 'number', min: '0', step: 'any', value: schedule.interval_hours, 'aria-label': 'Интервал пересчёта, ч'});
     const state = schedule.interval_hours > 0
       ? `Включено: каждые ${schedule.interval_hours} ч. Следующий расчёт — ${when(schedule.next_due_at)}${schedule.running ? '' : ' (начнётся после перезапуска приложения)'}.`
       : 'Выключено: выводы пересчитываются после каждого принятия фотографии и по кнопке.';
-    return h('div', {class: 'card stack'}, h('h3', {}, 'Пересчёт по расписанию'), h('p', {class: 'muted small'}, state),
+    return h('div', {class: 'stack'}, h('h4', {}, 'Пересчёт по расписанию'), h('p', {class: 'muted small'}, state),
       h('div', {class: 'toolbar'}, field('Пересчитывать каждые, ч (0 — выключено)', hours),
         btn('Сохранить расписание', async (ev) => {
           const self = ev.currentTarget;
@@ -165,61 +220,221 @@
         })));
   }
 
-  App.register({id: 'findings', async render(ctx) {
-    const q = ctx.query;
-    const [runs, schedule, goals, result] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'), get('/application-goals'),
-      get(`/analysis/runs/${q.run || 'latest'}?` + new URLSearchParams(Object.entries({kind: q.kind, task: q.task, setup: q.setup, material: q.material})
-        .filter(([, v]) => v)).toString())]);
-    const run = result.run;
-    goalNames = Object.fromEntries(goals.map((g) => [g.id, g.name]));
-    const route = (change) => {
-      const next = Object.fromEntries(Object.entries({...q, ...change}).filter(([, v]) => v));
-      App.go('/findings?' + new URLSearchParams(next).toString());
+  // -- «Перепроверить все работы» (REQ-004, DEC-089) ----------------------------------------------------------------------
+  const RECHECK_POLL_MS = 1000;
+  const RECHECK_PHASE = {backup: 'Делаю резервную копию мастерской…', analysis: 'Пересчитываю выводы…'};
+  const RECHECK_END = {done: 'Перепроверка закончена', cancelled: 'Перепроверка остановлена', failed: 'Перепроверка не удалась',
+    interrupted: 'Перепроверка прервана: приложение было закрыто'};
+  const PHOTO = {replaced: ['заменено', 'ok'], kept: ['оставлено старое', 'warn'], failed: ['ошибка', 'bad']};
+  const CHANGE = {appeared: ['появился', 'ok'], gone: ['ушёл', ''], changed: ['изменился', 'warn']};
+  const mb = (bytes) => (bytes == null ? '—' : bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1).replace('.', ',')} ГБ`
+    : `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',')} МБ`);
+  const duration = (s) => (s < 90 ? `${Math.max(1, Math.round(s))} с` : `${Math.round(s / 60)} мин`);
+
+  /** Ask first: how many photographs, about how long, where the backup goes and whether it fits; then start and follow. */
+  function recheckButton(box) {
+    return btn('Перепроверить все работы', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try {
+        const p = await get('/recheck/preview');
+        if (p.running) { followRecheck(box, await get('/recheck/latest')); return; }
+        const short = p.free_bytes != null && p.free_bytes < p.backup_bytes;
+        const body = !p.photos ? h('p', {}, 'Принятых фотографий нет: перепроверять нечего.') : h('div', {class: 'stack'},
+          h('p', {}, `Все принятые фотографии (${p.photos}) будут заново измерены так, как приложение измеряет сейчас, и выводы пересчитаны один раз в конце. `
+            + `Займёт примерно ${duration(p.estimate_s)}.`),
+          h('p', {}, `Сначала — полная резервная копия мастерской в папку ${p.backup_dir} (${mb(p.backup_bytes)}, свободно ${mb(p.free_bytes)}): `
+            + 'новое измерение заменяет старое вместе с его файлами, вернуть прежнее можно только из этой копии.'),
+          h('p', {class: 'muted small'}, 'Если новое измерение фотографии не получится целиком, останется старое. Пока идёт перепроверка, фотографии нельзя '
+            + 'принимать, перемерять и удалять; её можно остановить между фотографиями.'),
+          short ? h('div', {class: 'alert bad'}, 'Места для резервной копии не хватает: освободите место или выберите другую папку резервных копий в разделе «Мастерская».') : null);
+        App.modal('Перепроверить все работы?', body, !p.photos || short ? [{label: 'Закрыть', run: (m) => m.close()}]
+          : [{label: 'Отмена', run: (m) => m.close()},
+            {label: 'Перепроверить', cls: 'primary', run: async (m) => { const started = await post('/recheck', {}); m.close(); followRecheck(box, started); }}]);
+      } catch (e) { fail(e); } finally { self.disabled = false; }
+    }, 'btn-small');
+  }
+
+  /** A re-check running: its phase, «k из N» with the photograph being measured and the time left, a bar and «Остановить»; polled every
+      second while the screen shows it (the re-check goes on when the screen is left); at the end the screen is drawn again with the report. */
+  function followRecheck(box, r) {
+    const fillBar = h('div', {class: 'lab-bar-fill'});
+    const meter = h('div', {role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(r.total), 'aria-label': 'Перепроверка всех работ'},
+      h('div', {class: 'lab-bar'}, fillBar));
+    const text = h('span', {class: 'small'});
+    const stopButton = btn('Остановить', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { await post(`/recheck/${r.id}/stop`, {}); toast('Перепроверка остановится после фотографии, которая сейчас измеряется', 'ok'); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
+    App.fill(box, h('div', {class: 'row'}, h('strong', {class: 'small'}, 'Перепроверка всех работ'), text, h('span', {class: 'spacer'}), stopButton), meter);
+    const show = () => {
+      const c = r.current;
+      const left = r.done && r.total > r.done ? ` · осталось ≈ ${duration(r.elapsed_s / r.done * (r.total - r.done))}` : '';
+      text.textContent = r.phase === 'remeasure'
+        ? `Перемеряю фото ${Math.min(r.done + 1, r.total)} из ${r.total}` + (c ? ` · ${c.title || c.photo_name} (фото № ${c.pair_id})` : '') + left
+        : RECHECK_PHASE[r.phase] || r.phase;
+      const percent = r.total ? Math.round(r.done / r.total * 100) : 0;
+      fillBar.setAttribute('style', `width:${percent}%`);
+      meter.setAttribute('aria-valuenow', String(r.done));
     };
+    const poll = async () => {
+      if (!box.isConnected) return;
+      try { r = await get(`/recheck/${r.id}`); } catch (e) { App.fill(box, h('div', {class: 'alert bad'}, e.message)); return; }
+      if (r.status === 'running') { show(); setTimeout(poll, RECHECK_POLL_MS); return; }
+      toast(RECHECK_END[r.status] || r.status, r.status === 'done' ? 'ok' : 'bad');
+      App.render({preserveScroll: true});                         // the new run of conclusions and the report
+    };
+    show();
+    setTimeout(poll, RECHECK_POLL_MS);
+  }
+
+  /** The report of the last re-check in a fold: the backup, the photographs (replaced, kept with the reason, failed; the largest colour
+      change) and what changed in the findings, each as a short list. */
+  function recheckReport(r, route) {
+    const count = (s) => r.photos.filter((p) => p.status === s).length;
+    const f = r.findings;
+    const photos = App.list({items: r.photos, key: (p) => p.pair_id, search: (p) => `${p.title || ''} ${p.photo_name || ''} ${p.pair_id}`,
+      row: (p) => [pill(...(PHOTO[p.status] || [p.status])), h('span', {class: 'lst-text'}, p.title || p.photo_name || `фото № ${p.pair_id}`),
+        h('span', {class: 'muted small'}, `фото № ${p.pair_id}`), p.max_delta_e != null ? h('span', {class: 'small'}, `ΔE до ${num(p.max_delta_e, 1)}`) : null,
+        p.changed_layers ? h('span', {class: 'muted small'}, `слоёв изменилось: ${p.changed_layers}`) : null],
+      details: (p) => h('div', {class: 'stack small'}, p.reason ? h('p', {}, I18N.tr(p.reason)) : null,
+        h('p', {}, link('/analysis/' + (p.replaced_by || p.pair_id), p.replaced_by ? `Новое измерение — фото № ${p.replaced_by}` : 'Открыть фото'))),
+      filters: [{key: 'status', label: 'Итог', options: Object.entries(PHOTO).map(([k, [text]]) => [k, text]), test: (p, v) => p.status === v}],
+      sorts: [['delta', 'Больший сдвиг цвета', (a, b) => (b.max_delta_e ?? -1) - (a.max_delta_e ?? -1)], ['order', 'По порядку', (a, b) => a.pair_id - b.pair_id]],
+      empty: 'Фотографии не перемерялись.'});
+    const changes = f ? [...f.appeared.map((x) => ({...x, change: 'appeared'})), ...f.gone.map((x) => ({...x, change: 'gone'})),
+      ...f.changed.map((x) => ({...x, change: 'changed'}))] : [];
+    const changeList = changes.length ? App.list({items: changes, key: (x) => `${x.change}:${x.id}`,
+      row: (x) => [pill(...CHANGE[x.change]), h('span', {class: 'fd-kind fd-' + x.kind}, KIND_ONE[x.kind] || x.kind), h('span', {class: 'lst-text'}, I18N.tr(x.statement))],
+      details: (x) => h('div', {class: 'stack small'}, x.was ? h('p', {}, `Было: ${KIND_ONE[x.was.kind] || x.was.kind} — ${I18N.tr(x.was.statement)}`) : null,
+        h('p', {}, btn('Открыть вывод', () => route({finding: x.id}), 'btn-small'))),
+      filters: [{key: 'change', label: 'Изменение', options: Object.entries(CHANGE).map(([k, [text]]) => [k, text]), test: (x, v) => x.change === v}]}) : null;
+    const listed = f ? ['appeared', 'gone', 'changed'].filter((k) => f.counts[k] > f[k].length) : [];
+    const summary = `${when(r.finished_at || r.started_at)} · ${RECHECK_END[r.status] || r.status}`
+      + (r.photos.length ? ` · заменено ${count('replaced')}, оставлено старое ${count('kept')}, ошибок ${count('failed')}` : '');
+    return h('details', {class: 'fd-fold'}, h('summary', {}, 'Последняя перепроверка: ' + summary),
+      h('div', {class: 'stack'},
+        r.error ? h('div', {class: 'alert bad'}, I18N.tr(r.error)) : null,
+        facts([['Резервная копия', r.backup ? `${r.backup.path} (${mb(r.backup.bytes)})` : 'не сделана'],
+          ['Фотографии', `перемерено ${r.done} из ${r.total}` + (r.elapsed_s ? ` за ${duration(r.elapsed_s)}` : '')],
+          ['Выводы', f ? `расчёт № ${f.before_run_id ?? '—'} → № ${f.after_run_id}: появилось ${f.counts.appeared}, ушло ${f.counts.gone}, изменилось ${f.counts.changed}`
+            : 'не пересчитаны']]),
+        f ? h('div', {class: 'toolbar'}, btn('Показать выводы, требующие внимания, — сначала новые', () => route({run: '', finding: '', tab: '', state: 'attention',
+          sort: 'newest', kind: '', task: '', setup: '', material: ''}), 'btn-small')) : null,
+        h('h4', {}, 'Фотографии'), photos.el,
+        changeList ? [h('h4', {}, 'Что изменилось в выводах'), changeList.el] : null,
+        listed.length ? h('p', {class: 'muted small'}, 'Названы не все изменения: ' + listed.map((k) => `${CHANGE[k][0]} — ${f[k].length} из ${f.counts[k]}`).join(', ')) : null));
+  }
+
+  /** The run on one line, «Пересчитать сейчас»; what it read, the rules not saved, earlier runs and the schedule in a fold. */
+  function runLine(run, runs, schedule, cur, route, recheckBox) {
     const recalc = btn('Пересчитать сейчас', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try {
         const r = await post('/analysis/runs');
         toast(`Расчёт № ${r.id} готов`, 'ok');
-        if (q.run) route({run: ''}); else App.render();          // the new run is the latest
+        route({run: '', finding: ''});                           // the new run is the latest
       }
       catch (e) { fail(e); self.disabled = false; }
-    }, 'primary');
-    const runSelect = h('select', {'aria-label': 'Расчёт', onChange: (e) => route({run: e.target.value})},
-      h('option', {value: ''}, 'последний'), runs.map((r) => h('option', {value: r.id, selected: String(r.id) === q.run}, `№ ${r.id} · ${when(r.at)} · ${TRIGGER[r.trigger] || r.trigger}`)));
-    const o = result.options;
-    const select = (label, key, items) => field(label, h('select', {onChange: (e) => route({[key]: e.target.value})},
-      h('option', {value: ''}, 'все'), items.map(([v, text]) => h('option', {value: v, selected: v === q[key]}, text))));
-    const filters = h('div', {class: 'toolbar'},
-      select('Вид', 'kind', o.kinds.map((k) => [k, KIND[k]])), select('Задача', 'task', o.tasks.map((t) => [t, taskName(t)])),
-      select('Лазер и линза', 'setup', o.setups.map((s) => [s.key, setupName(s)])), select('Титан', 'material', o.stocks.map((s) => [s.key, stockName(s.stock)])));
-    const runCard = h('div', {class: 'card stack'}, h('h3', {}, 'Расчёт выводов'),
-      run ? facts([['Расчёт', `№ ${run.id} · ${when(run.at)} · ${TRIGGER[run.trigger] || run.trigger}`],
-        ['Входные данные', `принятых фотографий ${run.inputs.accepted_pairs} · наблюдений для модели ${run.inputs.eligible_observations} · записей знания ${run.inputs.knowledge_entries}`
-          + ` · целевых цветов ${run.inputs.targets} · выводов AI ${run.inputs.insights}`],
-        ['Найдено', KINDS.map((k) => `${KIND[k]}: ${run.counts[k] || 0}`).join(' · ')]])
-        : h('p', {class: 'muted'}, 'Расчётов ещё не было. Выводы считаются после каждого принятия фотографии; можно пересчитать и сейчас.'),
-      ...(run ? rulesAlerts(run) : []),
-      h('div', {class: 'toolbar'}, recalc, field('Показать расчёт', runSelect),
-        h('p', {class: 'toolbar-hint'}, 'Прежние расчёты сохраняются: их выводы можно открыть и сравнить.')));
-    // photo engraving on every laser and titanium where one was photographed: what each setting does and the plate proposed (photo-engraving-quality)
+    }, 'primary btn-small');
+    const runSelect = h('select', {'aria-label': 'Расчёт', onChange: (e) => route({run: e.target.value, finding: ''})},
+      h('option', {value: ''}, 'последний'), runs.map((r) => h('option', {value: r.id, selected: String(r.id) === cur.run}, `№ ${r.id} · ${when(r.at)} · ${TRIGGER[r.trigger] || r.trigger}`)));
+    const alerts = run ? rulesAlerts(run) : [];
+    const older = run && runs.length && runs[0].id !== run.id;
+    return h('div', {class: 'card stack fd-run'},
+      h('div', {class: 'row'}, run ? h('strong', {}, `Расчёт № ${run.id}`) : h('strong', {}, 'Расчётов ещё не было'),
+        run ? h('span', {class: 'muted small'}, `${when(run.at)} · ${TRIGGER[run.trigger] || run.trigger}`) : null,
+        older ? h('span', {class: 'small'}, pill('прежний расчёт', 'warn'), ' ', h('a', {href: '#', onClick: (e) => { e.preventDefault(); route({run: '', finding: ''}); }}, 'к последнему')) : null,
+        h('span', {class: 'spacer'}), recalc, recheckButton(recheckBox)),
+      run ? null : h('p', {class: 'muted small'}, 'Выводы считаются после каждого принятия фотографии; можно пересчитать и сейчас.'),
+      recheckBox,
+      h('details', {class: 'fd-fold'}, h('summary', {}, 'О расчёте и расписании' + (alerts.length ? ` · правила оценки не сохранены: ${alerts.length}` : '')),
+        h('div', {class: 'stack'},
+          run ? facts([['Входные данные', `принятых фотографий ${run.inputs.accepted_pairs} · наблюдений для модели ${run.inputs.eligible_observations} · записей знания ${run.inputs.knowledge_entries}`
+            + ` · целевых цветов ${run.inputs.targets} · выводов AI ${run.inputs.insights}`],
+            ['Найдено', KINDS.map((k) => `${KIND[k]}: ${run.counts[k] || 0}`).join(' · ')]]) : null,
+          alerts,
+          h('div', {class: 'toolbar'}, field('Показать расчёт', runSelect), h('p', {class: 'toolbar-hint'}, 'Прежние расчёты сохраняются: их выводы можно открыть и сравнить.')),
+          scheduleBlock(schedule))));
+  }
+
+  /** The findings of the run as a short list read from the server page by page (REQ-002). */
+  function findingsList(cur, keep) {
+    const asked = {state: cur.state === 'all' ? '' : (cur.state || 'attention'), kind: cur.kind || '', task: cur.task || '', setup: cur.setup || '', material: cur.material || ''};
+    return App.list({
+      load: async (s) => {
+        const params = Object.entries({...s.filters, sort: s.sort, offset: s.offset, limit: s.limit}).filter(([, v]) => v !== '' && v != null);
+        const r = await get(`/analysis/runs/${cur.run || 'latest'}?` + new URLSearchParams(params).toString());
+        return {items: r.findings, total: r.matched, counts: r.counts, options: r.options};
+      },
+      key: (f) => f.key, row, details: (f, list) => [markBlock(f, list.refresh), findingCard(f)], actions: (f, list) => markButtons(f, list.refresh,
+        () => list.open(f.key).then((det) => { const note = det && det.querySelector('textarea'); if (note) note.focus(); })),
+      filters: [{key: 'state', label: 'Состояние', options: STATES, keepEmpty: true},
+        {key: 'kind', label: 'Вид', options: KINDS.map((k) => [k, KIND[k]])},
+        {key: 'task', label: 'Задача', select: true, options: (a) => ((a.options || {}).tasks || []).map((t) => [t, taskName(t)])},
+        {key: 'setup', label: 'Лазер и линза', select: true, options: (a) => ((a.options || {}).setups || []).map((s) => [s.key, setupName(s)])},
+        {key: 'material', label: 'Титан', select: true, options: (a) => ((a.options || {}).stocks || []).map((s) => [s.key, stockName(s.stock)])}],
+      sorts: SORTS, initial: {sort: cur.sort || 'important', filters: asked},
+      empty: 'Под выбранные фильтры выводов нет.', className: 'fd-list',
+      onChange: (s) => keep({...s.filters, state: s.filters.state || 'all', sort: s.sort === 'important' ? '' : s.sort}),
+    });
+  }
+
+  /** A finding a link opened (``?finding=<id>``, from the designer): above the list, open, whatever the filters. */
+  async function linkedFinding(id, close) {
+    const box = h('div', {class: 'card stack fd-linked'});
+    const show = async () => {
+      const f = await get(`/analysis/findings/${id}`);
+      App.fill(box, [h('div', {class: 'row'}, h('h3', {}, `Вывод № ${f.id}`), h('span', {class: 'muted small'}, `из расчёта № ${f.run_id}`),
+        h('span', {class: 'spacer'}), markButtons(f, show, () => box.querySelector('textarea').focus()), btn('Закрыть', () => { box.remove(); close(); }, 'btn-small')),
+        markBlock(f, show), findingCard(f)]);
+    };
+    try { await show(); } catch (e) { App.fill(box, h('div', {class: 'alert bad'}, e.message || String(e))); }
+    return box;
+  }
+
+  /** Photo engraving on every laser and titanium where one was photographed (photo-engraving-quality): one row each, the kinds under it. */
+  function photoList(photo) {
+    const keyOf = (k) => `${k.device_id}/${k.lens_id}/${k.material_id}`;
+    return h('div', {class: 'stack'},
+      h('p', {class: 'muted small'}, 'Лучшие измеренные настройки каждого вида, что делает каждая настройка и какую плату предлагает лаборатория — по всем принятым фотографиям.'),
+      App.list({items: photo, key: keyOf, open: photo.length === 1 ? keyOf(photo[0]) : null,
+        row: (k) => [h('span', {class: 'lst-text'}, `${k.setup} · ${k.titanium}`),
+          h('span', {class: 'muted small'}, `измерено видов: ${k.kinds.filter((x) => x.best).length} из ${k.kinds.length}`),
+          k.kinds.some((x) => x.proposal) ? pill('есть предложение', 'ok') : null],
+        details: (k) => h('div', {class: 'ex-insights'}, PhotoQuality.kindCards(k, {device_id: k.device_id, lens_id: k.lens_id, material_id: k.material_id})),
+        sorts: [['setup', 'По лазеру и титану', (p, q) => `${p.setup} · ${p.titanium}`.localeCompare(`${q.setup} · ${q.titanium}`)]]}).el);
+  }
+
+  App.register({id: 'findings', async render(ctx) {
+    const cur = {...ctx.query};
+    const [runs, schedule, goals, lastRecheck] = await Promise.all([get('/analysis/runs?limit=60'), get('/analysis/schedule'), get('/application-goals'),
+      get('/recheck/latest')]);
+    goalNames = Object.fromEntries(goals.map((g) => [g.id, g.name]));
+    const run = cur.run ? (runs.find((r) => String(r.id) === cur.run) || await get(`/analysis/runs/${cur.run}?limit=1`).then((r) => r.run)) : runs[0] || null;
+    // the list keeps its choices in the address without drawing the screen again; another run draws it again
+    const address = () => '/findings?' + new URLSearchParams(Object.entries(cur).filter(([, v]) => v)).toString();
+    const keep = (change) => { Object.assign(cur, change); history.replaceState(null, '', '#' + address()); };
+    const route = (change) => { Object.assign(cur, change); App.go(address()); };
     let photo = [];
     try { photo = await get('/photo-knowledge/everywhere'); } catch (_) { /* the rest of the screen stands */ }
-    const photoCard = photo.length ? h('section', {class: 'stack'}, h('h3', {}, 'Фотогравировка'),
-      h('p', {class: 'muted small'}, 'Лучшие измеренные настройки каждого вида, что делает каждая настройка и какую плату предлагает лаборатория — по всем принятым фотографиям.'),
-      photo.map((known) => h('div', {class: 'card stack'}, h('h4', {}, `${known.setup} · ${known.titanium}`),
-        h('div', {class: 'ex-insights'}, PhotoQuality.kindCards(known, {device_id: known.device_id, lens_id: known.lens_id, material_id: known.material_id}))))) : null;
-    const sections = KINDS.map((k) => {
-      const items = result.findings.filter((f) => f.kind === k);
-      return items.length ? h('section', {class: 'stack'}, h('h3', {}, `${KIND[k]} · ${items.length}`), items.map(findingCard)) : null;
-    });
-    return h('div', {class: 'stack'},
+    const linked = cur.finding ? await linkedFinding(cur.finding, () => keep({finding: ''})) : null;
+    const total = run ? KINDS.reduce((n, k) => n + (run.counts[k] || 0), 0) : 0;
+    const recheckBox = h('div', {class: 'stack fd-recheck'});
+    if (lastRecheck && lastRecheck.status === 'running') followRecheck(recheckBox, lastRecheck);
+    else if (lastRecheck) App.fill(recheckBox, recheckReport(lastRecheck, route));
+    const findings = h('div', {class: 'stack'}, linked,
+      !run ? null : total ? findingsList(cur, keep).el : h('div', {class: 'card empty'}, 'В этом расчёте выводов нет.'));
+    const tabs = photo.length ? App.tabs([['findings', 'Выводы', findings], ['photo', 'Фотогравировка', photoList(photo)]],
+      {initial: cur.tab === 'photo' ? 'photo' : 'findings', label: 'Выводы', prefix: 'fd', onSelect: (id) => keep({tab: id === 'photo' ? 'photo' : ''})}) : null;
+    return h('div', {class: 'stack fd-page'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Выводы'),
         h('p', {class: 'sub'}, 'Что показала накопленная работа: улучшения, нестабильность, аномалии, пробелы и гипотезы AI. Измеренное отделено от гипотез.')),
         h('span', {class: 'spacer'}), link('/designer', 'Планировщик экспериментов')),
-      runCard, scheduleCard(schedule), run ? filters : null,
-      run && !result.findings.length ? h('div', {class: 'card empty'}, result.total ? 'Под выбранные фильтры выводов нет.' : 'В этом расчёте выводов нет.') : null,
-      sections, photoCard);
+      runLine(run, runs, schedule, cur, route, recheckBox),
+      tabs ? [tabs.list, ...tabs.panels] : findings);
   }});
 })();

@@ -91,7 +91,7 @@ class El {
     if (deep) for (const k of this.childNodes) c.append(k.cloneNode(true));
     return c;
   }
-  focus() {}
+  focus() { this.focused = true; }                 // a test reads whether a screen put the cursor in a field
   setPointerCapture() {}
   getBoundingClientRect() { return {left: 0, top: 0, width: 100, height: 100}; }
 }
@@ -138,7 +138,8 @@ function context(routes) {
       json: async () => r.json, text: async () => (r.text ?? JSON.stringify(r.json)), blob: async () => ({size: (r.text || '').length})};
   }
   const ctx = {document, fetch, requests, DOMParser: class { parseFromString(text) { return parseXml(text); } }, URL: {createObjectURL: () => 'blob:x', revokeObjectURL() {}},
-    URLSearchParams, console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, window: {scrollY: 0, scrollTo() {}, innerHeight: 800}, location: {hash: ''}};
+    URLSearchParams, console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, window: {scrollY: 0, scrollTo() {}, innerHeight: 800}, location: {hash: ''},
+    history: {replaceState(_, __, url) { ctx.location.hash = String(url).slice(String(url).indexOf('#')); }}};
   vm.createContext(ctx);
   return ctx;
 }

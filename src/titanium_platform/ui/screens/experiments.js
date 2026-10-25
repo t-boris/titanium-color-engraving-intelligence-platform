@@ -74,22 +74,12 @@
     if (!devices.length) return h('div', {class: 'os'}, hero,
       h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер и установите линзу'), link('/devices', 'Лазеры')));
 
-    const query = sessionStorage.getItem('experiment-search') || '';
-    const wantedStatus = sessionStorage.getItem('experiment-status') || 'all';
-    const wantedTask = sessionStorage.getItem('experiment-task') || '';      // REQ-020: эксперименты одной задачи гравировки
-    // ?device=<id>: the experiments of one laser, the list its page links to (no separate list there)
+    // ?device=<id>: the experiments of one laser, the list its page links to (no separate list there). The search, the state, the
+    // engraving task (REQ-020), the order and the pages are the shared list's (ExperimentCards.list, DEC-090), the same as on the laser's page.
     const laser = devices.find((device) => String(device.id) === String(ctx.query.device)) || null;
-    const shown = experiments.filter((e) => (wantedStatus === 'all' || e.status === wantedStatus) && (!laser || e.device_id === laser.id) &&
-      (!wantedTask || (e.tasks || []).includes(wantedTask)) &&
-      (!query || [e.title, e.kind, e.laser, e.lens, e.material].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())));
-    const filters = h('div', {class: 'ex-filters'},
-      laser ? h('span', {class: 'row'}, pill(`Лазер: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'Все лазеры')) : null,
-      h('input', {type: 'search', value: query, placeholder: 'Поиск по названию, лазеру, титану', 'aria-label': 'Поиск эксперимента',
-        onChange: (ev) => { sessionStorage.setItem('experiment-search', ev.target.value); reload(); }}),
-      h('select', {'aria-label': 'Состояние эксперимента', onChange: (ev) => { sessionStorage.setItem('experiment-status', ev.target.value); reload(); }},
-        [['all', 'Все'], ['needs_review', 'Нужна проверка'], ['plate_ready', 'Ждут фото'], ['accepted', 'Приняты']].map(([v, l]) => h('option', {value: v, selected: v === wantedStatus}, l))),
-      Tasks.select(wantedTask, {empty: 'Все задачи', aria: 'Задача гравировки',
-        onChange: (value) => { sessionStorage.setItem('experiment-task', value); reload(); }}));
+    const shown = laser ? experiments.filter((e) => e.device_id === laser.id) : experiments;
+    const scope = laser ? h('div', {class: 'ex-filters'},
+      h('span', {class: 'row'}, pill(`Лазер: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'Все лазеры'))) : null;
 
     // the image purpose of a capability plate cannot judge a picture; the photographed photo engravings of this titanium can
     const photoBest = (photoKinds?.kinds || []).filter((k) => k.best && k.best.score != null).sort((a, b) => b.best.score - a.best.score)[0];
@@ -168,8 +158,9 @@
         h('section', {class: 'os-col ex-list'},
           h('div', {class: 'os-col-head'}, h('h3', {}, 'Эксперименты'), pill(laser ? `${shown.length} из ${experiments.length}` : experiments.length),
             pill(`${experiments.filter((e) => e.needs_review).length} к проверке`, experiments.some((e) => e.needs_review) ? 'warn' : '')),
-          filters,
-          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.'))),
+          scope,
+          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, {id: 'experiments',
+            empty: experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.'}))),
         h('div', {class: 'ex-right'}, taskPanel,
           panel('Выводы для материала', latest.size, insightCards,
             'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',

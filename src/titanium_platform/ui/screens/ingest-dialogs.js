@@ -29,8 +29,19 @@ const IngestDialogs = (() => {
     if (l.notes?.length) details.push(h('div', {class: 'muted small'}, l.notes.map((n) => I18N.tr(n)).join('; ')));
     return h('div', {class: 'stack small'}, ...details);
   };
-  const layersTable = (layers) => table(['Слой', 'Мощность, %', 'Частота, кГц', 'Скорость, мм/с', 'Областей', 'Результат'],
-    layers.map((l) => [I18N.name(l.name), num(l.power, 1), num(l.frequency_khz, 0), num(l.speed, 0), l.regions, layerResult(l)]), 'Слоёв нет');
+  // the layers of the file as a short list (findings-you-can-manage-short-lists-re-check, REQ-005, DEC-090): a matrix photograph has a
+  // hundred. One line per layer (name, power · frequency · speed, areas, the result), those not measured first, the result under the line.
+  const RESULT = {unreadable: ['нечитаем', 'warn', 'Нечитаемые'], skipped: ['пропущен', 'warn', 'Пропущенные'], measured: ['измерен', 'ok', 'Измеренные']};
+  const resultOf = (l) => (l.measured_lab ? 'measured' : l.readable ? 'skipped' : 'unreadable');
+  const rank = (l) => Object.keys(RESULT).indexOf(resultOf(l));
+  const settingsOf = (l) => [l.power == null ? null : `${num(l.power, 1)} %`, l.frequency_khz == null ? null : `${num(l.frequency_khz, 0)} кГц`,
+    l.speed == null ? null : `${num(l.speed, 0)} мм/с`].filter(Boolean).join(' · ') || 'настройки не прочитаны';
+  const layersTable = (layers) => App.list({items: layers, key: (l) => l.index, empty: 'Слоёв нет',
+    row: (l) => [h('span', {class: 'lst-text', title: I18N.name(l.name)}, I18N.name(l.name)), h('span', {class: 'muted small'}, settingsOf(l)),
+      h('span', {class: 'muted small'}, `областей ${l.regions}`), pill(RESULT[resultOf(l)][0], RESULT[resultOf(l)][1])],
+    details: layerResult, search: (l) => `${I18N.name(l.name)} ${l.name}`,
+    filters: [{key: 'result', label: 'Результат', options: Object.entries(RESULT).map(([k, [, , label]]) => [k, label]), test: (l, v) => resultOf(l) === v}],
+    sorts: [['problems', 'Сначала не измеренные', (a, b) => rank(a) - rank(b) || a.index - b.index], ['order', 'По порядку', (a, b) => a.index - b.index]]}).el;
 
   /** «Исправить пару»: другой файл LightBurn. Проверка, подтверждение и проверка масок сбрасываются на сервере. */
   function fixFile(pair, reload) {

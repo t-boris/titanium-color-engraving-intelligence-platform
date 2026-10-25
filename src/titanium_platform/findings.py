@@ -38,7 +38,11 @@ from . import color, designer, devices, model, setup as su, tasks
 from .db import Store, now
 
 KINDS = ("improvement", "unstable", "anomaly", "gap", "hypothesis")
-TRIGGERS = ("acceptance", "manual", "schedule")
+TRIGGERS = ("acceptance", "manual", "schedule", "recheck")
+STATES = ("attention", "acknowledged", "hidden")
+SORTS = ("important", "newest", "delta", "setup")
+MARK_ACTIONS = ("acknowledge", "hide", "reopen", "pin", "unpin", "note")
+CHANGE_DELTA_E = 1.0          # a hidden or acknowledged finding returns when its ΔE moves by this much (about the smallest visible difference)
 # the tasks a coverage gap is looked for: those a LightBurn mode implies, so a photographed layer can show each of them
 TASKS = tuple(key for key, task in tasks.TASKS.items() if task.get("lightburn_modes"))
 INTERVAL_SETTING = "analysis_interval_hours"
@@ -56,6 +60,19 @@ def _lock(store: Store) -> threading.Lock:
 
 def _entry_id(device_id: int, lens_id: int | None, key: str) -> str:
     return f"{device_id}:{'unknown' if lens_id is None else lens_id}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+
+
+def _original_pairs(store: Store) -> dict[int, int]:
+    """Every pair -> the first measurement of its photograph: a re-measure is a revision with ``correction_of`` its source."""
+    source = {r["id"]: r["c"] for r in store.query("SELECT id, json_extract(data_json,'$.correction_of') AS c FROM pair")}
+    out = {}
+    for pair_id in source:
+        at, seen = pair_id, set()
+        while source.get(at) is not None and at not in seen:
+            seen.add(at)
+            at = source[at]
+        out[pair_id] = at
+    return out
 
 
 def _stock_key(key: str) -> str:
@@ -147,6 +164,7 @@ def _partitions(store: Store) -> list[tuple[int, int | None]]:
 
 def _analyse(store: Store, previous) -> tuple[list[dict], dict]:
     names = _Names(store)
+    originals = _original_pairs(store)
     before = json.loads(previous["summary_json"]) if previous else {}
     previous_entries = before.get("entries", {})
     previous_keys = {r["key"] for r in store.query("SELECT key FROM finding WHERE run_id=?", (previous["id"],))} if previous else set()
@@ -166,7 +184,8 @@ def _analyse(store: Store, previous) -> tuple[list[dict], dict]:
         summaries = model.knowledge_summaries(store, device_id, lens_id)
         rows = {r["parameters_key"]: r for r in store.query("SELECT * FROM knowledge WHERE device_id=? AND lens_id IS ?", (device_id, lens_id))}
         partition = {"device_id": device_id, "lens_id": lens_id, "rules": rules, "names": names, "rows": rows,
-                     "pair_of": {o["id"]: o["pair_id"] for o in obs}, "previous": previous, "previous_entries": previous_entries}
+                     "pair_of": {o["id"]: o["pair_id"] for o in obs}, "previous": previous, "previous_entries": previous_entries,
+                     "original_of": originals}
         for key, s in sorted(summaries.items()):
             eid = _entry_id(device_id, lens_id, key)
             if s["available"]:
@@ -262,6 +281,7 @@ def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> 
     groups: dict[str, list[dict]] = {}
     for o in obs:
         groups.setdefault(model.observation_key(o["parameters"], o["context"], o["task"]), []).append(o)
+    taken: dict[str, int] = {}
     for key, members in sorted(groups.items()):
         s = summaries[key]
         if len(members) < 2:
@@ -296,7 +316,12 @@ def _anomalies(partition: dict, obs: list[dict], summaries: dict[str, dict]) -> 
                                  "knowledge_id": partition["rows"][key]["id"] if key in partition["rows"] else None},
                     "compares": {"observation_lab": o["lab"], "reference_lab": [float(v) for v in reference], "delta_e": distance,
                                  "rule": "tolerance" if tolerance is not None else "three_sd", "tolerance": tolerance, "sd": sd}}
-            out.append(_finding("anomaly", f"anomaly:observation:{o['id']}", partition, material_id, s["task"]["kind"], data, stock))
+            # the photograph (its first measurement) and the layer, so a re-measure keeps the operator's mark (DEC-002); a photograph
+            # accepted twice by an old version has two observations of a layer, numbered in the order they were made
+            base = f"anomaly:photo:{partition['original_of'].get(o['pair_id'], o['pair_id'])}:{o['layer_index']}"
+            taken[base] = taken.get(base, 0) + 1
+            fkey = base if taken[base] == 1 else f"{base}:{taken[base]}"
+            out.append(_finding("anomaly", fkey, partition, material_id, s["task"]["kind"], data, stock))
     return out
 
 
@@ -467,12 +492,149 @@ def _public(row) -> dict:
             "lens_id": row["lens_id"], "material_id": row["material_id"], "task": row["task"], **json.loads(row["data_json"])}
 
 
+# -- the operator's marks (DEC-001 of findings-you-can-manage-short-lists-re-check) ----------------------------------------
+def deviation(f: dict) -> float | None:
+    """The ΔE a finding is about: an observation's or a target's distance, else its recipe's expected error."""
+    c, u = f.get("compares") or {}, f.get("uncertainty") or {}
+    value = c.get("delta_e") if f.get("subkind") in ("observation", "target_reached", "target_missing") else u.get("expected_delta_e")
+    return None if value is None else float(value)
+
+
+def substance(f: dict) -> dict:
+    """What a mark is given for: the kind of conclusion, what it rests on and its ΔE."""
+    s = f.get("samples") or {}
+    return {"kind": f["kind"], "subkind": f.get("subkind"), "independent_engravings": s.get("independent_engravings"),
+            "photographs": s.get("photographs"), "recipes": s.get("recipes"), "delta_e": deviation(f)}
+
+
+def changed_since(snapshot: dict, now_: dict) -> bool:
+    """New data for the finding: another kind, a new engraving or photograph, or a ΔE moved by CHANGE_DELTA_E or more."""
+    if any(snapshot.get(k) != now_.get(k) for k in ("kind", "subkind", "independent_engravings", "photographs", "recipes")):
+        return True
+    before, after = snapshot.get("delta_e"), now_.get("delta_e")
+    if (before is None) != (after is None):
+        return True
+    return before is not None and abs(after - before) >= CHANGE_DELTA_E
+
+
+def _marks(store: Store) -> dict[str, dict]:
+    return {r["key"]: dict(r) for r in store.query("SELECT * FROM finding_mark")}
+
+
+def _with_mark(f: dict, row: dict | None) -> dict:
+    """The finding with its mark, its state now («учтено» or «скрыто» only while it is the finding they were given for) and the ΔE it is
+    about, as the list shows and sorts it."""
+    mark = {"status": None, "pinned": False, "note": None, "status_at": None, "changed": False}
+    state = "attention"
+    if row is not None:
+        mark.update(pinned=bool(row["pinned"]), note=row["note"], status=row["status"], status_at=row["status_at"])
+        if row["status"]:
+            if changed_since(json.loads(row["snapshot_json"] or "{}"), substance(f)):
+                mark["changed"] = True
+            else:
+                state = row["status"]
+    return f | {"mark": mark, "state": state, "deviation": deviation(f)}
+
+
+def mark(store: Store, finding_id: int, action: str, note: str | None = None) -> dict:
+    """The operator acknowledges, hides, reopens, pins, unpins or annotates a finding; kept by its key, written to the audit."""
+    if action not in MARK_ACTIONS:
+        raise su.ValidationError(f"unknown finding action {action}")
+    row = store.one("SELECT * FROM finding WHERE id=?", (finding_id,))
+    if row is None:
+        raise KeyError(f"finding {finding_id} not found")
+    f = _public(row)
+    old = store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],))
+    current = dict(old) if old else {"key": f["key"], "status": None, "pinned": 0, "note": None, "snapshot_json": None, "status_at": None}
+    at = now()
+    if action in ("acknowledge", "hide"):
+        current.update(status="acknowledged" if action == "acknowledge" else "hidden", snapshot_json=json.dumps(substance(f)), status_at=at)
+    elif action == "reopen":
+        current.update(status=None, snapshot_json=None, status_at=at)
+    elif action in ("pin", "unpin"):
+        current["pinned"] = 1 if action == "pin" else 0
+    else:
+        current["note"] = (note or "").strip()[:2000] or None
+    with store.transaction():
+        store.execute("INSERT INTO finding_mark(key,status,pinned,note,snapshot_json,status_at,updated_at) VALUES (?,?,?,?,?,?,?) "
+                      "ON CONFLICT(key) DO UPDATE SET status=excluded.status, pinned=excluded.pinned, note=excluded.note, "
+                      "snapshot_json=excluded.snapshot_json, status_at=excluded.status_at, updated_at=excluded.updated_at",
+                      (f["key"], current["status"], current["pinned"], current["note"], current["snapshot_json"], current["status_at"], at))
+        store.audit("finding_marked", finding_id=finding_id, key=f["key"], mark=action, status=current["status"],
+                    pinned=bool(current["pinned"]), note=current["note"])
+    return _with_mark(f, store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],)))["mark"]
+
+
+def get_finding(store: Store, finding_id: int) -> dict:
+    """One finding with its mark and state (a link to it opens it, REQ-002)."""
+    row = store.one("SELECT * FROM finding WHERE id=?", (finding_id,))
+    if row is None:
+        raise KeyError(f"finding {finding_id} not found")
+    f = _public(row)
+    f["setup"] = su.setup_key(f["device_id"], f["lens_id"])
+    f["stock_key"] = "unknown" if f["material_id"] is None else str(f["material_id"])
+    return _with_mark(f, store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],)))
+
+
+_KIND_RANK = {"anomaly": 0, "unstable": 1, "gap": 2, "hypothesis": 3, "improvement": 4}
+
+
+def _same_finding(store: Store):
+    """A key as today's runs write it: a run before DEC-002 named an anomaly by its observation, today it is the photograph (its first
+    measurement) and the layer."""
+    originals = _original_pairs(store)
+
+    def key(k: str) -> str:
+        if not k.startswith("anomaly:observation:"):
+            return k
+        o = store.one("SELECT pair_id, layer_index FROM observation WHERE id=?", (int(k.rsplit(":", 1)[1]),))
+        return k if o is None else f"anomaly:photo:{originals.get(o['pair_id'], o['pair_id'])}:{o['layer_index']}"
+    return key
+
+
+def compare_runs(store: Store, before_id: int | None, after_id: int, listed: int = 60) -> dict:
+    """What a run changed against an earlier one, by finding: appeared, gone, and changed (another kind, new evidence or ΔE moved by
+    CHANGE_DELTA_E, as a mark would lapse); at most ``listed`` of each are named, the counts are whole."""
+    same = _same_finding(store)
+    load = lambda run_id: {same(r["key"]): _public(r) for r in store.query("SELECT * FROM finding WHERE run_id=?", (run_id,))}  # noqa: E731
+    before, after = (load(before_id) if before_id is not None else {}), load(after_id)
+    brief = lambda f: {"id": f["id"], "kind": f["kind"], "statement": f["statement"]}  # noqa: E731
+    order = lambda f: (_KIND_RANK.get(f["kind"], 9), f["statement"])  # noqa: E731
+    appeared = sorted((after[k] for k in after.keys() - before.keys()), key=order)
+    gone = sorted((before[k] for k in before.keys() - after.keys()), key=order)
+    changed = sorted((after[k] for k in after.keys() & before.keys() if changed_since(substance(before[k]), substance(after[k]))), key=order)
+    return {"before_run_id": before_id, "after_run_id": after_id, "before": len(before), "after": len(after),
+            "counts": {"appeared": len(appeared), "gone": len(gone), "changed": len(changed)},
+            "appeared": [brief(f) for f in appeared[:listed]], "gone": [brief(f) for f in gone[:listed]],
+            "changed": [brief(f) | {"was": brief(before[same(f["key"])])} for f in changed[:listed]]}
+
+
+def _sort_key(sort: str, first_seen: dict[str, int]):
+    if sort == "newest":
+        return lambda f: (not f["mark"]["pinned"], -first_seen.get(f["key"], 0), f["id"])
+    if sort == "delta":
+        return lambda f: (not f["mark"]["pinned"], deviation(f) is None, -(deviation(f) or 0), f["id"])
+    if sort == "setup":
+        return lambda f: (not f["mark"]["pinned"], f["setup"], f["stock_key"], _KIND_RANK.get(f["kind"], 9), f["id"])
+    return lambda f: (not f["mark"]["pinned"], not (f.get("new") or f["mark"]["changed"]), _KIND_RANK.get(f["kind"], 9),
+                      -(deviation(f) or 0), f["id"])
+
+
 def findings_of(store: Store, run_id: int, kind: str | None = None, task: str | None = None, setup: str | None = None,
-                material: str | None = None) -> dict:
-    """The findings of one run, filtered by kind, task, laser + lens (``laser:<id>/lens:<id|unknown>``) and titanium stock (its
-    record id or ``unknown``), with the values each filter can take in this run."""
+                material: str | None = None, state: str | None = None, sort: str | None = None, offset: int = 0,
+                limit: int | None = None) -> dict:
+    """The findings of one run with the operator's marks, filtered by state (attention, acknowledged, hidden), kind, task, laser +
+    lens (``laser:<id>/lens:<id|unknown>``) and titanium stock (its record id or ``unknown``), sorted (``important``: pinned, then new
+    or changed, then by kind and deviation; ``newest``: the run a finding first appeared in; ``delta``: largest ΔE; ``setup``) and
+    paged. Returns the page, ``matched`` (all that pass the filters), ``total`` (the run's findings), ``counts`` per state and per
+    kind (each with the other filters applied, as a filter would show them) and the values each filter can take in this run."""
+    if state is not None and state not in STATES:
+        raise su.ValidationError(f"unknown finding state {state}")
+    if sort is not None and sort not in SORTS:
+        raise su.ValidationError(f"unknown finding order {sort}")
     run = get_run(store, run_id)
-    rows = [_public(r) for r in store.query("SELECT * FROM finding WHERE run_id=? ORDER BY id", (run_id,))]
+    marks = _marks(store)
+    rows = [_with_mark(_public(r), marks.get(r["key"])) for r in store.query("SELECT * FROM finding WHERE run_id=? ORDER BY id", (run_id,))]
     setups, stocks = {}, {}
     for f in rows:
         f["setup"] = su.setup_key(f["device_id"], f["lens_id"])
@@ -481,9 +643,27 @@ def findings_of(store: Store, run_id: int, kind: str | None = None, task: str | 
         stocks.setdefault(f["stock_key"], {"key": f["stock_key"], "stock": f["context"]["stock"]})
     options = {"kinds": [k for k in KINDS if any(f["kind"] == k for f in rows)], "tasks": sorted({f["task"] for f in rows if f["task"]}),
                "setups": [setups[k] for k in sorted(setups)], "stocks": [stocks[k] for k in sorted(stocks)]}
-    shown = [f for f in rows if (kind is None or f["kind"] == kind) and (task is None or f["task"] == task)
-             and (setup is None or f["setup"] == setup) and (material is None or f["stock_key"] == material)]
-    return {"run": run, "findings": shown, "total": len(rows), "options": options}
+    test = {"state": lambda f: state is None or f["state"] == state, "kind": lambda f: kind is None or f["kind"] == kind,
+            "task": lambda f: task is None or f["task"] == task, "setup": lambda f: setup is None or f["setup"] == setup,
+            "material": lambda f: material is None or f["stock_key"] == material}
+    passes = lambda f, but=None: all(fn(f) for name, fn in test.items() if name != but)  # noqa: E731
+    shown = [f for f in rows if passes(f)]
+    counts = {"state": {"": sum(1 for f in rows if passes(f, "state"))} | {s: sum(1 for f in rows if passes(f, "state") and f["state"] == s) for s in STATES},
+              "kind": {"": sum(1 for f in rows if passes(f, "kind"))} | {k: sum(1 for f in rows if passes(f, "kind") and f["kind"] == k) for k in KINDS}}
+    if sort is not None or limit is not None:
+        keys = sorted({f["key"] for f in shown})
+        first_seen = {}
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            first_seen |= {r["key"]: r["first"] for r in store.query(
+                f"SELECT key, MIN(run_id) AS first FROM finding WHERE key IN ({','.join('?' * len(chunk))}) GROUP BY key", chunk)}
+        for f in shown:
+            f["first_run_id"] = first_seen.get(f["key"])
+        shown.sort(key=_sort_key(sort or "important", first_seen))
+    matched = len(shown)
+    if limit is not None:
+        shown = shown[max(0, int(offset)):max(0, int(offset)) + max(1, min(int(limit), 200))]
+    return {"run": run, "findings": shown, "matched": matched, "total": len(rows), "counts": counts, "options": options}
 
 
 def history(store: Store, finding_id: int) -> list[dict]:

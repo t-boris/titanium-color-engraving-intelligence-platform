@@ -14,7 +14,7 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "dialogs.js"]
+HELPERS = ["app.js", "dialogs.js", "list.js"]
 HARNESS = """
 const fs = require('fs');
 const {context, load} = require(%(dom)s);
@@ -32,6 +32,9 @@ const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => 
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const sent = () => ctx.requests.filter((r) => r.method !== 'GET').map((r) => [r.method, r.path, typeof r.body === 'string' ? JSON.parse(r.body) : r.body]);
 const dialog = () => ctx.document.body.querySelector('.modal');
+// a line of a short list: the texts of its parts and the buttons at its end
+const line = (r) => [r.querySelector('.lst-main').children.map((c) => c.textContent), r.querySelectorAll('button').map((b) => b.textContent)];
+const card = (tree, title) => tree.querySelectorAll('.card').find((c) => c.querySelector('h3') && c.querySelector('h3').textContent === title);
 (async () => {
   const out = {};
 %(body)s
@@ -95,7 +98,7 @@ def test_the_screen_shows_the_workshop_its_backups_and_the_recovery_copies_and_m
   const tree = await ctx.__screens.workshop.render({query: {}});
   await tick();
   out.facts = tree.querySelectorAll('dd').map((d) => d.textContent);
-  out.rows = tree.querySelectorAll('tr').filter((tr) => tr.querySelectorAll('td').length).map((tr) => tr.querySelectorAll('td').map((td) => td.textContent));
+  out.rows = tree.querySelectorAll('.lst-row').map(line);
   out.headings = tree.querySelectorAll('h3').map((x) => x.textContent);
   out.recovery = tree.textContent.includes('перед сменой схемы') && tree.textContent.includes('backups');
   await byText(tree, 'button', 'Сделать резервную копию').dispatch('click'); await tick();
@@ -108,10 +111,9 @@ def test_the_screen_shows_the_workshop_its_backups_and_the_recovery_copies_and_m
 """)
     assert out["facts"][:4] == ["/Users/me/.titanium-platform", "0.30.0", "схема 1", "titanium-platform (pid 4242)"] and out["facts"][4].startswith("120,0 ГБ из ")
     assert out["headings"] == ["Мастерская", "Резервные копии", "Копии перед сменой схемы", "Диагностика"]
-    backup_row, copy_row = out["rows"]
-    assert backup_row[:4] == ["2026-10-24 12:00", "52 МБ", "0.30.0 · схема 1", "312 файлов"] and backup_row[4] == BACKUP["path"]
-    assert "Проверить" in backup_row[5] and "Восстановить…" in backup_row[5] and "Заменить открытую мастерскую…" in backup_row[5]
-    assert copy_row == ["2026-10-24 10:00", "schema-before-2-20261024T100000Z.sqlite", "48 МБ", "перед сменой схемы"] and out["recovery"]
+    backup_row, copy_row = out["rows"]                                                                      # one line each
+    assert backup_row == [["2026-10-24 12:00", "52 МБ", "0.30.0 · схема 1", "312 файлов", BACKUP["path"]], ["Проверить", "Восстановить…", "Заменить открытую мастерскую…"]]
+    assert copy_row == [["2026-10-24 10:00", "schema-before-2-20261024T100000Z.sqlite", "48 МБ", "перед сменой схемы"], []] and out["recovery"]
     assert out["made"][0] == ["POST", "/api/workshop/backups", {}]
     assert out["result"] == [f"Резервная копия записана: {BACKUP['path']} · файлов 2 · 52 МБ."]
     assert out["changed"] == [["PUT", "/api/workshop/backup-dir", {"path": "/Volumes/Disk/titanium-backups"}]]
@@ -172,3 +174,40 @@ def test_the_diagnostics_button_says_what_is_and_is_not_included_and_posts_the_e
     assert out["posted"] == ["POST", "/api/workshop/diagnostics", {}]
     assert out["result"].startswith("Файл диагностики записан: /Volumes/Disk/titanium-backups/titanium-diagnostics-20261024T120500Z.zip (0,0 МБ; summary.json, logs/app.log, audit.jsonl).")
     assert out["link"] == "/api/workshop/diagnostics/titanium-diagnostics-20261024T120500Z.zip"
+
+
+@node
+def test_the_recovery_copies_and_the_backups_show_ten_lines_the_newest_first_and_the_rest_on_request(tmp_path):
+    copies = [{**COPIES[0], "name": f"{'schema-before' if i % 3 else 'titanium-before'}-{i}.sqlite", "path": f"/Users/me/.titanium-platform/backups/copy-{i}.sqlite",
+               "bytes": (i % 7 + 1) * 2**20, "modified_at": f"2026-09-{i:02d}T10:00:00+00:00", "kind": "schema" if i % 3 else "release"} for i in range(1, 26)]
+    backups = [{**BACKUP, "path": f"/Volumes/Disk/titanium-backups/titanium-backup-{i:02d}", "complete": i != 5,
+                "manifest": {**BACKUP["manifest"], "created_at": f"2026-10-{i:02d}T12:00:00+00:00"}} for i in range(1, 13)]
+    routes = {**routes_of(), "/api/workshop/recovery-copies": ok(copies[::-1]), "/api/workshop/backups": {"GET": ok(backups[::-1])}}
+    out = run(tmp_path, routes, """
+  const tree = await ctx.__screens.workshop.render({query: {}});
+  await tick();
+  const copies = card(tree, 'Копии перед сменой схемы'), backups = card(tree, 'Резервные копии');
+  const names = () => copies.querySelectorAll('.lst-row').map((r) => line(r)[0][1]);
+  out.first = names(); out.count = copies.querySelector('.lst-count').textContent; out.more = copies.querySelector('.lst-foot').textContent;
+  out.chips = copies.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  out.backups = [backups.querySelectorAll('.lst-row').length, backups.querySelector('.lst-count').textContent, backups.querySelector('.lst-foot').textContent,
+    line(backups.querySelectorAll('.lst-row')[7])[0]];
+  await copies.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick();
+  out.second = names().length;
+  await copies.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('перед обновлением версии')).dispatch('click'); await tick();
+  out.release = names();
+  const order = copies.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  order.value = 'size'; await order.dispatch('change'); await tick();
+  out.largest = copies.querySelectorAll('.lst-row').map((r) => line(r)[0][2]).slice(0, 3);
+  await copies.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.details = copies.querySelector('.lst-det').hidden ? null : copies.querySelectorAll('dd').map((d) => d.textContent)[0];
+""")
+    assert out["first"] == [f"{'schema-before' if i % 3 else 'titanium-before'}-{i}.sqlite" for i in range(25, 15, -1)]   # ten, the newest first
+    assert out["count"] == "показано 10 из 25" and out["more"] == "Показать ещё 10" and out["second"] == 20
+    assert out["chips"] == ["Все · 25", "перед сменой схемы · 17", "перед обновлением версии · 8"]
+    assert out["release"] == [f"titanium-before-{i}.sqlite" for i in (24, 21, 18, 15, 12, 9, 6, 3)]
+    assert out["largest"] == ["7,0 МБ", "6,0 МБ", "5,0 МБ"]
+    assert out["details"] == "/Users/me/.titanium-platform/backups/copy-6.sqlite"                                        # the full path under the line
+    lines, count, more, partial = out["backups"]
+    assert (lines, count, more) == (10, "показано 10 из 12", "Показать ещё 2")
+    assert partial == ["2026-10-05 12:00", "52 МБ", "0.30.0 · схема 1", "312 файлов", "неполная", "/Volumes/Disk/titanium-backups/titanium-backup-05"]

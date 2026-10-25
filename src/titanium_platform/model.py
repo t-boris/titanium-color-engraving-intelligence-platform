@@ -93,7 +93,7 @@ def eligible_observations(store: Store, device_id: int, lens_id: int | None) -> 
         "FROM observation o JOIN pair p ON p.id=o.pair_id WHERE o.device_id=? AND o.lens_id IS ? AND p.status='Accepted' "
         f"AND o.model_eligible=1 AND {TEST_FEATURE_SQL} ORDER BY o.id", (device_id, lens_id))
     for r in rows:
-        out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "lab": json.loads(r["lab_json"]),
+        out.append({"id": r["id"], "pair_id": r["pair_id"], "engraving_id": r["engraving_id"], "layer_index": r["layer_index"], "lab": json.loads(r["lab_json"]),
                     "parameters": json.loads(r["parameters_json"]), "repeat_eligible": bool(r["repeat_eligible"]),
                     "context": json.loads(r["context_json"]), "alignment": r["alignment_method"], "task": tasks.of_observation(r),
                     "source": {"photo_name": r["photo_name"], "lightburn_name": r["lightburn_name"],

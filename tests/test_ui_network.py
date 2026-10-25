@@ -14,7 +14,7 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "dialogs.js"]
+HELPERS = ["app.js", "dialogs.js", "list.js"]
 HARNESS = """
 const fs = require('fs');
 const {context, load} = require(%(dom)s);

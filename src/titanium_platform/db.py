@@ -429,6 +429,13 @@ class Store:
         self.conn.execute("CREATE TABLE IF NOT EXISTS proposal_event (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                           "proposal_id INTEGER NOT NULL REFERENCES proposal(id), at TEXT NOT NULL, from_status TEXT, "
                           "to_status TEXT NOT NULL, reason TEXT NOT NULL, note TEXT, finding_id INTEGER REFERENCES finding(id))")
+        # The operator's marks on findings (DEC-001 of findings-you-can-manage-short-lists-re-check): by the finding's key, so they
+        # hold across runs; «учтено» and «скрыто» keep the finding's substance they were given for and lapse when it changes.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS finding_mark (key TEXT PRIMARY KEY, status TEXT, pinned INTEGER NOT NULL DEFAULT 0, "
+                          "note TEXT, snapshot_json TEXT, status_at TEXT, updated_at TEXT NOT NULL)")
+        # «Перепроверить все работы» (DEC-089): each re-check with its backup and its report, kept after a restart.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS recheck_run (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, "
+                          "finished_at TEXT, status TEXT NOT NULL, backup_path TEXT, report_json TEXT NOT NULL)")
         self.conn.executescript(LAB_SCHEMA)
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):

@@ -1,6 +1,8 @@
 """The colour model of one laser and lens and the knowledge page of one colour on one screen (REQ-044, DEC-080): the sets on the left, the
 map of the selected set with its cautions in the middle, its tables in tabs on the right, the remembered choice, the empty states; the
-knowledge page as two columns. Run in node over the small DOM of the other screen tests, with answers shaped like the server's."""
+knowledge page as two columns. The model and the RAW «Все слои» are short lists (REQ-005, DEC-090): one line each, a page of 20, search,
+filters and sorts, the figures under a line on a click. Run in node over the small DOM of the other screen tests, with answers shaped like
+the server's."""
 import json
 import re
 import shutil
@@ -28,7 +30,7 @@ for (const name of ['createElement', 'createElementNS']) {              // the m
   const make = ctx.document[name];
   ctx.document[name] = (...args) => { const el = make(...args); el.style = {}; return el; };
 }
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'hardware.js', {code: %(glue)s}, 'screens/knowledge.js', 'screens/colors.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/knowledge.js', 'screens/colors.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const has = (el, cls) => (el.className || '').split(' ').includes(cls);
@@ -106,10 +108,12 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
   out.columns = tree.querySelectorAll('section').map((s) => s.className);
   const centre = tree.querySelector('.lm-centre'), right = tree.querySelector('.lm-right');
   out.centre = centre.textContent; out.circles = centre.querySelectorAll('circle').length; out.plot = centre.querySelectorAll('svg').length;
-  out.right = right.textContent; out.rows = right.querySelectorAll('div').filter((d) => has(d, 'lm-item')).length;
-  out.knowledgeLinks = right.querySelectorAll('a').map((a) => a.getAttribute('href'));
+  out.right = right.textContent; out.rows = right.querySelectorAll('div').filter((d) => has(d, 'lst-row')).length;
+  out.knowledgeLinks = right.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   out.tabs = tabsOf(tree).length;
-  out.selects = tree.querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
+  out.selects = tree.querySelector('.lm-head').querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
+  await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.opened = right.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   await byText(tree, 'button', 'Целевой цвет').dispatch('click');
   out.dialog = ctx.document.body.querySelector('.modal').getAttribute('aria-label');
 """)
@@ -123,8 +127,11 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
     assert out["columns"] == ["os-col lm-left", "os-col lm-centre", "os-col lm-right"]
     assert "Калиброванные наблюдения для прогноза" in out["centre"] and "Пунктир — наборы без оценок повторяемости" in out["centre"]
     assert out["plot"] == 1 and out["circles"] == 3                                                       # one map, a circle for every measured colour
-    assert "Модель цветовых параметров" in out["right"] and out["rows"] == 4 and out["knowledgeLinks"] == [f"#/knowledge/{k}" for k in (1, 2, 3, 4)]
-    assert "мощность / частота / скорость 31.0 / 300 / 1000" in out["right"] and "независимых 1" in out["right"] and "стабильность дисперсия 1.50" in out["right"]
+    assert "Модель цветовых параметров" in out["right"] and out["rows"] == 4
+    assert out["knowledgeLinks"] == [["Открыть", f"#/knowledge/{k}"] for k in (1, 2, 3, 4)]               # every line opens its entry's page
+    assert "31.0 % · 300 кГц · 1000 мм/с · L 41.0 · a 2.0 · b -3.0Измерено" in out["right"]                   # one line: settings, colour, stage
+    assert len(out["opened"]) == 1 and "31.0 % · 300 кГц · 1000 мм/с · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
+    assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность дисперсия 1.50" in out["opened"][0]
     assert out["tabs"] == 0                                                                               # the model is a single list, no tabs
 
 
@@ -143,10 +150,17 @@ def test_a_raw_set_shows_its_map_cautions_and_three_tabs_and_every_old_table_is_
   out.seen = right.textContent;
   await tabsOf(right)[1].dispatch('click');
   out.second = shownPanels(right);
-  out.variants = right.querySelectorAll('article').map((a) => a.textContent);
-  out.variantLinks = right.querySelectorAll('a').map((a) => a.getAttribute('href'));
+  const variants = right.querySelectorAll('div').find((d) => d.getAttribute('id') === 'lm-tab-panel-variants');
+  out.variants = variants.querySelectorAll('.lst-main').map((m) => m.textContent);
+  await variants.querySelectorAll('.lst-main')[1].dispatch('click'); await tick();
+  out.variantOpen = variants.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  out.variantLinks = variants.querySelectorAll('a').map((a) => a.getAttribute('href'));
   await tabsOf(right)[2].dispatch('click');
-  out.layers = right.querySelectorAll('div').find((d) => d.getAttribute('id') === 'lm-tab-panel-layers').querySelectorAll('div').filter((d) => has(d, 'lm-item')).map((d) => d.textContent);
+  const layers = right.querySelectorAll('div').find((d) => d.getAttribute('id') === 'lm-tab-panel-layers');
+  out.layerRows = layers.querySelectorAll('.lst-main').map((m) => m.textContent);
+  await layers.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.layerOpen = layers.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  out.parts = layers.querySelectorAll('div').filter((d) => has(d, 'lm-item')).map((d) => d.textContent);
   await sets()[2].dispatch('click');
   out.empty = right.textContent; out.pairTitle = tree.querySelector('.lm-centre').querySelector('h3').textContent;
   out.noIngest = tree.querySelector('.lm-centre').querySelectorAll('a').length;
@@ -160,9 +174,12 @@ def test_a_raw_set_shows_its_map_cautions_and_three_tabs_and_every_old_table_is_
     assert out["tabs"] == ["Что видно (2)", "Варианты (3)", "Все слои (2)"] and out["first"] == ["lm-tab-panel-seen"] and out["second"] == ["lm-tab-panel-variants"]
     assert "Что видно в этой паре" in out["seen"] and "Finding 0 · C00" in out["seen"] and "ΔE от чистой поверхности 4.20" in out["seen"]
     assert len(out["variants"]) == 3 and "V0" in out["variants"][0] and "ΔE 12.3" in out["variants"][0] and "настройки неполные" in out["variants"][1]
-    assert out["variantLinks"].count("#/analysis/7") == 3
-    assert len(out["layers"]) == 3 and "C00" in out["layers"][0] and "Тестовый участок" in out["layers"][0] and "пикселей 1200" in out["layers"][0]
-    assert "a note of the layer" in out["layers"][0] and "C00 / sub1" in out["layers"][1] and "Часть слоя" in out["layers"][1]       # the sub-measurement keeps its row
+    assert len(out["variantOpen"]) == 1 and "Отличие от очищенного фона на этом снимке" in out["variantOpen"][0]   # one line each, details on click
+    assert out["variantLinks"] == ["#/analysis/7"]
+    assert out["layerRows"] == ["C00 · тёмный на этом фотоΔE 7.5частей 1", "C01 · тёмный на этом фотоΔE 7.5"]          # one line per layer
+    assert len(out["layerOpen"]) == 1 and "Тестовый участок" in out["layerOpen"][0] and "пикселей 1200" in out["layerOpen"][0]
+    assert "a note of the layer" in out["layerOpen"][0] and "L 20.0 · a 1.0 · b 0.0" in out["layerOpen"][0]
+    assert len(out["parts"]) == 1 and "C00 / sub1" in out["parts"][0] and "Часть слоя" in out["parts"][0]   # the measured part opens with its layer
     assert "Нет данных" in out["empty"] and out["pairTitle"] == "RAW-наблюдения · пара 5" and out["noIngest"] == 0
 
 
@@ -213,6 +230,101 @@ def test_the_empty_states_keep_their_words_and_their_links(tmp_path):
 """)
     assert empty["root"].split() == ["os", "lm"] and "Для этого лазера с этой линзой пока нет проверенных измерений" in empty["text"]
     assert "#/ingest" in empty["hrefs"] and "#/colors" in empty["hrefs"] and empty["sets"] == 0 and "Целевой цвет" in empty["text"]      # the header and the pickers stay
+
+
+def many_known() -> list:
+    """45 entries: every ninth in production, every other fifth validated, every seventh questioned (with its doubt), the odd ones
+    of the fill task and the even ones of the text task, the expected error growing with the id and missing for every third; the
+    last has no evidence yet (no summary)."""
+    entries = []
+    for k in range(1, 46):
+        e = known(k, stage="production" if k % 9 == 0 else "validated" if k % 5 == 0 else "measured", questioned=k % 7 == 0)
+        e["summary"].update(task={"kind": "fill" if k % 2 else "text", "basis": "explicit"}, expected_delta_e=k / 10, available=k % 3 != 0)
+        e["doubt"] = {"reason": "a doubt", "observation_ids": [k]} if e["questioned"] else None
+        entries.append(e)
+    entries[-1]["summary"] = None
+    return entries
+
+
+LIST = """
+  const right = tree.querySelector('.lm-right');
+  const ids = () => right.querySelectorAll('.lst-act').map((a) => +a.querySelector('a').getAttribute('href').split('/').pop());
+  const count = () => right.querySelector('.lst-count').textContent;
+  const chips = () => right.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  const more = () => { const b = right.querySelector('.lst-foot').querySelector('button'); return b ? b.textContent : null; };
+  const chip = async (text) => { await right.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith(text)).dispatch('click'); await tick(); };
+  const choose = async (label, value) => {
+    const s = right.querySelectorAll('label').find((l) => has(l, 'lst-select') && l.querySelector('span').textContent === label).querySelector('select');
+    s.value = value; await s.dispatch('change'); await tick();
+  };
+  const opened = () => right.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+"""
+
+
+@node
+def test_the_model_shows_one_page_of_its_entries_with_the_stage_doubt_and_task_filters_the_sorts_and_the_search(tmp_path):
+    out = run(tmp_path, {**routes_for(knowledge=0), "/api/knowledge": {"status": 200, "json": many_known()}}, {"query": QUERY}, LIST + """
+  out.head = tree.querySelector('.lm-right').querySelector('.os-col-head').textContent;
+  out.first = {rows: right.querySelectorAll('.lst-row').length, count: count(), more: more(), chips: chips(), ids: ids(),
+    selects: right.querySelectorAll('label').filter((l) => has(l, 'lst-select')).map((l) => l.querySelector('span').textContent)};
+  out.bare = right.querySelectorAll('.lst-main')[4].textContent;
+  await chip('Производственное'); out.production = [count(), ids()];
+  await chip('Все');
+  await choose('Под вопросом', 'yes'); out.questioned = [count(), ids()];
+  await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick(); out.doubt = opened();
+  await choose('Под вопросом', ''); await choose('Задача', 'text'); out.text = [count(), more()];
+  await choose('Задача', ''); await choose('Порядок', 'error'); out.error = ids().slice(0, 3);
+  await choose('Порядок', 'light'); out.light = ids().slice(0, 2);
+  await choose('Порядок', 'newest'); out.newest = ids().slice(0, 2);
+  await right.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick(); out.second = [count(), more()];
+  const search = right.querySelector('.lst-search'); search.value = '75.0 %'; await search.dispatch('input'); await tick(); await tick();
+  out.searched = [count(), ids()];
+""")
+    assert out["head"] == "Модель цветовых параметров45"                                                  # the count of the whole model
+    first = out["first"]
+    assert first["rows"] == 20 and first["count"] == "показано 20 из 45" and first["more"] == "Показать ещё 20"     # one page, not 45 lines
+    assert first["chips"] == ["Все · 45", "Измерено · 32", "Валидировано · 8", "Производственное · 5"]          # a stage with no entry is not offered
+    assert first["selects"] == ["Под вопросом", "Задача", "Порядок"]
+    assert first["ids"][:13] == [9, 18, 27, 36, 45, 5, 10, 15, 20, 25, 30, 35, 40]                           # the further an entry got, the higher
+    assert out["bare"] == "75.0 % · 300 кГц · 1000 мм/сПроизводственное"                                     # an entry without evidence: no colour
+    assert out["production"] == ["показано 5 из 5", [9, 18, 27, 36, 45]]
+    assert out["questioned"] == ["показано 6 из 6", [35, 7, 14, 21, 28, 42]]
+    assert len(out["doubt"]) == 1 and "Под вопросом. a doubt" in out["doubt"][0] and "Задача: Заливка" in out["doubt"][0]
+    assert out["text"] == ["показано 20 из 22", "Показать ещё 2"]
+    assert out["error"] == [1, 2, 4]                                                                          # no estimate of the error: last
+    assert out["light"] == [44, 43] and out["newest"] == [45, 44]
+    assert out["second"] == ["показано 40 из 45", "Показать ещё 5"]
+    assert out["searched"] == ["показано 1 из 1", [45]]
+
+
+@node
+def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path):
+    raw = pair(7, layers=26)
+    for i, s in enumerate(raw["samples"]):
+        s["delta_e_from_clean_witness"] = i * 0.5
+    raw["samples"][24]["role"] = "registration, QR and engraved labels"
+    raw["samples"][25]["role"] = "pre-test cleaning witness"
+    del raw["samples"][25]["delta_e_from_clean_witness"]
+    out = run(tmp_path, routes_for(samples=0, pairs=[raw], knowledge=0), {"query": QUERY}, LIST + """
+  await tabsOf(right).find((b) => b.textContent.startsWith('Все слои')).dispatch('click');
+  const layers = right.querySelectorAll('div').find((d) => d.getAttribute('id') === 'lm-tab-panel-layers');
+  const rows = () => layers.querySelectorAll('.lst-main').map((m) => m.textContent);
+  out.tab = tabsOf(right).map((b) => b.textContent)[2];
+  out.first = {rows: rows().length, count: layers.querySelector('.lst-count').textContent, chips: layers.querySelectorAll('.lst-chip').map((c) => c.textContent)};
+  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Свидетель чистки')).dispatch('click'); await tick();
+  out.witness = rows();
+  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Все')).dispatch('click'); await tick();
+  const sort = layers.querySelector('select'); sort.value = 'contrast'; await sort.dispatch('change'); await tick();
+  out.contrast = rows().slice(0, 2);
+  sort.value = 'light'; await sort.dispatch('change'); await tick();
+  out.light = rows()[0];
+""")
+    assert out["tab"] == "Все слои (26)"
+    assert out["first"]["rows"] == 20 and out["first"]["count"] == "показано 20 из 26"
+    assert out["first"]["chips"] == ["Все · 26", "Тестовый участок · 24", "Свидетель чистки · 1", "Метки и подписи · 1"]
+    assert out["witness"] == ["C025 · тёмный на этом фотоСвидетель чистки"]                                   # the witness has no ΔE of its own
+    assert out["contrast"] == ["C024 · тёмный на этом фотоМетки и подписиΔE 12.0", "C023 · тёмный на этом фотоΔE 11.5"]
+    assert out["light"].startswith("C025 · ")                                                                 # L 45: the lightest layer
 
 
 # -- the knowledge page ----------------------------------------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "filepick.js", "tasks.js"]
+HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
 SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js", "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js",
            "screens/vector-colours.js", "screens/vector-review.js", "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js",
            "screens/labs-cloud.js", "screens/labs.js"]
@@ -230,12 +230,13 @@ def test_the_catalogue_shows_cards_connects_from_the_cloud_into_the_progress_bar
   await tick();
   const panel = byRole(tree, 'tabpanel')[2];
   out.hidden = byRole(tree, 'tabpanel').map((p) => p.hidden);
-  const cards = panel.querySelectorAll('.cloud-lab');
+  const cards = panel.querySelectorAll('.lst-row');                                // a laboratory a line of the short list
   out.cards = cards.map((c) => [c.querySelector('.lab-name').textContent, c.querySelector('.lab-name').children.length, c.querySelectorAll('.pill').map((p) => p.textContent),
     c.querySelectorAll('button').map((b) => b.textContent)]);
-  out.first = cards[0].textContent;
-  await byText(cards[1], 'button', 'Подключить выпуск № 2').dispatch('click'); await tick(); await tick();
-  out.finished = cards[1].textContent;
+  await cards[0].querySelector('.lst-main').dispatch('click'); await tick();       // what it says of itself opens under its line
+  out.first = panel.querySelectorAll('.lst-row')[0].textContent + ' ' + panel.querySelectorAll('.lst-det').find((d) => !d.hidden).textContent;
+  await byText(panel.querySelectorAll('.lst-row')[1], 'button', 'Подключить выпуск № 2').dispatch('click'); await tick(); await tick();
+  out.finished = panel.querySelector('.cloud-progress').textContent;               // the end of the connection stays shown after the redraw
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = dialog ? dialog.textContent : null;
   const accept = panel.querySelector('.cloud-accept');
@@ -307,3 +308,53 @@ def test_with_the_cloud_switched_off_or_unreachable_the_rest_of_the_screen_still
     assert "Облако выключено в настройках сети" in out["own"] and "Войти" not in out["own"]
     assert "Облако лабораторий выключено в настройках сети этой мастерской" in out["catalogue"]
     assert "Публичные сведения" in out["publicForm"] and "Публикация" in out["publicForm"] and "Отзыв опубликованного" in out["publicForm"]
+
+
+@node
+def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_invitations_are_short_lists(tmp_path):
+    """REQ-005 of findings-you-can-manage-short-lists-re-check (DEC-090): a line each, twenty at a time, with their filters and orders."""
+    exports = [{"release_id": f"x-{i}", "content_sha256": f"{i:02d}ab0123456789ffff", "created_at": f"2026-10-{i:02d}T09:00:00", "counts": {"measurements": i},
+                "terms": {"id": "CC-BY-4.0"}, "bytes": 1024, "file": i != 2, "published": {"release_number": i, "published_at": "2026-10-24T10:00:00"} if i % 4 == 0 else None}
+               for i in range(1, 24)]
+    sources = [{**SOURCE, "id": 4, "name": "Бета"}, {**SOURCE, "id": 5, "name": "Альфа", "origin": "file", "connected_at": "2026-10-22T10:00:00"},
+               {**SOURCE, "id": 6, "name": "Гамма", "status": "disconnected", "current": None}]
+    labs = [LAB, {**LAB, "id": "lab-2", "name": "Закрытая", "visibility": "private", "connected": {"source_id": 4, "status": "connected", "newer": False, "current_release_number": 2}},
+            {**LAB, "id": "lab-3", "name": "Своя", "own": True, "latest_release": None}]
+    invitations = [{"id": f"i-{i}", "lab_id": "lab-1", "created_at": f"2026-10-{i:02d}T10:00:00", "expires_at": f"2026-11-{i:02d}T10:00:00",
+                    "accepted_by": "acc-9" if i == 1 else None, "accepted_at": None, "revoked_at": "2026-10-24T10:00:00" if i == 2 else None} for i in range(1, 4)]
+    own = {**SIGNED_IN, "lab": {"id": "lab-1", "name": "Open lab", "visibility": "private", "role": "owner", "origin_lab_id": "o-1"},
+           "releases": [RELEASE, {**RELEASE, "id": "r-10", "number": 3}], "invitations": invitations, "members": []}
+    routes = base_routes(**{"/api/labs/own": {"GET": ok({**OWN_LAB, "exports": exports})}, "/api/labs/sources": {"GET": ok(sources)},
+                           "/api/cloud/own": {"GET": ok(own)}, "/api/cloud/catalogue": {"GET": ok({"api_url": "https://cloud.test", "signed_in": True, "labs": labs})}})
+    out = run(tmp_path, routes, """
+  const tree = await ctx.__screens.labs.render({query: {}});
+  await tick();
+  const [mine, connected, catalogue] = byRole(tree, 'tabpanel');
+  const lines = (root) => root.querySelectorAll('.lst-main').map((m) => m.textContent);
+  const written = mine.querySelectorAll('.lst')[0];
+  out.written = [written.querySelectorAll('.lst-row').length, written.querySelector('.lst-count').textContent, lines(written)[0],
+    written.querySelectorAll('.lst-act')[0].querySelector('a').getAttribute('href'), written.querySelectorAll('.lst-chip').map((c) => c.textContent)];
+  const cloud = mine.querySelector('.cloud-own');
+  out.cloudReleases = lines(cloud.querySelectorAll('.lst')[0]).map((x) => x.slice(0, 3));
+  const invited = cloud.querySelectorAll('.lst')[1];
+  out.invitations = [lines(invited).map((x) => x.slice(0, 16)), invited.querySelectorAll('.lst-chip').map((c) => c.textContent),
+    invited.querySelectorAll('button').filter((b) => b.textContent === 'Отозвать').length];
+  out.sources = [connected.querySelectorAll('.lab-name').map((n) => n.textContent), connected.querySelectorAll('.lst-chip').map((c) => c.textContent),
+    connected.querySelectorAll('.lst-act').map((a) => a.textContent)];
+  await connected.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.sourceDetails = connected.querySelectorAll('.lst-det').find((d) => !d.hidden).textContent;
+  out.catalogue = catalogue.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  await catalogue.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('не подключены')).dispatch('click'); await tick();
+  out.notConnected = catalogue.querySelectorAll('.lab-name').map((n) => n.textContent);
+""")
+    rows, count, first, href, chips = out["written"]
+    assert (rows, count) == (20, "показано 20 из 23") and first.startswith("2026-10-23 09:00") and "облако № 20" not in first
+    assert href == "/api/labs/own/releases/x-23/file" and chips == ["Все · 23", "в облаке · 5", "только файлом · 18"]
+    assert out["cloudReleases"] == ["№ 3", "№ 2"]                                                              # the newest first
+    lines, chips, revoke = out["invitations"]
+    assert lines == ["2026-10-03 10:00", "2026-10-02 10:00", "2026-10-01 10:00"] and chips == ["Все · 3", "ждут · 1", "приняты · 1", "отозваны · 1"] and revoke == 1
+    names, chips, actions = out["sources"]
+    assert names == ["Альфа", "Бета", "Гамма"] and chips == ["Все · 3", "подключена · 2", "отключена · 1"] and actions == ["Открыть"] * 3
+    assert "подключена 2026-10-22 10:00 · выпусков на компьютере: 1" in out["sourceDetails"]
+    assert out["catalogue"] == ["Все · 3", "подключены · 1", "не подключены · 1", "Все · 3", "открытая · 2", "закрытая · 1"]
+    assert out["notConnected"] == ["Лаборатория <b>Север</b>"]                                               # the own laboratory is neither

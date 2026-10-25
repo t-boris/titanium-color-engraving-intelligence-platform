@@ -101,7 +101,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'filepick.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/dot-pick.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'filepick.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/dot-pick.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
   'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -251,13 +251,35 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
                  "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Палитра: 4", "на разбиении № 0", "Авто",
                  "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"):
         assert part in text, part
-    assert out["rows"] == [["↔ 12.5 мм", "vw-rows", "строки 12.5 мм: цвет рецепта измерен при 12.0 мм"],             # each layer's row length
-                           ["↔ 40.0 мм", "vw-rows warn", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
-                           ["↔ 30.0 мм", "vw-rows warn", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
+    assert out["rows"] == [["↔ 12.5 мм", "vw-rows muted", "строки 12.5 мм: цвет рецепта измерен при 12.0 мм"],             # each layer's row length
+                           ["↔ 40.0 мм", "vw-rows warn vw-bad", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
+                           ["↔ 30.0 мм", "vw-rows warn vw-bad", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
     assert out["details"][0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text           # the wide table is a window
     assert [d for d in out["details"][1:]] == ["Слои и время по слоям (4)", "Параметры работы",                        # the file tab folds its long parts,
                                                "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]           # the layers why their sizes matter
     assert out["renders"] == 0
+
+
+@node
+def test_a_palette_of_hundreds_shows_sixty_squares_and_more_on_request_and_keeps_the_chosen_one_in_view(tmp_path):
+    """findings-you-can-manage-short-lists-re-check REQ-005: the live palette has 639 measured colours; the squares come 60 at a time,
+    the lightest (or the nearest to the source colour) first, and the active colour is shown even when it is further down."""
+    many = [entry(f"p{i:03d}", [i % 255, 100, 100], [90.0 - i * 0.1, 0.0, 0.0]) for i in range(130)]
+    r = routes()
+    r["/api/vector/7/palette"] = {"status": 200, "json": many}
+    out = run_editor(tmp_path, r, """
+  const squares = () => tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
+  const pal = () => tree.querySelectorAll('section').find((s) => s.querySelector('.vw-ed-palette'));
+  out.first = squares(); out.foot = pal().querySelector('.lst-foot').textContent;
+  await byText(pal(), 'button', 'Показать ещё 60').dispatch('click'); await tick();
+  out.second = squares().length; out.foot2 = pal().querySelector('.lst-foot').textContent;
+  await byText(pal(), 'button', 'Показать ещё 10').dispatch('click'); await tick();
+  out.third = squares().length; out.foot3 = pal().querySelector('.lst-foot').textContent;
+""")
+    assert len(out["first"]) == 60 and out["first"][:2] == ["p000", "p001"]          # the lightest first while no area is pointed at
+    assert out["foot"] == "показано 60 из 130Показать ещё 60"
+    assert out["second"] == 120 and out["foot2"] == "показано 120 из 130Показать ещё 10"
+    assert out["third"] == 130 and out["foot3"] == ""
 
 
 @node
@@ -471,17 +493,24 @@ def routes_with_sources():
 @node
 def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_where_it_comes_from(tmp_path):
     out = run_editor(tmp_path, routes_with_sources(), """
-  const row = (k) => tree.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-ed-item') && d.querySelector('input')
-    && d.querySelector('input').getAttribute('aria-label') === `Отметить исходный цвет № ${k}`);
-  out.rows = [1, 2, 3].map((k) => row(k).textContent);
-  out.buttons = [1, 2, 3].map((k) => row(k).querySelectorAll('button').map((b) => b.textContent).filter(Boolean));
+  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Отметить исходный цвет № ${k}`).closest('.lst-row');
+  out.folded = [1, 2, 3].map((k) => row(k).textContent.includes('гравировк'));                 // where a colour is known from: under its line
+  const opened = [];
+  for (const k of [1, 2, 3]) {                                                                 // each line opened in turn: the line and what it opens
+    await row(k).querySelector('.lst-main').dispatch('click'); await tick();
+    const line = row(k), det = line.parentNode.childNodes[line.parentNode.childNodes.indexOf(line) + 1];
+    opened.push([line.textContent + det.textContent, [...line.querySelectorAll('button'), ...det.querySelectorAll('button')].map((b) => b.textContent).filter(Boolean)]);
+  }
+  out.rows = opened.map(([text]) => text);
+  out.buttons = opened.map(([, buttons]) => buttons);
   out.active = tree.textContent.includes('Авто');
   await byText(row(1), 'button', 'Заменить').dispatch('click'); await tick(); await tick();
   let dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.getAttribute('aria-label');
   out.better = dialog.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-better')).length;    // e11 is already confirmed by repeats
+  out.openAtFirst = dialog.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent.includes('3 независимые гравировки'));   // the current colour
   const chip = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
-  await chip('e13').dispatch('click');
+  await chip('e13').dispatch('click'); await tick();
   out.detail = dialog.textContent;
   out.links = dialog.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
@@ -489,12 +518,14 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
   out.closed = ctx.document.body.querySelector('.modal') === null;
 """)
     rows = out["rows"]
+    assert out["folded"] == [False, False, False]
     assert "проверен повтором" in rows[0] and "3 гравировки: 2 теста, 1 работа" in rows[0] and "все 3 совпали" in rows[0]
     assert "одна гравировка, не повторялась" in rows[1] and "1 гравировка: 1 тест" in rows[1]
     assert "не гравируется" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
     assert out["buttons"] == [["Заменить", "Не гравировать"], ["Заменить", "Автоматически", "Не гравировать"], ["Гравировать"]]
-    assert out["title"] == "Цвет группы № 1" and out["better"] == 0
+    assert out["title"] == "Цвет группы № 1" and out["better"] == 0 and out["openAtFirst"] == [True]
     detail = out["detail"]
+    assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 до исходного цвета · сомнительный" in detail.split("Выбран:")[1]   # the square chose it
     assert "сомнительный: гравировки расходятся" in detail and "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)" in detail
     assert ["векторная работа", "#/vector?plan=22"] in out["links"] and ["эксперимент", "#/experiment/eng-0"] in out["links"]
     assert out["posted"] == [{"op": "set_colour", "colour": 0, "entry_id": "e13"}] and out["closed"] is True
@@ -503,27 +534,30 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
 @node
 def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_orders_and_filters_by_stability(tmp_path):
     out = run_editor(tmp_path, routes_with_sources(), """
-  const row = (k) => tree.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-ed-item') && d.querySelector('input')
-    && d.querySelector('input').getAttribute('aria-label') === `Отметить исходный цвет № ${k}`);
+  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Отметить исходный цвет № ${k}`).closest('.lst-row');
   await byText(row(2), 'button', 'Заменить').dispatch('click'); await tick(); await tick();       // its colour was engraved once
   const dialog = ctx.document.body.querySelector('.modal');
   const order = (root) => root.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
   const block = dialog.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-better'));
   out.better = [block.textContent, order(block)];
-  const grid = () => dialog.querySelectorAll('div').find((d) => d.getAttribute('role') === 'group');
+  const grid = () => dialog.querySelector('.lst-rows');
   out.near = order(grid());
   const sorter = dialog.querySelector('select');
   sorter.value = 'stable'; await sorter.dispatch('change'); out.stable = order(grid());
   sorter.value = 'fast'; await sorter.dispatch('change'); out.fast = order(grid());
-  out.classes = Object.fromEntries(grid().querySelectorAll('button').map((b) => [b.getAttribute('data-entry'), b.className]));
-  const only = dialog.querySelector('input'); only.checked = true; await only.dispatch('change'); out.repeated = order(grid());
+  out.classes = Object.fromEntries(grid().querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className]));
+  out.chips = dialog.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  await dialog.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('проверены повтором')).dispatch('click'); out.repeated = order(grid());
+  const search = dialog.querySelector('.lst-search'); search.value = 'e14 work'; await search.dispatch('input'); await tick(); await tick();
+  out.searched = order(grid());                                                                   // the titles of the engravings it is known from
   out.now = dialog.textContent.includes('Сейчас:');
 """)
     assert "Стабильнее и похоже на текущий цвет" in out["better"][0] and out["better"][1] == ["e11", "e14"]          # confirmed by repeats, nearest to the current colour first
     assert out["near"] == ["e12", "e11", "e13", "e14"]                                                            # by dE to the source colour of this row
     assert out["stable"] == ["e11", "e14", "e12", "e13"]                                                           # confirmed (the more confident first), once, doubtful
     assert out["fast"] == ["e12", "e11", "e13", "e14"]                                                             # equal times keep the order by dE; e14 has no estimate: last
-    assert out["repeated"] == ["e11", "e14"] and out["now"] is True
+    assert out["chips"] == ["Все · 4", "проверены повтором · 2", "одна гравировка · 1", "сомнительные · 1"]
+    assert out["repeated"] == ["e11", "e14"] and out["searched"] == ["e14"] and out["now"] is True
     assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
 
 
@@ -806,3 +840,46 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
     assert "Точки с карты цветов: 30 % · 500 мм/с · 60 кГц · 300 нс · шаг 0.02 мм" in out["card"] and out["buttons"] == [True, True]
     assert "Джарвис · точки 30 % с карты цветов · яркость 20 %, контраст 0 %, гамма 1" in out["card"]
     assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «На шкалу»: the scale's power puts it back
+
+
+def many_colours(n):
+    """A work of ``n`` source colours, each its own layer: the ΔE grows with the colour, the area falls with it."""
+    j = view()
+    base = j["colours"][0]
+    j["colours"] = [{**base, "index": k, "delta_e": k / 10, "pixels": 1000 * (n - k), "regions": 1} for k in range(n)]
+    j["layers"] = [{**layer(1, "e11", [f"r{k}"], 10.0), "index": k + 1, "name": f"C{k + 1:02d} P10", "size": None} for k in range(n)]
+    return j
+
+
+@node
+def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sorted_and_opened_on_a_click(tmp_path):
+    """DEC-090: 33 source colours and 33 layers show 30 lines each and «Показать ещё 3»; «Сначала дальние (ΔE)» puts the farthest colour
+    first; where a colour is known from and «Не гравировать» are under its line, only once it is opened."""
+    j = many_colours(33)
+    out = run_editor(tmp_path, {**routes(), "/api/vector/7": {"status": 200, "json": j}, "/api/vector/7/colouring": {"status": 200, "json": j}}, """
+  const colours = section('Исходные цвета'), layers = section('Слои титана');
+  const mains = (root) => root.querySelectorAll('.lst-main');
+  out.colourLines = mains(colours).length; out.colourCount = colours.querySelector('.lst-count').textContent;
+  out.layerLines = mains(layers).length; out.layerCount = layers.querySelector('.lst-count').textContent;
+  out.closed = [colours.querySelectorAll('button').some((b) => b.textContent === 'Не гравировать'), colours.querySelectorAll('.lst-det').filter((d) => !d.hidden).length];
+  const sort = colours.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  out.sorts = sort.querySelectorAll('option').map((o) => o.textContent);
+  sort.value = 'far'; await sort.dispatch('change'); await tick();
+  out.farthest = mains(colours).slice(0, 2).map((m) => m.querySelector('strong').textContent);
+  await mains(colours)[0].dispatch('click'); await tick();
+  out.opened = colours.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  await colours.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick();
+  out.all = mains(colours).length;
+  let stopped = false;                                    // the small DOM bubbles anyway: that the box stops its click is what a browser obeys
+  const box = colours.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Отметить исходный цвет № 1');
+  await box.dispatch('click', {stopPropagation() { stopped = true; }});
+  out.boxStops = stopped;
+""")
+    assert (out["colourLines"], out["colourCount"]) == (30, "показано 30 из 33")
+    assert (out["layerLines"], out["layerCount"]) == (30, "показано 30 из 33")
+    assert out["closed"] == [False, 0]                                                            # nothing open until a line is clicked
+    assert out["sorts"] == ["По номеру", "Сначала дальние (ΔE)", "Больше площадь"]
+    assert out["farthest"] == ["№ 33", "№ 32"]
+    (opened,) = out["opened"]
+    assert opened.startswith("Исходный цвет № 33") and "все 2 совпали" not in opened and "Не гравировать" in opened and "рецепт: " in opened
+    assert out["all"] == 33 and out["boxStops"] is True

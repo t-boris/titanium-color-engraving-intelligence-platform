@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from .. import (analysis, application_guide, capability_plates, colormap, designer, experiments, findings, ingest, knowledge, model, oxide,
-               photo_work, plans, setup as su, tasks, vector_job, work_errors)
+               photo_work, plans, recheck, setup as su, tasks, vector_job, work_errors)
 from .common import (MAX_LIGHTBURN_BYTES, MAX_PHOTO_BYTES, lens_param, picture_response, public_pair, public_plan, read_upload,
                      refresh_after_change, store_of)
 from .common import content_disposition
@@ -418,6 +418,7 @@ def remeasure_pair(pair_id: int, request: Request):
     """Measure an accepted photograph again with the measurement as it is now; the new measurement replaces the old one only when it comes
     out whole, else the old one is kept and the reason is returned (DEC-088)."""
     s = store_of(request)
+    recheck.ensure_idle(s)                                   # not while every work is being re-checked
     result = ingest.remeasure_pair(s, pair_id, on_accepted=refresh_after_change)
     if result["replaced_by"] is not None:
         findings.after_acceptance(s)
@@ -488,6 +489,7 @@ def set_pair_task(pair_id: int, body: TaskIn, request: Request):
 def accept_pair(pair_id: int, request: Request):
     """Accept the measurements; the knowledge is refreshed, then the accumulated work is analysed again (REQ-022 AC1) once the
     target checks of the photograph are recorded."""
+    recheck.ensure_idle(store_of(request))
     ids = ingest.accept_pair(store_of(request), pair_id, on_accepted=refresh_after_change)
     run = findings.after_acceptance(store_of(request))
     concluded = work_errors.after_acceptance(store_of(request), pair_id)       # the conclusion goes into the work the photograph belongs to (DEC-090)
@@ -499,6 +501,7 @@ def accept_pair(pair_id: int, request: Request):
 def delete_pair(pair_id: int, request: Request):
     """Remove a pair from active use; the knowledge its observations fed is rebuilt with it (DEC-047), and a proposal whose
     plate it completed is no longer done."""
+    recheck.ensure_idle(store_of(request))
     pair = ingest.get_pair(store_of(request), pair_id)
     ingest.delete_pair(store_of(request), pair_id)
     designer.reconcile_statuses(store_of(request))

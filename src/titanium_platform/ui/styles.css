@@ -868,7 +868,6 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ex-task .ex-evidence .muted {display:block;overflow:visible;-webkit-line-clamp:unset}
 .ex-task .dashboard-task-foot {font-size:11px}
 .ex-insights {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start}
-.ex-list .dashboard-list {gap:6px;margin-top:0}
 .ex-list .exp-card {grid-template-columns:64px minmax(0,1fr);gap:10px;padding:8px 10px}
 .ex-list .exp-thumb {width:64px;height:64px}
 .ex-list .dashboard-item-top>a {font-size:13px}
@@ -949,12 +948,6 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ep-caption {flex:none;margin:0;padding:8px 12px;max-height:6em;overflow:auto;border-top:1px solid var(--line);font-size:12px;line-height:1.35}
 .ep-panels h3 {margin:0;padding:0;border:0;font-size:15px}
 .ep-panels .stack {gap:10px}
-.ep-layers {display:flex;flex-direction:column;gap:8px}
-.ep-layer {display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:#111b2a}
-.ep-layer-top {display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}
-.ep-layer-top .sw {margin-right:6px}
-.ep-layer .small {overflow-wrap:anywhere}
-.ep-layer .stack {gap:2px}
 .ep-checks {display:flex;flex-direction:column;gap:6px}
 .pr-card {padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;background:#111b2a}
 .pr-card h4 {margin:4px 0 0;font-size:13px}
@@ -1156,3 +1149,51 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .lan-code {font-size:40px;font-weight:700;letter-spacing:.25em;font-variant-numeric:tabular-nums;padding:6px 0}
 .fingerprint {display:block;word-break:break-all;padding:10px 12px;border-radius:8px;background:#18213a;font-size:13px}
 .lan-urls {margin:4px 0 0;padding-left:20px} .lan-urls li {margin:2px 0}
+
+/* The compact list (list.js, DEC-090): a line per item, its details under the line, filter chips with counts, «Показать ещё». */
+.lst {display:flex;flex-direction:column;gap:8px;min-width:0}
+.lst-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.lst-search {min-width:180px;flex:0 1 260px}
+.lst-chips {display:flex;flex-wrap:wrap;gap:6px}
+.lst-chip {padding:4px 11px;border:1px solid var(--line-2);border-radius:100px;background:#151d2b;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.lst-chip:hover {color:var(--text);border-color:#4a5a78}
+.lst-chip.on {background:var(--accent-soft);border-color:#6f86c4;color:var(--text)}
+.lst-select {display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.lst-select select {min-height:30px;padding:3px 8px;font-size:12px}
+.lst-count {margin-left:auto}
+.lst-rows {display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:#111826;overflow:hidden}
+.lst-row {display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);min-width:0}
+.lst-row:last-of-type {border-bottom:0}
+.lst-row.open {background:#17223a}
+.lst-main {display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:7px 0;cursor:default;overflow:hidden;white-space:nowrap}
+.lst-main[role=button] {cursor:pointer}
+.lst-main>* {flex:none}
+.lst-main .lst-text {flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lst-main .sw {display:inline-block;width:14px;height:14px;border-radius:4px}
+.lst-act {display:flex;gap:4px;flex:none}
+.lst-act .btn {min-height:28px;padding:3px 9px;font-size:12px;border-radius:8px}
+.lst-det {padding:10px 14px 14px;border-bottom:1px solid var(--line);background:#141d2e}
+.lst-empty {margin:10px 14px}
+.lst-foot:empty {display:none}
+@media (max-width:760px) {.lst-row {flex-wrap:wrap} .lst-main {white-space:normal} .lst-count {margin-left:0}}
+/* «Выводы» as a short list (findings-you-can-manage-short-lists-re-check REQ-002): the kind as a small coloured label, laser and titanium cut short */
+.fd-page>.vw-tabs {padding:0 0 6px}
+.fd-page>.vw-tabs .vw-tab {flex:0 0 auto;padding:6px 16px}
+.fd-run summary {cursor:pointer;color:var(--muted);font-size:13px}
+.fd-run details[open] summary {margin-bottom:10px}
+.fd-kind {padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:#273247;color:#c4d0e4}
+.fd-kind.fd-improvement {background:#16382f;color:#8ae8c4}
+.fd-kind.fd-unstable {background:#3b3020;color:#f5d297}
+.fd-kind.fd-anomaly {background:#402632;color:#ffa9bb}
+.fd-kind.fd-hypothesis {background:#2c2846;color:#c9bdfc}
+.lst-main .fd-where {flex:0 1 auto;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+.lst-main .fd-note {flex:0 1 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.fd-mark textarea {min-width:min(420px, 100%)}
+@media (max-width:760px) {.lst-main .fd-where {max-width:none}}
+.fd-recheck:empty {display:none}
+/* compact lists inside the narrow panels: the list's own bar stays in view while its panel scrolls; vector swatches and grey-scale bars
+   at line size; an excluded colour dimmed as it was */
+.os-scroll .lst-bar {position:sticky;top:-10px;z-index:2;padding:6px 0;background:#111826}
+.lst-row.excluded {opacity:.65}
+.lst .vw-swatch {width:18px;height:18px;margin:0;border-radius:5px}
+.lst .ge-bar {width:44px;height:14px}

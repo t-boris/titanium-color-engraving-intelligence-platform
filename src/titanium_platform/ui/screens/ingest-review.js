@@ -361,6 +361,8 @@ const IngestReview = (() => {
   const SUPPLIED = {power: ['Мощность', '%'], frequency: ['Частота', 'кГц'], speed: ['Скорость', 'мм/с'],
     pulse_width: ['Длительность импульса (Q-Pulse)', 'нс'], line_interval: ['Шаг линий', 'мм'], passes: ['Проходы', '']};
   const stamp = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '');
+  const shortName = (setting) => (setting === 'pulse_width' ? 'Q-Pulse' : SUPPLIED[setting][0].toLowerCase());
+  let reopenSupplied = null;     // the layer whose value was just saved or removed: open again when the page is drawn after the check
 
   /** Слой, в файле которого нет обязательной настройки, получает поле ровно для неё. Само ничего не подставляется:
       оператор вводит значение, сервер проверяет его (ступени длительности, диапазон частот лазера), пара проверяется
@@ -373,12 +375,15 @@ const IngestReview = (() => {
     const device = gaps.some((l) => l.missing_settings.includes('pulse_width')) ? await App.get('/devices/' + pair.device_id).catch(() => null) : null;
     const steps = device ? device.passport.pulse_steps.map((s) => s.pulse_width_ns) : [];
     const listId = `pulse-steps-${pair.id}`;
+    const opened = reopenSupplied && reopenSupplied.pair === pair.id ? reopenSupplied.key : null;
+    reopenSupplied = null;
     const send = async (button, layer, setting, value) => {
       button.disabled = true;
       const status = h('span', {class: 'muted small', role: 'status'}, 'Сохраняем и перепроверяем пару…');
       button.after(status);
       try {
         await post(`/pairs/${pair.id}/supplied-settings`, {layer_index: layer.index, setting, value});
+        reopenSupplied = {pair: pair.id, key: String(layer.index)};
         toast(value == null ? 'Введённое значение убрано, пара перепроверена' : 'Значение сохранено как введённое оператором, пара перепроверена', 'ok');
         await reload();
       } catch (e) { status.remove(); button.disabled = false; fail(e); }
@@ -408,7 +413,14 @@ const IngestReview = (() => {
         + 'Значения, прочитанные из файла, не меняются.'
         + (steps.length ? ` Лазер принимает длительность импульса от ${Math.min(...steps)} до ${Math.max(...steps)} нс; в таблице производителя: ${steps.join(', ')} нс.` : '')),
       steps.length ? h('datalist', {id: listId}, ...steps.map((v) => h('option', {value: v}))) : null,
-      ...gaps.map((layer) => h('div', {class: 'stack'}, h('strong', {}, layer.name), ...layer.missing_settings.map((s) => entry(layer, s)))));
+      // a line per layer with what its file lacks, the fields under the line (findings-you-can-manage-short-lists-re-check, REQ-005)
+      App.list({id: `ingest-supplied:${pair.id}`, items: gaps, key: (layer) => layer.index, open: gaps.length === 1 ? String(gaps[0].index) : opened,
+        search: (layer) => layer.name, details: (layer) => h('div', {class: 'stack'}, ...layer.missing_settings.map((s) => entry(layer, s))),
+        row: (layer) => {
+          const given = layer.missing_settings.filter((s) => (layer.supplied_settings || {})[s]).length;
+          return [h('span', {class: 'lst-text', title: layer.name}, layer.name), h('span', {class: 'muted small'}, 'нет в файле: ' + layer.missing_settings.map(shortName).join(', ')),
+            given ? pill(`введено оператором: ${given}`, 'warn') : null];
+        }}).el);
   }
 
   // -- a parameter matrix (LightBurn Material Test) read from its photograph (REQ-031) --------------------------------
@@ -644,7 +656,7 @@ const IngestReview = (() => {
       ...((check.lens && check.lens.warnings) || []).map((m) => h('div', {class: 'alert warn', role: 'status'}, I18N.tr(m)))));
     const supplied = await suppliedSettingsCard(pair, reload);
     if (supplied) out.append(supplied);
-    const composed = Composition.card(check);
+    const composed = Composition.card(check, pair.id);
     if (composed) out.append(composed);
     const imageLayers = (check.layers || []).filter((l) => l.image);
     if (imageLayers.length) {

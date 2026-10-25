@@ -1,10 +1,14 @@
 import json
+import shutil
+import subprocess
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 
 import obs
+from test_vector_work import TABLES, UI
 from titanium_platform import analysis as an, color, conversion as cv, ingest as ig, knowledge as kn, plans as pl, setup as su
 from titanium_platform.db import now
 
@@ -184,3 +188,73 @@ def test_the_trajectory_is_the_one_planned_not_one_moved_by_the_result_being_jud
     m = an.report_for_pair(store, pair)["metrics"]
     assert m["max_path_distance"] == pytest.approx(4.0)  # ... but the report still measures against the plan
     assert pl.get_plan(store, plan_id)["transfer"]["points"][0]["lab"] == pytest.approx([20, 0, 0])
+
+
+# -- the analysis screen in node over the small DOM, with the report the server builds ------------------------------------------
+SCREEN = """
+const fs = require('fs');
+const {context, load} = require(%(dom)s);
+const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
+const ctx = context(data.routes);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'tasks.js', 'screens/vector-review.js', {code: %(glue)s}, 'screens/analysis.js']);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+(async () => {
+  const out = {};
+  const screen = async () => { const t = await ctx.__screens.analysis.render({arg: String(data.id), query: {}}); for (let i = 0; i < 4; i++) await tick(); return t; };
+  const tree = await screen();
+%(body)s
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+SCREEN_GLUE = ("const __screens = {}, __session = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => {};"
+               "globalThis.sessionStorage = {getItem: (k) => (k in __session ? __session[k] : null), setItem: (k, v) => { __session[k] = String(v); }};"
+               "globalThis.__screens = __screens;")
+
+
+def run_screen(tmp_path, pair_id, report, body) -> dict:
+    routes = {f"/api/pairs/{pair_id}/report": {"status": 200, "json": report}}
+    (tmp_path / "data.json").write_text(json.dumps({"id": pair_id, "routes": routes}), encoding="utf-8")
+    script = tmp_path / "analysis.js"
+    script.write_text(SCREEN % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+                                "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "glue": json.dumps(SCREEN_GLUE), "body": body},
+                      encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2500:]
+    return json.loads(done.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_measured_elements_are_a_short_list_out_of_tolerance_and_largest_delta_e_first_with_the_measurements_under_a_line(store, w, tmp_path):
+    """findings-you-can-manage-short-lists-re-check REQ-005: a plate of 25 bands is a page of 20 lines (colour, name, ΔE to the planned
+    colour, «вне допуска»), the ones out of the saved tolerance (6.0) first, then the largest ΔE; the measurements and the settings of a
+    band open under its line; a chip keeps only those out of tolerance; «По порядку» puts them back in band order."""
+    plan_id = cv.create_continuous(store, *w["setup"], "tonal", ramp(), 50, 25, "T")
+    layers = pl.get_plan(store, plan_id)["layers"]
+    off = {l["index"]: (l["index"] * 7 % 25) / 5 for l in layers} | {9: 8.0, 16: 7.0}          # ΔE of each band; 9 and 16 out of tolerance
+    pair = accepted_pair(store, w, plan_id, {l["index"]: (l["prediction"]["lab"][0] + off[l["index"]], 0, 0) for l in layers})
+    out = run_screen(tmp_path, pair, an.report_for_pair(store, pair), """
+  const panel = tree.querySelectorAll('section').find((s) => s.querySelector('h3') && s.querySelector('h3').textContent === 'Измеренные элементы');
+  const list = panel.querySelector('.lst');
+  const names = () => list.querySelectorAll('.lst-text').map((x) => x.textContent);
+  out.names = names();
+  out.count = list.querySelector('.lst-count').textContent;
+  out.more = list.querySelector('.lst-foot').querySelector('button').textContent;
+  out.first = list.querySelectorAll('.lst-main')[0].textContent;
+  out.third = list.querySelectorAll('.lst-main')[2].textContent;
+  out.chips = list.querySelectorAll('.lst-chip').map((c) => c.textContent);
+  out.tiles = tree.querySelectorAll('button').filter((b) => (b.className || '').includes('analysis-module')).length;
+  await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
+  out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  await list.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Вне допуска')).dispatch('click'); await tick();
+  out.outside = names();
+  await list.querySelectorAll('.lst-chip')[0].dispatch('click'); await tick();
+  const order = list.querySelector('select'); order.value = 'order'; await order.dispatch('change'); await tick();
+  out.ordered = names().slice(0, 3);
+""")
+    assert len(out["names"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5" and out["tiles"] == 0
+    # out of tolerance first (B09 ΔE 8, B16 ΔE 7), then the largest ΔE: B07 4.8, B14 4.6, B21 4.4, B03 4.2
+    assert out["names"][:6] == ["B09", "B16", "B07", "B14", "B21", "B03"]
+    assert "ΔE 8.0" in out["first"] and "вне допуска" in out["first"] and "ΔE 4.8" in out["third"] and "вне допуска" not in out["third"]
+    assert out["chips"] == ["Все · 25", "Вне допуска · 2", "Без замечаний · 23"]                   # no element went unmeasured: no chip for it
+    assert len(out["open"]) == 1 and "Плановый цвет" in out["open"][0] and "ΔE 8.0" in out["open"][0] and "Прочитанные параметры слоя" in out["open"][0]
+    assert out["outside"] == ["B09", "B16"] and out["ordered"] == ["B01", "B02", "B03"]

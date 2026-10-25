@@ -323,7 +323,9 @@ const ColorMap = (() => {
         (m.observation_ids || []).length ? ` · наблюдения №${m.observation_ids.join(', №')}` : '',
         (m.provisional_checks || []).length ? ` · проверки на рассмотрении №${m.provisional_checks.join(', №')}` : '',
         ...(m.missing_context || []).length ? [' · не хватает: ', ...Tasks.missing(m.missing_context)] : []);
-      // DEC-075: внутри допуска ΔE первыми идут самые быстрые рецепты; сервер говорит, как упорядочен ответ
+      // DEC-075: within the ΔE tolerance the fastest recipes come first; the server says how its answer is ordered.
+      // At most 12 recipes are asked for (``limit``), so the results stay a plain list; the engravings each recipe is known from are
+      // folded under its card (REQ-005, DEC-090), while the one colour picked on the map shows them open.
       const o = r.order || {};
       const order = o.by === 'time_within_tolerance'
         ? `Внутри допуска ΔE ${num(o.tolerance_de, 1)}${o.tolerance_source === 'rules' ? ' (из правил лазера и линзы)' : ''} рецептов: ${o.within_tolerance}; `
@@ -338,7 +340,7 @@ const ColorMap = (() => {
             m.provisional ? pill('предварительно', 'warn') : null,
             h('span', {class: 'muted small'}, often(m))),
           pick ? DotPick.action(pick, m) : null,
-          trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab), where(m), evidence(m)))),
+          trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab, false), where(m), evidence(m)))),
         r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
           btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
         r.counts.provisional && !f.provisional ? h('div', {class: 'alert warn'}, `${colours(r.counts.provisional)} из проверок, которые ещё не приняты, в поиске не участвуют: они предварительные. `,

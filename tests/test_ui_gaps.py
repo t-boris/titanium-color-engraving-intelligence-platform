@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from test_vector_work import TABLES
 from titanium_platform.api.app import UI_DIR
 
 
@@ -35,7 +36,9 @@ def test_the_plan_screen_renders_the_three_estimates_of_each_layer_from_its_pred
     screen = source("screens/plan.js")
     for field in ("num(pr.confidence)", "num(pr.expected_delta_e)", "pr.stability.assessed", "num(pr.stability.variance)"):
         assert field in screen, field
-    assert "'Уверенность', 'Ожидаемая ошибка ΔE', 'Стабильность'" in screen
+    # a layer is a line of a short list (DEC-090): its three estimates are the facts under the line, in this order
+    at = [screen.index(f"['{label}', pr ? ") for label in ("Уверенность", "Ожидаемая ошибка ΔE", "Стабильность")]
+    assert at == sorted(at)
 
 
 def test_a_setting_computed_from_a_law_is_shown_with_its_three_estimates_or_the_reason_it_is_not():
@@ -150,3 +153,100 @@ def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_russian(tmp_pat
                                       "settings unknown to this version are kept with the recipe but not interpreted: perfMode, rampLength"])
     assert out == ["Объектов «Ellipse» на этом слое: 2. Они не читаются: у них нет контура в файле.",
                    "Настройки, неизвестные этой версии, сохранены в рецепте, но не учитываются: perfMode, rampLength"]
+
+
+# -- findings-you-can-manage-short-lists-re-check REQ-005: the review's layer lists are short lists (run in node) ------------------
+REVIEW = """
+const fs = require('fs');
+const {context, load} = require(%(dom)s);
+const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
+const ctx = context(data.routes);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'dialogs.js', 'list.js', 'tasks.js', 'screens/composition.js', 'screens/ingest-dialogs.js',
+  'screens/ingest-tasks.js', 'screens/ingest-review.js', {code: %(glue)s}]);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const reloads = [];
+const draw = async () => { const t = await ctx.__review.render(data.pair, () => { reloads.push(1); }); for (let i = 0; i < 4; i++) await tick(); return t; };
+const listOf = (t, title) => t.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('card') && d.querySelector('h3')
+  && d.querySelector('h3').textContent === title).querySelector('.lst');
+const keys = (l) => l.querySelectorAll('.lst-row').map((r) => r.getAttribute('data-key'));
+const lines = (l) => l.querySelectorAll('.lst-main');
+const opened = (l) => l.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+(async () => {
+  const out = {};
+  const tree = await draw();
+%(body)s
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+"""
+REVIEW_GLUE = ("const __session = {}; globalThis.__review = IngestReview;"
+               "globalThis.sessionStorage = {getItem: (k) => (k in __session ? __session[k] : null), setItem: (k, v) => { __session[k] = String(v); }};")
+
+
+def review_layer(index, **over):
+    return {"index": index, "name": f"C{index:02d}", "type": "Scan", "power": 40.0, "frequency_khz": 1950.0, "speed": 1800.0, "pulse_width": 200.0,
+            "line_interval": 0.003, "passes": 1, "regions": 2, "readable": True, "compatible": True, "notes": [], "missing_settings": [],
+            "supplied_settings": {}, "defaulted_settings": {}, "measured_lab": [50.0 - index, 10.0, -10.0], "pixels": 1200, "role": "test feature",
+            "task": {"kind": "fill", "basis": "derived", "source": "layer"}, "metrics": [], **over}
+
+
+def review_pair():
+    """A photograph of a file with 30 layers: 22 lack the pass count (one is given by the operator), one has no fill and was skipped, one
+    could not be read."""
+    layers = [review_layer(i, missing_settings=["passes"], passes=None) if i < 22 else review_layer(i) for i in range(28)]
+    layers[2]["supplied_settings"] = {"passes": {"value": 2, "by": "operator", "at": "2026-10-25T10:00:00+00:00"}}
+    layers += [review_layer(28, regions=0, measured_lab=None, pixels=None, notes=["the layer has no fill geometry"]),
+               review_layer(29, readable=False, compatible=False, measured_lab=None, pixels=None, notes=["pulse width is missing from this LightBurn layer"])]
+    check = {"layers": layers, "problems": [], "warnings": [], "discrepancies": [], "color_measurement": {"mode": "reference_chart_corrected"},
+             "chart": {"detected": True, "usable": True, "residual": 1.2}, "alignment": {"valid": True, "method": "markers", "marker_count": 4}}
+    return {"id": 77, "status": "Needs correction", "lightburn_name": "work.lbrn2", "photo_name": "IMG_77.DNG", "engraving_title": "Работа",
+            "device_id": 1, "matrix": None, "layer_tasks": {}, "work_task": None, "plan_task": None, "file_confirmation": None, "check": check}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fields_and_choices_under_a_line(tmp_path):
+    """A file of 30 layers: «Слои файла», «Настройки, которых нет в файле LightBurn» and «Задачи гравировки» each show a page of 20 lines;
+    the layers not measured come first in «Слои файла»; the result, the fields of the missing settings and the task choice open under a
+    line; a task chosen for a layer is sent and the layer stays open when the page is drawn again."""
+    routes = {"/api/pairs/77/tasks": {"status": 200, "json": {}}}
+    (tmp_path / "data.json").write_text(json.dumps({"pair": review_pair(), "routes": routes}), encoding="utf-8")
+    script = tmp_path / "review.js"
+    script.write_text(REVIEW % {"dom": json.dumps(str(UI_DIR.parents[2] / "tests" / "ui_dom.js")), "data": json.dumps(str(tmp_path / "data.json")),
+                                "ui": json.dumps(str(UI_DIR) + "/"), "tables": json.dumps(TABLES), "glue": json.dumps(REVIEW_GLUE), "body": """
+  const files = listOf(tree, 'Слои файла');
+  out.files = {keys: keys(files), count: files.querySelector('.lst-count').textContent, lines: lines(files).slice(0, 3).map((m) => m.textContent),
+    chips: files.querySelectorAll('.lst-chip').map((c) => c.textContent)};
+  await lines(files)[0].dispatch('click'); await tick();
+  out.files.open = opened(files);
+  const supplied = listOf(tree, 'Настройки, которых нет в файле LightBurn');
+  out.supplied = {keys: keys(supplied), count: supplied.querySelector('.lst-count').textContent, lines: lines(supplied).slice(0, 3).map((m) => m.textContent),
+    fieldsBefore: supplied.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').length};
+  await lines(supplied)[0].dispatch('click'); await tick();
+  out.supplied.fields = supplied.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').map((i) => i.getAttribute('aria-label'));
+  await lines(supplied)[2].dispatch('click'); await tick();
+  out.supplied.given = opened(supplied);
+  const tasks = listOf(tree, 'Задачи гравировки');
+  out.tasks = {keys: keys(tasks), count: tasks.querySelector('.lst-count').textContent, choicesBefore: tasks.querySelectorAll('select').length};
+  await lines(tasks)[1].dispatch('click'); await tick();
+  const choice = tasks.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Задача слоя C01');
+  choice.value = 'text'; await choice.dispatch('change'); for (let i = 0; i < 4; i++) await tick();
+  out.tasks.sent = ctx.requests.filter((r) => r.method === 'PUT').map((r) => [r.path, JSON.parse(r.body)]);
+  out.tasks.reloads = reloads.length;
+  const again = listOf(await draw(), 'Задачи гравировки');
+  out.tasks.reopened = again.querySelectorAll('.lst-row').filter((r) => (r.className || '').split(' ').includes('open')).map((r) => r.getAttribute('data-key'));
+"""}, encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2500:]
+    out = json.loads(done.stdout)
+    files, supplied, tasks = out["files"], out["supplied"], out["tasks"]
+    assert len(files["keys"]) == 20 and files["count"] == "показано 20 из 30" and files["keys"][:3] == ["29", "28", "0"]   # not measured first
+    assert "нечитаем" in files["lines"][0] and "пропущен" in files["lines"][1] and "измерен" in files["lines"][2]
+    assert "40.0 % · 1950 кГц · 1800 мм/с" in files["lines"][2] and "областей 2" in files["lines"][2]
+    assert files["chips"] == ["Все · 30", "Нечитаемые · 1", "Пропущенные · 1", "Измеренные · 28"]
+    assert files["open"] == ["нечитаем В этом слое LightBurn не задан Q-Pulse"]                    # the result and its notes under the line
+    assert len(supplied["keys"]) == 20 and supplied["count"] == "показано 20 из 22" and supplied["fieldsBefore"] == 0
+    assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
+    assert supplied["fields"] == ["Проходы, слой C00"]
+    assert len(supplied["given"]) == 1 and "Проходы: 2" in supplied["given"][0] and "Убрать" in supplied["given"][0]
+    assert len(tasks["keys"]) == 20 and tasks["count"] == "показано 20 из 29" and tasks["choicesBefore"] == 0   # a layer without fill has no task
+    assert tasks["sent"] == [["/api/pairs/77/tasks", {"layer_index": 1, "task": "text"}]] and tasks["reloads"] == 1
+    assert tasks["reopened"] == ["1"]

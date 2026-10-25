@@ -35,6 +35,7 @@ DATABASE = "titanium.sqlite"
 FOLDERS = ("files", "labs", "lab_exports", "fonts")
 PARTIAL = ".partial"
 SKIPPED = {Path("labs") / ".staging"}                 # a release still being connected is not part of the workshop
+SETTING = "backup_dir"                                # the folder the operator keeps backups in
 
 
 def _utc() -> str:
@@ -63,6 +64,16 @@ def _user_files(data_dir: Path):
             yield rel, path
 
 
+def default_target(store: Store) -> str:
+    """Where a backup goes when no folder is named: the folder the operator keeps backups in, else ``~/titanium-backups``."""
+    return store.get_setting(SETTING) or str(Path.home() / "titanium-backups")
+
+
+def needed_bytes(store: Store) -> int:
+    """The space a backup of ``store``'s workshop takes, with a margin."""
+    return sum(path.stat().st_size for _, path in _user_files(store.data_dir)) + _database_bytes(store.path) + migrations.SPARE_BYTES
+
+
 def make(store: Store, target_dir: str | Path) -> dict:
     """Write a backup of ``store``'s workshop under ``target_dir``; the manifest with ``path``. Space is checked first; any failure
     removes the partial folder and raises."""
@@ -72,7 +83,7 @@ def make(store: Store, target_dir: str | Path) -> dict:
     if target_dir.resolve() == store.data_dir.resolve() or store.data_dir.resolve() in target_dir.resolve().parents:
         raise su.ValidationError("a backup cannot be written inside the workshop it copies: choose another folder")
     target_dir.mkdir(parents=True, exist_ok=True)
-    wanted = sum(path.stat().st_size for _, path in _user_files(store.data_dir)) + _database_bytes(store.path) + migrations.SPARE_BYTES
+    wanted = needed_bytes(store)
     free = shutil.disk_usage(target_dir).free
     if free < wanted:
         raise su.ValidationError(f"not enough free space for the backup: {wanted // 2**20} MB are needed and {free // 2**20} MB are free")

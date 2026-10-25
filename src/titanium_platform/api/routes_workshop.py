@@ -13,7 +13,7 @@ from .. import setup as su
 from .common import store_of
 
 router = APIRouter(prefix="/api/workshop")
-BACKUP_DIR = "backup_dir"                       # setting: the folder the operator keeps backups in
+BACKUP_DIR = backup.SETTING                     # setting: the folder the operator keeps backups in
 
 
 @router.get("")
@@ -79,7 +79,7 @@ def set_backup_dir(request: Request, body: dict):
 def make_backup(request: Request, body: dict | None = None):
     """A full backup into ``target_dir`` (by default the kept backup folder, else ``backups/`` beside the data)."""
     store = store_of(request)
-    target = (body or {}).get("target_dir") or store.get_setting(BACKUP_DIR) or str(Path.home() / "titanium-backups")
+    target = (body or {}).get("target_dir") or backup.default_target(store)
     return backup.make(store, target)
 
 
