@@ -376,7 +376,7 @@ def test_without_a_key_the_button_is_off_and_the_screen_says_why(work, job, mode
   out.modes = tree.querySelectorAll('button').map((b) => b.textContent).filter((t) => ['Ближе к оригиналу', 'Сохранить тональность'].includes(t));
   out.modesDisabled = tree.querySelectorAll('button').filter((b) => b.textContent === 'Ближе к оригиналу').map((b) => !!b.disabled);
 """)
-    assert out["disabled"] is True and len(out["alert"]) == 1 and out["alert"][0][0] is False and "OPENAI_API_KEY" in out["alert"][0][1]
+    assert out["disabled"] is True and len(out["alert"]) == 1 and out["alert"][0][0] is False and "«Сеть»" in out["alert"][0][1]
     assert out["modes"] == ["Ближе к оригиналу", "Сохранить тональность"] and out["modesDisabled"] == [False]      # the other modes are unaffected
 
 

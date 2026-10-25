@@ -455,7 +455,7 @@ def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_fr
 def test_without_a_key_the_ai_button_is_off_and_says_why_while_rules_can_still_be_set(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   out.disabled = button(tree, 'Попросить AI').disabled;
-  out.text = tree.textContent.includes('AI выключен: не задан ключ языковой модели (OPENAI_API_KEY)');
+  out.text = tree.textContent.includes('AI выключен: не задан ключ OpenAI (его вводят на экране «Сеть»)');
   const clothes = select(tree, 'Правило: Одежда');
   clothes.value = 'photo'; await clothes.dispatch('change'); await settle();
   out.saves = saves();

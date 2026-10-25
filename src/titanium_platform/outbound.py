@@ -38,6 +38,7 @@ def save(store: Store, body) -> dict:
 def apply(store: Store) -> dict:
     chosen = get(store)
     research.switched_on = chosen["ai"]
+    research.key_file = store.data_dir / research.KEY_FOLDER / research.KEY_FILE   # the workshop's own key (BUG-007)
     fonts.network_allowed = chosen["google_fonts"]
     cloud_http.switched_on = chosen["cloud"]
     return chosen

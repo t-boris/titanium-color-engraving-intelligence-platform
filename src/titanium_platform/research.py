@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -356,18 +357,16 @@ def save_insight(store: Store, session_id: int, purpose: str, claim: str,
 
 
 switched_on = True                            # the operator's network setting (outbound.py): off, no key is read and the AI features say so
+key_file: Path | None = None                  # the workshop's own key (BUG-007): <data>/ai/openai.key, set by outbound.apply
+KEY_FOLDER, KEY_FILE = "ai", "openai.key"
+KEY_PATTERN = re.compile(r"^sk-[A-Za-z0-9_-]{16,}$")
 
 
-def _api_key() -> str | None:
-    if not switched_on:
+def _developer_key() -> str | None:
+    """The key of a developer's ``.env.local`` (the working directory or the source tree); never read under the desktop shell."""
+    if os.environ.get("TCE_DESKTOP"):
         return None
-    env = os.environ.get("OPENAI_API_KEY", "").strip()
-    if env:
-        return env
-    if os.environ.get("TCE_DESKTOP"):          # under the desktop shell only the environment counts: no developer file is read
-        return None
-    paths = [Path.cwd() / ".env.local", Path(__file__).resolve().parents[2] / ".env.local"]
-    for path in paths:
+    for path in (Path.cwd() / ".env.local", Path(__file__).resolve().parents[2] / ".env.local"):
         if path.is_file():
             for line in path.read_text(encoding="utf-8").splitlines():
                 key, sep, value = line.partition("=")
@@ -376,8 +375,70 @@ def _api_key() -> str | None:
     return None
 
 
+def _workshop_key() -> str | None:
+    try:
+        text = key_file.read_text(encoding="utf-8").strip() if key_file is not None else ""
+    except OSError:
+        return None
+    return text or None
+
+
+def _found_key() -> tuple[str | None, str | None]:
+    """The key and where it comes from: the environment first, then the workshop's own file, then a developer's ``.env.local``."""
+    env = os.environ.get("OPENAI_API_KEY", "").strip()
+    if env:
+        return env, "environment"
+    own = _workshop_key()
+    if own:
+        return own, "workshop"
+    developer = _developer_key()
+    return (developer, "developer_file") if developer else (None, None)
+
+
+def _api_key() -> str | None:
+    if not switched_on:
+        return None
+    return _found_key()[0]
+
+
+def key_status() -> dict:
+    """What the network screen shows of the key: whether one is set, where it comes from and its last four characters, never the key."""
+    key, source = _found_key()
+    return {"set": key is not None, "source": source, "ending": key[-4:] if key else None, "switched_on": switched_on,
+            "workshop_file": key_file is not None and key_file.is_file()}
+
+
+def save_key(value) -> dict:
+    """Keep the operator's key in the workshop (mode 0600, outside backups, diagnostics and laboratory releases)."""
+    text = value.strip() if isinstance(value, str) else ""
+    if not KEY_PATTERN.match(text):
+        raise ResearchError("ключ OpenAI выглядит неверно: он начинается с sk- и не содержит пробелов")
+    if key_file is None:
+        raise ResearchError("мастерская не открыта: ключ некуда сохранить")
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(key_file.parent, 0o700)
+    except OSError:
+        pass
+    fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text + "\n")
+    os.chmod(key_file, 0o600)
+    return key_status()
+
+
+def forget_key() -> dict:
+    """Remove the workshop's own key; a key of the environment stays (it is not the workshop's to remove)."""
+    if key_file is not None:
+        try:
+            key_file.unlink()
+        except FileNotFoundError:
+            pass
+    return key_status()
+
+
 def ai_available() -> bool:
-    """Whether a key for the language model is configured (environment or .env.local)."""
+    """Whether a key for the language model is configured (environment, the workshop's key or a developer's .env.local)."""
     return _api_key() is not None
 
 
@@ -619,7 +680,7 @@ def answer(store: Store, session_id: int, message: str, client=None) -> dict:
         raise ResearchError("исследование закрыто")
     client = client if client is not None else started_client()
     if client is None:
-        raise ResearchError("OPENAI_API_KEY не найден в окружении или локальном .env.local")
+        raise ResearchError("ключ OpenAI не задан: введите его на экране «Сеть» → «Внешние службы» (или задайте переменную OPENAI_API_KEY)")
     if session["memory"] is None and session["message_count"] >= MEMORY_INTERVAL:
         try:
             _refresh_memory(store, session_id, session["model"], client)

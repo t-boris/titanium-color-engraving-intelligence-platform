@@ -143,3 +143,26 @@ def test_the_buttons_ask_for_a_code_apply_the_settings_revoke_after_confirmation
                            ["PUT", "/api/cloud/settings", {"api_url": "http://127.0.0.1:9000"}]]
     assert out["address"] == "http://127.0.0.1:9000"
     assert out["renders"] == 4                                                     # the code, the settings, the revoke and the rename reload the screen
+
+
+@node
+def test_the_openai_key_is_entered_on_the_network_screen_and_only_its_ending_is_shown(tmp_path):
+    """BUG-007: the desktop application has no environment of a shell; the key is given to the workshop here."""
+    key = {"set": True, "source": "workshop", "ending": "Zz99", "switched_on": True, "workshop_file": True}
+    routes = {"/api/lan": {"GET": ok(STATUS)}, "/api/network": {"GET": ok(NETWORK)}, "/api/cloud/settings": {"GET": ok(CLOUD)},
+              "/api/network/ai-key": {"GET": ok({"set": False, "source": None, "ending": None, "switched_on": True, "workshop_file": False}),
+                                      "PUT": ok(key)}}
+    out = run(tmp_path, routes, """
+  const el = await ctx.__screens.network.render({query: {}});
+  ctx.document.body.append(el);
+  const box = el.querySelector('.ai-key');
+  out.before = box.textContent;
+  const input = box.querySelector('input');
+  out.type = input.getAttribute('type');
+  input.value = 'sk-proj-secret-secret-1234';
+  await byText(box, 'button', 'Сохранить ключ').dispatch('click'); await tick();
+  out.cleared = input.value;
+  out.sent = sent();
+""")
+    assert "ключ не задан" in out["before"] and "ai/openai.key" in out["before"] and out["type"] == "password"
+    assert out["sent"] == [["PUT", "/api/network/ai-key", {"key": "sk-proj-secret-secret-1234"}]] and out["cleared"] == ""

@@ -1,10 +1,10 @@
 /* Сеть (feature electron, REQ-082, DEC-047; REQ-080). Доступ с планшета по локальной сети: отдельный сервер с шифрованием и собственным центром
    сертификации мастерской (отпечаток и сертификат для установки на планшете), код сопряжения на пять минут с обратным отсчётом, список
    подключённых планшетов с отзывом. И переключатели того, куда приложение вообще может обращаться: AI-исследователь, Google Fonts, проверка
-   обновлений, облако лабораторий (и его адрес, REQ-086) — больше никуда ничего не отправляется. Имена планшетов показываются только текстом (узлы h()). Адрес: #/network */
+   обновлений, облако лабораторий (и его адрес, REQ-086), ключ OpenAI мастерской (BUG-007) — больше никуда ничего не отправляется. Имена планшетов показываются только текстом (узлы h()). Адрес: #/network */
 'use strict';
 (() => {
-  const {h, btn, field, pill, get, post, put, toast, fail, modal, confirmBox, table} = App;
+  const {h, btn, field, pill, get, post, put, del, toast, fail, modal, confirmBox, table} = App;
   const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
   const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   const EMPTY_CODE = '— — — — — —';
@@ -114,7 +114,27 @@
     return h('div', {class: 'toolbar cloud-address'}, field('Адрес облака лабораторий', input, `пусто — стандартный адрес ${cloud.default}; https, или http только для 127.0.0.1`), save);
   }
 
-  function outboundCard(net, cloud) {
+  const KEY_SOURCE = {environment: 'из переменной окружения OPENAI_API_KEY', workshop: 'сохранён в мастерской',
+    developer_file: 'из файла .env.local разработчика'};
+
+  /** The OpenAI key of the AI features (BUG-007): kept by the workshop (ai/openai.key, readable only by this user), never shown back. */
+  function aiKey(key, reload) {
+    if (!key) return null;
+    const input = h('input', {type: 'password', autocomplete: 'off', placeholder: 'sk-…', 'aria-label': 'Ключ OpenAI'});
+    const state = key.set ? pill(`ключ задан (…${key.ending}), ${KEY_SOURCE[key.source] || ''}`, 'ok') : pill('ключ не задан', 'bad');
+    const save = btn('Сохранить ключ', async () => {
+      try { await put('/network/ai-key', {key: input.value}); input.value = ''; toast('Ключ OpenAI сохранён в мастерской', 'ok'); reload(); }
+      catch (e) { fail(e); }
+    }, 'btn-small');
+    const remove = key.workshop_file ? btn('Удалить ключ', () => confirmBox('Удалить ключ OpenAI',
+      'Ключ будет удалён из мастерской; AI-исследователь и пояснения перестанут работать, пока ключ не введут снова.', 'Удалить',
+      async () => { await del('/network/ai-key'); toast('Ключ удалён', 'ok'); reload(); }), 'danger btn-small') : null;
+    return h('div', {class: 'stack ai-key'}, h('div', {class: 'row'}, h('strong', {}, 'Ключ OpenAI'), state),
+      h('div', {class: 'toolbar'}, field('Новый ключ', input, 'хранится только в папке мастерской (ai/openai.key, доступ только у вашего пользователя); '
+        + 'не попадает в резервные копии, диагностику и выпуски лабораторий; переменная окружения OPENAI_API_KEY, если задана, главнее'), save, remove));
+  }
+
+  function outboundCard(net, cloud, key, reload) {
     const row = ([key, label, help]) => {
       const box = h('input', {type: 'checkbox', class: 'switch', 'aria-label': label});
       box.checked = !!net[key];
@@ -126,15 +146,16 @@
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Внешние службы'),
       h('p', {class: 'small muted'}, 'Всё, к чему приложение может обращаться за пределами этого компьютера. Больше никуда оно ничего не отправляет: телеметрии нет.'),
-      SWITCHES.map(row), cloudAddress(cloud));
+      SWITCHES.map(row), aiKey(key, reload), cloudAddress(cloud));
   }
 
   App.register({id: 'network', async render() {
     stopCountdown();
-    const [st, net, cloud] = await Promise.all([get('/lan'), get('/network'), get('/cloud/settings').catch(() => null)]);
+    const [st, net, cloud, key] = await Promise.all([get('/lan'), get('/network'), get('/cloud/settings').catch(() => null),
+      get('/network/ai-key').catch(() => null)]);
     const reload = () => App.render({preserveScroll: true});
     return h('div', {class: 'stack'},
       h('div', {}, h('h2', {}, 'Сеть'), h('p', {class: 'sub'}, 'Планшет в мастерской по локальной сети и то немногое, к чему приложение обращается за её пределами.')),
-      lanCard(st, reload), codeCard(st, reload), certificateCard(st), devicesCard(st, reload), outboundCard(net, cloud));
+      lanCard(st, reload), codeCard(st, reload), certificateCard(st), devicesCard(st, reload), outboundCard(net, cloud, key, reload));
   }});
 })();

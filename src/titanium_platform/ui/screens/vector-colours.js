@@ -144,7 +144,7 @@ const VectorColours = (() => {
     const own = field('Своё описание', text, `до ${j.ai.max_text} знаков`);
     const free = h('input', {type: 'checkbox'}), photo = h('input', {type: 'checkbox'});
     const off = h('p', {class: 'alert warn', hidden: true});
-    const WHY = {key: 'AI-раскраска выключена: не задан ключ языковой модели (переменная OPENAI_API_KEY или файл .env.local). Остальные способы работают.',
+    const WHY = {key: 'AI-раскраска выключена: не задан ключ OpenAI (его вводят на экране «Сеть»). Остальные способы работают.',
       library: 'AI-раскраска выключена: на этом компьютере не установлена библиотека языковой модели. Установите зависимости приложения (команда в README), остальные способы работают.'};
     const current = h('p', {class: 'small'});
     let busy = false;

@@ -283,3 +283,30 @@ def test_the_network_switches_are_kept_and_applied_to_the_ai_and_google_fonts(ow
     assert outbound.get(owner.app.state.store)["google_fonts"] is False
     outbound.save(owner.app.state.store, {"google_fonts": True})
     assert fonts.network_allowed is True
+
+
+# -- the workshop's own OpenAI key (BUG-007) -------------------------------------------------------------------------------------------
+def test_the_workshop_keeps_the_ai_key_the_desktop_shell_reads_it_and_it_is_never_sent_back(owner, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TCE_DESKTOP", "1")                  # under the shell the developer's .env.local is not read
+    assert owner.get("/api/network/ai-key").json()["set"] is False and research.ai_available() is False
+    assert owner.put("/api/network/ai-key", json={"key": "not a key"}).status_code == 422
+    secret = "sk-proj-" + "A1b2C3d4" * 4
+    saved = owner.put("/api/network/ai-key", json={"key": f"  {secret} "}).json()
+    assert saved == {"set": True, "source": "workshop", "ending": secret[-4:], "switched_on": True, "workshop_file": True}
+    path = owner.app.state.store.data_dir / "ai" / "openai.key"
+    assert path.read_text().strip() == secret and (path.stat().st_mode & 0o777) == 0o600
+    assert secret not in owner.get("/api/network/ai-key").text
+    assert research.ai_available() is True and research._api_key() == secret
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-the-environment-0000")     # the environment wins
+    assert owner.get("/api/network/ai-key").json()["source"] == "environment"
+    monkeypatch.delenv("OPENAI_API_KEY")
+    owner.put("/api/network", json={"ai": False})
+    assert research._api_key() is None and owner.get("/api/network/ai-key").json()["switched_on"] is False
+    owner.put("/api/network", json={"ai": True})
+    assert owner.delete("/api/network/ai-key").json()["set"] is False and not path.exists() and research.ai_available() is False
+
+
+def test_the_ai_key_stays_out_of_backups(owner):
+    from titanium_platform import backup
+    assert "ai" not in backup.FOLDERS

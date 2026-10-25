@@ -9,7 +9,7 @@ import html
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse
 
-from .. import lan, outbound
+from .. import lan, outbound, research
 from .common import store_of
 
 router = APIRouter(prefix="/api/lan")
@@ -88,6 +88,25 @@ def network_settings(request: Request):
 @settings_router.put("")
 def set_network_settings(request: Request, body: dict):
     return outbound.save(store_of(request), body)
+
+
+@settings_router.get("/ai-key")
+def ai_key(request: Request):
+    """Whether the AI has a key and where it comes from (BUG-007); the key itself is never sent back."""
+    outbound.apply(store_of(request))
+    return research.key_status()
+
+
+@settings_router.put("/ai-key")
+def set_ai_key(request: Request, body: dict):
+    outbound.apply(store_of(request))
+    return research.save_key((body or {}).get("key"))
+
+
+@settings_router.delete("/ai-key")
+def forget_ai_key(request: Request):
+    outbound.apply(store_of(request))
+    return research.forget_key()
 
 
 PAIR_PAGE = """<!doctype html>
