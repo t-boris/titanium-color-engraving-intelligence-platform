@@ -1051,6 +1051,7 @@ VARIATION_MAX, VARIATION_MIN = 12, 2
 VARIATION_COPY_MM = (8.0, 40.0)       # the longer side of a copy: smaller leaves too few photograph pixels, larger takes too long
 VARIATION_DEFAULT_COPY_MM = 18.0
 VARIATION_GAP, VARIATION_LABEL_H, VARIATION_RAMP_GAP, VARIATION_TOP = 3.0, 1.8, 0.8, 3.0
+VARIATION_WINDOW_OPAQUE = 0.8        # the share of a copy's window the picture must cover; the rest is left as it is
 VARIATION_PICTURE_PX_MM = 20.0        # as a photo zone's picture in a file: LightBurn resamples it to the layer's DPI and dithers that
 VARIATION_KEYS = frozenset({"dither", "power", "min_power", "speed", "frequency", "pulse_width", "line_interval", "passes", "dot_width"})
 MODE_LETTER = {"grayscale": "G", "jarvis": "J", "atkinson": "A", "stucki": "S", "dither": "FS", "ordered": "O", "newsprint": "N",
@@ -1088,7 +1089,9 @@ def _variation_picture(raw) -> np.ndarray:
 
 def variation_window(picture: np.ndarray, px_per_mm: float, size_mm: float = VARIATION_DEFAULT_COPY_MM) -> np.ndarray:
     """The part of a picture (grey, or BGRA) that a copy engraves at the picture's own scale: a square ``size_mm`` across (all of it when it
-    is smaller), placed where the picture is opaque and has the most tone, so the copies show its detail as large as the work engraves it."""
+    is smaller), placed where the picture is mostly opaque (``VARIATION_WINDOW_OPAQUE``) and has the most tone: the most of its 16 grey
+    steps present (each on at least 1 % of the window), then the widest spread; so the copies show its detail as large as the work
+    engraves it, from shadows to highlights (a zone of a portrait: the edge of the glasses and the skin, not only the dark lens)."""
     rows, cols = picture.shape[:2]
     side = max(16, round(size_mm * px_per_mm))
     if rows <= side and cols <= side:
@@ -1097,14 +1100,16 @@ def variation_window(picture: np.ndarray, px_per_mm: float, size_mm: float = VAR
     grey = (picture if picture.ndim == 2 else cv2.cvtColor(picture[..., :3], cv2.COLOR_BGR2GRAY)).astype(np.float32)
     opaque = np.ones(grey.shape, np.float32) if picture.ndim == 2 or picture.shape[2] < 4 else (picture[..., 3] >= 128).astype(np.float32)
     best, at = None, (0, 0)
-    step_y, step_x = max(1, (rows - h) // 8), max(1, (cols - w) // 8)
+    step_y, step_x = max(1, (rows - h) // 16), max(1, (cols - w) // 16)
     for y in range(0, rows - h + 1, step_y):
         for x in range(0, cols - w + 1, step_x):
             cover = opaque[y:y + h, x:x + w]
             share = float(cover.mean())
-            if share < 0.9:
+            if share < VARIATION_WINDOW_OPAQUE:
                 continue
-            tone = float(grey[y:y + h, x:x + w][cover > 0].std())
+            inside = grey[y:y + h, x:x + w][cover > 0]
+            steps = np.bincount(np.clip(inside / 16, 0, 15).astype(np.int64), minlength=16) / inside.size
+            tone = (int((steps >= 0.01).sum()), float(inside.std()))
             if best is None or tone > best:
                 best, at = tone, (y, x)
     if best is None:                                     # nowhere opaque enough: the middle

@@ -43,4 +43,5 @@ The Windows build runs on GitHub Actions by hand: workflow `desktop` (`workflow_
 | desktop | `titanium-platform --desktop --port 0 --parent-pid <shell>` with `TCE_SESSION_SECRET` | the shell's window only: it opens `/session/<secret>` once, which sets the session cookie |
 | smoke | `titanium-platform --smoke` | the build check |
 
-Under the desktop shell the core never reads `.env.local`; the AI key comes from the environment only.
+Under the desktop shell the core never reads `.env.local`; the AI key comes from the environment or from the workshop's
+`ai/openai.key` (mode 0600), which the operator enters on «Сеть» → «Внешние службы» (BUG-007).

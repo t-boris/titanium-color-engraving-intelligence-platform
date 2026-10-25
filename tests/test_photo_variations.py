@@ -87,6 +87,17 @@ def test_a_transparent_border_is_trimmed_and_the_copy_keeps_the_pictures_proport
     assert cv2.imread(plan["pictures"]["variation"], cv2.IMREAD_UNCHANGED).ndim == 2           # trimmed to its opaque part: nothing left to hide
 
 
+def test_the_window_of_a_copy_holds_the_most_tones_of_the_picture_at_its_own_scale():
+    """A dark lens with a sharp rim has the widest spread; the copies are cut where the most greys are, the skin's mid-tones included."""
+    picture = np.full((400, 800), 40, np.uint8)
+    picture[:, :400] = np.where(np.indices((400, 400)).sum(axis=0) % 40 < 20, 10, 120)      # dark, sharp, two tones only
+    picture[:, 400:] = np.tile(np.linspace(0, 255, 400), (400, 1)).astype(np.uint8)          # every grey
+    window = cp.variation_window(picture, px_per_mm=20, size_mm=10)                         # 200 x 200 pixels, as large as engraved
+    assert window.shape == (200, 200) and len(np.unique(window // 16)) >= 8                  # half the gradient: 8 of its 16 steps
+    transparent = np.dstack([picture] * 3 + [np.where(np.arange(800) < 600, 255, 0)[None, :].repeat(400, axis=0).astype(np.uint8)])
+    assert (cp.variation_window(transparent, 20, 10)[..., 3] == 255).mean() >= cp.VARIATION_WINDOW_OPAQUE   # mostly where it engraves
+
+
 @pytest.mark.parametrize("variants, extra, message", [
     (EIGHT[:1], {}, "от 2 до 12 копий"),
     (EIGHT + EIGHT[:5], {}, "от 2 до 12 копий"),
