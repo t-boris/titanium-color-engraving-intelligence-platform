@@ -15,7 +15,13 @@ that failed takes the best dark dots of another kind on that titanium; install a
       получился … фото № 147, 10,2 % — точки не темнее титана (L* 92)…»; no console errors. Small Plate: Jarvis and Atkinson both
       failed, nothing stands in.
 - [x] MarkView: DEC-006 (accepted, the operator's choice), BUG-008 (the photo panels still word photo dots as «с карты цветов»).
-- [ ] Full suite, desktop tests, build, tag v0.35.2, GitHub pre-release, back up the live DB, reinstall the desktop app.
+- [x] Full suite, desktop tests, build, tag v0.35.2, GitHub pre-release, back up the live DB, reinstall the desktop app.
+
+Done 2026-10-25: commit b9b6065 on main; suite 2314 passed, none skipped (2:53), desktop 16 passed; zip 260 423 763 bytes, sha256
+80f9e8ef…b5df, the same digest on GitHub (pre-release v0.35.2, includes 0.35.1); codesign strict ok, unnotarized; packaged smoke ok,
+core 0.35.2. The desktop app was not running (last action 17:11Z, no re-check), so nothing was quit; backup
+`~/.titanium-platform/backups/titanium-before-0.35.2-20261025T182916Z.sqlite`, integrity ok; 0.35.0 moved to the scratchpad
+(`old-0.35.0.app`), 0.35.2 in /Applications, not opened (the operator had closed it).
 
 # A photo zone's proposed plate starts from the best it can engrave — 0.35.1 (2026-10-25, found checking photo engraving on live data)
 
