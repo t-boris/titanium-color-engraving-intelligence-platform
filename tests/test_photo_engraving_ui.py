@@ -804,6 +804,33 @@ def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "jarvis"}] and out["went"] == ["/experiment/plan-33"]
 
 
+# a kind whose every engraving on the titanium came out a negative (DEC-006): the dots of another kind stand in for its best
+FLOP = {"settings": {"dither": "atkinson", "power": 10.2, "min_power": 10.2, "speed": 128.0}, "score": 0.0, "black_lab": [91.8, 1.2, 12.7],
+        "tone": {"range_L": -0.1}, "source": {"pair_id": 147, "layer": "C26"}, "findings": [{"code": "flat", "value": -0.1}]}
+FAILED_ADVICE = {**JARVIS_ADVICE, "kind": "atkinson", "status": "failed", "best": None, "failed": [FLOP], "dot_width": True,
+                 "stand_in": {**JARVIS_ADVICE["best"], "source": {"pair_id": 149, "layer": "C20"}},
+                 "take": {"dot_settings": JARVIS, "dot_width": 0.02}, "effects": {}}
+
+
+def test_a_kind_that_came_out_a_negative_says_so_and_takes_the_dark_dots_of_another_kind(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const box = () => tree.querySelector('.pq-advisor');
+  out.says = box().textContent;
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять тёмные точки «Джарвис»').dispatch('click'); await settle();
+  out.saves = saves();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Сделать плату: 4 копии').dispatch('click'); await settle();
+  out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body);
+""", work={"kind": "atkinson", "dot_power": 10.2, "dot_width": None}, advice=FAILED_ADVICE)
+    says = out["says"]
+    assert "не получился" in says and "Лучшее измеренное" not in says and "ещё не фотографировался" not in says
+    assert ("«Аткинсон» на этом титане не получился: фото № 147, 10,2 % — точки не темнее титана (L* 92): картинки не видно или она вышла "
+            "негативом. Вместо них — лучшие тёмные точки вида «Джарвис» на этом титане: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, "
+            "поправка точки 0,02 мм — оценка 0,9 по фото №149; для «Аткинсон» это предположение, пока его не сфотографируют на этих точках.") in says
+    assert "Лаборатория предлагает: та же картинка вокруг лучших точек другого вида." in says
+    assert out["saves"] == [{"dot_settings": JARVIS, "dot_width": 0.02}]
+    assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "atkinson", "dot_width": True}]
+
+
 def test_a_grayscale_work_past_its_scales_turn_is_told_so_offered_no_step_and_takes_the_span_in_order(tmp_path):
     refused = {"refused": "Max lies past the power where this scale's tones turn back lighter: take the span in order first"}
     past = {**ADVICE, "current": {"dither": "grayscale", "power": 28.0, "min_power": 12.0}, "steps": {d: refused for d in ("darker", "lighter", "sharper", "softer")},

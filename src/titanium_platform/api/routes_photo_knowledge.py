@@ -45,12 +45,14 @@ class ProposedIn(BaseModel):
     lens_id: int | None = None
     material_id: int | None = None
     kind: str
+    dot_width: bool = True                  # False: proposed to a photo zone, which writes no dot width correction
 
 
 @router.post("/photo-knowledge/plate", status_code=201)
 def make_proposed_plate(body: ProposedIn, request: Request):
     """The photo-variations plate the laboratory proposes for a kind (``photo_knowledge.proposed_plate``)."""
-    return photo_knowledge.proposed_plate(store_of(request), body.device_id, body.lens_id, body.material_id, body.kind)
+    return photo_knowledge.proposed_plate(store_of(request), body.device_id, body.lens_id, body.material_id, body.kind,
+                                          dot_width=body.dot_width)
 
 
 @router.post("/pairs/{pair_id}/next-variations", status_code=201)

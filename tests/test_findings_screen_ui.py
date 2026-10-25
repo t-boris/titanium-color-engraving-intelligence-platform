@@ -88,6 +88,28 @@ def test_the_findings_say_what_each_setting_does_to_a_photo_engraving_on_every_l
 
 
 @node
+def test_a_kind_that_came_out_a_negative_on_a_titanium_is_counted_and_its_card_says_why(tmp_path):
+    flop = {"settings": {"dither": "atkinson", "power": 15.0}, "black_lab": [74.1, 5.6, 36.7], "tone": {"range_L": -7.1},
+            "source": {"pair_id": 143, "layer": "C22"}}
+    faint = {"settings": {"dither": "atkinson", "power": 8.0}, "black_lab": [70.0, 0.0, 0.0], "tone": {"range_L": 4.2},
+             "source": {"pair_id": 120, "layer": "C3"}}
+    failed = {"kind": "atkinson", "status": "failed", "engravings": 2, "best": None, "failed": [flop, faint], "effects": {}, "proposal": None}
+    place = {**EVERYWHERE[0], "kinds": [*EVERYWHERE[0]["kinds"], failed]}
+    out = run(tmp_path, """
+  await tab('Фотогравировка').dispatch('click'); await tick();
+  const section = panel('Фотогравировка');
+  out.rows = section.querySelectorAll('.lst-main').map((x) => x.textContent);
+  out.cards = section.querySelectorAll('article').map((a) => a.textContent);
+""", routes={**ROUTES, "/api/photo-knowledge/everywhere": {"status": 200, "json": [place]}})
+    assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 2не получилось видов: 1есть предложение"]
+    card = out["cards"][1]
+    assert card.startswith("Аткинсонне получился")
+    assert ("«Аткинсон» на этом титане не получился: фото № 143, 15 % — точки не темнее титана (L* 74): картинки не видно или она вышла "
+            "негативом; фото № 120, 8 % — картинка едва видна: тёмное темнее светлого всего на 4 L*.") in card
+    assert "Нужны точки темнее титана: по опыту процесса — больше мощность, меньше скорость или шаг строк." in card
+
+
+@node
 def test_without_a_photographed_photo_engraving_the_findings_have_no_photo_tab(tmp_path):
     out = run(tmp_path, """
   out.tabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab').map((b) => b.textContent);

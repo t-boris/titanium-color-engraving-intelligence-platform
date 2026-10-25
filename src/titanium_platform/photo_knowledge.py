@@ -7,7 +7,9 @@ known yet (a photo-variations plate, DEC-002, DEC-003).
   frequency, Q-pulse, line interval, passes and the dot width) on one titanium, from the accepted checks of the laser and lens. Its tone
   is a ramp's when one was engraved at those settings (every grey alike), else a picture's; its detail a picture's. The best judged
   photograph stands for it. A grayscale ramp whose colour turns back past some power also gives the span below the turn
-  (``photo_quality.ordered_span``) as an engraving of its own.
+  (``photo_quality.ordered_span``) as an engraving of its own. An engraving that shows no picture (:func:`failed`: too little contrast,
+  or a negative, as dots lighter than the titanium make it) is never a kind's best; a dot kind with only those takes the dots of another
+  kind there (:func:`stand_in`, DEC-006).
 * **Effects** come from engravings that differ in one setting only, measured the same way: ramps against ramps (the copies of a plate, the
   rows of a grey-scale plate), and for the detail the pictures of one photo-variations plate. Each is the change per doubling of the
   setting; :func:`effects` gives their median per setting with the photographs they rest on.
@@ -155,15 +157,48 @@ def engravings(store: Store, device_id: int, lens_id: int | None, material_id: i
     return sorted(out, key=lambda e: (-(e["score"] or 0.0), -len(e["photographs"]), -max(e["photographs"])))
 
 
+def failed(engraving: Mapping) -> bool:
+    """Whether a judged engraving shows no picture (``photo_quality.findings`` «flat»: its dark end less than ``FLAT_RANGE_L`` darker than
+    its light end, or lighter, as dots lighter than the titanium make it, a negative): never a kind's best (DEC-006)."""
+    return any(f["code"] == "flat" for f in engraving["findings"])
+
+
+def _usable(engraving: Mapping, dot_width: bool) -> bool:
+    """Whether an engraving can be a kind's best for its owner: judged, a picture (:func:`failed`), and without the dot width correction
+    when the owner cannot write it."""
+    return engraving["score"] is not None and not failed(engraving) and (dot_width or engraving["settings"].get("dot_width") is None)
+
+
 def best(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str, *, dot_width: bool = True) -> dict | None:
     """The best measured engraving of ``kind`` on the laser and lens: on the titanium when it has one there, else on any (``other_titanium``);
-    without the dot width correction when the owner cannot write it (``dot_width`` False: a photo zone). None when none was photographed."""
+    never one that showed no picture (:func:`failed`, DEC-006); without the dot width correction when the owner cannot write it
+    (``dot_width`` False: a photo zone). None when none usable was photographed."""
     for material in ([material_id, None] if material_id is not None else [None]):
-        found = [e for e in engravings(store, device_id, lens_id, material, kind)
-                 if e["score"] is not None and (dot_width or e["settings"].get("dot_width") is None)]
+        found = [e for e in engravings(store, device_id, lens_id, material, kind) if _usable(e, dot_width)]
         if found:
             return {**found[0], "other_titanium": material is None and material_id is not None, "tried": len(found)}
     return None
+
+
+def failures(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str) -> list[dict]:
+    """The engravings of ``kind`` on the laser, lens and titanium that showed no picture (:func:`failed`), the newest photograph first."""
+    if material_id is None:
+        return []
+    return sorted((e for e in engravings(store, device_id, lens_id, material_id, kind) if failed(e)), key=lambda e: -max(e["photographs"]))
+
+
+def stand_in(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str, *, dot_width: bool = True) -> dict | None:
+    """The dots a dot kind takes on a titanium where every engraving of it showed no picture (DEC-006): the best usable engraving of
+    another dot kind there (:func:`_usable`), an estimate until the kind itself is photographed. None for grayscale, for a kind never
+    photographed there or with an engraving that is not a failure, and when no other dot kind was photographed usable there."""
+    if kind == "grayscale" or material_id is None:
+        return None
+    here = engravings(store, device_id, lens_id, material_id)
+    mine = [e for e in here if e["settings"]["dither"] == kind]
+    if not mine or not all(failed(e) for e in mine):
+        return None
+    found = next((e for e in here if e["settings"]["dither"] not in ("grayscale", kind) and _usable(e, dot_width)), None)
+    return None if found is None else {**found, "other_titanium": False, "tried": 1}
 
 
 # -- the best settings filled in when a kind is chosen (REQ-004) ---------------------------------------------------------------------
@@ -187,10 +222,13 @@ def recipe(engraving: Mapping) -> dict:
 
 def filled(store: Store, mode: ps.Mode, kind: str, *, dot_width: bool = True) -> dict | None:
     """The settings a work or photo zone on ``mode`` (its scale: laser, lens and titanium) takes when ``kind`` is chosen: the best measured
-    engraving of that kind on its own titanium (:func:`best`). A dot kind: its dots (``dot_recipe``, :func:`recipe`) and dot width (when
-    the owner writes one, ``dot_width``); grayscale: its measured scale and the span of its tones in order (``scale``, ``min_power``,
-    ``max_power``) when that scale is measured. None when nothing of the kind was photographed there."""
+    engraving of that kind on its own titanium (:func:`best`); a dot kind whose every engraving there showed no picture takes the dots of
+    the best engraving of another dot kind there (:func:`stand_in`, DEC-006). A dot kind: its dots (``dot_recipe``, :func:`recipe`) and dot
+    width (when the owner writes one, ``dot_width``); grayscale: its measured scale and the span of its tones in order (``scale``,
+    ``min_power``, ``max_power``) when that scale is measured. None when nothing usable of the kind was photographed there."""
     found = best(store, mode.device_id, mode.lens_id, mode.material_id, kind, dot_width=dot_width)
+    if (found is None or found["other_titanium"]) and kind != "grayscale":
+        found = stand_in(store, mode.device_id, mode.lens_id, mode.material_id, kind, dot_width=dot_width) or found
     if found is None or found["other_titanium"]:
         return None
     settings = found["settings"]
@@ -447,7 +485,10 @@ def advice(store: Store, mode: ps.Mode, centre: Mapping, *, dot_width: bool = Tr
     the workshop's own measurements (``own``), where the search of its kind stands and the experiment proposed (:func:`knowledge`);
     ``take``: the change that engraves it at the best measured engraving (:func:`_taken`), and for grayscale the scale's ``turn`` (the span
     of its tones in order, :func:`ordered_span`): with Max past it no step is offered and ``take`` brings it back inside.
-    ``dot_width``: whether the owner writes LightBurn's dot width correction (a photo zone does not)."""
+    ``dot_width``: whether the owner writes LightBurn's dot width correction (a photo zone does not; said back as ``dot_width``, so the plate
+    proposed is made for the same owner). A kind with no usable engraving there: ``failed``, its engravings that showed no picture
+    (:func:`failures`), and for a dot kind ``stand_in``, the dots of another kind it takes instead (:func:`stand_in`), which ``take``
+    applies (DEC-006)."""
     kind = str(centre.get("dither") or "grayscale")
     current = _rounded({**{k: centre.get(k) for k in KEYS}, "dither": kind})
     if kind != "grayscale":
@@ -467,16 +508,21 @@ def advice(store: Store, mode: ps.Mode, centre: Mapping, *, dot_width: bool = Tr
             continue
         steps[direction] = {**found, "apply": _applied(found)}
     top = best(store, mode.device_id, mode.lens_id, mode.material_id, kind, dot_width=dot_width)
-    at_best = top is not None and not top["other_titanium"] and all(
-        _same(top["settings"].get(k), current.get(k)) for k in (*DOT_SETTINGS, "min_power", "dot_width"))
+    at = lambda e: all(_same(e["settings"].get(k), current.get(k)) for k in (*DOT_SETTINGS, "min_power", "dot_width"))    # noqa: E731
+    at_best = top is not None and not top["other_titanium"] and at(top)
     take = None if top is None or at_best else _taken(store, mode, top, dot_width)
+    flops = failures(store, mode.device_id, mode.lens_id, mode.material_id, kind) if top is None or top["other_titanium"] else []
+    stand = stand_in(store, mode.device_id, mode.lens_id, mode.material_id, kind, dot_width=dot_width) if flops else None
+    if stand is not None:
+        take = None if at(stand) else _taken(store, mode, stand, dot_width)
     if past_turn and take is None:               # at least the span of this scale's tones in order
         take = {"min_power": max(current["min_power"] or 0.0, span[0]), "max_power": span[1]}
     entry = None
     if own:
         entry = next((k for k in knowledge(store, mode.device_id, mode.lens_id, mode.material_id, dot_width=dot_width)["kinds"]
                       if k["kind"] == kind), None)
-    return {"kind": kind, "current": current, "best": top, "at_best": at_best, "take": take,
+    return {"kind": kind, "current": current, "best": top, "at_best": at_best, "take": take, "failed": flops, "stand_in": stand,
+            "dot_width": dot_width,
             "turn": None if span is None else {"min_power": span[0], "max_power": span[1], "past": past_turn},
             "effects": effects(store, mode.device_id, mode.lens_id, mode.material_id, kind), "steps": steps,
             "status": None if entry is None else entry["status"], "proposal": None if entry is None else entry["proposal"]}
@@ -537,15 +583,18 @@ def knowledge(store: Store, device_id: int, lens_id: int | None, material_id: in
     (``proposal``): the next plate of a search that has not settled; a plate around the best of a kind measured only on works; a plate of
     an unmeasured dot kind around the best dot engraving. Each proposal says what its copies change and how big its plate is
     (:func:`_described`). ``items``: the :func:`photographs` of the laser and lens already read. ``dot_width`` False (a photo zone, which
-    writes no dot width correction): only the engravings made without one count as the best and as a proposal's centre, as in :func:`best`."""
+    writes no dot width correction): only the engravings made without one count as the best and as a proposal's centre, as in :func:`best`.
+    An engraving that showed no picture is never the best (:func:`failed`): a kind with only those is ``failed`` (its engravings listed
+    there, the newest first), and a dot kind is proposed around the best dots of another kind, as one never photographed (DEC-006)."""
     searches = _plate_searches(store, device_id, lens_id)
     items = photographs(store, device_id, lens_id) if items is None else items
     every = [e for e in engravings(store, device_id, lens_id, material_id, items=items) if dot_width or e["settings"].get("dot_width") is None]
     kinds = list(WATCHED) + sorted({e["settings"]["dither"] for e in every} - set(WATCHED))
-    best_dots = next((e for e in every if e["settings"]["dither"] != "grayscale" and e["score"] is not None), None)
+    best_dots = next((e for e in every if e["settings"]["dither"] != "grayscale" and _usable(e, dot_width)), None)
     out = []
     for kind in kinds:
-        mine = [e for e in every if e["settings"]["dither"] == kind]
+        mine = [e for e in every if e["settings"]["dither"] == kind and _usable(e, dot_width)]
+        flops = sorted((e for e in every if e["settings"]["dither"] == kind and failed(e)), key=lambda e: -max(e["photographs"]))
         top = mine[0] if mine else None
         search = next((s for s in searches if s["centre_kind"] == kind), None)
         if search is not None and search["report"]["settled"]:
@@ -559,15 +608,15 @@ def knowledge(store: Store, device_id: int, lens_id: int | None, material_id: in
             status = "measured"
             proposal = {"kind": "around", "centre": top["settings"], "step": 1.0, "source": top["source"]}
         elif kind != "grayscale" and best_dots is not None:
-            status = "unmeasured"
+            status = "failed" if flops else "unmeasured"
             proposal = {"kind": "around", "centre": {**best_dots["settings"], "dither": kind}, "step": 1.0, "source": best_dots["source"]}
         else:
-            status, proposal = "unmeasured", None
+            status, proposal = "failed" if flops else "unmeasured", None
         picture = next((s for s in searches), None)
         if proposal is not None:
             proposal = _described(proposal, _variations_of(store, search["plan_id"] if proposal["kind"] == "next" else picture["plan_id"])
                                   if proposal["kind"] == "next" or picture is not None else None)
-        out.append({"kind": kind, "status": status, "best": top, "engravings": len(mine),
+        out.append({"kind": kind, "status": status, "best": top, "engravings": len(mine) + len(flops), "failed": flops,
                     "effects": effects(store, device_id, lens_id, material_id, kind, items) if mine else {}, "proposal": proposal})
     picture = next((s for s in searches), None)
     return {"device_id": device_id, "lens_id": lens_id, "material_id": material_id, "kinds": out,
@@ -627,9 +676,10 @@ def next_plate(store: Store, pair_id: int) -> dict:
     return made
 
 
-def proposed_plate(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str) -> dict:
-    """The plate the laboratory proposes for ``kind`` (:func:`knowledge`), on the picture of the newest photographed variations plate."""
-    known = knowledge(store, device_id, lens_id, material_id)
+def proposed_plate(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str, *, dot_width: bool = True) -> dict:
+    """The plate the laboratory proposes for ``kind`` (:func:`knowledge`), on the picture of the newest photographed variations plate;
+    ``dot_width`` False: the plate proposed to a photo zone, around an engraving it can reproduce (DEC-005)."""
+    known = knowledge(store, device_id, lens_id, material_id, dot_width=dot_width)
     entry = next((k for k in known["kinds"] if k["kind"] == kind), None)
     if entry is None or entry["proposal"] is None:
         raise su.ValidationError("no experiment is proposed for this kind")

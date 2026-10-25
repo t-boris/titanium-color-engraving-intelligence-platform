@@ -1,3 +1,22 @@
+# A kind that failed is never «the best» — 0.35.2 (2026-10-25, operator chose «Тёмные точки другого вида»)
+
+Found on the live copy after 0.35.1: choosing Atkinson for zone 2 of work 41 filled in photo 147 (10.2 %, dots L* 92, a negative,
+score 0); halftone the same (photo 147, 12.1 %). The operator chose (AskUserQuestion): a failed engraving is never the best; a dot kind
+that failed takes the best dark dots of another kind on that titanium; install after the fix.
+
+- [x] `photo_knowledge.failed` («flat» finding), `failures`, `stand_in`; `best`, `knowledge`, `filled`, `advice` skip failed
+      engravings; status `failed`; advice returns `failed`, `stand_in`, `dot_width`; `take` moves to the stand-in's dots.
+- [x] `proposed_plate(dot_width=)` and the route's `dot_width`, so a zone's «Сделать плату» makes the plate its panel shows (DEC-005).
+- [x] UI: the advisor says which photos failed and why, «Взять тёмные точки «…»»; the kind cards and the «Выводы» row count failed
+      kinds; the editor's zone line names the photo its dots come from.
+- [x] Tests: unit (failed, stand-in, knowledge, filled), the zone through the API, the zone's proposed plate, two node UI tests; each
+      new test fails on 0.35.1.
+- [x] Rehearsal on the live copy (server 8796, own tab): zone 2 → Atkinson takes photo 149 (25 %, Jarvis); the panel reads «не
+      получился … фото № 147, 10,2 % — точки не темнее титана (L* 92)…»; no console errors. Small Plate: Jarvis and Atkinson both
+      failed, nothing stands in.
+- [x] MarkView: DEC-006 (accepted, the operator's choice), BUG-008 (the photo panels still word photo dots as «с карты цветов»).
+- [ ] Full suite, desktop tests, build, tag v0.35.2, GitHub pre-release, back up the live DB, reinstall the desktop app.
+
 # A photo zone's proposed plate starts from the best it can engrave — 0.35.1 (2026-10-25, found checking photo engraving on live data)
 
 The Stop hook asked again for photo-engraving convergence. Checked on a fresh copy of the live workshop with 0.35.0:

@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from titanium_platform import devices, ingest as ig, lenses, photo_knowledge as pk, plans, setup as su
+from titanium_platform import devices, ingest as ig, lenses, photo_knowledge as pk, plans, prediction_store as ps, setup as su
 from titanium_platform.db import now
 
 import test_photo_variations as tpv
@@ -59,6 +59,28 @@ def accepted(w, layers, material=None, plate_id=None, plan_id=None):
 
 LINEAR = list(np.linspace(30, 80, 16))
 BLOCKED = [30] * 6 + list(np.linspace(32, 78, 10))
+NEGATIVE = list(np.linspace(92, 88, 16))         # dots lighter than the titanium (light gold oxide): the picture comes out a negative
+
+
+def photographed_plate(w):
+    """A photographed «Подобрать настройки» plate of the world (``test_photo_variations.make``): copy 2 (power 20 %) keeps every tone, the
+    others block the shadows. Its plate, its geometry row and the accepted pair."""
+    s = w["store"]
+    s.set_setting("allow_non_raw_photos", True)
+    made = tpv.make({"store": s, "laser": {"id": w["laser"]}, "titanium": {"id": w["titanium"]}}, variants=None)
+    plate = s.one("SELECT geometry_json FROM plate WHERE id=?", (made["plate_id"],))
+    copies = json.loads(plate["geometry_json"])["variations"]["copies"]
+    layers = []
+    for c in copies:
+        good = c["copy"] == 2
+        layers += [layer(c["picture_layer"], c["variant"]["dither"], LINEAR if good else BLOCKED, power=c["variant"]["power"], detail=0.95),
+                   layer(c["ramp_layer"], c["variant"]["dither"], LINEAR if good else BLOCKED, "grey ramp", power=c["variant"]["power"])]
+    for rep in layers:                                     # the copies' settings as the plate wrote them
+        c = next(c for c in copies if rep["name"] in (c["picture_layer"], c["ramp_layer"]))
+        rep.update(speed=c["variant"]["speed"], line_interval=c["variant"]["line_interval"], frequency_khz=c["variant"]["frequency"],
+                   pulse_width=c["variant"]["pulse_width"])
+        rep["image"]["dot_width_mm"], rep["image"]["dot_correction"] = c["variant"].get("dot_width"), c["variant"].get("dot_width") is not None
+    return made, plate, accepted(w, layers, plate_id=made["plate_id"], plan_id=made["plan_id"])
 
 
 def test_the_settings_of_a_layer_are_the_files_else_the_operators_and_a_dot_kind_fires_every_dot_at_its_power():
@@ -106,6 +128,46 @@ def test_the_experiment_proposed_for_a_zone_starts_from_the_best_it_can_engrave_
     assert zone["best"]["source"]["pair_id"] == plain and zone["proposal"]["source"]["pair_id"] == plain
     assert zone["proposal"]["centre"]["power"] == 25.0 and zone["proposal"]["centre"].get("dot_width") is None
     assert pk.best(w["store"], w["laser"], w["lens"], w["titanium"], "jarvis", dot_width=False)["source"] == zone["best"]["source"]
+
+
+def test_an_engraving_that_shows_no_picture_is_never_the_best_and_a_dot_kind_that_failed_takes_the_dots_of_another_kind(world):
+    """DEC-006 (the live data: Atkinson at 10.2 % on photo 147 came out lighter than the titanium, a negative, and choosing Atkinson filled
+    in exactly those settings): a failed engraving is listed as one, never the best; the kind takes the best dots of another kind there."""
+    w = world
+    s, a = w["store"], (w["laser"], w["lens"], w["titanium"])
+    plain = accepted(w, [layer("C20 Photo jarvis", "jarvis", BLOCKED, power=25.0, speed=125.0)])
+    flop = accepted(w, [layer("C26 Photo atkinson", "atkinson", NEGATIVE, power=10.2, speed=128.0, interval=0.0169)])
+    found = pk.engravings(s, *a, "atkinson")
+    assert len(found) == 1 and pk.failed(found[0]) and found[0]["findings"][0]["code"] == "flat"
+    assert pk.best(s, *a, "atkinson") is None and [e["source"]["pair_id"] for e in pk.failures(s, *a, "atkinson")] == [flop]
+    assert pk.stand_in(s, *a, "atkinson")["source"]["pair_id"] == plain
+    assert pk.stand_in(s, *a, "stucki") is None and pk.stand_in(s, *a, "jarvis") is None      # never photographed; usable: no stand-in
+    mode = ps.Mode(*a, 125.0, 60.0, 200.0, 0.01, 1)
+    dots = pk.filled(s, mode, "atkinson")["dot_recipe"]
+    assert dots["photo"]["pair_id"] == plain and dots["photo"]["kind"] == "jarvis" and dots["settings"]["power"] == 25.0
+    assert pk.filled(s, mode, "stucki") is None                                               # never photographed: the owner keeps its dots
+    known = {k["kind"]: k for k in pk.knowledge(s, *a)["kinds"]}
+    atkinson = known["atkinson"]
+    assert atkinson["status"] == "failed" and atkinson["best"] is None and atkinson["engravings"] == 1
+    assert [e["source"]["pair_id"] for e in atkinson["failed"]] == [flop]
+    assert atkinson["proposal"]["source"]["pair_id"] == plain and atkinson["proposal"]["centre"]["dither"] == "atkinson"
+    assert atkinson["proposal"]["centre"]["power"] == 25.0
+    assert known["stucki"]["status"] == "unmeasured" and known["jarvis"]["status"] == "measured" and known["jarvis"]["failed"] == []
+
+
+def test_the_plate_proposed_to_a_zone_is_made_around_an_engraving_it_can_reproduce(world):
+    """DEC-005: «Сделать плату» on a zone's panel makes the plate the panel shows, not one around an engraving with a dot width."""
+    w = world
+    s, a = w["store"], (w["laser"], w["lens"], w["titanium"])
+    photographed_plate(w)
+    accepted(w, [layer("A-DW", "atkinson", LINEAR, power=30.0, dot_width=0.02, detail=0.95)])
+
+    def centre(made):
+        return json.loads(s.one("SELECT geometry_json FROM plate WHERE id=?", (made["plate_id"],))["geometry_json"])["variations"]["copies"][0]["variant"]
+    work = centre(pk.proposed_plate(s, *a, "atkinson"))
+    zone = centre(pk.proposed_plate(s, *a, "atkinson", dot_width=False))
+    assert (work["dither"], work["power"], work["dot_width"]) == ("atkinson", 30.0, 0.02)
+    assert zone["dither"] == "atkinson" and zone.get("dot_width") is None and zone["power"] != 30.0
 
 
 def test_ramps_that_differ_in_one_setting_measure_its_effect_and_the_step_follows_it(world):
@@ -163,21 +225,7 @@ def test_a_grayscale_ramp_that_turns_back_gives_the_span_below_the_turn_as_the_b
 def test_the_laboratory_proposes_the_next_plate_of_a_search_and_a_plate_for_a_kind_never_photographed(world):
     w = world
     s = w["store"]
-    s.set_setting("allow_non_raw_photos", True)
-    made = tpv.make({"store": s, "laser": {"id": w["laser"]}, "titanium": {"id": w["titanium"]}}, variants=None)
-    plate = s.one("SELECT geometry_json FROM plate WHERE id=?", (made["plate_id"],))
-    copies = json.loads(plate["geometry_json"])["variations"]["copies"]
-    layers = []
-    for c in copies:                                       # copy 2 (power 20 %) keeps every tone; the others block the shadows
-        good = c["copy"] == 2
-        layers += [layer(c["picture_layer"], c["variant"]["dither"], LINEAR if good else BLOCKED, power=c["variant"]["power"], detail=0.95),
-                   layer(c["ramp_layer"], c["variant"]["dither"], LINEAR if good else BLOCKED, "grey ramp", power=c["variant"]["power"])]
-    for rep in layers:                                     # the copies' settings as the plate wrote them
-        c = next(c for c in copies if rep["name"] in (c["picture_layer"], c["ramp_layer"]))
-        rep.update(speed=c["variant"]["speed"], line_interval=c["variant"]["line_interval"], frequency_khz=c["variant"]["frequency"],
-                   pulse_width=c["variant"]["pulse_width"])
-        rep["image"]["dot_width_mm"], rep["image"]["dot_correction"] = c["variant"].get("dot_width"), c["variant"].get("dot_width") is not None
-    pair_id = accepted(w, layers, plate_id=made["plate_id"], plan_id=made["plan_id"])
+    made, plate, pair_id = photographed_plate(w)
     known = pk.knowledge(s, w["laser"], w["lens"], w["titanium"])
     jarvis = next(k for k in known["kinds"] if k["kind"] == "jarvis")
     assert jarvis["status"] == "searching" and jarvis["proposal"]["kind"] == "next" and jarvis["proposal"]["step"] == 0.5
@@ -283,6 +331,15 @@ def test_a_photo_zone_takes_the_best_dots_of_a_kind_without_a_dot_width(zone_wor
     steps = said.json()["steps"]
     assert all("dot_width" not in (step.get("apply") or {}) for step in steps.values())          # a zone writes no dot width
     assert steps["darker"]["apply"]["dot_settings"]["power"] > 16
+    # every Atkinson engraving there came out a negative: choosing Atkinson takes the zone's best usable dots instead, and says why (DEC-006)
+    flop = accepted(w, [layer("C26 Photo atkinson", "atkinson", NEGATIVE, power=10.2, speed=128.0, interval=0.0169)])
+    zone = colouring(world, job, op="photo_set", zone=1, kind="atkinson")["zones"][0]
+    assert zone["kind"] == "atkinson" and zone["dot_recipe"]["photo"]["pair_id"] == plain and zone["dot_recipe"]["photo"]["kind"] == "jarvis"
+    assert zone["dot_recipe"]["settings"]["power"] == 18.0
+    said = world["client"].get(f"/api/vector/{job['id']}/photo/1/advice").json()
+    assert said["best"] is None and [e["source"]["pair_id"] for e in said["failed"]] == [flop] and said["dot_width"] is False
+    assert said["stand_in"]["source"]["pair_id"] == plain and said["take"] is None                 # already on those dots
+    assert said["status"] == "failed" and said["proposal"]["centre"]["dither"] == "atkinson" and said["proposal"]["centre"]["power"] == 18.0
 
 
 def test_a_grayscale_work_past_its_scales_turn_gets_no_step_and_takes_back_the_span_in_order(app_world):

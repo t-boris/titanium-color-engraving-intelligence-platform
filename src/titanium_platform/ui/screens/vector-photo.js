@@ -23,9 +23,11 @@ const VectorPhoto = (() => {
   /** Что зона выжжет — коротко, для заголовка и строки слоя. */
   const zoneSummary = (zone) => [layerOf(zone), kindName(zone.kind),
     !dotted(zone) ? `${value(zone.min_power)}–${value(zone.max_power)} %`
-      : zone.dot_recipe ? `точки ${value(zone.dot_recipe.settings.power)} % с карты цветов` : `точки ${value(zone.dot_power)} %`,
+      : zone.dot_recipe ? `точки ${value(zone.dot_recipe.settings.power)} % ${recipeFrom(zone.dot_recipe)}` : `точки ${value(zone.dot_power)} %`,
     zone.tone_used ? `яркость ${value(zone.tone.brightness, 0)} %, контраст ${value(zone.tone.contrast, 0)} %, гамма ${value(zone.tone.gamma, 2)}` : null]
     .filter(Boolean).join(' · ');
+  /** Откуда точки зоны: с карты цветов или со сфотографированной фотогравировки (её вид, когда он другой, DEC-006). */
+  const recipeFrom = (r) => (r.source === 'photo' && r.photo ? `по фото № ${r.photo.pair_id} (${kindName(r.photo.kind)})` : 'с карты цветов');
   const CHOICE = {drawing: 'рисунок сохранён', nearest: 'ближайший цвет', objects: 'раскраска по объектам'};
   /** Как подобраны серые зоны (0.23.0) — коротко, как у работы фотогравировки; у вида точками — ничего: точка бьёт на одной мощности. */
   const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'серые самой картинки'
@@ -153,7 +155,7 @@ const VectorPhoto = (() => {
           const back = btn('На шкалу', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: zone.dot_power}), 'btn-small');
           back.setAttribute('title', `Вернуть точки на шкалу зоны при ${value(zone.dot_power)} %`);
           return h('div', {class: 'vp-powers'},
-            h('p', {class: 'small'}, `Точки с карты цветов: ${value(recipe.settings.power)} % · ${settingsText(recipe.settings)} · ${stepText(recipe.settings)}`),
+            h('p', {class: 'small'}, `Точки ${recipeFrom(recipe)}: ${value(recipe.settings.power)} % · ${settingsText(recipe.settings)} · ${stepText(recipe.settings)}`),
             h('div', {class: 'row small'}, swatches, toMap, back),
             recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: выберите другой или верните точки на шкалу.') : null,
             h('p', {class: 'small muted'}, 'Каждая точка бьёт на настройках этого цвета; тон — сколько точек. В файле Min = Max.'));

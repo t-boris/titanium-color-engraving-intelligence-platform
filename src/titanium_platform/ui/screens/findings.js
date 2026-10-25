@@ -540,6 +540,7 @@
       App.list({items: photo, key: keyOf, open: photo.length === 1 ? keyOf(photo[0]) : null,
         row: (k) => [h('span', {class: 'lst-text'}, `${k.setup} · ${k.titanium}`),
           h('span', {class: 'muted small'}, `измерено видов: ${k.kinds.filter((x) => x.best).length} из ${k.kinds.length}`),
+          k.kinds.some((x) => x.status === 'failed') ? pill(`не получилось видов: ${k.kinds.filter((x) => x.status === 'failed').length}`, 'bad') : null,
           k.kinds.some((x) => x.proposal) ? pill('есть предложение', 'ok') : null],
         details: (k) => h('div', {class: 'ex-insights'}, PhotoQuality.kindCards(k, {device_id: k.device_id, lens_id: k.lens_id, material_id: k.material_id})),
         sorts: [['setup', 'По лазеру и титану', (p, q) => `${p.setup} · ${p.titanium}`.localeCompare(`${q.setup} · ${q.titanium}`)]]}).el);

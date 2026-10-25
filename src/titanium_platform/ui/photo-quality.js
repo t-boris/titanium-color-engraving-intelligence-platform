@@ -1,4 +1,4 @@
-/* Что лаборатория знает о фотогравировке (photo-engraving-quality REQ-003..REQ-005, DEC-001..DEC-004): выводы по каждой сфотографированной
+/* Что лаборатория знает о фотогравировке (photo-engraving-quality REQ-003..REQ-005, DEC-001..DEC-006): выводы по каждой сфотографированной
    фотогравировке (тон, детали и что поменять), копии одной платы рядом и следующая плата, лучшие измеренные настройки вида, шаг
    «темнее / светлее / чётче / мягче» и опыт, который предлагает лаборатория. Всё считает сервер (photo_quality.py, photo_knowledge.py);
    здесь — только тексты по-русски. */
@@ -125,7 +125,16 @@ const PhotoQuality = (() => {
       : ' Картинки для платы ещё нет: сделайте первую плату из фотоработы или фотозоны («Подобрать настройки: 8 копий»).';
     return `Копия 1 — центр, остальные меняют по одной настройке: ${changes}; по фото станет видно, какая лучше.${size}`;
   }
-  const STATUS = {settled: ['поиск сошёлся', 'ok'], searching: ['поиск идёт', 'warn'], measured: ['измерено, но не подобрано', 'warn'], unmeasured: ['не измерено', 'warn']};
+  const STATUS = {settled: ['поиск сошёлся', 'ok'], searching: ['поиск идёт', 'warn'], measured: ['измерено, но не подобрано', 'warn'], unmeasured: ['не измерено', 'warn'],
+    failed: ['не получился', 'bad']};
+  /** Почему гравировка не стала лучшей (``failed``, DEC-006): картинки не видно или она вышла негативом. */
+  const failedWhy = (e) => (e.tone.range_L <= 0
+    ? `${e.settings.dither === 'grayscale' ? 'тёмные места не темнее светлых' : `точки не темнее титана (L* ${value(e.black_lab[0], 0)})`}: картинки не видно или она вышла негативом`
+    : `картинка едва видна: тёмное темнее светлого всего на ${value(e.tone.range_L, 0)} L*`);
+  /** Гравировки вида на этом титане, где картинки не вышло, самые новые первыми. */
+  const failedText = (name, failed) => `«${name}» на этом титане не получился: `
+    + failed.slice(0, 3).map((e) => `фото № ${e.source.pair_id}, ${setting('power', e.settings.power)} — ${failedWhy(e)}`).join('; ')
+    + (failed.length > 3 ? `; ещё ${failed.length - 3}` : '') + '.';
 
   /** «Что знает лаборатория» у работы или фотозоны: лучшие измеренные настройки её вида, что делает каждая настройка, шаги «Темнее»,
       «Светлее», «Чётче», «Мягче» (``apply(changes)`` сохраняет изменение) и опыт, который закрывает незнание. ``path`` — адрес владельца
@@ -144,23 +153,30 @@ const PhotoQuality = (() => {
       if (shown !== key) return;
       const name = PhotoModes.label(a.kind);
       const b = a.best;
+      const failed = a.failed || [];
       const status = STATUS[a.status];
       const proposal = a.proposal && (a.proposal.kind === 'next' || a.proposal.plate) ? btn(a.proposal.kind === 'next' ? 'Сделать следующую плату' : `Сделать плату: ${copiesOf(a.proposal.copies.length)}`, async (ev) => {
         const self = ev.currentTarget;
         self.disabled = true;
         try {
           made(a.proposal.kind === 'next' ? await post(`/pairs/${a.proposal.pair_id}/next-variations`, {})
-            : await post('/photo-knowledge/plate', {device_id: view.scale.device_id, lens_id: view.scale.lens_id, material_id: view.scale.material_id, kind: a.kind}));
+            : await post('/photo-knowledge/plate', {device_id: view.scale.device_id, lens_id: view.scale.lens_id, material_id: view.scale.material_id, kind: a.kind,
+              dot_width: a.dot_width}));
         } catch (e) { App.fail(e); self.disabled = false; }
       }, 'btn-small') : null;
       fill(el,
         h('h4', {}, `Что известно о виде «${name}» на этом лазере и титане`, status ? [' ', pill(status[0], status[1])] : null),
         b ? h('p', {class: 'small'}, h('strong', {}, a.at_best ? 'Работа на лучших измеренных настройках: ' : 'Лучшее измеренное: '),
           bestText(a.kind, b) + `${b.other_titanium ? ' (на другом титане)' : ''}${b.span_of ? ' — диапазон полоски до разворота тона' : ''}.`)
-          : h('p', {class: 'small muted'}, `Этот вид на этом лазере и титане ещё не фотографировался: настройки — оценка.`),
+          : failed.length ? null : h('p', {class: 'small muted'}, `Этот вид на этом лазере и титане ещё не фотографировался: настройки — оценка.`),
+        failed.length ? h('p', {class: 'alert warn small'}, failedText(name, failed), a.stand_in
+          ? ` Вместо них — лучшие тёмные точки вида «${PhotoModes.label(a.stand_in.settings.dither)}» на этом титане: ${bestText(a.stand_in.settings.dither, a.stand_in)}`
+            + `; для «${name}» это предположение, пока его не сфотографируют на этих точках.`
+          : ' Тёмных точек другого вида на этом титане тоже нет: нужны точки темнее титана — по опыту процесса больше мощность, меньше скорость или шаг строк.') : null,
         a.turn && a.turn.past ? h('p', {class: 'alert warn small'}, `Max ${setting('power', a.current.power)} — дальше ${setting('power', a.turn.max_power)}, `
           + 'где тона этой шкалы разворачиваются: там больше мощности — светлее, а не темнее, и тёмные места картинки выходят светлыми.') : null,
-        a.take ? h('p', {class: 'small'}, btn(a.turn && a.turn.past && !b ? 'Взять диапазон до разворота' : 'Взять лучшие настройки', () => apply(a.take), 'btn-small'),
+        a.take ? h('p', {class: 'small'}, btn(a.stand_in ? `Взять тёмные точки «${PhotoModes.label(a.stand_in.settings.dither)}»`
+          : a.turn && a.turn.past && !b ? 'Взять диапазон до разворота' : 'Взять лучшие настройки', () => apply(a.take), 'btn-small'),
           h('span', {class: 'muted'}, ' ' + takeText(a.take))) : null,
         Object.keys(a.effects).length ? h('ul', {class: 'small'}, Object.entries(a.effects).map(([k, e]) => effectLine(k, e))) : null,
         h('div', {class: 'row'}, Object.keys(DIRECTION).map((d) => stepButton(d, a.steps[d], apply))),
@@ -168,7 +184,7 @@ const PhotoQuality = (() => {
           + (a.steps[d].basis === 'measured' ? ' (измерено)' : ' (по опыту процесса)')).join(' · ')),
         a.proposal ? h('p', {class: 'small'}, proposal, h('span', {class: 'muted'}, (a.proposal.kind === 'next'
           ? ` Лаборатория предлагает: следующая плата вокруг копии ${a.proposal.best_label}, изменения вдвое меньше. `
-          : ` Лаборатория предлагает: та же картинка вокруг ${a.status === 'unmeasured' ? 'лучших точек другого вида' : 'лучшего измеренного'}. `)
+          : ` Лаборатория предлагает: та же картинка вокруг ${a.status === 'unmeasured' || a.status === 'failed' ? 'лучших точек другого вида' : 'лучшего измеренного'}. `)
           + proposalText(a.proposal))) : null);
     }
     return {el, load};
@@ -193,12 +209,14 @@ const PhotoQuality = (() => {
         catch (e) { App.fail(e); self.disabled = false; }
       }, 'btn-small') : null;
       const why = !p ? (k.status === 'settled' ? 'Поиск сошёлся: это лучшие настройки вида.' : k.kind === 'grayscale'
-        ? 'Начните со шкал серого (Фотогравировка → Шкалы серого).' : 'Сначала сфотографируйте любую фотогравировку точками.')
+        ? 'Начните со шкал серого (Фотогравировка → Шкалы серого).' : k.status === 'failed'
+          ? 'Нужны точки темнее титана: по опыту процесса — больше мощность, меньше скорость или шаг строк.' : 'Сначала сфотографируйте любую фотогравировку точками.')
         : p.kind === 'next' ? `Следующая плата вокруг копии ${p.best_label}, изменения вдвое меньше.`
-          : k.status === 'unmeasured' ? 'Та же картинка на лучших настройках другого вида точками.' : 'Та же картинка вокруг лучшего измеренного.';
+          : k.status === 'unmeasured' || k.status === 'failed' ? 'Та же картинка на лучших настройках другого вида точками.' : 'Та же картинка вокруг лучшего измеренного.';
       return h('article', {class: 'dashboard-insight pq-kind'},
         h('div', {class: 'dashboard-item-top'}, h('strong', {}, PhotoModes.label(k.kind)), status ? pill(status[0], status[1]) : null),
-        h('p', {class: 'small'}, k.best ? `Лучшее: ${bestText(k.kind, k.best)}` : 'Ещё не фотографировался на этом лазере и титане.'),
+        h('p', {class: 'small'}, k.best ? `Лучшее: ${bestText(k.kind, k.best)}` : k.failed && k.failed.length ? failedText(PhotoModes.label(k.kind), k.failed)
+          : 'Ещё не фотографировался на этом лазере и титане.'),
         Object.keys(k.effects).length ? h('ul', {class: 'small'}, Object.entries(k.effects).map(([key, e]) => effectLine(key, e))) : null,
         h('p', {class: 'small muted'}, why), p ? h('p', {class: 'small muted'}, proposalText(p)) : null, make);
     });

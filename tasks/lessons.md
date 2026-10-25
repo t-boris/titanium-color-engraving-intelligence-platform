@@ -689,3 +689,14 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   photograph), never the current pair's `accepted_at`; a test of such a rule re-measures first. Rehearse every new data rule on a copy
   of the live data before the release: the live data has histories (re-measures, re-checks) the fixtures do not. A test that reaches
   `Path.home()` sets HOME to its own folder.
+
+## «The best» must exclude what failed: check the auto-fill of every kind on live data (0.35.2, 2026-10-25)
+
+- **What happened.** `photo_knowledge.best` ranked engravings by score and took the first one with a score. A score of 0 is still a
+  score, so Atkinson's only engraving on Big Plate, a negative (photo 147, dots L* 92), was «the best Atkinson». Choosing Atkinson
+  filled in those settings, and the laboratory proposed a plate around them. 0.33.0 tested the fill with a good engraving only, and the
+  0.35.1 check on live data looked at Jarvis, the zone's current kind, not at every kind the operator can choose.
+- **Rule.** A selection of «the best» that feeds an automatic fill excludes failures explicitly (a named predicate such as
+  `photo_knowledge.failed`), and its tests include a failed candidate. When verifying an auto-fill on live data, run it for every option
+  the operator can pick (each kind, each titanium), not only for the current one.
+
