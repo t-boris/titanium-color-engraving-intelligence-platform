@@ -599,3 +599,19 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   version at install time (it said 0.3.1 while `pyproject.toml` said 0.31.0), so a PyInstaller build from the venv reports the old
   version. Before a desktop build: `uv pip install --python .venv/bin/python -e . --no-deps` (the venv has no pip), and read the version
   in the core's smoke line, not only `"smoke": "ok"`.
+
+## A wheel built before the desktop core leaves an egg-info the core then carries (0.32.0, 2026-10-24)
+
+- **What happened.** `python -m build --wheel` ran first and left `src/titanium_color_engraving_platform.egg-info` (git-ignored, so
+  `git status` does not show it). PyInstaller then bundled that egg-info instead of the editable install's dist-info; the core's smoke
+  still said 0.32.0, but `desktop/forge.config.js` looks for a dist-info and refused the package ("the built core says null").
+- **Rule.** Build the desktop core and the shell first, the wheel last, and remove `src/*.egg-info` after the wheel; before a core
+  build, `ls src/*.egg-info` must find nothing and `.venv/.../site-packages` must hold `titanium_color_engraving_platform-<v>.dist-info`.
+
+## Look at the picture a plate will engrave before handing the plate over (0.32.0, 2026-10-24)
+
+- **What happened.** The variations plate cut its copies from the window of the zone's picture with the widest grey spread; on the
+  real zone (a portrait with sunglasses) that was the inside of a dark lens with greys 32–150 only, useless for judging a portrait's tones.
+  Seen only by rendering the window from a copy of the live database.
+- **Rule.** Before a plate built from the operator's own picture is handed over, build it on a copy of the live database and look at the
+  picture each copy engraves; a selection rule tested on synthetic pictures is not proven on a real one.
