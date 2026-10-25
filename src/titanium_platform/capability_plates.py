@@ -6,11 +6,16 @@ value (REQ-019). The job settings are the plate's own.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import math
 from typing import Any
 
-from . import devices, grayscale, photo_modes, plans, setup as su, tasks
+import cv2
+import numpy as np
+
+from . import devices, grayscale, photo_modes, photo_quality, plans, setup as su, tasks
 from .db import Store, now
 
 PLATE_TYPES = [
@@ -70,6 +75,10 @@ PLATE_TYPES = [
      "purpose": "Узнать, как цвет заливки меняется с её размером: одни и те же настройки на полосках разной ширины, то есть с разной длиной строки.",
      "action": "До 28 залитых полосок высотой 4 мм (режим Scan, постоянная мощность): каждая полоска — свой слой LightBurn с одним из 1–7 рецептов и одной из 1–5 ширин от 3 до 300 мм. Строки заливки идут вдоль ширины, поэтому ширина полоски — длина строки. Очистка и метки занимают ещё два слоя.",
      "finds": "Цвет каждого рецепта при каждой ширине: насколько он сдвигается с длиной строки и с какой ширины перестаёт меняться. Измеряется середина полоски, края не учитываются."},
+    {"id": "photo_variations", "name": "Фотогравировка: одна картинка × несколько настроек",
+     "purpose": "Найти лучшие настройки фотогравировки для выбранного вида (Jarvis, Atkinson, Stucki, градации серого …): что делает картинку темнее, светлее, чётче или мягче на этом титане.",
+     "action": "До 12 копий одной и той же картинки рядом; у каждой копии свой набор настроек (вид, мощность, скорость, частота, длительность импульса, шаг линий, поправка ширины точки), под ней шкала серого с теми же настройками. Копия и её шкала — два слоя-изображения LightBurn; очистка и метки — ещё два слоя. По умолчанию копии меняют по одному параметру вокруг лучших известных настроек.",
+     "finds": "Для каждой копии: тон (различимые ступени шкалы, темнота, сохранены ли тени и света), сохранение деталей и зерно — и какая копия лучшая. Изменение одного параметра между копиями показывает, как он влияет на тон и чёткость; лучшие настройки становятся настройками по умолчанию для этого вида."},
 ]
 for item in PLATE_TYPES:
     item["description"] = f"Зачем: {item['purpose']} Что делает плата: {item['action']} Что выясняет результат: {item['finds']}"
@@ -1038,10 +1047,226 @@ def _fill_sizes(values: dict, passport: dict) -> tuple[list[dict], list[dict], d
                             "fills": {"recipes": recipes, "widths_mm": widths, "strip_height_mm": FILL_STRIP_HEIGHT}}
 
 
+VARIATION_MAX, VARIATION_MIN = 12, 2
+VARIATION_COPY_MM = (8.0, 40.0)       # the longer side of a copy: smaller leaves too few photograph pixels, larger takes too long
+VARIATION_DEFAULT_COPY_MM = 18.0
+VARIATION_GAP, VARIATION_LABEL_H, VARIATION_RAMP_GAP, VARIATION_TOP = 3.0, 1.8, 0.8, 3.0
+VARIATION_PICTURE_PX_MM = 20.0        # as a photo zone's picture in a file: LightBurn resamples it to the layer's DPI and dithers that
+VARIATION_KEYS = frozenset({"dither", "power", "min_power", "speed", "frequency", "pulse_width", "line_interval", "passes", "dot_width"})
+MODE_LETTER = {"grayscale": "G", "jarvis": "J", "atkinson": "A", "stucki": "S", "dither": "FS", "ordered": "O", "newsprint": "N",
+               "halftone": "H", "sketch": "SK", "threshold": "T"}
+VARIATION_SHORT = (("power", "P"), ("speed", "V"), ("frequency", "F"), ("pulse_width", "PW"), ("line_interval", "I"), ("dot_width", "D"),
+                   ("passes", "N"))
+
+
+def _variation_picture(raw) -> np.ndarray:
+    """The picture every copy engraves, from PNG or JPEG bytes (or their base64): 8-bit grey, or grey with its opacity (BGRA) when it has
+    transparent parts, trimmed to its opaque part."""
+    data = raw
+    if isinstance(raw, str):
+        try:
+            data = base64.b64decode(raw, validate=True)
+        except ValueError:
+            raise su.ValidationError("картинка копий не прочитана: ожидается PNG или JPEG") from None
+    found = None if not isinstance(data, (bytes, bytearray)) else photo_modes.decode_picture(bytes(data))
+    if found is None:
+        raise su.ValidationError("картинка копий не прочитана: ожидается PNG или JPEG")
+    grey, alpha = found
+    opaque = alpha >= photo_modes.ALPHA_MIN
+    if not opaque.any():
+        raise su.ValidationError("у картинки нет непрозрачной части: гравировать нечего")
+    rows, cols = np.nonzero(opaque.any(axis=1))[0], np.nonzero(opaque.any(axis=0))[0]
+    grey, alpha = grey[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1], alpha[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+    if grey.shape[0] < 16 or grey.shape[1] < 16:
+        raise su.ValidationError("картинка слишком мала: нужно хотя бы 16 × 16 точек")
+    g8 = np.round(np.clip(grey, 0, 1) * 255).astype(np.uint8)
+    if (alpha >= photo_modes.ALPHA_MIN).all():
+        return g8
+    a8 = np.where(alpha >= photo_modes.ALPHA_MIN, 255, 0).astype(np.uint8)
+    return np.dstack([g8, g8, g8, a8])
+
+
+def variation_window(picture: np.ndarray, px_per_mm: float, size_mm: float = VARIATION_DEFAULT_COPY_MM) -> np.ndarray:
+    """The part of a picture (grey, or BGRA) that a copy engraves at the picture's own scale: a square ``size_mm`` across (all of it when it
+    is smaller), placed where the picture is opaque and has the most tone, so the copies show its detail as large as the work engraves it."""
+    rows, cols = picture.shape[:2]
+    side = max(16, round(size_mm * px_per_mm))
+    if rows <= side and cols <= side:
+        return picture
+    h, w = min(rows, side), min(cols, side)
+    grey = (picture if picture.ndim == 2 else cv2.cvtColor(picture[..., :3], cv2.COLOR_BGR2GRAY)).astype(np.float32)
+    opaque = np.ones(grey.shape, np.float32) if picture.ndim == 2 or picture.shape[2] < 4 else (picture[..., 3] >= 128).astype(np.float32)
+    best, at = None, (0, 0)
+    step_y, step_x = max(1, (rows - h) // 8), max(1, (cols - w) // 8)
+    for y in range(0, rows - h + 1, step_y):
+        for x in range(0, cols - w + 1, step_x):
+            cover = opaque[y:y + h, x:x + w]
+            share = float(cover.mean())
+            if share < 0.9:
+                continue
+            tone = float(grey[y:y + h, x:x + w][cover > 0].std())
+            if best is None or tone > best:
+                best, at = tone, (y, x)
+    if best is None:                                     # nowhere opaque enough: the middle
+        at = ((rows - h) // 2, (cols - w) // 2)
+    y, x = at
+    return np.ascontiguousarray(picture[y:y + h, x:x + w])
+
+
+def variation_label(variant: dict, centre: dict | None) -> str:
+    """The short engraved label of a copy: its kind's letter and the settings in which it differs from the centre (all of them for the
+    centre itself), as ``J P25 V125 I.01``; grayscale power is Min and Max, as ``G P2-30``."""
+    parts = [MODE_LETTER.get(variant["dither"], variant["dither"][:2].upper())]
+    grey = variant["dither"] == plans.IMAGE_DITHER
+    for key, short in VARIATION_SHORT:
+        value = variant.get(key)
+        if grey and key == "power":
+            same = centre is not None and variant is not centre and (centre.get("min_power"), centre.get("power")) == (variant["min_power"], value)
+            if not same:
+                parts.append(f"P{variant['min_power']:g}-{value:g}")
+            continue
+        if centre is not None and variant is not centre and centre.get(key) == value:
+            continue
+        if value is None:
+            if key == "dot_width" and centre is not None and centre.get(key) is not None:
+                parts.append(short + "0")                 # the centre corrects the dot width, this copy does not
+            continue
+        if key == "passes" and value == 1:
+            continue
+        text = f"{value:g}"
+        parts.append(short + (text[1:] if text.startswith("0.") else text))
+    return " ".join(parts)
+
+
+def _variant(raw, values: dict, passport: dict, n: int) -> dict:
+    """One copy's settings: the plate's settings with the copy's own over them, each one the laser can engrave."""
+    if not isinstance(raw, dict):
+        raise su.ValidationError(f"копия {n}: настройки задаются набором значений")
+    unknown = set(raw) - VARIATION_KEYS
+    if unknown:
+        raise su.ValidationError(f"копия {n}: неизвестные параметры: {', '.join(sorted(unknown))}")
+    dither = str(raw.get("dither") or values.get("dither") or "jarvis").lower()
+    kind = photo_modes.mode(dither)
+    if kind is None or kind.key != dither or kind.family not in (photo_modes.POWER, photo_modes.DOTS):
+        raise su.ValidationError(f"копия {n}: вид — градации серого или один из видов точками LightBurn")
+    merged = {**{k: values[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes")},
+              **{k: v for k, v in raw.items() if k not in ("dither", "dot_width", "min_power")}}
+    try:
+        checked, _, _ = _passport_defaults(passport, merged)
+    except su.ValidationError as exc:
+        raise su.ValidationError(f"копия {n}: {exc}") from None
+    out = {"dither": dither, **_process(checked)}
+    if kind.family == photo_modes.POWER:
+        low = raw.get("min_power", values.get("min_power", 0.0))
+        try:
+            low = float(low)
+        except (TypeError, ValueError):
+            raise su.ValidationError(f"копия {n}: Min мощность должна быть числом") from None
+        if not (math.isfinite(low) and 0 <= low < out["power"]):
+            raise su.ValidationError(f"копия {n}: Min мощность от 0 до Max, меньше Max")
+        out["min_power"] = low
+    else:
+        out["min_power"] = out["power"]                  # every dot fires at the layer's power
+        dot_width = raw["dot_width"] if "dot_width" in raw else values.get("dot_width")      # None: the correction off
+        if dot_width is not None:
+            lo, hi = photo_modes.DOT_WIDTH_MM
+            if isinstance(dot_width, bool) or not isinstance(dot_width, (int, float)) or not lo <= dot_width <= hi:
+                raise su.ValidationError(f"копия {n}: поправка ширины точки от {lo:g} до {hi:g} мм")
+            out["dot_width"] = float(dot_width)
+    return out
+
+
+def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
+    """One picture engraved several times, each copy at its own settings (feature photo-engraving-quality): the copies stand in a grid,
+    each with its label above it and, under it, a grey ramp at the same settings and the same width (one row length), so the photograph
+    measures each copy's tone exactly (the ramp) and its detail and grain (the picture). A copy and its ramp are two Image layers; the
+    picture is stored once (``geometry["pictures"]``) and every copy's layer names it."""
+    supplied = values.get("variations") or {}
+    picture = _variation_picture(supplied.get("picture_png"))
+    # the centre: the plate's settings with the kind, Min power and dot width the variations give (the plate dialog gives them there)
+    centre_values = {**values, **{k: supplied[k] for k in ("dither", "min_power", "dot_width") if k in supplied}}
+    specs = supplied.get("variants")
+    if specs is None:                                     # one change at a time around the centre (photo_quality.variants_around)
+        specs = photo_quality.variants_around({"dither": str(centre_values.get("dither") or "jarvis").lower(),
+                                               **{k: centre_values.get(k) for k in ("power", "min_power", "speed", "line_interval", "dot_width")}})
+    if not isinstance(specs, list) or not VARIATION_MIN <= len(specs) <= VARIATION_MAX:
+        raise su.ValidationError(f"задайте от {VARIATION_MIN} до {VARIATION_MAX} копий: каждая копия с её шкалой — два слоя LightBurn")
+    variants = [_variant(raw, centre_values, passport, n) for n, raw in enumerate(specs, 1)]
+    keys = [json.dumps(v, sort_keys=True) for v in variants]
+    if len(set(keys)) != len(keys):
+        raise su.ValidationError("две копии с одинаковыми настройками ничего не сравнят: измените настройки одной из них")
+    try:
+        copy_mm = float(supplied.get("copy_mm", VARIATION_DEFAULT_COPY_MM))
+    except (TypeError, ValueError):
+        raise su.ValidationError("размер копии должен быть числом") from None
+    lo, hi = VARIATION_COPY_MM
+    if not (math.isfinite(copy_mm) and lo <= copy_mm <= hi):
+        raise su.ValidationError(f"размер копии (длинная сторона) от {lo:g} до {hi:g} мм")
+    rows_px, cols_px = picture.shape[:2]
+    width = copy_mm if cols_px >= rows_px else round(copy_mm * cols_px / rows_px, 2)
+    height = copy_mm if rows_px > cols_px else round(copy_mm * rows_px / cols_px, 2)
+    limit_px = round(copy_mm * VARIATION_PICTURE_PX_MM)
+    if max(rows_px, cols_px) > limit_px:
+        scale = limit_px / max(rows_px, cols_px)
+        picture = cv2.resize(picture, (max(1, round(cols_px * scale)), max(1, round(rows_px * scale))), interpolation=cv2.INTER_AREA)
+        if picture.ndim == 3:
+            picture[..., 3] = np.where(picture[..., 3] >= 128, 255, 0)
+    steps = max(6, min(grayscale.RAMP_STEPS, int(width / GREY_MIN_STEP)))
+    greys = grayscale.ramp_greys(steps)
+    centre = variants[0]                                  # the first copy: its label names every setting, the others what they change
+    columns = max(1, min(len(variants), int((values.get("max_width_mm", PLATE_DEFAULT_MM) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"]
+                                                                                                 + COMPACT_MARKER_SIZE["margin_mm"]) + VARIATION_GAP)
+                                             // (width + VARIATION_GAP))))
+    cell_h = VARIATION_LABEL_H + height + VARIATION_RAMP_GAP + GREY_TILE_HEIGHT
+    labels = _text("PHOTO VARIATIONS", 1.0, 0.6, 0.12)
+    layers, cells, copies = [], [], []
+    for n, variant in enumerate(variants, 1):
+        col, row = (n - 1) % columns, (n - 1) // columns
+        x, y = 1.0 + col * (width + VARIATION_GAP), VARIATION_TOP + row * (cell_h + VARIATION_GAP)
+        label = f"{n} " + variation_label(variant, centre)
+        labels += _text(label, x, y + 0.3, 0.10)
+        params = {k: variant[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")}
+        params["min_power"] = variant["min_power"]
+        if variant.get("dot_width") is not None:
+            params["dot_width"] = variant["dot_width"]
+        top = y + VARIATION_LABEL_H
+        ramp_y = top + height + VARIATION_RAMP_GAP
+        pic_name, ramp_name = f"PV{n}-PICTURE", f"PV{n}-RAMP"
+        pic_layer = _layer(len(layers) + 1, pic_name, params, [_rect(x, top, width, height)], mode="Image",
+                           line_interval=params["line_interval"], global_passes=values["global_passes"])
+        pic_layer["picture"] = {"x": x, "y": top, "width": width, "height": height, "dither": variant["dither"], "file": f"{pic_name}.png",
+                                "picture_key": "variation"}
+        pic_layer["variation"] = {"copy": n, "part": "picture"}
+        layers.append(pic_layer)
+        ramp = {"x": x, "y": ramp_y, "width": width, "height": GREY_TILE_HEIGHT, "greys": greys, "dither": variant["dither"]}
+        ramp_layer = _layer(len(layers) + 1, ramp_name, params, [_rect(x, ramp_y, width, GREY_TILE_HEIGHT)], mode="Image",
+                            line_interval=params["line_interval"], global_passes=values["global_passes"])
+        ramp_layer["ramp"] = ramp
+        ramp_layer["variation"] = {"copy": n, "part": "ramp"}
+        layers.append(ramp_layer)
+        for name, part, ry, rh in ((pic_name, "picture", top, height), (ramp_name, "ramp", ramp_y, GREY_TILE_HEIGHT)):
+            cells.append({"name": name, "parameters": params, "x": x, "y": ry, "width": width, "height": rh, "copy": n, "part": part,
+                          "dither": variant["dither"], "min_power": variant["min_power"], "max_power": variant["power"]})
+        copies.append({"copy": n, "label": label, "variant": variant, "picture_layer": pic_name, "ramp_layer": ramp_name,
+                       "x": x, "y": top, "width": width, "height": height, "ramp": {"y": ramp_y, "height": GREY_TILE_HEIGHT, "steps": steps}})
+    rows = (len(variants) + columns - 1) // columns
+    plate_w = 1.0 + columns * width + (columns - 1) * VARIATION_GAP + 1.0
+    plate_h = VARIATION_TOP + rows * cell_h + (rows - 1) * VARIATION_GAP + 1.0
+    png = cv2.imencode(".png", picture)[1].tobytes()
+    meta = {"name": str(supplied.get("picture_name") or "picture")[:120], "size_px": [int(picture.shape[1]), int(picture.shape[0])],
+            "sha256": hashlib.sha256(png).hexdigest(), "transparent": picture.ndim == 3, "source": supplied.get("source")}
+    return layers, labels, {"width": plate_w, "height": plate_h, "columns": columns, "rows": rows, "cells": cells,
+                            "feature_count": len(variants) * (1 + steps),
+                            "sample_area_mm2": round(len(variants) * width * (height + GREY_TILE_HEIGHT), 2),
+                            "variations": {"copies": copies, "copy_mm": copy_mm, "width_mm": width, "height_mm": height,
+                                           "picture": meta, "ramp_steps": steps},
+                            "pictures": {"variation": png}}
+
+
 BUILDERS = {"small_patches": _small_patches, "compact_capability": _compact_capability, "text_readability": _text_readability, "calibration": _calibration, "power_speed": _power_speed, "frequency": _frequency,
             "pulse_cutoff": _pulse_cutoff, "line_resolution": _line_resolution, "hatch_interval": _hatch_interval,
             "offset_fill": _offset_fill, "wobble": _wobble, "material_matrix": _material_matrix, "grey_scales": _grey_scales,
-            "fill_sizes": _fill_sizes}
+            "fill_sizes": _fill_sizes, "photo_variations": _photo_variations}
 
 
 def preview(store: Store, device_id: int, material_id: int, test_type: str, settings: dict | None = None) -> dict:
@@ -1074,7 +1299,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         if cw:
             values["pulse_width"] = float(cw["pulse_width_ns"])
     if test_type in ("small_patches", "frequency", "pulse_cutoff", "calibration", "compact_capability", "material_matrix", "text_readability",
-                     "grey_scales", "fill_sizes"):
+                     "grey_scales", "fill_sizes", "photo_variations"):
         layers, label_regions, geometry = BUILDERS[test_type](values, device["passport"])
     else:
         layers, label_regions, geometry = BUILDERS[test_type](values)
@@ -1084,6 +1309,10 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
         values["scales"] = geometry["scales"]
     if test_type == "fill_sizes":
         values["recipes"], values["widths_mm"] = geometry["fills"]["recipes"], geometry["fills"]["widths_mm"]
+    pictures = geometry.pop("pictures", None)            # stored once beside the plan, never in the plate's geometry
+    if test_type == "photo_variations":
+        values["variations"] = {k: v for k, v in values["variations"].items() if k != "picture_png"} | {
+            "variants": [c["variant"] for c in geometry["variations"]["copies"]], "picture": geometry["variations"]["picture"]}
     # REQ-020: every cell states its task (letters are text, the rest what their LightBurn mode implies), and the plate
     # records the task it was made for: the operator's choice, else its research goal, else what its test type examines
     for layer in layers:
@@ -1145,7 +1374,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
             "clean_layer": clean | {"interval": clean["line_interval"], "global_passes": 1, "bidirectional": True,
                                     "cross_hatch": True, "angle": 0.0, "angle_increment": 0.0},
             "marker_layer": marker_layer, "clean_regions": clean_regions, "experiment": experiment,
-            "values": values, "label_regions_count": len(label_regions)}
+            "values": values, "label_regions_count": len(label_regions), "pictures": pictures}
 
 
 def _persist_prepared(store: Store, result: dict, device_id: int, material_id: int, test_type: str,
@@ -1179,6 +1408,14 @@ def _persist_prepared(store: Store, result: dict, device_id: int, material_id: i
                  "process_settings": {k: result["values"][k] for k in ("pulse_width", "line_interval", "passes")},
                  "lightburn_settings": {"global_passes": result["values"]["global_passes"], "bidirectional": True,
                                         "cross_hatch": False, "scan_angle": 0.0, "angle_increment": 0.0}}
+    if result.get("pictures"):                          # a picture the plate engraves (photo_variations): a file of the workshop
+        folder = store.data_dir / "files"
+        folder.mkdir(parents=True, exist_ok=True)
+        plan_data["pictures"] = {}
+        for key, png in result["pictures"].items():
+            path = folder / f"plate-{ident}-{key}.png"
+            path.write_bytes(png)
+            plan_data["pictures"][key] = str(path)
     plan_id = store.execute(
         "INSERT INTO plan(name,mode,status,device_id,lens_id,plate_id,markers,plan_identifier,band_count,data_json,created_at,research_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (f"{title} · {ident}", plans.MODE_CAPABILITY, "Ready to export", device["id"], lens["id"], plate_id,
@@ -1198,6 +1435,24 @@ def create(store: Store, device_id: int, material_id: int, test_type: str, setti
     with store.transaction():
         return _persist_prepared(store, result, device_id, material_id, test_type,
                                  research_session_id, supersede_plan_id)
+
+
+def create_variations(store: Store, device_id: int, material_id: int, picture: np.ndarray, px_per_mm: float, centre: dict, name: str,
+                      source: dict, *, step: float = 1.0) -> dict:
+    """A photo-variations plate of a photo engraving: the part of its file's picture with the most tone, at the scale it is engraved at
+    (:func:`variation_window`), engraved at ``centre`` (the engraving's own settings) and at one change of a setting each
+    (``photo_quality.variants_around``)."""
+    window = variation_window(picture, px_per_mm)
+    rows, cols = window.shape[:2]
+    copy_mm = round(max(rows, cols) / px_per_mm, 2)
+    lo, hi = VARIATION_COPY_MM
+    if copy_mm < lo:
+        raise su.ValidationError(f"the engraving is smaller than {lo:g} mm: too small to compare its copies")
+    keys = ("power", "min_power", "speed", "frequency", "pulse_width", "line_interval", "passes", "global_passes", "dither", "dot_width")
+    settings = {k: centre[k] for k in keys if centre.get(k) is not None}
+    settings["variations"] = {"picture_png": cv2.imencode(".png", window)[1].tobytes(), "copy_mm": min(hi, copy_mm), "picture_name": name,
+                              "variants": photo_quality.variants_around(settings, step), "source": source}
+    return create(store, device_id, material_id, "photo_variations", settings)
 
 
 def preview_small_patch_parts(store: Store, device_id: int, material_id: int, settings: dict) -> list[dict]:

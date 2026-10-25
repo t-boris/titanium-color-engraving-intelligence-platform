@@ -63,6 +63,7 @@ class CapabilityPlateIn(BaseModel):
     patches: list[dict] | None = None
     recipes: list[dict] | None = None     # a fill-size plate: its recipes and strip widths
     widths_mm: list[float] | None = None
+    variations: dict | None = None        # a photo-variations plate: its picture (PNG or JPEG in base64), kind, copy size, copies
     registration: str = "full"
     max_width_mm: float = 100.0
     max_height_mm: float = 100.0
@@ -177,6 +178,8 @@ def _capability_settings(body: CapabilityPlateIn) -> dict:
         settings["recipes"] = body.recipes
     if body.widths_mm is not None:
         settings["widths_mm"] = body.widths_mm
+    if body.variations is not None:
+        settings["variations"] = body.variations
     if body.task:
         settings.update(task=body.task, task_goals=body.task_goals)
     return settings

@@ -180,6 +180,12 @@ def vector_zone(plan_id: int, number: int, request: Request):
     return vector_job.zone_view(store_of(request), plan_id, number)
 
 
+@router.post("/vector/{plan_id}/photo/{number}/variations", status_code=201)
+def vector_zone_variations(plan_id: int, number: int, request: Request):
+    """A photo-variations plate of a photo zone: its picture at its settings and at one change each (see vector_job.zone_variations)."""
+    return vector_job.zone_variations(store_of(request), plan_id, number)
+
+
 @router.post("/vector/{plan_id}/photo/{number}/settings")
 def change_vector_zone(plan_id: int, number: int, body: dict, request: Request):
     """Change the photo engraving of a zone from its screen: one step of the work's editor (see vector_job.zone_change)."""

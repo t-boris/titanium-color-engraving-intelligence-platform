@@ -38,7 +38,7 @@ import cv2
 import numpy as np
 import shapely
 
-from . import ai_colouring as ai, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, capability_plates as cp, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -1226,6 +1226,23 @@ def _zone_of_work(store: Store, plan_id: int, number) -> tuple[dict, dict, dict]
 def _zone_cut(plan: dict, zone: dict) -> dict:
     """The zone's picture (:func:`photo_zones.cut`) at its layer's DPI, as uploaded: the zone's tone is applied where it is drawn."""
     return pz.cut(plan, _zone_loops(plan), zone, pz.layer_dpi(plan, zone))
+
+
+def zone_variations(store: Store, plan_id: int, number) -> dict:
+    """A photo-variations plate of a photo zone (feature photo-engraving-quality): the part of the zone's picture with the most tone, as the
+    work's file engraves it and as large, at the zone's settings and at one change each (``capability_plates.create_variations``)."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    if es.pin_of(plan) is not None:
+        raise su.ValidationError("a variations plate tries settings on this workshop's laser, and this work uses a laboratory release's scale: "
+                                 "check the release's settings on this laser with a transfer experiment («Проверить у себя»)")
+    found = _zone_cut(plan, zone)
+    layer = pz.file_layer(_ev(store, plan), plan, zone, found, 0)
+    box, pixels = layer["picture"], layer["picture"]["pixels"]
+    made = cp.create_variations(store, plan["device_id"], pz.mode_of(plan, zone).material_id, pixels, pixels.shape[1] / float(box["width"]),
+                                layer["parameters"], f"{plan['name']} · zone {zone['number']}",
+                                {"kind": "photo_zone", "plan_id": plan["id"], "zone": zone["number"]})
+    store.audit("photo_zone_variations", plan_id=plan["id"], zone=zone["number"], variations_plan_id=made["plan_id"], kind=zone["kind"])
+    return made
 
 
 def zone_picture(store: Store, plan_id: int, number) -> rc.Picture:

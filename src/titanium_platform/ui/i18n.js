@@ -79,6 +79,8 @@ const I18N = (() => {
 
 I18N.add([
   // обёртки сообщений: прежде общих правил, которые иначе съели бы и обёртку
+  // a copy of a photo-variations plate whose settings the laser cannot take: the reason is translated by its own rule
+  [/^копия (\d+): (.+)$/i, (m) => `копия ${m[1]}: ` + I18N.tr(m[2])],
   [/^photo zone (\d+) cannot be engraved: (.+)$/i, (m) => `Фотозону ${m[1]} не выгравировать: ` + I18N.tr(m[2])],
   // надпись в работе, которую не выгравировать (feature inscriptions-in-works): раньше общих правил, которые совпали бы с её причиной
   [/^inscription (\d+) cannot be engraved: (.+)$/i, (m) => `Надпись ${m[1]} не выгравировать: ` + I18N.tr(m[2])],

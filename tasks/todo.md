@@ -1,3 +1,48 @@
+# Photo engraving: measured quality, best settings per mode, experiments that converge (goal set 2026-10-24)
+
+Operator's goal (2026-10-24): every kind of engraving gets the attention colour gets; photo engraving (dot modes such as Atkinson, Jarvis,
+and grayscale) is analysed after every photograph: what makes it darker, lighter, sharper, softer, which mode for which case; when a
+mode is chosen for a photo zone or work, the best known settings are filled in; when knowledge is missing the laboratory proposes the
+experiment (e.g. one plate, 8 copies of one picture at different settings); every photograph improves the defaults. Mid-goal requests
+(same day): "create one next compact LightBurn test for this goal; first check for a pending plate" and "OPENAI_API_KEY не найден … Почини".
+Feature: `docs/features/photo-engraving-quality` (MarkView).
+
+## What the data says before any change (live workshop, read only)
+- No plate waits for a photograph: grey-scale plates 25 and 38 are photographed and accepted; plans 35/37 are draft photo works.
+- Dot-mode engravings photographed so far (tonal profile of the check, L* range white→black, rank correlation):
+  Jarvis 25 % 125 mm/s 60 kHz 200 ns 0.01 mm (pair 118) range 48.4, rho 0.94 — the operator set these by hand in LightBurn; the
+  app had proposed 12.4 % at 0.0169 mm from the colour scale. Jarvis 30 % 150 mm/s 0.0231 mm dot corr. 0.02 (pair 106) range 27.9,
+  rho 0.89. Jarvis 12.5 % 0.0169 (114) range 13.9 weak; Atkinson 15 % 0.0254 (112) 12.0, rho −0.1; Atkinson 10.2 % 0.0169 (116) 2.6;
+  Halftone 12.1 % (116) 2.7: the pictures nearly vanished.
+- The operator's own archive (Dropbox/Sirius Art, 9 Jarvis layers): 25 %, 125–150 mm/s, 60 kHz, 0.01 mm (2540 dpi), dot
+  correction 0.01 mm in some.
+- Detail prototype (band-pass regression of the photograph on the picture, real pairs): grayscale works keep 0.85–1.0 of the
+  picture's contrast at 0.4 mm and 0.3–0.85 at 0.2 mm; zone layers need the zone's own region geometry (prototype read 0).
+- The AI key: under the desktop shell `research._api_key` reads only the environment; an app opened from Finder has none.
+
+## Steps
+- [x] 1 AI key kept by the workshop (`<data>/ai/openai.key`, 0600), entered on «Сеть»; environment still first; never in backups,
+      diagnostics or lab releases (BUG-007)
+- [x] 2 Plate `photo_variations`: one picture × 2–8 settings (mode, power, speed, frequency, pulse width, interval, dot width), each
+      copy = picture layer + grey ramp layer with the same settings, markers and QR; made from a photo zone, a photo work or an
+      uploaded picture; default variants centred on the best known settings of the mode
+      Done: 2–12 copies (8 by default), labels, the picture stored once (`plan["pictures"]`), a window of the file's picture at its real
+      size (`variation_window`), «Подобрать настройки: 8 копий» on photo works and zones, the plate dialog with an uploaded picture,
+      default copies by `photo_quality.variants_around` (DEC-003); the tone measures of `photo_quality.tone` (DEC-001) are in, the detail
+      measure is written but not yet run on photographs (step 4). Tests: `tests/test_photo_variations.py` (19), UI tests extended.
+- [ ] 3 Release 0.32.0 (key + plate), desktop build, deploy; the first plate made in the workshop and handed over with screen steps
+- [ ] 4 `photo_quality.py`: tone (distinguishable levels, darkness, contrast, shadows/highlights kept, dot gain), detail at
+      0.2/0.4/0.8 mm, grain, scan-direction blur — from the check (new photographs) and backfilled for accepted ones
+- [ ] 5 Conclusions after every photograph for every photo layer, with the setting to change for darker/lighter/sharper/softer;
+      the plate's copies ranked; the experiment page and «Выводы» show them; the image purpose stops saying only "needs a test"
+- [ ] 6 Knowledge per laser, lens, titanium and mode: best measured settings, measured sensitivities (same picture, one setting
+      changed), priors marked as such
+- [ ] 7 Photo zones and photo works fill in the best settings when a mode is chosen; «Темнее / Светлее / Чётче / Мягче» apply the
+      next measured step; what the values rest on is shown
+- [ ] 8 Proposals: a mode without measured best settings, or a best at the edge of what was tried, proposes the next variations
+      plate (centred on the best, steps halved when the best stays in the middle)
+- [ ] 9 Release 0.33.0, deploy, read-only check on the live data
+
 # Electron: desktop workshop and laboratory exchange (goal set 2026-10-24)
 
 Specification `docs/features/electron` read in full (REQ-080..087, DEC-021..041, Q-001..009, F-001, implementation/plan.md) with

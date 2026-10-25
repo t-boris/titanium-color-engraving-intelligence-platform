@@ -290,6 +290,25 @@ def test_the_plate_dialog_sends_the_recipes_and_widths_of_a_fill_size_plate_and_
     assert out["grey"]["scales"]["rows"] == {"axis": "width", "values": [20, 40, 70]} and out["grey"]["max_width_mm"] == 100
 
 
+@node
+def test_the_plate_dialog_sends_the_picture_of_a_photo_variations_plate_its_kind_and_size(tmp_path):
+    out = run_dialog(tmp_path, """
+  ctx.btoa = (text) => Buffer.from(text, 'binary').toString('base64');
+  out.none = await made({type: 'photo_variations'}, () => {});
+  out.photo = await made({type: 'photo_variations'}, (box) => {
+    out.photoCard = card(labelled(box, 'Картинка копий')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
+    labelled(box, 'Картинка копий').files = [{name: 'yana.png', arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer}];
+    labelled(box, 'Вид копий').value = 'grayscale';
+    labelled(box, 'Размер копии, мм').value = '24';
+    labelled(box, 'Min мощность копий, %').value = '2';
+  });
+""")
+    assert out["none"] is None                                                       # nothing is sent without a picture
+    assert out["photoCard"] == "" and out["greyCard"] == "none"
+    assert out["photo"]["test_type"] == "photo_variations"
+    assert out["photo"]["variations"] == {"picture_name": "yana.png", "dither": "grayscale", "copy_mm": 24, "min_power": 2, "picture_png": "iVBORw=="}
+
+
 # -- the CSS ---------------------------------------------------------------------------------------------------------------------------
 def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_long_panels_scroll():
     assert re.search(r"\.ex-body \{grid-template-columns:minmax\(340px,40%\) minmax\(0,1fr\)\}", CSS)

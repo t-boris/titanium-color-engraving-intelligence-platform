@@ -81,5 +81,10 @@ I18N.add([
     [/^a centre-line region has no outline to fill/i, 'У центральной линии нет контура для заливки: её можно гравировать только линией'],
     [/^no LightBurn layer is assigned to the settings group '?([^']*)'?$/i, (m) => 'Группе настроек «' + m[1] + '» не назначен слой LightBurn'],
     [/^the settings group must be a non-empty name/i, 'Группа настроек — непустое название'],
+    // the photo-variations plate: one picture at several settings (feature photo-engraving-quality)
+    [/^the engraving is smaller than ([\d.]+) mm: too small to compare its copies$/i,
+      (m) => `Гравировка меньше ${m[1]} мм: её копии слишком малы, чтобы сравнивать`],
+    [/^the picture of this plate \((.+)\) is missing from the workshop's files$/i,
+      'Картинки этой пластины нет среди файлов мастерской: создайте пластину заново'],
   ]);
 })();

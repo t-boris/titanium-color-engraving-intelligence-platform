@@ -32,6 +32,14 @@ const PlateDialog = (() => {
   // Размер заливки: полоски этих ширин для каждого рецепта; рецепт — основные параметры опыта с одним изменённым параметром
   const FILL_AXES = ['power', 'speed', 'frequency', 'pulse_width', 'line_interval', 'passes'];
   const FILL_WIDTHS = '5, 20, 50, 100';
+  const PHOTO_KINDS = [['jarvis', 'Jarvis'], ['atkinson', 'Atkinson'], ['stucki', 'Stucki'], ['grayscale', 'Градации серого']];
+  /** The bytes of a file as base64 (the plate's picture travels inside the JSON of the plate). */
+  async function base64Of(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  }
 
   async function open(devices, materials, reload, preset = {}) {
     const typeRows = await get('/plate-types');
@@ -128,6 +136,21 @@ const PlateDialog = (() => {
         + 'Рецепт — «Основные параметры опыта»; рецептов столько, сколько значений меняемого параметра. До 7 рецептов и 5 ширин, не больше 28 полосок.'),
       field('Ширины полосок, мм, через запятую (3–300)', fill.widths),
       h('div', {class: 'grid g2'}, field('Рецепты: меняемый параметр', fill.axis), field('Значения по рецептам, через запятую', fill.values)));
+    // One picture at several settings: copies of an uploaded picture; without copies given the server changes one setting at a time around the base
+    const photo = {
+      file: h('input', {type: 'file', accept: 'image/png,image/jpeg', 'aria-label': 'Картинка копий'}),
+      kind: h('select', {'aria-label': 'Вид копий'}, PHOTO_KINDS.map(([key, name]) => h('option', {value: key}, name))),
+      size: h('input', {type: 'number', min: '8', max: '40', step: 'any', value: '18', 'aria-label': 'Размер копии, мм'}),
+      min: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: '1', 'aria-label': 'Min мощность копий, %'}),
+    };
+    const photoCard = h('div', {class: 'card stack', style: 'display:none'},
+      h('p', {class: 'muted small'}, 'Восемь копий одной картинки рядом, под каждой — полоска серого на тех же настройках. Первая копия — на основных параметрах опыта, '
+        + 'у остальных по одному изменению: в виде точками мощность −20 % и +20 %, скорость +40 %, шаг строк ×1,69, поправка ширины точки и два других вида; '
+        + 'в градациях серого — Max, Min, шаг строк и скорость. Картинка берётся в настоящем размере: её длинная сторона — размер копии. '
+        + 'Удобнее начинать со страницы фотоработы или фотозоны: кнопка «Подобрать настройки: 8 копий» берёт её картинку и настройки.'),
+      field('Картинка (PNG или JPEG)', photo.file),
+      h('div', {class: 'grid g3'}, field('Вид первой копии', photo.kind), field('Размер копии, мм (длинная сторона)', photo.size),
+        field('Min мощность, % (градации серого)', photo.min)));
     const settings = {
       power: h('input', {type: 'number', min: '1', max: '100', step: 'any', value: DEFAULTS.power}),
       frequency: h('input', {type: 'number', min: '1', step: 'any', value: DEFAULTS.frequency}),
@@ -198,6 +221,7 @@ const PlateDialog = (() => {
       smallCard.style.display = type.value === 'small_patches' ? '' : 'none';
       greyCard.style.display = type.value === 'grey_scales' ? '' : 'none';
       fillCard.style.display = type.value === 'fill_sizes' ? '' : 'none';
+      photoCard.style.display = type.value === 'photo_variations' ? '' : 'none';
       // полоски заливки до 100 мм вместе с подписями и метками шире 100 мм
       if (resetSize) maxWidth.value = maxHeight.value = type.value === 'small_patches' ? '25' : type.value === 'fill_sizes' ? '150' : '100';
       if (resetSize && type.value === 'grey_scales') {
@@ -259,7 +283,7 @@ const PlateDialog = (() => {
       field('Заготовка', material),
       h('div', {class: 'grid g2'}, field('Максимальная ширина платы, мм', maxWidth),
         field('Максимальная высота платы, мм', maxHeight)),
-      matrixCard, smallCard, greyCard, fillCard,
+      matrixCard, smallCard, greyCard, fillCard, photoCard,
       h('details', {class: 'card'}, h('summary', {}, 'Добавить новую заготовку'),
         h('div', {class: 'stack', style: 'margin-top:12px'},
           h('div', {class: 'grid g3'}, field('Материал', newMaterial.family), field('Название / лист', newMaterial.name), field('Марка / сплав', newMaterial.grade), field('Партия', newMaterial.batch)),
@@ -302,6 +326,12 @@ const PlateDialog = (() => {
         out.widths_mm = values(fill.widths, 'Ширины полосок');
         out.recipes = fill.values.value.trim() ? values(fill.values, 'Рецепты').map((value) => ({[fill.axis.value]: value})) : [{}];
       }
+      if (type.value === 'photo_variations') {
+        const file = (photo.file.files || [])[0];
+        if (!file) throw new Error('Выберите картинку для копий (PNG или JPEG)');
+        out.variations = {picture_name: file.name, dither: photo.kind.value, copy_mm: +photo.size.value,
+          ...(photo.kind.value === 'grayscale' ? {min_power: +photo.min.value} : {})};
+      }
       if (type.value === 'small_patches') {
         const count = +patch.count.value;
         const numbers = patch.values.value.split(/[,;\s]+/).filter(Boolean).map(Number);
@@ -331,7 +361,9 @@ const PlateDialog = (() => {
     return modal('Создать экспериментальную плату', body, [
       {label: 'Отмена', run: (x) => x.close()},
       {label: 'Создать плату', cls: 'primary', run: async (x) => {
-        const made = await post('/capability-plates', requestBody());
+        const sent = requestBody();
+        if (sent.variations) sent.variations.picture_png = await base64Of(photo.file.files[0]);
+        const made = await post('/capability-plates', sent);
         x.close();
         if (reload) reload();
         const parts = made.parts || [made];

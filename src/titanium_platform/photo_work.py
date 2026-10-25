@@ -927,6 +927,32 @@ def width_ramp(store: Store, plan_id: int) -> dict:
     return made
 
 
+def variations(store: Store, plan_id: int) -> dict:
+    """A photo-variations plate of the work (feature photo-engraving-quality): the part of its file's picture with the most tone, at the
+    size the work engraves it, at the work's own settings and at one change each (``capability_plates.create_variations``)."""
+    plan = _work(store, plan_id)
+    if es.pin_of(plan) is not None:
+        raise su.ValidationError("a variations plate tries settings on this workshop's laser, and this work uses a laboratory release's scale: "
+                                 "check the release's settings on this laser with a transfer experiment («Проверить у себя»)")
+    lens = devices.get_device(store, plan["device_id"]).get("lens") or {}
+    if lens.get("id") != plan["lens_id"]:
+        raise su.ValidationError("the laser has another lens on it than this work's scale was measured with: put that lens on the laser first")
+    item = _item(store, plan)
+    if _dotted(plan):
+        power = st.dots(_ev(store, plan), plan, item["curve"])["power"]
+        fired = st.fired_at(item["mode"], plan)
+        picture = ps.picture_for_file(item, power, power, plan["width_mm"], fired=fired)
+        centre = {**ps.file_parameters(fired, power, power), "dither": plan["kind"], "dot_width": st.dot_width_used(plan)}
+    else:
+        low, high = ps.check_power_range(plan["min_power"], plan["max_power"])
+        picture = ps.picture_for_file(item, low, high, plan["width_mm"], plan["rules"])
+        centre = {**ps.file_parameters(item["mode"], low, high), "dither": GRAYSCALE}
+    made = cp.create_variations(store, plan["device_id"], mode_of(plan).material_id, picture, picture.shape[1] / float(plan["width_mm"]), centre,
+                                plan["name"], {"kind": "photo_work", "plan_id": plan["id"]})
+    store.audit("photo_work_variations", plan_id=plan["id"], variations_plan_id=made["plan_id"], kind=plan["kind"])
+    return made
+
+
 # -- the engravings of the work (0.19.3) --------------------------------------------------------------------------------------------
 def _engraved_layer(check: Mapping) -> dict | None:
     """The picture layer a photograph measured: the first layer with a tonal profile."""

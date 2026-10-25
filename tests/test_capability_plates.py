@@ -98,8 +98,8 @@ def test_markers_and_labels_burn_with_the_operators_marker_layer_settings_never_
 
 
 def test_every_plate_type_explains_purpose_method_and_findings():
-    assert len(cp.PLATE_TYPES) == 14
-    assert len({item["id"] for item in cp.PLATE_TYPES}) == 14
+    assert len(cp.PLATE_TYPES) == 15                    # 0.32.0: one picture × several settings (photo-engraving-quality)
+    assert len({item["id"] for item in cp.PLATE_TYPES}) == 15
     assert set(cp.BUILDERS) == {item["id"] for item in cp.PLATE_TYPES}
     assert all(item.get("purpose") and item.get("action") and item.get("finds") for item in cp.PLATE_TYPES)
 

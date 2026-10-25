@@ -73,6 +73,8 @@
     [/^choose a lens of this workshop or none$/i, 'Выберите линзу этой мастерской или «без линзы»'],
     [/^a ramp measures this workshop's own scale, and this work uses a laboratory release's scale: check the release's settings on this laser with a transfer experiment \(«Проверить у себя»\)$/i,
       'Рампа измеряет собственную шкалу мастерской, а работа использует шкалу выпуска лаборатории: проверьте настройки выпуска на этом лазере переносом («Проверить у себя»)'],
+    [/^a variations plate tries settings on this workshop's laser, and this work uses a laboratory release's scale: check the release's settings on this laser with a transfer experiment \(«Проверить у себя»\)$/i,
+      'Пластина копий пробует настройки на лазере мастерской, а работа использует шкалу выпуска лаборатории: проверьте настройки выпуска на этом лазере переносом («Проверить у себя»)'],
     [/^the layer (.+?) has settings this laser cannot take: (.+)$/is,
       (m) => `Слой «${m[1]}»: настройки, которые этот лазер не может выполнить: ${m[2].split('; ').map((x) => I18N.tr(x)).join('; ')}`],
     // перенос рецепта («Проверить у себя»)

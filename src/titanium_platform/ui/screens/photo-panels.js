@@ -292,6 +292,25 @@ const PhotoPanels = (() => {
       + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
   }
 
+  /** «Подобрать настройки» (feature photo-engraving-quality, REQ-002): a plate of eight copies of a part of the picture, the first at the
+      work's settings and every other with one setting changed, a grey ramp at the same settings under each; ``path`` is where to ask for it.
+      Its photograph shows which setting makes the picture darker, lighter, sharper or softer, and which copy is best. */
+  function variationsOffer(view, path) {
+    const dots = dotted(view);
+    const make = btn('Подобрать настройки: 8 копий', async (ev) => {
+      const self = ev.currentTarget;
+      self.disabled = true;
+      try { const made = await post(path, {}); toast(`Создано: ${made.name}`, 'ok'); go('/experiment/plan-' + made.plan_id); }
+      catch (e) { fail(e); self.disabled = false; }
+    }, 'btn-small');
+    const changes = dots
+      ? 'мощность −20 % и +20 %, скорость +40 %, шаг строк ×1,69, поправка ширины точки вкл./выкл. и два других вида точками'
+      : 'Max −20 % и +20 %, Min ±3, шаг строк ×1,5 и ×0,75, скорость ×0,7 и ×1,4';
+    return h('p', {class: 'small ge-variations'}, make, h('span', {class: 'muted'}, ' Пластина: часть картинки с самым богатым тоном в её настоящем размере — '
+      + `восемь копий. Первая — на настройках работы, у остальных по одному изменению: ${changes}. Под каждой копией — полоска серого на тех же `
+      + 'настройках. Выгравируйте, сфотографируйте и загрузите — по фото будет видно, что делает картинку темнее, светлее, чётче или мягче.'));
+  }
+
   const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет'], ['objects', 'Раскраска по объектам']];
   const CHOICE_ABOUT = '«Сохранить рисунок»: тона картинки раскладываются по одной плавной полосе шкалы — от самого светлого её цвета к самому тёмному, '
     + 'светлота только убывает, оттенок не скачет; соседние тона получают соседние мощности, поэтому кожа остаётся ровной, с градиентом, без пятен. '
@@ -388,12 +407,12 @@ const PhotoPanels = (() => {
   /** Картинка работы на её шкале: ширина, подбор серых и контуры над картинкой, картинка рядом с прогнозом посередине, время под ней,
       подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
       ``save`` (DEC-108). Владелец (работа или фотозона векторной работы) задаёт ``ramp`` — адрес «Пробы на ширине работы» (без него её нет),
-      ``original`` — адрес исходной цветной картинки, ``width`` — меняется ли ширина (у зоны она — по её областям), ``objects`` — есть ли
+      ``variations`` (the address of the «Подобрать настройки» plate; none without it), ``original`` — адрес исходной цветной картинки, ``width`` — меняется ли ширина (у зоны она — по её областям), ``objects`` — есть ли
       «Раскраска по объектам» (у зоны — с 0.23.1), ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
       первой, затем картинка в нуле) и ``stage(el, cols)`` — что положить поверх прогноза (надписи работы): ``el`` — картинка рядом с
       прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. ``tone`` — яркость, контраст и гамма картинки (0.27.0),
       владелец ставит их под ``inputs``. */
-  function workPicture(save, chooseKind, {ramp = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
+  function workPicture(save, chooseKind, {ramp = null, variations = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
     const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
     kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em', disabled: !widthFree,
@@ -460,6 +479,7 @@ const PhotoPanels = (() => {
         toneText(view),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
+        variations ? variationsOffer(view, variations) : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой (шкалы измерены на очищенных пластинах); C01 — ` : ''}`
           + `слой-изображение в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
           + `${settingsText(view.scale, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`),
@@ -509,6 +529,7 @@ const PhotoPanels = (() => {
         mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: оценка — по цвету, каким он был при выборе. '
           + 'Выберите цвет заново («Другой цвет») или верните точки на шкалу.') : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
+        variations ? variationsOffer(view, variations) : null,
         h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
           h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
             + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — ${source}.`)),

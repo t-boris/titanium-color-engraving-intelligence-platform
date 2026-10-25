@@ -74,6 +74,7 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `/api/plans/${work.id}` && method === 'DELETE') return answer(null, 204);
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
   if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Шкалы серого · TCE-31'}, 201);
+  if (path === `/api/photo-works/${work.id}/variations`) return answer({plan_id: 32, name: 'Фотогравировка: одна картинка × несколько настроек · TCE-32'}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
   if (path === `/api/photo-works/${work.id}/objects`) return answer({...data.objects, active: work.by_colour && work.colour_choice === 'objects'});
   if (path === `/api/photo-works/${work.id}/theme`) {
@@ -296,6 +297,10 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('полоской серого 100 мм в ширину')};
   await ramp.dispatch('click'); await settle();
   out.ramp.posted = requests.filter((r) => r.path.endsWith('/width-ramp')).map((r) => r.method); out.ramp.went = ctx.__went.slice(-1);
+  const tries = tree.querySelectorAll('button').find((b) => b.textContent === 'Подобрать настройки: 8 копий');
+  out.tries = {says: tries.parentNode.textContent.includes('Max −20 % и +20 %, Min ±3')};
+  await tries.dispatch('click'); await settle();
+  out.tries.posted = requests.filter((r) => r.path.endsWith('/variations')).map((r) => r.method); out.tries.went = ctx.__went.slice(-1);
   width.value = '0'; await width.dispatch('change'); await settle();
   out.refused = {width: width.value, error: tree.querySelectorAll('p.alert').filter((p) => !p.hidden).map((p) => p.textContent)};
 """)
@@ -307,6 +312,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert out["cleaning"] == [True, True]                                                    # the file cleans first, and its time says so
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
+    assert out["tries"] == {"says": True, "posted": ["POST"], "went": ["/experiment/plan-32"]}     # eight copies, one change each
     assert out["refused"] == {"width": "100", "error": ["Ширина картинки должна быть от 1 до 1000 мм"]}   # refused: the work stays as it was
 
 

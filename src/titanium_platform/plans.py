@@ -389,6 +389,15 @@ def get_plan(store: Store, plan_id: int) -> dict:
 
 
 # -- LightBurn writer ----------------------------------------------------------------------------------------
+def _plan_picture(plan: dict, key: str) -> np.ndarray:
+    """A picture a plate keeps as a file of the workshop (``plan["pictures"]``, a photo-variations plate's copies): grey, or BGRA."""
+    path = (plan.get("pictures") or {}).get(key)
+    picture = cv2.imread(str(path), cv2.IMREAD_UNCHANGED) if path else None
+    if picture is None:
+        raise su.ValidationError(f"the picture of this plate ({key}) is missing from the workshop's files")
+    return picture
+
+
 def _rect(x: float, y: float, w: float, h: float, layer: int) -> str:
     cx, cy = x + w / 2, y + h / 2
     return (f'    <Shape Type="Rect" CutIndex="{layer}" W="{w:.5f}" H="{h:.5f}" Cr="0">\n'
@@ -631,7 +640,7 @@ def export_lbrn2(plan: dict) -> bytes:
             if layer.get("ramp"):
                 pixels, own_dpi = grayscale.ramp_picture(placed, dpi), dpi
             else:                                    # the zone's own pixels, at its own DPI (no finer than the layer's)
-                pixels = placed["pixels"]
+                pixels = placed["pixels"] if placed.get("pixels") is not None else _plan_picture(plan, placed["picture_key"])
                 own_dpi = pixels.shape[1] / placed["width"] * grayscale.MM_PER_INCH
             shapes.append(_bitmap(placed["x"] + x_offset, placed["y"] + y_offset, placed["width"], placed["height"], pixels, own_dpi,
                                   file_index, f"{layer['name']}.png" if layer.get("ramp") else placed["file"], mirror_y=mirror_y == "True"))
