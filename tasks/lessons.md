@@ -677,3 +677,15 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **Rule.** As in 0.33.0, and earlier: read the criteria word by word while building the screen, not only before ticking; a missing
   button or chip is cheaper to add then than after the release suite.
 
+
+## A re-measure renews a pair's dates: an engraving's time is its photograph's first acceptance (0.35.0, 2026-10-25)
+
+- **What happened.** «Считать с последней гравировки» chose the newest engraving by `pair.accepted_at`. A re-measure is a new pair
+  accepted now, so after «Перепроверить все работы» every photograph of the live workshop carried the re-check time, and re-measuring
+  one old photograph would have made it «the newest». The tests passed: they never re-measured before choosing. The rehearsal on a
+  copy of the live data showed every older engraving dated 25.10. Also, `tests/test_backup.py` listed the operator's real
+  `~/titanium-backups` once the live re-check had written there.
+- **Rule.** Any rule that orders or dates engravings or photographs reads `ingest.first_accepted` (the first measurement of the
+  photograph), never the current pair's `accepted_at`; a test of such a rule re-measures first. Rehearse every new data rule on a copy
+  of the live data before the release: the live data has histories (re-measures, re-checks) the fixtures do not. A test that reaches
+  `Path.home()` sets HOME to its own folder.

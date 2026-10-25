@@ -17,7 +17,12 @@ keep detail everywhere (no change). Plan: ~/.claude/plans/serene-popping-rabbit.
       finding; the excluded layer on the photo page; «Считается с гравировки» on a knowledge entry + node tests.
 - [x] 4. Rehearsal on a copy of the live workshop (paths rewritten): observation 3063, a contradicted recipe, «Вернуть», findings
       before/after. Found and fixed: an engraving was dated by its re-measured pair (DEC-005).
-- [ ] 5. README, 0.35.0, full suite -n 12 + desktop tests, release, reinstall, report.
+- [x] 5. README, 0.35.0, full suite -n 12 + desktop tests, release, reinstall, report.
+      Done: commit 3e6abc1 on main, tag v0.35.0, GitHub pre-release with the signed macOS arm64 zip (260 418 982 bytes, sha256
+      c7550cb5…dd2d, the same digest on GitHub; codesign strict ok, unnotarized; packaged smoke ok, core 0.35.0). Suite 2309 passed,
+      none skipped (-n 12, 3:45); desktop 16 passed. Desktop app reinstalled: 0.34.0 quit (no re-check running; last action 17:11 UTC),
+      live database backed up to `~/.titanium-platform/backups/titanium-before-0.35.0-20261025T174950Z.sqlite` (integrity ok), 0.34.0
+      moved to the session scratchpad, 0.35.0 in /Applications, opened (the workshop picker first).
 
 ## Review (2026-10-25, 0.35.0)
 - Rehearsal on a copy of the live workshop (`sqlite3 mode=ro .backup` + files, 1.2 GB; 271 stored paths rewritten with
