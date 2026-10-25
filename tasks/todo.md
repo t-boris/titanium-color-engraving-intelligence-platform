@@ -71,6 +71,16 @@ Feature: `docs/features/photo-engraving-quality` (MarkView).
   12.6 %): the steps are refused and «Взять лучшие настройки» brings Max inside. Zone 2 of work 41 (Jarvis 12.5 %) is offered the best
   photographed Jarvis (25 %, score 0.6, pair 118). No variations plate is photographed yet, so every proposal asks for the first one
   from a work or zone; the 0.32.0 plate handed over (plan 42 on the copy) is that first plate once photographed.
+- The convergence loop run end to end on a copy of the live database (zone 2 of work 41, the operator's picture), each plate
+  through the zone's button, the LightBurn export, `check_pair`, `accept_pair`, with a simulated photograph from a titanium model
+  whose true best Jarvis is 21 % at 125 mm/s and 0.01 mm (more energy blocks the shadows and blurs, less is flat):
+  before: steps from priors, no plate can be proposed; «Взять лучшие настройки» puts the zone on Jarvis 25 % (pair 118).
+  Plate 1 (81 × 56 mm, 8 copies around 25 %): best «2 J P20», effects measured (power ×2: 10.6 L* darker; speed ×2: 10.7 lighter;
+  interval ×2: 10.8 lighter; dot width +1.7), «Темнее/Светлее» switch from prior to measured, next plate around P20 at half step.
+  Plate 2: the centre P20 ties the best; next at a quarter step. Plate 3: the centre stays best: «поиск сошёлся», no plate proposed,
+  the zone is offered P20. Converged in three plates to within 1 % of the model's optimum. Seen on the way: the score caps at 1.0, so
+  copies within the plateau tie and the centre wins ties (the search moves only on evidence). Script and log:
+  scratchpad `demo/loop.py`, `demo/loop.log` (not in the repository; the live database untouched).
 - DEC-004 is proposed (knowledge read on demand; the fill; the strongest measured lever; proposals). REQ-003..REQ-005 criteria ticked;
   the feature is `implemented`. BUG-007 stays `fixed` until the operator confirms the AI answers in the desktop window.
 
