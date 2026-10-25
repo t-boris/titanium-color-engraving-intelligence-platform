@@ -3,9 +3,10 @@ picture rather than as colours.
 
 * **Tone**, from the layer's tonal profile (``ingest._tonal_profile`` of the picture, or ``_ramp_profile`` of a grey ramp at the same
   settings): the colour at each grey level, black (0) to white (1). From it:
-  ``levels``      how many different tones a viewer tells apart: walking from black to white, a grey is a new tone when its colour is at
-                  least ``JND`` (ΔE76) from the last new tone, so noise smaller than that never counts; ``levels_share`` is the new tones
-                  over the steps measured;
+  ``levels``      how many different tones a viewer tells apart in the picture's order: walking from black to white, a grey is a new
+                  tone when its colour is at least ``JND`` (ΔE76) from the last new tone and it is not darker than that tone by more than
+                  half of ``JND``, so noise smaller than that and greys out of order never count; ``levels_share`` is the new tones over
+                  the steps measured;
   ``range_L``     how much lighter the white end is than the black end (L*);
   ``shadows_to``  the grey up to which everything looks like the black end (within ``FLAT_DE``): blocked shadows;
   ``highlights_from`` the grey from which everything looks like the white end: lost highlights;
@@ -14,11 +15,16 @@ picture rather than as colours.
   ``mid_darkness`` how dark the middle grey came out between the two ends (0 = like the white end, 1 = like the black end): 0.5 is
                   the picture's own tone; above it the mid-tones are darker (in a dot kind: dot gain), below lighter; not given when the
                   ends are less than ``MIN_RANGE`` apart (nothing to place the middle between);
-  ``mean_L``      the mean lightness of the picture as it came out (its greys weighted by their area), for a picture profile only.
+  ``mean_L``      how light it came out on average: a picture's greys weighted by their area, a grey ramp's steps alike (the copies of
+                  one plate compare by it: lighter or darker).
 * **Detail** (:func:`detail`), from the photograph laid over the picture: at each scale (0.2, 0.4, 0.8 mm) the share of the picture's
   own contrast that the engraving keeps (a regression slope of the photograph's band of that scale on the picture's band, after the
   tone curve, so an engraving that only lightens keeps 1), how much of it is not the picture (grain, ΔL*), and the same along the scan
   lines and across them (blur along one direction only points at the scan, not the picture).
+* **Findings** (:func:`findings`, REQ-003): what a layer's tone and detail say, each with the settings that usually correct it
+  (``PRIOR_MOVES``: the physics of the process, marked ``basis: "prior"`` until plates measure them).
+* **Copies of one plate compared** (:func:`compare`): ranked by :func:`score`, what each changed setting did against the centre copy
+  (lighter or darker, shadows, highlights, tones, detail), and the next plate: centred on the best copy, the step halved (DEC-003).
 
 Pure functions on plain data and arrays; the store is never read here.
 """
@@ -33,6 +39,7 @@ ALGORITHM = 1
 JND = 2.0                       # ΔE76: two neighbouring greys this far apart are told apart at a glance
 FLAT_DE = 3.0                   # ΔE76 from an end within which a grey looks like that end
 MIN_RANGE = 6.0                 # L*: ends closer than this leave no middle to judge
+FULL_RANGE_L = 40.0             # L*: a lightness range from which a photo engraving has its full contrast (the workshop's best reach 40–50)
 DETAIL_SCALES_MM = (0.2, 0.4, 0.8)
 DETAIL_MIN_PX = 1.5             # a scale finer than this many photograph pixels is not measured
 DETAIL_MIN_SAMPLES = 2000
@@ -60,7 +67,7 @@ def tone(tonal: dict | None) -> dict | None:
     lightness = labs[:, 0]
     levels, anchor = 1, labs[0]
     for lab in labs[1:]:
-        if float(np.linalg.norm(lab - anchor)) >= JND:
+        if float(np.linalg.norm(lab - anchor)) >= JND and lab[0] >= anchor[0] - JND / 2:
             levels, anchor = levels + 1, lab
     black, white = labs[0], labs[-1]
     from_black = np.linalg.norm(labs - black, axis=1)
@@ -88,7 +95,7 @@ def tone(tonal: dict | None) -> dict | None:
             "shadows_blocked": round(max(0.0, shadows_to - float(greys[0])), 3),
             "highlights_lost": round(max(0.0, float(greys[-1]) - highlights_from), 3),
             "reversals": reversals, "reversal_share": round(len(reversals) / max(1, len(bins) - 1), 3), "mid_darkness": mid,
-            "mean_L": round(float(np.average(lightness, weights=counts)), 1) if measured_by == "picture" and counts.sum() > 0 else None,
+            "mean_L": round(float(np.average(lightness, weights=counts) if measured_by == "picture" and counts.sum() > 0 else lightness.mean()), 1),
             "evidence": (tonal or {}).get("evidence"), "rho": (tonal or {}).get("rho")}
 
 
@@ -146,14 +153,44 @@ def detail(lightness: np.ndarray, expected: np.ndarray, inside: np.ndarray, px_p
 
 def score(tone_: dict | None, detail_: dict | None = None) -> float | None:
     """One number to rank engravings of one picture (DEC-001): the share of the tone steps told apart, times the share of steps whose tone
-    keeps its order, times the detail kept at 0.4 mm when it was measured (capped at 1: an engraving cannot keep more than the picture has)."""
+    keeps its order, times the contrast (the lightness range over ``FULL_RANGE_L``, at most 1: a scale whose every step is told apart over
+    25 L* still looks pale beside one over 45 L*), times the detail kept at 0.4 mm when it was measured (capped at 1: an engraving cannot
+    keep more than the picture has)."""
     if not tone_:
         return None
-    value = tone_["levels_share"] * (1.0 - tone_["reversal_share"])
+    value = tone_["levels_share"] * (1.0 - tone_["reversal_share"]) * max(0.0, min(1.0, tone_["range_L"] / FULL_RANGE_L))
     kept = (detail_ or {}).get("kept")
     if kept is not None:
         value *= max(0.0, min(1.0, kept))
     return round(value, 3)
+
+
+def ordered_span(tonal: dict | None) -> dict | None:
+    """The part of a grayscale ramp's power span that engraves the most tones in order: on titanium the oxide's colour turns back lighter
+    past some power, and a picture across the turn has reversed tones. Of every run of three or more neighbouring steps with no reversal,
+    the one with the most tones told apart over the whole ramp's steps, times its contrast (as :func:`score`), the longer of two alike; its
+    steps (their greys stretched to 0..1), its tone and its Min and Max power (the lightest step's and the darkest's). None without the
+    steps' powers, or when the whole ramp keeps its tones in order."""
+    bins = _bins(tonal or {})
+    if len(bins) < 3 or any(b.get("power_pct") is None for b in bins) or not (tone(tonal) or {}).get("reversals"):
+        return None
+    best = None
+    for i in range(len(bins)):
+        for j in range(i + 2, len(bins)):
+            lo, hi = bins[i]["gray"], bins[j]["gray"]
+            if hi <= lo:
+                continue
+            part = {**tonal, "bins": [{**b, "gray": round((b["gray"] - lo) / (hi - lo), 4)} for b in bins[i:j + 1]]}
+            tone_ = tone(part)
+            if tone_ is None or tone_["reversals"]:
+                continue
+            value = (tone_["levels"] - 1) / (len(bins) - 1) * max(0.0, min(1.0, tone_["range_L"] / FULL_RANGE_L))
+            if best is None or value > best[0] + 1e-9 or (value > best[0] - 1e-9 and j - i > best[2] - best[1]):
+                best = (value, i, j, tone_, part)
+    if best is None or (best[1], best[2]) == (0, len(bins) - 1):
+        return None
+    value, i, j, tone_, part = best
+    return {"tonal": part, "tone": tone_, "score": round(value, 3), "min_power": float(bins[j]["power_pct"]), "max_power": float(bins[i]["power_pct"])}
 
 
 # -- the next plate (DEC-001) -------------------------------------------------------------------------------------------------------
@@ -202,3 +239,147 @@ def variants_around(centre: dict, step: float = 1.0) -> list[dict]:
         if kind != centre["dither"]:
             add({"dither": kind})
     return out
+
+
+# -- findings (REQ-003) -------------------------------------------------------------------------------------------------------------
+BLOCKED_SHARE = 0.15            # a share of the grey scale (2 of 16 steps) that looks like one end is worth a change
+FLAT_RANGE_L = 15.0             # L*: a picture whose black end is less than this darker than its white end barely shows
+REVERSED_SHARE = 0.1            # a share of the steps out of order
+MID_DARK, MID_LIGHT = 0.65, 0.35  # mid_darkness beyond which the mid-tones came out darker (dot gain) or lighter than the picture's
+DETAIL_KEPT = 0.7               # the share of the picture's contrast at 0.4 mm below which a viewer sees it soft
+GRAIN_L = 2.0                   # L*: what the photograph adds at 0.4 mm and the picture has not, seen as grain
+
+
+def _up(setting: str) -> dict:
+    return {"setting": setting, "direction": "up"}
+
+
+def _down(setting: str) -> dict:
+    return {"setting": setting, "direction": "down"}
+
+
+# the settings that usually correct a finding, the strongest first: (dot kinds, grayscale). Priors from how a fibre laser marks titanium:
+# more energy per area (power up, speed down, lines closer) darkens and spreads; the dot width correction shrinks each dot (dot gain);
+# in grayscale Max sets the black end and Min the white one, and past some Max the oxide's colour turns back lighter.
+PRIOR_MOVES: dict[str, tuple[list[dict], list[dict]]] = {
+    "flat": ([_up("power"), _down("speed"), _down("line_interval")], [_up("power"), _down("speed")]),
+    "reversed": ([_up("power")], [_down("power")]),
+    "shadows_blocked": ([_down("power"), _up("dot_width"), _up("line_interval")], [_down("power")]),
+    "highlights_lost": ([_down("dot_width"), _up("power")], [_down("min_power")]),
+    "midtones_dark": ([_up("dot_width"), _up("line_interval")], []),
+    "midtones_light": ([_down("dot_width")], []),
+    "detail_lost": ([_down("power"), _down("line_interval")], [_down("power"), _down("line_interval")]),
+    "grainy": ([{"setting": "dither", "to": "stucki"}, _down("line_interval")], [_down("line_interval")]),
+}
+
+
+def findings(tone_: dict | None, detail_: dict | None, dither: str) -> list[dict]:
+    """What a photo layer's tone and detail say (REQ-003): a list of ``{"code", "value", "moves", "basis"}``, the most important first;
+    ``moves`` are the settings that usually correct it (``PRIOR_MOVES``, ``basis: "prior"``). ``good`` alone when nothing is wrong; empty
+    when nothing was measured."""
+    if not tone_:
+        return []
+    dots = str(dither or "grayscale").lower() != "grayscale"
+    out: list[dict] = []
+
+    def add(code: str, value) -> None:
+        moves = PRIOR_MOVES[code][0 if dots else 1]
+        out.append({"code": code, "value": value, "moves": [dict(m) for m in moves], "basis": "prior" if moves else None})
+
+    flat = tone_["range_L"] < FLAT_RANGE_L
+    if flat:
+        add("flat", tone_["range_L"])
+    if tone_["reversal_share"] >= REVERSED_SHARE:
+        add("reversed", tone_["reversals"])
+        if not flat and dots:                    # dots of one power cannot turn back by themselves: look at the photograph first
+            out[-1].update(moves=[], basis=None)
+    if not flat:
+        if tone_["shadows_blocked"] >= BLOCKED_SHARE:
+            add("shadows_blocked", tone_["shadows_to"])
+        if tone_["highlights_lost"] >= BLOCKED_SHARE:
+            add("highlights_lost", tone_["highlights_from"])
+        mid = tone_.get("mid_darkness")
+        if mid is not None and mid > MID_DARK:
+            add("midtones_dark", mid)
+        elif mid is not None and mid < MID_LIGHT:
+            add("midtones_light", mid)
+    kept, grain = (detail_ or {}).get("kept"), (detail_ or {}).get("grain_L")
+    if kept is not None and kept < DETAIL_KEPT:
+        add("detail_lost", kept)
+    if grain is not None and grain >= GRAIN_L:
+        add("grainy", grain)
+    return out or [{"code": "good", "value": score(tone_, detail_), "moves": [], "basis": None}]
+
+
+# -- the copies of one plate compared (REQ-003, DEC-003) ----------------------------------------------------------------------------
+EFFECT_KEYS = ("mean_L", "range_L", "shadows_blocked", "highlights_lost", "levels", "mid_darkness")
+SETTLED_STEP = 0.25             # the centre stayed the best at changes this small (power ±5 %): the search has settled
+MIN_STEP = 0.125                # the smallest share of the first changes a next plate makes
+
+
+def compare(copies: list[dict], step: float = 1.0) -> dict | None:
+    """The copies of a photo-variations plate judged together. ``copies``: ``[{"copy", "variant", "ramp", "picture", "detail"}]`` in the
+    plate's order, the first the centre; ``ramp`` and ``picture`` are tonal profiles (each copy is judged on its ramp, every grey alike and
+    the same for every copy, else on its picture), ``detail`` the picture's :func:`detail`. Gives the copies ranked by :func:`score` (a tie
+    goes to the copy that changes less), what each copy's change did against the centre (positive ``mean_L``: lighter), and the next plate:
+    centred on the best copy with ``step`` halved (at least ``MIN_STEP``); none when the centre stayed the best at a step of
+    ``SETTLED_STEP`` or less (``settled``). None when no copy was measured."""
+    judged = []
+    for item in copies:
+        tone_ = tone(item.get("ramp")) or tone(item.get("picture"))
+        judged.append({**item, "tone": tone_, "score": score(tone_, item.get("detail"))})
+    measured = [j for j in judged if j["score"] is not None]
+    if not measured:
+        return None
+    ranked = sorted(measured, key=lambda j: (-j["score"], j["copy"]))
+    centre = judged[0]
+    effects = []
+    if centre["tone"] is not None:
+        for j in judged[1:]:
+            if j["tone"] is None:
+                continue
+            keys = sorted(set(centre["variant"]) | set(j["variant"]))
+            changed = [{"setting": k, "from": centre["variant"].get(k), "to": j["variant"].get(k)} for k in keys
+                       if centre["variant"].get(k) != j["variant"].get(k)]
+            effect = {"copy": j["copy"], "changed": changed}
+            for key in EFFECT_KEYS:
+                a, b = centre["tone"].get(key), j["tone"].get(key)
+                effect[key] = round(b - a, 3) if a is not None and b is not None else None
+            a, b = (centre.get("detail") or {}).get("kept"), (j.get("detail") or {}).get("kept")
+            effect["kept"] = round(b - a, 2) if a is not None and b is not None else None
+            effect["score"] = round(j["score"] - centre["score"], 3)
+            effects.append(effect)
+    best = ranked[0]
+    settled = best["copy"] == judged[0]["copy"] and step <= SETTLED_STEP
+    return {"ranked": [{"copy": j["copy"], "score": j["score"], "findings": findings(j["tone"], j.get("detail"), j["variant"].get("dither"))}
+                       for j in ranked],
+            "best": best["copy"], "effects": effects, "settled": settled,
+            "next": None if settled else {"centre": best["variant"], "step": max(MIN_STEP, round(step / 2, 4))}}
+
+
+def judge(tonal: dict | None, detail_: dict | None, dither: str) -> dict | None:
+    """Everything said of one photo layer of a check: its tone, its detail (when measured), the score and the findings; None when its
+    tones could not be read."""
+    tone_ = tone(tonal)
+    if tone_ is None:
+        return None
+    return {"algorithm": ALGORITHM, "tone": tone_, "detail": detail_, "score": score(tone_, detail_), "findings": findings(tone_, detail_, dither)}
+
+
+def plate_report(variations: dict, layers: list[dict]) -> dict | None:
+    """The copies of a photo-variations plate (``variations``: its geometry's, with each copy's settings, label and layer names) compared
+    on a check's ``layers`` (each with its ``tonal`` profile and, for a picture, its measured ``quality``); each copy keeps its label. None
+    when no copy was measured."""
+    by_name = {rep.get("name"): rep for rep in layers}
+    copies = []
+    for item in variations.get("copies") or []:
+        picture, ramp = by_name.get(item["picture_layer"]) or {}, by_name.get(item["ramp_layer"]) or {}
+        copies.append({"copy": item["copy"], "variant": item["variant"], "ramp": ramp.get("tonal"), "picture": picture.get("tonal"),
+                       "detail": (picture.get("quality") or {}).get("detail")})
+    found = compare(copies, float(variations.get("step") or 1.0))
+    if found is None:
+        return None
+    labels = {item["copy"]: item["label"] for item in variations.get("copies") or []}
+    for item in found["ranked"] + found["effects"]:
+        item["label"] = labels.get(item["copy"])
+    return {**found, "best_label": labels.get(found["best"]), "step": float(variations.get("step") or 1.0)}

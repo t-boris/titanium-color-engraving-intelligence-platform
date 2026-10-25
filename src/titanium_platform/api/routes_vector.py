@@ -180,6 +180,12 @@ def vector_zone(plan_id: int, number: int, request: Request):
     return vector_job.zone_view(store_of(request), plan_id, number)
 
 
+@router.get("/vector/{plan_id}/photo/{number}/advice")
+def vector_zone_advice(plan_id: int, number: int, request: Request):
+    """What the laboratory knows of a photo zone's kind and proposes (see vector_job.zone_advice)."""
+    return vector_job.zone_advice(store_of(request), plan_id, number)
+
+
 @router.post("/vector/{plan_id}/photo/{number}/variations", status_code=201)
 def vector_zone_variations(plan_id: int, number: int, request: Request):
     """A photo-variations plate of a photo zone: its picture at its settings and at one change each (see vector_job.zone_variations)."""

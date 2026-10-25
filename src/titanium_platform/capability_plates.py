@@ -1181,6 +1181,17 @@ def _variant(raw, values: dict, passport: dict, n: int) -> dict:
     return out
 
 
+def variation_grid(width: float, height: float, count: int, max_width_mm: float = PLATE_DEFAULT_MM) -> dict:
+    """The grid of a photo-variations plate of ``count`` copies ``width`` × ``height`` mm, each with its label and ramp: its columns, rows,
+    the height of one copy's cell and the plate's width and height."""
+    columns = max(1, min(count, int((max_width_mm - 2 * (COMPACT_MARKER_SIZE["aruco_mm"] + COMPACT_MARKER_SIZE["margin_mm"]) + VARIATION_GAP)
+                                    // (width + VARIATION_GAP))))
+    rows = (count + columns - 1) // columns
+    cell_h = VARIATION_LABEL_H + height + VARIATION_RAMP_GAP + GREY_TILE_HEIGHT
+    return {"columns": columns, "rows": rows, "cell_h": cell_h, "width": 1.0 + columns * width + (columns - 1) * VARIATION_GAP + 1.0,
+            "height": VARIATION_TOP + rows * cell_h + (rows - 1) * VARIATION_GAP + 1.0}
+
+
 def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[dict], dict]:
     """One picture engraved several times, each copy at its own settings (feature photo-engraving-quality): the copies stand in a grid,
     each with its label above it and, under it, a grey ramp at the same settings and the same width (one row length), so the photograph
@@ -1191,9 +1202,16 @@ def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[di
     # the centre: the plate's settings with the kind, Min power and dot width the variations give (the plate dialog gives them there)
     centre_values = {**values, **{k: supplied[k] for k in ("dither", "min_power", "dot_width") if k in supplied}}
     specs = supplied.get("variants")
+    try:
+        step = float(supplied.get("step", 1.0))           # the share of the first changes the copies make (DEC-003: halved plate by plate)
+    except (TypeError, ValueError):
+        step = math.nan
+    if not (math.isfinite(step) and 0.05 <= step <= 1.0):
+        raise su.ValidationError("шаг изменений копий — число от 0,05 до 1")
     if specs is None:                                     # one change at a time around the centre (photo_quality.variants_around)
         specs = photo_quality.variants_around({"dither": str(centre_values.get("dither") or "jarvis").lower(),
-                                               **{k: centre_values.get(k) for k in ("power", "min_power", "speed", "line_interval", "dot_width")}})
+                                               **{k: centre_values.get(k) for k in ("power", "min_power", "speed", "line_interval", "dot_width")}},
+                                              step)
     if not isinstance(specs, list) or not VARIATION_MIN <= len(specs) <= VARIATION_MAX:
         raise su.ValidationError(f"задайте от {VARIATION_MIN} до {VARIATION_MAX} копий: каждая копия с её шкалой — два слоя LightBurn")
     variants = [_variant(raw, centre_values, passport, n) for n, raw in enumerate(specs, 1)]
@@ -1219,10 +1237,8 @@ def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[di
     steps = max(6, min(grayscale.RAMP_STEPS, int(width / GREY_MIN_STEP)))
     greys = grayscale.ramp_greys(steps)
     centre = variants[0]                                  # the first copy: its label names every setting, the others what they change
-    columns = max(1, min(len(variants), int((values.get("max_width_mm", PLATE_DEFAULT_MM) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"]
-                                                                                                 + COMPACT_MARKER_SIZE["margin_mm"]) + VARIATION_GAP)
-                                             // (width + VARIATION_GAP))))
-    cell_h = VARIATION_LABEL_H + height + VARIATION_RAMP_GAP + GREY_TILE_HEIGHT
+    grid = variation_grid(width, height, len(variants), values.get("max_width_mm", PLATE_DEFAULT_MM))
+    columns, rows, cell_h = grid["columns"], grid["rows"], grid["cell_h"]
     labels = _text("PHOTO VARIATIONS", 1.0, 0.6, 0.12)
     layers, cells, copies = [], [], []
     for n, variant in enumerate(variants, 1):
@@ -1254,9 +1270,7 @@ def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[di
                           "dither": variant["dither"], "min_power": variant["min_power"], "max_power": variant["power"]})
         copies.append({"copy": n, "label": label, "variant": variant, "picture_layer": pic_name, "ramp_layer": ramp_name,
                        "x": x, "y": top, "width": width, "height": height, "ramp": {"y": ramp_y, "height": GREY_TILE_HEIGHT, "steps": steps}})
-    rows = (len(variants) + columns - 1) // columns
-    plate_w = 1.0 + columns * width + (columns - 1) * VARIATION_GAP + 1.0
-    plate_h = VARIATION_TOP + rows * cell_h + (rows - 1) * VARIATION_GAP + 1.0
+    plate_w, plate_h = grid["width"], grid["height"]
     png = cv2.imencode(".png", picture)[1].tobytes()
     meta = {"name": str(supplied.get("picture_name") or "picture")[:120], "size_px": [int(picture.shape[1]), int(picture.shape[0])],
             "sha256": hashlib.sha256(png).hexdigest(), "transparent": picture.ndim == 3, "source": supplied.get("source")}
@@ -1264,7 +1278,7 @@ def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[di
                             "feature_count": len(variants) * (1 + steps),
                             "sample_area_mm2": round(len(variants) * width * (height + GREY_TILE_HEIGHT), 2),
                             "variations": {"copies": copies, "copy_mm": copy_mm, "width_mm": width, "height_mm": height,
-                                           "picture": meta, "ramp_steps": steps},
+                                           "picture": meta, "ramp_steps": steps, "step": step, "follows": supplied.get("follows")},
                             "pictures": {"variation": png}}
 
 
@@ -1456,7 +1470,7 @@ def create_variations(store: Store, device_id: int, material_id: int, picture: n
     keys = ("power", "min_power", "speed", "frequency", "pulse_width", "line_interval", "passes", "global_passes", "dither", "dot_width")
     settings = {k: centre[k] for k in keys if centre.get(k) is not None}
     settings["variations"] = {"picture_png": cv2.imencode(".png", window)[1].tobytes(), "copy_mm": min(hi, copy_mm), "picture_name": name,
-                              "variants": photo_quality.variants_around(settings, step), "source": source}
+                              "variants": photo_quality.variants_around(settings, step), "step": step, "source": source}
     return create(store, device_id, material_id, "photo_variations", settings)
 
 

@@ -13,7 +13,8 @@ import pytest
 import obs
 from test_grey_scales import app_world  # noqa: F401  (a laser, lens and titanium with four measured grey scales)
 from test_vector_work import BLUE, GREEN, PAPER, RED, YELLOW, lab, picture
-from titanium_platform import ingest, lightburn as lb, objects, people, photo_modes, photo_zones as pz, plans as pl, prediction_store as ps
+from titanium_platform import ingest, lightburn as lb, objects, people, photo_knowledge as pk, photo_modes, photo_zones as pz, plans as pl
+from titanium_platform import prediction_store as ps
 from titanium_platform import segment as sg, setup as su, vector_job
 
 
@@ -118,6 +119,7 @@ def test_selected_regions_become_a_photo_zone_on_the_best_measured_scale_and_lea
     plan = pl.get_plan(store, job["id"])
     mode = pz.best_scale(store, plan, zone["width_mm"])
     lo, hi = ps.measured_span(store, mode, zone["width_mm"])
+    hi = min(hi, pk.ordered_span(store, mode)[1])         # the scale's oxide turns lighter again: the zone stops before (REQ-004 of photo quality)
     assert (zone["number"], zone["regions"], zone["kind"], zone["by_colour"], zone["dot_power"]) == (1, red, "grayscale", True, None)
     assert zone["scale"] == pz.scale_data(mode) and (zone["min_power"], zone["max_power"]) == (lo, hi) and zone["problem"] is None
     assert zone["span"] == pytest.approx(list(ps.curve_for(store, mode, zone["width_mm"])[0].span), abs=0.01)
@@ -180,7 +182,8 @@ def test_another_scale_brings_its_span_and_min_max_and_colours_by_the_picture_ar
     others = [m for m in ps.scale_modes(store, plan["device_id"], plan["lens_id"], plan["material_id"]) if pz.scale_data(m) != zone["scale"]]
     other = others[0]
     moved = colouring(world, job, op="photo_set", zone=1, scale=pz.scale_data(other))["zones"][0]
-    assert moved["scale"] == pz.scale_data(other) and [moved["min_power"], moved["max_power"]] == list(ps.measured_span(store, other, moved["width_mm"]))
+    assert moved["scale"] == pz.scale_data(other) and [moved["min_power"], moved["max_power"]] == list(pk.default_span(store, other, moved["width_mm"]))
+    assert moved["max_power"] < ps.measured_span(store, other, moved["width_mm"])[1]       # up to where its tones turn back
     hand = colouring(world, job, op="photo_set", zone=1, min_power=5, max_power=12, by_colour=False)["zones"][0]
     assert (hand["min_power"], hand["max_power"], hand["by_colour"]) == (5, 12, False)
     refused(world, job, {"op": "photo_set", "zone": 1, "min_power": 30, "max_power": 12},

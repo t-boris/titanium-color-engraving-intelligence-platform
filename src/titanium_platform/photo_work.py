@@ -55,7 +55,7 @@ import numpy as np
 import shapely
 
 from . import (capability_plates as cp, color, conversion as cv, devices, dot_colours as dc, drawing, engraving_time, evidence_source as es, grayscale,
-               ingest as ig, lettering, objects as ob, palette, people, photo_modes, photo_state as st, plans as pl, prediction,
+               ingest as ig, lettering, objects as ob, palette, people, photo_knowledge as pk, photo_modes, photo_state as st, plans as pl, prediction,
                prediction_store as ps, render_cache as rc, row_length, setup as su, vector_job as vj)
 from .db import Store, now
 from .prediction import PredictionError
@@ -71,7 +71,10 @@ TILE_PX = 360                       # the longer side of a kind's picture in Â«Ð
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
         "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts",
         "evidence_source", "source_versions")
-SETTINGS = ("scale", "width_mm", "dot_colour", *st.SETTINGS)        # ``dot_colour``: a point of the colour map picked for the dots
+# ``dot_colour``: a point of the colour map picked for the dots; ``dot_settings``: the settings the dots fire at (a step darker or lighter)
+SETTINGS = ("scale", "width_mm", "dot_colour", "dot_settings", *st.SETTINGS)
+# a change of the kind alone fills in the best measured engraving of the new kind (photo_knowledge.filled); with any of these it does not
+FILLED_UNLESS = ("scale", "min_power", "max_power", "dot_colour", "dot_settings", "dot_power", "dot_width")
 # what a work made before the rules of parts (0.19.0), undo, the drawing kept (0.20.1) or the kinds and objects (0.21.0) has
 DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": [], "evidence_source": None, "source_versions": []}
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
@@ -130,7 +133,7 @@ def _scale_data(mode: ps.Mode) -> dict:
 
 
 measured_scale = ps.measured_mode         # the measured scale a work names (shared with the photo zones of vector works, REQ-073)
-_span = ps.measured_span
+_span = pk.default_span                   # its measured powers, narrowed to its tones in order once photographed
 
 
 def _remember(path: str, upload: dict) -> None:
@@ -797,8 +800,11 @@ def update(store: Store, plan_id: int, changes) -> None:
     ``dot_width`` (LightBurn's correction, ``photo_state.dot_width_in``: a width in mm or None, off), the colour
     of a dot kind's dots picked on the colour map (``dot_colour``, a point's group, ``dot_colours.picked``: a tone of a grey scale puts the
     dots on that scale at its power, a fill makes them fire at its settings, kept as ``dot_recipe`` and its colour taken again when the
-    width changes; another scale or a power on the scale puts them back on the scale), or whether the picture may be sent to the AI
-    (``ai_photo``). A change of what is engraved can be undone."""
+    width changes; another scale or a power on the scale puts them back on the scale), the settings the dots fire at (``dot_settings``,
+    ``photo_knowledge.dots_at``: a step darker, lighter, sharper or softer), or whether the picture may be sent to the AI (``ai_photo``).
+    A change of the kind alone fills in the best measured engraving of the new kind on the work's titanium (``photo_knowledge.filled``,
+    feature photo-engraving-quality REQ-004): a dot kind's dots and dot width, grayscale's scale and the span of its tones in order.
+    A change of what is engraved can be undone."""
     plan = _work(store, plan_id)
     before = _here(plan)
     if not isinstance(changes, Mapping) or not changes or not set(changes) <= set(SETTINGS):
@@ -815,6 +821,24 @@ def update(store: Store, plan_id: int, changes) -> None:
         picked = dc.picked(_ev(store, plan), mode_of(plan), plan["width_mm"], changes["dot_colour"])
         recipe = picked.pop("dot_recipe", None)
         changes = {**{k: v for k, v in changes.items() if k != "dot_colour"}, **picked}
+    if "dot_settings" in changes:
+        kind = changes.get("kind", plan["kind"])
+        if not _dotted({"kind": kind}) or not isinstance(changes["dot_settings"], Mapping):
+            raise su.ValidationError("the dots' settings are given for a dot kind: choose one of them first")
+        found = pk.dots_at(_ev(store, plan), mode_of(plan), kind, changes["dot_settings"], plan["width_mm"],
+                           plan["dot_recipe"] if _dotted(plan) else None)
+        recipe = found["dot_recipe"]
+        changes = {**{k: v for k, v in changes.items() if k != "dot_settings"}, **({"dot_power": found["dot_power"]} if recipe is None else {})}
+    filled = (pk.filled(_ev(store, plan), mode_of(plan), changes["kind"])
+              if "kind" in changes and changes["kind"] != plan["kind"] and not set(FILLED_UNLESS) & set(changes) else None)
+    if filled is not None and "scale" in filled:                 # grayscale: its best scale and the span of its tones in order
+        if es.pin_of(plan) is None:
+            plan.update(device_id=filled["scale"].device_id, lens_id=filled["scale"].lens_id)
+        plan.update(scale=_scale_data(filled["scale"]), dot_recipe=None)
+        changes = {**changes, "min_power": filled["min_power"], "max_power": filled["max_power"]}
+    elif filled is not None:                                     # a dot kind: the dots of its best photographed engraving
+        recipe = filled["dot_recipe"]
+        changes = {**changes, "dot_width": filled["dot_width"]}
     if "scale" in changes:
         mode = measured_scale(_ev(store, plan), changes["scale"])
         if es.pin_of(plan) is None:                  # an own work is engraved with the laser and lens of its scale
@@ -925,6 +949,19 @@ def width_ramp(store: Store, plan_id: int) -> dict:
     made = cp.create(store, plan["device_id"], mode.material_id, "grey_scales", settings)
     store.audit("photo_work_width_ramp", plan_id=plan["id"], ramp_plan_id=made["plan_id"], width_mm=width, kind=plan["kind"])
     return made
+
+
+def advice(store: Store, plan_id: int) -> dict:
+    """What the laboratory knows of the work's kind on its laser, lens and titanium and proposes (``photo_knowledge.advice``, feature
+    photo-engraving-quality REQ-004, REQ-005): read from the work's source of measurements, from the settings its file engraves at."""
+    plan = _work(store, plan_id)
+    mode = mode_of(plan)
+    if _dotted(plan):
+        power = plan["dot_recipe"]["settings"]["power"] if plan["dot_recipe"] else plan["dot_power"]
+        centre = {**ps.file_parameters(st.fired_at(mode, plan), power, power), "dither": plan["kind"], "dot_width": st.dot_width_used(plan)}
+    else:
+        centre = {**ps.file_parameters(mode, plan["min_power"], plan["max_power"]), "dither": GRAYSCALE}
+    return pk.advice(_ev(store, plan), mode, centre, own=es.pin_of(plan) is None)
 
 
 def variations(store: Store, plan_id: int) -> dict:

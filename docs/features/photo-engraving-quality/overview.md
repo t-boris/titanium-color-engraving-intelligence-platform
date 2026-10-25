@@ -2,7 +2,7 @@
 type: feature
 id: photo-engraving-quality
 title: Photo engraving quality
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-25
 provenance: Created by an AI agent through MarkView from Operator goal 2026-10-24 (photo engraving analysis, ideal settings per mode, proactive experiments)

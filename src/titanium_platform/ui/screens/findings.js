@@ -203,6 +203,13 @@
       ...(run ? rulesAlerts(run) : []),
       h('div', {class: 'toolbar'}, recalc, field('Показать расчёт', runSelect),
         h('p', {class: 'toolbar-hint'}, 'Прежние расчёты сохраняются: их выводы можно открыть и сравнить.')));
+    // photo engraving on every laser and titanium where one was photographed: what each setting does and the plate proposed (photo-engraving-quality)
+    let photo = [];
+    try { photo = await get('/photo-knowledge/everywhere'); } catch (_) { /* the rest of the screen stands */ }
+    const photoCard = photo.length ? h('section', {class: 'stack'}, h('h3', {}, 'Фотогравировка'),
+      h('p', {class: 'muted small'}, 'Лучшие измеренные настройки каждого вида, что делает каждая настройка и какую плату предлагает лаборатория — по всем принятым фотографиям.'),
+      photo.map((known) => h('div', {class: 'card stack'}, h('h4', {}, `${known.setup} · ${known.titanium}`),
+        h('div', {class: 'ex-insights'}, PhotoQuality.kindCards(known, {device_id: known.device_id, lens_id: known.lens_id, material_id: known.material_id}))))) : null;
     const sections = KINDS.map((k) => {
       const items = result.findings.filter((f) => f.kind === k);
       return items.length ? h('section', {class: 'stack'}, h('h3', {}, `${KIND[k]} · ${items.length}`), items.map(findingCard)) : null;
@@ -213,6 +220,6 @@
         h('span', {class: 'spacer'}), link('/designer', 'Планировщик экспериментов')),
       runCard, scheduleCard(schedule), run ? filters : null,
       run && !result.findings.length ? h('div', {class: 'card empty'}, result.total ? 'Под выбранные фильтры выводов нет.' : 'В этом расчёте выводов нет.') : null,
-      sections);
+      sections, photoCard);
   }});
 })();

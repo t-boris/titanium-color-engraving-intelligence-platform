@@ -677,7 +677,7 @@ def run_photo(tmp_path, body):
             "export_blocked": None}
     data = {"scales": [photo_ui.scale(150, [1, 30])], "scale": photo_ui.scale_answer(), "work": work, "kinds": photo_ui.KINDS,
             "works": [photo_ui.listed(work)], "parts": photo_ui.PARTS, "ai_rules": photo_ui.AI_RULES, "engravings": [], "objects": photo_ui.OBJECTS,
-            "themes": photo_ui.THEMES, "palette": PALETTE}
+            "themes": photo_ui.THEMES, "palette": PALETTE, "advice": photo_ui.ADVICE}
     (tmp_path / "data.json").write_text(json.dumps(data), encoding="utf-8")
     script = tmp_path / "screen.js"
     script.write_text(PHOTO_HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),

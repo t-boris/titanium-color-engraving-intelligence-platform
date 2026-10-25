@@ -10,7 +10,7 @@ import pytest
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "filepick.js"]
+SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "filepick.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => {}; globalThis.__screens = __screens;"
         "globalThis.__went = []; App.go = (route) => { __went.push(route); };"
         "globalThis.FormData = class { constructor() { this.fields = []; } append(k, v) { this.fields.push([k, v]); } };")
@@ -89,6 +89,8 @@ ctx.fetch = async (url, opts = {}) => {
     return answer(view());
   }
   if (path === `/api/photo-works/${work.id}/engravings`) return answer(data.engravings);
+  if (path === `/api/photo-works/${work.id}/advice`) return answer(data.advice);
+  if (path === '/api/photo-knowledge/plate') return answer({plan_id: 33, name: 'Фотогравировка: одна картинка × несколько настроек · TCE-33'}, 201);
   if (path === `/api/photo-works/${work.id}/ai`) {
     if (hold.length) await hold.shift();
     remember();
@@ -123,12 +125,36 @@ const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.ge
 """
 
 
-def run(tmp_path, query, body, work=None, engravings=(), scales=None):
+JARVIS = {"power": 22.0, "speed": 180.0, "frequency": 60.0, "pulse_width": 250.0, "line_interval": 0.012, "passes": 1, "global_passes": 1}
+# what the laboratory knows of the work's kind (photo_knowledge.advice): an engraving of it photographed, the power's effect measured
+ADVICE = {"kind": "grayscale", "current": {}, "best": None, "at_best": False, "effects": {}, "status": "unmeasured", "proposal": None,
+          "steps": {d: {"refused": "the settings are already at their limits: nothing known moves the engraving further that way"}
+                    for d in ("darker", "lighter", "sharper", "softer")}}
+JARVIS_ADVICE = {
+    "kind": "jarvis", "current": {}, "at_best": False, "status": "measured",
+    "best": {"settings": {"dither": "jarvis", "min_power": 22.0, "dot_width": 0.02, **JARVIS}, "score": 0.9, "source": {"pair_id": 118, "layer": "C20"},
+             "other_titanium": False, "span_of": None},
+    "effects": {"power": {"per": "doubling", "photographs": [120], "mean_L": {"median": -6.0, "n": 2}, "score": {"median": 0.1, "n": 2}}},
+    "steps": {"darker": {"changed": [{"setting": "power", "from": 12.5, "to": 17.5}], "basis": "measured", "evidence": {"photographs": [120]},
+                         "apply": {"dot_settings": {**JARVIS, "power": 17.5}}},
+              "lighter": {"changed": [{"setting": "power", "from": 12.5, "to": 9.0}], "basis": "measured", "evidence": {"photographs": [120]},
+                          "apply": {"dot_settings": {**JARVIS, "power": 9.0}}},
+              "sharper": {"changed": [{"setting": "dot_width", "from": None, "to": 0.01}], "basis": "prior", "evidence": None, "apply": {"dot_width": 0.01}},
+              "softer": {"changed": [{"setting": "power", "from": 12.5, "to": 14.0}], "basis": "prior", "evidence": None,
+                         "apply": {"dot_settings": {**JARVIS, "power": 14.0}}}},
+    "proposal": {"kind": "around", "centre": {"dither": "jarvis", **JARVIS}, "step": 1.0, "source": {"pair_id": 118, "layer": "C20"},
+                 "copies": [[], [{"setting": "power", "from": 22.0, "to": 17.6}], [{"setting": "speed", "from": 180.0, "to": 252.0}],
+                            [{"setting": "dither", "from": "jarvis", "to": "atkinson"}]],
+                 "plate": {"copy_mm": [18.0, 12.0], "size_mm": [65.0, 44.6], "picture": "portrait.png"}},
+    "take": {"dot_settings": JARVIS, "dot_width": 0.02}, "turn": None}
+
+
+def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=None):
     work = {**WORK, **(work or {})}
     scales = [scale(150, [1, 30]), scale(100, [2, 25])] if scales is None else scales
     (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_answer(), "work": work, "kinds": KINDS,
                                                     "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings),
-                                                    "objects": OBJECTS, "themes": THEMES}),
+                                                    "objects": OBJECTS, "themes": THEMES, "advice": advice or ADVICE}),
                                         encoding="utf-8")
     script = tmp_path / "screen.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
@@ -746,3 +772,46 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
     assert out["waits"] == 3                                                              # a tick with the width in the field sends it
     assert out["saves"] == [{"dot_width": 0.02}, {"dot_width": None}, {"dot_width": 0.02}, {"dot_width": 0.025}, {"dot_width": None}]
     assert out["undone"] == [True, "0.025"] and out["grey"]
+
+
+def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the_plate_it_proposes_are_made_from_the_work(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const box = () => tree.querySelector('.pq-advisor');
+  out.says = box().textContent;
+  out.titles = Object.fromEntries(box().querySelectorAll('button').map((b) => [b.textContent, b.getAttribute('title')]));
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Темнее').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Чётче').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять лучшие настройки').dispatch('click'); await settle();
+  out.saves = saves();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Сделать плату: 4 копии').dispatch('click'); await settle();
+  out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body); out.went = ctx.__went.slice(-1);
+""", work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None}, advice=JARVIS_ADVICE)
+    says = out["says"]
+    assert "Что известно о виде «Джарвис» на этом лазере и титане" in says and "измерено, но не подобрано" in says
+    assert "Лучшее измеренное: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, поправка точки 0,02 мм — оценка 0,9 по фото №118." in says
+    assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №120)" in says
+    assert out["titles"]["Темнее"] == "мощность 12,5 % → 17,5 % — измерено по фото №120"
+    assert out["titles"]["Чётче"] == "поправка ширины точки выкл. → 0,01 мм — по опыту процесса: ещё не измерено"
+    assert "Точки: 22 %, 180 мм/с, шаг 0,012 мм, поправка точки 0,02 мм." in says
+    # what the proposed plate finds out and how big it is
+    assert ("Копия 1 — центр, остальные меняют по одной настройке: мощность 22 % → 17,6 %; скорость 180 мм/с → 252 мм/с; вид Джарвис → Аткинсон; "
+            "по фото станет видно, какая лучше. Плата 65 × 45 мм: 4 копии по 18 × 12 мм, под каждой полоска серого.") in says
+    assert out["saves"] == [{"dot_settings": {**JARVIS, "power": 17.5}}, {"dot_width": 0.01}, {"dot_settings": JARVIS, "dot_width": 0.02}]
+    assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "jarvis"}] and out["went"] == ["/experiment/plan-33"]
+
+
+def test_a_grayscale_work_past_its_scales_turn_is_told_so_offered_no_step_and_takes_the_span_in_order(tmp_path):
+    refused = {"refused": "Max lies past the power where this scale's tones turn back lighter: take the span in order first"}
+    past = {**ADVICE, "current": {"dither": "grayscale", "power": 28.0, "min_power": 12.0}, "steps": {d: refused for d in ("darker", "lighter", "sharper", "softer")},
+            "turn": {"min_power": 1.0, "max_power": 14.5, "past": True}, "take": {"min_power": 12.0, "max_power": 14.5}}
+    out = run(tmp_path, {"work": "7"}, """
+  const box = () => tree.querySelector('.pq-advisor');
+  out.says = box().textContent;
+  out.disabled = box().querySelectorAll('button').filter((b) => b.disabled).map((b) => b.textContent);
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять диапазон до разворота').dispatch('click'); await settle();
+  out.saves = saves();
+""", advice=past)
+    assert "Max 28 % — дальше 14,5 %, где тона этой шкалы разворачиваются: там больше мощности — светлее, а не темнее" in out["says"]
+    assert "Min 12 %, Max 14,5 %." in out["says"]
+    assert out["disabled"] == ["Темнее", "Светлее", "Чётче", "Мягче"]
+    assert out["saves"] == [{"min_power": 12.0, "max_power": 14.5}]

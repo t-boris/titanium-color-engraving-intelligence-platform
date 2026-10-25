@@ -1047,6 +1047,11 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .dp-action {gap:8px;align-items:center;flex-wrap:wrap;margin:0}
 .ge-dotmark {position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1.5px;background:var(--text);border:1px solid var(--surface);border-radius:2px;pointer-events:none}
 .ge-closeup {margin:0;display:flex;flex-direction:column;gap:4px}
+/* what the laboratory knows of a photo engraving (photo-quality.js): the advice of a work or zone, the conclusions of a check */
+.pq-advisor {border-top:1px solid var(--line);padding-top:8px}
+.pq-advisor h4, .pq-variations h4 {margin:0}
+.pq-findings, .pq-variations ol, .pq-variations ul {margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.pq-layer + .pq-layer {border-top:1px solid var(--line);padding-top:8px}
 .ge-closeup img {max-width:100%;image-rendering:pixelated;border-radius:6px;align-self:flex-start}
 /* colouring by objects (0.21.0): the scale's colours to click, the objects of the picture */
 .ge-palette {display:flex;flex-wrap:wrap;gap:4px}

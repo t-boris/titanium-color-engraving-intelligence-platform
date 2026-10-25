@@ -39,16 +39,27 @@ Feature: `docs/features/photo-engraving-quality` (MarkView).
       0.01 mm (pair 118); on a copy of the live database this gives plan 42, 90.4 × 65.2 mm, 16 layers, copies «1 J P25 V125 F60
       PW200 I.01», «2 J P20», «3 J P30», «4 J V175», «5 J I.0169», «6 J D.01», «7 A», «8 S». The 8765 server is not running (the
       operator works in the desktop application): no wheel deploy for 0.32.0.
-- [ ] 4 `photo_quality.py`: tone (distinguishable levels, darkness, contrast, shadows/highlights kept, dot gain), detail at
+- [x] 4 `photo_quality.py`: tone (distinguishable levels, darkness, contrast, shadows/highlights kept, dot gain), detail at
       0.2/0.4/0.8 mm, grain, scan-direction blur — from the check (new photographs) and backfilled for accepted ones
-- [ ] 5 Conclusions after every photograph for every photo layer, with the setting to change for darker/lighter/sharper/softer;
+      Done: judged on read in `ingest.get_pair` (no re-measuring where the profile is enough); `ordered_span` takes the part of a
+      grey ramp before the oxide's turn; settled search (`SETTLED_STEP`, `MIN_STEP`).
+- [x] 5 Conclusions after every photograph for every photo layer, with the setting to change for darker/lighter/sharper/softer;
       the plate's copies ranked; the experiment page and «Выводы» show them; the image purpose stops saying only "needs a test"
-- [ ] 6 Knowledge per laser, lens, titanium and mode: best measured settings, measured sensitivities (same picture, one setting
+      Done: `ui/photo-quality.js` (`layerBox`, `variationsBox`) on the experiment page; «Выводы» has a «Фотогравировка» section
+      (`GET /api/photo-knowledge/everywhere`); the image card on «Эксперименты» says what the photographs measured.
+- [x] 6 Knowledge per laser, lens, titanium and mode: best measured settings, measured sensitivities (same picture, one setting
       changed), priors marked as such
-- [ ] 7 Photo zones and photo works fill in the best settings when a mode is chosen; «Темнее / Светлее / Чётче / Мягче» apply the
+      Done: `photo_knowledge.py` reads it from the accepted checks (DEC-004, proposed): `engravings`, `best`, `effects`, `adjust`.
+- [x] 7 Photo zones and photo works fill in the best settings when a mode is chosen; «Темнее / Светлее / Чётче / Мягче» apply the
       next measured step; what the values rest on is shown
-- [ ] 8 Proposals: a mode without measured best settings, or a best at the edge of what was tried, proposes the next variations
+      Done: kind change fills `pk.filled` (grayscale: measured scale, Min/Max in order; dots: photo recipe); `advice` on works
+      (`/photo-works/{id}/advice`) and zones (`/vector/{id}/photo/{n}/advice`); a step moves the strongest measured lever, never past a
+      limit or the scale's turn; «Взять лучшие настройки» / «Взять диапазон до разворота».
+- [x] 8 Proposals: a mode without measured best settings, or a best at the edge of what was tried, proposes the next variations
       plate (centred on the best, steps halved when the best stays in the middle)
+      Done: `knowledge` proposals (next / around / unmeasured dot kind) with the copies' changes and the plate's size; buttons on
+      the work, the zone, «Эксперименты» and «Выводы»; `POST /api/photo-knowledge/plate`, `POST /api/pairs/{id}/next-variations`.
+      On the live copy no variations plate is photographed yet: every proposal says to make the first from a work or zone.
 - [ ] 9 Release 0.33.0, deploy, read-only check on the live data
 
 # Electron: desktop workshop and laboratory exchange (goal set 2026-10-24)

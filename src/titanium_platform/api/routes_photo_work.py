@@ -99,6 +99,13 @@ def photo_work_width_ramp(plan_id: int, request: Request):
     return photo_work.width_ramp(store_of(request), plan_id)
 
 
+@router.get("/photo-works/{plan_id}/advice")
+def photo_work_advice(plan_id: int, request: Request):
+    """What the laboratory knows of the work's kind and proposes: the best measured settings, what each setting does, a step darker,
+    lighter, sharper or softer, and the experiment proposed (see photo_work.advice)."""
+    return photo_work.advice(store_of(request), plan_id)
+
+
 @router.post("/photo-works/{plan_id}/variations", status_code=201)
 def photo_work_variations(plan_id: int, request: Request):
     """A photo-variations plate of the work: its picture at its settings and at one change each (see photo_work.variations); the plate is

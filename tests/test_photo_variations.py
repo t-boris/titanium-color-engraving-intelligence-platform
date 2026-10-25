@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 import synth
-from titanium_platform import capability_plates as cp, capability_results, devices, ingest as ig, lenses, lightburn, plans, setup as su
+from titanium_platform import (capability_plates as cp, capability_results, devices, ingest as ig, lenses, lightburn, photo_knowledge,
+                               plans, setup as su)
 
 BASE = {"power": 25, "speed": 125, "frequency": 60, "pulse_width": 200, "line_interval": 0.01}
 EIGHT = [{"dither": "jarvis"}, {"dither": "atkinson"}, {"dither": "stucki"}, {"power": 20}, {"power": 30},
@@ -167,6 +168,38 @@ def test_a_photographed_plate_measures_every_ramp_step_by_step_and_every_copy_ag
     ig.accept_pair(s, pid)                                       # the plate's results page and its findings take the plate as any other
     report = capability_results.report_for_pair(s, pid)
     assert report is not None and report["test_type"] == "photo_variations"
+    pair = ig.get_pair(s, pid)                                   # the copies judged as pictures on every read (DEC-001, DEC-003)
+    found = pair["variations"]
+    assert len(found["ranked"]) == 8 and found["best"] != 1 and found["best_label"].startswith(f"{found['best']} ")
+    assert all(effect["mean_L"] < 0 for effect in found["effects"])          # every copy was drawn darker than the first
+    best = next(c for c in found["ranked"] if c["copy"] == found["best"])
+    assert best["score"] > next(c for c in found["ranked"] if c["copy"] == 1)["score"]
+    assert found["next"]["step"] == 0.5 and found["next"]["centre"]["power"] in (20, 25, 30)
+    quality = {rep["name"]: rep["photo_quality"] for rep in pair["check"]["layers"] if rep.get("photo_quality")}
+    for n in range(1, 9):
+        assert quality[f"PV{n}-RAMP"]["detail"] is None and quality[f"PV{n}-RAMP"]["findings"]
+        assert quality[f"PV{n}-PICTURE"]["detail"]["kept"] == pytest.approx(1.0, abs=0.2), n      # the picture pasted as it is
+    # the laboratory knows the best Jarvis now and proposes the next plate around it: the same picture, the changes halved (DEC-003)
+    known = photo_knowledge.knowledge(s, world["laser"]["id"], world["lens"]["id"], world["titanium"]["id"])
+    jarvis = next(k for k in known["kinds"] if k["kind"] == "jarvis")
+    proposal = jarvis["proposal"]
+    assert jarvis["status"] == "searching" and {k: proposal[k] for k in ("kind", "pair_id", "centre", "step", "best_label")} == {
+        "kind": "next", "pair_id": pid, "centre": found["next"]["centre"], "step": 0.5, "best_label": found["best_label"]}
+    assert jarvis["best"]["photographs"] == [pid]
+    following = photo_knowledge.next_plate(s, pid)
+    made = json.loads(s.one("SELECT geometry_json FROM plate WHERE id=?", (following["plate_id"],))["geometry_json"])
+    geometry = made["variations"]
+    # the proposal said what the plate finds out and how big it is: the change of each copy and the plate's size, as it was made
+    assert len(proposal["copies"]) == len(geometry["copies"]) and proposal["copies"][0] == []
+    assert all(len(c) == 1 and c[0]["to"] == geometry["copies"][n]["variant"][c[0]["setting"]] for n, c in enumerate(proposal["copies"][1:], 1)
+               if c[0]["setting"] not in ("dither", "dot_width"))
+    assert proposal["plate"]["size_mm"] == [round(made["width"], 1), round(made["height"], 1)]
+    assert proposal["plate"]["copy_mm"] == [geometry["width_mm"], geometry["height_mm"]]
+    assert geometry["step"] == 0.5 and geometry["copies"][0]["variant"] == {**found["next"]["centre"], **{
+        k: v for k, v in geometry["copies"][0]["variant"].items() if k not in found["next"]["centre"]}}
+    assert geometry["picture"]["sha256"] == json.loads(s.one("SELECT geometry_json FROM plate WHERE id=?", (plan["plate_id"],))[0])[
+        "variations"]["picture"]["sha256"]
+    assert geometry["follows"] == {"kind": "next", "pair_id": pid, "best_copy": found["best"]}
 
 
 # -- from a photo work and a photo zone ---------------------------------------------------------------------------------------------

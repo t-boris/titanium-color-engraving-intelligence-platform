@@ -411,8 +411,9 @@ const PhotoPanels = (() => {
       «Раскраска по объектам» (у зоны — с 0.23.1), ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
       первой, затем картинка в нуле) и ``stage(el, cols)`` — что положить поверх прогноза (надписи работы): ``el`` — картинка рядом с
       прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. ``tone`` — яркость, контраст и гамма картинки (0.27.0),
-      владелец ставит их под ``inputs``. */
-  function workPicture(save, chooseKind, {ramp = null, variations = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
+      владелец ставит их под ``inputs``. ``advice`` — адрес владельца, у которого лаборатория говорит, что известно о виде
+      (``PhotoQuality.advisor``: лучшие измеренные настройки, «Темнее», «Светлее», «Чётче», «Мягче» и предложенный опыт). */
+  function workPicture(save, chooseKind, {ramp = null, variations = null, advice = null, original = null, width: widthFree = true, objects = true, layer = null, stage = null} = {}) {
     const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
     kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em', disabled: !widthFree,
@@ -429,6 +430,7 @@ const PhotoPanels = (() => {
     contours.addEventListener('change', () => save({contours: contours.checked}));
     const waiting = () => fill(out, h('p', {class: 'muted ge-placeholder'}, 'Считаем прогноз…'));
     const tone = toneSliders(save);
+    const advisor = advice ? PhotoQuality.advisor(advice, (changes) => save(changes)) : null;
     /** Что сказать о тоне картинки в подробностях: только когда он её меняет. */
     const toneText = (view) => {
       if (!view.tone_used) return null;
@@ -455,6 +457,7 @@ const PhotoPanels = (() => {
         fill(details, h('p', {class: 'muted'}, 'Прогноза нет: шкала этой работы не измерена.'));
         return;
       }
+      if (advisor) advisor.load(view);
       if (dots) { showDots(view, info, sc); return; }
       const t = info.time;
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;      // the file cleans the titanium first (C00)
@@ -480,6 +483,7 @@ const PhotoPanels = (() => {
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         variations ? variationsOffer(view, variations) : null,
+        advisor ? advisor.el : null,
         h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой (шкалы измерены на очищенных пластинах); C01 — ` : ''}`
           + `слой-изображение в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
           + `${settingsText(view.scale, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`),
@@ -530,6 +534,7 @@ const PhotoPanels = (() => {
           + 'Выберите цвет заново («Другой цвет») или верните точки на шкалу.') : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         variations ? variationsOffer(view, variations) : null,
+        advisor ? advisor.el : null,
         h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
           h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
             + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — ${source}.`)),

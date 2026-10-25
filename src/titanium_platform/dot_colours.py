@@ -156,7 +156,10 @@ def recipe(entry: Mapping, width_mm: float) -> dict:
 
 def at_width(store: Store, mode: ps.Mode, kept: Mapping, width_mm: float) -> dict:
     """The kept dots ``kept`` at another width: the colour of their entry there; when the entry is no longer measured, the copy as it was,
-    marked ``missing``."""
+    marked ``missing``. Dots of a photo engraving (``source`` "photo", ``photo_knowledge.recipe``) keep their colour: it was measured on
+    a picture, not on rows of one length."""
+    if kept.get("source") == "photo":
+        return dict(kept)
     entries = palette.vector_palette(store, mode.device_id, mode.lens_id, mode.material_id)["entries"]
     entry = next((e for e in entries if e["id"] == kept["entry"]), None)
     return {**kept, "missing": True} if entry is None else {**recipe(entry, width_mm), "picked_at": kept["picked_at"]}
@@ -174,7 +177,8 @@ def fired_at(mode: ps.Mode, kept: Mapping | None) -> ps.Mode:
 
 def dots(store: Store, kept: Mapping) -> dict:
     """The dots of a recipe as ``prediction_store.dots_at`` gives those of a scale: their power and colour, the cleaned titanium between
-    them, and where they come from."""
+    them, and where they come from (``map``: a fill of the colour map; ``photo``: a photographed photo engraving)."""
     clean = ps.clean_titanium(store)
     return {"power": float(kept["settings"]["power"]), "lab": list(kept["lab"]), "hex": _hex(kept["lab"]),
-            "clean_lab": [round(float(v), 2) for v in clean], "clean_hex": _hex(clean), "source": "map", "recipe": dict(kept)}
+            "clean_lab": [round(float(v), 2) for v in clean], "clean_hex": _hex(clean), "source": kept.get("source") or "map",
+            "recipe": dict(kept)}

@@ -24,15 +24,21 @@ def scale_of(client, speed, line_interval):
     return next(sc["mode"] for sc in scales if sc["mode"]["speed"] == speed and sc["mode"]["line_interval"] == line_interval)
 
 
+# The grey scales of ``app_world`` are measured 2..40 %, and their oxide turns lighter again past 29.87 % (the last hue, a light blue, is
+# lighter than the violet before it): a picture's tones stay in order up to there (photo-engraving-quality REQ-004, DEC-004).
+IN_ORDER = (2.0, 29.87)
+
+
 def test_a_new_work_starts_on_the_best_measured_scale_at_its_measured_min_and_max_and_is_listed(app_world):
     client = app_world["client"]
     best = client.get("/api/grey-scales").json()["scales"][0]
+    assert best["span"] == [2.0, 40.0]
     work = create(client)
     assert work["name"] == "girl" and work["image_name"] == "girl.png" and work["image_size"] == [240, 120]
-    assert work["scale"] == best["mode"] and (work["min_power"], work["max_power"]) == (2.0, 40.0) and not work["by_colour"]
+    assert work["scale"] == best["mode"] and (work["min_power"], work["max_power"]) == IN_ORDER and not work["by_colour"]
     assert (work["width_mm"], work["height_mm"]) == (60, 30) and work["time"]["seconds"] > 0
     shown = work["picture"]
-    assert shown["power_range"] == [2.0, 40.0] and shown["size_mm"] == {"width": 60, "height": 30}
+    assert shown["power_range"] == list(IN_ORDER) and shown["size_mm"] == {"width": 60, "height": 30}
     png = client.get(shown["preview"])
     assert png.status_code == 200 and png.headers["content-type"] == "image/png" and png.headers["etag"]
     listed = client.get("/api/photo-works").json()
@@ -137,7 +143,7 @@ def test_a_work_whose_scale_is_no_longer_measured_opens_and_says_why_and_another
     assert client.get(f"/api/photo-works/{work['id']}/thumb.png").status_code == 200       # the picture as LightBurn sees it
     assert client.get(f"/api/photo-works/{work['id']}/export.lbrn2").status_code == 422
     back = client.post(f"/api/photo-works/{work['id']}/settings", json={"scale": scale_of(client, 150, 0.0169)}).json()
-    assert back["picture"]["power_range"] == [2.0, 40.0]
+    assert back["picture"]["power_range"] == list(IN_ORDER)
 
 
 def test_without_a_measured_scale_a_new_work_is_refused_with_the_way_to_measure_one(tmp_path):

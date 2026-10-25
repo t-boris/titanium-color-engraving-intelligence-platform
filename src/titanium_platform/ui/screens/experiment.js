@@ -127,6 +127,12 @@
         h('div', {class: 'stack small'}, Tasks.metrics(l.metrics, {skip: ['lab']}), (l.notes || []).length ? h('span', {}, l.notes.map((n) => I18N.tr(n)).join(' · ')) : null,
           ...Composition.layerNotes(l))));
       const images = (check.layers || []).filter((l) => l.image && l.tonal);
+      // each photographed photo engraving judged as a picture, and the copies of a «Подобрать настройки» plate side by side
+      // (photo-engraving-quality REQ-003, DEC-001, DEC-003)
+      const judged = images.filter((l) => l.photo_quality).map((l) => PhotoQuality.layerBox(l.name, l.photo_quality));
+      const quality = pair.variations ? h('div', {class: 'stack'}, PhotoQuality.variationsBox(pair.variations, shown, pair.status === 'Accepted'),
+        judged.length ? h('details', {}, h('summary', {class: 'small'}, `Выводы по каждому слою · ${judged.length}`), h('div', {class: 'stack'}, judged)) : null)
+        : judged.length ? h('div', {class: 'stack'}, h('h3', {}, 'Фотогравировка: выводы'), ...judged) : null;
       // an accepted photo engraving: what the grey scale predicted before it against what came out (DEC-117), loaded after the rest
       const review = images.length && pair.status === 'Accepted' ? h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Сравниваем с прогнозом…')) : null;
       fill(result,
@@ -140,6 +146,7 @@
           + (Math.abs(ref.exposure_stops) >= 1 ? `Снимок ${ref.exposure_stops > 0 ? 'темнее' : 'светлее'} номинала на ${num(Math.abs(ref.exposure_stops), 1)} ступени экспозиции; ` : '')
           + 'отношение цвета к чистому титану в линейном свете от экспозиции не зависит.')] : []),
         review,
+        quality,
         layers.length ? h('div', {class: 'stack'}, h('h3', {}, `Измеренные слои · ${layers.length}`),
           h('p', {class: 'muted small'}, ref ? 'Цвет относительно чистого титана, затем слой, задача, параметры, метрики и заметки.' : 'Цвет на фото, затем слой, задача, параметры, метрики и заметки.'),
           h('div', {class: 'ep-layers'}, rows)) : h('p', {class: 'muted'}, 'Измерений пока нет: откройте проверку.'),

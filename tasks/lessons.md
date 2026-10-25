@@ -617,3 +617,24 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   Seen only by rendering the window from a copy of the live database.
 - **Rule.** Before a plate built from the operator's own picture is handed over, build it on a copy of the live database and look at the
   picture each copy engraves; a selection rule tested on synthetic pictures is not proven on a real one.
+
+## Tick an acceptance criterion only against its own words (0.33.0, 2026-10-24)
+
+- **What happened.** REQ-004 (approved) says a step changes "the setting with the largest measured effect"; the step was built to take
+  the setting measured on the most photographs first. Found only when the criteria were read one by one before ticking them.
+- **Rule.** Before ticking a criterion, read it word by word against the code path and a test that shows exactly that behaviour. A
+  design reason to differ goes into a proposed decision and the code follows the approved text until the operator accepts the change.
+
+## A shared panel added to a screen needs every harness of that screen updated (0.33.0, 2026-10-24)
+
+- **What happened.** The photo work's advice panel (`PhotoQuality.advisor`) broke four lettering tests: they reuse the photo work's node
+  harness with their own data, which had no `advice` answer, and the panel read a missing answer. Module-level `App.toast/go/fail`
+  were also undefined where `photo-quality.js` loads (before `dialogs.js` and `router.js`), and tests replace `App.go`.
+- **Rule.** A new script goes into every node harness that loads its screen (grep the screen's name in `tests/`); every new GET it makes
+  gets a fake answer in each harness's data; helpers that join `App` later are taken when used, not destructured at load.
+
+## Two tables are named for a device (0.33.0, 2026-10-24)
+
+- **What happened.** A query joined `device` for the laser's name and returned nothing: `device` holds the sync tokens of
+  devices; lasers are `laser_device` (what `pair.device_id` references).
+- **Rule.** Read the `REFERENCES` of the column in `db.py` before joining on it.

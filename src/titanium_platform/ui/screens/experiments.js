@@ -48,6 +48,13 @@
     }
     findings = findings.filter((finding) => finding.material_id === selectedMaterial?.id &&
       finding.lens_id === selectedDevice?.lens?.id);
+    // what the laboratory knows of each kind of photo engraving here and the experiment it proposes (photo-engraving-quality REQ-005)
+    const setup = selectedDevice && selectedMaterial ? {device_id: selectedDevice.id, lens_id: selectedDevice.lens?.id ?? null, material_id: selectedMaterial.id} : null;
+    let photoKinds = null;
+    if (setup) {
+      try { photoKinds = await get(`/photo-knowledge?device_id=${setup.device_id}${setup.lens_id == null ? '' : `&lens_id=${setup.lens_id}`}&material_id=${setup.material_id}`); }
+      catch (_) { /* Остальной обзор доступен. */ }
+    }
     let guide = null;
     if (selectedDevice && selectedMaterial && selectedGoal) {
       try { guide = await get(`/application-guide?device_id=${selectedDevice.id}&material_id=${selectedMaterial.id}&goal=${selectedGoal.id}`); }
@@ -84,17 +91,24 @@
       Tasks.select(wantedTask, {empty: 'Все задачи', aria: 'Задача гравировки',
         onChange: (value) => { sessionStorage.setItem('experiment-task', value); reload(); }}));
 
+    // the image purpose of a capability plate cannot judge a picture; the photographed photo engravings of this titanium can
+    const photoBest = (photoKinds?.kinds || []).filter((k) => k.best && k.best.score != null).sort((a, b) => b.best.score - a.best.score)[0];
     const insightCards = [...latest.values()].sort((a, b) =>
-      ['line', 'text', 'color', 'image'].indexOf(a.purpose) - ['line', 'text', 'color', 'image'].indexOf(b.purpose)).map((finding) =>
-      h('article', {class: 'dashboard-insight'},
+      ['line', 'text', 'color', 'image'].indexOf(a.purpose) - ['line', 'text', 'color', 'image'].indexOf(b.purpose)).map((finding) => {
+      const photo = finding.purpose === 'image' && finding.status !== 'candidate' ? photoBest : null;
+      const preview = photo ? `Фотогравировка измерена: лучше всего вышел вид «${PhotoModes.label(photo.kind)}» (оценка `
+        + `${String(+photo.best.score.toFixed(2)).replace('.', ',')} по фото №${photo.best.source.pair_id}). Что делает каждая настройка и какую плату сделать дальше — в панели «Фотогравировка».`
+        : finding.summary;
+      return h('article', {class: 'dashboard-insight'},
         h('div', {class: 'dashboard-item-top'}, h('strong', {}, PURPOSE[finding.purpose] || finding.purpose),
-          pill(finding.status === 'candidate' ? 'Кандидат' : 'Нужен тест', finding.status === 'candidate' ? 'ok' : 'warn')),
-        h('p', {class: 'dashboard-insight-preview', title: finding.summary}, finding.summary),
+          photo ? pill('Фото измерено', 'ok') : pill(finding.status === 'candidate' ? 'Кандидат' : 'Нужен тест', finding.status === 'candidate' ? 'ok' : 'warn')),
+        h('p', {class: 'dashboard-insight-preview', title: preview}, preview),
         h('details', {class: 'dashboard-details'}, h('summary', {}, 'Полный вывод и следующий шаг'),
           h('p', {}, finding.summary), h('p', {}, finding.next_test),
           settingSummary(finding.parameters || finding.evidence?.parameters)
             ? h('p', {}, 'Измеренный режим: ' + settingSummary(finding.parameters || finding.evidence?.parameters)) : null,
-          link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`))));
+          link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`)));
+    });
     const devicePicker = devices.length > 1 ? h('select', {class: 'dashboard-device', 'aria-label': 'Лазер для выводов',
       onChange: (event) => { sessionStorage.setItem('experiment-dashboard-device', event.target.value); reload(); }},
       devices.map((device) => h('option', {value: device.id, selected: device.id === selectedDevice.id}, device.name))) : null;
@@ -159,6 +173,8 @@
         h('div', {class: 'ex-right'}, taskPanel,
           panel('Выводы для материала', latest.size, insightCards,
             'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',
-            link(`/devices/${selectedDevice.id}`, selectedDevice.name)))));
+            link(`/devices/${selectedDevice.id}`, selectedDevice.name)),
+          photoKinds ? panel('Фотогравировка: что предлагает лаборатория', photoKinds.kinds.filter((k) => k.proposal).length,
+            PhotoQuality.kindCards(photoKinds, setup), 'Видов фотогравировки нет.') : null)));
   }});
 })();

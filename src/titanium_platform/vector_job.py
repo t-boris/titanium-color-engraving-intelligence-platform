@@ -38,7 +38,7 @@ import cv2
 import numpy as np
 import shapely
 
-from . import ai_colouring as ai, capability_plates as cp, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, capability_plates as cp, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_knowledge as pk, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -1243,6 +1243,16 @@ def zone_variations(store: Store, plan_id: int, number) -> dict:
                                 {"kind": "photo_zone", "plan_id": plan["id"], "zone": zone["number"]})
     store.audit("photo_zone_variations", plan_id=plan["id"], zone=zone["number"], variations_plan_id=made["plan_id"], kind=zone["kind"])
     return made
+
+
+def zone_advice(store: Store, plan_id: int, number) -> dict:
+    """What the laboratory knows of a photo zone's kind on the work's laser, lens and the zone's titanium and proposes
+    (``photo_knowledge.advice``, feature photo-engraving-quality REQ-004, REQ-005), from the settings its layer engraves at; a zone writes
+    no dot width correction."""
+    plan, zone, row = _zone_of_work(store, plan_id, number)
+    evidence = _ev(store, plan)
+    centre = pz.parameters(evidence, plan, zone, _zone_cut(plan, zone)["box"]["width"])
+    return pk.advice(evidence, pz.mode_of(plan, zone), centre, dot_width=False, own=es.pin_of(plan) is None)
 
 
 def zone_picture(store: Store, plan_id: int, number) -> rc.Picture:

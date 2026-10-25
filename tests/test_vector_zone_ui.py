@@ -58,6 +58,7 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `${base}/undo`) return restore(past, future, 'there is no earlier change of the work to undo');
   if (path === `${base}/redo`) return restore(future, past, 'there is no undone change to redo');
   if (path === `${base}/kinds`) return answer(data.kinds);
+  if (path === `${base}/advice`) return answer(data.advice);
   return answer({error: path + ' not found'}, 404);
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -93,9 +94,20 @@ KINDS = {"zone": 1, "kind": "grayscale", "kinds": [
     for k in KIND_KEYS]}
 
 
+# what the laboratory knows of a grayscale zone's kind (photo_knowledge.advice): nothing photographed, the steps by the prior of the process
+ADVICE = {"kind": "grayscale", "current": {}, "best": None, "at_best": False, "effects": {}, "status": None, "proposal": None,
+          "steps": {"darker": {"changed": [{"setting": "power", "from": 28.0, "to": 30.8}], "basis": "prior", "evidence": None,
+                               "apply": {"min_power": 12.0, "max_power": 30.8}},
+                    "lighter": {"changed": [{"setting": "power", "from": 28.0, "to": 25.5}], "basis": "prior", "evidence": None,
+                                "apply": {"min_power": 12.0, "max_power": 25.5}},
+                    "sharper": {"changed": [{"setting": "power", "from": 28.0, "to": 25.5}], "basis": "prior", "evidence": None,
+                                "apply": {"min_power": 12.0, "max_power": 25.5}},
+                    "softer": {"refused": "the settings are already at their limits: nothing known moves the engraving further that way"}}}
+
+
 def run(tmp_path, body, query=None, **zone):
     (tmp_path / "data.json").write_text(json.dumps({"zone": {**ZONE, **zone}, "work": WORK, "scales": [scale(150, [1, 30]), scale(100, [2, 25])],
-                                                    "scale": scale_answer(), "kinds": KINDS}), encoding="utf-8")
+                                                    "scale": scale_answer(), "kinds": KINDS, "advice": ADVICE}), encoding="utf-8")
     script = tmp_path / "zone.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
@@ -253,3 +265,17 @@ def test_the_brightness_contrast_and_gamma_of_a_zone_are_saved_from_three_slider
     assert out["off"] == [True, True, True, False]
     assert out["saves"] == [{"tone": {"brightness": 20, "contrast": 0, "gamma": 1.5}}, {"tone": {"brightness": 0, "contrast": 0, "gamma": 1}},
                             {"by_colour": True}]
+
+
+def test_a_zone_says_what_the_laboratory_knows_of_its_kind_and_a_step_lighter_saves_its_min_and_max(tmp_path):
+    out = run(tmp_path, """
+  const box = () => tree.querySelector('.pq-advisor');
+  out.says = box().textContent;
+  out.refused = box().querySelectorAll('button').filter((b) => b.disabled).map((b) => [b.textContent, b.getAttribute('title')]);
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Светлее').dispatch('click'); await settle();
+  out.saved = requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
+""")
+    assert "Что известно о виде «градации серого»" in out["says"] and "ещё не фотографировался" in out["says"]
+    assert "Светлее: мощность 28 % → 25,5 % (по опыту процесса)" in out["says"]
+    assert out["refused"] == [["Мягче", "Настройки уже на пределе: ничего из известного не сдвинет гравировку дальше в эту сторону"]]
+    assert out["saved"] == [{"min_power": 12.0, "max_power": 25.5}]

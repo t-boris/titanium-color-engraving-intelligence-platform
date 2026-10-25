@@ -15,7 +15,7 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "filepick.js", "tasks.js"]
+HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "filepick.js", "tasks.js"]
 SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js", "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js",
            "screens/vector-colours.js", "screens/vector-review.js", "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js",
            "screens/labs-cloud.js", "screens/labs.js"]

@@ -51,7 +51,7 @@
         + 'Картинка работы — на месте зоны, вне её областей прозрачна: точки ставит LightBurn.'
       : `Файл LightBurn работы: слой ${view.name} — изображение в режиме градаций серого после слоёв цвета: Min ${value(info.power_range[0], 1)} %, `
         + `Max ${value(info.power_range[1], 1)} %, ${settingsText(view.scale, info.dpi)}. Картинка — на месте зоны, вне её областей прозрачна.`);
-    const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})), {width: false, objects: false, layer, variations: `${base}/variations`});
+    const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})), {width: false, objects: false, layer, variations: `${base}/variations`, advice: base});
     const head = zoneHead(view, step);
     const tabs = App.tabs([['picture', 'Картинка', picture.details], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'vz.zone.tab', label: 'Картинка и шкала', prefix: 'vz-tab'});

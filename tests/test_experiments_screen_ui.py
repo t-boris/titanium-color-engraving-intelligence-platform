@@ -25,8 +25,8 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'tasks.js', {code: %(glue)s}, 'screens/experiment-cards.js', 'screens/plate-dialog.js',
-  'screens/experiments.js', {code: 'globalThis.ExperimentCards = ExperimentCards;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'tasks.js', {code: %(glue)s}, 'screens/experiment-cards.js',
+  'screens/plate-dialog.js', 'screens/experiments.js', {code: 'globalThis.ExperimentCards = ExperimentCards;'}]);
 for (const [k, v] of Object.entries(data.store || {})) ctx.sessionStorage.setItem(k, v);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -328,3 +328,53 @@ def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_othe
         assert part in SCREEN, part
     assert "{class: 'dashboard-hero'" not in SCREEN and "{class: 'experiment-dashboard'" not in SCREEN and "exp-columns" not in SCREEN     # the old page frame is gone
     assert "return {card, list, layers};" in CARDS                                                                    # the laser page keeps using the same list
+
+
+# -- what the laboratory proposes for each kind of photo engraving (photo-engraving-quality REQ-005) ---------------------------------------
+JARVIS = {"dither": "jarvis", "power": 20.0, "min_power": 20.0, "speed": 125.0, "frequency": 60.0, "pulse_width": 200.0, "line_interval": 0.01,
+          "passes": 1, "global_passes": 1, "dot_width": None}
+KNOWN = {"device_id": 1, "lens_id": 5, "material_id": 1, "picture_from": {"pair_id": 7, "plan_id": 3}, "kinds": [
+    {"kind": "jarvis", "status": "searching", "engravings": 9,
+     "effects": {"power": {"per": "doubling", "photographs": [7], "mean_L": {"median": -6.0, "n": 2}, "score": {"median": 0.1, "n": 2}}}, "best": {"settings": JARVIS, "score": 0.81, "source": {"pair_id": 7, "layer": "PV2-RAMP"}},
+     "proposal": {"kind": "next", "pair_id": 7, "centre": JARVIS, "step": 0.5, "best_label": "2 J P20",
+                  "copies": [[], [{"setting": "power", "from": 20.0, "to": 18.0}]], "plate": {"copy_mm": [18.0, 12.0], "size_mm": [42.0, 24.6], "picture": "p.png"}}},
+    {"kind": "atkinson", "status": "unmeasured", "engravings": 0, "effects": {}, "best": None,
+     "proposal": {"kind": "around", "centre": {**JARVIS, "dither": "atkinson"}, "step": 1.0, "source": {"pair_id": 7, "layer": "PV2-RAMP"},
+                  "copies": [[], [{"setting": "power", "from": 20.0, "to": 16.0}], [{"setting": "power", "from": 20.0, "to": 24.0}]],
+                  "plate": {"copy_mm": [18.0, 12.0], "size_mm": [65.0, 24.6], "picture": "p.png"}}},
+    {"kind": "stucki", "status": "unmeasured", "engravings": 0, "effects": {}, "best": None,
+     "proposal": {"kind": "around", "centre": {**JARVIS, "dither": "stucki"}, "step": 1.0, "source": {"pair_id": 7, "layer": "PV2-RAMP"},
+                  "copies": [[], [{"setting": "power", "from": 20.0, "to": 16.0}]], "plate": None}},
+    {"kind": "grayscale", "status": "unmeasured", "engravings": 0, "effects": {}, "best": None, "proposal": None}]}
+
+
+@node
+def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_for_the_laser_and_titanium(tmp_path):
+    image = {**FINDING, "purpose": "image", "status": "needs_image_test", "summary": "Режим для изображения пока не подтверждён", "pair_id": 9}
+    routes = {**ROUTES, "/api/photo-knowledge": {"status": 200, "json": KNOWN}, "/api/devices/1/findings": {"status": 200, "json": [FINDING, image]},
+              "/api/photo-knowledge/plate": {"status": 201, "json": {"plan_id": 12, "name": "Фотогравировка · TCE-12"}}}
+    out = run(tmp_path, """
+  const panel = tree.querySelectorAll('section').find((s) => has(s, 'ex-find') && s.textContent.includes('Фотогравировка: что предлагает лаборатория'));
+  out.head = panel.querySelector('.os-col-head').textContent;
+  out.cards = panel.querySelectorAll('article').map((a) => a.textContent);
+  out.image = tree.querySelectorAll('article').find((a) => a.textContent.startsWith('Изображение')).textContent;
+  out.asked = ctx.requests.filter((r) => r.path === '/api/photo-knowledge').map((r) => r.url);
+  out.buttons = panel.querySelectorAll('article').map((a) => a.querySelectorAll('button').map((b) => b.textContent));
+  await byText(panel.querySelectorAll('article')[1], 'button', 'Сделать плату: 3 копии').dispatch('click'); await tick(); await tick();
+  out.made = ctx.requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => JSON.parse(r.body));
+  out.went = ctx.location.hash;
+""", routes=routes)
+    assert out["head"].startswith("Фотогравировка: что предлагает лаборатория3")                    # three kinds have an experiment proposed
+    assert out["asked"] == ["/api/photo-knowledge?device_id=1&lens_id=5&material_id=1"]
+    jarvis, atkinson, stucki, grey = out["cards"]
+    assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №7)" in jarvis                 # what the power does here
+    assert "Плата 42 × 25 мм: 2 копии по 18 × 12 мм" in jarvis and "мощность 20 % → 18 %" in jarvis
+    assert "Картинки для платы ещё нет: сделайте первую плату из фотоработы или фотозоны" in stucki   # nothing to engrave it from yet
+    assert out["buttons"] == [["Сделать следующую плату"], ["Сделать плату: 3 копии"], [], []]
+    # the image purpose of the capability plate no longer says only «needs a test»: what the photographs measured is said there
+    assert out["image"].startswith("ИзображениеФото измерено") and "лучше всего вышел вид «Джарвис» (оценка 0,81 по фото №7)" in out["image"]
+    assert jarvis.startswith("Джарвиспоиск идёт") and "Лучшее: 20 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — оценка 0,81 по фото №7" in jarvis
+    assert "Следующая плата вокруг копии 2 J P20, изменения вдвое меньше." in jarvis and jarvis.endswith("Сделать следующую плату")
+    assert "Ещё не фотографировался на этом лазере и титане." in atkinson and "на лучших настройках другого вида точками" in atkinson
+    assert "Начните со шкал серого (Фотогравировка → Шкалы серого)." in grey
+    assert out["made"] == [{"device_id": 1, "lens_id": 5, "material_id": 1, "kind": "atkinson"}] and out["went"] == "#/experiment/plan-12"

@@ -34,6 +34,7 @@ LightBurn coordinates remain in millimetres; the photo may be rotated or reflect
 from __future__ import annotations
 
 import json
+import math
 import re
 import uuid
 from datetime import datetime
@@ -50,6 +51,7 @@ from . import left_behind
 from . import lightburn as lb
 from . import photo as ph
 from . import photo_modes
+from . import photo_quality
 from . import plans as pl
 from . import render_cache as rc
 from . import setup as su
@@ -89,7 +91,7 @@ def _pair_row(store: Store, pair_id: int):
 
 def get_pair(store: Store, pair_id: int) -> dict:
     d = dict(_pair_row(store, pair_id))
-    plan = store.one("SELECT name, mode, data_json FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
+    plan = store.one("SELECT name, mode, data_json, plate_id FROM plan WHERE id=?", (d["plan_id"],)) if d["plan_id"] else None
     d["plan_mode"] = plan["mode"] if plan else None        # a plan restored from the imported file is not a plate (REQ-005)
     d["plan_name"] = plan["name"] if plan else None
     d["context"] = json.loads(d.pop("context_json"))
@@ -100,7 +102,25 @@ def get_pair(store: Store, pair_id: int) -> dict:
     if d.get("check"):
         express_against_clean(store, d["check"])
         _layer_tasks(store, d, plan_data)
+        _photo_quality(store, d, d.get("plate_id") or (plan["plate_id"] if plan else None))
     return d
+
+
+def _photo_quality(store: Store, pair: dict, plate_id: int | None) -> None:
+    """How every photo layer of the check came out as a picture (feature photo-engraving-quality, DEC-001, REQ-003): its tone, its detail
+    when the check measured it, a score and the findings with the settings that correct them (``photo_quality.judge``); on a
+    photo-variations plate its copies compared and the next plate (``photo_quality.plate_report``). Derived on every read, never stored,
+    so a better judgement improves old checks too."""
+    layers = pair["check"].get("layers") or []
+    for rep in layers:
+        kind = photo_modes.mode((rep.get("image") or {}).get("dither"))
+        if rep.get("tonal") and kind is not None and kind.family != photo_modes.DEPTH:
+            rep["photo_quality"] = photo_quality.judge(rep["tonal"], (rep.get("quality") or {}).get("detail"), kind.key)
+    plate = store.one("SELECT test_type, geometry_json FROM plate WHERE id=?", (plate_id,)) if plate_id else None
+    if plate is not None and plate["test_type"] == "photo_variations":
+        variations = json.loads(plate["geometry_json"] or "{}").get("variations")
+        if variations:
+            pair["variations"] = photo_quality.plate_report(variations, layers)
 
 
 def layer_task(pair: dict, plan: dict | None, rep: dict) -> dict:
@@ -1373,6 +1393,18 @@ def _picture_gray(png: bytes) -> np.ndarray | None:
     return grey * alpha + (1 - alpha)
 
 
+def _picture_warp(bm: dict, picture_shape: tuple[int, ...], mm_to_image: np.ndarray, flip: bool) -> np.ndarray:
+    """The homography that lays the picture of an image object (``picture_shape``: its rows and columns; with ``flip`` its last row is
+    at the top) over the photograph."""
+    rows, cols = picture_shape[:2]
+    a, b, c, d, e, f = bm["matrix"]
+    local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
+    to_local = np.array([[bm["w"] / cols, 0, -bm["w"] / 2],
+                         [0, (-1 if flip else 1) * bm["h"] / rows, (bm["h"] / 2 if flip else -bm["h"] / 2)],
+                         [0, 0, 1.0]])
+    return np.asarray(mm_to_image, float) @ local_to_mm @ to_local
+
+
 def _prefer_reading(rho: float, other: float | None) -> bool:
     """Is a reading with this rank correlation better than the other? A clear positive agreement wins; with none, the stronger."""
     if other is None:
@@ -1406,9 +1438,6 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
             continue
         gray, opacity = found
         solid_picture = (opacity >= photo_modes.ALPHA_MIN).astype(np.float32)      # the grey of a transparent pixel is no tone (DEC-095)
-        rows, cols = gray.shape
-        a, b, c, d, e, f = bm["matrix"]
-        local_to_mm = np.array([[a, c, e], [b, d, f], [0, 0, 1.0]])
         px_per_mm = float(np.sqrt(abs(np.linalg.det(mm_to_image[:2, :2]))))
         sigma = max(1.0, TONAL_BLUR_MM * px_per_mm)
         shrink = cv2.erode(cv2.fillConvexPoly(np.zeros(shape, np.uint8), np.round(cv2.perspectiveTransform(
@@ -1418,10 +1447,7 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
             shrink &= allowed
         lit = [cv2.GaussianBlur(lab[:, :, c], (0, 0), sigma) for c in range(3)]
         for flip in (False, True) if flip_given is None else (flip_given,):
-            to_local = np.array([[bm["w"] / cols, 0, -bm["w"] / 2],
-                                 [0, (-1 if flip else 1) * bm["h"] / rows, (bm["h"] / 2 if flip else -bm["h"] / 2)],
-                                 [0, 0, 1.0]])
-            warp = mm_to_image @ local_to_mm @ to_local
+            warp = _picture_warp(bm, gray.shape, mm_to_image, flip)
             laid = cv2.GaussianBlur(cv2.warpPerspective(gray, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA), (0, 0), sigma)
             solid = cv2.erode((cv2.warpPerspective(solid_picture, warp, (shape[1], shape[0]), flags=cv2.INTER_AREA) > 0.999).astype(np.uint8),
                               np.ones((int(max(3, 2 * sigma)) | 1,) * 2, np.uint8)).astype(bool)
@@ -1476,6 +1502,53 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
                            "The power of a bin follows the settings of the layer: the lightest grey gets Min power, the darkest Max power, linearly between "
                            "(rule confirmed by the operator, Q-024).")
     return best
+
+
+def _picture_detail(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape: tuple[int, int], allowed: np.ndarray | None,
+                    tonal: dict) -> dict | None:
+    """How much of its picture's detail an image layer kept (``photo_quality.detail``, feature photo-engraving-quality): the photograph's
+    L* against the picture laid over it without blur, the same edge up as its tonal profile reads it, each grey given the lightness that
+    profile measured for it; at the photograph's scale over the picture, the scan lines along the layer's scan angle. Where the picture is
+    opaque, the photograph shows it (``allowed``) and nothing else covers it. None without a picture or a tone curve."""
+    bins = sorted((b for b in tonal.get("bins") or [] if b.get("L") is not None), key=lambda b: b["gray"])
+    if len(bins) < 3:
+        return None
+    greys, lightness = np.array([b["gray"] for b in bins], float), np.array([b["L"] for b in bins], float)
+    mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
+    best = None
+    for region in layer.regions:
+        bm = region.bitmap
+        found = _picture_grey_alpha(bm["png"]) if bm and bm.get("png") else None
+        if found is None:
+            continue
+        grey, opacity = found
+        polygon_mm = np.asarray(region.polygon, np.float32)
+        corners = cv2.perspectiveTransform(polygon_mm[None], mm_to_image.astype(np.float32))[0]
+        x0, y0 = (max(0, int(np.floor(v))) for v in corners.min(axis=0))
+        x1, y1 = min(shape[1], int(np.ceil(corners[:, 0].max())) + 1), min(shape[0], int(np.ceil(corners[:, 1].max())) + 1)
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            continue
+        warp = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1.0]]) @ _picture_warp(bm, grey.shape, mm_to_image, bool(tonal.get("vertical_flip")))
+        size = (x1 - x0, y1 - y0)
+        laid = cv2.warpPerspective(grey.astype(np.float32), warp, size, flags=cv2.INTER_LINEAR)
+        solid = cv2.warpPerspective((opacity >= photo_modes.ALPHA_MIN).astype(np.float32), warp, size, flags=cv2.INTER_LINEAR) > 0.999
+        covers = cv2.warpPerspective(np.ones(grey.shape[:2], np.float32), warp, size) > 0.999
+        inside = cv2.fillConvexPoly(np.zeros((size[1], size[0]), np.uint8), np.round(corners - [x0, y0]).astype(np.int32), 1).astype(bool)
+        inside &= solid & covers
+        if allowed is not None:
+            inside &= allowed[y0:y1, x0:x1]
+        if best is not None and int(inside.sum()) <= best[0]:
+            continue
+        area_mm = abs(float(cv2.contourArea(polygon_mm)))
+        px_per_mm = float(np.sqrt(abs(float(cv2.contourArea(corners))) / area_mm)) if area_mm > 0 else 0.0
+        angle = math.radians(float(getattr(layer, "scan_angle", None) or 0.0))
+        centre = polygon_mm.mean(axis=0)
+        ends = cv2.perspectiveTransform(np.array([[centre, centre + [math.cos(angle), math.sin(angle)]]], np.float32), mm_to_image.astype(np.float32))[0]
+        along = ends[1] - ends[0]
+        photo = cv2.cvtColor(np.asarray(np.clip(corrected_rgb[y0:y1, x0:x1], 0, 1), np.float32), cv2.COLOR_RGB2LAB)[..., 0]
+        expected = np.interp(laid, greys, lightness).astype(np.float32)
+        best = (int(inside.sum()), photo_quality.detail(photo, expected, inside, px_per_mm, 1 if abs(along[0]) >= abs(along[1]) else 0))
+    return None if best is None else best[1]
 
 
 def _ramp_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, ramp: dict, dx: float, dy: float, shape: tuple[int, int],
@@ -2498,6 +2571,9 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
                      else _tonal_profile(corrected, layer_h, layer, shape, allowed, matched=report["alignment"].get("method") in PICTURE_ALIGNMENTS))
             if tonal is not None:
                 rep["tonal"] = tonal
+                detail = None if ramp else _picture_detail(corrected, layer_h, layer, shape, allowed, tonal)
+                if detail is not None:
+                    rep["quality"] = {"detail": detail}          # what the photograph alone gives; the tone is derived on every read
         if rep.get("role") == "registration, QR and engraved labels" and plan and plan.get("markers"):
             aruco = [{"name": f"ArUco {marker['id']}", "rects": marker["rects"]} for marker in plan["markers"].get("aruco", [])]
             subfeatures = [_sample_marker_subfeature(corrected, h, item["rects"], item["name"],

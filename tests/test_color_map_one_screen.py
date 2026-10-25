@@ -27,7 +27,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'dialogs.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
                     {code: 'globalThis.ColorMap = ColorMap;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);

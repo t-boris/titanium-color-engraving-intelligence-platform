@@ -42,8 +42,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (color, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, grayscale, photo_modes, photo_state as st,
-               prediction, prediction_store as ps, render_cache as rc)
+from . import (color, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, grayscale, photo_knowledge as pk, photo_modes,
+               photo_state as st, prediction, prediction_store as ps, render_cache as rc)
 from .db import Store
 from .prediction import PredictionError
 
@@ -52,7 +52,9 @@ KINDS = st.KINDS                    # every kind of photo engraving that colours
 GREYS = ("colour_choice", "contours", "rules", "colouring")
 SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "dot_recipe", "by_colour", "tone", *GREYS)
 # what the operator changes: the settings, the dots' colour picked on the colour map (``dot_colour``: a point's group) instead of the recipe
-CHANGES = tuple(k for k in SETTINGS if k != "dot_recipe") + ("dot_colour",)
+CHANGES = tuple(k for k in SETTINGS if k != "dot_recipe") + ("dot_colour", "dot_settings")
+# a change of the kind alone fills in the best measured engraving of the new kind (photo_knowledge.filled); with any of these it does not
+FILLED_UNLESS = ("scale", "min_power", "max_power", "dot_colour", "dot_settings", "dot_power")
 ANSWERS = ("ai", "ai_theme")
 DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, "dot_recipe", "tone", *ANSWERS)}      # what a zone made before 0.23.0 or 0.27.0 lacks
 LASSO_SHARE = 0.5           # a region is inside a lasso (or an old zone, after a new split) when at least this share of it is
@@ -175,7 +177,7 @@ def new_zone(store: Store, plan: Mapping, colouring: Mapping, region_ids: list[s
                 **copy.deepcopy({k: DEFAULTS[k] for k in ANSWERS})}
         return settle(store, plan, zone, width_mm)
     mode = best_scale(store, plan, width_mm)
-    low, high = ps.measured_span(store, mode, width_mm)
+    low, high = pk.default_span(store, mode, width_mm)
     return {"number": number, "regions": list(region_ids), "kind": GRAYSCALE, "scale": scale_data(mode), "min_power": low, "max_power": high,
             "dot_power": None, "by_colour": True, **copy.deepcopy(DEFAULTS)}
 
@@ -190,7 +192,7 @@ def settle(store: Store, plan: Mapping, zone: dict, width_mm: float) -> dict:
         except PredictionError:
             pass
     recipe = zone.get("dot_recipe")
-    if recipe and recipe["size"]["row_mm"] != round(float(width_mm), 1):                 # ``palette.at_size`` keeps the length to 0.1 mm
+    if recipe and recipe["size"] and recipe["size"]["row_mm"] != round(float(width_mm), 1):    # ``palette.at_size`` keeps the length to 0.1 mm
         zone["dot_recipe"] = dc.at_width(store, mode_of(plan, zone), recipe, width_mm)
     return zone
 
@@ -211,7 +213,9 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
     scale brings Min and Max to its span at the zone's width; a dot kind's power must lie in the scale's measured powers there; how the
     greys are chosen (:data:`GREYS`) and the tone are checked as a photo work's (``photo_state.change``). The dots' colour picked on the
     colour map (``dot_colour``, ``dot_colours.picked``, as a photo work's): a tone of a grey scale moves the zone to that scale at that
-    power, a fill keeps its recipe (``dot_recipe``); another scale or a power on the scale puts the dots back on the scale."""
+    power, a fill keeps its recipe (``dot_recipe``); another scale or a power on the scale puts the dots back on the scale. The settings the
+    dots fire at (``dot_settings``, ``photo_knowledge.dots_at``: a step darker or lighter). A change of the kind alone fills in the best
+    measured engraving of the new kind on the zone's titanium (``photo_knowledge.filled``, feature photo-engraving-quality REQ-004)."""
     unknown = sorted(set(changes) - set(CHANGES))
     if unknown:
         raise ZoneError(f"a photo zone has no setting {unknown[0]!r}")
@@ -227,6 +231,18 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         picked = dc.picked(store, mode_of(plan, out), width_mm, changes["dot_colour"])
         recipe = picked.pop("dot_recipe", None)
         changes = {**{k: v for k, v in changes.items() if k != "dot_colour"}, **picked}
+    if "dot_settings" in changes:
+        if not dotted(out) or not isinstance(changes["dot_settings"], Mapping):
+            raise ZoneError("the dots' settings are given for a dot kind: choose one of them first")
+        found = pk.dots_at(store, mode_of(plan, out), out["kind"], changes["dot_settings"], width_mm, zone.get("dot_recipe") if dotted(zone) else None)
+        recipe = found["dot_recipe"]
+        changes = {**{k: v for k, v in changes.items() if k != "dot_settings"}, **({"dot_power": found["dot_power"]} if recipe is None else {})}
+    if "kind" in changes and changes["kind"] != zone.get("kind") and not set(FILLED_UNLESS) & set(changes):
+        filled = pk.filled(store, mode_of(plan, out), changes["kind"], dot_width=False)    # a zone writes no dot width
+        if filled is not None and "scale" in filled:            # grayscale: its best scale and the span of its tones in order
+            changes = {**changes, "scale": scale_data(filled["scale"]), "min_power": filled["min_power"], "max_power": filled["max_power"]}
+        elif filled is not None:                                # a dot kind: the dots of its best photographed engraving
+            recipe = filled["dot_recipe"]
     if "scale" in changes or ("dot_power" in changes and changes["dot_power"] is not None):
         out["dot_recipe"] = None
     if "scale" in changes:
@@ -237,7 +253,7 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         mode = ps.measured_mode(store, {**wanted, "device_id": device_id, "lens_id": lens_id})
         out["scale"] = scale_data(mode)
         try:
-            out["min_power"], out["max_power"] = ps.measured_span(store, mode, width_mm)
+            out["min_power"], out["max_power"] = pk.default_span(store, mode, width_mm)
         except PredictionError as exc:
             raise ZoneError(str(exc)) from None
     if "min_power" in changes or "max_power" in changes:

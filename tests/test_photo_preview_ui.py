@@ -11,7 +11,7 @@ import pytest
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "filepick.js"]
+SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "filepick.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => {}; globalThis.__screens = __screens;"
         "globalThis.FormData = class { constructor() { this.fields = []; } append(k, v) { this.fields.push([k, v]); } };"
         "globalThis.File = class { constructor(parts, name) { this.parts = parts; this.name = name; this.size = 1; } };")

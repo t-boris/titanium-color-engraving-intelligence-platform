@@ -13,7 +13,7 @@ from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
-SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
+SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
            "screens/vector-workspace.js", "screens/prediction-review.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { globalThis.__renders = (globalThis.__renders || 0) + 1; };"
         "App.go = (route) => { location.hash = '#' + route; };"
@@ -379,3 +379,55 @@ def test_the_pencil_beside_the_title_renames_the_experiment_with_one_request(tmp
     assert out["posts"] == [["/api/experiments/eng-work/rename", json.dumps({"name": "Inna Portrait 150 мм"}, separators=(",", ":"), ensure_ascii=False)]]
     assert out["title"] == "Inna Portrait 150 мм" and out["label"] == "Переименовать эксперимент «Inna Portrait 150 мм»"
     assert out["toasts"] == ["Эксперимент переименован ×"]
+
+
+# -- a photographed photo engraving judged as a picture, and the copies of a «Подобрать настройки» plate (photo-engraving-quality) --------
+def judged(score, findings, **tone):
+    scales = [{"mm": 0.2, "kept": 0.3, "grain_L": 2.0}, {"mm": 0.4, "kept": 0.55, "grain_L": 2.4}, {"mm": 0.8, "kept": 0.8, "grain_L": 2.6},
+              {"mm": 0.1, "kept": None, "reason": "finer than the photograph"}]
+    return {"algorithm": 1, "score": score, "findings": findings, "detail": {"kept": 0.55, "grain_L": 2.4, "scales": scales},
+            "tone": {"measured_by": "picture", "levels": 9, "steps": 16, "range_L": 25.0, "black_L": 31.0, "white_L": 56.0, "mean_L": 44.0, **tone}}
+
+
+BLOCKED = {"code": "shadows_blocked", "value": 0.3, "basis": "prior",
+           "moves": [{"setting": "power", "direction": "down"}, {"setting": "dot_width", "direction": "up"}, {"setting": "line_interval", "direction": "up"}]}
+GOOD = {"code": "good", "value": 0.81, "moves": [], "basis": None}
+
+
+def variations_detail(pid):
+    out = photo_detail(pid)
+    out["check"]["layers"][0].update(name="PV1-PICTURE", image={"dither": "jarvis"}, photo_quality=judged(0.42, [BLOCKED]))
+    out["variations"] = {
+        "ranked": [{"copy": 2, "score": 0.81, "findings": [GOOD], "label": "2 J P20"},
+                   {"copy": 1, "score": 0.42, "findings": [BLOCKED], "label": "1 J P25 V125 F60 PW200 I.01"}],
+        "best": 2, "best_label": "2 J P20", "settled": False, "step": 1.0,
+        "effects": [{"copy": 2, "label": "2 J P20", "changed": [{"setting": "power", "from": 25.0, "to": 20.0}], "mean_L": 3.1, "range_L": 2.0,
+                     "shadows_blocked": -0.2, "highlights_lost": 0.0, "levels": 2, "mid_darkness": -0.05, "kept": 0.1, "score": 0.39}],
+        "next": {"centre": {"dither": "jarvis", "power": 20.0}, "step": 0.5}}
+    return out
+
+
+@node
+def test_a_photographed_variations_plate_ranks_its_copies_says_what_each_change_did_and_makes_the_next_plate(tmp_path):
+    routes = routes_for(PORTRAIT)
+    routes.update(api(**{"/api/pairs/111": variations_detail(111), "/api/pairs/111/prediction-review": REVIEW, "/api/prediction-reviews": OVERALL}))
+    routes["/api/pairs/111/next-variations"] = {"status": 201, "json": {"plan_id": 40, "name": "Фотогравировка · TCE-40"}}
+    out = run(tmp_path, routes, "plan-32", """
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  const box = side.querySelectorAll('div').find((d) => has(d, 'pq-variations'));
+  out.text = box.textContent;
+  out.layer = side.querySelectorAll('div').find((d) => has(d, 'pq-layer')).textContent;
+  await byText(box, 'button', 'Сделать следующую плату').dispatch('click'); for (let i = 0; i < 4; i++) await tick();
+  out.posted = ctx.requests.filter((r) => r.path.endsWith('/next-variations')).map((r) => r.method);
+  out.went = ctx.location.hash;
+""")
+    text = out["text"]
+    assert "Лучше всех — копия 2 J P20 (оценка 0,81)." in text
+    assert "2 J P20 — 0,81" in text and "1 J P25 V125 F60 PW200 I.01 — 0,42 · Тени слились: всё темнее 30 % серого выходит одним тоном" in text
+    assert "мощность 25 % → 20 %: светлее на 3,1 L*, контраст +2 L*, тени открылись на 20 %, тонов +2, чётче (+10 % деталей)" in text
+    assert "Следующая плата: та же картинка вокруг копии 2, изменения вдвое меньше (шаг 0,5 от первых)." in text
+    layer = out["layer"]
+    assert "PV1-PICTURE" in layer and "оценка 0,42" in layer and "Различимых тонов 9 из 16, от чёрного до белого 25 L* (31 → 56), в среднем L* 44." in layer
+    assert "Детали сохранились: 0,2 мм — 30 %, 0,4 мм — 55 %, 0,8 мм — 80 %; зерно ±2,4 L*." in layer
+    assert "Что поменять: мощность меньше, поправка ширины точки больше, шаг строк больше (по опыту процесса)" in layer
+    assert out["posted"] == ["POST"] and out["went"] == "#/experiment/plan-40"
