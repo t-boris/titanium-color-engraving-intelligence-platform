@@ -81,6 +81,13 @@ Feature: `docs/features/photo-engraving-quality` (MarkView).
   the zone is offered P20. Converged in three plates to within 1 % of the model's optimum. Seen on the way: the score caps at 1.0, so
   copies within the plateau tie and the centre wins ties (the search moves only on evidence). Script and log:
   scratchpad `demo/loop.py`, `demo/loop.log` (not in the repository; the live database untouched).
+- The workshop's own photographs replayed in the order they were accepted (copy of the live database): after each one the best
+  known settings move up. Big Plate grayscale 0.36 (IMG_3294) → 0.51 (IMG_3296) → 0.86 (IMG_3376, 1–14.53 % at 0.0254 mm, 350 ns);
+  Big Plate Jarvis 0.48 (IMG_3307, 30 % 0.0231 mm) → 0.60 (IMG_3418, 25 % 125 mm/s 0.01 mm); Test Plate grayscale 0.06 (IMG_3283)
+  → 0.75 (IMG_3385); Small Plate grayscale 0.21 (IMG_3377) → 0.47 (IMG_3403) → 0.92 (IMG_3419). Effects of the line interval and the
+  pulse width became measured with IMG_3376 and IMG_3385. Older checks without Min power in the file show it unknown ("P?").
+- Open, the operator's: the first real photograph of the 8-copy plate (zone 2 of work 41 in 0.33.0), DEC-004 accepted or changed,
+  BUG-007 confirmed in the desktop window.
 - DEC-004 is proposed (knowledge read on demand; the fill; the strongest measured lever; proposals). REQ-003..REQ-005 criteria ticked;
   the feature is `implemented`. BUG-007 stays `fixed` until the operator confirms the AI answers in the desktop window.
 
