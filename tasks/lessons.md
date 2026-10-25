@@ -609,6 +609,9 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   `src/*.egg-info` while it builds the editable wheel, and the spec runs with `PYTHONPATH=../src`, where importlib finds it first.
 - **Rule.** Remove `src/*.egg-info` immediately before PyInstaller (after the editable refresh and after any wheel), build the core and
   the shell, the wheel last; check that `dist/titanium-core/_internal` holds `titanium_color_engraving_platform-<v>.dist-info`.
+- **Third trap (0.34.0).** The shell is zsh: `rm -rf src/*.egg-info && …` with no egg-info present fails on the unmatched glob, the
+  `&&` chain stops before PyInstaller, and the smoke that follows runs the previous core (it said 0.33.0). Remove it with
+  `find src -maxdepth 1 -name "*.egg-info" -exec rm -rf {} +` and read the version the smoke prints before going on.
 
 ## Look at the picture a plate will engrave before handing the plate over (0.32.0, 2026-10-24)
 

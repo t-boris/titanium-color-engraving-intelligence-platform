@@ -25,7 +25,11 @@ photo-kind cards; colour model 669 rows; matrix experiment/analysis 100 layer ca
       `rowClass`, `open(key)` (the «Заметка» row action of a finding).
 - [x] 7. Rehearsal of the re-check on a copy of the workshop with every stored path rewritten; default row counts per screen on the copy.
       Done: see the review below.
-- [ ] 8. README, 0.34.0, full suite -n 12 + desktop tests, release, reinstall the desktop app, report.
+- [x] 8. README, 0.34.0, full suite -n 12 + desktop tests, release, reinstall the desktop app, report.
+      Done: commit 1167a11 on main, tag v0.34.0, GitHub pre-release with the signed macOS arm64 zip (260 397 028 bytes, sha256
+      a8c26d8e…12ee; codesign strict ok, unnotarized; packaged smoke ok, core 0.34.0). Suite 2291 passed, none skipped (-n 12, 3:00);
+      desktop 16 passed. Desktop app reinstalled: 0.33.0 quit, live database backed up to
+      `~/.titanium-platform/backups/titanium-before-0.34.0-20261025T153901Z.sqlite` (integrity ok), 0.34.0 in /Applications, opened.
 
 ## Review (2026-10-25, 0.34.0)
 - Rehearsal on a copy of the live workshop (`sqlite3 mode=ro .backup` + files, 1.2 GB; 209 stored paths rewritten with
