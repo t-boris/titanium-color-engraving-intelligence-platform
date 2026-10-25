@@ -94,6 +94,20 @@ def test_a_zone_that_cannot_write_the_dot_width_gets_the_best_engraving_without_
     assert pk.best(w["store"], w["laser"], w["lens"], w["titanium"], "jarvis", dot_width=False)["settings"]["power"] == 20.0
 
 
+def test_the_experiment_proposed_for_a_zone_starts_from_the_best_it_can_engrave_not_from_a_dot_width_engraving(world):
+    """A photo zone writes no dot width correction: its «Лучшее измеренное» and the plate the laboratory proposes around it are the same
+    engraving made without one, even when an engraving with a dot width scored better (the live data: Jarvis at 0.02 mm on photo 139)."""
+    w = world
+    dotted = accepted(w, [layer("C04", "jarvis", LINEAR, power=30.0, speed=150.0, dot_width=0.02)])
+    plain = accepted(w, [layer("C20 Photo jarvis", "jarvis", BLOCKED, power=25.0)])
+    work = next(k for k in pk.knowledge(w["store"], w["laser"], w["lens"], w["titanium"])["kinds"] if k["kind"] == "jarvis")
+    assert work["best"]["source"]["pair_id"] == dotted and work["proposal"]["centre"]["dot_width"] == 0.02
+    zone = next(k for k in pk.knowledge(w["store"], w["laser"], w["lens"], w["titanium"], dot_width=False)["kinds"] if k["kind"] == "jarvis")
+    assert zone["best"]["source"]["pair_id"] == plain and zone["proposal"]["source"]["pair_id"] == plain
+    assert zone["proposal"]["centre"]["power"] == 25.0 and zone["proposal"]["centre"].get("dot_width") is None
+    assert pk.best(w["store"], w["laser"], w["lens"], w["titanium"], "jarvis", dot_width=False)["source"] == zone["best"]["source"]
+
+
 def test_ramps_that_differ_in_one_setting_measure_its_effect_and_the_step_follows_it(world):
     w = world
     lighter = [v + 6 for v in LINEAR]                                          # half the power: 6 L* lighter

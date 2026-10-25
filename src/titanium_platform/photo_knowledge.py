@@ -474,7 +474,8 @@ def advice(store: Store, mode: ps.Mode, centre: Mapping, *, dot_width: bool = Tr
         take = {"min_power": max(current["min_power"] or 0.0, span[0]), "max_power": span[1]}
     entry = None
     if own:
-        entry = next((k for k in knowledge(store, mode.device_id, mode.lens_id, mode.material_id)["kinds"] if k["kind"] == kind), None)
+        entry = next((k for k in knowledge(store, mode.device_id, mode.lens_id, mode.material_id, dot_width=dot_width)["kinds"]
+                      if k["kind"] == kind), None)
     return {"kind": kind, "current": current, "best": top, "at_best": at_best, "take": take,
             "turn": None if span is None else {"min_power": span[0], "max_power": span[1], "past": past_turn},
             "effects": effects(store, mode.device_id, mode.lens_id, mode.material_id, kind), "steps": steps,
@@ -529,15 +530,17 @@ def _described(proposal: dict, variations: Mapping | None) -> dict:
                                                     "picture": (variations.get("picture") or {}).get("name")}}
 
 
-def knowledge(store: Store, device_id: int, lens_id: int | None, material_id: int | None, items: list[dict] | None = None) -> dict:
+def knowledge(store: Store, device_id: int, lens_id: int | None, material_id: int | None, items: list[dict] | None = None, *,
+              dot_width: bool = True) -> dict:
     """What is known of each watched kind (:data:`WATCHED`, and every other kind photographed) on a laser, lens and titanium: the best
     measured engraving, how many were judged, the measured effects of its settings, where the search stands and the experiment proposed
     (``proposal``): the next plate of a search that has not settled; a plate around the best of a kind measured only on works; a plate of
     an unmeasured dot kind around the best dot engraving. Each proposal says what its copies change and how big its plate is
-    (:func:`_described`). ``items``: the :func:`photographs` of the laser and lens already read."""
+    (:func:`_described`). ``items``: the :func:`photographs` of the laser and lens already read. ``dot_width`` False (a photo zone, which
+    writes no dot width correction): only the engravings made without one count as the best and as a proposal's centre, as in :func:`best`."""
     searches = _plate_searches(store, device_id, lens_id)
     items = photographs(store, device_id, lens_id) if items is None else items
-    every = engravings(store, device_id, lens_id, material_id, items=items)
+    every = [e for e in engravings(store, device_id, lens_id, material_id, items=items) if dot_width or e["settings"].get("dot_width") is None]
     kinds = list(WATCHED) + sorted({e["settings"]["dither"] for e in every} - set(WATCHED))
     best_dots = next((e for e in every if e["settings"]["dither"] != "grayscale" and e["score"] is not None), None)
     out = []

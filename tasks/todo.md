@@ -1,3 +1,18 @@
+# A photo zone's proposed plate starts from the best it can engrave — 0.35.1 (2026-10-25, found checking photo engraving on live data)
+
+The Stop hook asked again for photo-engraving convergence. Checked on a fresh copy of the live workshop with 0.35.0:
+- Photo knowledge after the re-check: Big Plate — Jarvis best photo 139 C04 (score 0.367, dot width 0.02), photo 149 C20 (0.264, no
+  dot width); Atkinson only photo 147 (0.0); halftone 147 (0.006). Small Plate — Jarvis 145 (0.0), Atkinson 143 (0.0). The zeros are
+  real: tone reversed (range L* −7.1, −0.1, −2.7; 67–77 % of steps out of order), the dark of the picture lighter on titanium.
+- Work 41 «Яна портрет - 1», zone 2 (Jarvis, 22.5 %): «Лучшее измеренное» photo 149 (25 %), «Темнее» 26 %, «Светлее» 19.5 %, «Чётче»
+  20.5 %, «Мягче» 25 % (by the process's prior: no measured effect yet), «Подобрать настройки: 8 копий» around the zone's settings.
+- Defect: the proposal on the same panel came from `knowledge()` without the zone's dot-width rule: around photo 139 (30 %, 150 mm/s,
+  0.0231 mm, dot width 0.02) with a copy removing the dot width. Fixed (photo-engraving-quality DEC-005, proposed): `knowledge(dot_width=)`
+  from `advice`; on the live copy the proposal is now around photo 149 (25 %).
+- Open for the operator (photo-engraving-quality Q-001): should a zone's plate spend a copy on the dot width 0.01 mm it cannot use
+  (recommended: a slower speed instead).
+- The 8-copy plate of zone 2 is not made yet on the live data (the plate of 17:11 UTC is «Шаг заливки», plan 42).
+
 # Actions that fix what a finding says — 0.35.0 (operator 2026-10-25; plan approved)
 
 Operator, on an anomaly «Наблюдение № 3063 отстоит на 84.1 ΔE от согласованного цвета своего рецепта»: «Что можно сделать с этими
