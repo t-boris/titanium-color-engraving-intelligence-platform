@@ -90,6 +90,18 @@
     [/^give the work's new width or its new height, one of them$/i, 'Впишите новую ширину работы или новую высоту — одну из них'],
     [/^the work's size must be a positive number of millimetres$/i, 'Размер работы — положительное число миллиметров'],
     [/^the work is this size already$/i, 'У работы уже такой размер'],
+    // область разбивается ещё раз (REQ-002, DEC-084)
+    [/^the region is one colour at this detail: there is nothing to split$/i, 'Область при такой мелкости одного цвета: делить нечего'],
+    [/^the region's colours lie in specks smaller than the smallest region: there is nothing to split$/i,
+      'Цвета области разбросаны пятнышками мельче самой маленькой области: делить нечего'],
+    [/^the region cannot be split again: its outline does not match its pixels$/i, 'Область не разбить ещё раз: её контур не сходится с её пикселями'],
+    [/^the region covers no pixel of the picture$/i, 'Область не покрывает ни одного пикселя картинки'],
+    [/^the region cannot be split cleanly into so many colours: try fewer$/i, 'Область не разбить чисто на столько цветов: попробуйте меньше'],
+    [/^split a region into a whole number of colours from 2 to (\d+)$/i, (m) => `Область делится на целое число цветов от 2 до ${m[1]}`],
+    [/^the work has all the (\d+) colours LightBurn's layers allow: merge colours to split a region$/i,
+      (m) => `В работе уже ${m[1]} цветов — столько, сколько позволяют слои LightBurn: чтобы разбить область, сначала слейте цвета`],
+    [/^the work has room for (\d+) more colours: split the region into at most (\d+)$/i,
+      (m) => `В работе есть место ещё для ${m[1]} цветов: разбейте область не больше чем на ${m[2]}`],
     // редактор раскраски: кисть, слияния, отмена и повтор (REQ-045..REQ-049 редактора, DEC-075..DEC-077 редактора)
     [/^the scope must be region, colour or fill$/i, 'Кисть красит область, весь исходный цвет или заливку'],
     [/^the similarity must be a non-negative delta E$/i, 'Похожесть — неотрицательное значение ΔE'],

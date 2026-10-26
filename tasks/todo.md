@@ -35,13 +35,26 @@ core 0.36.0 (the first build was rebuilt: it predated the translations). The des
 
 ## Phase 2 — «Разбить область ещё раз» (0.37.0)
 
-- [ ] `segment.split_region(document, raster, rid, parts)`: the region's pixels (from `photo_zones.labels`) clustered into `colours`
-      parts at the finest superpixel size, small parts merged, the outer boundary arcs kept exactly and cut where the inner borders
-      meet them, new arcs inside, new palette colours appended (indexes are ids, no re-sort), the largest part keeps the region's id.
-- [ ] `vector_job`: op `split_region {region, colours}` as a merge-like new version; the region's hand colour, exclusion and zone
-      carry to all parts; the current mode colours the new colours (closest for a work coloured by AI).
-- [ ] UI: «Разбить мельче…» in the selection panel for one selected region (a number of colours 2–6).
-- [ ] Tests on a synthetic picture with a gradient region: part count, watertight coverage, neighbours' arcs unchanged, undo.
+- [x] `segment.split_region(document, raster, image, rid, n_colors)`: the region's pixels (from `photo_zones.labels`, made one piece
+      with the holes of its outline only: `_whole_mask`) clustered at the finest superpixel size from a pixel inside the border; border
+      pixels take the class of the nearest inner pixel (no strip of a neighbour's colour along the outline); colours closer than ΔE 2
+      joined; parts under half an even share (at most the work's minimum area, at least 4 finest superpixels) merged. The outline's arcs
+      are cut where the inner borders meet them and otherwise kept; inner borders traced from the pixels and kept inside the outline
+      (`_kept_inside`, dense re-trace where the simplified one cuts across); a part whose outline would cross itself is refused.
+      The largest part keeps the id; its colour's parts keep the region's colour; each other colour is one new palette colour.
+- [x] `vector_job`: op `split_region {region, colours}` as a new version (like a merge); hand colour on the largest part, exclusion and
+      zone on all parts; the new colours take the nearest titanium colour (`closest`), the rest of the colouring untouched; refused with
+      how many colours fit when the palette has no room.
+- [x] UI: «Разбить мельче…» in the selection panel for one selected region (2–8 colours), toast with the number of parts.
+- [x] Tests: API on a gradient picture (parts, neighbours' points kept, coverage raw and smoothed, palette, history, export, undo; hand
+      colour and exclusion; photo zone; refusals; split again and resize), geometry for 2..8 colours, a holed region, the pixel cleanup;
+      editor UI test.
+- [x] Rehearsal on a fresh copy of the live workshop (8796, own tab): a sweep of 50 regions of «Luna 1» × 2/3/5/8 colours: 172 split,
+      27 refused as one colour or specks, 1 refused as unclean (r423 into 8: a spike thinner than 0.02 mm; 2, 3, 5 split it); coverage
+      0 after each; neighbours' raw borders unchanged (smoothed: within a fraction of the smoothing near new junctions). In the screen:
+      r345 → 2 parts, r18 into 4 → 7 parts, toast, undo to version 1; no console errors.
+- [x] MarkView: DEC-084 proposed (the id MarkView gave), REQ-002 statement and criteria corrected (hand colour on the largest part).
+- [ ] Version 0.37.0, README, full suite, desktop tests, build, tag, GitHub pre-release; reinstall waits for the operator.
 
 ## Phase 3 — «Обрезать под пластину» (0.38.0)
 

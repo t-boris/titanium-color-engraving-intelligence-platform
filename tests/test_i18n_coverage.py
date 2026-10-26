@@ -79,7 +79,8 @@ DATA_TAILS = {
 }
 # A handler that passes on the whole message of a caught exception that is not a user error: (file, function) -> the
 # module and class whose raised messages reach the operator through it.
-PASSTHROUGH = {("ingest.py", "update_matrix"): ("matrix.py", "ValueError"), ("photo_state.py", "rules_in"): ("picture_rules.py", "RuleError")}
+PASSTHROUGH = {("ingest.py", "update_matrix"): ("matrix.py", "ValueError"), ("photo_state.py", "rules_in"): ("picture_rules.py", "RuleError"),
+               ("vector_job.py", "_split_region"): ("segment.py", "SplitError")}      # a region split again (REQ-002 of work-size-and-splitting-a-region-again)
 
 
 class Scope(NamedTuple):

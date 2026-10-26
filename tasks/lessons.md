@@ -710,3 +710,15 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **Rule.** Before a rehearsal, make a fresh copy of the live workshop (`.backup` over the read-only URI, `cp -Rc` of `files/` and
   `fonts/`, never `ai/`, then `rehearse_rebase.py`), and read the work's current state from that copy, not from earlier notes. After a
   server restart, reload the tab (`location.reload()`) before judging the UI.
+
+## Geometry made from a raster of a smoothed outline: sweep it on live data before trusting a synthetic test (0.37.0, 2026-10-26)
+
+- **What happened.** `split_region` passed its first tests on a gradient square, yet the parts' outlines crossed themselves: the
+  coverage test (rasterised) cannot see a crossing thinner than a pixel. A validity check over every part, then a sweep of 50 live
+  regions × 4 colour counts, showed five separate causes in turn: a one-pixel strip of a neighbour's colour along the outline (the
+  raster drawn from the smoothed outline takes neighbours' pixels), an edge path that went the long way round, points rounded to 5
+  decimals counted as off the outline, one-pixel pockets and corner touches in the raster, and simplification cutting across a spike.
+- **Rule.** Geometry that joins a smoothed vector outline with borders traced from pixels gets an exact validity check of its result
+  (`shapely.is_valid_reason`; a loop touching itself at a corner is the tracer's normal output) that refuses rather than saves, and is
+  swept over many real regions and every parameter value before release. Tolerances against stored points are at least their rounding.
+

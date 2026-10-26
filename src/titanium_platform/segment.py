@@ -68,6 +68,8 @@ from xml.sax.saxutils import quoteattr
 
 import cv2
 import numpy as np
+import shapely
+from shapely.geometry import LineString, Point, Polygon
 
 from . import color, contour, faces
 from .vectorize import _num
@@ -99,6 +101,10 @@ _ONE_BIT = {1: 0, 2: 1, 4: 2, 8: 3}
 
 class SegmentError(ValueError):
     """The picture cannot be split with these settings; the message is meant for the operator."""
+
+
+class SplitError(SegmentError):
+    """A region cannot be split again (:func:`split_region`); the message is meant for the operator."""
 
 
 def _number(value, name: str, *, positive: bool = False) -> float:
@@ -960,3 +966,521 @@ def _doubled_area(points: list) -> float:
     """Twice the signed area an arc adds to a loop walked forward: the shoelace over its points (y down)."""
     return sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:]))
 
+
+
+# ======================================================================================================================
+# A region split again (feature work-size-and-splitting-a-region-again, REQ-002, DEC-084)
+# ======================================================================================================================
+# One region's pixels are clustered into a few colours at the finest superpixel size and the connected parts become regions of their
+# own. The region's outer border is kept point for point: its arcs are only cut where a new inner border meets them, so every neighbour
+# keeps its geometry and the picture stays watertight. The new borders inside are traced from the pixels as the split's arcs are.
+SPLIT_AGAIN_MAX = 8                     # colours a region can be split into
+SPLIT_MIN_DE = 2.0                      # colours of a region closer than this (Lab distance, about the least visible) are one: noise is no colour
+SPLIT_MIN_SPECKS = 4                    # a part is at least this many finest superpixels
+ROUND_MM = 2e-5                         # points are kept to 5 decimals of a mm: a point this near the outline is on it
+SPLIT_INSET_PX = 0.05                   # the new borders inside keep this far (in pixels) inside the region's outline
+SPLIT_STRAY_SHARE = 0.02                # pixels of a region's outline apart from its main piece: more than this share means a wrong outline
+SNAP_PX = 3.0                           # a mask corner farther than this from the region's outline means the outline does not match
+CUT_EPS_MM = 1e-4                       # cuts closer than this along the outline are one cut
+
+
+def split_region(document: dict, raster: np.ndarray, image_rgb, rid: str, n_colors: int, *, seed: int = 0) -> tuple[dict, list[str]]:
+    """A new document in which region ``rid`` is split into finer regions by colour and the ids of its parts, the largest first.
+
+    ``raster`` is the split on the picture's pixels (:func:`photo_zones.labels`: the index of the region at each pixel, in the document's
+    order), ``image_rgb`` the working picture (``image_px``). The region's pixels are clustered into ``n_colors`` colours (2 to
+    ``SPLIT_AGAIN_MAX``) at the finest superpixel size; parts under half an even share of the region (at most the split's minimum area,
+    at least a few finest superpixels) merge into the neighbouring part of the nearest colour. The largest part keeps the region's id and place; the parts of its colour keep the region's palette colour, each other
+    colour becomes one new palette colour (the mean Lab of its pixels) with a new index, so the palette grows by ``n_colors - 1`` at most;
+    the other parts get new ids. Every other region is as it was: the arcs of the region's border are cut where the new
+    borders inside meet them and otherwise untouched, so a neighbour's border is the same curve. The input is not changed. A region that is
+    one colour at that detail, or whose outline does not match its pixels, is refused with :class:`SplitError`; a wrong picture, raster or
+    number of colours with :class:`SegmentError`.
+    """
+    img = np.asarray(image_rgb)
+    rows, cols = document["image_px"]["height"], document["image_px"]["width"]
+    if img.ndim != 3 or img.shape[:2] != (rows, cols) or img.dtype != np.uint8 or raster.shape != (rows, cols):
+        raise SegmentError("the picture and the raster must be those of the split")
+    n_colors = _whole(n_colors, "the number of colours", 2, SPLIT_AGAIN_MAX)
+    regions = document["regions"]
+    index = next((i for i, r in enumerate(regions) if r["id"] == rid), None)
+    if index is None:
+        raise SplitError(f"there is no region {rid!r}")
+    mask = raster == index
+    if not mask.any():
+        raise SplitError("the region covers no pixel of the picture")
+    px_mm = float(document["px_mm"])
+    region = regions[index]
+    rings = [_Ring(document, loop) for loop in region["loops"]]
+    outline = Polygon(rings[0].points, [ring.points for ring in rings[1:]])
+    outline = outline if outline.is_valid else outline.buffer(0)
+    mask = _whole_mask(mask, [Polygon(ring.points) for ring in rings[1:]], px_mm)
+    parts, part_class, class_lab = _parts(document, img, mask, n_colors, seed)
+    m = len(part_class)
+    sub_arcs, sub_loops = _planar_map(parts)
+    junction_mm = _junctions([arc for arc in sub_arcs if arc[1] < 0 or arc[2] < 0], cols + 1, px_mm)
+
+    # where each mask corner on the region's border lies along its rings
+    placed: dict[int, tuple[int, float, list[float]]] = {}            # corner vertex -> (ring, param, point)
+    for v, (x, y) in junction_mm.items():
+        best = min(((r, *ring.project(x, y)) for r, ring in enumerate(rings)), key=lambda found: found[2])
+        if best[2] > SNAP_PX * px_mm:
+            raise SplitError("the region cannot be split again: its outline does not match its pixels")
+        placed[v] = (best[0], best[1], best[3])
+
+    # boundary arcs of the parts, oriented with the part on the left: the chain of corners along each ring, or a whole ring
+    chain: dict[int, dict[int, tuple[int, int]]] = {r: {} for r in range(len(rings))}     # ring -> start corner -> (end corner, sub arc)
+    whole: dict[int, int] = {}                                                         # sub arc of a whole ring -> ring
+    boundary_of: dict[int, tuple[int, int, int]] = {}                                  # sub arc -> (part, start corner, end corner)
+    for i, (vertices, left, right, _, _, closed) in enumerate(sub_arcs):
+        if left >= 0 and right >= 0:
+            continue
+        part = left if left >= 0 else right
+        if closed:
+            x, y = divmod(vertices[0], cols + 1)[::-1]
+            r = min(range(len(rings)), key=lambda r: rings[r].project(x * px_mm, y * px_mm)[1])
+            if rings[r].project(x * px_mm, y * px_mm)[1] > SNAP_PX * px_mm:
+                raise SplitError("the region cannot be split again: its outline does not match its pixels")
+            whole[i] = r
+            boundary_of[i] = (part, -1, -1)
+            continue
+        start, end = (vertices[0], vertices[-1]) if left == part else (vertices[-1], vertices[0])
+        if placed[start][0] != placed[end][0]:
+            raise SplitError("the region cannot be split again: its outline does not match its pixels")
+        chain[placed[start][0]][start] = (end, i)
+        boundary_of[i] = (part, start, end)
+    if set(whole.values()) & {r for r, links in chain.items() if links} or len(set(whole.values())) + sum(1 for links in chain.values() if links) != len(rings):
+        raise SplitError("the region cannot be split again: its outline does not match its pixels")
+
+    # cut every ring at its corners in their order along it, pieces between consecutive cuts; new arcs for the cut pieces
+    doc = copy.deepcopy(document)
+    old_arcs = doc["arcs"]
+    new_arcs: list[dict] = []
+    renumber: dict[int, list] = {}             # old arc index -> forward refs of the pieces that replace it, in its own direction
+    part_ids = [rid] + [f"r{1 + max(int(r['id'][1:]) for r in regions) + k}" for k in range(m - 1)]
+    piece_refs: dict[tuple[int, int], list[tuple]] = {}               # (start corner, end corner) -> ("old", ref) | ("new", arc) in ring order
+    side_of: dict[int, str] = {}                                      # old arc of the region left whole -> the part's id on its side
+    for r, ring in enumerate(rings):
+        links = chain[r]
+        if not links:
+            continue
+        first = min(links, key=lambda v: placed[v][1])
+        order, v = [], first
+        while True:
+            order.append(v)
+            v = links[v][0]
+            if v == first:
+                break
+        if len(order) != len(links):
+            raise SplitError("the region cannot be split again: its outline does not match its pixels")
+        params = []
+        for v in order:
+            s = placed[v][1]
+            params.append(s if not params else max(s, params[-1] + CUT_EPS_MM))
+        cuts = ring.cuts(params)
+        for k, v in enumerate(order):
+            end, sub = links[v]
+            part = boundary_of[sub][0]
+            piece_refs[(v, end)] = ring.piece(cuts[k], cuts[(k + 1) % len(order)], k == len(order) - 1, old_arcs, new_arcs, renumber,
+                                              part_ids[part], side_of)
+    for sub, r in whole.items():
+        for ref in rings[r].loop:
+            side_of[_arc_of(ref)] = part_ids[boundary_of[sub][0]]
+    for a, pieces in renumber.items():          # forward refs in the old arc's own direction
+        pieces.sort(key=lambda piece: piece[0], reverse=not pieces[0][2])
+        renumber[a] = [ref for _, ref, _ in pieces]
+
+    # arcs of the other regions and the region's arcs left whole, renumbered; then the new borders inside the region
+    kept: dict[int, int] = {}
+    for i, arc in enumerate(old_arcs):
+        if i in renumber:
+            continue
+        copy_arc = dict(arc)
+        if i in side_of:
+            copy_arc["left"], copy_arc["right"] = (side_of[i] if side == rid else side for side in (arc["left"], arc["right"]))
+        kept[i] = len(new_arcs)
+        new_arcs.append(copy_arc)
+    inner: dict[int, int] = {}
+    tolerance_px = float(document["tolerance_mm"]) / px_mm
+    within, inside = outline.buffer(ROUND_MM), outline.buffer(-SPLIT_INSET_PX * px_mm)
+    shapely.prepare(within)
+    for i, (vertices, left, right, _, _, closed) in enumerate(sub_arcs):
+        if i in boundary_of:
+            continue
+        ends = [] if closed else [list(placed[v][2]) if v in placed else None for v in (vertices[0], vertices[-1])]
+        for tolerance in (tolerance_px, 0.0):          # simplified as every border; where that cuts across the outline, dense
+            points = _arc_points(vertices, cols + 1, closed, tolerance, px_mm)
+            for at, end in zip((0, -1), ends):
+                if end is not None:
+                    points[at] = end
+            points = _kept_inside(points, closed, within, inside, SPLIT_INSET_PX * px_mm)
+            if within.contains(LineString(points)):
+                break
+        inner[i] = len(new_arcs)
+        new_arcs.append({"id": None, "left": part_ids[left], "right": part_ids[right], "closed": closed, "points": points})
+    for i, arc in enumerate(new_arcs):
+        arc["id"] = i
+    doc["arcs"] = new_arcs
+
+    def rewrite(ref: int) -> list[int]:
+        a = _arc_of(ref)
+        if a in kept:
+            return [kept[a] if ref >= 0 else ~kept[a]]
+        forward = renumber[a]
+        return forward if ref >= 0 else [~x for x in reversed(forward)]
+
+    for other in doc["regions"]:
+        if other["id"] != rid:
+            other["loops"] = [[x for ref in loop for x in rewrite(ref)] for loop in other["loops"]]
+    part_loops = []
+    for part in range(m):
+        loops = []
+        for loop in sub_loops[part]:
+            refs: list[int] = []
+            for ref in loop:
+                i = _arc_of(ref)
+                if i in inner:
+                    refs.append(inner[i] if ref >= 0 else ~inner[i])
+                elif i in whole:
+                    refs += [x for old in rings[whole[i]].loop for x in rewrite(old)]
+                else:
+                    _, start, end = boundary_of[i]
+                    for kind, x in piece_refs[(start, end)]:
+                        refs += [x] if kind == "new" else rewrite(x)
+            loops.append(refs)
+        part_loops.append(loops)
+
+    # the regions: the largest part in the region's place; the colour of its parts is the region's, each other colour a new one
+    sizes = _shares(np.bincount(parts[parts >= 0], minlength=m), region["pixels"])
+    next_index = 1 + max(p["index"] for p in doc["palette"])
+    colour_of = {part_class[0]: (region["color"], region["lab"], region["srgb"])}
+    for c in part_class:
+        if c not in colour_of:
+            lab = [round(float(v), 3) for v in class_lab[c]]
+            colour_of[c] = (next_index, lab, color.lab_to_srgb8(np.asarray(class_lab[c])).tolist())
+            doc["palette"].append({"index": next_index, "lab": lab, "srgb": colour_of[c][2], "pixels": 0})
+            next_index += 1
+    palette = {p["index"]: p for p in doc["palette"]}
+    palette[region["color"]]["pixels"] -= region["pixels"]
+    made = []
+    for part in range(m):
+        colour, lab, srgb = colour_of[part_class[part]]
+        palette[colour]["pixels"] += int(sizes[part])
+        made.append({"id": part_ids[part], "color": colour, "lab": lab, "srgb": srgb, "pixels": int(sizes[part]), "important": region["important"],
+                     "loops": part_loops[part]})
+    doc["regions"] = [made[0] if r["id"] == rid else r for r in doc["regions"]] + made[1:]
+    for part in made:                      # never a part whose outline crosses itself: refused rather than saved (a loop that
+        loops = [_loop_points(doc, loop) for loop in part["loops"]]      # touches itself at a corner, as the split's own do, is fine)
+        reason = "" if all(len(loop) >= 4 for loop in loops) else "Too few points"
+        reason = reason or shapely.is_valid_reason(Polygon(loops[0], loops[1:]))
+        if reason != "Valid Geometry" and not reason.startswith("Ring Self-intersection"):
+            raise SplitError("the region cannot be split cleanly into so many colours: try fewer")
+    return doc, part_ids
+
+
+def _whole_mask(mask: np.ndarray, holes: list, px_mm: float) -> np.ndarray:
+    """The region's pixels as one piece with the holes of its outline only (``holes``: the polygons of its inner rings). The pixels drawn
+    from the outline of a region (and of its neighbours) can leave a pixel out inside it, pinch off a pixel of the outside where the
+    outline passes between two pixel centres, or touch only at a corner. A hole of the pixels whose middle is in none of ``holes`` is
+    filled; pieces that touch at a corner are joined by a pixel next to both; pieces still apart are left to the outline when they are a
+    few pixels (SPLIT_STRAY_SHARE), and refused when more."""
+    mask = mask.copy()
+    count, background = cv2.connectedComponents((~mask).astype(np.uint8), connectivity=4)
+    if count > 2:
+        edge = set(np.unique(np.concatenate([background[0], background[-1], background[:, 0], background[:, -1]])).tolist())
+        depth = cv2.distanceTransform((~mask).astype(np.uint8), cv2.DIST_L2, 3)
+        for k in set(range(1, count)) - edge:
+            hole = background == k
+            y, x = np.unravel_index(int(np.argmax(np.where(hole, depth, -1))), hole.shape)
+            middle = Point((x + 0.5) * px_mm, (y + 0.5) * px_mm)
+            if not any(polygon.contains(middle) for polygon in holes):
+                mask |= hole
+    for _ in range(3):
+        count, pieces = cv2.connectedComponents(mask.astype(np.uint8), connectivity=4)
+        if count <= 2:
+            return mask
+        padded = np.pad(pieces, 1)
+        around = np.stack([padded[:-2, 1:-1], padded[2:, 1:-1], padded[1:-1, :-2], padded[1:-1, 2:]])
+        biggest = np.where(around > 0, around, np.iinfo(np.int32).min).max(axis=0)
+        smallest = np.where(around > 0, around, np.iinfo(np.int32).max).min(axis=0)
+        bridge = ~mask & (biggest > 0) & (smallest < np.iinfo(np.int32).max) & (biggest != smallest)
+        if not bridge.any():
+            break
+        mask |= bridge
+    count, pieces = cv2.connectedComponents(mask.astype(np.uint8), connectivity=4)
+    if count > 2:
+        sizes = np.bincount(pieces.ravel(), minlength=count)[1:]
+        if sizes.sum() - sizes.max() > SPLIT_STRAY_SHARE * sizes.sum():
+            raise SplitError("the region cannot be split again: its outline does not match its pixels")
+        mask = pieces == 1 + int(sizes.argmax())
+    return mask
+
+
+def _parts(document: dict, img: np.ndarray, mask: np.ndarray, n_colors: int, seed: int) -> tuple[np.ndarray, list[int], dict[int, list[float]]]:
+    """The region's pixels split into parts: a raster of the picture with the part (0..m-1, the largest first) of every pixel of the
+    region and -1 elsewhere, the colour of each part, and the mean Lab of each colour's pixels. Superpixels at the finest size inside the region's box, clustered into
+    ``n_colors`` colours; the connected parts under the split's minimum area merge into the neighbouring part of the nearest colour,
+    an island of the region (no neighbouring part) stays whatever its size."""
+    h, w = mask.shape
+    ys, xs = np.nonzero(mask)
+    size = max(MIN_SUPERPIXEL_PX, round(document["superpixel_px"]["coarse"] * faces.DETAILS["finest"]))
+    pad = 2 * size
+    y0, y1 = max(0, ys.min() - pad), min(h, ys.max() + 1 + pad)
+    x0, x1 = max(0, xs.min() - pad), min(w, xs.max() + 1 + pad)
+    inside = mask[y0:y1, x0:x1]
+    lab = color.srgb8_to_lab(np.ascontiguousarray(img[y0:y1, x0:x1])).astype(np.float32)
+    smooth = cv2.bilateralFilter(lab, 0, SMOOTH_COLOR, SMOOTH_SPACE)
+    make = _ALGORITHM[document.get("algorithm", DEFAULT_ALGORITHM)]
+    _, sp = np.unique(make(np.ascontiguousarray(smooth), size).astype(np.int64)[inside], return_inverse=True)
+    sp = sp.ravel()
+    n = int(sp.max()) + 1
+    pixels = np.bincount(sp, minlength=n).astype(float)
+    mean = np.stack([np.bincount(sp, weights=smooth[inside][:, c].astype(np.float64), minlength=n) for c in range(3)], axis=1) / pixels[:, None]
+    # the colours come from the region's inside, a pixel in from its border: the border pixels of the raster drawn from the smoothed
+    # outline can be the neighbours' and must make no colour of their own, nor a strip of another colour along the outline. A border
+    # pixel takes the colour of the nearest pixel inside (each pixel by itself when the region is too thin to have an inside).
+    core_box = cv2.erode(inside.astype(np.uint8), np.ones((3, 3), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0).astype(bool)
+    core = core_box[inside]
+    sample = np.bincount(sp[core], minlength=n).astype(float) if core.any() else pixels
+    chosen = sample > 0
+    centres, assign = _kmeans(mean[chosen], sample[chosen], n_colors, seed)
+    centres = _distinct(centres, np.bincount(assign, weights=sample[chosen], minlength=len(centres)))
+    k = len(centres)
+    full = np.full(inside.shape, k, np.int32)
+    full[inside] = _nearest(mean, centres)[sp]
+    if core.any():
+        _, nearest = cv2.distanceTransformWithLabels((~core_box).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+        class_of = np.zeros(int(nearest.max()) + 1, np.int32)
+        class_of[nearest[core_box]] = full[core_box]
+        rim = inside & ~core_box
+        full[rim] = class_of[nearest[rim]]
+    if k < 2 or len(np.unique(full[inside])) < 2:
+        raise SplitError("the region is one colour at this detail: there is nothing to split")
+    region, of_class = _components(full, k + 1)
+    outside = of_class == k
+    a = np.concatenate([region[:, :-1].ravel(), region[:-1, :].ravel()])
+    b = np.concatenate([region[:, 1:].ravel(), region[1:, :].ravel()])
+    touching = (a != b) & ~outside[a] & ~outside[b]
+    has_neighbour = np.zeros(len(of_class), bool)
+    has_neighbour[a[touching]] = has_neighbour[b[touching]] = True
+    keep = outside | ~has_neighbour
+    class_lab = np.vstack([centres, [[1e6, 0.0, 0.0]]])            # the outside is never the nearest colour
+    # a part is at least half an even share of the region (at most the split's minimum area) and a few finest superpixels
+    least = max(SPLIT_MIN_SPECKS * size ** 2, min(document["min_area_mm2"] / document["px_mm"] ** 2, int(mask.sum()) / (2 * n_colors)))
+    merged = _merge_small(region, of_class, class_lab, least, keep)[region]
+    merged[~inside] = k
+    region, of_class = _components(merged, k + 1)
+    numbers = [i for i in range(len(of_class)) if of_class[i] != k]
+    if len(numbers) < 2:
+        raise SplitError("the region's colours lie in specks smaller than the smallest region: there is nothing to split")
+    area = np.bincount(region.ravel(), minlength=len(of_class))
+    numbers.sort(key=lambda i: (-area[i], i))
+    renumber = np.full(len(of_class), -1, np.int32)
+    renumber[numbers] = np.arange(len(numbers))
+    crop = renumber[region]
+    parts = np.full((h, w), -1, np.int32)
+    parts[y0:y1, x0:x1] = crop
+    part_class = [int(of_class[i]) for i in numbers]
+    flat, labs = merged.ravel(), lab.reshape(-1, 3).astype(np.float64)
+    means = {c: [float(v) for v in labs[flat == c].mean(axis=0)] for c in set(part_class)}
+    return parts, part_class, means
+
+
+def _shares(counts: np.ndarray, total: int) -> np.ndarray:
+    """``counts`` scaled to add up to ``total`` (the region's own pixels: the raster drawn from its outline has a few more or fewer), each
+    part at least one pixel, the rounding left on the largest."""
+    scaled = np.maximum(1, np.round(counts * total / max(int(counts.sum()), 1))).astype(np.int64)
+    scaled[int(np.argmax(counts))] += total - int(scaled.sum())
+    return scaled
+
+
+def _distinct(centres: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """The colour centres with those closer than SPLIT_MIN_DE joined, the heaviest pair first (the joined one is their weighted mean)."""
+    centres, weights = [np.asarray(c, np.float64) for c in centres], [float(w) for w in weights]
+    while len(centres) > 1:
+        pairs = [(float(np.sqrt(((centres[a] - centres[b]) ** 2).sum())), a, b) for a in range(len(centres)) for b in range(a + 1, len(centres))]
+        distance, a, b = min(pairs)
+        if distance >= SPLIT_MIN_DE:
+            break
+        total = weights[a] + weights[b] or 1.0
+        centres[a] = (centres[a] * weights[a] + centres[b] * weights[b]) / total
+        weights[a] = total
+        del centres[b], weights[b]
+    return np.array(centres)
+
+
+def _kept_inside(points: list, closed: bool, within, inside, inset_mm: float) -> list:
+    """A new border inside a region kept inside it. ``within`` is the region's outline (a hair larger, so a border on it is within):
+    a border that stays within it is as traced. Where the border traced from the pixels strays beyond it (a pixel corner lies up to
+    half a pixel past the smoothed outline), each point outside ``inside``, the outline shrunk a hair, moves to the nearest point of its
+    edge, and a step that still leaves the outline follows that edge, when that is a short way (never round the region). The ends of an
+    open border stay where they are, on the outline."""
+    if len(points) < 2 or inside.is_empty or within.contains(LineString(points)):
+        return points
+    edges = [ring for polygon in getattr(inside, "geoms", [inside]) for ring in [polygon.exterior, *polygon.interiors]]
+    last = len(points) - 1
+    moved = [list(q) if (not closed and k in (0, last)) or inside.contains(Point(q)) else _on_edge(edges, q) for k, q in enumerate(points)]
+    if closed:
+        moved[-1] = moved[0]
+    out = [moved[0]]
+    for k in range(1, len(moved)):
+        a, b = out[-1], moved[k]
+        if not within.contains(LineString([a, b])):
+            start = _on_edge(edges, a) if not closed and k == 1 else a          # from the junction on the outline: onto the edge first
+            target = _on_edge(edges, b) if not closed and k == last else b
+            path = _along(edges, start, target)
+            if path and LineString([start, *path]).length <= 2 * math.dist(a, b) + 4 * inset_mm:
+                out += ([start] if start is not a else []) + path
+                if out[-1] != b:
+                    out.append(b)
+                continue
+        out.append(b)
+    kept = [[round(float(x), 5), round(float(y), 5)] for x, y in out]
+    return [q for k, q in enumerate(kept) if k == 0 or q != kept[k - 1]]
+
+
+def _on_edge(edges: list, point) -> list[float]:
+    """The point of the nearest of ``edges`` (rings) nearest to ``point``."""
+    p = Point(point)
+    ring = min(edges, key=lambda r: r.distance(p))
+    q = ring.interpolate(ring.project(p))
+    return [q.x, q.y]
+
+
+def _along(edges: list, a, b) -> list[list[float]]:
+    """The path from ``a`` to ``b`` along the nearest ring of ``edges``, the shorter way round: its corners between them and ``b``'s
+    place on it (nothing when ``a`` and ``b`` are one point or on different rings)."""
+    pa, pb = Point(a), Point(b)
+    ring = min(edges, key=lambda r: r.distance(pa) + r.distance(pb))
+    if ring.distance(pa) > 1e-6 or ring.distance(pb) > 1e-6 or pa.distance(pb) < 1e-9:
+        return []
+    coords = np.asarray(ring.coords)[:-1]
+    s = np.array([ring.project(Point(c)) for c in coords])
+    length = ring.length
+    sa, sb = ring.project(pa), ring.project(pb)
+    forward = (sb - sa) % length
+    if forward <= length - forward:
+        ahead = (s - sa) % length
+        chosen = [k for k in np.argsort(ahead) if 0 < ahead[k] < forward]
+    else:
+        behind = (sa - s) % length
+        chosen = [k for k in np.argsort(behind) if 0 < behind[k] < length - forward]
+    end = ring.interpolate(sb)
+    return [[float(x), float(y)] for x, y in coords[chosen]] + [[end.x, end.y]]
+
+
+def _junctions(arcs: list, cols: int, px_mm: float) -> dict[int, tuple[float, float]]:
+    """The corners where the open arcs of a planar map end, in mm."""
+    out = {}
+    for vertices, _, _, _, _, closed in arcs:
+        if not closed:
+            for v in (vertices[0], vertices[-1]):
+                y, x = divmod(v, cols)
+                out[v] = (x * px_mm, y * px_mm)
+    return out
+
+
+class _Ring:
+    """One loop of a region as a closed polyline in mm with the region on the left: where each of its arcs lies along it (``spans``), the
+    nearest point of it to a given point (``project``), and the pieces of it between cuts (``piece``), made of its arcs cut at them."""
+
+    def __init__(self, document: dict, loop: list[int]):
+        self.loop = loop
+        arcs = document["arcs"]
+        points: list[list[float]] = []
+        self.spans = []                          # (ref, first index, last index) of each arc's points in the ring
+        for ref in loop:
+            p = arcs[_arc_of(ref)]["points"]
+            p = p if ref >= 0 else p[::-1]
+            if points:
+                points.extend(p[1:])
+                self.spans.append((ref, len(points) - len(p), len(points) - 1))
+            else:
+                points.extend(p)
+                self.spans.append((ref, 0, len(points) - 1))
+        self.points = np.asarray(points, np.float64)
+        steps = np.sqrt(((self.points[1:] - self.points[:-1]) ** 2).sum(axis=1))
+        self.s = np.concatenate([[0.0], np.cumsum(steps)])
+        self.length = float(self.s[-1])
+
+    def project(self, x: float, y: float) -> tuple[float, float, list[float]]:
+        """The param along the ring, the distance and the point of the ring nearest to (x, y)."""
+        a, b = self.points[:-1], self.points[1:]
+        d = b - a
+        q = np.array([x, y]) - a
+        t = np.clip((q * d).sum(axis=1) / np.maximum((d * d).sum(axis=1), 1e-18), 0.0, 1.0)
+        near = a + t[:, None] * d
+        dist = np.sqrt(((near - [x, y]) ** 2).sum(axis=1))
+        i = int(dist.argmin())
+        s = float(self.s[i] + t[i] * (self.s[i + 1] - self.s[i]))
+        return s, float(dist[i]), [round(float(v), 5) for v in near[i]]
+
+    def cuts(self, params: list[float]) -> list[tuple[int, float, list[float]]]:
+        """Each cut as (span, param, point): a cut within CUT_EPS_MM of an arc's end is at that end (the start of the next span)."""
+        out = []
+        for s in params:
+            s = min(max(s, 0.0), self.length)
+            j = max(0, min(len(self.spans) - 1, int(np.searchsorted(self.s, s, side="right") - 1)))
+            while j < len(self.spans) - 1 and s > self.s[self.spans[j][2]]:
+                j += 1
+            while j > 0 and s < self.s[self.spans[j][1]]:
+                j -= 1
+            ref, first, last = self.spans[j]
+            if s >= self.s[last] - CUT_EPS_MM:               # at the arc's end: the start of the next arc
+                j = (j + 1) % len(self.spans)
+                out.append((j, float(self.s[self.spans[j][1]]) if j else 0.0, [float(v) for v in self.points[self.spans[j][1]]]))
+            elif s <= self.s[first] + CUT_EPS_MM:
+                out.append((j, float(self.s[first]), [float(v) for v in self.points[first]]))
+            else:
+                i = int(np.searchsorted(self.s, s, side="right") - 1)
+                t = (s - self.s[i]) / max(self.s[i + 1] - self.s[i], 1e-18)
+                point = self.points[i] + t * (self.points[i + 1] - self.points[i])
+                out.append((j, s, [round(float(v), 5) for v in point]))
+        return out
+
+    def piece(self, start: tuple, end: tuple, wrap: bool, old_arcs: list, new_arcs: list, renumber: dict, part_id: str, side_of: dict) -> list[tuple]:
+        """What the ring is from cut ``start`` forward to cut ``end``, with the part on the left: ``("old", ref)`` for an arc left whole
+        (``side_of`` notes the part on its side) and ``("new", index)`` for a new arc appended to ``new_arcs`` (noted in ``renumber`` as
+        forward refs in the old arc's own direction). Nothing between two cuts at one point; the last piece (``wrap``) goes round."""
+        (ja, sa, pa), (jb, sb, pb) = start, end
+        n = len(self.spans)
+        if not wrap and (ja, sa) == (jb, sb):
+            return []
+        if ja == jb and sa < sb and not wrap:
+            return [x for x in [self._portion(ja, sa, sb, pa, pb, old_arcs, new_arcs, renumber, part_id, side_of)] if x]
+        refs = [self._portion(ja, sa, None, pa, None, old_arcs, new_arcs, renumber, part_id, side_of)]
+        j = (ja + 1) % n
+        while j != jb:
+            ref = self.spans[j][0]
+            side_of[_arc_of(ref)] = part_id
+            refs.append(("old", ref))
+            j = (j + 1) % n
+        refs.append(self._portion(jb, None, sb, None, pb, old_arcs, new_arcs, renumber, part_id, side_of))
+        return [x for x in refs if x]
+
+    def _portion(self, j: int, sa, sb, pa, pb, old_arcs: list, new_arcs: list, renumber: dict, part_id: str, side_of: dict):
+        """Span ``j`` from ``sa`` (its start when None) to ``sb`` (its end when None) in ring direction: ``("old", ref)`` when that is the
+        whole arc, ``("new", index)`` for a new arc, None when it is nothing (a cut at the span's start, or at its end)."""
+        ref, first, last = self.spans[j]
+        a = _arc_of(ref)
+        s_first, s_last = float(self.s[first]), float(self.s[last])
+        at_start = sa is None or sa <= s_first + CUT_EPS_MM
+        at_end = sb is None or sb >= s_last - CUT_EPS_MM
+        if at_start and at_end:
+            side_of[a] = part_id
+            return ("old", ref)
+        if (sb is not None and sb <= s_first + CUT_EPS_MM) or (sa is not None and sa >= s_last - CUT_EPS_MM):
+            return None
+        lo = first if at_start else int(np.searchsorted(self.s, sa, side="right"))
+        hi = last if at_end else int(np.searchsorted(self.s, sb, side="left") - 1)
+        points = ([] if at_start else [pa]) + [[float(v) for v in q] for q in self.points[lo:hi + 1]] + ([] if at_end else [pb])
+        if len(points) < 2:
+            points = [pa if pa is not None else points[0], pb if pb is not None else points[-1]]
+        old = old_arcs[a]
+        other = old["right"] if ref >= 0 else old["left"]
+        new_arcs.append({"id": None, "left": part_id, "right": other, "closed": False, "points": points})
+        index = len(new_arcs) - 1
+        # where the piece starts along the ring: the pieces of one arc are put in the arc's order once all are made (the last piece
+        # of a ring wraps round to the start of the arc the first cut lies on, so they are not made in that order)
+        renumber.setdefault(a, []).append((s_first if at_start else sa, index if ref >= 0 else ~index, ref >= 0))
+        return ("new", index)

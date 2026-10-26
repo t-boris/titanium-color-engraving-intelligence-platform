@@ -473,8 +473,9 @@ def density_of(split: dict) -> int:
 PHOTO_OPS = ("photo_add", "photo_remove", "photo_set", "photo_delete")     # the photo zones (REQ-073, :mod:`photo_zones`)
 TEXT_OPS = lettering.OPS                                                  # the inscriptions (feature inscriptions-in-works)
 COLOURING_OPS = ("assign", "ai_colour", "restore", "settings", "set_colour", "paint", "exclude_colour", "include_colour",
-                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "undo", "redo") + PHOTO_OPS + TEXT_OPS
+                 "exclude_region", "include_region", "merge_titanium", "merge_colours", "merge_regions", "split_region", "undo", "redo") + PHOTO_OPS + TEXT_OPS
 MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version of the split
+SPLIT_OPS = ("split_region",)                        # so does a region split again (work-size-and-splitting-a-region-again, REQ-002)
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
 UNDO_DEPTH = 50                                      # steps kept to undo and redo together
 
@@ -1875,7 +1876,8 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
     choice; one area is painted with ``paint``); ``exclude_colour``, ``include_colour`` and ``exclude_region``, ``include_region`` (one
     ``region`` or several ``regions``) leave them out of the file or bring them back. ``{"op": "merge_titanium", "entries",
     "into"}`` makes titanium colours one (:func:`_merge_titanium`); ``{"op": "merge_colours", "colours", "entry_id"?}`` and
-    ``{"op": "merge_regions", "regions"}`` make a new version of the split (:func:`_merge`). ``undo`` and ``redo`` step
+    ``{"op": "merge_regions", "regions"}`` make a new version of the split (:func:`_merge`), and so does ``{"op": "split_region", "region",
+    "colours"}``, which splits one region again into finer regions (:func:`_split_region`). ``undo`` and ``redo`` step
     back and forth through all of them, the split version, the tolerance and the filters included.
     """
     if not isinstance(op, dict):
@@ -1895,6 +1897,10 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
         merged, colouring, keeper = _merge(plan, document, entries, kind, op)
         _snapshot(plan)
         plan["colouring"], document = colouring, merged
+    elif kind in SPLIT_OPS:
+        split, colouring, keeper = _split_region(plan, document, entries, op)
+        _snapshot(plan)
+        plan["colouring"], document = colouring, split
     else:
         changes = _change(store, plan, document, entries, kind, op)
         _snapshot(plan)
@@ -1902,7 +1908,7 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
         if kind in ("assign", "settings", "ai_colour"):
             _add_variant(store, plan, document, entries)
     with store.transaction():
-        if kind in MERGE_OPS:                    # the new version is the history's entry of the operation
+        if kind in MERGE_OPS or kind in SPLIT_OPS:        # the new version is the history's entry of the operation
             _new_version(store, plan, document, {**op, "keeper": keeper})
         else:
             plan["history"].append({"version": plan["document_version"], "op": op, "at": now()})
@@ -2178,6 +2184,43 @@ def _merge(plan: dict, document: dict, entries: list[dict], kind: str, op: dict)
     colouring["excluded_colours"] = [i for i in colouring["excluded_colours"] if i in left]
     colouring["photo"] = [z for z in pz.zones(colouring) if z["regions"]]
     return merged, colouring, keeper
+
+
+def _split_region(plan: dict, document: dict, entries: list[dict], op: dict) -> tuple[dict, dict, str]:
+    """One region split again into finer regions by colour (work-size-and-splitting-a-region-again REQ-002, DEC-084), computed without
+    changing the job: the new document (:func:`segment.split_region`), the colouring carried to it and the id of the largest part, which
+    is the region's own. The region's exclusion and its photo zone carry to every part; a titanium colour chosen by hand stays on the
+    largest part; the new colours of the palette take the nearest titanium colour, the rest of the colouring is as it was."""
+    rid = _region_id(document, op.get("region"))
+    colours = op.get("colours", 3)
+    if isinstance(colours, bool) or not isinstance(colours, int) or not 2 <= colours <= seg.SPLIT_AGAIN_MAX:
+        raise cv.ConversionError(f"split a region into a whole number of colours from 2 to {seg.SPLIT_AGAIN_MAX}")
+    room = photo_cap(plan["markers_enabled"]) - len(document["palette"])       # each colour of the parts but the region's is a new one
+    if room < 1:
+        raise cv.ConversionError(f"the work has all the {len(document['palette'])} colours LightBurn's layers allow: merge colours to split a region")
+    if colours - 1 > room:
+        raise cv.ConversionError(f"the work has room for {room} more colours: split the region into at most {room + 1}")
+    raster = pz.labels(document, _loops_by_region(plan, document))
+    try:
+        split, parts = seg.split_region(document, raster, _source_rgb(Path(plan["image_path"]).read_bytes()), rid, colours)
+    except seg.SplitError as exc:
+        raise cv.ConversionError(str(exc)) from None
+    colouring = copy.deepcopy(plan["colouring"])
+    if rid in colouring["excluded_regions"]:
+        colouring["excluded_regions"] += parts[1:]
+    for zone in pz.zones(colouring):
+        if rid in zone["regions"]:
+            inside = set(zone["regions"]) | set(parts)
+            zone["regions"] = [r["id"] for r in split["regions"] if r["id"] in inside]
+    had = {p["index"] for p in document["palette"]}
+    new = [str(p["index"]) for p in split["palette"] if p["index"] not in had]
+    if new:
+        auto = _automatic(plan, split, entries, "closest", 0, colouring)
+        for key in new:
+            if key in auto["assignment"]:
+                colouring["assignment"][key] = auto["assignment"][key]
+                colouring["how"][key] = auto["how"][key]
+    return split, colouring, parts[0]
 
 
 # ======================================================================================================================

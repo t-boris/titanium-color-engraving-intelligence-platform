@@ -779,6 +779,27 @@ const VectorEditor = (() => {
       return found.size === 1 ? [...found][0] : null;
     }
 
+    /** One selected region split again into finer regions by colour (work-size-and-splitting-a-region-again, REQ-002): the window asks
+        into how many colours; the largest part keeps the region's id and colour, the others take the nearest titanium colours. */
+    function splitFiner(rid) {
+      const count = h('input', {type: 'number', min: '2', max: '8', step: '1', value: '3', 'aria-label': 'Число цветов'});
+      const box = App.modal('Разбить область мельче', h('div', {class: 'stack'},
+        h('p', {class: 'small muted'}, 'Картинка внутри области делится на столько цветов, сколько указано, самой мелкой сеткой; каждый связный кусок '
+          + 'становится своей областью. Внешняя граница и соседи остаются как были. Самый большой кусок сохраняет номер области, куски его '
+          + 'цвета — цвет области; каждый другой цвет становится новым цветом палитры с ближайшим цветом титана. Шаг можно отменить (Ctrl+Z).'),
+        App.field('Число цветов (2–8)', count)), [
+        {label: 'Отмена', run: (m) => m.close()},
+        {label: 'Разбить', cls: 'primary', run: async (m) => {
+          const n = Math.round(parseFloat(count.value));
+          if (!(n >= 2 && n <= 8)) throw new Error('Число цветов — целое от 2 до 8');
+          const before = j.document.regions;
+          const ok = await act({op: 'split_region', region: rid, colours: n});
+          if (ok) { toast(`Область разбита на ${App.plural(j.document.regions - before + 1, ['часть', 'части', 'частей'])}`, 'ok'); m.close(); }
+        }}]);
+      if (count.select) count.select();
+      return box;
+    }
+
     function syncSelection() {
       const ids = [...state.selection];
       const link = ids.length > 1 ? connected(ids) : null;
@@ -796,6 +817,7 @@ const VectorEditor = (() => {
           tools.pick ? btn('Цвет выделенному…', () => tools.pick(j, `Цвет титана для выделенных областей (${ids.length})`, selectionLab(ids), commonEntry(ids),
             (entryId) => act({op: 'paint', scope: 'region', regions: ids, entry_id: entryId})), 'primary') : null,
           btn('Слить в один контур', () => act({op: 'merge_regions', regions: ids}), '', ids.length < 2 || link === false || checking),
+          btn('Разбить мельче…', () => splitFiner(ids[0]), '', ids.length !== 1),
           btn('Не гравировать', () => act({op: 'exclude_region', regions: ids})), btn('Гравировать', () => act({op: 'include_region', regions: ids})),
           btn('Снять выделение', clearSelection)) : null,
         ids.length ? h('div', {class: 'row vw-ed-photo-acts'},
@@ -804,7 +826,7 @@ const VectorEditor = (() => {
           zoned.length ? btn('Вернуть в цвета', () => act({op: 'photo_remove', regions: zoned})) : null) : null,
         ids.length && !zones.length ? h('p', {class: 'small muted'}, '«Сделать фотозоной» — выделенные области выйдут фотогравировкой картинки работы, '
           + 'а не цветами; вид и шкала — во вкладке «Фото».') : null,
-        ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе.') : null,
+        ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе. «Разбить мельче…» делит выбранную область на части по цвету.') : null,
         why ? h('p', {class: 'small muted'}, why) : null);
     }
 

@@ -36,7 +36,8 @@ def test_no_colour_is_accepted_anywhere_any_more():
 
 
 def test_the_editor_sends_every_operation_of_the_contract_and_asks_the_server_for_the_reach_of_a_fill():
-    for op in ("paint", "merge_titanium", "merge_colours", "merge_regions", "exclude_region", "include_region", "exclude_colour", "include_colour"):
+    for op in ("paint", "merge_titanium", "merge_colours", "merge_regions", "split_region", "exclude_region", "include_region", "exclude_colour",
+               "include_colour"):
         assert f"op: '{op}'" in EDITOR, op
     assert "undoRedo('undo')" in EDITOR and "undoRedo('redo')" in EDITOR and "act({op: kind})" in EDITOR
     assert "{op: 'paint', region: rid, scope: state.scope, entry_id: state.active}" in EDITOR and "op.similarity_de = state.similarity" in EDITOR
@@ -883,3 +884,35 @@ def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sort
     (opened,) = out["opened"]
     assert opened.startswith("Исходный цвет № 33") and "все 2 совпали" not in opened and "Не гравировать" in opened and "рецепт: " in opened
     assert out["all"] == 33 and out["boxStops"] is True
+
+
+@node
+def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_colours(tmp_path):
+    """Feature work-size-and-splitting-a-region-again, REQ-002: «Разбить мельче…» is offered for one selected region only; the window asks for
+    2..8 colours, refuses another number before any request and sends ``split_region`` once."""
+    out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
+  const finer = () => byText(section('Выделение'), 'button', 'Разбить мельче…');
+  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await path('r1').dispatch('click');
+  out.one = finer().disabled;
+  await path('r2').dispatch('click', {shiftKey: true});
+  out.two = finer().disabled;
+  await path('r2').dispatch('click', {shiftKey: true});
+  await finer().dispatch('click');
+  const dialog = ctx.document.body.querySelector('.modal');
+  out.dialog = dialog.textContent;
+  const input = dialog.querySelector('input');
+  out.prefill = input.value;
+  input.value = '12';
+  await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick();
+  out.refusedPosts = posted().length;
+  out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
+  input.value = '4';
+  await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick(); await tick(); await tick();
+  out.posted = posted();
+  out.closed = ctx.document.body.querySelector('.modal') == null;
+""")
+    assert out["one"] is False and out["two"] is True
+    assert "Разбить область мельче" in out["dialog"] and "Внешняя граница и соседи остаются как были" in out["dialog"] and out["prefill"] == "3"
+    assert out["refusedPosts"] == 0 and any("целое от 2 до 8" in t for t in out["toasts"])
+    assert out["posted"] == [{"op": "split_region", "region": "r1", "colours": 4}] and out["closed"] is True
