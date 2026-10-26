@@ -86,6 +86,10 @@
       'Цвет титана — один из измеренных цветов этого лазера, линзы и заготовки титана'],
     [/^there is no earlier colouring to go back to$/i, 'Нет более ранней раскраски, к которой можно вернуться'],
     [/^there is no such variant of the colouring$/i, 'Такого варианта раскраски нет'],
+    // размер работы (фича work-size-and-splitting-a-region-again, REQ-001)
+    [/^give the work's new width or its new height, one of them$/i, 'Впишите новую ширину работы или новую высоту — одну из них'],
+    [/^the work's size must be a positive number of millimetres$/i, 'Размер работы — положительное число миллиметров'],
+    [/^the work is this size already$/i, 'У работы уже такой размер'],
     // редактор раскраски: кисть, слияния, отмена и повтор (REQ-045..REQ-049 редактора, DEC-075..DEC-077 редактора)
     [/^the scope must be region, colour or fill$/i, 'Кисть красит область, весь исходный цвет или заливку'],
     [/^the similarity must be a non-negative delta E$/i, 'Похожесть — неотрицательное значение ΔE'],

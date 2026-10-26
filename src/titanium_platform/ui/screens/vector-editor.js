@@ -142,7 +142,7 @@ const VectorEditor = (() => {
     const state = {tool: 'brush', scope: 'region', similarity: SIMILARITY, active: null, view: 'titanium', far: false, ref: null,
       selection: new Set(), layers: new Set(), colours: new Set()};
     let lookup = resolver(j);
-    let svg = null, loadedVersion = null, missId = '';
+    let svg = null, loadedVersion = null, loadedWidth = null, missId = '';
     let paths = new Map(), colourOf = new Map(), byColour = new Map(), byEntry = new Map();
     let vb = {x: 0, y: 0, w: j.document.size_mm.width, h: j.document.size_mm.height};
     let entries = null, paletteError = null, paletteKey = null;
@@ -258,6 +258,7 @@ const VectorEditor = (() => {
       }
       if (version !== geometryKey(j)) return;                 // пока грузилось, пришёл рисунок новее: его загрузка уже идёт
       const {width: W, height: H} = j.document.size_mm;
+      loadedWidth = W;
       const step = Math.max(W, H) / 80;
       missId = `vw-miss-${id}-${version}`.replace(/[^\w-]/g, '-');
       const pattern = svgEl('pattern', {id: missId, patternUnits: 'userSpaceOnUse', width: step, height: step, patternTransform: 'rotate(45)'});
@@ -981,8 +982,10 @@ const VectorEditor = (() => {
       state.colours = new Set([...state.colours].filter((k) => known.has(k)));
       const inUse = new Set((j.layers || []).map((l) => String(l.entry_id)));
       state.layers = new Set([...state.layers].filter((e) => inUse.has(e)));
-      if (loadedVersion !== geometryKey(j)) load();
-      else { paint(); showZones(); refreshHover(); }
+      if (loadedVersion !== geometryKey(j)) {
+        const resized = loadedWidth !== null && Math.abs(loadedWidth - j.document.size_mm.width) > 1e-6;   // the work's size changed (REQ-001)
+        load().then(() => { if (resized && loadedVersion === geometryKey(j)) fit(); });
+      } else { paint(); showZones(); refreshHover(); }
       loadNear();
       syncPanel();
       photo.update(j);

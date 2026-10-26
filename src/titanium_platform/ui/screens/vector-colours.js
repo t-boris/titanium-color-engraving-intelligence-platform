@@ -139,7 +139,9 @@ const VectorColours = (() => {
     let j = null;
     const way = (v) => (v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
       + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : ''));
-    const elsewhere = (v) => v.version != null && v.version !== j.document.version;
+    // the server says whether a variant is restorable (a size change keeps the regions, DEC-002 of work-size-and-splitting-a-region-again);
+    // a view without the flag goes by the split version
+    const elsewhere = (v) => (v.restorable != null ? v.restorable === false : v.version != null && v.version !== j.document.version);
     const current = (v) => v.number === j.colouring.variant;
     const list = App.list({id: 'vw.variants', items: [], key: (v) => String(v.number), className: 'vw-variants',
       row: (v) => [h('strong', {class: 'lst-text'}, `№ ${v.number} · ${way(v)}`), h('span', {class: 'muted small'}, `ΔE ${num(v.totals.mean_delta_e)}`),

@@ -700,3 +700,13 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   `photo_knowledge.failed`), and its tests include a failed candidate. When verifying an auto-fill on live data, run it for every option
   the operator can pick (each kind, each titanium), not only for the current one.
 
+
+
+## A rehearsal copy of the live workshop goes stale: copy it again for each rehearsal (0.36.0, 2026-10-25)
+
+- **What happened.** The rehearsal of «Вписать» was aimed at «Luna 1», but the copy on port 8796 was made for 0.35 and did not hold it:
+  the operator made the work later (and remade it square meanwhile, so its id and size were not what the earlier notes said). The
+  browser tab also kept the old scripts after the server restart until it was reloaded.
+- **Rule.** Before a rehearsal, make a fresh copy of the live workshop (`.backup` over the read-only URI, `cp -Rc` of `files/` and
+  `fonts/`, never `ai/`, then `rehearse_rebase.py`), and read the work's current state from that copy, not from earlier notes. After a
+  server restart, reload the tab (`location.reload()`) before judging the UI.

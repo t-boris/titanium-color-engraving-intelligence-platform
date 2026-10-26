@@ -633,6 +633,25 @@ def smoothed(document: dict, sigma_mm: float) -> dict:
     return {**document, "arcs": arcs, "smoothing_mm": sigma}
 
 
+def scaled(document: dict, factor: float) -> dict:
+    """The split engraved ``factor`` times as large (feature work-size-and-splitting-a-region-again, DEC-001): a copy in which every arc point,
+    the size, the millimetres per pixel, the minimum area and the tolerance are scaled; the regions, their ids, the palette, the picture's
+    pixels and the important areas (in pixels) are as they were. A split of the same picture at the new width with the same settings would
+    give the same raster (its minimum area is a share of the picture, the superpixels work in pixels), so the scale is exact. The document
+    is the one as traced, without smoothing (:func:`smoothed` is applied on reading)."""
+    factor = _number(factor, "the scale factor", positive=True)
+    doc = copy.deepcopy(document)
+    for arc in doc["arcs"]:
+        arc["points"] = [[round(x * factor, 5), round(y * factor, 5)] for x, y in arc["points"]]
+        arc.pop("nodes", None)
+    doc.pop("smoothing_mm", None)
+    doc["size_mm"] = {"width": document["size_mm"]["width"] * factor, "height": document["size_mm"]["height"] * factor}
+    doc["px_mm"] = document["px_mm"] * factor
+    doc["min_area_mm2"] = document["min_area_mm2"] * factor ** 2
+    doc["tolerance_mm"] = document["tolerance_mm"] * factor
+    return doc
+
+
 def _oriented(nodes: list[list[float]], backwards: bool) -> list[list[float]]:
     """The nodes of an arc walked backwards: the order reverses and every node's in- and out-handle swap."""
     return [[n[0], n[1], n[4], n[5], n[2], n[3]] for n in reversed(nodes)] if backwards else nodes

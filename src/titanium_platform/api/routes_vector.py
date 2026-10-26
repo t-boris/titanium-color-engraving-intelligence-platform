@@ -109,6 +109,15 @@ def vector_source(plan_id: int, request: Request, body: dict | None = None):
     return {**preview, "work": _view(request, plan_id)}
 
 
+@router.post("/vector/{plan_id}/size")
+def resize_vector_job(plan_id: int, request: Request, body: dict | None = None):
+    """Another size for a photo work: ``width_mm`` or ``height_mm``, the other side by the picture (see vector_job.resize); the job is
+    returned as it is afterwards."""
+    body = body or {}
+    vector_job.resize(store_of(request), plan_id, body.get("width_mm"), body.get("height_mm"))
+    return _view(request, plan_id)
+
+
 @router.post("/vector/{plan_id}/rename")
 def rename_vector_job(plan_id: int, request: Request, body: dict | None = None):
     """Another name for a work (see vector_job.rename_work); nothing else about it changes."""

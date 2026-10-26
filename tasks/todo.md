@@ -1,3 +1,47 @@
+# Work size and splitting a region again — 0.36.0 … (2026-10-25, operator: «Luna 1» is 150 × 200 mm, the plate 150 × 150)
+
+The operator approved («Так и сделай»): «Вписать» first (a width or a height, the other side by the picture; colours, inscriptions and
+photo zones kept), then «Разбить область ещё раз» (one selected region split finer, the rest untouched), then «Обрезать под пластину».
+MarkView feature `work-size-and-splitting-a-region-again`. The code map (Explore agent) showed: regions store no coordinates, the geometry
+is arcs in mm; a re-split at a new width with the same settings gives the same raster, so a pure scale of the document is exact and keeps
+every region id, merge and colour; `lettering.scaled` already scales texts; `photo_zones.settle` re-takes a zone's dots at a new width.
+
+## Phase 1 — «Вписать» (0.36.0)
+
+- [x] `segment.scaled(document, factor)`: arcs' points, `size_mm`, `px_mm`, `min_area_mm2`, `tolerance_mm` scaled; ids, palette,
+      regions, `image_px`, `important` untouched.
+- [x] `vector_job.resize(store, plan_id, width_mm | height_mm)`: a new version (undoable), `plan.size_mm`, markers, texts scaled,
+      zones settled at their new width; refused when both or neither side is given, not positive, or the size is the same.
+- [x] Undo and redo bring the size back: `_go` syncs `plan.size_mm` and the markers with the restored document.
+- [x] A variant belongs to a split by its regions (`split` key of region ids, colours and pixels), not by its version number: variants
+      survive a resize; legacy variants without the key keep the version rule until the work is on their version, then get the key
+      (`_key_variants`, in every editor operation and in a resize). The view says `restorable`.
+- [x] Route `POST /vector/{id}/size`; UI: «Размер…» in the work's head (two linked fields), the editor fits the new size, the
+      variants tab uses `restorable` (falls back to the version for a view without it).
+- [x] Tests: API (ids, arcs ×f, colouring kept, undo/redo with markers, variants, refusals), inscriptions and a zone settled, header UI test.
+- [x] Rehearsal on a fresh copy of the live workshop (the 0.35 copy had no «Luna 1»; server 8796, own tab): «Luna 1» (plan 44, now
+      150 × 150 in the live data: the operator remade it square) to a width of 100 → 100 × 100, version 2; the editor fits the new size;
+      «Luna» moves 125.2 → 83.5 mm and 12 → 8 mm high, the gap 0.3 mm stays; the zone keeps its 125 regions, 92.25 → 61.5 mm wide;
+      the LightBurn file and the thumbnail come; undo → 150 × 150, version 1; redo → 100 × 100; no console errors.
+- [x] MarkView: REQ-001, REQ-002 approved (the operator's words), REQ-003 draft; DEC-001..DEC-003 proposed; overview status implementing.
+- [ ] Version 0.36.0, README, full suite, desktop tests, build, tag, GitHub pre-release, back up the live DB, reinstall the desktop app
+      (the app is running: the reinstall waits for the operator to quit it or to say so).
+
+## Phase 2 — «Разбить область ещё раз» (0.37.0)
+
+- [ ] `segment.split_region(document, raster, rid, parts)`: the region's pixels (from `photo_zones.labels`) clustered into `colours`
+      parts at the finest superpixel size, small parts merged, the outer boundary arcs kept exactly and cut where the inner borders
+      meet them, new arcs inside, new palette colours appended (indexes are ids, no re-sort), the largest part keeps the region's id.
+- [ ] `vector_job`: op `split_region {region, colours}` as a merge-like new version; the region's hand colour, exclusion and zone
+      carry to all parts; the current mode colours the new colours (closest for a work coloured by AI).
+- [ ] UI: «Разбить мельче…» in the selection panel for one selected region (a number of colours 2–6).
+- [ ] Tests on a synthetic picture with a gradient region: part count, watertight coverage, neighbours' arcs unchanged, undo.
+
+## Phase 3 — «Обрезать под пластину» (0.38.0)
+
+- [ ] A plate's width × height and a frame moved over the picture; regions outside cut, those crossing clipped; texts and zones
+      moved with the frame. Design after phases 1 and 2 are in use.
+
 # Photo dots named by their photograph — 0.35.3 (2026-10-25, BUG-008)
 
 The Stop hook listed BUG-008 among what is open. Checked first whether «Темнее/Светлее» for dots could rest on measurements already in

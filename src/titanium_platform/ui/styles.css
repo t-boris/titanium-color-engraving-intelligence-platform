@@ -838,6 +838,7 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .vw-name-row h3 {padding:0;border:0;font-size:17px;overflow-wrap:anywhere}
 .vw-rename {flex:none;min-height:24px;padding:0 7px;font-size:13px;line-height:1;opacity:.7}
 .vw-rename:hover,.vw-rename:focus-visible {opacity:1}
+.vw-size {vertical-align:middle;min-height:22px;padding:0 7px;font-size:12px;line-height:1}
 /* === end rename === */
 
 /* ex-: «Эксперименты» на один экран (REQ-044, DEC-080). Слева список с фильтрами, справа рабочая задача и под ней выводы для материала;

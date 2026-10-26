@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import collections
 import copy
+import hashlib
 import json
 import math
 import threading
@@ -662,6 +663,57 @@ def _photo_job(store: Store, plan_id: int) -> dict:
     return plan
 
 
+def resize(store: Store, plan_id: int, width_mm=None, height_mm=None) -> None:
+    """The work engraved at another size (feature work-size-and-splitting-a-region-again, REQ-001, DEC-001): its new width or its new
+    height in mm, the other side by the picture. The split is scaled, not made again (:func:`segment.scaled`): a new version with the same
+    regions, colours, merges and variants, which undo brings back (:func:`_go`). The inscriptions are scaled with the picture
+    (``lettering.scaled``), each photo zone is settled at its new width, the markers are drawn for the new size; the smoothing stays in
+    mm (DEC-003). The size the work has already, both sides or neither, and a side that is not a positive number are refused."""
+    plan = _photo_job(store, plan_id)
+    if (width_mm is None) == (height_mm is None):
+        raise cv.ConversionError("give the work's new width or its new height, one of them")
+    given = "width" if height_mm is None else "height"
+    try:
+        side = float(width_mm if height_mm is None else height_mm)
+    except (TypeError, ValueError):
+        side = math.nan
+    if not math.isfinite(side) or side <= 0:
+        raise cv.ConversionError("the work's size must be a positive number of millimetres")
+    factor = side / plan["size_mm"][given]
+    if abs(factor - 1) < 1e-6:
+        raise cv.ConversionError("the work is this size already")
+    _pin_legacy(plan)
+    _key_variants(plan, _document(plan))
+    document = seg.scaled(_document(plan), factor)
+    colouring = copy.deepcopy(plan["colouring"])
+    if _texts(colouring):
+        colouring["texts"] = lettering.scaled(_texts(colouring), factor)
+    if pz.zones(colouring):
+        loops = {r["id"]: r["loops"] for r in seg.regions_as_loops(seg.smoothed(document, float(plan.get("smoothing_mm", 0.0))))}
+        for zone in pz.zones(colouring):
+            pz.settle(_ev(store, plan), plan, zone, pz.width_of(loops, zone["regions"]))
+    _snapshot(plan)
+    plan["colouring"] = colouring
+    _resized(store, plan, document["size_mm"])
+    entries = _palette(store, plan)
+    with store.transaction():
+        _new_version(store, plan, document, {"op": "resize", "given": given, "width_mm": document["size_mm"]["width"],
+                                             "height_mm": document["size_mm"]["height"]})
+        _photo_refresh(store, plan, document, entries)
+        store.audit("vector_work_resized", plan_id=plan["id"], given=given, width_mm=document["size_mm"]["width"],
+                    height_mm=document["size_mm"]["height"])
+
+
+def _resized(store: Store, plan: dict, size: dict) -> None:
+    """The plan at the size of its document: the size itself and the registration markers drawn for it."""
+    plan["size_mm"] = {"width": float(size["width"]), "height": float(size["height"])}
+    plan["markers"] = cv._plan_markers(plan["plan_identifier"], plan["markers_enabled"], size["width"], size["height"], store)
+
+
+def _same_size(a: dict, b: dict) -> bool:
+    return all(abs(float(a[k]) - float(b[k])) < 1e-6 for k in ("width", "height"))
+
+
 def resplit(store: Store, plan_id: int, params: dict) -> None:
     """Split the picture again with new settings and important areas: a new document version, coloured anew (closest);
     a fresh start, the variants and the steps to undo and redo of the earlier split are left behind with it."""
@@ -773,14 +825,38 @@ def _carried_zones(store: Store, plan: dict, old: dict, new: dict) -> list[dict]
 
 
 def _add_variant(store: Store, plan: dict, document: dict, entries: list[dict]) -> None:
-    """The current colouring, just made by an automatic mode, becomes a numbered variant that can be restored on the
-    version of the split it was made on."""
+    """The current colouring, just made by an automatic mode, becomes a numbered variant that can be restored on a split with the
+    regions it coloured (:func:`_split_key`)."""
     number = 1 + max((v["number"] for v in plan["variants"]), default=0)
     plan["colouring"]["variant"] = number
     state = _state(plan, document, entries, _inscribed(store, plan, entries))
     plan["variants"].append({"number": number, "mode": plan["colouring"]["mode"], "seed": plan["colouring"]["seed"], "at": now(),
                              **({"subset": plan["colouring"]["subset"]} if plan["colouring"].get("subset") else {}),
-                             "version": plan["document_version"], "colouring": copy.deepcopy(plan["colouring"]), "totals": state["totals"]})
+                             "version": plan["document_version"], "split": _split_key(document), "colouring": copy.deepcopy(plan["colouring"]),
+                             "totals": state["totals"]})
+
+
+def _split_key(document: dict) -> str:
+    """What a colouring is made for: the regions of the split with their colours and sizes (work-size-and-splitting-a-region-again, DEC-002).
+    A change of the work's size keeps it; a merge, a region split again or a new split changes it."""
+    return hashlib.sha1(json.dumps([[r["id"], r["color"], r["pixels"]] for r in document["regions"]]).encode()).hexdigest()[:16]
+
+
+def _key_variants(plan: dict, document: dict) -> None:
+    """Variants made before the key (0.36.0) on the version the work is at now get it: this document is the split they coloured. Those of
+    other versions keep the version rule until the work is back on their version."""
+    key = None
+    for variant in plan["variants"]:
+        if "split" not in variant and variant.get("version", plan["document_version"]) == plan["document_version"]:
+            key = key or _split_key(document)
+            variant["split"] = key
+
+
+def _restorable(plan: dict, document: dict, variant: dict) -> bool:
+    """Whether a variant can be restored on the current split: one with the regions it coloured (DEC-002); a variant made before the key
+    knows only the version it was made on (editor DEC-077)."""
+    key = variant.get("split")
+    return key == _split_key(document) if key else variant["version"] == plan["document_version"]
 
 
 def _loops_by_region(plan: dict, document: dict) -> dict[str, list]:
@@ -1594,6 +1670,7 @@ def photo_view(store: Store, plan: dict) -> dict:
         settings={"tolerance_de": plan["threshold"], **settings},
         outside=state["outside"], missing={"regions": len(state["missing_regions"])}, totals=state["totals"],
         variants=[{**{k: v[k] for k in ("number", "mode", "seed", "at", "totals")}, "version": v.get("version", plan["document_version"]),
+                   "restorable": _restorable(plan, document, v),
                    **({"ai": v["colouring"]["ai"]} if v["colouring"].get("ai") else {}),
                    **({"subset": v["subset"]} if v.get("subset") else {})} for v in plan["variants"]],
         ai={"available": _ai_missing() is None, "missing": _ai_missing(), "styles": list(ai.STYLES), "photo_allowed": bool(plan.get("ai_photo")),
@@ -1749,22 +1826,26 @@ def _snapshot(plan: dict) -> None:
     plan["undo"], plan["redo"] = (plan["undo"] + [_here(plan)])[-UNDO_DEPTH:], []
 
 
-def _step(plan: dict, direction: str) -> None:
+def _step(store: Store, plan: dict, direction: str) -> None:
     """Undo or redo one operation: the state on top of that stack comes back and the present one goes onto the other."""
     if not plan[direction]:
         raise cv.ConversionError("there is no earlier colouring to go back to" if direction == "undo" else "there is no undone change to redo")
     there = plan[direction].pop()
     plan["redo" if direction == "undo" else "undo"].append(_here(plan))
-    _go(plan, there)
+    _go(store, plan, there)
 
 
-def _go(plan: dict, there: dict) -> None:
-    """Bring a state back; one of another split version brings that version's document back from the history."""
+def _go(store: Store, plan: dict, there: dict) -> None:
+    """Bring a state back; one of another split version brings that version's document back from the history, and the work's size
+    and markers with it when the version was made by a size change (work-size-and-splitting-a-region-again, DEC-001)."""
     if there["version"] != plan["document_version"]:
         entry = next((h for h in plan["history"] if h.get("path") and h["version"] == there["version"]), None)
         if entry is None or not Path(entry["path"]).is_file():
             raise cv.ConversionError("there is no such version of the vector document")
         plan["document_version"], plan["document_path"] = entry["version"], entry["path"]
+        size = _document(plan)["size_mm"]
+        if not _same_size(size, plan["size_mm"]):
+            _resized(store, plan, size)
     plan["colouring"], plan["threshold"] = copy.deepcopy(there["colouring"]), there["threshold"]
     plan["colour_settings"] = copy.deepcopy(there["colour_settings"])
 
@@ -1804,10 +1885,12 @@ def colour(store: Store, plan_id: int, op: dict) -> None:
         raise cv.ConversionError(f"unknown edit operation {kind!r}")
     _pin_legacy(plan)
     document = _document(plan)
+    _key_variants(plan, document)
     entries = _palette(store, plan)
     if kind in ("undo", "redo"):
-        _step(plan, kind)
+        _step(store, plan, kind)
         document = _document(plan)
+        _key_variants(plan, document)                # back on an earlier version: its old variants get the key too
     elif kind in MERGE_OPS:
         merged, colouring, keeper = _merge(plan, document, entries, kind, op)
         _snapshot(plan)
@@ -1845,7 +1928,7 @@ def _change(store: Store, plan: dict, document: dict, entries: list[dict], kind:
         variant = next((v for v in plan["variants"] if v["number"] == op.get("variant")), None)
         if variant is None:
             raise cv.ConversionError("there is no such variant of the colouring")
-        if variant["version"] != plan["document_version"]:
+        if not _restorable(plan, document, variant):
             raise cv.ConversionError("this variant of the colouring belongs to another version of the split")
         return {"colouring": {**copy.deepcopy(variant["colouring"]), "photo": copy.deepcopy(pz.zones(current)),        # the zones and the
                               "texts": copy.deepcopy(_texts(current))}}                                                # inscriptions stay

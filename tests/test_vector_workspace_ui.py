@@ -333,3 +333,45 @@ def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_titl
     assert "renamed: (name) => { shown = {...shown, name}; head.update(shown); }" in VECTOR_JS                          # the photo header keeps the stored name
     assert "return {list, header, frame, renameButton};" in (UI / "screens" / "vector-workspace.js").read_text(encoding="utf-8")
     assert re.search(r"\.vw-rename \{[^}]*flex:none", CSS) and re.search(r"\.vw-name-row \{[^}]*display:flex", CSS)
+
+
+@node
+def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following_the_picture(work, job, tmp_path):
+    """Feature work-size-and-splitting-a-region-again, REQ-001: «Размер…» opens two linked fields; the side typed last is sent, the head and the
+    editor show the work the server answers with."""
+    c, j = work, job
+    routes = routes_of(c, j)
+    view = routes[f"/api/vector/{j['id']}"]["json"]
+    routes[f"/api/vector/{j['id']}/size"] = {"status": 200, "json": {**view, "size_mm": {"width": 120.0, "height": 90.0},
+                                                                     "document": {**view["document"], "size_mm": {"width": 120.0, "height": 90.0}, "version": 2}}}
+    out = run(tmp_path, routes, {"plan": str(j["id"])}, f"""
+  {DIALOG} {POSTS} {TOASTS}
+  const head = () => tree.querySelectorAll('header')[0];
+  out.before = head().querySelector('.sub').textContent;
+  await byText(head(), 'button', 'Размер…').dispatch('click');
+  const d = dialog();
+  const inputs = () => d.querySelectorAll('input');
+  out.prefill = inputs().map((i) => [i.getAttribute('aria-label'), i.value]);
+  inputs()[0].value = '30'; await inputs()[0].dispatch('input');
+  out.linkedHeight = inputs()[1].value;
+  inputs()[1].value = '90'; await inputs()[1].dispatch('input');
+  out.linkedWidth = inputs()[0].value;
+  out.text = d.textContent;
+  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick(); await tick(); await tick();
+  out.posts = posts().map(([path, body]) => [path, JSON.parse(body)]);
+  out.closed = dialog() == null;
+  out.after = head().querySelector('.sub').textContent;
+  out.toasts = toasts().map((t) => t[1]);
+  await byText(head(), 'button', 'Размер…').dispatch('click');
+  const again = dialog();
+  out.again = again.querySelectorAll('input').map((i) => i.value);
+  await byText(again, 'button', 'Изменить размер').dispatch('click'); await tick();      // the size as it is: closed without a request
+  out.unchanged = [dialog() == null, posts().length];
+""")
+    assert out["before"].startswith("60.0 × 45.0 мм") and out["prefill"] == [["Ширина, мм", "60"], ["Высота, мм", "45"]]
+    assert out["linkedHeight"] == "22.5" and out["linkedWidth"] == "120"
+    assert "по пропорциям картинки" in out["text"] and "можно отменить" in out["text"]
+    assert out["posts"] == [[f"/api/vector/{j['id']}/size", {"height_mm": 90}]] and out["closed"] is True
+    assert out["after"].startswith("120.0 × 90.0 мм") and "разбиение № 2" in out["after"]
+    assert any("120.0 × 90.0 мм" in t for t in out["toasts"])
+    assert out["again"] == ["120", "90"] and out["unchanged"] == [True, 1]

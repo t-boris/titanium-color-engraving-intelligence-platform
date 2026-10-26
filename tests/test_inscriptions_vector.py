@@ -332,3 +332,25 @@ def test_an_inscription_beyond_the_edge_says_so_and_the_file_engraves_it_up_to_t
     letters = engraved.intersection(whole["cut"])                                                 # under the cut the layer has its letters only
     assert shapely.symmetric_difference(letters, clipped["letters"]).area < 0.01 * clipped["letters"].area
     assert clipped["letters"].area < 0.8 * whole["letters"].area
+
+
+def test_a_size_change_scales_the_inscriptions_with_the_picture_and_settles_the_zone_at_its_new_width(world):
+    """Feature work-size-and-splitting-a-region-again, REQ-001: the texts keep their place and size on the picture (``lettering.scaled``, their
+    gap in mm kept); a photo zone keeps its regions and is as wide as they are now; undo brings both back."""
+    job = create(world)
+    red = of_colour(world, job, RED)
+    colouring(world, job, op="photo_add", regions=red)
+    zone = colouring(world, job, op="photo_set", zone=1, kind="jarvis")["zones"][0]
+    before = add(world, job, gap_mm=0.6)["texts"][0]
+    answer = world["client"].post(f"/api/vector/{job['id']}/size", json={"height_mm": 90})
+    assert answer.status_code == 200, answer.text
+    after = answer.json()
+    assert after["size_mm"] == {"width": 120.0, "height": 90.0} and after["document"]["version"] == job["document"]["version"] + 1
+    (text,) = after["texts"]
+    assert (text["x"], text["y"], text["height_mm"], text["gap_mm"]) == (60.0, 50.0, 16.0, 0.6) and text["problem"] is None
+    assert text["entry_id"] == before["entry_id"]
+    (settled,) = after["zones"]
+    assert settled["regions"] == zone["regions"] and settled["kind"] == "jarvis"
+    assert settled["width_mm"] == pytest.approx(zone["width_mm"] * 2, abs=0.2) and settled["dot_power"] is not None
+    back = colouring(world, job, op="undo")
+    assert back["size_mm"] == {"width": 60.0, "height": 45.0} and back["texts"][0]["x"] == 30 and back["zones"][0]["width_mm"] == zone["width_mm"]

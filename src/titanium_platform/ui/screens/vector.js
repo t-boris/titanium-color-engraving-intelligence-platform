@@ -372,7 +372,9 @@
     const exp = j.experiment || {};
     const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {}), review = h('div', {class: 'stack'});
     let shown = null, queue = Promise.resolve(), parts = null, frame = null;
-    const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }});
+    /** «Размер…» (REQ-001 фичи work-size-and-splitting-a-region-again): в той же очереди; ответ — работа целиком или null при отказе. */
+    const resize = (body) => (queue = queue.then(async () => { try { const work = await post(`/vector/${j.id}/size`, body); show(work); return work; } catch (e) { fail(e); return null; } }));
+    const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }, resize});
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step returns the whole work
     const banner = LabSource.banner(`/vector/${j.id}`, 'vector', (work) => show(work));
     function show(next) {

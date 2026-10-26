@@ -1507,3 +1507,122 @@ def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_
     assert out["chips"] == ["Все · 36", "Есть рецепт · 32", "Мало данных · 4"]
     assert out["history"][0].startswith("v22") and out["history"][1].startswith("v21") and out["historyCount"] == "показано 20 из 22"
     assert out["revert"] == ["Вернуть эту версию"]
+
+
+# -- the size of a work (feature work-size-and-splitting-a-region-again, REQ-001, DEC-001, DEC-002) ---------------------------------------------
+def resized(c, j, **side):
+    r = c["client"].post(f"/api/vector/{j['id']}/size", json=side)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def size_refused(c, j, body, message):
+    r = c["client"].post(f"/api/vector/{j['id']}/size", json=body)
+    assert r.status_code == 422 and r.json()["error"] == message, (body, r.text)
+
+
+def test_a_work_given_another_size_by_one_side_keeps_its_regions_merges_and_colouring_scaled_exactly(work):
+    """REQ-001, DEC-001: the split is scaled, not made again; the other side follows the picture (240 x 180 px: 4 to 3)."""
+    c = work
+    j = create(c, markers="true").json()
+    a, blue_e = areas(c, j), by_rgb(j, BLUE)["entry_id"]
+    j = colouring(c, j, op="paint", region=a["paper"], scope="region", entry_id=blue_e)
+    j = colouring(c, j, op="exclude_region", region=a["disc"])
+    j = colouring(c, j, op="merge_regions", regions=[a["ring"], a["inner"]])                 # a merge: a re-split would lose it
+    before, old = document_of(c, j), state_of(c, j)
+    assert (j["document"]["version"], j["size_mm"]) == (2, {"width": 60.0, "height": 45.0})
+    j = resized(c, j, height_mm=90)
+    assert j["document"]["version"] == 3 and j["size_mm"] == {"width": 120.0, "height": 90.0} and j["document"]["size_mm"] == j["size_mm"]
+    after = document_of(c, j)
+    assert [r["id"] for r in after["regions"]] == [r["id"] for r in before["regions"]] and after["palette"] == before["palette"]
+    assert [{k: r[k] for k in r if k != "loops"} for r in after["regions"]] == [{k: r[k] for k in r if k != "loops"} for r in before["regions"]]
+    assert [r["loops"] for r in after["regions"]] == [r["loops"] for r in before["regions"]]
+    assert all([[round(x * 2, 5), round(y * 2, 5)] for x, y in old_arc["points"]] == new_arc["points"]
+               and {k: v for k, v in old_arc.items() if k != "points"} == {k: v for k, v in new_arc.items() if k != "points"}
+               for old_arc, new_arc in zip(before["arcs"], after["arcs"]))
+    assert (after["px_mm"], after["min_area_mm2"], after["tolerance_mm"]) == (pytest.approx(before["px_mm"] * 2), pytest.approx(before["min_area_mm2"] * 4),
+                                                                              pytest.approx(before["tolerance_mm"] * 2))
+    assert after["image_px"] == before["image_px"] and after["important"] == before["important"] and after["centres"] == before["centres"]
+    new = state_of(c, j)
+    assert (new[2], new[3], new[5]) == (old[2], old[3], old[5]) and new[6] != old[6]      # the colours, colouring and settings; the picture is larger
+    assert {k: v for k, v in new[4].items() if k != "seconds"} == {k: v for k, v in old[4].items() if k != "seconds"} and new[4]["seconds"] > old[4]["seconds"]
+    assert j["colouring"]["regions"] == {a["paper"]: blue_e} and j["colouring"]["excluded_regions"] == [a["disc"]]
+    plan = pl.get_plan(c["store"], j["id"])
+    assert plan["markers"] == pl.marker_geometry(plan["plan_identifier"], 120.0, 90.0) and plan["markers"] != pl.marker_geometry(plan["plan_identifier"], 60.0, 45.0)
+    assert plan["history"][-1]["op"] == {"op": "resize", "given": "height", "width_mm": 120.0, "height_mm": 90.0} and plan["history"][-1]["version"] == 3
+    listed = next(w for w in c["client"].get("/api/vector").json() if w["id"] == j["id"])
+    assert (listed["width_mm"], listed["height_mm"]) == (120.0, 90.0)
+    # by the width, back to a quarter: the same regions again
+    j = resized(c, j, width_mm=30)
+    assert j["size_mm"] == {"width": 30.0, "height": 22.5} and [r["id"] for r in document_of(c, j)["regions"]] == [r["id"] for r in before["regions"]]
+
+
+def test_the_areas_and_times_of_a_resized_work_follow_its_size(work, job):
+    c, j = work, job
+    before = {layer["name"]: layer["area_mm2"] for layer in j["layers"]}
+    j = resized(c, j, width_mm=120)
+    assert {layer["name"]: layer["area_mm2"] for layer in j["layers"]} == {name: pytest.approx(area * 4, rel=1e-3) for name, area in before.items()}
+    assert j["totals"]["seconds"] == pytest.approx(job["totals"]["seconds"] * 4, rel=0.05) and j["time"]["seconds"] > job["time"]["seconds"]
+
+
+def test_undo_and_redo_bring_the_size_and_the_markers_back_with_the_split_version(work):
+    c = work
+    j = create(c, markers="true").json()
+    a = areas(c, j)
+    j = colouring(c, j, op="merge_regions", regions=[a["ring"], a["inner"]])
+    small = state_of(c, j)
+    j = resized(c, j, width_mm=120)
+    j = colouring(c, j, op="paint", region=a["band"], scope="region", entry_id=by_rgb(j, BLUE)["entry_id"])
+    large = state_of(c, j)
+    assert (j["undo"], j["redo"]) == (3, 0)
+    j = colouring(c, j, op="undo")
+    assert j["size_mm"] == {"width": 120.0, "height": 90.0}
+    j = colouring(c, j, op="undo")
+    plan = pl.get_plan(c["store"], j["id"])
+    assert (j["document"]["version"], j["size_mm"], plan["size_mm"]) == (2, {"width": 60.0, "height": 45.0}, {"width": 60.0, "height": 45.0})
+    assert plan["markers"] == pl.marker_geometry(plan["plan_identifier"], 60.0, 45.0) and state_of(c, j) == small
+    j = colouring(c, j, op="redo")
+    assert (j["document"]["version"], j["size_mm"]) == (3, {"width": 120.0, "height": 90.0})
+    j = colouring(c, j, op="redo")
+    assert state_of(c, j) == large and pl.get_plan(c["store"], j["id"])["markers"] == pl.marker_geometry(plan["plan_identifier"], 120.0, 90.0)
+    assert [h["version"] for h in pl.get_plan(c["store"], j["id"])["history"] if h.get("path")] == [1, 2, 3]
+
+
+def test_a_size_change_is_refused_without_one_positive_side_or_for_the_size_the_work_has(work, job):
+    c, j = work, job
+    size_refused(c, j, {}, "give the work's new width or its new height, one of them")
+    size_refused(c, j, {"width_mm": 100, "height_mm": 75}, "give the work's new width or its new height, one of them")
+    for bad in (0, -5, "abc", "nan"):
+        size_refused(c, j, {"width_mm": bad}, "the work's size must be a positive number of millimetres")
+    size_refused(c, j, {"height_mm": 45}, "the work is this size already")
+    size_refused(c, j, {"width_mm": 60.0000001}, "the work is this size already")
+    assert c["client"].get(f"/api/vector/{j['id']}").json()["document"]["version"] == 1 and pl.get_plan(c["store"], j["id"])["undo"] == []
+
+
+def test_variants_survive_a_size_change_but_not_a_merge_and_old_variants_keep_the_version_rule(work, job):
+    """DEC-002: a variant belongs to the regions it coloured. One made before the key (no ``split``) is restored on its version only."""
+    c, j = work, job
+    j = colouring(c, j, op="assign", mode="tonality")
+    assert [(v["version"], v["restorable"]) for v in j["variants"]] == [(1, True), (1, True)]
+    j = resized(c, j, width_mm=120)
+    assert [(v["version"], v["restorable"]) for v in j["variants"]] == [(1, True), (1, True)]
+    j = colouring(c, j, op="restore", variant=1)
+    assert j["colouring"]["variant"] == 1 and j["document"]["version"] == 2
+    j = colouring(c, j, op="merge_colours", colours=[by_rgb(j, BLUE)["index"], by_rgb(j, RED)["index"]])
+    assert [v["restorable"] for v in j["variants"]] == [False, False]
+    refused(c, j, {"op": "restore", "variant": 2}, "this variant of the colouring belongs to another version of the split")
+    j = colouring(c, j, op="undo")                                                             # back on the resized split: restorable again
+    assert [v["restorable"] for v in j["variants"]] == [True, True]
+    plan = pl.get_plan(c["store"], j["id"])
+    for v in plan["variants"]:
+        v.pop("split")                                                                        # as a work made before 0.36.0 keeps them
+    cv._persist(c["store"], plan, cv.ST_READY, plan["markers_enabled"])
+    j = c["client"].get(f"/api/vector/{j['id']}").json()
+    assert [(v["version"], v["restorable"]) for v in j["variants"]] == [(1, False), (1, False)]
+    refused(c, j, {"op": "restore", "variant": 1}, "this variant of the colouring belongs to another version of the split")
+    j = colouring(c, j, op="undo")                                                             # the restore
+    j = colouring(c, j, op="undo")                                                             # the size change
+    assert j["document"]["version"] == 1 and [v["restorable"] for v in j["variants"]] == [True, True]
+    assert all("split" in v for v in pl.get_plan(c["store"], j["id"])["variants"])          # on their own version they get the key
+    j = resized(c, j, width_mm=90)                                                             # and from now on a size change keeps them
+    assert [v["restorable"] for v in j["variants"]] == [True, True] and colouring(c, j, op="restore", variant=2)["colouring"]["variant"] == 2
