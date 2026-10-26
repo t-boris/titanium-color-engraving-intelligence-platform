@@ -25,8 +25,7 @@ every region id, merge and colour; `lettering.scaled` already scales texts; `pho
       the LightBurn file and the thumbnail come; undo → 150 × 150, version 1; redo → 100 × 100; no console errors.
 - [x] MarkView: REQ-001, REQ-002 approved (the operator's words), REQ-003 draft; DEC-001..DEC-003 proposed; overview status implementing.
 - [x] Version 0.36.0, README, full suite, desktop tests, build, tag, GitHub pre-release.
-- [ ] Back up the live DB and reinstall the desktop app: the app is running (the operator is working in it), so the reinstall waits for
-      the operator to quit it or to say `reinstall`.
+- [x] Back up the live DB and reinstall the desktop app: done with 0.37.0 on 2026-10-26 (phase 2).
 
 Done 2026-10-25: commit babd562 on main, tag v0.36.0; suite 2321 passed, none skipped (-n 12, 3:18; the one failure, three untranslated
 messages, was fixed and `test_i18n_coverage` + `test_ui_files` rerun green); desktop 16 passed; zip 260 430 481 bytes, sha256
@@ -55,11 +54,13 @@ core 0.36.0 (the first build was rebuilt: it predated the translations). The des
       r345 → 2 parts, r18 into 4 → 7 parts, toast, undo to version 1; no console errors.
 - [x] MarkView: DEC-084 proposed (the id MarkView gave), REQ-002 statement and criteria corrected (hand colour on the largest part).
 - [x] Version 0.37.0, README, full suite, desktop tests, build, tag, GitHub pre-release.
-- [ ] Back up the live DB and reinstall the desktop app (0.36.0 and 0.37.0 together): waits for the operator to quit it or say `reinstall`.
+- [x] Back up the live DB and reinstall the desktop app (0.36.0 and 0.37.0 together) on the operator's `reinstall`: no re-check running,
+      app quit, backup `titanium-before-0.37.0-20261026T015943Z.sqlite` (integrity ok, 15 works), zip digest as released, codesign
+      strict ok in /Applications, version 0.37.0, opened again.
 
 Done 2026-10-26: commit 2cd1a1a on main, tag v0.37.0; suite 2337 passed, none skipped (-n 12, 3:25); desktop 16 passed; zip
 260 456 243 bytes, sha256 65d4c5f6…0b318e, the same digest downloaded back from GitHub (pre-release v0.37.0); codesign strict ok,
-unnotarized; packaged smoke ok, core 0.37.0. The desktop app is not reinstalled yet.
+unnotarized; packaged smoke ok, core 0.37.0. Reinstalled on the operator's `reinstall` the same night.
 
 ## Phase 3 — «Обрезать под пластину» (0.38.0)
 
