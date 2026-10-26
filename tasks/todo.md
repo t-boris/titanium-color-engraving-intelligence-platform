@@ -54,7 +54,12 @@ core 0.36.0 (the first build was rebuilt: it predated the translations). The des
       0 after each; neighbours' raw borders unchanged (smoothed: within a fraction of the smoothing near new junctions). In the screen:
       r345 → 2 parts, r18 into 4 → 7 parts, toast, undo to version 1; no console errors.
 - [x] MarkView: DEC-084 proposed (the id MarkView gave), REQ-002 statement and criteria corrected (hand colour on the largest part).
-- [ ] Version 0.37.0, README, full suite, desktop tests, build, tag, GitHub pre-release; reinstall waits for the operator.
+- [x] Version 0.37.0, README, full suite, desktop tests, build, tag, GitHub pre-release.
+- [ ] Back up the live DB and reinstall the desktop app (0.36.0 and 0.37.0 together): waits for the operator to quit it or say `reinstall`.
+
+Done 2026-10-26: commit 2cd1a1a on main, tag v0.37.0; suite 2337 passed, none skipped (-n 12, 3:25); desktop 16 passed; zip
+260 456 243 bytes, sha256 65d4c5f6…0b318e, the same digest downloaded back from GitHub (pre-release v0.37.0); codesign strict ok,
+unnotarized; packaged smoke ok, core 0.37.0. The desktop app is not reinstalled yet.
 
 ## Phase 3 — «Обрезать под пластину» (0.38.0)
 
