@@ -722,3 +722,14 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   (`shapely.is_valid_reason`; a loop touching itself at a corner is the tracer's normal output) that refuses rather than saves, and is
   swept over many real regions and every parameter value before release. Tolerances against stored points are at least their rounding.
 
+
+## Never run a visible second instance of the desktop app while the operator works (0.37.0, 2026-10-26)
+
+- **What happened.** To find why the operator's window drew without styles, I started the installed app a second time with a copied
+  window profile and a debugging port. The operator had meanwhile quit the blank window and clicked the Dock icon: macOS activated my
+  instance (same bundle id), and the operator opened the live workshop in its picker and worked in it. I then reloaded that window
+  over the debugging port and quit it with `osascript … to quit`, which quits whichever instance of the bundle id is running.
+  Nothing was written, but the operator's session was interrupted twice.
+- **Rule.** While the operator may be using the app, diagnose only with the hidden `--smoke` mode (own `--user-data-dir`), the
+  browser server or a rehearsal copy; never a visible window of the same bundle, and never `osascript … quit` unless the only running
+  instance is the one the operator asked me to restart. Check `ps … --data-dir` before acting on any running instance.
