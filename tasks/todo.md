@@ -24,8 +24,14 @@ every region id, merge and colour; `lettering.scaled` already scales texts; `pho
       «Luna» moves 125.2 → 83.5 mm and 12 → 8 mm high, the gap 0.3 mm stays; the zone keeps its 125 regions, 92.25 → 61.5 mm wide;
       the LightBurn file and the thumbnail come; undo → 150 × 150, version 1; redo → 100 × 100; no console errors.
 - [x] MarkView: REQ-001, REQ-002 approved (the operator's words), REQ-003 draft; DEC-001..DEC-003 proposed; overview status implementing.
-- [ ] Version 0.36.0, README, full suite, desktop tests, build, tag, GitHub pre-release, back up the live DB, reinstall the desktop app
-      (the app is running: the reinstall waits for the operator to quit it or to say so).
+- [x] Version 0.36.0, README, full suite, desktop tests, build, tag, GitHub pre-release.
+- [ ] Back up the live DB and reinstall the desktop app: the app is running (the operator is working in it), so the reinstall waits for
+      the operator to quit it or to say `reinstall`.
+
+Done 2026-10-25: commit babd562 on main, tag v0.36.0; suite 2321 passed, none skipped (-n 12, 3:18; the one failure, three untranslated
+messages, was fixed and `test_i18n_coverage` + `test_ui_files` rerun green); desktop 16 passed; zip 260 430 481 bytes, sha256
+82fe83f7…fb6ac, the same digest downloaded back from GitHub (pre-release v0.36.0); codesign strict ok, unnotarized; packaged smoke ok,
+core 0.36.0 (the first build was rebuilt: it predated the translations). The desktop app is not reinstalled yet.
 
 ## Phase 2 — «Разбить область ещё раз» (0.37.0)
 
