@@ -14,6 +14,7 @@ that was engraved is never touched.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -237,6 +238,16 @@ def engraved_picture(store: Store, plan_id: int, engraving_id: str, promised: bo
         raise KeyError("this work has no review of that engraving")
     exported = next((e for e in plan["exports"] if e["number"] == review["export_number"] and e.get("promised")), None)
     promise = exported["promised"] if exported else wr.promised_layers(plan.get("layers") or [])
+    if exported:
+        version = exported.get("document_version", plan["document_version"])
+        path = (plan["document_path"] if version == plan["document_version"] else
+                next((h["path"] for h in plan.get("history") or [] if h["version"] == version and h.get("path")), None))
+        if path is None or not Path(path).is_file():
+            raise KeyError("the saved split of this export is missing")
+        # A later split/resize belongs to the next file. The promise's region ids and photo coordinates belong to its own split.
+        plan = {**plan, "document_path": path, "document_version": version,
+                "smoothing_mm": exported.get("smoothing_mm", plan.get("smoothing_mm", 0.0))}
+        plan["size_mm"] = vj._document(plan)["size_mm"]
     colours = {row["promised_index"]: row["promised_srgb" if promised else "got_srgb"] for row in review["rows"]}
     painted = {region: colours[layer["index"]] for layer in promise if layer["index"] in colours for region in layer["region_ids"]}
     zones = _review_pictures(store, plan, review, promised)

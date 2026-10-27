@@ -19,8 +19,21 @@ the engraving as closely as possible. No automatic recolouring or laser-paramete
 - [x] Final full suite: 2347 passed, none skipped (178.81 s, `-n 12`); desktop shell: 16 passed, none skipped.
       Real-copy API at 0.37.1: 12 layers, no missing regions, lower fill RGB [161,118,83], row 33.1 mm against measured 33.2 mm;
       review selects export 2 and includes its photo layer; both complete comparison images and thumbnail return 200.
-- [ ] Signed build, packaged smoke, commit and push.
-- [ ] Install and verify the operator's desktop version after a permitted restart (tasks/lessons.md: do not close an active app unasked).
+- [x] Signed build, packaged smoke, commit 82dfaf9 on main, pushed. The core's real-copy API was also checked from the frozen binary.
+- [x] Operator authorized `reinstall locally`; first installation of 0.37.1 backed up to
+      `titanium-before-0.37.1-20261027T074056Z.sqlite` (63 688 704 bytes, integrity ok; 17 plans, 133 pairs, 3140 observations).
+      Native UI shows v0.37.1, work 46 and its photo review selecting export 2. The operator's new split/colouring/history are preserved.
+- [x] Late live check: the operator re-split the work during the investigation (versions 4/5). The old comparison must reopen its own
+      version-1 document, dimensions and smoothing. Fixed and regression-tested across re-split, resize and smoothing. On a fresh live
+      copy (version 5), both comparison PNGs exactly match the archived version-1 pictures.
+- [x] Final suite after the archived-split repair: 2348 passed, none skipped (187.56 s, `-n 12`); final UI wording: 21 passed.
+      Final signed core and outer app verified with `codesign --verify --deep --strict`; hidden packaged smoke: version 0.37.1,
+      packaged true, UI 2. UI assets in core, bundle and installation staging match the source files.
+- [x] Final local installation and restart: backup `titanium-before-0.37.1-final-20261027T075405Z.sqlite`, integrity ok.
+      Native UI shows v0.37.1 on the real workshop. Work 46's version 5, four exports and fourteen undo steps are preserved;
+      colouring, document path/version, history, undo/redo, exports and size compare equal to the pre-restart backup.
+      Installed core matches the final signed build; running that binary on a fresh data copy gives both archived comparison PNGs
+      byte-for-byte equal to version 1 even though the current work is version 5. The operator's active app stays open.
 
 # Work size and splitting a region again — 0.36.0 … (2026-10-25, operator: «Luna 1» is 150 × 200 mm, the plate 150 × 150)
 

@@ -147,3 +147,23 @@ def test_photo_review_explains_the_wrong_export_and_the_actual_tones_in_the_ui(t
     assert 'Фотозона 1' in out['text'] and '250 → 350' in out['text'] and '1 → 2.9' in out['text']
     assert '18' in out['text'] and '61' in out['text'] and '46' in out['text'] and '88.4' in out['text']
     assert 'undefined' not in out['text'] and 'участвуют в следующих прогнозах' in out['text']
+
+
+def test_comparison_of_an_old_engraving_keeps_its_exported_split_size_and_smoothing_after_edits(work, job):
+    from test_work_review import engrave, exported
+    s, client = work['store'], work['client']
+    exported(work, job)
+    pid = engrave(work, job)
+    we.record(s, pid)
+    original = {p: we.engraved_picture(s, job['id'], 'eng-1', p).png() for p in (False, True)}
+    response = client.post(f"/api/vector/{job['id']}/split", json={'n_colors': 3, 'faces': False, 'density': 40})
+    assert response.status_code == 200, response.text
+    response = client.post(f"/api/vector/{job['id']}/size", json={'width_mm': 40})
+    assert response.status_code == 200, response.text
+    response = client.post(f"/api/vector/{job['id']}/smoothing", json={'mm': .3})
+    assert response.status_code == 200, response.text
+    current = plans.get_plan(s, job['id'])
+    assert current['document_version'] != current['exports'][0]['document_version']
+    for p in (False, True):
+        assert we.engraved_picture(s, job['id'], 'eng-1', p).png() == original[p]
+    assert plans.get_plan(s, job['id']) == current

@@ -117,5 +117,6 @@
     [/^(\d+) region\(s\) have a titanium colour that is no longer measured on this laser, lens and titanium stock: choose another before export$/i,
       (m) => `Областей с цветом титана, которого больше нет среди измерений этого лазера, линзы и заготовки: ${m[1]}. Выберите для них другой цвет перед экспортом`],
     [/^this work has no review of that engraving$/i, 'У этой работы нет вывода по этой гравировке'],
+    [/^the saved split of this export is missing$/i, 'Сохранённое разбиение этого файла отсутствует: сравнение нельзя восстановить.'],
   ]);
 })();

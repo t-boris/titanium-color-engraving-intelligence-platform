@@ -42,6 +42,8 @@ Fixed in 0.37.1:
 - Export matching includes image mode, Min/Max, pulse width and other recorded scan controls. Reviews show photo errors against
   the measurements known at export, differences from the latest file, and both comparison pictures include the actual embedded
   bitmap rendered with the prior or measured tone curve, in its measured transform and opacity.
+  The comparison also reopens the split, dimensions and smoothing saved with that export, so a later re-split or resize of the work
+  cannot redraw the old engraving on the new regions.
 - The editor states which vector layers and photo zones estimate a size that has not been measured. On startup versioned derived
   reviews and work-list attention counts are rebuilt for existing results.
 
@@ -50,3 +52,7 @@ golden-evidence and UI suites. On a database copy, replaying export 2 with the n
 layers' photographed median colours to floating-point precision and includes all fifteen photo bins. This is a check that the
 accepted result reaches its preview, not independent evidence of the next engraving's accuracy. The actual bitmap comparison
 shows the washed-out face and dog in the measured panel. A future engraving remains the independent repeat.
+
+Installation verification caught the operator's newer split (versions 4 and 5, made while the investigation ran). With a fresh copy of
+that state, both comparison PNGs are byte-for-byte identical to the archived version-1 comparison; the current split and colouring
+remain untouched. A regression test re-splits, resizes and changes smoothing after engraving, then checks both old comparison PNGs.

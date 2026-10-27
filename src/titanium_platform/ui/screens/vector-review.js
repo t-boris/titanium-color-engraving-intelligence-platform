@@ -35,7 +35,7 @@ const VectorReview = (() => {
     const t = p.tone;
     return h('div', {class: 'stack'}, h('h4', {}, p.zone ? `Фотозона ${p.zone}` : p.name),
       (p.changed_settings || []).length ? h('div', {class: 'alert warn'},
-        `Выгравированные настройки отличаются от последнего файла № ${p.latest_export}: `,
+        `Выгравированные настройки отличаются от файла № ${p.latest_export}: `,
         p.changed_settings.map((k) => `${PHOTO_SETTINGS[k] || k}: ${p.settings[k]} → ${p.latest_settings[k]}`).join('; '),
         '. Сравнение относится к выгравированным настройкам.') : null,
       p.median_de == null ? h('p', {class: 'small muted'}, 'Для настроек этого фотослоя до гравировки не было измеренной шкалы: точность прогноза не оценена.')
