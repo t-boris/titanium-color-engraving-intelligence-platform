@@ -1209,3 +1209,11 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .lst-row.excluded {opacity:.65}
 .lst .vw-swatch {width:18px;height:18px;margin:0;border-radius:5px}
 .lst .ge-bar {width:44px;height:14px}
+
+/* Actual engraving examples and operator assessments beside the measured photo settings. */
+.ge-scale-examples { display:flex; flex-wrap:wrap; gap:8px; }
+.ge-scale-examples > span { display:flex; flex-direction:column; gap:4px; max-width:96px; text-align:left; }
+.ge-scale-examples img { width:88px; height:66px; object-fit:contain; border-radius:4px; }
+.ge-result { border:1px solid var(--line); border-radius:8px; padding:10px; }
+.ge-result-photo { display:block; width:100%; max-height:220px; object-fit:contain; }
+.ge-result textarea { width:100%; resize:vertical; }

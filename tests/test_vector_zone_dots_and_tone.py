@@ -201,3 +201,45 @@ def test_a_tone_change_of_a_zone_that_was_undone_is_redone_with_its_look_and_its
     assert np.array_equal(zone_grey(world, job), toned)
     view = world["client"].get(f"/api/vector/{job['id']}/photo/1").json()
     assert view["tone"] == redone["tone"] and view["work"]["redo"] == 0
+
+
+def test_colour_matched_zone_adjusts_the_final_greys_in_its_file_and_preview(world):
+    job = create(world)
+    colouring(world, job, op="photo_add", regions=of_colour(world, job, RED))
+    zone = colouring(world, job, op="photo_set", zone=1, by_colour=True, contours=True)["zones"][0]
+    plain = zone_grey(world, job)
+    changed = colouring(world, job, op="photo_set", zone=1, tone={"brightness": -20}, sharpness=30)["zones"][0]
+    actual = zone_grey(world, job)
+    assert changed["tone_used"] and changed["sharpness"] == 30 and changed["picture"] != zone["picture"]
+    expected = ps.adjust_picture(plain[..., 0].astype(np.float32) / 255, {**AS_IT_IS, "brightness": -20}, 30, plain[..., 3] / 255)
+    inside = plain[..., 3] > 0
+    assert np.abs(actual[..., 0][inside].astype(float) - np.round(expected[inside] * 255)).max() <= 1
+    assert np.array_equal(actual[..., 3], plain[..., 3])
+    detail = world["client"].get(f"/api/vector/{job['id']}/photo/1").json()
+    assert detail["sharpness"] == 30 and detail["picture"]["power_usage"]["range"]
+    restored = colouring(world, job, op="undo")["zones"][0]
+    assert restored["sharpness"] == 0 and np.array_equal(zone_grey(world, job), plain)
+
+
+def test_operator_assessments_belong_to_one_exported_lightburn_marker_and_not_its_neighbours(world):
+    from titanium_platform import photo_results as results
+    job = create(world)
+    colouring(world, job, op='photo_add', regions=of_colour(world, job, RED))
+    colouring(world, job, op='photo_add', regions=of_colour(world, job, YELLOW))
+    client, store = world['client'], world['store']
+    assert client.get(f"/api/vector/{job['id']}/export.lbrn2").status_code == 200
+    one, = results.for_work(store, job['id'], zone=1)
+    two, = results.for_work(store, job['id'], zone=2)
+    original = dict(one['settings'])
+    for aspect, verdict in (('colour', 'good'), ('photo', 'bad')):
+        answer = client.post('/api/photo-results/mark', json={'source': one['source'], 'aspect': aspect, 'verdict': verdict})
+        assert answer.status_code == 200, answer.text
+    assert results.for_work(store, job['id'], zone=2)[0]['verdict'] == 'unrated'
+    colouring(world, job, op='photo_set', zone=1, min_power=10)
+    frozen, = results.for_work(store, job['id'], zone=1)
+    assert frozen['settings'] == original and frozen['assessments']['colour']['verdict'] == 'good' and frozen['verdict'] == 'bad'
+    assert client.get(f"/api/vector/{job['id']}/export.lbrn2").status_code == 200
+    latest, previous = results.for_work(store, job['id'], zone=1)
+    assert latest['verdict'] == 'unrated' and latest['source']['number'] != previous['source']['number']
+    assert previous['source']['layer'] == one['source']['layer'] and previous['verdict'] == 'bad'
+    assert client.post('/api/photo-results/mark', json={'source': {**one['source'], 'sha256': 'stale'}, 'aspect': 'photo', 'verdict': 'good'}).status_code == 422

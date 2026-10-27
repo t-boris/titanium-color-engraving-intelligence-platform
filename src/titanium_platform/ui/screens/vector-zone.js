@@ -55,7 +55,7 @@
         + `Max ${value(info.power_range[1], 1)} %, ${settingsText(view.scale, info.dpi)}. Картинка — на месте зоны, вне её областей прозрачна.`);
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})), {width: false, objects: false, layer, variations: `${base}/variations`, advice: base});
     const head = zoneHead(view, step);
-    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
+    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['results', 'Результаты', PhotoPanels.exportedResults(view.work.id, view.number)], ['scale', 'Шкала', slots.scale], ['confirm', 'Подтверждение', slots.confirm],
       ['points', 'Точки', slots.points]], {initial: 'picture', remember: 'vz.zone.tab', label: 'Картинка и шкала', prefix: 'vz-tab'});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     // at the zone's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)

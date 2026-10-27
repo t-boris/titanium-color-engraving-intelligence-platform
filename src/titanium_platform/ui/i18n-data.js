@@ -154,7 +154,7 @@
     // яркость, контраст и гамма картинки (0.27.0)
     [/^the tone of the picture is its brightness, contrast and gamma$/i, 'Тон картинки — её яркость, контраст и гамма'],
     [/^the picture's (\S+) must be a number from (\S+) to (\S+)$/i, (m) => {
-      const name = {brightness: 'Яркость', contrast: 'Контраст', gamma: 'Гамма'}[m[1]] || m[1];
+      const name = {brightness: 'Яркость', contrast: 'Контраст', gamma: 'Гамма', sharpness: 'Чёткость'}[m[1]] || m[1];
       return `${name} картинки — число от ${m[2].replace('.', ',')} до ${m[3].replace('.', ',')}`;
     }],
     // the dot width correction of a dot kind (0.28.0)
@@ -243,5 +243,10 @@
     [/^a photo zone has no setting '?([^']*)'?$/i, (m) => `У фотозоны нет настройки «${m[1]}»`],
     [/^«colours by the picture» must be on or off$/i, '«Цвета по картинке» — включено или выключено'],
     [/^a lasso needs three points or more, each x and y in mm$/i, 'Лассо — три точки или больше, у каждой x и y в мм'],
+    [/^choose photo engraving or colour for this layer assessment$/i, 'Выберите, что оценить на маркере: фотогравировку или цвет'],
+    [/^choose good, bad or unrated for the engraving result$/i, 'Выберите оценку: удачно, неудачно или без оценки'],
+    [/^the engraving result note must be at most 1000 characters$/i, 'Комментарий к результату — не больше 1000 символов'],
+    [/^choose an accepted photo or a numbered exported file for the result$/i, 'Выберите принятую фотографию или версию экспортированного файла'],
+    [/^the engraved photo layer of this result is unavailable$/i, 'Маркер этого результата недоступен или исходный файл изменился. Обновите список результатов'],
   ]);
 })();

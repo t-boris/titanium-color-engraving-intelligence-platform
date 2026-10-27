@@ -199,7 +199,8 @@ const PhotoQuality = (() => {
   const bestText = (kind, b) => `${setting('power', b.settings.power)}${kind === 'grayscale' ? ` (Min ${setting('min_power', b.settings.min_power)})` : ''}, `
     + `${setting('speed', b.settings.speed)}, ${setting('frequency', b.settings.frequency)}, ${setting('pulse_width', b.settings.pulse_width)}, `
     + `шаг ${setting('line_interval', b.settings.line_interval)}${b.settings.dot_width != null ? `, поправка точки ${setting('dot_width', b.settings.dot_width)}` : ''}`
-    + ` — оценка ${value(b.score, 2)} по фото №${b.source.pair_id}`;
+    + ` — автоматическая оценка ${value(b.score, 2)} по фото №${b.source.pair_id}`
+    + (b.operator_results && b.operator_results.good ? `; оператор отметил фотогравировку удачной (${b.operator_results.good})` : '');
 
   /** Что лаборатория знает о каждом виде фотогравировки на лазере, линзе и титане (``GET /photo-knowledge``) и какой опыт предлагает:
       карточки для экрана «Эксперименты». ``setup`` — {device_id, lens_id, material_id}. */

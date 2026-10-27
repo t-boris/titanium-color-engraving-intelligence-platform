@@ -1,3 +1,28 @@
+# Photo controls and prediction audit — 0.38.0 (2026-10-27)
+
+- [x] Compare the actual accepted Luna 1 file (pair 151), rather than its subsequently edited work, with the current Inna export.
+      Luna: 150/60/300/.0169, Min9.6 Max28.2, 37.9% above15%. Inna: 150/60/350/.0254, Min1 Max30,
+      all opaque greys136..255, 84.2% below10%, no pixel at15%. Its drawing path ends near13% on one grey-ramp calibration (pair140).
+      Luna is collected for its own mode. Size alone is not a demonstrated physical explanation; the reported pale outcome is accepted.
+- [x] Enable tone adjustments after colour matching/rules/contours and add opacity-aware sharpness; keep preview/file paths aligned,
+      undo/redo, next-zone inheritance and render caches consistent. Preserve dormant legacy tones until explicitly edited.
+- [x] Show actual prepared-grey powers separately from Min/Max. Distinguish test-ramp calibration from observed photo profiles.
+- [x] Operator steering: assess a specific LightBurn marker/layer, not the whole picture; colour and photo engraving are independent.
+      Store a layer/numbered-file snapshot with its source identity; show real photographed examples and separate judgements in selection.
+      Allow a reported outcome without RAW, clearly labelled; preserve prior-file marks across edits and keep new exports unrated.
+      Manual photo success outranks the automatic score, colour success does not override a failed photograph. Never erase measured colours.
+- [x] Tests cover independent aspects, accepted-layer provenance, source identity, repeat photographs, recommendation priority and reset,
+      and two actual export zones with neighbours, subsequent edits, new file versions and a stale-file rejection.
+- [x] Full local suite: 2366 passed, none skipped (194.53 s). Hidden native renderer: eight enabled controls, C23 prepared power
+      1–14.5% against configured1–30%; independent colour/photo controls on C27 and C23, exact marker in the saved request, no console errors.
+      Rehearsal database only: Luna151 photo good, Inna export5 C23 photo bad, colour-good on C23 is explicitly a test fixture, not a real assessment.
+- [x] Built/signed/installed0.38.0. Core and both packaged/installed hidden smokes pass at0.38.0; six bundled UI assets match source,
+      deep strict code signatures verified. App backup: Library/Caches/Titanium-workshop-install-backups/before-0.38.0-20261027T155056Z.app.
+      SQLite recovery copy: .titanium-platform/backups/titanium-before-0.38.0-20261027T154906Z.sqlite (integrity ok).
+      Operator windows were not restarted. Assessments were tested on a copy, not written into the active workshop.
+- [x] Commit/push main and release v0.38.0.
+- [x] Report the remaining physical prediction uncertainty without claiming a newly accurate colour model.
+
 # Consistent scale palettes — 0.37.3 (2026-10-27, BUG-011)
 
 - [x] Trace the actual work-46 mismatch: card uses 38.4 mm, detail/picture use 121.2 mm; measured colours differ, not missing data.

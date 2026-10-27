@@ -1249,7 +1249,7 @@ def _zone_shown(plan: dict, row: dict) -> dict:
             "span": None if curve is None else [round(float(v), 2) for v in curve.span], "referenced": None if curve is None else curve.referenced,
             "size": None if curve is None else dict(curve.size or {}),
             "dots": row["dots"], "estimate": pz.dotted(zone) and row["measured"] is None, "problem": row["problem"],
-            "tone_used": st.tone_used(zone) is not None,
+            "tone_used": st.tone_used(zone) is not None, "sharpness": zone.get("sharpness", 0.0),
             "name": None if row["parameters"] is None else pz.layer_name(row["index"], zone, row["parameters"]),
             "picture": None if row["problem"] else f"/api/vector/{plan['id']}/photo/{zone['number']}.png?v={key[:16]}"}
 
@@ -1707,7 +1707,8 @@ def photo_view(store: Store, plan: dict) -> dict:
         time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), layer_cap=photo_cap(plan["markers_enabled"]),
         preview_evidence={"estimated_layers": sum((by_id[l["entry_id"]].get("size") or {}).get("how") != prediction.MEASURED for l in state["layers"]),
                           "layers": len(state["layers"]),
-                          "estimated_zones": sum(row["curve"] is None or (row["curve"].size or {}).get("how") != prediction.MEASURED for row in zones)},
+                          "estimated_zones": sum(row["curve"] is None or (row["curve"].size or {}).get("how") != prediction.MEASURED for row in zones),
+                          "ramp_only_zones": sum(row["curve"] is not None and ps.prediction_evidence(row["curve"])["ramp_only"] for row in zones)},
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}

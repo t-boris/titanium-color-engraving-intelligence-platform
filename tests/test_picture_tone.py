@@ -1,7 +1,5 @@
 """The brightness, contrast and gamma of a photo work's picture (0.27.0): its greys are toned before they become power or dots, so the
-look, the close-up and the LightBurn file carry the same greys and LightBurn's own adjustments stay at their defaults. A dot kind always
-takes the tone; grayscale takes it while the picture's own greys are engraved, and keeps it, unused, while the greys are chosen for the
-picture's colours. The tone is one change of the work: it is undone and redone. The picture is a horizontal ramp from white to black."""
+look, the close-up and the LightBurn file carry the same greys and LightBurn's own adjustments stay at their defaults. All modes take the tone; colour matching adjusts its chosen greys after matching, rules and contours. The tone is one change of the work: it is undone and redone. The picture is a horizontal ramp from white to black."""
 import cv2
 import numpy as np
 import pytest
@@ -38,7 +36,10 @@ def test_a_picture_is_toned_once_from_its_own_greys_and_left_as_it_is_without_a_
     darker = st.toned(toned, {**state, "tone": {**AS_IT_IS, "gamma": 2.0}})
     assert darker["grey_full"] == pytest.approx(upload["grey_full"] ** 2, abs=1e-6)                     # from the picture, not from the toned one
     by_colour = {**lighter, "kind": st.GRAYSCALE}
-    assert st.tone_used(by_colour) is None and st.toned(upload, by_colour) is upload                    # greys chosen for the colours: no tone
+    assert st.tone_used(by_colour) is None                        # a legacy dormant tone stays dormant until explicitly edited
+    by_colour["tone_after_match"] = True
+    assert st.tone_used(by_colour) == {**AS_IT_IS, "brightness": 20.0}
+    assert st.toned(upload, by_colour) is upload                 # colour matching receives the original; its result is adjusted later
     assert st.tone_used({**by_colour, "by_colour": False}) == {**AS_IT_IS, "brightness": 20.0}
     assert st.tone_of({"kind": "jarvis"}) == AS_IT_IS                                                   # a state made before the tone
 
@@ -89,7 +90,7 @@ def test_a_tone_change_that_was_undone_is_redone_with_its_dots_its_look_and_its_
     assert (redone["undo"], redone["redo"]) == (undone["undo"] + 1, 0)
 
 
-def test_grayscale_takes_the_tone_while_its_own_greys_are_engraved_and_keeps_it_while_they_are_chosen_for_colours(app_world):  # noqa: F811
+def test_grayscale_adjusts_its_own_and_colour_matched_greys_in_the_preview_and_export(app_world):  # noqa: F811
     client = app_world["client"]
     work = create(client)
     assert (work["kind"], work["by_colour"]) == ("grayscale", False)
@@ -101,8 +102,14 @@ def test_grayscale_takes_the_tone_while_its_own_greys_are_engraved_and_keeps_it_
     chosen = settings(client, work, tone={"brightness": 0}, by_colour=True)
     by_colour = filed(client, work)
     kept = settings(client, work, tone={"brightness": 20})
-    assert kept["tone"]["brightness"] == 20.0 and not kept["tone_used"]                                 # kept, waiting
-    assert kept["picture"]["preview"] == chosen["picture"]["preview"] and np.array_equal(filed(client, work), by_colour)
+    assert kept["tone"]["brightness"] == 20.0 and kept["tone_used"]
+    assert kept["picture"]["preview"] != chosen["picture"]["preview"]
+    assert np.abs(filed(client, work) - np.clip(by_colour + 51, 0, 255)).max() <= 1
+    darker = settings(client, work, tone={"brightness": -20})
+    assert np.abs(filed(client, work) - np.clip(by_colour - 51, 0, 255)).max() <= 1
+    assert darker["picture"]["power_usage"]["median"] > chosen["picture"]["power_usage"]["median"]
+    client.post(f"/api/photo-works/{work['id']}/undo")
+    assert np.abs(filed(client, work) - np.clip(by_colour + 51, 0, 255)).max() <= 1
 
 
 def test_a_tone_out_of_its_range_is_refused_and_changes_nothing(app_world):  # noqa: F811
@@ -118,3 +125,33 @@ def test_a_tone_out_of_its_range_is_refused_and_changes_nothing(app_world):  # n
         assert refused(client, work, tone=tone) == message, tone
     assert client.get(f"/api/photo-works/{work['id']}").json()["tone"] == {**AS_IT_IS, "brightness": -10.0}
     assert settings(client, work, tone={"gamma": 0.456})["tone"] == {**AS_IT_IS, "brightness": -10.0, "gamma": 0.46}
+
+
+def test_sharpness_keeps_cut_out_edges_clean_and_is_zero_by_default():
+    grey = np.full((40, 120), 0.6, np.float32)
+    alpha = np.zeros_like(grey); alpha[5:35, 10:110] = 1
+    # Arbitrary transparent RGB must not contaminate the engraving.
+    grey[alpha == 0] = 0
+    sharpened = ps.adjust_picture(grey, None, 100, alpha)
+    assert sharpened[alpha > 0] == pytest.approx(0.6, abs=1e-6)
+    assert ps.adjust_picture(grey, None, 0, alpha) is grey
+    grey[15:25, 40:60] = 0.4
+    sharpened = ps.adjust_picture(grey, None, 60, alpha)
+    assert sharpened[15, 40] < grey[15, 40] and sharpened[14, 40] > grey[14, 40]
+
+
+def test_sharpness_is_saved_exported_and_undone_with_colour_matching(app_world):  # noqa: F811
+    client = app_world["client"]
+    work = settings(client, create(client), by_colour=True)
+    plain = filed(client, work)
+    changed = settings(client, work, sharpness=80)
+    assert changed["sharpness"] == 80 and changed["picture"]["preview"] != work["picture"]["preview"]
+    actual = filed(client, work)
+    assert not np.array_equal(actual, plain)
+    assert np.abs(actual - np.round(ps.adjust_picture(plain / 255, None, 80, np.ones_like(plain)) * 255)).max() <= 1
+    for value in (True, -1, 101, "very"):
+        assert refused(client, work, sharpness=value) == "the picture's sharpness must be a number from 0 to 100"
+    undone = client.post(f"/api/photo-works/{work['id']}/undo").json()
+    assert undone["sharpness"] == 0 and np.array_equal(filed(client, work), plain)
+    redone = client.post(f"/api/photo-works/{work['id']}/redo").json()
+    assert redone["sharpness"] == 80 and np.array_equal(filed(client, work), actual)

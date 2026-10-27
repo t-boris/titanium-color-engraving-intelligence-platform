@@ -384,9 +384,11 @@
       head.update(next);
       banner.update(next);
       const p = next.preview_evidence;
-      evidence.className = 'small' + (p && (p.estimated_layers || p.estimated_zones) ? ' alert warn' : ' muted');
-      fill(evidence, !p ? null : p.estimated_layers || p.estimated_zones
-        ? `Превью: у ${p.estimated_layers} из ${p.layers} цветовых слоёв и у ${p.estimated_zones || 0} фотозон размер ещё не измерен. Показана оценка по другим размерам; оттенок на металле может отличаться.`
+      evidence.className = 'small' + (p && (p.estimated_layers || p.estimated_zones || p.ramp_only_zones) ? ' alert warn' : ' muted');
+      fill(evidence, !p ? null : p.ramp_only_zones
+        ? `Расчётный вид: ${p.ramp_only_zones} фотозон рассчитаны по тестовым шкалам. В базе для этих режимов нет измерений фотогравировки; точность её цвета и контраста не подтверждена.`
+        : p.estimated_layers || p.estimated_zones
+        ? `Превью: для ${p.estimated_layers} из ${p.layers} цветовых слоёв и ${p.estimated_zones || 0} фотозон использованы измерения другой ширины. Точность для этой работы не проверена.`
         : `Превью: цвета ${p.layers} слоёв измерены при этом размере. Фотозоны проверяются по своим шкалам.`);
       fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],

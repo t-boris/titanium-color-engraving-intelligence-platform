@@ -50,13 +50,13 @@ from .prediction import PredictionError
 GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS                    # every kind of photo engraving that colours titanium, as a photo work offers them
 GREYS = ("colour_choice", "contours", "rules", "colouring")
-SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "dot_recipe", "by_colour", "tone", *GREYS)
+SETTINGS = ("kind", "scale", "min_power", "max_power", "dot_power", "dot_recipe", "by_colour", "tone", "tone_after_match", "sharpness", *GREYS)
 # what the operator changes: the settings, the dots' colour picked on the colour map (``dot_colour``: a point's group) instead of the recipe
-CHANGES = tuple(k for k in SETTINGS if k != "dot_recipe") + ("dot_colour", "dot_settings")
+CHANGES = tuple(k for k in SETTINGS if k not in ("dot_recipe", "tone_after_match")) + ("dot_colour", "dot_settings")
 # a change of the kind alone fills in the best measured engraving of the new kind (photo_knowledge.filled); with any of these it does not
 FILLED_UNLESS = ("scale", "min_power", "max_power", "dot_colour", "dot_settings", "dot_power")
 ANSWERS = ("ai", "ai_theme")
-DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, "dot_recipe", "tone", *ANSWERS)}      # what a zone made before 0.23.0 or 0.27.0 lacks
+DEFAULTS = {k: st.DEFAULTS[k] for k in (*GREYS, "dot_recipe", "tone", "tone_after_match", "sharpness", *ANSWERS)}      # defaults for older zones
 LASSO_SHARE = 0.5           # a region is inside a lasso (or an old zone, after a new split) when at least this share of it is
 FILE_PX_PER_MM = 20.0       # the zone's picture in the file has this many pixels a mm (fewer when the layer's DPI is lower): its
                             # transparent edge follows the smoothed borders to 0.05 mm, and a zone of a whole 150 mm work stays under 9 Mpx
@@ -267,7 +267,7 @@ def changed(store: Store, plan: Mapping, zone: Mapping, changes: Mapping, width_
         if not isinstance(changes["by_colour"], bool):
             raise ZoneError("«colours by the picture» must be on or off")
         out["by_colour"] = changes["by_colour"]
-    greys = {k: changes[k] for k in (*GREYS, "tone") if k in changes}
+    greys = {k: changes[k] for k in (*GREYS, "tone", "sharpness") if k in changes}
     if greys:
         st.change(store, out, greys, mode_of(plan, out), width_mm)
     if "dot_power" in changes and changes["dot_power"] is not None:
@@ -504,7 +504,8 @@ def key(plan: Mapping, zone: Mapping, scale_curve: prediction.Curve | None, meas
     return rc.key_of({"kind": "vector-photo-zone", "image": rc.file_stamp(plan["image_path"]), "document": rc.file_stamp(plan["document_path"]),
                       "smoothing_mm": plan.get("smoothing_mm", 0.0), "size": plan["size_mm"],
                       "zone": {k: zone[k] for k in ("regions", "scale", *drawn_by)}, "engraving": engraving, "px": px,
-                      "tone": st.tone_used({**zone, "kind": engraving}), "curve": digest(scale_curve), "dots_curve": digest(measured)})
+                      "tone": st.tone_used({**zone, "kind": engraving}), "sharpness": zone.get("sharpness", 0.0),
+                      "curve": digest(scale_curve), "dots_curve": digest(measured)})
 
 
 def side_by_side(grey: np.ndarray, rgb8: np.ndarray, alpha: np.ndarray) -> np.ndarray:

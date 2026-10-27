@@ -1,3 +1,9 @@
+## A different measurement size is uncertainty, not proof of a physical cause
+- Operator (2026-10-27): «Не может от размера так зависеть». A pale Inna engraving was explained too early by the short test strip.
+- Rule: compare actual engraved files and their prepared pixels before assigning causation. Luna 1 used 9.6–28.2%, 300ns/.0169;
+  the current inverse mapped every pixel below15% at350ns/.0254. A size mismatch does not establish why a photograph fails.
+  A colourful rendering from one test ramp is an unvalidated estimate until its photo-engraving predictions are checked.
+
 # Lessons
 
 Rules written after the operator's remarks, to prevent a repeat.

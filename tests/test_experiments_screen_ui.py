@@ -432,7 +432,7 @@ def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_
     assert out["buttons"] == [["Сделать следующую плату"], ["Сделать плату: 3 копии"], [], []]
     # the image purpose of the capability plate no longer says only «needs a test»: what the photographs measured is said there
     assert out["image"].startswith("ИзображениеФото измерено") and "лучше всего вышел вид «Джарвис» (оценка 0,81 по фото №7)" in out["image"]
-    assert jarvis.startswith("Джарвиспоиск идёт") and "Лучшее: 20 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — оценка 0,81 по фото №7" in jarvis
+    assert jarvis.startswith("Джарвиспоиск идёт") and "Лучшее: 20 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,81 по фото №7" in jarvis
     assert "Следующая плата вокруг копии 2 J P20, изменения вдвое меньше." in jarvis and jarvis.endswith("Сделать следующую плату")
     assert "Ещё не фотографировался на этом лазере и титане." in atkinson and "на лучших настройках другого вида точками" in atkinson
     assert "Начните со шкал серого (Фотогравировка → Шкалы серого)." in grey

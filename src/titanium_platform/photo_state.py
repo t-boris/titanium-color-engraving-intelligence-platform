@@ -17,8 +17,9 @@ A state is a mapping with :data:`SETTINGS` and the AI's last answers (missing on
   by which LightBurn shrinks the dots of its dithering, or None (off, the default); written to the dot kind's layer and part of the mode
   its tones are measured at (:func:`kind_mode`), kept and waiting in grayscale;
 * ``tone``: the picture's brightness, contrast and gamma (0.27.0, :data:`TONE`), applied to its greys before they become power or dots
-  (:func:`toned`, the formulas of ``prediction.adjust_grey``): in a dot kind, and in grayscale while its own greys are engraved
-  (``by_colour`` off); the look, the close-up and the file all take the toned greys, so LightBurn's own adjustments stay at their defaults;
+  (the formulas of ``prediction.adjust_grey``): before rendering for original greys and dots, after colour matching/rules/contours
+  for chosen greys. ``sharpness`` (0..100, default 0) adds an opacity-normalised unsharp mask. The preview and file take the same
+  adjustments; LightBurn's own adjustments stay at their defaults;
 * ``ai_photo``: whether a reduced copy of the picture may be sent to the AI; ``ai`` and ``ai_theme``: its last answers.
 
 The owner keeps the rest: the picture (``upload``, as ``prediction_store.decode_upload`` makes it), the scale's mode, the width its rows
@@ -45,7 +46,7 @@ GRAYSCALE = prediction.PREDICTED_MODE
 KINDS = tuple(key for key, kind in photo_modes.MODES.items() if kind.family != photo_modes.DEPTH)
 MAX_COLOURED = 32                   # main colours a state keeps at most: one per object
 PART_MIN_SHARE = 0.005              # a part covering less of the picture is not offered (to the operator or the AI): it is noise of the model
-SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "dot_width", "tone",
+SETTINGS = ("min_power", "max_power", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind", "dot_power", "dot_width", "tone", "sharpness",
             "ai_photo")
 DOT_WIDTH_MM = photo_modes.DOT_WIDTH_MM       # the dot width LightBurn's correction takes, mm
 # the picture's greys as they are: LightBurn's defaults of its three adjustments (``lightburn.BITMAP_DEFAULTS``) under the screen's names
@@ -56,7 +57,8 @@ KEEP_TONED = 2                      # toned pictures kept in memory: the tone sh
 # what a state made before the rules of parts (0.19.0), the drawing kept (0.20.1), the kinds and objects (0.21.0), the tone (0.27.0) or the
 # dot width (0.28.0) has
 DEFAULTS = {"colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE, "dot_power": None,
-            "dot_recipe": None, "dot_width": None, "tone": dict(TONE), "ai_photo": False, "ai": None, "ai_theme": None}
+            "dot_recipe": None, "dot_width": None, "tone": dict(TONE), "tone_after_match": False, "sharpness": 0.0,
+            "ai_photo": False, "ai": None, "ai_theme": None}
 _toned: OrderedDict[tuple, tuple[dict, dict]] = OrderedDict()
 _lock = threading.Lock()
 
@@ -99,10 +101,10 @@ def tone_of(state: Mapping) -> dict:
 
 
 def tone_used(state: Mapping) -> dict | None:
-    """The tone the picture's greys are engraved with: None when it leaves them as they are, or in grayscale with the greys chosen for
-    the picture's colours (``by_colour``), which do not come from its greys; the tone is kept there and waits."""
+    """The tone applied to the laser's greys, including greys chosen by colour. None leaves the tones unchanged."""
     tone = tone_of(state)
-    if tone == TONE or (not dotted(state) and state["by_colour"]):
+    # Older works kept a dormant tone while matching colours. Do not silently activate it on upgrade; an explicit tone edit opts in.
+    if tone == TONE or (not dotted(state) and state["by_colour"] and not state.get("tone_after_match", False)):
         return None
     return tone
 
@@ -114,16 +116,19 @@ def toned(upload: dict, state: Mapping) -> dict:
     never toned twice. Kept in memory for the last few tones."""
     raw = upload.get("untoned", upload)
     tone = tone_used(state)
-    if tone is None:
+    sharpness = state.get("sharpness", 0.0)
+    # Colour matching works on Lab, not the source's greys. Adjust its output instead, after matching/rules/contours (item).
+    if (not dotted(state) and state["by_colour"]) or (tone is None and not sharpness):
         return raw
-    key = (id(raw), tuple(tone[k] for k in TONE))
+    tone = tone or TONE
+    key = (id(raw), tuple(tone[k] for k in TONE), sharpness)
     with _lock:
         known = _toned.get(key)
         if known is not None and known[0] is raw:
             _toned.move_to_end(key)
             return known[1]
-    adjust = lambda grey: prediction.adjust_grey(grey, tone["gamma"], tone["contrast"], tone["brightness"]).astype(np.float32)  # noqa: E731
-    out = {**raw, "picture": adjust(raw["picture"]), "grey_full": adjust(raw["grey_full"]), "untoned": raw, "tone": tone}
+    adjust = lambda grey, alpha: ps.adjust_picture(grey, tone, sharpness, alpha)  # noqa: E731
+    out = {**raw, "picture": adjust(raw["picture"], raw["alpha"]), "grey_full": adjust(raw["grey_full"], raw["alpha_full"]), "untoned": raw, "tone": tone}
     with _lock:
         _toned[key] = (raw, out)
         _toned.move_to_end(key)
@@ -167,6 +172,9 @@ def item(store: Store, mode: ps.Mode, upload: dict, state: Mapping, name: str, w
     found = upload.get("untoned", upload) if whole is None else whole
     out = ps.picture_item(store, mode, toned(upload, state), name, toned_ and state["by_colour"], width_mm, state["colour_choice"],
                           toned_ and state["contours"], state["colouring"])
+    if toned_ and state["by_colour"]:
+        out["output_tone"] = tone_used(state)
+        out["output_sharpness"] = state.get("sharpness", 0.0)
     if toned_ and state["by_colour"] and state["colour_choice"] == "objects" and state["colouring"]:
         out["objects"] = objects(found)
     if toned_ and state["rules"]:
@@ -217,6 +225,14 @@ def change(store: Store, state: dict, changes: Mapping, mode: ps.Mode, width_mm:
     whether the picture may go to the AI (``ai_photo``). ``mode`` is the scale after the change; with ``moved`` the owner changed the scale or the
     width: a dot kind's power is kept while the scale is measured there, otherwise it goes where its colour stands out most (as after a
     change of the kind). The recipe of the colour map (``dot_recipe``) is the owner's to set: it picks it at its width."""
+    if "sharpness" in changes:
+        value = changes["sharpness"]
+        number = None if isinstance(value, bool) else ps._number(value)
+        if number is None or not 0 <= number <= 100:
+            raise su.ValidationError("the picture's sharpness must be a number from 0 to 100")
+        state["sharpness"] = round(float(number), 1)
+    if "tone" in changes:
+        state["tone_after_match"] = True
     if "min_power" in changes or "max_power" in changes:
         state["min_power"], state["max_power"] = ps.check_power_range(changes.get("min_power", state["min_power"]),
                                                                       changes.get("max_power", state["max_power"]))

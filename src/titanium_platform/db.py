@@ -139,6 +139,15 @@ CREATE TABLE IF NOT EXISTS pair (
     created_at TEXT NOT NULL,
     accepted_at TEXT
 );
+CREATE TABLE IF NOT EXISTS photo_result_mark (
+    source_key TEXT NOT NULL,
+    aspect TEXT NOT NULL CHECK(aspect IN ('photo', 'colour')),
+    verdict TEXT NOT NULL CHECK(verdict IN ('good', 'bad', 'unrated')),
+    note TEXT NOT NULL DEFAULT '',
+    snapshot_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(source_key, aspect)
+);
 CREATE TABLE IF NOT EXISTS observation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pair_id INTEGER NOT NULL REFERENCES pair(id),

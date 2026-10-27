@@ -50,6 +50,12 @@ ctx.fetch = async (url, opts = {}) => {
     : opts.body ? JSON.parse(opts.body) : null;
   requests.push({path, url: String(url), method, body});
   if (path === '/api/grey-scales') return answer({scales: data.scales});
+  if (path === '/api/photo-results/mark') {
+    const row = data.scale.examples.find((r) => r.source.layer === body.source.layer);
+    row.assessments = {...(row.assessments || {}), [body.aspect]: {verdict: body.verdict, note: body.note}};
+    if (body.aspect === 'photo') row.verdict = body.verdict;
+    return answer({...row, ...body});
+  }
   if (path === '/api/devices') return answer([{id: 1, lens: {id: 2}}]);
   if (path === '/api/materials') return answer([]);
   if (path === '/api/grey-scales/scale') return answer(data.scale);
@@ -715,6 +721,46 @@ def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in
 
 
 @node
+def test_colour_matching_keeps_tone_controls_enabled_and_sharpness_is_saved_and_reset(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const panel = tree.querySelector('.ge-tone');
+  out.enabled = panel.querySelectorAll('input').every((i) => !i.disabled);
+  out.note = panel.textContent.includes('Регулировки применяются после подбора серых');
+  const s = labelled(tree, 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления');
+  s.value = '40'; await s.dispatch('change'); await wait(350); await settle();
+  await button(tree, 'Как есть').dispatch('click'); await settle();
+  out.saves = saves();
+""", work={"by_colour": True})
+    assert out["enabled"] and out["note"]
+    assert out["saves"] == [{"tone": {"brightness": 0, "contrast": 0, "gamma": 1}, "sharpness": 40},
+                            {"tone": {"brightness": 0, "contrast": 0, "gamma": 1}, "sharpness": 0}]
+
+
+@node
+def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_path):
+    example = {'source': {'kind': 'export', 'id': 9, 'number': 5, 'layer': 23, 'sha256': 'abc'}, 'layer': 'C23',
+               'title': 'Портрет · файл №5', 'url': '#/vector?plan=9', 'photo': None, 'verdict': 'unrated',
+               'settings': {**mode(100), 'power': 30, 'min_power': 1}, 'at': '2026-10-27T10:00:00'}
+    data = {**scale_answer(), 'examples': [example]}
+    out = run(tmp_path, {'work': '7'}, """
+  await button(tree, 'Шкала').dispatch('click'); await settle();
+  const block = () => tree.querySelector('.ge-result');
+  const area = (a) => block().querySelectorAll('.ge-assessment').find((x) => x.getAttribute('data-aspect') === a);
+  area('colour').querySelector('select').value = 'good';
+  area('colour').querySelector('textarea').value = 'Золото получилось';
+  await button(area('colour'), 'Сохранить: цвет').dispatch('click'); await settle();
+  area('photo').querySelector('select').value = 'bad';
+  area('photo').querySelector('textarea').value = 'Фотогравировка слишком светлая';
+  await button(area('photo'), 'Сохранить: фотогравировка').dispatch('click'); await settle();
+  out.values = ['colour', 'photo'].map((a) => [area(a).querySelector('select').value, area(a).querySelector('textarea').value]);
+  out.marks = requests.filter(r => r.path === '/api/photo-results/mark').map(r => r.body);
+  out.marker = block().textContent.includes('Маркер C23');
+""", scale_data=data)
+    assert out['marker'] and out['values'] == [['good', 'Золото получилось'], ['bad', 'Фотогравировка слишком светлая']]
+    assert [(r['source']['layer'], r['aspect'], r['verdict']) for r in out['marks']] == [(23, 'colour', 'good'), (23, 'photo', 'bad')]
+
+
+@node
 def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
     """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Как есть» on the photo work screen."""
     out = run(tmp_path, {"work": "7"}, """
@@ -792,7 +838,7 @@ def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None}, advice=JARVIS_ADVICE)
     says = out["says"]
     assert "Что известно о виде «Джарвис» на этом лазере и титане" in says and "измерено, но не подобрано" in says
-    assert "Лучшее измеренное: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, поправка точки 0,02 мм — оценка 0,9 по фото №118." in says
+    assert "Лучшее измеренное: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №118." in says
     assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №120)" in says
     assert out["titles"]["Темнее"] == "мощность 12,5 % → 17,5 % — измерено по фото №120"
     assert out["titles"]["Чётче"] == "поправка ширины точки выкл. → 0,01 мм — по опыту процесса: ещё не измерено"
@@ -850,7 +896,7 @@ def test_a_kind_that_came_out_a_negative_says_so_and_takes_the_dark_dots_of_anot
     assert "не получился" in says and "Лучшее измеренное" not in says and "ещё не фотографировался" not in says
     assert ("«Аткинсон» на этом титане не получился: фото № 147, 10,2 % — точки не темнее титана (L* 92): картинки не видно или она вышла "
             "негативом. Вместо них — лучшие тёмные точки вида «Джарвис» на этом титане: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, "
-            "поправка точки 0,02 мм — оценка 0,9 по фото №149; для «Аткинсон» это предположение, пока его не сфотографируют на этих точках.") in says
+            "поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №149; для «Аткинсон» это предположение, пока его не сфотографируют на этих точках.") in says
     assert "Лаборатория предлагает: та же картинка вокруг лучших точек другого вида." in says
     assert out["saves"] == [{"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "atkinson", "dot_width": True}]

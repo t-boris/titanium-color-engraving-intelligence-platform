@@ -94,6 +94,10 @@ const PhotoPanels = (() => {
         `Цвета при ширине ${mm(sc.size.row_mm)}`,
         sc.size.how === 'outside' ? ` · по измерению ${mmList(sc.size.from_mm)}` : '') : null,
       h('strong', {}, settingsText(sc.mode, sc.dpi)),
+      sc.results && sc.results.total ? h('span', {class: 'small ge-result-summary'}, `Фото: удачно ${sc.results.good} · неудачно ${sc.results.bad} · без оценки ${sc.results.unrated}`) : null,
+      sc.examples && sc.examples.length ? h('span', {class: 'ge-scale-examples'}, sc.examples.slice(0, 3).map((r) => h('span', {class: 'small'},
+        r.photo ? h('img', {src: r.photo, loading: 'lazy', alt: `Фото гравировки: ${r.title}`}) : null,
+        `${r.title} · ${r.layer} · фото: ${{good: 'удачно', bad: 'неудачно', unrated: 'без оценки'}[r.verdict]}; цвет: ${{good: 'удачно', bad: 'неудачно', unrated: 'без оценки'}[((r.assessments || {}).colour || {}).verdict || 'unrated']}`))) : null,
       h('span', {class: 'small muted'}, `${titaniumLabel(sc)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
       sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `измерена при ширине ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
@@ -255,6 +259,7 @@ const PhotoPanels = (() => {
             + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
           unmeasured ? h('p', {class: 'small muted'}, `Серых вне измеренных мощностей (${value(span[0], 1)}–${value(span[1], 1)} %): ${unmeasured} из 256 — заштрихованы; цвет там не прогнозируется.`) : null,
           size ? h('p', {class: 'small'}, pill(size.short, size.tone), ' ', size.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
+          d.examples && d.examples.length ? resultCards(d.examples, () => load(false)) : null,
           greyTable(levels), h('ul', {class: 'small'}, d.notes.map((n) => h('li', {}, I18N.tr(n)))));
         fill(slots.confirm, confirmationBlock(d.confirmation));
         fill(slots.points, fillsBlock(d.fill_points), pointsBlock(d.curve));
@@ -264,6 +269,52 @@ const PhotoPanels = (() => {
     function schedule() { clearTimeout(timer); timer = setTimeout(() => load(true), 250); }
     load(false);
     return {stop() { stopped = true; clearTimeout(timer); }};
+  }
+
+  /** Actual photo layers and numbered exports, with operator judgements independent of the automatic tonal score. */
+  function resultCards(rows, changed) {
+    const labels = {good: ['Удачно', 'ok'], bad: ['Неудачно', 'bad'], unrated: ['Без оценки', 'warn']};
+    const cards = rows.map((row) => {
+      function assessment(aspect, label) {
+        const current = (row.assessments || {})[aspect] || {verdict: aspect === 'photo' ? row.verdict || 'unrated' : 'unrated', note: ''};
+        const status = pill(...labels[current.verdict]);
+        const verdict = h('select', {'aria-label': `${label}: ${row.layer} · ${row.title}`}, Object.entries(labels).map(([key, v]) => h('option', {value: key}, v[0])));
+        verdict.value = current.verdict;
+        const note = h('textarea', {rows: 2, maxlength: 1000, 'aria-label': `Комментарий (${label}): ${row.layer} · ${row.title}`, placeholder: 'Что получилось на этом маркере…'});
+        note.value = current.note || '';
+        const save = btn(`Сохранить: ${label.toLowerCase()}`, async () => {
+          save.disabled = true;
+          try {
+            const saved = await post('/photo-results/mark', {source: row.source, aspect, verdict: verdict.value, note: note.value});
+            if (changed) await changed(saved);
+            else { status.textContent = labels[saved.verdict][0]; status.className = `pill ${labels[saved.verdict][1]}`; }
+          } catch (e) { App.fail(e); }
+          finally { save.disabled = false; }
+        }, 'btn-small');
+        return h('div', {class: 'stack ge-assessment', 'data-aspect': aspect}, h('div', {class: 'row'}, h('strong', {}, label), status, verdict, save), note);
+      }
+      const p = row.settings;
+      return h('article', {class: 'ge-result stack'}, h('div', {class: 'row'}, h('strong', {}, `Маркер ${row.layer}`), link(row.url.replace(/^#/, ''), row.title),
+        h('span', {class: 'small muted'}, when(row.at))),
+        row.photo ? h('a', {href: row.url}, h('img', {class: 'ge-result-photo', src: row.photo, loading: 'lazy', alt: `Фотография гравировки ${row.title}`}))
+          : h('p', {class: 'small muted'}, 'Фото не добавлено. Оценка результата со слов оператора.'),
+        h('p', {class: 'small'}, `Min ${value(p.min_power, 1)} / Max ${value(p.power, 1)} % · ${settingsText(p)}${row.width_mm != null ? ` · ширина ${mm(row.width_mm)}` : ''}`),
+        assessment('colour', 'Цвет'), assessment('photo', 'Фотогравировка'));
+    });
+    return h('section', {class: 'ge-results stack'}, h('h4', {}, 'Результаты по маркерам LightBurn'),
+      h('p', {class: 'small muted'}, 'Цвет и фотогравировка оцениваются отдельно для этого слоя и версии файла. Неудачные измерения сохраняются.'), cards);
+  }
+
+  function exportedResults(planId, zone = null) {
+    const el = h('section', {class: 'stack'});
+    async function load() {
+      try {
+        const data = await get(`/photo-results/work/${planId}${zone != null ? `?zone=${zone}` : ''}`);
+        fill(el, data.results.length ? resultCards(data.results, load) : h('p', {class: 'small muted'}, 'Сначала экспортируйте файл LightBurn: оценка будет привязана к его версии.'));
+      } catch (e) { fill(el, h('p', {class: 'small muted'}, e.message)); }
+    }
+    load();
+    return el;
   }
 
   /** Откуда цвет точек: на шкале — кнопка «Цвет с карты»; с карты цветов — его цвет и настройки, «Другой цвет» и «На шкалу»
@@ -337,6 +388,7 @@ const PhotoPanels = (() => {
   /** Что сказать о подборе серых (``colour_match`` с сервера): насколько сохранён рисунок или насколько близки цвета. */
   function matchText(match) {
     if (!match) return null;
+    if (match.manually_adjusted) return h('p', {class: 'small'}, 'После подбора серые скорректированы вручную. Превью и файл используют эти изменения; показатели автоматического подбора к ним не относятся.');
     const used = `использовано серых ${match.greys_used} из ${match.greys_available}`;
     if (match.choice === 'objects') {
       const done = match.objects || [];
@@ -367,33 +419,37 @@ const PhotoPanels = (() => {
 
   const TONE = {brightness: 0, contrast: 0, gamma: 1};          // the picture's greys as they are (photo_state.TONE)
   const TONE_ABOUT = 'Яркость, контраст и гамма картинки — те же, что в LightBurn, но применяются здесь, к серым картинки до того, как они станут '
-    + 'мощностью или точками: прогноз и файл LightBurn получают одну и ту же картинку, а в самом LightBurn эти настройки остаются нулевыми. '
+    + 'мощностью или точками: прогноз и файл LightBurn получают одну и ту же картинку, а в самом LightBurn эти настройки остаются стандартными (0 / 0 / 1). '
     + 'Яркость сдвигает все тона, контраст разводит светлое и тёмное, гамма меняет средние тона (меньше 1 — светлее, больше 1 — темнее), не трогая '
     + 'белое и чёрное. В виде точками светлее — меньше точек, темнее — больше.';
-  const TONE_OFF = 'При подборе серых под цвета яркость задают цвета картинки: яркость, контраст и гамма сохранены и вернутся, когда подбор выключен '
-    + 'или выбран вид точками.';
+  const TONE_MATCHED = 'Регулировки применяются после подбора серых и попадают в файл LightBurn. Темнее серый — выше мощность. '
+    + 'Цвет и светлота титана меняются по измеренной шкале, поэтому повышение мощности не всегда затемняет металл.';
 
   /** Яркость, контраст и гамма картинки (0.27.0): три ползунка и «Как есть»; каждое изменение уходит через ``save({tone})`` после паузы.
       Пока ползунок двигают или изменение в пути, ответ сервера их не сдвигает; потом они встают, как у работы. В градациях серого с
-      подбором серых под цвета они выключены (серые берутся не из картинки); пока прогноза нет (шкала не измерена), их не видно, как и
+      подбором серых под цвета они меняют результат подбора; пока прогноза нет (шкала не измерена), их не видно, как и
       ползунков мощности. */
   function toneSliders(save) {
     let timer = null, busy = 0, last = null;
+    const defaults = {...TONE, sharpness: 0};
     const one = (key, label, short, min, max, step) => {
-      const range = h('input', {type: 'range', min, max, step, value: TONE[key], 'aria-label': label});
-      const exact = h('input', {type: 'number', min, max, step: 'any', value: TONE[key], 'aria-label': label});
+      const range = h('input', {type: 'range', min, max, step, value: defaults[key], 'aria-label': label});
+      const exact = h('input', {type: 'number', min, max, step: 'any', value: defaults[key], 'aria-label': label});
       range.addEventListener('input', () => { exact.value = range.value; later(); });
       exact.addEventListener('change', () => { range.value = exact.value; later(); });
       return {key, range, exact, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
     };
     const all = [one('brightness', 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', 'Яркость', -100, 100, 1),
       one('contrast', 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее', 'Контраст', -100, 100, 1),
-      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.2, 5, 0.05)];
-    const toneOf = (view) => ({...TONE, ...(view.tone || {})});
+      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.2, 5, 0.05),
+      one('sharpness', 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 0, 100, 1)];
+    const toneOf = (view) => ({...defaults, ...(view.tone || {}), sharpness: view.sharpness || 0});
     const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); } };
-    async function send(tone) {
+    async function send(values) {
       busy += 1;
-      await save({tone});
+      const change = {tone: Object.fromEntries(Object.keys(TONE).map((k) => [k, values[k]]))};
+      if (values.sharpness !== ((last && last.sharpness) || 0)) change.sharpness = values.sharpness;
+      await save(change);
       busy -= 1;
       if (!busy && !timer && last) set(toneOf(last));
     }
@@ -401,19 +457,18 @@ const PhotoPanels = (() => {
       clearTimeout(timer);
       timer = setTimeout(() => { timer = null; send(Object.fromEntries(all.map((s) => [s.key, +s.exact.value]))); }, 300);
     }
-    const reset = btn('Как есть', () => { clearTimeout(timer); timer = null; set(TONE); send({...TONE}); }, 'btn-small');
-    reset.setAttribute('title', 'Яркость 0, контраст 0, гамма 1: картинка как загружена');
-    const note = h('p', {class: 'small muted ge-tone-note', hidden: true}, TONE_OFF);
+    const reset = btn('Как есть', () => { clearTimeout(timer); timer = null; set(defaults); send({...defaults}); }, 'btn-small');
+    reset.setAttribute('title', 'Яркость 0, контраст 0, гамма 1, чёткость 0: без ручных регулировок');
+    const note = h('p', {class: 'small muted ge-tone-note', hidden: true}, TONE_MATCHED);
     const el = h('div', {class: 'ge-powers ge-tone', role: 'group', 'aria-label': 'Яркость, контраст и гамма картинки', title: TONE_ABOUT},
       all.map((s) => s.box), h('div', {class: 'row'}, reset), note);
     function show(view) {
       last = view;
       el.hidden = !!view.problem;
-      const tone = toneOf(view), off = !dotted(view) && !!view.by_colour;
+      const tone = toneOf(view), matched = !dotted(view) && !!view.by_colour;
       if (!timer && !busy) set(tone);
-      for (const s of all) { s.range.disabled = off; s.exact.disabled = off; }
-      reset.disabled = off || all.every((s) => tone[s.key] === TONE[s.key]);
-      note.hidden = !off;
+      reset.disabled = all.every((s) => tone[s.key] === defaults[s.key]);
+      note.hidden = !matched;
     }
     return {el, show};
   }
@@ -447,10 +502,11 @@ const PhotoPanels = (() => {
     const advisor = advice ? PhotoQuality.advisor(advice, (changes) => save(changes)) : null;
     /** Что сказать о тоне картинки в подробностях: только когда он её меняет. */
     const toneText = (view) => {
-      if (!view.tone_used) return null;
-      const t = view.tone;
+      if (!view.tone_used && !view.sharpness) return null;
+      const t = {...TONE, ...(view.tone || {})};
       return h('p', {class: 'small'}, `Картинка изменена: яркость ${value(t.brightness, 0)} %, контраст ${value(t.contrast, 0)} %, гамма ${value(t.gamma, 2)}. `
-        + 'Прогноз и файл LightBurn — с этими изменениями; в LightBurn яркость, контраст и гамма остаются нулевыми, чтобы не применить их дважды.');
+        + (view.sharpness ? `Чёткость ${value(view.sharpness, 0)}. ` : '')
+        + 'Прогноз и файл LightBurn — с этими изменениями; в LightBurn яркость, контраст и гамма остаются стандартными (0 / 0 / 1), чтобы не применить их дважды.');
     };
     function show(view, sc) {
       const dots = dotted(view);
@@ -477,12 +533,15 @@ const PhotoPanels = (() => {
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;      // the file cleans the titanium first (C00)
       const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
       const lined = info.contours_report && info.contours_report.share > 0 ? ' и контуры' : '';
+      const rampOnly = info.prediction_evidence && info.prediction_evidence.ramp_only;
       fill(out,
-        h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Прогноз на титане')),
+        rampOnly ? h('p', {class: 'small alert warn ge-prediction-evidence'}, 'В базе этот режим измерен только тестовой шкалой. Точность расчёта для фотогравировки не подтверждена.') : null,
+        h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Расчётный вид на титане')),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
       if (stage) stage(out.querySelector('.pp-stage'), info.picture && info.picture.shown_width);
       const atSize = sizeText(info.scale_size);
       fill(foot,
+        info.power_usage ? h('span', {class: 'ge-power-usage small'}, `Мощность по подготовленным серым: ${value(info.power_usage.range[0], 1)}–${value(info.power_usage.range[1], 1)} %; медиана ${value(info.power_usage.median, 1)} %. Настройки Min / Max: ${value(info.power_range[0], 1)} / ${value(info.power_range[1], 1)} %.`) : null,
         h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
         info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
@@ -860,5 +919,5 @@ const PhotoPanels = (() => {
   }
 
   return {value, when, materialLabel, titaniumLabel, sameScale, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList,
-    sizeText, SIZE_ABOUT, scaleBar, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
+    sizeText, SIZE_ABOUT, scaleBar, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, resultCards, exportedResults, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
 })();

@@ -138,7 +138,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
     assert out["layer"] and out["missing"] == [False, False, False]                   # no ramp, no original picture, no cleaning of its own
     assert out["choices"] == ["Сохранить рисунок", "Ближайший цвет"]                            # «Раскраска по объектам» comes with its tab
-    assert out["tabs"] == ["Картинка", "Шкала", "Подтверждение", "Точки"] and out["steps"] == [True, True]
+    assert out["tabs"] == ["Картинка", "Результаты", "Шкала", "Подтверждение", "Точки"] and out["steps"] == [True, True]
 
 
 @node
@@ -262,7 +262,7 @@ def test_the_brightness_contrast_and_gamma_of_a_zone_are_saved_from_three_slider
     assert out["start"] == ["0", "0", "1", True, False]
     assert out["after"] == ["20", "1.5", False]                                               # one save after a pause, the sliders as saved
     assert out["reset"] == ["0", "1"]
-    assert out["off"] == [True, True, True, False]
+    assert out["off"] == [False, False, True, False]
     assert out["saves"] == [{"tone": {"brightness": 20, "contrast": 0, "gamma": 1.5}}, {"tone": {"brightness": 0, "contrast": 0, "gamma": 1}},
                             {"by_colour": True}]
 

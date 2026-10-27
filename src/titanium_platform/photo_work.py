@@ -69,7 +69,7 @@ GRAYSCALE = st.GRAYSCALE
 KINDS = st.KINDS
 TILE_PX = 360                       # the longer side of a kind's picture in «Какая гравировка?»
 DATA = ("image_path", "image_name", "image_size", "scale", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules",
-        "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts",
+        "colouring", "kind", "dot_power", "dot_recipe", "dot_width", "tone", "tone_after_match", "sharpness", "ai_photo", "ai", "ai_theme", "undo", "redo", "updated_at", "texts",
         "evidence_source", "source_versions")
 # ``dot_colour``: a point of the colour map picked for the dots; ``dot_settings``: the settings the dots fire at (a step darker or lighter)
 SETTINGS = ("scale", "width_mm", "dot_colour", "dot_settings", *st.SETTINGS)
@@ -80,7 +80,7 @@ DEFAULTS = {**st.DEFAULTS, "undo": [], "redo": [], "texts": [], "evidence_source
 # What one step of undo or redo brings back: everything that decides what the work engraves, and the AI's answer that led to it. The
 # permission to send the picture to the AI is not part of it: undoing never allows more to be sent than the operator allows now.
 STATE = ("scale", "device_id", "lens_id", "min_power", "max_power", "width_mm", "by_colour", "colour_choice", "contours", "rules", "colouring", "kind",
-         "dot_power", "dot_recipe", "dot_width", "tone", "ai", "ai_theme", "texts")
+         "dot_power", "dot_recipe", "dot_width", "tone", "tone_after_match", "sharpness", "ai", "ai_theme", "texts")
 UNDO_DEPTH = 50                     # steps kept to undo and redo together, as the vector editor keeps
 KEEP_LOOKS = 8                      # what the dots of the works' last looks are (their share above all), so an open work is not dithered again
 KEEP_CUT = 2                        # pictures cut by their inscriptions kept in memory, as the decoded ones
@@ -186,7 +186,7 @@ def _key(kind: str, plan: Mapping, curve: prediction.Curve, measured: prediction
                       "min_power": plan["min_power"], "max_power": plan["max_power"], "by_colour": plan["by_colour"],
                       "colour_choice": plan["colour_choice"], "contours": plan["contours"], "rules": plan["rules"],
                       "colouring": plan["colouring"] if plan["colour_choice"] == "objects" else None, "engraving": plan["kind"], "dot_power": plan["dot_power"] if _dotted(plan) else None,
-                      "dot_recipe": plan.get("dot_recipe") if _dotted(plan) else None, "tone": st.tone_used(plan)})
+                      "dot_recipe": plan.get("dot_recipe") if _dotted(plan) else None, "tone": st.tone_used(plan), "sharpness": plan.get("sharpness", 0.0)})
 
 
 # -- inscriptions (feature inscriptions-in-works, REQ-005, DEC-003) ---------------------------------------------------------------
@@ -401,7 +401,7 @@ def _summary(store: Store, plan: Mapping, texts: dict | None = None) -> dict:
             "by_colour": plan["by_colour"], "colour_choice": plan["colour_choice"], "contours": plan["contours"],
             "kind": plan["kind"], "dot_power": plan["dot_power"], "dot_recipe": plan["dot_recipe"], "dot_width": plan["dot_width"],
             "colouring": plan["colouring"],
-            "tone": st.tone_of(plan), "tone_used": st.tone_used(plan) is not None,
+            "tone": st.tone_of(plan), "tone_used": st.tone_used(plan) is not None, "sharpness": plan.get("sharpness", 0.0),
             "rules": [st.shown_rule(r) for r in plan["rules"]], "ai": plan["ai"], "ai_theme": plan["ai_theme"], "ai_photo": plan["ai_photo"],
             "undo": len(plan["undo"]), "redo": len(plan["redo"]), "time": None if frozen else _time(store, plan, fired, texts),
             "texts_count": len(plan["texts"]), "source": es.shown(store, plan)}
@@ -534,7 +534,7 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
         small = cv2.resize(rgb8, (max(1, round(cols * scale)), max(1, round(rows * scale))), interpolation=cv2.INTER_AREA) if scale < 1 else rgb8
         return prediction.to_png(small)
     key = rc.key_of({"kind": "photo-work-thumbnail", "px": THUMB_PX, "image": rc.file_stamp(plan["image_path"]), "unmeasured": True,
-                     "tone": st.tone_used(plan)}) \
+                     "tone": st.tone_used(plan), "sharpness": plan.get("sharpness", 0.0)}) \
         if curve is None else _key("photo-work-thumbnail", plan, curve, measured, paint)
     return rc.Picture(store, _folder(plan["id"]), key, draw)
 
@@ -730,7 +730,7 @@ def create(store: Store, data: bytes, file_name: str, name, width_mm, scale=None
     plan = {"device_id": device_id, "lens_id": lens_id, "image_path": cv._store_image(store, data), "image_name": file_name,
             "image_size": [cols, rows], "scale": _scale_data(mode), "min_power": low, "max_power": high, "width_mm": width,
             "by_colour": False, "colour_choice": drawing.CHOICES[0], "contours": False, "rules": [], "colouring": {}, "kind": GRAYSCALE,
-            "dot_power": None, "dot_recipe": None, "dot_width": None, "tone": dict(st.TONE), "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
+            "dot_power": None, "dot_recipe": None, "dot_width": None, "tone": dict(st.TONE), "tone_after_match": False, "sharpness": 0.0, "ai_photo": False, "ai": None, "ai_theme": None, "undo": [], "redo": [], "updated_at": now(),
             "texts": [], "evidence_source": pin, "source_versions": []}
     with store.transaction():
         plan_id = _save(store, plan, name=title, identifier=pl.new_identifier(IDENTIFIER_PREFIX))

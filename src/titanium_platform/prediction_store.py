@@ -347,6 +347,7 @@ def _hex(lab) -> str:
 
 
 def _scale_summary(store: Store, mode: Mode, materials: Mapping, row_mm: float | None = None) -> dict | None:
+    from . import photo_results
     try:
         curve, basis = curve_for(store, mode, row_mm)
     except PredictionError:
@@ -363,6 +364,7 @@ def _scale_summary(store: Store, mode: Mode, materials: Mapping, row_mm: float |
     settings = {k: getattr(mode, k) for k in SETTINGS} | {"global_passes": mode.global_passes}
     time = engraving_time.per_area(settings)
     return {"mode": mode.as_dict(), "material": materials.get(mode.material_id), "titanium": _titanium(mode, materials, sources),
+            "results": photo_results.summary(photo_results.at_mode(store, mode)), "examples": photo_results.at_mode(store, mode),
             "span": [lo, hi], "points": len(curve.points),
             "engravings": len(engravings), "by_kind": hows, "reference": basis["reference"], "referenced": curve.referenced,
             "dpi": grayscale.image_dpi(mode.line_interval) if mode.line_interval else None,
@@ -427,7 +429,9 @@ def scales(store: Store, device_id: int | None = None, lens_id=None, material_id
     materials = _materials(store)
     width = None if row_mm is None else check_width(row_mm)
     out = [_scale_summary(store, mode, materials, width) for mode in scale_modes(store, device_id, lens_id, material_id)]
-    return sorted((item for item in out if item is not None), key=lambda item: (not item["referenced"], -item["engravings"], -item["points"]))
+    return sorted((item for item in out if item is not None),
+                  key=lambda item: (-bool(item['results']['good']), bool(item['results']['bad'] and not item['results']['good']),
+                                    not item["referenced"], -item["engravings"], -item["points"]))
 
 
 def measured_mode(store: Store, wanted) -> Mode:
@@ -450,6 +454,7 @@ def measured_span(store: Store, mode: Mode, width_mm: float) -> tuple[float, flo
 
 
 def scale(store: Store, mode: Mode, min_power=None, max_power=None, row_mm=None) -> dict:
+    from . import photo_results
     """One scale in full at a size (rows ``row_mm`` long; by default the size most engravings measured): its curve with every source,
     "which grey makes which colour" at Min..Max (by default the measured span), each engraving against the curve of the others at its own
     size, and each fill of the same settings against the curve at its power."""
@@ -464,7 +469,7 @@ def scale(store: Store, mode: Mode, min_power=None, max_power=None, row_mm=None)
                       "curve_lab": None if not np.isfinite(at[0]) else [round(float(v), 2) for v in at],
                       "de": None if not np.isfinite(at[0]) or p.referenced != curve.referenced else round(float(np.linalg.norm(np.asarray(p.lab) - at)), 1)})
     points = [{**row, "hex": _hex(row["lab"])} for row in curve.as_dict()["points"]]
-    return {**summary, "curve": {**curve.as_dict(), "points": points}, "greys": grayscale.scale_of_greys(curve, low, high),
+    return {**summary, "examples": photo_results.at_mode(store, mode), "curve": {**curve.as_dict(), "points": points}, "greys": grayscale.scale_of_greys(curve, low, high),
             "confirmation": grayscale.confirmation(_per_engraving(store, mode, curve.referenced)), "fill_points": fills}
 
 
@@ -622,9 +627,34 @@ def predicted(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndar
             "mode": item["mode"].as_dict(), "curve": curve, "referenced": rendered["referenced"], "reference": item["reference"],
             "span": rendered["span"], "axis": rendered["axis"], "power_range": rendered["power_range"], "outside_share": rendered["outside_share"], "spread": rendered["spread"],
             "transparent_share": rendered["transparent_share"],
+            "power_usage": power_usage(item, low, high) if low is not None else None,
+            "prediction_evidence": prediction_evidence(item["curve"]),
             "adjustments": rendered["adjustments"], "notes": rendered["notes"] + item["basis_notes"],
             "picture": {"width": item["size"][0], "height": item["size"][1], "shown_width": cols, "shown_height": rows}}
     return info, rendered["rgb8"]
+
+
+def prediction_evidence(curve: prediction.Curve) -> dict:
+    """Distinguish a test ramp from an observed photograph. A colour curve alone does not validate its prediction of a picture."""
+    sources = [s for row in curve.points for s in row["sources"]]
+    return {"ramp_only": bool(sources) and all(s.get("how") == "grey ramp" for s in sources),
+            "engravings": len({prediction._engraving_of(s) for s in sources})}
+
+
+def power_usage(item: dict, low: float, high: float) -> dict | None:
+    """Power commanded by the prepared preview's opaque greys, including bitmap adjustments. Never infer a marking threshold."""
+    opaque = item["alpha"] >= photo_modes.ALPHA_MIN
+    grey = np.round(np.clip(item["picture"][opaque], 0, 1) * 255) / 255
+    if not grey.size:
+        return None
+    values = prediction.adjustments_of(item.get("adjustments"))["values"]
+    powers = prediction.grey_to_power(prediction.adjust_grey(grey, values["Gamma"], values["Contrast"], values["Brightness"]), low, high)
+    edges = np.arange(0, 105, 5)
+    counts, _ = np.histogram(powers, edges)
+    return {"range": [round(float(powers.min()), 2), round(float(powers.max()), 2)],
+            "median": round(float(np.median(powers)), 2),
+            "histogram": [{"from": int(a), "to": int(b), "share": round(int(n) / len(powers), 4)}
+                          for a, b, n in zip(edges[:-1], edges[1:], counts)]}
 
 
 # -- a picture engraved on a scale (REQ-059) --------------------------------------------------------------------------------------
@@ -867,6 +897,32 @@ def _spared(rules, parts: np.ndarray) -> np.ndarray | None:
     return np.isin(parts, even) if even else None
 
 
+def adjust_picture(grey: np.ndarray, tone: Mapping | None, sharpness: float, alpha: np.ndarray) -> np.ndarray:
+    """Adjust the actual laser-input greys. Sharpening radius is 0.15% of image width at both preview and file resolution.
+
+    Normalise the blur by opacity so unengraved pixels do not create a dark or light halo at a cut-out edge. A zero setting is identity.
+    """
+    out = np.asarray(grey, np.float32)
+    if tone:
+        out = prediction.adjust_grey(out, tone["gamma"], tone["contrast"], tone["brightness"]).astype(np.float32)
+    if sharpness:
+        mask = (np.asarray(alpha) >= photo_modes.ALPHA_MIN).astype(np.float32)
+        sigma = max(0.1, out.shape[1] * 0.0015)
+        weight = cv2.GaussianBlur(mask, (0, 0), sigma)
+        blur = cv2.GaussianBlur(out * mask, (0, 0), sigma) / np.maximum(weight, 1e-6)
+        out = np.where(mask > 0, np.clip(out + sharpness / 50.0 * (out - blur), 0, 1), out).astype(np.float32)
+    return out
+
+
+def _adjust_output(item: dict) -> dict:
+    if not item.get("output_tone") and not item.get("output_sharpness"):
+        return item
+    out = _with_levels({**item, "picture": adjust_picture(item["picture"], item.get("output_tone"), item.get("output_sharpness", 0.0), item["alpha"])})
+    if "colour_match" in out:
+        out["colour_match"] = {**out["colour_match"], "manually_adjusted": True}
+    return out
+
+
 def engraved(item: dict, min_power: float, max_power: float, rules: list[dict] | None = None) -> dict:
     """The item as it is engraved at Min..Max: its own greys or the greys chosen for its colours (``by_colour``), each part with a rule
     by that rule (``with_rules``) and, with ``contours`` (only for greys chosen for its colours, ``picture_item``), the edges this engraving
@@ -878,7 +934,7 @@ def engraved(item: dict, min_power: float, max_power: float, rules: list[dict] |
     else:
         shown = with_colours(item, low, high) if item["by_colour"] else item
     if not item.get("contours"):
-        return shown
+        return _adjust_output(shown)
     rows, cols = item["picture"].shape
     spare = _spared(rules, people.parts_at(part_scores(item), (cols, rows))) if any(r["kind"] == "even" for r in rules or ()) else None
     base = (np.clip(shown["picture"], 0, 1) * 255).round().astype(np.uint8)
@@ -886,7 +942,7 @@ def engraved(item: dict, min_power: float, max_power: float, rules: list[dict] |
                              _px_per_mm(item.get("width_mm"), cols), spare)
     out = _with_levels({**shown, "picture": np.ascontiguousarray(lined["grey8"].astype(np.float32) / (grayscale.LEVELS - 1))})
     out["contours_report"] = {"share": lined["share"]}
-    return out
+    return _adjust_output(out)
 
 
 def with_rules(item: dict, min_power: float, max_power: float, rules: list[dict]) -> dict:
@@ -951,6 +1007,7 @@ def picture_for_file(item: dict, min_power: float, max_power: float, width_mm: f
         base = (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)
         grey = drawing.contours(base, lab, opaque, item["curve"], low, high, _px_per_mm(width_mm, grey.shape[1]),
                                 _spared(rules, parts) if rules else None)["grey8"].astype(np.float32) / 255
+    grey = adjust_picture(grey, item.get("output_tone"), item.get("output_sharpness", 0.0), alpha)
     grey = np.where(opaque, grey, 1.0)
     grey8 = (np.clip(grey, 0, 1) * 255).round().astype(np.uint8)
     if not transparent:

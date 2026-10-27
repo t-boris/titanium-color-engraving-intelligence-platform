@@ -102,8 +102,10 @@ def _family(kind: str) -> str:
 def photographs(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
     """Every photo layer of the accepted checks of a laser and lens, judged: its pair, layer, titanium, settings, how its tone was measured
     (``grey ramp`` or ``picture``), the plate type it was engraved on, the judgement (``photo_quality.judge``) and its black end's colour."""
+    from . import photo_results
+    assessments = photo_results.marks(store)
     rows = store.query(
-        "SELECT p.id, p.material_id, p.context_json, p.data_json, p.accepted_at, t.test_type, t.id AS plate_id FROM pair p "
+        "SELECT p.id, p.engraving_id, p.material_id, p.context_json, p.data_json, p.accepted_at, t.test_type, t.id AS plate_id FROM pair p "
         "LEFT JOIN plan l ON l.id=p.plan_id LEFT JOIN plate t ON t.id=COALESCE(p.plate_id, l.plate_id) "
         "WHERE p.status=? AND p.device_id=? AND p.lens_id IS ? ORDER BY p.id", (ingest.ST_ACCEPTED, device_id, lens_id))
     out = []
@@ -119,12 +121,14 @@ def photographs(store: Store, device_id: int, lens_id: int | None) -> list[dict]
                 continue
             bins = sorted(rep["tonal"]["bins"], key=lambda b: b["gray"])
             item = {"pair_id": row["id"], "layer": rep.get("name"), "material_id": material, "settings": settings,
+                    "operator_result": assessments.get(photo_results.pair_key(row, rep['index'])),
                     "measured_by": rep["tonal"].get("measured_by") or "picture", "plate_type": row["test_type"], "plate_id": row["plate_id"],
                     "accepted_at": row["accepted_at"], "black_lab": [bins[0]["L"], bins[0].get("a", 0.0), bins[0].get("b", 0.0)], **judged}
             out.append(item)
             span = pq.ordered_span(rep["tonal"]) if settings["dither"] == "grayscale" and item["measured_by"] == "grey ramp" else None
             if span is not None:                    # the part of the ramp below the oxide's turn: an engraving of its own
                 out.append({**item, "settings": _rounded({**settings, "min_power": span["min_power"], "power": span["max_power"]}),
+                            "operator_result": None,
                             "span_of": rep.get("name"), "tone": span["tone"], "detail": None, "score": pq.score(span["tone"]),
                             "findings": pq.findings(span["tone"], None, "grayscale")})
     return out
@@ -148,25 +152,37 @@ def engravings(store: Store, device_id: int, lens_id: int | None, material_id: i
         detailed = max((i for i in pictures if i.get("detail")), key=rank, default=None)
         detail = (detailed or {}).get("detail")
         settings = items[0]["settings"]
+        outcomes = {i['operator_result']['key']: i['operator_result'] for i in items if i.get('operator_result')}
+        operator = {v: sum(r['verdict'] == v for r in outcomes.values()) for v in ('good', 'bad')}
         out.append({"settings": settings, "material_id": material, "tone": toned["tone"], "detail": detail,
+                    "operator_results": operator,
                     "score": pq.score(toned["tone"], detail), "findings": pq.findings(toned["tone"], detail, settings["dither"]),
                     "measured_by": toned["measured_by"], "span_of": toned.get("span_of"), "black_lab": toned["black_lab"],
                     "source": {"pair_id": toned["pair_id"], "layer": toned["layer"]},
                     "photographs": sorted({i["pair_id"] for i in items}), "plate_types": sorted({i["plate_type"] or "work" for i in items}),
                     "variations": sorted({i["plate_id"] for i in items if i["plate_type"] == "photo_variations"})})
-    return sorted(out, key=lambda e: (-(e["score"] or 0.0), -len(e["photographs"]), -max(e["photographs"])))
+    return sorted(out, key=lambda e: (-bool(e['operator_results']['good']), bool(e['operator_results']['bad']),
+                                    -(e["score"] or 0.0), -len(e["photographs"]), -max(e["photographs"])))
 
 
 def failed(engraving: Mapping) -> bool:
     """Whether a judged engraving shows no picture (``photo_quality.findings`` «flat»: its dark end less than ``FLAT_RANGE_L`` darker than
     its light end, or lighter, as dots lighter than the titanium make it, a negative): never a kind's best (DEC-006)."""
+    result = engraving.get('operator_results') or {}
+    if result.get('good'):
+        return False
+    if result.get('bad'):
+        return True
     return any(f["code"] == "flat" for f in engraving["findings"])
 
 
 def _usable(engraving: Mapping, dot_width: bool) -> bool:
     """Whether an engraving can be a kind's best for its owner: judged, a picture (:func:`failed`), and without the dot width correction
     when the owner cannot write it."""
-    return engraving["score"] is not None and not failed(engraving) and (dot_width or engraving["settings"].get("dot_width") is None)
+    result = engraving.get('operator_results') or {}
+    if result.get('bad') and not result.get('good'):
+        return False
+    return engraving["score"] is not None and (result.get('good') or not failed(engraving)) and (dot_width or engraving["settings"].get("dot_width") is None)
 
 
 def best(store: Store, device_id: int, lens_id: int | None, material_id: int | None, kind: str, *, dot_width: bool = True) -> dict | None:

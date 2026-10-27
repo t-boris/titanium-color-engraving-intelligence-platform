@@ -81,7 +81,7 @@ def test_the_findings_say_what_each_setting_does_to_a_photo_engraving_on_every_l
     assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 1есть предложение"]      # one place: open at once
     jarvis, = out["cards"]
     assert jarvis.startswith("Джарвисизмерено, но не подобрано")
-    assert "Лучшее: 30 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — оценка 0,62 по фото №41" in jarvis
+    assert "Лучшее: 30 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,62 по фото №41" in jarvis
     assert "мощность вдвое больше: темнее на 6 L*, оценка −0,1 (по фото №41, №42)" in jarvis
     assert "мощность 30 % → 24 %" in jarvis and "Картинки для платы ещё нет" in jarvis
     assert out["buttons"] == []                                   # no picture to engrave the plate from yet: nothing to press

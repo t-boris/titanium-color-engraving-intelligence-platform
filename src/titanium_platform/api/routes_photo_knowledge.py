@@ -6,10 +6,27 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from .. import photo_knowledge
+from .. import photo_knowledge, photo_results
 from .common import store_of
 
 router = APIRouter(prefix="/api")
+
+
+class ResultMarkIn(BaseModel):
+    source: dict
+    aspect: str = 'photo'
+    verdict: str
+    note: str = ''
+
+
+@router.post('/photo-results/mark')
+def mark_photo_result(body: ResultMarkIn, request: Request):
+    return photo_results.mark(store_of(request), body.source, body.verdict, body.note, body.aspect)
+
+
+@router.get('/photo-results/work/{plan_id}')
+def exported_photo_results(plan_id: int, request: Request, zone: int | None = None):
+    return {'results': photo_results.for_work(store_of(request), plan_id, zone)}
 
 
 @router.get("/photo-knowledge")
