@@ -16,7 +16,7 @@
 'use strict';
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, duration, table, fail} = App;
-  const {value, when, materialLabel, titaniumLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleCard, newSlots, emptySlots,
+  const {value, when, materialLabel, titaniumLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleBar, scaleCard, newSlots, emptySlots,
     scaleDetail, sameScale, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT} = PhotoPanels;
   let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
@@ -161,17 +161,16 @@
       best first (the server's order: scales a recipe refers to, then the most engraved and measured), pages of 20. A line opens the scale's
       card (its titanium, engravings, widths, confirmation); pressing the card chooses the scale. ``chosen()`` is the scale chosen now: the list
       opens on it. */
-  function scaleList(id, scales, chosen, choose) {
+  function scaleList(id, scales, chosen, choose, display = (sc) => sc) {
     const key = (sc) => modeQuery(sc.mode);
     const rank = new Map(scales.map((sc, i) => [sc, i]));
     const best = (a, b) => rank.get(a) - rank.get(b);
-    const bar = (sc) => (sc.bar.length ? `linear-gradient(to right, ${sc.bar.map((b) => b.hex).join(', ')})` : 'none');
     const now = chosen();
     return App.list({id, items: scales, key, open: now ? key(now) : null, className: 'ge-scale-list',
-      row: (sc) => [h('span', {class: 'ge-bar', style: `background:${bar(sc)}`}),
+      row: (sc) => [scaleBar(display(sc)),
         h('span', {class: 'lst-text', title: `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`}, settingsText(sc.mode, sc.dpi)),
         sc === chosen() ? pill('выбрана', 'ok') : null],
-      details: (sc) => scaleCard(sc, sc === chosen(), () => choose(sc)),
+      details: (sc) => scaleCard(display(sc), sc === chosen(), () => choose(sc)),
       search: (sc) => `${settingsText(sc.mode, sc.dpi)} ${titaniumLabel(sc)}`,
       sorts: [['best', 'Лучшие первыми', best], ['fast', 'Быстрее', (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || best(a, b)],
         ['wide', 'Шире диапазон мощности', (a, b) => (b.span[1] - b.span[0]) - (a.span[1] - a.span[0]) || best(a, b)]],
@@ -181,8 +180,10 @@
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
       сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
   async function workScreen(id) {
-    const [first, {scales}] = await Promise.all([get('/photo-works/' + id), get('/grey-scales')]);
+    const first = await get('/photo-works/' + id);
+    let {scales} = await get(`/grey-scales?row_mm=${first.width_mm}`);
     let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve(), current = null;
+    let scalesWidth = first.width_mm, scalesRequest = null, selectedDetail = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const slots = newSlots();
     const base = `/photo-works/${id}`;
@@ -208,11 +209,29 @@
     // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
     current = chosen();
-    const list = scaleList('ge.work.scales', scales, () => current, (item) => pick(item));
+    const list = scaleList('ge.work.scales', scales, () => current, (item) => pick(item),
+      (sc) => sc === current && selectedDetail ? {...sc, ...selectedDetail} : sc);
     const cards = (sc) => { current = sc; list.refresh(); };
 
     function showScale() {
       if (detail) detail.stop();
+      selectedDetail = null;
+      if (scalesWidth !== view.width_mm) {
+        if (scalesRequest && scalesRequest.width === view.width_mm) return;
+        const request = scalesRequest = {width: view.width_mm};
+        const width = request.width;
+        emptySlots(slots, 'Загружаем шкалы на ширине работы…');
+        get(`/grey-scales?row_mm=${width}`).then((next) => {
+          if (scalesRequest !== request || view.width_mm !== width) return;
+          scalesRequest = null;
+          scalesWidth = width;
+          scales = next.scales;
+          list.items = scales;
+          showScale();
+        }).catch((e) => { if (scalesRequest === request) { scalesRequest = null; error.textContent = e.message; error.hidden = false; } });
+        return;
+      }
+      scalesRequest = null;
       const sc = chosen();
       shownKey = scaleKey(view);
       cards(sc);
@@ -220,7 +239,8 @@
       const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p}),
         recipe: fromMap(view) ? view.dot_recipe : null, hex: view.picture && view.picture.dots ? view.picture.dots.hex : null, dpi: view.dpi,
         map: () => go(DotPick.address(view))} : null;
-      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot});
+      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot,
+        loaded: (data) => { selectedDetail = data; cards(chosen()); }});
       else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
     }
     function shown() {
@@ -253,6 +273,7 @@
       if (detail) detail.stop();
       detail = null;
       shownKey = null;
+      selectedDetail = null;
       cards(item);
       emptySlots(slots, 'Загружаем шкалу…');
       save({scale: item.mode});
@@ -429,7 +450,7 @@
   /** «Шкалы серого» на один экран: шкалы слева, Min, Max, полоса и таблица серых посередине, подтверждение, точки и виды справа. */
   async function scalesScreen(wanted) {
     const [{scales}, devices, materials] = await Promise.all([get('/grey-scales'), get('/devices'), get('/materials')]);
-    let current = null, detail = null;
+    let current = null, detail = null, selectedDetail = null;
     const create = btn('Новая работа на этой шкале', () => newWork(current.mode), 'primary btn-small');
     const head = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'),
       h('div', {class: 'ge-title'}, h('h2', {}, 'Шкалы серого'), h('p', {class: 'sub'}, ABOUT)), plateButton(devices, materials, 'btn-small'),
@@ -444,12 +465,14 @@
     const tabs = App.tabs([['confirm', 'Подтверждение', slots.confirm], ['points', 'Точки', slots.points], ['kinds', 'Виды', kindsBlock()]],
       {initial: 'confirm', remember: 'ge.tab', label: 'Шкала', prefix: 'ge-tab'});
     current = scales.find((sc) => modeQuery(sc.mode) === wanted) || scales[0];
-    const list = scaleList('ge.scales', scales, () => current, (sc) => choose(sc));
+    const list = scaleList('ge.scales', scales, () => current, (sc) => choose(sc),
+      (sc) => sc === current && selectedDetail ? {...sc, ...selectedDetail} : sc);
     const choose = (sc) => {
       if (detail) detail.stop();
       current = sc;
+      selectedDetail = null;
       list.refresh();
-      detail = scaleDetail(sc, slots);
+      detail = scaleDetail(sc, slots, {loaded: (data) => { selectedDetail = data; list.refresh(); }});
     };
     choose(current);
     return h('div', {class: 'os ge'}, head, h('div', {class: 'os-body ge-body'},

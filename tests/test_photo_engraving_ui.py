@@ -152,10 +152,10 @@ JARVIS_ADVICE = {
     "take": {"dot_settings": JARVIS, "dot_width": 0.02}, "turn": None}
 
 
-def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=None):
+def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=None, scale_data=None):
     work = {**WORK, **(work or {})}
     scales = [scale(150, [1, 30]), scale(100, [2, 25])] if scales is None else scales
-    (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_answer(), "work": work, "kinds": KINDS,
+    (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_data or scale_answer(), "work": work, "kinds": KINDS,
                                                     "works": [listed(work)], "parts": PARTS, "ai_rules": AI_RULES, "engravings": list(engravings),
                                                     "objects": OBJECTS, "themes": THEMES, "advice": advice or ADVICE}),
                                         encoding="utf-8")

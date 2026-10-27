@@ -39,8 +39,10 @@
     const first = await get(base);
     const query = new URLSearchParams({device_id: first.work.device_id, material_id: first.work.material_id ?? ''});
     if (first.work.lens_id != null) query.set('lens_id', String(first.work.lens_id));
-    const {scales} = await get(`/grey-scales?${query}`);
+    query.set('row_mm', String(first.width_mm));
+    let {scales} = await get(`/grey-scales?${query}`);
     let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve(), left = false;
+    let scalesWidth = first.width_mm, scalesRequest = null, selectedDetail = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const list = h('div', {class: 'ge-scales'});
     const slots = newSlots();
@@ -58,17 +60,36 @@
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     // at the zone's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
-    const cards = (current) => fill(list, scales.map((item) => scaleCard(item, item === current, () => pick(item))));
+    const cards = (current) => fill(list, scales.map((item) => scaleCard(
+      item === current && selectedDetail ? {...item, ...selectedDetail} : item, item === current, () => pick(item))));
 
     function showScale() {
       if (detail) detail.stop();
+      selectedDetail = null;
+      if (scalesWidth !== view.width_mm) {
+        if (scalesRequest && scalesRequest.width === view.width_mm) return;
+        const request = scalesRequest = {width: view.width_mm};
+        const width = request.width;
+        query.set('row_mm', String(width));
+        emptySlots(slots, 'Загружаем шкалы на ширине зоны…');
+        get(`/grey-scales?${query}`).then((next) => {
+          if (left || scalesRequest !== request || view.width_mm !== width) return;
+          scalesRequest = null;
+          scalesWidth = width;
+          scales = next.scales;
+          showScale();
+        }).catch((e) => { if (!left && scalesRequest === request) { scalesRequest = null; error.textContent = e.message; error.hidden = false; } });
+        return;
+      }
+      scalesRequest = null;
       const sc = chosen();
       shownKey = scaleKey(view);
       cards(sc);
       const dot = dotted(view) && view.dot_power != null ? {power: view.dot_power, changed: (p) => save({dot_power: p}),
         recipe: fromMap(view) ? view.dot_recipe : null, hex: view.picture && view.picture.dots ? view.picture.dots.hex : null, dpi: view.dpi,
         map: () => go(DotPick.zoneAddress(view.work, view.number))} : null;
-      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot});
+      if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot,
+        loaded: (data) => { selectedDetail = data; cards(chosen()); }});
       else { detail = null; emptySlots(slots, 'Шкала этой зоны не измерена: выберите шкалу слева.'); }
     }
     function shown() {
@@ -108,6 +129,7 @@
       if (detail) detail.stop();
       detail = null;
       shownKey = null;
+      selectedDetail = null;
       cards(item);
       emptySlots(slots, 'Загружаем шкалу…');
       save({scale: item.mode});

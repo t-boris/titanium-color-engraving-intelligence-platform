@@ -731,7 +731,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_set", "zone": 1, "min_power": 5, "max_power": 29},
                              {"op": "photo_set", "zone": 1, "by_colour": False},
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
-    assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id="]
+    assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id=&row_mm=20"]
     assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Открыть»: the zone on its own screen
 
 

@@ -105,9 +105,9 @@ ADVICE = {"kind": "grayscale", "current": {}, "best": None, "at_best": False, "e
                     "softer": {"refused": "the settings are already at their limits: nothing known moves the engraving further that way"}}}
 
 
-def run(tmp_path, body, query=None, **zone):
+def run(tmp_path, body, query=None, scale_data=None, **zone):
     (tmp_path / "data.json").write_text(json.dumps({"zone": {**ZONE, **zone}, "work": WORK, "scales": [scale(150, [1, 30]), scale(100, [2, 25])],
-                                                    "scale": scale_answer(), "kinds": KINDS, "advice": ADVICE}), encoding="utf-8")
+                                                    "scale": scale_data or scale_answer(), "kinds": KINDS, "advice": ADVICE}), encoding="utf-8")
     script = tmp_path / "zone.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
@@ -133,7 +133,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   out.steps = [button(tree, 'Отменить').disabled, button(tree, 'Повторить').disabled];
 """)
     assert out["head"] == ["Фотозона 1", "работа «Портрет» · C03 · областей 2 · 24,5 × 18,2 мм", "#/vector?plan=9"]
-    assert out["scales"] == [{"device_id": "1", "material_id": "3", "lens_id": "2"}]           # only the scales the work can be engraved on
+    assert out["scales"] == [{"device_id": "1", "material_id": "3", "lens_id": "2", "row_mm": "24.5"}]  # the zone's size, as well as its setup
     assert out["opened"] == {"chosen": [False, True], "powers": ["12", "28"], "shown": "/api/vector/9/photo/1/preview.png?v=0"}
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
     assert out["layer"] and out["missing"] == [False, False, False]                   # no ramp, no original picture, no cleaning of its own

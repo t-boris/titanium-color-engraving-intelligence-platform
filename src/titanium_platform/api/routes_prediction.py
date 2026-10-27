@@ -129,11 +129,12 @@ def _scale_mode(request: Request, device_id: int, lens_id: str, material_id: int
 
 
 @router.get("/grey-scales")
-def grey_scales(request: Request, device_id: int | None = None, lens_id: str | None = None, material_id: int | None = None):
+def grey_scales(request: Request, device_id: int | None = None, lens_id: str | None = None, material_id: int | None = None,
+                row_mm: float | None = None):
     """Every measured grayscale scale (one per set of fixed settings), optionally of one laser, lens and titanium: its colour bar over the
-    measured powers, what measured it, whether the engravings confirm each other and its time per square centimetre."""
+    measured powers at ``row_mm`` (or its default measured size), what measured it, whether the engravings confirm each other and its time per square centimetre."""
     lens = lens_param(lens_id) if lens_id else None
-    return {"scales": prediction_store.scales(store_of(request), device_id, lens, material_id)}
+    return {"scales": prediction_store.scales(store_of(request), device_id, lens, material_id, row_mm)}
 
 
 @router.get("/pairs/{pair_id}/prediction-review")

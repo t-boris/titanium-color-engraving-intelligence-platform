@@ -73,13 +73,26 @@ const PhotoPanels = (() => {
   const SIZE_ABOUT = 'Цвет на титане зависит от длины строки гравировки (у картинки — от её ширины): лазер возвращается к точке через строку, '
     + 'и на коротких строках титан не успевает остыть.';
 
-  /** Карточка шкалы в списке: цвета по измеренным мощностям, настройки, чем измерена, подтверждение и время на см². */
+  const greySegments = (levels) => Array.from({length: BAR_SEGMENTS}, (_, i) => levels[255 - Math.round(i * 255 / (BAR_SEGMENTS - 1))]);
+  /** A selected scale carries the detail response's greys: the card and picture strip then use identical powers, colours and unknowns. */
+  function scaleBar(sc) {
+    const rows = sc.greys ? greySegments(sc.greys.levels) : sc.bar;
+    return h('span', {class: 'ge-bar', role: 'img', 'aria-label': 'Цвета шкалы'}, rows.map((row) => h('span', {
+      class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
+      title: `${row.level != null ? `серый ${row.level} · ` : ''}мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}`})));
+  }
+
+  /** Scale cards use the displayed scan width and, for the selected scale, the current Min/Max. */
   function scaleCard(sc, chosen, choose) {
-    const bar = sc.bar.length ? `linear-gradient(to right, ${sc.bar.map((b) => b.hex).join(', ')})` : 'none';
     const kinds = Object.entries(sc.by_kind).map(([how, n]) => `${HOW[how] || how}: ${n}`).join(' · ');
+    const ends = sc.greys ? [sc.greys.levels[255].power, sc.greys.levels[0].power] : sc.span;
+    const size = sizeText(sc.size);
     return h('button', {type: 'button', class: 'ge-scale' + (chosen ? ' is-chosen' : ''), 'aria-pressed': String(chosen), onClick: choose},
-      h('span', {class: 'ge-bar', style: `background:${bar}`}),
-      h('span', {class: 'ge-ends small'}, h('span', {}, `P ${value(sc.span[0], 1)} %`), h('span', {}, `P ${value(sc.span[1], 1)} %`)),
+      scaleBar(sc),
+      h('span', {class: 'ge-ends small'}, h('span', {}, `P ${value(ends[0], 1)} %`), h('span', {}, `P ${value(ends[1], 1)} %`)),
+      sc.size && sc.size.row_mm != null ? h('span', {class: 'small muted', title: size ? size.long : ''},
+        `Цвета при ширине ${mm(sc.size.row_mm)}`,
+        sc.size.how === 'outside' ? ` · по измерению ${mmList(sc.size.from_mm)}` : '') : null,
       h('strong', {}, settingsText(sc.mode, sc.dpi)),
       h('span', {class: 'small muted'}, `${titaniumLabel(sc)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
       sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `измерена при ширине ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
@@ -90,8 +103,7 @@ const PhotoPanels = (() => {
       С ``dot`` ({power, pick}) — полоса цветов по мощностям шкалы для вида точками: метка на мощности точек, щелчок выбирает другую; без
       ``power`` (точки с карты цветов) метки нет, щелчок возвращает точки на шкалу. */
   function greyBar(levels, dot = null) {
-    const at = (i) => levels[255 - Math.round(i * 255 / (BAR_SEGMENTS - 1))];
-    const segments = Array.from({length: BAR_SEGMENTS}, (_, i) => at(i));
+    const segments = greySegments(levels);
     const lo = levels[255].power, hi = levels[0].power;
     const strip = h('div', {class: 'ge-strip' + (dot ? ' ge-pickable' : ''), 'aria-label': dot ? 'Цвет точек при каждой мощности: щёлкните, чтобы выбрать' : 'Цвет каждого серого'},
       segments.map((row) => h('span', {class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
@@ -177,7 +189,7 @@ const PhotoPanels = (() => {
       hex, dpi, map()}) — работа в виде точками: вместо Min и Max одна мощность точек, полоса — цвета по всем измеренным мощностям, щелчок по ней
       выбирает мощность; ``map()`` открывает карту цветов, чтобы выбрать цвет точек там; с ``recipe`` (цвет с карты, ``hex``) вместо мощности
       — этот цвет и кнопки «Другой цвет» и «На шкалу». */
-  function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null, dot = null} = {}) {
+  function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null, dot = null, loaded = null} = {}) {
     let span = sc.span;
     let timer = null, seq = 0, stopped = false;
     let atMm = rowMm != null ? rowMm : (sc.size ? sc.size.row_mm : null);
@@ -246,6 +258,7 @@ const PhotoPanels = (() => {
           greyTable(levels), h('ul', {class: 'small'}, d.notes.map((n) => h('li', {}, I18N.tr(n)))));
         fill(slots.confirm, confirmationBlock(d.confirmation));
         fill(slots.points, fillsBlock(d.fill_points), pointsBlock(d.curve));
+        if (loaded) loaded(d);
       } catch (e) { if (!stopped && mine === seq) { error.textContent = e.message; error.hidden = false; } }
     }
     function schedule() { clearTimeout(timer); timer = setTimeout(() => load(true), 250); }
@@ -847,5 +860,5 @@ const PhotoPanels = (() => {
   }
 
   return {value, when, materialLabel, titaniumLabel, sameScale, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList,
-    sizeText, SIZE_ABOUT, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
+    sizeText, SIZE_ABOUT, scaleBar, scaleCard, newSlots, emptySlots, scaleDetail, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT};
 })();

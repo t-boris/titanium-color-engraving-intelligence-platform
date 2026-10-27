@@ -1,3 +1,16 @@
+# Consistent scale palettes — 0.37.3 (2026-10-27, BUG-011)
+
+- [x] Trace the actual work-46 mismatch: card uses 38.4 mm, detail/picture use 121.2 mm; measured colours differ, not missing data.
+- [x] Add requested-size list summaries and width-aware selector caches; label each displayed width.
+- [x] Share selected card/detail grey levels and hatching at the current Min/Max. Reload on resize and discard obsolete responses.
+- [x] Five regression tests cover real size-dependent colours, the API, power controls, resize and delayed responses after undo.
+      Full suite: 2353 passed, none skipped (175.46 s). Actual work-46 data in hidden Electron: all 64 card/preview segments match,
+      including six hatched segments at Min 2.5%, Max 30.2%; width label 121.4 mm, measurement basis 121.2 mm.
+- [x] Built, signed and installed 0.37.3 locally. Core, packaged and installed hidden smokes pass; installed backend reports 0.37.3,
+      five UI assets match source and deep strict signature verification passes. Previous app backed up to
+      Library/Caches/Titanium-workshop-install-backups/before-0.37.3-20261027T142718Z.app. Active operator windows are not restarted.
+- [x] Commit and push main; release v0.37.3.
+
 # Grey-scale card strips — 0.37.2 (2026-10-27, BUG-010)
 
 - [x] Reproduce the missing colour strip in the real, hidden Electron renderer: valid gradient, 2 px wide.

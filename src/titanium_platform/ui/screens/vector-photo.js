@@ -34,9 +34,10 @@ const VectorPhoto = (() => {
       zone.rules && zone.rules.length ? `правил для частей: ${zone.rules.length}` : null].filter(Boolean).join(' · '));
 
   /** Измеренные шкалы серого лазера, линзы и титана работы, лучшие первыми: один запрос на работу (он долгий — грузится в фоне). */
-  function scales(j) {
+  function scales(j, zone) {
     const query = new URLSearchParams({device_id: j.device_id ?? '', material_id: j.material_id ?? ''});
     if (j.lens_id != null) query.set('lens_id', String(j.lens_id));
+    if (zone.width_mm != null) query.set('row_mm', String(zone.width_mm));
     const key = query.toString();
     if (!scalesCache.has(key)) scalesCache.set(key, get(`/grey-scales?${key}`).then((d) => d.scales || []));
     return scalesCache.get(key).catch((e) => { scalesCache.delete(key); throw e; });
@@ -124,7 +125,7 @@ const VectorPhoto = (() => {
       const now = h('p', {class: 'small'}, `${settingsText(zone.scale)} · ${stepText(zone.scale)}`);
       if (!known && !scalesError) fill(scaleBox, now, h('p', {class: 'small muted'}, 'Загружаем измеренные шкалы…'));
       if (!known && !scalesError) {
-        try { known = await scales(j); } catch (e) { scalesError = e.message; }
+        try { known = await scales(j, zone); } catch (e) { scalesError = e.message; }
       }
       if (scalesError) return fill(scaleBox, now, h('p', {class: 'alert bad small'}, scalesError));
       const chosen = known.find((sc) => sameScale(sc.mode, zone.scale));

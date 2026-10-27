@@ -419,12 +419,14 @@ def engraving_check(store: Store, mode: Mode, pair_id: int, tolerance: float = 5
     return out
 
 
-def scales(store: Store, device_id: int | None = None, lens_id=None, material_id=None) -> list[dict]:
+def scales(store: Store, device_id: int | None = None, lens_id=None, material_id=None, row_mm: float | None = None) -> list[dict]:
     """Every grayscale scale (one per mode) with its colour bar over the measured powers, how many engravings measured it and of which
-    kind, whether they confirm each other, the fills of the same settings and the time per square centimetre. The best measured first:
+    kind, whether they confirm each other, the fills of the same settings and the time per square centimetre. With ``row_mm``, each
+    bar and measured power span use the same scan-row length as the picture, rather than the scale's most-measured size. The best measured first:
     chart-referenced colours, then more engravings, then more points."""
     materials = _materials(store)
-    out = [_scale_summary(store, mode, materials) for mode in scale_modes(store, device_id, lens_id, material_id)]
+    width = None if row_mm is None else check_width(row_mm)
+    out = [_scale_summary(store, mode, materials, width) for mode in scale_modes(store, device_id, lens_id, material_id)]
     return sorted((item for item in out if item is not None), key=lambda item: (not item["referenced"], -item["engravings"], -item["points"]))
 
 
