@@ -517,7 +517,7 @@ select::-ms-expand {display:none}
 /* Предпросмотр фотогравировки (REQ-030): картинка и прогноз рядом; оговорка о цветах относительно камеры — на самой картинке (DEC-062) */
 /* Фотогравировка: шкалы серого (REQ-059) */
 .ge-scales {display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
-.ge-scale {display:flex;flex-direction:column;gap:6px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:inherit;cursor:pointer;font:inherit}
+.ge-scale {display:flex;flex-direction:column;align-items:stretch;gap:6px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:inherit;cursor:pointer;font:inherit}
 .ge-scale.is-chosen {border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .ge-bar {display:block;height:22px;border-radius:6px;border:1px solid var(--line)}
 .ge-ends {display:flex;justify-content:space-between;color:var(--muted)}

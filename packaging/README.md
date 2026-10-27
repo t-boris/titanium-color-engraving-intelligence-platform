@@ -8,7 +8,7 @@ child on a free loopback port with a per-launch session secret.
 
 ```sh
 uv pip install --python .venv/bin/python -e ".[desktop]"   # adds pyinstaller (the venv is uv-managed, no pip)
-cd packaging && PYTHONPATH=../src ../.venv/bin/python -m PyInstaller --noconfirm --distpath ../dist --workpath ../build/pyinstaller sidecar.spec && cd ..
+cd packaging && env -u PYTHONPATH ../.venv/bin/python -m PyInstaller --noconfirm --distpath ../dist --workpath ../build/pyinstaller sidecar.spec && cd ..
 dist/titanium-core/titanium-core --smoke       # starts on a temporary workshop, opens a session, asks /api/health, exits 0
 ```
 
@@ -16,7 +16,12 @@ dist/titanium-core/titanium-core --smoke       # starts on a temporary workshop,
 resources). It collects the package data (UI, models, schemas), the metadata of packages that read their own version, and the native
 libraries of OpenCV, SciPy, scikit-learn, rawpy, Shapely, HarfBuzz and fontTools.
 
+Run with the editable package installed and no source `PYTHONPATH`: a source path placed first can make metadata collection choose
+the source `.egg-info` instead of the environment's versioned `.dist-info`, which the shell's packaging version check requires.
+
 ## The shell
+
+Use Node.js 22 for the reference Mac packaging run.
 
 ```sh
 cd desktop

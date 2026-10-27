@@ -1,3 +1,21 @@
+# Grey-scale card strips — 0.37.2 (2026-10-27, BUG-010)
+
+- [x] Reproduce the missing colour strip in the real, hidden Electron renderer: valid gradient, 2 px wide.
+- [x] Stretch the shared card contents; visually check full-width gradients and separated Min/Max at 226/320/600 px.
+      Compact list strips remain 44 × 14 px. The operator's live window is not used for the fixture.
+- [x] Full local suite: 2348 passed, none skipped (216.15 s, `pytest -q -rs -n 12`). Installed stylesheet hotfix verified at
+      226/320/600 px using the installed CSS; Developer ID signature verified. No operator window was restarted.
+- [x] Operator then requested `Install locally`: rebuilt the frozen core with versioned dist-info, packaged using Node 22.22.3,
+      signed and installed the complete 0.37.2 desktop app in /Applications. Core, packaged app and installed app hidden smokes pass;
+      installed core reports 0.37.2, UI draws, source/installed stylesheet hashes match, deep strict Developer ID verification passes.
+      Previous app cloned to Library/Caches/Titanium-workshop-install-backups/before-0.37.2-20261027T135512Z.app.
+      No real workshop is opened by the smoke checks. Source PYTHONPATH must be absent when collecting versioned build metadata.
+- [x] Commit and push on main; release v0.37.2.
+- [x] Separately measure IMG_3448.DNG: 144 patches, chart residual 3.38 ΔE; 68 geometry inliers, median 1.33 px.
+      Results and measured palette saved under Downloads/Titanium-color-palette-100-60-300/IMG_3448-analysis.
+      C05 has a visible pale-yellow step at 7.8%, its darkest measured step at 20.6%, blue at 22.2–23.8%.
+      These external results have not been inserted into the accepted workshop observations.
+
 # Preview against Inna & Emmy 2 — 0.37.1 (2026-10-27, BUG-009)
 
 Operator: lower background should be green, it engraved brown; photo engraving failed. Clarified priority: the preview must resemble
