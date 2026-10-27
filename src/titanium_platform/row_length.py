@@ -102,9 +102,17 @@ def _setting(layer: lb.Layer, key: str) -> str:
     return "" if raw is None else str(raw).strip().lower()
 
 
+def together_settings(parameters: dict) -> bool:
+    """Does a recipe fill its shapes together? Shared by the imported-file measurement and the work's preview."""
+    source = parameters.get("source_settings") or {}
+    def value(tag):
+        raw = source.get(tag)
+        return str(raw.get("Value") if isinstance(raw, dict) else raw).strip().lower()
+    return value("scanOpt") != "individual" and value("floodFill") not in ("1", "true")
+
+
 def _together(layer: lb.Layer) -> bool:
-    """Does LightBurn fill the layer's shapes as one (not shape by shape)?"""
-    return _setting(layer, "scanOpt") != "individual" and _setting(layer, "floodFill") not in ("1", "true")
+    return together_settings({"source_settings": layer.source_settings})
 
 
 def of_layer(layer: lb.Layer) -> float | None:

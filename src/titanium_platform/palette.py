@@ -74,7 +74,7 @@ from . import agreement, color, colormap, colouring, model, prediction, setup as
 from .conversion import FILL_MODES, LINE_MODES
 from .db import Store
 
-ALGORITHM = "1"                   # how a palette is made from the evidence; a release names it (electron REQ-083)
+ALGORITHM = "2"                   # default LightBurn path metadata no longer separates equivalent measurements
 MAX_COLOURS = 29                  # LightBurn's 30 output layers less the cleaning layer, which always comes first (DEC-073)
 MODES = ("closest", "tonality", "random", "contrast", "artistic")
 SUBSETS = ("all", "warm", "cool", "bright")   # the groups of the palette Artistic draws from
@@ -121,6 +121,7 @@ def _entry(group: str, recipe: dict) -> dict:
             "referenced": first["referenced"], "engravings": len(recipe["engravings"]), "photographs": len(recipe["photographs"]),
             "experiments": recipe["experiments"], "observation_ids": sorted(recipe["observation_ids"]),
             "parameters": first["parameters"], "mode": first["parameters"].get("layer_type"), "task": first["task"],
+            "fill_together": (first.get("preview_execution") or {}).get("together", True),
             "time": first["time"], "time_s_per_cm2": first["time_s_per_cm2"], "missing_context": colormap.missing_context(recipe["points"]),
             "doubtful": agreement.doubtful(found), "sources": colormap.sources_of(recipe, found), "sizes": _sizes(recipe)}
 
@@ -190,13 +191,18 @@ def _settings_of(group: str) -> str:
 def _supersede(built: list[tuple[str, dict]]) -> None:
     """Mark the entries whose settings were measured on a better basis too (``caution`` = ``superseded``, DEC-083): the better
     measurement replaces them in the automatic choice."""
-    best: dict[str, int] = {}
+    best: dict[str, dict] = {}
     for group, entry in built:
-        key = _settings_of(group)
-        best[key] = max(best.get(key, 0), BASIS_RANK[entry["basis"]])
+        key = entry.get("physical_key") or _settings_of(group)
+        previous = best.get(key)
+        rank = lambda e: (BASIS_RANK[e["basis"]], e.get("equivalent_id", e["id"]) == e["id"])
+        if previous is None or rank(entry) > rank(previous):
+            best[key] = entry
     for group, entry in built:
-        if BASIS_RANK[entry["basis"]] < best[_settings_of(group)]:
+        chosen = best[entry.get("physical_key") or _settings_of(group)]
+        if BASIS_RANK[entry["basis"]] < BASIS_RANK[chosen["basis"]]:
             entry["caution"] = "superseded"
+            entry["replacement_id"] = chosen["id"]
 
 
 def _across_plates(points: list[dict], material_id: int) -> list[dict]:
@@ -207,13 +213,48 @@ def _across_plates(points: list[dict], material_id: int) -> list[dict]:
     for point in points:
         groups.setdefault(PLATE.sub("|ti:*|", point["group"]), set()).add(point["group"])
     pick = {key: min(found, key=lambda g: (own not in g, g)) for key, found in groups.items()}
-    return [{**point, "group": pick[PLATE.sub("|ti:*|", point["group"])]} for point in points]
+    return [{**point, "original_group": point["group"], "group": pick[PLATE.sub("|ti:*|", point["group"])]} for point in points]
 
 
 def pooled_ids(points: list[dict], material_id: int) -> dict[str, str]:
     """The id of the palette entry each recipe of the colour map's ``points`` (one plate each, on titanium of the work's material) is
     pooled into across the plates (:func:`_across_plates`), by the point's own group."""
     return {point["group"]: entry_id(pooled["group"]) for point, pooled in zip(points, _across_plates(points, material_id))}
+
+
+def _compatible_recipes(points: list[dict]) -> list[tuple[str, dict, str]]:
+    """Share the colour evidence of equivalent area fills, keeping every existing palette id and the task records.
+
+    Saving a generated file in LightBurn 2.2 adds fgPathAlgorithm=CutGantry. The old, omitted default and the explicit default must
+    learn from one another. Calibration fills and the same fills in colour pictures also measure the same physical operation; the
+    knowledge summaries keep their tasks, while the preview uses their colour evidence. The best available measurement basis wins.
+    All other controls, unknown tags, layer types and titanium partitions stay in the key; text and lines were already excluded.
+    Unlike changing model.parameters_key, this leaves saved colour choices, histories and published recipes addressable.
+    """
+    normalized, groups = [], {}
+    for point in points:
+        old = point["recipe"].split("|layer|", 1)[0]
+        execution = point.get("preview_execution") or {}
+        new = execution.get("key", old)
+        key = point["recipe"].replace(old + "|", new + "|", 1)
+        key = re.sub(r"\|task:[^|]+$", "|task:area", key)
+        normalized.append({**point, "recipe": key})
+        groups.setdefault(key, {})[point["group"]] = execution.get("default_path", False)
+    recipes = colormap.by_recipe(normalized)
+    out = []
+    for key, names in groups.items():
+        primary = min(names, key=lambda name: (names[name], name))
+        recipe = recipes[key]
+        rank = max(BASIS_RANK[_basis(p)] for p in recipe["points"])
+        best = [p for p in recipe["points"] if BASIS_RANK[_basis(p)] == rank]
+        recipe = colormap.by_recipe(best)[key]
+        for group in names:
+            # Keep the original group's settings first: exporting an old id repeats its own recipe.
+            own = [p for p in recipe["points"] if p["group"] == group]
+            others = [p for p in recipe["points"] if p["group"] != group]
+            aliases = sorted({entry_id(p.get("original_group", p["group"])) for p in recipes[key]["points"]})
+            out.append((group, {**recipe, "points": own + others, "aliases": aliases, "physical_key": BASIS.sub(r"|*\1", key)}, entry_id(primary)))
+    return out
 
 
 def vector_palette(store: Store, device_id: int, lens_id: int | None, material_id: int, max_time_s_per_cm2: float | None = None,
@@ -240,7 +281,8 @@ def vector_palette(store: Store, device_id: int, lens_id: int | None, material_i
             area.append(point)
         else:
             left_out[reason].add(point["group"])
-    built = [(recipe["points"][0]["group"], _entry(recipe["points"][0]["group"], recipe)) for recipe in colormap.by_recipe(area).values()]
+    built = [(group, {**_entry(group, recipe), "equivalent_id": primary, "aliases": recipe["aliases"], "physical_key": recipe["physical_key"]})
+             for group, recipe, primary in _compatible_recipes(area)]
     _supersede(built)
     entries = []
     for group, entry in built:
@@ -538,7 +580,7 @@ def automatic(entry: dict, limit: float | None, include_as_shot: bool) -> bool:
     """Whether the automatic modes may choose an entry: not cautioned (its colour changes under the same settings, or a better
     measurement of them exists, DEC-083), no slower than ``limit`` seconds per square centimetre (an unknown time is slower than
     any limit) and, unless included, not measured as photographed (DEC-077)."""
-    if entry.get("caution"):
+    if entry.get("caution") or entry.get("equivalent_id", entry["id"]) != entry["id"]:
         return False
     if limit is not None and (entry.get("time_s_per_cm2") is None or entry["time_s_per_cm2"] > limit):
         return False
@@ -549,7 +591,7 @@ def choosable(entries, limit: float | None, include_as_shot: bool) -> tuple[list
     """The entries the automatic modes choose from, and whether they are the cautioned ones: when no entry is free of caution (every
     colour of the titanium changed under its settings, or was replaced) the cautioned ones that pass the other limits are used, so that a
     work can still be coloured; the screen marks each of them (DEC-083)."""
-    entries = list(entries)
+    entries = [e for e in entries if e.get("equivalent_id", e["id"]) == e["id"]]
     free = [e for e in entries if automatic(e, limit, include_as_shot)]
     if free:
         return free, False

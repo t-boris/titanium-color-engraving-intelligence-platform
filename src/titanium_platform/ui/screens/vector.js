@@ -377,11 +377,17 @@
     const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }, resize});
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step returns the whole work
     const banner = LabSource.banner(`/vector/${j.id}`, 'vector', (work) => show(work));
+    const evidence = h('div', {class: 'small'});
     function show(next) {
       const resplit = !shown || next.document.version !== shown.document.version;
       shown = next;
       head.update(next);
       banner.update(next);
+      const p = next.preview_evidence;
+      evidence.className = 'small' + (p && (p.estimated_layers || p.estimated_zones) ? ' alert warn' : ' muted');
+      fill(evidence, !p ? null : p.estimated_layers || p.estimated_zones
+        ? `Превью: у ${p.estimated_layers} из ${p.layers} цветовых слоёв и у ${p.estimated_zones || 0} фотозон размер ещё не измерен. Показана оценка по другим размерам; оттенок на металле может отличаться.`
+        : `Превью: цвета ${p.layers} слоёв измерены при этом размере. Фотозоны проверяются по своим шкалам.`);
       fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
@@ -407,7 +413,7 @@
     }
     show(j);
     parts = VectorColours.parts(j, run, permit);
-    frame = VectorWorkspace.frame({head: [head.el, banner.el], editor: parts.editor, initial: 'colours', items: [
+    frame = VectorWorkspace.frame({head: [head.el, banner.el, evidence], editor: parts.editor, initial: 'colours', items: [
       ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
       ['review', VectorReview.tabLabel(j), review], ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
     return frame.el;

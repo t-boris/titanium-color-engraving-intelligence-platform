@@ -733,3 +733,15 @@ again in the next commit). Add the exact files a tool or an edit produced; check
 - **Rule.** While the operator may be using the app, diagnose only with the hidden `--smoke` mode (own `--user-data-dir`), the
   browser server or a rehearsal copy; never a visible window of the same bundle, and never `osascript … quit` unless the only running
   instance is the one the operator asked me to restart. Check `ps … --data-dir` before acting on any running instance.
+
+## An accepted result must reach the exact preview that promised it (0.37.1, 2026-10-27)
+
+- **What happened.** «Inna & Emmy 2» engraved brown where the preview promised green. The accepted result was present in the database,
+  but area-task labels and LightBurn's explicit/default path tag separated its evidence from the saved recipe; one older palette id
+  also changed when its own plate was measured. The preview ignored individual-shape scan order. A washed-out photo layer was
+  discarded for low tone correlation, and vector-only export matching selected another file with a different pulse width.
+- **Rule.** Trace feedback end to end on the actual saved work: exported recipe and bitmap → accepted observation/profile → evidence
+  partition and saved id → size/scan-order choice → both editor and thumbnail. Keep every execution control that affects the burn,
+  but prove and handle harmless file-default differences. Prove image orientation independently when available; low correlation can
+  be the defect being measured. Match mixed exports using their images too. A replay of the same measurement proves that feedback
+  is connected; only a later independent engraving tests the next prediction's accuracy.

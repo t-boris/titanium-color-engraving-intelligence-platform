@@ -770,7 +770,20 @@ def _palette(store: Store, plan: dict) -> list[dict]:
     evidence = es.of(store, plan)
     if evidence.frozen is not None:
         return es.kept_palette(evidence.pin)
-    return palette.vector_palette(evidence.store, evidence.device_id, evidence.lens_id, evidence.material_id)["entries"]
+    entries = palette.vector_palette(evidence.store, evidence.device_id, evidence.lens_id, evidence.material_id)["entries"]
+    by_id = {e["id"]: e for e in entries}
+    entries = [{**by_id[e["replacement_id"]], "id": e["id"], "aliases": sorted(set(e.get("aliases") or []) |
+                set(by_id[e["replacement_id"]].get("aliases") or []))} if e.get("replacement_id") in by_id else e for e in entries]
+    # A first measurement on the work's own plate can rename an entry previously pooled from another plate. Resolve the old ids still
+    # kept by this work, including its variants and history, to the same evidence without rewriting the operator's choices.
+    stored, known = json.dumps(plan), {e["id"] for e in entries}
+    aliases = []
+    for entry in entries:
+        for old in entry.get("aliases") or []:
+            if old not in known and old in stored:
+                aliases.append({**entry, "id": old})
+                known.add(old)
+    return entries + aliases
 
 
 def _empty_colouring() -> dict:
@@ -806,7 +819,7 @@ def _automatic(plan: dict, document: dict, entries: list[dict], mode: str, seed:
         out.pop("subset", None)
     result = palette.assign(_sources(document), entries, mode, tolerance_de=plan["threshold"], seed=seed, max_time=settings["max_time"],
                             keep=keep, include_as_shot=settings["include_as_shot"], borders=borders, subset=subset,
-                            size_of=lambda index, entry: colour_rows(index, _angle(entry)))     # each colour at its own size (DEC-107)
+                            size_of=lambda index, entry: colour_rows(index, _angle(entry), _together(entry)))
     out["assignment"] = {str(c["index"]): c["entry_id"] for c in result["colours"]}
     out["how"] = {str(c["index"]): c["how"] for c in result["colours"]}
     return out
@@ -870,6 +883,10 @@ def _angle(entry: dict) -> float:
     return float(entry["parameters"].get("scan_angle") or 0.0)
 
 
+def _together(entry: dict) -> bool:
+    return row_length.together_settings(entry["parameters"]) if entry["parameters"].get("source_settings") else entry.get("fill_together", True)
+
+
 def _row_lengths(plan: dict, document: dict):
     """How long the scan rows of regions engraved as one layer are (DEC-107): ``of(region_ids, angle)`` fills their shapes together, as
     LightBurn fills a layer's shapes by default (the file writes no other grouping), and ``of_colour(index, angle)`` takes the regions
@@ -880,14 +897,19 @@ def _row_lengths(plan: dict, document: dict):
     for region in document["regions"]:
         by_colour.setdefault(region["color"], []).append(region["id"])
 
-    def of(region_ids, angle: float = 0.0) -> float | None:
-        key = (frozenset(region_ids), round(angle, 3))
+    def of(region_ids, angle: float = 0.0, together: bool = True) -> float | None:
+        key = (frozenset(region_ids), round(angle, 3), together)
         if key not in known:
-            known[key] = row_length.of_shapes([loops[r] for r in region_ids if r in loops], angle)
+            shapes = [loops[r] for r in region_ids if r in loops]
+            if not together:
+                # The file merges touching regions of one recipe before filling its resulting shapes individually.
+                joined = _joined(document, {r: "layer" for r in region_ids})
+                shapes = [r["loops"] for r in seg.regions_as_loops(joined) if r["id"] in region_ids]
+            known[key] = row_length.of_shapes(shapes, angle, together)
         return known[key]
 
-    def of_colour(index: int, angle: float = 0.0) -> float | None:
-        return of(by_colour.get(index, ()), angle)
+    def of_colour(index: int, angle: float = 0.0, together: bool = True) -> float | None:
+        return of(by_colour.get(index, ()), angle, together)
 
     return of, of_colour
 
@@ -1034,14 +1056,15 @@ def _state(plan: dict, document: dict, entries: list[dict], inscribed: dict | No
     by_id = dict(measured)
     for entry_id, layer in used.items():                 # each layer in the colour its recipe gives at the length of its rows
         entry = measured[entry_id]
+        together = _together(entry)
         cut_here = [r for r in layer["region_ids"] if r in trimmed]
         if cut_here or entry_id in text_shapes:          # the rows of what is left of its regions and of its letters
             layer["row_mm"] = row_length.of_shapes([loops[r] for r in layer["region_ids"] if r not in trimmed and r in loops]
                                                    + [shape for r in cut_here for shape in trimmed[r]["shapes"]]
                                                    + [shape for found in text_shapes.get(entry_id, ()) for shape in lettering.shapes(found)],
-                                                   _angle(entry))
+                                                   _angle(entry), together)
         else:
-            layer["row_mm"] = rows(layer["region_ids"], _angle(entry))
+            layer["row_mm"] = rows(layer["region_ids"], _angle(entry), together)
         seen = palette.at_size(entry, layer["row_mm"])
         by_id[entry_id] = {**entry, "lab": seen["lab"], "srgb": seen["srgb"], "size": seen["size"]}
     weighted = sum(region["pixels"] * color.delta_e(region["lab"], by_id[entry_id]["lab"]) for region, entry_id in placed)
@@ -1051,9 +1074,9 @@ def _state(plan: dict, document: dict, entries: list[dict], inscribed: dict | No
         if entry is None:
             delta = None
         else:
-            lab = by_id[entry["id"]]["lab"] if entry["id"] in used else palette.at_size(entry, colour_rows(c["index"], _angle(entry)))["lab"]
+            lab = by_id[entry["id"]]["lab"] if entry["id"] in used else palette.at_size(entry, colour_rows(c["index"], _angle(entry), _together(entry)))["lab"]
             delta = color.delta_e(c["lab"], lab)
-        nearest = min((color.delta_e(c["lab"], palette.at_size(e, colour_rows(c["index"], _angle(e)))["lab"]) for e in candidates), default=None)
+        nearest = min((color.delta_e(c["lab"], palette.at_size(e, colour_rows(c["index"], _angle(e), _together(e)))["lab"]) for e in candidates), default=None)
         c.update(delta_e=None if delta is None else round(delta, 2), outside_tolerance=delta is not None and delta > tolerance,
                  nearest_delta_e=None if nearest is None else round(nearest, 2))
     outside = [c for c in colours if c["outside_tolerance"] and c["status"] != "excluded" and c["open_regions"]]
@@ -1224,6 +1247,7 @@ def _zone_shown(plan: dict, row: dict) -> dict:
             "rules": [st.shown_rule(r) for r in zone["rules"]], "index": row["index"],
             "width_mm": round(row["width_mm"], 2), "area_mm2": round(row["area_mm2"], 2), "box": {k: round(v, 4) for k, v in row["box"].items()},
             "span": None if curve is None else [round(float(v), 2) for v in curve.span], "referenced": None if curve is None else curve.referenced,
+            "size": None if curve is None else dict(curve.size or {}),
             "dots": row["dots"], "estimate": pz.dotted(zone) and row["measured"] is None, "problem": row["problem"],
             "tone_used": st.tone_used(zone) is not None,
             "name": None if row["parameters"] is None else pz.layer_name(row["index"], zone, row["parameters"]),
@@ -1681,6 +1705,9 @@ def photo_view(store: Store, plan: dict) -> dict:
         zones=[_zone_shown(plan, row) for row in zones], zone_kinds=list(pz.KINDS),
         texts=[lettering.shown_row(row, by_id) for row in state["texts"]], text_defaults=lettering.DEFAULTS,
         time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), layer_cap=photo_cap(plan["markers_enabled"]),
+        preview_evidence={"estimated_layers": sum((by_id[l["entry_id"]].get("size") or {}).get("how") != prediction.MEASURED for l in state["layers"]),
+                          "layers": len(state["layers"]),
+                          "estimated_zones": sum(row["curve"] is None or (row["curve"].size or {}).get("how") != prediction.MEASURED for row in zones)},
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}
@@ -2346,11 +2373,15 @@ def thumbnail(store: Store, plan_id: int) -> rc.Picture:
     another picture and an unchanged one is neither drawn nor sent again; it lives in the render cache (``vector-<id>``)."""
     plan = _job(store, plan_id)
     painted = _painted(plan)
+    if painted is not None:
+        entries = _palette(store, plan)
+        state = _state(plan, _document(plan), entries, _inscribed(store, plan, entries))
+        painted = {region: state["by_id"][layer["entry_id"]]["srgb"] for layer in state["layers"] for region in layer["region_ids"]}
     zones = []
     if painted is not None and pz.zones(plan["colouring"]):          # its photo zones as they will come out (REQ-073)
         rows = _zone_rows(store, plan, _document(plan), pz.zones(plan["colouring"]), 0)
         zones = [(row["box"], _zone_picture(store, plan, row)) for row in rows if not row["problem"]]
-    texts = _text_paint(store, plan) if painted is not None else []
+    texts = _text_paint(store, {**plan, "layers": _export_layers(store, plan, state)}) if painted is not None else []
     key = rc.key_of({"kind": "vector-thumbnail", "plan": plan["id"], "px": THUMB_PX, "version": plan["document_version"],
                      "document": rc.file_stamp(plan["document_path"]), "smoothing_mm": plan.get("smoothing_mm", 0.0),
                      "painted": None if painted is None else rc.text_digest(json.dumps(painted, sort_keys=True)),

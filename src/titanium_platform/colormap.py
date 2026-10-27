@@ -216,6 +216,15 @@ SHOWN_PARAMETERS = ("power", "frequency", "speed", "pulse_width", "line_interval
                     "cross_hatch", "scan_angle")
 
 
+def _preview_execution(params: dict) -> dict:
+    """Physical fill controls for preview evidence, without exposing preserved file metadata in the displayed parameters."""
+    source = params.get("source_settings") or {}
+    path = source.get("fgPathAlgorithm")
+    path = path.get("Value") if isinstance(path, dict) else path
+    clean = {**params, "source_settings": {k: v for k, v in source.items() if k != "fgPathAlgorithm"}} if path == "CutGantry" else params
+    return {"key": model.parameters_key(clean), "default_path": path == "CutGantry", "together": row_length.together_settings(params)}
+
+
 PLATE = re.compile(r"\|ti:[^|]*\|")          # the titanium stock record inside the group key of a recipe (_group)
 
 
@@ -324,6 +333,7 @@ def collect(store: Store, include_unreferenced: bool = True, setup: str | None =
         points.append({"id": row["id"], "pair_id": row["pair_id"], "layer_index": row["layer_index"], "layer_name": evidence.get("layer_name"),
                        "measurement": kind, "approximate": approximate, "referenced": referenced, "provisional": False, "lab": lab, "delta": delta,
                        "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
+                       "preview_execution": _preview_execution(params),
                        "observation_ids": [row["id"]], "group": _group(params, info, kind, referenced, False, point_task), **_time(params),
                        "row_mm": row_length.of_pair(lengths, row["pair_id"], row["lightburn_path"]).get(row["layer_index"]), **info})
     first_row = {}
@@ -389,6 +399,7 @@ def _provisional_points(store: Store, names, kept: set[int], nominal: list[float
                         "layer_name": rep.get("name"), "measurement": kind, "approximate": approximate, "referenced": referenced,
                         "provisional": True, "lab": lab, "delta": [lab[i] - clean[i] for i in range(3)] if clean else None,
                         "display_lab": display, "parameters": {k: params.get(k) for k in SHOWN_PARAMETERS}, "task": point_task,
+                        "preview_execution": _preview_execution(params),
                         "observation_ids": [], "group": _group(params, info, kind, referenced, True, point_task), **_time(params),
                         **info})
         out += _tonal_points(pair["id"], check, info, kind, clean, nominal, True)

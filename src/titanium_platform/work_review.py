@@ -22,7 +22,8 @@ import statistics
 
 from . import color
 
-SETTINGS = ("power", "frequency", "speed", "pulse_width", "line_interval", "passes")
+SETTINGS = ("power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes", "bidirectional", "cross_hatch",
+            "scan_angle", "angle_increment", "min_power")
 REQUIRED = ("power", "frequency", "speed", "line_interval")        # a layer without these cannot be recognised
 MATCH_REL = 0.005                                                   # LightBurn rounds a setting to about four digits
 VISIBLE_DE = 5.0                  # DEC-090 (assumed): a difference below this is not called an error; the chart's own error is about 3.6
@@ -38,13 +39,16 @@ KEPT_REVIEWS = 20
 # -- recognising a recipe ---------------------------------------------------------------------------------------------------------
 def settings_of(parameters: dict) -> dict:
     """The numbers that make one LightBurn layer what it is."""
-    return {name: float(parameters[name]) for name in SETTINGS if parameters.get(name) is not None}
+    return {**{name: float(parameters[name]) for name in SETTINGS if parameters.get(name) is not None},
+            **{name: parameters[name] for name in ("layer_type", "dither") if parameters.get(name) is not None}}
 
 
 def closeness(a: dict, b: dict) -> float | None:
     """The largest relative difference between two layers' settings, or None when they cannot be the same recipe: a required setting is
     missing from one, or a setting both know differs by more than the rounding LightBurn does."""
     if any(name not in a or name not in b for name in REQUIRED):
+        return None
+    if any(name in a and name in b and a[name] != b[name] for name in ("layer_type", "dither")):
         return None
     worst = 0.0
     for name in SETTINGS:

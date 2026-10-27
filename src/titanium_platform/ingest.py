@@ -34,10 +34,12 @@ LightBurn coordinates remain in millimetres; the photo may be rotated or reflect
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import re
 import uuid
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -1412,6 +1414,73 @@ def _prefer_reading(rho: float, other: float | None) -> bool:
     return rho > other if max(rho, other) >= 0.3 else abs(rho) > abs(other)
 
 
+def _bitmap_fingerprint(png: bytes) -> str | None:
+    found = _picture_grey_alpha(png)
+    if found is None:
+        return None
+    grey, alpha = found
+    pixels = np.stack([(np.clip(a, 0, 1) * 255).round().astype(np.uint8) for a in (grey, alpha)])
+    return hashlib.sha256(str(pixels.shape).encode() + pixels.tobytes()).hexdigest()
+
+
+@lru_cache(maxsize=64)
+def _exported_bitmaps(path: str, stamp: int) -> dict[int, tuple[str, ...]]:
+    try:
+        project = lb.parse_file(path)
+        return {layer.index: tuple(f for r in layer.regions if r.bitmap and r.bitmap.get("png")
+                                  if (f := _bitmap_fingerprint(r.bitmap["png"])) is not None) for layer in project.layers}
+    except (OSError, lb.LightBurnError):
+        return {}
+
+
+def exported_image_flip(plan: dict | None, layer: lb.Layer) -> bool | None:
+    """An unchanged bitmap of our own vector export has a known storage orientation, even after a LightBurn re-save.
+
+    Compare decoded grey AND alpha pixels, never the name or layer number. A missing file or an edited bitmap proves nothing.
+    The region transform still places, rotates and mirrors the picture. Only the ambiguous PNG storage flip is fixed here.
+    """
+    if not plan or plan.get("mode") != pl.MODE_VECTOR or plan.get("strategy") != "photo" or "export_mirror_y" not in plan:
+        return None
+    actual = [_bitmap_fingerprint(r.bitmap["png"]) for r in layer.regions if r.bitmap and r.bitmap.get("png")]
+    if not actual or any(f is None for f in actual):
+        return None
+    for export in reversed(plan.get("exports") or []):
+        path = export.get("path")
+        try:
+            fingerprints = _exported_bitmaps(path, Path(path).stat().st_mtime_ns)
+        except (OSError, TypeError):
+            continue
+        if any(tuple(actual) == saved for saved in fingerprints.values()):
+            return False
+    return None
+
+
+def usable_tonal_profile(store: Store, pair, check: dict, rep: dict) -> bool:
+    """Use a low-correlation legacy profile only when its bitmap's orientation is independently proved by our export.
+
+    Low correlation can describe the engraving's lost tones, rather than bad registration. This also repairs old accepted results
+    without changing immutable observations or pretending an arbitrary weak profile was measured reliably.
+    """
+    tonal = rep.get("tonal") or {}
+    if tonal.get("evidence") == "clear":
+        return True
+    if not (check.get("alignment") or {}).get("valid") or tonal.get("vertical_flip") is not False or not pair["plan_id"]:
+        return False
+    try:
+        plan = pl.get_plan(store, pair["plan_id"])
+        path = pair["lightburn_path"]
+        actual = _exported_bitmaps(path, Path(path).stat().st_mtime_ns).get(rep["index"], ())
+        if not actual or plan.get("mode") != pl.MODE_VECTOR or plan.get("strategy") != "photo" or "export_mirror_y" not in plan:
+            return False
+        for export in reversed(plan.get("exports") or []):
+            path = export.get("path")
+            if path and Path(path).is_file() and tuple(actual) in _exported_bitmaps(path, Path(path).stat().st_mtime_ns).values():
+                return True
+    except (KeyError, OSError, TypeError):
+        pass
+    return False
+
+
 def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape: tuple[int, int],
                    allowed: np.ndarray | None, flip: bool | None = None, matched: bool = False) -> dict | None:
     """How the grey levels of an image object came out on the metal: L* of the photograph against the grey level of the
@@ -1430,6 +1499,7 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     mm_to_image = np.linalg.inv(np.asarray(layer_h, float))
     lab = cv2.cvtColor(np.asarray(np.clip(corrected_rgb, 0, 1), np.float32), cv2.COLOR_RGB2LAB)
     best = None
+    orientation_known = matched or flip is not None
     flip_given = False if matched else flip
     for region in layer.regions:
         bm = region.bitmap
@@ -1494,10 +1564,11 @@ def _tonal_profile(corrected_rgb: np.ndarray, layer_h: np.ndarray, layer, shape:
     best["adjustments"] = adjusted                       # applied by LightBurn before engraving; the grey axis is before them
     best["adjustments_keep_order"] = not any(tag not in lb.MONOTONE_ADJUSTMENTS for tag in adjusted)
     best.update(range_L=round(max(levels) - min(levels), 2), dark_L=levels[0], light_L=levels[-1],
-                evidence="clear" if matched or abs(best["rho"]) >= 0.5 else "weak",
+                evidence="clear" if orientation_known or abs(best["rho"]) >= 0.5 else "weak",
                 limitation="Grey levels are those of the stored picture, before LightBurn's brightness, contrast and gamma; dithering is not "
                            "modelled. " + ("The photograph was aligned by matching this picture: it is read as it was matched, and the match is the "
-                                           "evidence. " if matched else "Which edge of the picture is up is taken from the better positive agreement: "
+                           "evidence. " if matched else "The bitmap matches this work's exported picture, whose storage orientation is known. "
+                           if orientation_known else "Which edge of the picture is up is taken from the better positive agreement: "
                                                                         "a turned picture with an inverted tone looks the same. ") +
                            "The power of a bin follows the settings of the layer: the lightest grey gets Min power, the darkest Max power, linearly between "
                            "(rule confirmed by the operator, Q-024).")
@@ -2568,7 +2639,8 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
                 allowed = ~covered if allowed is None else allowed & ~covered
             ramp = (planned_layer or {}).get("ramp")
             tonal = (_ramp_profile(corrected, layer_h, layer, ramp, dx, dy, shape, allowed) if ramp
-                     else _tonal_profile(corrected, layer_h, layer, shape, allowed, matched=report["alignment"].get("method") in PICTURE_ALIGNMENTS))
+                     else _tonal_profile(corrected, layer_h, layer, shape, allowed, flip=exported_image_flip(plan, layer),
+                                         matched=report["alignment"].get("method") in PICTURE_ALIGNMENTS))
             if tonal is not None:
                 rep["tonal"] = tonal
                 detail = None if ramp else _picture_detail(corrected, layer_h, layer, shape, allowed, tonal)

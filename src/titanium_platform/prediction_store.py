@@ -199,7 +199,7 @@ def _collected(store: Store, mode: Mode, stamp: tuple[int, int]) -> dict:
                                  "line_interval": rep.get("line_interval"), "passes": rep.get("passes"), "global_passes": rep.get("global_passes"),
                                  "power": rep.get("power"), "dot_width": image.get("dot_width_mm") if image.get("dot_correction") else None}):
                 continue
-            if tonal.get("evidence") != "clear":
+            if not ingest.usable_tonal_profile(store, pair, check, rep):
                 weak += 1
                 continue
             if mode.dither != prediction.PREDICTED_MODE and (check.get("composition") or {}).get("picture_over_fills"):

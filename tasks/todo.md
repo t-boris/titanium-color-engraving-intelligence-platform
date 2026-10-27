@@ -1,3 +1,27 @@
+# Preview against Inna & Emmy 2 — 0.37.1 (2026-10-27, BUG-009)
+
+Operator: lower background should be green, it engraved brown; photo engraving failed. Clarified priority: the preview must resemble
+the engraving as closely as possible. No automatic recolouring or laser-parameter tuning was requested.
+
+- [x] Inspect actual pair 153, source photograph, three exports and all accepted measurements on a fresh database copy.
+- [x] Trace lost feedback through area-task keys, default path metadata, plate-specific palette ids and older measurement bases.
+      Preserve ids/task records; share physical fill evidence for previews; keep unknown execution controls distinct.
+- [x] Correct row lengths for individual/flood filling and joined touching regions; update work-list thumbnails from live evidence.
+- [x] Admit a weak legacy photo profile only with independently proven exported-bitmap orientation and valid alignment.
+- [x] Select export 2 by its photo settings; add photo errors, actual/latest settings, and the embedded picture to both result panels.
+- [x] State size estimates above the editor; rebuild existing reviews and attention counts at startup.
+- [x] Live-copy check: original vector mean error 20.24 ΔE, C05 19.76; photo median 17.99, max 60.87, 38.4 → 121.2 mm.
+      Export 2 replay: all 12 vector medians reproduce their accepted readings (numerical precision); all 15 photo bins participate.
+      This is feedback-path validation, not a new independent physical repeat. The full comparison images were visually checked:
+      the measured panel reproduces the washed-out face/dog; the exported bitmap stays upright and transparent outside its zone.
+- [x] Regression tests for evidence sharing/ids, unknown controls, per-shape rows, export matching, weak-profile gating, thumbnail
+      freshness, photo placement/opacity and the result UI. Existing golden evidence, laboratory parity and measurement-basis tests pass.
+- [x] Final full suite: 2347 passed, none skipped (178.81 s, `-n 12`); desktop shell: 16 passed, none skipped.
+      Real-copy API at 0.37.1: 12 layers, no missing regions, lower fill RGB [161,118,83], row 33.1 mm against measured 33.2 mm;
+      review selects export 2 and includes its photo layer; both complete comparison images and thumbnail return 200.
+- [ ] Signed build, packaged smoke, commit and push.
+- [ ] Install and verify the operator's desktop version after a permitted restart (tasks/lessons.md: do not close an active app unasked).
+
 # Work size and splitting a region again — 0.36.0 … (2026-10-25, operator: «Luna 1» is 150 × 200 mm, the plate 150 × 150)
 
 The operator approved («Так и сделай»): «Вписать» first (a width or a height, the other side by the picture; colours, inscriptions and

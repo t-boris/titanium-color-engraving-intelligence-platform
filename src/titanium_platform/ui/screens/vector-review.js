@@ -28,6 +28,24 @@ const VectorReview = (() => {
 
   // ---- результат гравировки -----------------------------------------------------------------------------------------------------
 
+  const PHOTO_SETTINGS = {power: 'максимальная мощность, %', min_power: 'минимальная мощность, %', pulse_width: 'импульс, нс',
+    line_interval: 'шаг, мм', speed: 'скорость, мм/с', frequency: 'частота, кГц', dither: 'вид'};
+
+  function photoResult(p) {
+    const t = p.tone;
+    return h('div', {class: 'stack'}, h('h4', {}, p.zone ? `Фотозона ${p.zone}` : p.name),
+      (p.changed_settings || []).length ? h('div', {class: 'alert warn'},
+        `Выгравированные настройки отличаются от последнего файла № ${p.latest_export}: `,
+        p.changed_settings.map((k) => `${PHOTO_SETTINGS[k] || k}: ${p.settings[k]} → ${p.latest_settings[k]}`).join('; '),
+        '. Сравнение относится к выгравированным настройкам.') : null,
+      p.median_de == null ? h('p', {class: 'small muted'}, 'Для настроек этого фотослоя до гравировки не было измеренной шкалы: точность прогноза не оценена.')
+        : h('p', {}, `Прогноз фотослоя по прежним измерениям: медиана ошибки ${num(p.median_de, 1)} ΔE, максимум ${num(p.max_de, 1)} ΔE.`),
+      t ? h('p', {class: 'small'}, `На фото: различимых тонов ${t.levels} из ${t.steps}; светлота от ${num(t.black_L, 1)} до ${num(t.white_L, 1)} L*.`) : null,
+      h('p', {class: 'small muted'}, p.profile_usable
+        ? 'Измеренные тона участвуют в следующих прогнозах этого фотослоя на тех же настройках.'
+        : 'Измеренные тона не участвуют в прогнозе: соответствие картинки и фотографии пока не подтверждено.'));
+  }
+
   function detail(row) {
     const causes = row.causes.map((c) => h('li', {}, (CAUSE[c.code] || (() => c.code))(c)));
     modal(row.name, h('div', {class: 'stack'},
@@ -76,6 +94,7 @@ const VectorReview = (() => {
           : h('p', {}, `Совпало слоёв ${t.matched} из ${t.promised} обещанных. Средняя разница ${num(t.mean_delta_e, 1)} ΔE по площади; заметно отличаются ${t.beyond_layers} слоёв `
             + `(${percent(t.area_share_beyond)} площади). Порог ${num(r.limit, 1)} ΔE.`),
         ...r.notes.map((n) => h('div', {class: 'alert'}, (NOTE[n.code] || (() => n.code))(n))),
+        ...(r.photo || []).map(photoResult),
         t.matched ? h('div', {class: 'vw-review-pics'}, pic(true), pic(false)) : null,
         rows.length ? h('div', {class: 'vw-lines'}, rows.map(rowLine)) : null,
         r.not_engraved.length ? h('details', {class: 'vw-details'}, h('summary', {}, `Обещаны, но на фото не найдены (${r.not_engraved.length})`),
@@ -159,6 +178,7 @@ const VectorReview = (() => {
       s.matched ? h('p', {}, `Совпало слоёв ${s.matched} из ${s.promised} обещанных; средняя разница ${num(s.mean_delta_e, 1)} ΔE; заметно отличаются ${s.beyond_layers} слоёв `
         + `(${percent(s.area_share_beyond)} площади).`) : h('p', {}, wr.review.promise_lost ? LOST : 'Ни один слой этого файла не совпал по настройкам с файлом работы.'),
       ...wr.review.notes.map((n) => h('p', {class: 'small muted'}, (NOTE[n.code] || (() => n.code))(n))),
+      ...(wr.review.photo || []).map(photoResult),
       h('div', {class: 'row'}, link('/vector?plan=' + wr.plan_id, 'Открыть работу: сравнение и замены')));
   }
 
