@@ -33,8 +33,10 @@ Out of scope (ask first): a dialog after the second failure — today it only lo
       signed (Developer ID 3M68DG8S7N, codesign strict ok); the packaged hidden smoke says version 0.38.1 and its `shell.log` has
       `interface drawn` and no session token; pre-release v0.38.1 (commit 0da6e4d); sha256
       `b78cb0cf6b6299617b4f0229e1b1a38bdb69dbe62830e8247898949928eb9438`, the same after downloading it back
-- [ ] reinstall (0.38.0 → 0.38.1) waits for the operator's `reinstall`: the app is running (pid 95638, the operator is working in it);
-      no second visible instance of the app meanwhile
+- [x] reinstall (0.38.0 → 0.38.1) on the operator's `reinstall`: no re-check running, the one instance (the operator's) quit,
+      backup `titanium-before-0.38.1-20261105T200510Z.sqlite` (integrity ok, 16 works, audit 1091), the zip downloaded back from the
+      release (digest as released), codesign strict ok in /Applications, version 0.38.1, opened again; its first `shell.log` line says
+      `start: shell 0.38.1, … packaged`. The old bundle is in the session scratchpad (`old-app-0380`).
 
 Review (2026-11-05):
 - Proven with the real Electron, hidden: the packaged smoke writes the log and draws; a throwaway window against a local server whose
