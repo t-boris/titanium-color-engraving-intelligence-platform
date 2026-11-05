@@ -751,3 +751,14 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   but prove and handle harmless file-default differences. Prove image orientation independently when available; low correlation can
   be the defect being measured. Match mixed exports using their images too. A replay of the same measurement proves that feedback
   is connected; only a later independent engraving tests the next prediction's accuracy.
+
+## A pure module tested with an invented event shape: run the real Electron once before trusting it (0.38.1, 2026-11-05)
+
+- **What happened.** `requestNote` decided which requests of the core go to the shell's log. Its unit tests fed it hand-made details
+  (`error` present only for failures), and all passed. The first hidden `--smoke` with the real Electron logged every one of 96
+  requests as «failed: net::OK»: Electron sets `error: 'net::OK'` on requests that went well.
+- **Rule.** A module that reads what a platform reports (Electron events, request details, OS paths) gets one run against the real
+  platform before its tests count as proof, and the shape seen there goes into the tests. The shell's hidden `--smoke` is that run: its
+  log file is read, not only its exit code. The failure path (a blank page, the reload) is proven the same way with a throwaway hidden
+  window against a tiny local server kept in the scratchpad, never with a visible window of the installed bundle.
+

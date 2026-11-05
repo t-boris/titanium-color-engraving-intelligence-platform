@@ -23,12 +23,12 @@ Design (no new library, the shell's architecture unchanged: pure modules with in
 
 Out of scope (ask first): a dialog after the second failure — today it only logs.
 
-- [ ] `shell-log.js` + `desktop/test/shell-log.test.js` (redaction, rotation, long and multi-line messages, an unwritable file)
-- [ ] `window-health.js` + `desktop/test/window-health.test.js` (drawn at once, drawn after polling, one reload then drawn, two
+- [x] `shell-log.js` + `desktop/test/shell-log.test.js` (redaction, rotation, long and multi-line messages, an unwritable file)
+- [x] `window-health.js` + `desktop/test/window-health.test.js` (drawn at once, drawn after polling, one reload then drawn, two
       failures, a throwing probe, superseded check, reset)
-- [ ] wire `main.js`; the smoke uses `WindowHealth`
-- [ ] `cd desktop && npm test`; targeted pytest for the desktop-shell contract (`tests/test_desktop_shell.py`)
-- [ ] version 0.38.1 (`pyproject.toml`, `desktop/package.json`, lock), README entry
+- [x] wire `main.js` (the watchers live in `window-health.js`, so they are testable); the smoke uses `WindowHealth`
+- [x] `cd desktop && npm test` (33 passed); targeted pytest for the desktop-shell contract (`tests/test_desktop_shell.py`)
+- [x] version 0.38.1 (`pyproject.toml`, `desktop/package.json`, lock), README entry
 - [ ] full suite `-n 12` without skips; rebuild the core (egg-info removed first) and the shell; packaged smoke prints `interface drawn` in
       its log and no secret; codesign strict; pre-release; digest of the download
 - [ ] reinstall waits for the operator's `reinstall` (the app may be running); no second visible instance of the app meanwhile

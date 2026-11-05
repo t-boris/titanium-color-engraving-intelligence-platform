@@ -44,3 +44,18 @@ def test_the_ui_page_has_no_inline_script_because_the_shells_policy_forbids_them
     assert '<script src="/boot.js"></script>' in html and html.index("/boot.js") > html.rindex("/screens/")
     guards = (Path(__file__).parent.parent / "desktop" / "src" / "guards.js").read_text(encoding="utf-8")
     assert "script-src 'self'" in guards and "script-src 'self' ${origin} 'unsafe-inline'" not in guards
+
+
+def test_the_shell_keeps_a_log_outside_the_workshop_and_checks_that_the_window_drew():
+    """A window that showed only the skip link left no trace (0.37.0). The shell writes `shell.log` in the operating system's log
+    folder, not in the workshop (backups and diagnostics scan that), and after each load of the main window asks whether `#app` has
+    children, reloading once when it has none. The two modules hold no Electron, so `node --test` covers them."""
+    src = ROOT / "desktop" / "src"
+    main = (src / "main.js").read_text(encoding="utf-8")
+    assert "app.getPath('logs')" in main and "'shell.log'" in main
+    assert "new WindowHealth" in main and "watchWindow(" in main and "reloadIgnoringCache" in main
+    assert "addSecret" in main                              # the launch secret is kept out of the log
+    for name in ("shell-log.js", "window-health.js"):
+        text = (src / name).read_text(encoding="utf-8")
+        assert "require('electron')" not in text, name
+    assert "/session/" in (src / "shell-log.js").read_text(encoding="utf-8")        # the session address is redacted
