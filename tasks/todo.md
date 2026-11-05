@@ -29,9 +29,21 @@ Out of scope (ask first): a dialog after the second failure — today it only lo
 - [x] wire `main.js` (the watchers live in `window-health.js`, so they are testable); the smoke uses `WindowHealth`
 - [x] `cd desktop && npm test` (33 passed); targeted pytest for the desktop-shell contract (`tests/test_desktop_shell.py`)
 - [x] version 0.38.1 (`pyproject.toml`, `desktop/package.json`, lock), README entry
-- [ ] full suite `-n 12` without skips; rebuild the core (egg-info removed first) and the shell; packaged smoke prints `interface drawn` in
-      its log and no secret; codesign strict; pre-release; digest of the download
-- [ ] reinstall waits for the operator's `reinstall` (the app may be running); no second visible instance of the app meanwhile
+- [x] full suite `-n 12` without skips: 2367 passed (259 s); the core rebuilt (egg-info removed first, dist-info 0.38.1), the shell's zip
+      signed (Developer ID 3M68DG8S7N, codesign strict ok); the packaged hidden smoke says version 0.38.1 and its `shell.log` has
+      `interface drawn` and no session token; pre-release v0.38.1 (commit 0da6e4d); sha256
+      `b78cb0cf6b6299617b4f0229e1b1a38bdb69dbe62830e8247898949928eb9438`, the same after downloading it back
+- [ ] reinstall (0.38.0 → 0.38.1) waits for the operator's `reinstall`: the app is running (pid 95638, the operator is working in it);
+      no second visible instance of the app meanwhile
+
+Review (2026-11-05):
+- Proven with the real Electron, hidden: the packaged smoke writes the log and draws; a throwaway window against a local server whose
+  page stays blank logs the refused `/styles.css`, describes the page, reloads once ignoring the cache (the page, cacheable for an
+  hour, was fetched twice) and then marks the second failure as final; a page that is blank once draws after the reload and says
+  `(after 1 reload)`. That run also found a real flaw the unit tests could not (Electron reports `net::OK` on every request): see lessons.md.
+- Not known: why the operator's window was blank at the first start of 0.37.0. Nothing in the bundle, the core or a second start
+  explains it. The next time it happens `~/Library/Logs/Лазерная мастерская/shell.log` will say.
+- Left out on purpose: a dialog after the second failure (today it only logs); the operator's `reinstall` decides.
 
 
 # UX research backlog — 2026-11-05
