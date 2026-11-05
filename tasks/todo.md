@@ -1,3 +1,39 @@
+# Desktop shell: a log file and a window self-check (0.38.1) — 2026-11-05
+
+The operator's window drew only the «Перейти к содержимому» link after the first start of 0.37.0 (no styles, no interface); it did not
+repeat, and nothing was left to learn why: the shell prints to a stdout nobody reads and the core writes no file. Operator's answer to
+the proposal: «Делай». The hidden `--smoke` of the same bundle, a never-run copy of it and a second start on a copy of the workshop all
+drew the interface, so the cause stays unknown until a failure leaves a record.
+
+Design (no new library, the shell's architecture unchanged: pure modules with injected IO, `main.js` wires Electron):
+- **`desktop/src/shell-log.js`** — `ShellLog`: one line per event with a UTC time and a scope, appended synchronously to
+  `app.getPath('logs')/shell.log` (macOS: `~/Library/Logs/Лазерная мастерская/`). It is not in the workshop folder, as first proposed:
+  `backup.py` and `diagnostics.py` scan that folder, a log there would make a failed new workshop «not empty» for the picker, and the
+  log is needed before a workshop is chosen. `/session/<secret>` and the launch secret are redacted from every line; messages are cut
+  at 2000 characters; the file rotates to `shell.log.1` at 1 MB; a write error never reaches the app.
+- **`desktop/src/window-health.js`** — `WindowHealth`: after the main frame loads (or fails to), polls the page for `#app` children for
+  up to 15 s. Drawn: one log line, the reload budget is restored. Not drawn: logs what the page looks like (ready state, style sheets,
+  scripts, the start of its text, the probe's error), then `reloadIgnoringCache()` **once**; a second failure is logged as the final
+  one. A newer check supersedes one in flight; the shell resets it when the core is restarted.
+- **`main.js`** — the log opens in `start()` (version, Electron, packaged, paths); every core line goes to it as `[core]`; the core's
+  death, restart and failure; the window's `did-fail-load`, `render-process-gone`, `unresponsive`, `console-message` (warning and
+  error), and every request of the core's origin that ended with a status ≥ 400 or a network error (path only, no query) — the
+  evidence that was missing; the check above. `--smoke` runs the same `WindowHealth` (no reload) and a log in its temp folder, so the
+  packaged smoke proves the wiring.
+
+Out of scope (ask first): a dialog after the second failure — today it only logs.
+
+- [ ] `shell-log.js` + `desktop/test/shell-log.test.js` (redaction, rotation, long and multi-line messages, an unwritable file)
+- [ ] `window-health.js` + `desktop/test/window-health.test.js` (drawn at once, drawn after polling, one reload then drawn, two
+      failures, a throwing probe, superseded check, reset)
+- [ ] wire `main.js`; the smoke uses `WindowHealth`
+- [ ] `cd desktop && npm test`; targeted pytest for the desktop-shell contract (`tests/test_desktop_shell.py`)
+- [ ] version 0.38.1 (`pyproject.toml`, `desktop/package.json`, lock), README entry
+- [ ] full suite `-n 12` without skips; rebuild the core (egg-info removed first) and the shell; packaged smoke prints `interface drawn` in
+      its log and no secret; codesign strict; pre-release; digest of the download
+- [ ] reinstall waits for the operator's `reinstall` (the app may be running); no second visible instance of the app meanwhile
+
+
 # UX research backlog — 2026-11-05
 
 Operator asked to study [the UX research](../docs/research/2026-11-05-ux-refactoring.md) and create issues directly in MarkView.
