@@ -2,7 +2,7 @@
 type: feature
 id: ux-validation-p0
 title: "[P0] Проверка пользы редизайна и предметных гарантий"
-status: draft
+status: implementing
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n7, n48, n49, n50, n51, n52, n53, n54, n55, n56, n57, n58, n59; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: n/a
+  Failure Scenarios: known
+  Data Model: known
+  Notifications: known
+  Security: n/a
+  Analytics: known
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: "Изучены требования и исследование: польза редизайна пока не измерена. Нужны сравнение до/после и проверка сохранения предметных гарантий; дополнительных продуктовых решений сейчас не требуется."
+  Target Users: Проект ориентирован на оператора мастерской. Уровень подготовки и частота задач не установлены; их следует фиксировать как условия наблюдения.
+  Primary Workflow: REQ-001 задаёт сквозные задачи и отдельные проверки первого запуска, импорта, прерванного входа и восстановления. До и после используются одинаковые задачи и сопоставимые условия.
+  Permissions: Новые роли и права не вводятся; проверяются существующие сценарии доступа.
+  Failure Scenarios: REQ-002/003 охватывают задержанные и устаревшие ответы, повторные действия, ошибки сохранения, возврат назад, resize/undo и совместимость старых документов.
+  Data Model: Новые сущности не нужны. Проверке подлежат сохранность документов, изображений, измерений, происхождения, истории и выгравированных версий.
+  Notifications: В dialogs.js уже есть сообщения с role=status и aria-live=polite. Фактическая доступность сообщений и ошибок требует проверки в настоящем интерфейсе.
+  Security: Новые механизмы безопасности не входят в задачу; проверка прерванного входа предусмотрена существующим объёмом.
+  Analytics: Метрики перечислены в REQ-001 и n57. Исходных значений нет; численные цели явно отложены до baseline. Нагрузки 20/200/2000 являются тестовыми.
+  Dependencies: Проверка связана с этапами P0→P1→P2, существующими регрессионными тестами и исправленными ошибками. tests/test_list_ui.py использует имитацию DOM; нужны также браузер и Electron.
+  Acceptance Criteria: REQ-001–003 и n55–n58 позволяют написать спецификацию сейчас. BUG-011 содержит отдельную ранее выполненную Electron-проверку; она не подтверждает пользу будущего редизайна. Удаление старых экранов обусловлено проверкой документов.
+questions_left: 0
 ---
 
 # [P0] Проверка пользы редизайна и предметных гарантий

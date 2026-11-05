@@ -14,7 +14,7 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "dialogs.js", "list.js"]
+HELPERS = ["app.js", "forms.js", "dialogs.js", "list.js"]
 HARNESS = """
 const fs = require('fs');
 const {context, load} = require(%(dom)s);
@@ -166,3 +166,43 @@ def test_the_openai_key_is_entered_on_the_network_screen_and_only_its_ending_is_
 """)
     assert "ключ не задан" in out["before"] and "ai/openai.key" in out["before"] and out["type"] == "password"
     assert out["sent"] == [["PUT", "/api/network/ai-key", {"key": "sk-proj-secret-secret-1234"}]] and out["cleared"] == ""
+
+
+@node
+def test_a_port_outside_the_servers_range_is_refused_beside_the_box_and_a_refused_address_stays_under_its_box(tmp_path):
+    """ux-save-feedback-p0 REQ-003: the port is a whole number from 1024 to 65535 (lan.save_settings); what is typed is never corrected, and what the
+    server says about the cloud address is shown under the address box with the typed text kept, not in a toast that goes away."""
+    routes = {"/api/lan": {"GET": ok(STATUS), "PUT": ok(STATUS)}, "/api/network": {"GET": ok(NETWORK)},
+              "/api/cloud/settings": {"GET": ok(CLOUD), "PUT": {"status": 422, "json": {"error": "the address must start with https://", "kind": "invalid"}}}}
+    out = run(tmp_path, routes, """
+  const el = await ctx.__screens.network.render({query: {}});
+  ctx.document.body.append(el);
+  const port = el.querySelectorAll('input')[1];
+  const lan = () => el.querySelectorAll('label').filter((l) => l.textContent.startsWith('Порт'))[0];
+  const problems = [];
+  for (const typed of ['80', '70000', '8766.5', 'abc', '']) {
+    port.value = typed;
+    await byText(el, 'button', 'Применить').dispatch('click'); await tick();
+    problems.push([typed, lan().errorText(), port.value, port.getAttribute('aria-invalid')]);
+  }
+  out.problems = problems;
+  out.sentWhileInvalid = sent().length;
+  port.value = '1024';
+  await byText(el, 'button', 'Применить').dispatch('click'); await tick();
+  out.sent = sent();
+  const address = el.querySelector('.cloud-address');
+  address.querySelector('input').value = 'ftp://x';
+  await byText(address, 'button', 'Сохранить').dispatch('click'); await tick();
+  out.refused = {kept: address.querySelector('input').value, message: address.querySelector('.f-form-error').textContent, shown: !address.querySelector('.f-form-error').hidden,
+    toasts: ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent)};
+""")
+    assert out["problems"] == [["80", "Допустимо: целое число, от 1024 до 65535. Введено: 80", "80", "true"],
+                               ["70000", "Допустимо: целое число, от 1024 до 65535. Введено: 70000", "70000", "true"],
+                               ["8766.5", "Нужно целое число. Введено: 8766,5", "8766.5", "true"],
+                               ["abc", "Введите число. Введено: «abc»", "abc", "true"],
+                               ["", "Заполните это поле", "", "true"]]
+    assert out["sentWhileInvalid"] == 0
+    assert out["sent"][-1][:2] == ["PUT", "/api/lan"] and out["sent"][-1][2]["port"] == 1024
+    assert out["refused"] == {"kept": "ftp://x", "shown": True, "toasts": ["Доступ по локальной сети включён ×"],          # only the earlier success
+                              "message": "Сервер не принял данные: the address must start with https:// (сообщение сервера, без перевода)."
+                                         " Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."}

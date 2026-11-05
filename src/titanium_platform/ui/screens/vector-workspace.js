@@ -33,10 +33,14 @@ const VectorWorkspace = (() => {
     let saving = false, box = null;
     const input = h('input', {value: current, autocomplete: 'off', 'aria-label': words.field,
       onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
+    // the name is required; a blank one, and any refusal of the server, is said beside the field and the dialog stays open with the name as typed
+    const form = Forms.create();
+    const nameField = form.add('name', 'Название', input, {required: true, read: () => (input.value.trim() ? {ok: true, value: input.value.trim()} : {ok: false, message: words.blank})});
     async function save(close) {
       if (saving) return;
-      const title = input.value.trim();
-      if (!title) throw new Error(words.blank);
+      const v = form.collect();
+      if (!v) return;
+      const title = v.name;
       if (title === current) { close(); return; }
       saving = true;
       try {
@@ -44,9 +48,9 @@ const VectorWorkspace = (() => {
         toast(words.done, 'ok');
         close();
         done(made.name);
-      } catch (e) { saving = false; throw e; }
+      } catch (e) { saving = false; form.fail(e); }
     }
-    box = modal(words.title, h('div', {class: 'stack'}, field('Название', input)), [
+    box = modal(words.title, h('div', {class: 'stack'}, nameField, form.error), [
       {label: 'Отмена', run: (m) => m.close()}, {label: 'Сохранить', cls: 'primary', run: (m) => save(m.close)}]);
     if (input.select) input.select();
   }
@@ -122,14 +126,20 @@ const VectorWorkspace = (() => {
     let saving = false, box = null, edited = 'width';
     const ratio = size.height / size.width;
     const onEnter = (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } };
-    const width = h('input', {type: 'number', min: '1', step: '0.1', value: mm(size.width), 'aria-label': 'Ширина, мм', onKeydown: onEnter});
-    const height = h('input', {type: 'number', min: '1', step: '0.1', value: mm(size.height), 'aria-label': 'Высота, мм', onKeydown: onEnter});
+    // the side typed last is sent, and it must be a positive number of millimetres (vector_job.resize); the other side only follows it, by the proportions
+    const form = Forms.create();
+    const sideRule = Forms.QUANTITIES.workWidth;
+    const width = Forms.numberInput(sideRule, {step: '0.1', value: mm(size.width), onKeydown: onEnter});
+    const height = Forms.numberInput(sideRule, {step: '0.1', value: mm(size.height), onKeydown: onEnter});
+    const widthField = form.add('width', 'Ширина', width, {quantity: 'workWidth', required: true, read: () => (edited === 'width' ? Forms.readNumber(width, sideRule, {required: true}) : {ok: true, value: null})});
+    const heightField = form.add('height', 'Высота', height, {quantity: sideRule, required: true, read: () => (edited === 'height' ? Forms.readNumber(height, sideRule, {required: true}) : {ok: true, value: null})});
     width.addEventListener('input', () => { edited = 'width'; const w = parseFloat(width.value); height.value = w > 0 ? mm(w * ratio) : ''; });
     height.addEventListener('input', () => { edited = 'height'; const hh = parseFloat(height.value); width.value = hh > 0 ? mm(hh / ratio) : ''; });
     async function save(close) {
       if (saving) return;
-      const value = parseFloat((edited === 'width' ? width : height).value);
-      if (!(value > 0)) throw new Error('Впишите размер в миллиметрах: положительное число');
+      const v = form.collect();
+      if (!v) return;                                                   // the side typed says what is wrong beside itself; the boxes keep what was typed
+      const value = v[edited];
       if (Math.abs(value - size[edited]) < 0.05) { close(); return; }
       saving = true;
       try {
@@ -142,7 +152,7 @@ const VectorWorkspace = (() => {
     box = modal('Размер работы', h('div', {class: 'stack'},
       h('p', {class: 'small muted'}, 'Одна сторона — ваше число, другая — по пропорциям картинки. Области, цвета, надписи и фотозоны остаются на своих '
         + 'местах, разбиение не пересчитывается; шаг можно отменить (Ctrl+Z).'),
-      h('div', {class: 'toolbar'}, field('Ширина, мм', width), field('Высота, мм', height))), [
+      h('div', {class: 'toolbar'}, widthField, heightField), form.error), [
       {label: 'Отмена', run: (m) => m.close()}, {label: 'Изменить размер', cls: 'primary', run: (m) => save(m.close)}]);
     if (width.select) width.select();
   }

@@ -1,3 +1,56 @@
+# UX P0 pass: nine features in one release (0.39.0) — 2026-11-05
+
+Operator's goal: implement all nine `ux-*-p0` MarkView features (27 requirements, answers already given, `status: review`) in one pass,
+commit once to `main`, release. Architecture and libraries unchanged (vanilla JS screens + FastAPI-style routes, `App.list`, node-DOM tests).
+
+Facts found while planning (not in the specs):
+- `ux-work-creation-p0` has **no** implementation plan (the other eight do); its design is made here from REQ-001..003 and DEC-001.
+- `ux-photo-review-p0` DEC-001 says «no implementation is authorized by this decision»; the operator's goal of 2026-11-05 supersedes it.
+- BUG-012..016 (list focus, list `more`, dialogs, skip link, font row) are the shared defects under REQ of collections / catalog /
+  accessible-layout; they are fixed in the foundation, not per feature.
+- Some acceptance items cannot be executed by the agent: a screen reader, a real operator's before/after timings, Electron on every
+  profile. They are recorded as **not executed** in the validation record, never as passed.
+
+Order: foundation first (shared code every feature stands on), then the features by file ownership, then the whole suite once.
+
+- [x] F1 `list.js`: search keeps its input (BUG-012); `more` has busy/ticket/retry (BUG-013); empty vs no-results + reset; pinned selection;
+      load error beside the list with retry (growing-collections REQ-003/004)
+- [x] F2 `dialogs.js`: focus trap, inert background, «Отмена» first for destructive confirmation, focus back to the opener (BUG-014)
+- [x] F3 `router.js`: the skip link moves focus and keeps the route (BUG-015); focus after navigation
+  (F1–F3 proven in node on a fake DOM that now keeps real focus: `tests/test_ui_foundation.py`, 16 tests; 307 older UI tests still pass.
+  A browser lint caught `NodeList.find` in my first draft — `tests/test_ui_files.py` is worth keeping. Not yet seen in a real browser.)
+- [x] F4 shared field with label/unit/range/error association; save-state tracker (stale answers rejected); operation registry + task panel
+      (save-feedback REQ-001..003): `forms.js`, `save-state.js`, `operations.js`, `terms.js`; REQ-003 c1/c2 remain open for the forms
+      listed in the review (no server rule found for some quantities; none invented)
+- [x] A work-catalog · B growing-collections · C work-creation (+ the BUG-003 kind step in the wizard) · D engraving-lifecycle · E photo-review
+      stages · F evidence-summaries + findings queue · G accessible-layout · H validation record: built by parallel agents by file
+      ownership; hooks applied by the lead (lifecycle return after acceptance, applicability labels, material selector in seven places,
+      source references in experiments, one «Скачать LightBurn» in photo engraving)
+- [x] the whole suite `-n 12`, no skips: 2925 passed, 0 failed, 0 skipped (357 s) with the version at 0.39.0
+- [x] seen in a real browser (throw-away workshop, 200 + 200 records): search focus/caret, double «more», no-results + reset, dialog trap and
+      focus return, nested picker dialog, skip link, wizard, material list, task panel, 20-route sweep without console messages
+      (`docs/validation/ux-p0-results.md`)
+- [x] MarkView: acceptance criteria ticked only where a test or a browser check backs them; seven features `implemented`, two stay
+      `implementing` (save-feedback: forms not yet on the shared field; validation: operator's baseline, screen reader, Electron)
+- [x] version 0.39.0 (`pyproject.toml`, `desktop/package.json`, lock ×2), README entry
+- [x] core rebuilt (editable metadata reinstalled first, dist-info 0.39.0; bundled UI identical to source, 105 files; frozen `--smoke` ok);
+      `desktop` tests 33 passed; signed zip (Developer ID 3M68DG8S7N, codesign strict ok on the unzipped copy); the packaged hidden
+      smoke says version 0.39.0, its `shell.log` has `interface drawn` and no session token; sha256
+      `7c9108ccd0d21b170d83cd983ade63bef1f738bd80c0abb1e11dcf01589a9954`
+- [ ] one commit to `main`, push, pre-release `v0.39.0` with the zip; digest verified after downloading it back (recorded below)
+
+Review (2026-11-05, written before the release step):
+- Not executed, and recorded as such: screen reader, Electron on the new screens, real window resize / browser zoom (emulated by the
+  agents' headless Chrome), the operator's before/after timings (the baseline sheet is left empty), back navigation and stale answers in
+  a browser (node only), ingest-review overlay by pointer on a real photograph.
+- Still open (criteria not ticked): accessible-layout REQ-001 c3 (spacing of target sizes) and REQ-002 c4 (Electron); evidence REQ-002 c6;
+  save-feedback REQ-003 c1/c2 (unmigrated forms: region group box, sliders, selects, review zoom boxes; speed and focus have no documented
+  limit); validation REQ-001 c1/c2 and REQ-002 c1/c2; work-creation REQ-002 c6 (restart in the real app).
+- Open questions for the operator are listed in `docs/validation/ux-p0-results.md` section 6.
+- What the process cost: agents running in one tree made every mid-run failure provisional; file ownership + recorded hooks worked, but
+  the final full run had to wait until the last agent reported (see lessons.md).
+
+
 # Desktop shell: a log file and a window self-check (0.38.1) — 2026-11-05
 
 The operator's window drew only the «Перейти к содержимому» link after the first start of 0.37.0 (no styles, no interface); it did not

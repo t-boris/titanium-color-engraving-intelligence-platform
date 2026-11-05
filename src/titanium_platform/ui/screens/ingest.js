@@ -20,21 +20,21 @@
     if (ctx.query.rephoto) {
       try {
         const [source, rigs] = await Promise.all([get('/pairs/' + ctx.query.rephoto), rigsOf()]);
-        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), backTo(source)), IngestUpload.rephoto(source, rigs));
+        return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(true), h('span', {class: 'spacer'}), backTo(source)), IngestStages.upload(), IngestUpload.rephoto(source, rigs));
       } catch (e) {
         return h('div', {class: 'card empty'}, h('h3', {}, 'Исходная пара не найдена'), link('/experiments', 'Вернуться к экспериментам'));
       }
     }
-    const [lists, materials, rigs] = await Promise.all([App.hardwareLists(), get('/materials'), rigsOf()]);
-    if (!lists.devices.length || !materials.length || !rigs.length) {
+    const [lists, stocks, rigs] = await Promise.all([App.hardwareLists(), MaterialPicker.total(), rigsOf()]);       // only whether any stock record exists
+    if (!lists.devices.length || !stocks || !rigs.length) {
       const [heading, add] = !lists.devices.length ? ['Нужен лазер', link('/devices', 'Добавить лазер')]
-        : !materials.length ? ['Добавьте использованный титан', link('/setup?tab=material', 'Добавить титан')]
+        : !stocks ? ['Добавьте использованный титан', link('/setup?tab=material', 'Добавить титан')]
           : ['Опишите установку съёмки', link('/setup?tab=rigs', 'Добавить установку съёмки')];
       return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back),
         h('div', {class: 'card empty'}, h('h3', {}, heading),
           h('p', {}, 'Для каждого измеренного эксперимента сохраняются лазер, конкретная заготовка титана и установка съёмки, на которой сделана фотография.'),
           add));
     }
-    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), await IngestUpload.render(ctx, lists, materials, rigs));
+    return h('div', {class: 'stack'}, h('div', {class: 'row'}, title(false), h('span', {class: 'spacer'}), back), IngestStages.upload(), await IngestUpload.render(ctx, lists, rigs));
   }});
 })();

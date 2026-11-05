@@ -451,6 +451,12 @@ class Store:
                           "device_id INTEGER NOT NULL, lens_id INTEGER, original_pair_id INTEGER, layer_index INTEGER, recipe_key TEXT NOT NULL, "
                           "engraving_ids_json TEXT, kept_engraving_id TEXT, finding_key TEXT, note TEXT, detail_json TEXT NOT NULL, "
                           "created_at TEXT NOT NULL, revoked_at TEXT)")
+        # The input of a new work that setup or a starter test interrupted (ux-work-creation-p0 DEC-001): it outlives the application. The
+        # picture lives in files/drafts/ under a name relative to the workshop (nothing to rebase); a completed or discarded task keeps its
+        # row and loses its picture, and is never offered again.
+        self.conn.execute("CREATE TABLE IF NOT EXISTS creation_draft (id INTEGER PRIMARY KEY AUTOINCREMENT, status TEXT NOT NULL, "
+                          "flow TEXT NOT NULL, name TEXT, image_file TEXT, image_name TEXT, image_type TEXT, state_json TEXT NOT NULL, "
+                          "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, work_kind TEXT, work_id INTEGER)")
         self.conn.executescript(LAB_SCHEMA)
         self.conn.execute("UPDATE pair SET hardware_json='{}' WHERE hardware_json IS NULL")
         for engraving in self.conn.execute("SELECT DISTINCT engraving_id FROM pair"):

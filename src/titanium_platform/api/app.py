@@ -12,9 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from .. import __version__, capability_results, cloud_session, findings, lab_import, lan, outbound, research, work_errors
 from ..db import open_store
 from . import (routes_cloud, routes_devices, routes_findings, routes_fonts, routes_labs, routes_lan, routes_lenses, routes_palette,
-               routes_photo_knowledge, routes_photo_work, routes_plans, routes_prediction, routes_recheck, routes_research, routes_setup, routes_vector,
+               routes_photo_knowledge, routes_photo_work, routes_plans, routes_prediction, routes_provenance, routes_recheck, routes_research, routes_setup, routes_vector,
                routes_work, routes_workshop)
-from . import security
+from . import routes_catalog, routes_creation, routes_lifecycle, security
 from .common import install_error_handlers
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
@@ -86,10 +86,13 @@ def create_app(data_dir: str | Path) -> FastAPI:
 
     for r in (routes_setup.router, routes_devices.router, routes_lenses.router, routes_work.router, routes_plans.router,
               routes_vector.router, routes_palette.router, routes_research.router, routes_prediction.router, routes_photo_work.router,
-              routes_photo_knowledge.router,
+              routes_photo_knowledge.router, routes_provenance.router,
               routes_findings.router, routes_findings.exclusions_router, routes_recheck.router, routes_fonts.router, routes_labs.router, routes_cloud.router, routes_workshop.router, routes_lan.router,
               routes_lan.settings_router, routes_lan.pages):
         app.include_router(r)
+    app.include_router(routes_catalog.router)       # the shared catalog of works: a read model over the vector and photo works
+    app.include_router(routes_creation.router)      # the context, the unfinished tasks and the result previews of new work (ux-work-creation-p0)
+    app.include_router(routes_lifecycle.router)     # the chain, readiness and files of a work, and what an accepted result changed (ux-engraving-lifecycle-p0)
 
     @app.exception_handler(404)
     async def not_found(request, exc):

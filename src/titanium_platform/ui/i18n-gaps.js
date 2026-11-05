@@ -73,5 +73,21 @@
     // настройки слоя, которых эта версия не знает: сохранены в рецепте, но не учитываются (REQ-036); имена тегов — данные
     [/^settings unknown to this version are kept with the recipe but not interpreted: (.+)$/i,
       (m) => `Настройки, неизвестные этой версии, сохранены в рецепте, но не учитываются: ${m[1]}`],
+    // создание работы: контекст, незавершённые задачи и сравнение результатов (ux-work-creation-p0)
+    [/^the selected laser was not found; choose it again$/i, 'Выбранный лазер не найден: выберите его заново'],
+    [/^the selected lens was not found; choose it again$/i, 'Выбранная линза не найдена: выберите её заново'],
+    [/^the selected photography setup was not found; choose it again$/i, 'Выбранная установка съёмки не найдена: выберите её заново'],
+    [/^choose what the work will be: colour areas, photo engraving, a silhouette or lines$/i,
+      'Выберите, чем будет работа: цветные области, фотогравировка, силуэт или линии'],
+    [/^the grey scales are made in the test dialog, which asks for their settings$/i, 'Шкалы серого создаются в окне теста: там вводятся их настройки'],
+    [/^this task is finished: it cannot be changed$/i, 'Эта задача закончена: изменить её нельзя'],
+    [/^the picture of this unfinished task is not kept$/i, 'Картинка этой незавершённой задачи не сохранена'],
+    [/^name the kind of the work that was made$/i, 'Укажите вид созданной работы'],
+    [/^the unfinished task must be an object$/i, 'Незавершённая задача записана неверно'],
+    [/^the unfinished task holds too much text$/i, 'В незавершённой задаче слишком много текста'],
+    [/^unfinished task (\d+) not found$/i, (m) => `Незавершённая задача ${m[1]} не найдена`],
+    [/^the picture is empty$/i, 'Картинка пустая'],
+    [/^the picture is larger than (\d+) MB$/i, (m) => `Картинка больше ${m[1]} МБ`],
+    [/^the unfinished task belongs to an unknown creation screen$/i, 'Незавершённая задача относится к неизвестному экрану создания'],
   ]);
 })();

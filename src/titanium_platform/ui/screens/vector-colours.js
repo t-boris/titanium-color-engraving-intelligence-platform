@@ -172,8 +172,13 @@ const VectorColours = (() => {
   function aiBlock(j, run, permit) {
     const style = h('select', {'aria-label': 'Стиль AI-раскраски'}, STYLES.map(([v, name]) => h('option', {value: v}, name)));
     const hint = h('span', {class: 'small muted'});
-    const text = h('input', {type: 'text', maxlength: String(j.ai.max_text), placeholder: 'например: как витраж, много синего', 'aria-label': 'Своё описание'});
-    const own = field('Своё описание', text, `до ${j.ai.max_text} знаков`);
+    const text = h('input', {type: 'text', placeholder: 'например: как витраж, много синего'});
+    // the description is asked for only with the style of the operator's own, and then it must be there and short enough (ai_colouring.request)
+    const aiForm = Forms.create();
+    const own = aiForm.add('text', 'Своё описание', text, {required: true, maxLength: j.ai.max_text,
+      read: () => (style.value !== 'custom' ? {ok: true, value: null}
+        : (text.value.trim() === '' ? {ok: false, message: 'Опишите, как должна выглядеть раскраска'}
+          : text.value.trim().length > j.ai.max_text ? {ok: false, message: `Не больше ${j.ai.max_text} символов. Введено: ${text.value.trim().length}`} : {ok: true, value: text.value.trim()}))});
     const free = h('input', {type: 'checkbox'}), photo = h('input', {type: 'checkbox'});
     const off = h('p', {class: 'alert warn', hidden: true});
     const WHY = {key: 'AI-раскраска выключена: не задан ключ OpenAI (его вводят на экране «Сеть»). Остальные способы работают.',
@@ -182,9 +187,11 @@ const VectorColours = (() => {
     let busy = false;
     const go = btn('Раскрасить с помощью AI', async (ev) => {
       const self = ev.currentTarget;
+      const v = aiForm.collect();
+      if (!v) return;                                                // the description says what is wrong beside itself and stays as typed
       busy = true; self.disabled = true; self.textContent = 'AI подбирает цвета…';
       try {
-        await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: text.value} : {}), free_lightness: free.checked});
+        await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: v.text} : {}), free_lightness: free.checked});
       } finally { busy = false; self.textContent = 'Раскрасить с помощью AI'; sync(j); }
     }, 'primary');
     function sync(next) {
@@ -204,6 +211,7 @@ const VectorColours = (() => {
     sync(j);
     const el = h('div', {class: 'stack vw-ai'}, h('h4', {}, 'Раскраска с помощью AI'),
       h('div', {class: 'vw-split-fields'}, field('Стиль', style, null), own),
+      aiForm.error,
       hint,
       h('div', {class: 'vw-split-actions'},
         h('label', {class: 'row'}, free, h('span', {}, 'Свободная светлота: AI может менять порядок светлого и тёмного (по умолчанию он сохраняется)')),
@@ -217,13 +225,21 @@ const VectorColours = (() => {
 
   function settingsBar(j, run) {
     const s = j.settings;
-    const tol = h('input', {type: 'number', step: 'any', min: '0', value: s.tolerance_de, 'aria-label': 'Допуск ΔE'});
-    const maxTime = h('input', {type: 'number', step: 'any', min: '0', value: s.max_time ?? '', placeholder: 'без предела', 'aria-label': 'Наибольшее время, с/см²'});
+    // the tolerance and the longest time are read as the server's rules state them (conversion._threshold, colormap.time_limit); an empty ΔE box leaves
+    // the work's own tolerance and an empty time box means no limit; a wrong one is refused beside its box and stays in it
+    const form = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const tol = Forms.numberInput(Q.deltaE, {value: s.tolerance_de});
+    const maxTime = Forms.numberInput(Q.maxTime, {value: s.max_time ?? '', placeholder: 'без предела'});
     const asShot = h('input', {type: 'checkbox', checked: s.include_as_shot});
-    return h('div', {class: 'toolbar'}, field('Допуск ΔE', tol), field('Наибольшее время, с/см²', maxTime),
+    const tolField = form.add('tolerance_de', 'Допуск ΔE', tol, {quantity: 'deltaE'});
+    const timeField = form.add('max_time', 'Наибольшее время', maxTime, {quantity: 'maxTime'});
+    return h('div', {class: 'toolbar'}, tolField, timeField,
       h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона)')),
-      btn('Применить', () => run({op: 'settings', tolerance_de: tol.value === '' ? null : +tol.value, max_time: maxTime.value === '' ? null : +maxTime.value,
-        include_as_shot: asShot.checked})));
+      btn('Применить', () => {
+        const v = form.collect();
+        if (v) run({op: 'settings', tolerance_de: v.tolerance_de, max_time: v.max_time, include_as_shot: asShot.checked});
+      }), form.error);
   }
 
   /** Части рабочего стола: вкладка «Цвета» (``colours``), вкладка «AI» (``ai``) и редактор (``editor``; его картинка и панель

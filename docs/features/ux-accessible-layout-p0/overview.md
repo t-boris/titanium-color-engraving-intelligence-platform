@@ -2,7 +2,7 @@
 type: feature
 id: ux-accessible-layout-p0
 title: "[P0] Клавиатура, холст и небольшое окно"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n33, n39, n34; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: n/a
+  Failure Scenarios: known
+  Data Model: n/a
+  Notifications: n/a
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Полный рабочий путь должен оставаться доступным клавиатурой и при ограниченном окне; наличие CSS не доказывает доступность.
+  Target Users: Операторы, использующие клавиатуру, увеличенный текст или небольшое окно.
+  Primary Workflow: REQ-001 уже задаёт путь меню → поиск → диалог → цвет → редактор → экспорт → возврат и альтернативы жестам.
+  Permissions: Изменение прав доступа не требуется.
+  Failure Scenarios: Критерии покрывают недостижимые действия, потерю рабочей области и предметные регрессии. Реальное поведение ещё предстоит проверить; дефекты диалогов, skip и шрифтов относятся к отдельным Bugs.
+  Data Model: Новая модель данных не нужна; код уже содержит числовые поля положения и поворота надписей.
+  Notifications: Отдельный механизм уведомлений не входит в эту функцию.
+  Security: Новых требований безопасности в заданной области нет.
+  Analytics: Исходные показатели удобства отсутствуют; новая телеметрия не задана и не нужна для фиксации этой спецификации.
+  Dependencies: В коде подтверждены клавиатурные вкладки, стили фокуса, уменьшения анимаций и контрастных режимов. Учтены отдельные Bugs и проверки n55–n58.
+  Acceptance Criteria: Выбран профиль 800×600 CSS px и текст до 200%, отдельно и совместно; ширина 320 CSS px сохранена. Дополнительных продуктовых вопросов нет; приёмка интерфейса ещё не выполнена.
+questions_left: 0
 ---
 
 # [P0] Клавиатура, холст и небольшое окно

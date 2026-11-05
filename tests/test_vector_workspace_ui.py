@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from test_ai_colouring import ai_op, model    # noqa: F401  (the fake client of the model)
-from test_vector_work import GLUE as WORK_GLUE, TABLES, UI, create, job, routes_of, work    # noqa: F401  (fixtures)
+from test_vector_work import GLUE as WORK_GLUE, TABLES, UI, create, job, picture, routes_of, work    # noqa: F401  (fixtures)
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
@@ -23,8 +23,8 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
+  'screens/vector-colours.js', 'screens/lifecycle.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/evidence-summary.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const has = (el, cls) => (el.className || '').split(' ').includes(cls);
@@ -247,7 +247,8 @@ def test_a_blank_name_is_refused_before_any_request_and_the_name_as_it_is_or_can
   let d = await open();
   d.querySelector('input').value = '    ';
   await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
-  out.blank = [posts().length, dialog() != null, toasts().map((t) => t[0] + ' ' + t[1])];
+  out.blank = [posts().length, dialog() != null, toasts().map((t) => t[0] + ' ' + t[1]), d.querySelector('input').getAttribute('aria-invalid'),
+    d.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent), d.querySelector('input').value];
   d.querySelector('input').value = ' ' + card.querySelector('h3').textContent + ' ';
   await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
   out.same = [posts().length, dialog() == null];
@@ -256,7 +257,8 @@ def test_a_blank_name_is_refused_before_any_request_and_the_name_as_it_is_or_can
   await byText(d, 'button', 'Отмена').dispatch('click'); await tick();
   out.cancel = [posts().length, dialog() == null, card.querySelector('h3').textContent];
 """)
-    assert out["blank"] == [0, True, ["toast bad Впишите название работы ×"]]                     # refused, the dialog stays for another try
+    # refused before any request, the reason beside the field (no toast), what was typed kept, the dialog open for another try
+    assert out["blank"] == [0, True, [], "true", ["Впишите название работы"], "    "]
     assert out["same"] == [0, True] and out["cancel"] == [0, True, j["name"]]
 
 
@@ -298,8 +300,12 @@ def test_a_refused_rename_keeps_the_dialog_open_and_can_be_tried_again(work, job
   out.open = dialog() != null;
   out.title = card.querySelector('h3').textContent;
   out.toasts = toasts().map((t) => t[0]);
+  out.beside = [d.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).length, d.querySelector('input').value, d.querySelector('input').getAttribute('aria-invalid') !== 'true'];
+  out.said = d.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'alert').map((p) => p.textContent);
 """)
-    assert out["posts"] == 2 and out["open"] is True and out["title"] == j["name"] and out["toasts"] == ["toast bad", "toast bad"]
+    # the refusal of the server is said under the dialog's field, not in a toast; the name typed stays and a second try is sent
+    assert out["posts"] == 2 and out["open"] is True and out["title"] == j["name"] and out["toasts"] == []
+    assert out["beside"][1] == "Another" and "Назовите план" in out["said"][0] and "осталось в форме" in out["said"][0]
 
 
 @node
@@ -351,7 +357,7 @@ def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following
   await byText(head(), 'button', 'Размер…').dispatch('click');
   const d = dialog();
   const inputs = () => d.querySelectorAll('input');
-  out.prefill = inputs().map((i) => [i.getAttribute('aria-label'), i.value]);
+  out.prefill = inputs().map((i) => [d.querySelectorAll('span').find((x) => x.getAttribute('id') === i.getAttribute('aria-labelledby')).textContent, i.value]);
   inputs()[0].value = '30'; await inputs()[0].dispatch('input');
   out.linkedHeight = inputs()[1].value;
   inputs()[1].value = '90'; await inputs()[1].dispatch('input');
@@ -368,10 +374,106 @@ def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following
   await byText(again, 'button', 'Изменить размер').dispatch('click'); await tick();      // the size as it is: closed without a request
   out.unchanged = [dialog() == null, posts().length];
 """)
-    assert out["before"].startswith("60.0 × 45.0 мм") and out["prefill"] == [["Ширина, мм", "60"], ["Высота, мм", "45"]]
+    assert out["before"].startswith("60.0 × 45.0 мм") and out["prefill"] == [["Ширина", "60"], ["Высота", "45"]]
     assert out["linkedHeight"] == "22.5" and out["linkedWidth"] == "120"
     assert "по пропорциям картинки" in out["text"] and "можно отменить" in out["text"]
     assert out["posts"] == [[f"/api/vector/{j['id']}/size", {"height_mm": 90}]] and out["closed"] is True
     assert out["after"].startswith("120.0 × 90.0 мм") and "разбиение № 2" in out["after"]
     assert any("120.0 × 90.0 мм" in t for t in out["toasts"])
     assert out["again"] == ["120", "90"] and out["unchanged"] == [True, 1]
+
+
+# -- ux-save-feedback-p0, REQ-003: the numbers of a vector work are checked beside their boxes ------------------------------------------------
+@node
+def test_a_wrong_size_is_said_beside_its_box_with_nothing_sent_and_what_was_typed_kept(work, job, tmp_path):
+    c, j = work, job
+    out = run(tmp_path, routes_of(c, j), {"plan": str(j["id"])}, f"""
+  {DIALOG} {POSTS}
+  await byText(tree.querySelectorAll('header')[0], 'button', 'Размер…').dispatch('click');
+  const d = dialog();
+  const width = () => d.querySelectorAll('input')[0];
+  const said = () => d.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent);
+  width().value = '-5'; await width().dispatch('input');
+  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  out.negative = [posts().length, said(), width().value, width().getAttribute('aria-invalid'), dialog() != null];
+  width().value = ''; await width().dispatch('input');
+  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  out.empty = [posts().length, said()];
+  width().value = '12abc'; await width().dispatch('input');
+  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  out.letters = [posts().length, said()];
+""")
+    assert out["negative"][0] == 0 and "Допустимо" in out["negative"][1][0] and "Введено: -5" in out["negative"][1][0]
+    assert out["negative"][2:] == ["-5", "true", True]
+    assert out["empty"] == [0, ["Заполните это поле"]]
+    assert out["letters"][0] == 0 and len(out["letters"][1]) == 1
+
+
+@node
+def test_the_split_colours_the_colour_settings_and_the_ai_description_are_checked_before_anything_is_asked_or_sent(work, job, tmp_path):
+    c, j = work, job
+    out = run(tmp_path, routes_of(c, j), {"plan": str(j["id"])}, f"""
+  {DIALOG} {POSTS}
+  const said = (root) => root.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent);
+  const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {{}}).textContent === text);
+  // the colours of the split: a wrong number is refused beside the box and the question about splitting again is not even asked
+  const colours = labelled('Число цветов').firstControl();
+  colours.value = '99'; await colours.dispatch('input');
+  const before = ctx.requests.filter((r) => r.method === 'POST').length;
+  await byText(tree, 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.colours = [dialog() == null, ctx.requests.filter((r) => r.method === 'POST').length - before, said(labelled('Число цветов')), colours.value, colours.getAttribute('aria-invalid')];
+  colours.value = '12'; await colours.dispatch('input');
+  await byText(tree, 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.asked = [dialog() != null, said(labelled('Число цветов'))];
+  // the settings of the colours: the longest time must be above 0
+  const time = labelled('Наибольшее время').firstControl();
+  time.value = '0'; await time.dispatch('input');
+  await byText(tree, 'button', 'Применить').dispatch('click'); await tick();
+  out.time = [ctx.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/edit')).length, said(labelled('Наибольшее время')), time.value];
+  // the AI colouring with a description of its own: it must be there and short enough
+  const style = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Стиль AI-раскраски');
+  style.value = 'custom'; await style.dispatch('change');
+  const text = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').startsWith('например'));
+  const go = byText(tree, 'button', 'Раскрасить с помощью AI');
+  const posted = () => ctx.requests.filter((r) => r.method === 'POST').length;
+  const mark = posted();
+  text.value = '   '; await text.dispatch('input'); await go.dispatch('click'); await tick();
+  out.blankText = [posted() - mark, said(labelled('Своё описание')), go.disabled];
+  text.value = 'x'.repeat(401); await text.dispatch('input'); await go.dispatch('click'); await tick();
+  out.longText = [posted() - mark, said(labelled('Своё описание')), text.value.length];
+""")
+    assert out["colours"][:2] == [True, 0] and "Допустимо" in out["colours"][2][0] and "Введено: 99" in out["colours"][2][0]
+    assert out["colours"][3:] == ["99", "true"]
+    assert out["asked"] == [True, []]
+    assert out["time"][0] == 0 and "Введено: 0" in out["time"][1][0] and out["time"][2] == "0"
+    assert out["blankText"] == [0, ["Опишите, как должна выглядеть раскраска"], False]
+    assert out["longText"][0] == 0 and "400" in out["longText"][1][0] and out["longText"][2] == 401
+
+
+@node
+def test_the_tolerance_and_the_threshold_of_a_silhouette_work_are_checked_beside_their_boxes_and_a_refusal_stands_under_the_box(work, tmp_path):
+    made = work["client"].post("/api/vector", data={"device_id": work["w"]["setup"][0], "lens_id": work["w"]["setup"][1], "material_id": work["ti"],
+                                                    "name": "Old", "width_mm": 50, "strategy": "fill", "threshold": 8},
+                               files={"image": ("a.png", picture(), "image/png")})
+    assert made.status_code == 201, made.text
+    j = made.json()
+    routes = {f"/api/vector/{j['id']}": {"status": 200, "json": work["client"].get(f"/api/vector/{j['id']}").json()},
+              f"/api/vector/{j['id']}/edit": {"status": 422, "json": {"error": "enter a non-negative delta E threshold", "kind": "validation"}}}
+    out = run(tmp_path, routes, {"plan": str(j["id"])}, f"""
+  {POSTS}
+  const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {{}}).textContent === text);
+  const said = (text) => labelled(text).errorText();
+  const tol = labelled('Точность контура').firstControl(), thr = labelled('Порог ΔE').firstControl();
+  tol.value = '-1'; await tol.dispatch('input');
+  await byText(tree, 'button', 'Применить точность').dispatch('click'); await tick();
+  out.tolerance = [posts().length, said('Точность контура'), tol.value, tol.getAttribute('aria-invalid')];
+  thr.value = ''; await thr.dispatch('input');
+  await byText(tree, 'button', 'Применить порог').dispatch('click'); await tick();
+  out.empty = [posts().length, said('Порог ΔE')];
+  thr.value = '4'; await thr.dispatch('input');
+  await byText(tree, 'button', 'Применить порог').dispatch('click'); await tick(); await tick();
+  out.refused = [posts().length, thr.value, thr.getAttribute('aria-invalid'), said('Порог ΔE')];
+""")
+    assert out["tolerance"][0] == 0 and "Введено: -1" in out["tolerance"][1] and out["tolerance"][2:] == ["-1", "true"]
+    assert out["empty"] == [0, "Заполните это поле"]
+    assert out["refused"][:3] == [1, "4", "true"] and out["refused"][3]                                      # sent once; the number stays, the refusal stands under it

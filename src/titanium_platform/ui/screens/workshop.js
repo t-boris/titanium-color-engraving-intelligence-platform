@@ -20,24 +20,27 @@
   // ---- the workshop itself -------------------------------------------------------------------------------------------------------
 
   function workshopCard(w, changed) {
-    const dir = h('input', {value: w.backup_dir || '', placeholder: w.default_backup_dir, 'aria-label': 'Папка резервных копий'});
-    const err = errorBox();
+    const form = Forms.create();
+    // the folder is sent exactly as typed; an empty box means the default folder, so it is not required
+    const dir = form.add('path', 'Папка резервных копий', h('input', {value: w.backup_dir || '', placeholder: w.default_backup_dir}),
+      {raw: true, help: 'сюда записываются резервные копии и файлы диагностики; пусто — папка по умолчанию'});
     const change = btn('Изменить', async (ev) => {
       const self = ev.currentTarget;
-      self.disabled = true; err.hidden = true;
+      const v = form.collect();
+      if (!v) return;
+      self.disabled = true;
       try {
-        const made = await put('/workshop/backup-dir', {path: dir.value});
+        const made = await put('/workshop/backup-dir', {path: v.path});
         toast('Папка резервных копий сохранена', 'ok');
         changed(made.backup_dir);
-      } catch (e) { showError(err, e); } finally { self.disabled = false; }
+      } catch (e) { form.fail(e); } finally { self.disabled = false; }
     });
     const schema = w.schema === w.schema_known ? pill(`схема ${w.schema}`, 'ok') : pill(`схема ${w.schema} из ${w.schema_known}`, 'warn');
     return h('div', {class: 'card stack'}, h('h3', {}, 'Мастерская'),
       facts([['Папка данных', w.data_dir], ['Версия приложения', w.app], ['Схема базы', schema],
         ['Открыта процессом', w.lock ? `${w.lock.program || 'titanium-platform'} (pid ${w.lock.pid})` : 'не заблокирована'],
         ['Свободно на диске', `${mb(w.disk.free_bytes)} из ${mb(w.disk.total_bytes)}`]]),
-      field('Папка резервных копий', h('div', {class: 'row'}, dir, change), 'сюда записываются резервные копии и файлы диагностики; пусто — папка по умолчанию'),
-      err);
+      h('div', {class: 'row'}, dir, change), form.error);
   }
 
   // ---- backups -------------------------------------------------------------------------------------------------------------------
@@ -57,43 +60,49 @@
   }
 
   function restoreDialog(b, w, done) {
-    const target = h('input', {placeholder: 'например, ~/titanium-restored', 'aria-label': 'Папка для восстановления'});
-    const err = errorBox();
+    const form = Forms.create();
+    const target = form.add('target', 'Папка для восстановления', h('input', {placeholder: 'например, ~/titanium-restored'}),
+      {required: true, help: 'пустая или новая папка; непустая папка будет отказана'});
     const body = h('div', {class: 'stack'},
       h('p', {class: 'small'}, `Копия от ${when((b.manifest || {}).created_at)} (${mb((b.manifest || {}).bytes)}) будет восстановлена в новую папку: `
         + 'база, файлы работ, подключённые выпуски и шрифты; пути в записях переписываются на новую папку. Открытая мастерская не меняется.'),
-      field('Папка для восстановления', target, 'пустая или новая папка; непустая папка будет отказана'), err);
+      target, form.error);
     return modal('Восстановить в другую папку', body, [{label: 'Отмена', run: (d) => d.close()},
       {label: 'Восстановить', cls: 'primary', run: async (d) => {
-        err.hidden = true;
+        const v = form.collect();
+        if (!v) return;
         try {
-          const made = await post('/workshop/restore', {path: b.path, target_dir: target.value.trim()});
+          const made = await post('/workshop/restore', {path: b.path, target_dir: v.target});
           toast(`Мастерская восстановлена в ${made.path}`, 'ok');
           d.close();
           done(made);
-        } catch (e) { showError(err, e); }
+        } catch (e) { form.fail(e); }
       }}]);
   }
 
   function replaceDialog(b, w, done) {
-    const word = h('input', {placeholder: CONFIRM_WORD, 'aria-label': 'Слово подтверждения', autocomplete: 'off'});
-    const err = errorBox();
+    const form = Forms.create();
+    const wordBox = h('input', {placeholder: CONFIRM_WORD, autocomplete: 'off'});
+    const typed = () => wordBox.value.trim();
+    const word = form.add('word', `Чтобы продолжить, введите слово ${CONFIRM_WORD}`, wordBox, {required: true,
+      read: () => (typed() === CONFIRM_WORD ? {ok: true, value: typed()} : {ok: false, message: `Введите слово ${CONFIRM_WORD}, чтобы заменить открытую мастерскую`})});
     const go = btn('Заменить мастерскую', async (ev) => {
       const self = ev.currentTarget;
-      if (word.value.trim() !== CONFIRM_WORD) { showError(err, new Error(`Введите слово ${CONFIRM_WORD}, чтобы заменить открытую мастерскую`)); return; }
-      self.disabled = true; err.hidden = true;
+      const v = form.collect();
+      if (!v) return;
+      self.disabled = true;
       try {
-        const made = await post('/workshop/restore', {path: b.path, target_dir: w.data_dir, overwrite: true, confirm: word.value.trim()});
+        const made = await post('/workshop/restore', {path: b.path, target_dir: w.data_dir, overwrite: true, confirm: v.word});
         fill(body, h('p', {class: 'alert warn'}, `Мастерская заменена копией; прежняя отложена в ${made.set_aside || '—'}. `
           + 'Перезапустите приложение: до перезапуска оно ещё работает с прежними данными в памяти.'));
         done(made);
-      } catch (e) { showError(err, e); self.disabled = word.value.trim() !== CONFIRM_WORD; }
+      } catch (e) { form.fail(e); self.disabled = typed() !== CONFIRM_WORD; }
     }, 'danger', true);
-    word.addEventListener('input', () => { go.disabled = word.value.trim() !== CONFIRM_WORD; });
+    wordBox.addEventListener('input', () => { go.disabled = typed() !== CONFIRM_WORD; });
     const body = h('div', {class: 'stack'},
       h('p', {class: 'alert warn'}, `Открытая мастерская ${w.data_dir} будет заменена копией от ${when((b.manifest || {}).created_at)}. `
         + `Нынешняя папка не удаляется: она будет отложена как ${w.data_dir}.replaced-<дата>. Всё, что сделано после этой копии, останется только там.`),
-      field(`Чтобы продолжить, введите слово ${CONFIRM_WORD}`, word), err, go);
+      word, form.error, go);
     return modal('Заменить открытую мастерскую', body, [{label: 'Закрыть', run: (d) => d.close()}]);
   }
 

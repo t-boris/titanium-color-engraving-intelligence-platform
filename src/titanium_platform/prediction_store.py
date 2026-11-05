@@ -44,7 +44,7 @@ from typing import Mapping
 import cv2
 import numpy as np
 
-from . import (color, colormap, colouring, devices, dots, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules,
+from . import (applicability, color, colormap, colouring, devices, dots, drawing, engraving_time, experiments, grayscale, ingest, lightburn as lb, people, photo_modes, picture_rules,
                plans as pl, prediction, row_length, setup as su, tasks)
 from .db import Store
 from .prediction import PredictionError
@@ -623,12 +623,13 @@ def predicted(item: dict, min_power=None, max_power=None) -> tuple[dict, np.ndar
     curve = item["curve"].as_dict()
     curve["points"] = [{**row, "grey": _grey_for(row["power"], item["curve"], low, high, values)} for row in curve["points"]]
     rows, cols = item["picture"].shape
+    evidence = prediction_evidence(item["curve"])
     info = {"index": item["index"], "name": item["name"], "dither": item["dither"], "settings": item["settings"], "refused": None,
             "mode": item["mode"].as_dict(), "curve": curve, "referenced": rendered["referenced"], "reference": item["reference"],
             "span": rendered["span"], "axis": rendered["axis"], "power_range": rendered["power_range"], "outside_share": rendered["outside_share"], "spread": rendered["spread"],
             "transparent_share": rendered["transparent_share"],
             "power_usage": power_usage(item, low, high) if low is not None else None,
-            "prediction_evidence": prediction_evidence(item["curve"]),
+            "prediction_evidence": evidence, "applicability": applicability.of_size(item["curve"].size, evidence["ramp_only"]),
             "adjustments": rendered["adjustments"], "notes": rendered["notes"] + item["basis_notes"],
             "picture": {"width": item["size"][0], "height": item["size"][1], "shown_width": cols, "shown_height": rows}}
     return info, rendered["rgb8"]

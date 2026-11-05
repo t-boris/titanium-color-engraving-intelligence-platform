@@ -29,20 +29,35 @@ const DeviceView = (() => {
       table(['Длительность импульса', 'Частота среза', 'Наибольшая энергия импульса'], rows, undefined, true));
   }
 
+  /** The documents of a laser as the compact list (ux-growing-collections-p0, REQ-002): a line each, a search, the kind as a filter, an order,
+      pages of twenty. A line opens to the file's preview and facts only when asked, so a hundred scans are not loaded at once; the document
+      opened last stays in view as the pinned line when a search or a filter leaves it out. Every document stays reachable by «Открыть». */
   function documentsCard(d, reload) {
-    const items = d.documents.map((x) => {
-      const url = `/api/devices/${d.id}/documents/${x.id}`;
-      const preview = x.media_type.startsWith('image/')
-        ? h('a', {href: url, target: '_blank', rel: 'noopener'}, h('img', {src: url, alt: x.title, loading: 'lazy', style: 'max-width:220px;max-height:160px;object-fit:cover'})) : null;
-      return h('div', {class: 'card stack', style: 'min-width:0'}, preview, h('strong', {}, x.title),
-        h('p', {class: 'muted small'}, `${DeviceForms.KIND[x.kind] || x.kind} · ${x.filename} · ${size(x.size)}`),
-        h('div', {class: 'row'}, h('a', {href: url, target: '_blank', rel: 'noopener'}, 'Открыть'),
-          btn('Удалить', () => confirmBox('Удалить документ', `«${x.title}». Файл будет удалён с диска, паспорт останется.`, 'Удалить',
-            async () => { await del(`/devices/${d.id}/documents/${x.id}`); toast('Документ удалён', 'ok'); reload(d.id); }), 'danger')));
-    });
+    let current = null;                                    // the document the operator opened last
+    const url = (x) => `/api/devices/${d.id}/documents/${x.id}`;
+    const day = (iso) => (iso || '').slice(0, 10);
+    const open = (x) => h('a', {class: 'btn btn-small', href: url(x), target: '_blank', rel: 'noopener'}, 'Открыть');
+    const items = App.list({id: 'device-documents.' + d.id, items: d.documents, key: (x) => x.id, className: 'doc-list',
+      search: (x) => `${x.title} ${x.filename} ${DeviceForms.KIND[x.kind] || x.kind}`,
+      row: (x) => [h('span', {class: 'lst-text', title: x.title}, x.title), pill(DeviceForms.KIND[x.kind] || x.kind),
+        h('span', {class: 'muted small'}, x.filename), h('span', {class: 'muted small'}, size(x.size))],
+      details: (x) => {
+        current = x.id;
+        const preview = x.media_type.startsWith('image/')
+          ? h('a', {href: url(x), target: '_blank', rel: 'noopener'}, h('img', {src: url(x), alt: x.title, loading: 'lazy', style: 'max-width:220px;max-height:160px;object-fit:cover'})) : null;
+        return h('div', {class: 'stack small'}, preview,
+          facts([['Вид', DeviceForms.KIND[x.kind] || x.kind], ['Файл', x.filename], ['Размер', size(x.size)], ['Добавлен', day(x.created_at)]]));
+      },
+      actions: (x) => [open(x), btn('Удалить', () => confirmBox('Удалить документ', `«${x.title}». Файл будет удалён с диска, паспорт останется.`, 'Удалить',
+        async () => { await del(`/devices/${d.id}/documents/${x.id}`); toast('Документ удалён', 'ok'); reload(d.id); }), 'btn-small danger')],
+      filters: [{key: 'kind', label: 'Вид', select: true, options: DeviceForms.KINDS, test: (x, v) => x.kind === v}],
+      sorts: [['newest', 'Сначала новые', (p, q) => q.id - p.id], ['title', 'По названию', (p, q) => p.title.localeCompare(q.title) || p.id - q.id],
+        ['size', 'Сначала большие', (p, q) => q.size - p.size || p.id - q.id]],
+      selected: () => current, clearSelection: () => { current = null; },
+      empty: 'Документов пока нет', noResults: 'Документов с таким названием или видом нет.'});
     return h('div', {class: 'card stack'}, h('h3', {}, 'Документы'),
       h('p', {class: 'muted small'}, 'Исходные фотографии и файлы хранятся без изменений: значения, прочитанные с них, можно сверить с оригиналом.'),
-      items.length ? h('div', {class: 'grid g3'}, items) : h('p', {class: 'muted'}, 'Документов пока нет'), DeviceForms.uploadForm(d, reload));
+      d.documents.length ? items.el : h('p', {class: 'muted'}, 'Документов пока нет'), DeviceForms.uploadForm(d, reload));
   }
 
   function capabilityResultsCard(results, deviceId) {

@@ -4,9 +4,7 @@
    Измеренное пятно хранится у линзы, с которой его мерили (REQ-019); M² — у лазера. */
 'use strict';
 const DeviceLens = (() => {
-  const {h, btn, field, pill, get, post, put, patch, del, toast, fail, confirmBox, modal, table, facts} = App;
-  const val = (el) => el.value.trim();
-  const num = (el) => (val(el) === '' ? null : +val(el).replace(',', '.'));
+  const {h, btn, pill, get, post, put, patch, del, toast, fail, confirmBox, modal, table, facts} = App;
   const g = (v, d = 4) => (v == null ? '—' : String(+(+v).toPrecision(d)));
   const SOURCE = {lens: 'по линзе', 'lens and laser settings': 'меньшее из линзы и настроек лазера', 'Field Size': 'по настройкам: Field Size', 'Size Width / Size Height': 'по настройкам: размер рабочей области'};
 
@@ -15,17 +13,21 @@ const DeviceLens = (() => {
       при замене линзы оно к другой линзе не переходит (REQ-019). Сохраняется только то, что вы изменили. */
   function spotForm(d, refresh) {
     const p = d.passport, lens = d.lens;
-    const f = {m2: h('input', {type: 'number', step: 'any', min: 0, value: p.m2 ?? '', placeholder: 'например, 1.3', 'aria-label': 'M² вашего лазера'}),
-      spot: h('input', {type: 'number', step: 'any', min: 0, value: lens.spot_diameter_um ?? '', placeholder: 'мкм', 'aria-label': `Диаметр пятна, измеренный с линзой «${lens.name}», мкм`})};
-    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'},
-      field('M² вашего лазера', f.m2, 'качество пучка: из протокола испытаний или от производителя; без него пятно известно только в границах'),
-      field(`Или диаметр пятна, измеренный с линзой «${lens.name}», мкм`, f.spot, 'если измеряли: имеет приоритет над расчётом и хранится у этой линзы, при замене линзы не переносится')),
+    const f = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const m2 = f.add('m2', 'M² вашего лазера', Forms.numberInput(Q.m2, {value: p.m2 ?? '', placeholder: 'например, 1.3'}),
+      {quantity: 'm2', help: 'качество пучка: из протокола испытаний или от производителя; без него пятно известно только в границах'});
+    const spot = f.add('spot', `Или диаметр пятна, измеренный с линзой «${lens.name}»`, Forms.numberInput(Q.spot, {value: lens.spot_diameter_um ?? '', placeholder: 'мкм'}),
+      {quantity: 'spot', help: 'если измеряли: имеет приоритет над расчётом и хранится у этой линзы, при замене линзы не переносится'});
+    return h('div', {class: 'stack'}, h('div', {class: 'grid g2'}, m2, spot), f.error,
     btn('Сохранить', async () => {
+      const v = f.collect();
+      if (!v) return;
       try {
-        if (num(f.m2) !== (p.m2 ?? null)) await patch('/devices/' + d.id, {passport: {...p, m2: num(f.m2)}});
-        if (num(f.spot) !== (lens.spot_diameter_um ?? null)) await patch('/lenses/' + lens.id, {spot_diameter_um: num(f.spot)});
+        if (v.m2 !== (p.m2 ?? null)) await patch('/devices/' + d.id, {passport: {...p, m2: v.m2}});
+        if (v.spot !== (lens.spot_diameter_um ?? null)) await patch('/lenses/' + lens.id, {spot_diameter_um: v.spot});
         toast('Сохранено', 'ok'); refresh(d.id);
-      } catch (e) { fail(e); }
+      } catch (e) { f.fail(e); }
     }, 'primary'));
   }
 
@@ -63,23 +65,35 @@ const DeviceLens = (() => {
 
   /** Фокусное расстояние линзы, записанной без него: запись дополняется, данные с этой линзой остаются её данными (DEC-063). */
   function focalDialog(d, l, refresh) {
-    const focal = h('input', {type: 'number', step: 'any', placeholder: 'мм', 'aria-label': 'Фокусное расстояние'});
-    modal('Фокусное расстояние линзы', h('div', {class: 'stack'}, h('p', {}, `«${l.name}»: впишите значение с оправы или из документации.`), field('Фокусное расстояние, мм', focal)), [
+    const f = Forms.create();
+    const focal = f.add('focal', 'Фокусное расстояние', Forms.numberInput(Forms.QUANTITIES.focal), {quantity: 'focal', required: true});
+    modal('Фокусное расстояние линзы', h('div', {class: 'stack'}, h('p', {}, `«${l.name}»: впишите значение с оправы или из документации.`), focal, f.error), [
       {label: 'Отмена', run: (m) => m.close()},
-      {label: 'Сохранить', cls: 'primary', run: async (m) => { await patch('/lenses/' + l.id, {focal_length_mm: num(focal)}); m.close(); toast('Фокус сохранён', 'ok'); refresh(d.id); }}]);
+      {label: 'Сохранить', cls: 'primary', run: async (m) => {
+        const v = f.collect();
+        if (!v) return;                                  // the dialog stays open with the reason beside the box
+        try { await patch('/lenses/' + l.id, {focal_length_mm: v.focal}); } catch (e) { f.fail(e); return; }
+        m.close(); toast('Фокус сохранён', 'ok'); refresh(d.id);
+      }}]);
   }
 
   function form(d, refresh) {
-    const f = {name: h('input', {placeholder: 'например, F-theta 254', 'aria-label': 'Название линзы'}), focal: h('input', {type: 'number', step: 'any', placeholder: 'мм', 'aria-label': 'Фокусное расстояние'}),
-      fieldMm: h('input', {type: 'number', step: 'any', placeholder: 'мм, например 175', 'aria-label': 'Поле линзы'}), exp: h('input', {type: 'number', step: 'any', value: 1, 'aria-label': 'Расширитель пучка'}),
-      note: h('input', {placeholder: 'необязательно', 'aria-label': 'Заметка'})};
-    return h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, field('Название', f.name), field('Фокусное расстояние, мм', f.focal, 'выгравировано на оправе: F=…; если неизвестно, оставьте пустым'),
-      field('Поле линзы, мм', f.fieldMm, 'сторона квадрата, например 110, 150, 175'), field('Расширитель пучка', f.exp, '1, если расширителя нет; ×2 уменьшает пятно вдвое'), field('Заметка', f.note)),
+    const f = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const number = (q, attrs) => Forms.numberInput(q, attrs);
+    return h('div', {class: 'stack'}, h('div', {class: 'grid g3'},
+      f.add('name', 'Название', h('input', {placeholder: 'например, F-theta 254'}), {required: true}),
+      f.add('focal', 'Фокусное расстояние', number(Q.focal, {placeholder: 'мм'}), {quantity: 'focal', help: 'выгравировано на оправе: F=…; если неизвестно, оставьте пустым'}),
+      f.add('fieldMm', 'Поле линзы', number(Q.lensField, {placeholder: 'мм, например 175'}), {quantity: 'lensField', help: 'сторона квадрата, например 110, 150, 175'}),
+      f.add('exp', 'Расширитель пучка', number(Q.expansion, {value: 1}), {quantity: 'expansion', help: '1, если расширителя нет; ×2 уменьшает пятно вдвое'}),
+      f.add('note', 'Заметка', h('input', {placeholder: 'необязательно'}), {})), f.error,
     btn('Добавить и установить', async () => {
+      const v = f.collect();
+      if (!v) return;
       try {
-        const lens = await post('/lenses', {name: val(f.name), focal_length_mm: num(f.focal), field_mm: num(f.fieldMm), expansion: num(f.exp) ?? 1, note: val(f.note) || null});
+        const lens = await post('/lenses', {name: v.name, focal_length_mm: v.focal, field_mm: v.fieldMm, expansion: v.exp ?? 1, note: v.note});
         await put(`/devices/${d.id}/lens`, {lens_id: lens.id}); toast('Линза добавлена и установлена', 'ok'); refresh(d.id);
-      } catch (e) { fail(e); }
+      } catch (e) { f.fail(e); }
     }, 'primary'));
   }
 

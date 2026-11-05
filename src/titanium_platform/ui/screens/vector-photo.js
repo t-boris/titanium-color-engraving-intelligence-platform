@@ -161,20 +161,32 @@ const VectorPhoto = (() => {
             h('p', {class: 'small muted'}, 'Каждая точка бьёт на настройках этого цвета; тон — сколько точек. В файле Min = Max.'));
         }
         const power = number(`Мощность точек фотозоны ${zone.number}, %`, zone.dot_power, zone.span ? zone.span[0] : 0, zone.span ? zone.span[1] : 100);
-        power.addEventListener('change', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: Number(power.value)}));
-        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power), swatches,
+        // a power outside 0..100 % is refused beside the box and stays in it; nothing is sent (prediction_store.check_power_range)
+        const powerNote = Forms.watch(power, 'photoPower', (v) => ctx.act({op: 'photo_set', zone: zone.number, dot_power: v}));
+        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power), powerNote, swatches,
           h('div', {class: 'row small'}, toMap, h('span', {class: 'muted'}, 'любой измеренный цвет этого лазера и титана')),
           h('p', {class: 'small muted'}, 'Каждая точка бьёт на этой мощности; тон — сколько точек. В файле Min = Max.'));
       }
       const low = number(`Min мощность фотозоны ${zone.number}, %`, zone.min_power, 0, 100);
       const high = number(`Max мощность фотозоны ${zone.number}, %`, zone.max_power, 0, 100);
-      const send = () => ctx.act({op: 'photo_set', zone: zone.number, min_power: Number(low.value), max_power: Number(high.value)});
-      low.addEventListener('change', send);
-      high.addEventListener('change', send);
+      // each end is read as the rule states (0..100 %); a wrong one is said beside its own box and nothing is sent until both are right
+      let conflict = false;                                               // Min above Max is said under Max until either is changed
+      const send = () => {
+        if (conflict) { conflict = false; high.removeAttribute('aria-invalid'); highNote.textContent = ''; }
+        if (low.getAttribute('aria-invalid') === 'true' || high.getAttribute('aria-invalid') === 'true') return;
+        if (Number(low.value) > Number(high.value)) {                      // prediction_store.check_power_range: Min is not above Max
+          conflict = true;
+          high.setAttribute('aria-invalid', 'true');
+          highNote.textContent = `Min ${low.value} % не может быть больше Max ${high.value} %. Введено: ${high.value}`;
+          return;
+        }
+        ctx.act({op: 'photo_set', zone: zone.number, min_power: Number(low.value), max_power: Number(high.value)});
+      };
+      const lowNote = Forms.watch(low, 'photoPower', send), highNote = Forms.watch(high, 'photoPower', send);
       const tone = h('input', {type: 'checkbox', checked: !!zone.by_colour, 'aria-label': `Цвета по картинке, фотозона ${zone.number}`});
       tone.addEventListener('change', () => ctx.act({op: 'photo_set', zone: zone.number, by_colour: tone.checked}));
       return h('div', {class: 'vp-powers'},
-        h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low), h('label', {class: 'row'}, h('span', {}, 'Max, %'), high)),
+        h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low), lowNote, h('label', {class: 'row'}, h('span', {}, 'Max, %'), high), highNote),
         h('label', {class: 'row small'}, tone, h('span', {}, 'Цвета по картинке: серые подобраны так, чтобы цвета титана шли за цветами картинки, '
           + 'как у векторных областей вокруг. Выключено — гравируются серые самой картинки.')),
         zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Как подбирать серые и контуры — в «Открыть».`) : null);

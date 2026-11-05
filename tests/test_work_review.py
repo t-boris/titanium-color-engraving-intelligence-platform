@@ -290,6 +290,20 @@ def test_the_picture_of_the_result_paints_each_region_in_the_colour_its_layer_me
     assert missing.status_code == 404
 
 
+def test_the_promised_and_the_received_pictures_are_drawn_at_one_scale(work, job):
+    # ux-engraving-lifecycle-p0 REQ-003: «ожидали / получилось» are compared side by side, so both are the same picture size of the same work
+    c, j = work, job
+    exported(c, j)
+    work_errors.after_acceptance(c["store"], engrave(c, j, labs={0: [90.0, 60.0, 40.0]}))
+    url = f"/api/vector/{j['id']}/engraved.png"
+    promised = c["client"].get(url, params={"engraving": "eng-1", "promised": "true"})
+    received = c["client"].get(url, params={"engraving": "eng-1", "promised": "false"})
+    assert promised.status_code == 200 and received.status_code == 200
+    one, two = pixels(promised), pixels(received)
+    assert one.shape == two.shape and one.shape[0] > 0 and one.shape[1] > 0
+    assert (one != two).any()                                                              # and they are two pictures, not one drawn twice
+
+
 def test_the_report_of_a_pair_carries_the_review_of_its_work(work, job):
     c, j = work, job
     exported(c, j)

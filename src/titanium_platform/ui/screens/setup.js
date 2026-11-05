@@ -8,7 +8,7 @@
   App.register({id: 'setup', async render(ctx) {
     const tab = TABS.some((t) => t[0] === ctx.query.tab) ? ctx.query.tab : 'material';
     const reload = (t, extra) => { location.hash = `#/setup?tab=${t || tab}${extra ? '&' + extra : ''}`; App.render(); };
-    const body = tab === 'material' ? SetupForms.materialTab(await get('/materials'), reload)
+    const body = tab === 'material' ? await MaterialCatalog.tab(ctx)
       : tab === 'rigs' ? SetupForms.rigsTab(await get('/setups'), reload)
         : tab === 'rules' ? await SetupRules.rulesTab(ctx, reload) : await SetupRules.markersTab(reload);
     return h('div', {class: 'stack'}, h('h2', {}, 'Настройки'),

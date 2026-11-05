@@ -134,6 +134,8 @@ def test_a_photograph_is_split_and_previewed_in_its_source_colours_before_any_ex
     assert "arcs" not in json.dumps(j) and len(json.dumps(j)) < 40_000                 # the geometry goes once, as the SVG
     plan = pl.get_plan(work["store"], j["id"])
     assert len(plan["history"]) == 1 and plan["history"][0]["op"]["op"] == "split"
+    # ux-evidence-summaries-p0 REQ-001: the preview says how far it can be trusted, from the counts the work keeps
+    assert j["applicability"]["level"] and j["applicability"]["counts"]["layers"] == j["preview_evidence"]["layers"]
 
 
 def test_the_split_settings_and_important_areas_are_used_when_the_picture_is_split_again(work, job, monkeypatch):
@@ -1041,7 +1043,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
+  'screens/vector-colours.js', 'screens/lifecycle.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/evidence-summary.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 (async () => {
@@ -1086,12 +1088,12 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.classes = svgs.map((s) => s.getAttribute('class'));
   const picture = svgs.find((s) => (s.getAttribute('class') || '').split(' ').includes('vw-ed-svg'));
   out.titanium = picture.querySelectorAll('path').map((p) => [p.getAttribute('data-color'), p.getAttribute('fill'), p.getAttribute('stroke')]);
-  out.exportDisabled = byText(tree, 'button', 'Создать файл LightBurn').disabled;
+  out.exportDisabled = byText(tree, 'button', 'Скачать LightBurn').disabled;
   out.links = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
   out.tabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('vw-tab-')).map((b) => b.textContent);
   const screen = tree;                                            // the screen is the workspace itself
   out.inScreen = ['Алгоритм разбиения', 'Число цветов', 'Разбить заново', 'Слои титана', 'Исходные цвета', 'Подробно по цветам…', 'Варианты раскраски', 'Раскрасить с помощью AI',
-                  'Создать файл LightBurn', '← Мои работы', 'Сделать копию']
+                  'Скачать LightBurn', '← Мои работы', 'Сделать копию']
     .filter((t) => !screen.textContent.includes(t) && !screen.querySelectorAll('select, input, button').some((c) => c.getAttribute('aria-label') === t));
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
 """)
@@ -1109,7 +1111,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
         colour = by_rgb(view, rgb)
         painted = "rgb({},{},{})".format(*view["entries"][str(colour["entry_id"])]["srgb"])
         assert all(fill == stroke == painted for index, fill, stroke in out["titanium"] if index == str(colour["index"])), rgb
-    assert out["exportDisabled"] is bool(view["export_blocked"])
+    assert out["exportDisabled"] is (not view["lifecycle"]["readiness"]["ready"]) and view["lifecycle"]["readiness"]["ready"] is (view["export_blocked"] is None)
     assert not any((href or "").startswith("/api") for href in out["links"])        # nothing on this screen navigates to the API
 
 
@@ -1297,8 +1299,8 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
 
 def test_the_start_form_sends_the_algorithm_with_the_other_photograph_fields():
     screen = (UI / "screens" / "vector.js").read_text(encoding="utf-8")
-    assert "const algorithm = VectorSplit.picker('slic');" in screen and "field('Алгоритм разбиения', algorithm.select)" in screen
-    assert "fd.append('algorithm', algorithm.select.value)" in screen
+    assert "const algorithm = VectorSplit.picker('slic');" in screen and "f.add('algorithm', 'Алгоритм разбиения', algorithm.select" in screen
+    assert "fd.append('algorithm', v.algorithm)" in screen and "value: algorithm.select.value" in screen          # read once by the form, sent with the other fields
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -1307,16 +1309,20 @@ def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fet
     routes = routes_of(work, j)
     routes[f"/api/vector/{j['id']}/export.lbrn2"] = {"status": 422, "json": {"error": "every region is excluded: there is nothing to engrave", "kind": "invalid"}}
     out = run_screen(tmp_path, j, routes, """
-  const button = byText(tree, 'button', 'Создать файл LightBurn');
+  const button = byText(tree, 'button', 'Скачать LightBurn');
   out.disabled = button.disabled;
   await button.dispatch('click');
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => (d.className || '').startsWith('toast')).map((d) => d.textContent);
   out.requests = ctx.requests.map((r) => r.method + ' ' + r.path);
   out.reenabled = !button.disabled;
+  const failure = tree.querySelectorAll('div').find((d) => (d.getAttribute('role') === 'alert') && !d.hidden);
+  out.failure = failure ? failure.textContent : null;                                // the reason stays beside the button, with a retry
+  out.retry = failure ? failure.querySelectorAll('button').map((b) => b.textContent) : [];
 """)
     assert out["disabled"] is False and out["reenabled"]
     assert any("Все области исключены: гравировать нечего" in t for t in out["toast"]) and not any("every region" in t for t in out["toast"])
     assert f"GET /api/vector/{j['id']}/export.lbrn2" in out["requests"]
+    assert out["failure"].startswith("Файл не получен: Все области исключены: гравировать нечего") and out["retry"] == ["Повторить"]
 
 
 def test_the_area_overlay_does_not_paint_the_chart_background_over_the_picture():

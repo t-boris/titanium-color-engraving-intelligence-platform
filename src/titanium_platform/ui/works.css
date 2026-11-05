@@ -1,0 +1,43 @@
+/* Работы: общий каталог векторных работ и фотогравировок (feature ux-work-catalog-p0). Строка каталога — это строка App.list (styles.css, .lst-*);
+   здесь только то, что нужно каталогу: миниатюра, ячейки строки, меню действий и вид «галерея» того же списка. */
+.works-thumb {display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:48px;border-radius:8px;background:#0e1420;border:1px solid var(--line);overflow:hidden;
+  color:var(--muted);font-weight:700}
+.works-thumb img {display:block;width:100%;height:100%;object-fit:contain}
+.works-thumb.empty {background:#1a2233}
+.works-thumb-link {display:inline-flex;flex:none;border-radius:8px;text-decoration:none}
+.works-name {font-weight:600;color:var(--text);text-decoration:none;min-width:0}
+.works-name:hover {text-decoration:underline}
+.works-size,.works-date {flex:none;white-space:nowrap}
+.works-equipment {flex:0 1 220px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.works-parts {flex:none;white-space:nowrap}
+.works-broken {background:#2a1a24}
+.works-notice:empty {display:none}
+.works-gone {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.works-view {display:inline-flex;gap:4px}
+.works-view .btn[aria-pressed=true] {background:var(--accent-soft);border-color:#6f86c4;color:var(--text)}
+
+/* the menu of a row and the «Новая работа» menu */
+.works-list .lst-rows {overflow:visible}
+.works-menu-wrap {position:relative;display:inline-block}
+.works-menu {position:absolute;z-index:20;right:0;top:calc(100% + 4px);min-width:200px;display:flex;flex-direction:column;padding:4px;border:1px solid var(--line-2);border-radius:10px;
+  background:#151d2b;box-shadow:0 10px 30px #0008}
+.works-menu[hidden] {display:none}
+.works-menu-item {display:block;width:100%;padding:8px 12px;border:0;border-radius:7px;background:transparent;color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.works-menu-item:hover:not(:disabled),.works-menu-item:focus-visible {background:#22304a}
+.works-menu-item.danger {color:var(--danger)}
+.works-menu-item:disabled {opacity:.5;cursor:default}
+
+/* the gallery: the same list, its rows as cards */
+.works-gallery .works-list .lst-rows {display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;border:0;background:transparent}
+.works-gallery .works-list .lst-row {position:relative;flex-direction:column;align-items:stretch;gap:6px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#111826}
+.works-gallery .works-list .lst-row:last-of-type {border-bottom:1px solid var(--line)}
+.works-gallery .works-list .lst-main {flex-direction:column;align-items:stretch;gap:6px;white-space:normal;padding:0;overflow:visible}
+.works-gallery .works-list .lst-main>* {flex:none}
+.works-gallery .works-thumb-link {display:block}
+.works-gallery .works-thumb-link .works-thumb {display:flex;width:100%;height:160px}
+.works-gallery .works-thumb {width:100%;height:160px}
+.works-gallery .works-name {white-space:normal;overflow-wrap:anywhere}
+.works-gallery .works-equipment {flex:none;white-space:normal}
+.works-gallery .works-list .lst-act {position:absolute;top:14px;right:14px}
+@media (max-width:760px) {.works-thumb {width:40px;height:40px} .works-equipment {flex:1 1 100%}}
+@media (forced-colors:active) {.works-menu,.works-thumb {border:1px solid CanvasText}}

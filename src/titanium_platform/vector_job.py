@@ -39,7 +39,7 @@ import cv2
 import numpy as np
 import shapely
 
-from . import ai_colouring as ai, capability_plates as cp, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, palette, photo_knowledge as pk, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
+from . import ai_colouring as ai, applicability, capability_plates as cp, color, colormap, conversion as cv, dot_colours as dc, engraving_time, evidence_source as es, faces, grayscale, lettering, lifecycle, palette, photo_knowledge as pk, photo_state as st, photo_zones as pz, plans as pl, prediction, prediction_store as ps, render_cache as rc, research, row_length, segment as seg, setup as su, tasks, vectorize as vz, work_review
 from .prediction import PredictionError
 from .db import Store, now
 
@@ -281,6 +281,20 @@ def check_exportable(assessment: dict, cap: int) -> None:
         raise cv.ConversionError(f"{len(assessment['layers'])} different recipes need more LightBurn layers than the {cap} available")
 
 
+def blockers_of(assessment: dict, cap: int) -> list[dict]:
+    """Every reason :func:`check_exportable` refuses, as data and not only the first (feature ux-engraving-lifecycle-p0): a code, the
+    numbers it is about and what the screen opens to fix it. No prose, the screen words them; an empty list exactly when the check passes."""
+    out = []
+    if assessment["weak"]:
+        out.append({"code": "weak_regions", "count": len(assessment["weak"]), "ids": assessment["weak"][:BLOCKER_IDS],
+                    "target": {"kind": "region", "id": assessment["weak"][0]}})
+    if not assessment["layers"]:
+        out.append({"code": "nothing_to_engrave", "target": {"kind": "regions"}})
+    elif len(assessment["layers"]) > cap:
+        out.append({"code": "too_many_layers", "count": len(assessment["layers"]), "cap": cap, "target": {"kind": "regions"}})
+    return out
+
+
 def _blocker(assessment: dict, plan: dict) -> str | None:
     try:
         check_exportable(assessment, layer_cap(plan.get("clean_layer") is not None))
@@ -381,6 +395,7 @@ def view(store: Store, plan_id: int) -> dict:
     out = {k: v for k, v in plan.items() if k not in ("document_path", "history", "exports")}
     out.update(regions=a["regions"], groups=a["groups"], layers=a["layers"], weak=a["weak"], palette=a["palette"],
                export_blocked=_blocker(a, plan), layer_cap=layer_cap(plan.get("clean_layer") is not None),
+               blockers=blockers_of(a, layer_cap(plan.get("clean_layer") is not None)),
                svg=vz.to_svg(document, weak=frozenset(a["weak"])),
                document={k: document[k] for k in ("strategy", "size_mm", "px_mm", "image_px", "tolerance_mm", "min_area_mm2", "threshold")}
                | {"version": plan["document_version"]},
@@ -405,7 +420,8 @@ def export(store: Store, plan_id: int) -> tuple[str, bytes]:
     path = store.data_dir / "files" / f"vector-export-{uuid.uuid4().hex[:12]}.lbrn2"
     path.write_bytes(data)
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
-                            "document_version": plan["document_version"], "layers": len(a["layers"]), "regions": len(keep)})
+                            "document_version": plan["document_version"], "layers": len(a["layers"]), "regions": len(keep),
+                            "markers": bool(plan["markers_enabled"])})
     cv._persist(store, plan, ST_EXPORTED, plan["markers_enabled"])
     return plan["name"], data
 
@@ -478,6 +494,7 @@ MERGE_OPS = ("merge_colours", "merge_regions")       # each makes a new version 
 SPLIT_OPS = ("split_region",)                        # so does a region split again (work-size-and-splitting-a-region-again, REQ-002)
 SCOPES = ("region", "colour", "fill")                # what a click of the brush paints (editor REQ-045)
 UNDO_DEPTH = 50                                      # steps kept to undo and redo together
+BLOCKER_IDS = 20                                     # region ids a structured export blocker names (the count says the rest)
 
 
 def photo_cap(markers: bool) -> int:
@@ -1128,6 +1145,33 @@ def _blocker_photo(plan: dict, state: dict, zones: list[dict] | None = None) -> 
     return None
 
 
+def _blockers_photo(plan: dict, state: dict, zones: list[dict] | None = None) -> list[dict]:
+    """Every reason :func:`_blocker_photo` refuses, as data and not only the first (feature ux-engraving-lifecycle-p0): a code, the numbers it
+    is about and the tab of the work that fixes it. The screen words them; the reason an inscription or a photo zone cannot be engraved is theirs and
+    already translatable, so it travels with the blocker. An empty list exactly when :func:`_blocker_photo` is None."""
+    out = []
+    fix = {"kind": "tab", "tab": "colours"}
+    if not state["by_id"] and not state["zones"]:
+        out.append({"code": "no_palette", "target": fix})
+    if state["missing_regions"]:
+        out.append({"code": "missing_colours", "count": len(state["missing_regions"]), "ids": state["missing_regions"][:BLOCKER_IDS], "target": fix})
+    for number, row in enumerate(state.get("texts") or [], 1):
+        if row["problem"]:
+            out.append({"code": "text", "number": number, "problem": row["problem"], "target": fix})      # the problem is the inscription's own translated reason
+            break                                   # as the message: the first inscription that cannot be engraved
+    if not state["layers"] and not state["zones"]:
+        out.append({"code": "nothing_to_engrave", "target": fix})
+    cap = photo_cap(plan["markers_enabled"])
+    needed = len(state["layers"]) if len(state["layers"]) > cap else len(state["layers"]) + len(state["zones"])
+    if needed > cap:
+        out.append({"code": "too_many_layers", "count": needed, "cap": cap, "target": fix})
+    for row in zones or ():
+        if row["problem"]:
+            out.append({"code": "zone", "number": row["number"], "problem": row["problem"], "target": fix})
+            break
+    return out
+
+
 def _photo_refresh(store: Store, plan: dict, document: dict, entries: list[dict]) -> dict:
     """Store the layers of the current colouring and set the status: ready when it can be exported."""
     state = _state(plan, document, entries, _inscribed(store, plan, entries))
@@ -1704,17 +1748,19 @@ def photo_view(store: Store, plan: dict) -> dict:
         layers=[{k: v for k, v in layer.items() if k not in ("region_ids", "layer_keys")} | {"regions": layer["region_ids"]} for layer in layers],
         zones=[_zone_shown(plan, row) for row in zones], zone_kinds=list(pz.KINDS),
         texts=[lettering.shown_row(row, by_id) for row in state["texts"]], text_defaults=lettering.DEFAULTS,
-        time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), layer_cap=photo_cap(plan["markers_enabled"]),
-        preview_evidence={"estimated_layers": sum((by_id[l["entry_id"]].get("size") or {}).get("how") != prediction.MEASURED for l in state["layers"]),
+        time=_estimate(plan, layers, zones), export_blocked=_blocker_photo(plan, state, zones), blockers=_blockers_photo(plan, state, zones),
+        layer_cap=photo_cap(plan["markers_enabled"]),
+        preview_evidence=(evidence := {"estimated_layers": sum((by_id[l["entry_id"]].get("size") or {}).get("how") != prediction.MEASURED for l in state["layers"]),
                           "layers": len(state["layers"]),
                           "estimated_zones": sum(row["curve"] is None or (row["curve"].size or {}).get("how") != prediction.MEASURED for row in zones),
-                          "ramp_only_zones": sum(row["curve"] is not None and ps.prediction_evidence(row["curve"])["ramp_only"] for row in zones)},
+                          "ramp_only_zones": sum(row["curve"] is not None and ps.prediction_evidence(row["curve"])["ramp_only"] for row in zones)}),
+        applicability=applicability.of_preview(evidence),
         palette_size=len(entries), smoothing_mm=plan.get("smoothing_mm", 0.0), smoothing_max_mm=SMOOTHING_MAX_MM,
         history=[{k: h[k] for k in ("version", "op", "at")} for h in plan["history"]],
         exports=[{k: e.get(k) for k in ("number", "name", "at", "document_version", "layers", "regions", "variant", "seconds")}
                  for e in plan["exports"]],
         attention=_attention(plan, state, entries, settings),
-        reviews=work_review.newest_first(plan.get("reviews") or []))
+        reviews=[{**r, "basis": lifecycle.basis_of(plan, r)} for r in work_review.newest_first(plan.get("reviews") or [])])      # named, also for old reviews
     return out
 
 
@@ -1751,7 +1797,7 @@ def _photo_export(store: Store, plan: dict) -> tuple[str, bytes]:
     plan.pop("unresolved", None)
     plan["exports"].append({"number": len(plan["exports"]) + 1, "name": plan["name"] + ".lbrn2", "path": str(path), "at": now(),
                             "document_version": plan["document_version"], "layers": len(layers) + len(zones), "regions": len(regions),
-                            "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
+                            "markers": bool(plan["markers_enabled"]), "variant": plan["colouring"]["variant"], "colouring": copy.deepcopy(plan["colouring"]),
                             "smoothing_mm": plan.get("smoothing_mm", 0.0), "seconds": _estimate(plan, layers, zones)["seconds"],
                             "promised": work_review.promised_layers(layers),       # what this file shows in the preview (DEC-090)
                             "zones": [{**copy.deepcopy(row["zone"]), "index": row["index"], "name": pz.layer_name(row["index"], row["zone"], row["parameters"]),

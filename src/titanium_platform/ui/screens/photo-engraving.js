@@ -17,11 +17,17 @@
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, duration, table, fail} = App;
   const {value, when, materialLabel, titaniumLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleBar, scaleCard, newSlots, emptySlots,
-    scaleDetail, sameScale, workPicture, colourTab, aiTab, kindTiles, kindChooser, KINDS_ABOUT} = PhotoPanels;
+    scaleDetail, sameScale, workPicture, colourTab, aiTab, kindChooser} = PhotoPanels;
   let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
   const PICTURES = 'image/png,image/jpeg,image/tiff,image/bmp,image/webp';
   const PREVIEW_GAP = 8;                     // px of white between the picture and its look in the preview (prediction.GAP)
+  // ux-save-feedback-p0: what a change of the work is called when it could not be saved, and which of its fields the controls draw (a field
+  // that was not saved stays in its control; the others are redrawn from the work as the server has it)
+  const SAVED_NAMES = {width_mm: 'Ширина, мм', by_colour: 'Подбор серых под цвета', colour_choice: 'Как подбирать серые', contours: 'Контуры',
+    tone: 'Яркость, контраст, гамма', sharpness: 'Чёткость', kind: 'Вид гравировки', scale: 'Шкала', min_power: 'Min, %', max_power: 'Max, %',
+    dot_power: 'Мощность точек, %', dot_width: 'Ширина точки, мм', ai_photo: 'AI видит картинку', rules: 'Правила AI', colouring: 'Раскраска'};
+  const KEPT_IN_CONTROLS = ['width_mm', 'by_colour', 'colour_choice', 'contours', 'tone', 'sharpness', 'dot_width', 'ai_photo'];
   /** Файл с сервера сохраняется на компьютер; ошибка сервера показывается переведённой, без перехода на адрес API. */
   async function download(path, fallbackName) {
     let res;
@@ -96,7 +102,7 @@
   }
 
   /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Отменить» и «Повторить» (``step('undo' | 'redo')``), «Шкалы серого»,
-      «Сделать копию» и «Файл LightBurn». */
+      «Сделать копию» и «Скачать LightBurn». */
   function workHead(first, step) {
     const title = h('div', {class: 'ge-title'});
     const undo = btn('Отменить', () => step('undo'), 'btn-small'), redo = btn('Повторить', () => step('redo'), 'btn-small');
@@ -106,13 +112,11 @@
       try { const made = await post(`/photo-works/${first.id}/copy`, {}); toast('Копия создана и открыта: эта работа осталась как была', 'ok'); go('/photo-engraving?work=' + made.id); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
-    const file = btn('Файл LightBurn', async (ev) => {
-      const self = ev.currentTarget;
-      self.disabled = true;
-      try { await download(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2'); } catch (e) { fail(e); } finally { self.disabled = false; }
-    }, 'primary btn-small');
+    // the one wording and behaviour of a file download (ux-engraving-lifecycle-p0): one press at a time, a failure stays beside the button with a retry
+    const file = Lifecycle.downloadButton(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2', 'Скачать LightBurn', {cls: 'primary btn-small'}).el;
     const check = h('a', {class: 'btn btn-small', href: `#/photo-preview?work=${first.id}`,
       title: 'Файл работы в «Предпросмотре фотогравировки» — с титаном, лазером и линзой её шкалы'}, 'Файл в предпросмотре');
+    const context = h('p', {class: 'sub muted', 'aria-label': 'Лазер, линза и титан этой работы'});     // the work's own, saved in it (ux-work-creation-p0)
     const el = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'), title,
       h('div', {class: 'row', role: 'group', 'aria-label': 'Отмена и повтор'}, undo, redo),
       h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), copy, check, file);
@@ -126,7 +130,8 @@
       const pencil = VectorWorkspace.renameButton(next.id, next.name, (stored) => update({...shown, name: stored}), '/photo-works');
       fill(title, h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
         h('p', {class: 'sub'}, `${next.image_name || 'картинка'} · ${next.image_size[0]} × ${next.image_size[1]} пикс. · ${value(next.width_mm, 1)} × ${value(next.height_mm, 1)} мм`
-          + ` · изменена ${when(next.updated_at)}`));
+          + ` · изменена ${when(next.updated_at)}`), context);
+      App.workContextText(next).then((text) => { context.textContent = text; });
     }
     update(first);
     return {el, update};
@@ -182,11 +187,25 @@
   async function workScreen(id) {
     const first = await get('/photo-works/' + id);
     let {scales} = await get(`/grey-scales?row_mm=${first.width_mm}`);
-    let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve(), current = null;
+    let view = first, detail = null, shownKey = null, current = null;
     let scalesWidth = first.width_mm, scalesRequest = null, selectedDetail = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const slots = newSlots();
     const base = `/photo-works/${id}`;
+    // Every change of the work goes through ``doc`` (save-state.js, BUG-002, BUG-011): one after another in the order made, an answer is shown
+    // only when it is the answer to the newest change, a change that failed stays in its control with the error beside the work.
+    const doc = SaveState.create({label: 'Работа', confirmed: first, names: SAVED_NAMES,
+      send: async (request) => { const next = await post(request.path, request.body); view = next; return next; },
+      apply: (next, info) => { if (info.reverted || info.edits.some((e) => e.meta.again)) shownKey = null; shown(); },
+      reload: async () => { view = await get(base); doc.adopt(view); },
+      onOrphanFailure: (lost) => { if (typeof Operations !== 'undefined') Operations.report({title: `Работа «${view.name}»: изменения не сохранены`, message: `${lost.message} ${lost.describe}`.trim(),
+        context: {route: `/photo-engraving?work=${id}`, label: 'Фотогравировка'}, recover: {label: 'Открыть работу', route: `/photo-engraving?work=${id}`}, details: [['Работа', `№ ${id}`]]}); }});
+    /** The work as the controls draw it: as the server has it, with the fields that could not be saved as they were typed. */
+    const drawn = () => {
+      const own = doc.local();
+      const kept = KEPT_IN_CONTROLS.filter((k) => k in own);
+      return kept.length ? {...view, ...SaveState.pick(own, kept)} : view;
+    };
     // надписи: прогноз сервера уже рисует их врезанными, слой поверх прогноза — ручки и контур (inscriptions-in-works, REQ-005)
     let tab = null;
     const lettering = Lettering.create(view, {act: async (op) => !(await send(`${base}/texts`, op)), palette: () => get(`${base}/palette`),
@@ -196,7 +215,7 @@
       {ramp: `${base}/width-ramp`, variations: `${base}/variations`, advice: base, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     const head = workHead(view, step);
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step brings the work anew
-    const banner = LabSource.banner(base, 'photo', (next) => { view = next; shownKey = null; shown(); });
+    const banner = LabSource.banner(base, 'photo', (next) => { view = next; doc.adopt(next); shownKey = null; shown(); });
     const dotWidth = dotWidthBox(save);
     const ai = aiTab(base, save, (wish, fresh) => send(`${base}/ai`, {wish, fresh}));
     const colour = colourTab(base, save, (path, body) => send(path, body));
@@ -247,24 +266,23 @@
       head.update(view);
       banner.update(view);
       lettering.update(view);
-      picture.show(view, chosen());
-      dotWidth.show(view);
-      colour.show(view);
-      ai.show(view);
+      const typed = drawn();
+      picture.show(typed, chosen());
+      dotWidth.show(typed);
+      colour.show(typed);
+      ai.show(typed);
       if (scaleKey(view) !== shownKey) showScale();
     }
     /** One change of the work (``path`` with ``body``): sent after those before it; the answer to the last one is shown. With ``again``
-        the scale is shown anew from the answer (an undo or redo can bring back other Min and Max on the same scale). The promise gives the
-        error of this change, or null. */
-    function send(path, body, again = false) {
-      const mine = ++seq;
+        the scale is shown anew from the answer (an undo or redo can bring back other Min and Max on the same scale). ``unsaved`` is the
+        change as fields of the work (absolute values: it can be sent again); without it the change cannot be repeated (an undo, a text).
+        The promise gives the error of this change, or null. */
+    function send(path, body, again = false, unsaved = null) {
       error.hidden = true;
       picture.waiting();
-      queue = queue.then(() => post(path, body)).then((next) => { view = next; if (mine === seq) { if (again) shownKey = null; shown(); } return null; },
-        (e) => { if (mine === seq) { error.textContent = e.message; error.hidden = false; shown(); } return e; });
-      return queue;
+      return doc.edit({path, body}, {local: unsaved, calculates: true, retryable: !!unsaved, meta: {again}});
     }
-    function save(changes) { return send(`/photo-works/${id}/settings`, changes); }
+    function save(changes) { return send(`/photo-works/${id}/settings`, changes, false, changes); }
     /** «Отменить» или «Повторить» (``kind``): работа становится такой, какой была до последнего изменения (или после отменённого). */
     function step(kind) { return (view[kind] || 0) > 0 ? send(`/photo-works/${id}/${kind}`, {}, true) : Promise.resolve(null); }
     /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
@@ -294,7 +312,7 @@
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
         h('div', {class: 'os-scroll'}, scales.length ? list.el : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
-        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, dotWidth.el, slots.error, error, slots.bar, picture.out, picture.foot)),
+        h('div', {class: 'ge-work'}, picture.inputs, picture.tone, slots.powers, dotWidth.el, doc.view.el, slots.error, error, slots.bar, picture.out, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 
@@ -304,7 +322,10 @@
       (from the scales page) or the best measured scale, Min and Max its measured span. Step 2: «Какая гравировка?» with the picture in each
       kind, grayscale chosen; a click on a tile chooses its kind and «Создать» keeps the work in it and opens the work. Leaving step 2 any
       other way («Назад», ×, Escape, a click outside) deletes the work step 1 made; «Назад» returns to step 1 with its fields as they were. */
-  function newWork(scale) {
+  async function newWork(scale) {
+    // ux-work-creation-p0: with nothing measured to make a work on, the creation screen says what is missing and offers the starter test
+    if (!scale && await App.handOverToCreation('photo')) return;
+    const begun = scale ? {context: null} : await App.contextStart({});       // the laser, lens and titanium new work starts from; null when it cannot be read
     const fileIn = h('input', {type: 'file', accept: PICTURES, 'aria-label': 'Картинка'});
     const name = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
     const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', value: '50', 'aria-label': 'Ширина на титане, мм'});
@@ -320,6 +341,7 @@
     let pick = null, releaseScales = [];
     async function switchSource(src) {
       own.hidden = !src;
+      if (shared) shared.hidden = !!src;
       releaseScales = [];
       if (!src) return;
       try {
@@ -337,7 +359,12 @@
         if (!releaseScales.length) fill(scaleSelect, h('option', {value: ''}, 'выпуск не измерил шкал серого с этой установкой'));
       } catch (e) { fail(e); }
     }
-    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width), source.el, own,
+    // the work is made on the best scale of the shared laser, lens and titanium (REQ-001): they are shown here and a laboratory release below replaces them
+    // «Изменить…» opens the dialog of the creation screen (what the change makes unavailable is shown before «Применить»); the source is chosen below
+    const sharedStrip = begun.context && begun.context.device_id != null && begun.context.material_id != null
+      ? WorkContext.strip(begun.context, {heading: 'Работа делается на', source: false, onChange: (saved) => { begun.context = saved; }}) : null;
+    const shared = sharedStrip ? sharedStrip.el : null;
+    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width), shared, source.el, own,
       h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
         : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
         + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'));
@@ -356,35 +383,23 @@
           const sc = releaseScales[+scaleSelect.value];
           if (sc) fd.append('scale', JSON.stringify(sc.mode));
         } else if (scale) fd.append('scale', JSON.stringify(scale));
+        else if (shared) {
+          // the work is made on a scale of the laser, lens and titanium shown above, never silently on another laser's
+          const own = await App.contextScale(begun.context, width.value);
+          if (!own) throw new Error('Для выбранных лазера, линзы и титана нет измеренной шкалы серого: выберите другие кнопкой «Изменить…» или добавьте тест в мастере создания работы');
+          fd.append('scale', JSON.stringify(own));
+        }
         const made = await form('/photo-works', fd);
+        if (src && begun.context && begun.context.material_id != null) App.rememberContext({device: pick.deviceId(), lens: pick.lensId(), material: begun.context.material_id, source: src});
         m.close();
         kindStep(made.id);
       }}]);
-    const kindStep = (id) => {
-      let chosen = GRAYSCALE, kept = false, back = false;
-      const label = () => `Создать в «${kindName(chosen)}»`;
-      const tiles = kindTiles(`/photo-works/${id}`, chosen, (key) => { chosen = key; tiles.mark(key); create.textContent = label(); }, 'выбрано');
-      const dialog = modal('Новая работа · шаг 2 из 2: какая гравировка?', h('div', {class: 'stack'},
-        h('p', {class: 'small'}, 'Под каждым видом — ваша картинка, какой она выйдет на титане на шкале работы; щелчок выбирает вид. ' + KINDS_ABOUT), tiles.el), [
-        {label: '← Назад', run: (m) => { back = true; m.close(); }},
-        {label: label(), cls: 'primary', run: async (m) => {
-          kept = true;                                      // from here the work stays, even if the dialog is closed while it is saved
-          try { if (chosen !== GRAYSCALE) await post(`/photo-works/${id}/settings`, {kind: chosen}); }
-          catch (e) { kept = false; throw e; }
-          m.close();
-          go(`/photo-engraving?work=${id}`);
-        }}], () => {
-        if (kept) return;
-        del('/plans/' + id).catch(fail);
-        if (back) pictureStep();
-      });
-      const buttons = dialog.el.querySelectorAll('button');
-      const create = buttons[buttons.length - 1];
-    };
+    // step 2 is shared with the creation screen (PhotoKindStep): the question and the rule that leaving it deletes the work are written once
+    const kindStep = (id) => PhotoKindStep.open(id, {onKept: () => go(`/photo-engraving?work=${id}`), onLeft: ({back}) => { if (back) pictureStep(); }});
     pictureStep();
   }
 
-  const plateButton = (devices, materials, cls) => btn('Пластина «Шкалы серого»', () => PlateDialog.open(devices, materials, null, {type: 'grey_scales'}), cls,
+  const plateButton = (devices, cls) => btn('Пластина «Шкалы серого»', () => PlateDialog.open(devices, null, null, {type: 'grey_scales'}), cls,
     !devices.some((d) => d.lens));
 
   function workCard(w) {
@@ -417,13 +432,13 @@
 
   /** «Мои работы»: сохранённые работы и «Новая работа»; оттуда же — шкалы серого и пластина для их измерения. */
   async function listScreen() {
-    const [works, devices, materials] = await Promise.all([get('/photo-works'), get('/devices'), get('/materials')]);
+    const [works, devices] = await Promise.all([get('/photo-works'), get('/devices')]);
     const create = () => btn('Новая работа', () => newWork(null), 'primary');
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Фотогравировка'),
         h('p', {class: 'sub'}, 'Мои работы: картинка в режиме градаций серого на измеренной шкале — какой она выйдет на титане, сколько гравируется, файл LightBurn. '
           + 'Хранятся на этом компьютере. Откройте работу, чтобы продолжить, или сделайте копию, чтобы переделать, не потеряв прежнюю.')),
-        h('span', {class: 'spacer'}), h('a', {class: 'btn', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), plateButton(devices, materials, ''), create()),
+        h('span', {class: 'spacer'}), h('a', {class: 'btn', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), plateButton(devices, ''), create()),
       h('p', {class: 'small muted'}, 'Другие виды: ', link('/photo-preview', 'прогноз по файлу LightBurn'), ' · ', link('/photo', 'непрерывная полосами'), '.'),
       works.length ? h('div', {class: 'vw-works'}, works.map(workCard))
         : h('div', {class: 'card empty'}, h('h3', {}, 'Работ пока нет'),
@@ -449,11 +464,11 @@
 
   /** «Шкалы серого» на один экран: шкалы слева, Min, Max, полоса и таблица серых посередине, подтверждение, точки и виды справа. */
   async function scalesScreen(wanted) {
-    const [{scales}, devices, materials] = await Promise.all([get('/grey-scales'), get('/devices'), get('/materials')]);
+    const [{scales}, devices] = await Promise.all([get('/grey-scales'), get('/devices')]);
     let current = null, detail = null, selectedDetail = null;
     const create = btn('Новая работа на этой шкале', () => newWork(current.mode), 'primary btn-small');
     const head = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'),
-      h('div', {class: 'ge-title'}, h('h2', {}, 'Шкалы серого'), h('p', {class: 'sub'}, ABOUT)), plateButton(devices, materials, 'btn-small'),
+      h('div', {class: 'ge-title'}, h('h2', {}, 'Шкалы серого'), h('p', {class: 'sub'}, ABOUT)), plateButton(devices, 'btn-small'),
       scales.length ? create : null);
     if (!scales.length) {
       return h('div', {class: 'os ge'}, head, h('div', {class: 'os-body ge-empty'},

@@ -4,7 +4,7 @@
    которые сохраняют изменение; сама ничего не знает о том, работа это или зона. */
 'use strict';
 const PhotoPanels = (() => {
-  const {h, fill, btn, link, pill, get, post, go, toast, modal, labText, duration, table, fail} = App;
+  const {h, fill, btn, link, pill, get, post, toast, modal, labText, duration, table, fail} = App;
   const SPREAD_LIMIT = 5;                       // ΔE within which independent engravings agree (agreement.AGREEMENT_DE, DEC-083)
   const BAR_SEGMENTS = 64;                      // segments of the grey -> colour bar (4 grey levels each)
   const TABLE_STEP = 17;                        // the 16 greys of the table: 255, 238, ... 0, the steps of the plate's ramp
@@ -208,9 +208,11 @@ const PhotoPanels = (() => {
     const slider = (label, short, start, moved = () => schedule()) => {
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: start, 'aria-label': label});
       const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: start, 'aria-label': label});
-      range.addEventListener('input', () => { exact.value = range.value; moved(); });
-      exact.addEventListener('change', () => { range.value = exact.value; moved(); });
-      return {exact, range, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+      range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; moved(); });
+      // prediction_store.check_power_range: 0 to 100 %; a value outside is kept in the box with the reason beside it and is not applied
+      // (a wrong value goes on to the owner's save as well: its tracker then says «not saved» with what was typed, and the server gives its reason)
+      const note = Forms.watch(exact, 'photoPower', (v) => { range.value = v; moved(); }, {wrong: () => moved()});
+      return {exact, range, note, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
     };
     const measured = [Math.ceil(span[0] * 10 - 1e-9) / 10, Math.floor(span[1] * 10 + 1e-9) / 10];
     const [lo0, hi0] = dot ? measured : initial || measured;
@@ -235,13 +237,17 @@ const PhotoPanels = (() => {
     const onMap = dot && dot.recipe ? ` · точки — на настройках ${fromPhoto(dot.recipe) ? `точек ${recipeFrom(dot.recipe)}` : 'цвета с карты цветов'}` : '';      // the scale stays the work's; its dots fire elsewhere
     fill(slots.title, (onMap ? 'шкала: ' : '') + settingsText(sc.mode, sc.dpi) + onMap);
     slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}${onMap}`);
-    fill(slots.powers, ...(dot ? [dot.recipe ? null : dotPower.box, dotSource] : [low.box, high.box]), widths);
+    fill(slots.powers, ...(dot ? [dot.recipe ? null : dotPower.box, dotPower.note, dotSource] : [low.box, low.note, high.box, high.note]), widths);
     fill(slots.error, error);
     fill(slots.bar, loading());
     for (const tab of [slots.scale, slots.confirm, slots.points]) fill(tab, loading());
     async function load(byOperator) {
       const lo = +low.exact.value, hi = +high.exact.value;
       error.hidden = true;
+      if (![low, high].every((b) => Forms.readNumber(b.exact, Forms.QUANTITIES.photoPower, {required: true}).ok)) {
+        if (byOperator && changed) changed(lo, hi);                       // the owner's tracker is told what is on the screen; the scale is not asked for it
+        return;                                                           // the reason stands beside the box that is wrong
+      }
       if (!(lo <= hi)) { error.textContent = 'Min мощность должна быть не выше Max.'; error.hidden = false; return; }
       if (byOperator && changed) changed(lo, hi);
       const mine = ++seq;
@@ -280,18 +286,24 @@ const PhotoPanels = (() => {
         const status = pill(...labels[current.verdict]);
         const verdict = h('select', {'aria-label': `${label}: ${row.layer} · ${row.title}`}, Object.entries(labels).map(([key, v]) => h('option', {value: key}, v[0])));
         verdict.value = current.verdict;
-        const note = h('textarea', {rows: 2, maxlength: 1000, 'aria-label': `Комментарий (${label}): ${row.layer} · ${row.title}`, placeholder: 'Что получилось на этом маркере…'});
-        note.value = current.note || '';
+        // photo_results.mark: the note is at most 1000 characters once trimmed; a longer one is refused with its length, not cut at 1000 as it is pasted
+        const form = Forms.create();
+        const noteBox = h('textarea', {rows: 2, placeholder: 'Что получилось на этом маркере…'});
+        noteBox.value = current.note || '';
+        const note = form.add('note', 'Комментарий', noteBox, {maxLength: 1000, empty: ''});
         const save = btn(`Сохранить: ${label.toLowerCase()}`, async () => {
+          const v = form.collect();
+          if (!v) return;
           save.disabled = true;
           try {
-            const saved = await post('/photo-results/mark', {source: row.source, aspect, verdict: verdict.value, note: note.value});
+            const saved = await post('/photo-results/mark', {source: row.source, aspect, verdict: verdict.value, note: v.note});
             if (changed) await changed(saved);
             else { status.textContent = labels[saved.verdict][0]; status.className = `pill ${labels[saved.verdict][1]}`; }
-          } catch (e) { App.fail(e); }
+          } catch (e) { form.fail(e); }
           finally { save.disabled = false; }
         }, 'btn-small');
-        return h('div', {class: 'stack ge-assessment', 'data-aspect': aspect}, h('div', {class: 'row'}, h('strong', {}, label), status, verdict, save), note);
+        return h('div', {class: 'stack ge-assessment', 'data-aspect': aspect, role: 'group', 'aria-label': `${label}: ${row.layer} · ${row.title}`},
+          h('div', {class: 'row'}, h('strong', {}, label), status, verdict, save), note, form.error);
       }
       const p = row.settings;
       return h('article', {class: 'ge-result stack'}, h('div', {class: 'row'}, h('strong', {}, `Маркер ${row.layer}`), link(row.url.replace(/^#/, ''), row.title),
@@ -343,8 +355,12 @@ const PhotoPanels = (() => {
     const make = btn(dots ? 'Проба этого вида' : 'Проба на ширине работы', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(path, {}); toast(`Создано: ${made.name}`, 'ok'); go('/experiment/plan-' + made.plan_id); }
-      catch (e) { fail(e); self.disabled = false; }
+      const end = App.landing(self);
+      try {
+        const made = await post(path, {});
+        if (end.stillHere()) toast(`Создано: ${made.name}`, 'ok');
+        end.go('/experiment/plan-' + made.plan_id, {title: 'Плата создана', message: `Создано: ${made.name}. Откройте эксперимент: выгравируйте плату, сфотографируйте и загрузите.`, openLabel: 'Открыть плату', goOptions: {}});
+      } catch (e) { fail(e); self.disabled = false; }
     }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
     if (dots) {
       const corrected = view.dot_width != null ? `, с поправкой ширины точки ${value(view.dot_width, 3)} мм` : '';
@@ -365,8 +381,12 @@ const PhotoPanels = (() => {
     const make = btn('Подобрать настройки: 8 копий', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(path, {}); toast(`Создано: ${made.name}`, 'ok'); go('/experiment/plan-' + made.plan_id); }
-      catch (e) { fail(e); self.disabled = false; }
+      const end = App.landing(self);
+      try {
+        const made = await post(path, {});
+        if (end.stillHere()) toast(`Создано: ${made.name}`, 'ok');
+        end.go('/experiment/plan-' + made.plan_id, {title: 'Плата создана', message: `Создано: ${made.name}. Откройте эксперимент: выгравируйте плату, сфотографируйте и загрузите.`, openLabel: 'Открыть плату', goOptions: {}});
+      } catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
     const changes = dots
       ? 'мощность −20 % и +20 %, скорость +40 %, шаг строк ×1,69, поправка ширины точки вкл./выкл. и два других вида точками'
@@ -432,19 +452,22 @@ const PhotoPanels = (() => {
   function toneSliders(save) {
     let timer = null, busy = 0, last = null;
     const defaults = {...TONE, sharpness: 0};
-    const one = (key, label, short, min, max, step) => {
-      const range = h('input', {type: 'range', min, max, step, value: defaults[key], 'aria-label': label});
-      const exact = h('input', {type: 'number', min, max, step: 'any', value: defaults[key], 'aria-label': label});
-      range.addEventListener('input', () => { exact.value = range.value; later(); });
-      exact.addEventListener('change', () => { range.value = exact.value; later(); });
-      return {key, range, exact, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+    // the limits are the server's (photo_state.TONE_LIMITS and the sharpness check); the slider has the step, the box the exact value
+    const QUANTITY = {brightness: 'toneBrightness', contrast: 'toneContrast', gamma: 'toneGamma', sharpness: 'sharpness'};
+    const one = (key, label, short, step) => {
+      const q = Forms.QUANTITIES[QUANTITY[key]];
+      const range = h('input', {type: 'range', min: q.min, max: q.max, step, value: defaults[key], 'aria-label': label});
+      const exact = h('input', {type: 'number', min: q.min, max: q.max, step: 'any', value: defaults[key], 'aria-label': label});
+      range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; later(); });
+      const note = Forms.watch(exact, QUANTITY[key], (v) => { range.value = v; later(); }, {wrong: () => later()});
+      return {key, range, exact, note, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
     };
-    const all = [one('brightness', 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', 'Яркость', -100, 100, 1),
-      one('contrast', 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее', 'Контраст', -100, 100, 1),
-      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.2, 5, 0.05),
-      one('sharpness', 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 0, 100, 1)];
+    const all = [one('brightness', 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', 'Яркость', 1),
+      one('contrast', 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее', 'Контраст', 1),
+      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.05),
+      one('sharpness', 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 1)];
     const toneOf = (view) => ({...defaults, ...(view.tone || {}), sharpness: view.sharpness || 0});
-    const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); } };
+    const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); s.exact.removeAttribute('aria-invalid'); s.note.textContent = ''; } };
     async function send(values) {
       busy += 1;
       const change = {tone: Object.fromEntries(Object.keys(TONE).map((k) => [k, values[k]]))};
@@ -455,13 +478,16 @@ const PhotoPanels = (() => {
     }
     function later() {
       clearTimeout(timer);
-      timer = setTimeout(() => { timer = null; send(Object.fromEntries(all.map((s) => [s.key, +s.exact.value]))); }, 300);
+      timer = setTimeout(() => {
+        timer = null;
+        send(Object.fromEntries(all.map((s) => [s.key, +s.exact.value])));      // a wrong box is sent as typed: the owner's tracker keeps it and the server refuses it
+      }, 300);
     }
     const reset = btn('Как есть', () => { clearTimeout(timer); timer = null; set(defaults); send({...defaults}); }, 'btn-small');
     reset.setAttribute('title', 'Яркость 0, контраст 0, гамма 1, чёткость 0: без ручных регулировок');
     const note = h('p', {class: 'small muted ge-tone-note', hidden: true}, TONE_MATCHED);
     const el = h('div', {class: 'ge-powers ge-tone', role: 'group', 'aria-label': 'Яркость, контраст и гамма картинки', title: TONE_ABOUT},
-      all.map((s) => s.box), h('div', {class: 'row'}, reset), note);
+      all.map((s) => [s.box, s.note]), h('div', {class: 'row'}, reset), note);
     function show(view) {
       last = view;
       el.hidden = !!view.problem;
@@ -493,7 +519,8 @@ const PhotoPanels = (() => {
     const out = h('div', {class: 'ge-stage'});
     const foot = h('div', {class: 'ge-foot'});
     const details = h('div', {class: 'stack'});
-    width.addEventListener('change', () => save({width_mm: +width.value}));
+    // prediction_store.check_width: 1 to 1000 mm; a width outside is kept in the box with the reason beside it and is not saved
+    const widthNote = Forms.watch(width, 'pictureWidth', (v) => save({width_mm: v}), {wrong: () => save({width_mm: +width.value})});
     byColour.addEventListener('change', () => save({by_colour: byColour.checked}));
     choice.addEventListener('change', () => save({colour_choice: choice.value}));
     contours.addEventListener('change', () => save({contours: contours.checked}));
@@ -513,6 +540,7 @@ const PhotoPanels = (() => {
       tone.show(view);
       fill(kind, `Вид: ${kindName(view.kind || GRAYSCALE)}`);
       width.value = String(view.width_mm);
+      width.removeAttribute('aria-invalid'); widthNote.textContent = '';
       byColour.checked = !!view.by_colour;
       byColour.disabled = dots;
       choice.value = view.colour_choice || 'drawing';
@@ -535,7 +563,8 @@ const PhotoPanels = (() => {
       const lined = info.contours_report && info.contours_report.share > 0 ? ' и контуры' : '';
       const rampOnly = info.prediction_evidence && info.prediction_evidence.ramp_only;
       fill(out,
-        rampOnly ? h('p', {class: 'small alert warn ge-prediction-evidence'}, 'В базе этот режим измерен только тестовой шкалой. Точность расчёта для фотогравировки не подтверждена.') : null,
+        info.applicability ? EvidenceSummary.applicability(info.applicability)
+          : rampOnly ? h('p', {class: 'small alert warn ge-prediction-evidence'}, 'В базе этот режим измерен только тестовой шкалой. Точность расчёта для фотогравировки не подтверждена.') : null,
         h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Расчётный вид на титане')),
         h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
       if (stage) stage(out.querySelector('.pp-stage'), info.picture && info.picture.shown_width);
@@ -628,7 +657,7 @@ const PhotoPanels = (() => {
           + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));
     }
     const inputs = h('div', {class: 'ge-inputs'}, kind,
-      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width),
+      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width), widthNote,
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
@@ -654,7 +683,10 @@ const PhotoPanels = (() => {
   function colourTab(base, save, send) {
     const status = h('p', {class: 'small', role: 'status', hidden: true});
     const themes = h('div', {class: 'row'});
-    const wish = h('input', {type: 'text', maxlength: 400, 'aria-label': 'Как раскрасить — своими словами', placeholder: 'например: очки золотом, фон синий, губы красные'});
+    // ai_colouring.MAX_TEXT: the description is 1 to 400 characters once trimmed; a longer text is refused with its length instead of being cut at 400 as it is typed
+    const wishForm = Forms.create();
+    const wish = h('input', {type: 'text', placeholder: 'например: очки золотом, фон синий, губы красные'});
+    const wishField = wishForm.add('wish', 'Как раскрасить — своими словами', wish, {required: true, maxLength: 400});
     const aiNote = h('div');
     const palette = h('div', {class: 'ge-palette', role: 'group', 'aria-label': 'Цвета шкалы'});
     const list = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем объекты картинки…'));
@@ -675,7 +707,8 @@ const PhotoPanels = (() => {
     function clear(key) { const next = {...colours()}; delete next[key]; colourWith(next); }
     async function ask() {
       if (asking) return;
-      if (!wish.value.trim()) { status.textContent = 'Напишите, как раскрасить картинку.'; status.hidden = false; return; }
+      const v = wishForm.collect();
+      if (!v) { status.hidden = true; return; }                          // the reason stands beside the box
       asking = true;
       enable();
       status.textContent = 'AI думает… обычно это до минуты.';
@@ -759,7 +792,7 @@ const PhotoPanels = (() => {
       h('p', {class: 'small'}, COLOURING_ABOUT),
       blocked,
       h('h4', {}, 'Темы'), themes,
-      h('div', {class: 'row ge-ask'}, wish, askButton), status, aiNote,
+      h('div', {class: 'row ge-ask'}, wishField, askButton), status, aiNote,
       h('h4', {}, 'Объекты'),
       h('p', {class: 'small muted'}, 'Выберите объект в списке и щёлкните его цвет на полосе цветов шкалы.'),
       palette, list, notes, overlay,
@@ -781,8 +814,9 @@ const PhotoPanels = (() => {
       ``save`` сохраняет правила и разрешение, ``ask(wish, fresh)`` спрашивает AI; оба отдают ошибку или null. ``base`` — адрес API работы
       или фотозоны. */
   function aiTab(base, save, ask) {
-    const wish = h('textarea', {rows: 3, maxlength: 400, 'aria-label': 'Что изменить в картинке',
-      placeholder: 'например: всё как есть, чёрно-белое; платье фиолетовым, ярким; кожу равномерно светлой'});
+    const wishForm = Forms.create();
+    const wish = h('textarea', {rows: 3, placeholder: 'например: всё как есть, чёрно-белое; платье фиолетовым, ярким; кожу равномерно светлой'});
+    const wishField = wishForm.add('wish', 'Что изменить в картинке', wish, {required: true, maxLength: 400});     // ai_colouring.MAX_TEXT
     const photo = h('input', {type: 'checkbox'});
     const status = h('p', {class: 'small', role: 'status', hidden: true});
     const missing = h('p', {class: 'alert warn small', hidden: true});
@@ -793,7 +827,7 @@ const PhotoPanels = (() => {
     photo.addEventListener('change', () => save({ai_photo: photo.checked}));
     async function request(fresh) {
       if (asking) return;
-      if (!wish.value.trim()) { status.textContent = 'Напишите, что AI должен изменить в картинке.'; status.hidden = false; return; }
+      if (!wishForm.collect()) { status.hidden = true; return; }
       asking = true;
       enable();
       status.textContent = 'AI думает… обычно это до минуты.';
@@ -855,7 +889,7 @@ const PhotoPanels = (() => {
     const el = h('div', {class: 'stack'},
       h('p', {class: 'small'}, 'Скажите своими словами, что изменить в картинке. AI предложит правило для каждой части — фона, волос, кожи, одежды; '
         + 'серые подбираются на шкале работы по вашим измерениям, поэтому видно, что на этом титане достижимо.'),
-      wish, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Отправить AI уменьшенную картинку (без этого — только числа: части и их цвета)')),
+      wishField, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Отправить AI уменьшенную картинку (без этого — только числа: части и их цвета)')),
       h('div', {class: 'row'}, button, again), missing, status, answer,
       h('div', {class: 'row ge-parts-head'}, h('h4', {}, 'Части картинки'), plain), table_, overlay,
       h('p', {class: 'small muted'}, 'Как есть — серые картинки; цвета фото — для каждого пикселя серый с ближайшим цветом на шкале; чёрно-белое — только серые, '

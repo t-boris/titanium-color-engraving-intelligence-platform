@@ -9,12 +9,14 @@ from pathlib import Path
 
 import pytest
 
+from lifecycle_stub import lifecycle
 from titanium_platform.api.app import UI_DIR
 
 SCRIPTS = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
 EDITOR = (UI_DIR / "screens" / "vector-editor.js").read_text(encoding="utf-8")
 COLOURS = (UI_DIR / "screens" / "vector-colours.js").read_text(encoding="utf-8")
 VECTOR = (UI_DIR / "screens" / "vector.js").read_text(encoding="utf-8")
+LIFECYCLE = (UI_DIR / "screens" / "lifecycle.js").read_text(encoding="utf-8")
 CSS = (UI_DIR / "styles.css").read_text(encoding="utf-8")
 
 
@@ -89,7 +91,7 @@ def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one
     assert "const run = (op) => (queue = queue.then(() => send(op)));" in VECTOR
     assert "show(await post(`/vector/${j.id}/colouring`, op))" in VECTOR and "if (parts) parts.update(next);" in VECTOR
     assert "if (resplit) fill(split, VectorSplit.card(next, reload, smooth));" in VECTOR
-    assert "j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked))" in VECTOR      # the reason stays beside the export
+    assert "I18N.tr(r.reason)" in LIFECYCLE and "Lifecycle.exportCard(j.lifecycle" in VECTOR      # the exact reason stays beside the export, under the readiness
 
 
 # -- the screen in node ----------------------------------------------------------------------------------------------------------
@@ -103,7 +105,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'filepick.js', 'hardware.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/vector-split.js', 'screens/dot-pick.js', 'screens/vector-photo.js', 'screens/lettering.js', 'screens/vector-editor.js',
-  'screens/vector-colours.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/vector.js']);
+  'screens/vector-colours.js', 'screens/lifecycle.js', 'screens/vector-review.js', 'screens/vector-workspace.js', 'screens/lab-source.js', 'screens/evidence-summary.js', 'screens/vector.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -192,7 +194,7 @@ def view(version=1):
         "ai": {"available": True, "styles": ["realistic", "artistic", "impressionism", "cubism"], "photo_allowed": False, "photo_px": 512, "max_text": 400},
         "variants": [{"number": 1, "mode": "closest", "seed": 0, "at": "2026-10-19T10:00:00", "totals": totals, "version": version},
                      {"number": 2, "mode": "random", "seed": 1, "at": "2026-10-19T10:05:00", "totals": totals, "version": version - 1}],
-        "export_blocked": None, "exports": [],
+        "export_blocked": None, "exports": [], "lifecycle": lifecycle(),
         "time": {"seconds": 400, "complete": True, "layers": [{"index": i, "seconds": 100, "note": None} for i in range(4)]}}
 
 
@@ -255,9 +257,11 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     assert out["rows"] == [["↔ 12.5 мм", "vw-rows muted", "строки 12.5 мм: цвет рецепта измерен при 12.0 мм"],             # each layer's row length
                            ["↔ 40.0 мм", "vw-rows warn vw-bad", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
                            ["↔ 30.0 мм", "vw-rows warn vw-bad", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
-    assert out["details"][0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text           # the wide table is a window
-    assert [d for d in out["details"][1:]] == ["Слои и время по слоям (4)", "Параметры работы",                        # the file tab folds its long parts,
-                                               "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]           # the layers why their sizes matter
+    strip, *folds = out["details"]                                  # the first fold is the strip under the head: the path of the file and the forecast (ux-accessible-layout-p0)
+    assert strip.startswith("Путь файла и прогноз")
+    assert folds[0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text                   # the wide table is a window
+    assert folds[1:] == ["Полный рецепт и слои (4)", "Прежние файлы", "Параметры работы",                              # the file tab folds its long parts (the recipe and
+                         "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]                                      # the files made before), the layers why their sizes matter
     assert out["renders"] == 0
 
 
@@ -523,7 +527,8 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
     assert "проверен повтором" in rows[0] and "3 гравировки: 2 теста, 1 работа" in rows[0] and "все 3 совпали" in rows[0]
     assert "одна гравировка, не повторялась" in rows[1] and "1 гравировка: 1 тест" in rows[1]
     assert "не гравируется" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
-    assert out["buttons"] == [["Заменить", "Не гравировать"], ["Заменить", "Автоматически", "Не гравировать"], ["Гравировать"]]
+    assert out["buttons"] == [["Выбрать области", "Заменить", "Не гравировать"], ["Выбрать области", "Заменить", "Автоматически", "Не гравировать"],
+                              ["Выбрать области", "Гравировать"]]                    # «Выбрать области» (ux-accessible-layout-p0) is new on every line
     assert out["title"] == "Цвет группы № 1" and out["better"] == 0 and out["openAtFirst"] == [True]
     detail = out["detail"]
     assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 до исходного цвета · сомнительный" in detail.split("Выбран:")[1]   # the square chose it
@@ -589,7 +594,7 @@ def test_the_contract_view_used_here_has_every_field_the_editor_reads():
     """The fields of the job view the editor reads are the ones of the API contract; a rename on the server shows up here."""
     j = view()
     for field in ("colours", "entries", "colouring", "settings", "outside", "totals", "layers", "layer_cap", "palette_size", "undo", "redo",
-                  "variants", "document", "export_blocked"):
+                  "variants", "document", "lifecycle"):             # whether the file can be made comes as ``lifecycle.readiness``
         assert field in j and f"j.{field}" in EDITOR + COLOURS + VECTOR, field
     for field in ("index", "lab", "srgb", "status", "entry_id", "delta_e", "outside_tolerance", "regions"):
         assert field in j["colours"][0] and f"c.{field}" in EDITOR, field
@@ -663,6 +668,27 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
 
 
 @node
+def test_a_min_power_above_the_max_is_said_under_the_max_and_sent_only_once_either_is_changed_to_agree(tmp_path):
+    """ux-save-feedback-p0, REQ-003: prediction_store.check_power_range states 0 <= Min <= Max <= 100; nothing is sent while the two disagree."""
+    out = run_editor(tmp_path, zone_routes(), """
+  await byText(tree, 'button', 'Фото').dispatch('click');
+  await wait(5);
+  const zone = section('Фотозоны');
+  const lowBox = () => byLabel(zone, 'input', 'Min мощность фотозоны 1, %'), highBox = () => byLabel(zone, 'input', 'Max мощность фотозоны 1, %');   // drawn again after a save
+  const sent = () => ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body)).filter((b) => b.op === 'photo_set');
+  const said = () => zone.querySelectorAll('span').filter((x) => x.classList.contains('f-error') && x.textContent).map((x) => x.textContent);
+  highBox().value = '20'; await highBox().dispatch('change'); await tick();
+  lowBox().value = '60'; await lowBox().dispatch('change'); await tick();
+  out.conflict = [sent().length, said(), highBox().getAttribute('aria-invalid'), lowBox().value, highBox().value];
+  lowBox().value = '10'; await lowBox().dispatch('change'); await tick();
+  out.agreed = [sent().map((b) => [b.min_power, b.max_power]), said(), highBox().getAttribute('aria-invalid'), Number(highBox().value)];
+""")
+    assert out["conflict"][0] == 1 and len(out["conflict"][1]) == 1 and "Min 60" in out["conflict"][1][0]      # the first send (Max 20 with the zone's Min) went; the conflict did not
+    assert out["conflict"][2:4] == ["true", "60"]                                                              # what was typed stays
+    assert out["agreed"][0][-1] == [10, out["agreed"][3]] and len(out["agreed"][0]) == 2 and out["agreed"][1] == [] and out["agreed"][2] is None
+
+
+@node
 def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(tmp_path):
     out = run_editor(tmp_path, zone_routes(), """
   out.pics = svg().querySelectorAll('image').filter((im) => im.classList.contains('vw-zone-pic'))
@@ -694,6 +720,10 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   await zone.querySelectorAll('button').find((b) => b.textContent.startsWith('Джарвис')).dispatch('click'); await tick();
   await others[0].dispatch('click'); await tick();
   const low = byLabel(zone, 'input', 'Min мощность фотозоны 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
+  // ux-save-feedback-p0, REQ-003: a power outside 0..100 % is said beside its box, kept in it, and nothing is saved
+  const high = byLabel(zone, 'input', 'Max мощность фотозоны 1, %'), saved = ctx.requests.length;
+  high.value = '150'; await high.dispatch('change'); await tick();
+  out.powerWrong = [ctx.requests.length - saved, high.getAttribute('aria-invalid'), high.value, zone.querySelectorAll('span').filter((x) => x.classList.contains('f-error') && x.textContent).map((x) => x.textContent)];
   const tone = byLabel(zone, 'input', 'Цвета по картинке, фотозона 1'); tone.checked = false; await tone.dispatch('change'); await tick();
   await byText(zone, 'button', 'Открыть').dispatch('click');
   out.opened = ctx.__went;
@@ -732,6 +762,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_set", "zone": 1, "by_colour": False},
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
     assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id=&row_mm=20"]
+    assert out["powerWrong"][:3] == [0, "true", "150"] and "Допустимо" in out["powerWrong"][3][0] and "Введено: 150" in out["powerWrong"][3][0]
     assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Открыть»: the zone on its own screen
 
 

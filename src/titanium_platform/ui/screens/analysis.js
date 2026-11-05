@@ -349,9 +349,15 @@
     }, 'btn-small');
     const remeasure = btn('Перемерить заново', async (ev) => {
       const control = ev.currentTarget; control.disabled = true; control.textContent = 'Измеряем заново…';
+      const end = App.landing(control);                          // the measuring takes about half a minute: a person who has gone elsewhere is not brought back, the result waits in the task panel
       try {
         const out = await post(`/pairs/${id}/remeasure`);
-        if (out.status === 'replaced') { toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok'); go('/analysis/' + out.replaced_by); return; }
+        if (out.status === 'replaced') {
+          if (end.stillHere()) toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok');
+          end.go('/analysis/' + out.replaced_by, {title: 'Фотография перемерена', message: 'Перемерено новыми подсчётами; прежнее измерение заменено. Откройте новый анализ.',
+            openLabel: 'Открыть анализ', goOptions: {}});
+          return;
+        }
         toast('Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''), 'warn');
         control.disabled = false; control.textContent = 'Перемерить заново';
       } catch (error) { control.disabled = false; control.textContent = 'Перемерить заново'; fail(error); }
@@ -363,7 +369,9 @@
       h('div', {class: 'analysis-hero'},
         h('div', {}, h('h2', {}, r.engraving_title || 'Анализ гравировки'),
           h('p', {class: 'sub'}, [MODE[r.mode] || 'Гравировка', device, lens, material].filter(Boolean).join(' · ')),
-          h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`)),
+          h('p', {class: 'muted small'}, `Проверка №${id} · совмещение ${align}${c?.measurement_modes?.includes('raw_camera_relative') ? ' · RAW без эталонной карты' : ''}`),
+          // «пара» and «основание» are the words of this report: said through the task, the number in the details (ux-save-feedback-p0, REQ-003)
+          h('div', {class: 'stack kn-terms'}, Terms.note('pair', id), Terms.note('basis'))),
         h('div', {class: 'analysis-actions'}, link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту'),
           r.plan_id ? (r.mode === 'Photo engraving work' ? link('/photo-engraving?work=' + r.plan_id, 'Работа фотогравировки')
             : link('/plans/' + r.plan_id, restored ? 'Восстановленный план' : 'Плата')) : null,

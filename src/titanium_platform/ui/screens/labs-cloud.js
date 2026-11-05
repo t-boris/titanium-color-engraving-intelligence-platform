@@ -72,8 +72,8 @@
   // ---- «Облако» on «Моя лаборатория» ----------------------------------------------------------------------------------------------
 
   function publishBlock(own, terms, reload) {
-    const termsSelect = h('select', {'aria-label': 'Условия использования в облаке'}, terms.map((t) => h('option', {value: t.id}, `${shared.termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
-    const visibility = h('select', {'aria-label': 'Видимость'}, Object.entries(VISIBILITY).map(([id, name]) => h('option', {value: id}, name)));
+    const termsSelect = h('select', {}, terms.map((t) => h('option', {value: t.id}, `${shared.termsName(t)} — ${(t.summary && t.summary.ru) || ''}`)));
+    const visibility = h('select', {}, Object.entries(VISIBILITY).map(([id, name]) => h('option', {value: id}, name)));
     const out = h('div', {class: 'stack'}), progress = h('div', {class: 'stack', hidden: true});
     let ready = false;
     const prepare = btn('Подготовка публикации', async (ev) => {
@@ -94,7 +94,8 @@
       h('p', {class: 'small muted'}, 'В облако уходит тот же выпуск .tcelab, что и в файл: сначала посмотрите, что в него войдёт. Файл выпуска остаётся и в «Записанных выпусках». '
         + (own.lab ? `Лаборатория в облаке ${VISIBILITY[own.lab.visibility] || own.lab.visibility}: видимость выбирается при первой публикации.`
           : 'Видимость выбирается при первой публикации: открытую лабораторию видят все, закрытую — только приглашённые.')),
-      h('div', {class: 'row'}, prepare, field('Условия использования', termsSelect), own.lab ? null : field('Видимость', visibility), publish), out, progress);
+      h('div', {class: 'row'}, prepare, field('Условия использования в облаке', termsSelect, null, {required: true}),
+        own.lab ? null : field('Видимость', visibility, null, {required: true}), publish), out, progress);
   }
 
   function pendingBlock(p, reload) {
@@ -235,21 +236,24 @@
   }
 
   function acceptBlock(signedIn, reload) {
-    const input = h('input', {placeholder: 'ссылка приглашения', 'aria-label': 'Ссылка приглашения'});
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const form = Forms.create();
+    const link = form.add('link', 'Ссылка приглашения', h('input', {placeholder: 'ссылка приглашения'}), {required: true, raw: true,
+      help: 'ссылку передал владелец закрытой лаборатории'});
     const accept = btn('Принять приглашение', async (ev) => {
       const self = ev.currentTarget;
-      self.disabled = true; err.hidden = true;
+      const v = form.collect();
+      if (!v) return;
+      self.disabled = true;
       try {
-        const got = await post('/cloud/invitations/accept', {link: input.value});
+        const got = await post('/cloud/invitations/accept', {link: v.link});
         toast(`Приглашение принято: ${got.lab.name}`, 'ok');
         reload();
-      } catch (e) { err.textContent = e.message; err.hidden = false; } finally { self.disabled = false; }
+      } catch (e) { form.fail(e); } finally { self.disabled = false; }
     }, 'btn-small');
     return h('div', {class: 'card stack cloud-accept'}, h('h3', {}, 'Закрытые лаборатории'),
       h('p', {class: 'small muted'}, signedIn ? 'Закрытая лаборатория появляется в каталоге после приглашения: вставьте ссылку, которую передал её владелец.'
         : 'Чтобы видеть закрытые лаборатории и принимать приглашения, войдите в облако на вкладке «Моя лаборатория».'),
-      signedIn ? h('div', {class: 'toolbar'}, field('Ссылка приглашения', input), accept) : null, err);
+      signedIn ? h('div', {class: 'toolbar'}, link, accept) : null, signedIn ? form.error : null);
   }
 
   async function catalogueTab() {
@@ -313,7 +317,7 @@
   /** On the card of one laboratory connected from the cloud: the check by the button and how it is checked by itself. */
   function sourceCard(card, reload) {
     if (card.origin !== 'cloud') return null;
-    const mode = h('select', {'aria-label': 'Проверка обновлений'}, Object.entries(UPDATE_CHECKS).map(([id, name]) => h('option', {value: id}, name)));
+    const mode = h('select', {}, Object.entries(UPDATE_CHECKS).map(([id, name]) => h('option', {value: id}, name)));
     mode.value = card.update_checks || 'manual';
     mode.addEventListener('change', async () => {
       try { await App.put(`/cloud/sources/${card.id}`, {update_checks: mode.value}); toast('Проверка обновлений: ' + UPDATE_CHECKS[mode.value], 'ok'); }

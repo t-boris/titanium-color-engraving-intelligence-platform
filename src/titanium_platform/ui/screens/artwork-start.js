@@ -11,7 +11,8 @@ const ArtworkParts = (() => {
   const doubt = (reason) => reason.split('; ').map((part) => I18N.tr(part)).join('; ');
 
   function startForm(lists, ctx) {
-    const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens});
+    const begin = ctx.start || {device: ctx.query.device, lens: ctx.query.lens};         // the laser and lens the workshop chose last; the address wins (REQ-001)
+    const pick = App.laserLensPicker(lists, {device: begin.device, lens: begin.lens});
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
     const name = h('input', {placeholder: 'Название плана'}), width = h('input', {type: 'number', step: 'any', value: 60});
     const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'}), markers = h('input', {type: 'checkbox'});
@@ -31,7 +32,11 @@ const ArtworkParts = (() => {
       task.append(fd);
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const p = await App.form('/discrete', fd); go('/artwork?plan=' + p.id); } catch (e) { show(e.message); self.disabled = false; }
+      try {
+        const p = await App.form('/discrete', fd);
+        App.rememberContext({device: pick.deviceId(), lens: pick.lensId()});
+        go('/artwork?plan=' + p.id);
+      } catch (e) { show(e.message); self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),

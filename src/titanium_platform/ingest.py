@@ -51,6 +51,7 @@ from . import composition
 from . import grayscale
 from . import left_behind
 from . import lightburn as lb
+from . import pair_review
 from . import photo as ph
 from . import photo_modes
 from . import photo_quality
@@ -105,6 +106,7 @@ def get_pair(store: Store, pair_id: int) -> dict:
         express_against_clean(store, d["check"])
         _layer_tasks(store, d, plan_data)
         _photo_quality(store, d, d.get("plate_id") or (plan["plate_id"] if plan else None))
+    d["review"] = pair_review.review_state(d)       # the stages and blockers the screen shows, derived on every read (ux-photo-review-p0)
     return d
 
 
@@ -2004,12 +2006,14 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                                        reflected=bool(np.linalg.det(h[:2, :2]) < 0))
             report["warnings"].append("The work corners were corrected manually; review every layer outline before accepting measurements.")
             return h, dx, dy
+        if anchor:
+            # a detail the operator placed by hand decides, as four hand-placed corners do: it corrects an alignment that
+            # automation took for valid just as it rescues one that failed (ux-photo-review-p0, DEC-001)
+            return _element_anchor(anchor, work_layers, report), dx, dy
         h = _by_markers(img_bgr, marked["markers"], expected, area, dx, dy, work_layers, report, plate is not None, linked)
         if h is not None:
             return h, dx, dy
         count = report["alignment"].get("marker_count", 0)
-        if anchor:
-            return _element_anchor(anchor, work_layers, report), dx, dy
         if corners:
             # A known plate can still be aligned when its engraved ArUco marks are unreadable.
             # The operator supplies the four outer work corners; keep the plan's export offset so
@@ -2037,6 +2041,8 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
             raise ph.PhotoError("the LightBurn file has no geometry to align to")
         report["alignment"]["method"] = "manual"
         return ph.homography_from_corners([tuple(c) for c in corners], _bbox([r for layer in work_layers for r in layer.regions])), dx, dy
+    if anchor:
+        return _element_anchor(anchor, work_layers, report), dx, dy        # the hand-placed detail first, see above
     from . import anchoring, registration
     diagnostics: dict = {}
     matched = anchoring.register(img_bgr, work_layers, diagnostics)
@@ -2090,8 +2096,6 @@ def _align(store: Store, row, img_bgr, plate, plan, corners, anchor, work_layers
                     "The fit of whole shapes was not confirmed by element anchors; review the layer overlay before accepting."
                 )
             return matched.image_to_mm, dx, dy
-    if anchor:
-        return _element_anchor(anchor, work_layers, report), dx, dy
     if corners:
         if not work_layers:
             raise ph.PhotoError("the LightBurn file has no geometry to align to")
@@ -2258,6 +2262,57 @@ def snap_pair_overlay(store: Store, pair_id: int, *, translation_fraction=None, 
              "shape_score": item["shape_score"],
              "shift_fraction": [item["shift_px"][0] / preview_width,
                                 item["shift_px"][1] / preview_height]} for item in proposals]
+
+
+ANCHOR_MIN_AREA_MM2, ANCHOR_MIN_SIDE_MM, ANCHOR_LIMIT = .5, .35, 12
+
+
+def anchor_candidates(store: Store, pair_id: int) -> list[dict]:
+    """The details the operator can place on the photograph by hand ("workpiece alignment", DEC-001 of ux-photo-review-p0).
+
+    With an alignment in hand (automation took it for valid, or the operator set it) every four-cornered closed detail of a work
+    layer is offered with its four corners where the alignment puts it on the photograph now, in the order of its own corners in
+    the file: the operator moves them onto the detail as it really lies, and the pair is checked from that detail (``check_pair``
+    with ``anchor``). Without one, the candidates the check found on the photograph itself (``alignment.suggestions``) are
+    offered, the ones too small to grab left out. A parameter matrix is aligned by its grid and has none. Nothing is saved."""
+    row = _pair_row(store, pair_id)
+    _guard_mutable(row)
+    pair = get_pair(store, pair_id)
+    check = pair.get("check") or {}
+    alignment = check.get("alignment") or {}
+    size = check.get("image_size")
+    if not size:
+        raise IngestError("check the photograph before choosing a detail")
+    if pair.get("matrix"):
+        return []
+    if not alignment.get("image_to_mm"):
+        floor = .035 * min(size)
+        return [item for item in alignment.get("suggestions") or []
+                if len(item.get("corners_fraction") or []) == 4
+                and min(np.ptp([p[0] * size[0] for p in item["corners_fraction"]]), np.ptp([p[1] * size[1] for p in item["corners_fraction"]])) >= floor]
+    try:
+        project = lb.parse_file(row["lightburn_path"])
+        _normalize_project_to_plan(project, pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None)
+    except lb.LightBurnError as exc:
+        raise IngestError(str(exc)) from exc
+    inverse = np.linalg.inv(np.asarray(alignment["image_to_mm"], float))
+    system = {rep["index"] for rep in check.get("layers") or [] if rep.get("role") in pair_review.SYSTEM_ROLES}
+    found = []
+    for layer in project.layers:
+        if layer.index in system:
+            continue
+        for region_no, region in enumerate(layer.regions):
+            polygon = np.asarray(region.polygon, np.float64)
+            area = float(cv2.contourArea(polygon.astype(np.float32))) if len(polygon) == 4 else 0.0
+            if len(polygon) != 4 or area < ANCHOR_MIN_AREA_MM2 or region.width < ANCHOR_MIN_SIDE_MM or region.height < ANCHOR_MIN_SIDE_MM:
+                continue
+            photo = cv2.perspectiveTransform(polygon.reshape(1, 4, 2), inverse)[0] / np.array([size[0], size[1]], float)
+            if not np.isfinite(photo).all() or (photo < 0).any() or (photo > 1).any():
+                continue                        # under the frame or off the photograph: nothing to grab
+            found.append({"layer_index": layer.index, "region_index": region_no, "element": f"{layer.name} #{region_no + 1}",
+                          "area_mm2": round(area, 2), "corners_fraction": photo.round(6).tolist(), "basis": "current alignment"})
+    found.sort(key=lambda item: -item["area_mm2"])
+    return found[:ANCHOR_LIMIT]
 
 
 def check_pair(store: Store, pair_id: int, corners=None, allow_non_raw: bool = False, corners_fraction=None,
@@ -2560,6 +2615,8 @@ def _measure(store, row, pair, project, plate, plan, corners, work_layers, repor
         if missing:
             problems.append(f"plate cells not found in the LightBurn file: {', '.join(missing)}")
             return finish(False)
+        if pair.get("file_confirmation") and not pair_review.confirmation_covers(pair["file_confirmation"], discrepancies):
+            pair["file_confirmation"] = None          # the operator confirmed other differences than these: the file is asked about again
         if discrepancies and not pair.get("file_confirmation"):
             problems.append("The LightBurn file differs from the plate definition: correct the pair or confirm that this file was used")
     shape = corrected.shape[:2]
@@ -2817,21 +2874,11 @@ def accept_pair(store: Store, pair_id: int, on_accepted: Callable[[Store, int, i
     check = pair.get("check")
     passport = su.resolve(store, row["device_id"], row["lens_id"])["device"]["passport"]
     plan = pl.get_plan(store, row["plan_id"]) if row["plan_id"] else None
-    if not check or row["status"] != ST_READY:
-        raise IngestError("run the check first; the pair is not ready to accept")
-    if not check.get("color_measurement"):
-        raise IngestError("the photograph has no usable color measurement basis")
-    if check["problems"]:
-        raise IngestError("resolve the problems found by the check: " + "; ".join(check["problems"]))
-    if check["discrepancies"] and not pair["file_confirmation"]:
-        raise IngestError("the LightBurn file differs from the plate definition: correct the pair or confirm the file")
-    if not pair["masks_reviewed"]:
-        raise IngestError("review the layer masks overlaid on the photograph before accepting")
-    if pair.get("matrix") and not pair["matrix"].get("confirmed"):
-        raise IngestError("confirm the settings read from the matrix before accepting")
+    # The one gate: the screen lists the same conditions as the blockers of the review (pair_review.refusal, ux-photo-review-p0).
+    refused = pair_review.refusal(pair)
+    if refused:
+        raise IngestError(refused)
     layers = [rep for rep in check["layers"] if rep["measured_lab"] is not None]
-    if not layers:
-        raise IngestError("no readable, comparable layer to accept")
     rephoto = pair["rephoto_of"] is not None
     color_mode = check["color_measurement"]["mode"]
     reason = ("reference-chart corrected, aligned, layer readable and comparable" if color_mode == "reference_chart_corrected"
@@ -2929,7 +2976,9 @@ def delete_pair(store: Store, pair_id: int) -> None:
     # removes it from active lists, color learning, and reports; uploaded file copies are purged.
     with store.transaction():
         store.execute("UPDATE pair SET status=? WHERE id=?", (ST_DELETED, pair_id))
-        store.audit("pair_deleted", pair_id=pair_id, previous_status=row["status"], observations=len(observations))
+        # a rejected pair is kept in the audit with the engraved version it belonged to and the state it was rejected in
+        store.audit("pair_deleted", pair_id=pair_id, previous_status=row["status"], observations=len(observations),
+                    engraving_id=row["engraving_id"], plan_id=row["plan_id"], lightburn_file=row["lightburn_name"], photo_file=row["photo_name"])
         # a plan restored from the file of this work is its record: archived with the last of its photographs
         store.execute("UPDATE plan SET status='Deleted' WHERE id=? AND mode=? AND NOT EXISTS "
                       "(SELECT 1 FROM pair WHERE plan_id=plan.id AND status!=?)", (row["plan_id"], pl.MODE_RESTORED, ST_DELETED))

@@ -26,7 +26,60 @@ const App = (() => {
     return el;
   }
   const btn = (label, onClick, cls = '', disabled = false) => h('button', {type: 'button', class: 'btn ' + cls, onClick, disabled}, label);
-  const field = (label, input, help) => h('label', {class: 'f'}, h('span', {}, label), input, help ? h('span', {class: 'small muted'}, help) : null);
+  /** A labelled field. ``input`` is the control (or a node that holds several), ``help`` an optional explanation under it. Called with three
+      arguments it draws exactly what it always drew. ``opts`` (REQ-003 of ux-save-feedback-p0) makes it a field a screen reader can use:
+      ``required`` (said in words and as aria-required), ``unit`` (drawn beside the control), ``constraint`` (the permitted range or rule, in
+      words). The label text alone names the control (aria-labelledby); unit, constraint, help and error describe it (aria-describedby).
+      Every field, with or without ``opts``, answers ``setError(text)`` and ``clearError()``: the message stays beside the input the person
+      typed (aria-invalid, aria-describedby) and never changes the input; ``firstControl()`` is its first control, ``errorText()`` the message. */
+  let fieldSeq = 0;
+  const CONTROL = /^(input|select|textarea)$/;
+  const controlsOf = (node) => (!node || node.nodeType !== 1 ? [] : CONTROL.test(node.localName) ? [node] : [...node.querySelectorAll('input, select, textarea')]);
+  function field(label, input, help, opts) {
+    const id = `f${++fieldSeq}`;
+    const labelSpan = h('span', opts ? {id: `${id}-label`} : {}, label);
+    const note = help ? h('span', {class: 'small muted', id: opts ? `${id}-help` : null}, help) : null;
+    const facts = opts ? [opts.unit ? `единица: ${opts.unit}` : null, opts.constraint || null].filter(Boolean) : [];
+    const hint = facts.length ? h('span', {class: 'small muted f-constraint', id: `${id}-hint`}, facts.join(' · ')) : null;
+    const body = opts && opts.unit && input ? h('span', {class: 'f-with-unit'}, input, h('span', {class: 'f-unit', 'aria-hidden': 'true'}, opts.unit)) : input;
+    const el = h('label', {class: 'f'}, labelSpan, opts && opts.required ? h('span', {class: 'f-required'}, 'обязательно') : null, body, hint, note);
+    let failure = null;
+    const controls = () => controlsOf(input);                              // read when needed: a screen may fill a composite control after the field is made
+    const single = () => { const all = controls(); return all.length === 1 && all[0] === input; };
+    const describe = () => {
+      if (note && !note.getAttribute('id')) note.setAttribute('id', `${id}-help`);
+      const ids = [hint, note, failure].filter(Boolean).map((n) => n.getAttribute('id'));
+      for (const c of single() ? [input] : [input, ...controls()]) {
+        if (!c || c.nodeType !== 1) continue;
+        if (ids.length) c.setAttribute('aria-describedby', ids.join(' ')); else c.removeAttribute('aria-describedby');
+      }
+    };
+    if (opts && input && input.nodeType === 1) {
+      input.setAttribute('aria-labelledby', `${id}-label`);                 // the label text alone is the name, not the hints under it
+      if (!single()) input.setAttribute('role', 'group');
+      if (opts.required) for (const c of controls()) c.setAttribute('aria-required', 'true');
+      describe();
+    }
+    el.setError = (text) => {
+      if (!text) { el.clearError(); return; }
+      if (!failure) failure = h('span', {class: 'small f-error', id: `${id}-error`});
+      failure.textContent = text;
+      if (failure.parentNode !== el) el.append(failure);                    // always the last thing in the field
+      el.classList.add('has-error');
+      for (const c of controls()) c.setAttribute('aria-invalid', 'true');
+      describe();
+    };
+    el.clearError = () => {
+      if (failure) failure.remove();
+      failure = null;
+      el.classList.remove('has-error');
+      for (const c of controls()) c.removeAttribute('aria-invalid');
+      describe();
+    };
+    el.firstControl = () => controls()[0] || null;                         // not ``control``: a label's own read-only property
+    el.errorText = () => (failure ? failure.textContent : '');
+    return el;
+  }
   const link = (route, label) => h('a', {href: '#' + route}, label);
   const pill = (text, kind = '') => h('span', {class: 'pill ' + kind}, text);
   const labText = (lab) => (lab ? `L ${(+lab[0]).toFixed(1)} · a ${(+lab[1]).toFixed(1)} · b ${(+lab[2]).toFixed(1)}` : '—');
@@ -71,12 +124,16 @@ const App = (() => {
   /** Где мы знаем цвет (REQ-049, REQ-051): каждая независимая гравировка, откуда она (тест или работа), совпадает ли с цветом настроек и куда посмотреть. */
   function sourcesBlock(sources, a, agreedLab, open = true) {
     const n = sources.length;
+    // a few photographs are named in the line; many are a count with a list of links (ux-growing-collections-p0, REQ-002)
+    const many = (list) => typeof SourceRefs !== 'undefined' && list.length > SourceRefs.SHORT;
     const row = (s) => h('li', {class: 'cm-source'}, swatch(s.lab), ' ', h('strong', {}, s.title), ' ', pill(ORIGIN[kindOf(s)][0]), ' · ',
       link('/experiment/' + encodeURIComponent(s.experiment), 'эксперимент'), ...(s.work_id ? [' · ', link('/vector?plan=' + s.work_id, 'векторная работа')] : []),
-      ...(s.provisional ? [' · ', pill('предварительно', 'warn')] : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
-      h('div', {class: 'muted'}, [day(s.date), s.photos.length ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
+      ...(s.provisional || many(s.pair_ids) ? (s.provisional ? [' · ', pill('предварительно', 'warn')] : []) : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
+      h('div', {class: 'muted'}, [day(s.date), s.photos.length && !many(s.photos) ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
         ' · ', pill(...MEASURED[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('совпадает', 'ok') : pill('расходится', 'warn')) : null,
-        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''));
+        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''),
+      !s.provisional && many(s.pair_ids) ? SourceRefs.refs(s.pair_ids, {label: 'Разборы фото', href: (id) => `/analysis/${id}`}) : null,
+      many(s.photos) ? SourceRefs.refs(s.photos, {label: 'Фото', mark: ''}) : null);
     return h('details', {class: 'cm-sources', open},
       h('summary', {}, n > 1 ? `Откуда мы знаем этот цвет: ${n} независимые гравировки (${originParts(sources)})` : `Откуда мы знаем этот цвет: одна гравировка (${ORIGIN[kindOf(sources[0])][0]})`),
       agreedLab && n > 1 ? h('p', {class: 'small'}, 'Цвет настроек: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
@@ -95,24 +152,62 @@ const App = (() => {
     return h('span', {class: 'sw', style: `background:rgb(${c[0]},${c[1]},${c[2]})`, title: labText(lab)});
   }
 
+  // Seams other modules plug into without the screens knowing about them (operations.js, the task panel): ``observe(method, path, body)`` and
+  // ``upload({path, fd, abort})`` each return a watcher or null. A watcher is told what happened and can never break a request.
+  const hooks = {observe: null, upload: null};
+  const watch = (name, arg) => { try { return hooks[name] ? hooks[name](arg) : null; } catch (_) { return null; } };
+  const tell = (watcher, event, ...args) => { try { if (watcher && watcher[event]) watcher[event](...args); } catch (_) { /* a watcher never breaks a request */ } };
+
+  const BODY_SOURCES = ['body', 'query', 'path', 'form', 'header', 'cookie'];
+  const LIMIT_WORDS = {gt: (v) => `больше ${v}`, ge: (v) => `не меньше ${v}`, lt: (v) => `меньше ${v}`, le: (v) => `не больше ${v}`};
+  const LIMIT_OF = {greater_than: 'gt', greater_than_equal: 'ge', less_than: 'lt', less_than_equal: 'le'};
+  /** The text of one item of FastAPI's validation list, in Russian, from its ``type`` and ``ctx`` (nothing is made up: the limits are the server's). */
+  function validationText(item) {
+    const type = item && item.type;
+    if (type === 'missing') return 'Заполните это поле';
+    if (/^(float|int|decimal)_(parsing|type)$/.test(type || '')) return 'Введите число';
+    if (type === 'int_from_float') return 'Введите целое число';
+    if (LIMIT_OF[type] && item.ctx && item.ctx[LIMIT_OF[type]] != null) return `Значение должно быть ${LIMIT_WORDS[LIMIT_OF[type]](item.ctx[LIMIT_OF[type]])}`;
+    if (type === 'string_too_short' && item.ctx) return `Слишком коротко: не меньше ${item.ctx.min_length} зн.`;
+    if (type === 'string_too_long' && item.ctx) return `Слишком длинно: не больше ${item.ctx.max_length} зн.`;
+    return 'Проверьте значение этого поля';
+  }
+  /** FastAPI's validation list as ``[{field, path, message, type, raw}]``: ``path`` is where the server found the fault (without «body»), ``field`` its last part. */
+  function validationDetails(list) {
+    return list.filter((item) => item && Array.isArray(item.loc)).map((item) => {
+      const loc = BODY_SOURCES.includes(item.loc[0]) ? item.loc.slice(1) : item.loc;
+      return {field: String(loc[loc.length - 1] ?? ''), path: loc.join('.'), message: validationText(item), type: item.type, raw: item.msg};
+    });
+  }
+
   async function api(method, path, body, isForm) {
     const opts = {method, headers: {}};
     if (body !== undefined) {
       if (isForm) opts.body = body;
       else { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     }
+    const watcher = watch('observe', {method, path, body});
     let res;
     try { res = await fetch('/api' + path, opts); }
-    catch (_) { throw Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'}); }
-    if (res.status === 204) return null;
+    catch (_) {
+      const failure = Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'});
+      tell(watcher, 'fail', failure);
+      throw failure;
+    }
+    if (res.status === 204) { tell(watcher, 'ok', null); return null; }
     const json = (res.headers.get('content-type') || '').includes('json');
     const data = json ? await res.json() : await res.blob();
     if (!res.ok) {
       const d = data && data.detail ? data.detail : data;
       const raw = d && d.error ? d.error : (Array.isArray(d) ? 'Проверьте заполнение полей формы'
         : typeof d === 'string' ? d : `Ошибка сервера (${res.status}). Проверка не завершилась.`);
-      throw Object.assign(new Error(I18N.tr(raw)), {kind: d && d.kind, status: res.status});
+      // ``details`` is what the server said about each field (only FastAPI's own validation list names fields; the application's own
+      // refusals {error, kind} do not, and the form then keeps the message as one about the whole form)
+      const failure = Object.assign(new Error(I18N.tr(raw)), {kind: d && d.kind, status: res.status}, Array.isArray(d) ? {details: validationDetails(d)} : {});
+      tell(watcher, 'fail', failure);
+      throw failure;
     }
+    tell(watcher, 'ok', data);
     return data;
   }
   const get = (p) => api('GET', p);
@@ -122,25 +217,45 @@ const App = (() => {
   const del = (p) => api('DELETE', p);
   const form = (p, fd) => api('POST', p, fd, true);
 
+  /** An upload with its progress (0-100). Besides ``onProgress`` the task panel (hooks.upload) follows it: it can stop it while the file is on its
+      way (``xhr.abort``, the promise then fails with ``kind: 'cancelled'``) and show its end wherever the person is. */
   function formProgress(path, fd, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      const watcher = watch('upload', {path, fd, abort: () => xhr.abort()});
+      const fail = (error) => { tell(watcher, 'fail', error); reject(error); };
       xhr.open('POST', '/api' + path);
       xhr.responseType = 'json';
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100));
+        if (!event.lengthComputable) return;
+        const percent = Math.round(event.loaded / event.total * 100);
+        tell(watcher, 'progress', percent);
+        onProgress(percent);
       };
-      xhr.onerror = () => reject(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'));
+      xhr.onerror = () => fail(Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'}));
+      xhr.onabort = () => { const stopped = Object.assign(new Error('Загрузка остановлена.'), {kind: 'cancelled'}); tell(watcher, 'cancelled'); reject(stopped); };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response);
+        if (xhr.status >= 200 && xhr.status < 300) { tell(watcher, 'ok', xhr.response); return resolve(xhr.response); }
         const data = xhr.response;
         const detail = data?.detail || data;
         const raw = detail?.error || (typeof detail === 'string' ? detail : `Ошибка сервера (${xhr.status}). Загрузка не завершилась.`);
-        reject(new Error(I18N.tr(raw)));
+        fail(Object.assign(new Error(I18N.tr(raw)), {status: xhr.status}, Array.isArray(detail) ? {details: validationDetails(detail)} : {}));
       };
       xhr.send(fd);
     });
   }
 
-  return {h, fill, btn, field, link, pill, labText, num, duration, timeBlock, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress};
+  /** The end of an action that takes the person on to ``route`` (an upload that ends in its check): they are taken there while they are still on the
+      screen they pressed the button on; once they have left it, the result goes to the task panel with a button to open it, and the screen they are
+      on now is not changed under them (ux-save-feedback-p0, REQ-002). Call it when the action starts, with the button that was pressed:
+      ``const end = App.landing(button)``; then ``end.stillHere()`` (is a toast about this screen still right?) and
+      ``end.go(route, {title, message, openLabel})`` when it is done. Where the task panel is not loaded, the person is always taken on. */
+  function landing(control) {
+    const ops = typeof Operations !== 'undefined' ? Operations : null;
+    const origin = ops ? ops.startedAt(control) : null;
+    return {stillHere: () => !origin || !origin.left(),
+      go: (route, notice = {}) => (origin ? ops.finish(origin, {route, ...notice}) : (App.go(route, {preserveScroll: true}), true))};
+  }
+
+  return {h, fill, btn, field, link, pill, labText, num, duration, timeBlock, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress, hooks, validationDetails, landing};
 })();

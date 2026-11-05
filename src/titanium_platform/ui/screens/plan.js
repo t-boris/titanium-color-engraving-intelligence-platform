@@ -55,7 +55,9 @@
       facts([['Прогнозный цвет', pr ? h('span', {}, swatch(pr.lab), ' ', labText(pr.lab)) : '—'], ['Уверенность', pr ? num(pr.confidence) : '—'],
         ['Ожидаемая ошибка ΔE', pr ? num(pr.expected_delta_e) : '—'],
         ['Стабильность', pr ? (pr.stability.assessed ? 'дисперсия ' + num(pr.stability.variance) : 'не оценена') : '—'],
-        ['Стадия', l.stage ? h('span', {}, STAGE[l.stage], l.questioned ? [' ', pill('под вопросом', 'bad')] : '') : '—'], ['Областей', String(regionCount(l))]]));
+        ['Стадия', l.stage ? h('span', {}, STAGE[l.stage], l.questioned ? [' ', pill('под вопросом', 'bad')] : '') : '—'], ['Областей', String(regionCount(l))]]),
+      // the words of the line, explained through what the person is doing (ux-save-feedback-p0, REQ-003); the layer's recipe is a knowledge entry
+      l.stage ? h('div', {class: 'stack kn-terms'}, Terms.note('stage'), l.parameters && l.parameters.layer_type != null ? Terms.note('knowledge') : null, pr ? Terms.note('basis') : null) : null);
   }
 
   /** The photo zones of a vector work (REQ-073): an Image layer each, after the colour layers - the work's picture engraved in the zone's
@@ -105,14 +107,6 @@
             : 'Каждая полоса — в прогнозном цвете её измеренного набора параметров'))));
   }
 
-  async function download(p) {
-    const res = await fetch(`/api/plans/${p.id}/export.lbrn2`);
-    if (!res.ok) { const d = await res.json(); throw new Error(I18N.tr((d.detail || d).error)); }
-    const url = URL.createObjectURL(await res.blob());
-    const a = h('a', {href: url, download: p.name.replace(/[^\w.-]+/g, '_') + '.lbrn2'});
-    document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  }
-
   App.register({id: 'plan', async render(ctx) {
     let p;
     try { p = await get('/plans/' + ctx.arg); } catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'План гравировки не найден'), link('/experiments', 'К экспериментам')); }
@@ -127,12 +121,9 @@
       : work && work.status !== 'Deleted' ? link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту') : null;
     const [editRoute, editLabel] = p.mode === 'Discrete color engraving' ? ['/artwork?plan=' + p.id, 'Редактировать преобразование']
       : p.mode.includes('photo engraving') ? ['/photo?plan=' + p.id, 'Исправить: новый план из этого'] : vector ? ['/vector?plan=' + p.id, 'Открыть векторную работу'] : [null, null];
-    const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
-      const self = ev.currentTarget;
-      self.disabled = true;
-      try { await download(p); toast('Файл подготовлен и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); App.render(); } catch (e) { fail(e); self.disabled = false; }
-    }, 'primary', draft || ['Superseded', 'Cancelled'].includes(p.status) || !(p.layers.length || (p.photo_zones || []).length));
-    if (restored) exportBtn.hidden = true;
+    // the one place a plan's file is made: the chain of its life, whether it can be made now, «Скачать LightBurn» and the files made before
+    const exportCard = restored ? null : Lifecycle.exportCard(p.lifecycle, {path: `/plans/${p.id}/export.lbrn2`, name: p.name.replace(/[^\w.-]+/g, '_') + '.lbrn2',
+      reload: () => App.render({preserveScroll: true}), designer: p.device_id ? `/designer?device=${p.device_id}&lens=${App.lensParam(p.lens_id)}` : null});
     const warnings = (p.warnings || []).map((w) => PhotoForm.questionedWarning(w));
     const markers = p.markers_enabled ? 'включены' : 'выключены';
     const toggle = ['Calibration plate', 'Laser capability test', 'Restored from file'].includes(p.mode) ? null : btn(p.markers_enabled ? 'Выключить регистрационные маркеры' : 'Включить регистрационные маркеры', async () => {
@@ -173,8 +164,8 @@
         ['Подписи и маркеры', markers + (['Calibration plate', 'Laser capability test'].includes(p.mode) ? ' · слой C01, ArUco + QR ID' : '')]]),
         exp.test_description ? h('p', {class: 'muted small'}, exp.test_description) : null,
         p.time ? App.timeBlock(p.time) : null,
-        h('p', {class: 'muted small'}, 'Чистка — первый слой C00. При экспорте файл LightBurn скачивается на компьютер; он не отправляется в лазер автоматически.'),
-        h('div', {class: 'row'}, toggle, exportBtn)),
+        h('p', {class: 'muted small'}, 'Чистка — первый слой C00.'), toggle ? h('div', {class: 'row'}, toggle) : null),
+      exportCard ? h('div', {class: 'card'}, exportCard) : null,
       banding(p),
       h('div', {class: 'card'}, h('h3', {}, 'Слои и параметры'), p.layers.length || (p.photo_zones || []).length
         ? layerList(p).el

@@ -14,6 +14,7 @@ import pytest
 from shapely.geometry import box
 
 import test_photo_engraving_ui as photo_ui
+from lifecycle_stub import lifecycle
 from test_vector_editor_ui import PALETTE, node, routes, run_editor, view
 from titanium_platform import fonts, lettering, prediction
 from titanium_platform.api.app import UI_DIR
@@ -284,6 +285,7 @@ def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyo
     j = r["/api/vector/7"]["json"]
     j["texts"] = [text("t1", problem=gone, shown={**SHOWN, "clipped": True}), text("t2", problem=unmeasured, srgb=None)]
     j["export_blocked"] = f"inscription 1 cannot be engraved: {gone}"
+    j["lifecycle"] = lifecycle(ready=False, reason=j["export_blocked"], blockers=[{"code": "text", "number": 1, "problem": gone, "target": {"kind": "tab", "tab": "colours"}}])
     out = run_editor(tmp_path, r, OPEN + """
   const alerts = () => pane.querySelectorAll('p').filter((p) => p.classList.contains('alert')).map((p) => [p.className, p.textContent]);
   out.list = alerts();
@@ -295,7 +297,7 @@ def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyo
 """)
     blocked = "Надпись 1 не выгравировать: Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"
     assert out["list"] == [["alert warn small", blocked]]
-    assert out["text"].count(blocked) == 2                                          # in the tab and beside the export
+    assert out["text"].count(blocked) == 3                          # in the tab, beside the export as a line of its own, and in the exact words of the check
     assert out["pills"] == [["не выгравировать"], ["не выгравировать"]]                  # each one in the list
     assert out["first"] == [["alert warn small", blocked], ["alert bad", "Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"],
                             ["alert warn", "Часть надписи выходит за край работы: там она обрезана."]]

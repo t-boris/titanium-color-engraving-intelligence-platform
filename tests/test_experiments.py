@@ -192,7 +192,7 @@ def test_the_experiment_screen_offers_check_selection_brightness_and_contours_an
     assert "btn(`Проверка №${p.id}`, () => { current = p; refreshAll(); }, 'btn-small')" in page          # every check, selectable
     assert "btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость'" in page
     assert "btn(contours ? 'Скрыть контуры' : 'Показать контуры'" in page
-    for part in ("'Скачать .lbrn2'", "'Скачать файл LightBurn'", "`Измеренные слои · ${layers.length}`", "'Выводы по этому эксперименту'",
+    for part in ("'Скачать LightBurn'", "'Скачать файл этой гравировки'", "Lifecycle.chain(lifecycle, {onAction", "`Измеренные слои · ${layers.length}`", "'Выводы по этому эксперименту'",
                  "IngestReview.hiddenMargins(check.alignment)"):
         assert part in page, part
 

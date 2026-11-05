@@ -13,10 +13,10 @@ from test_vector_work import GLUE, TABLES, UI, job, routes_of, work    # noqa: F
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
-SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js",
-           "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-review.js",
-           "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js", "screens/labs-cloud.js", "screens/labs.js"]
+HELPERS = ["app.js", "forms.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
+SCRIPTS = ["screens/lab-source.js", "screens/material-picker.js", "screens/vector-split.js",
+           "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/lifecycle.js", "screens/vector-review.js",
+           "screens/vector-workspace.js", "screens/evidence-summary.js", "screens/vector.js", "screens/photo-panels.js", "screens/labs-cloud.js", "screens/labs.js"]
 FORM_DATA = "globalThis.FormData = class { constructor() { this.items = []; } append(k, v) { this.items.push([k, typeof v === 'object' && v ? v.name : String(v)]); } };"
 HARNESS = """
 const fs = require('fs');
@@ -91,11 +91,12 @@ def test_the_menu_has_laboratories_with_an_icon_of_its_own_and_the_screens_are_l
 @node
 def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chosen_release_as_its_source(tmp_path):
     routes = {"/api/devices": ok([{"id": 1, "name": "JPT", "title": "JPT YDFLP-E-60", "lens": {"id": 2}}]), "/api/lenses": ok([{"id": 2, "kind": "F-Theta", "focal_length_mm": 174}]),
-              "/api/materials": ok([{"id": 3, "name": "Small Plate", "grade": "Grade 5"}]), "/api/vector-palette": ok({"entries": [{"basis": "chart"}]}),
+              "/api/materials": ok([{"id": 3, "name": "Small Plate", "grade": "Grade 5"}]), "/api/materials/3": ok({"id": 3, "name": "Small Plate", "grade": "Grade 5"}),
+              "/api/vector-palette": ok({"entries": [{"basis": "chart"}]}),
               "/api/rules": ok({"delta_tolerance": 5.0}), "/api/vector": ok({"id": 99}, 201), "/api/labs/choices": ok(CHOICES),
               "/api/labs/palette": ok({"source": SOURCE, "conditions": SOURCE["conditions"], "entries": [{"basis": "clean"}, {"basis": "as-shot"}]})}
     out = run(tmp_path, routes, """
-  const tree = await ctx.__screens.vector.render({query: {new: '1'}});
+  const tree = await ctx.__screens.vector.render({query: {new: '1', classic: '1'}});
   await tick();
   const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Источник измерений');
   out.options = select.options.map((o) => [o.value, o.textContent]);
@@ -103,10 +104,12 @@ def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chose
   select.value = '1'; await select.dispatch('change'); await tick();
   out.info = tree.querySelectorAll('p').filter((p) => p.textContent.includes('Измеренных цветов заливки')).map((p) => p.textContent).pop();
   out.hint = select.parentNode.textContent;
+  const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text);
   tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'portrait.jpg'}];
+  labelled('Название работы').firstControl().value = 'Portrait';                      // the plan's name is required (ux-save-feedback-p0, REQ-003)
   await byText(tree, 'button', 'Создать работу').dispatch('click'); await tick();
   out.created = sent().filter(([, path]) => path === '/api/vector');
-  const strategy = tree.querySelectorAll('select').find((sel) => sel.getAttribute('aria-label') === 'Стратегия');
+  const strategy = labelled('Стратегия').firstControl();
   strategy.value = 'fill'; await strategy.dispatch('change'); await tick();
   out.hiddenForTrace = select.parentNode.hidden;
 """)
@@ -177,6 +180,7 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
          "recipe": {"power": 40, "frequency": 30, "speed": 500, "pulse_width": 200, "line_interval": 0.02, "passes": 1}, "observation_ids": [1]}]}
     routes = {"/api/labs/sources/4": ok(card), "/api/labs/choices": ok(CHOICES), "/api/labs/palette": ok(palette),
               "/api/devices": ok([{"id": 1, "name": "JPT", "title": "JPT YDFLP-E-60"}]), "/api/materials": ok([{"id": 3, "name": "Small Plate", "grade": "Grade 5"}]),
+              "/api/materials/3": ok({"id": 3, "name": "Small Plate", "grade": "Grade 5"}),
               "/api/labs/transfers": {"GET": ok([]), "POST": ok({"plan_id": 77, "name": "Перенос · TCE-77"}, 201)}}
     out = run(tmp_path, routes, """
   const banner = ctx.LabSource.banner('/photo-works/7', 'photo', () => {});
@@ -195,6 +199,7 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
   await byText(colour, 'button', 'Проверить у себя').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialogSelects = dialog.querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
+  out.dialogStock = dialog.querySelectorAll('.matpick').map((p) => p.getAttribute('aria-label'));          // the own titanium is the stock selector, no longer a drop-down
   await byText(dialog, 'button', 'Создать пластину').dispatch('click'); await tick();
   out.transfer = sent().pop();
   out.notice = tree.querySelectorAll('a').map((a) => a.getAttribute('href')).filter((href) => href.includes('/plans/'));
@@ -209,7 +214,7 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
     assert out["palette"] == [["POST", "/api/labs/palette", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}]]
     assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "по эталонной карте" in out["colour"] and "гравировок 2" in out["colour"] and "все 2 совпали" in out["colour"]
     assert "40.0 % · 30.0 кГц · 500 мм/с · 200 нс · шаг 0.0200 мм · проходов 1" in out["colour"]
-    assert out["dialogSelects"] == ["Свой лазер", "Свой титан"]
+    assert out["dialogSelects"] == ["Свой лазер"] and out["dialogStock"] == ["Свой титан"]
     assert out["transfer"] == ["POST", "/api/labs/transfers", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "entry_id": "e1", "device_id": 1, "material_id": 3}]
     assert out["notice"] == ["#/plans/77"]
 

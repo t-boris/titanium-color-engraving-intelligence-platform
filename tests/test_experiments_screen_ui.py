@@ -26,7 +26,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s},
-  'screens/experiment-cards.js', 'screens/device-view.js', 'screens/plate-dialog.js', 'screens/experiments.js',
+  'screens/experiment-cards.js', 'screens/device-view.js', 'screens/material-picker.js', 'screens/source-refs.js', 'screens/plate-dialog.js', 'screens/experiments.js',
   {code: 'globalThis.ExperimentCards = ExperimentCards; globalThis.DeviceView = DeviceView;'}]);
 for (const [k, v] of Object.entries(data.store || {})) ctx.sessionStorage.setItem(k, v);
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -63,6 +63,7 @@ ROUTES = {
                                                  experiment("eng-a", "Тест Q-Pulse", "accepted"), experiment("eng-b", "Шаг строк", "needs_review")]},
     "/api/devices": {"status": 200, "json": [{"id": 1, "name": "Laser A", "title": "Laser A", "lens": {"id": 5, "name": "F-Theta"}, "passport": {"pulse_steps": []}}]},
     "/api/materials": {"status": 200, "json": [{"id": 1, "name": "Titan", "grade": "2", "batch": "A"}]},
+    "/api/materials/1": {"status": 200, "json": {"id": 1, "name": "Titan", "grade": "2", "batch": "A"}},       # the stock selector reads the one record it shows
     "/api/application-goals": {"status": 200, "json": [{"id": "text", "name": "Надписи", "objective": "Разборчивые буквы выбранного размера"},
                                                        {"id": "line", "name": "Линии", "objective": "Тонкие линии"}]},
     "/api/devices/1/findings": {"status": 200, "json": [FINDING, {**FINDING, "purpose": "text", "status": "needs_test", "pair_id": 8}]},
@@ -107,7 +108,7 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
   const task = q(tree, '.ex-task');
   out.task = {head: P(task, '.os-col-head', 'h3').textContent, labels: task.querySelectorAll('label').map((l) => l.querySelector('span').textContent),
     next: byText(task, 'button', 'Создать следующий тест') != null, details: task.querySelectorAll('details').map((d) => d.textContent),
-    inScroll: q(task, '.os-scroll').querySelectorAll('select').length, result: q(task, '.dashboard-task-result').textContent, foot: q(task, '.dashboard-task-foot').textContent};
+    inScroll: q(task, '.os-scroll').querySelectorAll('select, .matpick').length, result: q(task, '.dashboard-task-result').textContent, foot: q(task, '.dashboard-task-foot').textContent};
   const find = q(tree, '.ex-find');
   out.find = {head: q(find, '.os-col-head').textContent, cards: q(find, '.os-scroll').querySelectorAll('article').map((a) => a.textContent),
     link: P(find, '.os-col-head', 'a').getAttribute('href')};
@@ -223,7 +224,7 @@ def test_the_next_test_button_still_creates_the_plate_for_the_goal_material_and_
 @node
 def test_the_task_pickers_remember_their_choice_and_reload(tmp_path):
     out = run(tmp_path, """
-  const selects = tree.querySelector('.ex-task').querySelectorAll('select');
+  const selects = tree.querySelector('.ex-task').querySelectorAll('select, .matpick');        // the material is the stock selector, no longer a drop-down
   out.labels = selects.map((s) => s.getAttribute('aria-label'));
   selects[0].value = 'line'; await selects[0].dispatch('change');
   out.goal = ctx.__store['experiment-dashboard-goal']; out.renders = ctx.__renders.length;
@@ -274,7 +275,7 @@ const {context, load, El} = require(%(dom)s);
 Object.defineProperty(El.prototype, 'style', {get() { return this._style || (this._style = {}); }});
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'screens/material-picker.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
 const card = (input) => {                                                   // whether the card around an input is shown
@@ -381,7 +382,7 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
 def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_other_tests_and_screens_rely_on():
     for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskPanel,",
                  "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown, {id: 'experiments',",
-                 "panel('Выводы для материала', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, materials, reload)"):
+                 "panel('Выводы для материала', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, null, reload)"):
         assert part in SCREEN, part
     assert "{class: 'dashboard-hero'" not in SCREEN and "{class: 'experiment-dashboard'" not in SCREEN and "exp-columns" not in SCREEN     # the old page frame is gone
     assert "return {card, list, layers};" in CARDS and "App.list({id, items: experiments" in CARDS                  # the laser page keeps using the same list
@@ -437,3 +438,16 @@ def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_
     assert "Ещё не фотографировался на этом лазере и титане." in atkinson and "на лучших настройках другого вида точками" in atkinson
     assert "Начните со шкал серого (Фотогравировка → Шкалы серого)." in grey
     assert out["made"] == [{"device_id": 1, "lens_id": 5, "material_id": 1, "kind": "atkinson"}] and out["went"] == "#/experiment/plan-12"
+
+
+@node
+def test_a_long_list_of_supporting_observations_is_a_count_and_a_list_not_a_sentence(tmp_path):
+    many = list(range(40, 52))
+    routes = {**ROUTES, "/api/application-guide": {**ROUTES["/api/application-guide"], "json": {**ROUTES["/api/application-guide"]["json"],
+              "support": {"pair_id": 7, "observation_ids": many, "engravings": 2, "photographs": 3, "missing_context": []}}}}
+    short = run(tmp_path, "out.text = tree.querySelector('.ex-task').textContent; out.refs = tree.querySelectorAll('.srefs').length;")
+    long_ = run(tmp_path, "out.text = tree.querySelector('.ex-task').textContent; out.refs = tree.querySelectorAll('.srefs').length;"
+                "out.count = tree.querySelector('.srefs-count').textContent;", routes=routes)
+    assert "наблюдения №11, №12" in short["text"] and short["refs"] == 0                       # a few stay in the sentence, as before
+    assert "наблюдения №40" not in long_["text"] and long_["refs"] == 1 and long_["count"] == "12"
+    assert "Наблюдения-основания" in long_["text"] and "основание — проверка №7" in long_["text"]

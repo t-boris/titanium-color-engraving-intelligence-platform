@@ -14,7 +14,7 @@
     if (!id) {
       const lists = await App.hardwareLists();
       if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
-      return h('div', {class: 'stack'}, h('h2', {}, 'Цветная гравировка'), startForm(lists, ctx));
+      return h('div', {class: 'stack'}, h('h2', {}, 'Цветная гравировка'), startForm(lists, {...ctx, start: await App.contextStart(ctx.query)}));
     }
     const reload = () => App.render();
     const plan = await get('/plans/' + id), palette = await get(`/discrete/${id}/palette`);

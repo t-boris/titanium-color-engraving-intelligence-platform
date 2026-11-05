@@ -42,11 +42,21 @@ def test_screens_are_loaded_after_the_helpers_they_use():
                       ("/screens/glossary-controller.js", "/screens/device-questions.js"), ("/screens/device-questions.js", "/screens/device-view.js"),
                       ("/screens/device-character-card.js", "/screens/device.js"), ("/screens/device-lens.js", "/screens/device.js"),
                       ("/markdown.js", "/screens/research.js"), ("/screens/color-map.js", "/screens/colors.js"),
+                      ("/screens/evidence-summary.js", "/screens/color-map.js"), ("/screens/evidence-summary.js", "/screens/knowledge.js"),
+                      ("/screens/evidence-summary.js", "/screens/colors.js"), ("/screens/evidence-summary.js", "/screens/findings.js"),
                       ("/screens/experiment-cards.js", "/screens/device-view.js"), ("/screens/experiment-cards.js", "/screens/experiments.js"),
                       ("/hardware.js", "/screens/photo-preview.js"), ("/filepick.js", "/screens/photo-preview.js"),
                       ("/photo-modes.js", "/screens/vector-photo.js"), ("/screens/vector-photo.js", "/screens/vector-editor.js"),
                       ("/photo-modes.js", "/screens/photo-panels.js"), ("/screens/photo-panels.js", "/screens/photo-engraving.js"),
-                      ("/screens/photo-panels.js", "/screens/vector-zone.js"), ("/screens/prediction-review.js", "/screens/experiment.js")]:
+                      ("/screens/photo-panels.js", "/screens/photo-kind-step.js"), ("/screens/photo-kind-step.js", "/screens/photo-engraving.js"),
+                      ("/screens/photo-kind-step.js", "/screens/creation.js"),
+                      ("/screens/photo-panels.js", "/screens/vector-zone.js"), ("/screens/prediction-review.js", "/screens/experiment.js"),
+                      ("/router.js", "/screens/lifecycle.js"), ("/screens/lifecycle.js", "/screens/plan.js"), ("/screens/lifecycle.js", "/screens/experiment.js"),
+                      ("/screens/lifecycle.js", "/screens/vector-review.js"), ("/screens/lifecycle.js", "/screens/vector.js"), ("/screens/lifecycle.js", "/screens/ingest-review.js"), ("/screens/lifecycle.js", "/screens/photo-engraving.js"),
+                      # the selector of a stock record (ux-growing-collections-p0, REQ-001) is loaded before every file that builds one
+                      *[("/screens/material-picker.js", user) for user in ("/context.js", "/screens/vector.js", "/screens/labs.js", "/screens/plate-dialog.js",
+                                                              "/screens/photo-preview.js", "/screens/experiments.js", "/screens/ingest-upload.js", "/screens/ingest.js",
+                                                              "/screens/designer.js", "/screens/research.js")]]:
         assert order[dep] < order[user], (dep, user)
 
 
@@ -85,7 +95,7 @@ def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_eve
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
     assert nav[:3] == ["/experiments", "/colors", "/vector"] and len(icons) == len(nav) == len(set(nav))
-    assert nav[3:] == ["/photo-engraving", "/designer", "/findings", "/devices", "/setup", "/research", "/network", "/labs", "/workshop"]   # REQ-059: photo engraving fourth; electron: network, labs, then the workshop
+    assert nav[3:] == ["/photo-engraving", "/works", "/designer", "/findings", "/devices", "/setup", "/research", "/network", "/labs", "/workshop"]   # REQ-059: photo engraving fourth; ux-work-catalog-p0: the shared catalog of works right after the two kinds; electron: network, labs, then the workshop
     assert "vector: 'vector'" in router and "App.register({id: 'vector'" in _screen("vector.js")
     vector_icon = '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>'
     assert vector_icon in icons_block(router, 2)                                                           # the vector icon moved with its entry
@@ -142,7 +152,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/designer.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/material-picker.js', 'screens/designer.js']);
 const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0)); };
 const texts = (root) => root.querySelectorAll('.lst-main').map((m) => m.textContent);
 (async () => {

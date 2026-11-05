@@ -5,12 +5,18 @@
   const goalName = (goals, id) => goals.find((item) => item.id === id)?.name || id;
   const option = (value, label) => h('option', {value}, label);
 
+  /** «Скачать LightBurn»: one press at a time, a failure stays beside the button with a retry (Lifecycle.downloadButton); a plain link where that is not loaded. */
+  function downloadLightBurn(plan) {
+    const path = `/plans/${plan.id}/export.lbrn2`;
+    if (typeof Lifecycle === 'undefined') return h('a', {href: '/api' + path, class: 'btn btn-small'}, 'Скачать LightBurn');
+    return Lifecycle.downloadButton(path, `${String(plan.name || 'plate').replace(/[^\w.-]+/g, '_')}.lbrn2`, 'Скачать LightBurn', {cls: 'btn-small'}).el;
+  }
+
   function artifacts(plans) {
     return plans.length ? plans.map((plan) => h('div', {class: 'research-artifact'},
       h('div', {}, link('/plans/' + plan.id, plan.name), pill(({Exported: 'Экспортирован',
         Superseded: 'Заменена', Cancelled: 'Отменена'})[plan.status] || 'Готов')),
-      ['Superseded', 'Cancelled'].includes(plan.status) ? null :
-        h('a', {href: `/api/plans/${plan.id}/export.lbrn2`, class: 'btn btn-small'}, 'Скачать LightBurn'))) :
+      ['Superseded', 'Cancelled'].includes(plan.status) ? null : downloadLightBurn(plan))) :
       [h('p', {class: 'muted small'}, 'Пока нет платы. Опишите критерий и попросите AI предложить или создать тест.')];
   }
 
@@ -45,8 +51,9 @@
   }
 
   App.register({id: 'research', async render(ctx) {
-    const [devices, materials, goals, sessions] = await Promise.all([
-      get('/devices'), get('/materials'), get('/application-goals'), get('/research/sessions')]);
+    const [devices, stocks, goals, sessions] = await Promise.all([
+      get('/devices'), get('/materials?limit=1'), get('/application-goals'), get('/research/sessions')]);
+    const hasMaterials = (Array.isArray(stocks) ? stocks.length : stocks.all) > 0;     // the records themselves are chosen in the picker, a page at a time
     const requested = Number(ctx.arg);
     const selected = sessions.find((item) => item.id === requested) || sessions[0];
     const active = selected ? await get('/research/sessions/' + selected.id) : null;
@@ -67,26 +74,31 @@
           else App.go('/research');
         }), 'btn-small danger research-delete') : null);
 
+    const form = Forms.create();
     const deviceSelect = h('select', {required: true}, devices.map((item) => option(item.id, [item.name, item.lens?.name].filter(Boolean).join(' · '))));
-    const materialSelect = h('select', {required: true}, materials.map((item) => option(item.id,
-      [item.name, item.grade, item.batch].filter(Boolean).join(' · '))));
+    const materialSelect = MaterialPicker.create({initial: 'recent', name: 'Материал и заготовка'});
     const goalSelect = h('select', {required: true}, goals.map((item) => option(item.id, item.name)));
-    const targetInput = h('textarea', {rows: '2', maxlength: '600',
-      placeholder: 'Например: читаемый чёрный текст высотой 1 мм на Grade 2 при минимальном времени обработки'});
+    const targetInput = h('textarea', {rows: '2', placeholder: 'Например: читаемый чёрный текст высотой 1 мм на Grade 2 при минимальном времени обработки'});
+    const deviceField = form.add('device', 'Лазер и линза', deviceSelect, {required: true, help: 'на лазере должна стоять линза'});
+    const materialField = form.add('material', 'Материал и заготовка', materialSelect, {required: true,
+      read: () => (materialSelect.value ? {ok: true, value: Number(materialSelect.value)} : {ok: false, message: 'Выберите заготовку: конкретную партию или лист'})});
+    const goalField = form.add('goal', 'Задача', goalSelect, {required: true});
+    // research.create_session: the target is 4 to 600 characters; a longer text is refused with its length, not cut short
+    const targetField = form.add('target', 'Что считаем успехом', targetInput, {required: true, minLength: 4, maxLength: 600});
     const createButton = btn('Начать исследование', async () => {
+      const v = form.collect();
+      if (!v) return;
       createButton.disabled = true;
       try {
-        const session = await post('/research/sessions', {device_id: Number(deviceSelect.value),
-          material_id: Number(materialSelect.value), goal: goalSelect.value, target: targetInput.value});
+        const session = await post('/research/sessions', {device_id: Number(v.device), material_id: v.material, goal: v.goal, target: v.target});
         toast('Исследование создано', 'ok');
         App.go('/research/' + session.id);
-      } catch (error) { fail(error); createButton.disabled = false; }
-    }, 'primary', !devices.length || !materials.length);
+      } catch (error) { form.fail(error); createButton.disabled = false; }
+    }, 'primary', !devices.length || !hasMaterials);
     const startPanel = h('details', {class: 'card research-new', open: !active},
       h('summary', {}, 'Новое исследование'),
-      h('div', {class: 'research-start-grid'}, field('Лазер и линза', deviceSelect),
-        field('Материал и заготовка', materialSelect), field('Задача', goalSelect)),
-      field('Что считаем успехом', targetInput),
+      h('div', {class: 'research-start-grid'}, deviceField, materialField, goalField),
+      targetField, form.error,
       h('div', {class: 'row'}, createButton));
     if (!active) return h('div', {class: 'research-page'},
       h('div', {class: 'dashboard-hero'}, h('div', {}, h('h2', {}, 'AI-исследователь'),

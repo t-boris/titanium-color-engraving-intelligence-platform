@@ -1,7 +1,9 @@
 /* Прогноз и результат (0.24.0, DEC-117): что шкала серого обещала для принятой фотогравировки до неё — по гравировкам, принятым раньше,
    на её ширине строк, как показывала работа, — и что вышло на фото: тон за тоном, медиана и максимум разницы, светлее или темнее, желтее
    или синее. Под этим — на чём стоял прогноз: ширина строк среди измеренных, пластины и их толщина, чистка, чистый титан на фото.
-   Это факты с числами; ничего не взвешивается и не угадывается. Внизу — тот же итог по всем принятым фотогравировкам. */
+   Это факты с числами; ничего не взвешивается и не угадывается. Внизу — тот же итог по всем принятым фотогравировкам.
+   Основание названо прямо (feature ux-engraving-lifecycle-p0, REQ-003): прогноз здесь не хранился вместе с файлом, это реконструкция по
+   измерениям, принятым раньше этой гравировки; её не выдают за обещание файла. */
 'use strict';
 const PredictionReview = (() => {
   const {h, fill, pill, get, swatch} = App;
@@ -81,7 +83,13 @@ const PredictionReview = (() => {
         pill(`медиана ${value(layer.median_de)} ΔE`, layer.median_de > layer.tolerance_de ? 'warn' : 'ok')),
       h('p', {class: 'small'}, `Тонов сравнено: ${layer.compared} · максимум ${value(layer.max_de)} ΔE · в пределах ${value(layer.tolerance_de, 0)} ΔE: `
         + `${value(layer.within * 100, 0)} %. ${shift(layer)}`),
-      h('h4', {}, 'На чём стоял прогноз'), h('ul', {class: 'pr-causes small'}, causes), tones(layer));
+      largest(layer), h('h4', {}, 'На чём стоял прогноз'), h('ul', {class: 'pr-causes small'}, causes), tones(layer));
+  }
+  const TOP_TONES = 3;                       // the tones that came out furthest from the prediction, named before the full list
+  /** Крупнейшие отличия слоя: тона, где результат дальше всего от прогноза, по убыванию ΔE. */
+  function largest(layer) {
+    const top = [...layer.bands].sort((a, b) => b.de - a.de).slice(0, TOP_TONES);
+    return top.length ? h('p', {class: 'small'}, h('strong', {}, 'Крупнейшие отличия: '), top.map((b) => `${value(b.power)} % — ${value(b.de)} ΔE`).join('; '), '.') : null;
   }
   function overallText(o) {
     if (!o || !o.all.tones) return null;
@@ -95,6 +103,8 @@ const PredictionReview = (() => {
     const several = review.layers.length > 1;
     return h('div', {class: 'stack pr-card'}, h('h3', {}, 'Прогноз и результат'),
       h('p', {class: 'small muted'}, 'Что шкала обещала до этой гравировки — по гравировкам, принятым раньше, на её ширине строк, как показывала работа, — и что вышло на фото.'),
+      h('p', {class: 'small', role: 'note'}, h('strong', {}, 'Основание: реконструкция. '), 'Вместе с файлом этот прогноз не сохранялся: он собран заново по гравировкам, '
+        + 'принятым до этой. Это не обещание файла, а то, что можно было предсказать по прежним измерениям.'),
       ...review.layers.filter((layer) => !layer.reason).map((layer) => layerBlock(layer, several)),
       ...reasons(review.layers.filter((layer) => layer.reason), review.layers.length), overallText(overall));
   }

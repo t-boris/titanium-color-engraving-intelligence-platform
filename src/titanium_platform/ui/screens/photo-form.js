@@ -39,7 +39,8 @@ const PhotoForm = (() => {
     const state = {mode: revising ? revising.continuous_mode : ctx.query.mode === 'color_path' ? 'color_path' : 'tonal',
       path: revising ? [...revising.path_ids] : [], allowed: revising ? [...revising.allowed_questioned] : [], preview: null, image: null};
     const host = h('div', {class: 'stack'});
-    const pick = App.laserLensPicker(lists, {device: revising ? revising.device_id : ctx.query.device, lens: revising ? App.lensParam(revising.lens_id) : ctx.query.lens,
+    const begin = revising ? null : await App.contextStart(ctx.query);                  // the laser and lens the workshop chose last; the address wins (REQ-001)
+    const pick = App.laserLensPicker(lists, {device: revising ? revising.device_id : begin.device, lens: revising ? App.lensParam(revising.lens_id) : begin.lens,
       onChange: async () => { state.path = []; state.allowed = []; await loadPalette(); invalidate(); }});
     const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Фотография для гравировки'});
     const name = h('input', {placeholder: 'Название плана', value: revising ? `${revising.name} — исправление` : ''});
@@ -86,7 +87,11 @@ const PhotoForm = (() => {
       if (!state.preview || previewSig !== signature()) return show('Сначала сделайте актуальный предпросмотр');
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const p = await form('/continuous', body(true)); toast(revising ? 'Исправленный план создан; прежний план не изменён' : 'План создан', 'ok'); go('/plans/' + p.id); } catch (e) { show(e.message); self.disabled = false; }
+      try {
+        const p = await form('/continuous', body(true));
+        if (!revising) App.rememberContext({device: pick.deviceId(), lens: pick.lensId()});
+        toast(revising ? 'Исправленный план создан; прежний план не изменён' : 'План создан', 'ok'); go('/plans/' + p.id);
+      } catch (e) { show(e.message); self.disabled = false; }
     }
 
     function sourcePicture() {

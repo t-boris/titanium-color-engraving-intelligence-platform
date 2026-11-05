@@ -2,7 +2,7 @@
 type: feature
 id: ux-evidence-summaries-p0
 title: "[P0] Краткая достоверность и очередь решений"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n24, n23, n31; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: known
+  Failure Scenarios: known
+  Data Model: known
+  Notifications: n/a
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Нужно сократить первое чтение, сохранив независимые признаки достоверности; улучшение удобства пока остаётся гипотезой.
+  Target Users: Исследователь или мастер оценивает измерения, применимость прогноза и действия по выводам.
+  Primary Workflow: Выбор A определил приоритет проверки причины; остальные доступные действия сохраняются в раскрытии.
+  Permissions: Код уже ограничивает исправления последним расчётом; существующие ограничения сохраняются.
+  Failure Scenarios: Ограничения применимости и обработка действий уже существуют; новое представление ещё предстоит проверить в реальном интерфейсе.
+  Data Model: Признаки измерения, применимость, отметки и исключения уже представлены отдельно; новая модель данных не требуется.
+  Notifications: Новые уведомления не входят в задачу; обратная связь существующих действий сохраняется.
+  Security: Изменения механизмов безопасности не входят в задачу.
+  Analytics: Исследование задаёт сравнение задач до и после; исходные замеры и численные цели пока отсутствуют и не препятствуют спецификации.
+  Dependencies: "Проверены требования, исследование и код выводов: порядок доступных действий существует, правило рекомендации добавляется выбранным решением."
+  Acceptance Criteria: Критерии сохраняют предметные гарантии и требуют проверки интерфейса и доступности; реализация и приёмка в этой задаче не выполняются.
+questions_left: 0
 ---
 
 # [P0] Краткая достоверность и очередь решений

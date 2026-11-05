@@ -10,6 +10,9 @@
    Acting on a finding (act-on-findings): an opened finding of the latest run starts with «Что сделать» — take the measurement out,
    measure its photograph again, count the recipe from its newest engraving, confirm a questioned entry; each decision shows what it
    changes first, and «Убрано оператором N» lists the decisions with «Вернуть».
+   A decision queue (ux-evidence-summaries-p0, REQ-002, DEC-001): a row names the problem, what it concerns and ONE recommended step that
+   the server chose (``f.recommendation``, findings.py); the other remedies wait under «Другие действия», the calculation, its schedule and the
+   operator's exclusions under folds. Photo engraving is a queue of the same kind (``/analysis/photo-queue``).
    Адрес: #/findings?run=&state=&kind=&task=&setup=&material=&sort=&tab=&finding= */
 'use strict';
 (() => {
@@ -30,6 +33,16 @@
   const stockName = (s) => (s ? [s.name, s.grade, s.batch].filter(Boolean).join(' · ') || 'титан без названия' : 'титан не указан');
   const setupName = (c) => `${c.device || 'лазер № ' + c.device_id} · ${App.lensLabel(c.lens)}`;
   const settings = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с · ${num(p.pulse_width, 0)} нс · шаг ${num(p.line_interval, 4)} мм · ${p.passes ?? '—'} пр.`;
+  /** Why the server recommends this step (the ids are those of ``findings.RECOMMENDATION_RULES``). */
+  const WHY = {
+    recheck_running: 'Идёт перепроверка всех работ: фотографии сейчас нельзя перемерять, а решения о расчёте — принимать. Посмотрите основания вывода.',
+    measurement_anomaly: 'Сначала перемерьте фотографию: если измерение неверное, новое его исправит. Убирать его из расчёта или считать рецепт заново стоит после проверки причины.',
+    corrective_choice_ambiguous: 'Что исправлять, зависит от причины, а она пока не ясна: сначала посмотрите основания вывода — фотографии и записи знания, на которых он стоит.',
+    experiment_for_gap: 'Данных не хватает: лаборатория предложит опыт, который закроет пробел.',
+    good_news: 'Исправлять нечего: отметьте «Учтено», когда прочитаете.',
+    evidence_to_read: 'Исправлений этот вывод не предлагает; посмотрите, на чём он стоит.',
+    nothing_to_do: 'Действий не предлагается: отметьте «Учтено», когда прочитаете.',
+    already_handled: 'Вы уже отметили этот вывод: он вернётся в «Требуют внимания», когда появятся новые данные.'};
   const designerRoute = (deviceId, lensId, proposalId) => `/designer?device=${deviceId}&lens=${App.lensParam(lensId)}${proposalId ? '&proposal=' + proposalId : ''}`;
 
   function samples(s) {
@@ -64,7 +77,13 @@
       case 'validated': return `Стадия «${STAGE[c.stage] || c.stage}»${c.since ? ' с ' + when(c.since) : ''}; критерии: повторов ${c.repeat_threshold ?? '—'}, `
         + `допуск ΔE ${c.delta_tolerance ?? '—'}, порог дисперсии ${c.variance_threshold ?? '—'}`;
       case 'variance': return `Дисперсия повторов ${num(c.variance)} ΔE² против сохранённого порога ${c.variance_threshold}`;
-      case 'questioned': return `Стадия «${STAGE[c.stage] || c.stage}»; наблюдения, вызвавшие сомнение: ${(c.doubt_observation_ids || []).join(', ') || '—'}`;
+      case 'questioned': {
+        const doubt = c.doubt_observation_ids || [];
+        const stage = `Стадия «${STAGE[c.stage] || c.stage}»`;
+        // a few observations are named in the line; many are a count with a list of links (ux-growing-collections-p0, REQ-002)
+        return doubt.length > SourceRefs.SHORT ? [stage, SourceRefs.observations(doubt, {label: 'Наблюдения, вызвавшие сомнение'})]
+          : `${stage}; наблюдения, вызвавшие сомнение: ${doubt.join(', ') || '—'}`;
+      }
       case 'observation': return [h('span', {}, swatch(c.observation_lab), ' наблюдение ', labText(c.observation_lab)), ' против ',
         h('span', {}, swatch(c.reference_lab), c.rule === 'tolerance' ? ' среднее рецепта ' : ' среднее других гравировок ', labText(c.reference_lab)),
         ` · ΔE ${num(c.delta_e, 1)} · ` + (c.rule === 'tolerance' ? `допуск ${c.tolerance}` : `3σ = ${num(3 * c.sd)} ΔE`)];
@@ -90,18 +109,22 @@
     const e = f.evidence || {};
     const links = [];
     const pairs = e.pair_ids || [];
-    pairs.slice(0, 12).forEach((id) => links.push(link('/analysis/' + id, 'фото № ' + id)));
-    if (pairs.length > 12) links.push(h('span', {class: 'muted'}, `и ещё ${pairs.length - 12}`));
+    // up to the old limits the numbers are links in the row; beyond them a count with a list of every one (ux-growing-collections-p0, REQ-002)
+    if (pairs.length > 12) links.push(SourceRefs.photos(pairs, {label: 'Фото'}));
+    else pairs.forEach((id) => links.push(link('/analysis/' + id, 'фото № ' + id)));
     if (e.knowledge_id) links.push(link('/knowledge/' + e.knowledge_id, 'знание № ' + e.knowledge_id));
-    (e.knowledge_ids || []).slice(0, 8).forEach((id) => links.push(link('/knowledge/' + id, 'знание № ' + id)));
+    const known = e.knowledge_ids || [];
+    if (known.length > 8) links.push(SourceRefs.refs(known, {label: 'Знание', href: (id) => '/knowledge/' + id}));
+    else known.forEach((id) => links.push(link('/knowledge/' + id, 'знание № ' + id)));
     if (e.target_id != null) links.push(link(designerRoute(f.device_id, f.lens_id), 'цель № ' + e.target_id));
     if (e.plan_id) links.push(link('/plans/' + e.plan_id, 'исходная работа цели'));
     if (e.proposal_id) links.push(link(designerRoute(f.device_id, f.lens_id, e.proposal_id), 'предложение № ' + e.proposal_id));
     if (e.session_id) links.push(link('/research/' + e.session_id, 'исследование № ' + e.session_id));
     const obs = e.observation_ids || [];
-    return h('div', {class: 'row small'}, h('span', {class: 'muted'}, 'Основания:'),
+    return h('div', {class: 'row small fd-evidence'}, h('span', {class: 'muted'}, 'Основания:'),
       links.length ? links : h('span', {class: 'muted'}, 'принятых записей нет'),
-      obs.length ? h('span', {class: 'muted'}, `наблюдения № ${obs.slice(0, 8).join(', ')}${obs.length > 8 ? ` … (всего ${obs.length})` : ''}`) : null);
+      obs.length > 8 ? SourceRefs.observations(obs, {label: 'Наблюдения'}) : null,
+      obs.length && obs.length <= 8 ? h('span', {class: 'muted'}, `наблюдения № ${obs.join(', ')}`) : null);
   }
 
   /** Тот же вывод во всех расчётах, где он был; подряд идущие одинаковые объединены. */
@@ -128,7 +151,7 @@
     return details;
   }
 
-  function proposeButton(f) {
+  function proposeButton(f, cls = 'primary btn-small') {
     if (f.kind !== 'gap' || !f.proposable) return null;
     return btn('Предложить эксперимент', async (ev) => {
       const self = ev.currentTarget;
@@ -138,7 +161,7 @@
         toast(`Предложение № ${p.id} готово`, 'ok');
         App.go(designerRoute(p.device_id, p.lens_id, p.id));
       } catch (e) { fail(e); self.disabled = false; }
-    }, 'primary btn-small');
+    }, cls);
   }
 
   function findingCard(f) {
@@ -147,13 +170,12 @@
     const recipe = f.recipe && f.recipe.lab ? h('p', {class: 'small'}, swatch(f.recipe.lab), ' ', labText(f.recipe.lab), ' · ', settings(f.recipe.parameters)) : null;
     return h('article', {class: 'stack finding'},
       h('div', {class: 'row'}, pill(KIND_ONE[f.kind] || f.kind), pill(basis, basisKind), f.new ? pill('новое в этом расчёте', 'ok') : null,
-        h('span', {class: 'spacer'}), proposeButton(f)),
+        h('span', {class: 'spacer'}), f.recommendation && f.recommendation.action === 'propose_experiment' ? null : proposeButton(f)),   // the recommended step already holds it
       h('p', {}, h('strong', {}, I18N.tr(f.statement))),
       recipe,
       facts([['Лазер и линза', setupName(c)], ['Титан', stockName(c.stock)], ['Задача', taskName(f.task)], ['Образцы', samples(f.samples)],
         ['Неопределённость', uncertainty(f)], ['Сравнивает', compares(f)]]),
-      (f.limitations || []).length ? h('ul', {class: 'small muted'}, f.limitations.map((l) => h('li', {}, I18N.tr(l)))) : null,
-      evidence(f), historyBlock(f));
+      (f.limitations || []).length ? h('ul', {class: 'small muted'}, f.limitations.map((l) => h('li', {}, I18N.tr(l)))) : null);
   }
 
   // -- the operator's marks (REQ-003): «Учтено», «Скрыть» / «Вернуть», «Закрепить», a note; ``done`` reads the findings again
@@ -161,12 +183,13 @@
   const DONE = {acknowledge: 'Отмечено «учтено»: вывод вернётся в «Требуют внимания», когда у него появятся новые данные.',
     hide: 'Скрыто до новых данных: вывод можно найти в «Скрытых».', reopen: 'Вывод снова требует внимания.'};
   function markButtons(f, done, openNote) {
+    const advised = f.recommendation && f.recommendation.action === 'acknowledge' && f.state === 'attention';
     const act = (action, text) => btn(text, async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try { await mark(f, action); if (DONE[action]) toast(DONE[action], 'ok'); await done(); }
       catch (e) { fail(e); self.disabled = false; }
-    }, 'btn-small');
+    }, action === 'acknowledge' && advised ? 'primary btn-small fd-recommended' : 'btn-small');
     return [f.state === 'attention' ? act('acknowledge', 'Учтено') : act('reopen', 'Вернуть'),
       f.state !== 'hidden' ? act('hide', 'Скрыть') : null,
       btn('Заметка', () => openNote(), 'btn-small'),
@@ -178,16 +201,21 @@
     const was = m.status === 'hidden' ? 'скрыт' : 'отмечен «учтено»';
     const status = m.changed ? `Был ${was} ${when(m.status_at)}; с тех пор появились новые данные, вывод снова требует внимания.`
       : m.status ? `${m.status === 'hidden' ? 'Скрыт' : 'Отмечен «учтено»'} ${when(m.status_at)}: вернётся, когда появятся новые данные.` : null;
-    const note = h('textarea', {rows: '2', maxlength: '2000', placeholder: 'Что сделано, что проверить…'});
+    const form = Forms.create();
+    const note = h('textarea', {rows: '2', placeholder: 'Что сделано, что проверить…'});
     note.value = m.note || '';
+    // the server keeps the first 2000 characters of a note; a longer one is refused here with its length rather than cut short without a word
+    const noteField = form.add('note', 'Заметка оператора', note, {raw: true, maxLength: 2000});
     const save = btn('Сохранить заметку', async (ev) => {
       const self = ev.currentTarget;
+      const v = form.collect();
+      if (!v) return;
       self.disabled = true;
-      try { await mark(f, 'note', note.value); toast('Заметка сохранена', 'ok'); await done(); }
-      catch (e) { fail(e); self.disabled = false; }
+      try { await mark(f, 'note', v.note); toast('Заметка сохранена', 'ok'); await done(); }
+      catch (e) { form.fail(e); self.disabled = false; }
     }, 'btn-small');
     return h('div', {class: 'stack fd-mark'}, status ? h('p', {class: 'small muted'}, status) : null,
-      h('div', {class: 'toolbar'}, field('Заметка оператора', note), save));
+      h('div', {class: 'toolbar'}, noteField, save), form.error);
   }
 
   // -- what can be done about a finding (act-on-findings REQ-001..REQ-004) ---------------------------------------------------
@@ -202,7 +230,10 @@
   };
   const DECIDED = {exclude_measurement: 'измерение убрано из расчёта', count_from_latest: 'рецепт считается с последней гравировки'};
   const layerName = (name, index) => (name ? `«${I18N.name(name)}»` : `№ ${index}`);
-  const engravingText = (e) => `${e.title || 'гравировка'} · ${when(e.when)} · фото № ${e.pair_ids.join(', ')}`;
+  const longPhotos = (e) => e.pair_ids.length > SourceRefs.SHORT;
+  const engravingText = (e) => `${e.title || 'гравировка'} · ${when(e.when)} · ` + (longPhotos(e) ? `фото: ${e.pair_ids.length}` : `фото № ${e.pair_ids.join(', ')}`);
+  /** The photographs of an engraving beyond a few: a count with a list of links under its line. */
+  const engravingPhotos = (e) => (longPhotos(e) ? SourceRefs.photos(e.pair_ids, {label: 'Фото'}) : null);
 
   /** The recipe's colour before and after a decision, as the knowledge will derive it. */
   function colourChange(p) {
@@ -219,9 +250,9 @@
       return h('p', {}, 'Перестанет считаться: ', link('/analysis/' + o.pair_id, `фото № ${o.pair_id}`), `, слой ${layerName(o.layer_name, o.layer_index)} `,
         h('span', {}, swatch(o.lab), labText(o.lab)));
     }
-    return h('div', {class: 'stack small'}, h('div', {}, 'Останется: ', swatch(p.kept.lab), ' ', engravingText(p.kept)),
+    return h('div', {class: 'stack small'}, h('div', {}, 'Останется: ', swatch(p.kept.lab), ' ', engravingText(p.kept), engravingPhotos(p.kept)),
       h('div', {}, `Перестанут считаться (${p.older.length}):`),
-      h('ul', {}, p.older.slice(0, 6).map((e) => h('li', {}, swatch(e.lab), ' ', engravingText(e)))),
+      h('ul', {}, p.older.slice(0, 6).map((e) => h('li', {}, swatch(e.lab), ' ', engravingText(e), engravingPhotos(e)))),
       p.older.length > 6 ? h('div', {class: 'muted'}, `и ещё ${p.older.length - 6}`) : null);
   }
 
@@ -237,13 +268,17 @@
   /** A decision: what it changes first (REQ-004), a note, then the decision and the screen with the new run and «Вернуть». */
   async function decide(f, action) {
     const preview = await post(`/analysis/findings/${f.id}/remedy`, {action});
-    const note = h('textarea', {rows: '2', maxlength: '2000', placeholder: 'Почему (необязательно)'});
+    const form = Forms.create();
+    const note = form.add('note', 'Заметка', h('textarea', {rows: '2', placeholder: 'Почему (необязательно)'}), {raw: true, maxLength: 2000});
     App.modal(REMEDY[action][0] + '?', h('div', {class: 'stack fd-remedy-preview'}, leaving(preview), colourChange(preview),
       h('p', {class: 'muted small'}, 'Сами измерения не меняются: решение хранится отдельно, «Вернуть» его отменит. После решения пересчитаются '
-        + 'знание, выводы и работы.'), field('Заметка', note)),
+        + 'знание, выводы и работы.'), note, form.error),
     [{label: 'Отмена', run: (m) => m.close()},
       {label: REMEDY[action][0], cls: 'primary', run: async (m) => {
-        const r = await post(`/analysis/findings/${f.id}/remedy`, {action, note: note.value, confirm: true});
+        const v = form.collect();
+        if (!v) return;
+        let r;
+        try { r = await post(`/analysis/findings/${f.id}/remedy`, {action, note: v.note, confirm: true}); } catch (e) { form.fail(e); return; }
         m.close();
         toast([`Готово · ${DECIDED[action]}${r.run_id ? ` · расчёт № ${r.run_id}` : ''} `, btn('Вернуть', () => revoke(r.exclusion.id), 'btn-small')], 'ok');
         App.render({preserveScroll: true});
@@ -252,12 +287,16 @@
 
   /** «Перемерить фото» from the finding (REQ-003): busy while it measures, then every layer's colour before and after (the finding's layer
       first), or why the old measurement was kept; the screen is drawn again when the result is closed. */
+  const measuring = new Set();                       // photographs being measured again: a second click on any button for one waits for the first
   async function remeasure(f, pairId, control) {
+    if (measuring.has(pairId)) return;
+    measuring.add(pairId);
     control.disabled = true;
     control.textContent = 'Перемеряю… (около полуминуты)';
     let out;
     try { out = await post(`/pairs/${pairId}/remeasure`); }
     catch (e) { fail(e); control.disabled = false; control.textContent = REMEDY.remeasure[0]; return; }
+    finally { measuring.delete(pairId); }
     const own = f.kind === 'anomaly' ? Number(String(f.key).split(':')[3]) : null;
     const body = out.status !== 'replaced' ? h('p', {}, 'Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''))
       : h('div', {class: 'stack'}, h('p', {}, `Фото № ${pairId} перемерено; новое измерение — `, link('/analysis/' + out.replaced_by, `фото № ${out.replaced_by}`), '.'),
@@ -285,19 +324,65 @@
         }}]);
   }
 
-  /** «Что сделать»: one button per remedy the finding offers, each with a line on what it does; nothing for a finding with none. */
-  function remedyBlock(f) {
-    const offered = (f.remedies || []).filter((r) => REMEDY[r.action]);
-    if (!offered.length) return null;
-    const button = (r) => btn(REMEDY[r.action][0], async (ev) => {
+  /** The button of one remedy the finding offers (the same flows as ever: the preview and the confirmation of a decision, the measuring again). */
+  function remedyButton(f, r, cls = 'btn-small') {
+    return btn(REMEDY[r.action][0], async (ev) => {
       const self = ev.currentTarget;
       if (r.action === 'remeasure') { await remeasure(f, r.pair_id, self); return; }
       self.disabled = true;
       try { if (r.action === 'confirm_questioned') confirmEntry(r.knowledge_id); else await decide(f, r.action); }
       catch (e) { fail(e); } finally { self.disabled = false; }
-    }, 'btn-small');
-    return h('div', {class: 'stack fd-remedies'}, h('h4', {}, 'Что сделать'),
-      offered.map((r) => h('div', {class: 'fd-remedy'}, button(r), h('span', {class: 'muted small'}, REMEDY[r.action][1]))));
+    }, cls);
+  }
+
+  /** «Другие действия»: every remedy the finding offers except the one recommended, each with a line on what it does, behind a fold;
+      nothing for a finding with none (an earlier run offers none). */
+  function otherActions(f) {
+    const advised = f.recommendation && f.recommendation.action === 'remeasure' ? 'remeasure' : null;
+    const offered = (f.remedies || []).filter((r) => REMEDY[r.action] && r.action !== advised);
+    if (!offered.length) return null;
+    return h('details', {class: 'fd-more-actions'}, h('summary', {}, `Другие действия (${offered.length})`),
+      h('div', {class: 'stack fd-remedies'}, offered.map((r) => h('div', {class: 'fd-remedy'}, remedyButton(f, r), h('span', {class: 'muted small'}, REMEDY[r.action][1])))));
+  }
+
+  /** The one recommended step as a button: measure the photograph again, open the evidence (the row opens under its own line), propose an
+      experiment; «Учтено» is the mark button itself, drawn as the recommended one. ``open`` opens the evidence where the finding is shown. */
+  function nextButton(f, open, cls = 'primary btn-small fd-recommended') {
+    const r = f.recommendation;
+    if (!r) return null;
+    if (r.action === 'remeasure') {
+      return btn(REMEDY.remeasure[0], async (ev) => {
+        const self = ev.currentTarget;
+        await remeasure(f, r.pair_id, self);
+      }, cls);
+    }
+    if (r.action === 'open_evidence') return btn('Открыть основания', () => open(f), cls);
+    if (r.action === 'propose_experiment') return proposeButton(f, cls);
+    return null;
+  }
+
+  /** «Что дальше»: the recommended step, why, and — when the step is not «Учтено» — nothing else; the rest is under «Другие действия». */
+  function nextBlock(f, open) {
+    const r = f.recommendation;
+    if (!r) return null;
+    const button = nextButton(f, open, 'primary btn-small');
+    const why = WHY[r.rule];
+    return h('div', {class: 'fd-remedies fd-next', 'data-action': r.action},
+      h('h4', {}, 'Что дальше'), h('div', {class: 'fd-remedy'}, button, h('span', {class: 'muted small fd-next-why'}, why || '')));
+  }
+
+  /** What an opened finding shows, in the order of a decision: the recommended step, the evidence it rests on, the other actions, the
+      operator's mark and note, then the finding itself with its figures; its history by calculation is a fold. */
+  /** The words the finding uses without saying what they are (ux-save-feedback-p0, REQ-003): the basis it rests on, and — when it rests on them — the photo
+      and engraving pair, the knowledge entry and its stage, each explained through what the person is doing, the technical number inside. */
+  function termsBlock(f) {
+    const e = f.evidence || {};
+    const pairs = e.pair_ids || [], known = [e.knowledge_id, ...(e.knowledge_ids || [])].filter((id) => id != null);
+    return h('div', {class: 'stack kn-terms'}, Terms.note('basis'), pairs.length ? Terms.note('pair', pairs.length === 1 ? pairs[0] : null) : null,
+      known.length ? Terms.note('knowledge', known.length === 1 ? known[0] : null) : null, known.length ? Terms.note('stage') : null);
+  }
+  function findingDetails(f, done, open) {
+    return [nextBlock(f, open), evidence(f), termsBlock(f), otherActions(f), markBlock(f, done), findingCard(f), historyBlock(f)];
   }
 
   /** «Убрано оператором N» (REQ-005): the decisions in force as a short list, each with «Вернуть»; nothing when there is none. */
@@ -328,7 +413,8 @@
     return [f.mark.pinned ? h('span', {title: 'Закреплён наверху', 'aria-label': 'Закреплён наверху'}, '📌') : null,
       h('span', {class: 'fd-kind fd-' + f.kind}, KIND_ONE[f.kind] || f.kind),
       h('span', {class: 'lst-text', title: I18N.tr(f.statement)}, I18N.tr(f.statement)),
-      h('span', {class: 'muted small fd-where'}, `${c.device || 'лазер № ' + f.device_id} · ${stockName(c.stock)}`),
+      h('span', {class: 'muted small fd-where', title: `${setupName(c)} · ${stockName(c.stock)}${f.task ? ' · ' + taskName(f.task) : ''}`},
+        `${c.device || 'лазер № ' + f.device_id} · ${stockName(c.stock)}${f.task ? ' · ' + taskName(f.task) : ''}`),
       f.deviation != null ? h('span', {class: 'small'}, `ΔE ${num(f.deviation, 1)}`) : null,
       f.mark.changed ? pill('изменился', 'warn') : f.new ? pill('новое', 'ok') : null,
       f.state === 'hidden' ? pill('скрыт') : f.state === 'acknowledged' ? pill('учтён') : null,
@@ -342,18 +428,22 @@
   }
 
   function scheduleBlock(schedule) {
-    const hours = h('input', {type: 'number', min: '0', step: 'any', value: schedule.interval_hours, 'aria-label': 'Интервал пересчёта, ч'});
+    const form = Forms.create();
+    const hours = form.add('hours', 'Пересчитывать каждые (0 — выключено)', Forms.numberInput(Forms.QUANTITIES.analysisInterval, {value: schedule.interval_hours}),
+      {quantity: 'analysisInterval', required: true});
     const state = schedule.interval_hours > 0
       ? `Включено: каждые ${schedule.interval_hours} ч. Следующий расчёт — ${when(schedule.next_due_at)}${schedule.running ? '' : ' (начнётся после перезапуска приложения)'}.`
       : 'Выключено: выводы пересчитываются после каждого принятия фотографии и по кнопке.';
     return h('div', {class: 'stack'}, h('h4', {}, 'Пересчёт по расписанию'), h('p', {class: 'muted small'}, state),
-      h('div', {class: 'toolbar'}, field('Пересчитывать каждые, ч (0 — выключено)', hours),
+      h('div', {class: 'toolbar'}, hours,
         btn('Сохранить расписание', async (ev) => {
           const self = ev.currentTarget;
+          const v = form.collect();
+          if (!v) return;
           self.disabled = true;
-          try { await put('/analysis/schedule', {interval_hours: hours.value === '' ? 0 : +hours.value}); toast('Расписание сохранено', 'ok'); App.render({preserveScroll: true}); }
-          catch (e) { fail(e); self.disabled = false; }
-        })));
+          try { await put('/analysis/schedule', {interval_hours: v.hours}); toast('Расписание сохранено', 'ok'); App.render({preserveScroll: true}); }
+          catch (e) { form.fail(e); self.disabled = false; }
+        })), form.error);
   }
 
   // -- «Перепроверить все работы» (REQ-004, DEC-089) ----------------------------------------------------------------------
@@ -497,6 +587,10 @@
           scheduleBlock(schedule))));
   }
 
+  /** «Открыть основания»: the row opens under its own line and the cursor goes to the first thing the finding rests on. */
+  const focusEvidence = (root) => { const box = root && root.querySelector('.fd-evidence'), first = box && box.querySelector('a'); if (first) first.focus(); };
+  const openEvidence = (list, f) => list.open(f.key).then(focusEvidence);
+
   /** The findings of the run as a short list read from the server page by page (REQ-002). */
   function findingsList(cur, keep) {
     const asked = {state: cur.state === 'all' ? '' : (cur.state || 'attention'), kind: cur.kind || '', task: cur.task || '', setup: cur.setup || '', material: cur.material || ''};
@@ -506,8 +600,9 @@
         const r = await get(`/analysis/runs/${cur.run || 'latest'}?` + new URLSearchParams(params).toString());
         return {items: r.findings, total: r.matched, counts: r.counts, options: r.options};
       },
-      key: (f) => f.key, row, details: (f, list) => [remedyBlock(f), markBlock(f, list.refresh), findingCard(f)], actions: (f, list) => markButtons(f, list.refresh,
-        () => list.open(f.key).then((det) => { const note = det && det.querySelector('textarea'); if (note) note.focus(); })),
+      key: (f) => f.key, row, details: (f, list) => findingDetails(f, list.refresh, (x) => openEvidence(list, x)),
+      actions: (f, list) => [nextButton(f, (x) => openEvidence(list, x)), ...markButtons(f, list.refresh,
+        () => list.open(f.key).then((det) => { const note = det && det.querySelector('textarea'); if (note) note.focus(); }))],
       filters: [{key: 'state', label: 'Состояние', options: STATES, keepEmpty: true},
         {key: 'kind', label: 'Вид', options: KINDS.map((k) => [k, KIND[k]])},
         {key: 'task', label: 'Задача', select: true, options: (a) => ((a.options || {}).tasks || []).map((t) => [t, taskName(t)])},
@@ -526,24 +621,53 @@
       const f = await get(`/analysis/findings/${id}`);
       App.fill(box, [h('div', {class: 'row'}, h('h3', {}, `Вывод № ${f.id}`), h('span', {class: 'muted small'}, `из расчёта № ${f.run_id}`),
         h('span', {class: 'spacer'}), markButtons(f, show, () => box.querySelector('textarea').focus()), btn('Закрыть', () => { box.remove(); close(); }, 'btn-small')),
-        remedyBlock(f), markBlock(f, show), findingCard(f)]);
+        findingDetails(f, show, () => focusEvidence(box))]);
     };
     try { await show(); } catch (e) { App.fill(box, h('div', {class: 'alert bad'}, e.message || String(e))); }
     return box;
   }
 
-  /** Photo engraving on every laser and titanium where one was photographed (photo-engraving-quality): one row each, the kinds under it. */
+  /** Photo engraving as a queue of the same kind (ux-evidence-summaries-p0 REQ-002): one row for every laser and titanium where one was
+      photographed, its kinds under it; the row names the problem (a kind that came out a negative, one not yet measured …), what it
+      concerns and ONE recommended step — the first of its kinds the server ranks highest (``recommendation`` of ``/analysis/photo-queue``). */
+  const PHOTO_STATUS = {settled: 'поиск сошёлся', searching: 'поиск идёт', measured: 'измерено, но не подобрано', unmeasured: 'не измерено', failed: 'не получился'};
+  const PHOTO_STEP = {
+    open_evidence: (r) => ({label: `Открыть фото № ${r.target.id}`, go: `/analysis/${r.target.id}`}),
+    make_plate: () => ({label: 'Посмотреть предложение', open: true}),
+    open_scales: () => ({label: 'Шкалы серого', go: '/photo-engraving?scales=1'}),
+    add_photograph: () => ({label: 'Добавить фото', go: '/ingest'})};
+  const PHOTO_WHY = {failed_look_first: 'Негатив или едва видная картинка: сначала посмотрите фотографию, потом делайте новую плату.',
+    plate_offered: 'Лаборатория предлагает плату, которая подберёт настройки вида.', read_the_best: 'Лучшее измеренное — посмотрите фотографию, по которой оно стоит.',
+    start_with_scales: 'Начните со шкал серого: по ним строится прогноз градаций.', photograph_first: 'Сначала сфотографируйте любую фотогравировку точками.'};
+  const kindName = (kind) => PhotoModes.label(kind);
+  /** The kinds of a place that still ask something of the operator, the most urgent first (the server's ``rank``). */
+  const pending = (place) => place.kinds.filter((k) => k.recommendation && k.recommendation.action !== 'none').sort((a, b) => a.recommendation.rank - b.recommendation.rank);
   function photoList(photo) {
     const keyOf = (k) => `${k.device_id}/${k.lens_id}/${k.material_id}`;
+    const urgency = (place) => (pending(place)[0] || {recommendation: {rank: 99}}).recommendation.rank;
     return h('div', {class: 'stack'},
-      h('p', {class: 'muted small'}, 'Лучшие измеренные настройки каждого вида, что делает каждая настройка и какую плату предлагает лаборатория — по всем принятым фотографиям.'),
+      h('p', {class: 'muted small'}, 'Очередь по фотогравировке: у каждого лазера и титана — что мешает и один рекомендуемый шаг. Лучшие измеренные настройки каждого вида, '
+        + 'что делает каждая настройка и какую плату предлагает лаборатория — под строкой.'),
       App.list({items: photo, key: keyOf, open: photo.length === 1 ? keyOf(photo[0]) : null,
-        row: (k) => [h('span', {class: 'lst-text'}, `${k.setup} · ${k.titanium}`),
-          h('span', {class: 'muted small'}, `измерено видов: ${k.kinds.filter((x) => x.best).length} из ${k.kinds.length}`),
-          k.kinds.some((x) => x.status === 'failed') ? pill(`не получилось видов: ${k.kinds.filter((x) => x.status === 'failed').length}`, 'bad') : null,
-          k.kinds.some((x) => x.proposal) ? pill('есть предложение', 'ok') : null],
+        row: (k) => {
+          const first = pending(k)[0];
+          const failed = k.kinds.filter((x) => x.status === 'failed');
+          return [h('span', {class: 'lst-text'}, `${k.setup} · ${k.titanium}`),
+            h('span', {class: 'muted small'}, `измерено видов: ${k.kinds.filter((x) => x.best).length} из ${k.kinds.length}`),
+            failed.length ? pill(`не получилось видов: ${failed.length}`, 'bad') : null,
+            k.kinds.some((x) => x.proposal) ? pill('есть предложение', 'ok') : null,
+            first ? h('span', {class: 'small fd-next-kind', title: PHOTO_WHY[first.recommendation.rule]},
+              `Дальше: ${kindName(first.kind)} — ${PHOTO_STATUS[first.status] || first.status}`) : h('span', {class: 'muted small'}, 'решений не требуется')];
+        },
+        actions: (k, list) => {
+          const first = pending(k)[0];
+          if (!first) return [];
+          const step = PHOTO_STEP[first.recommendation.action](first.recommendation);
+          return [btn(step.label, () => (step.go ? App.go(step.go) : list.open(keyOf(k))), 'primary btn-small fd-recommended')];
+        },
         details: (k) => h('div', {class: 'ex-insights'}, PhotoQuality.kindCards(k, {device_id: k.device_id, lens_id: k.lens_id, material_id: k.material_id})),
-        sorts: [['setup', 'По лазеру и титану', (p, q) => `${p.setup} · ${p.titanium}`.localeCompare(`${q.setup} · ${q.titanium}`)]]}).el);
+        sorts: [['urgent', 'Сначала требующие решения', (p, q) => urgency(p) - urgency(q) || `${p.setup} · ${p.titanium}`.localeCompare(`${q.setup} · ${q.titanium}`)],
+          ['setup', 'По лазеру и титану', (p, q) => `${p.setup} · ${p.titanium}`.localeCompare(`${q.setup} · ${q.titanium}`)]]}).el);
   }
 
   App.register({id: 'findings', async render(ctx) {
@@ -557,7 +681,7 @@
     const keep = (change) => { Object.assign(cur, change); history.replaceState(null, '', '#' + address()); };
     const route = (change) => { Object.assign(cur, change); App.go(address()); };
     let photo = [];
-    try { photo = await get('/photo-knowledge/everywhere'); } catch (_) { /* the rest of the screen stands */ }
+    try { photo = await get('/analysis/photo-queue'); } catch (_) { /* the rest of the screen stands */ }
     const linked = cur.finding ? await linkedFinding(cur.finding, () => keep({finding: ''})) : null;
     const total = run ? KINDS.reduce((n, k) => n + (run.counts[k] || 0), 0) : 0;
     const recheckBox = h('div', {class: 'stack fd-recheck'});
@@ -569,10 +693,11 @@
       {initial: cur.tab === 'photo' ? 'photo' : 'findings', label: 'Выводы', prefix: 'fd', onSelect: (id) => keep({tab: id === 'photo' ? 'photo' : ''})}) : null;
     return h('div', {class: 'stack fd-page'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Выводы'),
-        h('p', {class: 'sub'}, 'Что показала накопленная работа: улучшения, нестабильность, аномалии, пробелы и гипотезы AI. Измеренное отделено от гипотез.')),
+        h('p', {class: 'sub'}, 'Очередь решений: у каждого вывода — что не так, к чему это относится и один рекомендуемый шаг. '
+          + 'Улучшения, нестабильность, аномалии, пробелы и гипотезы AI; измеренное отделено от гипотез.')),
         h('span', {class: 'spacer'}), link('/designer', 'Планировщик экспериментов')),
       runLine(run, runs, schedule, cur, route, recheckBox),
-      exclusionsBlock(excluded),
-      tabs ? [tabs.list, ...tabs.panels] : findings);
+      tabs ? [tabs.list, ...tabs.panels] : findings,
+      exclusionsBlock(excluded));                                  // the operator's decisions in force: a fold under the queue, not above it
   }});
 })();

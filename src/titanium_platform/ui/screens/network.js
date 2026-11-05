@@ -16,16 +16,19 @@
   function lanCard(st, reload) {
     const enabled = h('input', {type: 'checkbox', class: 'lan-enabled', 'aria-label': 'Доступ с планшета по локальной сети'});
     enabled.checked = !!st.enabled;
-    const port = h('input', {type: 'number', min: 1024, max: 65535, step: 1, 'aria-label': 'Порт'});
-    port.value = st.port;
-    const name = h('input', {maxlength: 64, 'aria-label': 'Имя мастерской на планшете'});
-    name.value = st.name || '';
+    const f = Forms.create();
+    const port = Forms.numberInput(Forms.QUANTITIES.lanPort, {value: st.port});
+    const name = h('input', {maxlength: 64, value: st.name || ''});
+    const portField = f.add('port', 'Порт', port, {quantity: 'lanPort', required: true});
+    const nameField = f.add('name', 'Имя мастерской на планшете', name, {empty: ''});
     const apply = btn('Применить', async () => {
+      const v = f.collect();
+      if (!v) return;
       try {
-        await put('/lan', {enabled: enabled.checked, port: Number(port.value), name: name.value});
+        await put('/lan', {enabled: enabled.checked, port: v.port, name: v.name});
         toast(enabled.checked ? 'Доступ по локальной сети включён' : 'Доступ по локальной сети выключен', 'ok');
         reload();
-      } catch (e) { fail(e); }
+      } catch (e) { f.fail(e); }
     }, 'primary');
     const state = st.running ? pill('работает', 'ok') : st.enabled ? pill('не запущен', 'bad') : pill('выключен');
     const urls = st.urls.length ? h('ul', {class: 'lan-urls'}, st.urls.map((u) => h('li', {}, h('code', {}, u))))
@@ -34,7 +37,7 @@
       h('p', {class: 'small muted'}, 'Планшет в той же сети открывает мастерскую по адресу ниже. Это отдельный сервер с шифрованием; '
         + 'обычный адрес приложения на этом компьютере не меняется, и из интернета мастерская не видна.'),
       h('label', {class: 'row'}, enabled, h('span', {}, 'Доступ с планшета по локальной сети')),
-      h('div', {class: 'toolbar'}, field('Порт', port), field('Имя мастерской на планшете', name), apply),
+      h('div', {class: 'toolbar'}, portField, nameField, apply), f.error,
       st.error ? h('p', {class: 'alert bad', role: 'alert'}, 'Сервер не запустился: ', st.error) : null,
       h('div', {}, h('p', {class: 'small'}, st.running ? 'Адреса для планшета:' : 'Адреса, по которым планшет откроет мастерскую после включения:'), urls));
   }
@@ -102,16 +105,19 @@
   /** The address of the cloud (cloud.api_url): the production service unless the operator names another, for example one under test. */
   function cloudAddress(cloud) {
     if (!cloud) return null;
-    const input = h('input', {placeholder: cloud.default, 'aria-label': 'Адрес облака лабораторий'});
-    input.value = cloud.custom ? cloud.api_url : '';
+    const f = Forms.create();
+    const input = h('input', {placeholder: cloud.default, value: cloud.custom ? cloud.api_url : ''});
+    const addressField = f.add('url', 'Адрес облака лабораторий', input, {empty: '', help: `пусто — стандартный адрес ${cloud.default}; https, или http только для 127.0.0.1`});
     const save = btn('Сохранить', async () => {
+      const v = f.collect();
+      if (!v) return;
       try {
-        const saved = await put('/cloud/settings', {api_url: input.value.trim()});
+        const saved = await put('/cloud/settings', {api_url: v.url});
         input.value = saved.custom ? saved.api_url : '';
         toast(saved.custom ? 'Адрес облака сохранён' : 'Адрес облака: стандартный', 'ok');
-      } catch (e) { fail(e); }
+      } catch (e) { f.fail(e); }       // the server's words stay under the box, with what was typed left as it was
     }, 'btn-small');
-    return h('div', {class: 'toolbar cloud-address'}, field('Адрес облака лабораторий', input, `пусто — стандартный адрес ${cloud.default}; https, или http только для 127.0.0.1`), save);
+    return h('div', {class: 'stack cloud-address'}, h('div', {class: 'toolbar'}, addressField, save), f.error);
   }
 
   const KEY_SOURCE = {environment: 'из переменной окружения OPENAI_API_KEY', workshop: 'сохранён в мастерской',
@@ -120,18 +126,24 @@
   /** The OpenAI key of the AI features (BUG-007): kept by the workshop (ai/openai.key, readable only by this user), never shown back. */
   function aiKey(key, reload) {
     if (!key) return null;
-    const input = h('input', {type: 'password', autocomplete: 'off', placeholder: 'sk-…', 'aria-label': 'Ключ OpenAI'});
+    const f = Forms.create();
+    const input = h('input', {type: 'password', autocomplete: 'off', placeholder: 'sk-…'});
     const state = key.set ? pill(`ключ задан (…${key.ending}), ${KEY_SOURCE[key.source] || ''}`, 'ok') : pill('ключ не задан', 'bad');
+    // the key is sent as typed: what a key may look like is the server's rule (research.save_key) and its words are shown under the box
+    const keyField = f.add('key', 'Новый ключ', input, {read: () => ({ok: true, value: input.value}),
+      help: 'хранится только в папке мастерской (ai/openai.key, доступ только у вашего пользователя); '
+        + 'не попадает в резервные копии, диагностику и выпуски лабораторий; переменная окружения OPENAI_API_KEY, если задана, главнее'});
     const save = btn('Сохранить ключ', async () => {
-      try { await put('/network/ai-key', {key: input.value}); input.value = ''; toast('Ключ OpenAI сохранён в мастерской', 'ok'); reload(); }
-      catch (e) { fail(e); }
+      const v = f.collect();
+      if (!v) return;
+      try { await put('/network/ai-key', {key: v.key}); input.value = ''; toast('Ключ OpenAI сохранён в мастерской', 'ok'); reload(); }
+      catch (e) { f.fail(e); }
     }, 'btn-small');
     const remove = key.workshop_file ? btn('Удалить ключ', () => confirmBox('Удалить ключ OpenAI',
       'Ключ будет удалён из мастерской; AI-исследователь и пояснения перестанут работать, пока ключ не введут снова.', 'Удалить',
       async () => { await del('/network/ai-key'); toast('Ключ удалён', 'ok'); reload(); }), 'danger btn-small') : null;
     return h('div', {class: 'stack ai-key'}, h('div', {class: 'row'}, h('strong', {}, 'Ключ OpenAI'), state),
-      h('div', {class: 'toolbar'}, field('Новый ключ', input, 'хранится только в папке мастерской (ai/openai.key, доступ только у вашего пользователя); '
-        + 'не попадает в резервные копии, диагностику и выпуски лабораторий; переменная окружения OPENAI_API_KEY, если задана, главнее'), save, remove));
+      h('div', {class: 'toolbar'}, keyField, save, remove), f.error);
   }
 
   function outboundCard(net, cloud, key, reload) {

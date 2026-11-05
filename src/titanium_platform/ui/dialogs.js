@@ -16,19 +16,46 @@ Object.assign(App, (() => {
   }
   const fail = (e) => toast(e.message || String(e), 'bad');
 
-  /** A dialog: ``title``, ``body`` and a row of ``actions`` ({label, cls, run(m)}). ``onClose`` is called once when the dialog is closed,
-      however it is: by an action, ×, Escape or a click outside. */
+  // The dialogs open now, the last is on top: only it answers Escape and Tab, and everything behind the top one is inert.
+  const open = [];
+  const FOCUSABLE = 'a, button, input, select, textarea, [tabindex]';
+  const reachable = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => {
+    if (el.disabled || el.getAttribute('tabindex') === '-1' || (el.localName === 'a' && !el.hasAttribute('href'))) return false;
+    for (let n = el; n && n !== box; n = n.parentNode) if (n.hidden) return false;
+    return true;
+  });
+
+  /** A dialog: ``title``, ``body`` and a row of ``actions`` ({label, cls, run(m), initial}). ``onClose`` is called once when the dialog is
+      closed, however it is: by an action, ×, Escape or a click outside. Tab and Shift+Tab stay inside it and the page behind it is inert
+      (BUG-014); the focus starts on the first field, else on the action marked ``initial``, else on the last action; closing gives the
+      focus back to whoever opened it, or to the main area when that element is gone. */
   function modal(title, body, actions, onClose = null) {
     const opener = document.activeElement;
     let closed = false;
     const bg = h('div', {class: 'modal-bg', onClick: (e) => { if (e.target === bg) close(); }});
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const inerted = [];
+    const onKey = (e) => {
+      if (open[open.length - 1] !== self) return;               // a dialog above this one answers
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Tab') return;
+      const items = reachable(box);
+      if (!items.length) { e.preventDefault(); return; }
+      const now = document.activeElement;
+      const inside = !!now && box.contains(now);
+      if (e.shiftKey && (!inside || now === items[0])) { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (!e.shiftKey && (!inside || now === items[items.length - 1])) { e.preventDefault(); items[0].focus(); }
+    };
     const close = () => {
       if (closed) return;
       closed = true;
-      bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus();
+      bg.remove(); document.removeEventListener('keydown', onKey);
+      open.splice(open.indexOf(self), 1);
+      for (const part of inerted) part.removeAttribute('inert');
+      const back = opener && opener.focus && opener.isConnected !== false ? opener : (document.getElementById ? document.getElementById('main') : null);
+      if (back && back.focus) back.focus();
       if (onClose) onClose();
     };
+    const self = {close};
     const buttons = (actions || []).map((a) => btn(a.label, async (ev) => {
       const b = ev.currentTarget;
       b.disabled = true;
@@ -37,15 +64,22 @@ Object.assign(App, (() => {
     const box = h('div', {class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title},
       h('div', {class: 'row'}, h('h3', {}, title), h('span', {class: 'spacer'}), h('button', {type: 'button', class: 'btn', 'aria-label': 'Закрыть', onClick: close}, '×')),
       body, h('div', {class: 'row', style: 'margin-top:14px'}, buttons));
+    // the page behind the dialog (and a dialog under this one) can be reached neither by the keyboard nor by the pointer
+    for (const part of [...document.body.children]) {
+      if (part !== bg && !part.hasAttribute('inert') && !(part.classList && part.classList.contains('toasts'))) { part.setAttribute('inert', ''); inerted.push(part); }
+    }
     bg.append(box);
     document.body.append(bg);
+    open.push(self);
     document.addEventListener('keydown', onKey);
-    (box.querySelector('input,select,textarea') || buttons[buttons.length - 1] || box.querySelector('button')).focus();
+    const marked = (actions || []).findIndex((a) => a.initial);
+    (box.querySelector('input,select,textarea') || buttons[marked >= 0 ? marked : buttons.length - 1] || box.querySelector('button')).focus();
     return {close, el: box};
   }
 
+  /** A confirmation. Its focus starts on «Отмена», so a quick Enter never confirms a deletion. */
   function confirmBox(title, text, okLabel, run) {
-    return modal(title, h('p', {}, text), [{label: 'Отмена', run: (m) => m.close()},
+    return modal(title, h('p', {}, text), [{label: 'Отмена', initial: true, run: (m) => m.close()},
       {label: okLabel, cls: 'primary', run: async (m) => { await run(); m.close(); }}]);
   }
 

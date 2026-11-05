@@ -15,6 +15,7 @@ I18N.add([
   [/^no readable, comparable layer to accept/i, 'Нет читаемого сопоставимого слоя для принятия'],
   [/^only an accepted pair can be re-photographed/i, 'Переснять можно только принятую пару'],
   [/^the photograph is not aligned yet/i, 'Фотография ещё не выровнена: сначала выполните проверку'],
+  [/^check the photograph before choosing a detail/i, 'Сначала проверьте фотографию, затем выбирайте деталь'],
   [/^Four engraved markers match the LightBurn geometry, but the QR identifier is unreadable; review the full layer overlay before accepting\.$/i,
     'Четыре метки согласуются с геометрией LightBurn, но QR-код не прочитан. Перед принятием проверьте наложение всех слоёв.'],
   [/^Alignment starts from one manually placed detail; review the other layer outlines before accepting measurements\.$/i,

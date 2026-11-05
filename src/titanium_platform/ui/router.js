@@ -6,14 +6,15 @@ Object.assign(App, (() => {
   // REQ-059: фотогравировка — четвёртый раздел; «Цветная гравировка» (это и есть векторная работа) ушла из меню, её адрес работает;
   // непрерывная фотогравировка полосами и прогноз по файлу LightBurn открываются из раздела «Фотогравировка», их адреса прежние
   const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/photo-engraving', 'Фотогравировка'],
-    ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь'],
+    ['/works', 'Работы'], ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь'],
     ['/network', 'Сеть'], ['/labs', 'Лаборатории'], ['/workshop', 'Мастерская']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
-    artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', vector: 'vector', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
+    artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', works: 'works', vector: 'vector', new: 'new', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
     findings: 'findings', devices: 'devices', research: 'research', network: 'network', labs: 'labs', workshop: 'workshop'};
   const NAV_OF = {experiment: '/experiments', ingest: '/experiments', analysis: '/experiments', plans: '/experiments', knowledge: '/colors',
-    artwork: '/vector', 'vector-zone': '/vector', photo: '/photo-engraving', 'photo-preview': '/photo-engraving'};
+    artwork: '/vector', new: '/vector', 'vector-zone': '/vector', photo: '/photo-engraving', 'photo-preview': '/photo-engraving'};
   let token = 0;
+  let lastHash = null;                     // the address of the screen drawn last: «#main» (the skip link) must never replace it
 
   const register = (def) => screens.set(def.id, def);
 
@@ -31,6 +32,7 @@ Object.assign(App, (() => {
     '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M6 18L18 6"/>',
     '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19c7 0 3-14 10-14M5 5h6M13 19h6"/>',
     '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m5 17 5-5 4 3 3-6 4 6"/>',
+    '<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><path d="M13 14h8M13 17.5h8M13 21h5"/>',
     '<path d="M4 19V5M4 19h16M7 15l4-5 4 2 5-7"/>',
     '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/>',
     '<path d="M3 12h4l2-6 3 12 2-8 2 4h5"/>',
@@ -111,7 +113,8 @@ Object.assign(App, (() => {
     return [
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Лазерная мастерская', h('small', {}, 'Материалы · Режимы · Работы')),
-        h('div', {class: 'header-actions'}, menuButton, versionTag, h('span', {class: 'user-chip', title: 'Вход не требуется'}, 'Исследователь / мастер'))),
+        h('div', {class: 'header-actions'}, menuButton, versionTag, typeof Operations !== 'undefined' ? Operations.entry() : null,        // the task panel, with the count of running tasks
+          h('span', {class: 'user-chip', title: 'Вход не требуется'}, 'Исследователь / мастер'))),
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 
@@ -143,6 +146,9 @@ Object.assign(App, (() => {
       main.replaceChildren(h('div', {class: 'alert bad', role: 'alert'}, h('strong', {}, 'Не удалось загрузить данные'), h('p', {}, e.message || String(e)), btn('Повторить', render)));
     }
     main.removeAttribute('aria-busy');
+    lastHash = location.hash || '#/experiments';
+    // after a move to another screen the keyboard starts at its content; a refresh of the same screen keeps whatever the person was on
+    if (!preserveScroll && mine === token && main.focus) main.focus({preventScroll: true});
     const workspace = !!main.querySelector('.workspace');       // экран на один экран: без бокового меню и прокрутки страницы (DEC-085)
     document.body.classList.toggle('is-workspace', workspace);
     if (preserveScroll) {
@@ -159,7 +165,25 @@ Object.assign(App, (() => {
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape' && menuOpen()) { setMenu(false); (window.innerWidth > 1000 ? railButton : menuButton).focus(); }
     });
-    addEventListener('hashchange', () => { const options = nextNavigationOptions || {}; nextNavigationOptions = null; render(options); });
+    // «Перейти к содержимому» (BUG-015): moves the focus to the content and leaves the address, the screen and its state alone
+    const skipTo = () => {
+      const main = document.getElementById('main');
+      if (main && main.focus) main.focus();
+    };
+    document.addEventListener('click', (ev) => {
+      const link = ev.target && ev.target.closest ? ev.target.closest('a.skip') : null;
+      if (!link) return;
+      ev.preventDefault();
+      skipTo();
+    });
+    addEventListener('hashchange', () => {
+      if (location.hash === '#main') {                       // a way to the link the click handler did not catch: undo the address
+        if (history.replaceState && lastHash) history.replaceState(null, '', lastHash);
+        skipTo();
+        return;
+      }
+      const options = nextNavigationOptions || {}; nextNavigationOptions = null; render(options);
+    });
     watchVersion();
     render();
   };

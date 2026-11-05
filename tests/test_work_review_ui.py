@@ -19,7 +19,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context({});
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/vector-review.js', {code: 'globalThis.VR = VectorReview;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', {code: %(glue)s}, 'screens/lifecycle.js', 'screens/vector-review.js', {code: 'globalThis.VR = VectorReview;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const VR = ctx.VR, ran = [];
@@ -66,11 +66,11 @@ def test_the_tab_shows_what_came_out_against_what_was_promised_with_both_picture
   out.dialog = ctx.document.body.querySelector('.modal').textContent;
 """)
     review = payload["reviews"][0]
-    assert "Результат гравировки" in out["text"] and f"Совпало слоёв {review['summary']['matched']} из {review['summary']['promised']} обещанных" in out["text"]
+    assert "Результат гравировки" in out["text"] and f"Совпало слоёв {review['summary']['matched']} из {review['summary']['promised']} ожидаемых" in out["text"]
     assert len(out["rows"]) == review["summary"]["matched"] and out["rows"][0].find("ΔE") > 0                      # the worst layer first
     assert any("promised=true" in s for s in out["pictures"]) and any("promised=false" in s for s in out["pictures"])
     assert all(f"engraving={review['engraving_id']}" in s for s in out["pictures"]) and out["label"] == "Результат"
-    assert "Обещано" in out["dialog"] and "Получилось" in out["dialog"] and "ΔE" in out["dialog"]
+    assert "Ожидали" in out["dialog"] and "Получилось" in out["dialog"] and "ΔE" in out["dialog"]
     assert pair
 
 
@@ -126,7 +126,7 @@ def test_a_file_whose_layers_match_none_of_the_works_says_it_is_another_file_and
     n = len(plan["layers"])
     assert out["alerts"] == ["Ни один слой гравированного файла не совпал по настройкам со слоями файла этой работы. Это другой файл (его правили в "
                              "LightBurn или сделали не из этой работы): сравнивать нечего."]
-    assert out["sides"] == [f"Обещаны, но на фото не найдены ({n})", f"Есть на фото, но не в файле работы ({n})"] and out["pictures"] == 0
+    assert out["sides"] == [f"Ожидались, но на фото не найдены ({n})", f"Есть на фото, но не в файле работы ({n})"] and out["pictures"] == 0
     assert "Совпало слоёв" not in out["text"]
     assert out["card"] == ["Фото IMG_1.DNG: слои не совпали с файлом этой работы"]
     assert "Ни один слой этого файла не совпал по настройкам с файлом работы." in out["report"]
@@ -205,10 +205,10 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'filepick.js', 'tasks.js', 'screens/ingest-upload.js', {code: 'globalThis.IU = IngestUpload;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'filepick.js', 'tasks.js', 'screens/material-picker.js', 'screens/ingest-upload.js', {code: 'globalThis.IU = IngestUpload;'}]);
 (async () => {
   const out = {};
-  const tree = await ctx.IU.render({query: data.query}, data.lists, data.materials, []);
+  const tree = await ctx.IU.render({query: data.query}, data.lists, []);
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
 %(body)s
   console.log(JSON.stringify(out));
@@ -219,8 +219,9 @@ LISTS = {"devices": [{"id": 1, "name": "Laser A", "title": "Laser A", "lens": No
 
 
 def upload_form(tmp_path, query, plan, body):
-    data = {"query": query, "lists": LISTS, "materials": [{"id": 1, "name": "Ti sheet", "grade": "Grade 2"}, {"id": 4, "name": "Ti rod", "grade": "Grade 5"}],
-            "routes": {"/api/plans/22": {"status": 200, "json": plan}} if plan else {}}
+    stock = {"/api/materials/1": {"status": 200, "json": {"id": 1, "name": "Ti sheet", "grade": "Grade 2"}},            # the stock selector reads the one record it shows
+             "/api/materials/4": {"status": 200, "json": {"id": 4, "name": "Ti rod", "grade": "Grade 5"}}}
+    data = {"query": query, "lists": LISTS, "routes": {**stock, **({"/api/plans/22": {"status": 200, "json": plan}} if plan else {})}}
     (tmp_path / "upload.json").write_text(json.dumps(data), encoding="utf-8")
     script = tmp_path / "upload.js"
     script.write_text(UPLOAD % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "upload.json")),
@@ -236,7 +237,7 @@ FORM_BODY = """
   const selects = tree.querySelectorAll('select');
   out.laser = selects.find((s) => s.getAttribute('aria-label') === 'Лазер').value;
   out.lens = selects.find((s) => s.getAttribute('aria-label') === 'Линза').value;
-  out.titanium = selects.find((s) => s.getAttribute('aria-label') === 'Использованный титан').value;
+  out.titanium = tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Использованный титан / лист / партия').value;      // the stock selector, named by its visible label
 """
 
 

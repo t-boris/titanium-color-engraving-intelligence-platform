@@ -60,7 +60,7 @@ def test_the_pair_review_offers_an_input_for_exactly_the_missing_settings_and_sh
 # -- REQ-019, REQ-018, REQ-017 -------------------------------------------------------------------------------------------------------
 def test_the_lens_tab_saves_the_measured_spot_on_the_lens_and_m2_on_the_laser():
     tab = source("screens/device-lens.js")
-    assert "patch('/lenses/' + lens.id, {spot_diameter_um: num(f.spot)})" in tab and "lens.spot_diameter_um" in tab
+    assert "patch('/lenses/' + lens.id, {spot_diameter_um: v.spot})" in tab and "lens.spot_diameter_um" in tab
     assert "spot_diameter_um" not in source("screens/device-forms.js")             # the passport form no longer takes a spot
     assert "p.spot_diameter_um" not in source("screens/device-view.js")
 
@@ -162,7 +162,7 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'dialogs.js', 'list.js', 'tasks.js', 'screens/composition.js', 'screens/ingest-dialogs.js',
-  'screens/ingest-tasks.js', 'screens/ingest-review.js', {code: %(glue)s}]);
+  'screens/ingest-tasks.js', 'screens/ingest-stages.js', 'screens/ingest-review.js', {code: %(glue)s}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const reloads = [];
 const draw = async () => { const t = await ctx.__review.render(data.pair, () => { reloads.push(1); }); for (let i = 0; i < 4; i++) await tick(); return t; };
@@ -198,8 +198,14 @@ def review_pair():
                review_layer(29, readable=False, compatible=False, measured_lab=None, pixels=None, notes=["pulse width is missing from this LightBurn layer"])]
     check = {"layers": layers, "problems": [], "warnings": [], "discrepancies": [], "color_measurement": {"mode": "reference_chart_corrected"},
              "chart": {"detected": True, "usable": True, "residual": 1.2}, "alignment": {"valid": True, "method": "markers", "marker_count": 4}}
+    review = {"stage": "review", "accepted": False, "acceptable": False, "advisories": [],        # what pair_review.review_state derives for it
+              "blockers": [{"code": "masks_unreviewed", "stage": "review", "tools": ["masks"], "detail": None}],
+              "tools": ["corners", "anchor", "shift", "matrix", "layers", "tasks"],
+              "stages": [{"key": key, "state": state, "blockers": ["masks_unreviewed"] if key == "review" else []}
+                         for key, state in (("files", "done"), ("alignment", "done"), ("review", "current"), ("accept", "todo"))]}
     return {"id": 77, "status": "Needs correction", "lightburn_name": "work.lbrn2", "photo_name": "IMG_77.DNG", "engraving_title": "Работа",
-            "device_id": 1, "matrix": None, "layer_tasks": {}, "work_task": None, "plan_task": None, "file_confirmation": None, "check": check}
+            "device_id": 1, "matrix": None, "layer_tasks": {}, "work_task": None, "plan_task": None, "file_confirmation": None, "check": check,
+            "review": review}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -221,7 +227,7 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
   out.supplied = {keys: keys(supplied), count: supplied.querySelector('.lst-count').textContent, lines: lines(supplied).slice(0, 3).map((m) => m.textContent),
     fieldsBefore: supplied.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').length};
   await lines(supplied)[0].dispatch('click'); await tick();
-  out.supplied.fields = supplied.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').map((i) => i.getAttribute('aria-label'));
+  out.supplied.fields = supplied.querySelectorAll('label').filter((l) => l.firstControl() && l.firstControl().getAttribute('type') === 'number').map((l) => l.firstChild.textContent);   // named by the visible label
   await lines(supplied)[2].dispatch('click'); await tick();
   out.supplied.given = opened(supplied);
   const tasks = listOf(tree, 'Задачи гравировки');
@@ -245,7 +251,7 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     assert files["open"] == ["нечитаем В этом слое LightBurn не задан Q-Pulse"]                    # the result and its notes under the line
     assert len(supplied["keys"]) == 20 and supplied["count"] == "показано 20 из 22" and supplied["fieldsBefore"] == 0
     assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
-    assert supplied["fields"] == ["Проходы, слой C00"]
+    assert supplied["fields"] == ["Проходы, слой «C00»: нет в файле"]
     assert len(supplied["given"]) == 1 and "Проходы: 2" in supplied["given"][0] and "Убрать" in supplied["given"][0]
     assert len(tasks["keys"]) == 20 and tasks["count"] == "показано 20 из 29" and tasks["choicesBefore"] == 0   # a layer without fill has no task
     assert tasks["sent"] == [["/api/pairs/77/tasks", {"layer_index": 1, "task": "text"}]] and tasks["reloads"] == 1

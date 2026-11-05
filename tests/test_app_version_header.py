@@ -63,7 +63,8 @@ def test_a_server_that_does_not_answer_leaves_the_header_without_a_version_and_w
 
 def test_the_label_is_small_and_hidden_while_empty_and_the_header_keeps_its_height():
     assert re.search(r"\.app-version \{font-size:12px;", CSS) and ".app-version:empty {display:none}" in CSS
-    assert "versionTag, h('span', {class: 'user-chip'" in ROUTER and "get('/version')" in ROUTER
+    # the header row is: menu button, version label, the task panel's entry (feature ux-save-feedback-p0), then the user chip; the label stays beside the chip
+    assert re.search(r"header-actions'\}, menuButton, versionTag, [^\n]*\n\s*h\('span', \{class: 'user-chip'", ROUTER) and "get('/version')" in ROUTER
 
 
 def test_the_server_reports_the_version_the_package_has(tmp_path):

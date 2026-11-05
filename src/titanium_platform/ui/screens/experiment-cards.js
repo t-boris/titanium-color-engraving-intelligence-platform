@@ -32,11 +32,11 @@ const ExperimentCards = (() => {
   /** The experiments as a short list: a line each (title, state, last activity), the card under a line on a click, «Открыть» at its end.
       The search reads the title, kind, laser, lens and titanium; the filters are the state and the engraving task (only the tasks the
       experiments have). ``id`` keeps the choices for the session (each screen its own); ``empty`` is said when nothing passes. */
-  function list(experiments, {id = null, empty = 'Экспериментов нет.'} = {}) {
+  function list(experiments, {id = null, empty = 'Экспериментов нет.', noResults = empty} = {}) {
     const order = Object.keys(TaskText.KIND);
     const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
     const tasks = [...new Set(experiments.flatMap((e) => e.tasks || []))].sort((a, b) => rank(a) - rank(b));
-    return App.list({id, items: experiments, key: (e) => e.key, empty,
+    return App.list({id, items: experiments, key: (e) => e.key, empty, noResults,
       search: (e) => [e.title, I18N.name(e.title), e.kind, I18N.name(e.kind), e.laser, e.lens, e.material].filter(Boolean).join(' '),
       filters: [{key: 'status', label: 'Состояние эксперимента', options: STATES, test: (e, v) => e.status === v},
         ...(tasks.length ? [{key: 'task', label: 'Задача', select: true, all: 'все задачи', options: tasks.map((k) => [k, Tasks.name(k)]),

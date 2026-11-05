@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from . import color, designer, devices, exclusions, ingest, model, setup as su, tasks
+from . import color, designer, devices, exclusions, ingest, model, photo_knowledge, setup as su, tasks
 from .db import Store, now
 
 KINDS = ("improvement", "unstable", "anomaly", "gap", "hypothesis")
@@ -562,7 +562,9 @@ def get_finding(store: Store, finding_id: int) -> dict:
     f["stock_key"] = "unknown" if f["material_id"] is None else str(f["material_id"])
     latest = get_run(store)
     f["remedies"] = remedies(f) if latest is not None and latest["id"] == f["run_id"] else []
-    return _with_mark(f, store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],)))
+    f = _with_mark(f, store.one("SELECT * FROM finding_mark WHERE key=?", (f["key"],)))
+    f["recommendation"] = recommend(f, busy=_rechecking(store))
+    return f
 
 
 # -- what can be done about a finding (feature act-on-findings) -------------------------------------------------------------------
@@ -601,6 +603,111 @@ def remedy(store: Store, finding_id: int, action: str, note: str | None = None, 
     if not confirm:
         return exclusions.preview_latest(store, f["device_id"], f["lens_id"], key)
     return exclusions.count_from_latest(store, f["device_id"], f["lens_id"], key, note, f["key"])
+
+
+# -- the one next step a finding recommends (feature ux-evidence-summaries-p0, REQ-002, DEC-001) -----------------------------------
+# What a finding offers (``remedies``, in the order «Что сделать» shows them) says what can be done, not what to do first: an exclusion
+# or a recalculation changes what the model counts, and the cause of a measurement that looks wrong is not known yet. DEC-001: check the
+# cause before a corrective change. The first rule below that fits the finding wins; the rules are data, so the order is read and tested
+# as it stands. ``offers``: any of these remedies is offered now; ``evidence``: the finding has something to open; ``busy``: every work is
+# being re-checked, which refuses each corrective action until it ends.
+CORRECTIVE = ("exclude_measurement", "count_from_latest", "confirm_questioned")
+RECOMMENDATION_RULES = (
+    {"id": "already_handled", "state": ("acknowledged", "hidden"), "action": "none"},
+    {"id": "recheck_running", "busy": True, "offers": ("remeasure", *CORRECTIVE), "evidence": True, "action": "open_evidence"},
+    {"id": "measurement_anomaly", "kind": "anomaly", "subkind": "observation", "offers": ("remeasure",), "busy": False, "action": "remeasure"},
+    {"id": "corrective_choice_ambiguous", "offers": CORRECTIVE, "busy": False, "action": "open_evidence"},
+    {"id": "experiment_for_gap", "kind": "gap", "proposable": True, "action": "propose_experiment"},
+    {"id": "good_news", "kind": "improvement", "action": "acknowledge"},
+    {"id": "evidence_to_read", "evidence": True, "action": "open_evidence"},
+    {"id": "nothing_to_do", "action": "acknowledge"},
+)
+
+
+def _rechecking(store: Store) -> bool:
+    """Every work is being re-checked: a photograph cannot be measured again and no measurement can be taken out until it ends."""
+    from . import recheck                                  # recheck draws findings, so it imports this module
+    return recheck.running(store)
+
+
+def evidence_target(f: dict) -> dict | None:
+    """What to open to check a finding on its evidence: the knowledge entry of a questioned recipe, the research session of a hypothesis,
+    else the first photograph it rests on, else a knowledge entry; None when it rests on nothing that can be opened."""
+    e = f.get("evidence") or {}
+    if f.get("subkind") == "questioned" and e.get("knowledge_id") is not None:
+        return {"kind": "knowledge", "id": e["knowledge_id"]}
+    if f.get("subkind") == "insight" and e.get("session_id") is not None:
+        return {"kind": "research", "id": e["session_id"]}
+    if e.get("pair_ids"):
+        return {"kind": "pair", "id": e["pair_ids"][0]}
+    ids = [e["knowledge_id"]] if e.get("knowledge_id") is not None else list(e.get("knowledge_ids") or [])
+    return {"kind": "knowledge", "id": ids[0]} if ids else None
+
+
+def _fits(rule: dict, f: dict, offered: set[str], target: dict | None, busy: bool) -> bool:
+    """The finding meets every condition of the rule (a rule with none fits all)."""
+    checks = {"kind": lambda want: f.get("kind") == want, "subkind": lambda want: f.get("subkind") == want,
+              "state": lambda want: f.get("state", "attention") in want,
+              "proposable": lambda want: bool(f.get("proposable")) == want, "offers": lambda want: bool(offered & set(want)),
+              "evidence": lambda want: (target is not None) == want, "busy": lambda want: busy == want}
+    return all(checks[key](want) for key, want in rule.items() if key not in ("id", "action"))
+
+
+def recommend(f: dict, busy: bool = False) -> dict:
+    """The one next step for a finding that has its ``remedies`` (empty on a run that is not the latest, so a historical run never
+    recommends a corrective action): ``{"action", "rule", ...}`` with the pair to measure again (``remeasure``) or the thing to open
+    (``open_evidence``, ``target``). ``busy``: a re-check is running, which refuses every corrective action, so none is recommended."""
+    offered = {r["action"] for r in f.get("remedies") or []}
+    target = evidence_target(f)
+    rule = next(rule for rule in RECOMMENDATION_RULES if _fits(rule, f, offered, target, busy))
+    out = {"action": rule["action"], "rule": rule["id"]}
+    if rule["action"] == "remeasure":
+        out["pair_id"] = next(r["pair_id"] for r in f["remedies"] if r["action"] == "remeasure")
+    elif rule["action"] == "open_evidence":
+        out["target"] = target
+    return out
+
+
+# Photo engraving follows the same queue (REQ-002): one row per kind of photo engraving on a laser, lens and titanium
+# (``photo_knowledge.knowledge``), the problem its ``status`` names, the one next step the first rule that fits gives, in the order of
+# urgency (``rank``). A kind that came out as a negative or is barely visible is looked at in its photograph before a plate is made.
+PHOTO_RULES = (
+    {"id": "failed_look_first", "status": "failed", "action": "open_evidence"},
+    {"id": "settled", "status": "settled", "action": "none"},                      # the search converged: nothing is asked of the operator
+    {"id": "plate_offered", "plate": True, "action": "make_plate"},
+    {"id": "read_the_best", "best": True, "action": "open_evidence"},
+    {"id": "start_with_scales", "kind": "grayscale", "action": "open_scales"},
+    {"id": "photograph_first", "action": "add_photograph"},
+)
+
+
+def photo_recommend(k: dict) -> dict:
+    """The one next step for a kind of photo engraving (an item of ``photo_knowledge.knowledge``'s ``kinds``): ``action`` and ``rule``,
+    ``rank`` (the index of the rule: the lower, the sooner), the photograph to open (``target``) or the plate to make (``proposal``,
+    and ``pair_id`` for the next plate of a search)."""
+    p = k.get("proposal")
+    facts = {"status": k.get("status"), "kind": k.get("kind"), "best": bool(k.get("best")),
+             "plate": bool(p and (p.get("kind") == "next" or p.get("plate")))}
+    rank, rule = next((i, r) for i, r in enumerate(PHOTO_RULES) if all(facts[key] == want for key, want in r.items() if key not in ("id", "action")))
+    out = {"action": rule["action"], "rule": rule["id"], "rank": rank}
+    if rule["action"] == "open_evidence":
+        source = (k["failed"][0] if rule["id"] == "failed_look_first" else k["best"])["source"]
+        out["target"] = {"kind": "pair", "id": source["pair_id"]}
+    elif rule["action"] == "make_plate":
+        out["proposal"] = p["kind"]
+        if p["kind"] == "next":
+            out["pair_id"] = p["pair_id"]
+    return out
+
+
+def photo_queue(store: Store) -> list[dict]:
+    """What is known of photo engraving on every laser, lens and titanium where one was photographed (``photo_knowledge.everywhere``),
+    each kind with its ``recommendation``."""
+    places = photo_knowledge.everywhere(store)
+    for place in places:
+        for k in place["kinds"]:
+            k["recommendation"] = photo_recommend(k)
+    return places
 
 
 _KIND_RANK = {"anomaly": 0, "unstable": 1, "gap": 2, "hypothesis": 3, "improvement": 4}
@@ -664,8 +771,10 @@ def findings_of(store: Store, run_id: int, kind: str | None = None, task: str | 
     marks = _marks(store)
     rows = [_with_mark(_public(r), marks.get(r["key"])) for r in store.query("SELECT * FROM finding WHERE run_id=? ORDER BY id", (run_id,))]
     setups, stocks = {}, {}
+    busy = _rechecking(store)
     for f in rows:
         f["remedies"] = remedies(f) if latest else []
+        f["recommendation"] = recommend(f, busy)
         f["setup"] = su.setup_key(f["device_id"], f["lens_id"])
         f["stock_key"] = "unknown" if f["material_id"] is None else str(f["material_id"])
         setups.setdefault(f["setup"], {"key": f["setup"], "device": f["context"]["device"], "lens": f["context"]["lens"]})

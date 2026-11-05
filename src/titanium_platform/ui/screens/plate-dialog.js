@@ -22,8 +22,6 @@ const PlateDialog = (() => {
     line_interval: {name: 'Интервал линий, мм', min: 0.01, max: 0.2}, passes: {name: 'Проходы', min: 1, max: 5},
     wobble_size: {name: 'Диаметр wobble, мм (0 = выкл.)', min: 0, max: 0.08},
   };
-  const materialName = (m) => [m.family, m.name, m.grade, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ');
-
   // REQ-059: шкалы серого — две оси из этих параметров и ширины полоски; по умолчанию строки — шаг линий (2000/1500/1200/1000 dpi), столбцы — скорость
   const GREY_AXES = ['line_interval', 'speed', 'frequency', 'pulse_width', 'passes', 'width'];
   const greyAxisName = (key) => key === 'width' ? 'Ширина полоски, мм' : MATRIX_AXES[key].name;
@@ -41,12 +39,15 @@ const PlateDialog = (() => {
     return btoa(text);
   }
 
+  /** ``materials`` is no longer read: the stock record is chosen in the selector, which asks the server for what it shows (ux-growing-collections-p0,
+      REQ-001); a caller may pass an array, null or nothing. */
   async function open(devices, materials, reload, preset = {}) {
     const typeRows = await get('/plate-types');
     const available = (devices || []).filter((d) => d.lens);
     const type = h('select', {'aria-label': 'Тип экспериментальной платы'}, h('option', {value: '', selected: true}, 'выберите тип платы'));
     const device = h('select', {'aria-label': 'Лазер'}, available.map((d) => h('option', {value: d.id}, `${d.name}${d.serial ? ` · ${d.serial}` : ''}`)));
-    const material = h('select', {'aria-label': 'Заготовка'}, [h('option', {value: ''}, 'выберите конкретную заготовку')].concat((materials || []).map((m) => h('option', {value: m.id}, materialName(m)))));
+    // nothing is chosen until the caller or the workshop's last choice names a record (below); one concrete batch or sheet, never a grade
+    const material = MaterialPicker.create({allowEmpty: true, clearLabel: 'Снять выбор', empty: 'выберите конкретную заготовку', title: 'Выбор заготовки для платы', name: 'Заготовка'});
     const desc = h('div', {class: 'stack muted small'});
     const hardware = h('p', {class: 'muted small'});
     const maxWidth = h('input', {type: 'number', min: '1', max: '300', step: 'any', value: '100'});
@@ -253,6 +254,11 @@ const PlateDialog = (() => {
     matrix.yAxis.addEventListener('change', () => updateMatrixAxes('yAxis'));
     patch.count.addEventListener('change', patchDefaults);
     patch.axis.addEventListener('change', patchDefaults);
+    // a new test starts on the laser and titanium new work starts from (ux-work-creation-p0 REQ-001) unless the caller names others
+    const start = preset.device != null || preset.material != null ? {} : await App.contextStart({});
+    const laserWanted = preset.device ?? start.device, stockWanted = preset.material ?? start.material;
+    if (laserWanted != null && available.some((d) => String(d.id) === String(laserWanted))) device.value = String(laserWanted);
+    if (stockWanted != null && stockWanted !== '') material.value = String(stockWanted);
     fillHardware(); changeDescription();
     if (preset.type && typeRows.some((row) => row.id === preset.type)) { type.value = preset.type; changeDescription(true); }
 
@@ -266,9 +272,7 @@ const PlateDialog = (() => {
       try {
         const saved = await post('/materials', {name: newMaterial.name.value.trim(), family: newMaterial.family.value.trim(), grade: newMaterial.grade.value.trim() || null,
           batch: newMaterial.batch.value.trim() || null, thickness_mm: null, surface: null});
-        materials.push(saved);
-        material.append(h('option', {value: saved.id, selected: true}, materialName(saved)));
-        material.value = saved.id;
+        material.value = saved.id;                       // the new record is the one chosen
         newMaterial.name.value = newMaterial.grade.value = newMaterial.batch.value = '';
         toast('Заготовка сохранена и выбрана', 'ok');
       } catch (e) { fail(e); }
@@ -364,6 +368,8 @@ const PlateDialog = (() => {
         const sent = requestBody();
         if (sent.variations) sent.variations.picture_png = await base64Of(photo.file.files[0]);
         const made = await post('/capability-plates', sent);
+        const through = available.find((d) => d.id === sent.device_id);         // the next new work and test start where this test was made
+        App.rememberContext({device: sent.device_id, lens: through && through.lens ? through.lens.id : null, material: sent.material_id});
         x.close();
         if (reload) reload();
         const parts = made.parts || [made];

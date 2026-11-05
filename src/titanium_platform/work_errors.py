@@ -19,8 +19,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import (colormap, conversion as cv, ingest, lightburn as lb, palette, photo_modes, photo_quality, plans as pl, prediction, prediction_store as ps, render_cache as rc,
-               row_length, vector_job as vj, work_review as wr)
+from . import (colormap, conversion as cv, ingest, lifecycle, lightburn as lb, palette, photo_modes, photo_quality, plans as pl, prediction, prediction_store as ps,
+               render_cache as rc, row_length, vector_job as vj, work_review as wr)
 from .db import Store, now
 
 MEASUREMENT = {"reference_chart_corrected": "calibrated", "raw_camera_relative": "relative"}      # as colormap names them
@@ -60,21 +60,42 @@ def _engraved(store: Store, pair_id: int) -> list[dict]:
     return out
 
 
-def _promise_for(plan: dict, engraved: list[dict]) -> tuple[int | None, list[dict] | None, bool]:
-    """The export whose layers the engraved file matches best (the latest on a tie): its number, its promise and whether the promise is
-    only reconstructed. A work exported before promises were kept is set against its layers as it last stored them (approximate) while
-    its colouring and split are still the ones its last file was made from (:func:`work_review.baseline_of`); after a recolouring or a
-    new split the promise is lost and is None, and a work never exported is set against its layers as they are (approximate)."""
+def _choose(plan: dict, engraved: list[dict], pinned: int | None = None, before: str | None = None
+            ) -> tuple[int | None, list[dict] | None, bool, list[int]]:
+    """The export whose layers the engraved file matches best, its promise, whether that is only reconstructed, and the other exports that fit
+    it equally well. Only an export made at or before the photograph was first added (``before``) can be the file that was engraved; an
+    engraving already compared with a file stays with it (``pinned``), so that a later export or a new photograph of it moves nothing. The
+    newest of equally good files is chosen, and the others are named so that the screen can say the choice was not certain. A work exported
+    before promises were kept is set against its layers as it last stored them (approximate) while its colouring and split are still the
+    ones its last file was made from (:func:`work_review.baseline_of`); after a recolouring or a new split the promise is lost and is None,
+    and a work never exported is set against its layers as they are (approximate)."""
+    eligible = [e for e in plan["exports"] if before is None or (e.get("at") or "") <= before]
     kept = [(e["number"], e["promised"], [{"settings": wr.settings_of(z["parameters"])} for z in e.get("zones") or []])
-            for e in plan["exports"] if e.get("promised")]
+            for e in eligible if e.get("promised")]
+    if pinned is not None:
+        held = [k for k in kept if k[0] == pinned]
+        if held:
+            return held[0][0], held[0][1], False, []
     # A mixed work's photo zones distinguish files whose vector layers are identical (Inna & Emmy 2: exports 2 and 3).
-    best = max(kept, key=lambda k: (len(wr.match(k[1] + k[2], engraved)), k[0]), default=None)
+    scores = {k[0]: len(wr.match(k[1] + k[2], engraved)) for k in kept}
+    best = max(kept, key=lambda k: (scores[k[0]], k[0]), default=None)
     if best is not None:
-        return best[0], best[1], False
+        return best[0], best[1], False, [n for n, score in scores.items() if score == scores[best[0]] and n != best[0]]
     if not plan["exports"]:
-        return None, wr.promised_layers(plan.get("layers") or []), True
+        return None, wr.promised_layers(plan.get("layers") or []), True, []
     promise, approximate = wr.baseline_of(plan)
-    return plan["exports"][-1]["number"], promise, approximate
+    return plan["exports"][-1]["number"], promise, approximate, []
+
+
+def _promise_for(plan: dict, engraved: list[dict]) -> tuple[int | None, list[dict] | None, bool]:
+    """:func:`_choose` without a pin or a time bound: the number of the export, its promise and whether the promise is only reconstructed."""
+    return _choose(plan, engraved)[:3]
+
+
+def _first_photographed(store: Store, engraving_id: str) -> str | None:
+    """When a photograph of the engraving was first added: no file made after that can be the one that was engraved."""
+    row = store.one("SELECT MIN(created_at) AS first FROM pair WHERE engraving_id=? AND status!='Deleted'", (engraving_id,))
+    return row["first"] if row else None
 
 
 def _photo_review(store: Store, plan: dict, pair: dict, number: int | None) -> list[dict]:
@@ -131,11 +152,15 @@ def review_pair(store: Store, pair_id: int) -> dict | None:
     if pair["status"] != ingest.ST_ACCEPTED or plan is None:
         return None
     engraved = _engraved(store, pair_id)
-    number, promise, approximate = _promise_for(plan, engraved)
+    earlier = next((r for r in plan.get("reviews") or [] if r["engraving_id"] == pair["engraving_id"]), None)
+    pinned = earlier["export_number"] if earlier is not None and not earlier.get("approximate") and not earlier.get("promise_lost") else None
+    number, promise, approximate, ambiguous = _choose(plan, engraved, pinned, _first_photographed(store, pair["engraving_id"]))
     residual = ((pair.get("check") or {}).get("chart") or {}).get("residual")
     found = wr.review(promise or [], engraved, chart_residual=residual)
+    named = lifecycle.basis("lost" if promise is None else "reconstructed" if approximate else "saved",
+                            next((e for e in plan["exports"] if e["number"] == number), None), ambiguous)
     return {"version": REVIEW_VERSION, "engraving_id": pair["engraving_id"], "pair_id": pair_id, "photo_name": pair["photo_name"], "reviewed_at": now(),
-            "export_number": number, "approximate": approximate, "promise_lost": promise is None, "chart_residual": residual,
+            "export_number": number, "approximate": approximate, "promise_lost": promise is None, "basis": named, "chart_residual": residual,
             "photo": _photo_review(store, plan, pair, number), **found}
 
 
@@ -146,6 +171,9 @@ def record(store: Store, pair_id: int) -> dict | None:
         return None
     plan = _work(store, ingest.get_pair(store, pair_id)["plan_id"])
     kept = [r for r in plan.get("reviews") or [] if r["engraving_id"] != review["engraving_id"]]
+    replaced = next((r for r in plan.get("reviews") or [] if r["engraving_id"] == review["engraving_id"]), None)
+    if replaced is not None and replaced.get("prediction_change"):      # what the first acceptance of the engraving did to the prediction stays told
+        review["prediction_change"] = replaced["prediction_change"]
     plan["reviews"] = wr.newest_first(kept + [review])[:wr.KEPT_REVIEWS]
     cv._persist(store, plan, plan["status"], plan["markers_enabled"])
     return review
@@ -206,6 +234,7 @@ def after_acceptance(store: Store, pair_id: int) -> dict | None:
     """The conclusions of an accepted pair: its review goes into its work, then every work of the laser and lens is counted again.
     Returns the work and its review (what the screen tells the operator), or None when the pair belongs to no vector work."""
     pair = ingest.get_pair(store, pair_id)
+    before = lifecycle.slim_attention((_work(store, pair["plan_id"]) or {}).get("attention"))      # the counts as the last change left them
     try:
         review = record(store, pair_id)
     except SKIPPED:
@@ -213,7 +242,31 @@ def after_acceptance(store: Store, pair_id: int) -> dict | None:
     after_change(store, pair["device_id"], pair["lens_id"])
     if review is None:
         return None
-    return {"plan_id": pair["plan_id"], "work": pl.get_plan(store, pair["plan_id"])["name"], "review": review}
+    plan = _work(store, pair["plan_id"])
+    review = _keep_prediction_change(store, plan, review, before, lifecycle.slim_attention(plan.get("attention")))
+    return {"plan_id": pair["plan_id"], "work": plan["name"], "review": review, "summary": lifecycle.acceptance_summary(plan, review, pair_id)}
+
+
+def _keep_prediction_change(store: Store, plan: dict, review: dict, before: dict | None, after: dict | None) -> dict:
+    """Keep in the review of an engraving how the work's drift counts moved when it was accepted, so that the work's screen can tell the
+    operator again whenever they come back. The review stored in the plan is the one changed, and returned."""
+    for stored in plan.get("reviews") or []:
+        if stored["engraving_id"] == review["engraving_id"]:
+            stored["prediction_change"] = {"before": before, "after": after}
+            cv._persist(store, plan, plan["status"], plan["markers_enabled"])
+            return stored
+    return review
+
+
+def summary_of_pair(store: Store, pair_id: int) -> dict | None:
+    """The summary of an accepted result as the work's screen shows it when the operator returns to the work (or opens it again); None when
+    the pair is not accepted, belongs to no vector work made from a photograph, or has no review in it."""
+    pair = ingest.get_pair(store, pair_id)
+    plan = _work(store, pair["plan_id"])
+    review = None if plan is None else next((r for r in plan.get("reviews") or [] if r["engraving_id"] == pair["engraving_id"]), None)
+    if review is None or pair["status"] != ingest.ST_ACCEPTED:
+        return None
+    return lifecycle.acceptance_summary(plan, review, pair_id)
 
 
 def after_deletion(store: Store, pair: dict) -> None:

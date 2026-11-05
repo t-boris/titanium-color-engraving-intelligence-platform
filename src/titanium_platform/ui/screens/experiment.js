@@ -78,6 +78,8 @@
     const key = decodeURIComponent(ctx.arg || '');
     const exp = await get('/experiments/' + encodeURIComponent(key));
     const reload = () => App.render({preserveScroll: true});
+    // the path of the plan's file (prepared, file received, result added, checked) and its files; a photograph work keeps no file records
+    const lifecycle = exp.plan_id && !(exp.plate && exp.plate.mode === 'Photo engraving work') ? await get(`/plans/${exp.plan_id}/lifecycle`).catch(() => null) : null;
     const pairs = exp.pairs;
     const wanted = Number(ctx.query.check);
     let current = pairs.find((p) => p.id === wanted) || pairs.find((p) => p.id === exp.main_pair_id) || pairs[pairs.length - 1] || null;
@@ -127,9 +129,15 @@
         btn(isLifted(current) ? 'Обычная яркость' : 'Поднять яркость', () => { lifted = !isLifted(current); sessionStorage.setItem('experiment-lifted', lifted ? '1' : '0'); refreshAll(); }, 'btn-small'),
         current && current.status === 'Accepted' ? btn('Перемерить заново', async (ev) => {
           const control = ev.currentTarget; control.disabled = true; control.textContent = 'Измеряем заново…';
+          const end = App.landing(control);                      // the measuring takes about half a minute: a person who has gone elsewhere is not brought back, the result waits in the task panel
           try {
             const out = await post(`/pairs/${current.id}/remeasure`);
-            if (out.status === 'replaced') { toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok'); go('/experiment/' + encodeURIComponent(key) + '?check=' + out.replaced_by); return; }
+            if (out.status === 'replaced') {
+              if (end.stillHere()) toast('Перемерено новыми подсчётами; прежнее измерение заменено', 'ok');
+              end.go('/experiment/' + encodeURIComponent(key) + '?check=' + out.replaced_by, {title: 'Фотография перемерена',
+                message: 'Перемерено новыми подсчётами; прежнее измерение заменено. Откройте новую проверку.', openLabel: 'Открыть проверку', goOptions: {}});
+              return;
+            }
             toast('Прежнее измерение оставлено: ' + I18N.tr(out.reason || ''), 'warn');
             control.disabled = false; control.textContent = 'Перемерить заново';
           } catch (error) { control.disabled = false; control.textContent = 'Перемерить заново'; fail(error); }
@@ -199,7 +207,7 @@
     const plate = photoWork ? h('div', {class: 'stack'}, h('h3', {}, 'Работа фотогравировки'),
       h('p', {}, h('strong', {}, exp.plate.name)), h('p', {class: 'muted small'}, exp.plate.identifier || ''),
       h('div', {class: 'row'}, link('/photo-engraving?work=' + exp.plate.plan_id, 'Открыть работу'),
-        h('a', {class: 'btn btn-small', href: `/api/photo-works/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2')))
+        Lifecycle.downloadButton(`/photo-works/${exp.plate.plan_id}/export.lbrn2`, 'photo-work.lbrn2', 'Скачать LightBurn', {cls: 'btn-small'}).el))
       : exp.plate ? h('div', {class: 'stack'}, h('h3', {}, 'Плата'),
       h('p', {}, h('strong', {}, I18N.name(exp.plate.name))),
       h('p', {class: 'muted small'}, [exp.plate.test_name || I18N.name(exp.plate.mode), `${exp.plate.layers} слоёв`, exp.plate.band_count ? `${exp.plate.band_count} полос` : null,
@@ -212,15 +220,18 @@
       exp.plate.engraving_task ? h('p', {class: 'small'}, h('strong', {}, 'Задача: '), Tasks.name(exp.plate.engraving_task.kind),
         exp.plate.engraving_task.basis === 'explicit' ? '' : ' (по режиму плана)',
         Object.keys(exp.plate.engraving_task.goals || {}).length ? ` · ${Tasks.goalsText(exp.plate.engraving_task.goals)}` : '') : null,
+      lifecycle ? Lifecycle.readiness(lifecycle, {designer: null}) : null,
       h('div', {class: 'row'}, link('/plans/' + exp.plate.plan_id, 'Открыть и изменить плату'),
-        h('a', {class: 'btn btn-small', href: `/api/plans/${exp.plate.plan_id}/export.lbrn2`}, 'Скачать .lbrn2'),
-        link('/research', 'Попросить AI-исследователя изменить плату'))) : null;
+        Lifecycle.downloadButton(`/plans/${exp.plate.plan_id}/export.lbrn2`, 'plate.lbrn2', 'Скачать LightBurn',
+          {cls: 'btn-small', disabled: lifecycle ? !lifecycle.readiness.ready : false, onDone: reload}).el,
+        link('/research', 'Попросить AI-исследователя изменить плату')),
+      lifecycle ? h('details', {class: 'small'}, h('summary', {}, `Прежние файлы${lifecycle.files.length ? ` (${lifecycle.files.length})` : ''}`), Lifecycle.files(lifecycle, {onDone: reload})) : null) : null;
     const work = pairs[pairs.length - 1];
     // REQ-030: an accepted grayscale photo engraving opens its own file in the preview at other Min and Max power
     const photoEngraving = pairs.slice().reverse().find((p) => p.status === 'Accepted' && (p.grayscale_image || p.tonal_image));
     const files = !exp.plate && work ? h('div', {class: 'stack'}, h('h3', {}, 'Готовая работа'),
       h('p', {class: 'muted small'}, `Файл LightBurn: ${work.lightburn_name}`), App.timeBlock(exp.time),
-      h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл LightBurn'),
+      h('div', {class: 'row'}, h('a', {class: 'btn btn-small', href: work.lightburn_url, download: work.lightburn_name}, 'Скачать файл этой гравировки'),
         photoEngraving ? link(`/photo-preview?pair=${photoEngraving.id}`, 'Как будет выглядеть при других Min/Max') : null)) : null;
     const findings = exp.findings.length ? h('div', {class: 'stack'}, h('h3', {}, 'Выводы по этому эксперименту'),
       ...exp.findings.map((f) => h('div', {class: 'stack'}, h('p', {}, h('strong', {}, ({line: 'Линии', text: 'Текст', color: 'Цвет', image: 'Изображение'})[f.purpose] || f.purpose),
@@ -269,7 +280,10 @@
         h('div', {class: 'ep-sub'}, h('span', {class: 'sub'}, sub),
           (exp.tasks || []).length ? [h('span', {class: 'muted small'}, 'Задачи:'), ...exp.tasks.map((k) => pill(Tasks.name(k)))] : null)),
       h('span', {class: 'spacer'}), pill(exp.status_text, STATUS_KIND[exp.status] || ''), addPhoto, remove);
-    return h('div', {class: 'os experiment'}, head,
+    return h('div', {class: 'os experiment'}, head, lifecycle ? h('div', {class: 'ep-chain'}, Lifecycle.chain(lifecycle, {onAction: (a) => {
+      const tab = a.code === 'compare' ? 'result' : 'plate';                      // the result tab compares; the file is made on the plate's tab
+      if (items.some(([key]) => key === tab)) box.select(tab);
+    }})) : null,
       h('div', {class: 'os-body ep-body'},
         h('section', {class: 'os-col ep-photo-col', 'aria-label': 'Фото с наложением'}, photoTools, stage, caption),
         h('aside', {class: 'os-col ep-side', 'aria-label': 'Сведения об эксперименте'}, box.list, h('div', {class: 'os-scroll ep-panels'}, box.panels))));

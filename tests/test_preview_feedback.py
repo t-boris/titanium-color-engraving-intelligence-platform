@@ -138,6 +138,7 @@ def test_review_photo_keeps_its_placement_and_alpha_instead_of_turning_the_face_
 def test_photo_review_explains_the_wrong_export_and_the_actual_tones_in_the_ui(tmp_path):
     from test_work_review_ui import run
     review = {'engraving_id': 'e1', 'photo_name': 'result.DNG', 'reviewed_at': '2026-10-27T06:55:00', 'export_number': 2,
+              'basis': {'kind': 'saved', 'export_number': 2, 'exported_at': '2026-10-27T06:00:00', 'document_version': 3, 'ambiguous': []},   # the work's view names it for every review (vector_job.view)
               'summary': {'matched': 0, 'promised': 0}, 'rows': [], 'notes': [], 'not_engraved': [], 'unmatched': [],
               'photo': [{'zone': 1, 'changed_settings': ['pulse_width', 'min_power'], 'latest_export': 3,
                          'settings': {'pulse_width': 250, 'min_power': 1}, 'latest_settings': {'pulse_width': 350, 'min_power': 2.9},

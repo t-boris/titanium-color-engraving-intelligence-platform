@@ -9,12 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from lifecycle_stub import file_record, lifecycle
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 CSS = (UI / "styles.css").read_text(encoding="utf-8")
 SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "tasks.js", "screens/composition.js", "screens/ingest-upload.js", "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-review.js",
-           "screens/vector-workspace.js", "screens/prediction-review.js"]
+           "screens/vector-workspace.js", "screens/prediction-review.js", "screens/lifecycle.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => { globalThis.__renders = (globalThis.__renders || 0) + 1; };"
         "App.go = (route) => { location.hash = '#' + route; };"
         "const __local = {}, __session = {};"
@@ -28,6 +29,8 @@ const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/experiment.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const saved = [];                                         // a link clicked to save a file: [its address, the name it is saved as]
+ctx.document.createElement('a').constructor.prototype.click = function () { saved.push([this.getAttribute('href'), this.getAttribute('download')]); };
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const has = (el, cls) => (el.className || '').split(' ').includes(cls);
 const tabButtons = (tree) => tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('ep-tab-'));
@@ -105,6 +108,9 @@ def routes_for(*experiments) -> dict:
     routes.update(api(**{"/api/pairs/59": pair_detail(59, matrix=True, layers=10), "/api/pairs/51": pair_detail(51), "/api/pairs/70": pair_detail(70),
                          "/api/pairs/71": pair_detail(71, matrix=True)}))
     routes.update({f"/api/pairs/{n}": {"status": 200, "json": {}} for n in ()})
+    for e in experiments:        # the path of the plan's file: every plan of an experiment but a photograph work answers it
+        if e["plan_id"] and (e["plate"] or {}).get("mode") != "Photo engraving work":
+            routes[f"/api/plans/{e['plan_id']}/lifecycle"] = {"status": 200, "json": lifecycle(plan_id=e["plan_id"], kind="plain")}
     return routes
 
 
@@ -282,8 +288,101 @@ def test_a_plate_without_photos_shows_its_picture_slot_the_plate_and_its_actions
     assert out["head"] == ["#/ingest?plan=22", "#/ingest?plan=22"]                                  # the title row and the empty picture slot both offer it
     assert "Imma + Boris" in out["plate"] and "Описание платы" in out["plate"] and "16 слоёв" in out["plate"] and "Задача:" in out["plate"]
     links = dict((text, href) for text, href in out["links"])
-    assert links["Открыть и изменить плату"] == "#/plans/22" and links["Скачать .lbrn2"] == "/api/plans/22/export.lbrn2"
+    assert links["Открыть и изменить плату"] == "#/plans/22" and "Скачать .lbrn2" not in links      # the file is a button now, one for every plan
     assert links["Попросить AI-исследователя изменить плату"] == "#/research" and links["предложению планировщика № 3"].startswith("#/designer?device=1&lens=")
+
+
+PLATE_FILE = {"status": 200, "text": "<xml/>", "type": "application/xml", "headers": {"content-disposition": "attachment; filename*=UTF-8''plate.lbrn2"}}
+
+
+@node
+def test_a_plate_shows_the_path_of_its_file_and_one_download_action_that_reloads_the_screen_and_keeps_the_file_in_history(tmp_path):
+    routes = routes_for(PLATE)
+    routes["/api/plans/22/export.lbrn2"] = PLATE_FILE
+    routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("file", kind="plain", plan_id=22, files=[file_record(1, download_url=None, downloadable=False)])}
+    out = run(tmp_path, routes, "plan-22", """
+  const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
+  out.chain = chain.querySelectorAll('li').map((li) => li.querySelector('.lc-name').textContent + li.querySelector('.lc-word').textContent);
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  const button = byText(side, 'button', 'Скачать LightBurn');
+  out.disabled = button.disabled; out.side = side.textContent;
+  out.folds = side.querySelectorAll('summary').map((x) => x.textContent);
+  await button.dispatch('click'); await tick();
+  out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('export')); out.saved = saved; out.renders = ctx.__renders || 0;
+""")
+    assert out["chain"] == ["Подготовлено (выполнено)", "Файл получен (сейчас)", "Результат добавлен (впереди)", "Проверено (впереди)"]
+    assert out["disabled"] is False and "Файл LightBurn: готов к выгрузке" in out["side"] and out["folds"] == ["Прежние файлы (1)"]
+    assert out["requests"] == ["/api/plans/22/export.lbrn2"] and out["saved"] == [["blob:x", "plate.lbrn2"]] and out["renders"] == 1
+
+
+@node
+def test_a_plate_that_cannot_be_exported_says_why_and_keeps_the_action_off_instead_of_hiding_it(tmp_path):
+    routes = routes_for(PLATE)
+    routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("prepared", kind="plain", plan_id=22, ready=False, layers=None, blockers=[{"code": "draft"}])}
+    out = run(tmp_path, routes, "plan-22", """
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  const button = byText(side, 'button', 'Скачать LightBurn');
+  out.disabled = button.disabled; out.side = side.textContent;
+""")
+    assert out["disabled"] is True and "Файл LightBurn: пока нельзя" in out["side"] and "План — черновик: завершите преобразование" in out["side"]
+
+
+@node
+def test_the_chain_of_an_experiment_offers_the_action_of_its_stage_and_the_comparison_opens_the_result_tab(tmp_path):
+    routes = routes_for(BOTH)
+    routes["/api/plans/5/lifecycle"] = {"status": 200, "json": lifecycle("verified", kind="plain", plan_id=5, files=[file_record(1, stage="verified")])}
+    out = run(tmp_path, routes, "plan-5", """
+  const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
+  out.buttons = chain.querySelectorAll('button').map((b) => b.textContent);
+  await byText(chain, 'button', 'Сравнить с ожиданием').dispatch('click'); await tick();
+  out.shown = shownPanels(tree);
+""")
+    assert out["buttons"] == ["Сравнить с ожиданием"] and out["shown"] == ["ep-tab-panel-result"]
+
+
+@node
+def test_the_chain_of_a_plate_with_a_file_asks_for_the_result_and_the_download_action_opens_the_plate_tab(tmp_path):
+    routes = routes_for(PLATE)
+    routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("file", kind="plain", plan_id=22, files=[file_record(1, download_url=None)])}
+    waiting = run(tmp_path, routes, "plan-22", """
+  const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
+  out.links = chain.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert waiting["links"] == [["Добавить результат", "#/ingest?plan=22"]]
+    routes["/api/plans/22/lifecycle"] = {"status": 200, "json": lifecycle("prepared", kind="plain", plan_id=22)}
+    ready = run(tmp_path, routes, "plan-22", """
+  const chain = tree.querySelectorAll('div').find((d) => has(d, 'ep-chain'));
+  out.buttons = chain.querySelectorAll('button').map((b) => b.textContent);
+  await byText(chain, 'button', 'К файлу').dispatch('click'); await tick();
+  out.shown = shownPanels(tree);
+""")
+    assert ready["buttons"] == ["К файлу"] and ready["shown"] == ["ep-tab-panel-plate"]
+
+
+@node
+def test_a_plate_whose_path_cannot_be_read_is_still_shown_with_its_other_actions_and_no_made_up_state(tmp_path):
+    routes = routes_for(PLATE)
+    routes["/api/plans/22/lifecycle"] = {"status": 500, "json": {"error": "boom", "kind": "internal"}}
+    out = run(tmp_path, routes, "plan-22", """
+  out.chains = tree.querySelectorAll('div').filter((d) => has(d, 'ep-chain')).length;
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  out.links = side.querySelectorAll('a').map((a) => a.textContent);
+  out.side = side.textContent;
+""")
+    assert out["chains"] == 0 and "Открыть и изменить плату" in out["links"] and "Файл LightBurn:" not in out["side"]
+
+
+@node
+def test_a_photograph_work_is_downloaded_from_its_own_route_and_asks_for_no_path_of_files_it_does_not_keep(tmp_path):
+    routes = routes_for(PHOTO_WORK)
+    routes["/api/photo-works/28/export.lbrn2"] = PLATE_FILE
+    out = run(tmp_path, routes, "plan-28", """
+  const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
+  await byText(side, 'button', 'Скачать LightBurn').dispatch('click'); await tick();
+  out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('lifecycle') || p.includes('export'));
+  out.chains = tree.querySelectorAll('div').filter((d) => has(d, 'ep-chain')).length;
+""")
+    assert out["requests"] == ["/api/photo-works/28/export.lbrn2"] and out["chains"] == 0
 
 
 PHOTO_WORK = experiment("plan-28", kind="Photo engraving work", plan_id=28, engraving_id=None, main_pair_id=51,
@@ -303,7 +402,7 @@ def test_a_photo_work_is_shown_as_the_work_opened_and_exported_on_its_own_screen
     assert out["tabs"][-1] == "Работа фотогравировки" and "Плата" not in out["tabs"]
     assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "слоёв" not in out["side"]
     links = dict(out["links"])
-    assert links["Открыть работу"] == "#/photo-engraving?work=28" and links["Скачать .lbrn2"] == "/api/photo-works/28/export.lbrn2"
+    assert links["Открыть работу"] == "#/photo-engraving?work=28" and "Скачать .lbrn2" not in links
     assert "Открыть и изменить плату" not in links and "Попросить AI-исследователя изменить плату" not in links
 
 

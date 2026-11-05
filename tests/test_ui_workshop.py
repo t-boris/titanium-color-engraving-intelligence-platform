@@ -89,7 +89,7 @@ def test_the_menu_ends_with_the_workshop_with_an_icon_of_its_own_and_the_screen_
     for route in ("'/workshop'", "'/workshop/backups'", "'/workshop/backups/inspect'", "'/workshop/restore'", "'/workshop/backup-dir'",
                   "'/workshop/recovery-copies'", "'/workshop/diagnostics'"):
         assert route in screen, route
-    assert "confirm: word.value.trim()" in screen and "overwrite: true" in screen        # the word typed by the operator is what is sent
+    assert "confirm: v.word" in screen and "overwrite: true" in screen        # the word typed by the operator is what is sent
 
 
 @node
@@ -104,7 +104,7 @@ def test_the_screen_shows_the_workshop_its_backups_and_the_recovery_copies_and_m
   await byText(tree, 'button', 'Сделать резервную копию').dispatch('click'); await tick();
   out.made = sent();
   out.result = tree.querySelectorAll('.alert.ok').map((p) => p.textContent);
-  const dir = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Папка резервных копий');
+  const dir = tree.querySelectorAll('label').find((l) => l.textContent.startsWith('Папка резервных копий')).firstControl();
   dir.value = '/Volumes/Disk/titanium-backups';
   await byText(tree, 'button', 'Изменить').dispatch('click'); await tick();
   out.changed = sent().slice(-1);
@@ -128,7 +128,7 @@ def test_restoring_goes_into_a_typed_folder_and_replacing_the_open_workshop_need
   out.inspected = [dialog().getAttribute('aria-label'), dialog().textContent.includes('Копия полная'), sent().slice(-1)[0]];
   byText(dialog(), 'button', 'Закрыть').dispatch('click'); await tick();
   await byText(tree, 'button', 'Восстановить…').dispatch('click'); await tick();
-  const target = dialog().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Папка для восстановления');
+  const target = dialog().querySelectorAll('label').find((l) => l.textContent.startsWith('Папка для восстановления')).firstControl();
   target.value = '/Users/me/restored';
   await byText(dialog(), 'button', 'Восстановить').dispatch('click'); await tick();
   out.restored = sent().slice(-1)[0];
@@ -137,7 +137,7 @@ def test_restoring_goes_into_a_typed_folder_and_replacing_the_open_workshop_need
   const replace = byText(dialog(), 'button', 'Заменить мастерскую');
   out.warning = dialog().querySelector('.alert.warn').textContent;
   out.disabledBefore = replace.disabled;
-  const word = dialog().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Слово подтверждения');
+  const word = dialog().querySelectorAll('input')[0];
   word.value = 'yes'; await word.dispatch('input');
   out.disabledWrong = replace.disabled;
   const before = sent().length;

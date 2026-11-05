@@ -48,7 +48,13 @@ class El {
   }
   append(...kids) { for (const k of kids) this.childNodes.push(this._adopt(k)); }
   prepend(...kids) { this.childNodes.unshift(...kids.map((k) => this._adopt(k))); }
-  _detach(node) { this.childNodes = this.childNodes.filter((x) => x !== node); node.parentNode = null; }
+  /** A removed node (or one that holds the focused node) loses the focus, as in a browser, even when it is put back at once. */
+  _detach(node) {
+    const doc = this.ownerDocument || node.ownerDocument;
+    if (doc && doc.activeElement && node.nodeType === 1 && node.contains(doc.activeElement)) doc.activeElement = null;
+    this.childNodes = this.childNodes.filter((x) => x !== node); node.parentNode = null;
+  }
+  contains(other) { for (let n = other; n; n = n.parentNode) if (n === this) return true; return false; }
   remove() { if (this.parentNode) this.parentNode._detach(this); }
   replaceChildren(...kids) { for (const c of [...this.childNodes]) this._detach(c); this.append(...kids); }
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
@@ -91,7 +97,11 @@ class El {
     if (deep) for (const k of this.childNodes) c.append(k.cloneNode(true));
     return c;
   }
-  focus() { this.focused = true; }                 // a test reads whether a screen put the cursor in a field
+  focus() {                                        // a test reads whether a screen put the cursor in a field (``focused``) and who has it now
+    this.focused = true;
+    if (this.ownerDocument && this.isConnected) this.ownerDocument.activeElement = this;
+  }
+  blur() { if (this.ownerDocument && this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   setPointerCapture() {}
   getBoundingClientRect() { return {left: 0, top: 0, width: 100, height: 100}; }
 }
@@ -120,7 +130,8 @@ function context(routes) {
   const body = new El('body');
   const requests = [];
   const listeners = {};                                   // the document's own listeners (keys): a test fires them with document.dispatch
-  const document = {body, activeElement: null, createElement: (t) => new El(t), createElementNS: (_, t) => new El(t),
+  const make = (t) => { const el = new El(t); el.ownerDocument = document; return el; };
+  const document = {body, activeElement: null, createElement: make, createElementNS: (_, t) => make(t),
     createTextNode: (t) => new Text_(t), importNode: (n, deep) => n.cloneNode(deep),
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
@@ -128,7 +139,8 @@ function context(routes) {
       const ev = {type, target: body, preventDefault() {}, stopPropagation() {}, ...extra};
       return Promise.all([...(listeners[type] || [])].map((fn) => fn(ev)));
     },
-    querySelector: (s) => body.querySelector(s)};
+    querySelector: (s) => body.querySelector(s), getElementById: (id) => body.querySelectorAll('[id]').find((e) => e.getAttribute('id') === id) || null};
+  body.ownerDocument = document;
   async function fetch(url, opts = {}) {
     const path = String(url).split('?')[0];
     requests.push({path, url: String(url), method: opts.method || 'GET', body: opts.body});
@@ -146,6 +158,9 @@ function context(routes) {
 
 /** Run the UI files (and glue code given as {code}) as one script, as the browser shares their top-level names. */
 function load(ctx, ui, parts) {
+  // index.html loads forms.js and terms.js straight after app.js, so a harness that loads app.js has them as well (a harness may name them itself)
+  const at = parts.indexOf('app.js');
+  if (at >= 0) parts = [...parts.slice(0, at + 1), ...['forms.js', 'terms.js'].filter((n) => !parts.includes(n)), ...parts.slice(at + 1)];
   const code = parts.map((p) => (typeof p === 'string' ? fs.readFileSync(ui + p, 'utf8') : p.code)).join('\n;\n');
   vm.runInContext(code + '\n;globalThis.App = App; globalThis.I18N = I18N;', ctx);
 }

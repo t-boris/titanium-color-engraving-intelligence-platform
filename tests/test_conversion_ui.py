@@ -55,10 +55,11 @@ def test_a_photo_plan_is_revised_from_its_own_values_and_image_into_a_new_plan()
 
 def test_the_vector_screen_disables_export_while_regions_lack_evidence_and_offers_every_resolution():
     screen = source("screens/vector.js")
-    assert "'primary', !!j.export_blocked)" in screen and "I18N.tr(j.export_blocked)" in screen
+    lifecycle = source("screens/lifecycle.js")      # the one export card: disabled with the readiness, the exact reason beside it, the files made before
+    assert "Lifecycle.exportCard(j.lifecycle" in screen and "disabled: !r.ready" in lifecycle and "I18N.tr(r.reason)" in lifecycle
     for op in ("set_task", "set_layer", "delete", "merge", "set_tolerance", "exclude", "include", "set_settings", "to_designer", "revert", "set_threshold"):
         assert f"op: '{op}'" in screen, op
-    assert "App.laserLensPicker(" in screen and "/vector/palette?" in screen and "/exports/${e.number}" in screen
+    assert "App.laserLensPicker(" in screen and "/vector/palette?" in screen and "f.download_url.replace(/^\\/api/, '')" in source("screens/lifecycle.js")
 
 
 VECTOR_SCREENS = ("screens/vector.js", "screens/vector-split.js", "screens/vector-photo.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/vector-review.js", "screens/vector-workspace.js")
@@ -70,7 +71,7 @@ def test_the_vector_work_steps_are_loaded_before_the_screen_that_assembles_them(
         assert order["/app.js"] < order["/dialogs.js"] < order[part] < order["/screens/vector.js"], part
     assert order["/screens/vector-editor.js"] < order["/screens/vector-colours.js"]      # the colour step embeds the editor
     screen = source("screens/vector.js")
-    assert "VectorSplit.card(next, reload, smooth)" in screen and "VectorColours.parts(j, run, permit)" in screen and "VectorWorkspace.frame(" in screen and "j.strategy === 'photo' ? photoView(j) : jobView(j)" in screen
+    assert "VectorSplit.card(next, reload, smooth)" in screen and "VectorColours.parts(j, run, permit)" in screen and "VectorWorkspace.frame(" in screen and "j.strategy === 'photo' ? photoView(j, ctx.query.accepted) : jobView(j)" in screen
 
 
 def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_their_errors_translated():
@@ -79,8 +80,9 @@ def test_no_vector_screen_links_to_an_api_address_and_files_are_fetched_with_the
         assert not re.search(r"href:\s*[`'\"]/api", text), name                  # the raw API (and its English JSON) is never opened
         assert "window.open(" not in text and "location.href" not in text, name
     screen = source("screens/vector.js")
-    assert "await fetch('/api' + path)" in screen and "I18N.tr(raw)" in screen and "URL.createObjectURL(await res.blob())" in screen
-    assert "saveButton(`/vector/${id}/exports/${e.number}`" in screen and "saveButton(`/vector/${j.id}/exports/${e.number}`" in screen
+    lifecycle = source("screens/lifecycle.js")      # the one place a file is fetched, for the work, the plan, the plate and every file made before
+    assert "await fetch('/api' + path)" in lifecycle and "I18N.tr(raw)" in lifecycle and "URL.createObjectURL(await res.blob())" in lifecycle
+    assert "{href: url, download: name}" in lifecycle and "Lifecycle.exportCard(" in screen and "fetch(" not in screen
 
 
 def test_the_colouring_step_offers_every_operation_the_server_knows():

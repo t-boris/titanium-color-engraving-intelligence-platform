@@ -36,34 +36,35 @@
   // ---- «Моя лаборатория» ---------------------------------------------------------------------------------------------------------
 
   function publicForm(pub, saved) {
-    const text = (key, placeholder, multiline) => (multiline ? h('textarea', {rows: 3, placeholder, 'aria-label': placeholder}) : h('input', {placeholder, 'aria-label': placeholder}));
-    const name = text('name', 'Публичное название лаборатории'), description = text('description', 'Описание', true), url = text('url', 'Ссылка лаборатории (https)');
-    const author = text('author', 'Автор'), organization = text('organization', 'Организация'), authorUrl = text('author_url', 'Ссылка автора (https)');
-    name.value = pub.name || ''; description.value = pub.description || ''; url.value = pub.url || '';
-    author.value = pub.author || ''; organization.value = pub.organization || ''; authorUrl.value = pub.author_url || '';
+    const f = Forms.create();
+    // every box is sent as typed (``raw``); an unsaved sentence stays in its box when the server refuses, with the reason under the form
+    const box = (name, label, value, o = {}) => f.add(name, label, o.multiline ? h('textarea', {rows: 3, value}) : h('input', {value}), {raw: true, help: o.help});
+    const fields = {name: box('name', 'Название лаборатории', pub.name || ''), author: box('author', 'Автор', pub.author || ''),
+      url: box('url', 'Ссылка лаборатории', pub.url || '', {help: 'адрес https; пусто — без ссылки'}), organization: box('organization', 'Организация', pub.organization || ''),
+      authorUrl: box('author_url', 'Ссылка автора', pub.author_url || '', {help: 'адрес https; пусто — без ссылки'}), description: box('description', 'Описание', pub.description || '', {multiline: true})};
     const lasers = Object.entries(pub.lasers || {}).map(([id, laser]) => {
-      const publicName = h('input', {value: laser.public_name || '', 'aria-label': `Публичное название лазера ${id}`});
-      const manufacturer = h('input', {value: laser.manufacturer || '', placeholder: 'производитель'}), model = h('input', {value: laser.model || '', placeholder: 'модель'});
-      return {id, publicName, manufacturer, model, el: h('div', {class: 'grid g2 lab-laser'}, field(`Лазер № ${id}: публичное название`, publicName),
+      const manufacturer = h('input', {value: laser.manufacturer || '', 'aria-label': `Производитель лазера ${id}`}), model = h('input', {value: laser.model || '', 'aria-label': `Модель лазера ${id}`});
+      const publicName = f.add(`laser_${id}`, `Лазер № ${id}: публичное название`, h('input', {value: laser.public_name || ''}), {raw: true});
+      return {id, publicName, manufacturer, model, el: h('div', {class: 'grid g2 lab-laser'}, publicName,
         field('Производитель и модель', h('div', {class: 'row'}, manufacturer, model)))};
     });
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const save = btn('Сохранить', async (ev) => {
       const self = ev.currentTarget;
-      self.disabled = true; err.hidden = true;
+      self.disabled = true;
       try {
-        const made = await put('/labs/own', {name: name.value, description: description.value, url: url.value, author: author.value, organization: organization.value,
-          author_url: authorUrl.value, lasers: Object.fromEntries(lasers.map((l) => [l.id, {public_name: l.publicName.value, manufacturer: l.manufacturer.value, model: l.model.value}]))});
+        const v = f.collect();
+        if (!v) return;
+        const made = await put('/labs/own', {name: v.name, description: v.description, url: v.url, author: v.author, organization: v.organization, author_url: v.author_url,
+          lasers: Object.fromEntries(lasers.map((l) => [l.id, {public_name: v[`laser_${l.id}`], manufacturer: l.manufacturer.value, model: l.model.value}]))});
         toast('Публичные сведения сохранены', 'ok');
         saved(made);
-      } catch (e) { err.textContent = e.message; err.hidden = false; } finally { self.disabled = false; }
+      } catch (e) { f.fail(e); } finally { self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'card stack'}, h('h3', {}, 'Публичные сведения'),
       h('p', {class: 'small muted'}, 'Это и только это о мастерской попадает в каждый выпуск: название, описание, ссылка, автор и публичные названия лазеров. '
         + 'Местные названия лазеров, имена файлов, фотографии и заметки не публикуются.'),
-      h('div', {class: 'grid g2'}, field('Название лаборатории', name), field('Автор', author), field('Ссылка лаборатории', url, 'адрес https; пусто — без ссылки'),
-        field('Организация', organization), field('Ссылка автора', authorUrl), field('Описание', description)),
-      lasers.length ? lasers.map((l) => l.el) : h('p', {class: 'muted small'}, 'Лазеров пока нет: добавьте лазер в разделе «Лазеры».'), err, save);
+      h('div', {class: 'grid g2'}, fields.name, fields.author, fields.url, fields.organization, fields.authorUrl, fields.description),
+      lasers.length ? lasers.map((l) => l.el) : h('p', {class: 'muted small'}, 'Лазеров пока нет: добавьте лазер в разделе «Лазеры».'), f.error, save);
   }
 
   /** What «Подготовка публикации» shows of a preview: the same for a file and for the cloud. */
@@ -130,10 +131,11 @@
   }
 
   function withdrawalCard(exports, withdrawals, declared) {
-    const kind = h('select', {'aria-label': 'Что отзывается'}, Object.entries(TARGET).map(([id, name]) => h('option', {value: id}, name)));
-    const target = h('input', {placeholder: 'идентификатор (UUID)', 'aria-label': 'Идентификатор'});
-    const reason = h('textarea', {rows: 2, placeholder: 'Причина отзыва', 'aria-label': 'Причина отзыва'});
-    const replacement = h('select', {'aria-label': 'Выпуск-замена'}, h('option', {value: ''}, 'без замены'),
+    const f = Forms.create();
+    const kind = h('select', {}, Object.entries(TARGET).map(([id, name]) => h('option', {value: id}, name)));
+    const target = h('input', {placeholder: 'идентификатор (UUID)'});
+    const reason = h('textarea', {rows: 2, placeholder: 'Причина отзыва'});
+    const replacement = h('select', {}, h('option', {value: ''}, 'без замены'),
       exports.map((e) => h('option', {value: e.release_id}, `${when(e.created_at)} · ${short(e.content_sha256)}`)));
     const released = h('select', {'aria-label': 'Записанный выпуск'}, h('option', {value: ''}, 'выберите выпуск'),
       exports.map((e) => h('option', {value: e.release_id}, `${when(e.created_at)} · ${short(e.content_sha256)}`)));
@@ -141,21 +143,25 @@
     const switchKind = () => { released.hidden = kind.value !== 'release'; };
     kind.addEventListener('change', switchKind);
     switchKind();
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const kindField = f.add('kind', 'Что отзывается', kind, {required: true});
+    const targetField = f.add('target', 'Идентификатор', target, {required: true});
+    const reasonField = f.add('reason', 'Причина', reason, {raw: true, required: true, constraint: 'не больше 500 символов, только простой текст (lab_export.withdraw)'});
+    const replacementField = f.add('replacement', 'Выпуск-замена', replacement, {empty: null});
     const send = btn('Отозвать', async (ev) => {
       const self = ev.currentTarget;
-      self.disabled = true; err.hidden = true;
+      self.disabled = true;
       try {
-        await post('/labs/own/withdrawals', {target_kind: kind.value, target_id: target.value.trim(), reason: reason.value, replacement_release_id: replacement.value || null});
+        const v = f.collect();
+        if (!v) return;
+        await post('/labs/own/withdrawals', {target_kind: v.kind, target_id: v.target, reason: v.reason, replacement_release_id: v.replacement || null});
         toast('Отзыв записан: он уйдёт с каждым следующим выпуском', 'ok');
         declared();
-      } catch (e) { err.textContent = e.message; err.hidden = false; } finally { self.disabled = false; }
+      } catch (e) { f.fail(e); } finally { self.disabled = false; }
     }, 'danger');
     return h('div', {class: 'card stack'}, h('h3', {}, 'Отзыв опубликованного'),
       h('p', {class: 'small muted'}, 'Опубликованный выпуск не меняется. Если в нём ошибка, объявите отзыв выпуска, измерения или тонального профиля с причиной и, если есть, '
         + 'выпуском-заменой: заявление уходит с каждым следующим выпуском, и у получателей отозванное исключается из новых работ.'),
-      h('div', {class: 'grid g2'}, field('Что отзывается', kind), h('div', {class: 'f'}, h('label', {class: 'f'}, h('span', {}, 'Идентификатор'), target), released),
-        field('Причина', reason), field('Выпуск-замена', replacement)), err, send,
+      h('div', {class: 'grid g2'}, kindField, h('div', {class: 'f'}, targetField, released), reasonField, replacementField), f.error, send,
       withdrawals.length ? table(['Объявлен', 'Что', 'Идентификатор', 'Причина', 'Замена'], withdrawals.map((w) => [when(w.declared_at), TARGET[w.target_kind] || w.target_kind,
         short(w.target_id), w.reason, w.replacement_release_id ? short(w.replacement_release_id) : '—']), '', true) : h('p', {class: 'muted small'}, 'Отзывов нет.'));
   }
@@ -342,10 +348,10 @@
 
   /** «Проверить у себя»: a test plate of one colour of the release on the own laser for the own titanium (POST /labs/transfers). */
   async function transferDialog(request, entry, made) {
-    const [devices, materials] = await Promise.all([get('/devices'), get('/materials')]);
-    if (!devices.length || !materials.length) throw new Error('Сначала добавьте лазер и заготовку титана этой мастерской');
+    const [devices, stocks] = await Promise.all([get('/devices'), MaterialPicker.total()]);       // only whether any record exists, not all of them
+    if (!devices.length || !stocks) throw new Error('Сначала добавьте лазер и заготовку титана этой мастерской');
     const laser = h('select', {'aria-label': 'Свой лазер'}, devices.map((d) => h('option', {value: d.id}, d.title || d.name)));
-    const stock = h('select', {'aria-label': 'Свой титан'}, materials.map((m) => h('option', {value: m.id}, [m.name, m.grade, m.batch].filter(Boolean).join(' · '))));
+    const stock = MaterialPicker.create({initial: 'recent', name: 'Свой титан'});          // the record used last, or another found by a search (ux-growing-collections-p0, REQ-001)
     modal('Проверить цвет у себя', h('div', {class: 'stack'},
       h('p', {}, swatch(entry.lab), labText(entry.lab), h('span', {class: 'small muted'}, ` · ${recipeText(entry.recipe)}`)),
       h('p', {class: 'small'}, 'Рецепт выпуска гравируется одной ячейкой на вашем лазере с установленной сейчас линзой; настройки, которые ваш лазер не выполнит, '
@@ -353,6 +359,7 @@
       h('div', {class: 'grid g2'}, field('Свой лазер', laser), field('Свой титан', stock))), [
       {label: 'Отмена', run: (m) => m.close()},
       {label: 'Создать пластину', cls: 'primary', run: async (m) => {
+        if (!stock.value) throw new Error('Выберите свой титан: конкретную партию или лист');
         const plate = await post('/labs/transfers', {...request, entry_id: entry.id, device_id: +laser.value, material_id: +stock.value});
         toast('Пластина переноса создана', 'ok');
         m.close();

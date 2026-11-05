@@ -2,7 +2,7 @@
 type: feature
 id: ux-work-creation-p0
 title: "[P0] Контекст, первый запуск и создание от результата"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n11, n13, n18; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: n/a
+  Failure Scenarios: known
+  Data Model: known
+  Notifications: known
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Нужно устранить повторный ввод контекста и тупики настройки; ожидаемое улучшение пока не измерено.
+  Target Users: Операторы, начинающие первую работу или создающие следующую на имеющемся оборудовании.
+  Primary Workflow: Заданы изображение, размер, выбор результата и дополнительные настройки. Пользователь утвердил продолжение после перезапуска; существующий двухшаговый выбор фотоработы сохраняется как основа.
+  Permissions: Новые роли и права доступа не требуются.
+  Failure Scenarios: Охвачены отсутствие оборудования и измерений, отмена настройки и перезапуск. Явный отказ от задачи отличается от временного прерывания.
+  Data Model: Контекст включает лазер, линзу, заготовку и источник измерений. Незавершённый ввод сохраняется между запусками; сохранённая работа сохраняет собственный контекст.
+  Notifications: Предусмотрены предупреждение о несовместимости контекста и объяснение результата стартового теста.
+  Security: Новые подключения и механизмы доверия вне границ функции.
+  Analytics: Исходных замеров удобства нет; это не препятствует спецификации. Внедрение продуктовой аналитики не требуется.
+  Dependencies: Проверены требования, исследование и код двухшагового создания фотоработы. Исправленный BUG-003 не переоткрывается.
+  Acceptance Criteria: Гарантия восстановления уточнена. Проверки реального интерфейса, доступности и предметных регрессий n55–n58 остаются обязательными; здесь они не выполнялись.
+questions_left: 0
 ---
 
 # [P0] Контекст, первый запуск и создание от результата

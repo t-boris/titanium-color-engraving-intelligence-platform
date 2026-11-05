@@ -92,6 +92,13 @@ def propose_for_finding(finding_id: int, body: FindingProposalIn, request: Reque
     return findings.propose_for(store_of(request), finding_id, seed=body.seed, size=body.size)
 
 
+@router.get("/photo-queue")
+def photo_queue(request: Request):
+    """Photo engraving as a decision queue (ux-evidence-summaries-p0 REQ-002): every laser, lens and titanium where one was photographed, each
+    kind with the one next step recommended for it (``findings.photo_queue``)."""
+    return findings.photo_queue(store_of(request))
+
+
 @router.get("/schedule")
 def get_schedule(request: Request):
     return _schedule(request)

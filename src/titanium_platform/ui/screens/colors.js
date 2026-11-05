@@ -164,9 +164,12 @@
       },
       details: (k) => {
         const s = k.summary;
+        // REQ-001 of ux-evidence-summaries-p0: the signals first (every observation of an entry is chart-corrected), the figures in a fold
         return h('div', {class: 'stack small'}, h('p', {}, variantSettings(k.parameters)),
-          h('p', {}, dot([s && labText(s.lab), `независимых ${s ? s.independent_engravings : 0}`, `уверенность ${s && s.available ? num(s.confidence) : '—'}`,
-            `ошибка ΔE ${s && s.available ? num(s.expected_delta_e) : '—'}`, `стабильность ${s ? stab(s.stability) : '—'}`])),
+          s ? EvidenceSummary.summary({...s, measurement: 'calibrated', engravings: s.independent_engravings}) : null,
+          EvidenceSummary.disclosure('Цифры: цвет Lab, уверенность, ошибка ΔE, стабильность',
+            h('p', {}, dot([s && labText(s.lab), `независимых ${s ? s.independent_engravings : 0}`, `уверенность ${s && s.available ? num(s.confidence) : '—'}`,
+              `ошибка ΔE ${s && s.available ? num(s.expected_delta_e) : '—'}`, `стабильность ${s ? stab(s.stability) : '—'}`]))),
           taskOf(k) ? h('p', {class: 'muted'}, `Задача: ${Tasks.name(taskOf(k))}`) : null,
           k.questioned && k.doubt ? h('p', {}, h('strong', {}, 'Под вопросом. '), I18N.tr(k.doubt.reason)) : null);
       },
@@ -204,17 +207,16 @@
     const sets = [...(map.samples.length ? [{id: 'calibrated', title: 'Калиброванные наблюдения', note: `измеренных цветов ${map.samples.length}${know.length ? ` · в модели ${know.length}` : ''}`, view: () => calibratedView(map, know, 'lm.knowledge.' + pick.route())}] : []),
       ...relativeSets.map((set) => ({id: 'pair-' + set.pair_id, title: `${set.provisional ? 'Предварительно · ' : ''}пара ${set.pair_id}`,
         note: `${set.photo_name || 'фото'} · слоёв ${(set.samples || []).length} · вариантов ${(set.color_variants || []).length}`, view: () => relativeView(set)}))];
-    const left = h('section', {class: 'os-col lm-left', 'aria-label': 'Наборы наблюдений'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наборы'), pill(sets.length)), h('div', {class: 'os-scroll'}, h('div', {class: 'lm-sets'})));
+    // a laser with many RAW pairs has many sets: a search and pages of twenty, the set on the screen kept in view (ux-growing-collections-p0, REQ-002, REQ-003)
+    let current = null;
+    const setList = SetList.list(sets, {selected: () => current, onSelect: (id) => select(id)});
+    const left = h('section', {class: 'os-col lm-left', 'aria-label': 'Наборы наблюдений'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наборы'), pill(sets.length)), h('div', {class: 'os-scroll'}, h('div', {class: 'lm-sets'}, setList.el)));
     const centre = h('section', {class: 'os-col lm-centre'}), right = h('section', {class: 'os-col lm-right'});
-    const buttons = new Map(sets.map((s) => [s.id, h('button', {type: 'button', class: 'lm-set', 'aria-pressed': 'false', onClick: () => select(s.id)}, h('strong', {}, s.title), h('span', {class: 'muted small'}, s.note))]));
-    left.querySelector('.lm-sets').append(...buttons.values());
 
     function select(id) {
       const set = sets.find((s) => s.id === id) || sets[0];
-      for (const [key, node] of buttons) {
-        node.setAttribute('aria-pressed', String(key === set.id));
-        if (key === set.id) node.classList.add('active'); else node.classList.remove('active');
-      }
+      current = set.id;
+      setList.refresh();                                         // the pressed line follows
       keep(SET_KEY, set.id);
       const view = set.view();
       fill(centre, h('div', {class: 'os-col-head'}, h('div', {class: 'lm-set-title'}, h('h3', {}, view.title), h('p', {class: 'muted small'}, view.sub)), view.plotTitle ? pill(view.plotTitle) : null),

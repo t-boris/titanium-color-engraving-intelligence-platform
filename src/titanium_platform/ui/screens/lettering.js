@@ -98,6 +98,8 @@ const Lettering = (() => {
     const list = h('div', {class: 'lt-fonts', role: 'listbox', 'aria-label': 'Шрифты'});
     const more = h('div', {});
     const count = h('p', {class: 'small muted'});
+    const status = h('p', {class: 'small lt-font-status', role: 'status', 'aria-live': 'polite'});   // says what Enter or Space chose, for a screen reader
+    let active = chosen ? chosen.family : null;    // the row that holds the tab stop of the list (roving focus: arrow keys move it, Enter or Space chooses it)
     const googleBox = h('div', {class: 'stack small'});
     const ownInput = h('input', {type: 'file', accept: '.ttf,.otf,.ttc', 'aria-label': 'Свой файл шрифта (TTF, OTF, TTC)'});
     const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((seen) => {
@@ -140,31 +142,81 @@ const Lettering = (() => {
       render(false);
     }
 
+    /** What is said aloud when a row is chosen (the status line is a polite live region); a family still to download says so. */
+    function announce(f) {
+      const style = f.faces.find((x) => chosen && x.id === chosen.face);
+      fill(status, f.faces.length ? `Выбран шрифт ${f.family}${style ? ', начертание ' + style.style : ''}. «Выбрать» подтверждает.`
+        : `Шрифт ${f.family} ещё не скачан: скачиваем из Google Fonts, он будет выбран, когда скачается.`);
+    }
+    /** Choose a row, by a click or by Enter or Space: the same act, and the row keeps the tab stop. */
+    function pick(f, faceOf) {
+      if (f.faces.length) chosen = {family: f.family, face: faceOf().id}; else fetchChosen(f);
+      active = f.family;
+      announce(f);
+      render(false);
+    }
+
     function row(f) {
       const on = chosen && chosen.family === f.family;
-      const star = h('button', {type: 'button', class: 'lt-star', 'aria-pressed': favourites.has(f.family) ? 'true' : 'false',
+      const star = h('button', {type: 'button', class: 'lt-star', 'data-ctl': 'star', 'aria-pressed': favourites.has(f.family) ? 'true' : 'false',
         title: favourites.has(f.family) ? 'Убрать из избранных' : 'В избранные', 'aria-label': `${f.family}: избранный`,
         onClick: (ev) => { ev.stopPropagation(); if (favourites.has(f.family)) favourites.delete(f.family); else favourites.add(f.family);
           storage.write('lt.fav', [...favourites]); render(false); }}, favourites.has(f.family) ? '★' : '☆');
       const faceOf = () => (on && f.faces.find((x) => x.id === chosen.face)) || f.faces.find((x) => x.id === f.regular) || f.faces[0];
-      const styles = f.faces.length > 1 ? h('select', {'aria-label': `Начертание ${f.family}`, onClick: (ev) => ev.stopPropagation(),
-        onChange: (ev) => { chosen = {family: f.family, face: ev.target.value}; render(false); }},
+      const styles = f.faces.length > 1 ? h('select', {'aria-label': `Начертание ${f.family}`, 'data-ctl': 'style', onClick: (ev) => ev.stopPropagation(),
+        onChange: (ev) => { chosen = {family: f.family, face: ev.target.value}; active = f.family; announce(f); render(false); }},
       f.faces.map((x) => h('option', {value: x.id, selected: faceOf() && x.id === faceOf().id}, x.style))) : f.faces.length ? h('span', {class: 'small muted'}, f.faces[0].style) : null;
+      const fetchBtn = !f.faces.length && !(loading.has(f.family) || queue.includes(f.family))
+        ? btn(`Скачать (${num((f.size || 0) / 1024 / 1024, 1)} МБ)`, (ev) => { ev.stopPropagation(); loading.add(f.family); render(false);
+          downloadNow(f); }, 'btn-small') : null;
+      if (fetchBtn) fetchBtn.setAttribute('data-ctl', 'download');
+      const remove = f.source === 'own' && f.faces.length ? btn('Удалить', (ev) => { ev.stopPropagation(); removeOwn(f); }, 'btn-small') : null;
+      if (remove) remove.setAttribute('data-ctl', 'remove');
       const shown = !f.faces.length
-        ? (loading.has(f.family) || queue.includes(f.family) ? h('span', {class: 'small muted'}, 'Скачиваем из Google Fonts…')
-          : btn(`Скачать (${num((f.size || 0) / 1024 / 1024, 1)} МБ)`, (ev) => { ev.stopPropagation(); loading.add(f.family); render(false);
-            download(f.family).finally(() => loading.delete(f.family)); }, 'btn-small'))
+        ? (fetchBtn || h('span', {class: 'small muted'}, 'Скачиваем из Google Fonts…'))
         : h('img', {class: 'lt-preview', src: preview(faceOf().id), alt: `${sampleText()} шрифтом ${f.family}`, loading: 'lazy'});
-      const el = h('div', {class: 'lt-font' + (on ? ' picked' : ''), role: 'option', 'aria-selected': on ? 'true' : 'false', 'data-family': f.family,
-        onClick: () => { if (f.faces.length) chosen = {family: f.family, face: faceOf().id}; else fetchChosen(f); render(false); }},
-      h('div', {class: 'lt-font-head'}, star, h('strong', {}, f.family), h('span', {class: 'pill'}, SOURCES[f.source] || f.source),
+      // the row is one option of the listbox: focusable (roving, see rove), chosen by a click, Enter or Space; the controls inside it
+      // (favourite, style, download, remove) keep their own keys and never choose the row (a key is the row's only when it is the target)
+      const el = h('div', {class: 'lt-font' + (on ? ' picked' : ''), role: 'option', tabindex: '-1', 'aria-selected': on ? 'true' : 'false', 'data-family': f.family,
+        'aria-label': f.faces.length ? f.family : `${f.family}, не скачан`, onClick: () => pick(f, faceOf)},
+      h('div', {class: 'lt-font-head'}, star, h('strong', {}, f.family), on ? h('span', {class: 'pill ok lt-chosen'}, 'выбран') : null,
+        h('span', {class: 'pill'}, SOURCES[f.source] || f.source),
         h('span', {class: 'small muted'}, [KINDS[f.kind] || f.kind, f.scripts.map((s) => SCRIPTS[s] || s).join(', ')].filter(Boolean).join(' · ')),
-        h('span', {class: 'spacer'}), styles,
-        f.source === 'own' && f.faces.length ? btn('Удалить', (ev) => { ev.stopPropagation(); removeOwn(f); }, 'btn-small') : null),
+        h('span', {class: 'spacer'}), styles, remove),
       shown);
+      el.pick = () => pick(f, faceOf);
       if (!f.faces.length && observer) observer.observe(el);
       return el;
     }
+    const downloadNow = (f) => download(f.family).finally(() => loading.delete(f.family));
+
+    // --- roving focus of the list ----------------------------------------------------------------------------------------------
+    const rowsNow = () => [...list.querySelectorAll('.lt-font')];
+    const stopRow = () => rowsNow().find((r) => r.getAttribute('tabindex') === '0');
+    /** Exactly one row (and its own controls) is a tab stop: the row last used, else the chosen one, else the first. A row last used that a
+        search hides is remembered, so it has the stop again when the search is cleared. */
+    function rove() {
+      const rows = rowsNow();
+      const mine = rows.find((r) => r.getAttribute('data-family') === active) || rows.find((r) => r.classList.contains('picked')) || rows[0];
+      for (const r of rows) {
+        const here = r === mine;
+        r.setAttribute('tabindex', here ? '0' : '-1');
+        for (const c of r.querySelectorAll('button, select')) c.setAttribute('tabindex', here ? '0' : '-1');
+      }
+    }
+    const focusRow = (r) => { if (!r) return; active = r.getAttribute('data-family'); rove(); r.focus(); };
+    list.addEventListener('focusin', (ev) => {                 // a pointer or a tab that lands in a row makes it the tab stop
+      const r = ev.target && ev.target.closest ? ev.target.closest('.lt-font') : null;
+      if (r && r.getAttribute('data-family') !== active) { active = r.getAttribute('data-family'); rove(); }
+    });
+    list.addEventListener('keydown', (ev) => {
+      const r = ev.target;
+      if (!r || !r.classList || !r.classList.contains('lt-font')) return;                 // a key of a control inside a row is that control's
+      const rows = rowsNow(), at = rows.indexOf(r);
+      const go = {ArrowDown: at + 1, ArrowUp: at - 1, PageDown: at + 5, PageUp: at - 5, Home: 0, End: rows.length - 1}[ev.key];
+      if (go !== undefined) { ev.preventDefault(); focusRow(rows[Math.max(0, Math.min(rows.length - 1, go))]); return; }
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); r.pick(); }
+    });
 
     /** A Google family chosen before it is downloaded is downloaded now, whatever its size, and chosen once it is here (REQ-001). */
     function fetchChosen(f) {
@@ -174,17 +226,38 @@ const Lettering = (() => {
       download(f.family).finally(() => loading.delete(f.family));
     }
 
+    /** Redraw the list and give the focus back to the control that had it (a row, or its favourite, style, download, remove control): the rows
+        are rebuilt, and a focus that went with the old one would send the keyboard back to the top of the dialog. A control that is gone
+        (a family downloaded, a font removed) leaves the focus on its row, and a row that is gone on the row that keeps the tab stop. */
     function render(reset = true) {
+      const now = typeof document !== 'undefined' ? document.activeElement : null;
+      const inRow = now && list.contains(now) ? now.closest('.lt-font') : null;
+      const mark = inRow ? {family: inRow.getAttribute('data-family'), ctl: now === inRow ? '' : now.getAttribute('data-ctl') || ''} : null;
       if (reset) shownCount = PAGE;
       const found = families();
       fill(count, `Шрифтов: ${found.length} из ${catalogue.families.length}` + (catalogue.google.listed ? '' : ' · Google Fonts не загружен: кнопка ниже'));
       fill(list, found.length ? found.slice(0, shownCount).map(row) : h('p', {class: 'muted small'}, 'Под такой поиск и фильтры шрифтов нет.'));
-      fill(more, found.length > shownCount ? btn(`Показать ещё (${found.length - shownCount})`, () => { shownCount += PAGE; render(false); }) : null);
+      fill(more, found.length > shownCount ? btn(`Показать ещё (${found.length - shownCount})`, () => {
+        const first = shownCount;                              // the first row of the new portion takes the focus of the button that was pressed
+        shownCount += PAGE;
+        render(false);
+        focusRow(rowsNow()[first]);
+      }) : null);
+      rove();
+      if (mark) {
+        const again = rowsNow().find((r) => r.getAttribute('data-family') === mark.family);
+        const control = again && mark.ctl ? [...again.querySelectorAll('[data-ctl]')].find((c) => c.getAttribute('data-ctl') === mark.ctl) : null;
+        const target = control || again || stopRow();
+        if (target) target.focus();
+      }
       showGoogle();
     }
 
     function showGoogle() {
       const g = catalogue.google, s = g.download || {};
+      // the box is drawn again every second while a bulk download runs: a button of it that has the focus gets it back
+      const buttons = () => [...googleBox.querySelectorAll('button')];
+      const held = document.activeElement && googleBox.contains(document.activeElement) ? buttons().indexOf(document.activeElement) : -1;
       fill(googleBox,
         h('div', {class: 'row'}, btn(g.listed ? 'Обновить список Google Fonts' : 'Загрузить список Google Fonts', async (ev) => {
           const self = ev.currentTarget;
@@ -196,6 +269,8 @@ const Lettering = (() => {
           : 'Скачать все Google выбранной письменности или вида', () => bulk(), '', !(script.value || kind.value) || !!s.running),
         s.running ? h('span', {}, `скачано ${s.done} из ${s.total}…`) : s.total ? h('span', {class: 'muted'}, `скачано ${s.done} из ${s.total}`
           + (s.failed && s.failed.length ? `, не скачались: ${s.failed.length}` : '')) : null) : null);
+      const again = held >= 0 ? buttons()[held] : null;
+      if (again && !again.disabled) again.focus();
     }
 
     async function bulk() {
@@ -226,6 +301,7 @@ const Lettering = (() => {
         }
         if (chosen && chosen.family === f.family) chosen = null;
         await reload();
+        focusRow(stopRow());                                  // the button that asked is gone: the list keeps the focus
       });
     }
 
@@ -251,7 +327,7 @@ const Lettering = (() => {
       h('div', {class: 'row'}, h('label', {class: 'f lt-grow'}, h('span', {}, 'Образец'), text), h('label', {class: 'f lt-grow'}, h('span', {}, 'Поиск'), search)),
       h('div', {class: 'row lt-filters'}, source, script, kind),
       h('div', {class: 'row'}, h('span', {class: 'small'}, 'Свой шрифт:'), App.filePick(ownInput, 'Добавить файл шрифта')),
-      count, list, more, googleBox,
+      count, status, list, more, googleBox,
       h('p', {class: 'small muted'}, 'Образец нарисован так, как буквы попадут в файл; буква, которой нет в шрифте, — красная. Шрифты Google скачиваются, '
         + 'когда видны в списке (до 2 МБ), остальные — кнопкой; скачанные остаются на этом компьютере. ★ — избранные (запоминает этот браузер).')),
     [{label: 'Отмена', run: (m) => m.close()},
@@ -267,7 +343,8 @@ const Lettering = (() => {
   /** Надписи работы ``view``. ``o.act(op)`` отправляет операцию (true — принята), ``o.palette()`` — измеренные цвета титана работы,
       ``o.size(view)`` — размер работы в мм, ``o.scale()`` — экранных пикселей на мм картинки редактора (у фотогравировки слой знает это
       сам, :func:`attach`), ``o.drawn`` — слой рисует надписи сам (векторная работа), ``o.clean`` — цвет чистого титана для врезки,
-      ``o.open()`` — открыта ли вкладка. ``o.pick(title, lab, entryId, onPick)``: the host's window of measured colours (the editor's,
+      ``o.open()`` — открыта ли вкладка, ``o.picked(id)`` — надпись выбрана на самой картинке (на узком экране хозяин открывает её свойства).
+      ``o.pick(title, lab, entryId, onPick)``: the host's window of measured colours (the editor's,
       vector-colours.js: ΔE to ``lab``, time, where each colour is known from); a host without it shows the colours here to click. */
   function create(view, o) {
     let selected = null, entries = null, paletteError = null, drag = null, path = null, typing = null, built = null;
@@ -342,7 +419,7 @@ const Lettering = (() => {
       return {key, el: h('label', {class: 'f lt-num'}, h('span', {}, label), input), input};
     }
     function choice(label, key, options) {
-      const buttons = options.map(([value, name]) => btn(name, () => change({[key]: value})));
+      const buttons = options.map(([value, name]) => btn(name, () => (key === 'layout' && value === 'path' ? toPath() : change({[key]: value}))));
       return {key, buttons, values: options.map(([v]) => v), el: h('div', {class: 'stack'}, h('span', {class: 'small'}, label),
         h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': label}, buttons))};
     }
@@ -350,6 +427,98 @@ const Lettering = (() => {
       const input = h('input', {type: 'checkbox', 'aria-label': label, 'data-field': key});
       input.addEventListener('change', () => change({[key]: input.checked}));
       return {key, input, el: h('label', {class: 'row small'}, input, h('span', {}, label))};
+    }
+
+    /** «По пути» for an inscription: the server takes a path only with two points or more, so one that has none gets a straight path of two
+        from its place (as long as six letter heights), and its points are then edited on the picture or by number. */
+    function toPath() {
+      const t = spec();
+      if (!t) return Promise.resolve(false);
+      if (t.points && t.points.length >= 2) return change({layout: 'path'});
+      const length = Math.max(10, round(t.height_mm * 6, 1));
+      return change({layout: 'path', rotation: 0, ...placed([[t.x, t.y], [t.x + length, t.y]])});
+    }
+
+    // --- the same as the gestures, by buttons and numbers (ux-accessible-layout-p0, REQ-001) --------------------------------------
+    let stepMm = 1;                                       // how far a button moves the inscription
+    const NUDGE = [['←', 'влево', -1, 0], ['↑', 'вверх', 0, -1], ['↓', 'вниз', 0, 1], ['→', 'вправо', 1, 0]];
+    const TURN = [['↶ 15°', 'против часовой стрелки на 15°', -15], ['↶ 1°', 'против часовой стрелки на 1°', -1], ['↷ 1°', 'по часовой стрелке на 1°', 1],
+      ['↷ 15°', 'по часовой стрелке на 15°', 15]];
+    const SIZE_STEP = 1.1;
+    function tool(label, words, run) {
+      const b = btn(label, run, 'btn-small lt-tool');
+      b.setAttribute('aria-label', words);
+      return b;
+    }
+    /** Move, turn and size the chosen inscription by buttons: the changes the drag of the inscription, of its round handle and of its square
+        handle make (a size is about the frame's anchor, as the handle's), each one operation of the work and one step of undo. */
+    function placeTools() {
+      const t = () => spec();
+      const step = h('select', {'aria-label': 'Шаг сдвига, мм', onChange: (ev) => { stepMm = +ev.target.value; }},
+        [0.1, 0.5, 1, 5].map((v) => h('option', {value: v, selected: v === stepMm}, String(v).replace('.', ','))));
+      return h('div', {class: 'stack lt-place'}, h('span', {class: 'small'}, 'Положение и размер кнопками: то же, что тащить надпись и её ручки'),
+        h('div', {class: 'row lt-tools'},
+          h('label', {class: 'f lt-step'}, h('span', {}, 'Шаг, мм'), step),
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Сдвиг надписи'},
+            NUDGE.map(([sign, word, dx, dy]) => tool(sign, `Сдвинуть ${word} на шаг`, () => { const x = t(); return x && change({x: round(x.x + dx * stepMm, 3), y: round(x.y + dy * stepMm, 3)}); })))),
+        h('div', {class: 'row lt-tools'},
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Поворот надписи'},
+            TURN.map(([sign, word, deg]) => tool(sign, `Повернуть ${word}`, () => { const x = t(); return x && change({rotation: round(((x.rotation + deg + 540) % 360) - 180, 2)}); }))),
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Размер надписи'},
+            tool('Меньше', 'Уменьшить надпись на 10 %', () => { const x = t(); return x && change(scaled(x, 1 / SIZE_STEP)); }),
+            tool('Больше', 'Увеличить надпись на 10 %', () => { const x = t(); return x && change(scaled(x, SIZE_STEP)); }))));
+    }
+
+    /** The points of a path by number, in the work's mm (the place of the inscription is the first): the points on the picture, written down.
+        A row has «Вставить после» (between it and the next point; after the last, further along the path) and «Удалить» (two stay). */
+    function pointsEditor() {
+      const box = h('div', {class: 'stack lt-points'});
+      let rows = [];                                       // per point: {x, y, insert, remove} controls
+      const absoluteNow = () => { const t = spec(); return t ? absolute(t) : []; };
+      const send = (pts) => { const t = spec(); return t && change(placed(pts, t.rotation)); };
+      function row(i) {
+        const axis = (name) => {
+          const input = h('input', {type: 'number', step: '0.1', 'aria-label': `Точка ${i + 1}: ${name}, мм`, class: 'lt-point-input'});
+          input.addEventListener('change', () => {
+            if (input.value === '') return;
+            const pts = absoluteNow();
+            if (pts[i]) { pts[i] = name === 'x' ? [+input.value, pts[i][1]] : [pts[i][0], +input.value]; send(pts); }
+          });
+          return input;
+        };
+        const x = axis('x'), y = axis('y');
+        const insert = tool('Вставить после', `Вставить точку после точки ${i + 1}`, () => {
+          const pts = absoluteNow(), a = pts[i], b = pts[i + 1] || (pts[i - 1] ? [2 * a[0] - pts[i - 1][0], 2 * a[1] - pts[i - 1][1]] : [a[0] + 5, a[1]]);
+          pts.splice(i + 1, 0, i + 1 < pts.length ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : b);
+          return send(pts);
+        });
+        const remove = tool('Удалить', `Удалить точку ${i + 1}`, () => { const pts = absoluteNow(); pts.splice(i, 1); return send(pts); });
+        for (const [b, name] of [[insert, 'insert'], [remove, 'remove']]) b.setAttribute('data-ctl', name);
+        x.setAttribute('data-ctl', 'x'); y.setAttribute('data-ctl', 'y');
+        rows.push({x, y, insert, remove});
+        return h('div', {class: 'lt-point-row', role: 'group', 'aria-label': `Точка ${i + 1}${i === 0 ? ' (место надписи)' : ''}`},
+          h('strong', {class: 'lt-point-no'}, String(i + 1)), h('label', {class: 'f'}, h('span', {}, 'x'), x), h('label', {class: 'f'}, h('span', {}, 'y'), y), insert, remove);
+      }
+      /** Show the points of ``t``: the rows are made again when their number changes (the control that had the focus gets it back, on the
+          row that took the place of its own), else only the numbers change, except the field being typed in. */
+      function update(t) {
+        const pts = t && t.layout === 'path' ? absolute(t) : [];
+        if (pts.length !== rows.length) {
+          const now = document.activeElement;
+          const held = rows.findIndex((r) => Object.values(r).includes(now));
+          const ctl = held >= 0 ? now.getAttribute('data-ctl') : null;
+          rows = [];
+          fill(box, pts.map((_, i) => row(i)));
+          if (held >= 0 && rows.length) rows[Math.min(held, rows.length - 1)][ctl].focus();
+        }
+        pts.forEach(([x, y], i) => {
+          if (rows[i].x !== document.activeElement) rows[i].x.value = String(round(x, 3));
+          if (rows[i].y !== document.activeElement) rows[i].y.value = String(round(y, 3));
+          rows[i].remove.disabled = pts.length <= 2;
+          rows[i].insert.disabled = pts.length >= MAX_POINTS;
+        });
+      }
+      return {el: box, update};
     }
 
     /** A colour of the inscription (``key``): the backing (``allowNone``) may stay clean titanium. */
@@ -387,6 +556,7 @@ const Lettering = (() => {
         corner: number('Скругление углов, мм', 'corner_mm', '0.1', {min: '0'}),
         backingColour: colourPart('Цвет подложки', 'backing_entry_id', true),
         drawPath: btn('Нарисовать путь', () => startPath()),
+        place: placeTools(), points: pointsEditor(),
         info: h('div', {class: 'small stack'}),
       };
       parts.el = h('div', {class: 'stack'},
@@ -400,9 +570,11 @@ const Lettering = (() => {
         h('div', {class: 'lt-grid', 'data-for': 'arc'}, parts.bend.el),
         h('div', {class: 'lt-grid', 'data-for': 'circle'}, parts.radius.el, parts.start.el), h('div', {'data-for': 'circle'}, parts.inside.el),
         h('div', {class: 'stack', 'data-for': 'path'}, h('div', {class: 'row'}, parts.drawPath, h('span', {class: 'small muted'}, 'щелчками или ведя мышью по картинке; Enter или двойной щелчок — готово')),
+          h('details', {class: 'lt-points-fold'}, h('summary', {}, 'Точки пути числами'), parts.points.el),
           h('div', {class: 'lt-grid'}, parts.offset.el), parts.flip.el),
         h('div', {'data-for': 'curved'}, parts.letters.el),
         h('div', {class: 'lt-grid'}, parts.rotation.el, parts.x.el, parts.y.el),
+        parts.place,
         parts.colour.el,
         h('h4', {}, 'Врезка в картинку'),
         h('div', {class: 'lt-grid'}, parts.gap.el), parts.backing.el,
@@ -464,6 +636,7 @@ const Lettering = (() => {
       for (const box of p.el.querySelectorAll('[data-for]')) box.hidden = !visible[box.getAttribute('data-for')];
       p.corner.el.hidden = t.backing !== 'rect';
       fill(p.drawPath, path ? 'Готово' : t.points && t.points.length ? 'Нарисовать путь заново' : 'Нарисовать путь');
+      p.points.update(t);
       const s = t.shown;
       fill(p.info,
         t.problem ? h('p', {class: 'alert bad'}, I18N.tr(t.problem)) : null,
@@ -597,7 +770,7 @@ const Lettering = (() => {
       const d = drag;
       drag = null;
       if (mm) d.at = mm;
-      if (!d.moved) { draw(); return true; }
+      if (!d.moved) { draw(); if (o.picked) o.picked(d.t.id); return true; }              // a press without a move chose it: the host shows its fields
       const t = d.t, a = t.shown.frame.anchor;
       // a turn and a size are about the frame's anchor, as the layer showed them: the inscription's place moves with them when it is not there
       if (d.kind === 'move') change({x: round(t.x + d.at[0] - d.start[0], 3), y: round(t.y + d.at[1] - d.start[1], 3)});
@@ -605,19 +778,24 @@ const Lettering = (() => {
         const turned = angle(d, ev), [u, v] = turn([t.x - a[0], t.y - a[1]], turned);
         change({rotation: round(((t.rotation + turned + 540) % 360) - 180, 2), x: round(a[0] + u, 3), y: round(a[1] + v, 3)});
       } else if (d.kind === 'size') {
-        const k = factor(d);
-        const changes = {height_mm: round(clamp(t.height_mm * k, 0.3, 500), 3), spacing_mm: round(t.spacing_mm * k, 3),
-          x: round(a[0] + k * (t.x - a[0]), 3), y: round(a[1] + k * (t.y - a[1]), 3)};
-        if (t.backing !== 'none') Object.assign(changes, {padding_mm: round(t.padding_mm * k, 3), corner_mm: round(t.corner_mm * k, 3)});
-        if (t.layout === 'circle') changes.radius_mm = round(Math.max(0.5, t.radius_mm * k), 3);
-        if (t.layout === 'path') changes.points = t.points.map(([x, y]) => [round(x * k, 3), round(y * k, 3)]);
-        change(changes);
+        change(scaled(t, factor(d)));
       } else if (d.kind === 'point') {
         const pts = absolute(t);
         pts[d.index] = d.at;
         change(placed(pts, t.rotation));
       }
       return true;
+    }
+    /** The fields of inscription ``t`` scaled by ``k`` about its frame's anchor (its place when nothing is drawn yet): the size handle's drag
+        and the size buttons of the panel both end here, so a button and a gesture give the same change. */
+    function scaled(t, k) {
+      const a = t.shown ? t.shown.frame.anchor : [t.x, t.y];
+      const changes = {height_mm: round(clamp(t.height_mm * k, 0.3, 500), 3), spacing_mm: round(t.spacing_mm * k, 3),
+        x: round(a[0] + k * (t.x - a[0]), 3), y: round(a[1] + k * (t.y - a[1]), 3)};
+      if (t.backing !== 'none') Object.assign(changes, {padding_mm: round(t.padding_mm * k, 3), corner_mm: round(t.corner_mm * k, 3)});
+      if (t.layout === 'circle') changes.radius_mm = round(Math.max(0.5, t.radius_mm * k), 3);
+      if (t.layout === 'path') changes.points = t.points.map(([x, y]) => [round(x * k, 3), round(y * k, 3)]);
+      return changes;
     }
     /** A path through absolute points as the fields of an inscription: its place the first point, the others relative to it, unturned. */
     function placed(pts, rotation = 0) {

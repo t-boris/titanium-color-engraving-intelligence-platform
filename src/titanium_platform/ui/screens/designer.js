@@ -13,21 +13,34 @@
   const stockName = (s) => [s.name, s.grade, s.batch].filter(Boolean).join(' · ') || 'титан без названия';
 
   function plateDialog(prop, reload) {
-    const cw = h('input', {type: 'number', step: 'any', value: 6}), ch = h('input', {type: 'number', step: 'any', value: 5}), gap = h('input', {type: 'number', step: 'any', value: 1});
+    const f = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const size = (value) => Forms.numberInput(Q.cellSize, {value});
+    const cells = [f.add('cw', 'Ширина ячейки', size(6), {quantity: 'cellSize', required: true}), f.add('ch', 'Высота ячейки', size(5), {quantity: 'cellSize', required: true}),
+      f.add('gap', 'Зазор', Forms.numberInput(Q.gap, {value: 1}), {quantity: 'gap', required: true})];
     modal('Принять предложение и создать платы', h('div', {class: 'stack'}, h('p', {}, 'Для каждой предложенной скорости создаётся плата по декартову произведению предложенных мощностей и частот; первой операцией файла идёт очистка поверхности. Дополнительные пересечения сетки помечаются: это не рекомендации планировщика. Платы делаются с линзой, установленной на лазере сейчас: она должна совпадать с линзой предложения. Измерения не создаются.'),
-      h('div', {class: 'grid g3'}, field('Ширина ячейки, мм', cw), field('Высота ячейки, мм', ch), field('Зазор, мм', gap))), [
+      h('div', {class: 'grid g3'}, ...cells), f.error), [
       {label: 'Отмена', run: (m) => m.close()},
       {label: 'Принять и создать платы', cls: 'primary', run: async (m) => {
-        const made = await post(`/designer/proposals/${prop.id}/accept`, {cell_width: +cw.value, cell_height: +ch.value, gap: +gap.value});
+        const v = f.collect();
+        if (!v) return;                                   // the dialog stays open with the reason beside the box
+        let made;
+        try { made = await post(`/designer/proposals/${prop.id}/accept`, {cell_width: v.cw, cell_height: v.ch, gap: v.gap}); } catch (e) { f.fail(e); return; }
         m.close(); toast(`Предложение принято, создано плат: ${made.plates.length}`, 'ok'); reload();
       }}]);
   }
 
   function rejectDialog(prop, reload) {
-    const note = h('input', {placeholder: 'например: эти режимы уже проверены на другой заготовке'});
-    modal('Отклонить предложение', h('div', {class: 'stack'}, h('p', {}, 'Отклонённое предложение остаётся в истории; плат по нему создать нельзя.'), field('Причина (необязательно)', note)), [
+    const f = Forms.create();
+    const note = f.add('note', 'Причина', h('input', {placeholder: 'например: эти режимы уже проверены на другой заготовке'}), {raw: true, help: 'необязательно'});
+    modal('Отклонить предложение', h('div', {class: 'stack'}, h('p', {}, 'Отклонённое предложение остаётся в истории; плат по нему создать нельзя.'), note, f.error), [
       {label: 'Отмена', run: (m) => m.close()},
-      {label: 'Отклонить', cls: 'danger', run: async (m) => { await post(`/designer/proposals/${prop.id}/reject`, {note: note.value}); m.close(); toast('Предложение отклонено', 'ok'); reload(); }}]);
+      {label: 'Отклонить', cls: 'danger', run: async (m) => {
+        const v = f.collect();
+        if (!v) return;
+        try { await post(`/designer/proposals/${prop.id}/reject`, {note: v.note}); } catch (e) { f.fail(e); return; }
+        m.close(); toast('Предложение отклонено', 'ok'); reload();
+      }}]);
   }
 
   /** Измеренный исход одного набора: цвет на каждой принятой фотографии его ячейки и проверка цели (REQ-022 AC5). */
@@ -114,17 +127,25 @@
     const lists = await App.hardwareLists();
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
     const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { location.hash = '#/designer?' + pick.route(); }});
-    const [map, props, materials] = await Promise.all([get('/color-model?' + pick.query()), get('/designer/proposals?' + pick.query()), get('/materials')]);
+    const [map, props] = await Promise.all([get('/color-model?' + pick.query()), get('/designer/proposals?' + pick.query())]);
     const reload = () => App.render({preserveScroll: true});
-    const seed = h('input', {type: 'number', step: '1', value: 1729, 'aria-label': 'Зерно'}), size = h('input', {type: 'number', step: '1', min: '1', max: '40', value: 6, 'aria-label': 'Число наборов'});
+    const proposeForm = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const seed = Forms.numberInput(Q.seed, {value: 1729}), size = Forms.numberInput(Q.proposalSize, {value: 6});
     const chosen = props.find((p) => String(p.id) === ctx.query.proposal) || props[0] || null;
     const prop = chosen ? await get('/designer/proposals/' + chosen.id) : null;      // with its plates, photographs and results
     const group = prop?.group || {};
-    const stock = h('select', {'aria-label': 'Титан'}, h('option', {value: ''}, 'все измеренные заготовки'),
-      materials.map((m) => h('option', {value: m.id, selected: prop?.stock?.material_id === m.id}, stockName(m))));
+    // one stock record is chosen by a search among the records used last and the whole catalogue a page at a time; none means all measured stocks (ux-growing-collections-p0, REQ-001)
+    const stock = MaterialPicker.create({value: prop?.stock?.material_id, allowEmpty: true, empty: 'все измеренные заготовки', clearLabel: 'Все заготовки', name: 'Титан'});
     const pulse = pulseSelect(pick.device(), group.pulse_width);
-    const interval = h('input', {type: 'number', step: 'any', min: '0', value: group.line_interval ?? 0.025, 'aria-label': 'Шаг линий'});
-    const passes = h('input', {type: 'number', step: '1', min: '1', value: group.passes ?? 1, 'aria-label': 'Проходы слоя'});
+    const interval = Forms.numberInput(Q.lineInterval, {value: group.line_interval ?? 0.025});
+    const passes = Forms.numberInput(Q.passes, {value: group.passes ?? 1});
+    const pulseField = proposeForm.add('pulse', 'Длительность импульса', pulse, {required: true, help: 'только ступени этого лазера',
+      read: () => (pulse.value === '' ? {ok: false, message: 'Выберите длительность импульса: у лазера есть только свои ступени'} : {ok: true, value: +pulse.value})});
+    const intervalField = proposeForm.add('interval', 'Шаг линий', interval, {quantity: 'lineInterval', required: true});
+    const passesField = proposeForm.add('passes', 'Проходы слоя', passes, {quantity: 'passes', required: true});
+    const seedField = proposeForm.add('seed', 'Зерно', seed, {quantity: 'seed', required: true});
+    const sizeField = proposeForm.add('size', 'Число наборов', size, {quantity: 'proposalSize', required: true});
     // the latest measurement of a plate cell made for the target (REQ-006): delta E and the verdict by the saved tolerance
     const checked = (c) => (!c ? 'ещё не измерена' : !c.comparable ? 'измерена без карты: не сравнима'
       : `ΔE ${num(c.delta_e, 1)}${c.within_tolerance == null ? ' · допуск не задан' : c.within_tolerance ? ' · в допуске' : ' · вне допуска'}`);
@@ -132,10 +153,11 @@
       t.checks?.length ? link('/analysis/' + t.checks[0].pair_id, checked(t.checks[0])) : checked(null)]))
       : h('p', {class: 'muted'}, 'Нет недостижимых цветов из работ. Подбор по пробелам остаётся доступен.');
     const propose = btn('Предложить плату', async () => {
-      if (pulse.value === '' || interval.value === '' || passes.value === '') return fail(new Error('Задайте длительность импульса, шаг линий и число проходов'));
-      try { const r = await post('/designer/propose', {device_id: pick.deviceId(), lens_id: pick.lensId(), pulse_width: +pulse.value, line_interval: +interval.value,
-        passes: +passes.value, seed: +seed.value, size: +size.value, material_id: stock.value === '' ? null : +stock.value});
-        location.hash = `#/designer?${pick.route()}&proposal=${r.id}`; App.render(); } catch (e) { fail(e); }
+      const v = proposeForm.collect();
+      if (!v) return;
+      try { const r = await post('/designer/propose', {device_id: pick.deviceId(), lens_id: pick.lensId(), pulse_width: v.pulse, line_interval: v.interval,
+        passes: v.passes, seed: v.seed, size: v.size, material_id: stock.value === '' ? null : +stock.value});
+        location.hash = `#/designer?${pick.route()}&proposal=${r.id}`; App.render(); } catch (e) { proposeForm.fail(e); }
     }, 'primary');
     let body = null;
     if (prop) {
@@ -152,10 +174,10 @@
     h('div', {class: 'card stack'}, h('h3', {}, 'Цели из недостижимых цветов'), targets),
     h('div', {class: 'card stack'}, h('h3', {}, 'Настройки работы и поиск по мощности, частоте и скорости'),
       h('p', {class: 'muted small'}, 'Длительность импульса, шаг линий и проходы одинаковы для всего предложения: модель строится только по измерениям с этими же настройками, этого лазера и этой линзы. Мощность, частота и скорость подбираются в пределах паспорта лазера.'),
-      h('div', {class: 'grid g3'}, field('Длительность импульса, нс', pulse, 'только ступени этого лазера'), field('Шаг линий, мм', interval), field('Проходы слоя', passes),
+      h('div', {class: 'grid g3'}, pulseField, intervalField, passesField,
         field('Титан', stock, 'одна заготовка — модель только по её измерениям')),
-      h('div', {class: 'toolbar'}, field('Зерно', seed), field('Число наборов', size), propose,
-        h('p', {class: 'toolbar-hint'}, 'То же зерно и те же данные дают то же предложение. Число наборов — от 1 до 40.'))),
+      h('div', {class: 'toolbar'}, seedField, sizeField, propose,
+        h('p', {class: 'toolbar-hint'}, 'То же зерно и те же данные дают то же предложение.')), proposeForm.error),
     map.samples.length ? null : h('div', {class: 'alert warn'}, 'Добавьте измерения для анализа цветового пространства: пока наборы выбираются только по пробелам.'), body);
   }});
 })();

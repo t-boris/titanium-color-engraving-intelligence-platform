@@ -15,9 +15,9 @@ from test_vector_work import GLUE, TABLES, UI
 from titanium_platform.api.app import UI_DIR
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-HELPERS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
+HELPERS = ["app.js", "forms.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "tasks.js"]
 SCRIPTS = ["screens/lab-source.js", "screens/vector-split.js", "screens/vector-photo.js", "screens/lettering.js", "screens/vector-editor.js",
-           "screens/vector-colours.js", "screens/vector-review.js", "screens/vector-workspace.js", "screens/vector.js", "screens/photo-panels.js",
+           "screens/vector-colours.js", "screens/lifecycle.js", "screens/vector-review.js", "screens/vector-workspace.js", "screens/evidence-summary.js", "screens/vector.js", "screens/photo-panels.js",
            "screens/labs-cloud.js", "screens/labs.js"]
 WINDOW = "globalThis.__opened = []; window.open = (url) => { __opened.push(url); return {}; };"
 HARNESS = """
@@ -148,11 +148,12 @@ def test_a_signed_in_owner_publishes_after_the_same_preview_and_follows_the_job_
   out.account = [own.querySelector('.cloud-account').textContent, own.querySelector('.cloud-account').children.length];
   const publish = byText(own, 'button', 'Опубликовать в облаке');
   out.disabledBefore = publish.disabled;
-  out.selects = own.querySelectorAll('select').map((s) => [s.getAttribute('aria-label'), s.value]);
+  const choices = own.querySelectorAll('label').filter((l) => l.firstControl() && l.firstControl().localName === 'select');      // named by their visible label
+  out.selects = choices.map((l) => [l.firstChild.textContent, l.firstControl().value]);
   await byText(own, 'button', 'Подготовка публикации').dispatch('click'); await tick();
   out.preview = own.textContent;
   out.disabledAfter = publish.disabled;
-  own.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Видимость').value = 'private';
+  choices.find((l) => l.firstChild.textContent === 'Видимость').firstControl().value = 'private';
   publish.dispatch('click'); await tick();                                        // not awaited: the job is still running
   out.progress = byRole(own, 'progressbar')[0].getAttribute('aria-valuenow');
   out.running = own.querySelector('.cloud-publish').textContent;
@@ -358,3 +359,41 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
     assert "подключена 2026-10-22 10:00 · выпусков на компьютере: 1" in out["sourceDetails"]
     assert out["catalogue"] == ["Все · 3", "подключены · 1", "не подключены · 1", "Все · 3", "открытая · 2", "закрытая · 1"]
     assert out["notConnected"] == ["Лаборатория <b>Север</b>"]                                               # the own laboratory is neither
+
+
+@node
+def test_the_public_details_and_the_withdrawal_keep_what_was_typed_and_say_what_is_wrong_beside_the_form(tmp_path):
+    """ux-save-feedback-p0 REQ-003: the withdrawal needs a kind, an identifier and a reason (lab_export.withdraw) and says so beside the boxes; a refusal of the
+    server is shown under the form with everything typed kept; the public details are sent exactly as typed."""
+    own = {**OWN_LAB, "public": {"name": "Open lab", "author": "A. Author", "lasers": {"3": {"public_name": "Fibre", "manufacturer": "JPT", "model": "M7"}}},
+           "exports": [{"release_id": "r-1", "created_at": "2026-10-20T09:00:00+00:00", "content_sha256": "a" * 64, "counts": {}, "terms": {}, "file": True, "published": None}]}
+    routes = base_routes(**{"/api/labs/own": {"GET": ok(own), "PUT": ok(own)},
+                            "/api/labs/own/withdrawals": {"POST": {"status": 422, "json": {"error": "this laboratory never published what is to be withdrawn", "kind": "invalid"}}}})
+    out = run(tmp_path, routes, """
+  const tree = await ctx.__screens.labs.render({query: {}});
+  ctx.document.body.append(tree);
+  await tick();
+  const labelled = (root, text) => root.querySelectorAll('label').find((l) => l.firstChild && l.firstChild.textContent === text);
+  const inputOf = (root, text) => labelled(root, text).firstControl();
+  const sentBodies = () => ctx.requests.filter((r) => r.method !== 'GET' && r.path !== '/api/cloud/updates/automatic').map((r) => [r.method, r.path, typeof r.body === 'string' ? JSON.parse(r.body) : r.body]);
+  // the withdrawal: nothing typed
+  await byText(tree, 'button', 'Отозвать').dispatch('click'); await tick();
+  out.empty = {sent: sentBodies().length, target: labelled(tree, 'Идентификатор').errorText(), reason: labelled(tree, 'Причина').errorText(),
+    form: tree.querySelectorAll('.f-form-error').filter((e) => !e.hidden).map((e) => e.textContent)};
+  inputOf(tree, 'Идентификатор').value = 'abc-uuid';
+  inputOf(tree, 'Причина').value = '  Wrong   colours ';
+  await byText(tree, 'button', 'Отозвать').dispatch('click'); await tick();
+  out.refused = {sent: sentBodies(), kept: [inputOf(tree, 'Идентификатор').value, inputOf(tree, 'Причина').value],
+    form: tree.querySelectorAll('.f-form-error').filter((e) => !e.hidden).map((e) => e.textContent), toasts: ctx.document.body.querySelectorAll('.toast').length};
+  // the public details: sent as typed, with the laser's boxes
+  inputOf(tree, 'Название лаборатории').value = ' North lab ';
+  await byText(tree, 'button', 'Сохранить').dispatch('click'); await tick();
+  out.saved = sentBodies().filter((r) => r[0] === 'PUT')[0];
+""")
+    assert out["empty"]["sent"] == 0 and out["empty"]["target"] == "Заполните это поле" and out["empty"]["reason"] == "Заполните это поле"
+    assert out["empty"]["form"] == ["Не отправлено: исправьте поля «Идентификатор», «Причина». Всё, что вы ввели, осталось в форме."]
+    assert out["refused"]["sent"] == [["POST", "/api/labs/own/withdrawals", {"target_kind": "release", "target_id": "abc-uuid", "reason": "  Wrong   colours ", "replacement_release_id": None}]]
+    assert out["refused"]["kept"] == ["abc-uuid", "  Wrong   colours "] and out["refused"]["toasts"] == 0
+    assert out["refused"]["form"] == ["Сервер не принял данные: Эта лаборатория не публиковала то, что вы хотите отозвать."
+                                      " Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."]
+    assert out["saved"][1] == "/api/labs/own" and out["saved"][2]["name"] == " North lab " and out["saved"][2]["lasers"] == {"3": {"public_name": "Fibre", "manufacturer": "JPT", "model": "M7"}}

@@ -3,7 +3,7 @@
    сервером: 200 нс предлагается здесь, только если лазер даёт такую ступень (DEC-043). */
 'use strict';
 const DeviceCalc = (() => {
-  const {h, btn, field, pill, post, fail, facts, num} = App;
+  const {h, btn, pill, post, facts, num} = App;
   const g = (v, d = 3) => (v == null ? '—' : String(+(+v).toPrecision(d)));
 
   function result(o) {
@@ -18,26 +18,34 @@ const DeviceCalc = (() => {
 
   function calculator(d, onResult) {
     const steps = d.passport.pulse_steps.map((s) => +s.pulse_width_ns);
-    const pulse = h('select', {'aria-label': 'Длительность импульса'}, h('option', {value: '', selected: !steps.includes(200)}, 'выберите'),
+    const f = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const number = (q, value) => Forms.numberInput(q, {value});
+    const pulse = h('select', {}, h('option', {value: '', selected: !steps.includes(200)}, 'выберите'),
       steps.map((w) => h('option', {value: w, selected: w === 200}, w + ' нс')));
-    const f = {power: h('input', {type: 'number', step: 'any', value: 30}), frequency: h('input', {type: 'number', step: 'any', value: 80}), speed: h('input', {type: 'number', step: 'any', value: 900}),
-      pulse, interval: h('input', {type: 'number', step: 'any', value: 0.025}), passes: h('input', {type: 'number', min: '1', step: '1', value: 1})};
+    // the pulse is one of the laser's own steps (devices.require_selectable): a list, so no typed value can miss it
+    const boxes = [f.add('power', 'Мощность', number(Q.power, 30), {quantity: 'power', required: true}),
+      f.add('frequency', 'Частота', number(Q.frequency, 80), {quantity: 'frequency', required: true, help: 'вне диапазона этого лазера расчёт скажет об этом сам'}),
+      f.add('speed', 'Скорость', number(Q.speed, 900), {quantity: 'speed', required: true}),
+      f.add('pulse', 'Импульс, нс', pulse, {required: true, read: () => (pulse.value === '' ? {ok: false, message: 'Выберите длительность импульса: у лазера есть только свои ступени'} : {ok: true, value: +pulse.value})}),
+      f.add('interval', 'Интервал линий', number(Q.lineInterval, 0.025), {quantity: 'lineInterval', required: true}),
+      f.add('passes', 'Проходы слоя', number(Q.passes, 1), {quantity: 'passes', required: true})];
     const out = h('div', {class: 'stack'});
     const run = async () => {
-      if (f.pulse.value === '') return fail(new Error('Выберите длительность импульса'));
+      const v = f.collect();
+      if (!v) return;
       try {
-        const o = await post('/operating-point', {device_id: d.id, lens_id: d.lens ? d.lens.id : null, power: +f.power.value, frequency: +f.frequency.value, speed: +f.speed.value,
-          pulse_width: +f.pulse.value, line_interval: +f.interval.value, passes: +f.passes.value});
+        const o = await post('/operating-point', {device_id: d.id, lens_id: d.lens ? d.lens.id : null, power: v.power, frequency: v.frequency, speed: v.speed,
+          pulse_width: v.pulse, line_interval: v.interval, passes: v.passes});
         out.replaceChildren(...result(o));
         onResult(o);
-      } catch (e) { fail(e); }
+      } catch (e) { f.fail(e); }
     };
     return h('div', {class: 'card stack'}, h('h3', {}, 'Рабочая точка'),
       h('p', {class: 'muted small'}, 'Расчёт по паспортной модели: мощность растёт с частотой до частоты среза и дальше не растёт.'),
       h('p', {class: 'muted small'}, d.lens ? `Линза: ${App.lensLabel(d.lens)} (установлена на этом лазере).`
         : 'Линза не установлена: диаметр пятна, плотность энергии и перекрытие импульсов не рассчитываются.'),
-      h('div', {class: 'grid g3'}, field('Мощность, %', f.power), field('Частота, кГц', f.frequency), field('Скорость, мм/с', f.speed),
-        field('Импульс, нс', f.pulse), field('Интервал линий, мм', f.interval), field('Проходы слоя', f.passes)),
+      h('div', {class: 'grid g3'}, ...boxes), f.error,
       h('div', {class: 'row'}, btn('Рассчитать', run, 'primary')), out);
   }
   return {calculator};

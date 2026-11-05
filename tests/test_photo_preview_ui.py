@@ -11,7 +11,7 @@ import pytest
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js"]
+SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js", "screens/material-picker.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => {}; globalThis.__screens = __screens;"
         "globalThis.FormData = class { constructor() { this.fields = []; } append(k, v) { this.fields.push([k, v]); } };"
         "globalThis.File = class { constructor(parts, name) { this.parts = parts; this.name = name; this.size = 1; } };")
@@ -23,21 +23,23 @@ ctx.document.createElement = (t) => { const el = make(t); if (t === 'input') el.
 load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/photo-preview.js']);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 10; i++) await wait(0); };
-const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label);
+const named = (tree, label) => tree.querySelectorAll('label').find((l) => l.firstChild && l.firstChild.textContent === label);
+const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label) || (named(tree, label) ? named(tree, label).firstControl() : undefined);
+const stock = (tree) => tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Титан');       // the titanium is the stock selector, no longer a drop-down
 const posted = () => ctx.requests.filter((r) => r.path === '/api/predictions/photo')
   .map((r) => Object.fromEntries(r.body.fields.map(([k, v]) => [k, v && typeof v === 'object' ? v.name : String(v)])));
 (async () => {
   const out = {};
   const tree = await ctx.__screens['photo-preview'].render({query: %(query)s});
   await settle();
-  out.opened = {titanium: select(tree, 'Титан').value, laser: select(tree, 'Лазер').value, lens: select(tree, 'Линза').value,
+  out.opened = {titanium: stock(tree).value, laser: select(tree, 'Лазер').value, lens: select(tree, 'Линза').value,
                 note: tree.textContent.includes('Файл работы «Inna Portrait-P1-17.lbrn2» уже выбран'),
                 says: tree.textContent.includes('Этот режим измерен здесь:Big Plate 150 · Grade 5 · 3 мм · JPT M7 · F-Theta · 174 мм')};
-  select(tree, 'Титан').value = '3';
+  stock(tree).value = '3';
   tree.querySelectorAll('button').find((b) => b.textContent === 'Показать прогноз').dispatch('click'); await settle();
   tree.querySelectorAll('button').find((b) => b.textContent === 'Показать на нём').dispatch('click'); await settle();
   out.posted = posted().map((p) => [p.material_id, p.device_id, p.lens_id, p.lightburn]);
-  out.titanium = select(tree, 'Титан').value;
+  out.titanium = stock(tree).value;
   console.log(JSON.stringify(out));
 })().catch((e) => { console.error(e.stack); process.exit(1); });
 """
@@ -54,6 +56,8 @@ def run(tmp_path, query):
               "/api/lenses": {"status": 200, "json": [{"id": 2, "name": "F-Theta", "focal_length_mm": 174}]},
               "/api/materials": {"status": 200, "json": [{"id": 2, "name": "Big Plate 150", "grade": "Grade 5", "thickness_mm": 3},
                                                          {"id": 3, "name": "Small Plate", "grade": "Grade 5", "thickness_mm": 2}]},
+              "/api/materials/2": {"status": 200, "json": {"id": 2, "name": "Big Plate 150", "grade": "Grade 5", "thickness_mm": 3}},
+              "/api/materials/3": {"status": 200, "json": {"id": 3, "name": "Small Plate", "grade": "Grade 5", "thickness_mm": 2}},
               "/api/photo-works": {"status": 200, "json": [WORK]},
               "/api/photo-works/7/export.lbrn2": {"status": 200, "text": "<LightBurnProject/>", "type": "application/octet-stream"},
               "/api/predictions/photo": {"status": 200, "json": REFUSED}}

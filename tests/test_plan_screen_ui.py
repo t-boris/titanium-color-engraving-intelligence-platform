@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from lifecycle_stub import file_record, lifecycle
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -22,8 +23,10 @@ const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
 load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'photo-modes.js', 'photo-quality.js', {code: %(glue)s}, 'screens/photo-form.js', 'screens/vector-photo.js',
-  'screens/plan.js']);
+  'hardware.js', 'screens/lifecycle.js', 'screens/plan.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const saved = [];                                         // a link clicked to save a file: [its address, the name it is saved as]
+ctx.document.createElement('a').constructor.prototype.click = function () { saved.push([this.getAttribute('href'), this.getAttribute('download')]); };
 const open = () => tree.querySelectorAll('.lst-det').filter((d) => !d.hidden);
 let tree;
 (async () => {
@@ -33,7 +36,8 @@ let tree;
   const card = tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === 'Слои и параметры');
   const mains = () => card.querySelectorAll('.lst-main');
 %(body)s
-  out.export = tree.querySelectorAll('button').find((b) => b.textContent === 'Экспортировать в LightBurn').disabled;
+  const exportButton = tree.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  out.export = exportButton ? exportButton.disabled : null;                 // none when the plan is not exported (a plan restored from a file)
   console.log(JSON.stringify(out));
 })().catch((e) => { console.error(e.stack); process.exit(1); });
 """
@@ -65,12 +69,12 @@ def plan(zones, layers=True):
              "parameters": {"power": 50.0, "frequency": 1950.0, "speed": 1800.0, "pulse_width": 2.0, "line_interval": 0.01, "passes": 1}}
     return {"id": 22, "name": "Inna + Boris", "mode": "Vector job", "status": "Ready to export", "strategy": "photo", "markers_enabled": True,
             "layers": [layer] if layers else [], "photo_zones": zones, "active_pairs": 0, "device_id": 1, "lens_id": 2, "plan_identifier": "TCE-A-22",
-            "size_mm": {"width": 150.0, "height": 143.0}, "warnings": [], "exports": [], "experiment": None}
+            "size_mm": {"width": 150.0, "height": 143.0}, "warnings": [], "exports": [], "experiment": None, "lifecycle": lifecycle()}
 
 
-def run(tmp_path, body, steps=LINES) -> dict:
+def run(tmp_path, body, steps=LINES, **more) -> dict:
     data = tmp_path / "data.json"
-    data.write_text(json.dumps({"routes": {"/api/plans/22": {"status": 200, "json": body}}}), encoding="utf-8")
+    data.write_text(json.dumps({"routes": {"/api/plans/22": {"status": 200, "json": body}, **more}}), encoding="utf-8")
     script = tmp_path / "run.js"
     script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(data)), "ui": json.dumps(str(UI) + "/"),
                                  "tables": json.dumps(TABLES), "glue": json.dumps(GLUE), "body": steps}, encoding="utf-8")
@@ -130,6 +134,7 @@ def test_a_plan_of_many_layers_shows_one_page_sorts_them_and_opens_a_layer_only_
   out.sorted = mains().slice(0, 3).map((m) => m.textContent.split('ΔE')[0]);
   await mains()[0].dispatch('click'); await tick();
   out.opened = open().map((d) => d.textContent);
+  out.terms = open().flatMap((d) => d.querySelectorAll('.terms-note')).map((n) => n.querySelector('summary').textContent);
   await card.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick();
   out.all = mains().length;
 """)
@@ -139,4 +144,41 @@ def test_a_plan_of_many_layers_shows_one_page_sorts_them_and_opens_a_layer_only_
     assert out["sorted"] == ["C24 P24", "C23 P23", "C22 P22"]
     (opened,) = out["opened"]
     assert opened.startswith("50.0 % · 1950.0 кГц") and "Ожидаемая ошибка ΔE2.40" in opened and "СтадияВалидировано" in opened
+    assert "Что такое «стадия»?" in out["terms"]                                                    # the word of the line is explained (ux-save-feedback-p0, REQ-003)
     assert out["all"] == 24
+
+
+# -- the path of the plan's file (ux-engraving-lifecycle-p0) ---------------------------------------------------------------------------
+@node
+def test_the_plan_screen_offers_one_download_with_the_readiness_and_the_files_made_before_and_downloads_under_the_plans_name(tmp_path):
+    body = {**plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0})]),
+            "lifecycle": lifecycle("file", files=[file_record(1)])}
+    out = run(tmp_path, body, """
+  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  out.card = button.parentNode.parentNode.parentNode.textContent;
+  out.chain = tree.querySelectorAll('ol').length;
+  out.folds = tree.querySelectorAll('summary').map((s) => s.textContent);
+  await button.dispatch('click'); await tick();
+  out.requests = ctx.requests.map((r) => r.path).filter((p) => p.includes('export')); out.saved = saved; out.renders = ctx.__renders.length;
+""", **{"/api/plans/22/export.lbrn2": {"status": 200, "text": "<xml/>", "type": "application/xml"}})
+    assert "Файл LightBurn: готов к выгрузке" in out["card"] and "В лазер он не отправляется" in out["card"] and out["chain"] == 1
+    assert "Прежние файлы (1)" in out["folds"]
+    assert out["requests"] == ["/api/plans/22/export.lbrn2"] and out["saved"] == [["blob:x", "Inna_Boris.lbrn2"]] and out["renders"] == 1
+    assert "Экспортировать в LightBurn" not in out["card"]
+
+
+@node
+def test_a_plan_that_cannot_be_exported_says_what_is_missing_and_links_to_the_measurements_that_would_fill_it(tmp_path):
+    blocked = lifecycle("prepared", ready=False, blockers=[{"code": "missing_colours", "count": 2}])
+    out = run(tmp_path, {**plan([]), "lifecycle": blocked}, """
+  const lc = tree.querySelectorAll('div').find((d) => (d.className || '') === 'card' && d.textContent.includes('Файл LightBurn:'));
+  out.text = lc.textContent; out.links = lc.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
+""")
+    assert out["export"] is True and "Файл LightBurn: пока нельзя" in out["text"] and "цвет титана больше не измерен" in out["text"]
+    assert out["links"] == [["Цели экспериментов", "#/designer?device=1&lens=2"]]
+
+
+@node
+def test_a_plan_restored_from_a_file_has_no_export_at_all_because_it_records_a_job_that_was_engraved(tmp_path):
+    out = run(tmp_path, {**plan([]), "mode": "Restored from file", "restored": {"pair_id": 5}, "lifecycle": lifecycle("prepared", ready=False, blockers=[{"code": "restored"}])})
+    assert out["export"] is None

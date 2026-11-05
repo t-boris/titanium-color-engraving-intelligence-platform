@@ -27,7 +27,7 @@ const fs = require('fs');
 const {context, load} = require(%(dom)s);
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/dot-pick.js', 'screens/color-map.js',
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'photo-modes.js', 'photo-quality.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/evidence-summary.js', 'screens/dot-pick.js', 'screens/color-map.js',
                     {code: 'globalThis.ColorMap = ColorMap;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
@@ -106,7 +106,7 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
     assert out["filterTitle"] == "Фильтры" and out["selects"] == 4 and out["checkbox"] is True and out["filtersScroll"] is True
     assert out["labels"][:5] == ["Лазер и линза", "Материал", "Как измерен", "Задача", "Не дольше, мин/см²"]
     assert [s for s, _ in out["details"]] == ["Как это считается"] and "Время гравировки — оценка по настройкам рецепта" in out["details"][0][1]
-    assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "+", "−", "Весь вид"]
+    assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "◀", "▶", "+", "−", "Весь вид"]
     assert out["plot"] == [["div"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
     assert out["rightTitle"] == "Какой цвет нужен" and out["target"] == 5 and out["findButton"] is True and out["rightScroll"] == 1      # the picker, L, a, b and the tolerance
 
@@ -279,7 +279,8 @@ def test_a_picked_colour_shows_its_confidence_and_every_engraving_it_is_known_fr
   const detail = middle.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
   const circles = middle.querySelectorAll('circle').filter((c) => c.getAttribute('stroke') !== '#ffd166');
   const pickByTitle = async (title) => { await circles.find((c) => c.querySelector('title').textContent.startsWith(title)).dispatch('click'); await tick(); };
-  const read = () => ({text: detail.textContent, summary: detail.querySelector('summary').textContent, rows: detail.querySelectorAll('li').map((li) => li.textContent),
+  const sourcesOf = (root) => root.querySelectorAll('details').find((d) => has(d, 'cm-sources'));
+  const read = () => ({text: detail.textContent, summary: sourcesOf(detail).querySelector('summary').textContent, rows: detail.querySelectorAll('li').map((li) => li.textContent),
     links: detail.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]), pills: detail.querySelectorAll('.pill').map((p) => p.textContent),
     dot: detail.querySelectorAll('svg').map((v) => +v.querySelector('circle').getAttribute('r'))});
   await pickByTitle('Test 1'); out.three = read();
@@ -313,7 +314,8 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
   await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
   const list = right.children.find((c) => has(c, 'os-scroll'));
   const card = list.querySelectorAll('article')[0];
-  out.card = card.textContent; out.summary = card.querySelector('summary').textContent; out.rows = card.querySelectorAll('li').length;
+  const folded = card.querySelectorAll('details').find((d) => has(d, 'cm-sources'));
+  out.card = card.textContent; out.summary = folded.querySelector('summary').textContent; out.rows = card.querySelectorAll('li').length;
   out.once = list.querySelectorAll('.alert').map((a) => a.textContent);
   ctx.sessionStorage.setItem('color-map', JSON.stringify({doubtful: true, target: [80, 4, 30]}));
   tree = await screen();
@@ -341,10 +343,10 @@ def test_the_engravings_of_every_found_recipe_are_folded_and_those_of_the_picked
   const [, middle, right] = tree.querySelector('.os-body').children;
   await middle.querySelectorAll('circle')[0].dispatch('click');
   const detail = middle.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
-  out.picked = detail.querySelectorAll('details').map((d) => d.hasAttribute('open'));
+  out.picked = detail.querySelectorAll('details').filter((d) => has(d, 'cm-sources')).map((d) => d.hasAttribute('open'));
   await byText(detail, 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
   const list = right.children.find((c) => has(c, 'os-scroll'));
-  out.found = list.querySelectorAll('article').map((a) => a.querySelectorAll('details')
+  out.found = list.querySelectorAll('article').map((a) => a.querySelectorAll('details').filter((d) => has(d, 'cm-sources'))
     .map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.querySelectorAll('li').length]));
 """)
     assert out["picked"] == [True]

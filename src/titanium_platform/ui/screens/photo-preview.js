@@ -6,7 +6,7 @@
    фотоработы (её шкала даёт лазер, линзу и титан). */
 'use strict';
 (() => {
-  const {h, fill, btn, field, link, pill, get, form, num, swatch, labText, table} = App;
+  const {h, fill, btn, link, pill, get, form, num, swatch, labText, table} = App;
   const REFERENCE = {chart: ['по эталонной карте', 'ok'], 'clean titanium': ['относительно камеры, приведены к чистому титану своего снимка', 'warn'],
     'as photographed': ['относительно камеры, как сняты', 'warn']};
   const SOURCE_REFERENCE = {chart: 'по карте', 'clean titanium': 'к чистому титану', 'as photographed': 'как снят'};
@@ -71,9 +71,10 @@
     const slider = (key, label) => {
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: layer.settings[key], 'aria-label': label});
       const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: layer.settings[key], 'aria-label': label, style: 'width:6em'});
-      range.addEventListener('input', () => { exact.value = range.value; schedule(); });
-      exact.addEventListener('change', () => { range.value = exact.value; schedule(); });
-      return {exact, box: h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, exact))};
+      range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; schedule(); });
+      // prediction_store.check_power_range: 0 to 100 %; a value outside is kept in the box with the reason beside it and is not applied
+      const note = Forms.watch(exact, 'photoPower', (v) => { range.value = v; schedule(); });
+      return {exact, box: h('div', {class: 'stack'}, h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, exact)), note)};
     };
     const tone = TONE(layer);
     const low = slider('min_power', 'Мин. мощность, %'), high = slider('max_power', 'Макс. мощность, %');
@@ -91,9 +92,10 @@
     }
     let timer = null, seq = 0;
     async function rerender() {
-      const lo = +low.exact.value, hi = +high.exact.value;
+      const bounds = [low, high].map((b) => Forms.readNumber(b.exact, Forms.QUANTITIES.photoPower, {required: true}));
       error.hidden = true;
-      if (tone) return;
+      if (tone || !bounds.every((b) => b.ok)) return;                    // a wrong box keeps its text and says why beside itself
+      const [lo, hi] = bounds.map((b) => b.value);
       if (!(lo <= hi)) { error.textContent = 'Мин. мощность должна быть не выше макс.'; error.hidden = false; return; }
       const mine = ++seq;
       try {
@@ -112,7 +114,7 @@
   }
 
   App.register({id: 'photo-preview', async render(ctx) {
-    const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
+    const lists = await App.hardwareLists();
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
     let preloaded = null;                       // the LightBurn file of an accepted work, opened from its experiment, or of a photo work
     if (ctx.query.pair) {
@@ -130,34 +132,51 @@
     }
     const pick = App.laserLensPicker(lists, {device: preloaded ? preloaded.pair.device_id : ctx.query.device,
       lens: preloaded ? App.lensParam(preloaded.pair.lens_id) : ctx.query.lens, defaultLens: 'installed'});
-    const mat = h('select', {'aria-label': 'Титан'}, h('option', {value: ''}, 'выберите титан'), materials.map((m) => h('option', {value: m.id}, materialLabel(m))));
+    const form_ = Forms.create();
+    // one concrete record, found by a search among the records used last and not in a list of all; none is chosen unless the file's work or the address names one
+    // (ux-growing-collections-p0, REQ-001)
     const wantedMaterial = preloaded ? preloaded.pair.material_id : ctx.query.material;
-    if (wantedMaterial != null && materials.some((m) => String(m.id) === String(wantedMaterial))) mat.value = String(wantedMaterial);
-    const fileIn = h('input', {type: 'file', accept: '.lbrn,.lbrn2', 'aria-label': 'Файл LightBurn'});
+    const mat = MaterialPicker.create({value: wantedMaterial, allowEmpty: true, clearLabel: 'Снять выбор', empty: 'выберите титан', name: 'Титан'});
+    const fileIn = h('input', {type: 'file', accept: '.lbrn,.lbrn2'});
     const fileNote = h('p', {class: 'muted small'}, preloaded ? `Файл работы «${preloaded.pair.lightburn_name}» уже выбран: можно выбрать другой.` : '');
-    const overrides = OVERRIDES.map(([key, label]) => [key, h('input', {type: 'number', step: 'any', placeholder: 'как в файле', 'aria-label': label})]);
-    const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    // the form: the file, the titanium and the laser are required; each override is a number or empty («as in the file»). The ranges are the server's where it
+    // has them (the powers: prediction_store.check_power_range; the passes: a whole number from 1); the other overrides are only checked to be numbers
+    const OVERRIDE_QUANTITY = {min_power: 'photoPower', max_power: 'photoPower', passes: 'passes'};
+    const fileField = form_.add('file', 'Файл LightBurn', App.filePick(fileIn, 'Выбрать файл'), {required: true,
+      read: () => { const f = fileIn.files[0] || (preloaded && preloaded.file); return f ? {ok: true, value: f} : {ok: false, message: 'Выберите файл LightBurn'}; }});
+    const matField = form_.add('material', 'Титан', mat, {required: true,
+      read: () => (mat.value ? {ok: true, value: mat.value} : {ok: false, message: 'Выберите титан: кривая строится по измерениям на этом титане'})});
+    const laserField = form_.add('laser', 'Лазер', pick.laser, {required: true,
+      read: () => (pick.deviceId() ? {ok: true, value: pick.deviceId()} : {ok: false, message: 'Выберите лазер'})});
+    const lensField = form_.add('lens', 'Линза', pick.lens, {help: 'кривая строится по измерениям этого лазера с этой линзой', read: () => ({ok: true, value: pick.lensValue()})});
+    const overrides = OVERRIDES.map(([key, label]) => [key, form_.add(key, label, Forms.numberInput(Forms.QUANTITIES[OVERRIDE_QUANTITY[key]] || null, {placeholder: 'как в файле'}),
+      OVERRIDE_QUANTITY[key] ? {quantity: OVERRIDE_QUANTITY[key]} : {})]);
     const results = h('div', {class: 'stack'});
 
     async function predict() {
-      error.hidden = true;
-      const file = fileIn.files[0] || (preloaded && preloaded.file);
-      if (!file) { error.textContent = 'Выберите файл LightBurn'; error.hidden = false; return; }
-      if (!mat.value) { error.textContent = 'Выберите титан: кривая строится по измерениям на этом титане'; error.hidden = false; return; }
+      const v = form_.collect();
+      if (!v) return;
+      const file = v.file;
       const fd = new FormData();
-      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('material_id', mat.value);
-      for (const [key, input] of overrides) if (input.value !== '') fd.append(key, input.value);
+      fd.append('device_id', v.laser); fd.append('lens_id', v.lens); fd.append('material_id', v.material);
+      for (const [key] of overrides) if (v[key] != null) fd.append(key, v[key]);
       fd.append('lightburn', file, file.name);
       fill(results, h('p', {class: 'muted'}, 'Считаем прогноз…'));
       try {
         const out = await form('/predictions/photo', fd);
+        await knowStocks(out.layers);
         fill(results, h('p', {class: 'muted small'}, `Файл «${out.file}» · слоёв изображения: ${out.layers.length}. Ползунки Min и Max перерисовывают прогноз без новой загрузки.`),
           ...out.layers.map((layer) => layerCard(layer, out.cache_id, elsewhere)));
-      } catch (e) { fill(results); error.textContent = e.message; error.hidden = false; }
+      } catch (e) { fill(results); form_.fail(e); }
     }
     /* Where the file's mode is measured, when the chosen laser, lens and titanium have no measurement of it: one button each switches to it. */
+    const known = new Map();                                     // titanium id -> its record, read one by one for the lines below (never the whole catalogue)
+    const knowStocks = async (layers) => {
+      const wanted = [...new Set(layers.flatMap((layer) => (layer.measured_on || []).map((m) => m.material_id)).filter((id) => id != null && !known.has(id)))];
+      await Promise.all(wanted.map(async (id) => { try { known.set(id, await MaterialPicker.one(id)); } catch (_) { /* the line says «титан не указан» */ } }));
+    };
     const setupLabel = (m) => {
-      const d = lists.devices.find((x) => x.id === m.device_id), l = lists.lenses.find((x) => x.id === m.lens_id), t = materials.find((x) => x.id === m.material_id);
+      const d = lists.devices.find((x) => x.id === m.device_id), l = lists.lenses.find((x) => x.id === m.lens_id), t = known.get(m.material_id);
       return [t ? materialLabel(t) : 'титан не указан', d ? (d.title || d.name) : `лазер ${m.device_id}`, l ? App.lensLabel(l) : 'линза неизвестна'].join(' · ');
     };
     function switchTo(m) {
@@ -180,12 +199,11 @@
           + 'в режимах точек (Джарвис, Стаки и другие) — по тонам, измеренным в том же режиме. Там, где независимые гравировки расходятся, это видно.')),
         h('span', {class: 'spacer'}), link('/photo', 'Фотогравировка'), link('/colors', 'Карта цветов')),
       h('div', {class: 'card stack'},
-        h('div', {class: 'grid g2'}, field('Файл LightBurn', App.filePick(fileIn, 'Выбрать файл')), field('Титан', mat),
-          field('Лазер', pick.laser), field('Линза', pick.lens, 'кривая строится по измерениям этого лазера с этой линзой')),
+        h('div', {class: 'grid g2'}, fileField, matField, laserField, lensField),
         fileNote,
         h('details', {}, h('summary', {class: 'small'}, 'Другие настройки слоя (необязательно; пусто — как в файле)'),
-          h('div', {class: 'grid g3'}, overrides.map(([key, input]) => field(OVERRIDES.find((o) => o[0] === key)[1], input)))),
-        error, h('div', {class: 'toolbar'}, btn('Показать прогноз', predict, 'primary'))),
+          h('div', {class: 'grid g3'}, overrides.map(([, fieldEl]) => fieldEl))),
+        form_.error, h('div', {class: 'toolbar'}, btn('Показать прогноз', predict, 'primary'))),
       results);
   }});
 })();

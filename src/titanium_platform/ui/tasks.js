@@ -30,27 +30,67 @@ const Tasks = (() => {
     return el;
   }
 
-  /** Поля целей выбранной задачи (только те, что она записывает, и примечание); value() — объект для сервера. */
+  /** Поля целей выбранной задачи (только те, что она записывает, и примечание); value() — объект для сервера.
+      Числа читаются строго (ux-save-feedback-p0, REQ-003): правила — те, что проверяет сервер (tasks.clean_goals), ошибка стоит рядом с полем,
+      набранное остаётся. check() — все ли поля верны (и отметить неверные); value() и при ошибке не правит набранное: сервер откажет сам. */
+  const GOAL_QUANTITY = {line_width_mm: 'lineWidth', text_height_mm: 'textHeight'};
+  const NOTE_LIMIT = 500;                                                  // tasks.clean_goals: «a task note must not exceed 500 characters»
   function goalFields(kind, list) {
     const spec = ((list || []).find((t) => t.key === kind) || {goals: []}).goals.concat(['note']);
-    const inputs = {};
+    const reads = {};                                                      // goal -> () => {ok, value} | {ok: false, message}; value null: nothing typed
+    const marks = {};
     const fields = spec.map((g) => {
+      let el;
       if (g === 'target_lab') {
-        inputs[g] = ['L', 'a', 'b'].map((c) => h('input', {type: 'number', step: 'any', placeholder: c, 'aria-label': `${TaskText.GOAL[g]}: ${c}`, style: 'width:5em'}));
-        return field(TaskText.GOAL[g], h('span', {class: 'row'}, ...inputs[g]));
+        const parts = ['L', 'a', 'b'].map((c) => h('input', {type: 'number', step: 'any', placeholder: c, 'aria-label': `${TaskText.GOAL[g]}: ${c}`, style: 'width:5em'}));
+        el = field(TaskText.GOAL[g], h('span', {class: 'row'}, ...parts), 'три числа: L от 0 до 100, a и b — любые', {constraint: 'допустимо: L от 0 до 100'});
+        reads[g] = () => {
+          const typed = parts.map((i) => i.value.trim());
+          if (typed.every((t) => t === '')) return {ok: true, value: null};
+          if (typed.some((t) => t === '')) return {ok: false, message: 'Нужны все три числа: L, a и b. Заполнены не все'};
+          const got = typed.map((t, i) => Forms.parse(t, Forms.QUANTITIES[i === 0 ? 'labL' : 'labAB'], {required: true}));
+          const bad = got.findIndex((r) => !r.ok);
+          return bad < 0 ? {ok: true, value: got.map((r) => r.value)} : {ok: false, message: `${'Lab'[bad]}: ${got[bad].message}`};
+        };
+        for (const i of parts) i.addEventListener('input', () => el.clearError());
+      } else if (GOAL_QUANTITY[g]) {
+        const input = h('input', {type: 'number', step: 'any', min: '0'});
+        const q = GOAL_QUANTITY[g];
+        el = field(TaskText.GOAL[g] || g, input, null, {unit: 'мм', constraint: 'допустимо: больше 0'});
+        reads[g] = () => (input.value.trim() === '' ? {ok: true, value: null} : Forms.parse(input.value, Forms.QUANTITIES[q], {}));
+        input.addEventListener('input', () => el.clearError());
+      } else {
+        const input = h('input', {placeholder: 'необязательно'});
+        el = field(TaskText.GOAL[g] || g, input, null, {constraint: `не больше ${NOTE_LIMIT} символов`});
+        reads[g] = () => {
+          const text = input.value.trim();
+          return text.length > NOTE_LIMIT ? {ok: false, message: `Не больше ${NOTE_LIMIT} символов. Введено: ${text.length}`} : {ok: true, value: text === '' ? null : input.value};
+        };
+        input.addEventListener('input', () => el.clearError());
       }
-      inputs[g] = h('input', g.endsWith('_mm') ? {type: 'number', step: 'any', min: '0'} : {placeholder: 'необязательно'});
-      return field(TaskText.GOAL[g] || g, inputs[g]);
+      marks[g] = el;
+      return el;
     });
+    function check() {
+      let all = true;
+      for (const [g, read] of Object.entries(reads)) {
+        const r = read();
+        if (r.ok) marks[g].clearError(); else { marks[g].setError(r.message); all = false; }
+      }
+      return all;
+    }
     const value = () => {
       const out = {};
-      for (const [g, input] of Object.entries(inputs)) {
-        if (Array.isArray(input)) { if (input.every((i) => i.value !== '')) out[g] = input.map((i) => +i.value); }
-        else if (input.value !== '') out[g] = input.type === 'number' ? +input.value : input.value;
+      for (const [g, read] of Object.entries(reads)) {
+        const r = read();
+        if (r.ok) { if (r.value !== null) out[g] = r.value; continue; }
+        marks[g].setError(r.message);                                      // beside the box; the typed text is sent as it is and the server refuses it in its words
+        const typed = [...marks[g].querySelectorAll('input')].map((i) => i.value).filter((t) => t !== '');
+        out[g] = g === 'target_lab' ? typed : typed[0];
       }
       return out;
     };
-    return {el: h('div', {class: 'grid g3'}, ...fields), value};
+    return {el: h('div', {class: 'grid g3'}, ...fields), value, check};
   }
 
   /** Выбор задачи плана или платы с её целями (REQ-020 AC1). empty — подпись значения «задача по умолчанию» (её определит
@@ -69,6 +109,7 @@ const Tasks = (() => {
       el: h('div', {class: 'stack'}, field('Задача гравировки', sel, hint || 'что должна дать эта работа; результаты разных задач не смешиваются'),
         h('details', {}, h('summary', {}, 'Цели задачи (необязательно)'), goalsBox)),
       kind: () => sel.value,
+      check: () => (sel.value ? goals.check() : true),                      // false (and the bad boxes marked) when a goal cannot be read
       set: (kind) => { sel.value = kind; redraw(kind); },
       append(fd) { const c = chosen(); if (c.task) fd.append('task', c.task); if (c.goals) fd.append('goals', JSON.stringify(c.goals)); },
       body() { const c = chosen(); return c.task ? {task: c.task, task_goals: c.goals} : {}; },

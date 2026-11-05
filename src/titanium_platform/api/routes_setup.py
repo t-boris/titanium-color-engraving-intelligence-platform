@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from .. import plans, setup as su
+from .. import material_catalogue, plans, setup as su
 from .common import lens_param, refresh_after_change, store_of
 
 router = APIRouter(prefix="/api")
@@ -63,8 +63,23 @@ def save_rules(body: RulesIn, request: Request):
 
 
 @router.get("/materials")
-def list_materials(request: Request):
-    return su.list_materials(store_of(request))
+def list_materials(request: Request, search: str | None = None, family: str | None = None, grade: str | None = None,
+                   sort: str | None = None, offset: int = 0, limit: int | None = None):
+    """The stock records. Without ``limit`` the plain list of every record, as screens always read it (``search``, ``family``, ``grade`` and
+    ``sort`` narrow and order it when given). With ``limit`` (at most 200) one page: ``{items, total, all, counts, options, ...}``, searched
+    and ordered here, the latest used first unless ``sort`` says otherwise (``material_catalogue``)."""
+    s = store_of(request)
+    if limit is None and not (search or family or grade or sort or offset):
+        return su.list_materials(s)
+    found = material_catalogue.page(s, search=search or "", family=family or "", grade=grade or "", sort=sort or ("recent" if limit is not None else "id"),
+                                    offset=offset, limit=limit)
+    return found if limit is not None else found["items"]
+
+
+@router.get("/materials/{material_id}")
+def get_material(material_id: int, request: Request):
+    """One stock record, with the time it was last used (a screen that works with a record off the shown page asks for it)."""
+    return material_catalogue.get(store_of(request), material_id)
 
 
 @router.post("/materials", status_code=201)

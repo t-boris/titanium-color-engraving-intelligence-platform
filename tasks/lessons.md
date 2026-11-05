@@ -762,3 +762,23 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   log file is read, not only its exit code. The failure path (a blank page, the reload) is proven the same way with a throwaway hidden
   window against a tiny local server kept in the scratchpad, never with a visible window of the installed bundle.
 
+
+## A fake DOM accepts what a real browser refuses: guard the harness, then look in a browser once (0.39.0, 2026-11-05)
+
+- **What happened.** `App.field` stored its input in `label.control`. In the node fake DOM that is a plain property and every test
+  passed; in Chrome `HTMLLabelElement.control` is a read-only getter, so the assignment throws and the whole form would not draw. The
+  layout agent found it only by opening a real page. The same pass showed that an `Array` method on a `querySelectorAll(...)` result
+  (a NodeList in a browser) works in the fake DOM and fails in Chrome; `tests/test_ui_files.py` caught that one by a lint.
+- **Rule.** Never assign to a name that a built-in DOM element already owns (`control`, `form`, `labels`, `list`, `style`, `dataset`);
+  use a name of our own. The shared fake DOM (`tests/ui_dom.js`) throws on assignment to such names, and a lint forbids array methods
+  on NodeLists, so these two mistakes now fail in node. A UI change is not proven by node alone: every release opens the screens it
+  changed in a real browser on a throw-away workshop, and the results file says which checks were seen and which were only tested.
+
+## Parallel feature agents: one owner per file, hooks recorded, one integrator (0.39.0, 2026-11-05)
+
+- **What happened.** Nine UI features were built at once by separate agents. Mid-flight the shared tree failed tests that belonged to
+  other agents' unfinished files (zoom buttons, `currentTarget` lint, missing translations), which made every green run provisional.
+- **Rule.** Split by file ownership before starting; a file owned by someone else gets a recorded hook (what to call, where), not an
+  edit. Failures in files another agent is still editing are expected until it reports; the integrator re-runs the area after each
+  report and the whole suite once at the end. A feature is not done while a criterion is "partial" without a named reason: send the
+  agent back (BUG-003's kind step was missing from the wizard until it was sent back).

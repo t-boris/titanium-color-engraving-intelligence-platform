@@ -9,7 +9,6 @@
 const ColorMap = (() => {
   const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
   const SVG = 'http://www.w3.org/2000/svg';
-  const KIND = {calibrated: ['по эталонной карте', 'ok'], relative: ['относительно камеры', 'warn']};
 
   // sRGB (#rrggbb) -> Lab (D65), как в приложении
   function hexToLab(hex) {
@@ -193,7 +192,19 @@ const ColorMap = (() => {
     apply();
     const zoomIn = btn('+', () => zoomAt(ZOOM.step, W / 2, H / 2), 'btn-small'), zoomOut = btn('−', () => zoomAt(1 / ZOOM.step, W / 2, H / 2), 'btn-small');
     zoomIn.setAttribute('aria-label', 'Приблизить'); zoomOut.setAttribute('aria-label', 'Отдалить');
-    const bar = h('div', {class: 'cm-zoombar'}, scaleText, zoomIn, zoomOut, btn('Весь вид', () => { view = {s: 1, tx: 0, ty: 0}; apply(); }, 'btn-small'));
+    // the circles one by one, left to right, for a person who cannot aim at one (ux-accessible-layout-p0): a step picks the next circle as a click does
+    const order = points.slice().sort((p, q) => p.display_lab[P.x] - q.display_lab[P.x] || p.display_lab[P.y] - q.display_lab[P.y] || String(p.id).localeCompare(String(q.id)));
+    const stepTo = (dir) => {
+      const at = picked ? order.findIndex((q) => q.id === picked.id) : -1;
+      const n = at < 0 ? (dir > 0 ? 0 : order.length - 1) : (at + dir + order.length) % order.length;
+      onPick(order[n], {step: dir > 0 ? 'next' : 'previous', n: n + 1, of: order.length});
+    };
+    const stepButtons = [['previous', '◀', 'Предыдущий цвет на карте', -1], ['next', '▶', 'Следующий цвет на карте', 1]].map(([key, sign, name, dir]) => {
+      const b = btn(sign, () => stepTo(dir), 'btn-small');
+      b.setAttribute('aria-label', name); b.setAttribute('title', name); b.setAttribute('data-step', key);
+      return b;
+    });
+    const bar = h('div', {class: 'cm-zoombar'}, scaleText, ...stepButtons, zoomIn, zoomOut, btn('Весь вид', () => { view = {s: 1, tx: 0, ty: 0}; apply(); }, 'btn-small'));
     return h('div', {class: 'cm-zoom'}, svg, bar);
   }
 
@@ -290,13 +301,21 @@ const ColorMap = (() => {
 
     let target = state.target || null, picked = null;
     const results = h('div', {class: 'stack'}), detail = h('div', {class: 'cm-detail stack', hidden: true}), plotBox = h('div', {class: 'cm-plot'});
-    const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p) => { picked = p; detail.hidden = false;
-      fill(detail, h('h3', {}, 'Выбранный цвет'), h('div', {class: 'row'}, swatch(p.display_lab),
-        h('span', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), pill(...KIND[p.measurement]),
-        p.referenced ? null : pill('как снято, без привязки', 'warn')), pick ? DotPick.action(pick, p) : null, trustLine(p),
-        sourcesBlock((data.recipes && data.recipes[p.group] ? data.recipes[p.group].sources : [ONE_ENGRAVING(p)]), p.agreement, data.recipes && data.recipes[p.group] ? data.recipes[p.group].lab : null),
-        where(p), filmOf(p, model),
-        btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot(); }, target, picked, plane,
+    const stepNote = h('p', {class: 'small cm-step-note', role: 'status', 'aria-live': 'polite'});           // which circle a key press picked
+    // REQ-001 of ux-evidence-summaries-p0: the picked colour shows its swatch and the independent signals (repeat, where measured, what it rests
+    // on) and its settings; Lab, the confidence figures and the engravings it is known from are one fold away
+    const drawPlot = () => plotBox.replaceChildren(plot(shown(), (p, how) => { picked = p; detail.hidden = false;
+      const recipe = data.recipes && data.recipes[p.group], known = recipe ? recipe.sources : [ONE_ENGRAVING(p)];
+      fill(detail, h('h3', {}, 'Выбранный цвет'), EvidenceSummary.summary({...p, sources: known}, {lead: swatch(p.display_lab)}),
+        pick ? DotPick.action(pick, p) : null, where(p), filmOf(p, model),
+        EvidenceSummary.disclosure('Подробности: цвет Lab, уверенность, источники', [
+          h('p', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), trustLine(p), sourcesBlock(known, p.agreement, recipe ? recipe.lab : null)]),
+        btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot();
+      if (how) {                                                // a step by the buttons: say which circle it is and keep the focus on the button that was pressed
+        fill(stepNote, `Цвет ${how.n} из ${how.of}: ${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}`);
+        const again = [...plotBox.querySelectorAll('button')].find((b) => b.getAttribute('data-step') === how.step);
+        if (again) again.focus();
+      } else fill(stepNote); }, target, picked, plane,
       model ? model.spiral : null, pick ? (p) => !DotPick.can(pick, p) : null));
     async function setTarget(lab) {
       target = lab.map((v) => +(+v).toFixed(1));
@@ -334,13 +353,14 @@ const ColorMap = (() => {
       fill(results, h('h3', {}, 'Где встречался такой цвет'), h('p', {class: 'muted small'}, 'Измерения, не прогноз: каждая запись — один рецепт одной задачи гравировки.'),
         h('p', {class: 'small'}, order),
         !r.matches.length ? h('p', {class: 'muted'}, 'Подходящих цветов пока нет.') : h('div', {class: 'stack'}, ...r.matches.map((m) => h('article', {class: 'card stack color-hit'},
-          h('div', {class: 'row'}, swatch(m.display_lab), h('strong', {}, `ΔE ${num(m.distance, 1)}`), pill(...KIND[m.measurement]),
+          h('div', {class: 'row'}, swatch(m.display_lab), h('strong', {}, `ΔE ${num(m.distance, 1)}`),
             m.within_tolerance ? pill('в допуске', 'ok') : null,
             m.approximate ? pill(m.referenced ? 'к чистому титану, условный оттенок' : 'как снят, без привязки', 'warn') : null,
             m.provisional ? pill('предварительно', 'warn') : null,
             h('span', {class: 'muted small'}, often(m))),
-          pick ? DotPick.action(pick, m) : null,
-          trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab, false), where(m), evidence(m)))),
+          EvidenceSummary.summary({...m, sources: m.sources || [ONE_ENGRAVING(m)]}), pick ? DotPick.action(pick, m) : null, where(m),
+          EvidenceSummary.disclosure('Подробности: уверенность, источники, повторяемость',
+            [trustLine(m), sourcesBlock(m.sources || [ONE_ENGRAVING(m)], m.agreement, m.display_lab, false), evidence(m)])))),
         r.counts.unreferenced && !f.within ? h('div', {class: 'alert warn'}, `${colours(r.counts.unreferenced)} без привязки к чистому титану в поиске не участвуют: их расстояние до остальных ничего бы не значило. `,
           btn('Искать и среди них', () => remember({within: true}), 'btn-small')) : null,
         r.counts.provisional && !f.provisional ? h('div', {class: 'alert warn'}, `${colours(r.counts.provisional)} из проверок, которые ещё не приняты, в поиске не участвуют: они предварительные. `,
@@ -410,7 +430,7 @@ const ColorMap = (() => {
         h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
         h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length} · колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — приблизить`)),
       model && model.summary && model.summary.observations ? h('p', {class: 'cm-caption muted small'}, `Пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null,
-      plotBox, detail);
+      stepNote, plotBox, detail);
     // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
     const search = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Какой цвет нужен')),
       h('div', {class: 'cm-target'}, h('div', {class: 'row'}, picker, chip),

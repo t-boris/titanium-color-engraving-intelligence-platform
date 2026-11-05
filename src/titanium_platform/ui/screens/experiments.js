@@ -35,12 +35,13 @@
   const action = (route, label, primary) => h('a', {class: 'btn btn-small' + (primary ? ' primary' : ''), href: '#' + route}, label);
 
   App.register({id: 'experiments', async render(ctx) {
-    const [experiments, devices, materials, goals] = await Promise.all([
-      get('/experiments'), get('/devices'), get('/materials'), get('/application-goals')]);
+    const [experiments, devices, goals] = await Promise.all([get('/experiments'), get('/devices'), get('/application-goals')]);
     const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
     const selectedDevice = devices.find((device) => device.id === rememberedDevice) || devices[0];
     const rememberedMaterial = Number(sessionStorage.getItem('experiment-dashboard-material'));
-    const selectedMaterial = materials.find((material) => material.id === rememberedMaterial) || materials[0];
+    // the record the overview is about: the one remembered in this window, else the one used last; asked one at a time, never the whole catalogue
+    // (ux-growing-collections-p0, REQ-001)
+    const selectedMaterial = (rememberedMaterial ? await MaterialPicker.one(rememberedMaterial).catch(() => null) : null) || await MaterialPicker.lastUsed();
     const selectedGoal = goals.find((goal) => goal.id === sessionStorage.getItem('experiment-dashboard-goal')) || goals[0];
     let findings = [];
     if (selectedDevice) {
@@ -69,7 +70,7 @@
       h('div', {class: 'ex-actions'},
         action('/research', 'AI-исследователь'),
         action('/colors', 'Карта цветов'),
-        btn('Создать плату', () => PlateDialog.open(devices, materials, reload), 'primary btn-small', !devices.length),
+        btn('Создать плату', () => PlateDialog.open(devices, null, reload), 'primary btn-small', !devices.length),
         action('/ingest', 'Добавить работу и фото')));
     if (!devices.length) return h('div', {class: 'os'}, hero,
       h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер и установите линзу'), link('/devices', 'Лазеры')));
@@ -105,30 +106,36 @@
     const goalPicker = h('select', {'aria-label': 'Цель исследования', onChange: (event) => {
       sessionStorage.setItem('experiment-dashboard-goal', event.target.value); reload();
     }}, goals.map((goal) => h('option', {value: goal.id, selected: goal.id === selectedGoal.id}, goal.name)));
-    const materialPicker = h('select', {'aria-label': 'Материал и заготовка', onChange: (event) => {
-      sessionStorage.setItem('experiment-dashboard-material', event.target.value); reload();
-    }}, materials.map((material) => h('option', {value: material.id, selected: material.id === selectedMaterial?.id},
-      [material.name, material.grade, material.batch].filter(Boolean).join(' · '))));
+    const materialPicker = MaterialPicker.create({value: selectedMaterial ? selectedMaterial.id : undefined, name: 'Материал и заготовка', onChange: (record) => {
+      if (!record) return;
+      sessionStorage.setItem('experiment-dashboard-material', record.id); reload();
+    }});
     // 200 нс предлагается, только если лазер даёт эту ступень; иначе длительность импульса выбирает оператор (DEC-043)
     const askPulse = guide?.plate && guide.plate.settings?.pulse_width == null;
-    const pulseChoice = askPulse ? h('select', {'aria-label': 'Длительность импульса'}, h('option', {value: ''}, 'выберите'),
+    const plateForm = Forms.create();
+    const pulseSelect = askPulse ? h('select', {}, h('option', {value: ''}, 'выберите'),
       (selectedDevice?.passport?.pulse_steps || []).map((s) => h('option', {value: s.pulse_width_ns}, `${s.pulse_width_ns} нс`))) : null;
+    const pulseChoice = askPulse ? plateForm.add('pulse', 'Длительность импульса', pulseSelect, {required: true, help: 'у этого лазера нет ступени 200 нс',
+      read: () => (pulseSelect.value === '' ? {ok: false, message: 'Выберите длительность импульса из ступеней лазера'} : {ok: true, value: +pulseSelect.value})}) : null;
     const nextPlate = guide?.plate ? btn('Создать следующий тест', async (ev) => {
       const self = ev.currentTarget;
-      if (askPulse && pulseChoice.value === '') return App.fail(new Error('Выберите длительность импульса из ступеней лазера'));
+      const v = plateForm.collect();
+      if (!v) return;                                                  // the reason stands beside the box
       self.disabled = true; self.textContent = 'Создаём плату…';
       try {
         const made = await App.post('/application-guide/next-plate', {
-          device_id: selectedDevice.id, material_id: selectedMaterial.id, goal: selectedGoal.id, pulse_width: askPulse ? +pulseChoice.value : null});
+          device_id: selectedDevice.id, material_id: selectedMaterial.id, goal: selectedGoal.id, pulse_width: askPulse ? v.pulse : null});
         toast(`Создана плата ${made.name}`, 'ok'); App.go('/experiment/plan-' + made.plan_id);
-      } catch (error) { self.disabled = false; self.textContent = 'Создать следующий тест'; App.fail(error); }
+      } catch (error) { self.disabled = false; self.textContent = 'Создать следующий тест'; plateForm.fail(error); }
     }, 'primary') : null;
     // REQ-020: на чём основан вывод — наблюдения, сколько гравировок и фото, чего не хватает в контексте
+    const manyObservations = Boolean(guide?.support) && guide.support.observation_ids.length > SourceRefs.SHORT;    // a count and a list, not a sentence (ux-growing-collections-p0)
     const evidence = [
       guide?.support ? h('p', {class: 'muted small'}, `Задача: ${Tasks.name(guide.task.kind)} · основание — проверка №${guide.support.pair_id}`,
-        guide.support.observation_ids.length ? `, наблюдения №${guide.support.observation_ids.join(', №')}` : '',
+        guide.support.observation_ids.length && !manyObservations ? `, наблюдения №${guide.support.observation_ids.join(', №')}` : '',
         ` · гравировок: ${guide.support.engravings}, фото: ${guide.support.photographs} · повторяемость не оценена`,
         ...(guide.support.missing_context.length ? [' · не хватает: ', ...Tasks.missing(guide.support.missing_context)] : [])) : null,
+      manyObservations ? SourceRefs.observations(guide.support.observation_ids, {label: 'Наблюдения-основания'}) : null,
       settingSummary(guide?.finding?.parameters || guide?.finding?.evidence?.parameters)
         ? h('p', {class: 'muted small'}, 'Параметры наблюдения: ' + settingSummary(guide.finding.parameters || guide.finding.evidence.parameters)) : null].filter(Boolean);
     const taskNote = 'Один материал и одна цель: тест → RAW-фото → вывод → следующий тест.';
@@ -149,7 +156,7 @@
           evidence.length ? h('details', {class: 'dashboard-details ex-evidence'}, h('summary', {}, 'Основание вывода и параметры'), ...evidence) : null),
         h('div', {class: 'dashboard-task-next'}, h('small', {}, 'Следующий шаг'),
           h('p', {}, guide?.next_step || 'Создайте материал и первую плату.'),
-          pulseChoice ? field('Длительность импульса (у этого лазера нет ступени 200 нс)', pulseChoice) : null, nextPlate,
+          pulseChoice, nextPlate, guide?.plate ? plateForm.error : null,
           guide?.pending_plan_id ? link('/plans/' + guide.pending_plan_id, 'Открыть созданную плату') : null)),
       guide?.plate ? h('p', {class: 'dashboard-task-foot'},
         `Плата: ${PLATE_TYPE[guide.plate.test_type] || guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null));
@@ -159,7 +166,7 @@
           h('div', {class: 'os-col-head'}, h('h3', {}, 'Эксперименты'), pill(laser ? `${shown.length} из ${experiments.length}` : experiments.length),
             pill(`${experiments.filter((e) => e.needs_review).length} к проверке`, experiments.some((e) => e.needs_review) ? 'warn' : '')),
           scope,
-          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, {id: 'experiments',
+          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, {id: 'experiments', noResults: 'Ничего не найдено: измените поиск, состояние или лазер.',
             empty: experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.'}))),
         h('div', {class: 'ex-right'}, taskPanel,
           panel('Выводы для материала', latest.size, insightCards,

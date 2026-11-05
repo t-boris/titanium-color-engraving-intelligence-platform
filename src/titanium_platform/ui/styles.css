@@ -66,6 +66,7 @@ h3 {font-size:17px;font-weight:650;letter-spacing:-.2px;margin-bottom:12px}
 .sidebar.is-open .nav-link[aria-current=page]::before {left:-15px}
 .sidebar-note {margin:auto 6px 0;padding-top:16px;border-top:1px solid #252e3f;color:#7f8ca3;font-size:12px;line-height:1.5}
 .main {padding:38px 36px 64px;min-width:0;max-width:1440px;width:100%;margin:0 auto}
+.main:focus {outline:none}
 .sub {color:var(--muted);margin:0 0 4px;max-width:900px}
 .demo {margin-top:36px;padding:3px 0 3px 12px;border-left:2px solid #607aa4;color:#8d9bb2;font-size:12px}
 
@@ -1125,7 +1126,20 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .lt-font-head {display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
 .lt-font-head select {max-width:14em}
 .lt-preview {display:block;height:44px;max-width:100%;object-fit:contain;object-position:left center;background:#f4f1ea;border-radius:6px;padding:4px 8px}
-.lt-star {border:none;background:none;color:var(--warning);font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+.lt-star {border:none;background:none;color:var(--warning);font-size:18px;line-height:1;cursor:pointer;padding:0 2px;min-width:24px;min-height:24px}
+/* a row of the font list is focused as a whole (roving focus): the ring is drawn inside it because the list clips what is outside */
+.lt-font:focus-visible {outline:2px solid #b7c7ff;outline-offset:-3px;background:var(--surface-2)}
+.lt-font.picked .lt-chosen {flex:none}
+@media (forced-colors:active) {.lt-font.picked {border-width:3px;border-style:double}.lt-font:focus-visible {outline:3px solid Highlight}}
+/* position, turn and size by buttons, and a path's points by number (ux-accessible-layout-p0, REQ-001): the same changes as the gestures */
+.lt-tools {gap:8px 14px;align-items:flex-end}
+.lt-tool {min-width:34px;padding:4px 10px}
+.lt-step select {width:auto;min-width:5em}
+.lt-points {gap:6px}
+.lt-point-row {display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 8px}
+.lt-point-row .f {flex:1 1 84px;min-width:76px}
+.lt-point-no {min-width:1.6em;text-align:right;padding-bottom:12px}
+.lt-points-fold>summary {min-height:24px}
 /* === end lt === */
 
 /* === labs: portable laboratories (feature electron) === */
@@ -1177,6 +1191,14 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .lst-det {padding:10px 14px 14px;border-bottom:1px solid var(--line);background:#141d2e}
 .lst-empty {margin:10px 14px}
 .lst-foot:empty {display:none}
+.lst-side:empty,.lst-pin-box:empty {display:none}
+.lst-fail {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.lst-none {margin:10px 14px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.lst-none .lst-empty {margin:0}
+.lst-reset[hidden] {display:none}
+.lst-pin {border:1px solid #6f86c4;border-radius:12px;background:#141d2e;overflow:hidden}
+.lst-pin-note {margin:0;padding:8px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.lst-pin .lst-row {border-top:1px solid var(--line)}
 @media (max-width:760px) {.lst-row {flex-wrap:wrap} .lst-main {white-space:normal} .lst-count {margin-left:0}}
 /* «Выводы» as a short list (findings-you-can-manage-short-lists-re-check REQ-002): the kind as a small coloured label, laser and titanium cut short */
 .fd-page>.vw-tabs {padding:0 0 6px}
@@ -1217,3 +1239,327 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 .ge-result { border:1px solid var(--line); border-radius:8px; padding:10px; }
 .ge-result-photo { display:block; width:100%; max-height:220px; object-fit:contain; }
 .ge-result textarea { width:100%; resize:vertical; }
+
+/* Brief evidence and the decision queue (ux-evidence-summaries-p0): signals in words on the first level, figures in a fold beside them,
+   the applicability label above a forecast; a finding's row names its problem, its context and one recommended step. */
+.ev-summary {display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ev-summary .pill {white-space:normal}
+.ev-more {margin:6px 0}
+.ev-more > summary {cursor:pointer;font-weight:600}
+.ev-more[open] > summary {margin-bottom:8px}
+.ev-applic {margin:0 0 8px}
+.ev-applic-head {display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.ev-applic .ev-more {margin:4px 0 0}
+.fd-next {display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.fd-next-why {flex:1 1 220px}
+.lst-act .fd-recommended {font-weight:600}
+.fd-more-actions {margin:6px 0}
+.fd-more-actions > summary {cursor:pointer}
+.fd-fold-secondary {margin-top:6px}
+
+/* Growing collections (ux-growing-collections-p0): the catalogue of titanium records, its picker, source numbers behind a count, the sets of a
+   laser and the history of a knowledge entry. They all use the compact list (.lst); only what that list does not give is added here. */
+.mat-editor-box:empty {display:none}
+.mat-editor {border-color:#6f86c4}
+.mat-list .lst-main .mat-grade {flex:0 0 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.matpick {display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
+.matpick-label {overflow-wrap:anywhere}
+.matpick-recent:empty {display:none}
+.matpick-recent {display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.matpick-body {min-width:min(560px, 80vw)}
+.srefs {min-width:0}
+.srefs-head {margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.srefs-list {display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0 0;padding:0;list-style:none}
+.srefs-list[hidden],.srefs-foot[hidden] {display:none}
+.srefs-item {min-width:0}
+.srefs-foot {display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:6px}
+.srefs-actions {display:inline-flex;flex-wrap:wrap;gap:6px}
+.lm-sets-list .lst-rows {border:0;background:none;gap:6px;overflow:visible}
+.lm-sets-list .lst-row {padding:0;border:0}
+.lm-sets-list .lst-main {padding:0;white-space:normal;overflow:visible}
+.lm-sets-list .lm-set {flex:1 1 auto}
+.kn-history-list .lst-main .lst-text {flex:1 1 120px}
+
+/* Saving, errors, forms and background tasks (ux-save-feedback-p0). Status words beside a document, errors beside the field that caused
+   them, the unit beside a number, and the task panel that every page carries at its bottom edge. */
+.sr-only {position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.save-state {display:flex;flex-direction:column;gap:8px;margin:6px 0}
+.save-line {margin:0;color:var(--muted)}
+.save-state[data-state=failed] .save-line {color:var(--danger);font-weight:600}
+.save-state[data-state=saving] .save-line,.save-state[data-state=calculating] .save-line,.save-state[data-state=waiting] .save-line {color:var(--warning)}
+.save-line:focus {outline:2px solid var(--accent);outline-offset:2px}
+.save-error p {margin:0 0 6px}
+.save-actions {gap:8px}
+label.f .f-required {align-self:flex-start;font-size:11px;font-weight:600;color:var(--warning)}
+/* the word «обязательно» sits on the label's line, not on a line of its own */
+label.f:has(>.f-required) {display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:7px;align-items:baseline;align-content:start}
+label.f:has(>.f-required)>* {grid-column:1 / -1}
+label.f:has(>.f-required)>span:first-child {grid-column:1}
+label.f:has(>.f-required)>.f-required {grid-column:2}
+label.f .f-constraint {color:var(--muted)}
+label.f.has-error input,label.f.has-error select,label.f.has-error textarea {border-color:var(--danger);box-shadow:0 0 0 3px #ff9eaf26}
+label.f>span.small.f-error {color:var(--danger);font-size:12px;font-weight:600;line-height:1.5}      /* beats label.f>span.small (muted) */
+.f-with-unit {display:flex;align-items:center;gap:8px}
+.f-with-unit>input {flex:1 1 auto;min-width:0}
+.f-unit {flex:none;color:var(--muted);font-size:13px}
+.f-form-error {margin:0 0 10px}
+.terms-note {margin:4px 0}
+.terms-note>summary {cursor:pointer}
+.ops-dock {position:fixed;left:72px;bottom:24px;z-index:45;display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:min(460px,calc(100% - 96px))}
+.ops-dock[data-state=attention] .ops-toggle {border-color:var(--danger);color:var(--danger)}
+.ops-dock[data-state=running] .ops-toggle {border-color:var(--accent)}
+.ops-toggle {min-height:38px;padding:8px 14px;font-size:13px;background:#202b3e;box-shadow:0 8px 28px #0007}
+.ops-panel {width:100%;max-height:min(60vh,520px);overflow:auto;padding:16px;border:1px solid #475775;border-radius:16px;background:#1b2638;box-shadow:0 24px 80px #000b}
+.ops-panel h3 {margin:0;font-size:16px}
+.ops-list {list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.ops-item {padding:12px;border:1px solid var(--line-2);border-left-width:4px;border-radius:12px;background:#141b26;display:flex;flex-direction:column;gap:6px}
+.ops-item[data-state=running] {border-left-color:var(--accent)}
+.ops-item[data-state=done] {border-left-color:var(--success)}
+.ops-item[data-state=failed] {border-left-color:var(--danger)}
+.ops-item[data-state=cancelled] {border-left-color:var(--warning)}
+.ops-item progress {width:100%;height:10px;accent-color:var(--accent)}
+.ops-item p {margin:0}
+.ops-item .row {gap:8px;flex-wrap:wrap}
+.ops-details dl {margin:6px 0 0}
+
+/* The path of a work's file and its readiness (ux-engraving-lifecycle-p0): four steps, the current one marked in words and shape, not colour alone */
+.lc {display:flex;flex-direction:column;gap:4px;min-width:0}
+.lc-chain {display:flex;flex-wrap:wrap;gap:6px 10px;margin:0;padding:0;list-style:none}
+.lc-step {display:flex;align-items:center;gap:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:13px}
+.lc-mark {display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--line-2);font-size:12px}
+.lc-step.lc-done {color:var(--text)} .lc-step.lc-done .lc-mark {border-color:var(--success);color:var(--success)}
+.lc-step.lc-current {color:var(--text);border-color:var(--accent);background:var(--accent-soft);font-weight:650}
+.lc-step.lc-current .lc-mark {border-color:var(--accent);background:var(--accent);color:#0b0f16}
+.lc-word {position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.lc-next {margin:0;color:var(--muted)}
+.lc-blockers {margin:0;padding-left:22px} .lc-blocker {margin:4px 0}
+.lc-files {list-style:none;margin:0;padding:0} .lc-file {padding:6px 0;border-bottom:1px solid var(--line)}
+.lc-results {margin:4px 0 0;padding-left:18px}
+.lc-download {display:inline-flex;flex-direction:column;gap:6px;align-items:flex-start}
+.vw-chain {flex:none} .vw-chain .lc-hint {position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}   /* the narrow header keeps the action; the sentence stays for a screen reader */
+.ep-chain {flex:none}
+@media (max-width:760px) {.lc-step {font-size:12px}}
+
+/* The review of a pair as stages: the stage bar, a header per stage, the manual tools (ux-photo-review-p0) */
+.rv-steps {display:flex;gap:8px;list-style:none;margin:0;padding:0;flex-wrap:wrap}
+.rv-steps>li {flex:1 1 150px;display:flex}
+.rv-step {flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:48px;padding:9px 14px;border:1px solid var(--line-2);border-left-width:4px;border-radius:12px;background:var(--surface);color:var(--text);font:inherit;text-align:left}
+button.rv-step {cursor:pointer}
+button.rv-step:hover {border-color:var(--accent)}
+.rv-step.done {border-left-color:var(--success)}
+.rv-step.current {border-left-color:var(--warning)}
+.rv-step.shown {background:var(--accent-soft);border-color:var(--accent)}
+.rv-num {font-size:11px;font-weight:700;color:var(--muted)}
+.rv-name {font-weight:700}
+.rv-state {font-size:12px;color:var(--muted)}
+.rv-tools {display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rv-tool {min-height:40px}
+.rv-tool.on {background:var(--accent-soft);border-color:var(--accent)}
+.rv-regions:empty {display:none}
+.rv-region:focus {outline:2px solid var(--accent);outline-offset:4px}
+.rv-list {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.rv-blocker,.rv-advisory {display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 12px;border-left:4px solid var(--warning);border-radius:12px;background:#312a1e}
+.rv-blocker {border-left-color:var(--danger);background:#34212c}
+.rv-what {display:flex;flex-direction:column;gap:2px;flex:1 1 260px;min-width:0}
+.rv-fix {display:flex;gap:8px;flex-wrap:wrap}
+.rv-more>summary {cursor:pointer;font-weight:600}
+.rv-note>summary {cursor:pointer;font-size:12px;color:var(--muted)}
+.rv-facts {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.rv-sr {position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media (max-width:600px) {.rv-steps>li {flex-basis:100%}}
+
+/* ===== ux-accessible-layout-p0 (REQ-002, DEC-001): 320 px wide, 800×600, text at 200 %, and the last two together =====
+   One block per concern. Nothing here changes a rule above for a wide screen; what was a fixed size becomes a minimum, what could not
+   shrink may shrink, and what was hidden by overflow wraps instead. */
+
+/* 1) the shell on a narrow screen: the header scrolls away with the page instead of keeping 66-100 px of the work area, and the menu
+   opens under it wherever it is (the sidebar was fixed below a header that is always there) */
+@media (max-width:1000px) {
+  .app-header {position:relative;flex-wrap:wrap;gap:8px 12px}
+  .app-layout {position:relative}
+  .sidebar {position:absolute;top:0;bottom:0}
+  .header-actions {flex-wrap:wrap}
+}
+.sidebar.is-open .nav-link {white-space:normal;overflow-wrap:anywhere}      /* a long name wraps in the opened menu: at large text it was cut */
+@media (max-width:600px) {
+  .app-header {padding:8px 12px;min-height:56px}
+  .brand {padding-left:46px;font-size:18px}
+  .brand::before {top:3px}
+  .main {padding:14px 12px 40px}
+}
+
+/* 2) text at 200 %: a control's height is a minimum, so its text is never cut (the fixed heights were 44, 34 and 30 px) */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]),select:not([multiple]):not([size]) {height:auto}
+
+/* 3) 320 px: a grid never asks for a column wider than its container, a pill wraps its words, a title wraps instead of an ellipsis */
+.g2 {grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
+.g3 {grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr))}
+.color-variant-grid {grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr))}
+.vw-works {grid-template-columns:repeat(auto-fill,minmax(min(500px,100%),1fr))}
+.vw-split-fields {grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))}
+.ge-scales {grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}
+.ge-kinds {grid-template-columns:repeat(auto-fill,minmax(min(180px,100%),1fr))}
+.ge-powers {grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr))}
+.pill {max-width:100%;white-space:normal;overflow-wrap:anywhere;border-radius:14px}
+.dashboard-item-top {flex-wrap:wrap}
+.ex-insights {grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))}
+@media (max-width:1100px) {
+  .vw-work-title h2,.vw-work-title .sub {white-space:normal;overflow-wrap:anywhere}
+}
+@media (max-width:1000px) {.ops-dock {left:12px;max-width:calc(100% - 24px)}}   /* the rail that the dock stood beside is not there */
+@media (max-width:600px) {
+  .vw-work-card {grid-template-columns:minmax(0,1fr)}
+  .vw-work-head .btn {flex:0 1 auto;white-space:normal}
+}
+
+/* 4) a narrow screen: the editor's panel (brush, layers, colours, photo, inscriptions and what is selected) slides out over the picture.
+   «Панель» in the bar opens it, choosing something on the picture opens it on that, Esc or «Закрыть панель» shuts it (vector-editor.js) */
+.vw-ed-panel-head,.vw-ed-panel-toggle {display:none}
+@media (max-width:1100px) {
+  .vw-ed-panel-toggle {display:inline-flex}
+  .vw-work .vw-ed-panel,.vw-ed-panel {position:fixed;top:0;right:0;bottom:0;z-index:46;width:380px;max-width:100%;max-height:none;overflow:auto;
+    padding:0 0 12px;border:0;border-left:1px solid var(--line-2);border-radius:0;background:#111826;box-shadow:-18px 0 50px #000a;
+    visibility:hidden;transform:translateX(100%);transition:transform .18s ease,visibility 0s linear .18s}
+  .vw-work .vw-ed-panel.is-open,.vw-ed-panel.is-open {visibility:visible;transform:none;transition:transform .18s ease}
+  .vw-ed-panel-head {display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:1;padding:10px 12px;border-bottom:1px solid var(--line);background:#111826}
+  .vw-work .vw-ed-panel .vw-ed-panes {overflow:visible}
+}
+@media (forced-colors:active) {.vw-work .vw-ed-panel,.vw-ed-panel {border-left:2px solid CanvasText}}
+
+/* 5) list rows (App.list): what does not fit on a line goes to the next one instead of being cut off (the name of a row shrank to nothing
+   beside a pill and a date at 320 px, and a long line was cut by the box at 200 % text) */
+.lst-main {flex-wrap:wrap;gap:2px 8px}
+.lst-main .lst-text {flex:1 1 6em}
+.lst-select select,.cm select {padding-right:30px}      /* these two cleared the room the arrow needs, so a long choice ran under it at large text */
+.lst-act {flex:0 1 auto;flex-wrap:wrap;min-width:0;max-width:100%}
+.lst-act .btn {max-width:100%;white-space:normal}
+
+/* 6) target size, 24 × 24 CSS px at least (WCAG 2.5.8): the corner points of the photo have a larger invisible hit area than they look,
+   a standalone link, a summary and the small «Размер…» button are 24 px high; a link inside a sentence is left as it is */
+.dot::before {content:"";position:absolute;inset:-10px;border-radius:50%}
+.brand {display:inline-block;min-height:36px}
+.toolbar>a:not(.btn),.row>a:not(.btn),.os-col-head>a:not(.btn) {display:inline-flex;align-items:center;min-height:24px}
+summary {min-height:24px;padding-block:2px}
+.vw-size {min-height:24px}
+input[type=range],.vw-slider input[type=range] {min-height:24px}      /* a slider's box was 16 px high, the grip's size */
+.vw-slider {flex-wrap:wrap;gap:4px 12px}
+.vw-slider input[type=range] {flex:1 1 140px;min-width:120px}      /* the grip never squeezes to nothing beside its readout */
+@media (max-width:600px) {.vw-work .vw-split-fields {grid-template-columns:minmax(0,1fr)}}
+
+/* 7) what the number fields and the lists added for the keyboard need to lie in a row and to wrap (ux-accessible-layout-p0, REQ-001):
+   the area frame and the four corners by numbers */
+.vw-area-num {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr));gap:8px 12px}
+.corner-nums {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:8px 12px;margin-top:8px}
+.corner-num-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 10px;align-items:end;min-width:0}
+.corner-num-name {grid-column:1/-1}
+
+/* 8) dialogs on a small or a low window: the buttons of a dialog stay at its foot while its body scrolls, the close button keeps its
+   round shape in a narrow row, the padding gives room at 320 px */
+.modal {--pad:26px;padding:var(--pad)}
+@media (max-height:700px),(max-width:600px) {
+  .modal>.row:last-child {position:sticky;bottom:calc(-1 * var(--pad));padding-bottom:12px;background:linear-gradient(#151d2d00,#151d2d 14px);z-index:1}
+}
+@media (max-width:600px) {
+  .modal-bg {padding:8px}
+  .modal {--pad:16px;max-height:calc(100dvh - 16px);border-radius:16px}
+  .modal>.row:first-child .btn {flex:none}
+}
+
+/* 9) the map's zoom bar (five buttons and the scale) lies on top of the plot only where there is room; on a narrow screen or at large text
+   it is a row above the plot and covers nothing */
+@media (max-width:1000px) {
+  .cm-zoom {display:flex;flex-direction:column}
+  .cm-zoombar {position:static;order:-1;flex-wrap:wrap;justify-content:flex-end;padding:0 0 6px}
+  .cm-zoom>svg {flex:1 1 0;min-height:0}
+}
+
+/* 10) the keyboard's place in a field is as visible as everywhere else: the field's own style only tinted its border and glowed 12 % */
+input:focus-visible,select:focus-visible,textarea:focus-visible {outline:2px solid #b7c7ff;outline-offset:2px}
+@media (forced-colors:active) {input:focus-visible,select:focus-visible,textarea:focus-visible {outline-color:Highlight}}
+
+/* 11) ux-save-feedback-p0, second pass (REQ-002, REQ-003): the task panel's entry in the page header, the empty list of the panel, the way to a result
+   that ended while the person was elsewhere */
+.ops-entry {min-height:32px;padding:4px 12px;font-size:13px;white-space:nowrap}
+.ops-entry[data-state=attention] {border-color:var(--danger);color:var(--danger)}
+.ops-entry[data-state=running] {border-color:var(--accent)}
+.ops-empty {margin:0;color:var(--muted)}
+.kn-terms {gap:6px}
+
+/* 12) ux-accessible-layout-p0, final pass: the strip under a work's head (the path of the file, the forecast's reach, the preview's note) is
+   one fold on a narrow screen: folded, its line says the step and what the forecast and the preview warn about; on a wide one it is open and
+   has no line (Lifecycle.strip) */
+.lc-strip {margin:0;min-width:0}
+.lc-strip>.lc-strip-sum {display:none}
+@media (max-width:600px) {
+  .lc-strip>.lc-strip-sum {display:block;min-height:44px;padding:8px 12px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);cursor:pointer}
+  .lc-strip>.lc-strip-sum[data-caution] {border-color:#6d5933;border-left:4px solid var(--warning)}
+  .lc-strip-sum strong {font-size:14px}
+  .lc-strip-line {display:block;color:var(--muted);font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+  .lc-strip[open]>.lc-strip-sum {margin-bottom:8px}
+  .lc-strip .ev-applic {margin-bottom:6px}
+}
+
+/* 13) ux-accessible-layout-p0, final pass: on a phone (480 px and narrower) the editor's panel is a sheet from the bottom, 60 % of the window at
+   most, instead of a column over the whole picture; while it is open the picture above it takes the rest of the window and is scrolled to the
+   top (vector-editor.js showChosen), so what was chosen on the picture stays in view next to its actions */
+@media (max-width:480px) {
+  .vw-work .vw-ed-panel,.vw-ed-panel {top:auto;left:0;right:0;width:100%;max-height:60vh;max-height:60dvh;border-left:0;border-top:1px solid var(--line-2);
+    border-radius:14px 14px 0 0;box-shadow:0 -14px 40px #000a;transform:translateY(100%)}
+  .vw-work .vw-ed-panel.is-open,.vw-ed-panel.is-open {transform:none}
+  html:has(.vw-ed-panel.is-open) {scroll-padding-top:8px;scroll-padding-bottom:60dvh}
+  body:has(.vw-ed-panel.is-open) {padding-bottom:60dvh}
+  body:has(.vw-ed-panel.is-open) .vw-ed-stage {height:34dvh;min-height:180px}
+}
+@media (forced-colors:active) and (max-width:480px) {.vw-work .vw-ed-panel,.vw-ed-panel {border-left:0;border-top:2px solid CanvasText}}
+
+/* 14) ux-accessible-layout-p0, final pass: the catalogue's placeholder thumbnail (works.js, a picture that did not load) has the class «empty», which
+   is also the empty-state card's class (52 px of padding and a tilted frame before it): the thumbnail grew to 58 × 106 px at 320 px */
+.works-thumb.empty {padding:0;text-align:initial}
+.works-thumb.empty::before {content:none}
+.works-name {min-height:24px}                  /* the name is a link of its own: 23.25 px high by the line, 24 px by the target-size rule */
+
+/* 15) ux-accessible-layout-p0, final pass: the material picker asked for 80 % of the window as its least width, which is more than the dialog's
+   inside at 320-400 px (a sideways scroll of 16 px in the dialog); it asks for the dialog's own width instead */
+.matpick-body {min-width:min(560px,100%)}
+
+/* 16) ux-accessible-layout-p0, final pass: the foot of a dialog stays in view (block 8), so the browser must not leave the control that has the
+   keyboard behind it when it scrolls the control into view: the dialog keeps the foot's height (about 5 lines of text; it grows with the text) free */
+@media (max-height:700px),(max-width:600px) {
+  .modal {scroll-padding-bottom:6em}
+}
+.matpick-body p>a {display:inline-block;padding-block:4px}      /* a link of its own under the list: 16 px high by the line, 24 px by the target-size rule */
+.empty>a:not(.btn) {display:inline-flex;align-items:center;min-height:24px}      /* the link out of an empty-state card stands alone: 24 px by the target-size rule */
+
+/* 17) ux-accessible-layout-p0, final pass: the bar of an unfinished task (creation.css, fixed at the lower edge) is 105 px high at 800 px, 141 px at
+   320 px and up to 350 px at 200 % text, the page kept 92 px free below it, and the browser scrolled the control that has the keyboard under it:
+   creation.js tells the stylesheet the bar's real height */
+html body.has-creation-bar {padding-bottom:calc(var(--creation-bar-h,92px) + 8px)}
+html:has(body.has-creation-bar) {scroll-padding-bottom:calc(var(--creation-bar-h,92px) + 8px)}
+
+/* 18) ux-accessible-layout-p0, final pass: a field with «обязательно» put the name and the tag side by side in a two-column grid, so the field was
+   as wide as both (335 px at 200 % text in a 222 px cell of the upload form: a sideways scroll of 65 px). The tag goes under the name when the
+   two do not fit side by side */
+label.f:has(>.f-required) {display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;column-gap:8px;row-gap:7px}
+label.f:has(>.f-required)>* {flex:1 1 100%;min-width:0}
+label.f:has(>.f-required)>span:first-child,label.f:has(>.f-required)>.f-required {flex:0 1 auto}
+
+/* 19) ux-accessible-layout-p0, final pass: a power row of the photo scales (name, slider, number) cannot be narrower than its name written on one line
+   plus the number's 5 em: 253 px in a 228 px cell at 200 % text (the right edge was cut by the column). The name wraps, the row wraps */
+.ge-power {flex-wrap:wrap}
+.ge-power>.small {white-space:normal;flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+.ge-tone .ge-power {grid-template-columns:minmax(0,1fr) auto}
+
+/* 20) ux-accessible-layout-p0, final pass: the name of a row (a layer called CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05, a long work name) did not
+   shrink or wrap: 398 px in a 183 px row at 320 px, 778 px in 631 at 200 % text, and the rest of it was cut by the row. It wraps now */
+.lst-main>strong {flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+
+/* 21) ux-accessible-layout-p0, final pass: the task panel's button and the notices stood over the bar of an unfinished task (the button hid
+   «Отменить задачу»); with the bar on the page they stand above it, by the bar's real height */
+body.has-creation-bar .ops-dock,body.has-creation-bar .toasts {bottom:calc(var(--creation-bar-h,92px) + 12px)}
+body.has-creation-bar .ops-panel {max-height:min(60vh,520px,calc(100vh - var(--creation-bar-h,92px) - 120px))}       /* and the list keeps below the top of the window */
+.ge-power input[type=number] {width:6.2em}      /* «29.87» did not fit the 5 em it had once the spinner took its part of the width: the last digit was cut */
+
+/* 22) ux-accessible-layout-p0, final pass: a row's actions took the whole row at 200 % text and the row's own text had no width left (a finding at
+   800 px, «Пробел рецептов…»: 0 × 316 px, invisible). The text asks for 10 em before the actions are put on a line of their own */
+.lst-row {flex-wrap:wrap}
+.lst-main {flex:1 1 10em}

@@ -534,7 +534,7 @@ def test_the_screens_print_the_servers_english_vocabulary_through_a_translation(
     assert "ROLE[l.role]" in screen("ingest-dialogs.js") and "goalNames[c.purpose]" in screen("findings.js")
     assert "PLATE_TYPE[guide.plate.test_type]" in screen("experiments.js") and "PhotoModes.label(layer.dither)" in screen("photo-preview.js")
     assert "I18N.name(w.title)" in screen("device-report.js") and "I18N.name(w.title)" in screen("device-plots.js")
-    assert "I18N.known(e.reason) ?? e.reason" in screen("knowledge.js") and "I18N.name(r.name)" in screen("ingest-upload.js")
+    assert "I18N.known(e.reason) ?? e.reason" in screen("knowledge-history.js") and "I18N.name(r.name)" in screen("ingest-upload.js")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

@@ -10,7 +10,7 @@ import pytest
 from test_vector_work import TABLES, UI
 
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-SCRIPTS = ["app.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "hardware.js", "filepick.js"]
+SCRIPTS = ["app.js", "save-state.js", "photo-modes.js", "photo-quality.js", "dialogs.js", "list.js", "operations.js", "hardware.js", "filepick.js"]
 GLUE = ("const __screens = {}; App.register = (d) => { __screens[d.id] = d; }; App.render = () => {}; globalThis.__screens = __screens;"
         "globalThis.__went = []; App.go = (route) => { __went.push(route); };"
         "globalThis.FormData = class { constructor() { this.fields = []; } append(k, v) { this.fields.push([k, v]); } };")
@@ -22,7 +22,7 @@ const ctx = context({});
 const docKeys = [];
 ctx.document.addEventListener = (type, fn) => { if (type === 'keydown') docKeys.push(fn); };
 const press = (extra) => Promise.all(docKeys.map((fn) => fn({type: 'keydown', target: ctx.document.body, preventDefault() {}, ...extra})));
-load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/lettering.js', 'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/photo-panels.js', 'screens/dot-pick.js', 'screens/lab-source.js', 'screens/photo-engraving.js']);
+load(ctx, %(ui)s, [...%(tables)s, ...%(scripts)s, {code: %(glue)s}, 'screens/vector-workspace.js', 'screens/lettering.js', 'screens/vector-editor.js', 'screens/vector-colours.js', 'screens/evidence-summary.js', 'screens/lifecycle.js', 'screens/photo-panels.js', 'screens/photo-kind-step.js', 'screens/dot-pick.js', 'screens/lab-source.js', 'screens/photo-engraving.js']);
 const requests = [], hold = [], past = [], future = [];
 let work = data.work, version = 0;
 const remember = () => { past.push({...work}); future.length = 0; };
@@ -338,7 +338,8 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   await tries.dispatch('click'); await settle();
   out.tries.posted = requests.filter((r) => r.path.endsWith('/variations')).map((r) => r.method); out.tries.went = ctx.__went.slice(-1);
   width.value = '0'; await width.dispatch('change'); await settle();
-  out.refused = {width: width.value, error: tree.querySelectorAll('p.alert').filter((p) => !p.hidden).map((p) => p.textContent)};
+  const refusal = tree.querySelector('.save-error');
+  out.refused = {width: width.value, shown: !refusal.hidden, error: refusal.textContent, status: tree.querySelector('.save-line').textContent, preview: shown(tree)};
 """)
     opened = out["opened"]
     assert opened["chosen"] == [False, True] and opened["powers"] == ["12", "28"] and opened["width"] == "60" and opened["title"] == "Портрет"
@@ -349,7 +350,12 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
     assert out["tries"] == {"says": True, "posted": ["POST"], "went": ["/experiment/plan-32"]}     # eight copies, one change each
-    assert out["refused"] == {"width": "100", "error": ["Ширина картинки должна быть от 1 до 1000 мм"]}   # refused: the work stays as it was
+    # refused (ux-save-feedback-p0): the work stays as the server has it (the preview is the stored one), the typed 0 stays in its box, and the error
+    # stays beside the work with what was typed and what is stored, until it is corrected or closed
+    assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
+                              "status": "Работа: Не сохранено: на экране не то, что хранится",
+                              "error": "Не удалось сохранить. Ширина картинки должна быть от 1 до 1000 мм"
+                              "Набрано, но не сохранено — Ширина, мм: 0 (сохранено: 100).Закрыть"}
 
 
 @node
@@ -476,7 +482,7 @@ def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_tar
 def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_from_the_head(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   await button(tree, 'Попросить AI').dispatch('click'); await settle();
-  out.empty = {asks: asks().length, text: tree.textContent.includes('Напишите, что AI должен изменить в картинке.')};
+  out.empty = {asks: asks().length, text: tree.textContent.includes('Заполните это поле')};            // the reason stands beside the box, nothing is sent
   const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('уменьшенную картинку'));
   permission.checked = true; await permission.dispatch('change'); await settle();
   const wish = tree.querySelectorAll('textarea')[0];
@@ -645,7 +651,7 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   await button(tree, 'Тёплая').dispatch('click'); await settle();
   await button(tree, 'Случайно').dispatch('click'); await settle();
   await button(row('Другое (очки…)'), 'Авто').dispatch('click'); await settle();
-  tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Как раскрасить — своими словами').value = ' очки золотом ';
+  tree.querySelectorAll('label').find((l) => l.firstChild.textContent === 'Как раскрасить — своими словами').firstControl().value = ' очки золотом ';
   await button(tree, 'Раскрасить по просьбе').dispatch('click'); await settle();
   out.saves = saves();
   out.themes = posts('/theme').map((b) => [b.name, typeof b.seed]);
@@ -943,3 +949,18 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
     assert out["after"]["chosen"] == 3 and out["after"]["cards"] == ["true"]
     assert out["sorts"] == ["Лучшие первыми", "Быстрее", "Шире диапазон мощности"]
     assert "121 мм/с" in out["fastest"]
+
+
+@node
+def test_the_file_of_a_work_is_downloaded_with_the_one_wording_and_a_failed_download_stays_beside_the_button(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const head = tree.querySelector('.os-head');
+  const labels = () => head.querySelectorAll('button').map((b) => b.textContent);
+  out.labels = labels();
+  const button = head.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  out.inside = Boolean(button) && button.parentNode.className === 'lc-download';
+  await button.dispatch('click'); await settle();
+  out.asked = requests.filter((r) => r.path.endsWith('/export.lbrn2')).map((r) => r.path);
+""")
+    assert "Скачать LightBurn" in out["labels"] and "Файл LightBurn" not in out["labels"]
+    assert out["inside"] is True and out["asked"] == ["/api/photo-works/7/export.lbrn2"]

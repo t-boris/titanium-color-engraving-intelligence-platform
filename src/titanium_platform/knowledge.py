@@ -145,12 +145,21 @@ def after_removal(store: Store, device_id: int, lens_id: int | None, removed: di
     return changes
 
 
-def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events: list | None = None) -> dict:
+def _public_event(row) -> dict:
+    """A ``knowledge_event`` row as the API gives it: the evidence it rests on is a list of observation numbers."""
+    event = dict(row)
+    event["observation_ids"] = json.loads(event.pop("observation_ids_json"))
+    return event
+
+
+def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events: list | None = None, history_limit: int | None = None) -> dict:
     """One knowledge entry with its history and the summary of its evidence.
 
     A caller that reads many entries of one laser and lens passes what they share, read once: ``summaries`` (the
     ``model.knowledge_summaries`` of that laser and lens) and ``events`` (the entry's ``knowledge_event`` rows in id order).
-    Each is read here when not given; the result is the same either way."""
+    Each is read here when not given; the result is the same either way. ``history`` is the whole history in the order the events
+    happened, unless ``history_limit`` asks for the newest N only (0: none); ``history_total`` is always the number of events, and
+    :func:`history_page` reads the history a page at a time."""
     row = store.one("SELECT * FROM knowledge WHERE id=?", (kid,))
     if row is None:
         raise KeyError(f"knowledge {kid} not found")
@@ -161,7 +170,9 @@ def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events
     d["questioned"] = bool(d["questioned"])
     if events is None:
         events = store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,))
-    d["history"] = [dict(e, observation_ids=json.loads(e.pop("observation_ids_json"))) for e in (dict(r) for r in events)]
+    d["history_total"] = len(events)
+    shown = events if history_limit is None else events[max(0, len(events) - max(0, history_limit)):]
+    d["history"] = [_public_event(r) for r in shown]
     if summaries is None:
         summaries = model.knowledge_summaries(store, d["device_id"], d["lens_id"])
     d["summary"] = summaries.get(d["parameters_key"])
@@ -169,16 +180,38 @@ def get(store: Store, kid: int, summaries: dict[str, dict] | None = None, events
     return d
 
 
-def list_for_setup(store: Store, device_id: int, lens_id: int | None) -> list[dict]:
+HISTORY_PAGE_MAX = 200
+
+
+def history_page(store: Store, kid: int, *, event_type: str = "", newest_first: bool = True, offset: int = 0, limit: int = 20) -> dict:
+    """One page of an entry's history: ``items`` (the events, as ``get`` gives them), ``total`` (the events of the kind asked for), ``all``
+    (every event of the entry) and ``counts`` of the event kinds. Nothing of the history is lost by reading it in pages: the same events, in
+    the same order, come out of consecutive pages."""
+    if store.one("SELECT id FROM knowledge WHERE id=?", (kid,)) is None:
+        raise KeyError(f"knowledge {kid} not found")
+    events = [_public_event(r) for r in store.query("SELECT * FROM knowledge_event WHERE knowledge_id=? ORDER BY id", (kid,))]
+    counts: dict[str, int] = {"": len(events)}
+    for e in events:
+        counts[e["type"]] = counts.get(e["type"], 0) + 1
+    matched = [e for e in events if not event_type or e["type"] == event_type]
+    if newest_first:
+        matched.reverse()
+    start, size = max(0, int(offset)), max(1, min(int(limit), HISTORY_PAGE_MAX))
+    return {"items": matched[start:start + size], "total": len(matched), "all": len(events), "offset": start, "limit": size,
+            "counts": {"type": counts}}
+
+
+def list_for_setup(store: Store, device_id: int, lens_id: int | None, history_limit: int | None = None) -> list[dict]:
     """Every entry of one laser and lens, as ``get`` gives each. The summaries of the setup and the events of its entries are
-    read once for the whole list (BUG-001: reading them per entry made the list quadratic in its length)."""
+    read once for the whole list (BUG-001: reading them per entry made the list quadratic in its length). ``history_limit`` is
+    passed to ``get`` (a screen that lists entries and never shows their history asks for none)."""
     ids = [r["id"] for r in store.query("SELECT id FROM knowledge WHERE device_id=? AND lens_id IS ? ORDER BY id", (device_id, lens_id))]
     events: dict[int, list] = {}
     for e in store.query("SELECT e.* FROM knowledge_event e JOIN knowledge k ON k.id=e.knowledge_id "
                          "WHERE k.device_id=? AND k.lens_id IS ? ORDER BY e.id", (device_id, lens_id)):
         events.setdefault(e["knowledge_id"], []).append(e)
     summaries = model.knowledge_summaries(store, device_id, lens_id)
-    return [get(store, kid, summaries, events.get(kid, [])) for kid in ids]
+    return [get(store, kid, summaries, events.get(kid, []), history_limit) for kid in ids]
 
 
 # -- operator decisions ---------------------------------------------------------------------------------

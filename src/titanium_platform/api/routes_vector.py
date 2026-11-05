@@ -7,14 +7,16 @@ import json
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from .. import segment, setup as su, vector_job, work_errors
+from .. import lifecycle, segment, setup as su, vector_job, work_errors
 from .common import MAX_IMAGE_BYTES, content_disposition, form_flag, lens_param, picture_response, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
 
 
 def _view(request: Request, plan_id: int) -> dict:
-    return public_plan(vector_job.view(store_of(request), plan_id))
+    view = vector_job.view(store_of(request), plan_id)
+    view["lifecycle"] = lifecycle.of_vector(store_of(request), plan_id, view)       # the chain, the readiness and the files (ux-engraving-lifecycle-p0)
+    return public_plan(view)
 
 
 @router.get("/vector")

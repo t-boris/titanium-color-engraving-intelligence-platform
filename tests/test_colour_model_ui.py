@@ -30,7 +30,7 @@ for (const name of ['createElement', 'createElementNS']) {              // the m
   const make = ctx.document[name];
   ctx.document[name] = (...args) => { const el = make(...args); el.style = {}; return el; };
 }
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/knowledge.js', 'screens/colors.js']);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', {code: %(glue)s}, 'screens/evidence-summary.js', 'screens/source-refs.js', 'screens/knowledge-history.js', 'screens/set-list.js', 'screens/knowledge.js', 'screens/colors.js']);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.textContent === text);
 const has = (el, cls) => (el.className || '').split(' ').includes(cls);
@@ -114,6 +114,9 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
   out.selects = tree.querySelector('.lm-head').querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
   await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.opened = right.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
+  const det = right.querySelectorAll('.lst-det').find((d) => !d.hidden);
+  out.signals = det.querySelectorAll('.ev-signal').map((p) => p.textContent);
+  out.fold = det.querySelectorAll('details').map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.textContent.includes('стабильность дисперсия 1.50')]);
   await byText(tree, 'button', 'Целевой цвет').dispatch('click');
   out.dialog = ctx.document.body.querySelector('.modal').getAttribute('aria-label');
 """)
@@ -132,6 +135,8 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
     assert "31.0 % · 300 кГц · 1000 мм/с · L 41.0 · a 2.0 · b -3.0Измерено" in out["right"]                   # one line: settings, colour, stage
     assert len(out["opened"]) == 1 and "31.0 % · 300 кГц · 1000 мм/с · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
     assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность дисперсия 1.50" in out["opened"][0]
+    assert out["signals"][0] == "по эталонной карте" and out["signals"][-1] == "1 независимая гравировка"       # the signals first (REQ-001) ...
+    assert out["fold"] == [[False, "Цифры: цвет Lab, уверенность, ошибка ΔE, стабильность", True]]          # ... the figures in a closed fold
     assert out["tabs"] == 0                                                                               # the model is a single list, no tabs
 
 
@@ -205,6 +210,32 @@ def test_the_chosen_set_and_tab_are_remembered_and_a_stale_or_missing_memory_ope
     assert out["stored"]["lm.set"] == "pair-5" and out["stored"]["lm.tab"] == "variants"
     assert out["restored"] == ["пара 5"] and out["restoredTab"] == ["lm-tab-panel-variants"]
     assert out["stale"] == ["Калиброванные наблюдения"] and out["bare"] == ["Калиброванные наблюдения"] and out["bareAfter"] == ["пара 7"]
+
+
+@node
+def test_a_laser_with_many_raw_pairs_lists_twenty_sets_with_a_search_and_keeps_the_open_one_in_view(tmp_path):
+    """ux-growing-collections-p0, REQ-002 and REQ-003: the sets are a search and pages of twenty, not a button for every RAW pair, and the set
+    on the screen stays in view when the page or the search leaves it out."""
+    out = run(tmp_path, routes_for(pairs=[pair(n) for n in range(1, 46)]), {"query": QUERY}, """
+  const left = () => tree.querySelector('.lm-left');
+  const lines = (root) => root.querySelector('.lst-rows').querySelectorAll('div').filter((d) => has(d, 'lst-row'));
+  const pressed = (root) => root.querySelectorAll('button').filter((b) => has(b, 'lm-set') && b.getAttribute('aria-pressed') === 'true').map((b) => b.children[0].textContent);
+  out.first = {rows: lines(left()).length, count: left().querySelector('.lst-count').textContent, pressed: pressed(left()), head: left().querySelector('.os-col-head').textContent};
+  ctx.__store['lm.set'] = 'pair-44';
+  const again = await screen(data.arg);
+  const box = again.querySelector('.lm-left');
+  out.beyond = {rows: lines(box).length, note: box.querySelector('.lst-pin-note').textContent.trim().split('.')[0], pinned: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('пара 44')};
+  const search = box.querySelector('.lst-search');
+  search.value = 'пара 30';
+  await search.dispatch('input'); await tick();
+  out.found = {rows: lines(box).map((r) => r.querySelector('strong').textContent), count: box.querySelector('.lst-count').textContent, note: box.querySelector('.lst-pin-note').textContent.trim().split('.')[0]};
+  await lines(box)[0].querySelector('button').dispatch('click');
+  out.chosen = {pressed: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('пара 30'), stored: ctx.__store['lm.set']};
+""")
+    assert out["first"] == {"rows": 20, "count": "показано 20 из 46", "pressed": ["Калиброванные наблюдения"], "head": "Наборы46"}
+    assert out["beyond"] == {"rows": 20, "note": "Выбранная строка вне показанной части списка", "pinned": ["пара 44"], "title": True}
+    assert out["found"] == {"rows": ["пара 30"], "count": "показано 1 из 1", "note": "Выбранная строка скрыта: она не подходит под поиск или фильтры"}
+    assert out["chosen"] == {"pressed": ["пара 30"], "title": True, "stored": "pair-30"}
 
 
 @node
@@ -329,12 +360,19 @@ def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path
 
 # -- the knowledge page ----------------------------------------------------------------------------------------------------------------
 def knowledge_routes(stage="measured", questioned=False, history=None, ids=(480, 481), lens_id=2) -> dict:
+    """The entry as the server sends it with ``history_limit=0`` (its events come by the history route a page at a time) and that route."""
+    events = history if history is not None else [{"id": 1, "type": "created", "at": "2026-10-18T12:28:00", "from_stage": None, "to_stage": "measured", "reason": "first"}]
     record = {"id": 5, "device_id": 1, "lens_id": lens_id, "stage": stage, "questioned": questioned, "parameters": {**params(), "pulse_width": 4},
               "doubt": {"reason": "a doubt", "observation_ids": [3, 4]} if questioned else None,
-              "history": history if history is not None else [{"id": 1, "type": "created", "at": "2026-10-18T12:28:00", "from_stage": None, "to_stage": "measured", "reason": "first"}],
+              "history": [], "history_total": len(events),
               "summary": {"lab": [42.3, 2.1, -16.1], "independent_engravings": 2, "confidence": 0.5, "expected_delta_e": 3.25, "available": True,
                           "stability": {"assessed": False}, "rig_repeatability": {"assessed": False}, "observation_ids": list(ids), "attribution_note": "an attribution note"}}
-    return {"/api/knowledge/5": {"status": 200, "json": record}}
+    newest_first = [{**e, "observation_ids": e.get("observation_ids", [])} for e in reversed(events)]
+    kinds = {"": len(events), **{t: sum(1 for e in events if e["type"] == t) for t in {e["type"] for e in events}}}
+    page = {"items": newest_first, "total": len(events), "all": len(events), "offset": 0, "limit": 20, "counts": {"type": kinds}}
+    refs = [{"id": i, "pair_id": 100 + i, "layer_index": 0, "layer_name": None, "photo_name": f"p{i}.raw", "status": "Accepted"} for i in (*ids, 3, 4)]
+    return {"/api/knowledge/5": {"status": 200, "json": record}, "/api/knowledge/5/history": {"status": 200, "json": page},
+            "/api/observations/refs": {"status": 200, "json": refs}}
 
 
 @node
@@ -349,23 +387,46 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
   const cols = tree.querySelectorAll('section');
   out.columns = cols.map((s) => s.className);
   out.facts = tree.querySelectorAll('dt').map((d) => d.textContent);
-  out.factText = tree.querySelector('dl').textContent;
+  out.factText = tree.querySelectorAll('dl').map((d) => d.textContent).join(' ');
+  out.signals = tree.querySelectorAll('.ev-signal').map((p) => p.textContent);
+  out.fold = tree.querySelectorAll('details').filter((d) => has(d, 'ev-more')).map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.querySelectorAll('dt').length]);
   out.buttons = tree.querySelectorAll('button').map((b) => b.textContent);
   out.history = cols[1].textContent; out.evidence = cols[2].textContent;
-  out.rows = cols[1].querySelectorAll('tr').length;
+  out.rows = cols[1].querySelectorAll('div').filter((d) => has(d, 'lst-row')).length;
+  out.refs = cols[2].querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   out.note = tree.querySelectorAll('div').filter((d) => has(d, 'alert') && !has(d, 'kn-alert')).map((d) => d.textContent);
 """)
     assert out["root"].split() == ["os", "kn"] and "Знание о цвете" in out["head"] and "Валидировано" in out["head"]
     assert ["← К модели цвета", "#/colors?device=1&lens=2"] in out["links"] and ["Правила оценки", "#/setup?tab=rules&device=1&lens=2"] in out["links"]
     assert len(out["alert"]) == 1 and out["alert"][0].startswith("Под вопросом. a doubt") and any(n.startswith("an attribution note") for n in out["note"])
     assert out["columns"] == ["os-col", "os-col kn-history", "os-col kn-evidence"]
-    assert out["facts"] == ["Стадия", "Цвет", "Параметры", "Независимых гравировок", "Уверенность", "Совпали по цвету", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
+    assert out["facts"] == ["Стадия", "Параметры", "Цвет", "Независимых гравировок", "Уверенность", "Совпали по цвету", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
+    assert out["signals"] == ["по эталонной карте", "2 независимые гравировки"]            # the entry carries no agreement or sources: only what it has is said
+    assert out["fold"] == [[False, "Цифры расчёта: цвет Lab, уверенность, ожидаемая ошибка", 7]]      # Lab and the figures are one fold away, closed
     assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 кГц · 833 мм/с · импульс 4 · интервал 0.003 · проходов 1" in out["factText"]
     assert "не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте" in out["factText"]
     assert "Утвердить для производства" in out["buttons"] and "Подтвердить запись" in out["buttons"]            # the operator's decisions stay on the page
     assert out["buttons"].count("Откатить переход") == 1                                                      # only a transition can be rolled back
-    assert "История2" in out["history"] and out["rows"] == 3 and "повышено автоматически" in out["history"] and "Кандидат" in out["history"]
-    assert "Наблюдения-основания3" in out["evidence"] and "480, 481, 482" in out["evidence"]
+    assert "История2" in out["history"] and out["rows"] == 2 and "повышено автоматически" in out["history"] and "Кандидат" in out["history"]      # a line per event, the newest first
+    assert "Наблюдения-основания3" in out["evidence"] and "Номера наблюдений: 3" in out["evidence"]
+    assert out["refs"] == [["№480", "#/analysis/580"], ["№481", "#/analysis/581"], ["№482", "#/analysis/582"]]       # each number is a link to its photograph
+
+
+@node
+def test_the_knowledge_page_names_a_repeat_a_doubt_and_a_contradiction_beside_the_colour(tmp_path):
+    routes = knowledge_routes(stage="validated")
+    summary = routes["/api/knowledge/5"]["json"]["summary"]
+    summary.update(agreement={"engravings": 3, "agreeing": 2, "differing": 1, "limit": 5, "contradicted": False}, caution=None)
+    out = run(tmp_path, routes, {"id": "knowledge", "arg": 5}, """
+  out.stable = tree.querySelectorAll('.ev-signal').map((p) => p.textContent);
+""")
+    assert out["stable"] == ["проверен повтором", "по эталонной карте", "2 независимые гравировки"]
+    summary.update(agreement={"engravings": 3, "agreeing": 1, "differing": 2, "limit": 5, "contradicted": True}, caution="contradicted")
+    out = run(tmp_path, routes, {"id": "knowledge", "arg": 5}, """
+  out.doubt = tree.querySelectorAll('.ev-signal').map((p) => p.textContent);
+  out.factText = tree.querySelectorAll('dl').map((d) => d.textContent).join(' ');
+""")
+    assert out["doubt"][0] == "сомнительный: гравировки расходятся" and "цвет менялся при тех же настройках" in out["factText"]      # the cause stays in the fold
 
 
 @node

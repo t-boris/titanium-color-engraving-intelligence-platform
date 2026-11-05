@@ -7,18 +7,23 @@ const IngestUpload = (() => {
   function progressView() {
     const label = h('p', {class: 'muted small', role: 'status', 'aria-live': 'polite', hidden: true});
     const bar = h('progress', {max: '100', value: '0', hidden: true});
-    let timer = null;
+    let timer = null, figure = null;
+    // ux-save-feedback-p0 REQ-002: the live region says the stage once; the percent and the seconds change for the eyes only (aria-hidden), so a
+    // screen reader is not read a number every second
     return {el: h('div', {class: 'upload-progress'}, label, bar),
       uploading: (percent) => {
         label.hidden = bar.hidden = false;
         bar.value = percent;
-        label.textContent = `Загрузка фотографии: ${percent} %`;
+        if (!figure || figure.parentNode !== label) { figure = h('span', {'aria-hidden': 'true'}); label.replaceChildren('Загрузка фотографии: ', figure); }
+        figure.textContent = `${percent} %`;
       },
       checking: (what) => {
         label.hidden = bar.hidden = false;
         bar.removeAttribute('value');
         const start = Date.now();
-        const tick = () => { label.textContent = `${what || 'Файл сохранён. Совмещаем фотографию с LightBurn и измеряем гравировку…'} ${Math.floor((Date.now() - start) / 1000)} с`; };
+        const seconds = figure = h('span', {'aria-hidden': 'true'});
+        label.replaceChildren(`${what || 'Файл сохранён. Совмещаем фотографию с LightBurn и измеряем гравировку…'} `, seconds);
+        const tick = () => { seconds.textContent = `${Math.floor((Date.now() - start) / 1000)} с`; };
         if (timer) clearInterval(timer);
         tick(); timer = setInterval(tick, 1000);
       },
@@ -26,6 +31,11 @@ const IngestUpload = (() => {
       error: (message) => { label.hidden = false; label.textContent = message; label.className = 'alert bad'; },
     };
   }
+
+  const landing = (control) => App.landing(control);                // the person goes on to the check, or the result goes to the task panel (app.js)
+  const CHECK_READY = {title: 'Фотография загружена', message: 'Фотография загружена и проверена. Откройте проверку, посмотрите наложение и примите результат.', openLabel: 'Открыть проверку'};
+
+  const fileRead = (input, message) => () => (input.files && input.files[0] ? {ok: true, value: input.files[0]} : {ok: false, message});
 
   /** Выбор установки съёмки: по умолчанию та, что была в прошлый раз (или указанная). Эталонные значения карты берутся из неё (DEC-025). */
   function rigPicker(rigs, preferred) {
@@ -43,34 +53,37 @@ const IngestUpload = (() => {
       h('h3', {}, 'Сначала примите исходное наблюдение'),
       h('p', {}, 'Повторная фотография должна относиться к уже проверенной гравировке.'),
       link('/ingest?pair=' + source.id, 'Открыть исходную пару'));
-    const photo = h('input', {type: 'file', accept: '.raw,.nef,.nrw,.cr2,.cr3,.arw,.dng,.raf,.rw2,.orf,.pef,.srw',
-      'aria-label': 'Новая фотография RAW'});
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const f = Forms.create();
+    const photo = h('input', {type: 'file', accept: '.raw,.nef,.nrw,.cr2,.cr3,.arw,.dng,.raf,.rw2,.orf,.pef,.srw'});
     const progress = progressView();
-    const show = (message) => { err.textContent = message; err.hidden = !message; };
     const laser = [source.hardware?.device?.name, source.hardware?.lens?.name].filter(Boolean).join(' · ') || 'связка исходной пары';
     const titanium = [source.context?.titanium_name, source.context?.titanium_grade, source.context?.batch].filter(Boolean).join(' · ') || 'титан исходной пары';
     const rig = rigPicker(rigs, source.stand_id);
+    const photoField = f.add('photo', 'RAW-фото всей гравировки', App.filePick(photo, 'Выбрать RAW-фото'), {required: true, read: fileRead(photo, 'Выберите новую фотографию RAW')});
+    const rigField = rigs.length ? f.add('rig', 'Установка съёмки (стенд)', rig, {}) : null;
     const send = btn('Добавить фотографию и проверить', async (ev) => {
-      show('');
-      if (!photo.files[0]) return show('Выберите новую фотографию RAW');
+      const v = f.collect();
+      if (!v) return;
       const fd = new FormData();
-      fd.append('photo', photo.files[0]);
+      fd.append('photo', v.photo);
       if (rig.value) fd.append('stand_id', rig.value);
       const self = ev.currentTarget;
+      const end = landing(self);
       self.disabled = true;
       try {
         progress.uploading(0);
         const pair = await formProgress(`/pairs/${source.id}/rephotos`, fd, progress.uploading);
         progress.checking();
+        let ready = false;
         try {
           const checked = await post(`/pairs/${pair.id}/check`, {});
-          toast(checked.status === 'Ready to accept' ? 'Фотография загружена и проверена; посмотрите наложение.'
-            : 'Фотография загружена. Для совмещения нужна проверка углов на снимке.', checked.status === 'Ready to accept' ? 'ok' : 'warn');
-        } catch (e) { toast(`Фото сохранено; проверка не завершилась: ${e.message}`, 'warn'); }
+          ready = checked.status === 'Ready to accept';
+          if (end.stillHere()) toast(ready ? 'Фотография загружена и проверена; посмотрите наложение.'
+            : 'Фотография загружена. Для совмещения нужна проверка углов на снимке.', ready ? 'ok' : 'warn');
+        } catch (e) { if (end.stillHere()) toast(`Фото сохранено; проверка не завершилась: ${e.message}`, 'warn'); }
         progress.stop();
-        go('/ingest?pair=' + pair.id, {preserveScroll: true});
-      } catch (e) { progress.stop(); progress.error(e.message); show(e.message); self.disabled = false; }
+        end.go('/ingest?pair=' + pair.id, ready ? CHECK_READY : {...CHECK_READY, message: 'Фотография загружена, но проверка не готова: откройте её, чтобы довести до принятия.'});
+      } catch (e) { progress.stop(); f.fail(e); self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'stack'},
       h('div', {class: 'card stack'}, h('h3', {}, 'Новая фотография той же гравировки'),
@@ -80,19 +93,19 @@ const IngestUpload = (() => {
           : link('/plans/' + source.plan_id, source.plan_mode === 'Restored from file' ? 'Открыть план, восстановленный из файла' : 'Открыть экспериментальную плату')) : null,
         h('p', {}, 'LightBurn, настройки слоёв, лазер, линза и титан будут взяты из исходной пары. Новое фото не считается отдельной гравировкой.')),
       h('div', {class: 'card stack'}, h('h3', {}, 'Только новая фотография'),
-        field('RAW-фото всей гравировки', App.filePick(photo, 'Выбрать RAW-фото')),
-        rigs.length ? field('Установка съёмки (стенд)', rig) : null, rigs.length ? rigHint() : null,
+        photoField, rigField, rigs.length ? rigHint() : null,
         h('p', {class: 'muted small'}, 'После загрузки приложение проверит совмещение с тем же LightBurn-файлом. Перед принятием измерений вы увидите контуры на фото.'),
-        err, progress.el, h('div', {class: 'row'}, send)));
+        f.error, progress.el, h('div', {class: 'row'}, send)));
   }
 
   // a parameter matrix (LightBurn Material Test): the photograph is the whole input; the settings are read from it
-  async function sendMatrix(pick, mat, rig, context, photo, progress, show, self) {
-    if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
-    if (!mat.value) return show('Выберите использованный титан');
+  async function sendMatrix(pick, rig, context, f, progress, self) {
+    const v = f.collect();
+    if (!v) return;
+    const end = landing(self);
     const fd = new FormData();
     fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('stand_id', rig.value);
-    fd.append('context', JSON.stringify(context())); fd.append('photo', photo.files[0]);
+    fd.append('context', JSON.stringify(context(v))); fd.append('photo', v.photo);
     self.disabled = true;
     try {
       progress.uploading(0);
@@ -103,12 +116,12 @@ const IngestUpload = (() => {
       progress.checking('Матрица найдена. Корректируем цвет по карте и измеряем каждую ячейку…');
       try { await post(`/pairs/${pair.id}/check`, {}); } catch (e) { toast(`Проверка не завершилась: ${e.message}`, 'warn'); }
       progress.stop();
-      toast('Матрица распознана. Проверьте прочитанные параметры и подтвердите их.', 'ok');
-      go('/ingest?pair=' + pair.id, {preserveScroll: true});
-    } catch (e) { progress.stop(); progress.error(I18N.tr(e.message)); show(I18N.tr(e.message)); self.disabled = false; }
+      if (end.stillHere()) toast('Матрица распознана. Проверьте прочитанные параметры и подтвердите их.', 'ok');
+      end.go('/ingest?pair=' + pair.id, {title: 'Матрица распознана', message: 'Матрица распознана. Откройте проверку, посмотрите прочитанные параметры и подтвердите их.', openLabel: 'Открыть проверку'});
+    } catch (e) { progress.stop(); f.fail(e); self.disabled = false; }
   }
 
-  async function render(ctx, lists, materials, rigs) {
+  async function render(ctx, lists, rigs) {
     const matrixMode = ctx.query.kind === 'matrix';
     const kinds = h('div', {class: 'row'}, h('span', {class: 'muted small'}, 'Что добавляем:'),
       matrixMode ? link('/ingest?kind=file', 'Работа с файлом LightBurn') : h('strong', {}, 'Работа с файлом LightBurn'), ' · ',
@@ -118,73 +131,89 @@ const IngestUpload = (() => {
     if (ctx.query.plan) { try { planned = await get('/plans/' + ctx.query.plan); } catch (_) { planned = null; } }
     const pick = App.laserLensPicker(lists, {device: planned ? planned.device_id : ctx.query.device,
       lens: planned ? App.lensParam(planned.lens_id) : ctx.query.lens, defaultLens: 'unknown'});
-    const lb = h('input', {type: 'file', accept: '.lbrn,.lbrn2', 'aria-label': 'Файл LightBurn'});
-    const photo = h('input', {type: 'file', accept: '.raw,.nef,.nrw,.cr2,.cr3,.arw,.dng,.raf,.rw2,.orf,.pef,.srw', 'aria-label': 'Фотография RAW'});
-    const materialLabel = (m) => [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} мм` : null, m.batch].filter(Boolean).join(' · ');
-    const mat = h('select', {'aria-label': 'Использованный титан'}, [h('option', {value: ''}, 'выберите титан')].concat(materials.map((m) => h('option', {value: m.id}, materialLabel(m)))));
-    if (ctx.query.material) mat.value = ctx.query.material;
+    const f = Forms.create();
+    const lb = h('input', {type: 'file', accept: '.lbrn,.lbrn2'});
+    const photo = h('input', {type: 'file', accept: '.raw,.nef,.nrw,.cr2,.cr3,.arw,.dng,.raf,.rw2,.orf,.pef,.srw'});
+    // the titanium that was used: one concrete record, found by a search among the records used last and not in a list of all; none is chosen
+    // unless the address names one (ux-growing-collections-p0, REQ-001)
+    const mat = MaterialPicker.create({value: ctx.query.material, allowEmpty: true, clearLabel: 'Снять выбор', empty: 'выберите титан', name: 'Использованный титан / лист / партия'});
     const rig = rigPicker(rigs);
     // REQ-020: задача всей работы; по умолчанию каждый слой берёт задачу своего плана или своего режима LightBurn,
     // а на проверке пары её можно изменить для каждого слоя
     const task = Tasks.select('', {empty: planned ? 'по плану и слоям LightBurn' : 'по слою LightBurn', aria: 'Задача работы'});
-    const c = {focus: h('input', {type: 'number', step: 'any', placeholder: 'необязательно'}),
+    const c = {focus: Forms.numberInput(Forms.QUANTITIES.focus, {placeholder: 'необязательно'}),
       date: h('input', {type: 'date'}), note: h('input', {placeholder: 'необязательно'})};
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const progress = progressView();
-    const context = () => ({material_id: mat.value ? +mat.value : null, focus: c.focus.value, engraved_at: c.date.value, note: c.note.value});
-    const show = (m) => { err.textContent = m; err.hidden = !m; };
+    // the fields of the conditions, read once by the form: an empty optional box is nothing, not an empty text
+    const lbField = matrixMode ? null : f.add('lb', 'Файл .lbrn или .lbrn2', App.filePick(lb, 'Выбрать файл LightBurn'), {required: true,
+      help: 'параметры читаются из фактически запущенного файла',
+      read: () => (!lb.files[0] ? {ok: false, message: 'Выберите файл .lbrn или .lbrn2'}
+        : /\.lbrn2?$/i.test(lb.files[0].name) ? {ok: true, value: lb.files[0]} : {ok: false, message: 'Нужен файл .lbrn или .lbrn2'})});
+    const photoField = f.add('photo', 'Фотография RAW', App.filePick(photo, 'Выбрать фотографию'), {required: true,
+      help: matrixMode ? 'в кадре вся сетка с подписями и эталонная цветовая карта' : 'в кадре должна быть эталонная цветовая карта',
+      read: fileRead(photo, 'Для измерения требуется фотография RAW')});
+    const laserField = f.add('laser', 'Лазер', pick.laser, {required: true,
+      read: () => (pick.deviceId() ? {ok: true, value: pick.deviceId()} : {ok: false, message: 'Выберите лазер, на котором гравировали'})});
+    const lensField = f.add('lens', 'Линза, которой гравировали', pick.lens, {read: () => ({ok: true, value: pick.lensValue()})});
+    const matField = f.add('material', 'Использованный титан / лист / партия', mat, {required: true,
+      read: () => (mat.value ? {ok: true, value: +mat.value} : {ok: false, message: 'Выберите использованный титан'})});
+    const rigField = f.add('rig', 'Установка съёмки (стенд)', rig, {});
+    const taskField = matrixMode ? null : f.add('task', 'Задача гравировки', task, {help: 'для чего делалась работа: надписи, линии, заливка, изображение…; результаты разных задач не смешиваются'});
+    const focusField = f.add('focus', 'Фокус', c.focus, {quantity: 'focus'});
+    const dateField = f.add('date', 'Дата гравировки', c.date, {});
+    const noteField = f.add('note', 'Примечание', c.note, {});
+    const context = (v) => ({material_id: v.material, focus: v.focus, engraved_at: v.date, note: v.note});
 
     const same = btn('Как у предыдущей платы', async () => {
       try {
         const prev = await get(`/devices/${pick.deviceId()}/previous-context`);
         if (!Object.keys(prev).length) { toast('Для этого лазера ещё нет принятых экспериментов', 'warn'); return; }
         mat.value = prev.material_id ?? ''; c.focus.value = prev.focus ?? ''; c.date.value = prev.engraved_at ?? ''; c.note.value = prev.note ?? '';
+        f.clear();                                                    // the old complaints are about boxes that now hold other values
         pick.setLens(prev.lens_id);
         toast('Подставлены линза и титан предыдущего эксперимента этого лазера', 'ok');
       } catch (e) { fail(e); }
     });
     const send = btn('Загрузить пару', async (ev) => {
-      show('');
-      if (!lb.files[0]) return show('Выберите файл .lbrn или .lbrn2');
-      if (!/\.lbrn2?$/i.test(lb.files[0].name)) return show('Выберите файл .lbrn или .lbrn2');
-      if (!photo.files[0]) return show('Для измерения требуется фотография RAW');
+      const v = f.collect();
+      if (!v) return;                                                 // each wrong box says why, beside itself, and keeps what was typed
       const fd = new FormData();
-      if (!mat.value) return show('Выберите использованный титан');
-      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('context', JSON.stringify(context()));
+      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('context', JSON.stringify(context(v)));
       fd.append('stand_id', rig.value);
       if (ctx.query.plan) fd.append('plan_id', ctx.query.plan);
-      if (task.value) fd.append('task', task.value);
-      fd.append('lightburn', lb.files[0]); fd.append('photo', photo.files[0]);
+      if (v.task) fd.append('task', v.task);
+      fd.append('lightburn', v.lb); fd.append('photo', v.photo);
       const self = ev.currentTarget;
+      const end = landing(self);
       self.disabled = true;
       try {
         progress.uploading(0);
         const p = await formProgress('/pairs', fd, progress.uploading);
-        progress.stop(); toast('Файлы загружены. Теперь выполните проверку', 'ok');
-        go('/ingest?pair=' + p.id, {preserveScroll: true});
-      } catch (e) { progress.stop(); progress.error(e.message); show(e.message); }
+        progress.stop();
+        if (end.stillHere()) toast('Файлы загружены. Теперь выполните проверку', 'ok');
+        end.go('/ingest?pair=' + p.id, {title: 'Пара загружена', message: 'Файл LightBurn и фотография загружены. Откройте проверку: совместите фотографию с файлом и примите результат.', openLabel: 'Открыть проверку'});
+      } catch (e) { progress.stop(); f.fail(e); }
       finally { self.disabled = false; }
     }, 'primary');
 
-    const hardware = () => [h('div', {class: 'grid g3'}, field('Лазер (обязательно)', pick.laser), field('Линза, которой гравировали', pick.lens),
-        field('Использованный титан / лист / партия (обязательно)', mat)),
-      h('div', {class: 'grid g3'}, field('Установка съёмки (стенд)', rig)), rigHint(),
+    const hardware = () => [h('div', {class: 'grid g3'}, laserField, lensField, matField),
+      h('div', {class: 'grid g3'}, rigField), rigHint(),
       h('p', {class: 'muted small'}, planned ? 'Линза взята из платы или плана, для которых сделана эта работа.'
         : 'Линза импортированной работы остаётся неизвестной, пока вы её не выберете: установленная сейчас линза не подставляется. Данные с неизвестной линзой не смешиваются с данными известной.'),
       h('p', {class: 'small'}, 'Не нашли лазер или титан? ', link('/devices', 'Лазеры и линзы'), ' · ', link('/setup?tab=material', 'Добавить титан'))];
     const conditions = h('div', {class: 'card stack'}, h('h3', {}, 'Условия'), hardware(),
       h('details', {}, h('summary', {}, 'Дополнительные условия'),
-        h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same));
+        h('div', {class: 'grid g3'}, focusField, dateField, noteField), same));
     if (matrixMode) {
-      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; show(''); sendMatrix(pick, mat, rig, context, photo, progress, show, self); }, 'primary');
+      const sendM = btn('Загрузить фото матрицы', (ev) => { const self = ev.currentTarget; sendMatrix(pick, rig, context, f, progress, self); }, 'primary');
       return h('div', {class: 'stack'}, kinds,
         h('div', {class: 'card empty'}, h('h3', {}, 'Фотография матрицы параметров'),
           h('p', {}, 'Сетка квадратов, где каждый квадрат выгравирован своими настройками, а значения выгравированы рядом: по одной оси одна настройка, по другой другая, '
             + 'постоянные настройки написаны над сеткой (как печатает LightBurn Material Test). Файл LightBurn не нужен: настройки прочитаются с фотографии, '
             + 'а вы проверите и подтвердите их перед принятием.'),
           h('p', {class: 'muted small'}, 'В кадре: вся сетка с подписями и эталонная цветовая карта; снимайте прямо сверху. Если на снимке несколько матриц, каждая станет своим экспериментом.')),
-        h('div', {class: 'card stack'}, h('h3', {}, 'Фотография'), field('Фотография RAW', App.filePick(photo, 'Выбрать фотографию'))),
-        conditions, err, progress.el, h('div', {class: 'row'}, sendM));
+        h('div', {class: 'card stack'}, h('h3', {}, 'Фотография'), photoField),
+        conditions, f.error, progress.el, h('div', {class: 'row'}, sendM));
     }
     // a photograph opened from a work is linked to it; a file that names another work is linked to that one and the check says so
     const work = planned && planned.mode === 'Vector job' ? h('div', {class: 'alert ok'}, 'Фото для работы ', link('/vector?plan=' + planned.id, `«${planned.name}»`),
@@ -196,14 +225,14 @@ const IngestUpload = (() => {
       h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте файл LightBurn и фотографию результата'),
         h('p', {}, 'Параметры наблюдения будут прочитаны из фактически использованного файла. Измерения появятся только после проверки и принятия.')),
       h('div', {class: 'grid g2'},
-        h('div', {class: 'card stack'}, h('h3', {}, 'Файл LightBurn'), field('.lbrn или .lbrn2 · параметры читаются из фактически запущенного файла', App.filePick(lb, 'Выбрать файл LightBurn'))),
-        h('div', {class: 'card stack'}, h('h3', {}, 'Фотография результата'), field('Фотография RAW; в кадре должна быть эталонная цветовая карта', App.filePick(photo, 'Выбрать фотографию')))),
+        h('div', {class: 'card stack'}, h('h3', {}, 'Файл LightBurn'), lbField),
+        h('div', {class: 'card stack'}, h('h3', {}, 'Фотография результата'), photoField)),
       h('div', {class: 'card stack'}, h('h3', {}, 'Условия'), hardware(),
-        h('div', {class: 'grid g3'}, field('Задача гравировки', task, 'для чего делалась работа: надписи, линии, заливка, изображение…; результаты разных задач не смешиваются')),
+        h('div', {class: 'grid g3'}, taskField),
         h('p', {class: 'muted small'}, 'Лазер, линза и титан сохраняются у каждого эксперимента. Фокус, дата и примечание необязательны.'),
         h('details', {}, h('summary', {}, 'Дополнительные условия'),
-          h('div', {class: 'grid g3'}, field('Фокус', c.focus), field('Дата гравировки', c.date), field('Примечание', c.note)), same)),
-      err, progress.el, h('div', {class: 'row'}, send));
+          h('div', {class: 'grid g3'}, focusField, dateField, noteField), same)),
+      f.error, progress.el, h('div', {class: 'row'}, send));
   }
   return {render, rephoto};
 })();

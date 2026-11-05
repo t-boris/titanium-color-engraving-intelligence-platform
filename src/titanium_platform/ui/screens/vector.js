@@ -26,52 +26,84 @@
   const material = (m) => [m.name, m.grade, m.batch && `партия ${m.batch}`].filter(Boolean).join(' · ');
   const svgSrc = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
-  function startForm(lists, materials, ctx) {
+  function startForm(lists, ctx) {
     const pick = App.laserLensPicker(lists, {device: ctx.query.device, lens: ctx.query.lens, onChange: () => { loadPalette(); loadRules(); }});
-    const stock = h('select', {'aria-label': 'Титан'}, materials.map((m) => h('option', {value: m.id}, material(m))));
+    const f = Forms.create();
+    const Q = Forms.QUANTITIES;
+    // the titanium is one concrete record chosen by a search among the records used last, never from a list of all (ux-growing-collections-p0, REQ-001);
+    // it starts with the workshop's last choice (ux-work-creation-p0) and else with the record used last
+    const stock = MaterialPicker.create({value: ctx.start && ctx.start.material != null ? ctx.start.material : undefined, initial: 'recent', name: 'Титан',
+      onChange: () => loadPalette()});
     // feature electron, REQ-085: a photograph work may take its colours from a connected laboratory release instead of the own measurements;
     // the own measurements are the default, a laboratory is never chosen for the operator
     const source = LabSource.picker('vector', {onChange: () => loadPalette()});
-    const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
-    const name = h('input', {placeholder: 'Название работы'}), width = h('input', {type: 'number', step: 'any', min: '0', value: 60});
-    const strategy = h('select', {'aria-label': 'Стратегия'}, STRATEGIES.map(([id, label]) => h('option', {value: id}, label)));
-    const colours = h('input', {type: 'number', step: '1', min: '2', max: '29', value: 12});
-    const detail = h('select', {'aria-label': 'Детальность'}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l)));
+    const img = h('input', {type: 'file', accept: 'image/*'});
+    const name = h('input', {placeholder: 'Название работы'}), width = Forms.numberInput(Q.workWidth, {value: 60});
+    const strategy = h('select', {}, STRATEGIES.map(([id, label]) => h('option', {value: id}, label)));
+    const colours = Forms.numberInput(Q.photoColours, {value: 12});
+    const detail = h('select', {}, DETAIL.map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l)));
     const algorithm = VectorSplit.picker('slic');
     algorithm.hint.setAttribute('style', 'grid-column:1 / -1');
     const faces = h('input', {type: 'checkbox', checked: true});
-    const maxTime = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'});
+    const maxTime = Forms.numberInput(Q.maxTime, {placeholder: 'без предела'});
     const asShot = h('input', {type: 'checkbox'});
-    const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'});
+    const thr = Forms.numberInput(Q.deltaE, {placeholder: 'из правил'});
     // the delta E tolerance is never invented (conversion._threshold): the form shows at once whether the rules of the laser and lens hold one,
     // and a tolerance typed while they hold none is saved to them, once («Запомнить», on by default)
     const thrHint = h('span', {class: 'small muted'});
     const remember = h('input', {type: 'checkbox', checked: true});
     const rememberRow = h('label', {class: 'row small', hidden: true}, remember, h('span', {}, 'Запомнить для этого лазера с линзой'));
     let savedTolerance;                                   // in the rules: a number, null when none is saved, undefined while not known
-    const grey = h('input', {type: 'number', step: '1', min: '0', max: '255', placeholder: 'авто (Оцу)'});
-    const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: 0.08});
+    const grey = Forms.numberInput(Q.greyThreshold, {placeholder: 'авто (Оцу)'});
+    const tolerance = Forms.numberInput(Q.vectorTolerance, {value: 0.08});
     const markers = h('input', {type: 'checkbox'}), clean = h('input', {type: 'checkbox', checked: true});
     // REQ-020: главная задача работы следует из стратегии, пока оператор не выбрал другую; у каждой области — своя задача
     const STRATEGY_TASK = {photo: 'color_image', fill: 'fill', text: 'text', line: 'line'};
     const task = Tasks.chooser(STRATEGY_TASK[strategy.value], {hint: 'главная задача работы; задачу каждой области можно изменить после обводки'});
     const info = h('div', {});
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
-    const show = (m) => { err.textContent = m; err.hidden = !m; };
+    // the fields of the form: each says what it is, whether it is required, its unit and its permitted values (from the server's own rules), and a wrong one
+    // says why beside itself; the form keeps everything typed (ux-save-feedback-p0, REQ-003)
+    const phoPhoto = () => strategy.value === 'photo';
+    // a field of the group that is not shown (the photograph's or the tracing's) is not read: it cannot be wrong where it cannot be seen
+    const onlyPhoto = (read) => () => (phoPhoto() ? read() : {ok: true, value: null});
+    const onlyTrace = (read) => () => (phoPhoto() ? {ok: true, value: null} : read());
+    const laserField = f.add('laser', 'Лазер', pick.laser, {required: true,
+      read: () => (pick.deviceId() ? {ok: true, value: pick.deviceId()} : {ok: false, message: 'Выберите лазер'})});
+    const lensField = f.add('lens', 'Линза', pick.lens, {help: 'цвета и рецепты — измерения этого лазера с этой линзой', read: () => ({ok: true, value: pick.lensValue()})});
+    const imageField = f.add('image', 'Изображение', App.filePick(img, 'Выбрать изображение'), {required: true,
+      read: () => (img.files[0] ? {ok: true, value: img.files[0]} : {ok: false, message: 'Добавьте изображение для векторной работы'})});
+    const nameField = f.add('name', 'Название работы', name, {required: true});               // conversion: «give the plan a name»
+    const widthField = f.add('width', 'Ширина работы', width, {quantity: 'workWidth', required: true});
+    const strategyField = f.add('strategy', 'Стратегия', strategy, {required: true, help: 'фото — цветные области по картинке; заливка, текст и линии — по тёмному силуэту'});
+    const stockHint = h('span', {class: 'small muted'});      // «Фото» takes every plate of this grade (palette.vector_palette), the others this plate only
+    const stockField = f.add('material', 'Титан', stock, {required: true, help: stockHint,
+      read: () => (stock.value ? {ok: true, value: stock.value} : {ok: false, message: 'Выберите титан'})});
+    // the tolerance is required only while the rules of the laser and lens hold none (conversion._threshold)
+    const thrField = f.add('threshold', 'Допуск ΔE', thr, {quantity: 'deltaE', help: thrHint,
+      read: () => (thr.value === '' ? (savedTolerance === null ? {ok: false, message: 'Задайте допуск ΔE: для этого лазера с линзой он не сохранён'} : {ok: true, value: null})
+        : Forms.readNumber(thr, Q.deltaE, {}))});
+    const tolLabelText = () => (phoPhoto() ? 'Сглаживание границ' : 'Точность контура');
+    const toleranceField = f.add('tolerance', tolLabelText(), tolerance, {quantity: 'vectorTolerance', required: true});
+    const coloursField = f.add('colours', 'Число цветов', colours, {required: true, constraint: '', help: '2–29, с маркерами 2–28: чистка — первый слой',
+      read: onlyPhoto(() => Forms.readNumber(colours, {...Q.photoColours, max: markers.checked ? 28 : 29}, {required: true}))});
+    const detailField = f.add('detail', 'Детальность', detail, {required: true, help: 'крупно — спокойные большие области, детально — мелкие',
+      read: onlyPhoto(() => ({ok: true, value: detail.value}))});
+    const algorithmField = f.add('algorithm', 'Алгоритм разбиения', algorithm.select, {required: true, read: onlyPhoto(() => ({ok: true, value: algorithm.select.value}))});
+    const maxTimeField = f.add('max_time', 'Наибольшее время гравировки', maxTime, {quantity: 'maxTime', help: 'пусто — без предела; медленные цвета автоматика не берёт',
+      read: onlyPhoto(() => Forms.readNumber(maxTime, Q.maxTime, {}))});
+    const greyField = f.add('grey', 'Порог серого', grey, {quantity: 'greyThreshold', help: 'пусто — автоматически', read: onlyTrace(() => Forms.readNumber(grey, Q.greyThreshold, {}))});
     // поля фотографии и поля обводки показываются по стратегии; чистка у фотографии всегда первая (DEC-073)
-    const photoFields = h('div', {class: 'grid g2'}, field('Алгоритм разбиения', algorithm.select), field('Число цветов', colours, '2–29, с маркерами 2–28: чистка — первый слой'),
-      algorithm.hint, field('Детальность', detail, 'крупно — спокойные большие области, детально — мелкие'),
-      field('Наибольшее время гравировки, с/см²', maxTime, 'пусто — без предела; медленные цвета автоматика не берёт'),
+    const photoFields = h('div', {class: 'grid g2'}, algorithmField, coloursField,
+      algorithm.hint, detailField,
+      maxTimeField,
       h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица: глаза и губы делятся подробнее')),
       h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона и без чистого титана)')));
-    const traceFields = h('div', {class: 'grid g2'}, field('Порог серого', grey, 'пусто — автоматически'),
+    const traceFields = h('div', {class: 'grid g2'}, greyField,
       h('label', {class: 'row'}, clean, h('span', {}, 'Чистка первым слоем (C00)')));
-    const tolLabel = h('span', {});
-    const stockHint = h('span', {class: 'small muted'});      // «Фото» takes every plate of this grade (palette.vector_palette), the others this plate only
-    const photo = () => strategy.value === 'photo';
+    const photo = phoPhoto;
     const switchFields = () => {
       photoFields.hidden = !photo(); traceFields.hidden = photo(); source.el.hidden = !photo();
-      tolLabel.textContent = photo() ? 'Сглаживание границ, мм' : 'Точность контура, мм';
+      toleranceField.firstChild.textContent = tolLabelText();
       stockHint.textContent = photo() ? 'цвета — измерения титана этой марки с любой его пластины'
         : 'рецепты — только измеренные на этой заготовке';
       tolerance.value = photo() ? 0.08 : 0.05;
@@ -108,8 +140,6 @@
         : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана нет валидированных или производственных рецептов: все области окажутся без данных. ',
           link(`/designer?${pick.route()}`, 'Планировщик экспериментов')));
     }
-    stock.addEventListener('change', loadPalette);
-
     async function loadRules() {
       const asked = pick.query();
       let rules = null;
@@ -132,72 +162,61 @@
     thr.addEventListener('input', showTolerance);
 
     const submit = btn('Создать работу', async (ev) => {
-      show('');
-      if (!img.files[0]) return show('Добавьте изображение для векторной работы');
-      if (thr.value === '' && savedTolerance === null) {
-        thr.focus();
-        return show('Задайте допуск ΔE: для этого лазера с линзой он не сохранён');
-      }
+      const v = f.collect();
+      if (!v) return;                                                // every wrong box says why beside itself; the dialog of the work keeps all that was typed
+      if (!task.check()) return f.fail(new Error('Цели задачи заполнены неверно: исправьте отмеченные поля'));
       const fd = new FormData();
-      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('material_id', stock.value); fd.append('name', name.value);
-      fd.append('width_mm', width.value); fd.append('strategy', strategy.value); fd.append('tolerance_mm', tolerance.value);
-      fd.append('markers', markers.checked); fd.append('image', img.files[0]);
-      if (thr.value !== '') fd.append('threshold', thr.value);
+      fd.append('device_id', v.laser); fd.append('lens_id', v.lens); fd.append('material_id', v.material); fd.append('name', v.name);
+      fd.append('width_mm', v.width); fd.append('strategy', v.strategy); fd.append('tolerance_mm', v.tolerance);
+      fd.append('markers', markers.checked); fd.append('image', v.image);
+      if (v.threshold != null) fd.append('threshold', v.threshold);
       task.append(fd);
       if (photo()) {
-        fd.append('n_colors', colours.value); fd.append('algorithm', algorithm.select.value); fd.append('detail', detail.value); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
-        if (maxTime.value !== '') fd.append('max_time', maxTime.value);
+        fd.append('n_colors', v.colours); fd.append('algorithm', v.algorithm); fd.append('detail', v.detail); fd.append('faces', faces.checked); fd.append('include_as_shot', asShot.checked);
+        if (v.max_time != null) fd.append('max_time', v.max_time);
         if (source.value()) fd.append('source', JSON.stringify(source.value()));
       } else {
         fd.append('clean', clean.checked);
-        if (grey.value !== '') fd.append('grey_threshold', grey.value);
+        if (v.grey != null) fd.append('grey_threshold', v.grey);
       }
       const self = ev.currentTarget;
+      const end = App.landing(self);
       self.disabled = true;
-      if (thr.value !== '' && savedTolerance === null && remember.checked) {
+      if (v.threshold != null && savedTolerance === null && remember.checked) {
         try {
-          await put('/rules', {device_id: pick.deviceId(), lens_id: pick.lensId(), delta_tolerance: +thr.value});
-          savedTolerance = +thr.value;
+          await put('/rules', {device_id: pick.deviceId(), lens_id: pick.lensId(), delta_tolerance: v.threshold});
+          savedTolerance = v.threshold;
           showTolerance();
-        } catch (e) { self.disabled = false; return show(e.message); }
+        } catch (e) { self.disabled = false; return f.fail(e); }
       }
-      try { const j = await form('/vector', fd); toast('Векторная работа создана', 'ok'); go('/vector?plan=' + j.id); } catch (e) { show(e.message); self.disabled = false; }
+      try {
+        const j = await form('/vector', fd);
+        App.rememberContext({device: pick.deviceId(), lens: pick.lensId(), material: stock.value, source: photo() ? source.value() : undefined});
+        if (end.stillHere()) toast('Векторная работа создана', 'ok');
+        end.go('/vector?plan=' + j.id, {title: 'Векторная работа создана', message: `Работа «${v.name}» создана. Откройте её: проверьте области и выгрузите файл LightBurn.`, openLabel: 'Открыть работу', goOptions: {}});
+      } catch (e) { f.fail(e); self.disabled = false; }
     }, 'primary');
     switchFields();
     loadRules();
+    // ux-work-creation-p0, REQ-001: the shared choice is changed from here by the dialog of the creation screen (it shows what the change makes
+    // unavailable before «Применить»); the source of measurements stays this form's own picker, so the dialog leaves it out
+    const shared = ctx.start && ctx.start.context ? WorkContext.strip(ctx.start.context, {heading: 'Общий выбор мастерской', source: false, onChange: (c) => {
+      pick.setDevice(c.device_id, c.lens_id == null ? 'unknown' : c.lens_id);
+      if (c.material_id != null) stock.value = String(c.material_id);
+      loadPalette(); loadRules();
+    }}) : null;
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Новая векторная работа'), h('p', {class: 'sub'}, 'Фотография делится на цветные области и раскрашивается измеренными цветами титана; заливка, текст и линии обводятся по силуэту. Результат — обычный файл LightBurn.')), h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы')),
+      shared ? shared.el : null,
       h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
-        field('Лазер', pick.laser), field('Линза', pick.lens, 'цвета и рецепты — измерения этого лазера с этой линзой'),
-        h('label', {class: 'f'}, h('span', {}, 'Титан'), stock, stockHint), source.el, field('Изображение', App.filePick(img, 'Выбрать изображение')),
-        field('Название работы', name), field('Ширина работы, мм', width),
-        field('Стратегия', strategy, 'фото — цветные области по картинке; заливка, текст и линии — по тёмному силуэту'),
-        h('div', {class: 'f'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), thr, thrHint), rememberRow),
-        h('label', {class: 'f'}, tolLabel, tolerance)),
+        laserField, lensField, stockField, source.el, imageField,
+        nameField, widthField, strategyField,
+        h('div', {class: 'f'}, thrField, rememberRow),
+        toleranceField),
         photoFields, traceFields, task.el,
         h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')),
-        info, err, submit));
+        info, f.error, submit));
   }
-
-  /** Файл с сервера сохраняется на компьютер; ошибка сервера показывается переведённой, без перехода на адрес API. */
-  async function download(path, fallbackName) {
-    let res;
-    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Нет связи с локальным сервисом. Запущено ли приложение?'); }
-    if (!res.ok) {
-      let raw = null;
-      try { const d = await res.json(); raw = (d.detail || d).error; } catch (_) { raw = null; }
-      throw new Error(raw ? I18N.tr(raw) : `Ошибка сервера (${res.status}). Файл не получен.`);
-    }
-    const name = decodeURIComponent((res.headers.get('content-disposition') || '').split("UTF-8''")[1] || fallbackName);
-    const url = URL.createObjectURL(await res.blob());
-    const a = h('a', {href: url, download: name});
-    document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  }
-  const saveButton = (path, label, name) => btn(label, async (ev) => {
-    const self = ev.currentTarget;
-    self.disabled = true;
-    try { await download(path, name); } catch (e) { fail(e); } finally { self.disabled = false; }
-  });
 
   function settingsDialog(j, group, run) {
     const byId = Object.fromEntries(j.palette.map((e) => [e.id, e]));
@@ -230,8 +249,17 @@
     const selected = new Set();
     const size = j.document.size_mm;
     const exp = j.experiment || {};
-    const tolerance = h('input', {type: 'number', step: 'any', min: '0', value: j.document.tolerance_mm, 'aria-label': 'Точность контура, мм'});
-    const thr = h('input', {type: 'number', step: 'any', min: '0', value: j.threshold, 'aria-label': 'Порог ΔE'});
+    // the tolerance of the outline and the ΔE threshold are two forms of one box each: a wrong number is refused here with its reason beside the box and stays
+    // in it; a refusal of the server stands under the box too (ux-save-feedback-p0, REQ-003)
+    const toleranceForm = Forms.create(), thresholdForm = Forms.create();
+    const tolerance = toleranceForm.add('tolerance', 'Точность контура', Forms.numberInput(Forms.QUANTITIES.vectorTolerance, {value: j.document.tolerance_mm}),
+      {quantity: 'vectorTolerance', required: true});
+    const thr = thresholdForm.add('threshold', 'Порог ΔE', Forms.numberInput(Forms.QUANTITIES.deltaE, {value: j.threshold}), {quantity: 'deltaE', required: true});
+    const apply = (form, box, op) => async () => {
+      const v = form.collect();
+      if (!v) return;
+      try { await post(`/vector/${id}/edit`, op(v)); reload(); } catch (e) { box.setError((e && e.message) || String(e)); }      // the server's words stand under the box
+    };
 
     // the regions as a short list (DEC-090): a line each — the box for a merge, its colour, status, task, size, group and recipe; the
     // actions on the line; the task, the group and the recipe and prediction under it on a click; pages of 30, so editing stays on a page
@@ -274,11 +302,24 @@
       g.choice_unavailable ? pill('выбранный рецепт больше не подходит', 'warn') : '', `${g.regions.length}`, `${g.candidates.length}`,
       btn('Выбрать настройки', () => settingsDialog(j, g, run), '', !g.kind)]);
 
-    const exportBtn = btn('Экспортировать в LightBurn', async (ev) => {
-      const self = ev.currentTarget;
-      self.disabled = true;
-      try { await download(`/vector/${id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл подготовлен, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); reload(); } catch (e) { fail(e); self.disabled = false; }
-    }, 'primary', !!j.export_blocked);
+    /** The chain's action for a file: the export card is further down this page, so bring it to the eye and put the cursor on its action. */
+    const toFile = () => {
+      const card = document.getElementById('vw-job-export');
+      if (!card) return;
+      if (card.scrollIntoView) card.scrollIntoView({block: 'start'});
+      const action = [...card.querySelectorAll('button')].find((b) => b.textContent === 'Скачать LightBurn');
+      if (action && !action.disabled) action.focus();
+    };
+
+    /** A blocker names a region: open it in the list of regions, scrolled into view and focused, so that the fix is one step away. */
+    const openTarget = async (b) => {
+      if (!b.target || b.target.kind !== 'region') return;
+      await regions.open(b.target.id);
+      const row = [...regions.el.querySelectorAll('.lst-row')].find((r) => r.getAttribute('data-key') === b.target.id);
+      if (row && row.scrollIntoView) row.scrollIntoView({block: 'center'});
+      const main = row && row.querySelector('.lst-main');
+      if (main && main.focus) main.focus();
+    };
 
     // the history of edits as a short list: the newest first, a version a line, «Вернуть эту версию» on the line
     const history = App.list({id: 'vw.job.history', items: j.history.map((e, pos) => ({...e, pos})), key: (e) => String(e.pos),
@@ -293,6 +334,7 @@
       h('div', {class: 'row'}, h('div', {}, h('div', {class: 'vw-name-row'}, heading, pencil),
         h('p', {class: 'sub'}, `Версия документа ${j.document.version} · ${num(size.width, 1)} × ${num(size.height, 1)} мм · порог ΔE ${j.threshold}`)),
         h('span', {class: 'spacer'}), link('/plans/' + id, 'План гравировки'), link(`/designer?device=${j.device_id}&lens=${App.lensParam(j.lens_id)}`, 'Цели экспериментов')),
+      h('div', {class: 'card'}, Lifecycle.chain(j.lifecycle, {onAction: toFile})),
       h('div', {class: 'card stack'}, facts([['Идентификатор', j.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', j.lens ? App.lensLabel(j.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
         ['Стратегия', STRATEGY_NAME[j.document.strategy] || j.document.strategy],
@@ -303,8 +345,8 @@
         h('figure', {}, h('img', {src: `/api/plans/${id}/source-image`, style: 'width:100%', alt: 'Исходное изображение'}), h('figcaption', {class: 'muted small'}, 'Исходное изображение')),
         h('figure', {}, h('img', {src: svgSrc(j.svg), style: 'width:100%;background:#fff', alt: 'Векторные контуры'}),
           h('figcaption', {class: 'muted small'}, 'Контуры в цветах изображения; области без достаточных данных заштрихованы красным')))),
-      h('div', {class: 'card toolbar'}, field('Точность контура, мм', tolerance), btn('Применить точность', () => run({op: 'set_tolerance', tolerance_mm: +tolerance.value})),
-        field('Порог ΔE', thr), btn('Применить порог', () => run({op: 'set_threshold', threshold: +thr.value})),
+      h('div', {class: 'card toolbar'}, tolerance, btn('Применить точность', apply(toleranceForm, tolerance, (v) => ({op: 'set_tolerance', tolerance_mm: v.tolerance}))),
+        thr, btn('Применить порог', apply(thresholdForm, thr, (v) => ({op: 'set_threshold', threshold: v.threshold}))), toleranceForm.error, thresholdForm.error,
         btn('Объединить выбранные', () => (selected.size === 2 ? run({op: 'merge', regions: [...selected]}) : fail(new Error('Выберите ровно две области')))),
         btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => { try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); } })),
       j.weak.length ? weakSummary(j.weak) : null,
@@ -312,16 +354,13 @@
         regions.el),
       h('div', {class: 'card'}, h('h3', {}, 'Группы настроек'), h('p', {class: 'muted small'}, 'Одна группа — один рецепт; одинаковые рецепты разных групп выводятся в один слой LightBurn.'),
         table(['Группа', 'Нужно', 'Рецепт', '', 'Областей', 'Подходящих рецептов', ''], groups)),
-      h('div', {class: 'card stack'}, h('h3', {}, 'Экспорт'),
-        j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
+      h('div', {class: 'card stack', id: 'vw-job-export'}, h('h3', {}, 'Экспорт'),
         // REQ-020: задача, для которой будет измерено фото слоя; слой со смешанными задачами измеряется по своему режиму LightBurn
-        table(['Слой', 'Режим', 'Задача', 'Областей', 'Прогнозный цвет', 'Уверенность · ошибка'], j.layers.map((l) => [`C${String(l.index).padStart(2, '0')} · ${l.name}`, MODE[l.mode] || l.mode || '—',
-          l.task ? Tasks.name(l.task) : h('span', {class: 'muted small'}, 'смешанная: ' + (l.region_tasks || []).map((t) => (TASKS.find(([k]) => k === t) || [t, t])[1]).join(', ') + ' — по слою LightBurn'),
-          `${l.region_ids.length}`, h('span', {}, swatch(l.prediction.lab), labText(l.prediction.lab)), `${num(l.prediction.confidence)} · ΔE ${num(l.prediction.expected_delta_e)}`]), 'Слоёв нет'),
-        h('div', {class: 'row'}, exportBtn),
-        j.exports.length ? table(['Файл', 'Версия документа', 'Слоёв', 'Областей', 'Когда', ''], j.exports.map((e) => [
-          `№ ${e.number} · ${e.name}`, `v${e.document_version}`, `${e.layers}`, `${e.regions}`, e.at.replace('T', ' ').slice(0, 16),
-          saveButton(`/vector/${id}/exports/${e.number}`, 'Скачать', e.name)])) : null),
+        Lifecycle.exportCard(j.lifecycle, {path: `/vector/${id}/export.lbrn2`, name: 'vector.lbrn2', reload, onTarget: openTarget, withChain: false,
+          designer: `/designer?device=${j.device_id}&lens=${App.lensParam(j.lens_id)}`,
+          recipe: table(['Слой', 'Режим', 'Задача', 'Областей', 'Прогнозный цвет', 'Уверенность · ошибка'], j.layers.map((l) => [`C${String(l.index).padStart(2, '0')} · ${l.name}`, MODE[l.mode] || l.mode || '—',
+            l.task ? Tasks.name(l.task) : h('span', {class: 'muted small'}, 'смешанная: ' + (l.region_tasks || []).map((t) => (TASKS.find(([k]) => k === t) || [t, t])[1]).join(', ') + ' — по слою LightBurn'),
+            `${l.region_ids.length}`, h('span', {}, swatch(l.prediction.lab), labText(l.prediction.lab)), `${num(l.prediction.confidence)} · ΔE ${num(l.prediction.expected_delta_e)}`]), 'Слоёв нет')})),
       h('div', {class: 'card'}, h('h3', {}, 'История правок'), history.el));
   }
 
@@ -330,7 +369,7 @@
 
   /** Вкладка «Файл»: оценка времени всей работы до экспорта, слои с рецептами, экспорт и сохранённые файлы (REQ-042, REQ-043).
       Почему файл пока не создаётся, сказано здесь же, рядом с кнопкой. Слои и файлы идут строками: вкладка узкая. */
-  function photoExport(j, refresh) {
+  function photoExport(j, refresh, onTarget) {
     const t = j.time, zones = j.zones || [];
     const layers = t.layers.map((row) => {
       const layer = j.layers.find((l) => l.index === row.index), zone = layer ? null : zones.find((z) => z.index === row.index);
@@ -341,33 +380,22 @@
         h('span', {class: 'muted small'}, [part ? `областей ${layer ? layer.region_count : zone.regions.length}` : 'вся работа', part ? `${num(part.area_mm2 / 100, 2)} см²` : null,
           row.seconds == null ? I18N.tr(row.note) : duration(row.seconds)].filter(Boolean).join(' · ')));
     });
-    const exportBtn = btn('Создать файл LightBurn', async (ev) => {
-      const self = ev.currentTarget;
-      self.disabled = true;
-      try { await download(`/vector/${j.id}/export.lbrn2`, 'vector.lbrn2'); toast('Файл создан, сохранён в работе и скачан. Откройте его в LightBurn и проверьте слои', 'ok'); await refresh(); }
-      catch (e) { fail(e); self.disabled = false; }
-    }, 'primary', !!j.export_blocked);
-    return h('div', {class: 'stack'}, h('h4', {}, 'Файл LightBurn'),
-      h('p', {}, h('strong', {}, `Оценка времени всей работы: ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
-        h('span', {class: 'muted small'}, ' — оценка по скорости, шагу строк, проходам и перекрёстной заливке каждого рецепта; переходы между областями не учтены.')),
-      j.export_blocked ? h('div', {class: 'alert warn'}, I18N.tr(j.export_blocked)) : h('p', {class: 'muted small'}, 'Файл сохраняется в работе вместе с раскраской: фотография гравировки свяжется с ней по идентификатору в заметках файла.'),
-      h('div', {class: 'row'}, exportBtn),
-      h('details', {class: 'vw-details'}, h('summary', {}, `Слои и время по слоям (${t.layers.length})`), h('div', {class: 'vw-lines'}, layers),
-        h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length}` + (zones.length ? `, фотозон: ${zones.length}` : '') + ` из ${j.layer_cap}: C00 — чистка`
-          + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками'
-          + (zones.length ? '; фотозоны — слои изображения после слоёв цвета, прозрачные вне своих областей.' : '.'))),
-      j.exports.length ? h('div', {class: 'stack'}, h('h4', {}, 'Сохранённые файлы'), h('div', {class: 'vw-lines'}, j.exports.map((e) => h('div', {class: 'vw-line'},
-        h('span', {}, `№ ${e.number} · ${e.name}`, h('div', {class: 'muted small'}, [e.variant ? `вариант раскраски № ${e.variant}` : null, `слоёв ${e.layers}`, `областей ${e.regions}`,
-          duration(e.seconds), when(e.at)].filter(Boolean).join(' · '))),
-        saveButton(`/vector/${j.id}/exports/${e.number}`, 'Скачать', e.name))))) : null);
+    const estimate = h('p', {}, h('strong', {}, `Оценка времени всей работы: ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
+      h('span', {class: 'muted small'}, ' — оценка по скорости, шагу строк, проходам и перекрёстной заливке каждого рецепта; переходы между областями не учтены.'));
+    const recipe = h('div', {class: 'stack'}, estimate, h('div', {class: 'vw-lines'}, layers),
+      h('p', {class: 'small'}, `Слоёв цвета: ${j.layers.length}` + (zones.length ? `, фотозон: ${zones.length}` : '') + ` из ${j.layer_cap}: C00 — чистка`
+        + (j.markers_enabled ? ', C01 — маркеры' : '') + '; каждый слой — один рецепт со всеми настройками'
+        + (zones.length ? '; фотозоны — слои изображения после слоёв цвета, прозрачные вне своих областей.' : '.')));
+    return h('div', {class: 'stack'}, Lifecycle.exportCard(j.lifecycle, {path: `/vector/${j.id}/export.lbrn2`, name: 'vector.lbrn2', reload: refresh, onTarget, recipe,
+      withChain: false, recipeLabel: `Полный рецепт и слои (${t.layers.length})`,
+      designer: `/designer?device=${j.device_id}&lens=${App.lensParam(j.lens_id)}`}));
   }
-  const when = (iso) => iso.replace('T', ' ').slice(0, 16);
 
   /** Работа из фотографии на один экран (REQ-042, REQ-044, REQ-054): слева вкладки «Разбиение», «Цвета», «AI» и «Файл», посередине
       картинка редактора, справа его панель. Действие с раскраской возвращает работу целиком, и экран обновляется на месте, без
       перерисовки: редактор сохраняет масштаб, инструмент и выделение. Действия уходят на сервер по одному, в том порядке, в
       каком их сделал оператор. */
-  function photoView(j) {
+  function photoView(j, accepted) {
     const reload = () => App.render({preserveScroll: true});
     const exp = j.experiment || {};
     const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {}), review = h('div', {class: 'stack'});
@@ -377,12 +405,18 @@
     const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }, resize});
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step returns the whole work
     const banner = LabSource.banner(`/vector/${j.id}`, 'vector', (work) => show(work));
+    const applic = h('div', {});                                      // how far the preview can be trusted at this size (ux-evidence-summaries-p0)
     const evidence = h('div', {class: 'small'});
+    const chainBox = h('div', {class: 'vw-chain'});                  // the path of the work's file: prepared, file received, result added, checked
+    const summaryBox = h('div', {});                                  // what an accepted result did to the work, when the operator came back from accepting it
+    const status = Lifecycle.strip({chain: chainBox, forecast: applic, preview: evidence});    // the three above as one fold on a narrow screen (ux-accessible-layout-p0)
     function show(next) {
       const resplit = !shown || next.document.version !== shown.document.version;
       shown = next;
       head.update(next);
+      fill(chainBox, Lifecycle.chain(next.lifecycle, {onAction: (a) => frame.select(a.code === 'compare' ? 'review' : 'file')}));
       banner.update(next);
+      fill(applic, EvidenceSummary.applicability(next.applicability));
       const p = next.preview_evidence;
       evidence.className = 'small' + (p && (p.estimated_layers || p.estimated_zones || p.ramp_only_zones) ? ' alert warn' : ' muted');
       fill(evidence, !p ? null : p.ramp_only_zones
@@ -392,14 +426,16 @@
         : `Превью: цвета ${p.layers} слоёв измерены при этом размере. Фотозоны проверяются по своим шкалам.`);
       fill(about, h('details', {class: 'vw-details'}, h('summary', {}, 'Параметры работы'), facts([['Идентификатор', next.plan_identifier], ['Лазер', exp.device && (exp.device.title || exp.device.name)],
         ['Линза', next.lens ? App.lensLabel(next.lens) : 'неизвестна'], ['Титан', exp.material && material(exp.material)],
+        ['Измерения', next.source && next.source.kind === 'release' ? `лаборатория ${next.source.lab_name}` : 'этой мастерской'],      // the work's own, whatever the workshop chooses next
         ['Чистка', 'первый слой C00'], ['Маркеры', next.markers_enabled ? 'включены (C01)' : 'выключены'],
         ['Слоёв цвета', `${next.layers.length}` + ((next.zones || []).length ? ` и фотозон ${next.zones.length}` : '') + ` из ${next.layer_cap} доступных`]]),
         h('div', {class: 'row'}, btn(next.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
           try { await put(`/plans/${next.id}/markers`, {enabled: !next.markers_enabled}); await refresh(); } catch (e) { fail(e); }
         }))));
       if (resplit) fill(split, VectorSplit.card(next, reload, smooth));     // счётчики разбиения меняются только с его версией
-      fill(file, photoExport(next, refresh));
+      fill(file, photoExport(next, refresh, () => frame.select('colours')));
       fill(review, VectorReview.view(next, run));
+      status.sync();
       if (parts) parts.update(next);
     }
     async function send(op) {
@@ -415,21 +451,28 @@
     }
     show(j);
     parts = VectorColours.parts(j, run, permit);
-    frame = VectorWorkspace.frame({head: [head.el, banner.el, evidence], editor: parts.editor, initial: 'colours', items: [
+    frame = VectorWorkspace.frame({head: [head.el, status.el, summaryBox, banner.el], editor: parts.editor, initial: 'colours', items: [
       ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
       ['review', VectorReview.tabLabel(j), review], ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
+    if (accepted) {                                                   // back from accepting a result: what it did to this work (kept in the work, so it is told again)
+      get(`/pairs/${accepted}/work-summary`).then((found) => {
+        fill(summaryBox, Lifecycle.summary(found, {onNext: () => frame.select('review'), onClose: () => fill(summaryBox)}));
+      }).catch(() => fill(summaryBox, h('p', {class: 'muted small'}, 'Итог принятого результата не найден: возможно, фотография удалена.')));
+    }
     return frame.el;
   }
 
   App.register({id: 'vector', async render(ctx) {
     if (ctx.query.plan) {
       const j = await get('/vector/' + ctx.query.plan);
-      return j.strategy === 'photo' ? photoView(j) : jobView(j);
+      return j.strategy === 'photo' ? photoView(j, ctx.query.accepted) : jobView(j);
     }
     if (!ctx.query.new) return VectorWorkspace.list();
-    const [lists, materials] = await Promise.all([App.hardwareLists(), get('/materials')]);
+    if (!ctx.query.classic) return Creation.render(ctx);             // ux-work-creation-p0: the three-step creation; the one-page form stays at &classic=1 (text and a task of its own)
+    const [lists, stocks] = await Promise.all([App.hardwareLists(), MaterialPicker.total()]);       // only whether any record exists, not all of them
     if (!lists.devices.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте лазер'), link('/devices', 'Лазеры'));
-    if (!materials.length) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте заготовку титана'), link('/setup', 'Настройки'));
-    return startForm(lists, materials, ctx);
+    if (!stocks) return h('div', {class: 'card empty'}, h('h3', {}, 'Сначала добавьте заготовку титана'), link('/setup', 'Настройки'));
+    const start = await App.contextStart(ctx.query);                // the laser, lens and titanium the workshop chose last; the address wins
+    return startForm(lists, {...ctx, start, query: {...ctx.query, ...(start.device != null ? {device: start.device, lens: start.lens ?? ctx.query.lens} : {})}});
   }});
 })();

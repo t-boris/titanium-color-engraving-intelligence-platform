@@ -451,6 +451,12 @@ def snap_pair(pair_id: int, body: CornersIn, request: Request):
         mirror_horizontal=body.mirror_horizontal, mirror_vertical=body.mirror_vertical)}
 
 
+@router.get("/pairs/{pair_id}/anchor-candidates")
+def anchor_candidates(pair_id: int, request: Request):
+    """The details of the file the operator can place on the photograph by hand, at the position the alignment gives them now."""
+    return {"candidates": ingest.anchor_candidates(store_of(request), pair_id)}
+
+
 @router.post("/pairs/{pair_id}/lightburn")
 async def replace_lightburn(pair_id: int, request: Request, lightburn: UploadFile = File(None)):
     name, data = await read_upload(lightburn, MAX_LIGHTBURN_BYTES, "LightBurn")
@@ -561,16 +567,20 @@ def report(pair_id: int, request: Request):
 
 
 @router.get("/knowledge")
-def list_knowledge(request: Request, device_id: int, lens_id: str):
+def list_knowledge(request: Request, device_id: int, lens_id: str, history_limit: int | None = None):
+    """Every entry of one laser and lens; ``history_limit`` keeps only the newest N events of each (0: none; the list of a screen that never
+    shows the history), the whole history otherwise."""
     s = store_of(request)
     lens = lens_param(lens_id)
     su.resolve(s, device_id, lens)
-    return knowledge.list_for_setup(s, device_id, lens)
+    return knowledge.list_for_setup(s, device_id, lens, history_limit)
 
 
 @router.get("/knowledge/{kid}")
-def get_knowledge(kid: int, request: Request):
-    return knowledge.get(store_of(request), kid)
+def get_knowledge(kid: int, request: Request, history_limit: int | None = None):
+    """One entry; ``history_total`` is the number of its events, ``history`` all of them or, with ``history_limit``, the newest N (0: none;
+    ``/knowledge/{kid}/history`` reads the history a page at a time)."""
+    return knowledge.get(store_of(request), kid, history_limit=history_limit)
 
 
 @router.post("/knowledge/{kid}/approve")

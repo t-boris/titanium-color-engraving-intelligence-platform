@@ -8,7 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import conversion, designer, experiments, plans, render_cache, research, setup as su, vector_job
+from .. import conversion, designer, experiments, lifecycle, plans, render_cache, research, setup as su, vector_job
+from . import routes_lifecycle
 from .common import MAX_IMAGE_BYTES, content_disposition, image_media_type, lens_param, public_plan, read_upload, store_of, task_goals
 
 router = APIRouter(prefix="/api")
@@ -54,6 +55,8 @@ def _plan(request: Request, plan_id: int, regions: bool = False) -> dict:
     result["photo_zones"] = vector_job.plan_zones(s, plan)              # a vector work's photo zones: Image layers after the colours
     result["active_pairs"] = s.one("SELECT COUNT(*) AS n FROM pair WHERE plan_id=? AND status!='Deleted'", (plan_id,))["n"]
     result["time"] = experiments.plan_time(plans.get_plan(s, plan_id))
+    if plan["mode"] != plans.MODE_PHOTO_WORK:        # a photograph work exports through its own routes, with no file records
+        result["lifecycle"] = routes_lifecycle.of_plan(s, plan_id)      # the chain, the readiness and the files (ux-engraving-lifecycle-p0)
     return result
 
 
@@ -113,7 +116,7 @@ def export_plan(plan_id: int, request: Request):
     if plan["status"] in {"Superseded", "Cancelled"}:
         raise su.ProtectedError("эта плата заменена или отменена; откройте актуальную плату исследования")
     data = plans.export_lbrn2(plan)
-    s.execute("UPDATE plan SET status=? WHERE id=? AND status=?", ("Exported", plan_id, conversion.ST_READY))
+    lifecycle.record_plain_export(s, plan_id)       # the file is recorded (number, time, markers) and a ready plan becomes exported
     return Response(data, media_type="application/xml", headers={"Content-Disposition": content_disposition(plan["name"], ".lbrn2")})
 
 

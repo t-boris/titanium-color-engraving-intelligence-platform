@@ -1,5 +1,6 @@
 /* Векторная работа из фотографии, редактор цветов (REQ-043..REQ-049, DEC-001, DEC-075..DEC-077): одна большая картинка в
-   цветах титана и панель рядом (под картинкой на узком экране) — инструменты (кисть, пипетка, выделение), что меняет щелчок
+   цветах титана и панель рядом (на узком экране, до 1100 px, она выезжает поверх картинки по кнопке «Панель» и когда на картинке
+   выбрали область или надпись; ux-accessible-layout-p0, REQ-002) — инструменты (кисть, пипетка, выделение), что меняет щелчок
    кистью, активный цвет, палитра всех измеренных цветов, слои титана, исходные цвета, итоги, отмена и повтор. Каждый
    исходный цвет раскрашен сразу; цвет дальше допуска ΔE помечается и по запросу обводится на картинке, файл он не
    блокирует. Наведение обводит ровно то, что изменит щелчок (для заливки — области, которые назвал сервер). Масштаб и сдвиг
@@ -20,6 +21,7 @@ const VectorEditor = (() => {
   const TOOLS = [['brush', 'Кисть'], ['pipette', 'Пипетка'], ['select', 'Выделение']];
   const SCOPES = [['region', 'Участок'], ['colour', 'Весь исходный цвет'], ['fill', 'Заливка похожих']];
   const VIEWS = [['titanium', 'Титан'], ['source', 'Исходные цвета'], ['original', 'Оригинал']];
+  const PAN = [['←', 'влево', -1, 0], ['↑', 'вверх', 0, -1], ['↓', 'вниз', 0, 1], ['→', 'вправо', 1, 0]];   // the view moves by a fifth of itself
   const SIMILARITY = 8;                       // ΔE заливки похожих по умолчанию
   const SEE_THROUGH = 'rgba(0,0,0,0)';        // область фотозоны: видна картинка зоны под ней, а наведение и щелчок по ней работают
   const LASSO_STEP = 3;                       // экранных пикселей между точками лассо
@@ -148,7 +150,7 @@ const VectorEditor = (() => {
     let entries = null, paletteError = null, paletteKey = null;
     let paletteShown = PALETTE_PAGE;
     let near = null, nearKey = null, nearFailed = false;     // область → соседи по границе в текущей версии разбиения (DEC-080)
-    let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null, ready = false;
+    let hover = null, hot = [], farCount = 0, pending = 0, spaceHeld = false, sideTab = null, ready = false, panelOpen = false;
     let zonePics = null;                                     // <g> с картинками фотозон под областями
     let borders = [], bordersOf = new Map();                 // every border of the split once: its path and the regions on its sides
     let lines = null;                                        // <g> of the outlines above the regions: the zones, the hover, the selection
@@ -156,7 +158,9 @@ const VectorEditor = (() => {
     let reachTimer = null, sortTimer = null;
 
     // --- разметка -------------------------------------------------------------------------------------------------------
-    const stage = h('div', {class: 'vw-ed-stage tool-brush', role: 'group', 'aria-label': 'Картинка работы: наведите на область, щёлкните, чтобы изменить'});
+    // the picture takes the keyboard (arrows move the view, + and − zoom, 0 fits it), and every region can be chosen from the list «Области»
+    const stage = h('div', {class: 'vw-ed-stage tool-brush', role: 'group', tabindex: '0',
+      'aria-label': 'Картинка работы: наведите на область, щёлкните, чтобы изменить. С клавиатуры: стрелки сдвигают вид, плюс и минус меняют масштаб, 0 вписывает; области выбираются в списке «Области» на вкладке «Цвета»'});
     const tip = h('div', {class: 'vw-ed-tip', hidden: true, 'aria-hidden': 'true'});
     const loading = h('p', {class: 'vw-ed-loading muted small'}, 'Загрузка разбиения…');
     stage.append(loading, tip);
@@ -169,6 +173,9 @@ const VectorEditor = (() => {
         h('button', {type: 'button', class: 'btn', 'aria-label': 'Уменьшить', title: 'Уменьшить', onClick: () => zoomBy(1 / 1.5)}, '−'), zoomLabel,
         h('button', {type: 'button', class: 'btn', 'aria-label': 'Увеличить', title: 'Увеличить', onClick: () => zoomBy(1.5)}, '+'),
         btn('Вписать', () => fit())),
+      h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Сдвиг вида'},
+        PAN.map(([sign, word, fx, fy]) => h('button', {type: 'button', class: 'btn', 'aria-label': `Сдвинуть вид ${word}`, title: `Сдвинуть вид ${word}`,
+          onClick: () => panBy(fx, fy)}, sign))),
       h('span', {class: 'spacer'}),
       h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Отмена и повтор'}, undoBtn, redoBtn));
     const totals = h('p', {class: 'vw-ed-totals small'});
@@ -193,13 +200,24 @@ const VectorEditor = (() => {
     const paletteFoot = h('div', {class: 'lst-foot'});
     // the layers and the source colours are short lists (DEC-090): one line each, what it is and its other actions under it on a click,
     // search and sort; pages of 30, so that a work's colours (29 at most) are edited on one page
-    const layerList = App.list({id: 'vw.ed.layers', items: [], page: 30, key: (x) => x.key, row: layerRow, details: layerDetails, search: (x) => x.search,
+    const layerList = App.list({id: 'vw.ed.layers', items: [], page: 30, key: (x) => x.key, row: layerRow, details: layerDetails, actions: layerActions, search: (x) => x.search,
       sorts: [['order', 'По порядку', (a, b) => a.pos - b.pos], ['area', 'Больше площадь', (a, b) => (b.area ?? -1) - (a.area ?? -1) || a.pos - b.pos],
         ['time', 'Дольше гравировка', (a, b) => (b.seconds ?? -1) - (a.seconds ?? -1) || a.pos - b.pos]],
       empty: 'Слоёв цвета нет: всё исключено.'});
     const colourList = App.list({id: 'vw.ed.colours', items: [], page: 30, key: (c) => String(c.index), row: colourRow, details: colourDetails,
       rowClass: (c) => (c.status === 'excluded' ? 'excluded' : ''),
       actions: colourActions, search: (c) => `№ ${Number(c.index) + 1}`, filters: [COLOUR_FILTER], sorts: COLOUR_SORTS, empty: 'Нет исходных цветов под такой выбор.'});
+    // every region as a line (ux-accessible-layout-p0, REQ-001): a region, or several, are chosen without the pointer, as the click, Shift+click
+    // and the lasso on the picture choose them; what is done with the chosen ones is in the selection (the «Кисть» tab, or «Фото»)
+    const regionList = App.list({id: 'vw.ed.regions', items: [], page: 30, key: (x) => x.id, row: regionRow, actions: regionActions, search: (x) => x.search,
+      rowClass: (x) => (state.selection.has(x.id) ? 'picked' : ''),
+      filters: [{key: 'colour', label: 'Исходный цвет', select: true, all: 'Любой', options: () => j.colours.map((c) => [String(c.index), `Исходный цвет № ${Number(c.index) + 1}`]),
+        test: (x, v) => String(x.k) === v}, {key: 'chosen', label: 'Выделение', options: [['yes', 'Выбранные']], test: (x) => state.selection.has(x.id)}],
+      sorts: [['order', 'По порядку', (a, b) => a.pos - b.pos], ['colour', 'По исходному цвету', (a, b) => a.k - b.k || a.pos - b.pos]],
+      empty: 'Областей нет: разбиение ещё не загружено.'});
+    const regionNote = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'});
+    const regionBar = h('div', {class: 'row'}, btn('Выбрать все', () => chooseOnly([...paths.keys()]), 'btn-small'), btn('Снять выбор со всех', () => clearSelection(), 'btn-small'),
+      btn('К действиям с выделением', () => showSelection(), 'btn-small'));
     const layersBox = h('div', {class: 'vw-ed-list vw-ed-layers'}, layerList.el), layerMerge = h('div', {}), layersAbout = h('div', {});
     const farBox = h('input', {type: 'checkbox', onChange: (ev) => { state.far = ev.target.checked; syncSvgClass(); }});
     const farNote = h('p', {class: 'small muted'});
@@ -210,10 +228,11 @@ const VectorEditor = (() => {
     let layerRegions = new Map();                            // the key of a layer's line -> the regions it outlines on the picture
     outlineRows(layerList, (key) => (layerRegions.get(key) || (() => []))());
     outlineRows(colourList, (key) => byColour.get(Number(key)) || []);
+    outlineRows(regionList, (key) => [key]);
     const photo = VectorPhoto.create(j, {act: (op) => act(op), select: (ids) => selectOnly(ids), outline: (ids) => (ids ? setHot(ids) : refreshHover())});
     // надписи врезаются в картинку: слой рисует врезку цветом чистого титана, подложку и буквы их цветами (inscriptions-in-works)
     const lettering = Lettering.create(j, {act: (op) => act(op), palette: () => palette(j), size: (v) => v.document.size_mm, scale: () => frame().s,
-      drawn: true, clean: EXCLUDED, open: () => sideTab === 'texts',
+      drawn: true, clean: EXCLUDED, open: () => sideTab === 'texts', picked: () => { if (narrow()) openPanel('texts'); },
       pick: tools.pick ? (title, lab, entryId, onPick) => tools.pick(j, title, lab, entryId, onPick) : null});
     // панель на пять вкладок, чтобы не прокручивать: кисть и цвет, слои титана, исходные цвета (DEC-085), фотозоны (REQ-073), надписи
     const sideTabs = App.tabs([
@@ -226,7 +245,8 @@ const VectorEditor = (() => {
         h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid, paletteFoot))],
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
-        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge))],
+        h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge),
+        h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Области'), regionNote, regionBar, regionList.el))],
       ['photo', 'Фото', h('div', {class: 'vw-ed-pane'}, selectionSlots.photo, photo.el)],
       ['texts', 'Надписи', lettering.el]],
       {initial: 'brush', remember: 'vw.edtab', label: 'Панель редактора', prefix: 'vw-ed-tab', onSelect: (id) => {
@@ -234,14 +254,25 @@ const VectorEditor = (() => {
         syncSvgClass();
         lettering.opened();
         if (id === 'texts') { hover = null; tip.hidden = true; setHot([]); }
-        (id === 'photo' ? selectionSlots.photo : selectionSlots.brush).append(selectionBox);
+        const slot = id === 'photo' ? selectionSlots.photo : selectionSlots.brush;
+        if (selectionBox.parentNode !== slot) slot.append(selectionBox);           // moved only when the tab changes its place: a move drops the focus from the box's buttons
         if (ready && id === 'photo') setTool('select');       // on «Фото» a click selects (the brush is on «Кисть», out of sight)
       }});
-    const panel = h('aside', {class: 'vw-ed-panel', 'aria-label': 'Инструменты и цвета'}, sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
+    // on a narrow screen the panel slides out over the picture (ux-accessible-layout-p0, REQ-002): a button in the bar opens it, a click that
+    // selects something on the picture opens it on what was selected, Esc or «Закрыть» shuts it and the focus goes back to the button
+    const panelClose = h('button', {type: 'button', class: 'btn vw-ed-panel-close', onClick: () => closePanel(true)}, 'Закрыть панель');
+    const panel = h('aside', {class: 'vw-ed-panel', id: `vw-ed-panel-${id}`, 'aria-label': 'Инструменты и цвета'},
+      h('div', {class: 'vw-ed-panel-head'}, h('strong', {}, 'Панель редактора'), h('span', {class: 'spacer'}), panelClose),
+      sideTabs.list, h('div', {class: 'vw-ed-panes'}, sideTabs.panels));
+    panel.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && narrow() && panelOpen) { ev.stopPropagation(); closePanel(true); } });
+    const panelToggle = h('button', {type: 'button', class: 'btn vw-ed-panel-toggle', 'aria-expanded': 'false', 'aria-controls': `vw-ed-panel-${id}`,
+      onClick: () => (panelOpen ? closePanel(true) : openPanel(null))}, 'Панель: кисть, слои, цвета, надписи');
+    bar.append(panelToggle);
     const el = h('div', {class: 'vw-editor'},
       h('div', {class: 'vw-ed-main'}, bar, totals, stage,
         h('p', {class: 'small muted'}, 'Колесо мыши — масштаб у курсора, перетаскивание — сдвиг (при «Выделении» — лассо, сдвиг — пробел+перетаскивание '
-          + 'или средней кнопкой), «Вписать» — вся картинка. ', 'Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Esc — снять выделение.')),
+          + 'или средней кнопкой), «Вписать» — вся картинка. ', 'Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Esc — снять выделение. ',
+        'Без мыши: Tab на картинку — стрелки сдвигают вид, + и − меняют масштаб, 0 вписывает; области выбираются в списке «Области» на вкладке «Цвета».')),
       panel);
 
     // --- картинка: загрузка, раскраска, масштаб ---------------------------------------------------------------------------
@@ -299,6 +330,8 @@ const VectorEditor = (() => {
       outlineSelection();
       syncSelection();
       renderLayers();
+      renderColours();                                         // a line's «Выбрать области» is off while the colour has no region on the picture
+      renderRegions();
       refreshHover();
     }
 
@@ -419,6 +452,17 @@ const VectorEditor = (() => {
     }
     const zoomBy = (factor) => zoomAt(factor, vb.x + vb.w / 2, vb.y + vb.h / 2);
     const fit = () => setBox(0, 0, j.document.size_mm.width);
+    const panBy = (fx, fy) => setBox(vb.x + fx * vb.w / 5, vb.y + fy * vb.h / 5, vb.w);
+    stage.addEventListener('keydown', (ev) => {
+      if (ev.target !== stage || ev.ctrlKey || ev.metaKey || ev.altKey) return;       // a key of a control inside the picture is its own
+      const way = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[ev.key];
+      if (way) panBy(...way);
+      else if (ev.key === '+' || ev.key === '=') zoomBy(1.5);
+      else if (ev.key === '-') zoomBy(1 / 1.5);
+      else if (ev.key === '0') fit();
+      else return;
+      ev.preventDefault();
+    });
 
     // --- мышь: колесо — масштаб, перетаскивание дальше 4 px — сдвиг, а не щелчок ---------------------------------------------
     let drag = null, dragged = false, lettered = false;
@@ -505,6 +549,7 @@ const VectorEditor = (() => {
       outlineSelection();
       syncSelection();
       if (!ids.length) toast('Лассо не обвело ни одной области хотя бы наполовину');
+      else showChosen();
     }
     stage.addEventListener('pointerup', endDrag);
     stage.addEventListener('pointercancel', endDrag);
@@ -595,7 +640,7 @@ const VectorEditor = (() => {
     function clickRegion(rid, ev) {
       setRef(colourOf.get(rid));
       if (state.tool === 'pipette' || (state.tool === 'brush' && ev.altKey)) return pipette(rid);
-      if (state.tool === 'select') return select(rid, !!ev.shiftKey);
+      if (state.tool === 'select') { select(rid, !!ev.shiftKey); return showChosen(); }
       const op = {op: 'paint', region: rid, scope: state.scope, entry_id: state.active};
       if (state.scope === 'fill') op.similarity_de = state.similarity;
       return act(op);
@@ -625,12 +670,55 @@ const VectorEditor = (() => {
       setHot([]);
       if (state.selection.size) clearSelection();
     }
-    function selectOnly(ids) {
+    /** The regions ``ids`` are the selection (the tool is «Выделение»), wherever the person is. */
+    function chooseOnly(ids) {
       setTool('select');
       state.selection = new Set(ids.filter((rid) => paths.has(rid)));
       outlineSelection();
       syncSelection();
+    }
+    /** The selection's own place, with the focus on it: its actions are there, and a key press that came from another tab must not leave the
+        keyboard on a tab that is no longer shown. */
+    function showSelection() {
       if (sideTab !== 'photo') sideTabs.select('brush');       // the selection and its actions are on «Кисть» and on «Фото»
+      selectionBox.setAttribute('tabindex', '-1');
+      selectionBox.focus();
+    }
+    function selectOnly(ids) {
+      chooseOnly(ids);
+      showSelection();
+    }
+    // --- the panel as a slide-out on a narrow screen (the stylesheet shows it so below 1100 px; above, it is a column and these do nothing) -------------
+    const narrow = () => typeof matchMedia === 'function' && matchMedia('(max-width:1100px)').matches;
+    /** Open the panel, on ``tab`` when one is named, with the keyboard on the shown tab (or the selection's own box for «select»). */
+    function openPanel(tab, focus = true) {
+      if (tab) sideTabs.select(tab);
+      panelOpen = true;
+      panel.classList.add('is-open');
+      panelToggle.setAttribute('aria-expanded', 'true');
+      if (focus) {
+        const on = [...sideTabs.list.querySelectorAll('button')].find((b) => b.getAttribute('aria-selected') === 'true');
+        if (on) on.focus();
+      }
+    }
+    function closePanel(back) {
+      panelOpen = false;
+      panel.classList.remove('is-open');
+      panelToggle.setAttribute('aria-expanded', 'false');
+      if (back) panelToggle.focus();
+    }
+    /** What was chosen on the picture has its actions in the panel: on a narrow screen it slides out to them. */
+    function showChosen() {
+      if (!narrow() || !state.selection.size) return;
+      openPanel(sideTab === 'photo' ? 'photo' : 'brush', false);
+      if (stage.scrollIntoView && matchMedia('(max-width:480px)').matches) stage.scrollIntoView({block: 'start'});      // a phone: the sheet takes the lower part, the picture goes up
+      selectionBox.setAttribute('tabindex', '-1');
+      selectionBox.focus();
+    }
+    /** One region in or out of the selection without leaving the list it was chosen in (Shift+click on the picture). */
+    function toggleRegion(rid) {
+      if (state.tool !== 'select') setTool('select');
+      select(rid, true);
     }
 
     function outlineSelection() {
@@ -828,6 +916,7 @@ const VectorEditor = (() => {
           + 'а не цветами; вид и шкала — во вкладке «Фото».') : null,
         ids.length === 1 ? h('p', {class: 'small muted'}, 'Слить в один контур можно две области или больше, соседние по границе. «Разбить мельче…» делит выбранную область на части по цвету.') : null,
         why ? h('p', {class: 'small muted'}, why) : null);
+      if (ready) renderRegions();                              // the lines of the region list say which are chosen
     }
 
     function syncTotals() {
@@ -846,14 +935,18 @@ const VectorEditor = (() => {
         anew, so the list itself listens). */
     function outlineRows(list, regionsOf) {
       let over = null;
-      list.el.addEventListener('mouseover', (ev) => {
+      const enter = (ev) => {
         const line = ev.target && ev.target.closest ? ev.target.closest('.lst-row') : null;
         const key = line ? line.getAttribute('data-key') : null;
         if (key === over) return;
         over = key;
         if (key == null) refreshHover(); else setHot(regionsOf(key));
-      });
-      list.el.addEventListener('mouseleave', () => { over = null; refreshHover(); });
+      };
+      const leave = () => { over = null; refreshHover(); };
+      list.el.addEventListener('mouseover', enter);
+      list.el.addEventListener('focusin', enter);              // the keyboard outlines a line's regions as the pointer does
+      list.el.addEventListener('mouseleave', leave);
+      list.el.addEventListener('focusout', (ev) => { if (!ev.relatedTarget || !list.el.contains(ev.relatedTarget)) leave(); });
     }
 
     /** The colour layers, then the photo zones, as the lines of the layers' list: what each sorts and is searched by. */
@@ -944,9 +1037,39 @@ const VectorEditor = (() => {
     /** The action of a source colour's line: another titanium colour, or for a colour left out, engrave it again. */
     function colourActions(c) {
       const k = Number(c.index);
-      if (c.status === 'excluded') return [titled(btn('Гравировать', () => act({op: 'include_colour', colour: k})), 'Вернуть области этого цвета в файл')];
-      return tools.pick ? [titled(btn('Заменить', () => tools.pick(j, `Цвет группы № ${k + 1}`, c.lab, c.entry_id, (entryId) => act({op: 'set_colour', colour: k, entry_id: entryId}))),
-        'Выбрать другой цвет титана: видно, откуда он известен и насколько стабилен')] : [];
+      const choose = titled(btn('Выбрать области', () => selectOnly(byColour.get(k) || []), '', !(byColour.get(k) || []).length), 'Выделить на картинке все области этого исходного цвета');
+      if (c.status === 'excluded') return [choose, titled(btn('Гравировать', () => act({op: 'include_colour', colour: k})), 'Вернуть области этого цвета в файл')];
+      return [choose, ...(tools.pick ? [titled(btn('Заменить', () => tools.pick(j, `Цвет группы № ${k + 1}`, c.lab, c.entry_id, (entryId) => act({op: 'set_colour', colour: k, entry_id: entryId}))),
+        'Выбрать другой цвет титана: видно, откуда он известен и насколько стабилен')] : [])];
+    }
+
+    /** A layer's (or a photo zone's) regions chosen on the picture, where the action on them is. */
+    function layerActions(x) {
+      const ids = x.regions();
+      return [titled(btn('Выбрать области', () => selectOnly(ids), '', !ids.length), 'Выделить на картинке все области этого слоя')];
+    }
+
+    /** A region on one line: its colour, its number, its source colour and what it is engraved with (or why it is not). */
+    function regionRow(x) {
+      const r = x.r, e = r.entry, on = state.selection.has(x.id);
+      const shown = r.zone ? 'rgba(0,0,0,0)' : r.excluded ? EXCLUDED : r.missing || !e ? MISSING : rgb(e.srgb);
+      return [h('span', {class: 'sw', style: `background:${shown}`, 'aria-hidden': 'true'}), h('strong', {}, x.id),
+        h('span', {class: 'lst-text muted'}, [`исходный цвет № ${x.k + 1}`,
+          r.zone ? `фотозона ${r.zone.number}` : r.excluded ? 'не гравируется' : r.missing || !e ? 'цвета титана больше нет среди измерений'
+            : `титан ${labText(e.lab)}` + (r.c ? `, ΔE ${num(de(r.c.lab, e.lab))}` : ''), on ? 'выбрана' : null].filter(Boolean).join(' · '))];
+    }
+    function regionActions(x) {
+      const on = state.selection.has(x.id);
+      const b = btn(on ? 'Снять' : 'Выбрать', () => toggleRegion(x.id), 'btn-small');
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', `${on ? 'Снять выбор с области' : 'Выбрать область'} ${x.id}`);
+      return [b];
+    }
+    function renderRegions() {
+      regionList.items = [...paths.keys()].map((rid, pos) => { const k = colourOf.get(rid); return {id: rid, pos, k, r: lookup(rid, k), search: `${rid} исходный цвет № ${k + 1}`}; });
+      regionList.refresh();
+      fill(regionNote, state.selection.size ? `Выбрано областей: ${state.selection.size}. Что с ними делать, — вкладка «Кисть» (у фотозон — «Фото»), кнопка ниже ведёт туда.`
+        : 'Выбрано областей: 0. «Выбрать» у области, у слоя или у исходного цвета отмечает их на картинке; кнопка ниже ведёт к действиям с выбранными.');
     }
 
     /** What a source colour's line opens: where its titanium colour is known from and its recipe; the choice back to the automatic one and
@@ -991,6 +1114,7 @@ const VectorEditor = (() => {
       loadPalette();
       renderLayers();
       renderColours();
+      renderRegions();
       syncFarNote();
     }
 
@@ -1017,11 +1141,16 @@ const VectorEditor = (() => {
     const editor = {el, update, key(ev) {
       if (!el.isConnected) { if (current === editor) current = null; return; }
       if (document.querySelector('.modal-bg')) return;
+      if (ev.key === 'Escape' && panelOpen && narrow()) return closePanel(true);        // the slide-out first, the selection on a second press
       if (ev.key === 'Escape') return sideTab === 'texts' && lettering.escape() ? undefined : dropSelection();   // in a field too: Escape means nothing there
       const t = ev.target;
       if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
+      // Space is «pan with the drag» only for the pointer: on a button, a tab, a line of a list it presses it (preventing it here left every button dead)
+      const roled = t && t.closest ? t.closest('[role]') : null;
+      const onControl = !!(t && t.closest && (t.closest('button, summary, a[href]') || (roled && /^(tab|option|button|checkbox|radio|switch|menuitem)$/.test(roled.getAttribute('role')))));
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); undoRedo(z && !ev.shiftKey ? 'undo' : 'redo'); }
+      else if (ev.code === 'Space' && onControl) return;
       else if (ev.code === 'Space' && !ev.repeat) { ev.preventDefault(); spaceHeld = true; stage.classList.add('pan-ready'); }
       else if (ev.code === 'Space') ev.preventDefault();
     }, keyup(ev) {
