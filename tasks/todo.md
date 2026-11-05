@@ -37,7 +37,10 @@ Order: foundation first (shared code every feature stands on), then the features
       `desktop` tests 33 passed; signed zip (Developer ID 3M68DG8S7N, codesign strict ok on the unzipped copy); the packaged hidden
       smoke says version 0.39.0, its `shell.log` has `interface drawn` and no session token; sha256
       `7c9108ccd0d21b170d83cd983ade63bef1f738bd80c0abb1e11dcf01589a9954`
-- [ ] one commit to `main`, push, pre-release `v0.39.0` with the zip; digest verified after downloading it back (recorded below)
+- [x] one commit to `main` (4b8a783), pushed (GitHub answered `remote: fatal error in commit_refs` three times over SSH and once over
+      HTTPS for a fast-forward of 1.6 MB, with the status page green; the fourth minute-spaced retry went through, nothing changed);
+      pre-release v0.39.0 («внутренняя бета») with the zip; the asset downloaded back has the same sha256 as the build and as the
+      release's digest. The desktop app in /Applications was NOT reinstalled (a separate operator action, as with 0.38.1).
 
 Review (2026-11-05, written before the release step):
 - Not executed, and recorded as such: screen reader, Electron on the new screens, real window resize / browser zoom (emulated by the
