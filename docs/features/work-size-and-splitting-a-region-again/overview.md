@@ -2,7 +2,7 @@
 type: feature
 id: work-size-and-splitting-a-region-again
 title: Work size and splitting a region again
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-10-25
 provenance: Created by an AI agent through MarkView from operator, 2026-10-25 (work «Luna 1», plate 150 × 150)
@@ -18,13 +18,14 @@ understanding:
   Analytics: n/a
   Dependencies: known
   Acceptance Criteria: partial
+updated: 2026-11-05
 ---
 
 # Work size and splitting a region again
 
 ## Idea
 
-The operator makes a photo vector work («Luna 1», 150 × 200 mm from a 3:4 picture) and then finds the plate is 150 × 150 mm. Today the size of a work is fixed at creation: the width is given, the height follows the picture, and the only way to another size is a new work, which loses the colouring, the inscriptions, the photo zones and the history. The operator wants to change the size of an existing work («Вписать»: a width or a height, the other side by the picture; later «Обрезать под пластину»: a plate's width and height with a frame moved over the picture), keeping what was done. Also, with one region selected, to split that region again into finer regions, leaving the rest of the work as it is.
+Выпущенные возможности сохранённой фотоработы: «Вписать» — изменить одну сторону с сохранением пропорций, областей, раскраски, надписей, фотозон, вариантов и истории (REQ-001, 0.36.0); «Разбить мельче» — повторно разбить одну выбранную область, сохранив соседей и остальную работу (REQ-002, 0.37.0). По решению пользователя 2026-11-05 кадрирование под пластину выделено в отдельную фичу [Обрезать фотоработу под пластину](../feature/overview.md), REQ-004. Прежний REQ-003 superseded только из-за переноса; кадрирование остаётся невыполненным. Статус этой фичи отражает только выпущенные REQ-001 и REQ-002.
 
 ## Problem
 

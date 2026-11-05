@@ -1,3 +1,19 @@
+# MarkView scope split — 2026-11-05
+
+Operator approved separating the remaining crop and public desktop-beta work and closing the released scope ("так и сделай").
+
+- [x] `work-size-and-splitting-a-region-again`: implemented for REQ-001 (0.36.0) and REQ-002 (0.37.0); REQ-001 criteria synchronized
+      with release evidence. Original REQ-003 is superseded by [crop REQ-004](../docs/features/feature/requirements/REQ-004.md), still draft
+      with all four criteria open. Scope decision DEC-085 accepted; original requirement and transfer history retained.
+- [x] `electron`: implemented for the internal beta and laboratory exchange (stages A/B/C). Remaining public-release conditions moved
+      to [public desktop beta](../docs/features/desktop-macos-windows/overview.md), draft, REQ-087..REQ-093: clean-machine/minimum-OS
+      acceptance, signing/notarization and verified updates, safe update application, real LAN/firewall and browser acceptance,
+      account recovery, and release-card terms confirmation. DEC-061 accepted; original criteria retained in historical sections.
+- [x] Refresh stale implemented criteria in electron REQ-084; distinguish internal-beta behavior from the transferred public acceptance
+      in REQ-080/082/086. Existing proposed technical decisions remain proposed; no claim of public-beta delivery or verified status.
+- [x] Final MarkView list: both original features implemented, both follow-ups draft. Required local suite: 2366 passed,
+      none skipped (`.venv/bin/python -m pytest -q -rs -n 12`, 261.04 s). Documentation committed and pushed on main.
+
 # Photo controls and prediction audit — 0.38.0 (2026-10-27)
 
 - [x] Compare the actual accepted Luna 1 file (pair 151), rather than its subsequently edited work, with the current Inna export.
@@ -155,10 +171,11 @@ Done 2026-10-26: commit 2cd1a1a on main, tag v0.37.0; suite 2337 passed, none sk
 260 456 243 bytes, sha256 65d4c5f6…0b318e, the same digest downloaded back from GitHub (pre-release v0.37.0); codesign strict ok,
 unnotarized; packaged smoke ok, core 0.37.0. Reinstalled on the operator's `reinstall` the same night.
 
-## Phase 3 — «Обрезать под пластину» (0.38.0)
+## Phase 3 — «Обрезать под пластину» (moved to a separate feature, 2026-11-05)
 
 - [ ] A plate's width × height and a frame moved over the picture; regions outside cut, those crossing clipped; texts and zones
-      moved with the frame. Design after phases 1 and 2 are in use.
+      moved with the frame. Design after phases 1 and 2 are in use. Now tracked in [feature / REQ-004](../docs/features/feature/requirements/REQ-004.md).
+      The old 0.38.0 target was not delivered; 0.38.0 shipped photo controls instead.
 
 # Photo dots named by their photograph — 0.35.3 (2026-10-25, BUG-008)
 
