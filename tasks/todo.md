@@ -1,3 +1,45 @@
+# UX research backlog — 2026-11-05
+
+Operator asked to study [the UX research](../docs/research/2026-11-05-ux-refactoring.md) and create issues directly in MarkView.
+Created 17 draft features, 42 draft requirements, 5 open bugs and 2 unanswered research/product questions. No application behavior
+changed. P0/P1/P2 are the research's recommended sequence, not measured bug severity. Bugs record static code evidence and require
+real-browser reproduction before a fix; no operator data was touched.
+
+| Priority | MarkView feature | Requirements | Research nodes |
+| --- | --- | ---: | --- |
+| P1 | [Пять разделов и понятные ориентиры](../docs/features/ux-navigation-p1/overview.md) | 3 | n8, n10, n12, n60, n61, n62, n63, n64, n65 |
+| P0 | [Общий компактный каталог работ](../docs/features/ux-work-catalog-p0/overview.md) | 2 | n9, n19, n20, n62 |
+| P0 | [Контекст, первый запуск и создание от результата](../docs/features/ux-work-creation-p0/overview.md) | 3 | n11, n13, n18 |
+| P1 | [Тест от цели и AI в контексте](../docs/features/ux-experiment-planning-ai-p1/overview.md) | 2 | n14, n17, n61 |
+| P0 | [Проверка фотографии по исключениям](../docs/features/ux-photo-review-p0/overview.md) | 2 | n15, n16 |
+| P0 | [Материалы, источники и длинная история](../docs/features/ux-growing-collections-p0/overview.md) | 4 | n21, n44, n19, n52 |
+| P0 | [Краткая достоверность и очередь решений](../docs/features/ux-evidence-summaries-p0/overview.md) | 2 | n24, n23, n31 |
+| P1 | [Холст, выделение и единая панель свойств](../docs/features/ux-object-inspector-p1/overview.md) | 2 | n25, n30 |
+| P1 | [Короткие формы фотогравировки и надписей](../docs/features/ux-photo-lettering-panels-p1/overview.md) | 2 | n26, n27 |
+| P1 | [Выбор измеренного цвета по образцу](../docs/features/ux-color-selection-p1/overview.md) | 2 | n28 |
+| P0 | [Экспорт и сравнение с конкретной гравировкой](../docs/features/ux-engraving-lifecycle-p0/overview.md) | 3 | n16, n29, n32, n50 |
+| P0 | [Сохранение, ошибки, формы и фоновые задачи](../docs/features/ux-save-feedback-p0/overview.md) | 3 | n35, n41, n36 |
+| P0 | [Клавиатура, холст и небольшое окно](../docs/features/ux-accessible-layout-p0/overview.md) | 2 | n33, n39, n34 |
+| P1 | [Первый полезный экран без ожидания скрытых вкладок](../docs/features/ux-useful-first-screen-p1/overview.md) | 2 | n45 |
+| P1 | [Обслуживание, вход и подключение лаборатории](../docs/features/ux-workshop-tasks-p1/overview.md) | 3 | n37, n42, n43, n65 |
+| P2 | [Плотность, технические справки и калибровка](../docs/features/ux-expert-settings-p2/overview.md) | 2 | n40, n47, n54, n12 |
+| P0 | [Проверка пользы редизайна и предметных гарантий](../docs/features/ux-validation-p0/overview.md) | 3 | n7, n48, n49, n50, n51, n52, n53, n54, n55, n56, n57, n58, n59 |
+
+Open bugs: BUG-012 (search), BUG-013 (paging), BUG-014 (modal), BUG-015 (skip), BUG-016 (fonts). BUG-012/013 belong to growing collections; BUG-014/015 to accessible layout;
+BUG-016 to photo/lettering panels. Each contains reproduction steps, expected/actual behavior, evidence limits and acceptance criteria.
+The object-inspector feature is P1, but its brush-mode/scope requirement explicitly retains n30's P0 priority and can ship first.
+
+Coverage: every actionable research node n7..n65 maps to a feature or bug; n1..n6 are grouping/context nodes. n19 and existing
+findings/measurement actions are preservation requirements, not duplicate implementation. Fixed BUG-001/002/003/011 are regressions,
+not reopened defects. Public-beta signing, recovery and platform acceptance remain in desktop-macos-windows; UX workshop tasks link
+to that scope. Navigation grouping and the need for a light theme remain unanswered questions, not accepted decisions.
+
+- [x] Read the full research, inspect existing MarkView formats/statuses and compare the key claims with current code.
+- [x] Create and link the draft features, requirements, sources, open bugs and questions through MarkView.
+- [x] YAML and local source links validated for all 86 new Markdown files; all 59 actionable research nodes covered, final MarkView
+      inventory verified (17 draft features, 42 draft requirements, 5 open bugs, 2 open questions). Local suite: 2366 passed,
+      none skipped (`.venv/bin/python -m pytest -q -rs -n 12`, 246.04 s). Documentation committed and pushed on main.
+
 # MarkView scope split — 2026-11-05
 
 Operator approved separating the remaining crop and public desktop-beta work and closing the released scope ("так и сделай").
