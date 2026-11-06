@@ -70,7 +70,9 @@ The goal check refused to stop at 0.39.0: save-feedback and validation were stil
 - [x] core rebuilt (bundled UI identical to source), frozen `--smoke` ok; `desktop` tests 33 passed; signed zip, codesign strict ok, packaged
       hidden smoke 0.39.1 with `interface drawn` and no session token; sha256
       `078c0ecc0803c5385138e93f30d5064e046424804c2fcde36fc3bd777f4ecedb`
-- [ ] one commit to `main`, push, pre-release v0.39.1 with the zip, digest verified after downloading it back
+- [x] one commit to `main` (41d2c02), pushed on the first try; pre-release v0.39.1 («внутренняя бета», tag on 41d2c02) with the zip; the asset
+      downloaded back has the same sha256 as the build and as the release's digest. The desktop app in /Applications was NOT reinstalled
+      (a separate operator action; the operator's copy is still 0.38.1).
 
 # Desktop shell: a log file and a window self-check (0.38.1) — 2026-11-05
 
