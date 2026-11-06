@@ -1,53 +1,45 @@
-/* Векторная работа из фотографии, разбиение (REQ-042, DEC-074, DEC-076; выбор алгоритма и общий раздел с цветами — фича
-   vector-detail-and-colour-control, DEC-076): алгоритм, число цветов, плотность, сглаживание, лица — всё на виду, как
-   часть раздела «Цвета и разбиение» (vector-colours.js). Найденные важные области (лицо, глаза, губы) нарисованы поверх
-   картинки в сворачиваемом блоке: оператор убирает найденную область или добавляет свою — тянет прямоугольник или эллипс
-   по картинке (координаты — пиксели рабочей картинки). Изменения областей и настроек применяются кнопкой «Разбить заново»:
-   разбиение пересчитывается, раскраска начинается заново. */
+/* Image splitting, algorithm choice, and editable important regions in a vector work. */
 /* vector-detail-and-colour-control: the density is a slider beside the number of regions it would give, counted by the server before the
    split (I-2, its DEC-093). An eye, the lips and a marked area have a detail of their own, a marked area its kind (eye, lips, other), and
    any area's boundary can be moved or drawn again (I-3, its DEC-094); when only the detail, boundary or kind of areas changed, the colours
-   outside the changed areas stay as they were after «Разбить заново». */
+   outside the changed areas stay as they were after «Split again». */
 'use strict';
 const VectorSplit = (() => {
   const {h, fill, btn, field, post, toast, confirmBox} = App;
   const NS = 'http://www.w3.org/2000/svg';
   const DENSITY = {min: 30, max: 250, step: 5};                     // vector_job.DENSITY
   const LEVELS = {coarse: 70, medium: 100, fine: 150};                // the former levels of detail, points of the same scale
-  const KIND = {face: 'Лицо', eye: 'Глаз', lips: 'Губы', manual: 'Отмечено вручную'};
+  const KIND = {face: 'Face', eye: 'Eye', lips: 'Lips', manual: 'Marked manually'};
   const FINE = ['eye', 'lips', 'manual'];                                            // faces.FINE_KINDS: these have a detail of their own
-  const DETAILS = [['fine', 'мелко'], ['finer', 'очень мелко'], ['finest', 'максимально'], ['face', 'как у лица']];   // faces.DETAILS
-  const MARKED = [['eye', 'глаз'], ['lips', 'губы'], ['manual', 'другое']];           // vector_job.MARKED_KINDS
-  /** Алгоритмы разбиения и чем они отличаются: что получается на картинке и сколько это стоит (DEC-082 фичи
-      vector-detail-and-colour-control; числа — портрет работы 22 на 1200 пикселях, 28 цветов, крупно, с лицами и без). Детальность — не алгоритм:
-      она есть у каждого. Ключ метода хранится в работе: SLIC — «Мозаика», как и раньше. */
+  const DETAILS = [['fine', 'fine'], ['finer', 'very fine'], ['finest', 'maximum'], ['face', 'same as face']];   // faces.DETAILS
+  const MARKED = [['eye', 'eye'], ['lips', 'lips'], ['manual', 'other']];           // vector_job.MARKED_KINDS
+  /** Splitting algorithms, their visual tradeoffs, and approximate processing time. */
   const ALGORITHMS = [
-    ['slic', 'Мозаика', 'Универсальный, по умолчанию. Картинка делится на ровные участки близкого размера: лица и мягкие переходы держит лучше всего, границы плавные. Считается быстро: около 1,5 секунды на портрете в 1200 пикселей.'],
-    ['tonal', 'По тонам', 'Области повторяют свет и тень: брови, губы, блик на носу, складки — отдельными пятнами, а не участками сетки. Самый подробный по светотени. Считается дольше остальных: около 3 секунд на портрете в 1200 пикселей.'],
-    ['planes', 'Крупные плоскости', 'Большие ровные плоскости одного тона и полосы вдоль линий, участков одинакового размера нет. Областей примерно на 40 % меньше, чем у «Мозаики»: рисунок проще, тонкие переходы тона пропадают. В лицах, глазах и губах области остаются мельче.'],
-    ['seeds', 'SEEDS', 'Близок к «Мозаике»: те же ровные участки, но считается быстрее (около секунды), и областей чуть меньше. Тонкие линии и текст держит не хуже, особенно на шумных и неровно освещённых снимках. На портретах границы чуть грубее, а ошибка цвета чуть больше.']];
-  const RESET = 'Области будут найдены заново, и раскраска начнётся сначала: цвета, выбранные вручную, варианты раскраски и шаги отмены этого разбиения '
-    + 'пропадут. Надписи и фотозоны перенесутся на новое разбиение. Прежние файлы LightBurn и результаты гравировок останутся.';
+    ['slic', 'Mosaic', 'General-purpose default. Divides the image into even regions of similar size, preserving faces and soft transitions with smooth boundaries. About 1.5 seconds for a 1200-pixel portrait.'],
+    ['tonal', 'By tone', 'Regions follow light and shadow; eyebrows, lips, highlights, and folds become separate patches rather than a grid. Most detailed in tonal shading. About 3 seconds for a 1200-pixel portrait.'],
+    ['planes', 'Large planes', 'Large uniform planes and strips along lines, without fixed-size regions. About 40% fewer regions than Mosaic: simpler artwork with fewer subtle tonal transitions. Faces, eyes, and lips retain smaller regions.'],
+    ['seeds', 'SEEDS', 'Similar even regions to Mosaic but faster (about one second) and slightly fewer regions. Preserves fine lines and text, especially in noisy or unevenly lit images. Portrait boundaries are slightly rougher and color error slightly higher.']];
+  const RESET = 'Regions will be found again and coloring will restart: manually selected colors, coloring variants, and undo history for this split '
+    + 'will be lost. Lettering and photo zones move to the new split. Previous LightBurn files and engraving results remain.';
   const algorithmName = (v) => (ALGORITHMS.find(([id]) => id === v) || ALGORITHMS[0])[1];
 
-  /** Выбор алгоритма с пояснением, для каким картинкам он подходит; пояснение меняется вместе с выбором. */
+  /** Describe the selected algorithm. */
   function picker(current) {
-    const select = h('select', {'aria-label': 'Алгоритм разбиения'}, ALGORITHMS.map(([v, name]) => h('option', {value: v, selected: v === current}, name)));
+    const select = h('select', {'aria-label': 'Splitting algorithm'}, ALGORITHMS.map(([v, name]) => h('option', {value: v, selected: v === current}, name)));
     const hint = h('p', {class: 'toolbar-hint'});
     const explain = () => fill(hint, h('strong', {}, algorithmName(select.value) + ': '), (ALGORITHMS.find(([id]) => id === select.value) || ALGORITHMS[0])[2]);
     select.addEventListener('change', explain);
     explain();
     return {select, hint};
   }
-  /** Гладкость границ — ползунок в мм (0: как найдены): каждое движение перерисовывает границы сразу, разбиение и цвета остаются
-      (REQ-052, DEC-083). Запросы идут по одному: пока один считается, берётся последнее положение, промежуточные пропускаются. */
+  /** Redraw boundaries immediately; coalesce intermediate smoothing requests. */
   function smoothness(j, apply) {
     const rule = {...Forms.QUANTITIES.smoothing, max: j.smoothing_max_mm || Forms.QUANTITIES.smoothing.max};       // the end is the work's own (vector_job.SMOOTHING_MAX_MM)
-    const input = h('input', {type: 'range', min: '0', max: String(rule.max), step: '0.05', value: String(j.smoothing_mm || 0), 'aria-label': 'Гладкость линий, мм'});
-    const say = (v) => (+v === 0 ? 'как найдены' : `${App.num(+v, 2)} мм`);
+    const input = h('input', {type: 'range', min: '0', max: String(rule.max), step: '0.05', value: String(j.smoothing_mm || 0), 'aria-label': 'Line smoothing, mm'});
+    const say = (v) => (+v === 0 ? 'as detected' : `${App.num(+v, 2)} mm`);
     const readout = h('output', {class: 'vw-slider-value'}, say(input.value));
     // a refusal of the server is told under the slider; the slider stays where it was put, the drawing is as it was
-    const place = Forms.notice({what: 'Сглаживание', kept: 'Границы остались прежними; ползунок стоит там, где вы его поставили.'});
+    const place = Forms.notice({what: 'Smoothing', kept: 'Boundaries remain unchanged; the slider keeps your position.'});
     let sent = +input.value, busy = false, timer = null;
     async function pump() {
       if (busy) return;
@@ -64,11 +56,11 @@ const VectorSplit = (() => {
   function densityControl(j, settings) {
     const s = j.split, start = s.density || LEVELS[s.detail] || LEVELS.medium;
     const input = h('input', {type: 'range', min: String(DENSITY.min), max: String(DENSITY.max), step: String(DENSITY.step), value: String(start),
-      'aria-label': 'Плотность областей'});
+      'aria-label': 'Region density'});
     const readout = h('output', {class: 'vw-slider-value'}, String(start));
-    const count = h('p', {class: 'small vw-density-count'}, `сейчас областей: ${j.document.regions}`);
+    const count = h('p', {class: 'small vw-density-count'}, `current regions: ${j.document.regions}`);
     // the server counts the regions of the settings before the split; a refusal of that count is told under the slider (the count shown is the work's own)
-    const place = Forms.notice({what: 'Подсчёт областей', kept: 'Показано число областей, которое есть сейчас.'});
+    const place = Forms.notice({what: 'Region count', kept: 'The current region count is shown.'});
     let asked = null, busy = false, timer = null;
     async function pump() {
       if (busy) return;
@@ -76,13 +68,13 @@ const VectorSplit = (() => {
       try {
         while (JSON.stringify(settings()) !== asked) {
           place.clear();
-          if (settings().n_colors == null) { fill(count, `сейчас областей: ${j.document.regions}`); return; }          // the colours are wrong: the box says so, nothing is asked
+          if (settings().n_colors == null) { fill(count, `current regions: ${j.document.regions}`); return; }          // the colours are wrong: the box says so, nothing is asked
           asked = JSON.stringify(settings());
-          fill(count, 'считаю, сколько будет областей…');
+          fill(count, 'Counting resulting regions…');
           const r = await post(`/vector/${j.id}/split/preview`, settings());
-          if (JSON.stringify(settings()) === asked) fill(count, `будет областей: ${r.regions} (сейчас ${j.document.regions}) · наименьшая ${App.num(r.min_area_mm2, 2)} мм²`);
+          if (JSON.stringify(settings()) === asked) fill(count, `resulting regions: ${r.regions} (currently ${j.document.regions}) · smallest ${App.num(r.min_area_mm2, 2)} mm²`);
         }
-      } catch (e) { place.fail(e); fill(count, `сейчас областей: ${j.document.regions}`); asked = null; } finally { busy = false; }
+      } catch (e) { place.fail(e); fill(count, `current regions: ${j.document.regions}`); asked = null; } finally { busy = false; }
     }
     const recount = () => { clearTimeout(timer); timer = setTimeout(pump, 400); };
     input.addEventListener('input', () => { readout.textContent = input.value; recount(); });
@@ -118,7 +110,7 @@ const VectorSplit = (() => {
   /** A detected area's changes in one form, to compare them with the saved ones. */
   const norm = (c) => ({number: c.number, detail: c.detail || null, ellipse: c.ellipse || null, polygon: c.polygon || null});
 
-  /** Фигура области в пикселях картинки: эллипс или многоугольник. */
+  /** Region shape in image pixels: ellipse or polygon. */
   function shape(area, cls) {
     if (area.ellipse) {
       const e = area.ellipse;
@@ -127,8 +119,7 @@ const VectorSplit = (() => {
     return svgEl('polygon', {points: area.polygon.map((p) => p.join(',')).join(' '), class: cls});
   }
 
-  /** Блок разбиения в разделе «Цвета и разбиение»: настройки с выбором алгоритма, счётчики, «Разбить заново» и, в
-      сворачиваемом блоке, картинка с важными областями. */
+  /** Split settings and editable important regions. */
   function card(j, reload, smooth) {
     const doc = j.document, s = j.split;
     const W = doc.image_px.width, H = doc.image_px.height;
@@ -141,8 +132,8 @@ const VectorSplit = (() => {
     const coloursRule = {...Forms.QUANTITIES.photoColours, max: j.layer_cap};
     const colours = Forms.numberInput(coloursRule, {value: s.n_colors});
     const splitForm = Forms.create();
-    const coloursField = splitForm.add('colours', 'Число цветов', colours, {quantity: coloursRule, required: true,
-      help: 'чистка — первый слой' + (j.markers_enabled ? ', ещё один — маркеры' : '')});
+    const coloursField = splitForm.add('colours', 'Number of colors', colours, {quantity: coloursRule, required: true,
+      help: 'cleaning is the first layer' + (j.markers_enabled ? ', markers use another layer' : '')});
     const algorithm = picker(s.algorithm || 'slic');
     const settings = () => ({n_colors: Forms.parse(colours.value, coloursRule, {required: true}).value ?? null, algorithm: algorithm.select.value, density: +density.input.value, faces: faces.checked,
       manual, removed: [...removed], adjusted: [...adjusted.values()].sort((a, b) => a.number - b.number)});
@@ -167,40 +158,40 @@ const VectorSplit = (() => {
     const density = densityControl(j, settings);
     const smoothing = smoothness(j, smooth || (async () => {}));
     const faces = h('input', {type: 'checkbox', checked: s.faces});
-    const tool = h('select', {'aria-label': 'Форма новой области'}, h('option', {value: 'rect'}, 'Прямоугольник'), h('option', {value: 'ellipse'}, 'Эллипс'));
+    const tool = h('select', {'aria-label': 'New region shape'}, h('option', {value: 'rect'}, 'Rectangle'), h('option', {value: 'ellipse'}, 'Ellipse'));
     const overlay = svgEl('svg', {viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', class: 'vw-areas', role: 'img',
-      'aria-label': 'Важные области поверх картинки; тяните, чтобы отметить свою'});
+      'aria-label': 'Important regions over the image; drag to mark your own'});
     const list = h('div', {class: 'stack'});
     // the same areas by numbers (ux-accessible-layout-p0, REQ-001): a drag on the picture is not the only way to mark an area or to
     // reshape one; the frame is given in percent of the picture and becomes a rectangle or an ellipse as the shape list says
-    const FRAME = [['left', 'Слева, %', 25, 0], ['top', 'Сверху, %', 25, 0], ['width', 'Ширина, %', 50, 0.1], ['height', 'Высота, %', 50, 0.1]];
-    const frame = Object.fromEntries(FRAME.map(([key, label, value]) => [key, h('input', {type: 'number', step: '0.1', min: '0', max: '100', value: String(value), 'aria-label': `Область: ${label}`})]));
+    const FRAME = [['left', 'Left, %', 25, 0], ['top', 'Top, %', 25, 0], ['width', 'Width, %', 50, 0.1], ['height', 'Height, %', 50, 0.1]];
+    const frame = Object.fromEntries(FRAME.map(([key, label, value]) => [key, h('input', {type: 'number', step: '0.1', min: '0', max: '100', value: String(value), 'aria-label': `Region: ${label}`})]));
     // each of the four says beside itself what is wrong with it (the frame must lie inside the picture); what was typed stays
     const frameFields = Object.fromEntries(FRAME.map(([key, label]) => [key, App.field(label, frame[key], null, {required: true, constraint: key === 'left' || key === 'top' ? 'from 0 to 100' : 'greater than 0, at most 100'})]));
     for (const key of Object.keys(frame)) frame[key].addEventListener('input', () => frameFields[key].clearError());
     const numNote = h('p', {class: 'small vw-area-note', role: 'status', 'aria-live': 'polite'});
     const numActs = h('div', {class: 'row'});
-    const applyBtn = btn('Добавить область числами', applyFrame, 'primary');            // never replaced: a replaced button drops the keyboard
+    const applyBtn = btn('Add region by coordinates', applyFrame, 'primary');            // never replaced: a replaced button drops the keyboard
     numActs.append(applyBtn);
     let nudges = [];                                                                  // the four move buttons, there while a boundary is being edited
-    const makeNudges = () => [['←', 'влево', -1, 0], ['→', 'вправо', 1, 0], ['↑', 'вверх', 0, -1], ['↓', 'вниз', 0, 1]].map(([sign, word, dx, dy]) => {
+    const makeNudges = () => [['←', 'left', -1, 0], ['→', 'right', 1, 0], ['↑', 'up', 0, -1], ['↓', 'down', 0, 1]].map(([sign, word, dx, dy]) => {
       const b = btn(sign, () => nudge(dx, dy), 'btn-small');
-      b.setAttribute('aria-label', `Сдвинуть границу ${word} на 1 %`);
+      b.setAttribute('aria-label', `Move boundary ${word} by 1%`);
       return b;
     });
-    const pending = h('p', {class: 'muted small', hidden: true}, 'Изменения областей применятся после «Разбить заново».');
+    const pending = h('p', {class: 'muted small', hidden: true}, 'Region changes apply after Split again.');
     const editHint = h('p', {class: 'small', hidden: true});
     const areasTitle = h('summary', {});
     let areasKey = null;                                               // the areas as last drawn: a change of them recounts the regions
 
     /** An area's detail, one of four; a face has none of its own. */
     const detailPicker = (value, set, name, which) => {
-      const select = h('select', {'aria-label': `Детальность области: ${which}`}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
+      const select = h('select', {'aria-label': `Region detail: ${which}`}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
       select.addEventListener('change', () => { set(select.value); draw(); });
       return mark(select, `${name}:detail`);
     };
     const isEditing = (which) => editing != null && JSON.stringify(editing) === JSON.stringify(which);
-    const borderButton = (which) => mark(btn(isEditing(which) ? 'Готово' : 'Граница', () => { editing = isEditing(which) ? null : which; draw(); }),
+    const borderButton = (which) => mark(btn(isEditing(which) ? 'Done' : 'Boundary', () => { editing = isEditing(which) ? null : which; draw(); }),
       'found' in which ? `found${which.found}:border` : `manual${which.manual}:border`);
     /** A control of the list of areas, named so that the list drawn again puts the keyboard back on the same control. */
     const mark = (el, name) => { el.setAttribute('data-focus', name); return el; };
@@ -221,16 +212,16 @@ const VectorSplit = (() => {
       const single = {left: l >= 0 && l <= 100, top: t >= 0 && t <= 100, width: w > 0 && w <= 100, height: hh > 0 && hh <= 100};
       const wrong = Object.keys(frame).filter((k) => !Number.isFinite(parseFloat(frame[k].value)) || !single[k]);
       if (wrong.length) {
-        for (const k of wrong) frameFields[k].setError(Number.isFinite(parseFloat(frame[k].value)) ? `Допустимо: ${k === 'left' || k === 'top' ? 'from 0 to 100' : 'greater than 0, at most 100'} %. Введено: ${frame[k].value}` : 'Введите число, %');
+        for (const k of wrong) frameFields[k].setError(Number.isFinite(parseFloat(frame[k].value)) ? `Allowed: ${k === 'left' || k === 'top' ? 'from 0 to 100' : 'greater than 0, at most 100'} %. Entered: ${frame[k].value}` : 'Enter a number, %');
         frameFields[wrong[0]].firstControl().focus();
-        return {error: 'Укажите все четыре числа рамки области: слева и сверху от 0 до 100, ширина и высота больше 0 и не больше 100 %'};
+        return {error: 'Enter all four region bounds: left and top from 0 to 100; width and height greater than 0 and at most 100%.'};
       }
       if (l + w > 100.0001 || t + hh > 100.0001) {
-        for (const k of l + w > 100.0001 ? ['left', 'width'] : ['top', 'height']) frameFields[k].setError('Вместе с соседним числом рамка выходит за картинку: слева плюс ширина и сверху плюс высота — не больше 100 %');
-        return {error: 'Рамка должна лежать внутри картинки: слева и сверху не меньше 0, ширина и высота больше 0, слева плюс ширина и сверху плюс высота — не больше 100 %'};
+        for (const k of l + w > 100.0001 ? ['left', 'width'] : ['top', 'height']) frameFields[k].setError('The bounds extend beyond the image: left plus width and top plus height must not exceed 100%.');
+        return {error: 'The bounds must lie inside the image: left and top at least 0, width and height above 0, and each position plus size at most 100%.'};
       }
       const area = areaOf([l * W / 100, t * H / 100], [(l + w) * W / 100, (t + hh) * H / 100]);
-      return area ? {area} : {error: 'Рамка слишком мала: не меньше 2 пикселей рабочей картинки по каждой стороне'};
+      return area ? {area} : {error: 'The bounds are too small: each side must be at least 2 image pixels.'};
     }
     /** The frame fields take the box of the area being edited, so the numbers start from what is there. */
     function frameOf(area) {
@@ -245,8 +236,8 @@ const VectorSplit = (() => {
       const got = framed();
       if (got.error) { fill(numNote, got.error); numNote.setAttribute('class', 'small vw-area-note alert bad'); return; }
       numNote.setAttribute('class', 'small vw-area-note');
-      if (editing) { reshape(got.area); fill(numNote, 'Граница области изменена; применится после «Разбить заново»'); }
-      else { manual.push(got.area); fill(numNote, `Добавлена область: отмечено вручную № ${manual.length}; она применится после «Разбить заново»`); }
+      if (editing) { reshape(got.area); fill(numNote, 'Region boundary changed; it will apply after Split again'); }
+      else { manual.push(got.area); fill(numNote, `Region added: manually marked #${manual.length}; it will apply after Split again`); }
       draw();
     }
     /** The edited area's boundary moved by one percent of the picture. */
@@ -254,7 +245,7 @@ const VectorSplit = (() => {
       const area = edited();
       if (!area) return;
       reshape(moved(outline(area), dx * W / 100, dy * H / 100));
-      fill(numNote, 'Граница сдвинута на 1 %');
+      fill(numNote, 'Boundary moved by 1%');
       numNote.setAttribute('class', 'small vw-area-note');
       draw();
       frameOf(edited());                                                // the fields follow the boundary
@@ -277,33 +268,33 @@ const VectorSplit = (() => {
         || [...removed].some((n) => !s.removed.includes(n)) || was !== now;
       pending.hidden = !changed;
       editHint.hidden = editing == null;
-      fill(editHint, 'Тяните внутри выделенной области, чтобы сдвинуть её, или рядом с ней, чтобы нарисовать её границу заново (форма — как у новой области). «Готово» — закончить.');
+      fill(editHint, 'Drag inside the selected region to move it, or beside it to redraw its boundary using the new-region shape. Select Done to finish.');
       const editedNow = edited();
       if (editedNow && JSON.stringify(editing) !== framedFor) frameOf(editedNow);              // a new area to edit: its box in the fields
       framedFor = editedNow ? JSON.stringify(editing) : null;
-      fill(applyBtn, editing ? 'Задать границу числами' : 'Добавить область числами');
+      fill(applyBtn, editing ? 'Set boundary by coordinates' : 'Add region by coordinates');
       if (!!editing !== nudges.length > 0) { nudges.forEach((b) => b.remove()); nudges = editing ? makeNudges() : []; numActs.append(...nudges); }
-      fill(areasTitle, `Важные области: лица, глаза, губы и отмеченные вручную (найдено ${faces.checked ? j.areas.detected.length : 0}, отмечено ${manual.length}, убрано ${removed.size})`);
+      fill(areasTitle, `Important regions: faces, eyes, lips, and manually marked (found ${faces.checked ? j.areas.detected.length : 0}, marked ${manual.length}, removed ${removed.size})`);
       const rows = (faces.checked ? j.areas.detected : []).map((a) => {
         const gone = removed.has(a.number), changedHere = adjusted.has(a.number);
         return h('div', {class: 'row'},
-          h('span', {}, `${KIND[a.kind]} · найдено`, a.score == null ? '' : ` (оценка ${App.num(a.score)})`, gone ? ' · убрано' : changedHere ? ' · изменено' : ''),
-          !gone && FINE.includes(a.kind) ? detailPicker(effective(a).detail, (v) => adjust(a.number, {detail: v}), `found${a.number}`, `${KIND[a.kind].toLowerCase()}, найдено`) : null,
+          h('span', {}, `${KIND[a.kind]} · found`, a.score == null ? '' : ` (score ${App.num(a.score)})`, gone ? ' · removed' : changedHere ? ' · changed' : ''),
+          !gone && FINE.includes(a.kind) ? detailPicker(effective(a).detail, (v) => adjust(a.number, {detail: v}), `found${a.number}`, `${KIND[a.kind].toLowerCase()}, found`) : null,
           !gone ? borderButton({found: a.number}) : null,
-          !gone && changedHere ? mark(btn('Как найдено', () => { adjusted.delete(a.number); draw(); }), `found${a.number}:asfound`) : null,
-          gone ? mark(btn('Вернуть', () => { removed.delete(a.number); draw(); }), `found${a.number}:toggle`)
-            : mark(btn('Убрать', () => { removed.add(a.number); draw(); }), `found${a.number}:toggle`));
+          !gone && changedHere ? mark(btn('As detected', () => { adjusted.delete(a.number); draw(); }), `found${a.number}:asfound`) : null,
+          gone ? mark(btn('Restore', () => { removed.delete(a.number); draw(); }), `found${a.number}:toggle`)
+            : mark(btn('Remove', () => { removed.add(a.number); draw(); }), `found${a.number}:toggle`));
       });
       manual.forEach((a, i) => {
-        const kind = h('select', {'aria-label': `Что это за область: отмечено вручную № ${i + 1}`}, MARKED.map(([v, l]) => h('option', {value: v, selected: v === (a.kind || 'manual')}, l)));
+        const kind = h('select', {'aria-label': `Region type: manually marked #${i + 1}`}, MARKED.map(([v, l]) => h('option', {value: v, selected: v === (a.kind || 'manual')}, l)));
         kind.addEventListener('change', () => { manual[i] = {...manual[i], kind: kind.value}; draw(); });
         mark(kind, `manual${i}:kind`);
-        rows.push(h('div', {class: 'row'}, h('span', {}, `Отмечено вручную № ${i + 1}`), kind,
-          detailPicker(a.detail, (v) => { manual[i] = {...manual[i], detail: v === 'fine' ? undefined : v}; if (!manual[i].detail) delete manual[i].detail; }, `manual${i}`, `отмечено вручную № ${i + 1}`),
+        rows.push(h('div', {class: 'row'}, h('span', {}, `Marked manually #${i + 1}`), kind,
+          detailPicker(a.detail, (v) => { manual[i] = {...manual[i], detail: v === 'fine' ? undefined : v}; if (!manual[i].detail) delete manual[i].detail; }, `manual${i}`, `marked manually #${i + 1}`),
           borderButton({manual: i}),
-          mark(btn('Убрать', () => { manual.splice(i, 1); if (editing && 'manual' in editing) editing = null; draw(); }), `manual${i}:toggle`)));
+          mark(btn('Remove', () => { manual.splice(i, 1); if (editing && 'manual' in editing) editing = null; draw(); }), `manual${i}:toggle`)));
       });
-      keepFocus(() => fill(list, rows.length ? rows : h('p', {class: 'muted small'}, 'Важных областей нет. Потяните по картинке, чтобы отметить свою.')));
+      keepFocus(() => fill(list, rows.length ? rows : h('p', {class: 'muted small'}, 'No important regions. Drag on the image to mark one.')));
     }
 
     // dragging on the picture: a rectangle or an ellipse in pixels of the working picture, a new area or the edited area's new boundary;
@@ -351,36 +342,36 @@ const VectorSplit = (() => {
     draw();
 
     // split again: the colouring, its variants and its undo steps start anew, so the operator is asked first (I-8)
-    const run = btn('Разбить заново', () => {
+    const run = btn('Split again', () => {
       if (!splitForm.collect()) return;                                // the wrong number says why beside its box; no question is asked about it
-      confirmBox('Разбить картинку заново?', RESET, 'Разбить заново', async () => {
+      confirmBox('Split the image again?', RESET, 'Split again', async () => {
         try {
           await post(`/vector/${j.id}/split`, settings());
-          toast('Картинка разбита заново; цвета подобраны заново', 'ok');
+          toast('Image split again; colors reassigned', 'ok');
           reload();
         } catch (e) { splitForm.fail(e); }
       });
     }, 'primary');
-    const found = !doc.faces.searched ? 'поиск лиц выключен' : j.areas.search_failed ? 'поиск лиц не удался — отметьте важные области вручную'
-      : doc.faces.found ? `лиц найдено: ${doc.faces.found}` : 'лицо не найдено';
-    return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Разбиение'),
-      h('div', {class: 'vw-split-fields'}, field('Алгоритм разбиения', algorithm.select),
+    const found = !doc.faces.searched ? 'face detection off' : j.areas.search_failed ? 'face detection failed; mark important regions manually'
+      : doc.faces.found ? `faces found: ${doc.faces.found}` : 'no face found';
+    return h('div', {class: 'stack vw-split'}, h('h4', {}, 'Split'),
+      h('div', {class: 'vw-split-fields'}, field('Splitting algorithm', algorithm.select),
         coloursField, splitForm.error,
-        field('Плотность областей', density.el, 'меньше — крупнее и меньше областей, больше — мелче; 70, 100 и 150 — прежние «крупно», «средне» и «детально»'),
-        field('Гладкость линий', smoothing, 'ползунок перерисовывает границы сразу; области и цвета не меняются')),
+        field('Region density', density.el, 'lower values give fewer, larger regions; higher values give finer regions. 70, 100, and 150 match the former coarse, medium, and fine settings'),
+        field('Line smoothing', smoothing, 'the slider redraws boundaries immediately; regions and colors stay the same')),
       density.count,
-      h('div', {class: 'vw-split-actions'}, h('label', {class: 'row'}, faces, h('span', {}, 'Искать лица (глаза и губы — подробнее)')), run),
+      h('div', {class: 'vw-split-actions'}, h('label', {class: 'row'}, faces, h('span', {}, 'Find faces (more detail for eyes and lips)')), run),
       algorithm.hint,
-      h('p', {class: 'small'}, `Алгоритм ${algorithmName(doc.algorithm)} · цветов: ${doc.colours} · областей: ${doc.regions} · ${found}` + (doc.important_regions ? ` · областей в важных местах: ${doc.important_regions}` : '')
-        + ` · наименьшая область ${App.num(doc.min_area_mm2, 2)} мм²`),
+      h('p', {class: 'small'}, `Algorithm ${algorithmName(doc.algorithm)} · colors: ${doc.colours} · regions: ${doc.regions} · ${found}` + (doc.important_regions ? ` · regions in important areas: ${doc.important_regions}` : '')
+        + ` · smallest region ${App.num(doc.min_area_mm2, 2)} mm²`),
       h('details', {class: 'vw-details vw-areas-box'}, areasTitle,
         h('div', {class: 'grid g2'},
-          h('figure', {}, h('div', {class: 'vw-stage'}, h('img', {src: `/api/plans/${j.id}/source-image`, alt: 'Исходная картинка'}), overlay),
-            h('figcaption', {class: 'muted small'}, 'Картинка делится на цветные области без зазоров: общая граница двух областей — одна линия; лица, глаза, губы и отмеченные области делятся мельче. ',
-              'Лицо — голубое, глаза и губы — жёлтые, отмеченные вручную — зелёные, убранные — пунктир, выделенная — толще. Потяните по картинке, чтобы отметить свою область. ',
-              'У глаза, губ и отмеченной области своя детальность; если изменить только её, границу или вид области, цвета вне изменённых областей после «Разбить заново» останутся прежними.')),
-          h('div', {class: 'stack'}, field('Новая область', tool),
-            h('div', {class: 'vw-area-num', role: 'group', 'aria-label': 'Рамка области числами, в процентах картинки'}, Object.values(frameFields)),
+          h('figure', {}, h('div', {class: 'vw-stage'}, h('img', {src: `/api/plans/${j.id}/source-image`, alt: 'Source image'}), overlay),
+            h('figcaption', {class: 'muted small'}, 'The image is split into color regions without gaps; adjacent regions share one boundary. Faces, eyes, lips, and marked regions are split more finely. ',
+              'Faces are blue, eyes and lips yellow, and manually marked regions green. Removed regions are dashed and the selected boundary is thicker. Drag to mark a region. ',
+              'Eyes, lips, and marked regions have their own detail settings. If only detail, boundary, or kind changes, colors outside changed regions remain after Split again.')),
+          h('div', {class: 'stack'}, field('New region', tool),
+            h('div', {class: 'vw-area-num', role: 'group', 'aria-label': 'Region bounds as percentages of the image'}, Object.values(frameFields)),
             numActs, numNote, list, editHint, pending))));
   }
 

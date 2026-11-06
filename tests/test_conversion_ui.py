@@ -95,7 +95,7 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
         assert label in colours, label
     assert "Принять" not in colours                                                    # DEC-001: nothing waits for acceptance
     split = source("screens/vector-split.js")
-    assert "post(`/vector/${j.id}/split`" in split and "'Разбить заново'" in split and "лицо не найдено" in split
+    assert "post(`/vector/${j.id}/split`" in split and "'Split again'" in split and "no face found" in split
 
 
 def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour_within_the_threshold_is_chosen():

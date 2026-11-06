@@ -1092,7 +1092,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.links = tree.querySelectorAll('a').map((a) => a.getAttribute('href'));
   out.tabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('vw-tab-')).map((b) => b.textContent);
   const screen = tree;                                            // the screen is the workspace itself
-  out.inScreen = ['Алгоритм разбиения', 'Число цветов', 'Разбить заново', 'Слои титана', 'Исходные цвета', 'Подробно по цветам…', 'Варианты раскраски', 'Раскрасить с помощью AI',
+  out.inScreen = ['Splitting algorithm', 'Number of colors', 'Split again', 'Слои титана', 'Исходные цвета', 'Подробно по цветам…', 'Варианты раскраски', 'Раскрасить с помощью AI',
                   'Скачать LightBurn', '← My works', 'Make a copy']
     .filter((t) => !screen.textContent.includes(t) && !screen.querySelectorAll('select, input, button').some((c) => c.getAttribute('aria-label') === t));
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
@@ -1101,8 +1101,8 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
     assert out["tabs"] == ["Разбиение", "Document colors", "AI", "Варианты", "Результат", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
     assert not any(old in text for old in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn"))
     assert "vw-ed-svg" in out["pictures"] and "vw-areas" in out["pictures"]
-    for part in ("Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",
-                 "Подробно по цветам…", "самый быстрый цвет в пределах допуска", "Алгоритм Мозаика", "Важные области: лица, глаза, губы"):
+    for part in ("Файл LightBurn", "Оценка времени всей работы", "no face found", "Слои титана", "Исходные цвета",
+                 "Подробно по цветам…", "самый быстрый цвет в пределах допуска", "Algorithm Mosaic", "Important regions: faces, eyes, lips"):
         assert part in text, part
     assert not any(bad in text for bad in ("null", "undefined", "NaN", "без перевода", "[object", "Принять")), text[:3000]
     assert sum("vw-ed-svg" in (c or "").split() for c in out["classes"]) == 1 and "vw-areas" in out["classes"]
@@ -1153,11 +1153,11 @@ def test_the_colour_step_sends_contrast_and_artistic_with_its_group_and_names_th
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_density_slider_counts_the_regions_it_would_give_and_split_again_takes_it(work, job, tmp_path):
     """vector-detail-and-colour-control I-2: the slider asks the server for the count once it stops (the last position only), the work is
-    unchanged until «Разбить заново»."""
+    unchanged until «Split again»."""
     routes = routes_of(work, job)
     routes[f"/api/vector/{job['id']}/split/preview"] = {"status": 200, "json": {"density": 60, "regions": 17, "colours": 5, "min_area_mm2": 2.5}}
     out = run_screen(tmp_path, job, routes, """
-  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Плотность областей');
+  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Region density');
   out.initial = [slider.getAttribute('min'), slider.getAttribute('max'), slider.value];
   const count = () => tree.querySelectorAll('p').find((p) => (p.className || '').includes('vw-density-count')).textContent;
   out.before = count();
@@ -1165,14 +1165,14 @@ def test_the_density_slider_counts_the_regions_it_would_give_and_split_again_tak
   await new Promise((r) => setTimeout(r, 500)); await tick(); await tick();
   out.after = count();
   out.previews = ctx.requests.filter((r) => r.path.endsWith('/split/preview')).map((r) => JSON.parse(r.body));
-  await byText(tree, 'button', 'Разбить заново').dispatch('click');
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Split again').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Split again').dispatch('click'); await tick();
   out.split = ctx.requests.filter((r) => r.path.endsWith('/split') && r.method === 'POST').map((r) => JSON.parse(r.body));
 """)
     regions = work["client"].get(f"/api/vector/{job['id']}").json()["document"]["regions"]
-    assert out["initial"] == ["30", "250", "100"] and out["before"] == f"сейчас областей: {regions}"
+    assert out["initial"] == ["30", "250", "100"] and out["before"] == f"current regions: {regions}"
     assert [p["density"] for p in out["previews"]] == [60] and out["previews"][0]["n_colors"] == 5
-    assert out["after"].startswith(f"будет областей: 17 (сейчас {regions})")
+    assert out["after"].startswith(f"resulting regions: 17 (currently {regions})")
     assert len(out["split"]) == 1 and out["split"][0]["density"] == 60
 
 
@@ -1183,30 +1183,30 @@ def test_an_eye_is_given_a_detail_and_moved_and_a_missing_one_marked_and_split_a
     j = create(work).json()
     out = run_screen(tmp_path, j, routes_of(work, j), """
   const row = (start) => tree.querySelectorAll('div').filter((d) => d.className === 'row' && d.textContent.startsWith(start))[0];
-  const eye = row('Глаз · найдено');
+  const eye = row('Eye · found');
   out.details = eye.querySelector('select').options.map((o) => [o.value, o.textContent]);
-  out.faceSelects = row('Лицо · найдено').querySelectorAll('select').length;
+  out.faceSelects = row('Face · found').querySelectorAll('select').length;
   eye.querySelector('select').value = 'finest'; await eye.querySelector('select').dispatch('change');
-  await row('Глаз · найдено').querySelectorAll('button').find((b) => b.textContent === 'Граница').dispatch('click');
+  await row('Eye · found').querySelectorAll('button').find((b) => b.textContent === 'Boundary').dispatch('click');
   const overlay = tree.querySelectorAll('svg').find((s) => s.getAttribute('class') === 'vw-areas');
   out.editing = overlay.querySelectorAll('ellipse').filter((e) => (e.getAttribute('class') || '').includes('editing')).length;
   await overlay.dispatch('pointerdown', {clientX: 48, clientY: 36, pointerId: 1});
   await overlay.dispatch('pointermove', {clientX: 53, clientY: 40});
   await overlay.dispatch('pointerup', {clientX: 53, clientY: 40});
-  await row('Глаз · найдено').querySelectorAll('button').find((b) => b.textContent === 'Готово').dispatch('click');
+  await row('Eye · found').querySelectorAll('button').find((b) => b.textContent === 'Done').dispatch('click');
   await overlay.dispatch('pointerdown', {clientX: 5, clientY: 5, pointerId: 1});
   await overlay.dispatch('pointermove', {clientX: 20, clientY: 20});
   await overlay.dispatch('pointerup', {clientX: 20, clientY: 20});
-  const kind = tree.querySelectorAll('select').find((s) => (s.getAttribute('aria-label') || '').startsWith('Что это за область: отмечено вручную № 1'));
+  const kind = tree.querySelectorAll('select').find((s) => (s.getAttribute('aria-label') || '').startsWith('Region type: manually marked #1'));
   out.kinds = kind.options.map((o) => o.value);
   kind.value = 'eye'; await kind.dispatch('change');
-  out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Изменения областей применятся')).hidden;
-  out.changed = row('Глаз · найдено').textContent.includes('изменено');
-  await byText(tree, 'button', 'Разбить заново').dispatch('click');
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Region changes apply')).hidden;
+  out.changed = row('Eye · found').textContent.includes('changed');
+  await byText(tree, 'button', 'Split again').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Split again').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path.endsWith('/split') && r.method === 'POST').map((r) => JSON.parse(r.body));
 """)
-    assert out["details"] == [["fine", "мелко"], ["finer", "очень мелко"], ["finest", "максимально"], ["face", "как у лица"]]
+    assert out["details"] == [["fine", "fine"], ["finer", "very fine"], ["finest", "maximum"], ["face", "same as face"]]
     assert out["faceSelects"] == 0 and out["editing"] == 1 and out["kinds"] == ["eye", "lips", "manual"] and out["pending"] and out["changed"]
     body, = out["posted"]
     found = j["areas"]["detected"][1]["ellipse"]
@@ -1251,16 +1251,16 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
   await overlay.dispatch('pointermove', {clientX: 50, clientY: 40});
   await overlay.dispatch('pointerup', {clientX: 50, clientY: 40});
   out.drawn = overlay.querySelectorAll('polygon').map((p) => p.getAttribute('class'));
-  out.pending = tree.textContent.includes('Изменения областей применятся после');
-  await byText(tree, 'button', 'Разбить заново').dispatch('click');
+  out.pending = tree.textContent.includes('Region changes apply after');
+  await byText(tree, 'button', 'Split again').dispatch('click');
   out.beforeConfirm = ctx.requests.filter((r) => r.method === 'POST').length;
   const box = ctx.document.body.querySelector('.modal');
   out.warning = box.textContent;
-  await byText(box, 'button', 'Разбить заново').dispatch('click'); await tick();
+  await byText(box, 'button', 'Split again').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
 """)
     assert out["drawn"] == ["vw-area manual"] and out["pending"]
-    assert out["beforeConfirm"] == 0 and "раскраска начнётся сначала" in out["warning"] and "Надписи и фотозоны перенесутся" in out["warning"]
+    assert out["beforeConfirm"] == 0 and "coloring will restart" in out["warning"] and "Lettering and photo zones move" in out["warning"]
     (path, body), = out["posted"]
     assert path == f"/api/vector/{job['id']}/split" and body["manual"] == [{"polygon": [[24, 18], [120, 18], [120, 72], [24, 72]]}]
     assert body["n_colors"] == 5 and body["density"] == 100 and body["faces"] is True and body["removed"] == []      # medium detail is density 100
@@ -1272,7 +1272,7 @@ def test_an_area_dragged_on_the_picture_is_sent_in_picture_pixels_when_split_aga
 def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_like_and_costs_and_travel_with_split_again(work, job, tmp_path):
     """DEC-076, DEC-082 of vector-detail-and-colour-control: a choice before splitting again, each described, a level of detail not among them."""
     out = run_screen(tmp_path, job, routes_of(work, job), """
-  const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Алгоритм разбиения');
+  const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Splitting algorithm');
   out.options = select.options.map((o) => [o.value, o.textContent]);
   out.selected = select.value;
   const hint = () => tree.querySelectorAll('p').find((p) => p.className === 'toolbar-hint').textContent;
@@ -1280,16 +1280,16 @@ def test_the_four_algorithms_are_chosen_on_the_screen_each_with_what_it_looks_li
   for (const [value] of out.options) { select.value = value; await select.dispatch('change'); out.hints[value] = hint(); }
   out.detail = tree.querySelectorAll('select').filter((s) => s.getAttribute('aria-label') === 'Детальность').length;
   select.value = 'planes'; await select.dispatch('change');
-  await byText(tree, 'button', 'Разбить заново').dispatch('click');
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Split again').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Split again').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
 """)
-    assert out["options"] == [["slic", "Мозаика"], ["tonal", "По тонам"], ["planes", "Крупные плоскости"], ["seeds", "SEEDS"]] and out["selected"] == "slic"
+    assert out["options"] == [["slic", "Mosaic"], ["tonal", "By tone"], ["planes", "Large planes"], ["seeds", "SEEDS"]] and out["selected"] == "slic"
     hints = out["hints"]
-    assert len(set(hints.values())) == 4 and all(hints[k].startswith(name + ": ") for k, name in (("slic", "Мозаика"), ("tonal", "По тонам"),
-                                                                                                   ("planes", "Крупные плоскости"), ("seeds", "SEEDS")))
-    assert "лица" in hints["slic"] and "светотени" in hints["tonal"] and "дольше остальных" in hints["tonal"]                  # what it looks like, what it costs
-    assert "на 40 % меньше" in hints["planes"] and "быстрее" in hints["seeds"] and "Близок к «Мозаике»" in hints["seeds"]
+    assert len(set(hints.values())) == 4 and all(hints[k].startswith(name + ": ") for k, name in (("slic", "Mosaic"), ("tonal", "By tone"),
+                                                                                                   ("planes", "Large planes"), ("seeds", "SEEDS")))
+    assert "faces" in hints["slic"] and "tonal shading" in hints["tonal"] and "3 seconds" in hints["tonal"]                  # what it looks like, what it costs
+    assert "40% fewer" in hints["planes"] and "faster" in hints["seeds"] and "Similar even regions to Mosaic" in hints["seeds"]
     assert out["detail"] == 0                                                          # a density slider, not levels among the algorithms
     (path, body), = out["posted"]
     assert path == f"/api/vector/{job['id']}/split" and body["algorithm"] == "planes" and body["n_colors"] == 5
@@ -1417,7 +1417,7 @@ def test_the_slider_sends_the_last_position_once_and_the_editor_redraws_the_bord
     moved = {**routes[f"/api/vector/{j['id']}"]["json"], "smoothing_mm": 1.2}
     routes[f"/api/vector/{j['id']}/smoothing"] = {"status": 200, "json": moved}
     out = run_screen(tmp_path, j, routes, """
-  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Гладкость линий, мм');
+  const slider = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Line smoothing, mm');
   out.initial = [slider.getAttribute('type'), slider.getAttribute('min'), slider.getAttribute('max'), slider.getAttribute('step'), slider.value];
   const readout = slider.parentNode.querySelector('output');                           // its own readout (the density slider has one too)
   out.readoutBefore = readout.textContent;
@@ -1429,7 +1429,7 @@ def test_the_slider_sends_the_last_position_once_and_the_editor_redraws_the_bord
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
   out.geometry = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length - geometryBefore;
   out.renders = ctx.__renders.length;
-  out.stillThere = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Гладкость линий, мм') === slider;
+  out.stillThere = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Line smoothing, mm') === slider;
   out.readoutAfter = readout.textContent;
 """)
     assert out["initial"] == ["range", "0", "2", "0.05", "0.5"] and out["readoutBefore"].replace(",", ".") == "0.50 мм"
@@ -1443,7 +1443,7 @@ def test_the_editor_and_the_slider_are_wired_to_the_smoothness_of_the_work():
     editor = (UI / "screens" / "vector-editor.js").read_text(encoding="utf-8")
     assert "const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;" in editor and "loadedVersion !== geometryKey(j)" in editor
     split_js = (UI / "screens" / "vector-split.js").read_text(encoding="utf-8")
-    assert "type: 'range'" in split_js and "'aria-label': 'Гладкость линий, мм'" in split_js and "max: String(rule.max)" in split_js and "j.smoothing_max_mm || Forms.QUANTITIES.smoothing.max" in split_js
+    assert "type: 'range'" in split_js and "'aria-label': 'Line smoothing, mm'" in split_js and "max: String(rule.max)" in split_js and "j.smoothing_max_mm || Forms.QUANTITIES.smoothing.max" in split_js
 
 
 def test_a_work_can_be_made_when_every_measured_colour_of_the_titanium_changed_under_its_settings(tmp_path):

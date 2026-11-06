@@ -94,7 +94,7 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
         assert f"colors {entry['n_colours']} · regions {entry['regions']} · layers {entry['layers']}" in card["text"]
     assert any("Coloring: AI · Кубизм" in card["text"] for card in out["cards"])
     assert any("Coloring: Closer to original" in card["text"] or "Coloring: Preserve tonality" in card["text"] for card in out["cards"])
-    assert any("По тонам" in card["text"] for card in out["cards"]) and any("Мозаика" in card["text"] for card in out["cards"])
+    assert any("By tone" in card["text"] for card in out["cards"]) and any("Mosaic" in card["text"] for card in out["cards"])
     assert out["opened"] == f"#/vector?plan={first['id']}" and out["copied"] == "#/vector?plan=77" and out["copyPosts"] == [f"/api/vector/{first['id']}/copy"]
     assert "Delete work «Витраж»?" in out["question"] or "Витраж" in out["question"]
     assert "Make a copy" in out["question"] and "deleted permanently" in out["question"] and out["deletedBeforeAnswer"] == 0     # asked first
@@ -417,14 +417,14 @@ def test_the_split_colours_the_colour_settings_and_the_ai_description_are_checke
   const said = (root) => root.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent);
   const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {{}}).textContent === text);
   // the colours of the split: a wrong number is refused beside the box and the question about splitting again is not even asked
-  const colours = labelled('Число цветов').firstControl();
+  const colours = labelled('Number of colors').firstControl();
   colours.value = '99'; await colours.dispatch('input');
   const before = ctx.requests.filter((r) => r.method === 'POST').length;
-  await byText(tree, 'button', 'Разбить заново').dispatch('click'); await tick();
-  out.colours = [dialog() == null, ctx.requests.filter((r) => r.method === 'POST').length - before, said(labelled('Число цветов')), colours.value, colours.getAttribute('aria-invalid')];
+  await byText(tree, 'button', 'Split again').dispatch('click'); await tick();
+  out.colours = [dialog() == null, ctx.requests.filter((r) => r.method === 'POST').length - before, said(labelled('Number of colors')), colours.value, colours.getAttribute('aria-invalid')];
   colours.value = '12'; await colours.dispatch('input');
-  await byText(tree, 'button', 'Разбить заново').dispatch('click'); await tick();
-  out.asked = [dialog() != null, said(labelled('Число цветов'))];
+  await byText(tree, 'button', 'Split again').dispatch('click'); await tick();
+  out.asked = [dialog() != null, said(labelled('Number of colors'))];
   // the settings of the colours: the longest time must be above 0
   const time = labelled('Наибольшее время').firstControl();
   time.value = '0'; await time.dispatch('input');

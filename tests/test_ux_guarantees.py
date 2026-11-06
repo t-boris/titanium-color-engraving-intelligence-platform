@@ -275,33 +275,33 @@ def test_the_acceptance_gate_refuses_in_every_state_the_gate_of_0_38_1_refused_w
 # -- a full re-split asks first (research n58) -----------------------------------------------------------------------------------------------
 @node
 def test_splitting_again_changes_nothing_until_it_is_confirmed_and_cancelling_changes_nothing(work, job, tmp_path):  # noqa: F811
-    """«Разбить заново» restarts the colouring: the colours chosen by hand, the variants and the undo steps of the split are lost. The button
-    only opens a confirmation (its focus on «Отмена»); no request goes to the server until «Разбить заново» in the dialog is pressed, and
+    """«Split again» restarts the colouring: the colours chosen by hand, the variants and the undo steps of the split are lost. The button
+    only opens a confirmation (its focus on «Cancel»); no request goes to the server until «Split again» in the dialog is pressed, and
     Cancel, the cross and Escape each leave the work and the server as they were."""
     routes = routes_of(work, job)
     out = run_screen(tmp_path, job, routes, """
   const posts = () => ctx.requests.filter((r) => r.path.endsWith('/split') && r.method === 'POST').length;
   const modal = () => ctx.document.body.querySelector('.modal');
-  const open = async () => { await byText(tree, 'button', 'Разбить заново').dispatch('click'); await tick(); return modal(); };
+  const open = async () => { await byText(tree, 'button', 'Split again').dispatch('click'); await tick(); return modal(); };
   let box = await open();
   out.opened = {title: box.getAttribute('aria-label'), text: box.textContent, posts: posts(), focus: ctx.document.activeElement && ctx.document.activeElement.textContent};
-  await byText(box, 'button', 'Отмена').dispatch('click'); await tick();
+  await byText(box, 'button', 'Cancel').dispatch('click'); await tick();
   out.cancelled = {posts: posts(), open: !!modal()};
   box = await open();
-  await box.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Закрыть').dispatch('click'); await tick();
+  await box.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Close').dispatch('click'); await tick();
   out.crossed = {posts: posts(), open: !!modal()};
   box = await open();
   await ctx.document.dispatch('keydown', {key: 'Escape'}); await tick();
   out.escaped = {posts: posts(), open: !!modal()};
   box = await open();
-  await byText(box, 'button', 'Разбить заново').dispatch('click'); await tick(); await tick();
+  await byText(box, 'button', 'Split again').dispatch('click'); await tick(); await tick();
   out.confirmed = {posts: posts(), open: !!modal()};
 """)
-    assert out["opened"]["title"] == "Разбить картинку заново?" and out["opened"]["posts"] == 0
-    for lost in ("раскраска начнётся сначала", "цвета, выбранные вручную", "варианты раскраски", "шаги отмены"):
+    assert out["opened"]["title"] == "Split the image again?" and out["opened"]["posts"] == 0
+    for lost in ("coloring will restart", "manually selected colors", "coloring variants", "undo history"):
         assert lost in out["opened"]["text"], lost                                           # the dialog says what is lost
-    assert "Прежние файлы LightBurn и результаты гравировок останутся" in out["opened"]["text"]   # and what is kept
-    assert out["opened"]["focus"] == "Отмена"                                                 # a quick Enter cannot confirm
+    assert "Previous LightBurn files and engraving results remain" in out["opened"]["text"]   # and what is kept
+    assert out["opened"]["focus"] == "Cancel"                                                 # a quick Enter cannot confirm
     assert out["cancelled"] == {"posts": 0, "open": False}
     assert out["crossed"] == {"posts": 0, "open": False}
     assert out["escaped"] == {"posts": 0, "open": False}
@@ -327,7 +327,7 @@ def test_a_late_palette_answer_for_an_older_width_cannot_replace_the_palette_of_
   const width = labelled(tree, 'Ширина на титане, мм');
   data.scale = %s;
   width.value = '120'; await width.dispatch('change'); await settle();
-  out.waiting = tree.textContent.includes('Загружаем шкалы на ширине работы');
+  out.waiting = tree.textContent.includes('Loading scales for the work width');
   data.scale = %s;
   width.value = '90'; await width.dispatch('change'); await settle(); await wait(50); await settle();
   out.fresh = snapshot();
@@ -377,7 +377,7 @@ def test_a_late_answer_of_an_older_request_for_the_same_width_cannot_replace_the
   mark(61); data.scale = %s;
   const release120 = arm('120');
   width = widthBox; width.value = '120'; await width.dispatch('change'); await quiet();
-  out.pending = {loading: tree.textContent.includes('Загружаем шкалы'), marker: marker()};
+  out.pending = {loading: tree.textContent.includes('Loading scales'), marker: marker()};
   mark(62); data.scale = %s;
   width.value = '90'; await width.dispatch('change'); await quiet();
   out.at90 = marker();
@@ -404,17 +404,17 @@ def test_an_answer_for_a_width_the_work_has_left_while_its_changes_were_still_on
   mark(61); data.scale = %s;
   const release120 = arm('120');
   const width = widthBox; width.value = '120'; await width.dispatch('change'); await quiet();
-  out.pending = {loading: tree.textContent.includes('Загружаем шкалы'), marker: marker()};
+  out.pending = {loading: tree.textContent.includes('Loading scales'), marker: marker()};
   let release80, release90;
   hold.push(new Promise((resolve) => { release80 = resolve; }), new Promise((resolve) => { release90 = resolve; }));
   const saved = () => requests.filter((r) => r.path === '/api/photo-works/7/settings').map((r) => r.body.width_mm);
   width.value = '80'; width.dispatch('change'); await settle();                 // sent, its answer held
   width.value = '90'; width.dispatch('change'); await settle();                 // waits behind it
   release80(); await settle();                                                   // the work is 80 mm now; the change to 90 mm is on its way
-  out.between = {saved: saved(), listed: listed(), loading: tree.textContent.includes('Загружаем шкалы')};
+  out.between = {saved: saved(), listed: listed(), loading: tree.textContent.includes('Loading scales')};
   mark(63); data.scale = %s;
   release120(); await quiet();                                                   // the answer for 120 mm arrives while the work is 80 mm
-  out.stale = {listed: listed(), marker: marker(), loading: tree.textContent.includes('Загружаем шкалы')};
+  out.stale = {listed: listed(), marker: marker(), loading: tree.textContent.includes('Loading scales')};
   release90(); await quiet();
   out.end = {listed: listed(), marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Цвета при ширине 90 мм'), box: width.value};
 """ % (json.dumps(response(120)), json.dumps(response(90))))

@@ -430,49 +430,49 @@ def test_an_important_area_is_marked_reshaped_and_moved_by_numbers_and_sent_when
     r["/api/vector/7/split"] = {"status": 200, "json": view()}
     out = run_editor(tmp_path, r, PICTURE + """
   const overlay = () => tree.querySelectorAll('svg').find((s) => s.getAttribute('class') === 'vw-areas');
-  const num = (name) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Область: ${name}`);
+  const num = (name) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Region: ${name}`);
   const set = async (name, v) => { num(name).value = v; await num(name).dispatch('change'); };
   const said = () => { const p = tree.querySelectorAll('p').find((q) => q.classList.contains('vw-area-note')); return [p.textContent, p.getAttribute('class'), p.getAttribute('role')]; };
-  const add = () => byText(tree, 'button', 'Добавить область числами');
-  out.fields = ['Слева, %', 'Сверху, %', 'Ширина, %', 'Высота, %'].map((n) => num(n).value);
+  const add = () => byText(tree, 'button', 'Add region by coordinates');
+  out.fields = ['Left, %', 'Top, %', 'Width, %', 'Height, %'].map((n) => num(n).value);
   await add().dispatch('click');
   out.rect = [overlay().querySelectorAll('polygon').map((p) => p.getAttribute('points')), said()];
-  const shape = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Форма новой области');
+  const shape = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'New region shape');
   shape.value = 'ellipse';
   await add().dispatch('click');
   out.ellipse = overlay().querySelectorAll('ellipse').map((e) => [e.getAttribute('cx'), e.getAttribute('cy'), e.getAttribute('rx'), e.getAttribute('ry')]);
-  await set('Ширина, %', '90');                                                         // 25 + 90 is beyond the picture
+  await set('Width, %', '90');                                                         // 25 + 90 is beyond the picture
   await add().dispatch('click');
   out.beyond = [overlay().querySelectorAll('polygon').length + overlay().querySelectorAll('ellipse').length, said()];
-  await set('Ширина, %', '');
+  await set('Width, %', '');
   await add().dispatch('click');
   out.empty = said();
-  await set('Ширина, %', '0.1');                                                        // a fifth of a pixel
+  await set('Width, %', '0.1');                                                        // a fifth of a pixel
   await add().dispatch('click');
   out.tiny = [overlay().querySelectorAll('polygon').length + overlay().querySelectorAll('ellipse').length, said()[0]];
-  await byText(tree, 'button', 'Граница').dispatch('click');                             // the first row is the rectangle
-  out.prefilled = ['Слева, %', 'Сверху, %', 'Ширина, %', 'Высота, %'].map((n) => num(n).value);
-  const nudge = (word) => tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Сдвинуть границу ${word} на 1 %`);
-  await nudge('вправо').dispatch('click'); await nudge('вниз').dispatch('click'); await nudge('влево').dispatch('click'); await nudge('вправо').dispatch('click');
+  await byText(tree, 'button', 'Boundary').dispatch('click');                             // the first row is the rectangle
+  out.prefilled = ['Left, %', 'Top, %', 'Width, %', 'Height, %'].map((n) => num(n).value);
+  const nudge = (word) => tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Move boundary ${word} by 1%`);
+  await nudge('right').dispatch('click'); await nudge('down').dispatch('click'); await nudge('left').dispatch('click'); await nudge('right').dispatch('click');
   out.moved = overlay().querySelectorAll('polygon').map((p) => p.getAttribute('points'));
-  out.fieldsAfter = ['Слева, %', 'Сверху, %', 'Ширина, %', 'Высота, %'].map((n) => num(n).value);
+  out.fieldsAfter = ['Left, %', 'Top, %', 'Width, %', 'Height, %'].map((n) => num(n).value);
   shape.value = 'rect';                                                                 // a boundary takes the shape the list says, as a dragged one does
-  await set('Ширина, %', '20'); await set('Высота, %', '10');
-  await byText(tree, 'button', 'Задать границу числами').dispatch('click');
+  await set('Width, %', '20'); await set('Height, %', '10');
+  await byText(tree, 'button', 'Set boundary by coordinates').dispatch('click');
   out.reshaped = overlay().querySelectorAll('polygon').map((p) => p.getAttribute('points'));
-  out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Изменения областей применятся')).hidden;
-  await byText(tree, 'button', 'Готово').dispatch('click');
-  out.noNudge = !nudge('вправо');
-  await byText(tree, 'button', 'Разбить заново').dispatch('click');
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Разбить заново').dispatch('click'); await tick();
+  out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Region changes apply')).hidden;
+  await byText(tree, 'button', 'Done').dispatch('click');
+  out.noNudge = !nudge('right');
+  await byText(tree, 'button', 'Split again').dispatch('click');
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Split again').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((q) => q.path.endsWith('/split') && q.method === 'POST').map((q) => JSON.parse(q.body).manual);
 """)
     assert out["fields"] == ["25", "25", "50", "50"]
-    assert out["rect"][0] == ["100,50 300,50 300,150 100,150"] and out["rect"][1][0].startswith("Добавлена область: отмечено вручную № 1")
+    assert out["rect"][0] == ["100,50 300,50 300,150 100,150"] and out["rect"][1][0].startswith("Region added: manually marked #1")
     assert out["ellipse"] == [["200", "100", "100", "50"]]                                 # 50 % of 400 × 200 across, centred at 25 % + 25 %
-    assert out["beyond"][0] == 2 and "внутри картинки" in out["beyond"][1][0] and "bad" in out["beyond"][1][1]           # refused, nothing added
-    assert "четыре числа" in out["empty"][0]
-    assert out["tiny"][0] == 2 and "слишком мала" in out["tiny"][1]
+    assert out["beyond"][0] == 2 and "inside the image" in out["beyond"][1][0] and "bad" in out["beyond"][1][1]           # refused, nothing added
+    assert "four region bounds" in out["empty"][0]
+    assert out["tiny"][0] == 2 and "too small" in out["tiny"][1]
     assert out["prefilled"] == ["25", "25", "50", "50"]                                    # the row's own box
     assert out["moved"] == ["104,52 304,52 304,152 104,152"]                               # right, down, left, right: +4 px across and +2 px down
     assert out["fieldsAfter"] == ["26", "26", "50", "50"]                                   # the fields follow the boundary
@@ -484,18 +484,18 @@ def test_an_important_area_is_marked_reshaped_and_moved_by_numbers_and_sent_when
 @node
 def test_the_keyboard_stays_on_the_control_when_the_areas_are_drawn_again(tmp_path):
     out = run_editor(tmp_path, routes(), PICTURE + """
-  const num = (name) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Область: ${name}`);
+  const num = (name) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Region: ${name}`);
   const here = () => { const a = ctx.document.activeElement; return a ? [a.localName, (a.textContent || '').trim(), a.getAttribute('data-focus')] : null; };
-  const add = () => byText(tree, 'button', 'Добавить область числами');
+  const add = () => byText(tree, 'button', 'Add region by coordinates');
   const addButton = add();
   addButton.focus();
   await addButton.dispatch('click');                                                   // an area is added: the very same button keeps the keyboard
   out.add = [here(), add() === addButton];
   const border = () => tree.querySelectorAll('button').find((b) => b.getAttribute('data-focus') === 'manual0:border');
   border().focus();
-  await border().dispatch('click');                                                    // the list is drawn again with «Готово» where «Граница» was
+  await border().dispatch('click');                                                    // the list is drawn again with «Done» where «Boundary» was
   out.border = here();
-  await byText(tree, 'button', 'Готово').dispatch('click');
+  await byText(tree, 'button', 'Done').dispatch('click');
   out.done = here();
   const remove = () => tree.querySelectorAll('button').find((b) => b.getAttribute('data-focus') === 'manual0:toggle');
   remove().focus();
@@ -507,10 +507,10 @@ def test_the_keyboard_stays_on_the_control_when_the_areas_are_drawn_again(tmp_pa
   kind().value = 'face'; await kind().dispatch('change');
   out.kind = here();
 """)
-    assert out["add"] == [["button", "Добавить область числами", None], True]
-    assert out["border"] == ["button", "Готово", "manual0:border"]
-    assert out["done"] == ["button", "Граница", "manual0:border"]
-    assert out["removed"] == [["button", "Добавить область числами", None], False]
+    assert out["add"] == [["button", "Add region by coordinates", None], True]
+    assert out["border"] == ["button", "Done", "manual0:border"]
+    assert out["done"] == ["button", "Boundary", "manual0:border"]
+    assert out["removed"] == [["button", "Add region by coordinates", None], False]
     assert out["kind"][0] == "select" and out["kind"][2] == "manual0:kind"
 
 
@@ -974,7 +974,7 @@ def test_the_header_button_takes_the_keyboard_into_the_task_panel_and_escape_and
   await panel().dispatch('keydown', {key: 'Escape'});
   out.escaped = [panel().hidden, where()];                                          // the button that opened it
   await entry.dispatch('click');
-  await panel().querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Свернуть список задач').dispatch('click');
+  await panel().querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Close task list').dispatch('click');
   out.closed = [panel().hidden, where()];
   await entry.dispatch('click');
   await entry.dispatch('click');                                                    // the header button shuts it too, and keeps the keyboard
@@ -985,9 +985,9 @@ def test_the_header_button_takes_the_keyboard_into_the_task_panel_and_escape_and
   await panel().dispatch('keydown', {key: 'Escape'});
   out.orphan = [panel().hidden, where()];
 """)
-    assert out["opened"] == [False, "Свернуть список задач"]
-    assert out["escaped"] == [True, "Задачи: идёт 1"] and out["closed"] == [True, "Задачи: идёт 1"] and out["toggled"] == [True, "Задачи: идёт 1"]
-    assert out["orphan"][0] is True and out["orphan"][1].startswith("Задачи — ")
+    assert out["opened"] == [False, "Close task list"]
+    assert out["escaped"] == [True, "Tasks: running 1"] and out["closed"] == [True, "Tasks: running 1"] and out["toggled"] == [True, "Tasks: running 1"]
+    assert out["orphan"][0] is True and out["orphan"][1].startswith("Tasks — ")
 
 
 def test_the_task_panel_and_the_notices_stand_above_the_unfinished_task_bar_and_the_list_keeps_below_the_top_of_the_window():

@@ -252,7 +252,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
                            ["↔ 30.0 мм", "vw-rows warn vw-bad", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
     strip, *folds = out["details"]                                  # the first fold is the strip under the head: the path of the file and the forecast (ux-accessible-layout-p0)
     assert strip.startswith("Путь файла и прогноз")
-    assert folds[0].startswith("Важные области: лица, глаза, губы") and "Подробно по цветам…" in text                   # the wide table is a window
+    assert folds[0].startswith("Important regions: faces, eyes, lips") and "Подробно по цветам…" in text                   # the wide table is a window
     assert folds[1:] == ["Полный рецепт и слои (4)", "Прежние файлы", "Параметры работы",                              # the file tab folds its long parts (the recipe and
                          "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]                                      # the files made before), the layers why their sizes matter
     assert out["renders"] == 0
@@ -452,7 +452,7 @@ def test_a_merge_that_makes_a_new_split_version_loads_its_picture_and_keeps_the_
 """)
     assert out["fresh"] and out["svgFetches"] == 2 and out["viewBox"] == "6.6667 3.3333 26.6667 13.3333" and out["selected"] == ["r1", "r2"]
     assert out["nearFetches"] == 2                                                              # once per split version, as the picture
-    assert "#000000" not in out["fills"] and "разбиение № 2" in out["text"] and out["renders"] == 0
+    assert "#000000" not in out["fills"] and "split #2" in out["text"] and out["renders"] == 0
 
 
 @node
