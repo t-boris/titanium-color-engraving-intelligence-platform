@@ -435,9 +435,9 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     # stays beside the work with what was typed and what is stored, until it is corrected or closed
     assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
                               "predictionStatus": "Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.",
-                              "status": "Работа: Не сохранено: на экране не то, что хранится",
-                              "error": "Не удалось сохранить. the width of the picture must be 1..1000 mm"
-                              "Набрано, но не сохранено — Ширина, мм: 0 (сохранено: 100).Закрыть"}
+                              "status": "Работа: Not saved: the screen differs from the saved values",
+                              "error": "Could not save. the width of the picture must be 1..1000 mm"
+                              "Entered but not saved — Ширина, мм: 0 (saved: 100).Close"}
 
 
 @node

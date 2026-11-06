@@ -243,7 +243,7 @@ def test_the_measured_elements_are_a_short_list_out_of_tolerance_and_largest_del
   out.third = list.querySelectorAll('.lst-main')[2].textContent;
   out.chips = list.querySelectorAll('.lst-chip').map((c) => c.textContent);
   out.tiles = tree.querySelectorAll('button').filter((b) => (b.className || '').includes('analysis-module')).length;
-  out.terms = tree.querySelectorAll('.terms-note').map((n) => [n.querySelector('summary').textContent, n.textContent.includes('Технический номер: пара № ' + String(data.id))]);
+  out.terms = tree.querySelectorAll('.terms-note').map((n) => [n.querySelector('summary').textContent, n.textContent.includes('Technical identifier: pair #' + String(data.id))]);
   await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   await list.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Вне допуска')).dispatch('click'); await tick();
@@ -252,12 +252,12 @@ def test_the_measured_elements_are_a_short_list_out_of_tolerance_and_largest_del
   const order = list.querySelector('select'); order.value = 'order'; await order.dispatch('change'); await tick();
   out.ordered = names().slice(0, 3);
 """)
-    assert len(out["names"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5" and out["tiles"] == 0
-    assert out["terms"] == [["Что такое «пара»?", True], ["Что такое «основание»?", False]]            # the words of the report, the pair's number in the details
+    assert len(out["names"]) == 20 and out["count"] == "showing 20 of 25" and out["more"] == "Show 5 more" and out["tiles"] == 0
+    assert out["terms"] == [["What is a pair?", True], ["What is evidence?", False]]
     # out of tolerance first (B09 ΔE 8, B16 ΔE 7), then the largest ΔE: B07 4.8, B14 4.6, B21 4.4, B03 4.2
     assert out["names"][:6] == ["B09", "B16", "B07", "B14", "B21", "B03"]
     assert "ΔE 8.0" in out["first"] and "вне допуска" in out["first"] and "ΔE 4.8" in out["third"] and "вне допуска" not in out["third"]
-    assert out["chips"] == ["Все · 25", "Вне допуска · 2", "Без замечаний · 23"]                   # no element went unmeasured: no chip for it
+    assert out["chips"] == ["All · 25", "Вне допуска · 2", "Без замечаний · 23"]                   # no element went unmeasured: no chip for it
     assert len(out["open"]) == 1 and "Плановый цвет" in out["open"][0] and "ΔE 8.0" in out["open"][0] and "Прочитанные параметры слоя" in out["open"][0]
     assert out["outside"] == ["B09", "B16"] and out["ordered"] == ["B01", "B02", "B03"]
 

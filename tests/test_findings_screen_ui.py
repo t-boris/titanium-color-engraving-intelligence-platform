@@ -172,7 +172,7 @@ def test_the_acknowledged_and_hidden_chips_are_offered_even_before_anything_is_m
     out = run(tmp_path, """
   out.chips = panel('Выводы').querySelectorAll('.lst-chip').map((c) => c.textContent).slice(0, 4);
 """, routes={**LIST_ROUTES, "/api/analysis/runs/latest": {"status": 200, "json": page}})
-    assert out["chips"] == ["Все · 85", "Требуют внимания · 85", "Учтённые · 0", "Скрытые · 0"]
+    assert out["chips"] == ["All · 85", "Требуют внимания · 85", "Учтённые · 0", "Скрытые · 0"]
 
 
 @node
@@ -192,17 +192,17 @@ def test_the_findings_open_on_those_needing_attention_one_line_each_with_chips_c
 """, routes=LIST_ROUTES)
     assert out["asked"] == ["/api/analysis/runs/latest?state=attention&sort=important&offset=0&limit=20"]
     assert out["run"].startswith("Расчёт № 63") and out["run"].endswith("после принятия фотографииПересчитать сейчасПерепроверить все работы")
-    assert out["chips"] == ["Все · 95", "Требуют внимания · 85", "Учтённые · 6", "Скрытые · 4",
-                            "Все · 85", "Улучшения · 5", "Нестабильность · 30", "Аномалии · 40", "Пробелы · 10"]   # no AI hypothesis to show
-    assert out["pressed"] == ["Требуют внимания · 85", "Все · 85"]
-    assert out["rows"] == ["📌АномалияАномалия слоя C1JPT M7 · Grade 2 sheet · Grade 2 · ЗаливкаΔE 19.0✎ проверить",       # the problem, what it concerns, the note
-                           "НестабильноСомнение в знании № 12JPT M7 · Grade 2 sheet · Grade 2 · ЗаливкаΔE 2.5изменился",
-                           "ПробелНет линий на этом титанеJPT M7 · Grade 2 sheet · Grade 2 · Заливкановое"]
+    assert out["chips"] == ["All · 95", "Требуют внимания · 85", "Учтённые · 6", "Скрытые · 4",
+                            "All · 85", "Улучшения · 5", "Нестабильность · 30", "Аномалии · 40", "Пробелы · 10"]   # no AI hypothesis to show
+    assert out["pressed"] == ["Требуют внимания · 85", "All · 85"]
+    assert out["rows"] == ["📌АномалияАномалия слоя C1JPT M7 · Grade 2 sheet · Grade 2 · FillΔE 19.0✎ проверить",       # the problem, what it concerns, the note
+                           "НестабильноСомнение в знании № 12JPT M7 · Grade 2 sheet · Grade 2 · FillΔE 2.5изменился",
+                           "ПробелНет линий на этом титанеJPT M7 · Grade 2 sheet · Grade 2 · Fillновое"]
     assert out["actions"] == [["Перемерить фото", "Учтено", "Скрыть", "Заметка", "Открепить"],                    # ONE recommended step first, the queue's controls after it
                               ["Открыть основания", "Учтено", "Скрыть", "Заметка", "Закрепить"],
                               ["Предложить эксперимент", "Учтено", "Скрыть", "Заметка", "Закрепить"]]
     assert out["recommended"] == [1, 1, 1]                                                                   # exactly one button is the recommended one
-    assert out["count"] == "показано 3 из 85" and out["more"] == "Показать ещё 20" and out["cards"] == 0   # details only when a row opens
+    assert out["count"] == "showing 3 of 85" and out["more"] == "Show 20 more" and out["cards"] == 0   # details only when a row opens
 
 
 @node
@@ -351,7 +351,7 @@ def test_the_last_recheck_report_lists_the_photographs_and_the_changed_findings_
                              "замененоТестовая платафото № 41ΔE до 0.4", "оставлено староеc.CR3фото № 60"]       # the largest colour change first
     assert out["changes"] == ["появилсяАномалияНовая аномалия", "появилсяПробелНовый пробел", "ушёлАномалияСтарая аномалия",
                               "изменилсяНестабильноСтало нестабильно"]
-    assert out["reason"] == "Новое измерение читает меньше слоёв, чем принятоеОткрыть фото"
+    assert out["reason"] == "the new measurement reads fewer layers than the accepted oneОткрыть фото"
     assert out["hash"] == "#/findings?state=attention&sort=newest"
 
 
@@ -386,13 +386,13 @@ def test_an_opened_anomaly_leads_with_the_recommended_step_then_the_evidence_and
   out.fold = [more.hasAttribute('open'), more.querySelector('summary').textContent];
   out.lines = more.querySelectorAll('.fd-remedy').map((r) => [r.querySelector('button').textContent, r.querySelector('span').textContent]);
   out.evidence = open.querySelector('.fd-evidence').textContent;
-  out.terms = open.querySelectorAll('.terms-note').map((n) => [n.querySelector('summary').textContent, n.textContent.includes('Технический номер')]);
+  out.terms = open.querySelectorAll('.terms-note').map((n) => [n.querySelector('summary').textContent, n.textContent.includes('Technical identifier')]);
   out.history = open.querySelectorAll('details').filter((d) => d.querySelector('summary').textContent === 'История вывода по расчётам').length;
 """, routes=REMEDY_ROUTES)
     assert out["head"] == "Что дальше" and out["action"] == "remeasure" and out["step"] == ["Перемерить фото"]
     assert out["order"][:5] == ["fd-remedies", "row", "stack", "fd-more-actions", "stack"]               # the step, the evidence, the words explained, the other actions, the mark
     assert out["why"].startswith("Сначала перемерьте фотографию") and "после проверки причины" in out["why"]
-    assert ["Что такое «основание»?", False] in out["terms"]                                         # the word of the evidence row is explained (ux-save-feedback-p0, REQ-003)
+    assert ["What is evidence?", False] in out["terms"]
     assert out["fold"] == [False, "Другие действия (2)"]                                              # the measuring again is the step, not repeated below
     assert [button for button, _ in out["lines"]] == ["Убрать измерение", "Считать с последней гравировки"]
     assert out["lines"][0][1].startswith("Этот слой этой фотографии перестанет считаться в рецепте, на карте цветов, в палитре и в работах.")
@@ -526,7 +526,7 @@ def test_a_failed_remeasure_from_the_row_leaves_the_finding_as_it_was_and_the_bu
 """, routes={**REMEDY_ROUTES, "/api/pairs/136/remeasure": {"status": 409, "json": {"error": "every work is being re-checked: wait until it ends or stop it", "kind": "busy"}}})
     assert out["sent"] == ["POST"] and out["label"] == "Перемерить фото" and out["disabled"] is False       # ready again, not left on «Перемеряю…»
     assert out["modal"] is False and out["rows"] == 1                                                   # no result is shown for a measurement that did not happen
-    assert len(out["toast"]) == 1 and out["toast"][0].startswith("Идёт перепроверка всех работ")                                   # the server's refusal is told, once
+    assert len(out["toast"]) == 1 and out["toast"][0].startswith("every work is being re-checked")                                   # the server's refusal is told, once
 
 
 @node
@@ -718,7 +718,7 @@ def test_the_interval_of_the_schedule_is_read_as_the_server_states_it_and_a_wron
   const labelled = tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === 'Пересчитывать каждые (0 — выключено)');
   const box = labelled.firstControl();
   const puts = () => ctx.requests.filter((r) => r.method === 'PUT').length;
-  out.rule = [labelled.textContent.includes('обязательно'), labelled.textContent.includes('допустимо: от 0 до 8760'), labelled.textContent.includes('единица: ч')];
+  out.rule = [labelled.textContent.includes('required'), labelled.textContent.includes('allowed: from 0 to 8760'), labelled.textContent.includes('unit: h')];
   for (const typed of ['9000', '-1', '2.5h', '']) {
     box.value = typed; await box.dispatch('input');
     await byText(tree, 'button', 'Сохранить расписание').dispatch('click'); await tick();
@@ -732,5 +732,5 @@ def test_the_interval_of_the_schedule_is_read_as_the_server_states_it_and_a_wron
     for typed in ("9000", "-1", "2.5h"):
         count, said, kept, invalid = out[typed]
         assert count == 0 and said and kept == typed and invalid == "true"
-    assert "Введено: 9000" in out["9000"][1] and out["empty"][1] == "Заполните это поле" and out["empty"][0] == 0
+    assert "Entered: 9000" in out["9000"][1] and out["empty"][1] == "Complete this field" and out["empty"][0] == 0
     assert out["saved"] == [1, {"interval_hours": 24}, ""]

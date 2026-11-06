@@ -56,7 +56,7 @@ def test_a_finished_work_and_its_rephotograph_are_one_experiment_without_a_plate
     set_status(world["store"], first, "Accepted")         # only an accepted check can be photographed again
     again = work_pair(world, None, 4, rephoto_of=first)
     (experiment,) = experiments.list_experiments(world["store"])
-    assert experiment["key"].startswith("eng-") and experiment["plan_id"] is None and experiment["kind"] == "Готовая работа"
+    assert experiment["key"].startswith("eng-") and experiment["plan_id"] is None and experiment["kind"] == "Finished work"
     assert experiment["checks"] == 2 and experiment["main_pair_id"] == again
 
 
@@ -201,8 +201,8 @@ def test_the_experiment_list_shows_the_material_conclusions_beside_the_experimen
     page = screen("experiments.js")
     assert "findings = await get(`/devices/${selectedDevice.id}/findings`)" in page
     assert "f.material_id === selectedMaterial?.id" in page
-    assert "panel('Выводы для материала', latest.size, insightCards," in page
-    assert "link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`)" in page
+    assert "panel('Material findings', latest.size, insightCards," in page
+    assert "link(`/analysis/${finding.pair_id}`, `Measurements · review #${finding.pair_id}`)" in page
 
 
 def test_every_plate_work_and_check_entry_point_links_to_its_experiment():

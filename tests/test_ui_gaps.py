@@ -242,15 +242,15 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     assert done.returncode == 0, done.stderr[-2500:]
     out = json.loads(done.stdout)
     files, supplied, tasks = out["files"], out["supplied"], out["tasks"]
-    assert len(files["keys"]) == 20 and files["count"] == "показано 20 из 30" and files["keys"][:3] == ["29", "28", "0"]   # not measured first
+    assert len(files["keys"]) == 20 and files["count"] == "showing 20 of 30" and files["keys"][:3] == ["29", "28", "0"]   # not measured first
     assert "нечитаем" in files["lines"][0] and "пропущен" in files["lines"][1] and "измерен" in files["lines"][2]
     assert "40.0 % · 1950 кГц · 1800 мм/с" in files["lines"][2] and "областей 2" in files["lines"][2]
-    assert files["chips"] == ["Все · 30", "Нечитаемые · 1", "Пропущенные · 1", "Измеренные · 28"]
+    assert files["chips"] == ["All · 30", "Нечитаемые · 1", "Пропущенные · 1", "Измеренные · 28"]
     assert files["open"] == ["нечитаем pulse width is missing from this LightBurn layer"]                    # the result and its notes under the line
-    assert len(supplied["keys"]) == 20 and supplied["count"] == "показано 20 из 22" and supplied["fieldsBefore"] == 0
+    assert len(supplied["keys"]) == 20 and supplied["count"] == "showing 20 of 22" and supplied["fieldsBefore"] == 0
     assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
     assert supplied["fields"] == ["Проходы, слой «C00»: нет в файле"]
     assert len(supplied["given"]) == 1 and "Проходы: 2" in supplied["given"][0] and "Убрать" in supplied["given"][0]
-    assert len(tasks["keys"]) == 20 and tasks["count"] == "показано 20 из 29" and tasks["choicesBefore"] == 0   # a layer without fill has no task
+    assert len(tasks["keys"]) == 20 and tasks["count"] == "showing 20 of 29" and tasks["choicesBefore"] == 0   # a layer without fill has no task
     assert tasks["sent"] == [["/api/pairs/77/tasks", {"layer_index": 1, "task": "text"}]] and tasks["reloads"] == 1
     assert tasks["reopened"] == ["1"]

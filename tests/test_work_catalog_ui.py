@@ -176,15 +176,15 @@ def test_the_first_page_shows_at_most_twenty_works_with_thumbnail_name_type_size
   const s = await open();
   out.rows = rowsOf(s).map(info);
   out.count = count(s);
-  out.more = byText(s.el, 'button', 'Показать ещё 20') != null;
+  out.more = byText(s.el, 'button', 'Show 20 more') != null;
   out.first = gets()[0].url;
   out.gets = gets().length;
   out.heading = main.querySelector('h2').textContent;
   out.chips = chips(s);
 """)
-    assert len(out["rows"]) == 20 and out["count"] == "показано 20 из 45" and out["more"] and out["gets"] == 1 and out["heading"] == "Работы"
+    assert len(out["rows"]) == 20 and out["count"] == "showing 20 of 45" and out["more"] and out["gets"] == 1 and out["heading"] == "Работы"
     assert "limit=20" in out["first"] and "offset=0" in out["first"]
-    assert out["chips"] == ["Все · 45", "Векторные · 20", "Смешанные · 10", "Фотогравировка · 15"]
+    assert out["chips"] == ["All · 45", "Векторные · 20", "Смешанные · 10", "Фотогравировка · 15"]
     newest = out["rows"][0]                                      # the newest work first: M010 (the last one made)
     assert newest["name"] == "M010" and newest["pills"] == ["Смешанная", "Подготовлена"] and newest["parts"] == "2 фотозоны · 1 надпись"
     assert newest["href"] == f"#/vector?plan={made['M010']}" and newest["img"].startswith(f"/api/vector/{made['M010']}/thumb.png?v=")
@@ -200,13 +200,13 @@ def test_show_more_adds_one_portion_at_a_time_and_a_work_is_never_listed_twice(s
     seed(served, vectors=30, photos=15)
     out = screen(served, """
   const s = await open();
-  const more = () => byText(s.el, 'button', 'Показать ещё 20') || s.el.querySelector('.lst-foot').querySelector('button');
+  const more = () => byText(s.el, 'button', 'Show 20 more') || s.el.querySelector('.lst-foot').querySelector('button');
   await more().dispatch('click'); await until(() => rowsOf(s).length === 40, 'forty rows');
   await more().dispatch('click'); await until(() => rowsOf(s).length === 45, 'all rows');
   out.names = names(s); out.count = count(s); out.more = s.el.querySelector('.lst-foot').querySelector('button');
   out.offsets = gets().map((x) => /offset=(\\d+)/.exec(x.url)[1]);
 """)
-    assert len(out["names"]) == 45 == len(set(out["names"])) and out["count"] == "показано 45 из 45" and out["more"] is None
+    assert len(out["names"]) == 45 == len(set(out["names"])) and out["count"] == "showing 45 of 45" and out["more"] is None
     assert out["offsets"] == ["0", "20", "40"]
 
 
@@ -220,37 +220,37 @@ def test_search_the_type_and_equipment_filters_and_the_order_narrow_one_list_wit
   const laser = s.el.querySelectorAll('select').find((x) => x.parentNode.textContent.startsWith('Лазер'));
   out.laserOptions = laser.options.map((o) => o.textContent);
   await byText(s.el, 'button', 'Фотогравировка · 3').dispatch('click');
-  await until(() => count(s) === 'показано 3 из 3', 'photo works');
+  await until(() => count(s) === 'showing 3 of 3', 'photo works');
   out.photo = {{names: names(s), url: gets().pop().url, address: ctx.location.hash}};
-  await byText(s.el, 'button', 'Все · 9').dispatch('click');
+  await byText(s.el, 'button', 'All · 9').dispatch('click');
   laser.value = {laser_b}; await laser.dispatch('change');
-  await until(() => count(s) === 'показано 5 из 5', 'laser B works');
+  await until(() => count(s) === 'showing 5 of 5', 'laser B works');
   out.laser = {{names: names(s), chips: chips(s), address: ctx.location.hash, lensOptions: s.el.querySelectorAll('select').find((x) => x.parentNode.textContent.startsWith('Линза')).options.map((o) => o.textContent)}};
   const search = s.el.querySelector('.lst-search'); search.value = 'v00'; await search.dispatch('input');
   await until(() => names(s).every((n) => n.startsWith('V')), 'search');
   out.searched = {{names: names(s), count: count(s), address: ctx.location.hash, chips: chips(s)}};
-  const sort = s.el.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Порядок');
+  const sort = s.el.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Sort order');
   out.sortOptions = sort.options.map((o) => o.textContent);
   sort.value = 'name'; await sort.dispatch('change');
   await until(() => names(s).join() === [...names(s)].sort().join() && gets().pop().url.includes('sort=name'), 'sorted by name');
   out.sorted = {{names: names(s), address: ctx.location.hash}};
   const reset = s.el.querySelector('.lst-reset'); out.resetShown = !reset.hidden;
   await reset.dispatch('click');
-  await until(() => count(s) === 'показано 9 из 9', 'reset');
+  await until(() => count(s) === 'showing 9 of 9', 'reset');
   out.reset = {{count: count(s), search: search.value, address: ctx.location.hash, state: s.list.state(), resetHidden: reset.hidden}};
 """)
-    assert out["start"]["count"] == "показано 9 из 9" and out["start"]["chips"] == ["Все · 9", "Векторные · 4", "Смешанные · 2", "Фотогравировка · 3"]
+    assert out["start"]["count"] == "showing 9 of 9" and out["start"]["chips"] == ["All · 9", "Векторные · 4", "Смешанные · 2", "Фотогравировка · 3"]
     assert out["laserOptions"] == ["любой · 9", "Laser Alpha · 4", "Laser Beta · 5"]
     assert sorted(out["photo"]["names"]) == ["P001", "P002", "P003"] and "type=photo" in out["photo"]["url"] and out["photo"]["address"] == "#/works?type=photo"
     assert out["laser"]["address"] == f"#/works?laser={laser_b}" and sorted(out["laser"]["names"]) == ["M001", "P001", "P003", "V001", "V003"]
-    assert out["laser"]["chips"] == ["Все · 5", "Векторные · 2", "Смешанные · 1", "Фотогравировка · 2"]       # a count is what the chip would show with the laser as chosen
+    assert out["laser"]["chips"] == ["All · 5", "Векторные · 2", "Смешанные · 1", "Фотогравировка · 2"]       # a count is what the chip would show with the laser as chosen
     assert out["laser"]["lensOptions"][0] == "любая · 5"
-    assert sorted(out["searched"]["names"]) == ["V001", "V003"] and out["searched"]["count"] == "показано 2 из 2"
+    assert sorted(out["searched"]["names"]) == ["V001", "V003"] and out["searched"]["count"] == "showing 2 of 2"
     assert out["searched"]["address"] == f"#/works?q=v00&laser={laser_b}"
     assert out["sortOptions"] == ["Сначала недавно изменённые", "Сначала давно изменённые", "По названию"]
     assert out["sorted"]["names"] == ["V001", "V003"] and out["sorted"]["address"] == f"#/works?q=v00&laser={laser_b}&sort=name"
     assert out["resetShown"] is True
-    assert out["reset"] == {"count": "показано 9 из 9", "search": "", "address": "#/works?sort=name", "resetHidden": True,
+    assert out["reset"] == {"count": "showing 9 of 9", "search": "", "address": "#/works?sort=name", "resetHidden": True,
                             "state": {"sort": "name", "filters": {"type": "", "laser": "", "lens": "", "material": ""}, "search": "", "shown": 20}}
 
 
@@ -263,7 +263,7 @@ def test_a_work_with_no_laser_lens_or_material_is_found_by_the_none_choice(serve
   const lens = s.el.querySelectorAll('select').find((x) => x.parentNode.textContent.startsWith('Линза'));
   out.options = lens.options.map((o) => o.textContent);
   lens.value = 'none'; await lens.dispatch('change');
-  await until(() => count(s) === 'показано 1 из 1', 'works with no lens');
+  await until(() => count(s) === 'showing 1 of 1', 'works with no lens');
   out.names = names(s); out.equipment = info(rowsOf(s)[0]).equipment; out.url = gets().pop().url;
 """)
     assert out["options"][-1] == "линза не известна · 1" and out["names"] == ["Bare"] and "lens=none" in out["url"]
@@ -283,7 +283,7 @@ def test_nothing_found_and_an_empty_catalog_each_say_so_and_leave_a_way_out(serv
   const search = s.el.querySelector('.lst-search'); search.value = 'такого нет'; await search.dispatch('input');
   await until(() => s.el.querySelector('.lst-none'), 'nothing found');
   out.none = s.el.querySelector('.lst-none').textContent;
-  await byText(s.el.querySelector('.lst-none'), 'button', 'Сбросить поиск и фильтры').dispatch('click');
+  await byText(s.el.querySelector('.lst-none'), 'button', 'Clear search and filters').dispatch('click');
   await until(() => names(s).length === 3, 'the list again');
   out.after = names(s);
 """)
@@ -299,11 +299,11 @@ def test_a_failed_read_says_so_keeps_the_screen_and_the_retry_reads_again(served
   out.failure = s.el.querySelector('.lst-fail').textContent;
   out.rowsAfterFailure = rowsOf(s).length;
   out.stillHasToolbar = s.el.querySelector('.lst-search') != null && byText(main, 'button', 'Список') != null;
-  await byText(s.el, 'button', 'Повторить').dispatch('click');
+  await byText(s.el, 'button', 'Retry').dispatch('click');
   await until(() => rowsOf(s).length === 3, 'the retry');
   out.failureAfter = s.el.querySelector('.lst-fail') != null;
 """)
-    assert out["failure"].startswith("Не удалось загрузить список") and out["rowsAfterFailure"] == 0 and out["stillHasToolbar"] and out["failureAfter"] is False
+    assert out["failure"].startswith("Could not load the list") and out["rowsAfterFailure"] == 0 and out["stillHasToolbar"] and out["failureAfter"] is False
 
 
 # -- the gallery: the same list, the same query -----------------------------------------------------------------------------------------------
@@ -351,7 +351,7 @@ def test_the_address_carries_the_query_and_opening_it_again_restores_search_filt
   out.search = s.el.querySelector('.lst-search').value;
   out.pressed = s.el.querySelectorAll('.lst-chip').filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
   out.laserChosen = s.el.querySelectorAll('select').find((x) => x.parentNode.textContent.startsWith('Лазер')).value;
-  out.sortChosen = s.el.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Порядок').value;
+  out.sortChosen = s.el.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Sort order').value;
   out.firstUrl = gets()[0].url;
   out.address = ctx.location.hash;
   out.addressOfScreen = s.address();
@@ -369,7 +369,7 @@ def test_coming_back_from_a_work_far_down_the_list_shows_it_again_in_view_with_t
     made = seed(served, vectors=70)
     out = screen(served, """
   const s = await open();
-  for (const want of [40, 60]) { await byText(s.el, 'button', 'Показать ещё 20').dispatch('click'); await until(() => rowsOf(s).length === want, want + ' rows'); }
+  for (const want of [40, 60]) { await byText(s.el, 'button', 'Show 20 more').dispatch('click'); await until(() => rowsOf(s).length === want, want + ' rows'); }
   const row = rowsOf(s)[45], link = row.querySelector('.works-name');
   out.target = {key: row.getAttribute('data-key'), name: link.textContent, href: link.getAttribute('href')};
   await link.dispatch('click', {button: 0});                        // the person opens the work: the editor takes the screen
@@ -392,9 +392,9 @@ def test_coming_back_from_a_work_far_down_the_list_shows_it_again_in_view_with_t
     assert out["target"]["name"] == "V025" and out["target"]["href"] == f"#/vector?plan={made['V025']}"          # the 46th newest of 70
     assert out["leaving"] == f"#/works?at=vector-{made['V025']}"
     restored = out["restored"]
-    assert restored["rows"] == 60 and restored["count"] == "показано 60 из 70" and restored["gets"] == 1 and f"through=vector-{made['V025']}" in restored["firstGet"]
+    assert restored["rows"] == 60 and restored["count"] == "showing 60 of 70" and restored["gets"] == 1 and f"through=vector-{made['V025']}" in restored["firstGet"]
     assert restored["focus"] is True and restored["scrolled"] is True and restored["notice"] == "" and restored["address"] == out["leaving"]
-    assert out["afterRename"]["rows"] == 60 and out["afterRename"]["count"] == "показано 60 из 70" and "limit=60" in out["afterRename"]["limit"]
+    assert out["afterRename"]["rows"] == 60 and out["afterRename"]["count"] == "showing 60 of 70" and "limit=60" in out["afterRename"]["limit"]
     assert out["afterSearch"].startswith("#/works?q=v0") and "at=" not in out["afterSearch"]
 
 
@@ -407,8 +407,8 @@ def test_a_work_that_is_gone_or_hidden_when_the_person_comes_back_is_said_and_th
   const hidden = await open({{type: 'vector', at: 'photo-{made["P001"]}'}});
   const notice = main.querySelector('.works-notice');
   out.hidden = {{notice: notice.textContent, link: notice.querySelector('a').getAttribute('href'), type: hidden.list.state().filters.type, address: ctx.location.hash}};
-  await byText(notice, 'button', 'Сбросить поиск и фильтры').dispatch('click');
-  await until(() => count(hidden) === 'показано 20 из 31', 'reset');
+  await byText(notice, 'button', 'Clear search and filters').dispatch('click');
+  await until(() => count(hidden) === 'showing 20 of 31', 'reset');
   out.afterReset = {{notice: main.querySelector('.works-notice').textContent, count: count(hidden)}};
   const far = await open({{at: 'vector-{made["V001"]}'}});                  // the oldest of 31 works: beyond the first portion, inside what the server extends to
   await sleep(30);
@@ -420,7 +420,7 @@ def test_a_work_that_is_gone_or_hidden_when_the_person_comes_back_is_said_and_th
     assert out["gone"]["address"] == "#/works" and out["gone"]["state"]["at"] is None
     assert "не показана" in out["hidden"]["notice"] and out["hidden"]["link"] == f"#/photo-engraving?work={made['P001']}"
     assert out["hidden"]["type"] == "vector" and out["hidden"]["address"] == "#/works?type=vector"
-    assert out["afterReset"] == {"notice": "", "count": "показано 20 из 31"}
+    assert out["afterReset"] == {"notice": "", "count": "showing 20 of 31"}
     assert out["far"]["rows"] == 31                                               # whole portions up to the work (20 + 20), as many as there are
     assert out["far"]["focus"] is True and out["far"]["notice"] == "" and out["otherAreas"] == 0
 
@@ -502,7 +502,7 @@ def test_rename_of_a_work_that_has_gone_says_so_closes_and_the_catalog_is_read_a
   out.after = {{names: names(s), closed: dialog() == null, toast: toasts(), refreshed: gets().length - getsBefore}};
 """)
     assert out["after"]["names"] == ["V002"] and out["after"]["closed"] is True and out["after"]["refreshed"] >= 1
-    assert out["after"]["toast"] and "plan" not in out["after"]["toast"]                  # said in Russian, not as the server's English
+    assert out["after"]["toast"] and "plan 1 not found" in out["after"]["toast"]                  # said in Russian, not as the server's English
 
 
 @node
@@ -533,7 +533,7 @@ def test_copy_makes_a_work_next_to_the_first_and_a_failed_copy_still_refreshes_t
     assert out["vector"]["posts"] == f'/api/vector/{vector["id"]}/copy {{}}' and sum(1 for n in out["vector"]["names"] if n.startswith("Копируемая векторная")) == 2
     assert out["vector"]["types"].count("Векторная") == 2 and out["vector"]["types"].count("Фотогравировка") == 2
     assert "Копируемая векторная" not in out["failed"]["names"] and len(out["failed"]["names"]) == 3 and out["failed"]["refreshed"] >= 1
-    assert out["failed"]["posts"] == 1 and "plan" not in out["failed"]["toast"].split("Копия создана")[-1]
+    assert out["failed"]["posts"] == 1 and "plan 2 not found" in out["failed"]["toast"].split("Копия создана")[-1]
 
 
 @node
@@ -582,7 +582,7 @@ def test_delete_asks_first_cancel_has_the_focus_and_one_confirmation_deletes_onc
   out.cancelled = {closed: dialog() == null, deletes: deletes().length, names: names(s), focus: active() === menuButton(rowNamed(s, 'V002'))};
   await choose(rowNamed(s, 'P001'), 'Удалить…');
   out.photoText = dialog().querySelector('p').textContent;
-  await byText(dialog(), 'button', 'Отмена').dispatch('click');
+  await byText(dialog(), 'button', 'Cancel').dispatch('click');
   await choose(rowNamed(s, 'V002'), 'Удалить…');
   const confirm = byText(dialog(), 'button', 'Удалить'), getsBefore = gets().length;
   await Promise.all([confirm.dispatch('click'), confirm.dispatch('click')]);          // a double click
@@ -591,14 +591,14 @@ def test_delete_asks_first_cancel_has_the_focus_and_one_confirmation_deletes_onc
   out.deleted = {deletes: deletes(), names: names(s), refreshed: gets().length - getsBefore, closed: dialog() == null, toast: toasts(),
     focus: active() === rowNamed(s, 'V001').querySelector('.works-name') || active() === rowNamed(s, 'V003').querySelector('.works-name'), count: count(s)};
 """)
-    assert out["asked"]["title"] == "Удалить работу «V002»?" and out["asked"]["focus"] == "Отмена" and out["asked"]["deletes"] == 0
+    assert out["asked"]["title"] == "Удалить работу «V002»?" and out["asked"]["focus"] == "Cancel" and out["asked"]["deletes"] == 0
     assert "вернуть работу будет нельзя" in out["asked"]["text"] and "сначала сделайте копию" in out["asked"]["text"]
-    assert out["asked"]["buttons"] == ["×", "Отмена", "Удалить"]
+    assert out["asked"]["buttons"] == ["×", "Cancel", "Удалить"]
     assert out["cancelled"] == {"closed": True, "deletes": 0, "names": ["P001", "V003", "V002", "V001"], "focus": True}
     assert out["photoText"].startswith("Исчезнут картинка и настройки работы") and "Исчезнут исходная картинка" not in out["photoText"]
     assert out["deleted"]["deletes"] == [f"/api/plans/{made['V002']}"] and out["deleted"]["names"] == ["P001", "V003", "V001"]
     assert out["deleted"]["refreshed"] >= 1 and out["deleted"]["closed"] and "Работа удалена" in out["deleted"]["toast"] and out["deleted"]["focus"] is True
-    assert out["deleted"]["count"] == "показано 3 из 3"
+    assert out["deleted"]["count"] == "showing 3 of 3"
 
 
 @node
@@ -679,7 +679,7 @@ def test_the_catalog_is_registered_in_the_page_the_menu_and_the_routes_and_the_o
     assert scripts.index("/screens/works.js") > max(scripts.index(s) for s in ("/app.js", "/dialogs.js", "/list.js", "/screens/vector.js", "/screens/photo-engraving.js", "/screens/creation.js"))
     assert scripts.index("/screens/works.js") < scripts.index("/boot.js")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
-    assert "['/works', 'Работы']" in router and "works: 'works'" in router
+    assert "['/works', 'Works']" in router and "works: 'works'" in router
     assert nav[nav.index("/photo-engraving") + 1] == "/works"                        # next to the two kinds of work it lists
     assert {"/vector", "/photo-engraving"} <= set(nav) and "vector: 'vector'" in router and "'photo-engraving': 'photo-engraving'" in router     # the old ways stay
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)

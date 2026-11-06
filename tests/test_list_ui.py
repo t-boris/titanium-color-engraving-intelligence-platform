@@ -52,9 +52,9 @@ def test_a_long_list_shows_one_page_and_shows_more_on_request(tmp_path):
   await l.el.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick();
   out.third = rows(l).length; out.more3 = more(l); out.count3 = count(l);
 """)
-    assert (out["first"], out["count"], out["more"]) == (20, "показано 20 из 45", "Показать ещё 20")
-    assert (out["second"], out["more2"]) == (40, "Показать ещё 5")
-    assert (out["third"], out["more3"], out["count3"]) == (45, None, "показано 45 из 45")
+    assert (out["first"], out["count"], out["more"]) == (20, "showing 20 of 45", "Show 20 more")
+    assert (out["second"], out["more2"]) == (40, "Show 5 more")
+    assert (out["third"], out["more3"], out["count3"]) == (45, None, "showing 45 of 45")
 
 
 @node
@@ -69,11 +69,11 @@ def test_filter_chips_show_their_counts_and_narrow_the_list(tmp_path):
   const search = l.el.querySelector('.lst-search'); search.value = 'элемент 1'; await search.dispatch('input'); await tick(); await tick();
   out.searched = rows(l); out.chipsSearched = chips(l);
 """)
-    assert out["chips"] == ["Все · 45", "Первые · 15", "Вторые · 30"]          # an option that would show nothing is not offered
-    assert out["after"] == "показано 15 из 15" and out["pressed"] == ["Первые · 15"]
+    assert out["chips"] == ["All · 45", "Первые · 15", "Вторые · 30"]          # an option that would show nothing is not offered
+    assert out["after"] == "showing 15 of 15" and out["pressed"] == ["Первые · 15"]
     # «элемент 1», «элемент 10», …, «элемент 19» among the first kind (ids 1, 4, 7, …): 1, 10, 13, 16, 19
     assert out["searched"] == ["элемент 1", "элемент 10", "элемент 13", "элемент 16", "элемент 19"]
-    assert out["chipsSearched"] == ["Все · 11", "Первые · 5", "Вторые · 6"]
+    assert out["chipsSearched"] == ["All · 11", "Первые · 5", "Вторые · 6"]
 
 
 @node
@@ -133,8 +133,8 @@ def test_a_server_list_asks_for_one_page_with_the_chosen_sort_and_filters_and_ap
   out.secondRows = rows(l).length;
   out.asked = asked;
 """)
-    assert out["firstRows"] == 20 and out["count"] == "показано 20 из 30"
-    assert out["chips"] == ["Все · 45", "Первые · 15", "Вторые · 30"]
+    assert out["firstRows"] == 20 and out["count"] == "showing 20 of 30"
+    assert out["chips"] == ["All · 45", "Первые · 15", "Вторые · 30"]
     first, second, changed = out["asked"]
     assert first == {"sort": "new", "filters": {"kind": "b"}, "search": "", "offset": 0, "limit": 20}
     assert second == {"sort": "new", "filters": {"kind": "b"}, "search": "", "offset": 20, "limit": 20}
@@ -154,8 +154,8 @@ def test_a_remembered_drop_down_choice_that_is_gone_stays_visible_and_all_clears
   select.value = ''; await select.dispatch('change'); await tick();
   out.after = count(l);
 """)
-    assert out["options"] == [["все · 45", False], ["Первые · 15", False], ["Вторые · 30", False], ["выбранное ранее — его здесь нет", True]]
-    assert out["count"] == "показано 0 из 0" and out["after"] == "показано 20 из 45"
+    assert out["options"] == [["all · 45", False], ["Первые · 15", False], ["Вторые · 30", False], ["previous selection is unavailable", True]]
+    assert out["count"] == "showing 0 of 0" and out["after"] == "showing 20 of 45"
 
 
 @node

@@ -63,7 +63,7 @@ def test_typing_in_the_search_keeps_the_same_field_and_its_focus(tmp_path):
   out.same = same; out.rows = rows(l); out.count = count(l);
 """)
     assert all(a and b for a, b, _ in out["same"]) and [v for *_, v in out["same"]] == ["э", "эл", "элем", "элемент 4"]
-    assert out["count"] == "показано 7 из 7"
+    assert out["count"] == "showing 7 of 7"
 
 
 @node
@@ -108,7 +108,7 @@ def test_a_second_click_on_show_more_while_one_is_on_its_way_asks_once(tmp_path)
   gates.shift()(); await wait();
   out.rows = rows(l).length; out.ids = new Set(l.el.querySelectorAll('.lst-row').map((r) => r.getAttribute('data-key'))).size;
 """)
-    assert out["asked"] == 1 and out["label"] == "Загружаем…" and out["disabled"] is True
+    assert out["asked"] == 1 and out["label"] == "Loading…" and out["disabled"] is True
     assert out["rows"] == 40 and out["ids"] == 40
 
 
@@ -121,7 +121,7 @@ def test_a_late_page_of_an_old_search_does_not_join_the_new_list(tmp_path):
   fresh(); await wait(); late(); await wait();                                                      // the old answer arrives last
   out.rows = rows(l); out.count = count(l);
 """)
-    assert out["rows"] == [f"элемент {n}" for n in (4, 40, 41, 42, 43, 44, 45)] and out["count"] == "показано 7 из 7"
+    assert out["rows"] == [f"элемент {n}" for n in (4, 40, 41, 42, 43, 44, 45)] and out["count"] == "showing 7 of 7"
 
 
 @node
@@ -135,9 +135,9 @@ def test_a_failed_page_keeps_the_rows_the_search_and_offers_a_retry(tmp_path):
   l.el.querySelector('.lst-retry').dispatch('click'); await wait(); gates.shift()(); await wait();
   out.after = [rows(l).length, l.el.querySelector('.lst-fail'), count(l)];
 """)
-    assert out["alert"].startswith("Не удалось загрузить список: сервер не ответил") and out["rows"] == 20 and out["count"] == "показано 20 из 45"
+    assert out["alert"].startswith("Could not load the list: сервер не ответил") and out["rows"] == 20 and out["count"] == "showing 20 of 45"
     assert out["search"] == [True, "элемент"]
-    assert out["after"] == [40, None, "показано 40 из 45"]
+    assert out["after"] == [40, None, "showing 40 of 45"]
 
 
 @node
@@ -171,8 +171,8 @@ def test_nothing_found_offers_a_reset_that_clears_every_condition_and_keeps_the_
   await l.el.querySelector('.lst-none').querySelector('button').dispatch('click'); await wait();
   out.reset = [count(l), l.state().sort, l.state().search, l.state().filters.kind, input.value, rows(l)[0], l.el.querySelector('.lst-reset').hidden];
 """)
-    assert out["none"] == ["Таких нет.", "показано 0 из 0", True, False]
-    assert out["reset"] == ["показано 20 из 45", "back", "", "", "", "элемент 45", True]
+    assert out["none"] == ["Таких нет.", "showing 0 of 0", True, False]
+    assert out["reset"] == ["showing 20 of 45", "back", "", "", "", "элемент 45", True]
 
 
 @node
@@ -200,11 +200,11 @@ PINNED = """
 def test_a_selection_beyond_the_first_page_is_pinned_and_can_be_shown_in_the_list(tmp_path):
     out = run(tmp_path, PINNED % {"chosen": "30"} + """
   out.pinned = [pin().querySelector('.lst-pin-note').textContent, pin().querySelector('.lst-row').getAttribute('data-key')];
-  await pin().querySelectorAll('button').find((b) => b.textContent === 'Показать в списке').dispatch('click'); await wait();
+  await pin().querySelectorAll('button').find((b) => b.textContent === 'Show in list').dispatch('click'); await wait();
   out.after = [pin(), rows(l).length, count(l)];
 """)
-    assert out["pinned"][1] == "30" and out["pinned"][0].startswith("Выбранная строка вне показанной части списка")
-    assert out["after"] == [None, 40, "показано 40 из 45"]
+    assert out["pinned"][1] == "30" and out["pinned"][0].startswith("The selected row is beyond the displayed portion of the list")
+    assert out["after"] == [None, 40, "showing 40 of 45"]
 
 
 @node
@@ -213,12 +213,12 @@ def test_a_filter_that_excludes_the_selection_says_so_and_does_not_clear_it(tmp_
   out.inView = pin();                                                                            // the 2nd item is on the first page
   await l.el.querySelectorAll('.lst-chip').find((c) => c.getAttribute('data-value') === 'a').dispatch('click'); await wait();
   out.pinned = [pin().querySelector('.lst-pin-note').textContent, pin().querySelector('.lst-row').getAttribute('data-key'), chosen];
-  await pin().querySelectorAll('button').find((b) => b.textContent === 'Сбросить поиск и фильтры').dispatch('click'); await wait();
+  await pin().querySelectorAll('button').find((b) => b.textContent === 'Clear search and filters').dispatch('click'); await wait();
   out.after = [pin(), count(l), chosen];
 """)
     assert out["inView"] is None
-    assert out["pinned"][0].startswith("Выбранная строка скрыта: она не подходит под поиск или фильтры") and out["pinned"][1:] == ["2", 2]
-    assert out["after"] == [None, "показано 20 из 45", 2]
+    assert out["pinned"][0].startswith("The selected row is hidden by the search or filters") and out["pinned"][1:] == ["2", 2]
+    assert out["after"] == [None, "showing 20 of 45", 2]
 
 
 @node
@@ -233,8 +233,8 @@ def test_opening_a_line_that_is_not_shown_never_ends_in_a_silent_null(tmp_path):
   out.gone = [gone, pin().querySelector('.lst-pin-note').textContent];
 """)
     assert out["far"] == ["подробно 33", 40, None]
-    assert out["hidden"][0] == "подробно 2" and out["hidden"][1].startswith("Выбранная строка скрыта")
-    assert out["gone"][0] is None and out["gone"][1].startswith("Выбранный объект недоступен")
+    assert out["hidden"][0] == "подробно 2" and out["hidden"][1].startswith("The selected row is hidden")
+    assert out["gone"][0] is None and out["gone"][1].startswith("The selected item is unavailable")
 
 
 @node
@@ -268,7 +268,7 @@ def test_a_confirmation_starts_on_cancel_keeps_tab_inside_and_gives_the_focus_ba
   await doc.dispatch('keydown', {key: 'Escape'});
   out.closed = [doc.body.querySelector('.modal'), ran, shell.hasAttribute('inert'), doc.activeElement === opener];
 """)
-    assert out["start"] == "Отмена" and out["inert"] is True
+    assert out["start"] == "Cancel" and out["inert"] is True
     assert (out["forward"], out["backward"], out["fromBehind"]) == ("×", "Удалить", "×")
     assert out["closed"] == [None, 0, False, True]                              # Escape never confirms
 
@@ -324,7 +324,7 @@ def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
   await App.render(); out.kept = !nav().classList.contains('is-pinned');
 """)
     assert out["open"] and out["pinned"] == [True, "true", "1", "true"]
-    assert out["next"] == [True, "Свернуть меню", False]
+    assert out["next"] == [True, "Collapse menu", False]
     assert out["compact"] == [False, "0", True] and out["kept"]
 
 

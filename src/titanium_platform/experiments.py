@@ -17,7 +17,7 @@ from . import capability_results, designer, engraving_time, ingest, lightburn as
 from .db import Store
 
 NEEDS_REVIEW = ("Awaiting check", "Needs correction", "Ready to accept")
-STATUS = {"plate_ready": "Плата готова: ждёт фото", "needs_review": "Нужна проверка", "accepted": "Принят"}
+STATUS = {"plate_ready": "Plate ready: awaiting photo", "needs_review": "Review needed", "accepted": "Accepted"}
 HIDDEN_PLANS = ("Deleted", "Cancelled", "Superseded", "Restored")   # a restored plan records a finished work, not a plate
 
 
@@ -108,7 +108,7 @@ def _summary(key: str, group: dict, observations: dict[int, int], observed: dict
     meta = (plan or {}).get("experiment") or {}
     owner = plan or main                           # the laser and lens records of the experiment (DEC-063)
     return {"key": key, "title": title, "status": _status(group), "status_text": STATUS[_status(group)],
-            "kind": (meta.get("test_name") or plan["mode"]) if plan else ("Матрица параметров" if pairs and pairs[0].get("matrix") else "Готовая работа"),
+            "kind": (meta.get("test_name") or plan["mode"]) if plan else ("Parameter matrix" if pairs and pairs[0].get("matrix") else "Finished work"),
             "plan_id": plan["id"] if plan else None, "engraving_id": pairs[0]["engraving_id"] if pairs and not plan else None,
             "device_id": owner["device_id"], "lens_id": owner["lens_id"],
             "checks": len(pairs), "photos": len({p["photo_name"] for p in pairs}),

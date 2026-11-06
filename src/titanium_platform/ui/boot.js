@@ -1,4 +1,4 @@
-/* Запуск интерфейса — последний скрипт index.html. Отдельный файл, а не встроенный <script>: политика безопасности настольной оболочки
-   (desktop/src/guards.js, DEC-057) запрещает встроенные скрипты, и встроенная строка запуска оставляла окно оболочки пустым. */
+/* Start the interface from the final script in index.html. The desktop security policy
+   (desktop/src/guards.js, DEC-057) forbids inline scripts. */
 'use strict';
 App.start();

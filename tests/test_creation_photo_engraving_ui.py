@@ -118,7 +118,7 @@ def test_an_opened_photo_work_writes_its_own_laser_lens_titanium_and_source_unde
   const line = tree.querySelectorAll('p').find((p) => p.getAttribute('aria-label') === 'Лазер, линза и титан этой работы');
   out.line = line.textContent;
 """, context=other)
-    assert out["line"] == "Лазер: JPT 60 · линза: F-Theta · 174 мм · титан: Big Plate 150 · измерения: этой мастерской"
+    assert out["line"] == "Laser: JPT 60 · lens: F-Theta · 174 mm · stock: Big Plate 150 · measurements: this workshop"
 
 
 CHANGE = """
@@ -130,9 +130,9 @@ CHANGE = """
   const nested = ctx.document.body.querySelectorAll('.modal')[1];
   out.nested = [nested.querySelector('h3').textContent, nested.textContent.includes('Источник измерений')];
   const stock = nested.querySelectorAll('.matpick').find((x) => x.getAttribute('aria-label') === 'Титан');            // the titanium is the stock selector, no longer a drop-down
-  await button(stock, 'Выбрать…').dispatch('click'); await settle();                                              // its own dialog opens above this one
+  await button(stock, 'Choose…').dispatch('click'); await settle();                                              // its own dialog opens above this one
   const chooser = ctx.document.body.querySelectorAll('.modal')[2];
-  await button(chooser.querySelectorAll('.lst-row').find((r) => r.textContent.includes('Sheet')), 'Выбрать').dispatch('click'); await settle();
+  await button(chooser.querySelectorAll('.lst-row').find((r) => r.textContent.includes('Sheet')), 'Choose').dispatch('click'); await settle();
   out.warned = [nested.textContent.includes('Другая марка титана'), requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').length];
   await nested.querySelectorAll('button').find((b) => b.textContent === 'Применить').dispatch('click'); await settle();
   out.put = requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').map((r) => r.body);

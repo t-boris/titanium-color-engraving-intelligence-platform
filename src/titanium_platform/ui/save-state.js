@@ -12,12 +12,12 @@
 'use strict';
 const SaveState = (() => {
   const {h, btn} = App;
-  const STATUS_TEXT = {saved: 'Сохранено', waiting: 'Изменения ждут отправки', saving: 'Сохраняем…', calculating: 'Сохраняем и считаем…', failed: 'Не сохранено'};
+  const STATUS_TEXT = {saved: 'Saved', waiting: 'Changes waiting to be sent', saving: 'Saving…', calculating: 'Saving and calculating…', failed: 'Not saved'};
   const pick = (object, keys) => Object.fromEntries(keys.filter((k) => object && k in object).map((k) => [k, object[k]]));
   const plain = (value) => value === null || value === undefined || typeof value !== 'object';
   const shortText = (value) => {
     if (value === undefined || value === null || value === '') return '—';
-    if (typeof value === 'boolean') return value ? 'да' : 'нет';
+    if (typeof value === 'boolean') return value ? 'yes' : 'no';
     const text = String(value);
     return text.length > 60 ? text.slice(0, 57) + '…' : text;
   };
@@ -30,7 +30,7 @@ const SaveState = (() => {
       that cannot be repeated); announce(text): a polite message for a screen reader; onOrphanFailure(failure): a failure that came when the
       document's view was already off the screen; now(): the clock. */
   function create(opts) {
-    const {send, apply, label = 'Документ', names = {}, reload = null, announce = null, onOrphanFailure = null, now = clock} = opts;
+    const {send, apply, label = 'Document', names = {}, reload = null, announce = null, onOrphanFailure = null, now = clock} = opts;
     let revision = 0;                      // the number of the newest change
     let acknowledged = 0;                  // the newest change the server answered
     let current = opts.confirmed ?? null;  // the document as the server has it
@@ -50,9 +50,9 @@ const SaveState = (() => {
       for (const e of [sending, ...queue]) if (e && e.local) parts.push([e.revision, e.local]);
       return Object.assign({}, ...parts.sort((a, b) => a[0] - b[0]).map(([, v]) => v));
     }
-    // «Ширина, мм: 0 (сохранено: 100)»; for a value that is not a single figure or word, only that it differs
+    // “Width, mm: 0 (saved: 100)”; for a value that is not a single figure or word, only that it differs
     const describeLocal = () => Object.entries(local()).map(([k, v]) => (plain(v) && plain(current && current[k])
-      ? `${names[k] || k}: ${shortText(v)} (сохранено: ${shortText(current && current[k])})` : `${names[k] || k}: изменено, не сохранено`)).join('; ');
+      ? `${names[k] || k}: ${shortText(v)} (saved: ${shortText(current && current[k])})` : `${names[k] || k}: changed, not saved`)).join('; ');
     function snapshot() {
       return {status: status(), revision, acknowledged, queued: queue.length, local: local(), confirmed: current, savedAt, describe: describeLocal(),
         failures: failures.map((f) => ({revision: f.edit.revision, keys: [...f.keys], message: f.error.message, retryable: f.edit.retryable, shown: f.shown, retrying: f.retrying}))};
@@ -72,7 +72,7 @@ const SaveState = (() => {
         applied = current;
         apply(current, {local: local(), edits: batch, failed: failures.length > 0, reverted: false});
       }
-      if (hadFailure && !failures.length) { hadFailure = false; if (announce) announce(`${label}: изменения сохранены`); }
+      if (hadFailure && !failures.length) { hadFailure = false; if (announce) announce(`${label}: changes saved`); }
       notify();
       for (const wake of waiters.splice(0)) wake();
     }
@@ -169,21 +169,21 @@ const SaveState = (() => {
     return api;
   }
 
-  /** The status line and, beside it, the error with what can be done: «Повторить», «Вернуть сохранённое», «Закрыть». The line is not a live
+  /** The status line and, beside it, the error with what can be done: “Retry”, “Restore saved values”, “Close”. The line is not a live
       region (a slider would chatter); the error is an alert, drawn again only when its words change. */
   function createView(tracker, {label, reload}) {
     const line = h('p', {class: 'save-line small', tabindex: '-1'});
     const message = h('p', {});
     const diff = h('p', {class: 'small'});
-    const close = btn('Закрыть', () => tracker.dismiss(), 'btn-small');
+    const close = btn('Close', () => tracker.dismiss(), 'btn-small');
     const box = h('div', {class: 'alert bad save-error', role: 'alert', hidden: true}, message, diff, close);
-    const again = btn('Повторить сохранение', async () => {
+    const again = btn('Retry saving', async () => {
       const result = await tracker.retry();
       if (!result) line.focus && line.focus();
     }, 'btn-small primary');
-    const back = btn('Вернуть сохранённое', () => { tracker.revert(); line.focus && line.focus(); }, 'btn-small');
-    back.setAttribute('title', 'Заменить то, что набрано, сохранённым значением');
-    const refresh = btn('Показать сохранённое', async () => { if (tracker.reload) await tracker.reload(); tracker.revert(); }, 'btn-small');
+    const back = btn('Restore saved values', () => { tracker.revert(); line.focus && line.focus(); }, 'btn-small');
+    back.setAttribute('title', 'Replace the entered values with the saved values');
+    const refresh = btn('Show saved values', async () => { if (tracker.reload) await tracker.reload(); tracker.revert(); }, 'btn-small');
     const actions = h('div', {class: 'row save-actions', hidden: true}, again, back, refresh);
     const el = h('div', {class: 'save-state', 'data-state': 'saved'}, line, box, actions);
     let shownFor = '';
@@ -192,10 +192,10 @@ const SaveState = (() => {
       const failed = snap.failures.length > 0;
       const busy = snap.status === 'saving' || snap.status === 'calculating' || snap.status === 'waiting';
       let text = STATUS_TEXT[snap.status];
-      if (busy && snap.queued) text += ` · ещё ${snap.queued} в очереди`;
-      if (snap.status === 'saved') text += snap.savedAt ? ` в ${timeOf(snap.savedAt)}` : '';
-      if (failed && busy) text = 'Повторяем сохранение… ' + text;
-      if (snap.status === 'failed') text = Object.keys(snap.local).length ? 'Не сохранено: на экране не то, что хранится' : 'Не сохранено';
+      if (busy && snap.queued) text += ` · ${snap.queued} more queued`;
+      if (snap.status === 'saved') text += snap.savedAt ? ` at ${timeOf(snap.savedAt)}` : '';
+      if (failed && busy) text = 'Retrying save… ' + text;
+      if (snap.status === 'failed') text = Object.keys(snap.local).length ? 'Not saved: the screen differs from the saved values' : 'Not saved';
       line.textContent = `${label}: ${text}`;
       box.hidden = !(failed && snap.failures.some((f) => f.shown));
       actions.hidden = !failed;
@@ -204,8 +204,8 @@ const SaveState = (() => {
         const signature = snap.failures.map((f) => `${f.revision}:${f.message}`).join('|');
         if (signature !== shownFor) {
           shownFor = signature;
-          message.textContent = snap.failures.length > 1 ? `Не удалось сохранить изменений: ${snap.failures.length}. ${first.message}` : `Не удалось сохранить. ${first.message}`;
-          diff.textContent = snap.describe ? `Набрано, но не сохранено — ${snap.describe}.` : 'Работа осталась такой, как была сохранена.';
+          message.textContent = snap.failures.length > 1 ? `Changes could not be saved: ${snap.failures.length}. ${first.message}` : `Could not save. ${first.message}`;
+          diff.textContent = snap.describe ? `Entered but not saved — ${snap.describe}.` : 'The work remains as last saved.';
         }
       } else shownFor = '';
       const retryable = snap.failures.some((f) => f.retryable);

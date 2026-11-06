@@ -70,7 +70,7 @@ def test_the_laser_page_shows_the_one_experiment_list_filtered_by_it_and_no_list
     assert "/experiments?device_id=${id}" in device and "/devices/${id}/experiments" not in device
     assert "ExperimentCards.list(experiments" in view and "/experiments?device=" in view
     assert "source_photo_url" not in view and "item.observations" not in view
-    assert "ExperimentCards.list(shown" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
+    assert "ExperimentCards.list(items" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
 
 
 def test_photo_engraving_is_the_fourth_section_and_the_other_photo_screens_open_from_it():
@@ -79,7 +79,7 @@ def test_photo_engraving_is_the_fourth_section_and_the_other_photo_screens_open_
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[3] == "/photo-engraving" and "['/photo-engraving', 'Фотогравировка']" in router and len(icons) == len(nav)
+    assert nav[3] == "/photo-engraving" and "['/photo-engraving', 'Photo engraving']" in router and len(icons) == len(nav)
     assert not {"/artwork", "/photo", "/photo-preview"} & set(nav)
     for route, screen, file in (("artwork", "artwork", "artwork.js"), ("photo", "photo", "photo.js"), ("'photo-preview'", "photo-preview", "photo-preview.js"),
                                 ("'photo-engraving'", "photo-engraving", "photo-engraving.js")):
@@ -112,7 +112,7 @@ def test_the_findings_screen_is_in_the_menu_right_after_the_designer_with_an_ico
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
     assert nav[nav.index("/designer") + 1] == "/findings" and len(icons) == len(nav)
-    assert "['/findings', 'Выводы']" in router and "findings: 'findings'" in router
+    assert "['/findings', 'Findings']" in router and "findings: 'findings'" in router
     assert "App.register({id: 'findings'" in _screen("findings.js")
     order = {s: i for i, s in enumerate(SCRIPTS)}
     assert order["/i18n-data.js"] < order["/i18n-findings.js"] < order["/app.js"]
@@ -162,7 +162,7 @@ const texts = (root) => root.querySelectorAll('.lst-main').map((m) => m.textCont
   const sets = tree.querySelectorAll('.lst')[0];
   out.first = texts(sets); out.count = sets.querySelector('.lst-count').textContent; out.more = sets.querySelector('.lst-foot').textContent;
   out.chips = sets.querySelectorAll('.lst-chip').map((c) => c.textContent);
-  const order = sets.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const order = sets.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   order.value = 'utility'; await order.dispatch('change'); await tick();
   out.useful = texts(sets).slice(0, 2);
   await sets.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('измерены')).dispatch('click'); await tick();
@@ -196,10 +196,10 @@ def test_the_designer_lists_the_parameter_sets_of_a_proposal_twenty_at_a_time_wi
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
     out = json.loads(done.stdout)
-    assert len(out["first"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5"
+    assert len(out["first"]) == 20 and out["count"] == "showing 20 of 25" and out["more"] == "Show 5 more"
     assert out["first"][0].startswith("№ 110.0% · 100 кГц") and out["first"][0].endswith("Пробел в покрытииизмерен: фото 1")   # the planner's order
-    assert out["chips"][:4] == ["Все · 25", "Целевой цвет · 8", "Высокая неопределённость · 8", "Пробел в покрытии · 9"]
-    assert out["chips"][4:] == ["Все · 25", "измерены · 1", "ещё нет · 24"]
+    assert out["chips"][:4] == ["All · 25", "Целевой цвет · 8", "Высокая неопределённость · 8", "Пробел в покрытии · 9"]
+    assert out["chips"][4:] == ["All · 25", "измерены · 1", "ещё нет · 24"]
     assert out["useful"][0].startswith("№ 2534.0%") and out["useful"][1].startswith("№ 2433.0%")
     assert out["measured"] == [out["first"][0]]
     labels, links = out["details"]
@@ -232,7 +232,7 @@ def test_every_ui_script_parses():
 def test_the_app_serves_the_ui_and_unknown_pages_fall_back_to_it(tmp_path):
     with TestClient(create_app(tmp_path / "d")) as c:
         home = c.get("/")
-        assert home.status_code == 200 and "Лазерная мастерская" in home.text and 'lang="ru"' in home.text
+        assert home.status_code == 200 and "Laser workshop" in home.text and 'lang="en"' in home.text
         for src in SCRIPTS + ["/styles.css"]:
             r = c.get(src)
             assert r.status_code == 200 and len(r.content) > 50, src

@@ -98,11 +98,11 @@ def test_overlapping_changes_are_sent_in_order_and_only_the_last_answer_is_shown
   t.gates[0].res({w: 2, v: 1}); await wait();
   out.first = {sent: t.gates.length, applied: t.applied.length, line: t.line(), status: t.st.status()};
   t.gates[1].res({w: 3, v: 1}); await wait();
-  out.last = {applied: t.applied.map((x) => x.doc), line: t.line().replace(/ в \\d\\d:\\d\\d/, ''), status: t.st.status(), results: [await a, await b], order: t.gates.map((g) => g.request.w)};
+  out.last = {applied: t.applied.map((x) => x.doc), line: t.line().replace(/ at \\d\\d:\\d\\d/, ''), status: t.st.status(), results: [await a, await b], order: t.gates.map((g) => g.request.w)};
 """)
-    assert out["start"] == {"sent": 1, "line": "Работа: Сохраняем… · ещё 1 в очереди", "status": "saving", "queued": 1}       # the second waits for the first
-    assert out["first"] == {"sent": 2, "applied": 0, "line": "Работа: Сохраняем…", "status": "saving"}               # the answer to 2 does not show 3 as saved
-    assert out["last"] == {"applied": [{"w": 3, "v": 1}], "line": "Работа: Сохранено", "status": "saved", "results": [None, None], "order": [2, 3]}
+    assert out["start"] == {"sent": 1, "line": "Работа: Saving… · 1 more queued", "status": "saving", "queued": 1}       # the second waits for the first
+    assert out["first"] == {"sent": 2, "applied": 0, "line": "Работа: Saving…", "status": "saving"}               # the answer to 2 does not show 3 as saved
+    assert out["last"] == {"applied": [{"w": 3, "v": 1}], "line": "Работа: Saved", "status": "saved", "results": [None, None], "order": [2, 3]}
 
 
 @node
@@ -121,8 +121,8 @@ def test_a_late_answer_never_marks_a_newer_change_saved_or_replaces_it(tmp_path)
   const end = t.st.snapshot();
   out.after_last = {status: end.status, acknowledged: end.acknowledged, applied: t.applied.map((x) => x.doc)};
 """)
-    assert out["after_first"] == {"during": {"status": "calculating", "line": "Работа: Сохраняем и считаем…"}, "status": "calculating", "revision": 2,
-                                  "acknowledged": 1, "applied": 0, "line": "Работа: Сохраняем и считаем…"}
+    assert out["after_first"] == {"during": {"status": "calculating", "line": "Работа: Saving and calculating…"}, "status": "calculating", "revision": 2,
+                                  "acknowledged": 1, "applied": 0, "line": "Работа: Saving and calculating…"}
     assert out["after_last"] == {"status": "saved", "acknowledged": 2, "applied": [{"w": 3, "v": 1}]}
 
 
@@ -142,12 +142,12 @@ def test_a_failed_change_stays_in_its_place_with_the_typed_value_and_the_error_b
 """)
     failed = out["failed"]
     assert failed["result"] == "the width of the picture must be 1..1000 mm" and failed["status"] == "failed" and failed["shown"]
-    assert failed["line"] == "Работа: Не сохранено: на экране не то, что хранится" and failed["alert"] == "alert"
-    assert failed["text"] == ("Не удалось сохранить. the width of the picture must be 1..1000 mm"
-                              "Набрано, но не сохранено — Ширина: 0 (сохранено: 100).Закрыть")
+    assert failed["line"] == "Работа: Not saved: the screen differs from the saved values" and failed["alert"] == "alert"
+    assert failed["text"] == ("Could not save. the width of the picture must be 1..1000 mm"
+                              "Entered but not saved — Ширина: 0 (saved: 100).Close")
     assert failed["local"] == {"w": 0} and failed["confirmed"] == {"w": 100, "v": 1}                          # what is typed and what is stored, apart
     assert failed["redrawn"] == [{"local": {"w": 0}, "failed": True}]                                         # the screen is drawn again with the typed value over it
-    assert out["after_success"] == {"status": "failed", "shown": True, "local": {"w": 0}, "line": "Работа: Не сохранено: на экране не то, что хранится"}
+    assert out["after_success"] == {"status": "failed", "shown": True, "local": {"w": 0}, "line": "Работа: Not saved: the screen differs from the saved values"}
 
 
 @node
@@ -156,21 +156,21 @@ def test_failure_then_retry_then_a_new_edit_during_the_retry(tmp_path):
   const t = track({w: 100, v: 1});
   t.st.edit({w: 70}, {local: {w: 70}}); await wait();
   t.gates[0].rej(new Error('no connection')); await wait();
-  out.failed = {status: t.st.status(), buttons: ['Повторить сохранение', 'Вернуть сохранённое', 'Показать сохранённое'].map((l) => !button(t.st.view.el, l).hidden)};
+  out.failed = {status: t.st.status(), buttons: ['Retry saving', 'Restore saved values', 'Show saved values'].map((l) => !button(t.st.view.el, l).hidden)};
   const retry = t.st.retry(); await wait();                                                                 // the retry is on its way ...
-  out.retrying = {sent: t.gates.map((g) => g.request.w), line: t.line(), retryDisabled: button(t.st.view.el, 'Повторить сохранение').disabled};
+  out.retrying = {sent: t.gates.map((g) => g.request.w), line: t.line(), retryDisabled: button(t.st.view.el, 'Retry saving').disabled};
   t.st.edit({w: 75}, {local: {w: 75}}); await wait();                                                       // ... and the person types again
   t.gates[1].res({w: 70, v: 1}); await wait();
   out.after_retry = {status: t.st.status(), applied: t.applied.length, shown: t.shown(), local: t.st.local()};
   t.gates[2].res({w: 75, v: 1}); await wait();
   out.end = {status: t.st.status(), shown: t.shown(), applied: t.applied.map((x) => x.doc), order: t.gates.map((g) => g.request.w), retry: await retry,
-    line: t.line().replace(/ в \\d\\d:\\d\\d/, '')};
+    line: t.line().replace(/ at \\d\\d:\\d\\d/, '')};
 """)
     assert out["failed"] == {"status": "failed", "buttons": [True, True, False]}                              # a change that can be repeated: repeat, or put back
-    assert out["retrying"] == {"sent": [70, 70], "line": "Работа: Повторяем сохранение… Сохраняем…", "retryDisabled": True}
+    assert out["retrying"] == {"sent": [70, 70], "line": "Работа: Retrying save… Saving…", "retryDisabled": True}
     assert out["after_retry"] == {"status": "saving", "applied": 1, "shown": False, "local": {"w": 75}}    # the retry's answer is not the end: 75 is typed after it
     assert out["end"] == {"status": "saved", "shown": False, "applied": [{"w": 100, "v": 1}, {"w": 75, "v": 1}], "order": [70, 70, 75], "retry": None,
-                          "line": "Работа: Сохранено"}
+                          "line": "Работа: Saved"}
 
 
 @node
@@ -195,13 +195,13 @@ def test_closing_the_error_hides_the_message_only_and_putting_back_shows_the_sto
   const t = track({w: 100, v: 1});
   t.st.edit({w: 0}, {local: {w: 0}}); await wait();
   t.gates[0].rej(new Error('refused')); await wait();
-  await button(t.box(), 'Закрыть').dispatch('click'); await wait();
+  await button(t.box(), 'Close').dispatch('click'); await wait();
   out.closed = {shown: t.shown(), status: t.st.status(), line: t.line(), local: t.st.local(), dismissed: t.st.dismissed()};
-  await button(t.st.view.el, 'Вернуть сохранённое').dispatch('click'); await wait();
+  await button(t.st.view.el, 'Restore saved values').dispatch('click'); await wait();
   out.reverted = {status: t.st.status(), line: t.line(), local: t.st.local(), last: t.applied[t.applied.length - 1], shown: t.shown()};
 """)
-    assert out["closed"] == {"shown": False, "status": "failed", "line": "Работа: Не сохранено: на экране не то, что хранится", "local": {"w": 0}, "dismissed": True}
-    assert out["reverted"] == {"status": "saved", "line": "Работа: Сохранено", "local": {}, "shown": False,
+    assert out["closed"] == {"shown": False, "status": "failed", "line": "Работа: Not saved: the screen differs from the saved values", "local": {"w": 0}, "dismissed": True}
+    assert out["reverted"] == {"status": "saved", "line": "Работа: Saved", "local": {}, "shown": False,
                                "last": {"doc": {"w": 100, "v": 1}, "local": {}, "reverted": True, "failed": False}}
 
 
@@ -214,11 +214,11 @@ def test_a_change_that_must_not_be_sent_twice_offers_the_stored_work_instead_of_
   await wait();
   t.gates[0].rej(new Error('there is no earlier change')); await wait();
   const view = t.st.view.el;
-  out.offered = {retry: !button(view, 'Повторить сохранение').hidden, stored: !button(view, 'Показать сохранённое').hidden, put_back: !button(view, 'Вернуть сохранённое').hidden};
+  out.offered = {retry: !button(view, 'Retry saving').hidden, stored: !button(view, 'Show saved values').hidden, put_back: !button(view, 'Restore saved values').hidden};
   const before = t.gates.length;
   await t.st.retry();
   out.not_sent = t.gates.length === before;
-  await button(view, 'Показать сохранённое').dispatch('click'); await wait();
+  await button(view, 'Show saved values').dispatch('click'); await wait();
   out.shown = {reads, status: t.st.status(), last: t.applied[t.applied.length - 1].reverted};
 """)
     assert out["offered"] == {"retry": False, "stored": True, "put_back": False} and out["not_sent"] is True
@@ -235,7 +235,7 @@ def test_a_failure_after_the_screen_is_gone_is_reported_to_the_task_panel(tmp_pa
   t.gates[0].rej(new Error('no connection')); await wait();
   out.reported = reported;
 """)
-    assert out["reported"] == [{"label": "Работа", "message": "no connection", "describe": "Ширина: 5 (сохранено: 100)", "retryable": True}]
+    assert out["reported"] == [{"label": "Работа", "message": "no connection", "describe": "Ширина: 5 (saved: 100)", "retryable": True}]
 
 
 # -- the photo work: the save state wired into the screen (BUG-002, BUG-011) ------------------------------------------------------------
@@ -243,7 +243,7 @@ def photo(tmp_path, body, **kwargs):
     from test_photo_engraving_ui import run as photo_run
     return photo_run(tmp_path, {"work": "7"}, """
   ctx.document.body.append(tree);
-  const status = () => tree.querySelector('.save-line').textContent.replace(/ в \\d\\d:\\d\\d/, '');
+  const status = () => tree.querySelector('.save-line').textContent.replace(/ at \\d\\d:\\d\\d/, '');
   const failure = () => { const box = tree.querySelector('.save-error'); return box.hidden ? null : box.textContent; };
   const width = labelled(tree, 'Ширина на титане, мм');
   const failing = (test) => { const real = ctx.fetch; ctx.fetch = async (url, opts = {}) => {
@@ -266,9 +266,9 @@ def test_overlapping_width_changes_on_a_work_show_saving_until_the_last_answer(t
   second(); await settle();
   out.end = {status: status(), shown: shown(tree), width: width.value, failure: failure()};
 """)
-    assert out["start"] == {"status": "Работа: Сохраняем и считаем… · ещё 1 в очереди", "sent": [{"width_mm": 80}]}
-    assert out["after_first"] == {"status": "Работа: Сохраняем и считаем…", "sent": [{"width_mm": 80}, {"width_mm": 90}], "waiting": True, "failure": None}
-    assert out["end"] == {"status": "Работа: Сохранено", "shown": "/api/photo-works/7/preview.png?v=2", "width": "90", "failure": None}
+    assert out["start"] == {"status": "Работа: Saving and calculating… · 1 more queued", "sent": [{"width_mm": 80}]}
+    assert out["after_first"] == {"status": "Работа: Saving and calculating…", "sent": [{"width_mm": 80}, {"width_mm": 90}], "waiting": True, "failure": None}
+    assert out["end"] == {"status": "Работа: Saved", "shown": "/api/photo-works/7/preview.png?v=2", "width": "90", "failure": None}
 
 
 @node
@@ -282,11 +282,11 @@ def test_a_work_change_that_fails_keeps_what_was_typed_and_a_later_edit_does_not
   out.later = {status: status(), failure: failure() !== null, width: width.value, saves: saves(), colour: colour.checked};
 """)
     failed = out["failed"]
-    assert failed["width"] == "70" and failed["status"] == "Работа: Не сохранено: на экране не то, что хранится" and failed["waiting"] is False
-    assert failed["failure"] == ("Не удалось сохранить. Cannot reach the local service. Is the application running?"
-                                 "Набрано, но не сохранено — Ширина, мм: 70 (сохранено: 60).Закрыть")
+    assert failed["width"] == "70" and failed["status"] == "Работа: Not saved: the screen differs from the saved values" and failed["waiting"] is False
+    assert failed["failure"] == ("Could not save. Cannot reach the local service. Is the application running?"
+                                 "Entered but not saved — Ширина, мм: 70 (saved: 60).Close")
     assert failed["preview"] == "/api/photo-works/7/preview.png?v=0"                                          # the stored work is drawn again, not the empty wait
-    assert out["later"] == {"status": "Работа: Не сохранено: на экране не то, что хранится", "failure": True, "width": "70", "colour": True,
+    assert out["later"] == {"status": "Работа: Not saved: the screen differs from the saved values", "failure": True, "width": "70", "colour": True,
                             "saves": [{"width_mm": 70}, {"by_colour": True}]}
 
 
@@ -299,16 +299,16 @@ def test_a_work_change_failed_then_retried_then_edited_during_the_retry_ends_wit
   out.failed = {status: status(), width: width.value, failure: failure() !== null};
   globalThis.__retry = true;
   hold.push(new Promise((r) => { release = r; }));                            // the retry is held
-  button(tree, 'Повторить сохранение').dispatch('click'); await settle();
+  button(tree, 'Retry saving').dispatch('click'); await settle();
   out.retrying = {sent: saves(), status: status()};
   hold.push(Promise.resolve());
   width.value = '75'; width.dispatch('change'); await settle();               // typed while the retry is on its way
   release(); await settle(); await settle();
   out.end = {sent: saves(), status: status(), failure: failure(), width: width.value, shown: shown(tree)};
 """)
-    assert out["failed"] == {"status": "Работа: Не сохранено: на экране не то, что хранится", "width": "70", "failure": True}
-    assert out["retrying"]["sent"] == [{"width_mm": 70}, {"width_mm": 70}] and "Повторяем сохранение" in out["retrying"]["status"]
-    assert out["end"] == {"sent": [{"width_mm": 70}, {"width_mm": 70}, {"width_mm": 75}], "status": "Работа: Сохранено", "failure": None, "width": "75",
+    assert out["failed"] == {"status": "Работа: Not saved: the screen differs from the saved values", "width": "70", "failure": True}
+    assert out["retrying"]["sent"] == [{"width_mm": 70}, {"width_mm": 70}] and "Retrying save" in out["retrying"]["status"]
+    assert out["end"] == {"sent": [{"width_mm": 70}, {"width_mm": 70}, {"width_mm": 75}], "status": "Работа: Saved", "failure": None, "width": "75",
                           "shown": "/api/photo-works/7/preview.png?v=2"}
 
 
@@ -321,13 +321,13 @@ def test_an_undo_that_fails_is_not_offered_again_and_the_work_can_be_read_from_t
   ctx.fetch = async (url, opts = {}) => (String(url).endsWith('/undo') ? {ok: false, status: 503, headers: {get: () => 'application/json'}, json: async () => ({error: 'busy'})} : real(url, opts));
   await button(tree, 'Отменить').dispatch('click'); await settle();
   const view = tree.querySelector('.save-state');
-  out.failed = {status: status(), failure: failure() !== null, retry: !button(view, 'Повторить сохранение').hidden, stored: !button(view, 'Показать сохранённое').hidden};
+  out.failed = {status: status(), failure: failure() !== null, retry: !button(view, 'Retry saving').hidden, stored: !button(view, 'Show saved values').hidden};
   const reads = requests.filter((r) => r.path === '/api/photo-works/7' && r.method === 'GET').length;
-  await button(view, 'Показать сохранённое').dispatch('click'); await settle();
+  await button(view, 'Show saved values').dispatch('click'); await settle();
   out.read = {reads: requests.filter((r) => r.path === '/api/photo-works/7' && r.method === 'GET').length - reads, status: status(), failure: failure(), width: width.value};
 """)
-    assert out["failed"] == {"status": "Работа: Не сохранено", "failure": True, "retry": False, "stored": True}
-    assert out["read"] == {"reads": 1, "status": "Работа: Сохранено", "failure": None, "width": "80"}
+    assert out["failed"] == {"status": "Работа: Not saved", "failure": True, "retry": False, "stored": True}
+    assert out["read"] == {"reads": 1, "status": "Работа: Saved", "failure": None, "width": "80"}
 
 
 @node
@@ -341,7 +341,7 @@ def test_changes_that_fail_after_the_work_was_left_reach_the_task_panel(tmp_path
   out.panel = require('vm').runInContext('Operations.items()', ctx).map((o) => ({title: o.title, state: o.state, error: o.error, recover: o.recover.label}));
 """)
     assert out["panel"] == [{"title": "Работа «Портрет»: изменения не сохранены", "state": "failed", "recover": "Открыть работу",
-                             "error": "Cannot reach the local service. Is the application running? Ширина, мм: 70 (сохранено: 60)"}]
+                             "error": "Cannot reach the local service. Is the application running? Ширина, мм: 70 (saved: 60)"}]
 
 
 # -- REQ-002: operations that go on while the person is elsewhere ----------------------------------------------------------------------
@@ -852,9 +852,9 @@ def test_the_four_words_are_explained_through_the_task_with_the_number_in_the_de
   out.without = Terms.note('basis').querySelectorAll('p').length;
   out.unknown = (() => { try { Terms.about('nonsense'); return null; } catch (e) { return e.message; } })();
 """)
-    assert out["say"] == ["фото и гравировка (пара)", "запись о проверенных настройках (знание)", "насколько запись проверена (стадия)", "на чём это держится (основание)"]
-    assert out["note"]["summary"] == "Что такое «пара»?" and out["note"]["open"] == "details"
-    assert out["note"]["paragraphs"][0].startswith("Пара — одна выгравированная пластина и её фотография") and out["note"]["paragraphs"][1] == "Технический номер: пара № 12"
+    assert out["say"] == ["photo and engraving (pair)", "record of tested settings (knowledge)", "how thoroughly the record has been checked (stage)", "what supports the result (evidence)"]
+    assert out["note"]["summary"] == "What is a pair?" and out["note"]["open"] == "details"
+    assert out["note"]["paragraphs"][0].startswith("A pair is an engraved plate and its photograph") and out["note"]["paragraphs"][1] == "Technical identifier: pair #12"
     assert out["without"] == 1 and out["unknown"] == "unknown term nonsense"
 
 

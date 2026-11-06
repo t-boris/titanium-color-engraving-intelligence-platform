@@ -25,7 +25,7 @@ const records = (root) => qa(root, 'option').filter((o) => /^Лист \d+/.test(
 const picker = (root, name) => qa(root, '.matpick').find((p) => p.getAttribute('aria-label') === name);
 const labelOf = (p) => q(p, '.matpick-label').textContent;
 const sent = (url, method = 'POST') => log.filter((x) => x.url === url && x.method === method);
-const opened = async (p) => { const b = button(p, 'Выбрать…'); b.focus(); await b.dispatch('click'); return qa(doc.body, '.modal').pop(); };
+const opened = async (p) => { const b = button(p, 'Choose…'); b.focus(); await b.dispatch('click'); return qa(doc.body, '.modal').pop(); };
 """
 VECTOR = ["hardware.js", "photo-modes.js", "photo-quality.js", "tasks.js", PICKER, "context.js", "screens/vector-split.js", "screens/vector-photo.js",
           "screens/lettering.js", "screens/vector-editor.js", "screens/vector-colours.js", "screens/lifecycle.js", "screens/vector-review.js",
@@ -143,15 +143,15 @@ def test_the_transfer_dialog_of_a_laboratory_picks_the_own_titanium_in_the_selec
       await stock.ready;
       out.start = {pickers: qa(dialog, '.matpick').length, records: records(dialog), selects: qa(dialog, 'select').map((s) => s.getAttribute('aria-label')), label: labelOf(stock), value: stock.value};
       // the selector's own dialog opens above this one; a choice there leaves this one open and gives the focus back to the button that opened it
-      const opener = button(stock, 'Выбрать…');
+      const opener = button(stock, 'Choose…');
       const inner = await opened(stock);
       await until(() => rows(inner).length === 20);
       out.nested = {dialogs: qa(doc.body, '.modal').length, inertBelow: dialog.parentNode.hasAttribute('inert')};
       const search = q(inner, '.lst-search');
       search.value = 'b-0137';
       await search.dispatch('input');
-      await until(() => count(inner) === 'показано 1 из 1');
-      await button(rows(inner)[0], 'Выбрать').dispatch('click');
+      await until(() => count(inner) === 'showing 1 of 1');
+      await button(rows(inner)[0], 'Choose').dispatch('click');
       out.after = {dialogs: qa(doc.body, '.modal').length, inertBelow: dialog.parentNode.hasAttribute('inert'), value: stock.value, focus: doc.activeElement === opener};
       await button(dialog, 'Создать пластину').dispatch('click');
       await until(() => sent('/api/labs/transfers').length === 1);
@@ -292,8 +292,8 @@ def test_the_photo_preview_without_any_stock_record_offers_an_empty_catalogue_an
       const stock = picker(box, 'Титан');
       await stock.ready;
       const dialog = await opened(stock);
-      await until(() => dialog.textContent.includes('Заготовок пока нет.'));
-      out.empty = {label: labelOf(stock), value: stock.value, text: dialog.textContent.includes('Заготовок пока нет.'), urls: stockUrls()};
+      await until(() => dialog.textContent.includes('No stock records yet.'));
+      out.empty = {label: labelOf(stock), value: stock.value, text: dialog.textContent.includes('No stock records yet.'), urls: stockUrls()};
     """, EXPORTS)
     assert out["empty"]["label"] == "выберите титан" and out["empty"]["value"] == "" and out["empty"]["text"]
     bounded(out["empty"]["urls"])
@@ -317,8 +317,8 @@ def test_the_dialog_of_the_shared_choice_selects_the_workshops_record_and_saves_
       const search = q(inner, '.lst-search');
       search.value = 'b-0150';
       await search.dispatch('input');
-      await until(() => count(inner) === 'показано 1 из 1');
-      await button(rows(inner)[0], 'Выбрать').dispatch('click');
+      await until(() => count(inner) === 'showing 1 of 1');
+      await button(rows(inner)[0], 'Choose').dispatch('click');
       await until(() => sent('/api/creation/context/impact').length === before + 1);
       out.impact = JSON.parse(sent('/api/creation/context/impact').pop().body).material_id;
       await button(dialog, 'Применить').dispatch('click');
@@ -344,7 +344,8 @@ def test_the_experiments_overview_is_about_the_remembered_record_and_a_choice_in
     out = run_node(tmp_path, port, EXPERIMENTS, STORAGE + HELPERS + r"""
       ctx.sessionStorage.setItem('experiment-dashboard-material', '120');
       const box = mount(await ctx.__screens.experiments.render({query: {}}));
-      const stock = picker(box, 'Материал и заготовка');
+      await until(() => picker(box, 'Material and stock') != null);
+      const stock = picker(box, 'Material and stock');
       await until(() => stock.record !== null);
       out.start = {pickers: qa(box, '.matpick').length, records: records(box), value: stock.value, label: labelOf(stock),
         guide: log.filter((x) => x.url.startsWith('/api/application-guide?')).map((x) => x.url.match(/material_id=(\d+)/)[1])};
@@ -353,8 +354,8 @@ def test_the_experiments_overview_is_about_the_remembered_record_and_a_choice_in
       const search = q(inner, '.lst-search');
       search.value = 'b-0033';
       await search.dispatch('input');
-      await until(() => count(inner) === 'показано 1 из 1');
-      await button(rows(inner)[0], 'Выбрать').dispatch('click');
+      await until(() => count(inner) === 'showing 1 of 1');
+      await button(rows(inner)[0], 'Choose').dispatch('click');
       out.chosen = {remembered: ctx.__store['experiment-dashboard-material'], renders: ctx.__renders.length};
       out.urls = stockUrls();
     """, EXPORTS)
@@ -368,11 +369,12 @@ def test_the_experiments_overview_starts_with_the_record_used_last_and_is_quiet_
     store, port = bare
     out = run_node(tmp_path, port, EXPERIMENTS, STORAGE + HELPERS + r"""
       const box = mount(await ctx.__screens.experiments.render({query: {}}));
-      const stock = picker(box, 'Материал и заготовка');
+      await until(() => picker(box, 'Material and stock') != null);
+      const stock = picker(box, 'Material and stock');
       await stock.ready;
       out.none = {label: labelOf(stock), value: stock.value, guide: log.filter((x) => x.url.startsWith('/api/application-guide?')).length, urls: stockUrls()};
     """, EXPORTS)
-    assert out["none"]["value"] == "" and out["none"]["label"] == "заготовка не выбрана" and out["none"]["guide"] == 0
+    assert out["none"]["value"] == "" and out["none"]["label"] == "No stock selected" and out["none"]["guide"] == 0
     bounded(out["none"]["urls"])
 
 

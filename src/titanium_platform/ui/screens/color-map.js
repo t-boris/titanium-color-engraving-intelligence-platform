@@ -451,7 +451,7 @@ const ColorMap = (() => {
         ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
       h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'), bandFrom, Forms.describe(bandFrom, 'lightnessBand'), bandFromNote,
         h('span', {}, 'до'), bandTo, Forms.describe(bandTo, 'lightnessBand'), bandToNote,
-        h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length} · колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — приблизить`)),
+        h('span', {class: 'muted'}, ` · showing ${shown().length} of ${data.points.length} · wheel to zoom, drag to pan, double-click to zoom in`)),
       modelCaption,
       stepNote, plotBox, detail);
     modelRequest.then((loaded) => {

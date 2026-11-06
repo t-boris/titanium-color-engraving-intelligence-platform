@@ -135,7 +135,7 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
   out.layersHeading = side.querySelectorAll('h3').map((h) => h.textContent);
   out.alerts = side.querySelectorAll('div').filter((d) => has(d, 'alert')).map((d) => d.textContent);
 """)
-    assert out["root"] == "os experiment" and "Тест материала" in out["head"] and "Принят" in out["head"] and "Заливка" in out["head"]   # task pill beside the title
+    assert out["root"] == "os experiment" and "Тест материала" in out["head"] and "Принят" in out["head"] and "Fill" in out["head"]   # task pill beside the title
     assert out["back"] == "#/experiments" and out["addPhoto"] == "#/ingest?rephoto=59"
     assert out["tabs"] == [["Результат", False], ["Матрица", False], ["Проверки (1)", False], ["Работа", False]] and out["shown"] == ["ep-tab-panel-result"]
     assert out["photoTools"] == ["Скрыть контуры", "Поднять яркость", "Перемерить заново"] and out["legend"] == ["Что означают линии"]
@@ -184,15 +184,15 @@ def test_the_measured_layers_of_a_matrix_are_a_short_list_worst_first_a_page_at_
   out.kept = keys(again.querySelectorAll('aside').find((s) => has(s, 'ep-side')).querySelector('.lst')).slice(0, 3);
 """)
     assert out["heading"] == "Измеренные слои · 25"
-    assert len(out["keys"]) == 20 and out["count"] == "показано 20 из 25" and out["more"] == "Показать ещё 5"
+    assert len(out["keys"]) == 20 and out["count"] == "showing 20 of 25" and out["more"] == "Show 5 more"
     # not comparable, then noted, then the most uneven sample first: cells 7 (±2.4), 14 (±2.3), 21 (±2.2), 10 (±2.0), …
     assert out["keys"][:6] == ["3", "5", "7", "14", "21", "10"]
     assert "не сопоставим" in out["lines"][0] and "замечаний: 1" in out["lines"][1] and "±2.4 L*" in out["lines"][2]
     assert "L 40.5 · a 21.0 · b -21.0" in out["lines"][2] and out["swatches"] == 20               # the colour of each line
-    assert out["chips"] == ["Все · 25", "Не сопоставимы · 1", "С замечаниями · 1", "Без замечаний · 23"]
+    assert out["chips"] == ["All · 25", "Не сопоставимы · 1", "С замечаниями · 1", "Без замечаний · 23"]
     assert out["openBefore"] == 0 and len(out["open"]) == 1
     card = out["open"][0]
-    assert "Заливка · по слою LightBurn" in card and "1950 кГц" in card and "Разброс цвета в пробе: L* ±2.4" in card
+    assert "Fill · from the LightBurn layer" in card and "1950 кГц" in card and "Разброс цвета в пробе: L* ±2.4" in card
     assert out["ordered"] == ["0", "1", "2"] and out["kept"] == ["0", "1", "2"]
 
 
@@ -230,9 +230,9 @@ def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_pic
   out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
 """)
     assert out["tables"] == 0
-    assert len(out["keys"]) == 20 and out["keys"][:2] == ["0", "1"] and out["count"] == "показано 20 из 101"
+    assert len(out["keys"]) == 20 and out["keys"][:2] == ["0", "1"] and out["count"] == "showing 20 of 101"
     assert "C00" in out["first"] and "заливка" in out["first"] and "10 мм²" in out["first"] and "видно 100.0%" in out["first"]
-    assert out["chips"] == ["Все · 101", "заливка · 100", "фотогравировка · 1"]
+    assert out["chips"] == ["All · 101", "заливка · 100", "фотогравировка · 1"]
     assert out["byArea"] == ["99", "98"]
     assert out["photo"] == ["100"] and len(out["open"]) == 1
     assert "картинка непрозрачна на 80.0%" in out["open"][0] and "гравирует 41.5%" in out["open"][0]

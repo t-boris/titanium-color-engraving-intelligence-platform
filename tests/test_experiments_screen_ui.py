@@ -196,8 +196,8 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
   const list = q(tree, '.ex-list');
   out.listParts = kids(list); out.listHead = list.querySelector('.os-col-head').textContent; out.pills = P(list, '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);
   const scroll = q(list, '.os-scroll');
-  out.toolbar = [q(scroll, '.lst-search') != null, chips(scroll), labelled(scroll, 'Состояние эксперимента') != null,
-    selectOf(scroll, 'Задача').options.map((o) => o.textContent), selectOf(scroll, 'Sort order').options.map((o) => [o.value, o.textContent]), q(scroll, '.lst-count').textContent];
+  out.toolbar = [q(scroll, '.lst-search') != null, chips(scroll), labelled(scroll, 'Experiment status') != null,
+    selectOf(scroll, 'Task').options.map((o) => o.textContent), selectOf(scroll, 'Sort order').options.map((o) => [o.value, o.textContent]), q(scroll, '.lst-count').textContent];
   out.rowsInScroll = scroll.querySelectorAll('.lst-row').length; out.rowsInList = list.querySelectorAll('.lst-row').length; out.cards = list.querySelectorAll('article').length;
   out.cardTitles = titles(scroll);
   out.open = scroll.querySelectorAll('.lst-act').map((a) => [a.textContent, a.querySelector('a').getAttribute('href')]);
@@ -217,12 +217,12 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
     assert out["columns"] == ["os-col ex-list", "ex-right"] and out["right"] == ["os-col ex-task", "os-col ex-find", "os-col ex-find"]
     assert out["listParts"] == ["os-col-head", "os-scroll"] and out["listHead"].startswith("Experiments") and out["pills"] == ["3", "1 to review"]
     search, states, state_group, tasks, orders, count = out["toolbar"]                                  # the shared list's search, filters and order, in the list column
-    assert search and state_group and states == ["All · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"]
-    assert tasks == ["все задачи · 3", "Lettering · 3"] and count == "showing 3 of 3"
-    assert orders == [["recent", "Сначала недавние"], ["review", "Сначала к проверке"], ["title", "По названию"]]
+    assert search and state_group and states == ["All · 3", "Needs review · 1", "Awaiting photo · 1", "Accepted · 1"]
+    assert tasks == ["All tasks · 3", "Lettering · 3"] and count == "showing 3 of 3"
+    assert orders == [["recent", "Most recent"], ["review", "Needs review first"], ["title", "Title"]]
     assert out["rowsInScroll"] == out["rowsInList"] == 3 and out["cards"] == 0                           # one line each; the cards open under a line
     assert out["cardTitles"] == ["Плата текста", "Тест Q-Pulse", "Шаг строк"]                             # the most recently active first, as the server sends
-    assert out["open"] == [["Открыть", "#/experiment/plan-3"], ["Открыть", "#/experiment/eng-a"], ["Открыть", "#/experiment/eng-b"]]
+    assert out["open"] == [["Open", "#/experiment/plan-3"], ["Open", "#/experiment/eng-a"], ["Open", "#/experiment/eng-b"]]
     assert out["task"]["head"] == "Work goal" and out["task"]["labels"][:2] == ["Goal", "Material"] and out["task"]["inScroll"] >= 2
     assert out["task"]["next"] is True and "Laser A" not in out["task"]["result"] and "Разборчивые буквы выбранного размера" in out["task"]["result"]
     assert out["task"]["details"] == [out["task"]["details"][0]] and out["task"]["details"][0].startswith("Finding evidence and settings")
@@ -243,19 +243,19 @@ def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_thei
   search.value = 'q-pulse'; await search.dispatch('input'); await tick();
   out.searched = titles(scroll); out.chipsSearched = chips(scroll);
   search.value = ''; await search.dispatch('input'); await tick();
-  await chip(scroll, 'Нужна проверка').dispatch('click'); await tick();
+  await chip(scroll, 'Needs review').dispatch('click'); await tick();
   out.state = titles(scroll);
   await chip(scroll, 'All').dispatch('click'); await tick();
-  out.tasks = selectOf(scroll, 'Задача').options.map((o) => [o.value, o.textContent]);
-  const task = selectOf(scroll, 'Задача'); task.value = 'text'; await task.dispatch('change'); await tick();
+  out.tasks = selectOf(scroll, 'Task').options.map((o) => [o.value, o.textContent]);
+  const task = selectOf(scroll, 'Task'); task.value = 'text'; await task.dispatch('change'); await tick();
   out.task = titles(scroll);
   const order = selectOf(scroll, 'Sort order'); order.value = 'title'; await order.dispatch('change'); await tick();
   out.ordered = titles(scroll);
   out.kept = JSON.parse(ctx.__store['list:experiments']); out.renders = ctx.__renders.length;
 """, routes=routes)
-    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["All · 1", "Приняты · 1"]      # the search reads the title; the counts follow it
+    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["All · 1", "Accepted · 1"]      # the search reads the title; the counts follow it
     assert out["state"] == ["Шаг строк"]
-    assert out["tasks"] == [["", "все задачи · 3"], ["text", "Lettering · 2"], ["line", "Lines · 1"], ["fill", "Fill · 1"]]    # only the tasks the experiments have
+    assert out["tasks"] == [["", "All tasks · 3"], ["text", "Lettering · 2"], ["line", "Lines · 1"], ["fill", "Fill · 1"]]    # only the tasks the experiments have
     assert out["task"] == ["Плата текста", "Тест Q-Pulse"] and out["ordered"] == ["Плата текста", "Тест Q-Pulse"]
     assert out["kept"] == {"sort": "title", "filters": {"status": "", "task": "text"}, "search": "", "shown": 20}
     assert out["renders"] == 0                                                                                 # a choice narrows the list, the screen stays
@@ -425,9 +425,9 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
   const card = ctx.DeviceView.experimentsCard(all, {id: 1, name: 'Laser A', lens: {id: 5, name: 'F-Theta', focal_length_mm: 174}}, [{id: 5, name: 'F-Theta', focal_length_mm: 174}]);
   const panel = card.querySelectorAll('section').find((s) => s.textContent.startsWith('Эксперименты этого лазера'));
   out.head = panel.querySelector('.dashboard-panel-head').textContent;
-  out.toolbar = [panel.querySelector('.lst-search') != null, chips(panel), selectOf(panel, 'Задача').options.map((o) => o.textContent),
+  out.toolbar = [panel.querySelector('.lst-search') != null, chips(panel), selectOf(panel, 'Task').options.map((o) => o.textContent),
     selectOf(panel, 'Sort order').options.map((o) => o.textContent)];
-  await chip(panel, 'Приняты').dispatch('click'); await tick();
+  await chip(panel, 'Accepted').dispatch('click'); await tick();
   out.accepted = titles(panel);
   out.kept = [JSON.parse(ctx.__store['list:laser-experiments']).filters, ctx.__store['list:experiments'] || null];
   out.api = Object.keys(ctx.ExperimentCards);
@@ -435,8 +435,8 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
 """)
     assert out["head"] == "Эксперименты этого лазера3Открыть в общем списке"
     search, states, tasks, orders = out["toolbar"]
-    assert search and states == ["All · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"] and tasks == ["все задачи · 3", "Lettering · 3"]
-    assert orders == ["Сначала недавние", "Сначала к проверке", "По названию"]
+    assert search and states == ["All · 3", "Needs review · 1", "Awaiting photo · 1", "Accepted · 1"] and tasks == ["All tasks · 3", "Lettering · 3"]
+    assert orders == ["Most recent", "Needs review first", "Title"]
     assert out["accepted"] == ["Тест Q-Pulse"] and out["kept"][0] == {"status": "accepted", "task": ""} and out["kept"][1] is None   # its own choice, not the screen's
     assert out["api"] == ["card", "list", "layers"] and out["empty"] == "Пусто"
 

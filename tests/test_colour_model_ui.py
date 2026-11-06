@@ -135,7 +135,7 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
     assert "31.0 % · 300 кГц · 1000 мм/с · L 41.0 · a 2.0 · b -3.0Измерено" in out["right"]                   # one line: settings, colour, stage
     assert len(out["opened"]) == 1 and "31.0 % · 300 кГц · 1000 мм/с · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
     assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность дисперсия 1.50" in out["opened"][0]
-    assert out["signals"][0] == "по эталонной карте" and out["signals"][-1] == "1 независимая гравировка"       # the signals first (REQ-001) ...
+    assert out["signals"][0] == "reference chart corrected" and out["signals"][-1] == "1 independent engraving"       # the signals first (REQ-001) ...
     assert out["fold"] == [[False, "Цифры: цвет Lab, уверенность, ошибка ΔE, стабильность", True]]          # ... the figures in a closed fold
     assert out["tabs"] == 0                                                                               # the model is a single list, no tabs
 
@@ -232,9 +232,9 @@ def test_a_laser_with_many_raw_pairs_lists_twenty_sets_with_a_search_and_keeps_t
   await lines(box)[0].querySelector('button').dispatch('click');
   out.chosen = {pressed: pressed(box), title: again.querySelector('.lm-centre').textContent.includes('пара 30'), stored: ctx.__store['lm.set']};
 """)
-    assert out["first"] == {"rows": 20, "count": "показано 20 из 46", "pressed": ["Калиброванные наблюдения"], "head": "Наборы46"}
-    assert out["beyond"] == {"rows": 20, "note": "Выбранная строка вне показанной части списка", "pinned": ["пара 44"], "title": True}
-    assert out["found"] == {"rows": ["пара 30"], "count": "показано 1 из 1", "note": "Выбранная строка скрыта: она не подходит под поиск или фильтры"}
+    assert out["first"] == {"rows": 20, "count": "showing 20 of 46", "pressed": ["Калиброванные наблюдения"], "head": "Наборы46"}
+    assert out["beyond"] == {"rows": 20, "note": "The selected row is beyond the displayed portion of the list", "pinned": ["пара 44"], "title": True}
+    assert out["found"] == {"rows": ["пара 30"], "count": "showing 1 of 1", "note": "The selected row is hidden by the search or filters"}
     assert out["chosen"] == {"pressed": ["пара 30"], "title": True, "stored": "pair-30"}
 
 
@@ -300,32 +300,32 @@ def test_the_model_shows_one_page_of_its_entries_with_the_stage_doubt_and_task_f
     selects: right.querySelectorAll('label').filter((l) => has(l, 'lst-select')).map((l) => l.querySelector('span').textContent)};
   out.bare = right.querySelectorAll('.lst-main')[4].textContent;
   await chip('Производственное'); out.production = [count(), ids()];
-  await chip('Все');
+  await chip('All');
   await choose('Под вопросом', 'yes'); out.questioned = [count(), ids()];
   await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick(); out.doubt = opened();
   await choose('Под вопросом', ''); await choose('Задача', 'text'); out.text = [count(), more()];
-  await choose('Задача', ''); await choose('Порядок', 'error'); out.error = ids().slice(0, 3);
-  await choose('Порядок', 'light'); out.light = ids().slice(0, 2);
-  await choose('Порядок', 'newest'); out.newest = ids().slice(0, 2);
+  await choose('Задача', ''); await choose('Sort order', 'error'); out.error = ids().slice(0, 3);
+  await choose('Sort order', 'light'); out.light = ids().slice(0, 2);
+  await choose('Sort order', 'newest'); out.newest = ids().slice(0, 2);
   await right.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick(); out.second = [count(), more()];
   const search = right.querySelector('.lst-search'); search.value = '75.0 %'; await search.dispatch('input'); await tick(); await tick();
   out.searched = [count(), ids()];
 """)
     assert out["head"] == "Модель цветовых параметров45"                                                  # the count of the whole model
     first = out["first"]
-    assert first["rows"] == 20 and first["count"] == "показано 20 из 45" and first["more"] == "Показать ещё 20"     # one page, not 45 lines
-    assert first["chips"] == ["Все · 45", "Измерено · 32", "Валидировано · 8", "Производственное · 5"]          # a stage with no entry is not offered
-    assert first["selects"] == ["Под вопросом", "Задача", "Порядок"]
+    assert first["rows"] == 20 and first["count"] == "showing 20 of 45" and first["more"] == "Show 20 more"     # one page, not 45 lines
+    assert first["chips"] == ["All · 45", "Измерено · 32", "Валидировано · 8", "Производственное · 5"]          # a stage with no entry is not offered
+    assert first["selects"] == ["Под вопросом", "Задача", "Sort order"]
     assert first["ids"][:13] == [9, 18, 27, 36, 45, 5, 10, 15, 20, 25, 30, 35, 40]                           # the further an entry got, the higher
     assert out["bare"] == "75.0 % · 300 кГц · 1000 мм/сПроизводственное"                                     # an entry without evidence: no colour
-    assert out["production"] == ["показано 5 из 5", [9, 18, 27, 36, 45]]
-    assert out["questioned"] == ["показано 6 из 6", [35, 7, 14, 21, 28, 42]]
-    assert len(out["doubt"]) == 1 and "Под вопросом. a doubt" in out["doubt"][0] and "Задача: Заливка" in out["doubt"][0]
-    assert out["text"] == ["показано 20 из 22", "Показать ещё 2"]
+    assert out["production"] == ["showing 5 of 5", [9, 18, 27, 36, 45]]
+    assert out["questioned"] == ["showing 6 of 6", [35, 7, 14, 21, 28, 42]]
+    assert len(out["doubt"]) == 1 and "Под вопросом. a doubt" in out["doubt"][0] and "Задача: Fill" in out["doubt"][0]
+    assert out["text"] == ["showing 20 of 22", "Show 2 more"]
     assert out["error"] == [1, 2, 4]                                                                          # no estimate of the error: last
     assert out["light"] == [44, 43] and out["newest"] == [45, 44]
-    assert out["second"] == ["показано 40 из 45", "Показать ещё 5"]
-    assert out["searched"] == ["показано 1 из 1", [45]]
+    assert out["second"] == ["showing 40 of 45", "Show 5 more"]
+    assert out["searched"] == ["showing 1 of 1", [45]]
 
 
 @node
@@ -344,15 +344,15 @@ def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path
   out.first = {rows: rows().length, count: layers.querySelector('.lst-count').textContent, chips: layers.querySelectorAll('.lst-chip').map((c) => c.textContent)};
   await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Свидетель чистки')).dispatch('click'); await tick();
   out.witness = rows();
-  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('Все')).dispatch('click'); await tick();
+  await layers.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('All')).dispatch('click'); await tick();
   const sort = layers.querySelector('select'); sort.value = 'contrast'; await sort.dispatch('change'); await tick();
   out.contrast = rows().slice(0, 2);
   sort.value = 'light'; await sort.dispatch('change'); await tick();
   out.light = rows()[0];
 """)
     assert out["tab"] == "Все слои (26)"
-    assert out["first"]["rows"] == 20 and out["first"]["count"] == "показано 20 из 26"
-    assert out["first"]["chips"] == ["Все · 26", "Тестовый участок · 24", "Свидетель чистки · 1", "Метки и подписи · 1"]
+    assert out["first"]["rows"] == 20 and out["first"]["count"] == "showing 20 of 26"
+    assert out["first"]["chips"] == ["All · 26", "Тестовый участок · 24", "Свидетель чистки · 1", "Метки и подписи · 1"]
     assert out["witness"] == ["C025 · тёмный на этом фотоСвидетель чистки"]                                   # the witness has no ΔE of its own
     assert out["contrast"] == ["C024 · тёмный на этом фотоМетки и подписиΔE 12.0", "C023 · тёмный на этом фотоΔE 11.5"]
     assert out["light"].startswith("C025 · ")                                                                 # L 45: the lightest layer
@@ -401,7 +401,7 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
     assert len(out["alert"]) == 1 and out["alert"][0].startswith("Под вопросом. a doubt") and any(n.startswith("an attribution note") for n in out["note"])
     assert out["columns"] == ["os-col", "os-col kn-history", "os-col kn-evidence"]
     assert out["facts"] == ["Стадия", "Параметры", "Цвет", "Независимых гравировок", "Уверенность", "Совпали по цвету", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
-    assert out["signals"] == ["по эталонной карте", "2 независимые гравировки"]            # the entry carries no agreement or sources: only what it has is said
+    assert out["signals"] == ["reference chart corrected", "2 independent engravings"]            # the entry carries no agreement or sources: only what it has is said
     assert out["fold"] == [[False, "Цифры расчёта: цвет Lab, уверенность, ожидаемая ошибка", 7]]      # Lab and the figures are one fold away, closed
     assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 кГц · 833 мм/с · импульс 4 · интервал 0.003 · проходов 1" in out["factText"]
     assert "не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте" in out["factText"]
@@ -409,7 +409,7 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
     assert out["buttons"].count("Откатить переход") == 1                                                      # only a transition can be rolled back
     assert "История2" in out["history"] and out["rows"] == 2 and "повышено автоматически" in out["history"] and "Кандидат" in out["history"]      # a line per event, the newest first
     assert "Наблюдения-основания3" in out["evidence"] and "Номера наблюдений: 3" in out["evidence"]
-    assert out["refs"] == [["№480", "#/analysis/580"], ["№481", "#/analysis/581"], ["№482", "#/analysis/582"]]       # each number is a link to its photograph
+    assert out["refs"] == [["#480", "#/analysis/580"], ["#481", "#/analysis/581"], ["#482", "#/analysis/582"]]       # each number is a link to its photograph
 
 
 @node
@@ -420,13 +420,13 @@ def test_the_knowledge_page_names_a_repeat_a_doubt_and_a_contradiction_beside_th
     out = run(tmp_path, routes, {"id": "knowledge", "arg": 5}, """
   out.stable = tree.querySelectorAll('.ev-signal').map((p) => p.textContent);
 """)
-    assert out["stable"] == ["проверен повтором", "по эталонной карте", "2 независимые гравировки"]
+    assert out["stable"] == ["verified by repetition", "reference chart corrected", "2 independent engravings"]
     summary.update(agreement={"engravings": 3, "agreeing": 1, "differing": 2, "limit": 5, "contradicted": True}, caution="contradicted")
     out = run(tmp_path, routes, {"id": "knowledge", "arg": 5}, """
   out.doubt = tree.querySelectorAll('.ev-signal').map((p) => p.textContent);
   out.factText = tree.querySelectorAll('dl').map((d) => d.textContent).join(' ');
 """)
-    assert out["doubt"][0] == "сомнительный: гравировки расходятся" and "цвет менялся при тех же настройках" in out["factText"]      # the cause stays in the fold
+    assert out["doubt"][0] == "uncertain: engravings disagree" and "color varied with the same settings" in out["factText"]      # the cause stays in the fold
 
 
 @node

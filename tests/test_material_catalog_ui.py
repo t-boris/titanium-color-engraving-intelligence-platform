@@ -39,9 +39,9 @@ def test_the_catalogue_draws_twenty_compact_rows_whatever_its_size(tmp_path, cou
           out.first = {rows: rows(box).length, count: count(box), editor: q(box, '.mat-editor') !== null};
           out.parts = rows(box).slice(0, 4).map((r) => ({name: qa(r, 'strong')[0].textContent, grade: qa(r, '.mat-grade').map((n) => n.textContent),
             batch: qa(r, '.mat-batch').map((n) => n.textContent), thickness: qa(r, '.mat-thickness').map((n) => n.textContent), text: q(r, '.lst-main').textContent}));
-          out.more = button(box, 'Показать ещё 20') !== null;
+          out.more = button(box, 'Show 20 more') !== null;
           if (out.more) {
-            await button(box, 'Показать ещё 20').dispatch('click');
+            await button(box, 'Show 20 more').dispatch('click');
             await until(() => rows(box).length === 40);
             out.second = {count: count(box), asked: requests('/api/materials').slice(1).map((x) => x.url)};
           }
@@ -50,7 +50,7 @@ def test_the_catalogue_draws_twenty_compact_rows_whatever_its_size(tmp_path, cou
         cm.__exit__(None, None, None)
     assert out["asked"] == ["/api/materials?offset=0&limit=20&sort=recent"]                       # one page of twenty, never the whole catalogue
     shown = min(20, count)
-    assert out["first"] == {"rows": shown, "count": f"показано {shown} из {count}", "editor": False}   # no form is drawn until a record is chosen
+    assert out["first"] == {"rows": shown, "count": f"showing {shown} of {count}", "editor": False}   # no form is drawn until a record is chosen
     first = out["parts"][0]
     assert first["name"] == f"Лист {count}" and first["batch"] == [f"партия B-{count:04d}"]       # the newest first while nothing has been used
     grades = ("Grade 2", "Grade 5", "Ti-6Al-4V", None)
@@ -60,7 +60,7 @@ def test_the_catalogue_draws_twenty_compact_rows_whatever_its_size(tmp_path, cou
         assert row["thickness"] == [f"{+(0.5 + ((number - 1) % 5) * 0.5):g} мм"]
     assert out["more"] is (count > 20)
     if count > 20:
-        assert out["second"] == {"count": f"показано 40 из {count}", "asked": ["/api/materials?offset=20&limit=20&sort=recent"]}
+        assert out["second"] == {"count": f"showing 40 of {count}", "asked": ["/api/materials?offset=20&limit=20&sort=recent"]}
 
 
 def test_a_search_a_grade_and_an_order_are_asked_of_the_server_and_kept_in_the_address(small, tmp_path):
@@ -70,16 +70,16 @@ def test_a_search_a_grade_and_an_order_are_asked_of_the_server_and_kept_in_the_a
       search.focus();
       search.value = 'b-0137';
       await search.dispatch('input');
-      await until(() => count(box) === 'показано 1 из 1');
+      await until(() => count(box) === 'showing 1 of 1');
       out.found = {names: rows(box).map((r) => qa(r, 'strong')[0].textContent), asked: requests('/api/materials?').pop().url, focus: doc.activeElement === search};
-      await button(box, 'Сбросить поиск и фильтры').dispatch('click');
-      await until(() => count(box) === 'показано 20 из 200');
+      await button(box, 'Clear search and filters').dispatch('click');
+      await until(() => count(box) === 'showing 20 of 200');
       const grade = qa(box, 'label').find((l) => l.textContent.startsWith('Марка')).querySelector('select');
       out.options = grade.options.map((o) => o.textContent);
       grade.value = 'grade 5';
       await grade.dispatch('change');
-      await until(() => count(box) === 'показано 20 из 50');
-      const order = qa(box, 'select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+      await until(() => count(box) === 'showing 20 of 50');
+      const order = qa(box, 'select').find((s) => s.getAttribute('aria-label') === 'Sort order');
       out.orders = order.options.map((o) => o.textContent);
       order.value = 'thickness';
       await order.dispatch('change');
@@ -92,7 +92,7 @@ def test_a_search_a_grade_and_an_order_are_asked_of_the_server_and_kept_in_the_a
       out.none = q(box, '.lst-empty').textContent;
     """, EXPORTS)
     assert out["found"] == {"names": ["Лист 137"], "asked": "/api/materials?offset=0&limit=20&sort=recent&search=b-0137", "focus": True}   # the cursor stays in the field
-    assert out["options"][:3] == ["все · 200", "Grade 2 · 50", "Grade 5 · 50"] and "без марки · 50" in out["options"]
+    assert out["options"][:3] == ["all · 200", "Grade 2 · 50", "Grade 5 · 50"] and "без марки · 50" in out["options"]
     assert out["orders"] == ["Недавно использованные", "По названию", "По марке", "По толщине", "Недавно добавленные"]
     assert "grade=grade+5" in out["grade"]["asked"] and "sort=thickness" in out["grade"]["asked"]
     assert out["grade"]["hash"].startswith("#/setup?tab=material") and "grade=grade+5" in out["grade"]["hash"] and "sort=thickness" in out["grade"]["hash"]
@@ -155,7 +155,7 @@ def test_a_new_record_is_saved_once_and_appears_in_the_list(small, tmp_path):
     assert out["saved"]["body"] == {"name": "Новый лист", "family": "Titanium", "grade": "Grade 7", "batch": "N-77", "thickness_mm": 1.5, "surface": None}
     assert out["saved"]["editor"] == "Материал № 201" and "Материал сохранён" in out["saved"]["toast"][0]
     assert "Grade 7" in out["saved"]["first"] and "партия N-77" in out["saved"]["first"] and "1.5 мм" in out["saved"]["first"]
-    assert out["saved"]["count"] == "показано 20 из 201" and "material=201" in out["saved"]["hash"]
+    assert out["saved"]["count"] == "showing 20 of 201" and "material=201" in out["saved"]["hash"]
     assert store.one("SELECT name, batch FROM material_profile WHERE id=201")["batch"] == "N-77"
 
 
@@ -176,9 +176,9 @@ def test_a_refused_save_keeps_the_form_and_what_was_typed(small, tmp_path):
         posts: requests('/api/materials').filter((x) => x.method === 'POST').length, count: count(box), invalid: inputs[0].getAttribute('aria-invalid')};
     """, EXPORTS)
     assert out["refused"]["same"] and out["refused"]["enabled"] and out["refused"]["grade"] == "Grade 9" and out["refused"]["posts"] == 0 and out["refused"]["toasts"] == 0
-    assert out["refused"]["name"] == "Заполните это поле" and out["refused"]["thickness"] == "Допустимо: больше 0 мм. Введено: -1" and out["refused"]["thicknessKept"] == "-1"
-    assert out["refused"]["summary"] == "Не отправлено: исправьте поля «Название», «Толщина». Всё, что вы ввели, осталось в форме." and out["refused"]["invalid"] == "true"
-    assert out["refused"]["count"] == "показано 20 из 200"
+    assert out["refused"]["name"] == "Complete this field" and out["refused"]["thickness"] == "Allowed: greater than 0 mm. Entered: -1" and out["refused"]["thicknessKept"] == "-1"
+    assert out["refused"]["summary"] == "Not submitted: correct fields “Название”, “Толщина”. Your entries remain in the form." and out["refused"]["invalid"] == "true"
+    assert out["refused"]["count"] == "showing 20 of 200"
 
 
 def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_path):
@@ -194,7 +194,7 @@ def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_
       const search = q(box, '.lst-search');
       search.value = 'b-0010';
       await search.dispatch('input');
-      await until(() => count(box) === 'показано 1 из 1');
+      await until(() => count(box) === 'showing 1 of 1');
       out.typed = {same: q(box, '.mat-editor') === form, name: inputs[0].value, pinned: q(box, '.lst-pin-note') !== null,
         note: q(box, '.lst-pin-note') ? q(box, '.lst-pin-note').textContent.trim() : null, pinnedName: q(box, '.lst-pin') ? qa(q(box, '.lst-pin'), 'strong')[0].textContent : null};
       const gate = hold('/api/materials/' + id, 'PUT');
@@ -212,7 +212,7 @@ def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_
     """, EXPORTS)
     assert out["typed"]["same"] and out["typed"]["name"] == "Переименованный лист"                # the search did not take the typed text away
     assert out["typed"]["pinned"] and out["typed"]["pinnedName"] == "Лист 200"                       # the record being edited is kept in view though the search hides it
-    assert out["typed"]["note"].startswith("Выбранная строка")
+    assert out["typed"]["note"].startswith("The selected row")
     assert out["puts"] == 1 and out["saved"]["body"] == "Переименованный лист" and out["saved"]["editor"] == f"Материал № {out['saved']['id']}"
     assert store.one("SELECT name FROM material_profile WHERE id=?", (out["saved"]["id"],))["name"] == "Переименованный лист"
 
@@ -223,12 +223,12 @@ def test_the_record_named_in_the_address_opens_and_is_kept_in_view_beyond_the_fi
       const pin = q(box, '.lst-pin');
       out.open = {editor: q(box, '.mat-editor').getAttribute('aria-label'), name: qa(q(box, '.mat-editor'), 'input')[0].value, rows: rows(box).length,
         note: q(pin, '.lst-pin-note').textContent.trim(), pinned: qa(pin, 'strong')[0].textContent, asked: requests('/api/materials/37').length};
-      await button(pin, 'Снять выбор').dispatch('click');
+      await button(pin, 'Clear selection').dispatch('click');
       await until(() => q(box, '.lst-pin') === null);
       out.cleared = {editors: qa(box, '.mat-editor').length, hash: ctx.location.hash, focus: doc.activeElement && doc.activeElement.textContent};
     """, EXPORTS)
     assert out["open"]["editor"] == "Материал № 37" and out["open"]["name"] == "Лист 37" and out["open"]["rows"] == 20
-    assert out["open"]["note"].startswith("Выбранная строка вне показанной части списка.") and out["open"]["pinned"] == "Лист 37"
+    assert out["open"]["note"].startswith("The selected row is beyond the displayed portion of the list.") and out["open"]["pinned"] == "Лист 37"
     assert out["cleared"]["editors"] == 0 and "material=" not in out["cleared"]["hash"]
 
 
@@ -241,7 +241,7 @@ def test_a_record_that_is_not_there_is_said_not_skipped(small, tmp_path):
       out.closed = {hash: ctx.location.hash, editors: qa(box, '.mat-editor').length};
     """, EXPORTS)
     assert out["alert"]["role"] == "alert" and "Материал № 99999 недоступен" in out["alert"]["text"] and out["alert"]["rows"] == 20
-    assert out["alert"]["pin"].startswith("Выбранный объект недоступен")
+    assert out["alert"]["pin"].startswith("The selected item is unavailable")
     assert "material=" not in out["closed"]["hash"] and out["closed"]["editors"] == 0
 
 
@@ -256,8 +256,8 @@ def test_a_failed_read_keeps_the_screen_and_offers_a_retry(small, tmp_path):
       await until(() => rows(box).length === 20);
       out.retried = {fail: q(box, '.lst-fail') !== null, count: count(box)};
     """, EXPORTS)
-    assert out["failed"]["alert"] == "alert" and "Нет связи" in out["failed"]["text"] and out["failed"]["rows"] == 0 and out["failed"]["add"]
-    assert out["retried"] == {"fail": False, "count": "показано 20 из 200"}
+    assert out["failed"]["alert"] == "alert" and "Cannot reach the local service" in out["failed"]["text"] and out["failed"]["rows"] == 0 and out["failed"]["add"]
+    assert out["retried"] == {"fail": False, "count": "showing 20 of 200"}
 
 
 def test_an_empty_catalogue_invites_the_first_record(tmp_path):

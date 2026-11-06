@@ -162,9 +162,9 @@ const keep = () => dialog().querySelectorAll('button').filter((b) => b.textConte
 const dialogButton = (text) => dialog().querySelectorAll('button').find((b) => b.textContent === text);
 /** Choose a stock record the way a person does: the selector's own dialog opens above the box, the row of the record is chosen there (the titanium is no longer a drop-down). */
 const chooseStock = async (box, name) => {
-  await button(labelled(box, 'Титан'), 'Выбрать…').dispatch('click'); await settle();
+  await button(labelled(box, 'Титан'), 'Choose…').dispatch('click'); await settle();
   const inner = body.querySelectorAll('.modal').pop();
-  await button(inner.querySelectorAll('.lst-row').find((r) => r.textContent.includes(name)), 'Выбрать').dispatch('click');
+  await button(inner.querySelectorAll('.lst-row').find((r) => r.textContent.includes(name)), 'Choose').dispatch('click');
   return settle();
 };
 (async () => {
@@ -206,7 +206,7 @@ def test_the_first_step_asks_for_picture_name_and_size_and_a_missing_picture_or_
     for word in ("Лазер", "JPT 60", "F-Theta", "Plate", "Grade 5", "измерения этой мастерской"):
         assert word in out["context"]
     assert out["noPicture"] == "Выберите картинку (PNG, JPEG, TIFF)"                          # each wrong box says why beside itself and keeps what was typed
-    assert out["noSize"] == ["Допустимо: больше 0 мм. Введено: 0", "0", "true"]
+    assert out["noSize"] == ["Allowed: greater than 0 mm. Entered: 0", "0", "true"]
     assert out["posts"] == 0                                                    # a task is made only when the picture and the size are there
     assert out["classic"] == ["#/vector?new=1&classic=1"]                       # text and a layer task of its own stay in the one-page form
 
@@ -452,7 +452,7 @@ def test_a_change_the_server_refuses_is_told_in_the_dialog_and_the_dialog_stays_
   out.toast = body.querySelector('.toasts') ? body.querySelector('.toasts').textContent : '';
   out.strip = tree.querySelector('.work-context').textContent.includes('JPT 60');
 """)
-    assert out["open"] is True and "Выбранная линза не найдена: выберите её заново" in out["toast"] and out["strip"] is True
+    assert out["open"] is True and "the selected lens was not found; choose it again" in out["toast"] and out["strip"] is True
 
 
 @node
@@ -655,7 +655,7 @@ def test_other_open_tasks_are_offered_on_a_new_creation_and_each_can_be_resumed_
   await list.querySelectorAll('button').filter((b) => b.textContent === 'Отменить задачу')[0].dispatch('click'); await settle();
   out.confirm = dialog().querySelector('h3').textContent;
   out.discardedBefore = sent('POST', '/api/creation/drafts/2/discard').length;
-  await button(dialog(), 'Отмена').dispatch('click'); await settle();
+  await button(dialog(), 'Cancel').dispatch('click'); await settle();
   out.discardedAfterCancel = ctx.requests.filter((r) => r.path.endsWith('/discard')).length;
   await list.querySelectorAll('button').filter((b) => b.textContent === 'Отменить задачу')[0].dispatch('click'); await settle();
   await button(dialog(), 'Отменить задачу').dispatch('click'); await settle();
@@ -688,9 +688,9 @@ def test_a_task_that_cannot_be_saved_is_told_beside_the_form_and_the_form_keeps_
   await wait(700); await settle();
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
 """)
-    assert out["alerts"] == ["Не получилось отправить: Картинка пустая. Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."] and out["step"].startswith("Новая работа · шаг 1 из 3")
+    assert out["alerts"] == ["Could not submit: the picture is empty. Your entries remain in the form; correct them and submit again."] and out["step"].startswith("Новая работа · шаг 1 из 3")
     assert out["kept"] == ["Портрет", "80"] and out["later"].startswith("Новая работа · шаг 2 из 3")
-    assert any(n.startswith("Задача не сохранена: Картинка этой незавершённой задачи не сохранена") for n in out["note"])
+    assert any(n.startswith("Задача не сохранена: the picture of this unfinished task is not kept") for n in out["note"])
 
 
 # -- creating the work, completing the task ---------------------------------------------------------------------------------------------------
@@ -803,7 +803,7 @@ def test_a_work_the_server_refuses_leaves_the_task_open_and_the_form_as_it_was_a
   out.posts = sent('POST', '/api/vector').length;
   out.completedTwice = sent('POST', '/api/creation/drafts/1/complete').length;
 """)
-    assert out["alerts"] == ["Не получилось отправить: Не удалось прочитать изображение. Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."]
+    assert out["alerts"] == ["Could not submit: the image could not be read. Your entries remain in the form; correct them and submit again."]
     assert out["completed"] == 0 and out["open"] == [1] and out["enabled"] is True and out["went"] == []
     assert out["posts"] == 2 and out["completedTwice"] == 1                                 # one refused, one made; the second click while busy sent nothing
 
@@ -904,7 +904,7 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
 def test_leaving_the_question_by_the_cross_or_escape_leaves_no_work_and_the_form_as_it_was(tmp_path):
     out = run(tmp_path, photo_path + """
   await ask(tree);
-  await dialog().querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Закрыть').dispatch('click'); await settle(); await pending;
+  await dialog().querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Close').dispatch('click'); await settle(); await pending;
   out.cross = [S.deleted || [], sent('POST', '/api/creation/drafts/1/complete').length, dialog() === null, !button(tree, FORWARD).disabled, [...ctx.__went]];
   await ask(tree);
   await Promise.all(ctx.__keys.map((fn) => fn({key: 'Escape', type: 'keydown', target: body, preventDefault() {}}))); await settle(); await pending;
@@ -1012,7 +1012,7 @@ def test_cancelling_the_task_from_the_screen_asks_first_deletes_nothing_made_and
     out = run(tmp_path, create_path.replace("__TILE__", "0") + """
   await button(tree, 'Отменить задачу').dispatch('click'); await settle();
   out.asked = dialog().querySelector('h3').textContent + ' / ' + dialog().textContent.includes('Созданные работы не затрагиваются');
-  await button(dialog(), 'Отмена').dispatch('click'); await settle();
+  await button(dialog(), 'Cancel').dispatch('click'); await settle();
   out.after = [sent('POST', '/api/creation/drafts/1/discard').length, open().length];
   await button(tree, 'Отменить задачу').dispatch('click'); await settle();
   await button(dialog(), 'Отменить задачу').dispatch('click'); await settle();
@@ -1161,8 +1161,8 @@ def test_a_photo_works_own_laser_lens_titanium_and_source_are_written_in_one_lin
   on('GET /api/devices', () => refuse('workshop is busy', 500));
   out.unreadable = await ctx.App.workContextText({scale: {device_id: 1, lens_id: 2}, material: null, source: null});
 """)
-    assert out["line"] == "Лазер: Mopa 30 · линза: F-Theta · 174 мм · титан: Sheet · Grade 2 · партия B7 · измерения: этой мастерской"
-    assert out["release"] == "Лазер: JPT 60 · линза: неизвестна · титан: не указан · измерения: лаборатория Север"
+    assert out["line"] == "Laser: Mopa 30 · lens: F-Theta · 174 mm · stock: Sheet · Grade 2 · batch B7 · measurements: this workshop"
+    assert out["release"] == "Laser: JPT 60 · lens: Unknown · stock: not specified · measurements: laboratory Север"
     assert out["unreadable"] == ""                                                            # no lists, no line: the work screen stays as it was
 
 

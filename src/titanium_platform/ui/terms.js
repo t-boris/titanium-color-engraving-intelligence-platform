@@ -1,31 +1,27 @@
-/* The four words of the workshop that the screens use without saying what they are (feature ux-save-feedback-p0, REQ-003): «пара»,
-   «знание», «стадия», «основание». Each is explained through what the person is doing; the technical number stays available beside it
-   («пара № 12»), in the details of the explanation, so it can be quoted and found. The explanations repeat what the screens of the
-   product already say about these things (knowledge.js, findings.js, ingest*.js); a screen that wants the word explained asks ``Terms``
-   instead of writing its own sentence. */
+/* Shared explanations of workshop terminology, including optional technical identifiers (REQ-003). */
 'use strict';
 const Terms = (() => {
   const {h} = App;
   const TERMS = {
-    pair: {name: 'пара', task: 'фото и гравировка',
-      about: 'Пара — одна выгравированная пластина и её фотография, которые проверяются вместе. По принятой паре программа измеряет цвета; пока пара не принята, её измерения не попадают ни в знания, ни в прогнозы.'},
-    knowledge: {name: 'знание', task: 'запись о проверенных настройках',
-      about: 'Знание — запись о том, какие настройки лазера дают какой цвет на титане, вместе с измерениями, на которых она держится. Из таких записей строятся прогнозы и выводы.'},
-    stage: {name: 'стадия', task: 'насколько запись проверена',
-      about: 'Стадия показывает, насколько проверена запись знания: измерено, кандидат, повторено, валидировано, производственное. В производство запись переводит только человек, явным действием; автоматически стадия не понижается.'},
-    basis: {name: 'основание', task: 'на чём это держится',
-      about: 'Основание — фотографии, измерения и записи знания, на которых держится число или вывод. Их можно открыть и проверить самому.'}};
+    pair: {name: 'pair', question: 'What is a pair?', task: 'photo and engraving',
+      about: 'A pair is an engraved plate and its photograph reviewed together. The application measures colors from an accepted pair; until acceptance, its measurements are excluded from knowledge and predictions.'},
+    knowledge: {name: 'knowledge', question: 'What is a knowledge record?', task: 'record of tested settings',
+      about: 'A knowledge record links laser settings to the color they produce on titanium and the measurements supporting them. Predictions and findings use these records.'},
+    stage: {name: 'stage', question: 'What is a stage?', task: 'how thoroughly the record has been checked',
+      about: 'A stage describes how thoroughly a knowledge record has been checked: measured, candidate, repeated, validated or production. A person must explicitly promote a record to production; its stage is not lowered automatically.'},
+    basis: {name: 'evidence', question: 'What is evidence?', task: 'what supports the result',
+      about: 'Evidence is the photographs, measurements and knowledge records supporting a number or finding. You can open and inspect them.'}};
 
   const known = (key) => { const t = TERMS[key]; if (!t) throw new Error(`unknown term ${key}`); return t; };
-  /** The words for the task: «фото и гравировка (пара)». */
+  /** A task-oriented phrase followed by the technical term. */
   const say = (key) => { const t = known(key); return `${t.task} (${t.name})`; };
   /** What the word means, in a sentence. */
   const about = (key) => known(key).about;
   /** A fold that explains the word; the technical number (``id``) is in it, not in the text around it. */
   function note(key, id) {
     const t = known(key);
-    return h('details', {class: 'small terms-note'}, h('summary', {}, `Что такое «${t.name}»?`), h('p', {}, t.about),
-      id == null || id === '' ? null : h('p', {class: 'muted'}, `Технический номер: ${t.name} № ${id}`));
+    return h('details', {class: 'small terms-note'}, h('summary', {}, t.question), h('p', {}, t.about),
+      id == null || id === '' ? null : h('p', {class: 'muted'}, `Technical identifier: ${t.name} #${id}`));
   }
   return {TERMS, say, about, note};
 })();

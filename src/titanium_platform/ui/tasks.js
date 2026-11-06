@@ -1,25 +1,23 @@
-/* Задача гравировки на экранах (REQ-020): выбор задачи плана, платы или загружаемой работы, подпись задачи слоя,
-   метрики качества с основанием и способом измерения, недоступные метрики с причиной и недостающий контекст.
-   Список задач приходит с сервера (/api/tasks); подписи — TaskText (i18n-tasks.js). */
+/* Engraving tasks, goals, metrics and evidence context (REQ-020). */
 'use strict';
 const Tasks = (() => {
   const {h, fill, field, pill, get, num, labText} = App;
   let vocabulary = null;
 
-  /** Словарь задач с сервера: ключ, цели, которые задача записывает, метрики. Загружается один раз. */
+  /** Server task vocabulary: keys, recorded goals and metrics. Loaded once. */
   const load = () => (vocabulary ||= get('/tasks'));
   const name = (kind) => TaskText.KIND[kind] || kind;
 
-  /** «Надписи · выбрана для слоя», «Заливка · по слою LightBurn». */
+  /** Task name and source. */
   function label(task) {
     if (!task) return '—';
-    const source = TaskText.SOURCE[task.source] || (task.basis === 'explicit' ? 'задана оператором' : TaskText.SOURCE.layer);
+    const source = TaskText.SOURCE[task.source] || (task.basis === 'explicit' ? 'set by operator' : TaskText.SOURCE.layer);
     return `${name(task.kind)} · ${source}`;
   }
   const badge = (task) => (task ? pill(label(task), task.basis === 'explicit' ? 'ok' : '') : null);
 
-  /** Список задач. empty — подпись пустого значения (задача не выбрана), extra — особые значения [значение, подпись]. */
-  function select(current, {empty = null, extra = [], aria = 'Задача гравировки', onChange = null} = {}) {
+  /** Task list; empty labels an unselected task and extra holds additional value/label pairs. */
+  function select(current, {empty = null, extra = [], aria = 'Engraving task', onChange = null} = {}) {
     const el = h('select', {'aria-label': aria});
     const options = (keys) => fill(el, empty == null ? null : h('option', {value: ''}, empty), ...extra.map(([v, l]) => h('option', {value: v}, l)),
       ...keys.map((k) => h('option', {value: k}, name(k))));
@@ -30,9 +28,7 @@ const Tasks = (() => {
     return el;
   }
 
-  /** Поля целей выбранной задачи (только те, что она записывает, и примечание); value() — объект для сервера.
-      Числа читаются строго (ux-save-feedback-p0, REQ-003): правила — те, что проверяет сервер (tasks.clean_goals), ошибка стоит рядом с полем,
-      набранное остаётся. check() — все ли поля верны (и отметить неверные); value() и при ошибке не правит набранное: сервер откажет сам. */
+  /** Fields for the selected task goals and note. Numeric rules match the server; invalid input remains in the field (REQ-003). */
   const GOAL_QUANTITY = {line_width_mm: 'lineWidth', text_height_mm: 'textHeight'};
   const NOTE_LIMIT = 500;                                                  // tasks.clean_goals: «a task note must not exceed 500 characters»
   function goalFields(kind, list) {
@@ -43,11 +39,11 @@ const Tasks = (() => {
       let el;
       if (g === 'target_lab') {
         const parts = ['L', 'a', 'b'].map((c) => h('input', {type: 'number', step: 'any', placeholder: c, 'aria-label': `${TaskText.GOAL[g]}: ${c}`, style: 'width:5em'}));
-        el = field(TaskText.GOAL[g], h('span', {class: 'row'}, ...parts), 'три числа: L от 0 до 100, a и b — любые', {unitless: true, constraint: 'допустимо: L от 0 до 100'});
+        el = field(TaskText.GOAL[g], h('span', {class: 'row'}, ...parts), 'three numbers: L from 0 to 100; a and b can be any number', {unitless: true, constraint: 'allowed: L from 0 to 100'});
         reads[g] = () => {
           const typed = parts.map((i) => i.value.trim());
           if (typed.every((t) => t === '')) return {ok: true, value: null};
-          if (typed.some((t) => t === '')) return {ok: false, message: 'Нужны все три числа: L, a и b. Заполнены не все'};
+          if (typed.some((t) => t === '')) return {ok: false, message: 'Enter all three numbers: L, a and b'};
           const got = typed.map((t, i) => Forms.parse(t, Forms.QUANTITIES[i === 0 ? 'labL' : 'labAB'], {required: true}));
           const bad = got.findIndex((r) => !r.ok);
           return bad < 0 ? {ok: true, value: got.map((r) => r.value)} : {ok: false, message: `${'Lab'[bad]}: ${got[bad].message}`};
@@ -60,11 +56,11 @@ const Tasks = (() => {
         reads[g] = () => (input.value.trim() === '' ? {ok: true, value: null} : Forms.parse(input.value, Forms.QUANTITIES[q], {}));
         input.addEventListener('input', () => el.clearError());
       } else {
-        const input = h('input', {placeholder: 'необязательно'});
-        el = field(TaskText.GOAL[g] || g, input, null, {constraint: `не больше ${NOTE_LIMIT} символов`});
+        const input = h('input', {placeholder: 'optional'});
+        el = field(TaskText.GOAL[g] || g, input, null, {constraint: `at most ${NOTE_LIMIT} characters`});
         reads[g] = () => {
           const text = input.value.trim();
-          return text.length > NOTE_LIMIT ? {ok: false, message: `Не больше ${NOTE_LIMIT} символов. Введено: ${text.length}`} : {ok: true, value: text === '' ? null : input.value};
+          return text.length > NOTE_LIMIT ? {ok: false, message: `At most ${NOTE_LIMIT} characters. Entered: ${text.length}`} : {ok: true, value: text === '' ? null : input.value};
         };
         input.addEventListener('input', () => el.clearError());
       }
@@ -93,8 +89,7 @@ const Tasks = (() => {
     return {el: h('div', {class: 'grid g3'}, ...fields), value, check};
   }
 
-  /** Выбор задачи плана или платы с её целями (REQ-020 AC1). empty — подпись значения «задача по умолчанию» (её определит
-      сервер). append(fd) кладёт task и goals в форму, body() — в JSON. */
+  /** Choose a plan or plate task and its goals (REQ-020 AC1). append(fd) writes form fields; body() returns JSON. */
   function chooser(initial, {hint = null, empty = null} = {}) {
     const goalsBox = h('div', {});
     let goals = goalFields(initial, null);
@@ -106,8 +101,8 @@ const Tasks = (() => {
       return {task: sel.value || null, goals: Object.keys(g).length ? g : null};
     };
     return {
-      el: h('div', {class: 'stack'}, field('Задача гравировки', sel, hint || 'что должна дать эта работа; результаты разных задач не смешиваются'),
-        h('details', {}, h('summary', {}, 'Цели задачи (необязательно)'), goalsBox)),
+      el: h('div', {class: 'stack'}, field('Engraving task', sel, hint || 'what this work should achieve; results of different tasks are kept separate'),
+        h('details', {}, h('summary', {}, 'Task goals (optional)'), goalsBox)),
       kind: () => sel.value,
       check: () => (sel.value ? goals.check() : true),                      // false (and the bad boxes marked) when a goal cannot be read
       set: (kind) => { sel.value = kind; redraw(kind); },
@@ -116,39 +111,39 @@ const Tasks = (() => {
     };
   }
 
-  /** Цели задачи плана одной строкой. */
+  /** Plan task goals on one line. */
   function goalsText(goals) {
     return Object.entries(goals || {}).map(([g, v]) => `${TaskText.GOAL[g] || g}: ${Array.isArray(v) ? labText(v) : v}`).join(' · ');
   }
 
   function value(m) {
     if (m.metric === 'lab') return labText(m.value);
-    if (m.metric === 'line_visibility') return `${m.value[0]} из ${m.value[1]}`;
-    if (m.metric === 'tonal_profile') return `связь с серым ${num(m.value.rho, 2)} · размах L* ${num(m.value.range_L, 0)}`;
-    if (m.metric === 'apparent_trace_width') return `${num(m.value, 3)} мм ± ${num(m.scale.uncertainty_mm, 3)}`;
+    if (m.metric === 'line_visibility') return `${m.value[0]} of ${m.value[1]}`;
+    if (m.metric === 'tonal_profile') return `gray correlation ${num(m.value.rho, 2)} · L* range ${num(m.value.range_L, 0)}`;
+    if (m.metric === 'apparent_trace_width') return `${num(m.value, 3)} mm ± ${num(m.scale.uncertainty_mm, 3)}`;
     if (m.metric === 'line_continuity') return `${num(m.value, 0)} %`;
     if (m.metric === 'contrast') return `ΔL* ${num(m.value, 1)}`;
     return num(m.value, 1);
   }
   function basis(m) {
     const text = TaskText.BASIS[m.basis] || m.basis;
-    return m.basis === 'registration_scale' && m.scale ? `${text}: ${num(m.scale.px_per_mm, 1)} пикс./мм` : text;
+    return m.basis === 'registration_scale' && m.scale ? `${text}: ${num(m.scale.px_per_mm, 1)} px/mm` : text;
   }
 
-  /** Метрики качества слоя: значение, основание (подпись) и способ (подсказка); недоступные — с причиной (REQ-020 AC6). */
+  /** Layer quality metrics, evidence and method; unavailable metrics include a reason (REQ-020 AC6). */
   function metrics(list, {skip = []} = {}) {
     const items = (list || []).filter((m) => !skip.includes(m.metric));
     if (!items.length) return null;
     return h('div', {class: 'stack small task-metrics'},
       ...items.map((m) => (m.available
-        ? h('div', {title: `Способ: ${TaskText.METHOD[m.method] || m.method}`}, `${TaskText.METRIC[m.metric] || m.metric}: ${value(m)} `,
+        ? h('div', {title: `Method: ${TaskText.METHOD[m.method] || m.method}`}, `${TaskText.METRIC[m.metric] || m.metric}: ${value(m)} `,
           h('span', {class: 'muted'}, `· ${basis(m)}`))
-        : h('div', {class: 'muted'}, `${TaskText.METRIC[m.metric] || m.metric}: недоступно — ${I18N.tr(m.note)}`))));
+        : h('div', {class: 'muted'}, `${TaskText.METRIC[m.metric] || m.metric}: unavailable — ${I18N.tr(m.note)}`))));
   }
-  /** Основание цвета слоя одной подписью: «по эталонной карте», «относительно чистого титана этого снимка»… */
+  /** Layer color basis in one label. */
   const colourBasis = (list) => { const m = (list || []).find((x) => x.metric === 'lab'); return m ? basis(m) : null; };
 
-  /** Чего не хватает в контексте свидетельств (REQ-020 AC4). */
+  /** Missing evidence context (REQ-020 AC4). */
   const missing = (codes) => (codes || []).map((c) => pill(TaskText.MISSING[c] || c, 'warn'));
 
   return {load, name, label, badge, select, chooser, goalsText, metrics, colourBasis, missing};

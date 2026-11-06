@@ -1,5 +1,5 @@
 /* The compact list (DEC-090, REQ-001 of findings-you-can-manage-short-lists-re-check): one line per item, its details under the line on a
-   click (built only when opened, one line open at a time), a search, filter chips with counts, a sort, «показано N из M» and «Показать ещё»
+   click (built only when opened, one line open at a time), a search, filter chips with counts, a sort, “showing N of M” and “Show more”
    by pages. The application has no long lists: anything that can grow beyond a screen is shown with this list.
    The items are an array (``items``) or pages from the server (``load``). The choices (sort, filters, search, how many are shown) survive a
    redraw of the screen: kept in sessionStorage under ``id`` (a convenience of one viewer; without storage they are simply not kept) or
@@ -111,7 +111,7 @@ Object.assign(App, (() => {
       ui.built = true;
       const parts = [];
       if (opts.search) {
-        ui.search = h('input', {type: 'search', class: 'lst-search', placeholder: 'Найти…', value: state.search, 'aria-label': 'Поиск'});
+        ui.search = h('input', {type: 'search', class: 'lst-search', placeholder: 'Search…', value: state.search, 'aria-label': 'Search'});
         let timer = null;
         ui.search.addEventListener('input', () => {
           clearTimeout(timer);
@@ -131,12 +131,12 @@ Object.assign(App, (() => {
         }
       }
       if (sorts.length > 1) {
-        ui.sort = h('select', {'aria-label': 'Порядок', onChange: (e) => { state.sort = e.target.value; changed(); refresh(); }},
+        ui.sort = h('select', {'aria-label': 'Sort order', onChange: (e) => { state.sort = e.target.value; changed(); refresh(); }},
           sorts.map(([k, text]) => h('option', {value: k, selected: k === state.sort}, text)));
-        parts.push(h('label', {class: 'lst-select'}, h('span', {}, 'Порядок'), ui.sort));
+        parts.push(h('label', {class: 'lst-select'}, h('span', {}, 'Sort order'), ui.sort));
       }
       ui.count = h('span', {class: 'lst-count muted small', role: 'status', 'aria-live': 'polite'});
-      ui.reset = h('button', {type: 'button', class: 'btn btn-small lst-reset', hidden: true, onClick: () => reset()}, 'Сбросить поиск и фильтры');
+      ui.reset = h('button', {type: 'button', class: 'btn btn-small lst-reset', hidden: true, onClick: () => reset()}, 'Clear search and filters');
       parts.push(ui.count, ui.reset);
       App.fill(bar, parts);
     }
@@ -149,24 +149,24 @@ Object.assign(App, (() => {
         const label = (text, value) => (counts[value] == null ? text : `${text} · ${counts[value]}`);
         if (f.select) {
           // a value chosen earlier (remembered, or from the address) that is no longer among the options stays visible, so the list is
-          // never narrowed by a choice the drop-down does not show, and «все» clears it
+          // never narrowed by a choice the drop-down does not show, and “all” clears it
           const select = ui.selects.get(f.key);
           const known = optionsOf(f);
           const chosen = state.filters[f.key];
-          const stale = chosen && !known.some(([v]) => String(v) === chosen) ? [[chosen, 'выбранное ранее — его здесь нет']] : [];
-          select.replaceChildren(h('option', {value: '', selected: chosen === ''}, label(f.all || 'все', '')),
+          const stale = chosen && !known.some(([v]) => String(v) === chosen) ? [[chosen, 'previous selection is unavailable']] : [];
+          select.replaceChildren(h('option', {value: '', selected: chosen === ''}, label(f.all || 'all', '')),
             ...[...known, ...stale].map(([v, text]) => h('option', {value: v, selected: String(v) === chosen}, label(text, String(v)))));
         } else {
           const box = ui.chips.get(f.key);
           keepFocus(box, (node) => node.getAttribute('data-value'), (value) => [...box.querySelectorAll('.lst-chip')].find((c) => c.getAttribute('data-value') === value),
-            () => App.fill(box, [['', f.all || 'Все'], ...optionsOf(f)]
+            () => App.fill(box, [['', f.all || 'All'], ...optionsOf(f)]
               .filter(([v]) => v === '' || f.keepEmpty || counts[String(v)] == null || counts[String(v)] > 0 || String(v) === state.filters[f.key])
               .map(([v, text]) => h('button', {type: 'button', class: 'lst-chip' + (String(v) === state.filters[f.key] ? ' on' : ''), 'data-value': String(v),
                 'aria-pressed': String(String(v) === state.filters[f.key]), onClick: () => choose(f, String(v))}, label(text, String(v))))));
         }
       }
       if (ui.sort) ui.sort.value = state.sort;
-      ui.count.textContent = `показано ${loaded.items.length} из ${loaded.total}`;
+      ui.count.textContent = `showing ${loaded.items.length} of ${loaded.total}`;
       ui.reset.hidden = !conditions();
     }
 
@@ -222,16 +222,16 @@ Object.assign(App, (() => {
       if (!pinned) return null;
       const {item, why} = pinned;
       const text = {
-        excluded: 'Выбранная строка скрыта: она не подходит под поиск или фильтры.',
-        'maybe-excluded': 'Выбранная строка вне показанных: возможно, её скрывают поиск или фильтры.',
-        beyond: 'Выбранная строка вне показанной части списка.',
-        unavailable: 'Выбранный объект недоступен: его нет в этом списке или он не загрузился.',
+        excluded: 'The selected row is hidden by the search or filters.',
+        'maybe-excluded': 'The selected row is not shown; it may be hidden by the search or filters.',
+        beyond: 'The selected row is beyond the displayed portion of the list.',
+        unavailable: 'The selected item is unavailable: it is absent from this list or did not load.',
       }[why];
       const acts = [];
-      if ((why === 'excluded' || why === 'maybe-excluded') && conditions()) acts.push(btn('Сбросить поиск и фильтры', () => reset(), 'btn-small'));
-      if (why === 'beyond' && !opts.load) acts.push(btn('Показать в списке', () => reveal(pinned.key), 'btn-small'));
-      if (opts.clearSelection) acts.push(btn('Снять выбор', async () => { await opts.clearSelection(); pinKey = null; await refresh(); }, 'btn-small'));
-      return h('div', {class: 'lst-pin', role: 'group', 'aria-label': 'Выбранное'}, h('p', {class: 'small muted lst-pin-note'}, text, ' ', acts),
+      if ((why === 'excluded' || why === 'maybe-excluded') && conditions()) acts.push(btn('Clear search and filters', () => reset(), 'btn-small'));
+      if (why === 'beyond' && !opts.load) acts.push(btn('Show in list', () => reveal(pinned.key), 'btn-small'));
+      if (opts.clearSelection) acts.push(btn('Clear selection', async () => { await opts.clearSelection(); pinKey = null; await refresh(); }, 'btn-small'));
+      return h('div', {class: 'lst-pin', role: 'group', 'aria-label': 'Selection'}, h('p', {class: 'small muted lst-pin-note'}, text, ' ', acts),
         item ? rowOf(item, 0) : null);
     }
     /** Client mode: shows enough rows for the line ``key`` to be among them. */
@@ -250,8 +250,8 @@ Object.assign(App, (() => {
     function render() {
       const where = typeof window !== 'undefined' ? window.scrollY : 0;
       toolbar();
-      App.fill(side, failure ? h('div', {class: 'alert bad lst-fail', role: 'alert'}, h('span', {}, `Не удалось загрузить список: ${failure.text} `),
-        h('button', {type: 'button', class: 'btn btn-small lst-retry', onClick: () => retry()}, 'Повторить')) : null);
+      App.fill(side, failure ? h('div', {class: 'alert bad lst-fail', role: 'alert'}, h('span', {}, `Could not load the list: ${failure.text} `),
+        h('button', {type: 'button', class: 'btn btn-small lst-retry', onClick: () => retry()}, 'Retry')) : null);
       App.fill(pin, pinnedBox());
       keepFocus(rows, (node) => {
         const line = node.closest('.lst-row');
@@ -264,25 +264,25 @@ Object.assign(App, (() => {
       }, () => {
         if (loaded.items.length) App.fill(rows, loaded.items.map(rowOf));
         else if (failure) App.fill(rows, null);
-        else if (conditions()) App.fill(rows, h('div', {class: 'lst-none'}, h('p', {class: 'muted lst-empty'}, opts.noResults || 'Ничего не найдено по заданным условиям.'),
-          h('p', {class: 'small muted'}, noneText()), btn('Сбросить поиск и фильтры', () => reset(), 'btn-small')));
-        else App.fill(rows, h('p', {class: 'muted lst-empty'}, opts.empty || 'Ничего нет'));
+        else if (conditions()) App.fill(rows, h('div', {class: 'lst-none'}, h('p', {class: 'muted lst-empty'}, opts.noResults || 'No results match these conditions.'),
+          h('p', {class: 'small muted'}, noneText()), btn('Clear search and filters', () => reset(), 'btn-small')));
+        else App.fill(rows, h('p', {class: 'muted lst-empty'}, opts.empty || 'Nothing here'));
       });
       const rest = loaded.total - loaded.items.length;
       App.fill(foot, rest > 0 ? h('button', {type: 'button', class: 'btn btn-small', disabled: moreBusy, onClick: () => more()},
-        moreBusy ? 'Загружаем…' : `Показать ещё ${Math.min(page, rest)}`) : null);
+        moreBusy ? 'Loading…' : `Show ${Math.min(page, rest)} more`) : null);
       if (typeof window !== 'undefined' && window.scrollY !== where && window.scrollTo) window.scrollTo(0, where);
     }
     function noneText() {
       const parts = [];
-      if (state.search) parts.push(`поиск «${state.search}»`);
+      if (state.search) parts.push(`search “${state.search}”`);
       for (const f of filters) {
         const value = state.filters[f.key];
         if (!value) continue;
         const named = optionsOf(f).find(([v]) => String(v) === value);
         parts.push(`${f.label}: ${named ? named[1] : value}`);
       }
-      return 'Условия: ' + parts.join('; ') + '.';
+      return 'Conditions: ' + parts.join('; ') + '.';
     }
 
     async function more() {

@@ -1,40 +1,37 @@
-/* Лазер и линза работы (DEC-042, DEC-063): лазер — физический прибор, линза — её запись, «неизвестна» — отдельный выбор.
-   Знания разных лазеров и линз, в том числе неизвестной, не смешиваются. Адрес экрана: ?device=<id>&lens=<id|unknown>;
-   сервер принимает lens_id=unknown в запросах и формах и null в JSON. */
+/* Work laser and lens (DEC-042, DEC-063). Knowledge remains separate by laser and lens, including an unknown lens.
+   Routes use ?device=<id>&lens=<id|unknown>; the server accepts lens_id=unknown in requests and forms and null in JSON. */
 'use strict';
 Object.assign(App, (() => {
   const {h, get} = App;
   const UNKNOWN = 'unknown';
 
-  /** Название линзы с фокусом, когда он известен; линза без фокусного расстояния остаётся неполной (REQ-019). */
+  /** Show the focal length when known; a lens without it remains incomplete (REQ-019). */
   function lensLabel(lens) {
-    if (!lens) return 'линза неизвестна';
-    return lens.focal_length_mm == null ? `${lens.name} · фокус неизвестен` : `${lens.name} · ${+lens.focal_length_mm} мм`;
+    if (!lens) return 'Lens unknown';
+    return lens.focal_length_mm == null ? `${lens.name} · focal length unknown` : `${lens.name} · ${+lens.focal_length_mm} mm`;
   }
 
-  /** Линза для JSON: номер записи или null — линза неизвестна. */
+  /** Lens for JSON: a record id or null when unknown. */
   const lensBody = (value) => (value == null || value === '' || value === UNKNOWN ? null : +value);
-  /** Линза для адреса или формы: номер записи или unknown. */
+  /** Lens for a route or form: a record id or unknown. */
   const lensParam = (value) => (value == null || value === '' || value === UNKNOWN ? UNKNOWN : String(value));
 
-  /** Лазеры и линзы для выбора. */
+  /** Available lasers and lenses. */
   async function hardwareLists() {
     const [devices, lenses] = await Promise.all([get('/devices'), get('/lenses')]);
     return {devices, lenses};
   }
 
-  /** Два списка: лазер и линза. Линза — любая запись линзы или «неизвестна»; установленная на выбранном лазере помечена.
-      По умолчанию (defaultLens) — 'installed': линза, стоящая на лазере сейчас, или 'unknown': импортированная работа
-      не получает установленную линзу без выбора оператора (REQ-016). onChange вызывается при смене лазера или линзы. */
+  /** Pick a laser and lens, marking the installed lens. Imported work defaults to unknown unless the operator chooses one (REQ-016). */
   function laserLensPicker({devices, lenses}, {device = null, lens = null, defaultLens = 'installed', onChange = null} = {}) {
-    const laserSelect = h('select', {'aria-label': 'Лазер'}, devices.map((d) => h('option', {value: d.id}, d.title || d.name)));
+    const laserSelect = h('select', {'aria-label': 'Laser'}, devices.map((d) => h('option', {value: d.id}, d.title || d.name)));
     if (device != null && devices.some((d) => String(d.id) === String(device))) laserSelect.value = String(device);
-    const lensSelect = h('select', {'aria-label': 'Линза'});
+    const lensSelect = h('select', {'aria-label': 'Lens'});
     const current = () => devices.find((d) => String(d.id) === laserSelect.value) || null;
     const fillLenses = (wanted) => {
       const installed = current()?.lens?.id ?? null;
-      lensSelect.replaceChildren(h('option', {value: UNKNOWN}, 'неизвестна'),
-        ...lenses.map((l) => h('option', {value: l.id}, lensLabel(l) + (l.id === installed ? ' (установлена)' : ''))));
+      lensSelect.replaceChildren(h('option', {value: UNKNOWN}, 'Unknown'),
+        ...lenses.map((l) => h('option', {value: l.id}, lensLabel(l) + (l.id === installed ? ' (installed)' : ''))));
       const fallback = defaultLens === 'installed' && installed != null ? String(installed) : UNKNOWN;
       const asked = wanted == null ? null : lensParam(wanted);
       lensSelect.value = asked != null && [...lensSelect.options].some((o) => String(o.value) === asked) ? asked : fallback;
@@ -48,18 +45,15 @@ Object.assign(App, (() => {
       setLens: (id) => { lensSelect.value = lensParam(id); },
       /** Choose a laser and its lens from outside (the shared context changed): the lens list is made again for that laser; no ``onChange`` call. */
       setDevice: (id, lens = null) => { if (devices.some((d) => String(d.id) === String(id))) { laserSelect.value = String(id); fillLenses(lens); } },
-      query: () => `device_id=${laserSelect.value}&lens_id=${lensSelect.value}`,     // для запросов к серверу
-      route: () => `device=${laserSelect.value}&lens=${lensSelect.value}`,           // для адреса экрана
+      query: () => `device_id=${laserSelect.value}&lens_id=${lensSelect.value}`,     // server requests
+      route: () => `device=${laserSelect.value}&lens=${lensSelect.value}`,           // screen route
     };
   }
 
-  /** Лазер и линза из адреса экрана в виде запроса к серверу. */
+  /** Laser and lens from a route as a server query. */
   const hardwareQuery = (device, lens) => `device_id=${device}&lens_id=${lensParam(lens)}`;
 
-  /** С чего начинается новая работа или новый тест (ux-work-creation-p0, REQ-001): лазер, линза и заготовка из адреса экрана, а без них — из общего
-      контекста мастерской (последний явный выбор). Адрес сильнее общего выбора: ссылка, сделанная для одной установки, открывается на ней; лазер из
-      адреса без линзы берёт линзу, стоящую на нём, а не линзу общего выбора для другого лазера. Не прочитанный контекст — не отказ формы: всё
-      остаётся, как было до него. Ответ: {device, lens, material, source, context}; lens — номер записи, 'unknown' или null (линза, стоящая на лазере). */
+  /** Start from the route or the last explicit workshop context. A route's laser takes its own installed lens by default. */
   async function contextStart(query = {}) {
     let c = null;
     try { c = await App.get('/creation/context'); } catch (_) { c = null; }
@@ -68,8 +62,7 @@ Object.assign(App, (() => {
     return {device: fromAddress ? query.device : c ? c.device_id : null, lens, material: c ? c.material_id : null, source: c ? c.source : null, context: c};
   }
 
-  /** Запомнить установку, с которой сделана работа, как общий контекст следующей новой работы. ``source``: не передан — не менять, null — свои
-      измерения, объект — выпуск лаборатории (``label`` — как его видел оператор). Отказ ничего не сообщает: работа уже сделана. */
+  /** Remember the setup for the next work. A missing source leaves it unchanged; null selects local measurements. */
   async function rememberContext({device, lens, material, source, label} = {}) {
     const body = {device_id: +device, lens_id: lensBody(lens)};
     if (material != null && material !== '') body.material_id = +material;          // a form that has no titanium leaves the shared one as it is
@@ -92,10 +85,10 @@ Object.assign(App, (() => {
     try { lists = await hardwareLists(); } catch (_) { return ''; }
     const scale = work.scale || {};
     const device = lists.devices.find((d) => d.id === scale.device_id), lens = lists.lenses.find((l) => l.id === scale.lens_id);
-    const stock = work.material ? [work.material.name, work.material.grade, work.material.batch && `партия ${work.material.batch}`].filter(Boolean).join(' · ') : null;
+    const stock = work.material ? [work.material.name, work.material.grade, work.material.batch && `batch ${work.material.batch}`].filter(Boolean).join(' · ') : null;
     const s = work.source;
-    return [`Лазер: ${device ? device.title || device.name : 'не найден'}`, `линза: ${lens ? lensLabel(lens) : 'неизвестна'}`, `титан: ${stock || 'не указан'}`,
-      `измерения: ${s && s.kind === 'release' ? 'лаборатория ' + s.lab_name : 'этой мастерской'}`].join(' · ');
+    return [`Laser: ${device ? device.title || device.name : 'not found'}`, `lens: ${lens ? lensLabel(lens) : 'Unknown'}`, `stock: ${stock || 'not specified'}`,
+      `measurements: ${s && s.kind === 'release' ? 'laboratory ' + s.lab_name : 'this workshop'}`].join(' · ');
   }
 
   /** An older form that cannot make ``result`` from the shared context hands over to the creation screen, which says what is missing and offers the

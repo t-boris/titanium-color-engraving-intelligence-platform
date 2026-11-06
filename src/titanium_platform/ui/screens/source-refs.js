@@ -1,4 +1,4 @@
-/* Source numbers behind a count: «Наблюдения-основания: 24» instead of a line of twenty-four numbers (ux-growing-collections-p0, REQ-002).
+/* Source numbers behind a count: “Evidence observations: 24” instead of a line of twenty-four numbers (ux-growing-collections-p0, REQ-002).
    A count and, on request, a list of links: every number stays reachable (each one is a link to the analysis of its photograph) and none is
    dropped, however long the list. Long lists are shown fifty at a time. A short list (up to five numbers) is open from the start.
    The numbers are plain ids; a screen gives either ``href`` (a route for an id) or ``resolve`` (the ids of a page -> the routes and names,
@@ -14,22 +14,22 @@ const SourceRefs = (() => {
   async function resolveObservations(ids) {
     const found = await get('/observations/refs?ids=' + ids.join(','));
     return found.map((r) => ({id: r.id, route: r.pair_id == null ? null : '/analysis/' + r.pair_id,
-      note: r.pair_id == null ? 'не найдено' : [r.photo_name, r.layer_name || (r.layer_index == null ? null : `слой ${r.layer_index}`)].filter(Boolean).join(' · ')}));
+      note: r.pair_id == null ? 'not found' : [r.photo_name, r.layer_name || (r.layer_index == null ? null : `layer ${r.layer_index}`)].filter(Boolean).join(' · ')}));
   }
 
-  /** A count and a list of links for ``ids``. ``opts``: label («Наблюдения-основания»), mark («№»), href(id) -> route, resolve(ids) ->
+  /** A count and a list of links for ``ids``. ``opts``: label (“Evidence observations”), mark (“#”), href(id) -> route, resolve(ids) ->
       [{id, route, note}] (when it fails the numbers stay as plain text and a retry is offered), toggle: [shown, hidden] captions of the
-      button, short (numbers shown without a button), page (numbers per click of «Показать ещё»), open (start expanded), className.
+      button, short (numbers shown without a button), page (numbers per click of “Show more”), open (start expanded), className.
       Returns the node. */
   function refs(input, opts = {}) {
     const ids = [...new Set((input || []).map((id) => String(id)))];
-    const label = opts.label || 'Источники';
-    const mark = opts.mark == null ? '№' : opts.mark;
+    const label = opts.label || 'Sources';
+    const mark = opts.mark == null ? '#' : opts.mark;
     const short = opts.short == null ? SHORT : opts.short;
     const size = opts.page || PAGE;
-    const [showText, hideText] = opts.toggle || ['Показать номера', 'Скрыть номера'];
+    const [showText, hideText] = opts.toggle || ['Show IDs', 'Hide IDs'];
     const box = h('div', {class: 'srefs' + (opts.className ? ' ' + opts.className : '')});
-    if (!ids.length) return fill(box, h('span', {class: 'muted small'}, `${label}: нет`));
+    if (!ids.length) return fill(box, h('span', {class: 'muted small'}, `${label}: none`));
 
     const listId = 'srefs-' + (++serial);
     const long = ids.length > short;
@@ -59,10 +59,10 @@ const SourceRefs = (() => {
     function draw() {
       const rest = ids.length - shown;
       fill(list, ids.slice(0, shown).map(item));
-      status.textContent = busy ? 'Загружаем…' : `показано ${shown} из ${ids.length}`;
-      fill(actions, failure ? h('span', {class: 'alert bad srefs-fail', role: 'alert'}, `Не удалось получить ссылки: ${failure} `,
-        btn('Повторить', () => retry(), 'btn-small srefs-retry', busy)) : null,
-      rest > 0 ? btn(`Показать ещё ${Math.min(size, rest)}`, () => more(), 'btn-small srefs-more', busy) : null);
+      status.textContent = busy ? 'Loading…' : `showing ${shown} of ${ids.length}`;
+      fill(actions, failure ? h('span', {class: 'alert bad srefs-fail', role: 'alert'}, `Could not load links: ${failure} `,
+        btn('Retry', () => retry(), 'btn-small srefs-retry', busy)) : null,
+      rest > 0 ? btn(`Show ${Math.min(size, rest)} more`, () => more(), 'btn-small srefs-more', busy) : null);
     }
     /** Ask the server about ``wanted`` a page at a time; a failure leaves the numbers as plain text and says so. */
     async function ask(wanted) {
@@ -103,9 +103,9 @@ const SourceRefs = (() => {
   }
 
   /** The observations behind a result, as links to the analysis of their photographs. */
-  const observations = (ids, opts = {}) => refs(ids, {label: 'Наблюдения-основания', resolve: resolveObservations, ...opts});
+  const observations = (ids, opts = {}) => refs(ids, {label: 'Evidence observations', resolve: resolveObservations, ...opts});
   /** Photographs (pairs) by their numbers, as links to their analysis. */
-  const photos = (ids, opts = {}) => refs(ids, {label: 'Фото', href: (id) => '/analysis/' + id, ...opts});
+  const photos = (ids, opts = {}) => refs(ids, {label: 'Photos', href: (id) => '/analysis/' + id, ...opts});
 
   return {refs, observations, photos, SHORT, PAGE};
 })();

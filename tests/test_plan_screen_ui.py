@@ -97,7 +97,7 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
     assert gray.endswith("Изображение (Image), режим «Градации серого»: картинка работы в областях зоны, вне зоны прозрачна; "
                          "серые подобраны под цвета: ближайший цвет · контуры")                         # how its greys are chosen (0.23.0)
     assert dots.startswith("точки 20.0 % · 60.0 кГц") and dots.endswith("режим «Джарвис»: картинка работы в областях зоны, вне зоны прозрачна")
-    assert bad == "Ширина картинки должна быть от 1 до 1000 мм"                                    # the server's reason, translated
+    assert bad == "the width of the picture must be 1..1000 mm"
     assert out["chips"] == [["/api/vector/22/photo/1.png?v=k1", "vw-ed-zone-chip"], ["/api/vector/22/photo/2.png?v=k2", "vw-ed-zone-chip"]]
     assert out["pictures"] == [["/api/vector/22/photo/1.png?v=k1", "Фотозона 1", "plan-zone-pic"], ["/api/vector/22/photo/2.png?v=k2", "Фотозона 2", "plan-zone-pic"]]
     assert out["export"] is False
@@ -122,7 +122,7 @@ def layers(n):
 
 @node
 def test_a_plan_of_many_layers_shows_one_page_sorts_them_and_opens_a_layer_only_when_clicked(tmp_path):
-    """DEC-090: 24 layers show 20 lines and «Показать ещё 4»; the sort puts the largest expected error first; a line opens its parameters."""
+    """DEC-090: 24 layers show 20 lines and «Show 4 more»; the sort puts the largest expected error first; a line opens its parameters."""
     body = {**plan([]), "layers": layers(24)}
     out = run(tmp_path, body, """
   out.first = mains().map((m) => m.textContent.split('ΔE')[0]);
@@ -139,12 +139,12 @@ def test_a_plan_of_many_layers_shows_one_page_sorts_them_and_opens_a_layer_only_
   out.all = mains().length;
 """)
     assert out["first"][:3] == ["C01 P1", "C02 P2", "C03 P3"] and len(out["first"]) == 20
-    assert out["count"] == "показано 20 из 24" and out["more"] == "Показать ещё 4" and out["search"] is True
+    assert out["count"] == "showing 20 of 24" and out["more"] == "Show 4 more" and out["search"] is True
     assert out["openBefore"] == 0                                                                   # nothing is open until a line is clicked
     assert out["sorted"] == ["C24 P24", "C23 P23", "C22 P22"]
     (opened,) = out["opened"]
     assert opened.startswith("50.0 % · 1950.0 кГц") and "Ожидаемая ошибка ΔE2.40" in opened and "СтадияВалидировано" in opened
-    assert "Что такое «стадия»?" in out["terms"]                                                    # the word of the line is explained (ux-save-feedback-p0, REQ-003)
+    assert "What is a stage?" in out["terms"]
     assert out["all"] == 24
 
 

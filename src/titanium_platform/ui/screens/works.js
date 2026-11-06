@@ -279,7 +279,7 @@ const Works = (() => {
     const given = addressed ? {sort: query.sort || DEFAULT_SORT, search: query.q || '', filters: Object.fromEntries(FILTERS.map((k) => [k, query[k] || '']))} : {};
     list = App.list({id: 'works', className: 'works-list', key: (w) => w.key, load, search: true, initial: given, onChange: changed,
       filters: [
-        {key: 'type', label: 'Тип', all: 'Все', options: TYPE_CHIPS},
+        {key: 'type', label: 'Тип', all: 'All', options: TYPE_CHIPS},
         {key: 'laser', label: 'Лазер', select: true, all: 'любой', options: options('laser')},
         {key: 'lens', label: 'Линза', select: true, all: 'любая', options: options('lens')},
         {key: 'material', label: 'Заготовка', select: true, all: 'любая', options: options('material')}],
@@ -326,7 +326,7 @@ const Works = (() => {
         text = `Работа «${found.name}» не показана: она дальше в списке или не подходит под выбранные поиск и фильтры. Список показан с начала.`;
         actions_.push(h('a', {class: 'btn btn-small', href: '#' + found.open}, 'Открыть работу'));
         const s = list.state();
-        if (s.search || FILTERS.some((k) => s.filters[k])) actions_.push(btn('Сбросить поиск и фильтры', () => { fill(notice); list.reset(); }, 'btn-small'));
+        if (s.search || FILTERS.some((k) => s.filters[k])) actions_.push(btn('Clear search and filters', () => { fill(notice); list.reset(); }, 'btn-small'));
       }
       fill(notice, h('div', {class: 'alert warn works-gone'}, h('span', {}, text, ' '), ...actions_,
         btn('Закрыть', () => fill(notice), 'btn-small')));

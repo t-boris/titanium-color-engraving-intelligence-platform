@@ -219,7 +219,7 @@ def test_the_planes_and_the_lightness_range_are_remembered_for_the_next_drawing(
   out.circles = tree.querySelectorAll('circle').length;
 """)
     assert out["plane"] == "La" and out["band"] == [50, 100]
-    assert out["primary"] == ["a* × L*"] and "показано 2 из 3" in out["shown"] and out["circles"] == 2
+    assert out["primary"] == ["a* × L*"] and "showing 2 of 3" in out["shown"] and out["circles"] == 2
 
 
 # -- picking a colour and searching --------------------------------------------------------------------------------------------------------

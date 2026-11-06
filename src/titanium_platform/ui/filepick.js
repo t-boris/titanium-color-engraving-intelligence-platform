@@ -1,19 +1,16 @@
-/* Выбор файла в стиле приложения. Нативное <input type=file> рисует браузер: надпись «Choose File / no file selected»
-   по-английски и кнопка не по центру поля. Здесь настоящий input остаётся (клавиатура, доступность, форма), но
-   визуально скрыт, а видимая часть — кнопка «Выбрать файл» и имя выбранного файла по-русски.
-   App.filePick(input, label) возвращает узел-обёртку; input по-прежнему используется как обычно (input.files). */
+/* Accessible file input with an application-styled button and selected filename. */
 'use strict';
 Object.assign(App, (() => {
   const {h} = App;
-  const size = (n) => (n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' КБ' : (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' МБ');
+  const size = (n) => (n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1024 / 1024).toFixed(1) + ' MB');
 
-  function filePick(input, buttonLabel = 'Выбрать файл') {
+  function filePick(input, buttonLabel = 'Choose file') {
     input.classList.add('file-native');
-    const name = h('span', {class: 'file-name'}, 'Файл не выбран');
+    const name = h('span', {class: 'file-name'}, 'No file selected');
     const box = h('span', {class: 'file-pick'}, h('span', {class: 'btn btn-small file-button', 'aria-hidden': 'true'}, buttonLabel), name);
     const sync = () => {
       const f = input.files && input.files[0];
-      name.textContent = f ? `${f.name} · ${size(f.size)}` : 'Файл не выбран';
+      name.textContent = f ? `${f.name} · ${size(f.size)}` : 'No file selected';
       box.classList.toggle('has-file', !!f);
     };
     input.addEventListener('change', sync);

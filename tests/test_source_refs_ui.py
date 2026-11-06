@@ -45,11 +45,11 @@ def test_a_short_list_is_open_and_a_long_one_is_a_count_with_a_button(tmp_path):
       out.closedAgain = {expanded: toggle.getAttribute('aria-expanded'), hidden: list.hidden, caption: toggle.textContent, count: q(long, '.srefs-count').textContent};
     """, EXPORTS)
     assert out["short"] == {"count": "3", "toggle": False, "hidden": False, "links": ["#/analysis/3", "#/analysis/1", "#/analysis/2"]}   # repeats are one number
-    assert out["none"] == "Фото: нет"
-    assert out["closed"] == {"count": "24", "expanded": "false", "controls": True, "hidden": True, "drawn": 0, "caption": "Показать номера", "kind": "button",
+    assert out["none"] == "Фото: none"
+    assert out["closed"] == {"count": "24", "expanded": "false", "controls": True, "hidden": True, "drawn": 0, "caption": "Show IDs", "kind": "button",
                              "type": "button", "name": "Наблюдения-основания"}
-    assert out["open"] == {"expanded": "true", "hidden": False, "caption": "Скрыть номера", "status": "показано 24 из 24", "first": "№1", "last": "№24", "more": False}
-    assert out["closedAgain"] == {"expanded": "false", "hidden": True, "caption": "Показать номера", "count": "24"}
+    assert out["open"] == {"expanded": "true", "hidden": False, "caption": "Hide IDs", "status": "showing 24 of 24", "first": "#1", "last": "#24", "more": False}
+    assert out["closedAgain"] == {"expanded": "false", "hidden": True, "caption": "Show IDs", "count": "24"}
 
 
 def test_a_long_list_is_shown_fifty_at_a_time_and_every_number_is_reached(tmp_path):
@@ -69,9 +69,9 @@ def test_a_long_list_is_shown_fifty_at_a_time_and_every_number_is_reached(tmp_pa
       out.all = qa(box, 'a').map((a) => a.textContent);
       out.status = q(box, '.srefs-status').textContent;
     """, EXPORTS)
-    assert out["steps"] == [[50, "Показать ещё 50", "показано 50 из 120"], ["focus", "51"],      # the keyboard continues at the first new number
-                            [100, "Показать ещё 20", "показано 100 из 120"], ["focus", "101"]]
-    assert out["all"] == [str(i) for i in range(1, 121)] and out["status"] == "показано 120 из 120"                 # none dropped, none repeated
+    assert out["steps"] == [[50, "Show 50 more", "showing 50 of 120"], ["focus", "51"],      # the keyboard continues at the first new number
+                            [100, "Show 20 more", "showing 100 of 120"], ["focus", "101"]]
+    assert out["all"] == [str(i) for i in range(1, 121)] and out["status"] == "showing 120 of 120"                 # none dropped, none repeated
 
 
 def test_observation_numbers_are_named_by_the_server_a_page_at_a_time(server, tmp_path):
@@ -92,10 +92,10 @@ def test_observation_numbers_are_named_by_the_server_a_page_at_a_time(server, tm
     """, EXPORTS)
     assert out["before"] == 0
     assert out["first"]["asked"] == [50]                                                      # one request for the page that is shown, not for all sixty-one
-    assert out["first"]["link"].startswith("#/analysis/") and out["first"]["title"].startswith("№") and "p.raw" in out["first"]["title"]
+    assert out["first"]["link"].startswith("#/analysis/") and out["first"]["title"].startswith("#") and "p.raw" in out["first"]["title"]
     assert out["first"]["notes"] == [" p.raw · C01", " p.raw · C02"]
     assert out["second"]["asked"] == [50, 11] and out["second"]["links"] == 60 and out["second"]["count"] == "61"
-    assert out["second"]["lastIsLink"] == 0 and "не найдено" in out["second"]["lastText"] and out["second"]["lastText"].startswith("№999999")   # kept, said, not a link
+    assert out["second"]["lastIsLink"] == 0 and "not found" in out["second"]["lastText"] and out["second"]["lastText"].startswith("#999999")   # kept, said, not a link
 
 
 def test_a_failed_request_keeps_the_numbers_as_text_and_can_be_retried(server, tmp_path):
@@ -113,8 +113,8 @@ def test_a_failed_request_keeps_the_numbers_as_text_and_can_be_retried(server, t
       await until(() => q(box, '.srefs-fail') === null && qa(box, 'a').length === 8);
       out.retried = {{asked: requests('/observations/refs').length, links: qa(box, 'a').length, retry: q(box, '.srefs-retry') !== null}};
     """, EXPORTS)
-    assert out["failed"]["alert"] == "alert" and "Нет связи" in out["failed"]["text"] and "Повторить" in out["failed"]["text"]
-    assert out["failed"]["links"] == 0 and out["failed"]["numbers"] == [f"№{i}" for i in ids] and out["failed"]["count"] == "8"   # every number is still on the screen
+    assert out["failed"]["alert"] == "alert" and "Cannot reach the local service" in out["failed"]["text"] and "Retry" in out["failed"]["text"]
+    assert out["failed"]["links"] == 0 and out["failed"]["numbers"] == [f"#{i}" for i in ids] and out["failed"]["count"] == "8"   # every number is still on the screen
     assert out["retried"] == {"asked": 2, "links": 8, "retry": False}
 
 
@@ -136,5 +136,5 @@ def test_a_second_click_while_the_request_is_on_its_way_does_nothing(server, tmp
       out.during = during;
       out.after = {{asked: requests('/observations/refs').length, more: q(box, '.srefs-more').disabled}};
     """, EXPORTS)
-    assert out["during"] == {"more": True, "status": "Загружаем…", "plain": 50, "links": 0, "asked": 1}                  # the numbers are there while the names are awaited
+    assert out["during"] == {"more": True, "status": "Loading…", "plain": 50, "links": 0, "asked": 1}                  # the numbers are there while the names are awaited
     assert out["after"]["asked"] == 1 and out["after"]["more"] is False
