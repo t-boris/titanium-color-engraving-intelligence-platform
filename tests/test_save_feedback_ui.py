@@ -1353,19 +1353,19 @@ def test_the_lens_form_refuses_a_focal_length_outside_the_servers_bounds_and_kee
   const tab = await DeviceLens.card(device, (id) => refreshed.push(id));
   body.append(tab);
   const newLens = [...tab.querySelectorAll('.card')].pop();
-  inputOf(newLens, 'Название').value = 'F-theta 163';
-  inputOf(newLens, 'Фокусное расстояние').value = '19,9';
-  inputOf(newLens, 'Поле линзы').value = '600';
-  inputOf(newLens, 'Расширитель пучка').value = '0';
-  await button(newLens, 'Добавить и установить').dispatch('click'); await wait();
-  out.refused = {writes: writes(), focal: labelled(newLens, 'Фокусное расстояние').errorText(), fieldMm: labelled(newLens, 'Поле линзы').errorText(),
-    expansion: labelled(newLens, 'Расширитель пучка').errorText(), name: labelled(newLens, 'Название').errorText(),
-    kept: ['Название', 'Фокусное расстояние', 'Поле линзы', 'Расширитель пучка'].map((l) => inputOf(newLens, l).value),
-    unit: labelled(newLens, 'Фокусное расстояние').textContent, form: newLens.querySelector('.f-form-error').textContent};
-  inputOf(newLens, 'Фокусное расстояние').value = '254';
-  inputOf(newLens, 'Поле линзы').value = '110';
-  inputOf(newLens, 'Расширитель пучка').value = '';
-  await button(newLens, 'Добавить и установить').dispatch('click'); await wait();
+  inputOf(newLens, 'Name').value = 'F-theta 163';
+  inputOf(newLens, 'Focal length').value = '19,9';
+  inputOf(newLens, 'Lens field').value = '600';
+  inputOf(newLens, 'Beam expander').value = '0';
+  await button(newLens, 'Add and install').dispatch('click'); await wait();
+  out.refused = {writes: writes(), focal: labelled(newLens, 'Focal length').errorText(), fieldMm: labelled(newLens, 'Lens field').errorText(),
+    expansion: labelled(newLens, 'Beam expander').errorText(), name: labelled(newLens, 'Name').errorText(),
+    kept: ['Name', 'Focal length', 'Lens field', 'Beam expander'].map((l) => inputOf(newLens, l).value),
+    unit: labelled(newLens, 'Focal length').textContent, form: newLens.querySelector('.f-form-error').textContent};
+  inputOf(newLens, 'Focal length').value = '254';
+  inputOf(newLens, 'Lens field').value = '110';
+  inputOf(newLens, 'Beam expander').value = '';
+  await button(newLens, 'Add and install').dispatch('click'); await wait();
   out.sent = {created, writes: writes(), refreshed};
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-lens.js"])
     assert out["refused"]["writes"] == [] and out["refused"]["name"] == ""
@@ -1374,7 +1374,7 @@ def test_the_lens_form_refuses_a_focal_length_outside_the_servers_bounds_and_kee
     assert out["refused"]["expansion"] == "Allowed: from 0.2 to 20 ×. Entered: 0"
     assert out["refused"]["kept"] == ["F-theta 163", "19,9", "600", "0"]                       # nothing was corrected
     assert "allowed: from 20 to 1500" in out["refused"]["unit"]
-    assert out["refused"]["form"] == "Not submitted: correct fields “Фокусное расстояние”, “Поле линзы”, “Расширитель пучка”. Your entries remain in the form."
+    assert out["refused"]["form"] == "Not submitted: correct fields “Focal length”, “Lens field”, “Beam expander”. Your entries remain in the form."
     assert out["sent"]["created"] == [{"name": "F-theta 163", "focal_length_mm": 254, "field_mm": 110, "expansion": 1, "note": None}]
     assert out["sent"]["writes"] == ["POST /lenses", "PUT /devices/3/lens"] and out["sent"]["refreshed"] == [3]
 
@@ -1390,23 +1390,23 @@ def test_the_spot_form_and_the_focal_dialog_say_what_is_wrong_beside_the_box_and
   const tab = await DeviceLens.card(device, (id) => refreshed.push(id));
   body.append(tab);
   // the spot form: a measured spot outside 1..2000 µm is refused beside its box; M² of zero as well
-  inputOf(tab, 'Или диаметр пятна').value = '2500';
-  inputOf(tab, 'M² вашего лазера').value = '0';
-  await button(tab, 'Сохранить').dispatch('click'); await wait();
-  out.spot = {writes: writes(), spot: labelled(tab, 'Или диаметр пятна').errorText(), m2: labelled(tab, 'M² вашего лазера').errorText(), kept: [inputOf(tab, 'Или диаметр пятна').value, inputOf(tab, 'M² вашего лазера').value]};
-  inputOf(tab, 'Или диаметр пятна').value = '40';
-  inputOf(tab, 'M² вашего лазера').value = '1,3';
-  await button(tab, 'Сохранить').dispatch('click'); await wait();
+  inputOf(tab, 'Or spot diameter').value = '2500';
+  inputOf(tab, 'Your laser’s M²').value = '0';
+  await button(tab, 'Save').dispatch('click'); await wait();
+  out.spot = {writes: writes(), spot: labelled(tab, 'Or spot diameter').errorText(), m2: labelled(tab, 'Your laser’s M²').errorText(), kept: [inputOf(tab, 'Or spot diameter').value, inputOf(tab, 'Your laser’s M²').value]};
+  inputOf(tab, 'Or spot diameter').value = '40';
+  inputOf(tab, 'Your laser’s M²').value = '1,3';
+  await button(tab, 'Save').dispatch('click'); await wait();
   out.spotSaved = {writes: writes(), refreshed: [...refreshed]};
   // the focal dialog (opened from the list of lenses): empty and then a value the server refuses
-  await button(tab, 'Указать фокус').dispatch('click'); await wait();
+  await button(tab, 'Enter focal length').dispatch('click'); await wait();
   const dialog = body.querySelector('.modal');
-  await button(dialog, 'Сохранить').dispatch('click'); await wait();
-  out.dialogEmpty = {open: !!body.querySelector('.modal'), error: labelled(dialog, 'Фокусное расстояние').errorText(), patched: patched.length};
-  inputOf(dialog, 'Фокусное расстояние').value = '25';
-  await button(dialog, 'Сохранить').dispatch('click'); await wait();
-  out.dialogRefused = {open: !!body.querySelector('.modal'), form: dialog.querySelector('.f-form-error').textContent, typed: inputOf(dialog, 'Фокусное расстояние').value, patched: patched.length};
-  await button(dialog, 'Сохранить').dispatch('click'); await wait();
+  await button(dialog, 'Save').dispatch('click'); await wait();
+  out.dialogEmpty = {open: !!body.querySelector('.modal'), error: labelled(dialog, 'Focal length').errorText(), patched: patched.length};
+  inputOf(dialog, 'Focal length').value = '25';
+  await button(dialog, 'Save').dispatch('click'); await wait();
+  out.dialogRefused = {open: !!body.querySelector('.modal'), form: dialog.querySelector('.f-form-error').textContent, typed: inputOf(dialog, 'Focal length').value, patched: patched.length};
+  await button(dialog, 'Save').dispatch('click'); await wait();
   out.dialogSaved = {open: !!body.querySelector('.modal'), patched, refreshed: [...refreshed]};
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-lens.js"])
     assert out["spot"] == {"writes": [], "spot": "Allowed: from 1 to 2000 µm. Entered: 2500", "m2": "Allowed: greater than 0. Entered: 0", "kept": ["2500", "0"]}
