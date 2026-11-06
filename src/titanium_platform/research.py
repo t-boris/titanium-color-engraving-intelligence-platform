@@ -258,40 +258,40 @@ def preview_plate(store: Store, session_id: int, test_type: str, settings: dict 
             "context_signature": _proposal_signature(store, session_id),
             "pending_plan_id": pending["id"] if pending else None,
             "pending_replaceable": bool(pending and not pending["photo_count"]),
-            "time_estimate": None, "time_unavailable_reason": "Для этой платы оценка времени ещё не рассчитана."}
+            "time_estimate": None, "time_unavailable_reason": "The time estimate for this plate is not yet available."}
 
 
 def create_proposed_plate(store: Store, session_id: int, message_id: int, trace_index: int, *, replace_plan_id: int | None = None) -> dict:
     """Commit the exact saved preview once, with a fresh context check in the same transaction."""
     if trace_index < 0:
-        raise ResearchError("предложение не найдено")
+        raise ResearchError("proposal not found")
     with store.transaction():
         session, _, _ = _scope(store, session_id)
         row = store.one("SELECT tool_trace_json FROM research_message WHERE id=? AND session_id=? AND role='assistant'",
                         (message_id, session_id))
         if row is None:
-            raise ResearchError("сообщение с предложением не найдено")
+            raise ResearchError("proposal message not found")
         trace = json.loads(row["tool_trace_json"])
         if trace_index >= len(trace):
-            raise ResearchError("предложение не найдено")
+            raise ResearchError("proposal not found")
         item = trace[trace_index]
         if item.get("tool") != "preview_test" or not item.get("result", {}).get("context_signature"):
-            raise ResearchError("это сообщение не содержит подтверждённого предложения")
+            raise ResearchError("this message does not contain a confirmed proposal")
         if item.get("created_plan"):
             return item["created_plan"]
         if item["result"]["context_signature"] != _proposal_signature(store, session_id):
-            raise ResearchError("контекст исследования изменился; запросите новый предпросмотр теста")
+            raise ResearchError("the research context has changed; request a new test preview")
         pending = _pending_plate(store, session_id)
         if pending and (replace_plan_id != pending["id"] or pending["photo_count"]):
-            raise ResearchError(f"плата №{pending['id']} уже ожидает гравировку и фото; для замены нужна отдельная проверка")
+            raise ResearchError(f"plate #{pending['id']} is already awaiting engraving and photography; replacement requires a separate review")
         if replace_plan_id is not None and (not pending or pending["id"] != replace_plan_id):
-            raise ResearchError("выбранная для замены плата больше не ожидает гравировку")
+            raise ResearchError("the selected plate is no longer awaiting engraving")
         args = item.get("arguments") or {}
         test_type, settings = args["test_type"], args.get("settings") or {}
         current_preview = preview_plate(store, session_id, test_type, settings)
         checked = ("test_type", "summary", "test_settings", "cleanup_settings", "label_settings", "description")
         if any(current_preview.get(key) != item["result"].get(key) for key in checked):
-            raise ResearchError("настройки или размер предложенной платы изменились; запросите новый предпросмотр")
+            raise ResearchError("the proposed plate settings or size have changed; request a new preview")
         values = {**settings, "research_goal": session["goal"], "research_session_id": session_id}
         prepared = capability_plates.preview(store, session["device_id"], session["material_id"], test_type, values)
         plate = capability_plates._persist_prepared(store, prepared, session["device_id"], session["material_id"], test_type,
@@ -523,13 +523,12 @@ def started_client():
                             "dependencies (see README)") from None
 
 
-EXPLAIN_INSTRUCTIONS = """Ты помогаешь оператору лазерной гравировки по титану понять предложенный эксперимент.
-Предложение уже рассчитано офлайн-алгоритмом по измерениям; ты его не меняешь и не выбираешь параметры.
-Ответь по-русски обычным текстом, до 1800 знаков: что проверяет плата, почему выбран каждый набор (по полю rationale),
-какие физические гипотезы стоит проверить на результате (рост оксидной плёнки, тепловой вклад, нестабильность),
-и что будет считаться подтверждением или опровержением. Гипотезы называй гипотезами; не выдавай их за измерения.
-Не предлагай другие параметры и не пиши, что что-то уже доказано."""
-
+EXPLAIN_INSTRUCTIONS = """Help a titanium laser engraving operator understand the proposed experiment.
+The proposal was calculated offline from measurements; do not change it or choose settings.
+Reply in English as plain text, up to 1,800 characters: explain what the plate tests, why each set was chosen
+(from its rationale), which physical hypotheses to check in the result (oxide film growth, thermal effects,
+instability), and what would count as confirmation or refutation. Identify hypotheses as hypotheses, not measurements.
+Do not suggest other settings or claim that anything has already been proven."""
 
 def proposal_explainer(client=None):
     """An explainer for ``designer.attach_explanation`` (REQ-006, DEC-013): it sends a brief of the proposal to the model the
@@ -617,48 +616,43 @@ def call_tool(store: Store, session_id: int, name: str, arguments: dict, *, allo
     raise ResearchError(f"неизвестный инструмент: {name}")
 
 
-INSTRUCTIONS = """Ты исследователь параметров лазерной обработки. Отвечай по-русски, кратко и предметно.
-Используй данные выбранного физического лазера, установленной при создании сессии линзы и материала.
-Отделяй результаты этой сессии от связанных данных того же оборудования в recent_evidence.
-История диалога сохраняется, но старые ответы AI могут описывать уже заменённые платы. Текущее состояние
-из current_state и session_plans важнее старых реплик. Перед ответом сверяй ID платы, статус, число фото
-и accepted_photo_count. Экспортированная плата с принятым фото уже дала результат и не ожидает RAW.
-Superseded/Cancelled — история, а не текущий тест. Не говори, что не знаешь статус, если он есть в контексте.
-working_memory — конспект прошлых решений и гипотез, а не источник измерений. Полная история сохранена локально.
-Когда пользователь спрашивает о результате, проверь последнее принятое фото через inspect_photo
-и сравни предложенный suggest_next_test с пробелами именно этого результата. Ответь: что наблюдалось,
-какие параметры это подтверждают, что пока неизвестно и какой один тест даст максимальный прирост знания.
-Если появился новый предметный вывод, сохрани его с ID принятого фото.
-Сначала изучи контекст и результаты. Для вывода о конкретном режиме называй фото-проверку №ID,
-все записанные параметры и ограничения измерения. Отсутствующий параметр называй неизвестным.
-Фото без эталонной карты даёт относительный отклик камеры, не стандартизованный цвет.
-Контраст текста не доказывает читаемость; фото сверху не измеряет глубину и сквозной рез.
-Для целей глубины, 3D-рельефа и резки сначала вызови suggest_next_test и честно укажи,
-если специальная плата и физическое измерение ещё не реализованы. Не выдавай поверхностный тест за проверку глубины или реза.
-Для предложения следующего теста укажи гипотезу, два меняемых параметра, фиксированные параметры,
-проверяемый критерий и площадь платы. Предпочитай маленький тест, который снимает конкретную неопределённость.
-Предел размера платы (по умолчанию 100 × 100 мм, не больше 300 мм) — лишь верхняя граница, а не желаемый размер.
-Чтобы узнать, как цвет заливки меняется с её размером, выбирай fill_sizes: settings.recipes (1–7 рецептов)
-и settings.widths_mm (1–5 ширин полосок, 3–300 мм). Для простой проверки одного режима или
-сравнения 2–4 заливок выбирай small_patches: квадрат 3–5 мм, settings.patches с полными или частичными
-параметрами каждого участка, settings.max_width_mm/max_height_mm как лимит всего файла.
-Для минимальной площади ставь settings.registration="none"; тогда автоматическое совмещение фото менее
-надёжно. Если важнее уверенная привязка фото к векторам, оставь "full" с QR и четырьмя метками.
-Локальная очистка квадратиков и имеющихся меток встроена первым слоем. Не расширяй тест до
-длинных надписей и линий, пока пользователь не определил нужные образцы.
-Для сетки частота × скорость на заполненных буквах используй material_matrix с matrix.geometry="text".
-Для опыта на однолинейных буквах с включённым и выключенным wobble используй material_matrix с
-matrix.geometry="vector_text", осями speed и wobble_size (ноль выключает wobble) и matrix.wobble_step.
-Этот тип делает одинаковые A8M B012 высотой 2 и 4 мм дважды в каждой ячейке, режим LightBurn Cut.
-text_readability перебирает только мощность × скорость. Сначала проверь файл через preview_test.
-Не создавай и не заменяй плату из разговора. Покажи проверенный preview_test и объясни, что оператор
-может отдельно нажать «Создать тест» под предложением. Если уже есть ожидающая плата, назови её.
-Если пользователь просит только отменить ожидающую плату, используй cancel_pending_test.
-Если к плате уже привязано фото, не заменяй и не отменяй её автоматически.
-Не запускай лазер. Пользователь гравирует, загружает RAW, проверяет совмещение и принимает измерения.
-AI-выводы в базе — гипотезы или кандидаты; не выдавай их за подтверждённый рабочий рецепт.
-Когда из принятой фото-проверки следует новый предметный вывод, сохрани его через save_research_insight
-со ссылкой на номер проверки и назови ограничение. Не сохраняй догадки без принятого фото.
+INSTRUCTIONS = """You research laser processing parameters. Reply in English, concisely and specifically.
+Use the selected physical laser, the lens installed when the session was created, and the material.
+Distinguish results from this session from related data for the same equipment in recent_evidence.
+The conversation history is saved, but old AI replies may describe replaced plates. Current state from
+current_state and session_plans takes precedence. Check plate ID, status, photo count and accepted_photo_count
+before answering. An exported plate with an accepted photo already produced a result and is not awaiting RAW.
+Superseded and Cancelled plates are history, not the current test. Do not claim a status is unknown if it is in context.
+working_memory summarizes prior decisions and hypotheses; it is not evidence. Full history is stored locally.
+When asked about a result, inspect the latest accepted photo with inspect_photo and compare suggest_next_test with
+that result's gaps. Explain observations, the parameters they support, what remains unknown, and one test that would
+increase knowledge most. Save a new substantive finding with its accepted photo ID.
+First inspect context and results. For conclusions about a specific setting, cite the photo review ID, all recorded
+settings and measurement limitations. Identify missing settings as unknown. A photo without a reference chart gives
+relative camera response, not standardized color. Text contrast does not prove legibility; a top-down photo does not
+measure depth or cut-through. For depth, 3D relief and cutting, first call suggest_next_test and state honestly if a
+special plate and physical measurement are not implemented. Do not present a surface test as a depth or cutting test.
+For a proposed next test give a hypothesis, two variable settings, fixed settings, success criterion and plate area.
+Prefer a small test that resolves a specific uncertainty. The plate size limit (100 × 100 mm by default, no more
+than 300 mm) is an upper bound, not a desired size.
+To study how fill color changes with size use fill_sizes: settings.recipes (1–7 recipes) and settings.widths_mm
+(1–5 strip widths, 3–300 mm). For a simple check of one setting or comparison of 2–4 fills use small_patches:
+3–5 mm squares, settings.patches with full or partial parameters per patch, and settings.max_width_mm/max_height_mm
+as limits on the whole file. For minimal area use settings.registration="none"; automatic photo alignment will be
+less reliable. If reliable alignment to vectors matters more, retain "full" with QR and four markers. Local cleanup
+of the squares and existing markers is built into the first layer. Do not expand the test to long text and lines
+until the user has chosen the required samples.
+For a frequency × speed grid on filled letters use material_matrix with matrix.geometry="text". For single-line
+letters with wobble on and off use material_matrix with matrix.geometry="vector_text", axes speed and wobble_size
+(zero disables wobble), and matrix.wobble_step. This makes identical A8M B012 characters of 2 and 4 mm height twice
+in each cell, using LightBurn Cut mode. text_readability varies power × speed only. Check the file with preview_test first.
+Do not create or replace a plate from the conversation. Show the validated preview_test and explain that the operator
+can separately select Create test below the proposal. Identify any existing pending plate. If the user only asks to
+cancel a pending plate, use cancel_pending_test. If a photo is already attached, do not replace or cancel it
+automatically. Do not start the laser. The user engraves, uploads RAW, checks alignment and accepts measurements.
+AI findings in the database are hypotheses or candidates, not confirmed working recipes. When an accepted photo review
+supports a new substantive finding, save it with save_research_insight, cite the review ID and state the limitation.
+Do not save guesses without an accepted photo.
 """
 
 
@@ -683,13 +677,12 @@ def _refresh_memory(store: Store, session_id: int, model: str, client) -> None:
                 "excerpt_truncated": len(row["content"]) > 4000} for row in rows]
     result = client.responses.create(
         model=model, reasoning={"effort": "low"}, store=False, max_output_tokens=1100,
-        instructions=("Обнови рабочую память длительного исследования лазера. Ответь по-русски, до 3000 знаков. "
-                      "Сохраняй цель пользователя, его решения и ограничения, установленные выводы со ссылкой "
-                      "на ID принятого фото, гипотезы отдельно от фактов, открытые вопросы и согласованный "
-                      "следующий шаг. Не объявляй слова AI измерением. Не сохраняй временный статус платы: "
-                      "он всегда берётся из свежей базы. Не теряй важное из прежнего конспекта. "
-                      "Если excerpt_truncated=true, это только предел переданного фрагмента, не делай "
-                      "выводов о том, что сам ответ или работа оборвались."),
+        instructions=("Update the working memory for a long-running laser study. Reply in English, up to 3000 characters. "
+                      "Retain the user's goal, decisions and constraints, established findings with accepted photo IDs, "
+                      "hypotheses separately from facts, open questions and the agreed next step. Do not present AI statements "
+                      "as measurements. Do not save temporary plate status: it always comes from the current database. "
+                      "Preserve important information from the previous summary. If excerpt_truncated=true, this only limits "
+                      "the supplied excerpt; do not infer that the answer or work was interrupted."),
         input=[{"role": "user", "content": _json({"previous_memory": old["summary"] if old else "",
                                                    "new_messages": excerpt})}])
     if getattr(result, "status", None) == "incomplete":
@@ -763,7 +756,7 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
     blocked_tools = {"create_test", "replace_pending_test"}
     if advisory:
         blocked_tools |= {"cancel_pending_test", "run_photo_mapping", "save_research_insight"}
-        instructions += "\nЭто консультация: только читай данные, не изменяй и не сохраняй никакие предметные объекты."
+        instructions += "\nThis is advisory only: read data without modifying or saving any domain objects."
     trace: list[dict] = []
     created = False
     response = None
@@ -782,7 +775,7 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
                 try:
                     args = json.loads(item.arguments or "{}")
                     if item.name in blocked_tools:
-                        raise ResearchError("это действие недоступно в консультации или требует отдельного действия оператора; сначала покажите preview_test")
+                        raise ResearchError("this action is unavailable in advisory mode or requires a separate operator action; show preview_test first")
                     result = call_tool(store, session_id, item.name, args, allow_create=not created)
                     if item.name in {"create_test", "replace_pending_test"}:
                         created = True

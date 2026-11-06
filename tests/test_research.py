@@ -172,7 +172,7 @@ def test_ai_cannot_create_a_plate_by_calling_a_forbidden_tool(store):
     result = research.answer(store, session["id"], "Создай тест разрешения линий",
                              client=SimpleNamespace(responses=FailingResponses()))
     assert not result["session"]["plans"]
-    assert "отдельного действия" in result["tool_trace"][0]["error"]
+    assert "separate operator action" in result["tool_trace"][0]["error"]
 
 
 def test_proposal_cannot_be_created_after_its_context_changes(store):
@@ -183,7 +183,7 @@ def test_proposal_cannot_be_created_after_its_context_changes(store):
     research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message = research.get_session(store, session["id"])["messages"][-1]
     store.execute("UPDATE research_session SET target=? WHERE id=?", ("Другая цель", session["id"]))
-    with pytest.raises(research.ResearchError, match="контекст исследования изменился"):
+    with pytest.raises(research.ResearchError, match="the research context has changed"):
         research.create_proposed_plate(store, session["id"], message["id"], 0)
     assert not research.get_session(store, session["id"])["plans"]
 
@@ -212,7 +212,7 @@ def test_changed_marker_settings_require_a_fresh_preview(store):
     research._save_exchange(store, session["id"], "Предложи тест", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
     plans.save_marker_layer_settings(store, 35, 60, 150, pulse_width=200, line_interval=0.01, passes=1)
-    with pytest.raises(research.ResearchError, match="настройки или размер"):
+    with pytest.raises(research.ResearchError, match="settings or size"):
         research.create_proposed_plate(store, session["id"], message_id, 0)
     assert not research.get_session(store, session["id"])["plans"]
 
@@ -226,7 +226,7 @@ def test_pending_plate_is_replaced_only_by_the_separate_confirmed_action(store):
     assert preview["pending_plan_id"] == old["plan_id"] and preview["pending_replaceable"]
     research._save_exchange(store, session["id"], "Предложи замену", "Предложение", [{"tool": "preview_test", "arguments": args, "result": preview}])
     message_id = research.get_session(store, session["id"])["messages"][-1]["id"]
-    with pytest.raises(research.ResearchError, match="отдельная проверка"):
+    with pytest.raises(research.ResearchError, match="separate review"):
         research.create_proposed_plate(store, session["id"], message_id, 0)
     made = research.create_proposed_plate(store, session["id"], message_id, 0, replace_plan_id=old["plan_id"])
     assert made["replaced_plan_id"] == old["plan_id"]
@@ -366,7 +366,7 @@ def test_long_research_chat_pages_history_and_builds_durable_memory(store):
 
     class Responses:
         def create(self, **kwargs):
-            if "Обнови рабочую память" in kwargs["instructions"]:
+            if "Update the working memory" in kwargs["instructions"]:
                 assert "первый вопрос" in kwargs["input"][0]["content"]
                 return SimpleNamespace(output=[], output_text="Цель: чёткая надпись. Следующий шаг: сравнить линии.")
             if "третий вопрос" in str(kwargs["input"]):

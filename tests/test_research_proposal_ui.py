@@ -50,7 +50,7 @@ load(ctx,%(ui)s,[...%(tables)s,'app.js','dialogs.js',{code:glue},'screens/resear
  await dialog.querySelectorAll('button').find(b=>b.textContent==='Отмена').dispatch('click');
  const afterCancel=attempts;
  await replace.dispatch('click');
- await ctx.document.body.querySelector('.modal').querySelectorAll('button').find(b=>b.textContent==='Заменить и создать').dispatch('click');
+ await ctx.document.body.querySelector('.modal').querySelectorAll('button').find(b=>b.textContent==='Replace and create').dispatch('click');
  console.log(JSON.stringify({before,failure,done,beforeConfirm,afterCancel,afterConfirm:attempts}));
 })().catch(e=>{console.error(e.stack);process.exit(1)});
 """
@@ -60,8 +60,8 @@ load(ctx,%(ui)s,[...%(tables)s,'app.js','dialogs.js',{code:glue},'screens/resear
     proc = subprocess.run(['node', str(script)], capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
-    assert out['before']['attempts'] == 0 and '20 × 30 мм' in out['before']['text'] and 'Время не оценено' in out['before']['text']
+    assert out['before']['attempts'] == 0 and '20 × 30 mm' in out['before']['text'] and 'Время не оценено' in out['before']['text']
     assert 'Нет связи' in out['failure']['text'] and not out['failure']['disabled']
     assert out['done']['hidden'] and out['done']['href'] == '#/plans/88' and out['done']['attempts'] == 2
-    assert 'Плата №77' in out['beforeConfirm']['text'] and out['beforeConfirm']['attempts'] == out['afterCancel'] == 2
+    assert 'Plate #77' in out['beforeConfirm']['text'] and out['beforeConfirm']['attempts'] == out['afterCancel'] == 2
     assert out['afterConfirm'] == 3
