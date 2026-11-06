@@ -169,12 +169,12 @@ def test_opening_an_experiment_shows_its_photograph_with_the_overlay_first_witho
     page = screen("experiment.js")
     layout = page[page.index("refreshAll();\n    const sub = "):]
     # rendered before the page is returned: the photograph column first (beside the title row), then the tabs with the result, the checks, the files
-    order = [layout.index(part) for part in ("h('header', {class: 'os-head ep-head'}", "h('section', {class: 'os-col ep-photo-col', 'aria-label': 'Фото с наложением'}, photoTools, stage, caption)",
+    order = [layout.index(part) for part in ("h('header', {class: 'os-head ep-head'}", "h('section', {class: 'os-col ep-photo-col', 'aria-label': 'Photo overlay'}, photoTools, stage, caption)",
                                              "h('aside', {class: 'os-col ep-side'")]
     assert order == sorted(order)
     tabs = page[page.index("const items = ["):page.index("const box = App.tabs(")]
-    parts = ("['result', 'Результат', result]", "['matrix', 'Матрица', matrixBox]", "['checks', `Проверки (${pairs.length})`, checks]",
-             "['plate', photoWork ? 'Работа фотогравировки' : 'Плата', plate]", "['work', 'Работа', files]", "['findings', `Выводы (${exp.findings.length})`, findings]")
+    parts = ("['result', 'Result', result]", "['matrix', 'Matrix', matrixBox]", "['checks', `Reviews (${pairs.length})`, checks]",
+             "['plate', photoWork ? 'Photo engraving work' : 'Plate', plate]", "['work', 'Work', files]", "['findings', `Findings (${exp.findings.length})`, findings]")
     assert [tabs.index(part) for part in parts] == sorted(tabs.index(part) for part in parts)
     assert "function refreshAll() { showTools(); showPhoto(); showChecks(); showResult().catch(fail); }" in page
     # the overlay is on unless the operator switched it off; the brightness is lifted for the dark uncorrected RAW and left alone for the
@@ -209,10 +209,10 @@ def test_every_plate_work_and_check_entry_point_links_to_its_experiment():
     experiment_of_pair = "'/experiment/' + (pair.plan_id && pair.plan_mode !== 'Restored from file' ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id)"
     ingest = screen("ingest.js")
     assert experiment_of_pair in ingest and "backTo(pair)" in ingest and "backTo(source)" in ingest   # the pair review and its re-photograph
-    assert "link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'К эксперименту')" in screen("analysis.js")
+    assert "link('/experiment/' + (r.plan_id && !restored ? 'plan-' + r.plan_id : 'eng-' + r.engraving_id), 'Back to experiment')" in screen("analysis.js")
     plan = screen("plan.js")
-    assert "link('/experiment/plan-' + p.id, 'К эксперименту')" in plan                                      # a plate
-    assert "link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'К эксперименту')" in plan        # a work restored from its file
+    assert "link('/experiment/plan-' + p.id, 'Open experiment')" in plan                                      # a plate
+    assert "link('/experiment/eng-' + encodeURIComponent(work.engraving_id), 'Open experiment')" in plan        # a work restored from its file
     assert "link('/experiment/' + encodeURIComponent(e.key), I18N.name(e.title))" in screen("experiment-cards.js")
     assert "link('/experiment/' + encodeURIComponent(p.experiment), p.title)" in screen("color-map.js")
 
