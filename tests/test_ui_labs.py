@@ -1,4 +1,4 @@
-"""The laboratories screens (feature electron, REQ-083..085): the menu entry «Лаборатории», the source picker of a new vector or photo work,
+"""The laboratories screens (feature electron, REQ-083..085): the menu entry «Laboratories», the source picker of a new vector or photo work,
 the source banner of an open pinned work with «Update source» and «Return to previous source», and the card of a connected laboratory.
 Run in node over the small DOM of the other screen tests with a fake server; the text a release carries reaches the screen as text only."""
 import json
@@ -41,13 +41,13 @@ const sent = () => ctx.requests.filter((r) => r.method !== 'GET').map((r) => [r.
 })().catch((e) => { console.error(e.stack); process.exit(1); });
 """
 
-CHOICES = [{"source_id": 4, "name": "Лаборатория <b>Север</b>", "release": {"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z",
-                                                                             "content_sha256": "abcdef0123456789ffff", "verified": False, "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Автор"}},
-            "setups": [{"laser": {"uuid": "L1", "public_name": "Волоконный 60 Вт", "manufacturer": "JPT", "model": "M7"}, "lens": {"uuid": "N1", "focal_length_mm": 174},
+CHOICES = [{"source_id": 4, "name": "Laboratory <b>North</b>", "release": {"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z",
+                                                                             "content_sha256": "abcdef0123456789ffff", "verified": False, "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Author"}},
+            "setups": [{"laser": {"uuid": "L1", "public_name": "Fiber laser 60 W", "manufacturer": "JPT", "model": "M7"}, "lens": {"uuid": "N1", "focal_length_mm": 174},
                         "material": {"uuid": "M1", "family": "titanium", "grade": "Grade 5", "thickness_mm": 1.0}, "photographs": 12},
-                       {"laser": {"uuid": "L1", "public_name": "Волоконный 60 Вт"}, "lens": None, "material": None, "photographs": 2}]}]
-SOURCE = {"kind": "release", "release_id": "r-1", "source_id": 4, "lab_name": "Лаборатория <b>Север</b>", "content_sha256": "abcdef0123456789ffff",
-          "release_created_at": "2026-10-20T09:00:00Z", "laser": {"uuid": "L1", "id": 1, "public_name": "Волоконный 60 Вт"}, "lens": {"uuid": "N1", "id": 2, "focal_length_mm": 174},
+                       {"laser": {"uuid": "L1", "public_name": "Fiber laser 60 W"}, "lens": None, "material": None, "photographs": 2}]}]
+SOURCE = {"kind": "release", "release_id": "r-1", "source_id": 4, "lab_name": "Laboratory <b>North</b>", "content_sha256": "abcdef0123456789ffff",
+          "release_created_at": "2026-10-20T09:00:00Z", "laser": {"uuid": "L1", "id": 1, "public_name": "Fiber laser 60 W"}, "lens": {"uuid": "N1", "id": 2, "focal_length_mm": 174},
           "material": {"uuid": "M1", "id": 3, "family": "titanium", "grade": "Grade 5", "thickness_mm": 1.0}, "pinned_at": "2026-10-21T10:00:00", "algorithm_versions": {},
           "withdrawn_hidden": 1, "conditions": ["the colours and curves are another laboratory's measurements on its laser: the same colour on this laser is not promised",
                                                 "a newer release of this laboratory is connected: the work keeps its own until its source is updated"],
@@ -115,9 +115,9 @@ def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chose
 """)
     assert out["options"][0] == ["", "My measurements"] and out["first"][0] == ""                                            # the own measurements, chosen
     assert "this laser, lens, and titanium grade (from any plate): 1" in out["first"][1]
-    assert out["options"][1] == ["1", "Лаборатория <b>Север</b>: Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm (photos 12)"]
+    assert out["options"][1] == ["1", "Laboratory <b>North</b>: Fiber laser 60 W · lens 174 mm · titanium · Grade 5 · 1 mm (photos 12)"]
     assert len(out["options"]) == 2                                                                                          # a setup without titanium colours nothing
-    assert "laboratory “Лаборатория <b>Север</b>” (release dated 2026-10-20 · abcdef012345; Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm): 2" in out["info"]
+    assert "laboratory “Laboratory <b>North</b>” (release dated 2026-10-20 · abcdef012345; Fiber laser 60 W · lens 174 mm · titanium · Grade 5 · 1 mm): 2" in out["info"]
     assert "without reference: 1" in out["info"] and "the same colour on this laser is not promised" in out["info"]           # the conditions, translated
     assert "signature not verified" in out["hint"]
     [(method, path, items)] = out["created"]
@@ -153,35 +153,35 @@ def test_an_open_pinned_vector_work_shows_its_source_and_updates_it_only_through
 """, plan=job["id"])
     hidden, text, kinds = out["banner"]
     assert hidden is False and kinds == [3]                                                                                  # the laboratory's name is a text node
-    assert "Лаборатория <b>Север</b>" in text and "release dated 2026-10-20 · abcdef012345" in text and "withdrawn measurements excluded: 1" in text
-    assert "Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm" in text
+    assert "Laboratory <b>North</b>" in text and "release dated 2026-10-20 · abcdef012345" in text and "withdrawn measurements excluded: 1" in text
+    assert "Fiber laser 60 W · lens 174 mm · titanium · Grade 5 · 1 mm" in text
     assert "the same colour on this laser is not promised" in text and "a newer release of this laboratory is connected" in text        # every condition, translated
     assert "frozen" not in text and out["buttons"] == ["Update source", "Return to previous source"]             # versions > 0
     assert out["beforeConfirm"] == [["POST", f"/api/vector/{job['id']}/source", {}]]                                                  # the preview changes nothing
-    assert "Work will move to source: Лаборатория <b>Север</b>, release dated 2026-10-23 · 0123456789ab" in out["dialog"]
+    assert "Work will move to source: Laboratory <b>North</b>, release dated 2026-10-23 · 0123456789ab" in out["dialog"]
     assert "changed: 1; missing: 1; largest difference ΔE 2.0" in out["dialog"] and "not measured in new source" in out["dialog"]
     assert "zone 1: scale measured in the new source" in out["dialog"]
     colours, chips = out["colours"]                                                                        # a colour a line, the lost and the largest changes first
     assert "not measured in new source" in colours[0] and colours[1].endswith("ΔE 2.0") and chips == ["All · 2", "missing · 1", "changed · 1"]
     assert out["afterConfirm"][-1] == ["POST", f"/api/vector/{job['id']}/source", {"confirm": True}]
-    assert "0123456789ab" in out["updated"] and "previous sources: 2" in out["updated"] and "более новый выпуск" not in out["updated"]   # drawn from the returned work
+    assert "0123456789ab" in out["updated"] and "previous sources: 2" in out["updated"] and "newer release" not in out["updated"]   # drawn from the returned work
 
 
 @node
 def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers_the_palette_and_a_check_on_the_own_laser(tmp_path):
-    card = {"id": 4, "name": "Лаборатория <b>Север</b>", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 1, "withdrawals": 0, "release_withdrawn": False,
-            "lab": {"name": "Лаборатория <b>Север</b>", "description": "<script>alert(1)</script>", "url": "https://north.example"},
+    card = {"id": 4, "name": "Laboratory <b>North</b>", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 1, "withdrawals": 0, "release_withdrawn": False,
+            "lab": {"name": "Laboratory <b>North</b>", "description": "<script>alert(1)</script>", "url": "https://north.example"},
             "current": {"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "abcdef0123456789ffff", "verified": False, "status": "kept",
-                        "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Автор"}, "counts": {"measurements": 40}},
+                        "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Author"}, "counts": {"measurements": 40}},
             "releases": [{"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "abcdef0123456789ffff", "verified": False, "status": "kept",
-                          "withdrawn": False, "works": [{"plan_id": 12, "name": "Портрет", "mode": "vector"}]}], "withdrawal_list": []}
+                          "withdrawn": False, "works": [{"plan_id": 12, "name": "Portrait", "mode": "vector"}]}], "withdrawal_list": []}
     palette = {"source": SOURCE, "conditions": [SOURCE["conditions"][0]], "entries": [
         {"id": "e1", "lab": [50, 10, 10], "srgb": [140, 110, 100], "basis": "chart", "engravings": 2, "agreement": {"engravings": 2, "agreeing": 2, "differing": 0}, "caution": None,
          "recipe": {"power": 40, "frequency": 30, "speed": 500, "pulse_width": 200, "line_interval": 0.02, "passes": 1}, "observation_ids": [1]}]}
     routes = {"/api/labs/sources/4": ok(card), "/api/labs/choices": ok(CHOICES), "/api/labs/palette": ok(palette),
               "/api/devices": ok([{"id": 1, "name": "JPT", "title": "JPT YDFLP-E-60"}]), "/api/materials": ok([{"id": 3, "name": "Small Plate", "grade": "Grade 5"}]),
               "/api/materials/3": ok({"id": 3, "name": "Small Plate", "grade": "Grade 5"}),
-              "/api/labs/transfers": {"GET": ok([]), "POST": ok({"plan_id": 77, "name": "Перенос · TCE-77"}, 201)}}
+              "/api/labs/transfers": {"GET": ok([]), "POST": ok({"plan_id": 77, "name": "Transfer · TCE-77"}, 201)}}
     out = run(tmp_path, routes, """
   const banner = ctx.LabSource.banner('/photo-works/7', 'photo', () => {});
   banner.update({source: {...data.frozenSource}, confirmed: {name: 'portrait.lbrn2', at: '2026-10-21T10:00:00', file: '/api/photo-works/7/export.lbrn2'}});
@@ -208,9 +208,9 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
     assert "Result frozen." in reason and "other versions of the algorithms (palette)" in reason
     assert conditions == ["the colours and curves are another laboratory's measurements on its laser: the same colour on this laser is not promised"]   # the frozen reason stands apart
     assert file == "/api/photo-works/7/export.lbrn2" and buttons == ["Update source"]                                    # no earlier source to go back to
-    assert out["head"].startswith("Лаборатория <b>Север</b>") and "<script>alert(1)</script>" in out["sub"]                   # the release's text, as text
-    assert out["setups"] == [["Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm", ["Palette", "Grayscale scales"]],
-                             ["Волоконный 60 Вт · lens unknown", ["Grayscale scales"]]]
+    assert out["head"].startswith("Laboratory <b>North</b>") and "<script>alert(1)</script>" in out["sub"]                   # the release's text, as text
+    assert out["setups"] == [["Fiber laser 60 W · lens 174 mm · titanium · Grade 5 · 1 mm", ["Palette", "Grayscale scales"]],
+                             ["Fiber laser 60 W · lens unknown", ["Grayscale scales"]]]
     assert out["palette"] == [["POST", "/api/labs/palette", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}]]
     assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "reference chart corrected" in out["colour"] and "engravings 2" in out["colour"] and "all 2 agree" in out["colour"]
     assert "40.0 % · 30.0 kHz · 500 mm/s · 200 ns · interval 0.0200 mm · passes 1" in out["colour"]
@@ -224,13 +224,13 @@ def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their
     """REQ-005 of findings-you-can-manage-short-lists-re-check (DEC-090): a line per release, colour and transfer; details under a line."""
     release = lambda i, **more: {"release_id": f"r-{i}", "release_number": i, "created_at": f"2026-10-{i:02d}T09:00:00Z", "content_sha256": f"{i:02d}cdef0123456789ffff",   # noqa: E731
                                  "verified": True, "status": "kept", "withdrawn": False, "works": [], **more}
-    card = {"id": 4, "name": "Север", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 3, "withdrawals": 0, "release_withdrawn": False,
-            "lab": {"name": "Север"}, "current": release(3), "withdrawal_list": [],
-            "releases": [release(1, status="removed"), release(3, works=[{"plan_id": 12, "name": "Портрет", "mode": "vector"}]), release(2, withdrawn=True)]}
+    card = {"id": 4, "name": "North", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 3, "withdrawals": 0, "release_withdrawn": False,
+            "lab": {"name": "North"}, "current": release(3), "withdrawal_list": [],
+            "releases": [release(1, status="removed"), release(3, works=[{"plan_id": 12, "name": "Portrait", "mode": "vector"}]), release(2, withdrawn=True)]}
     entries = [{"id": f"e{i}", "lab": [20 + i * 2, 0, 0], "srgb": [0, 0, 0], "basis": ["chart", "clean", "as-shot"][i % 3], "engravings": i % 4 + 1,
                 "agreement": {"engravings": 1, "agreeing": 1, "differing": 0}, "caution": "contradicted" if i % 5 == 0 else None,
                 "recipe": {"power": 40, "frequency": 30, "speed": 500, "passes": 1}, "observation_ids": [i]} for i in range(25)]
-    transfers = [{"plan_id": 70 + i, "name": f"Перенос {i}", "identifier": f"TCE-{70 + i}", "source": {"lab": [50, 0, 0]}, "own_material": {"name": "Small Plate"},
+    transfers = [{"plan_id": 70 + i, "name": f"Transfer {i}", "identifier": f"TCE-{70 + i}", "source": {"lab": [50, 0, 0]}, "own_material": {"name": "Small Plate"},
                   "recipe": {"power": 40, "frequency": 30, "speed": 500, "passes": 1}, "created_at": f"2026-10-2{i}T10:00:00",
                   "measurements": [{"lab": [51, 0, 0], "pair_id": 90 + i, "delta_e": 1.5, "measured_at": "2026-10-24T10:00:00"}] if i == 1 else [],
                   "mean_delta_e": 1.5 if i == 1 else None} for i in range(3)]
@@ -276,5 +276,5 @@ def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their
     assert out["lightest"] == "L 68.0 · a 0.0 · b 0.0"
     assert out["cautious"] == ["L 60.0 · a 0.0 · b 0.0", "L 50.0 · a 0.0 · b 0.0", "L 40.0 · a 0.0 · b 0.0", "L 30.0 · a 0.0 · b 0.0", "L 20.0 · a 0.0 · b 0.0"]
     transfers, plans = out["transfers"]
-    assert [x.split(" · ")[0] for x in transfers] == ["Перенос 2", "Перенос 1", "Перенос 0"] and "mean ΔE 1.5" in transfers[1] and "awaiting photo" in transfers[0]
+    assert [x.split(" · ")[0] for x in transfers] == ["Transfer 2", "Transfer 1", "Transfer 0"] and "mean ΔE 1.5" in transfers[1] and "awaiting photo" in transfers[0]
     assert plans == ["#/plans/72", "#/plans/71", "#/plans/70"] and out["transferDetails"] == ["#/analysis/91"]
