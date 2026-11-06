@@ -74,7 +74,7 @@ def test_new_vector_work_opens_the_three_step_screen_and_the_one_page_form_stays
   await settle();
   out.classic = classic.querySelector('h2').textContent;
 """, shared=context())
-    assert out["wizard"] == "Новая работа · шаг 1 из 3: Картинка и размер" and out["classic"] == "Новая векторная работа"
+    assert out["wizard"] == "New work · step 1 of 3: Image and size" and out["classic"] == "Новая векторная работа"
 
 
 @node

@@ -1,68 +1,37 @@
-/* Creating a work from its result (feature ux-work-creation-p0, REQ-001..003, DEC-001).
-
-   IMPLEMENTATION PLAN (derived from the requirements and the code that exists)
-   -----------------------------------------------------------------------------------------------------------------------------------------
-   Server (new modules, no change to how a work is made):
-     creation_context.py   the shared context (laser, lens, titanium, rig, source) in the workshop settings; impact of a change; what a
-                           result needs (readiness) and the starter test; routes /api/creation/context, /context/impact, /readiness,
-                           /starter-plate.
-     creation_drafts.py    unfinished tasks on disk (table creation_draft, picture under files/drafts/ by a relative name): created when the
-                           picture is chosen, saved at every step, closed ONLY by an explicit complete (the work exists) or discard;
-                           closing the application never closes one. Routes /api/creation/drafts*.
-     creation_previews.py  one tile per result for the person's own picture at the requested width, drawn by the code the work will use
-                           (segment.segment, vectorize.trace, the grey picture of a photo work): /api/creation/drafts/{id}/preview/{result}.png.
-   Interface:
-     context.js (WorkContext)  the context strip with «Изменить…» (a dialog that shows the impact of the change BEFORE «Применить»), the read-only
-                               strip of an opened work's OWN context; hardware.js: contextStart / rememberContext for the older forms.
-     this file (Creation)      ONE entry, Creation.start(); the screen #/new (also /vector?new=1) in three steps that keep picture, name, size,
-                               result and every setting when the person goes back: 1 picture, name, size and context; 2 the result, as four
-                               comparable tiles with what each is good for; 3 the settings of the chosen result (algorithm, ΔE, smoothing,
-                               time under «Дополнительно») and «Создать работу». A missing laser, lens, titanium or measurement is a gate in
-                               step 3 (and a mark on the tile): the person finishes it elsewhere and comes back by the bar below; for missing
-                               measurements the gate is the starter test and says which result it makes available. Nothing is created until
-                               the last button, so cancelling leaves no half-made work. A photograph ends with the question «Какая гравировка?»
-                               (BUG-003, REQ-071): its button makes the work on the scale of the context and PhotoKindStep, the very dialog of
-                               photo engraving's «Новая работа», shows the person's picture in every kind; «Создать в «…»» keeps the work in the
-                               chosen kind, while «← Назад», × and Escape delete it and leave the form, the marked kind and the task as they were.
-                               While the question is open the task records the work (``hold``), so a window closed in the middle does not leave it
-                               behind: opening the task deletes it, if it is still that very work. The bar «Не закончена работа» is mounted outside
-                               #app on every screen while an open task exists, so setup screens need no return logic and a restart finds it again.
-   Not changed: BUG-003 (the two-step «Новая работа» of photo engraving stays, now through the shared PhotoKindStep; it hands over to this screen
-   only when it cannot go on), the editors, the lifecycle and review screens, list.js, dialogs.js and router.js behaviour.
-   ----------------------------------------------------------------------------------------------------------------------------------------- */
+/* Guided work creation, draft recovery, readiness, and photo engraving selection. */
 'use strict';
 const Creation = (() => {
   const {h, fill, btn, field, link, pill, get, post, put, del, form, toast, fail, go} = App;
 
   // -- the four results -----------------------------------------------------------------------------------------------------------------
   const RESULTS = [
-    {id: 'colour', title: 'Цветные области', strategy: 'photo', work: 'vector',
-      about: 'Картинка делится на гладкие цветные области; каждой достаётся измеренный цвет титана.',
-      file: 'Файл LightBurn: слой на каждый использованный цвет заливки.', needs: 'Нужны измеренные цвета заливки этого лазера, линзы и титана.'},
-    {id: 'photo', title: 'Фотогравировка', strategy: null, work: 'photo',
-      about: 'Картинка остаётся полутоновой: яркость каждой точки задаёт мощность на измеренной шкале.',
-      file: 'Файл LightBurn: слой-изображение со своей шкалой.', needs: 'Нужна измеренная шкала серого этого лазера, линзы и титана.'},
-    {id: 'silhouette', title: 'Силуэт', strategy: 'fill', work: 'vector',
-      about: 'Тёмная форма картинки заливается одним рецептом.',
-      file: 'Файл LightBurn: слой заливки.', needs: 'Нужен проверенный рецепт заливки.'},
-    {id: 'lines', title: 'Линии', strategy: 'line', work: 'vector',
-      about: 'Тёмные штрихи картинки становятся линиями по центру штриха.',
-      file: 'Файл LightBurn: слои линий (режим Line).', needs: 'Нужен проверенный рецепт линии.'}];
+    {id: 'colour', title: 'Color regions', strategy: 'photo', work: 'vector',
+      about: 'The image is split into smooth color regions, each assigned a measured titanium color.',
+      file: 'LightBurn file: one layer for each fill color used.', needs: 'Requires measured fill colors for this laser, lens, and titanium.'},
+    {id: 'photo', title: 'Photo engraving', strategy: null, work: 'photo',
+      about: 'The image remains continuous tone; each point’s brightness sets power on a measured scale.',
+      file: 'LightBurn file: an image layer with its own scale.', needs: 'Requires a measured grayscale scale for this laser, lens, and titanium.'},
+    {id: 'silhouette', title: 'Silhouette', strategy: 'fill', work: 'vector',
+      about: 'The dark image shape is filled with one recipe.',
+      file: 'LightBurn file: a fill layer.', needs: 'Requires a verified fill recipe.'},
+    {id: 'lines', title: 'Lines', strategy: 'line', work: 'vector',
+      about: 'Dark image strokes become lines along their centers.',
+      file: 'LightBurn file: line layers (Line mode).', needs: 'Requires a verified line recipe.'}];
   const RESULT = Object.fromEntries(RESULTS.map((r) => [r.id, r]));
-  const STEPS = [['picture', 'Картинка и размер'], ['result', 'Что получится'], ['method', 'Настройки и создание']];
-  const FACTS = {colour: (f) => `областей: ${f.areas} · цветов: ${f.colours}`, photo: (f) => `градаций серого в картинке: ${f.levels}`,
-    silhouette: (f) => `областей: ${f.areas}`, lines: (f) => `линий: ${f.strokes}`};
+  const STEPS = [['picture', 'Image and size'], ['result', 'Choose a result'], ['method', 'Settings and creation']];
+  const FACTS = {colour: (f) => `regions: ${f.areas} · colors: ${f.colours}`, photo: (f) => `grayscale levels in image: ${f.levels}`,
+    silhouette: (f) => `regions: ${f.areas}`, lines: (f) => `lines: ${f.strokes}`};
   const DEFAULT_WIDTH = '60';                                         // a starting value in the field, the same as the vector form's
   const FLOW = 'new';
   const AUTOSAVE_MS = 500;
   const MISSING = {
-    laser: ['Не добавлен ни один лазер.', '/devices', 'Добавить лазер'],
-    titanium: ['Не добавлена заготовка титана.', '/setup', 'Добавить заготовку'],
-    lens: ['На выбранном лазере нет линзы: тест гравируется через неё.', '/devices', 'Установить линзу'],
+    laser: ['No laser has been added.', '/devices', 'Add laser'],
+    titanium: ['No titanium blank has been added.', '/setup', 'Add blank'],
+    lens: ['The selected laser has no lens; the test requires one.', '/devices', 'Install lens'],
   };
-  const BECOMES = {measured_scale: 'Когда измерения теста будут приняты, появится измеренная шкала серого, и фотогравировка станет доступна.',
-    validated_recipes: 'Когда измерения теста будут приняты, они попадут в измеренные цвета этого лазера, линзы и титана. Рецепт входит в работу, когда он '
-      + 'проверен повторами по правилам лазера, поэтому может понадобиться повторить тест.'};
+  const BECOMES = {measured_scale: 'Once the test measurements are accepted, a measured grayscale scale will become available for photo engraving.',
+    validated_recipes: 'Accepted test measurements are added to the measured colors for this laser, lens, and titanium. A recipe can be used in work once it is '
+      + 'verified by repeats under the laser’s rules, so the test may need repeating.'};
 
   const url = ({result = null, draft = null} = {}) => {
     const query = [draft ? `draft=${draft}` : null, result ? `result=${result}` : null].filter(Boolean);
@@ -76,7 +45,7 @@ const Creation = (() => {
   const lensField = (context) => (context.lens_id == null ? 'unknown' : String(context.lens_id));
 
   // -- the bar of an unfinished task, on every screen --------------------------------------------------------------------------------------
-  const bar = h('aside', {id: 'creation-bar', class: 'alert warn creation-bar', 'aria-label': 'Незавершённая работа', hidden: true});
+  const bar = h('aside', {id: 'creation-bar', class: 'alert warn creation-bar', 'aria-label': 'Unfinished work', hidden: true});
   let barToken = 0;
   const onWizard = () => /^#\/(new|vector\?(.*&)?new=)/.test(String((typeof location === 'object' && location.hash) || '')) && !/[?&]classic=/.test(location.hash);
   // the bar is fixed over the lower edge of the window and its height changes with the width and the text size: the page keeps that much free below
@@ -89,14 +58,14 @@ const Creation = (() => {
 
   async function waitingText(draft) {
     const waiting = draft.state && draft.state.waiting;
-    if (!waiting || !waiting.result) return 'Можно продолжить.';
+    if (!waiting || !waiting.result) return 'You can continue.';
     try {
       const r = await get(`/creation/readiness?result=${waiting.result}`);
-      return r.ready ? 'Недостающее добавлено: можно продолжить.' : waiting.for === 'starter_test' ? 'Ждёт стартовый тест и приём его измерений.' : 'Ждёт настройки оборудования.';
-    } catch (_) { return 'Можно продолжить.'; }
+      return r.ready ? 'The missing prerequisites are available; you can continue.' : waiting.for === 'starter_test' ? 'Waiting for the starter test and acceptance of its measurements.' : 'Waiting for equipment setup.';
+    } catch (_) { return 'You can continue.'; }
   }
 
-  /** Redraws the bar: the newest open task with «Продолжить» and «Отменить задачу». It is hidden on the creation screen itself and when no task is open. */
+  /** Redraws the bar: the newest open task with “Continue” and “Cancel task”. It is hidden on the creation screen itself and when no task is open. */
   async function refreshBar() {
     const mine = ++barToken;
     let drafts = [];
@@ -106,18 +75,18 @@ const Creation = (() => {
     const draft = drafts[0];
     const note = await waitingText(draft);
     if (mine !== barToken) return;
-    fill(bar, h('div', {class: 'row'}, h('strong', {}, `Не закончена работа «${draft.name || (draft.image && baseName(draft.image.name)) || 'без названия'}».`),
-      h('span', {class: 'small'}, drafts.length > 1 ? `${note} Всего незавершённых: ${drafts.length}.` : note), h('span', {class: 'spacer'}),
-      btn('Продолжить', () => start({draft: draft.id}), 'btn-small primary'), btn('Отменить задачу', () => discard(draft, refreshBar), 'btn-small')));
+    fill(bar, h('div', {class: 'row'}, h('strong', {}, `Unfinished work “${draft.name || (draft.image && baseName(draft.image.name)) || 'untitled'}”.`),
+      h('span', {class: 'small'}, drafts.length > 1 ? `${note} Total unfinished: ${drafts.length}.` : note), h('span', {class: 'spacer'}),
+      btn('Continue', () => start({draft: draft.id}), 'btn-small primary'), btn('Cancel task', () => discard(draft, refreshBar), 'btn-small')));
     bar.hidden = false;
     padPage(true);
   }
 
   function discard(draft, after) {
-    return App.confirmBox(`Отменить задачу «${draft.name || 'без названия'}»?`,
-      'Введённое и сохранённая картинка будут удалены; вернуть задачу будет нельзя. Созданные работы не затрагиваются.', 'Отменить задачу', async () => {
+    return App.confirmBox(`Cancel task “${draft.name || 'untitled'}”?`,
+      'The entered data and saved image will be deleted and the task cannot be restored. Created works are unaffected.', 'Cancel task', async () => {
         await post(`/creation/drafts/${draft.id}/discard`);
-        toast('Задача отменена', 'ok');
+        toast('Task canceled', 'ok');
         if (after) await after();
       });
   }
@@ -144,24 +113,24 @@ const Creation = (() => {
     const heading = (text) => h('h2', {tabindex: '-1'}, text);
 
     // inputs are made once and stay in the page's memory while the person goes back and forth: nothing typed is ever lost by a step
-    const fileIn = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Картинка'});
-    const filePicker = App.filePick(fileIn, 'Выбрать картинку');          // made once: going back to the first step shows the chosen file again
-    const nameIn = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
+    const fileIn = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Image'});
+    const filePicker = App.filePick(fileIn, 'Choose image');          // made once: going back to the first step shows the chosen file again
+    const nameIn = h('input', {autocomplete: 'off', 'aria-label': 'Work name', placeholder: 'from file name'});
     const Q = Forms.QUANTITIES;
     const widthIn = Forms.numberInput(Q.workWidth, {value: DEFAULT_WIDTH});
     const M = {
-      thr: Forms.numberInput(Q.deltaE, {placeholder: 'из правил'}),
+      thr: Forms.numberInput(Q.deltaE, {placeholder: 'from rules'}),
       remember: h('input', {type: 'checkbox', checked: true}),
       tolerance: Forms.numberInput(Q.vectorTolerance, {value: '0.08'}),
       colours: Forms.numberInput(Q.photoColours, {value: 12}),
-      detail: h('select', {'aria-label': 'Детальность'}, [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']].map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l))),
+      detail: h('select', {'aria-label': 'Detail'}, [['coarse', 'Coarse'], ['medium', 'Medium'], ['fine', 'Fine']].map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l))),
       algorithm: VectorSplit.picker((S.draft && S.draft.state && S.draft.state.method && S.draft.state.method.algorithm) || 'slic'),
       faces: h('input', {type: 'checkbox', checked: true}),
-      maxTime: Forms.numberInput(Q.maxTime, {placeholder: 'без предела'}),
+      maxTime: Forms.numberInput(Q.maxTime, {placeholder: 'no limit'}),
       asShot: h('input', {type: 'checkbox'}),
       markers: h('input', {type: 'checkbox'}),
       clean: h('input', {type: 'checkbox', checked: true}),
-      grey: Forms.numberInput(Q.greyThreshold, {placeholder: 'авто (Оцу)'}),
+      grey: Forms.numberInput(Q.greyThreshold, {placeholder: 'auto (Otsu)'}),
     };
     // a step's fields are read as the server reads them; a wrong box says why beside itself and keeps what was typed, a refusal of the server stands where the field it
     // names is. The boxes persist between the steps, the controllers are made again with each drawing of a step (ux-save-feedback-p0, REQ-003)
@@ -210,9 +179,9 @@ const Creation = (() => {
     const autosave = () => {
       clearTimeout(timer);
       if (!S.draft) return;
-      timer = setTimeout(() => { send().then(() => tell('')).catch((e) => tell(`Задача не сохранена: ${e.message}`)); }, AUTOSAVE_MS);
+      timer = setTimeout(() => { send().then(() => tell('')).catch((e) => tell(`Task not saved: ${e.message}`)); }, AUTOSAVE_MS);
     };
-    const flush = async () => { clearTimeout(timer); if (S.draft) { try { await send(); tell(''); } catch (e) { tell(`Задача не сохранена: ${e.message}`); } } };
+    const flush = async () => { clearTimeout(timer); if (S.draft) { try { await send(); tell(''); } catch (e) { tell(`Task not saved: ${e.message}`); } } };
     for (const el of [nameIn, widthIn, ...Object.values(M).filter((v) => v && v.nodeType)]) { el.addEventListener('input', autosave); el.addEventListener('change', autosave); }
     M.algorithm.select.addEventListener('change', autosave);
     fileIn.addEventListener('change', () => {
@@ -245,7 +214,7 @@ const Creation = (() => {
       try {
         const res = await fetch(`/api/creation/drafts/${S.draft.id}/preview/${r.id}.png?width_mm=${encodeURIComponent(widthIn.value)}`);
         if (!res.ok) {
-          let raw = `Ошибка сервера (${res.status})`;
+          let raw = `Server error (${res.status})`;
           try { const d = await res.json(); raw = I18N.tr((d.detail || d).error || raw); } catch (_) { /* the status says it */ }
           throw new Error(raw);
         }
@@ -269,18 +238,18 @@ const Creation = (() => {
     }
     const toleranceHint = () => {
       const saved = S.rules, text = saved == null ? '' : String(+(+saved).toFixed(2));
-      M.thr.setAttribute('placeholder', saved != null ? `из правил: ${text}` : saved === null ? 'задайте' : 'из правил');
+      M.thr.setAttribute('placeholder', saved != null ? `from rules: ${text}` : saved === null ? 'enter a value' : 'from rules');
       M.thr.setAttribute('aria-invalid', saved === null && M.thr.value === '' ? 'true' : 'false');
-      return saved != null ? `пусто — ΔE ${text} из правил этого лазера с линзой; число здесь — только для этой работы`
-        : saved === null ? 'Для этого лазера с линзой допуск не сохранён — задайте его. Внутри допуска берётся самый быстрый цвет; ΔE 1 едва заметно, 2–3 — мало, 5 — две гравировки одного рецепта ещё совпадают.'
-          : 'пусто — допуск из правил этого лазера с линзой';
+      return saved != null ? `leave empty for ΔE ${text} from this laser and lens’s rules; an entered value applies only to this work`
+        : saved === null ? 'No tolerance is saved for this laser and lens; enter one. The fastest color within tolerance is selected. ΔE 1 is barely noticeable, 2–3 is small, and 5 can still match two engravings of one recipe.'
+          : 'leave empty to use the tolerance in this laser and lens’s rules';
     };
     M.thr.addEventListener('input', () => { if (S.step === 'method') toleranceHint(); });
 
     // -- the view -----------------------------------------------------------------------------------------------------------------------------
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const show = (text) => { error.textContent = text || ''; error.hidden = !text; };
-    const stepList = () => h('ol', {class: 'creation-steps', 'aria-label': 'Шаги создания работы'}, STEPS.map(([id, label], i) =>
+    const stepList = () => h('ol', {class: 'creation-steps', 'aria-label': 'Work creation steps'}, STEPS.map(([id, label], i) =>
       h('li', {'aria-current': id === S.step ? 'step' : null, class: id === S.step ? 'is-current' : ''}, `${i + 1}. ${label}`)));
     const stepNumber = () => STEPS.findIndex(([id]) => id === S.step) + 1;
     const pictureSrc = () => (S.draft && S.draft.image ? `/api/creation/drafts/${S.draft.id}/picture?v=${S.picture}` : null);
@@ -291,19 +260,19 @@ const Creation = (() => {
     function pictureStep() {
       const saved = S.draft && S.draft.image;
       const shownName = filePicker.querySelector('.file-name');
-      if (shownName && saved && !chosenFile()) shownName.textContent = `${saved.name} · сохранена в задаче`;      // the task keeps the picture: the person need not choose it again
+      if (shownName && saved && !chosenFile()) shownName.textContent = `${saved.name} · saved in task`;      // the task keeps the picture: the person need not choose it again
       pictureForm = Forms.create();
-      const imageField = pictureForm.add('image', 'Картинка', filePicker, {required: true, help: saved && !chosenFile() ? 'выберите другую, чтобы заменить' : 'PNG, JPEG, TIFF',
-        read: () => (chosenFile() || (S.draft && S.draft.image) ? {ok: true, value: chosenFile()} : {ok: false, message: 'Выберите картинку (PNG, JPEG, TIFF)'})});
-      const widthField = pictureForm.add('width', 'Ширина на титане', widthIn, {quantity: 'workWidth', required: true, help: 'высота — по пропорциям картинки'});
+      const imageField = pictureForm.add('image', 'Image', filePicker, {required: true, help: saved && !chosenFile() ? 'choose another to replace it' : 'PNG, JPEG, TIFF',
+        read: () => (chosenFile() || (S.draft && S.draft.image) ? {ok: true, value: chosenFile()} : {ok: false, message: 'Choose an image (PNG, JPEG, TIFF)'})});
+      const widthField = pictureForm.add('width', 'Width on titanium', widthIn, {quantity: 'workWidth', required: true, help: 'height follows the image proportions'});
       return h('div', {class: 'stack'},
-        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, imageField, field('Название работы', nameIn), widthField), pictureForm.error,
-          saved && pictureSrc() ? h('figure', {class: 'creation-picture'}, h('img', {src: pictureSrc(), alt: `Картинка задачи: ${saved.name}`}),
-            h('figcaption', {class: 'muted small'}, 'Сохранённая картинка')) : null),
+        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, imageField, field('Work name', nameIn), widthField), pictureForm.error,
+          saved && pictureSrc() ? h('figure', {class: 'creation-picture'}, h('img', {src: pictureSrc(), alt: `Task image: ${saved.name}`}),
+            h('figcaption', {class: 'muted small'}, 'Saved image')) : null),
         strip.el,
         error,
-        h('p', {class: 'small muted'}, 'Нужны надпись или своя задача слоя? ', link('/vector?new=1&classic=1', 'Форма со всеми стратегиями')),
-        h('div', {class: 'row'}, btn('Дальше →', toResult, 'primary')));
+        h('p', {class: 'small muted'}, 'Need an inscription or a custom layer task? ', link('/vector?new=1&classic=1', 'Form with all strategies')),
+        h('div', {class: 'row'}, btn('Next →', toResult, 'primary')));
     }
 
     function tileView(r) {
@@ -316,11 +285,11 @@ const Creation = (() => {
         node.setAttribute('tabindex', (S.result || RESULTS[0].id) === r.id ? '0' : '-1');                 // one tab stop for the group, the arrows move inside it
         node.setAttribute('aria-busy', t.state === 'loading' ? 'true' : 'false');
         node.className = 'creation-tile' + (chosen ? ' is-chosen' : '');
-        fill(slot, t.state === 'ready' ? h('img', {src: t.src, alt: `Ваша картинка: ${r.title.toLowerCase()}. ${FACTS[r.id](t.facts)}`})
-          : h('span', {class: 'creation-tile-wait muted small', role: 'status'}, t.state === 'failed' ? `Не удалось нарисовать: ${t.error}` : 'Рисуем…'));
+        fill(slot, t.state === 'ready' ? h('img', {src: t.src, alt: `Your image: ${r.title.toLowerCase()}. ${FACTS[r.id](t.facts)}`})
+          : h('span', {class: 'creation-tile-wait muted small', role: 'status'}, t.state === 'failed' ? `Could not render: ${t.error}` : 'Rendering…'));
         fill(facts, t.state === 'ready' ? FACTS[r.id](t.facts) : '');
-        fill(status, !ready ? pill('проверяем', '') : ready.error ? pill('не проверено', 'warn') : ready.ready ? pill('можно создать', 'ok')
-          : ready.missing.includes('measurements') ? pill('нужны измерения', 'warn') : pill('не хватает: ' + ready.missing.map((k) => ({laser: 'лазер', titanium: 'титан', lens: 'линза'}[k] || k)).join(', '), 'warn'));
+        fill(status, !ready ? pill('checking', '') : ready.error ? pill('not checked', 'warn') : ready.ready ? pill('ready to create', 'ok')
+          : ready.missing.includes('measurements') ? pill('measurements needed', 'warn') : pill('missing: ' + ready.missing.map((k) => ({laser: 'laser', titanium: 'titanium', lens: 'lens'}[k] || k)).join(', '), 'warn'));
       };
       tileViews[r.id] = {node, update};
       update();
@@ -348,10 +317,10 @@ const Creation = (() => {
 
     function resultStep() {
       return h('div', {class: 'stack'},
-        h('p', {class: 'muted small'}, 'Это ваша картинка шириной ' + `${widthIn.value} мм`.replace('.', ',') + ', как её сделает каждый способ. Цвета титана подбираются позже, по измерениям выбранной установки.'),
-        h('div', {class: 'creation-tiles', role: 'radiogroup', 'aria-label': 'Что получится', onKeydown: arrows}, RESULTS.map(tileView)),
+        h('p', {class: 'muted small'}, 'Your image at a width of ' + `${widthIn.value} mm`.replace('.', ',') + ', shown using each method. Titanium colors are selected later from the chosen setup’s measurements.'),
+        h('div', {class: 'creation-tiles', role: 'radiogroup', 'aria-label': 'Choose a result', onKeydown: arrows}, RESULTS.map(tileView)),
         strip.el, error,
-        h('div', {class: 'row'}, btn('← Назад', () => goTo('picture')), (nextButton = btn('Дальше →', toMethod, 'primary', !S.result))));
+        h('div', {class: 'row'}, btn('← Back', () => goTo('picture')), (nextButton = btn('Next →', toMethod, 'primary', !S.result))));
     }
 
     function gate(r, ready) {
@@ -360,28 +329,28 @@ const Creation = (() => {
         return h('li', {}, text, ' ', link(to, label));
       });
       const test = ready.starter_test;
-      return h('div', {class: 'alert warn stack', role: 'region', 'aria-label': 'Чего не хватает'},
-        h('strong', {}, `Чтобы создать «${r.title.toLowerCase()}», пока не хватает:`),
+      return h('div', {class: 'alert warn stack', role: 'region', 'aria-label': 'Missing prerequisites'},
+        h('strong', {}, `To create “${r.title.toLowerCase()}”, the following is still missing:`),
         items.length ? h('ul', {}, items) : null,
         ready.missing.includes('measurements') ? starterCard(r, ready, test) : null,
-        h('p', {class: 'small'}, 'Введённое сохранено в задаче. Когда всё будет готово, откройте её из полосы «Не закончена работа» вверху любого экрана — это можно сделать и после перезапуска приложения.'));
+        h('p', {class: 'small'}, 'Your entries are saved in the task. When ready, reopen it from the unfinished-work bar on any screen, including after restarting the application.'));
     }
 
     function starterCard(r, ready, test) {
-      if (!test) return h('p', {}, 'Нужны измерения этого лазера, линзы и титана. Сначала добавьте недостающее выше: тест гравируется через линзу на заготовке.');
+      if (!test) return h('p', {}, 'Measurements are needed for this laser, lens, and titanium. Add the missing prerequisites above first; the test requires a lens and blank.');
       const made = S.starter;
       return h('div', {class: 'stack'},
-        h('p', {}, h('strong', {}, 'Нужны измерения. '), r.needs),
-        h('p', {}, h('strong', {}, 'Начальный тест: '), test.test_type ? (S.plateNames[test.test_type] || test.test_type) : 'следующий шаг уже готов',
+        h('p', {}, h('strong', {}, 'Measurements needed. '), r.needs),
+        h('p', {}, h('strong', {}, 'Starter test: '), test.test_type ? (S.plateNames[test.test_type] || test.test_type) : 'the next step is ready',
           test.guide && test.guide.message ? ` — ${test.guide.message}` : ''),
         test.guide && test.guide.next_step ? h('p', {class: 'small'}, test.guide.next_step) : null,
-        h('p', {class: 'small'}, h('strong', {}, 'Что станет доступно: '), BECOMES[test.becomes] || ''),
-        r.id === 'photo' || r.id === 'colour' ? h('p', {class: 'small muted'}, 'Если измерения есть в выпуске подключённой лаборатории, выберите его кнопкой «Изменить…» в контексте выше.') : null,
-        test.needs_rig ? h('p', {class: 'small'}, 'Чтобы добавить фотографию теста, нужна установка съёмки: ', link('/setup?tab=rigs', 'Добавить установку съёмки')) : null,
-        made ? h('p', {class: 'alert ok small', role: 'status'}, `Тест создан: ${made.name}. `, link('/experiment/plan-' + made.plan_id, 'Открыть тест')) : null,
-        h('div', {class: 'row'}, test.guide && test.guide.pending_plan_id ? link('/plans/' + test.guide.pending_plan_id, 'Открыть уже созданный тест')
-          : r.id === 'photo' ? btn('Создать тест «Шкалы серого»…', () => startTest(r, test), 'primary')
-          : btn('Создать начальный тест', (ev) => { const self = ev.currentTarget; return makeStarter(r, self); }, 'primary', !test.test_type)));
+        h('p', {class: 'small'}, h('strong', {}, 'What becomes available: '), BECOMES[test.becomes] || ''),
+        r.id === 'photo' || r.id === 'colour' ? h('p', {class: 'small muted'}, 'If measurements are available in a connected laboratory release, select it using Change… in the context above.') : null,
+        test.needs_rig ? h('p', {class: 'small'}, 'A capture setup is required to add a test photograph: ', link('/setup?tab=rigs', 'Add capture setup')) : null,
+        made ? h('p', {class: 'alert ok small', role: 'status'}, `Test created: ${made.name}. `, link('/experiment/plan-' + made.plan_id, 'Open test')) : null,
+        h('div', {class: 'row'}, test.guide && test.guide.pending_plan_id ? link('/plans/' + test.guide.pending_plan_id, 'Open existing test')
+          : r.id === 'photo' ? btn('Create grayscale scales test…', () => startTest(r, test), 'primary')
+          : btn('Create starter test', (ev) => { const self = ev.currentTarget; return makeStarter(r, self); }, 'primary', !test.test_type)));
     }
 
     async function startTest(r, test) {
@@ -397,44 +366,44 @@ const Creation = (() => {
         await flush();
         const made = await post('/creation/starter-plate', {result: r.id});
         S.starter = (made.parts && made.parts[0]) || made;
-        toast('Тест создан: выгравируйте его и добавьте фотографию', 'ok');
+        toast('Test created: engrave it and add a photograph', 'ok');
         await loadReadiness();
         drawStep();
       } catch (e) { fail(e); button.disabled = false; }
     }
 
     const kindLine = () => {
-      S.kindText = h('span', {}, PhotoPanels.kindName(S.kind || PhotoPanels.GRAYSCALE));          // follows the mark in the question, also after «← Назад»
-      return h('p', {class: 'small'}, h('strong', {}, 'Вид гравировки: '), S.kindText,
-        '. Следующее окно покажет вашу картинку в каждом виде: вид выбирается до того, как работа будет создана.');
+      S.kindText = h('span', {}, PhotoPanels.kindName(S.kind || PhotoPanels.GRAYSCALE));          // follows the mark in the question, also after “← Back”
+      return h('p', {class: 'small'}, h('strong', {}, 'Engraving mode: '), S.kindText,
+        '. The next window shows your image in each mode; choose a mode before the work is created.');
     };
 
     function methodFields(r) {
       if (r.id === 'photo') {
         return h('p', {class: 'small muted'}, S.context.source
-          ? 'Шкала — лучшая из измеренных в выпуске лаборатории; шкалу, Min, Max и ширину можно поменять в работе.'
-          : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.');
+          ? 'The scale is the best measured in the laboratory release; you can change the scale, Min, Max, and width in the work.'
+          : 'The scale is the best measured one, and Min and Max use its measured range. You can change the scale, Min, Max, width, and grayscale matching in the work.');
       }
       methodForm = Forms.create();
       // the tolerance is required only while the rules of the laser and lens hold none (conversion._threshold)
-      const thr = methodForm.add('threshold', 'Допуск ΔE', M.thr, {quantity: 'deltaE', help: toleranceHint(),
-        read: () => (M.thr.value === '' ? (S.rules === null ? {ok: false, message: 'Задайте допуск ΔE: для этого лазера с линзой он не сохранён'} : {ok: true, value: null})
+      const thr = methodForm.add('threshold', 'ΔE tolerance', M.thr, {quantity: 'deltaE', help: toleranceHint(),
+        read: () => (M.thr.value === '' ? (S.rules === null ? {ok: false, message: 'Enter a ΔE tolerance; none is saved for this laser and lens'} : {ok: true, value: null})
           : Forms.readNumber(M.thr, Q.deltaE, {}))});
-      const remember = h('label', {class: 'row small', hidden: S.rules !== null}, M.remember, h('span', {}, 'Запомнить для этого лазера с линзой'));
+      const remember = h('label', {class: 'row small', hidden: S.rules !== null}, M.remember, h('span', {}, 'Remember for this laser and lens'));
       const common = [h('div', {class: 'f'}, thr, remember),
-        methodForm.add('tolerance', r.id === 'colour' ? 'Сглаживание границ' : 'Точность контура', M.tolerance, {quantity: 'vectorTolerance', required: true}),
-        h('label', {class: 'row'}, M.markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))];
+        methodForm.add('tolerance', r.id === 'colour' ? 'Boundary smoothing' : 'Contour precision', M.tolerance, {quantity: 'vectorTolerance', required: true}),
+        h('label', {class: 'row'}, M.markers, h('span', {}, 'Registration markers and identifier outside the image'))];
       if (r.id === 'colour') {
-        return h('div', {class: 'grid g2'}, field('Алгоритм разбиения', M.algorithm.select),
-          methodForm.add('colours', 'Число цветов', M.colours, {quantity: 'photoColours', required: true, constraint: '', help: '2–29, с маркерами 2–28: чистка — первый слой',
+        return h('div', {class: 'grid g2'}, field('Splitting algorithm', M.algorithm.select),
+          methodForm.add('colours', 'Number of colors', M.colours, {quantity: 'photoColours', required: true, constraint: '', help: '2–29, or 2–28 with markers; cleaning is the first layer',
             read: () => Forms.readNumber(M.colours, {...Q.photoColours, max: M.markers.checked ? 28 : 29}, {required: true})}),
-          M.algorithm.hint, field('Детальность', M.detail, 'крупно — спокойные большие области, детально — мелкие'),
-          methodForm.add('max_time', 'Наибольшее время гравировки', M.maxTime, {quantity: 'maxTime', help: 'пусто — без предела; медленные цвета автоматика не берёт'}),
-          h('label', {class: 'row'}, M.faces, h('span', {}, 'Искать лица: глаза и губы делятся подробнее')),
-          h('label', {class: 'row'}, M.asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона и без чистого титана)')), ...common);
+          M.algorithm.hint, field('Detail', M.detail, 'coarse produces larger smooth regions; fine produces smaller regions'),
+          methodForm.add('max_time', 'Maximum engraving time', M.maxTime, {quantity: 'maxTime', help: 'leave empty for no limit; automatic selection excludes slower colors'}),
+          h('label', {class: 'row'}, M.faces, h('span', {}, 'Detect faces: split eyes and lips in more detail')),
+          h('label', {class: 'row'}, M.asShot, h('span', {}, 'Include uncalibrated colors (captured without a reference or clean titanium)')), ...common);
       }
-      return h('div', {class: 'grid g2'}, methodForm.add('grey', 'Порог серого', M.grey, {quantity: 'greyThreshold', help: 'пусто — автоматически'}),
-        h('label', {class: 'row'}, M.clean, h('span', {}, 'Чистка первым слоем (C00)')), ...common);
+      return h('div', {class: 'grid g2'}, methodForm.add('grey', 'Grayscale threshold', M.grey, {quantity: 'greyThreshold', help: 'leave empty for automatic'}),
+        h('label', {class: 'row'}, M.clean, h('span', {}, 'Cleaning as first layer (C00)')), ...common);
     }
 
     function methodStep() {
@@ -442,36 +411,36 @@ const Creation = (() => {
       const blocked = !ready || !ready.ready;
       const open = r.id !== 'photo' && S.rules === null;
       const details = r.id === 'photo' ? h('div', {class: 'stack'}, methodFields(r), kindLine()) : h('details', {class: 'creation-advanced', open: open ? '' : null},
-        h('summary', {}, 'Дополнительно: алгоритм, допуск ΔE, сглаживание, время'), methodFields(r));
+        h('summary', {}, 'Advanced: algorithm, ΔE tolerance, smoothing, time'), methodFields(r));
       return h('div', {class: 'stack'},
-        h('div', {class: 'card stack'}, h('div', {class: 'row'}, pictureSrc() ? h('img', {class: 'creation-thumb', src: pictureSrc(), alt: 'Картинка задачи'}) : null,
-          h('div', {}, h('strong', {}, nameIn.value.trim() || 'без названия'), h('p', {class: 'small muted'}, `${r.title} · ширина ${widthIn.value} мм`),
+        h('div', {class: 'card stack'}, h('div', {class: 'row'}, pictureSrc() ? h('img', {class: 'creation-thumb', src: pictureSrc(), alt: 'Task image'}) : null,
+          h('div', {}, h('strong', {}, nameIn.value.trim() || 'untitled'), h('p', {class: 'small muted'}, `${r.title} · width ${widthIn.value} mm`),
             h('p', {class: 'small'}, r.file))), details),
         strip.el,
-        S.returned && ready && ready.ready ? h('p', {class: 'alert ok', role: 'status'}, 'Недостающее добавлено: можно создавать работу. Картинка, название и настройки остались как были.') : null,
+        S.returned && ready && ready.ready ? h('p', {class: 'alert ok', role: 'status'}, 'The missing prerequisites are available. You can create the work; the image, name, and settings are unchanged.') : null,
         blocked && ready && !ready.error ? gate(r, ready) : null,
-        ready && ready.error ? h('p', {class: 'alert bad', role: 'alert'}, `Не удалось проверить, чего не хватает: ${ready.error}`) : null,
+        ready && ready.error ? h('p', {class: 'alert bad', role: 'alert'}, `Could not check missing prerequisites: ${ready.error}`) : null,
         methodForm.error, error,
-        h('div', {class: 'row'}, btn('← Назад', () => goTo('result')), btn(r.id === 'photo' ? 'Дальше: какая гравировка →' : 'Создать работу', create, 'primary', blocked)));
+        h('div', {class: 'row'}, btn('← Back', () => goTo('result')), btn(r.id === 'photo' ? 'Next: engraving mode →' : 'Create work', create, 'primary', blocked)));
     }
 
     function unfinished() {
       const others = drafts.filter((d) => !S.draft || d.id !== S.draft.id);
       if (!others.length || S.draft) return null;
-      return h('section', {class: 'card stack', 'aria-label': 'Незавершённые задачи'}, h('h3', {}, `Незавершённые задачи: ${others.length}`),
-        others.slice(0, 5).map((d) => h('div', {class: 'row'}, h('strong', {}, d.name || (d.image && baseName(d.image.name)) || 'без названия'),
-          h('span', {class: 'small muted'}, (d.state && d.state.result && RESULT[d.state.result] ? RESULT[d.state.result].title : 'результат не выбран')),
-          h('span', {class: 'spacer'}), btn('Продолжить', () => start({draft: d.id}), 'btn-small primary'), btn('Отменить задачу', () => discard(d, () => App.render()), 'btn-small'))),
-        others.length > 5 ? h('p', {class: 'small muted'}, `и ещё ${others.length - 5}`) : null);
+      return h('section', {class: 'card stack', 'aria-label': 'Unfinished tasks'}, h('h3', {}, `Unfinished tasks: ${others.length}`),
+        others.slice(0, 5).map((d) => h('div', {class: 'row'}, h('strong', {}, d.name || (d.image && baseName(d.image.name)) || 'untitled'),
+          h('span', {class: 'small muted'}, (d.state && d.state.result && RESULT[d.state.result] ? RESULT[d.state.result].title : 'result not selected')),
+          h('span', {class: 'spacer'}), btn('Continue', () => start({draft: d.id}), 'btn-small primary'), btn('Cancel task', () => discard(d, () => App.render()), 'btn-small'))),
+        others.length > 5 ? h('p', {class: 'small muted'}, `and ${others.length - 5} more`) : null);
     }
 
     function drawStep() {
       const body = S.step === 'picture' ? pictureStep() : S.step === 'result' ? resultStep() : methodStep();
-      fill(host, h('div', {class: 'row'}, h('div', {}, heading(`Новая работа · шаг ${stepNumber()} из ${STEPS.length}: ${STEPS[stepNumber() - 1][1]}`),
-        h('p', {class: 'sub'}, 'Картинка, размер и что из неё получится. Пока работа не создана, всё введённое хранится в задаче и переживает перезапуск.')),
-        h('span', {class: 'spacer'}), S.draft ? btn('Отменить задачу', () => discard(S.draft, async () => { S.draft = null; await refreshBar(); go('/vector'); }), 'btn-small') : null),
-        stepList(), S.missingDraft ? h('p', {class: 'alert warn', role: 'status'}, 'Эта задача уже закончена или отменена, поэтому её нет в списке незавершённых. Начните новую.') : null,
-        S.released ? h('p', {class: 'alert warn', role: 'status'}, 'Окно «Какая гравировка?» не было закончено: работа, сделанная только для него, удалена. Выберите вид ещё раз.') : null,
+      fill(host, h('div', {class: 'row'}, h('div', {}, heading(`New work · step ${stepNumber()} of ${STEPS.length}: ${STEPS[stepNumber() - 1][1]}`),
+        h('p', {class: 'sub'}, 'Choose an image, size, and result. Until the work is created, entries are saved in the task and persist across restarts.')),
+        h('span', {class: 'spacer'}), S.draft ? btn('Cancel task', () => discard(S.draft, async () => { S.draft = null; await refreshBar(); go('/vector'); }), 'btn-small') : null),
+        stepList(), S.missingDraft ? h('p', {class: 'alert warn', role: 'status'}, 'This task has already been completed or canceled and is no longer in the unfinished list. Start a new one.') : null,
+        S.released ? h('p', {class: 'alert warn', role: 'status'}, 'The engraving mode selection was not completed; the temporary work was deleted. Choose a mode again.') : null,
         note, unfinished(), body);
       if (focusNext) { focusNext = false; focusHeading(); }
     }
@@ -507,7 +476,7 @@ const Creation = (() => {
 
     async function pictureBlob() {
       const res = await fetch(`/api/creation/drafts/${S.draft.id}/picture`);
-      if (!res.ok) throw new Error('Картинка задачи не найдена: выберите её заново');
+      if (!res.ok) throw new Error('Task image not found; choose it again');
       return res.blob();
     }
 
@@ -515,7 +484,7 @@ const Creation = (() => {
       if (S.busy) return;
       show('');
       const r = RESULT[S.result], c = S.context, width = numberOf(widthIn.value);
-      if (!(width > 0)) { show('Ширина на титане должна быть положительным числом миллиметров: вернитесь на шаг картинки и исправьте её'); return; }
+      if (!(width > 0)) { show('Width on titanium must be a positive number of millimeters. Return to the image step and correct it.'); return; }
       if (r.work === 'vector') {
         toleranceHint();
         if (!methodForm.collect()) return;                                         // every wrong box says why beside itself; nothing typed is lost
@@ -525,20 +494,20 @@ const Creation = (() => {
       self.disabled = true;
       try {
         const blob = await pictureBlob();
-        const fileName = S.draft.image.name, name = nameIn.value.trim() || baseName(fileName) || 'Работа';
+        const fileName = S.draft.image.name, name = nameIn.value.trim() || baseName(fileName) || 'Work';
         const made = r.work === 'photo' ? await createPhoto(blob, fileName, name, width) : await createVector(r, blob, fileName, name, width);
-        // BUG-003: a photograph asks «Какая гравировка?» before it is kept; leaving the question deletes the work and the task stays as it was
+        // BUG-003: a photograph asks “Which engraving mode?” before it is kept; leaving the question deletes the work and the task stays as it was
         if (r.work === 'photo' && await askKind(made) === null) { self.disabled = false; self.focus(); return; }
         try { await post(`/creation/drafts/${S.draft.id}/complete`, {work_kind: r.work, work_id: made.id}); }
-        catch (e) { toast('Работа создана, но задача осталась в списке незавершённых: отмените её', 'warn'); }
+        catch (e) { toast('Work created, but the task remains unfinished; cancel it', 'warn'); }
         await refreshBar();
-        toast(r.work === 'photo' ? 'Работа фотогравировки создана' : 'Векторная работа создана', 'ok');
+        toast(r.work === 'photo' ? 'Photo engraving work created' : 'Vector work created', 'ok');
         go(r.work === 'photo' ? `/photo-engraving?work=${made.id}` : `/vector?plan=${made.id}`);
       } catch (e) { if (r.work === 'vector') methodForm.fail(e); else show(e.message); self.disabled = false; }
       finally { S.busy = false; }
     }
 
-    /** «Какая гравировка?» for the photo work just made (PhotoKindStep, the same dialog as in photo engraving). Resolves with the kind the person keeps
+    /** “Which engraving mode?” for the photo work just made (PhotoKindStep, the same dialog as in photo engraving). Resolves with the kind the person keeps
         the work in, or null when they left it: the work is deleted and the form is as it was. The task records the work while the question is open
         (``hold``), so a window closed in the middle does not leave it behind: it is deleted when the task is opened again (``releaseHold``). */
     function askKind(made) {
@@ -547,7 +516,7 @@ const Creation = (() => {
         S.hold = held;
         flush();
         PhotoKindStep.open(made.id, {
-          title: 'Новая работа · какая гравировка?', initial: S.kind || PhotoPanels.GRAYSCALE,
+          title: 'New work · engraving mode', initial: S.kind || PhotoPanels.GRAYSCALE,
           onChoose: (key) => { S.kind = key; if (S.kindText) fill(S.kindText, PhotoPanels.kindName(key)); autosave(); },
           before: async () => {                       // from here the work is the person's: the task must no longer point at it
             S.hold = null;
@@ -601,7 +570,7 @@ const Creation = (() => {
       else {
         // the work is made on the best scale of the context's own laser, lens and titanium, not on whichever scale the workshop measured best
         const mode = await App.contextScale(c, width);
-        if (!mode) throw new Error('Для выбранных лазера, линзы и титана нет измеренной шкалы серого. Откройте задачу заново: проверка недостающего покажет, что сделать');
+        if (!mode) throw new Error('No grayscale scale is measured for the selected laser, lens, and titanium. Reopen the task to see the missing prerequisites.');
         fd.append('scale', JSON.stringify(mode));
       }
       return form('/photo-works', fd);

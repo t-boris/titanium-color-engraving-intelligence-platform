@@ -128,7 +128,7 @@ const body = ctx.document.body;
 const button = (root, text) => root.querySelectorAll('button').find((b) => b.textContent === text);
 // a box is named by its aria-label or, in a field, by the label of the field (the unit and the permitted values are read after the name, not in it)
 const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label)
-  || (root.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === label.replace(/, мм$/, '')) || {firstControl: () => undefined}).firstControl();
+  || (root.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === label.replace(/, mm$/, '')) || {firstControl: () => undefined}).firstControl();
 const dialog = () => body.querySelector('.modal');
 const sent = (method, path) => ctx.requests.filter((r) => r.method === method && r.path === path);
 const alerts = (root) => root.querySelectorAll('[role]').filter((a) => a.getAttribute('role') === 'alert' && !a.hidden).map((a) => a.textContent);
@@ -147,13 +147,13 @@ async function fillPicture(tree, {name = 'Портрет', width = '80', file = 
   const input = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file');
   input.files = [{name: file, size: 2048}];
   await input.dispatch('change');
-  labelled(tree, 'Название работы').value = name;
-  labelled(tree, 'Ширина на титане, мм').value = width;
+  labelled(tree, 'Work name').value = name;
+  labelled(tree, 'Width on titanium, mm').value = width;
   return input;
 }
 const tiles = (tree) => tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'radio');
 /** A photograph asks «Какая гравировка?» before it is kept (BUG-003): the button of step 3 opens the question, its last button keeps the work. */
-const FORWARD = 'Дальше: какая гравировка →';
+const FORWARD = 'Next: engraving mode →';
 let pending = null;                                                          // the click that opened the question stays unanswered until the person answers it
 const ask = async (tree) => { pending = button(tree, FORWARD).dispatch('click'); await settle(); };
 const kinds = () => dialog().querySelectorAll('.ge-kind');
@@ -193,19 +193,19 @@ def test_the_first_step_asks_for_picture_name_and_size_and_a_missing_picture_or_
   out.head = heading(tree);
   out.steps = tree.querySelector('ol').querySelectorAll('li').map((li) => [li.textContent, li.getAttribute('aria-current')]);
   out.context = tree.querySelector('.work-context').textContent;
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.noPicture = fieldError(tree, 'Картинка');
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  out.noPicture = fieldError(tree, 'Image');
   await fillPicture(tree, {width: '0'});
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.noSize = [fieldError(tree, 'Ширина на титане'), labelled(tree, 'Ширина на титане, мм').value, labelled(tree, 'Ширина на титане, мм').getAttribute('aria-invalid')];
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  out.noSize = [fieldError(tree, 'Width on titanium'), labelled(tree, 'Width on titanium, mm').value, labelled(tree, 'Width on titanium, mm').getAttribute('aria-invalid')];
   out.posts = sent('POST', '/api/creation/drafts').length;
   out.classic = tree.querySelectorAll('a').map((a) => a.getAttribute('href')).filter((h) => h.includes('classic'));
 """)
-    assert out["head"] == "Новая работа · шаг 1 из 3: Картинка и размер"
-    assert out["steps"] == [["1. Картинка и размер", "step"], ["2. Что получится", None], ["3. Настройки и создание", None]]
+    assert out["head"] == "New work · step 1 of 3: Image and size"
+    assert out["steps"] == [["1. Image and size", "step"], ["2. Choose a result", None], ["3. Settings and creation", None]]
     for word in ("Laser", "JPT 60", "F-Theta", "Plate", "Grade 5", "This workshop’s measurements"):
         assert word in out["context"]
-    assert out["noPicture"] == "Выберите картинку (PNG, JPEG, TIFF)"                          # each wrong box says why beside itself and keeps what was typed
+    assert out["noPicture"] == "Choose an image (PNG, JPEG, TIFF)"                          # each wrong box says why beside itself and keeps what was typed
     assert out["noSize"] == ["Allowed: greater than 0 mm. Entered: 0", "0", "true"]
     assert out["posts"] == 0                                                    # a task is made only when the picture and the size are there
     assert out["classic"] == ["#/vector?new=1&classic=1"]                       # text and a layer task of its own stay in the one-page form
@@ -218,20 +218,20 @@ def test_the_second_step_shows_the_persons_own_picture_as_four_comparable_tiles_
   S.readiness.lines = {result: 'lines', ready: false, missing: ['laser'], context: S.context, measured: null, starter_test: null};
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.head = heading(tree);
   out.tiles = tiles(tree).map((t) => [t.querySelector('strong').textContent, t.getAttribute('aria-checked'), t.querySelector('img').getAttribute('alt'), t.textContent]);
   out.previews = ctx.requests.filter((r) => r.path.includes('/preview/')).map((r) => r.url);
   out.fileSent = sent('POST', '/api/creation/drafts')[0].form;
-  out.next = button(tree, 'Дальше →').disabled;
+  out.next = button(tree, 'Next →').disabled;
 """)
-    assert out["head"] == "Новая работа · шаг 2 из 3: Что получится"
-    assert [t[0] for t in out["tiles"]] == ["Цветные области", "Фотогравировка", "Силуэт", "Линии"]
+    assert out["head"] == "New work · step 2 of 3: Choose a result"
+    assert [t[0] for t in out["tiles"]] == ["Color regions", "Photo engraving", "Silhouette", "Lines"]
     assert all(t[1] == "false" for t in out["tiles"]) and out["next"] is True            # nothing is chosen for the person
-    assert "областей: 12" in out["tiles"][0][2] and "цветов: 7" in out["tiles"][0][2]       # the picture's own look, with what was found in it
-    assert "градаций серого в картинке: 180" in out["tiles"][1][2] and "линий: 31" in out["tiles"][3][2]
-    assert "Файл LightBurn: слой на каждый использованный цвет заливки" in out["tiles"][0][3]         # export suitability stays visible
-    assert "нужны измерения" in out["tiles"][1][3] and "не хватает: лазер" in out["tiles"][3][3] and "можно создать" in out["tiles"][0][3]
+    assert "regions: 12" in out["tiles"][0][2] and "colors: 7" in out["tiles"][0][2]       # the picture's own look, with what was found in it
+    assert "grayscale levels in image: 180" in out["tiles"][1][2] and "lines: 31" in out["tiles"][3][2]
+    assert "LightBurn file: one layer for each fill color used" in out["tiles"][0][3]         # export suitability stays visible
+    assert "measurements needed" in out["tiles"][1][3] and "missing: laser" in out["tiles"][3][3] and "ready to create" in out["tiles"][0][3]
     assert sorted(out["previews"]) == sorted(f"/api/creation/drafts/1/preview/{r}.png?width_mm=80" for r in ("colour", "photo", "silhouette", "lines"))
     assert out["fileSent"]["flow"] == "new" and out["fileSent"]["picture"] == {"file": "portrait.png", "size": 2048} and out["fileSent"]["name"] == "Портрет"
     assert json.loads(out["fileSent"]["state"])["width_mm"] == "80"
@@ -243,7 +243,7 @@ def test_a_tile_that_cannot_be_drawn_says_so_and_the_others_still_work_and_choos
   S.previewFails = ['lines'];
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   const all = tiles(tree);
   out.failed = all[3].textContent;
   out.drawn = all.slice(0, 3).map((t) => t.querySelector('img') !== null);
@@ -252,9 +252,9 @@ def test_a_tile_that_cannot_be_drawn_says_so_and_the_others_still_work_and_choos
   out.focusStays = ctx.document.activeElement === all[2];
   out.same = tiles(tree)[2] === all[2];
   out.checked = tiles(tree).map((t) => t.getAttribute('aria-checked'));
-  out.next = button(tree, 'Дальше →').disabled;
+  out.next = button(tree, 'Next →').disabled;
 """)
-    assert "Не удалось нарисовать: the picture could not be drawn as lines" in out["failed"] and "можно создать" in out["failed"]
+    assert "Could not render: the picture could not be drawn as lines" in out["failed"] and "ready to create" in out["failed"]
     assert out["drawn"] == [True, True, True]
     assert out["focusStays"] is True and out["same"] is True                       # the tile is updated in place, never replaced under the keyboard
     assert out["checked"] == ["false", "false", "true", "false"] and out["next"] is False
@@ -265,28 +265,28 @@ def test_going_back_keeps_the_picture_the_name_the_size_the_result_and_every_set
     out = run(tmp_path, """
   const tree = await screen();
   const file = await fillPicture(tree, {name: 'Портрет Инны', width: '72'});
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[0].dispatch('click'); await settle();
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.third = heading(tree);
   const colours = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number' && i.getAttribute('max') === '29');
   colours.value = '7'; await colours.dispatch('input');
-  const detail = labelled(tree, 'Детальность'); detail.value = 'fine'; await detail.dispatch('change');
-  await button(tree, '← Назад').dispatch('click'); await settle();
+  const detail = labelled(tree, 'Detail'); detail.value = 'fine'; await detail.dispatch('change');
+  await button(tree, '← Back').dispatch('click'); await settle();
   out.second = [heading(tree), tiles(tree).map((t) => t.getAttribute('aria-checked'))];
-  await button(tree, '← Назад').dispatch('click'); await settle();
-  out.first = [heading(tree), labelled(tree, 'Название работы').value, labelled(tree, 'Ширина на титане, мм').value,
+  await button(tree, '← Back').dispatch('click'); await settle();
+  out.first = [heading(tree), labelled(tree, 'Work name').value, labelled(tree, 'Width on titanium, mm').value,
     tree.querySelector('.file-name').textContent, file.files[0].name];
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.again = [tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number' && i.getAttribute('max') === '29').value, labelled(tree, 'Детальность').value];
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  out.again = [tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number' && i.getAttribute('max') === '29').value, labelled(tree, 'Detail').value];
   await wait(700); await settle();
   out.saved = JSON.parse(sent('PUT', '/api/creation/drafts/1').pop().form.state);
   out.pictures = ctx.requests.filter((r) => r.form && r.form.picture).length;
 """)
-    assert out["third"] == "Новая работа · шаг 3 из 3: Настройки и создание"
-    assert out["second"] == ["Новая работа · шаг 2 из 3: Что получится", ["true", "false", "false", "false"]]
-    assert out["first"][:3] == ["Новая работа · шаг 1 из 3: Картинка и размер", "Портрет Инны", "72"] and out["first"][4] == "portrait.png"
+    assert out["third"] == "New work · step 3 of 3: Settings and creation"
+    assert out["second"] == ["New work · step 2 of 3: Choose a result", ["true", "false", "false", "false"]]
+    assert out["first"][:3] == ["New work · step 1 of 3: Image and size", "Портрет Инны", "72"] and out["first"][4] == "portrait.png"
     assert "portrait.png" in out["first"][3]
     assert out["again"] == ["7", "fine"]
     assert out["saved"]["result"] == "colour" and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Портрет Инны"
@@ -299,23 +299,23 @@ def test_the_algorithm_delta_e_smoothing_and_time_are_in_the_advanced_settings_o
     out = run(tmp_path, """
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  const pick = async (i) => { await tiles(tree)[i].dispatch('click'); await button(tree, 'Дальше →').dispatch('click'); await settle(); };
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  const pick = async (i) => { await tiles(tree)[i].dispatch('click'); await button(tree, 'Next →').dispatch('click'); await settle(); };
   await pick(0);
   const adv = tree.querySelector('details');
-  out.colour = [adv.querySelector('summary').textContent, adv.getAttribute('open'), adv.textContent.includes('Допуск ΔE'), adv.textContent.includes('Сглаживание границ'),
-    adv.textContent.includes('Алгоритм разбиения'), adv.textContent.includes('Наибольшее время гравировки')];
-  out.outside = tree.querySelector('.card').textContent.replace(adv.textContent, '').includes('Допуск ΔE');
-  await button(tree, '← Назад').dispatch('click'); await settle();
+  out.colour = [adv.querySelector('summary').textContent, adv.getAttribute('open'), adv.textContent.includes('ΔE tolerance'), adv.textContent.includes('Boundary smoothing'),
+    adv.textContent.includes('Splitting algorithm'), adv.textContent.includes('Maximum engraving time')];
+  out.outside = tree.querySelector('.card').textContent.replace(adv.textContent, '').includes('ΔE tolerance');
+  await button(tree, '← Back').dispatch('click'); await settle();
   await pick(2);
-  out.silhouette = [tree.querySelector('details').textContent.includes('Порог серого'), tree.querySelector('details').textContent.includes('Точность контура'),
-    tree.querySelector('details').textContent.includes('Алгоритм разбиения')];
-  await button(tree, '← Назад').dispatch('click'); await settle();
+  out.silhouette = [tree.querySelector('details').textContent.includes('Grayscale threshold'), tree.querySelector('details').textContent.includes('Contour precision'),
+    tree.querySelector('details').textContent.includes('Splitting algorithm')];
+  await button(tree, '← Back').dispatch('click'); await settle();
   await pick(1);
-  out.photo = [tree.querySelector('details'), tree.textContent.includes('Шкала — лучшая из измеренных')];
+  out.photo = [tree.querySelector('details'), tree.textContent.includes('The scale is the best measured')];
   S.tolerance = null;
 """)
-    assert out["colour"][0] == "Дополнительно: алгоритм, допуск ΔE, сглаживание, время" and out["colour"][1] is None
+    assert out["colour"][0] == "Advanced: algorithm, ΔE tolerance, smoothing, time" and out["colour"][1] is None
     assert out["colour"][2:] == [True, True, True, True] and out["outside"] is False
     assert out["silhouette"] == [True, True, False]
     assert out["photo"] == [None, True]
@@ -326,13 +326,13 @@ def test_the_result_tiles_are_one_tab_stop_and_answer_the_arrow_keys_like_radio_
     out = run(tmp_path, """
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   const stops = () => tiles(tree).map((t) => t.getAttribute('tabindex'));
   const checked = () => tiles(tree).map((t) => t.getAttribute('aria-checked'));
   out.start = [stops(), checked()];
   tiles(tree)[0].focus();
   await tiles(tree)[0].dispatch('keydown', {key: 'ArrowRight'});
-  out.right = [stops(), checked(), ctx.document.activeElement === tiles(tree)[1], button(tree, 'Дальше →').disabled];
+  out.right = [stops(), checked(), ctx.document.activeElement === tiles(tree)[1], button(tree, 'Next →').disabled];
   await tiles(tree)[1].dispatch('keydown', {key: 'End'});
   out.end = [checked(), ctx.document.activeElement === tiles(tree)[3]];
   await tiles(tree)[3].dispatch('keydown', {key: 'ArrowDown'});
@@ -359,21 +359,21 @@ def test_every_step_puts_the_keyboard_on_its_heading_going_forward_and_back_and_
     out = run(tmp_path, """
   const tree = await screen();
   out.first = ctx.document.activeElement && ctx.document.activeElement.textContent;
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.refused = [ctx.document.activeElement === button(tree, 'Дальше →') || ctx.document.activeElement === null, heading(tree)];
+  await button(tree, 'Next →').dispatch('click'); await settle();
+  out.refused = [ctx.document.activeElement === button(tree, 'Next →') || ctx.document.activeElement === null, heading(tree)];
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.second = [ctx.document.activeElement && ctx.document.activeElement.textContent, heading(tree)];
   await tiles(tree)[3].dispatch('click');
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.third = [ctx.document.activeElement && ctx.document.activeElement.textContent, heading(tree)];
-  await button(tree, '← Назад').dispatch('click'); await settle();
+  await button(tree, '← Back').dispatch('click'); await settle();
   out.back = [ctx.document.activeElement && ctx.document.activeElement.textContent, heading(tree)];
 """)
-    assert out["first"] == "Новая работа · шаг 1 из 3: Картинка и размер"
-    assert out["refused"][1].startswith("Новая работа · шаг 1 из 3")
+    assert out["first"] == "New work · step 1 of 3: Image and size"
+    assert out["refused"][1].startswith("New work · step 1 of 3")
     assert out["second"][0] == out["second"][1] and out["third"][0] == out["third"][1] and out["back"][0] == out["back"][1]
-    assert out["third"][1].endswith("Настройки и создание") and out["back"][1].endswith("Что получится")
+    assert out["third"][1].endswith("Settings and creation") and out["back"][1].endswith("Choose a result")
 
 
 # -- REQ-001: the shared context -----------------------------------------------------------------------------------------------------------
@@ -462,7 +462,7 @@ def test_a_context_that_lost_a_record_says_which_one_and_a_change_in_the_screen_
   const tree = await screen();
   out.note = tree.querySelector('.work-context').textContent;
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   const before = sent('GET', '/api/creation/readiness').length;
   await button(tree, 'Change…').dispatch('click'); await settle();
   await button(dialog(), 'Apply').dispatch('click'); await settle();
@@ -498,9 +498,9 @@ def test_an_opened_works_own_context_is_read_only_and_names_its_release_and_the_
 async_gate = """
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[__TILE__].dispatch('click');
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
 """
 
 
@@ -510,22 +510,22 @@ def test_without_measurements_the_screen_names_a_concrete_starter_test_and_the_r
   S.readiness.photo = {result: 'photo', ready: false, missing: ['measurements'], context: S.context, measured: 0,
     starter_test: {result: 'photo', needs_rig: true, becomes: 'measured_scale', device_id: 1, material_id: 3, test_type: 'grey_scales', guide: null}};
 """ + async_gate.replace("__TILE__", "1") + """
-  const gate = labelled(tree, 'Чего не хватает');
+  const gate = labelled(tree, 'Missing prerequisites');
   out.gate = gate.textContent;
   out.links = gate.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   out.create = button(tree, FORWARD).disabled;
   await button(tree, FORWARD).dispatch('click'); await settle();
   out.works = [sent('POST', '/api/photo-works').length, sent('POST', '/api/vector').length, sent('POST', '/api/creation/drafts/1/complete').length];
-  await button(tree, 'Создать тест «Шкалы серого»…').dispatch('click'); await settle();
+  await button(tree, 'Create grayscale scales test…').dispatch('click'); await settle();
   out.dialog = dialog() && dialog().querySelector('h3').textContent;
   await wait(700); await settle();
   out.waiting = JSON.parse(sent('PUT', '/api/creation/drafts/1').pop().form.state).waiting;
 """)
-    assert "пока не хватает" in out["gate"] and "Нужны измерения" in out["gate"] and "Нужна измеренная шкала серого этого лазера, линзы и титана." in out["gate"]
-    assert "Начальный тест: Шкалы серого" in out["gate"]
-    assert "Когда измерения теста будут приняты, появится измеренная шкала серого, и фотогравировка станет доступна." in out["gate"]
-    assert ["Добавить установку съёмки", "#/setup?tab=rigs"] in out["links"]                  # a photography setup is missing: the way to add it
-    assert "Введённое сохранено в задаче" in out["gate"]
+    assert "the following is still missing" in out["gate"] and "Measurements needed" in out["gate"] and "Requires a measured grayscale scale for this laser, lens, and titanium." in out["gate"]
+    assert "Starter test: Шкалы серого" in out["gate"]
+    assert "Once the test measurements are accepted, a measured grayscale scale will become available for photo engraving." in out["gate"]
+    assert ["Add capture setup", "#/setup?tab=rigs"] in out["links"]                  # a photography setup is missing: the way to add it
+    assert "Your entries are saved in the task" in out["gate"]
     assert out["create"] is True and out["works"] == [0, 0, 0]                              # nothing is created while the gate is closed
     assert out["dialog"] == "Create experiment plate"
     assert out["waiting"] == {"for": "starter_test", "result": "photo"}                     # the task remembers what the person went to do
@@ -538,22 +538,22 @@ def test_a_vector_starter_test_is_made_by_the_experiment_guide_and_a_refusal_lea
     starter_test: {result: 'silhouette', needs_rig: false, becomes: 'validated_recipes', device_id: 1, material_id: 3, test_type: 'calibration', task: 'fill',
       guide: {status: 'needs_test', message: 'Нет рецептов заливки', next_step: 'Создайте калибровочную плату', pending_plan_id: null}}};
 """ + async_gate.replace("__TILE__", "2") + """
-  out.card = labelled(tree, 'Чего не хватает').textContent;
+  out.card = labelled(tree, 'Missing prerequisites').textContent;
   on('POST /api/creation/starter-plate', () => refuse('no plate is proposed for this task yet'));
-  await button(tree, 'Создать начальный тест').dispatch('click'); await settle();
-  out.refused = [body.querySelector('.toasts').textContent.includes('no plate is proposed') || body.querySelector('.toasts').textContent.length > 0, button(tree, 'Создать начальный тест').disabled];
+  await button(tree, 'Create starter test').dispatch('click'); await settle();
+  out.refused = [body.querySelector('.toasts').textContent.includes('no plate is proposed') || body.querySelector('.toasts').textContent.length > 0, button(tree, 'Create starter test').disabled];
   on('POST /api/creation/starter-plate', (req) => reply(201, {plan_id: 31, name: 'Плата заливки'}));
-  await button(tree, 'Создать начальный тест').dispatch('click'); await settle();
-  out.made = labelled(tree, 'Чего не хватает').textContent;
-  out.link = tree.querySelectorAll('a').filter((a) => a.textContent === 'Открыть тест').map((a) => a.getAttribute('href'));
+  await button(tree, 'Create starter test').dispatch('click'); await settle();
+  out.made = labelled(tree, 'Missing prerequisites').textContent;
+  out.link = tree.querySelectorAll('a').filter((a) => a.textContent === 'Open test').map((a) => a.getAttribute('href'));
   out.posts = sent('POST', '/api/creation/starter-plate').map((r) => r.json);
   out.works = sent('POST', '/api/vector').length;
 """)
-    assert "Начальный тест: Калибровка — Нет рецептов заливки" in out["card"] and "Создайте калибровочную плату" in out["card"]
-    assert "Когда измерения теста будут приняты, они попадут в измеренные цвета этого лазера, линзы и титана." in out["card"]
-    assert "может понадобиться повторить тест" in out["card"]                              # honest: a recipe enters a work when it is validated
+    assert "Starter test: Калибровка — Нет рецептов заливки" in out["card"] and "Создайте калибровочную плату" in out["card"]
+    assert "Accepted test measurements are added to the measured colors for this laser, lens, and titanium." in out["card"]
+    assert "the test may need repeating" in out["card"]                              # honest: a recipe enters a work when it is validated
     assert out["refused"][1] is False                                                       # the button is usable again after a refusal
-    assert "Тест создан: Плата заливки." in out["made"] and out["link"] == ["#/experiment/plan-31"]
+    assert "Test created: Плата заливки." in out["made"] and out["link"] == ["#/experiment/plan-31"]
     assert out["posts"] == [{"result": "silhouette"}, {"result": "silhouette"}] and out["works"] == 0
 
 
@@ -562,15 +562,15 @@ def test_a_missing_laser_titanium_or_lens_is_a_gate_with_a_way_to_add_it_and_the
     out = run(tmp_path, """
   S.readiness.lines = {result: 'lines', ready: false, missing: ['titanium', 'lens'], context: S.context, measured: null, starter_test: null};
 """ + async_gate.replace("__TILE__", "3") + """
-  const gate = labelled(tree, 'Чего не хватает');
+  const gate = labelled(tree, 'Missing prerequisites');
   out.items = gate.querySelectorAll('li').map((li) => [li.textContent, li.querySelector('a').getAttribute('href')]);
-  out.create = button(tree, 'Создать работу').disabled;
+  out.create = button(tree, 'Create work').disabled;
   await wait(700); await settle();
   out.waiting = JSON.parse(sent('PUT', '/api/creation/drafts/1').pop().form.state).waiting;
-  out.kept = [labelled(tree, 'Название работы') === undefined, tree.querySelector('img') !== null];
+  out.kept = [labelled(tree, 'Work name') === undefined, tree.querySelector('img') !== null];
 """)
-    assert out["items"] == [["Не добавлена заготовка титана. Добавить заготовку", "#/setup"],
-                            ["На выбранном лазере нет линзы: тест гравируется через неё. Установить линзу", "#/devices"]]
+    assert out["items"] == [["No titanium blank has been added. Add blank", "#/setup"],
+                            ["The selected laser has no lens; the test requires one. Install lens", "#/devices"]]
     assert out["create"] is True
     assert out["waiting"] == {"for": "equipment", "result": "lines"}
 
@@ -580,14 +580,14 @@ def test_a_readiness_check_that_fails_is_told_and_does_not_open_the_gate(tmp_pat
     out = run(tmp_path, """
   const tree = await screen();
   await fillPicture(tree);
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[0].dispatch('click');
   on('GET /api/creation/readiness', () => refuse('workshop is busy', 500));
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.alerts = alerts(tree);
-  out.create = button(tree, 'Создать работу').disabled;
+  out.create = button(tree, 'Create work').disabled;
 """)
-    assert len(out["alerts"]) == 1 and out["alerts"][0].startswith("Не удалось проверить, чего не хватает: workshop is busy") and out["create"] is True
+    assert len(out["alerts"]) == 1 and out["alerts"][0].startswith("Could not check missing prerequisites: workshop is busy") and out["create"] is True
 
 
 # -- REQ-002 + DEC-001: the unfinished task survives a restart ------------------------------------------------------------------------------
@@ -606,20 +606,20 @@ def test_a_restart_finds_the_task_where_it_was_left_with_picture_name_size_resul
   out.focus = ctx.document.activeElement && ctx.document.activeElement.textContent;
   out.method = tree.querySelector('details').querySelectorAll('input').map((i) => [i.getAttribute('type'), i.value, i.checked]);
   out.picturesSent = ctx.requests.filter((r) => r.form && r.form.picture).length;
-  out.create = button(tree, 'Создать работу').disabled;
-  await button(tree, '← Назад').dispatch('click'); await settle();
-  await button(tree, '← Назад').dispatch('click'); await settle();
-  out.back = [labelled(tree, 'Название работы').value, labelled(tree, 'Ширина на титане, мм').value, tree.querySelector('.file-name').textContent,
+  out.create = button(tree, 'Create work').disabled;
+  await button(tree, '← Back').dispatch('click'); await settle();
+  await button(tree, '← Back').dispatch('click'); await settle();
+  out.back = [labelled(tree, 'Work name').value, labelled(tree, 'Width on titanium, mm').value, tree.querySelector('.file-name').textContent,
     tree.querySelectorAll('img').filter((i) => i.parentNode.localName === 'figure').map((i) => i.getAttribute('alt'))];
 """)
-    assert out["head"] == "Новая работа · шаг 3 из 3: Настройки и создание"
+    assert out["head"] == "New work · step 3 of 3: Settings and creation"
     assert out["thumb"][0] == "/api/creation/drafts/5/picture?v=0"                        # the picture comes from the workshop, not from the person again
-    assert "Портрет Инны" in out["summary"] and "Силуэт · ширина 72 мм" in out["summary"]
-    assert "Недостающее добавлено: можно создавать работу. Картинка, название и настройки остались как были." in out["note"]
+    assert "Портрет Инны" in out["summary"] and "Silhouette · width 72 mm" in out["summary"]
+    assert "The missing prerequisites are available. You can create the work; the image, name, and settings are unchanged." in out["note"]
     assert out["focus"] == out["head"]                                                    # the keyboard returns to the heading of the step
     assert ["number", "0.2", False] in out["method"] and ["number", "120", False] in out["method"]
     assert out["picturesSent"] == 0 and out["create"] is False
-    assert out["back"][:2] == ["Портрет Инны", "72"] and "portrait.png" in out["back"][2] and out["back"][3] == ["Картинка задачи: portrait.png"]
+    assert out["back"][:2] == ["Портрет Инны", "72"] and "portrait.png" in out["back"][2] and out["back"][3] == ["Task image: portrait.png"]
 
 
 @node
@@ -629,16 +629,16 @@ def test_a_task_without_its_picture_starts_at_the_first_step_and_a_finished_or_u
   S.drafts.push({id: 2, status: 'completed', flow: 'new', name: 'Готовая', image: null, state: {}});
   S.seq = 3;
   const first = await screen({draft: '1'});
-  out.noPicture = [heading(first), labelled(first, 'Название работы').value, labelled(first, 'Ширина на титане, мм').value];
+  out.noPicture = [heading(first), labelled(first, 'Work name').value, labelled(first, 'Width on titanium, mm').value];
   first.remove();
   const done = await screen({draft: '2'});
-  out.done = [heading(done), done.textContent.includes('Эта задача уже закончена или отменена')];
+  out.done = [heading(done), done.textContent.includes('This task has already been completed or canceled')];
   done.remove();
   const unknown = await screen({draft: '44'});
-  out.unknown = unknown.textContent.includes('Эта задача уже закончена или отменена');
+  out.unknown = unknown.textContent.includes('This task has already been completed or canceled');
 """)
-    assert out["noPicture"] == ["Новая работа · шаг 1 из 3: Картинка и размер", "Без картинки", "50"]
-    assert out["done"] == ["Новая работа · шаг 1 из 3: Картинка и размер", True] and out["unknown"] is True
+    assert out["noPicture"] == ["New work · step 1 of 3: Image and size", "Без картинки", "50"]
+    assert out["done"] == ["New work · step 1 of 3: Image and size", True] and out["unknown"] is True
 
 
 @node
@@ -648,23 +648,23 @@ def test_other_open_tasks_are_offered_on_a_new_creation_and_each_can_be_resumed_
   S.drafts.push({id: 2, status: 'open', flow: 'new', name: 'Вторая', image: {name: 'b.png'}, state: {}});
   S.seq = 3;
   const tree = await screen();
-  const list = labelled(tree, 'Незавершённые задачи');
+  const list = labelled(tree, 'Unfinished tasks');
   out.list = list.textContent;
-  await list.querySelectorAll('button').filter((b) => b.textContent === 'Продолжить')[0].dispatch('click');
+  await list.querySelectorAll('button').filter((b) => b.textContent === 'Continue')[0].dispatch('click');
   out.went = [...ctx.__went];
-  await list.querySelectorAll('button').filter((b) => b.textContent === 'Отменить задачу')[0].dispatch('click'); await settle();
+  await list.querySelectorAll('button').filter((b) => b.textContent === 'Cancel task')[0].dispatch('click'); await settle();
   out.confirm = dialog().querySelector('h3').textContent;
   out.discardedBefore = sent('POST', '/api/creation/drafts/2/discard').length;
   await button(dialog(), 'Cancel').dispatch('click'); await settle();
   out.discardedAfterCancel = ctx.requests.filter((r) => r.path.endsWith('/discard')).length;
-  await list.querySelectorAll('button').filter((b) => b.textContent === 'Отменить задачу')[0].dispatch('click'); await settle();
-  await button(dialog(), 'Отменить задачу').dispatch('click'); await settle();
+  await list.querySelectorAll('button').filter((b) => b.textContent === 'Cancel task')[0].dispatch('click'); await settle();
+  await button(dialog(), 'Cancel task').dispatch('click'); await settle();
   out.discarded = ctx.requests.filter((r) => r.path.endsWith('/discard')).map((r) => r.path);
   out.open = open().map((d) => d.id);
 """)
-    assert "Незавершённые задачи: 2" in out["list"] and "Вторая" in out["list"] and "Первая" in out["list"]
+    assert "Unfinished tasks: 2" in out["list"] and "Вторая" in out["list"] and "Первая" in out["list"]
     assert out["went"] == ["/new?draft=2"]                                                  # the newest first
-    assert out["confirm"] == "Отменить задачу «Вторая»?" and out["discardedAfterCancel"] == 0
+    assert out["confirm"] == "Cancel task “Вторая”?" and out["discardedAfterCancel"] == 0
     assert out["discarded"] == ["/api/creation/drafts/2/discard"] and out["open"] == [1]
 
 
@@ -674,32 +674,32 @@ def test_a_task_that_cannot_be_saved_is_told_beside_the_form_and_the_form_keeps_
   S.refuseDraft = 'the picture is empty';
   const tree = await screen();
   await fillPicture(tree, {name: 'Портрет'});
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.alerts = alerts(tree);
   out.step = heading(tree);
-  out.kept = [labelled(tree, 'Название работы').value, labelled(tree, 'Ширина на титане, мм').value];
+  out.kept = [labelled(tree, 'Work name').value, labelled(tree, 'Width on titanium, mm').value];
   S.refuseDraft = null;
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   out.later = heading(tree);
   S.refuseUpdate = 'the picture of this unfinished task is not kept';
-  const name = labelled(tree, 'Название работы');
-  await button(tree, '← Назад').dispatch('click'); await settle();
-  labelled(tree, 'Название работы').value = 'Другое'; await labelled(tree, 'Название работы').dispatch('input');
+  const name = labelled(tree, 'Work name');
+  await button(tree, '← Back').dispatch('click'); await settle();
+  labelled(tree, 'Work name').value = 'Другое'; await labelled(tree, 'Work name').dispatch('input');
   await wait(700); await settle();
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
 """)
-    assert out["alerts"] == ["Could not submit: the picture is empty. Your entries remain in the form; correct them and submit again."] and out["step"].startswith("Новая работа · шаг 1 из 3")
-    assert out["kept"] == ["Портрет", "80"] and out["later"].startswith("Новая работа · шаг 2 из 3")
-    assert any(n.startswith("Задача не сохранена: the picture of this unfinished task is not kept") for n in out["note"])
+    assert out["alerts"] == ["Could not submit: the picture is empty. Your entries remain in the form; correct them and submit again."] and out["step"].startswith("New work · step 1 of 3")
+    assert out["kept"] == ["Портрет", "80"] and out["later"].startswith("New work · step 2 of 3")
+    assert any(n.startswith("Task not saved: the picture of this unfinished task is not kept") for n in out["note"])
 
 
 # -- creating the work, completing the task ---------------------------------------------------------------------------------------------------
 create_path = """
   const tree = await screen();
   await fillPicture(tree, {name: 'Портрет Инны', width: '72'});
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[__TILE__].dispatch('click');
-  await button(tree, 'Дальше →').dispatch('click'); await settle();
+  await button(tree, 'Next →').dispatch('click'); await settle();
 """
 
 
@@ -708,7 +708,7 @@ def test_creating_a_vector_work_sends_the_context_and_the_settings_then_closes_t
     out = run(tmp_path, create_path.replace("__TILE__", "0") + """
   const colours = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number' && i.getAttribute('max') === '29');
   colours.value = '9';
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   const order = ctx.requests.filter((r) => ['POST', 'GET'].includes(r.method) && /vector$|complete$|picture$/.test(r.path)).map((r) => r.method + ' ' + r.path);
   out.order = order;
   out.fields = Object.fromEntries(sent('POST', '/api/vector')[0].body.items);
@@ -728,15 +728,15 @@ def test_creating_a_vector_work_sends_the_context_and_the_settings_then_closes_t
 @node
 def test_silhouette_and_lines_use_the_trace_settings_and_a_photo_work_is_made_on_the_scale_of_the_shared_laser_lens_and_titanium(tmp_path):
     out = run(tmp_path, create_path.replace("__TILE__", "2") + """
-  const grey = tree.querySelectorAll('input').find((i) => i.getAttribute('placeholder') === 'авто (Оцу)');
+  const grey = tree.querySelectorAll('input').find((i) => i.getAttribute('placeholder') === 'auto (Otsu)');
   grey.value = '110';
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.silhouette = Object.fromEntries(sent('POST', '/api/vector')[0].body.items);
 """)
     s = out["silhouette"]
     assert s["strategy"] == "fill" and s["grey_threshold"] == "110" and s["clean"] == "true" and "n_colors" not in s
     out = run(tmp_path, create_path.replace("__TILE__", "3") + """
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.lines = Object.fromEntries(sent('POST', '/api/vector')[0].body.items);
 """)
     assert out["lines"]["strategy"] == "line"
@@ -766,7 +766,7 @@ def test_a_photo_work_without_a_scale_of_the_context_is_not_made_on_another_lase
   out.dialog = dialog() !== null;
   out.again = button(tree, FORWARD).disabled;
 """)
-    assert out["alerts"][0].startswith("Для выбранных лазера, линзы и титана нет измеренной шкалы серого")
+    assert out["alerts"][0].startswith("No grayscale scale is measured for the selected laser, lens, and titanium")
     assert out["posts"] == 0 and out["completed"] == 0 and out["open"] == 1 and out["again"] is False and out["dialog"] is False   # no work, so no question either
 
 
@@ -780,7 +780,7 @@ def test_a_lab_release_in_the_context_is_sent_as_the_source_of_a_photo_work_and_
     assert json.loads(out["photo"]["source"]) == {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "device_id": 1, "lens_id": 2}
     assert "scale" not in out["photo"]
     out = run(tmp_path, f"S.context.source = {json.dumps(release)};" + create_path.replace("__TILE__", "0") + """
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.vector = Object.fromEntries(sent('POST', '/api/vector')[0].body.items);
 """)
     assert json.loads(out["vector"]["source"]) == {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}      # the label is for people, not for the server
@@ -789,15 +789,15 @@ def test_a_lab_release_in_the_context_is_sent_as_the_source_of_a_photo_work_and_
 @node
 def test_a_work_the_server_refuses_leaves_the_task_open_and_the_form_as_it_was_and_a_repeated_click_makes_one_work(tmp_path):
     out = run(tmp_path, "S.refuseVector = 'the image could not be read';" + create_path.replace("__TILE__", "0") + """
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.alerts = alerts(tree);
   out.completed = sent('POST', '/api/creation/drafts/1/complete').length;
   out.open = open().map((d) => d.id);
-  out.enabled = !button(tree, 'Создать работу').disabled;
+  out.enabled = !button(tree, 'Create work').disabled;
   out.went = [...ctx.__went];
   S.refuseVector = null;
   let release; S.vectorHold = new Promise((r) => { release = r; });
-  const make = button(tree, 'Создать работу');
+  const make = button(tree, 'Create work');
   const one = make.dispatch('click'); const two = make.dispatch('click');
   release(); await one; await two; await settle();
   out.posts = sent('POST', '/api/vector').length;
@@ -811,13 +811,13 @@ def test_a_work_the_server_refuses_leaves_the_task_open_and_the_form_as_it_was_a
 @node
 def test_when_the_task_cannot_be_closed_the_work_still_exists_and_opens_and_the_person_is_told_to_cancel_the_leftover_task(tmp_path):
     out = run(tmp_path, "S.refuseComplete = 'database is locked';" + create_path.replace("__TILE__", "0") + """
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   out.toast = body.querySelector('.toasts').textContent;
   out.posts = sent('POST', '/api/vector').length;
 """)
     assert out["went"] == ["/vector?plan=99"] and out["posts"] == 1
-    assert "Работа создана, но задача осталась в списке незавершённых: отмените её" in out["toast"]
+    assert "Work created, but the task remains unfinished; cancel it" in out["toast"]
 
 
 # -- BUG-003 inside the wizard: a photograph asks «Какая гравировка?» before the work is kept ------------------------------------------------
@@ -828,7 +828,7 @@ photo_path = "S.scales = [{mode: {device_id: 1, lens_id: 2, material_id: 3, key:
 def test_a_photograph_asks_which_kind_of_engraving_before_it_is_kept_with_the_persons_picture_in_every_kind(tmp_path):
     out = run(tmp_path, photo_path + """
   out.label = button(tree, FORWARD).textContent;
-  out.line = tree.textContent.includes('Вид гравировки: Grayscale');
+  out.line = tree.textContent.includes('Engraving mode: Grayscale');
   await ask(tree);
   out.title = dialog().querySelector('h3').textContent;
   out.names = kindNames();
@@ -848,8 +848,8 @@ def test_a_photograph_asks_which_kind_of_engraving_before_it_is_kept_with_the_pe
   out.deleted = S.deleted || [];
   out.dialogGone = dialog() === null;
 """)
-    assert out["label"] == "Дальше: какая гравировка →" and out["line"] is True                       # the button says what comes next; the kind is told on the step
-    assert out["title"] == "Новая работа · какая гравировка?" and len(out["names"]) == 4
+    assert out["label"] == "Next: engraving mode →" and out["line"] is True                       # the button says what comes next; the kind is told on the step
+    assert out["title"] == "New work · engraving mode" and len(out["names"]) == 4
     assert out["pictures"] == [f"/api/photo-works/77/kinds/{k}.png" for k in ("grayscale", "threshold", "dither", "sketch")]
     assert all(alt.startswith("Image in ") for alt in out["alts"])
     assert out["marked"] == ["true", "false", "false", "false"] and out["keepLabel"] == f"Create in “{out['names'][0]}”"       # grayscale is the start
@@ -881,10 +881,10 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
   await kinds()[3].dispatch('click'); await settle();
   await dialogButton('← Back').dispatch('click'); await settle(); await pending;
   out.back = [S.deleted || [], sent('POST', '/api/creation/drafts/1/complete').length, [...ctx.__went], dialog() === null, open().map((d) => d.id)];
-  out.form = [heading(tree), labelled(tree, 'Название работы') === undefined, tree.textContent.includes('Портрет Инны'), tree.textContent.includes('ширина 72 мм')];
+  out.form = [heading(tree), labelled(tree, 'Work name') === undefined, tree.textContent.includes('Портрет Инны'), tree.textContent.includes('width 72 mm')];
   out.enabled = !button(tree, FORWARD).disabled;
   out.focus = ctx.document.activeElement === button(tree, FORWARD);
-  out.line = tree.textContent.includes('Вид гравировки: ' + out.names[3]);
+  out.line = tree.textContent.includes('Engraving mode: ' + out.names[3]);
   out.saved = JSON.parse(sent('PUT', '/api/creation/drafts/1').pop().form.state);
   await ask(tree);
   out.again = [sent('POST', '/api/photo-works').length, kinds().map((k) => k.getAttribute('aria-pressed')), keep().textContent];
@@ -892,7 +892,7 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
   out.kept = [sent('POST', '/api/photo-works/77/settings').map((r) => r.json), (S.deleted || []).length, [...ctx.__went]];
 """)
     assert out["back"] == [[77], 0, [], True, [1]]                       # the work is deleted, nothing is closed, the task stays open
-    assert out["form"][0] == "Новая работа · шаг 3 из 3: Настройки и создание" and out["form"][2] is True and out["form"][3] is True
+    assert out["form"][0] == "New work · step 3 of 3: Settings and creation" and out["form"][2] is True and out["form"][3] is True
     assert out["line"] is True                                              # the step names the kind the person marked
     assert out["enabled"] is True and out["focus"] is True                  # the keyboard returns to the button that opened the question
     assert out["saved"]["kind"] == "sketch" and out["saved"]["hold"] is None and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Портрет Инны"
@@ -963,10 +963,10 @@ def test_a_window_closed_in_the_question_gets_its_leftover_work_deleted_when_the
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
   out.saved = JSON.parse(sent('PUT', '/api/creation/drafts/5').pop().form.state);
   await ask(tree);
-  out.line = tree.textContent.includes('Вид гравировки: ' + kindNames()[2]);
+  out.line = tree.textContent.includes('Engraving mode: ' + kindNames()[2]);
   out.marked = kinds().map((k) => k.getAttribute('aria-pressed'));
 """)
-    assert out["deleted"] == [77] and any("не было закончено" in n for n in out["note"])
+    assert out["deleted"] == [77] and any("was not completed" in n for n in out["note"])
     assert out["saved"]["hold"] is None and out["saved"]["kind"] == "dither" and out["line"] is True
     assert out["marked"] == ["false", "false", "true", "false"]            # the kind the person had marked is marked again
     other = run(tmp_path, "S.photoStamp = 'T9';" + draft + """
@@ -976,7 +976,7 @@ def test_a_window_closed_in_the_question_gets_its_leftover_work_deleted_when_the
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
   out.hold = JSON.parse(sent('PUT', '/api/creation/drafts/5').pop().form.state).hold;
 """)
-    assert other["deleted"] == [] and not any("не было закончено" in n for n in other["note"]) and other["hold"] is None    # another work now has that number: it is not touched
+    assert other["deleted"] == [] and not any("was not completed" in n for n in other["note"]) and other["hold"] is None    # another work now has that number: it is not touched
     gone = run(tmp_path, "S.photoGone = true;" + draft + """
   const tree = await screen({draft: '5'});
   await settle();
@@ -984,7 +984,7 @@ def test_a_window_closed_in_the_question_gets_its_leftover_work_deleted_when_the
   out.alerts = alerts(tree);
   out.head = heading(tree);
 """)
-    assert gone["deleted"] == [] and gone["alerts"] == [] and gone["head"] == "Новая работа · шаг 3 из 3: Настройки и создание"
+    assert gone["deleted"] == [] and gone["alerts"] == [] and gone["head"] == "New work · step 3 of 3: Settings and creation"
 
 
 @node
@@ -992,34 +992,34 @@ def test_a_delta_e_tolerance_the_rules_do_not_hold_is_asked_for_before_anything_
     out = run(tmp_path, "S.tolerance = null;" + create_path.replace("__TILE__", "0") + """
   out.open = tree.querySelector('details').getAttribute('open');
   out.hint = tree.querySelector('details').textContent;
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
-  out.alerts = [fieldError(tree, 'Допуск ΔE')];                                       // beside the box, not above the buttons only
+  await button(tree, 'Create work').dispatch('click'); await settle();
+  out.alerts = [fieldError(tree, 'ΔE tolerance')];                                       // beside the box, not above the buttons only
   out.nothing = [sent('POST', '/api/vector').length, sent('PUT', '/api/rules').length];
-  const thr = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').includes('задайте'));
+  const thr = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').includes('enter a value'));
   thr.value = '4'; await thr.dispatch('input');
-  await button(tree, 'Создать работу').dispatch('click'); await settle();
+  await button(tree, 'Create work').dispatch('click'); await settle();
   out.rules = sent('PUT', '/api/rules').map((r) => r.json);
   out.created = Object.fromEntries(sent('POST', '/api/vector')[0].body.items).threshold;
 """)
     assert out["open"] is not None                                                          # the block that must be filled is open, not hidden
-    assert "допуск не сохранён — задайте его" in out["hint"]
-    assert out["alerts"] == ["Задайте допуск ΔE: для этого лазера с линзой он не сохранён"] and out["nothing"] == [0, 0]
+    assert "No tolerance is saved for this laser and lens; enter one" in out["hint"]
+    assert out["alerts"] == ["Enter a ΔE tolerance; none is saved for this laser and lens"] and out["nothing"] == [0, 0]
     assert out["rules"] == [{"device_id": 1, "lens_id": 2, "delta_tolerance": 4}] and out["created"] == "4"
 
 
 @node
 def test_cancelling_the_task_from_the_screen_asks_first_deletes_nothing_made_and_leaves_no_half_made_work(tmp_path):
     out = run(tmp_path, create_path.replace("__TILE__", "0") + """
-  await button(tree, 'Отменить задачу').dispatch('click'); await settle();
-  out.asked = dialog().querySelector('h3').textContent + ' / ' + dialog().textContent.includes('Созданные работы не затрагиваются');
+  await button(tree, 'Cancel task').dispatch('click'); await settle();
+  out.asked = dialog().querySelector('h3').textContent + ' / ' + dialog().textContent.includes('Created works are unaffected');
   await button(dialog(), 'Cancel').dispatch('click'); await settle();
   out.after = [sent('POST', '/api/creation/drafts/1/discard').length, open().length];
-  await button(tree, 'Отменить задачу').dispatch('click'); await settle();
-  await button(dialog(), 'Отменить задачу').dispatch('click'); await settle();
+  await button(tree, 'Cancel task').dispatch('click'); await settle();
+  await button(dialog(), 'Cancel task').dispatch('click'); await settle();
   out.discarded = [sent('POST', '/api/creation/drafts/1/discard').length, open().length, [...ctx.__went]];
   out.works = [sent('POST', '/api/vector').length, sent('POST', '/api/photo-works').length, ctx.requests.filter((r) => r.method === 'DELETE').length];
 """)
-    assert out["asked"] == "Отменить задачу «Портрет Инны»? / true"
+    assert out["asked"] == "Cancel task “Портрет Инны”? / true"
     assert out["after"] == [0, 1] and out["discarded"] == [1, 0, ["/vector"]] and out["works"] == [0, 0, 0]
 
 
@@ -1046,16 +1046,16 @@ def test_the_bar_offers_the_unfinished_task_on_any_screen_hides_on_the_creation_
   out.onVectorNew = bar.hidden;
   ctx.location.hash = '#/devices';
   await ctx.Creation.refreshBar(); await settle();
-  await button(bar, 'Продолжить').dispatch('click');
+  await button(bar, 'Continue').dispatch('click');
   out.went = [...ctx.__went];
-  await button(bar, 'Отменить задачу').dispatch('click'); await settle();
-  await button(dialog(), 'Отменить задачу').dispatch('click'); await settle();
+  await button(bar, 'Cancel task').dispatch('click'); await settle();
+  await button(dialog(), 'Cancel task').dispatch('click'); await settle();
   out.afterDiscard = [bar.hidden, body.classList.contains('has-creation-bar')];
 """)
     assert out["none"] == [True, False]
-    assert out["shown"][0] is False and "Не закончена работа «Портрет»." in out["shown"][1] and "Ждёт стартовый тест и приём его измерений." in out["shown"][1]
-    assert out["shown"][2] == "Незавершённая работа" and out["shown"][3] is True
-    assert "Недостающее добавлено: можно продолжить." in out["ready"]
+    assert out["shown"][0] is False and "Unfinished work “Портрет”." in out["shown"][1] and "Waiting for the starter test and acceptance of its measurements." in out["shown"][1]
+    assert out["shown"][2] == "Unfinished work" and out["shown"][3] is True
+    assert "The missing prerequisites are available; you can continue." in out["ready"]
     assert out["onWizard"] is True and out["onVectorNew"] is True                            # the screen itself needs no reminder of itself
     assert out["went"] == ["/new?draft=3"] and out["afterDiscard"] == [True, False]
 
@@ -1072,7 +1072,7 @@ def test_the_bar_says_how_many_tasks_are_open_and_a_failed_list_leaves_it_hidden
   await ctx.Creation.refreshBar(); await settle();
   out.failed = bar.hidden;
 """)
-    assert "Не закончена работа «second»." in out["two"] and "Всего незавершённых: 2" in out["two"] and out["failed"] is True
+    assert "Unfinished work “second”." in out["two"] and "Total unfinished: 2" in out["two"] and out["failed"] is True
 
 
 @node
