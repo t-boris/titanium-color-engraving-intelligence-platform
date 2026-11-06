@@ -100,18 +100,16 @@ const PhotoPanels = (() => {
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
   }
 
-  /** Полоса «серый → цвет» при выбранных Min и Max: слева белый (Min), справа чёрный (Max), как ступени пластины; вне измеренного — штриховка.
-      С ``dot`` ({power, pick}) — полоса цветов по мощностям шкалы для вида точками: метка на мощности точек, щелчок выбирает другую; без
-      ``power`` (точки с карты цветов) метки нет, щелчок возвращает точки на шкалу. */
+  /** Color strip for grayscale or selectable dot power. */
   function greyBar(levels, dot = null) {
     const segments = greySegments(levels);
     const lo = levels[255].power, hi = levels[0].power;
-    const strip = h('div', {class: 'ge-strip' + (dot ? ' ge-pickable' : ''), 'aria-label': dot ? 'Цвет точек при каждой мощности: щёлкните, чтобы выбрать' : 'Цвет каждого серого'},
+    const strip = h('div', {class: 'ge-strip' + (dot ? ' ge-pickable' : ''), 'aria-label': dot ? 'Dot color at each power: click to select' : 'Color of each gray'},
       segments.map((row) => h('span', {class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
         title: dot ? `power ${value(row.power)} %${row.hex ? '' : ' · not measured'}` : `gray ${row.level} · power ${value(row.power)} %${row.hex ? '' : ' · not measured'}`})));
     if (!dot) {
       return h('div', {class: 'stack ge-greybar'}, strip, h('div', {class: 'ge-strip ge-ramp', 'aria-hidden': 'true'}),
-        h('div', {class: 'ge-ends small'}, h('span', {}, `белый 255 · Min ${value(lo, 1)} %`), h('span', {}, `чёрный 0 · Max ${value(hi, 1)} %`)));
+        h('div', {class: 'ge-ends small'}, h('span', {}, `white 255 · Min ${value(lo, 1)} %`), h('span', {}, `black 0 · Max ${value(hi, 1)} %`)));
     }
     strip.addEventListener('click', (ev) => {
       const box = strip.getBoundingClientRect();
@@ -122,7 +120,7 @@ const PhotoPanels = (() => {
     const onScale = dot.power != null;
     const mark = onScale ? h('span', {class: 'ge-dotmark', 'aria-hidden': 'true', style: `left:${hi > lo ? Math.min(100, Math.max(0, (dot.power - lo) / (hi - lo) * 100)) : 0}%`}) : null;
     return h('div', {class: 'stack ge-greybar'}, h('div', {class: 'ge-markbox'}, strip, mark),
-      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, onScale ? `точки: ${value(dot.power, 1)} %` : `точки — ${dot.from || 'с карты цветов'}`),
+      h('div', {class: 'ge-ends small'}, h('span', {}, `${value(lo, 1)} %`), h('span', {}, onScale ? `dots: ${value(dot.power, 1)} %` : `dots — ${dot.from || 'from color map'}`),
         h('span', {}, `${value(hi, 1)} %`)));
   }
 
@@ -133,47 +131,47 @@ const PhotoPanels = (() => {
     const rows = [];
     for (let level = 255; level >= 0; level -= TABLE_STEP) {
       const r = levels[level];
-      rows.push([h('span', {class: 'ge-nowrap'}, greyChip(level), ` ${level}`), value(r.power), r.lab ? h('span', {class: 'ge-lab'}, hexChip(r.hex), ' ', labLines(r.lab)) : h('span', {class: 'muted'}, 'вне измеренных мощностей'),
+      rows.push([h('span', {class: 'ge-nowrap'}, greyChip(level), ` ${level}`), value(r.power), r.lab ? h('span', {class: 'ge-lab'}, hexChip(r.hex), ' ', labLines(r.lab)) : h('span', {class: 'muted'}, 'outside measured powers'),
         r.spread_de == null ? h('span', {class: 'muted'}, '—') : pill(`${value(r.spread_de, 1)} ΔE`, r.spread_de > SPREAD_LIMIT ? 'warn' : 'ok')]);
     }
-    return table(['Серый картинки (0–255)', 'Мощность, %', 'Цвет на титане', 'Расхождение гравировок'], rows, '', true);
+    return table(['Image gray (0–255)', 'Power, %', 'Color on titanium', 'Engraving difference'], rows, '', true);
   }
 
-  const sourceText = (s) => [s.title, HOW[s.how] || s.how, s.layer_name, s.photo ? `фото ${s.photo}` : null].filter(Boolean).join(' · ');
+  const sourceText = (s) => [s.title, HOW[s.how] || s.how, s.layer_name, s.photo ? `photo ${s.photo}` : null].filter(Boolean).join(' · ');
 
-  /** Каждая гравировка шкалы — строкой списка: в узкой панели справа таблица из шести колонок не помещается. */
+  /** One scale engraving per row. */
   function confirmationBlock(c) {
     const rows = c.rows.map((r) => h('li', {class: 'ge-entry'},
       h('div', {class: 'ge-entry-head'}, h('span', {}, link('/experiment/' + encodeURIComponent(r.engraving.experiment), r.engraving.title), ` · ${HOW[r.engraving.how] || r.engraving.how}`),
-        r.median_de == null ? null : pill(`медиана ${value(r.median_de, 1)} ΔE`, r.median_de > c.tolerance_de ? 'warn' : 'ok')),
-      h('div', {class: 'small muted'}, [`точек ${r.points}`, r.compared ? `сравнено ${r.compared}` : 'нечем сравнить',
-        r.max_de == null ? null : `максимум ${value(r.max_de, 1)} ΔE`, r.within == null ? null : `в пределах ${c.tolerance_de} ΔE: ${value(r.within * 100, 0)} %`].filter(Boolean).join(' · '))));
-    return h('div', {class: 'stack'}, h('h4', {}, 'Подтверждают ли эксперименты'),
-      h('p', {class: 'small'}, 'Каждая гравировка сравнивается со шкалой, построенной по всем остальным: на её мощностях — разница цвета. Подтверждена, если медиана не больше '
+        r.median_de == null ? null : pill(`median ${value(r.median_de, 1)} ΔE`, r.median_de > c.tolerance_de ? 'warn' : 'ok')),
+      h('div', {class: 'small muted'}, [`points ${r.points}`, r.compared ? `compared ${r.compared}` : 'nothing to compare',
+        r.max_de == null ? null : `maximum ${value(r.max_de, 1)} ΔE`, r.within == null ? null : `within ${c.tolerance_de} ΔE: ${value(r.within * 100, 0)} %`].filter(Boolean).join(' · '))));
+    return h('div', {class: 'stack'}, h('h4', {}, 'Do experiments confirm the scale?'),
+      h('p', {class: 'small'}, 'Each engraving is compared at its powers with the scale built from all others. Confirmed if the median difference is at most '
         + `${c.tolerance_de} ΔE. `, confirmationPill(c)),
-      rows.length ? h('ul', {class: 'ge-entries'}, rows) : h('p', {class: 'muted'}, 'Нет гравировок'));
+      rows.length ? h('ul', {class: 'ge-entries'}, rows) : h('p', {class: 'muted'}, 'No engravings'));
   }
 
   function fillsBlock(fills) {
     if (!fills.length) return null;
-    return h('details', {}, h('summary', {}, `Заливки с теми же настройками (${fills.length}) — для сравнения, в шкалу не входят`),
+    return h('details', {}, h('summary', {}, `Fills with the same settings (${fills.length}) — for comparison, excluded from the scale`),
       h('p', {class: 'small muted'}, 'Fill and an image gray at the same power produce different colors (up to 36 ΔE in your light and mid tones), so the scale uses only photo engravings and gray-scale plates.'),
-      table(['Мощность, %', 'Цвет заливки', 'Разница со шкалой', 'Где'], fills.map((f) => [value(f.power), h('span', {class: 'ge-lab'}, hexChip(f.hex), ' ', labLines(f.lab)),
-        f.de == null ? h('span', {class: 'muted'}, f.curve_lab ? 'другой способ измерения' : 'вне шкалы') : pill(`${value(f.de, 1)} ΔE`, f.de > SPREAD_LIMIT ? 'warn' : 'ok'),
+      table(['Power, %', 'Fill color', 'Difference from scale', 'Where'], fills.map((f) => [value(f.power), h('span', {class: 'ge-lab'}, hexChip(f.hex), ' ', labLines(f.lab)),
+        f.de == null ? h('span', {class: 'muted'}, f.curve_lab ? 'different measurement method' : 'outside scale') : pill(`${value(f.de, 1)} ΔE`, f.de > SPREAD_LIMIT ? 'warn' : 'ok'),
         sourceText(f.source)]), '', true));
   }
 
   function pointsBlock(curve) {
-    return h('details', {}, h('summary', {}, `Измеренные точки шкалы (${curve.points.length})`),
-      table(['Мощность, %', 'Цвет', 'Гравировок', 'Где измерено'], curve.points.map((p) => [value(p.power), h('span', {class: 'ge-lab'}, hexChip(p.hex), ' ', labLines(p.lab)), String(p.engravings),
+    return h('details', {}, h('summary', {}, `Measured scale points (${curve.points.length})`),
+      table(['Power, %', 'Color', 'Engravings', 'Where measured'], curve.points.map((p) => [value(p.power), h('span', {class: 'ge-lab'}, hexChip(p.hex), ' ', labLines(p.lab)), String(p.engravings),
         h('div', {class: 'stack small'}, p.sources.map((s) => h('span', {}, link('/experiment/' + encodeURIComponent(s.experiment), s.title), ` · ${HOW[s.how] || s.how}`,
-          s.gray != null ? ` · серый ${Math.round(s.gray * 255)}` : '', s.pair_id ? [' · ', link(`/analysis/${s.pair_id}`, 'разбор')] : null)))]), '', true));
+          s.gray != null ? ` · gray ${Math.round(s.gray * 255)}` : '', s.pair_id ? [' · ', link(`/analysis/${s.pair_id}`, 'analysis')] : null)))]), '', true));
   }
 
   const newSlots = () => ({title: h('span', {class: 'sub ge-settings'}), powers: h('div', {class: 'ge-powers'}), error: h('div'), bar: h('div', {class: 'ge-barbox'}),
     scale: h('div', {class: 'stack'}), confirm: h('div', {class: 'stack'}), points: h('div', {class: 'stack'})});
 
-  /** Места шкалы без шкалы: одна строка ``text`` вместо Min и Max, полосы и вкладок. */
+  /** Empty the scale slots and show a message. */
   function emptySlots(slots, text) {
     fill(slots.title);
     slots.title.setAttribute('title', '');
@@ -182,21 +180,14 @@ const PhotoPanels = (() => {
     for (const place of [slots.bar, slots.scale, slots.confirm, slots.points]) fill(place, h('p', {class: 'muted'}, text));
   }
 
-  /** Шкала: её настройки, Min и Max, полоса «серый → цвет» и во вкладках таблица серых, подтверждение экспериментами, заливки и точки.
-      ``slots`` — места экрана, которые она заполняет. ``initial`` — Min и Max (у работы — её), иначе измеренный диапазон, округлённый внутрь
-      до 0,1 %, чтобы белый и чёрный оба остались в нём; ``changed(lo, hi)`` узнаёт новые Min и Max, когда их поменяли. ``rowMm`` — ширина,
-      при которой показывать цвета (у работы — её ширина); без неё — ширина, измеренная больше всего, и кнопки других измеренных ширин.
-      ``stop()`` — шкала больше не показывается: её отложенное изменение и поздние ответы не применяются. ``dot`` ({power, changed(p), recipe,
-      hex, dpi, map()}) — работа в виде точками: вместо Min и Max одна мощность точек, полоса — цвета по всем измеренным мощностям, щелчок по ней
-      выбирает мощность; ``map()`` открывает карту цветов, чтобы выбрать цвет точек там; с ``recipe`` (цвет с карты, ``hex``) вместо мощности
-      — этот цвет и кнопки «Другой цвет» и «На шкалу». */
+  /** Draw scale details, powers, measured widths, and optional dot selection. */
   function scaleDetail(sc, slots, {initial = null, changed = null, rowMm = null, dot = null, loaded = null} = {}) {
     let span = sc.span;
     let timer = null, seq = 0, stopped = false;
     let atMm = rowMm != null ? rowMm : (sc.size ? sc.size.row_mm : null);
-    const widths = rowMm == null && sc.sizes && sc.sizes.length > 1 ? h('div', {class: 'row ge-sizes', role: 'group', 'aria-label': 'Ширина, при которой показать цвета'},
-      h('span', {class: 'small'}, 'Ширина:'), sc.sizes.map((z) => h('button', {type: 'button', class: 'btn btn-small', 'aria-pressed': String(z.row_mm === atMm),
-        title: `измерено гравировок: ${z.engravings}, точек: ${z.points}`, onClick: (ev) => {
+    const widths = rowMm == null && sc.sizes && sc.sizes.length > 1 ? h('div', {class: 'row ge-sizes', role: 'group', 'aria-label': 'Width for displayed colors'},
+      h('span', {class: 'small'}, 'Width:'), sc.sizes.map((z) => h('button', {type: 'button', class: 'btn btn-small', 'aria-pressed': String(z.row_mm === atMm),
+        title: `measured engravings: ${z.engravings}, points: ${z.points}`, onClick: (ev) => {
           const self = ev.currentTarget;
           atMm = z.row_mm;
           for (const b of self.parentNode.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === self));
@@ -224,7 +215,7 @@ const PhotoPanels = (() => {
     let levelsShown = null;
     const dotPower = dot ? slider('Dot power, %', 'Dots, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }, dotRule) : null;
     const dotSource = dot && (dot.map || dot.recipe) ? dotSourceBox(dot, () => pickDot(dot.power)) : null;
-    /** Мощность точек ``p``: метка на полосе сразу, работа узнаёт её (сервер проверит, что шкала там измерена). */
+    /** Update dot power immediately; the server validates the measured range. */
     function pickDot(p) {
       if (!(p >= 0 && p <= 100)) return;
       dotPower.exact.value = String(p);
@@ -236,9 +227,9 @@ const PhotoPanels = (() => {
     }
     const dotBar = () => ({power: dot.recipe ? null : dot.power, pick: pickDot, from: dot.recipe ? recipeFrom(dot.recipe) : null});
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
-    const loading = () => h('p', {class: 'muted'}, 'Загружаем шкалу…');
-    const onMap = dot && dot.recipe ? ` · точки — на настройках ${fromPhoto(dot.recipe) ? `точек ${recipeFrom(dot.recipe)}` : 'цвета с карты цветов'}` : '';      // the scale stays the work's; its dots fire elsewhere
-    fill(slots.title, (onMap ? 'шкала: ' : '') + settingsText(sc.mode, sc.dpi) + onMap);
+    const loading = () => h('p', {class: 'muted'}, 'Loading scale…');
+    const onMap = dot && dot.recipe ? ` · dots use settings ${fromPhoto(dot.recipe) ? `of dots ${recipeFrom(dot.recipe)}` : 'of the color map recipe'}` : '';      // the scale stays the work's; its dots fire elsewhere
+    fill(slots.title, (onMap ? 'scale: ' : '') + settingsText(sc.mode, sc.dpi) + onMap);
     slots.title.setAttribute('title', `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}${onMap}`);
     fill(slots.powers, ...(dot ? [dot.recipe ? null : dotPower.box, dotPower.note, dotSource] : [low.box, low.note, high.box, high.note]), widths);
     fill(slots.error, error);
@@ -269,9 +260,9 @@ const PhotoPanels = (() => {
         levelsShown = levels;
         fill(slots.bar, greyBar(levels, dot ? dotBar() : null));
         fill(slots.scale,
-          h('p', {class: 'small muted'}, `${titaniumLabel(sc)}. Измерено от ${value(span[0], 1)} до ${value(span[1], 1)} %. Серый картинки становится мощностью линейно: `
-            + 'белый (255) — Min, чёрный (0) — Max; цвет между измеренными мощностями — линейно в Lab, за их пределами не прогнозируется.'),
-          unmeasured ? h('p', {class: 'small muted'}, `Серых вне измеренных мощностей (${value(span[0], 1)}–${value(span[1], 1)} %): ${unmeasured} из 256 — заштрихованы; цвет там не прогнозируется.`) : null,
+          h('p', {class: 'small muted'}, `${titaniumLabel(sc)}. Measured from ${value(span[0], 1)} to ${value(span[1], 1)}%. Image gray maps linearly to power: `
+            + 'white (255) is Min, black (0) is Max. Color is interpolated in Lab between measured powers; outside them it is not predicted.'),
+          unmeasured ? h('p', {class: 'small muted'}, `Grays outside measured powers (${value(span[0], 1)}–${value(span[1], 1)}%): ${unmeasured} of 256 are hatched; color is not predicted there.`) : null,
           size ? h('p', {class: 'small'}, pill(size.short, size.tone), ' ', size.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
           d.examples && d.examples.length ? resultCards(d.examples, () => load(false)) : null,
           greyTable(levels), h('ul', {class: 'small'}, d.notes.map((n) => h('li', {}, I18N.tr(n)))));

@@ -528,8 +528,8 @@ def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be
 @node
 def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chosen_one(tmp_path):
     out = run(tmp_path, {"scales": "1"}, """
-  out.first = {chosen: chosen(tree), powers: powers(tree), table: tree.textContent.includes('Серый картинки (0–255)'), works: requests.some((r) => r.path.startsWith('/api/photo-works'))};
-  const sizeButtons = (t) => t.querySelectorAll('button').filter((b) => (b.getAttribute('title') || '').startsWith('измерено гравировок'));
+  out.first = {chosen: chosen(tree), powers: powers(tree), table: tree.textContent.includes('Image gray (0–255)'), works: requests.some((r) => r.path.startsWith('/api/photo-works'))};
+  const sizeButtons = (t) => t.querySelectorAll('button').filter((b) => (b.getAttribute('title') || '').startsWith('measured engravings'));
   out.widths = sizeButtons(tree).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
   await button(tree, '38,4 mm').dispatch('click'); await settle();
   out.asked = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
@@ -807,8 +807,8 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
     m = out["mapped"]
     assert m["source"] == "Точкис карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Другой цветНа шкалу"
-    assert not m["slider"] and not m["mark"] and m["ends"] == "1 %точки — с карты цветов30 %" and m["says"] == [True] * 6
-    assert m["title"].startswith("шкала: 100 mm/s") and m["title"].endswith("точки — на настройках цвета с карты цветов")
+    assert not m["slider"] and not m["mark"] and m["ends"] == "1 %dots — с карты цветов30 %" and m["says"] == [True] * 6
+    assert m["title"].startswith("scale: 100 mm/s") and m["title"].endswith("dots use settings of the color map recipe")
     assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
     assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Цвет с карты", "slider": "12.5", "mark": True,
                            "title": "100 mm/s · 60 kHz · 250 ns · interval 0,0254 mm (1000 dpi) · passes 1"}
@@ -1011,8 +1011,8 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
   out.text = tree.textContent;
 """, work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
     assert out["source"].startswith("Точкипо фото № 149 (Jarvis): 25 % · 125 mm/s")
-    assert out["ends"] == "1 %точки — по фото № 149 (Jarvis)30 %"
-    assert out["title"].endswith("точки — на настройках точек по фото № 149 (Jarvis)")
+    assert out["ends"] == "1 %dots — по фото № 149 (Jarvis)30 %"
+    assert out["title"].endswith("dots use settings of dots по фото № 149 (Jarvis)")
     text = out["text"]
     assert "с карты цветов" not in text.replace("Цвет с карты", "") and "оценка по шкале" not in text
     assert "оценка по фото № 149 (Jarvis): этот вид на этих настройках ещё не гравировался" in text

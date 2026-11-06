@@ -339,7 +339,7 @@ def test_a_late_palette_answer_for_an_older_width_cannot_replace_the_palette_of_
 """ % (at_120, at_90), scale_data=response(60))
     assert result["waiting"] and result["widthNow"] == "90"
     assert result["listed"] == ["60", "120", "90"]
-    assert "Цвета при ширине 90 мм" in result["fresh"]["text"]
+    assert "Colors at width 90 mm" in result["fresh"]["text"]
     assert result["late"] == result["fresh"]                                       # the late answer changed nothing on the screen
     assert result["late"]["card"] == result["late"]["preview"] and len(result["late"]["card"]) == 64
     assert "120" not in result["asked"] and result["asked"][-1] == "90"            # and the scale of 120 mm was never asked for
@@ -352,7 +352,7 @@ def test_a_late_palette_answer_for_an_older_width_cannot_replace_the_palette_of_
 PALETTE_PROBE = """
   const widthBox = labelled(tree, 'Ширина на титане, мм');
   const mark = (seconds) => { data.scales = data.scales.map((s) => ({...s, time_s_per_cm2: seconds})); };           // what the next list will say
-  const marker = () => (tree.querySelector('.ge-scale.is-chosen').textContent.match(/(\\d+) с\\/см²/) || [])[1];
+  const marker = () => (tree.querySelector('.ge-scale.is-chosen').textContent.match(/(\\d+) s\\/cm²/) || [])[1];
   const listed = () => requests.filter((r) => r.path === '/api/grey-scales').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   const quiet = async () => { await settle(); await wait(50); await settle(); };
   const originalFetch = ctx.fetch, gates = {};
@@ -383,9 +383,9 @@ def test_a_late_answer_of_an_older_request_for_the_same_width_cannot_replace_the
   out.at90 = marker();
   mark(63); data.scale = %s;
   width.value = '120'; await width.dispatch('change'); await quiet();
-  out.at120 = {marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Цвета при ширине 120 мм')};
+  out.at120 = {marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Colors at width 120 mm')};
   release120(); await quiet();
-  out.late = {marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Цвета при ширине 120 мм'), box: widthBox.value};
+  out.late = {marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Colors at width 120 mm'), box: widthBox.value};
   out.listed = listed();
 """ % (json.dumps(response(120)), json.dumps(response(90)), json.dumps(response(120))))
     assert result["pending"] == {"loading": True, "marker": "70"}                  # the old list stays while the new one is awaited
@@ -416,7 +416,7 @@ def test_an_answer_for_a_width_the_work_has_left_while_its_changes_were_still_on
   release120(); await quiet();                                                   // the answer for 120 mm arrives while the work is 80 mm
   out.stale = {listed: listed(), marker: marker(), loading: tree.textContent.includes('Loading scales')};
   release90(); await quiet();
-  out.end = {listed: listed(), marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Цвета при ширине 90 мм'), box: width.value};
+  out.end = {listed: listed(), marker: marker(), text: tree.querySelector('.ge-scale.is-chosen').textContent.includes('Colors at width 90 mm'), box: width.value};
 """ % (json.dumps(response(120)), json.dumps(response(90))))
     assert result["pending"] == {"loading": True, "marker": "70"}
     assert result["between"] == {"saved": [120, 80, 90], "listed": ["60", "120"], "loading": True}      # all three changes were sent in order

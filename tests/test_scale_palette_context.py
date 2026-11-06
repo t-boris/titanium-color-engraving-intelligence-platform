@@ -77,7 +77,7 @@ def test_a_zone_selected_card_matches_the_preview_colours_unknowns_and_updated_p
         assert any(c[1] == 'ge-none' for c in result[name]['card'])
     assert result['before']['ends'] == 'P 12 %P 28 %'
     assert result['after']['ends'] == 'P 12 %P 20 %'
-    assert 'Цвета при ширине 24,5 мм' in result['after']['text']
+    assert 'Colors at width 24,5 mm' in result['after']['text']
 
 
 @node
@@ -94,7 +94,7 @@ def test_a_photo_work_reloads_choices_on_resize_and_uses_the_detail_for_its_sele
     assert result['widths'] == ['60', '120']
     for name in ['before', 'after']:
         assert result[name]['card'] == result[name]['preview']
-    assert 'Цвета при ширине 120 мм' in result['after']['text']
+    assert 'Colors at width 120 mm' in result['after']['text']
 
 
 @node
@@ -122,4 +122,4 @@ def test_a_late_palette_response_for_a_resized_work_cannot_overwrite_its_undo(tm
     assert result['width'] == '60'
     assert result['late'] == result['undone']
     assert result['late']['card'] == result['late']['preview']
-    assert 'Цвета при ширине 60 мм' in result['late']['text']
+    assert 'Colors at width 60 mm' in result['late']['text']
