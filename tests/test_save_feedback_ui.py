@@ -1294,27 +1294,27 @@ def test_the_rig_form_and_its_chart_reference_say_what_is_wrong_beside_the_box_a
   const tab = SetupForms.rigsTab([rig], () => {});
   body.append(tab);
   const card = tab.querySelectorAll('.card')[0];
-  inputOf(card, 'Камера').value = '   ';
-  await button(card, 'Сохранить установку').dispatch('click'); await wait();
-  out.empty = {writes: writes(), camera: labelled(card, 'Камера').errorText(), form: card.querySelectorAll('.f-form-error').pop().textContent};
-  inputOf(card, 'Камера').value = 'Sony A7';
-  await button(card, 'Сохранить установку').dispatch('click'); await wait();
-  out.refused = {writes: writes(), form: card.querySelectorAll('.f-form-error').pop().textContent, kept: inputOf(card, 'Камера').value, toasts: body.querySelectorAll('.toast').length};
+  inputOf(card, 'Camera').value = '   ';
+  await button(card, 'Save setup').dispatch('click'); await wait();
+  out.empty = {writes: writes(), camera: labelled(card, 'Camera').errorText(), form: card.querySelectorAll('.f-form-error').pop().textContent};
+  inputOf(card, 'Camera').value = 'Sony A7';
+  await button(card, 'Save setup').dispatch('click'); await wait();
+  out.refused = {writes: writes(), form: card.querySelectorAll('.f-form-error').pop().textContent, kept: inputOf(card, 'Camera').value, toasts: body.querySelectorAll('.toast').length};
   // the chart reference: a list of 24 triples, L from 0 to 100, a and b from -128 to 127
   const details = card.querySelector('details');
   const values = details.querySelector('textarea');
   values.value = '[[50, 0, 0]]';
-  await button(details, 'Сохранить эталонные значения').dispatch('click'); await wait();
-  out.short = {writes: writes().filter((c) => c.includes('chart')), message: labelled(details, 'Эталонные значения Lab').errorText(), kept: values.value};
+  await button(details, 'Save reference values').dispatch('click'); await wait();
+  out.short = {writes: writes().filter((c) => c.includes('chart')), message: labelled(details, 'Reference Lab values').errorText(), kept: values.value};
   values.value = JSON.stringify(Array.from({length: 24}, (_, i) => [i === 3 ? 120 : 50, 0, 0]));
-  await button(details, 'Сохранить эталонные значения').dispatch('click'); await wait();
-  out.range = labelled(details, 'Эталонные значения Lab').errorText();
+  await button(details, 'Save reference values').dispatch('click'); await wait();
+  out.range = labelled(details, 'Reference Lab values').errorText();
 """, scripts=SCRIPTS + ["screens/setup-forms.js"])
-    assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Complete this field" and "“Камера”" in out["empty"]["form"]
+    assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Complete this field" and "“Camera”" in out["empty"]["form"]
     assert out["refused"]["writes"] == ["PUT /setups/5"] and out["refused"]["kept"] == "Sony A7" and out["refused"]["toasts"] == 0
     assert "remain in the form" in out["refused"]["form"]                                       # said above the buttons, not in a toast that goes away
-    assert out["short"]["writes"] == [] and out["short"]["message"] == "Нужно ровно 24 тройки чисел [L, a, b]. Сейчас: 1" and out["short"]["kept"] == "[[50, 0, 0]]"
-    assert out["range"] == "Тройка 4: L от 0 до 100, a и b от -128 до 127. Введено: [120, 0, 0]"
+    assert out["short"]["writes"] == [] and out["short"]["message"] == "Exactly 24 [L, a, b] triples are required. Current: 1" and out["short"]["kept"] == "[[50, 0, 0]]"
+    assert out["range"] == "Triple 4: L must be 0–100 and a and b must be -128–127. Entered: [120, 0, 0]"
 
 
 @node
