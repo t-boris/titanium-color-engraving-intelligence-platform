@@ -281,10 +281,10 @@ def test_in_a_workshop_with_nothing_measured_the_gate_names_the_starter_test_and
 """)
         drafts = client.get("/api/creation/drafts").json()
         assert all(out["status"]), out["status"]
-        assert "Нужны измерения" in out["gate"] and "Начальный тест: Шкалы серого" in out["gate"]
+        assert "Нужны измерения" in out["gate"] and "Начальный тест: Gray scales" in out["gate"]
         assert "появится измеренная шкала серого" in out["gate"] and out["disabled"] is True
         assert "Нужны измерения" in out["silhouette"] and "Когда измерения теста будут приняты" in out["silhouette"]
-        assert out["makeEnabled"] is True and "Тест создан: Калибровочная матрица" in out["made"]                  # the vector starter test is made on the real route
+        assert out["makeEnabled"] is True and "Тест создан: Calibration matrix" in out["made"]                  # the vector starter test is made on the real route
         assert any(href.startswith("#/experiment/plan-") for href in out["links"]), out["links"]
         assert "Что станет доступно: Когда измерения теста будут приняты" in out["made"]                           # ... and still says what its measurements will give
         assert len(drafts) == 1 and drafts[0]["name"] == "Первый опыт" and drafts[0]["status"] == "open"        # the task waits, with its picture
