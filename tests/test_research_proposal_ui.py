@@ -47,7 +47,7 @@ load(ctx,%(ui)s,[...%(tables)s,'app.js','dialogs.js',{code:glue},'screens/resear
  await replace.dispatch('click');
  const dialog=ctx.document.body.querySelector('.modal');
  const beforeConfirm={text:dialog.textContent,attempts};
- await dialog.querySelectorAll('button').find(b=>b.textContent==='Отмена').dispatch('click');
+ await dialog.querySelectorAll('button').find(b=>b.textContent==='Cancel').dispatch('click');
  const afterCancel=attempts;
  await replace.dispatch('click');
  await ctx.document.body.querySelector('.modal').querySelectorAll('button').find(b=>b.textContent==='Replace and create').dispatch('click');

@@ -53,10 +53,10 @@ def test_a_repeated_calibrated_colour_shows_three_independent_signals_in_words(t
   out.texts = el.children.map((c) => c.textContent); out.tones = el.children.map((c) => c.className);
   out.titles = el.children.map((c) => c.getAttribute('title'));
 """)
-    assert out["role"] == "group" and out["label"] == "Краткая достоверность"
-    assert out["texts"] == ["проверен повтором", "по эталонной карте", "3 гравировки: 2 теста, 1 работа"]
+    assert out["role"] == "group" and out["label"] == "Evidence summary"
+    assert out["texts"] == ["verified by repetition", "reference chart corrected", "3 engravings: 2 tests, 1 work"]
     assert out["tones"] == ["pill ev-signal ev-repeat ok", "pill ev-signal ev-source ok", "pill ev-signal ev-basis"]
-    assert out["titles"][0] == "Совпали по цвету: все 3 совпали" and all(out["titles"])             # the words carry the meaning, never the colour alone
+    assert out["titles"][0] == "Color agreement: all 3 agree" and all(out["titles"])             # the words carry the meaning, never the colour alone
 
 
 @node
@@ -67,9 +67,9 @@ def test_a_single_unreferenced_camera_colour_and_a_doubtful_one_say_so(tmp_path)
   out.doubtful = texts({agreement: %(agree)s, doubtful: true, measurement: 'calibrated', sources: [{origin: 'work'}]});
   out.contradicted = texts({agreement: {engravings: 2, agreeing: 2, differing: 0, contradicted: true}, measurement: 'calibrated'});
 """ % {"agree": json.dumps(AGREE3)})
-    assert out["single"] == ["одна гравировка, не повторялась", "относительно камеры", "как снято, без привязки", "1 гравировка: 1 тест"]
-    assert out["doubtful"][0] == "сомнительный: гравировки расходятся" and out["doubtful"][-1] == "1 гравировка: 1 работа"
-    assert out["contradicted"][0] == "сомнительный: гравировки расходятся"
+    assert out["single"] == ["one engraving, not repeated", "camera relative", "as photographed, unreferenced", "1 engraving: 1 test"]
+    assert out["doubtful"][0] == "uncertain: engravings disagree" and out["doubtful"][-1] == "1 engraving: 1 work"
+    assert out["contradicted"][0] == "uncertain: engravings disagree"
 
 
 @node
@@ -84,9 +84,9 @@ def test_missing_data_draws_no_signal_instead_of_a_guess(tmp_path):
   out.noSources = ES.summary({agreement: {engravings: 2, agreeing: 2}, sources: []}).children.map((c) => c.textContent);
 """)
     assert out["empty"] is None and out["none"] is None and out["lead"] == "L"
-    assert out["noAgreement"] == ["по эталонной карте"]                                 # nothing is said about repeats when the data has none
-    assert out["unknownMeasure"] == ["проверен повтором"] and out["noSources"] == ["проверен повтором"]
-    assert out["count"] == ["4 независимые гравировки"]
+    assert out["noAgreement"] == ["reference chart corrected"]                                 # nothing is said about repeats when the data has none
+    assert out["unknownMeasure"] == ["verified by repetition"] and out["noSources"] == ["verified by repetition"]
+    assert out["count"] == ["4 independent engravings"]
 
 
 @node
@@ -103,13 +103,13 @@ def test_the_applicability_label_names_the_level_the_server_derived(tmp_path):
   out.unknown = one({level: 'unknown', limits: ['unknown'], size: {how: 'unknown', row_mm: null, measured_mm: [], from_mm: []}});
   out.missing = [ES.applicability(null), ES.applicability(undefined), ES.applicability({}), ES.applicability({level: 'made-up'})];
 """)
-    assert out["here"]["text"] == "измерено при этом размере" and out["here"]["pill"] == "pill ok" and "alert" not in out["here"]["cls"] and out["here"]["role"] == "note"
-    assert out["other"]["text"] == "измерено при другой ширине" and out["other"]["pill"] == "pill warn" and "alert warn" in out["other"]["cls"]
-    assert "между измерениями при 60 мм и 120 мм" in out["other"]["line"] and out["other"]["folds"] == 1                  # the numbers are one fold away
-    assert "Измерено при 120 мм" not in out["outside"]["line"] and "взяты при 120 мм" in out["outside"]["line"]
-    assert out["ramp"]["text"] == "только тестовая шкала" and "не подтверждена" in out["ramp"]["line"]
+    assert out["here"]["text"] == "measured at this size" and out["here"]["pill"] == "pill ok" and "alert" not in out["here"]["cls"] and out["here"]["role"] == "note"
+    assert out["other"]["text"] == "measured at another width" and out["other"]["pill"] == "pill warn" and "alert warn" in out["other"]["cls"]
+    assert "between measurements at 60 mm and 120 mm" in out["other"]["line"] and out["other"]["folds"] == 1                  # the numbers are one fold away
+    assert "Measured at 120 mm" not in out["outside"]["line"] and "measurements at 120 mm" in out["outside"]["line"]
+    assert out["ramp"]["text"] == "test scale only" and "unverified" in out["ramp"]["line"]
     assert out["rampWide"]["level"] == "test_scale_only" and out["rampWide"]["folds"] == 1                              # the width limit is kept beside the ramp
-    assert out["unknown"]["text"] == "ширина измерений неизвестна" and out["unknown"]["folds"] == 0
+    assert out["unknown"]["text"] == "measurement width unknown" and out["unknown"]["folds"] == 0
     assert out["missing"] == [None, None, None, None]                                                                   # a server that sent none draws none
 
 
@@ -122,9 +122,9 @@ def test_a_whole_works_label_counts_layers_and_photo_zones_apart(tmp_path):
   const fine = ES.applicability({level: 'measured_here', limits: [], counts: {layers: 4, estimated_layers: 0, zones: 0, estimated_zones: 0, ramp_only_zones: 0}});
   out.fine = fine.querySelector('.ev-applic-text').textContent;
 """)
-    assert "1 фотозона рассчитана только по тестовым шкалам" in out["line"]
-    assert "1 из 4 цветовых слоёв и 2 фотозоны" in out["fold"]
-    assert out["fine"] == "Цвета 4 цветовых слоёв измерены при этом размере. Фотозоны проверяются по своим шкалам."
+    assert "1 photo zone is predicted using test scales only" in out["line"]
+    assert "1 of 4 color layers and 2 photo zones" in out["fold"]
+    assert out["fine"] == "Colors of 4 color layers were measured at this size. Photo zones are checked against their own scales."
 
 
 @node
@@ -157,9 +157,9 @@ def test_the_picked_colour_shows_its_signals_and_keeps_the_figures_in_a_closed_f
   out.three = await read('Test 1'); out.once = await read('Test 2'); out.doubt = await read('Test 3');
 """)
     three, once, doubt = out["three"], out["once"], out["doubt"]
-    assert three["signals"] == ["проверен повтором", "по эталонной карте", "3 гравировки: 2 теста, 1 работа"]
-    assert once["signals"][0] == "одна гравировка, не повторялась" and once["signals"][-1] == "1 гравировка: 1 тест"
-    assert doubt["signals"][0] == "сомнительный: гравировки расходятся" and doubt["signals"][1] == "по эталонной карте"
+    assert three["signals"] == ["verified by repetition", "reference chart corrected", "3 engravings: 2 tests, 1 work"]
+    assert once["signals"][0] == "one engraving, not repeated" and once["signals"][-1] == "1 engraving: 1 test"
+    assert doubt["signals"][0] == "uncertain: engravings disagree" and doubt["signals"][1] == "reference chart corrected"
     for read in (three, once, doubt):
         assert read["foldOpen"] is False and read["foldTitle"] == "Подробности: цвет Lab, уверенность, источники" and read["foldHasLab"]
         assert "Уверенность" not in read["outsideText"] and "Откуда мы знаем" not in read["outsideText"]            # the figures are not on the first level
@@ -177,9 +177,9 @@ def test_a_found_recipe_shows_its_signals_with_the_figures_folded(tmp_path):
   const card = right.querySelectorAll('article')[0];
   const fold = card.querySelectorAll('details').find((d) => has(d, 'ev-more'));
   out.signals = card.querySelectorAll('.ev-signal').map((p) => p.textContent); out.open = fold.hasAttribute('open'); out.title = fold.querySelector('summary').textContent;
-  out.inFold = fold.textContent.includes('Уверенность: 0.50 (2 из 3 совпали)'); out.outside = card.children.filter((c) => c !== fold).map((c) => c.textContent).join('|');
+  out.inFold = fold.textContent.includes('Уверенность: 0.50 (2 of 3 agree)'); out.outside = card.children.filter((c) => c !== fold).map((c) => c.textContent).join('|');
 """)
-    assert out["signals"] == ["проверен повтором", "по эталонной карте", "3 гравировки: 2 теста, 1 работа"]
+    assert out["signals"] == ["verified by repetition", "reference chart corrected", "3 engravings: 2 tests, 1 work"]
     assert out["open"] is False and out["title"] == "Подробности: уверенность, источники, повторяемость" and out["inFold"] is True
     assert "Уверенность" not in out["outside"] and "ΔE 0.4" in out["outside"]
 
@@ -188,4 +188,4 @@ def test_the_component_is_registered_before_the_screens_that_use_it_and_reads_on
     page = (UI / "index.html").read_text(encoding="utf-8")
     assert page.index("/screens/evidence-summary.js") < page.index("/screens/knowledge.js") < page.index("/screens/color-map.js") < page.index("/screens/colors.js")
     assert page.index("/app.js") < page.index("/screens/evidence-summary.js") and page.index("/screens/evidence-summary.js") < page.index("/screens/findings.js")
-    assert "const {h, pill, steadiness, STEADY, agreed, originText, plural} = App;" in COMPONENT
+    assert "const {h, pill, steadiness, STEADY, agreed, originText} = App;" in COMPONENT

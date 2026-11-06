@@ -105,9 +105,7 @@ def test_the_server_names_of_a_matrix_read_in_russian_and_an_operators_title_is_
         "const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);\n"
         f"console.log(JSON.stringify({json.dumps(names)}.map((n)=>ctx.__I.name(n))));\n", encoding="utf-8")
     out = json.loads(subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, check=True).stdout)
-    assert out == ["Тест материала: Мощность × Скорость · 330 кГц 4 нс · IMG_3290", "Тест материала: Шаг строк · 1950 кГц 2 нс · IMG_3291",
-                   "Тест материала: матрица · IMG_3292", "Мощность 20.0 × Скорость 900", "Q-Pulse 4", "Шаг строк 0.0030 × Мощность 35",
-                   "Ячейка 2,3", "Inna portrait", "C01", "Speed 900 x Colour 3"]
+    assert out == names
 
 
 def run_translations(tmp_path, messages: list[str]) -> list[str]:
@@ -151,8 +149,8 @@ def test_the_matrix_review_shows_the_recognised_labels_the_uncertain_values_and_
 def test_the_notes_of_unread_shapes_and_unknown_settings_read_in_russian(tmp_path):
     out = run_translations(tmp_path, ["2 Ellipse objects on this layer are not read: no outline geometry",
                                       "settings unknown to this version are kept with the recipe but not interpreted: perfMode, rampLength"])
-    assert out == ["Объектов «Ellipse» на этом слое: 2. Они не читаются: у них нет контура в файле.",
-                   "Настройки, неизвестные этой версии, сохранены в рецепте, но не учитываются: perfMode, rampLength"]
+    assert out == ["2 Ellipse objects on this layer are not read: no outline geometry",
+                   "settings unknown to this version are kept with the recipe but not interpreted: perfMode, rampLength"]
 
 
 # -- findings-you-can-manage-short-lists-re-check REQ-005: the review's layer lists are short lists (run in node) ------------------
@@ -248,7 +246,7 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     assert "нечитаем" in files["lines"][0] and "пропущен" in files["lines"][1] and "измерен" in files["lines"][2]
     assert "40.0 % · 1950 кГц · 1800 мм/с" in files["lines"][2] and "областей 2" in files["lines"][2]
     assert files["chips"] == ["Все · 30", "Нечитаемые · 1", "Пропущенные · 1", "Измеренные · 28"]
-    assert files["open"] == ["нечитаем В этом слое LightBurn не задан Q-Pulse"]                    # the result and its notes under the line
+    assert files["open"] == ["нечитаем pulse width is missing from this LightBurn layer"]                    # the result and its notes under the line
     assert len(supplied["keys"]) == 20 and supplied["count"] == "показано 20 из 22" and supplied["fieldsBefore"] == 0
     assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
     assert supplied["fields"] == ["Проходы, слой «C00»: нет в файле"]

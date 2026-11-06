@@ -41,7 +41,7 @@ def test_session_plate_export_and_pending_guard(store):
     project = lightburn.parse_bytes(plans.export_lbrn2(stored))
     assert project.layer(0).name.startswith("CLEAN-")
     assert max(layer.index for layer in project.layers) <= 29
-    with pytest.raises(research.ResearchError, match="ожидает"):
+    with pytest.raises(research.ResearchError, match="awaiting"):
         research.create_plate(store, session["id"], "text_readability", JOB)
 
 
@@ -65,7 +65,7 @@ def test_ai_can_replace_a_pending_plate_without_losing_history(store):
     assert plans.get_plan(store, replaced["plan_id"])["research_session_id"] == session["id"]
     assert [p["status"] for p in research.get_session(store, session["id"])["plans"]] == ["Ready to export", "Superseded"]
     assert research.context(store, session["id"])["session_plans"][0]["replaceable"] is True
-    with pytest.raises(research.ResearchError, match="текущую ожидающую плату"):
+    with pytest.raises(research.ResearchError, match="current pending plate"):
         research.create_plate(store, session["id"], "line_resolution", JOB, replace_plan_id=old["plan_id"])
 
 
@@ -81,9 +81,9 @@ def test_replacement_refuses_linked_photos_and_invalid_new_plate_without_discard
         "photo_name,photo_path,context_json,data_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         ("Awaiting check", laser["id"], lens["id"], material["id"], old["plan_id"], "job-1",
          "file.lbrn2", "/missing.lbrn2", "photo.dng", "/missing.dng", "{}", "{}", now()))
-    with pytest.raises(research.ResearchError, match="привязано фото"):
+    with pytest.raises(research.ResearchError, match="photo"):
         research.create_plate(store, session["id"], "material_matrix", JOB, replace_plan_id=old["plan_id"])
-    with pytest.raises(research.ResearchError, match="привязано фото"):
+    with pytest.raises(research.ResearchError, match="photo"):
         research.cancel_pending_plate(store, session["id"], old["plan_id"], "тест больше не нужен")
     assert plans.get_plan(store, old["plan_id"])["status"] == "Ready to export"
 
@@ -95,7 +95,7 @@ def test_ai_can_cancel_only_the_current_pending_plate(store):
     cancelled = research.call_tool(store, session["id"], "cancel_pending_test",
                                    {"plan_id": old["plan_id"], "reason": "оператор попросил другой эксперимент"})
     assert cancelled["status"] == "Cancelled"
-    with pytest.raises(research.ResearchError, match="не является текущей"):
+    with pytest.raises(research.ResearchError, match="not the current pending"):
         research.cancel_pending_plate(store, session["id"], old["plan_id"], "повторная отмена")
     assert research.create_plate(store, session["id"], "material_matrix", JOB)["plan_id"] != old["plan_id"]
 
@@ -118,10 +118,10 @@ def test_evidence_and_insight_are_scoped_to_exact_hardware_and_accepted_photo(st
     saved = research.save_insight(store, session["id"], "text", "Контраст букв предварительно заметен на снимке.",
                                   "candidate", [accepted[0]])
     assert saved["evidence_pair_ids"] == [accepted[0]]
-    with pytest.raises(research.ResearchError, match="не относится"):
+    with pytest.raises(research.ResearchError, match="does not match"):
         research.save_insight(store, session["id"], "text", "Другая заготовка дала чёткий текст.",
                               "candidate", [accepted[1]])
-    with pytest.raises(research.ResearchError, match="подтверждение"):
+    with pytest.raises(research.ResearchError, match="operator confirms"):
         research.save_insight(store, session["id"], "text", "Готовый режим для работы.", "confirmed", [accepted[0]])
 
 
@@ -309,7 +309,7 @@ def test_depth_goal_does_not_export_a_surface_photo_test_as_depth_evidence(store
     laser, _, material = hardware(store)
     session = research.create_session(store, laser["id"], material["id"], "deep", "Найти глубину 0,2 мм")
     assert research.next_test(store, session["id"])["status"] == "measurement_needed"
-    with pytest.raises(research.ResearchError, match="физического измерения"):
+    with pytest.raises(research.ResearchError, match="physical measurement"):
         research.create_plate(store, session["id"], "material_matrix", JOB)
 
 

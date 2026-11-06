@@ -88,6 +88,7 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
   out.filterTitle = filters.querySelector('h3').textContent;
   out.labels = filters.querySelectorAll('label').map((l) => (l.querySelector('span') || l).textContent);
   out.selects = filters.querySelectorAll('select').length;
+  out.evidenceGroup = [filters.querySelector('fieldset').querySelector('legend').textContent, filters.querySelector('fieldset').querySelectorAll('input').length];
   out.checkbox = filters.querySelectorAll('input').some((i) => i.getAttribute('type') === 'checkbox');
   out.details = filters.querySelectorAll('details').map((d) => [d.querySelector('summary').textContent, d.textContent]);
   out.filtersScroll = has(filters.children[1], 'os-scroll');
@@ -104,7 +105,8 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
     assert out["root"] == "os cm" and out["cols"] == ["os-col", "os-col", "os-col"] and out["h2"] == "Карта цветов"
     assert "Показано цветов: 3 · по эталонной карте 2 · относительно камеры 1" in out["head"] and "Выберите лазер и линзу" in out["head"]
     assert out["filterTitle"] == "Фильтры" and out["selects"] == 4 and out["checkbox"] is True and out["filtersScroll"] is True
-    assert out["labels"][:5] == ["Лазер и линза", "Материал", "Как измерен", "Задача", "Не дольше, мин/см²"]
+    assert out["evidenceGroup"] == ["Evidence and time", 3]
+    assert out["labels"][:5] == ["Лазер и линза", "Материал", "Как измерен", "Задача", "Maximum time, min/cm²"]
     assert [s for s, _ in out["details"]] == ["Как это считается"] and "Время гравировки — оценка по настройкам рецепта" in out["details"][0][1]
     assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "◀", "▶", "+", "−", "Весь вид"]
     assert out["plot"] == [["div"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
@@ -125,6 +127,26 @@ def test_sorting_requests_a_new_server_ranked_result(tmp_path):
 """)
     assert len(out["search"]) == 2 and "sort=time" in out["search"][-1]
     assert out["remembered"] == "time"
+
+
+@node
+def test_color_map_does_not_wait_for_the_secondary_oxide_model(tmp_path):
+    out = run(tmp_path, routes_of(), """
+  const oldFetch = ctx.fetch; let finishModel;
+  ctx.fetch = (url, opts) => String(url).startsWith('/api/oxide/model')
+    ? new Promise((resolve) => { finishModel = resolve; }) : oldFetch(url, opts);
+  const pending = ctx.ColorMap.render({query: {}});
+  tree = await Promise.race([pending, new Promise((resolve) => setTimeout(() => resolve(null), 100))]);
+  out.ready = !!tree; out.circles = tree ? tree.querySelectorAll('circle').length : 0;
+  if (tree) { ctx.document.body.append(tree); tree.querySelector('.cm-plot').querySelector('svg').focus(); }
+  if (finishModel) finishModel({ok: true, status: 200, headers: {get: () => 'application/json'},
+    json: async () => ({spiral: [], summary: {observations: 1, median_de_coloured: 2, coloured: 3}})});
+  await tick(); await tick();
+  out.caption = tree && tree.querySelector('.cm-caption').textContent;
+  out.focusRetained = tree && ctx.document.activeElement === tree.querySelector('.cm-plot').querySelector('svg');
+""")
+    assert out["ready"] is True and out["circles"] == 3 and out["focusRetained"] is True
+    assert "median deviation 2.0 ΔE across 3 colors" in out["caption"]
 
 
 @node
@@ -162,13 +184,13 @@ def test_a_filter_is_remembered_and_the_next_query_carries_it(tmp_path):
   const pick = async (label, value) => { const s = labelled(left(), label).querySelector('select'); s.value = value; await s.dispatch('change'); await again(); };
   await pick('Как измерен', 'relative'); await pick('Материал', 'Grade 5');
   out.stored = JSON.parse(ctx.__store['color-map']);
-  const limit = labelled(left(), 'Не дольше, мин/см²').querySelector('input'); limit.value = '0:30'; await limit.dispatch('change'); await again();
+  const limit = labelled(left(), 'Maximum time, min/cm²').querySelector('input'); limit.value = '0:30'; await limit.dispatch('change'); await again();
   const box = left().querySelectorAll('input').find((i) => i.getAttribute('type') === 'checkbox'); box.checked = true; await box.dispatch('change'); await again();
   out.after = JSON.parse(ctx.__store['color-map']);
   const before = ctx.requests.length; await again();
   out.query = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
   out.selected = labelled(left(), 'Как измерен').querySelector('select').value;
-  const bad = labelled(left(), 'Не дольше, мин/см²').querySelector('input'); bad.value = 'abc'; await bad.dispatch('change');
+  const bad = labelled(left(), 'Maximum time, min/cm²').querySelector('input'); bad.value = 'abc'; await bad.dispatch('change');
   const note = left().querySelectorAll('p').find((p) => p.getAttribute('role') === 'alert' && !p.hidden);
   out.refusal = {toasts: ctx.__toasts || [], beside: note && note.textContent, kept: bad.value, invalid: bad.getAttribute('aria-invalid'),
     described: bad.getAttribute('aria-describedby').split(' ').includes(note && note.getAttribute('id')), stored: JSON.parse(ctx.__store['color-map']).maxTime};
@@ -178,7 +200,7 @@ def test_a_filter_is_remembered_and_the_next_query_carries_it(tmp_path):
     assert len(out["query"]) == 1 and all(part in out["query"][0] for part in ("measurement=relative", "material=Grade+5", "max_time_s_per_cm2=30", "include_unreferenced=false"))
     # the wrong text is refused beside its box, which keeps it, is marked and tied to the words; no toast, and the filter stays as it was (ux-save-feedback-p0, REQ-003)
     assert out["selected"] == "relative"
-    assert out["refusal"] == {"toasts": [], "beside": "Введите время как минуты:секунды (например 0:30) или минуты числом, больше нуля. Введено: «abc». Поиск остался прежним.",
+    assert out["refusal"] == {"toasts": [], "beside": "Enter a time greater than zero as minutes:seconds (for example, 0:30) or a number of minutes. Entered: “abc”. The search remains unchanged.",
                               "kept": "abc", "invalid": "true", "described": True, "stored": 30}
 
 
@@ -220,7 +242,7 @@ def test_a_picked_colour_is_described_under_the_map_and_the_search_fills_the_lis
   out.targetMark = middle.querySelectorAll('circle').some((c) => c.getAttribute('stroke') === '#ffd166');
 """)
     assert out["hiddenAtFirst"] is True and out["detailShown"] is True and out["detailTitle"] == "Выбранный цвет"
-    assert "L 80.0 · a 4.0 · b 30.0" in out["detail"] and "по эталонной карте" in out["detail"] and "время ≈ 41.0 с на см² (оценка)" in out["detail"]
+    assert "L 80.0 · a 4.0 · b 30.0" in out["detail"] and "reference chart corrected" in out["detail"] and "время ≈ 41.0 с на см² (оценка)" in out["detail"]
     assert out["pickedCircle"] == 1
     assert out["requests"][0].startswith("/api/colors/search?L=80&a=4&b=30&limit=12") and any(u.startswith("/api/colors/settings?L=80&a=4&b=30") for u in out["requests"])
     assert "Где встречался такой цвет" in out["list"] and out["hits"] == 1 and "ΔE 0.4" in out["list"] and "в допуске" in out["list"]
@@ -272,7 +294,7 @@ def test_the_filter_hides_the_doubtful_colours_and_the_next_questions_carry_it(t
     world["counts"]["doubtful"] = 1
     out = run(tmp_path, routes_of(world), """
   const left = () => tree.querySelector('.os-body').children[0];
-  const box = () => left().querySelectorAll('label').find((l) => l.textContent.startsWith('Скрыть цвета, в которых не уверены')).querySelector('input');
+  const box = () => left().querySelectorAll('label').find((l) => l.textContent.startsWith('Hide uncertain colors')).querySelector('input');
   out.title = box().parentNode.getAttribute('title'); out.sub0 = tree.querySelector('.sub').textContent;
   box().checked = true; await box().dispatch('change'); tree = await screen();
   out.stored = JSON.parse(ctx.__store['color-map']).doubtful;
@@ -286,7 +308,7 @@ def test_the_filter_hides_the_doubtful_colours_and_the_next_questions_carry_it(t
   out.search = ctx.requests.filter((r) => r.path === '/api/colors/search').map((r) => r.url).pop();
   out.explained = tree.querySelector('details').textContent.includes('такие цвета помечены «сомнительный» и их можно скрыть');
 """)
-    assert "Кружок меньше, чем у гравировки, которую не повторяли" in out["title"]
+    assert "Repeated engravings produced different colors" in out["title"]
     assert "сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub0"] and "скрыто" not in out["sub0"]
     assert out["stored"] is True and out["checked"] is True and "скрыто сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub1"]
     assert len(out["map"]) == 1 and "hide_doubtful=true" in out["map"][0] and "hide_doubtful=true" in out["search"] and out["explained"] is True
@@ -310,19 +332,19 @@ def test_a_picked_colour_shows_its_confidence_and_every_engraving_it_is_known_fr
   await pickByTitle('Test 3'); out.doubt = read();
 """)
     three = out["three"]
-    assert "Уверенность: 0.50 (2 из 3 совпали)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
-    assert three["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)" and "Цвет настроек: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
-    assert len(three["rows"]) == 3 and "Third try" in three["rows"][0] and "First try" in three["rows"][2] and "ΔE 20.5 от цвета настроек" in three["rows"][2]
-    assert three["pills"].count("совпадает") == 2 and three["pills"].count("расходится") == 1 and "сомнительный" not in three["pills"]
-    assert three["pills"].count("тест") == 2 and three["pills"].count("работа") == 1                      # every engraving says what it was (REQ-051)
-    assert ["разбор №23", "#/analysis/23"] in three["links"] and ["эксперимент", "#/experiment/eng-1"] in three["links"] and "фото IMG_3.DNG" in three["rows"][0]
-    assert "в пределах ΔE 5" in three["text"] and "повторное фото той же гравировки повтором не считается" in three["text"]
+    assert "Уверенность: 0.50 (2 of 3 agree)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
+    assert three["summary"] == "Color evidence: 3 independent engravings (2 tests, 1 work)" and "Settings color: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
+    assert len(three["rows"]) == 3 and "Third try" in three["rows"][0] and "First try" in three["rows"][2] and "ΔE 20.5 from the settings color" in three["rows"][2]
+    assert three["pills"].count("agrees") == 2 and three["pills"].count("disagrees") == 1 and "сомнительный" not in three["pills"]
+    assert three["pills"].count("test") == 2 and three["pills"].count("work") == 1                      # every engraving says what it was (REQ-051)
+    assert ["review #23", "#/analysis/23"] in three["links"] and ["experiment", "#/experiment/eng-1"] in three["links"] and "photos IMG_3.DNG" in three["rows"][0]
+    assert "within ΔE 5" in three["text"] and "another photo of the same engraving is not an independent repetition" in three["text"]
     once = out["once"]
-    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Откуда мы знаем этот цвет: одна гравировка (тест)"
-    assert len(once["rows"]) == 1 and "Test 2" in once["rows"][0] and "совпадает" not in once["pills"] and "Цвет настроек:" not in once["text"]
+    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Color evidence: one engraving (test)"
+    assert len(once["rows"]) == 1 and "Test 2" in once["rows"][0] and "agrees" not in once["pills"] and "Settings color:" not in once["text"]
     doubt = out["doubt"]
-    assert "Уверенность: 0.17 (1 из 2 совпали)" in doubt["text"] and "сомнительный" in doubt["pills"] and "цвет менялся при тех же настройках" in doubt["text"]
-    assert doubt["dot"][0] == pytest.approx(4 / 1.5) and "Older" in doubt["rows"][1] and "ΔE 27.0 от цвета настроек" in doubt["rows"][1]
+    assert "Уверенность: 0.17 (1 of 2 agree)" in doubt["text"] and "сомнительный" in doubt["pills"] and "color varied with the same settings" in doubt["text"]
+    assert doubt["dot"][0] == pytest.approx(4 / 1.5) and "Older" in doubt["rows"][1] and "ΔE 27.0 from the settings color" in doubt["rows"][1]
 
 
 @node
@@ -346,8 +368,8 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
   const show = byText(list2, 'button', 'Показать и их'); await show.dispatch('click');
   out.shown = JSON.parse(ctx.__store['color-map']).doubtful;
 """)
-    assert "Уверенность: 0.50 (2 из 3 совпали)" in out["card"] and "получался 3 раза" in out["card"] and out["card"].count("уверенность 0.50") == 0       # said once
-    assert out["summary"] == "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)" and out["rows"] == 3
+    assert "Уверенность: 0.50 (2 of 3 agree)" in out["card"] and "получался 3 раза" in out["card"] and out["card"].count("уверенность 0.50") == 0       # said once
+    assert out["summary"] == "Color evidence: 3 independent engravings (2 tests, 1 work)" and out["rows"] == 3
     assert out["once"] == ["Среди найденных рецептов сомнительных (при повторах цвет менялся): 2; они помечены. "]
     assert out["hidden"] == ["2 рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. Показать и их"] and out["shown"] is False
 
@@ -372,8 +394,8 @@ def test_the_engravings_of_every_found_recipe_are_folded_and_those_of_the_picked
     .map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.querySelectorAll('li').length]));
 """)
     assert out["picked"] == [True]
-    assert out["found"] == [[[False, "Откуда мы знаем этот цвет: 3 независимые гравировки (2 теста, 1 работа)", 3]],
-                            [[False, "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)", 2]]]      # folded, still all there
+    assert out["found"] == [[[False, "Color evidence: 3 independent engravings (2 tests, 1 work)", 3]],
+                            [[False, "Color evidence: 2 independent engravings (1 test, 1 work)", 2]]]      # folded, still all there
     assert "limit: '12'" in SCREEN                                                                       # a short list by itself: no pages needed
 
 
@@ -414,7 +436,7 @@ def test_the_diameter_of_a_circle_grows_one_and_a_half_times_per_agreeing_repeat
     assert by_title["Test 1"] == pytest.approx(4 / 1.5) and by_title["Test 3"] == pytest.approx(9)
     assert by_title["Test 4"] == 14 and by_title["Test 5"] == 2 and by_title["Test 6"] == pytest.approx(4)
     titles = " ".join(out["titles"])
-    assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (все 3 совпали)" in titles and "уверенность 0.17 (1 из 2 совпали)" in titles
+    assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (all 3 agree)" in titles and "уверенность 0.17 (1 of 2 agree)" in titles
     assert "каждый повтор с тем же цветом увеличивает его в 1,5 раза" in SCREEN
 
 
@@ -533,7 +555,7 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
     assert "с шагом строк от 0,0085 мм" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
     assert out["setup"] == ["Лазер и линзаJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
     assert out["pale"] == ["1", "0.18", "1"]                                                          # what cannot be the dots is pale
-    assert out["step"] == "Для точек этот цвет не подходит: шаг строк мельче 0,0085 мм: при таком шаге точки слипаются."            # the server's reason
+    assert out["step"] == "Для точек этот цвет не подходит: its step is finer than 0.0085 mm: there the dots merge."            # the server's reason
     assert out["tone"] == "Точки этим цветомТочки встанут на эту шкалу серого при 12,5 %: 150 мм/с · 60 кГц · 300 нс · шаг 0,0212 мм."
     assert out["fill"] == "Точки этим цветомТочки будут бить на настройках этой заливки: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм; шаг строк станет шагом точек."
     assert out["under"] == 2                                                                          # right under the picked colour

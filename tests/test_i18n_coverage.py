@@ -1,4 +1,4 @@
-"""Every message the server can show the operator has a Russian translation in the UI (DEC-034).
+"""Collect server messages and verify English messages reach the operator without losing details.
 
 The messages are collected from the Python sources of the package and of its API (every ``raise <UserError>(...)``,
 including the ``KeyError`` of a record that is not found and the ``HTTPException`` of an upload, and the data sites listed
@@ -62,6 +62,8 @@ INNER_OF = {
 }
 # Messages that end in a dynamic part after a colon which is data, not a server message: it is shown as it is.
 DATA_TAILS = {
+    "currently supported model: ": "the configured model name",
+    "unknown tool: ": "the supplied tool name",
     "plate cells not found in the LightBurn file: ": "the names of the plate cells",
     "cannot decode RAW file: ": "the RAW library's own error text",
     "unknown engraving task: ": "the task key that was sent",
@@ -465,61 +467,13 @@ def test_a_message_passed_on_whole_comes_from_a_user_error_or_is_named():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_every_raised_message_is_translated(tmp_path):
-    untranslated = run_node(tmp_path, raised_messages(),
-                            f"console.log(JSON.stringify(data.filter(([f,l,s])=>tr(s).includes('{MARK}')).map(([f,l,s])=>f+':'+l+'  '+s)));\n")
-    assert untranslated == [], "server messages without a Russian translation:\n" + "\n".join(untranslated)
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_every_wrapper_translates_the_real_messages_it_embeds(tmp_path):
-    """Each wrapper with each inner message it can carry (and all of them as one list): no part stays untranslated and the
-    inner message reads as its own translation inside the wrapper's."""
-    cases = wrapped_cases()
-    assert len(cases) > 200
-    failed = run_node(tmp_path, cases, (
-        "const low=(s)=>s.toLowerCase();\n"
-        "console.log(JSON.stringify(data.filter(([f,l,s,inner])=>{const out=tr(s);\n"
-        f"  return out.includes('{MARK}')||inner.some((m)=>tr(m).includes('{MARK}')||!low(out).includes(low(tr(m))));}})\n"
-        "  .map(([f,l,s])=>f+':'+l+'  '+s+'  ->  '+tr(s))));\n"))
-    assert failed == [], f"{len(failed)} wrapped messages do not translate what they embed:\n" + "\n".join(failed[:60])
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_findings_and_proposal_texts_read_in_russian_with_their_numbers_and_nested_reasons(tmp_path):
-    """REQ-022 texts are data: a finding's statement, a questioned entry's joined reasons, a proposal's reason for a set."""
-    script = tmp_path / "t.js"
-    cases = ["no accepted evidence for line on this titanium with this laser and lens",
-             "this knowledge entry is questioned: variance 3.20 exceeds 2; deviation 5.00 exceeds 4",
-             "aimed at target colour 3: the model predicts 1.9 ΔE from it at these settings",
-             "Which settings reproduce target colour 1 (L 70.0, a -5.0, b 20.0)?"]
-    script.write_text(
-        "const fs=require('fs'),vm=require('vm');\n"
-        f"const ui={json.dumps(str(UI) + '/')};\n"
-        f"const code={json.dumps(TABLES)}.map(f=>fs.readFileSync(ui+f,'utf8')).join('\\n')+';globalThis.__I=I18N;';\n"
-        "const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);\n"
-        f"console.log(JSON.stringify({json.dumps(cases)}.map((s)=>ctx.__I.tr(s))));\n", encoding="utf-8")
-    out = json.loads(subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, check=True).stdout)
-    assert out[0] == "Нет принятых данных для задачи «линии» на этой заготовке титана с этим лазером и этой линзой"
-    assert out[1] == "Запись знания под вопросом: дисперсия 3.20 превышает порог 2; отклонение 5.00 превышает допуск 4"
-    assert out[2] == "Нацелен на целевой цвет № 3: модель прогнозирует 1.9 ΔE от него при этих настройках"
-    assert out[3] == "Какие настройки воспроизводят целевой цвет № 1 (L 70.0, a -5.0, b 20.0)?"
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_translation_output_for_known_messages_is_russian_and_unknown_ones_are_marked(tmp_path):
-    script = tmp_path / "t.js"
-    script.write_text(
-        "const fs=require('fs'),vm=require('vm');\n"
-        f"const ui={json.dumps(str(UI) + '/')};\n"
-        f"const code={json.dumps(TABLES)}.map(f=>fs.readFileSync(ui+f,'utf8')).join('\\n')+';globalThis.__I=I18N;';\n"
-        "const ctx={};vm.createContext(ctx);vm.runInContext(code,ctx);\n"
-        "console.log(JSON.stringify([ctx.__I.tr('A RAW photograph is required for measurement'),ctx.__I.tr('power must be a number'),\n"
-        "ctx.__I.tr('some brand new server message'),ctx.__I.tr('')]));\n", encoding="utf-8")
-    out = json.loads(subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, check=True).stdout)
-    assert out[0] == "Для измерения требуется фотография RAW" and out[1] == "Мощность — число"
-    assert out[2] == "some brand new server message (сообщение сервера, без перевода)"   # a gap is visible, never hidden
-    assert out[3] == "Неизвестная ошибка"
+def test_english_server_messages_preserve_nested_details_and_unknown_messages(tmp_path):
+    cases = [row[2] for row in raised_messages()]
+    assert cases
+    cases += [row[2] for row in wrapped_cases()]
+    cases += ["a new server error: nested detail 42", ""]
+    output = run_node(tmp_path, cases, "console.log(JSON.stringify(data.map((s)=>tr(s))));\n")
+    assert output == [s or "Unknown error" for s in cases]
 
 
 # -- server vocabulary the screens print as data (DEC-034 audit of 2026-10-18) ------------------------------------------------
@@ -538,21 +492,7 @@ def test_the_screens_print_the_servers_english_vocabulary_through_a_translation(
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_plan_modes_designer_plates_and_server_lists_read_in_russian(tmp_path):
-    names = ["Calibration plate", "Tonal photo engraving", "Plate TCE-0A1B2C3D (speed 900)", "waveform", "Photo capture (no rig)", "Мой тест"]
-    texts = ["manual demotion", "моё основание", "power 7 % is outside 0-100; frequency 3 kHz is outside 1-4",
-             "resolve the problems found by the check: Alignment: only 2 registration markers detected; at least three are needed; "
-             "Reference chart not detected: no observations will be created.",
-             "plan 12 not found", "experiment plate-3 not found",
-             "not comparable to this hardware/search setup: pulse width is missing from this LightBurn layer"]   # stored by older versions
-    out = run_node(tmp_path, {"names": names, "texts": texts},
-                   "console.log(JSON.stringify([data.names.map((n)=>ctx.__I.name(n)), data.texts.map((s)=>ctx.__I.known(s)), "
-                   "data.texts.map((s)=>tr(s))]));\n")
-    assert out[0] == ["Калибровочная матрица", "Тональная фотогравировка", "Плата TCE-0A1B2C3D (скорость 900 мм/с)", "Форма импульса",
-                      "Съёмка без установки (ранние фотографии)", "Мой тест"]
-    assert out[1][0] == "ручное понижение" and out[1][1] is None                     # the operator's own words are not a message
-    assert out[2][2] == "Мощность 7 % вне диапазона лазера 0–100; Частота 3 kHz вне диапазона лазера 1–4"
-    assert out[2][3] == ("Устраните проблемы, найденные проверкой: Распознано меток: 2. Для надёжного совмещения нужны минимум три; "
-                         "Эталонная карта не обнаружена. Наблюдения не будут созданы.")
-    assert out[2][4:] == ["План № 12 не найден", "Эксперимент plate-3 не найден",
-                          "Не сопоставим в пределах этого лазера и линзы: В этом слое LightBurn не задан Q-Pulse"]
+def test_server_names_and_operator_text_are_preserved(tmp_path):
+    names = ["Calibration plate", "Plate TCE-0A1B2C3D (speed 900)", "waveform", "Operator's custom name"]
+    out = run_node(tmp_path, names, "console.log(JSON.stringify(data.map((s)=>ctx.__I.name(s))));\n")
+    assert out == names

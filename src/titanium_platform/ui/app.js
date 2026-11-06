@@ -1,6 +1,4 @@
-/* Цвет титана — ядро интерфейса: DOM-помощники и обращения к API.
-   Окна и уведомления — dialogs.js, маршруты — router.js. Язык интерфейса — русский (DEC-034);
-   сообщения сервера переводит I18N. */
+/* Titanium color UI core: DOM helpers and API calls. Dialogs are in dialogs.js; routes are in router.js. */
 'use strict';
 const App = (() => {
   function h(tag, attrs, ...kids) {
@@ -39,12 +37,12 @@ const App = (() => {
     const id = `f${++fieldSeq}`;
     const labelSpan = h('span', opts ? {id: `${id}-label`} : {}, label);
     const note = help ? h('span', {class: 'small muted', id: opts ? `${id}-help` : null}, help) : null;
-    // a quantity without a unit (a count, a ratio) says so to a screen reader: «без единицы»; the eyes get no extra words
-    const facts = opts ? [opts.unit ? `единица: ${opts.unit}` : null, opts.constraint || null].filter(Boolean) : [];
+    // a quantity without a unit (a count, a ratio) says so to a screen reader: "unitless"; the eyes get no extra words
+    const facts = opts ? [opts.unit ? `unit: ${opts.unit}` : null, opts.constraint || null].filter(Boolean) : [];
     const hint = facts.length || (opts && opts.unitless) ? h('span', {class: 'small muted f-constraint', id: `${id}-hint`},
-      opts.unitless && !opts.unit ? h('span', {class: 'sr-only'}, 'без единицы' + (facts.length ? ' · ' : '')) : null, facts.join(' · ')) : null;
+      opts.unitless && !opts.unit ? h('span', {class: 'sr-only'}, 'unitless' + (facts.length ? ' · ' : '')) : null, facts.join(' · ')) : null;
     const body = opts && opts.unit && input ? h('span', {class: 'f-with-unit'}, input, h('span', {class: 'f-unit', 'aria-hidden': 'true'}, opts.unit)) : input;
-    const el = h('label', {class: 'f'}, labelSpan, opts && opts.required ? h('span', {class: 'f-required'}, 'обязательно') : null, body, hint, note);
+    const el = h('label', {class: 'f'}, labelSpan, opts && opts.required ? h('span', {class: 'f-required'}, 'required') : null, body, hint, note);
     let failure = null;
     const controls = () => controlsOf(input);                              // read when needed: a screen may fill a composite control after the field is made
     const single = () => { const all = controls(); return all.length === 1 && all[0] === input; };
@@ -87,62 +85,61 @@ const App = (() => {
   const pill = (text, kind = '') => h('span', {class: 'pill ' + kind}, text);
   const labText = (lab) => (lab ? `L ${(+lab[0]).toFixed(1)} · a ${(+lab[1]).toFixed(1)} · b ${(+lab[2]).toFixed(1)}` : '—');
   const num = (v, d = 2) => (v == null ? '—' : (+v).toFixed(d));
-  /** Оценка времени гравировки работы по её файлу LightBurn (REQ-060): итог, что в него не входит, время каждого слоя. */
+  /** Engraving time estimate from the LightBurn file (REQ-060): total, exclusions and time per layer. */
   function timeBlock(t) {
-    if (!t) return h('p', {class: 'muted small'}, 'Время гравировки не оценить: файл работы не читается или ещё не создаётся.');
+    if (!t) return h('p', {class: 'muted small'}, 'Engraving time is unavailable: the work file cannot be read or has not been created yet.');
     return h('div', {class: 'stack'},
-      h('p', {}, h('strong', {}, `Время гравировки ≈ ${duration(t.seconds)}`), t.complete ? '' : ' (без слоёв, время которых не оценить)',
-        h('span', {class: 'muted small'}, ' — оценка по файлу LightBurn: площадь или длина каждого слоя, скорость, шаг строк, проходы и повторы; переходы между объектами не учтены.')),
-      h('details', {class: 'small'}, h('summary', {}, `По слоям (${t.layers.length})`),
+      h('p', {}, h('strong', {}, `Engraving time ≈ ${duration(t.seconds)}`), t.complete ? '' : ' (excluding layers without a time estimate)',
+        h('span', {class: 'muted small'}, ' — estimated from the LightBurn file using layer area or length, speed, line spacing, passes and repeats; travel between objects is excluded.')),
+      h('details', {class: 'small'}, h('summary', {}, `By layer (${t.layers.length})`),
         h('ul', {}, t.layers.map((r) => h('li', {}, `${r.name}: `, r.seconds == null ? I18N.tr(r.note) : duration(r.seconds))))));
   }
-  /** Длительность в секундах по-русски: «2 ч 05 мин», «4 мин 07 с», «45 с». */
-  const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
-    : s >= 60 ? `${Math.floor(s / 60)} мин ${String(Math.round(s % 60)).padStart(2, '0')} с` : `${Math.round(s)} с`);
-  /** Сколько независимых гравировок настройки дали один цвет (REQ-045): «2 из 3 совпали»; одна гравировка не повторялась. */
-  const agreed = (a) => (!a || a.engravings < 2 ? 'не повторялась' : a.differing ? `${a.agreeing} из ${a.engravings} совпали` : `все ${a.engravings} совпали`);
-  /** Почему настройку не берёт автоматика: цвет менялся при тех же настройках или те же настройки измерены точнее. */
-  const CAUTION = {contradicted: 'цвет менялся при тех же настройках', superseded: 'есть более точное измерение этих настроек'};
+  /** Duration in seconds, displayed in hours, minutes and seconds. */
+  const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} min`
+    : s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s` : `${Math.round(s)} s`);
+  /** How many independent engravings of a setting agreed (REQ-045). */
+  const agreed = (a) => (!a || a.engravings < 2 ? 'not repeated' : a.differing ? `${a.agreeing} of ${a.engravings} agree` : `all ${a.engravings} agree`);
+  /** Why automation excludes a setting: color varied, or a more accurate measurement exists. */
+  const CAUTION = {contradicted: 'color varied with the same settings', superseded: 'a more accurate measurement of these settings exists'};
 
   const plural = (n, [one, few, many]) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many}`;
-  /** Откуда взят цвет (REQ-051): тест (плита, проверка лазера, матрица параметров: гравировали, чтобы измерить цвет) или работа (векторная работа
-      или любая готовая гравировка: гравировали, чтобы смотреть). */
-  const ORIGIN = {test: ['тест', ['тест', 'теста', 'тестов']], work: ['работа', ['работа', 'работы', 'работ']]};
+  /** Color origin (REQ-051): a test made to measure color or a finished engraving. */
+  const ORIGIN = {test: ['test', ['test', 'tests']], work: ['work', ['work', 'works']]};
+  const counted = (n, forms) => `${n} ${n === 1 ? forms[0] : forms[1]}`;
   const kindOf = (s) => (s && s.origin === 'test' ? 'test' : 'work');          // a source with no origin is taken for a work
-  /** «2 теста, 1 работа»: из чего известен цвет. */
+  /** The source counts for a color. */
   const originParts = (sources) => ['test', 'work'].map((kind) => [kind, (sources || []).filter((s) => kindOf(s) === kind).length]).filter(([, n]) => n)
-    .map(([kind, n]) => plural(n, ORIGIN[kind][1])).join(', ');
-  /** «3 гравировки: 2 теста, 1 работа»: одной строкой, из чего известен цвет. */
-  const originText = (sources) => ((sources || []).length ? `${plural(sources.length, ['гравировка', 'гравировки', 'гравировок'])}: ${originParts(sources)}` : 'источники не записаны');
-  /** Можно ли верить цвету настройки (REQ-045, REQ-051): ``stable`` — повторён и совпал, ``single`` — одна гравировка, не повторялась,
-      ``doubtful`` — гравировки расходятся (кружок на карте меньше, чем у одной гравировки, или цвет менялся). */
+    .map(([kind, n]) => counted(n, ORIGIN[kind][1])).join(', ');
+  /** The number and types of engravings that support a color. */
+  const originText = (sources) => ((sources || []).length ? `${counted(sources.length, ['engraving', 'engravings'])}: ${originParts(sources)}` : 'no sources recorded');
+  /** Color reliability (REQ-045, REQ-051): repeated and matching, single, or conflicting. */
   function steadiness(e) {
     const a = e.agreement || {};
     if (a.engravings >= 2 && ((e.doubtful ?? (a.agreeing - 1 - (a.differing || 0) < 0)) || a.contradicted)) return 'doubtful';
     return a.engravings >= 2 && a.agreeing >= 2 ? 'stable' : 'single';
   }
-  const STEADY = {stable: ['проверен повтором', 'ok'], single: ['одна гравировка, не повторялась', 'warn'], doubtful: ['сомнительный: гравировки расходятся', 'bad']};
+  const STEADY = {stable: ['verified by repetition', 'ok'], single: ['one engraving, not repeated', 'warn'], doubtful: ['uncertain: engravings disagree', 'bad']};
   const day = (iso) => (iso || '').slice(0, 10);
-  const MEASURED = {calibrated: ['по эталонной карте', 'ok'], relative: ['относительно камеры', 'warn']};
-  /** Где мы знаем цвет (REQ-049, REQ-051): каждая независимая гравировка, откуда она (тест или работа), совпадает ли с цветом настроек и куда посмотреть. */
+  const MEASURED = {calibrated: ['reference chart corrected', 'ok'], relative: ['camera relative', 'warn']};
+  /** Color evidence (REQ-049, REQ-051): independent engravings, origins, agreement and links. */
   function sourcesBlock(sources, a, agreedLab, open = true) {
     const n = sources.length;
     // a few photographs are named in the line; many are a count with a list of links (ux-growing-collections-p0, REQ-002)
     const many = (list) => typeof SourceRefs !== 'undefined' && list.length > SourceRefs.SHORT;
     const row = (s) => h('li', {class: 'cm-source'}, swatch(s.lab), ' ', h('strong', {}, s.title), ' ', pill(ORIGIN[kindOf(s)][0]), ' · ',
-      link('/experiment/' + encodeURIComponent(s.experiment), 'эксперимент'), ...(s.work_id ? [' · ', link('/vector?plan=' + s.work_id, 'векторная работа')] : []),
-      ...(s.provisional || many(s.pair_ids) ? (s.provisional ? [' · ', pill('предварительно', 'warn')] : []) : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `разбор №${id}`)])),
-      h('div', {class: 'muted'}, [day(s.date), s.photos.length && !many(s.photos) ? `фото ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
-        ' · ', pill(...MEASURED[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('совпадает', 'ok') : pill('расходится', 'warn')) : null,
-        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} от цвета настроек` : ''),
-      !s.provisional && many(s.pair_ids) ? SourceRefs.refs(s.pair_ids, {label: 'Разборы фото', href: (id) => `/analysis/${id}`}) : null,
-      many(s.photos) ? SourceRefs.refs(s.photos, {label: 'Фото', mark: ''}) : null);
+      link('/experiment/' + encodeURIComponent(s.experiment), 'experiment'), ...(s.work_id ? [' · ', link('/vector?plan=' + s.work_id, 'vector work')] : []),
+      ...(s.provisional || many(s.pair_ids) ? (s.provisional ? [' · ', pill('provisional', 'warn')] : []) : s.pair_ids.flatMap((id) => [' · ', link(`/analysis/${id}`, `review #${id}`)])),
+      h('div', {class: 'muted'}, [day(s.date), s.photos.length && !many(s.photos) ? `photos ${s.photos.join(', ')}` : null, s.layers.length ? s.layers.join(', ') : null].filter(Boolean).join(' · '),
+        ' · ', pill(...MEASURED[s.measurement]), ' ', n > 1 ? (s.agrees ? pill('agrees', 'ok') : pill('disagrees', 'warn')) : null,
+        n > 1 ? ` · ΔE ${num(s.delta_e, 1)} from the settings color` : ''),
+      !s.provisional && many(s.pair_ids) ? SourceRefs.refs(s.pair_ids, {label: 'Photo reviews', href: (id) => `/analysis/${id}`}) : null,
+      many(s.photos) ? SourceRefs.refs(s.photos, {label: 'Photos', mark: ''}) : null);
     return h('details', {class: 'cm-sources', open},
-      h('summary', {}, n > 1 ? `Откуда мы знаем этот цвет: ${n} независимые гравировки (${originParts(sources)})` : `Откуда мы знаем этот цвет: одна гравировка (${ORIGIN[kindOf(sources[0])][0]})`),
-      agreedLab && n > 1 ? h('p', {class: 'small'}, 'Цвет настроек: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
+      h('summary', {}, n > 1 ? `Color evidence: ${n} independent engravings (${originParts(sources)})` : `Color evidence: one engraving (${ORIGIN[kindOf(sources[0])][0]})`),
+      agreedLab && n > 1 ? h('p', {class: 'small'}, 'Settings color: ', swatch(agreedLab), ` ${labText(agreedLab)}`) : null,
       h('ul', {class: 'stack small cm-source-list'}, ...sources.map(row)),
-      n > 1 ? h('p', {class: 'muted small'}, `Цвет настроек — среднее гравировок, которые совпали между собой (в пределах ΔE ${num(a && a.limit != null ? a.limit : 5, 0)}); `
-        + 'повторное фото той же гравировки повтором не считается.') : null);
+      n > 1 ? h('p', {class: 'muted small'}, `The settings color is the average of agreeing engravings (within ΔE ${num(a && a.limit != null ? a.limit : 5, 0)}); `
+        + 'another photo of the same engraving is not an independent repetition.') : null);
   }
 
   function labRgb(lab) {
@@ -251,18 +248,18 @@ const App = (() => {
   const tell = (watcher, event, ...args) => { try { if (watcher && watcher[event]) watcher[event](...args); } catch (_) { /* a watcher never breaks a request */ } };
 
   const BODY_SOURCES = ['body', 'query', 'path', 'form', 'header', 'cookie'];
-  const LIMIT_WORDS = {gt: (v) => `больше ${v}`, ge: (v) => `не меньше ${v}`, lt: (v) => `меньше ${v}`, le: (v) => `не больше ${v}`};
+  const LIMIT_WORDS = {gt: (v) => `greater than ${v}`, ge: (v) => `at least ${v}`, lt: (v) => `less than ${v}`, le: (v) => `at most ${v}`};
   const LIMIT_OF = {greater_than: 'gt', greater_than_equal: 'ge', less_than: 'lt', less_than_equal: 'le'};
   /** The text of one item of FastAPI's validation list, in Russian, from its ``type`` and ``ctx`` (nothing is made up: the limits are the server's). */
   function validationText(item) {
     const type = item && item.type;
-    if (type === 'missing') return 'Заполните это поле';
-    if (/^(float|int|decimal)_(parsing|type)$/.test(type || '')) return 'Введите число';
-    if (type === 'int_from_float') return 'Введите целое число';
-    if (LIMIT_OF[type] && item.ctx && item.ctx[LIMIT_OF[type]] != null) return `Значение должно быть ${LIMIT_WORDS[LIMIT_OF[type]](item.ctx[LIMIT_OF[type]])}`;
-    if (type === 'string_too_short' && item.ctx) return `Слишком коротко: не меньше ${item.ctx.min_length} зн.`;
-    if (type === 'string_too_long' && item.ctx) return `Слишком длинно: не больше ${item.ctx.max_length} зн.`;
-    return 'Проверьте значение этого поля';
+    if (type === 'missing') return 'Complete this field';
+    if (/^(float|int|decimal)_(parsing|type)$/.test(type || '')) return 'Enter a number';
+    if (type === 'int_from_float') return 'Enter a whole number';
+    if (LIMIT_OF[type] && item.ctx && item.ctx[LIMIT_OF[type]] != null) return `Value must be ${LIMIT_WORDS[LIMIT_OF[type]](item.ctx[LIMIT_OF[type]])}`;
+    if (type === 'string_too_short' && item.ctx) return `Too short: at least ${item.ctx.min_length} characters`;
+    if (type === 'string_too_long' && item.ctx) return `Too long: at most ${item.ctx.max_length} characters`;
+    return 'Check this field';
   }
   /** FastAPI's validation list as ``[{field, path, message, type, raw}]``: ``path`` is where the server found the fault (without «body»), ``field`` its last part. */
   function validationDetails(list) {
@@ -282,7 +279,7 @@ const App = (() => {
     let res;
     try { res = await fetch('/api' + path, opts); }
     catch (_) {
-      const failure = Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'});
+      const failure = Object.assign(new Error('Cannot reach the local service. Is the application running?'), {kind: 'network'});
       tell(watcher, 'fail', failure);
       throw failure;
     }
@@ -291,8 +288,8 @@ const App = (() => {
     const data = json ? await res.json() : await res.blob();
     if (!res.ok) {
       const d = data && data.detail ? data.detail : data;
-      const raw = d && d.error ? d.error : (Array.isArray(d) ? 'Проверьте заполнение полей формы'
-        : typeof d === 'string' ? d : `Ошибка сервера (${res.status}). Проверка не завершилась.`);
+      const raw = d && d.error ? d.error : (Array.isArray(d) ? 'Check the form fields'
+        : typeof d === 'string' ? d : `Server error (${res.status}). Validation did not finish.`);
       // ``details`` is what the server said about each field (only FastAPI's own validation list names fields; the application's own
       // refusals {error, kind} do not, and the form then keeps the message as one about the whole form)
       const failure = Object.assign(new Error(I18N.tr(raw)), {kind: d && d.kind, status: res.status}, Array.isArray(d) ? {details: validationDetails(d)} : {});
@@ -324,13 +321,13 @@ const App = (() => {
         tell(watcher, 'progress', percent);
         onProgress(percent);
       };
-      xhr.onerror = () => fail(Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'}));
-      xhr.onabort = () => { const stopped = Object.assign(new Error('Загрузка остановлена.'), {kind: 'cancelled'}); tell(watcher, 'cancelled'); reject(stopped); };
+      xhr.onerror = () => fail(Object.assign(new Error('Cannot reach the local service. Is the application running?'), {kind: 'network'}));
+      xhr.onabort = () => { const stopped = Object.assign(new Error('Upload stopped.'), {kind: 'cancelled'}); tell(watcher, 'cancelled'); reject(stopped); };
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) { tell(watcher, 'ok', xhr.response); return resolve(xhr.response); }
         const data = xhr.response;
         const detail = data?.detail || data;
-        const raw = detail?.error || (typeof detail === 'string' ? detail : `Ошибка сервера (${xhr.status}). Загрузка не завершилась.`);
+        const raw = detail?.error || (typeof detail === 'string' ? detail : `Server error (${xhr.status}). Upload did not finish.`);
         fail(Object.assign(new Error(I18N.tr(raw)), {status: xhr.status}, Array.isArray(detail) ? {details: validationDetails(detail)} : {}));
       };
       xhr.send(fd);

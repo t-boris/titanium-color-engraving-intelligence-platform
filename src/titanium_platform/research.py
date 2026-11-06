@@ -95,18 +95,18 @@ def delete_session(store: Store, session_id: int) -> None:
 def create_session(store: Store, device_id: int, material_id: int, goal: str, target: str,
                    model: str = DEFAULT_MODEL) -> dict:
     if goal not in application_guide.GOALS:
-        raise ResearchError("выберите известную задачу гравировки")
+        raise ResearchError("select a known engraving task")
     target = str(target or "").strip()
     if not 4 <= len(target) <= 600:
-        raise ResearchError("опишите измеримую цель исследования (4–600 символов)")
+        raise ResearchError("describe a measurable research goal (4–600 characters)")
     if model != DEFAULT_MODEL:
-        raise ResearchError(f"сейчас поддерживается модель {DEFAULT_MODEL}")
+        raise ResearchError(f"currently supported model: {DEFAULT_MODEL}")
     device = devices.get_device(store, device_id)
     lens = device.get("lens")
     if lens is None:
-        raise ResearchError("сначала установите линзу на выбранный лазер")
+        raise ResearchError("first install a lens on the selected laser")
     if store.one("SELECT id FROM material_profile WHERE id=?", (material_id,)) is None:
-        raise ResearchError("выберите материал и заготовку")
+        raise ResearchError("select a material and stock")
     stamp = now()
     session_id = store.execute(
         "INSERT INTO research_session(device_id,lens_id,material_id,goal,target,model,status,created_at,updated_at) "
@@ -122,10 +122,10 @@ def _scope(store: Store, session_id: int) -> tuple[dict, dict, dict]:
     device = devices.get_device(store, session["device_id"])
     material_row = store.one("SELECT * FROM material_profile WHERE id=?", (session["material_id"],))
     if material_row is None:
-        raise ResearchError("материал этой сессии удалён")
+        raise ResearchError("the material for this session has been deleted")
     lens_row = store.one("SELECT * FROM lens WHERE id=?", (session["lens_id"],))
     if lens_row is None:
-        raise ResearchError("линза этой сессии удалена")
+        raise ResearchError("the lens for this session has been deleted")
     return session, device, dict(material_row)
 
 
@@ -136,7 +136,7 @@ def _pair_in_scope(store: Store, session_id: int, pair_id: int) -> dict:
         "WHERE p.id=? AND p.status!='Deleted' AND p.device_id=? AND p.lens_id=? AND p.material_id=?",
         (pair_id, session["device_id"], session["lens_id"], session["material_id"]))
     if row is None:
-        raise ResearchError("эта проверка не относится к лазеру, линзе и материалу исследования")
+        raise ResearchError("this review does not match the laser, lens and material of the study")
     return ingest.get_pair(store, pair_id)
 
 
@@ -241,10 +241,10 @@ def _proposal_signature(store: Store, session_id: int) -> str:
 def preview_plate(store: Store, session_id: int, test_type: str, settings: dict | None = None) -> dict:
     session, device, _ = _scope(store, session_id)
     if session["goal"] in {"deep", "relief_3d", "cutting"}:
-        raise ResearchError("для глубины, 3D-рельефа и резки пока нет специальной платы и физического измерения; "
-                            "поверхностный фототест не проверяет эту цель")
+        raise ResearchError("there is no dedicated plate and physical measurement for depth, 3D relief or cutting yet; "
+                            "a surface photo test does not verify this goal")
     if not device.get("lens") or device["lens"]["id"] != session["lens_id"]:
-        raise ResearchError("установленная линза изменилась; создайте новое исследование для новой пары лазер–линза")
+        raise ResearchError("the installed lens has changed; create a new study for the new laser–lens pair")
     values = {**(settings or {}), "research_goal": session["goal"], "research_session_id": session_id}
     prepared = capability_plates.preview(store, session["device_id"], session["material_id"], test_type, values)
     pending = _pending_plate(store, session_id)
@@ -317,13 +317,13 @@ def cancel_pending_plate(store: Store, session_id: int, plan_id: int, reason: st
     _scope(store, session_id)
     reason = str(reason or "").strip()
     if not 4 <= len(reason) <= 500:
-        raise ResearchError("укажите причину отмены платы (4–500 символов)")
+        raise ResearchError("provide a reason for cancelling the plate (4–500 characters)")
     with store.transaction():
         pending = _pending_plate(store, session_id)
         if pending is None or pending["id"] != plan_id:
-            raise ResearchError("эта плата не является текущей ожидающей платой исследования")
+            raise ResearchError("this plate is not the current pending plate for this study")
         if pending["photo_count"]:
-            raise ResearchError("к плате уже привязано фото; сначала разберите эту проверку")
+            raise ResearchError("a photo is already attached to this plate; review it first")
         store.execute("UPDATE plan SET status='Cancelled' WHERE id=?", (plan_id,))
         store.audit("research_plate_cancelled", session_id=session_id, plan_id=plan_id, reason=reason)
     return {"cancelled_plan_id": plan_id, "status": "Cancelled", "reason": reason}
@@ -334,12 +334,12 @@ def create_plate(store: Store, session_id: int, test_type: str, settings: dict |
     session, _, _ = _scope(store, session_id)
     pending = _pending_plate(store, session_id)
     if replace_plan_id is not None and (pending is None or pending["id"] != replace_plan_id):
-        raise ResearchError("заменять можно только текущую ожидающую плату этого исследования")
+        raise ResearchError("only the current pending plate of this study can be replaced")
     if pending and replace_plan_id != pending["id"]:
-        raise ResearchError(f"плата №{pending['id']} уже ожидает гравировку и фото; "
-                            "если пользователь просит переделать её, вызовите replace_pending_test")
+        raise ResearchError(f"plate #{pending['id']} is already awaiting engraving and photography; "
+                            "if the user asks to redo it, call replace_pending_test")
     if pending and pending["photo_count"]:
-        raise ResearchError("к ожидающей плате уже привязано фото; замена недоступна до разбора проверки")
+        raise ResearchError("the pending plate already has a photo; replacement is unavailable until the review is resolved")
     preview_plate(store, session_id, test_type, settings)
     values = {**(settings or {}), "research_goal": session["goal"], "research_session_id": session_id}
     plate = capability_plates.create(store, session["device_id"], session["material_id"], test_type, values,
@@ -359,7 +359,7 @@ def inspect_pair(store: Store, session_id: int, pair_id: int) -> dict:
     if pair["status"] != ingest.ST_ACCEPTED:
         check = pair.get("check") or {}
         return common | {"alignment": check.get("alignment"), "problems": check.get("problems", []),
-                         "warnings": check.get("warnings", []), "next_step": "Проверьте совмещение и маски в интерфейсе перед принятием измерений."}
+                         "warnings": check.get("warnings", []), "next_step": "Check alignment and masks in the interface before accepting measurements."}
     report = analysis.report_for_pair(store, pair_id)
     rows = [{k: row.get(k) for k in ("layer_index", "name", "role", "parameters", "measured_lab", "line_metrics", "submeasurements")}
             for row in report["rows"][:40]]
@@ -387,19 +387,19 @@ def run_photo_mapping(store: Store, session_id: int, pair_id: int) -> dict:
 def save_insight(store: Store, session_id: int, purpose: str, claim: str,
                  confidence: str, evidence_pair_ids: list[int]) -> dict:
     if purpose not in application_guide.GOALS:
-        raise ResearchError("неизвестная задача гравировки")
+        raise ResearchError("unknown engraving task")
     if confidence not in {"hypothesis", "candidate"}:
-        raise ResearchError("AI-вывод может быть гипотезой или кандидатом; подтверждение делает оператор")
+        raise ResearchError("an AI finding can be a hypothesis or candidate; the operator confirms it")
     claim = str(claim or "").strip()
     if not 12 <= len(claim) <= 1200:
-        raise ResearchError("вывод должен содержать 12–1200 символов")
+        raise ResearchError("a finding must contain 12–1200 characters")
     ids = list(dict.fromkeys(int(pid) for pid in evidence_pair_ids))
     if not 1 <= len(ids) <= 12:
-        raise ResearchError("укажите от 1 до 12 принятых фото-проверок как доказательства")
+        raise ResearchError("provide 1 to 12 accepted photo reviews as evidence")
     for pair_id in ids:
         pair = _pair_in_scope(store, session_id, pair_id)
         if pair["status"] != ingest.ST_ACCEPTED:
-            raise ResearchError(f"проверка №{pair_id} ещё не принята")
+            raise ResearchError(f"review #{pair_id} has not been accepted")
     found = store.one("SELECT id FROM research_insight WHERE session_id=? AND purpose=? AND claim=?",
                       (session_id, purpose, claim))
     if found:
@@ -469,9 +469,9 @@ def save_key(value) -> dict:
     """Keep the operator's key in the workshop (mode 0600, outside backups, diagnostics and laboratory releases)."""
     text = value.strip() if isinstance(value, str) else ""
     if not KEY_PATTERN.match(text):
-        raise ResearchError("ключ OpenAI выглядит неверно: он начинается с sk- и не содержит пробелов")
+        raise ResearchError("the OpenAI key looks invalid: it starts with sk- and contains no spaces")
     if key_file is None:
-        raise ResearchError("мастерская не открыта: ключ некуда сохранить")
+        raise ResearchError("no workshop is open to save the key")
     key_file.parent.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(key_file.parent, 0o700)
@@ -588,7 +588,7 @@ TOOL_SPECS = [
 
 def call_tool(store: Store, session_id: int, name: str, arguments: dict, *, allow_create: bool = True) -> dict:
     if not isinstance(arguments, dict):
-        raise ResearchError("аргументы инструмента должны быть объектом")
+        raise ResearchError("tool arguments must be an object")
     if name == "research_context":
         return context(store, session_id)
     if name == "suggest_next_test":
@@ -597,11 +597,11 @@ def call_tool(store: Store, session_id: int, name: str, arguments: dict, *, allo
         return preview_plate(store, session_id, arguments["test_type"], arguments.get("settings"))
     if name == "create_test":
         if not allow_create:
-            raise ResearchError("за этот ответ уже создана одна плата")
+            raise ResearchError("a plate has already been created during this response")
         return create_plate(store, session_id, arguments["test_type"], arguments.get("settings"))
     if name == "replace_pending_test":
         if not allow_create:
-            raise ResearchError("за этот ответ уже создана одна плата")
+            raise ResearchError("a plate has already been created during this response")
         return create_plate(store, session_id, arguments["test_type"], arguments.get("settings"),
                             replace_plan_id=int(arguments["plan_id"]))
     if name == "cancel_pending_test":
@@ -613,7 +613,7 @@ def call_tool(store: Store, session_id: int, name: str, arguments: dict, *, allo
     if name == "save_research_insight":
         return save_insight(store, session_id, arguments["purpose"], arguments["claim"],
                             arguments["confidence"], arguments["evidence_pair_ids"])
-    raise ResearchError(f"неизвестный инструмент: {name}")
+    raise ResearchError(f"unknown tool: {name}")
 
 
 INSTRUCTIONS = """You research laser processing parameters. Reply in English, concisely and specifically.
@@ -706,14 +706,14 @@ def _interrupted_after_write(store: Store, session_id: int, question: str, trace
     for item in completed:
         result = item["result"]
         if item["tool"] in {"create_test", "replace_pending_test"}:
-            details.append(f"Плата №{result['plan_id']} создана; файл LightBurn доступен справа.")
+            details.append(f"Plate #{result['plan_id']} was created; the LightBurn file is available on the right.")
         elif item["tool"] == "cancel_pending_test":
-            details.append(f"Плата №{result['cancelled_plan_id']} отменена.")
+            details.append(f"Plate #{result['cancelled_plan_id']} was cancelled.")
         elif item["tool"] == "run_photo_mapping":
-            details.append(f"Проверка фото №{result['pair_id']} выполнена; откройте наложение и проверьте результат.")
+            details.append(f"Photo review #{result['pair_id']} completed; open the overlay and inspect the result.")
         else:
-            details.append(f"Гипотеза №{result['id']} сохранена.")
-    reply = " ".join(details) + " AI не завершил пояснение. Действие сохранено; повторите вопрос, если нужен анализ."
+            details.append(f"Hypothesis #{result['id']} saved.")
+    reply = " ".join(details) + " The AI did not finish its explanation. The action was saved; ask again if you need analysis."
     _save_exchange(store, session_id, question, reply, trace)
     return {"text": reply, "model": _session_row(store, session_id)["model"], "tool_trace": trace,
             "session": get_session(store, session_id)}
@@ -723,13 +723,13 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
     """One bounded Responses tool loop, persisting the conversation and tool evidence locally."""
     text = str(message or "").strip()
     if not 2 <= len(text) <= 4000:
-        raise ResearchError("сообщение должно содержать 2–4000 символов")
+        raise ResearchError("message must contain 2–4000 characters")
     session = get_session(store, session_id)
     if session["status"] != "active":
-        raise ResearchError("исследование закрыто")
+        raise ResearchError("the study is closed")
     client = client if client is not None else started_client()
     if client is None:
-        raise ResearchError("ключ OpenAI не задан: введите его на экране «Сеть» → «Внешние службы» (или задайте переменную OPENAI_API_KEY)")
+        raise ResearchError("OpenAI key is not set: enter it under Network → External services (or set OPENAI_API_KEY)")
     if session["memory"] is None and session["message_count"] >= MEMORY_INTERVAL:
         try:
             _refresh_memory(store, session_id, session["model"], client)
@@ -752,7 +752,7 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
     history.reverse()
     input_items: list[Any] = [*history, {"role": "user", "content": text}]
     scope = context(store, session_id)
-    instructions = INSTRUCTIONS + "\nКонтекст на начало ответа:\n" + _json(scope)[:45000]
+    instructions = INSTRUCTIONS + "\nContext at the start of the response:\n" + _json(scope)[:45000]
     blocked_tools = {"create_test", "replace_pending_test"}
     if advisory:
         blocked_tools |= {"cancel_pending_test", "run_photo_mapping", "save_research_insight"}
@@ -787,7 +787,7 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
                 input_items.append({"type": "function_call_output", "call_id": item.call_id,
                                     "output": _json(output)[:60000]})
         else:
-            raise ResearchError("AI вызвал слишком много инструментов за один ответ; уточните задачу")
+            raise ResearchError("the AI called too many tools in one response; refine the request")
     except ResearchError:
         recovered = _interrupted_after_write(store, session_id, text, trace)
         if recovered:
@@ -798,13 +798,13 @@ def answer(store: Store, session_id: int, message: str, client=None, *, advisory
         recovered = _interrupted_after_write(store, session_id, text, trace)
         if recovered:
             return recovered
-        raise ResearchError(f"AI-сервис не ответил ({type(exc).__name__}). Проверьте доступ модели и оплату API.") from None
+        raise ResearchError(f"The AI service did not respond ({type(exc).__name__}). Check model access and API billing.") from None
     output_text = (getattr(response, "output_text", "") or "").strip()
     if not output_text:
         recovered = _interrupted_after_write(store, session_id, text, trace)
         if recovered:
             return recovered
-        raise ResearchError("AI не вернул текст ответа; повторите запрос")
+        raise ResearchError("the AI returned no response text; try again")
     _save_exchange(store, session_id, text, output_text, trace)
     try:
         _refresh_memory(store, session_id, session["model"], client)

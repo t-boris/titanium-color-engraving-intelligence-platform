@@ -1,13 +1,12 @@
-/* Маршруты: адрес после «#». Неизвестный маршрут открывает «Эксперименты». Экран — объект {id, render(ctx)}. */
+/* Hash routes; unknown routes open Experiments. Screens provide {id, render(ctx)}. */
 'use strict';
 Object.assign(App, (() => {
   const {h, btn, get} = App;
   const screens = new Map();
-  // REQ-059: фотогравировка — четвёртый раздел; «Цветная гравировка» (это и есть векторная работа) ушла из меню, её адрес работает;
-  // непрерывная фотогравировка полосами и прогноз по файлу LightBurn открываются из раздела «Фотогравировка», их адреса прежние
-  const NAV = [['/experiments', 'Эксперименты'], ['/colors', 'Карта цветов'], ['/vector', 'Векторная работа'], ['/photo-engraving', 'Фотогравировка'],
-    ['/works', 'Работы'], ['/designer', 'Планировщик экспериментов'], ['/findings', 'Выводы'], ['/devices', 'Лазеры'], ['/setup', 'Настройки'], ['/research', 'AI-исследователь'],
-    ['/network', 'Сеть'], ['/labs', 'Лаборатории'], ['/workshop', 'Мастерская']];
+  // Photo engraving is the fourth section; existing addresses remain available (REQ-059).
+  const NAV = [['/experiments', 'Experiments'], ['/colors', 'Color map'], ['/vector', 'Vector work'], ['/photo-engraving', 'Photo engraving'],
+    ['/works', 'Works'], ['/designer', 'Experiment planner'], ['/findings', 'Findings'], ['/devices', 'Lasers'], ['/setup', 'Settings'], ['/research', 'AI researcher'],
+    ['/network', 'Network'], ['/labs', 'Laboratories'], ['/workshop', 'Workshop']];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', works: 'works', vector: 'vector', new: 'new', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
     findings: 'findings', devices: 'devices', research: 'research', network: 'network', labs: 'labs', workshop: 'workshop'};
@@ -25,8 +24,7 @@ Object.assign(App, (() => {
     return {id: parts[0] || 'experiments', arg: parts[1], query: Object.fromEntries(new URLSearchParams(qs || '')), path: '/' + parts.join('/')};
   }
 
-  // Иконки разделов из утверждённого прототипа v10 (DEC-019), в порядке NAV; векторная работа третья (критерий 1 фичи vector-detail-and-colour-control),
-  // фотогравировка четвёртая с иконкой картинки (REQ-059).
+  // Section icons follow NAV order (DEC-019, REQ-059).
   const ICONS = [
     '<path d="M9 3v6L4 18a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8M7 15h10"/>',
     '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M6 18L18 6"/>',
@@ -47,14 +45,13 @@ Object.assign(App, (() => {
     return el;
   }
 
-  // Разделы висят слева узкой полосой со значками на каждой странице; кнопка ☰ вверху полосы (на узком экране «Меню» в шапке) открывает
-  // поверх страницы окно с названиями: оно закрывается кликом вне его, Esc и переходом в раздел (DEC-081).
+  // The navigation rail opens an overlay with section names (DEC-081).
   const MENU_ICON = '<path d="M4 6h16M4 12h16M4 18h16"/>';
   let sidebar = null, menuButton = null, railButton = null, pinButton = null;
   const pinKey = 'navigation.pinned';
   const pinned = () => { try { return localStorage.getItem(pinKey) === '1'; } catch (_) { return false; } };
 
-  // Версия приложения в шапке (REQ-057, DEC-099): один запрос к серверу, дальше значение берётся из памяти; если сервер не ответил, метка пуста и скрыта.
+  // Fetch the application version once; hide the label if unavailable (REQ-057, DEC-099).
   let appVersion = null, versionAsked = false;
   function showVersion(tag) {
     if (appVersion) { tag.textContent = 'v' + appVersion; return; }
@@ -78,10 +75,10 @@ Object.assign(App, (() => {
     }).catch(() => {});
   }
   function showUpdate(version) {
-    const text = `Приложение обновлено до v${version} — перезагрузите страницу, чтобы работать в новой версии.`;
+    const text = `The application was updated to v${version}. Reload the page to use the new version.`;
     if (updateBanner) { updateBanner.querySelector('.update-text').textContent = text; return; }
     updateBanner = h('div', {class: 'update-banner', role: 'status'}, h('span', {class: 'update-text'}, text),
-      btn('Перезагрузить', () => location.reload(), 'btn-small primary'));
+      btn('Reload', () => location.reload(), 'btn-small primary'));
     document.body.append(updateBanner);
   }
   function watchVersion() {
@@ -105,30 +102,30 @@ Object.assign(App, (() => {
     try { localStorage.setItem(pinKey, next ? '1' : '0'); } catch (_) { /* navigation still works without storage */ }
     sidebar.classList.toggle('is-pinned', next);
     pinButton.setAttribute('aria-pressed', String(next));
-    pinButton.textContent = next ? 'Свернуть меню' : 'Закрепить меню';
+    pinButton.textContent = next ? 'Collapse menu' : 'Pin menu';
     setMenu(false);
     if (!next) railButton.focus();
   }
   function shell(active, main) {
     const toggleIcon = h('span', {class: 'nav-icon', 'aria-hidden': 'true'});
     toggleIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON + '</svg>';
-    railButton = h('button', {type: 'button', class: 'rail-toggle', title: 'Разделы', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu},
-      toggleIcon, h('span', {class: 'nav-text'}, 'Разделы'));
+    railButton = h('button', {type: 'button', class: 'rail-toggle', title: 'Sections', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu},
+      toggleIcon, h('span', {class: 'nav-text'}, 'Sections'));
     pinButton = btn('', () => setPinned(!sidebar.classList.contains('is-pinned')), 'btn-small nav-pin');
     pinButton.setAttribute('aria-pressed', String(pinned()));
-    pinButton.textContent = pinned() ? 'Свернуть меню' : 'Закрепить меню';
-    sidebar = h('aside', {class: 'sidebar' + (pinned() ? ' is-pinned' : ''), id: 'app-navigation', 'aria-label': 'Разделы приложения'}, railButton, pinButton,
-      h('nav', {class: 'nav', 'aria-label': 'Основная навигация'},
+    pinButton.textContent = pinned() ? 'Collapse menu' : 'Pin menu';
+    sidebar = h('aside', {class: 'sidebar' + (pinned() ? ' is-pinned' : ''), id: 'app-navigation', 'aria-label': 'Application sections'}, railButton, pinButton,
+      h('nav', {class: 'nav', 'aria-label': 'Main navigation'},
         NAV.map(([r, l], i) => h('a', {class: 'nav-link', href: '#' + r, title: l, 'aria-current': r === active ? 'page' : null,
           onClick: () => setMenu(false)}, icon(i), h('span', {class: 'nav-text'}, l)))),
-      h('p', {class: 'sidebar-note'}, 'Единственный пользователь. Все действия доступны; вход не требуется.'));
-    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Меню');
+      h('p', {class: 'sidebar-note'}, 'Single-user mode. All actions are available; no sign-in is required.'));
+    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Menu');
     setMenu(false);
-    const versionTag = h('span', {class: 'app-version', title: 'Версия приложения'});
+    const versionTag = h('span', {class: 'app-version', title: 'Application version'});
     showVersion(versionTag);
     return [
       h('header', {class: 'app-header'},
-        h('a', {class: 'brand', href: '#/experiments'}, 'Лазерная мастерская', h('small', {}, 'Материалы · Режимы · Работы')),
+        h('a', {class: 'brand', href: '#/experiments'}, 'Laser workshop', h('small', {}, 'Materials · Settings · Works')),
         h('div', {class: 'header-actions'}, menuButton, versionTag, typeof Operations !== 'undefined' ? Operations.entry() : null)),        // task count and application version
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
@@ -145,26 +142,26 @@ Object.assign(App, (() => {
     const active = NAV_OF[ctx.id] || '/' + ctx.id;
     const main = h('main', {class: 'main', id: 'main', tabindex: '-1', 'aria-busy': 'true'},
       h('div', {class: 'skeleton skeleton-title'}), h('div', {class: 'skeleton'}), h('div', {class: 'skeleton skeleton-block'}),
-      h('p', {class: 'loading-label'}, 'Загружаем данные…'));
+      h('p', {class: 'loading-label'}, 'Loading data…'));
     if (preserveScroll) main.style.minHeight = Math.max(previousHeight, window.innerHeight) + 'px';
     document.getElementById('app').replaceChildren(...shell(active, main));
     if (preserveScroll) window.scrollTo(0, previousY);
     try {
-      if (!def) throw new Error('Экран не найден');
+      if (!def) throw new Error('Screen not found');
       const node = await def.render(ctx);
-      if (mine !== token) return;   // пользователь уже ушёл на другой экран
+      if (mine !== token) return;   // the user has already left the screen
       const workspace = node.classList && node.classList.contains('workspace');
-      const bare = workspace || (node.classList && node.classList.contains('os'));      // экран на один экран: без подвала (REQ-044)
-      main.replaceChildren(...(bare ? [node] : [node, h('p', {class: 'demo'}, 'Данные хранятся на этом компьютере. RAW-результаты после проверки показываются предварительно; в стандартный прогноз входят только принятые измерения с коррекцией по эталонной карте.')]));
+      const bare = workspace || (node.classList && node.classList.contains('os'));      // single-screen layout without footer (REQ-044)
+      main.replaceChildren(...(bare ? [node] : [node, h('p', {class: 'demo'}, 'Data is stored on this computer. Reviewed RAW results are provisional; standard predictions use only accepted reference-chart-corrected measurements.')]));
     } catch (e) {
       if (mine !== token) return;
-      main.replaceChildren(h('div', {class: 'alert bad', role: 'alert'}, h('strong', {}, 'Не удалось загрузить данные'), h('p', {}, e.message || String(e)), btn('Повторить', render)));
+      main.replaceChildren(h('div', {class: 'alert bad', role: 'alert'}, h('strong', {}, 'Could not load data'), h('p', {}, e.message || String(e)), btn('Retry', render)));
     }
     main.removeAttribute('aria-busy');
     lastHash = location.hash || '#/experiments';
     // after a move to another screen the keyboard starts at its content; a refresh of the same screen keeps whatever the person was on
     if (!preserveScroll && mine === token && main.focus) main.focus({preventScroll: true});
-    const workspace = !!main.querySelector('.workspace');       // экран на один экран: без бокового меню и прокрутки страницы (DEC-085)
+    const workspace = !!main.querySelector('.workspace');       // single-screen workspace without sidebar or page scrolling (DEC-085)
     document.body.classList.toggle('is-workspace', workspace);
     if (preserveScroll) {
       window.scrollTo(0, previousY);
@@ -181,7 +178,7 @@ Object.assign(App, (() => {
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape' && menuOpen()) { setMenu(false); (window.innerWidth > 1000 ? railButton : menuButton).focus(); }
     });
-    // «Перейти к содержимому» (BUG-015): moves the focus to the content and leaves the address, the screen and its state alone
+    // Skip to content (BUG-015): moves the focus to the content and leaves the address, the screen and its state alone
     const skipTo = () => {
       const main = document.getElementById('main');
       if (main && main.focus) main.focus();

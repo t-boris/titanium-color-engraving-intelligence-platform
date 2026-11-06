@@ -472,7 +472,7 @@ def test_a_refused_operation_is_shown_translated_and_the_picture_stays_as_it_was
   out.fill = path('r1').getAttribute('fill');
   out.busy = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-editor')).className;
 """)
-    assert any("Такого исходного цвета нет" in t for t in out["toasts"]) and not any("no such" in t for t in out["toasts"])
+    assert any("there is no such source colour" in t for t in out["toasts"])
     assert out["fill"] == "rgb(205,198,182)" and out["busy"] == "vw-editor" and out["renders"] == 0
 
 
@@ -517,7 +517,7 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
   let dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.getAttribute('aria-label');
   out.better = dialog.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-better')).length;    // e11 is already confirmed by repeats
-  out.openAtFirst = dialog.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent.includes('3 независимые гравировки'));   // the current colour
+  out.openAtFirst = dialog.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent.includes('3 independent engravings'));   // the current colour
   const chip = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
   await chip('e13').dispatch('click'); await tick();
   out.detail = dialog.textContent;
@@ -528,16 +528,16 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
 """)
     rows = out["rows"]
     assert out["folded"] == [False, False, False]
-    assert "проверен повтором" in rows[0] and "3 гравировки: 2 теста, 1 работа" in rows[0] and "все 3 совпали" in rows[0]
-    assert "одна гравировка, не повторялась" in rows[1] and "1 гравировка: 1 тест" in rows[1]
+    assert "verified by repetition" in rows[0] and "3 engravings: 2 tests, 1 work" in rows[0] and "all 3 agree" in rows[0]
+    assert "one engraving, not repeated" in rows[1] and "1 engraving: 1 test" in rows[1]
     assert "не гравируется" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
     assert out["buttons"] == [["Выбрать области", "Заменить", "Не гравировать"], ["Выбрать области", "Заменить", "Автоматически", "Не гравировать"],
                               ["Выбрать области", "Гравировать"]]                    # «Выбрать области» (ux-accessible-layout-p0) is new on every line
     assert out["title"] == "Цвет группы № 1" and out["better"] == 0 and out["openAtFirst"] == [True]
     detail = out["detail"]
-    assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 from the target sample · сомнительный" in detail.split("Selected measured titanium color:")[1]
-    assert "сомнительный: гравировки расходятся" in detail and "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)" in detail
-    assert ["векторная работа", "#/vector?plan=22"] in out["links"] and ["эксперимент", "#/experiment/eng-0"] in out["links"]
+    assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 from the target sample · uncertain: engravings disagree" in detail.split("Selected measured titanium color:")[1]
+    assert "uncertain: engravings disagree" in detail and "Color evidence: 2 independent engravings (1 test, 1 work)" in detail
+    assert ["vector work", "#/vector?plan=22"] in out["links"] and ["experiment", "#/experiment/eng-0"] in out["links"]
     assert out["posted"] == [{"op": "set_colour", "colour": 0, "entry_id": "e13"}] and out["closed"] is True
 
 
@@ -787,7 +787,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                              {"op": "photo_set", "zone": 1, "by_colour": False},
                              {"op": "photo_remove", "regions": ["r3", "r4"]}, {"op": "photo_delete", "zone": 1}]
     assert out["scalesFetched"] == ["/api/grey-scales?device_id=&material_id=&row_mm=20"]
-    assert out["powerWrong"][:3] == [0, "true", "150"] and "Допустимо" in out["powerWrong"][3][0] and "Введено: 150" in out["powerWrong"][3][0]
+    assert out["powerWrong"][:3] == [0, "true", "150"] and "Allowed" in out["powerWrong"][3][0] and "Entered: 150" in out["powerWrong"][3][0]
     assert out["opened"] == ["/vector-zone?work=7&zone=1"]                            # «Открыть»: the zone on its own screen
 
 
@@ -976,5 +976,5 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
     assert "Разбить область мельче" in out["dialog"] and "Внешняя граница и соседи остаются как были" in out["dialog"] and out["prefill"] == "3"
     # the wrong number is refused beside its box, which keeps it and is tied to the words; no request and no toast (ux-save-feedback-p0, REQ-003)
     assert out["refusedPosts"] == 0 and out["toasts"] == []
-    assert out["beside"] == {"text": "Допустимо: целое число, от 2 до 8. Введено: 12", "invalid": "true", "kept": "12", "described": True}
+    assert out["beside"] == {"text": "Allowed: whole number, from 2 to 8. Entered: 12", "invalid": "true", "kept": "12", "described": True}
     assert out["posted"] == [{"op": "split_region", "region": "r1", "colours": 4}] and out["closed"] is True

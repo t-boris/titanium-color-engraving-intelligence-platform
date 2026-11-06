@@ -1,45 +1,24 @@
-/* Задачи гравировки (REQ-020): названия задач, основания и способы измерения метрик, чего не хватает в контексте,
-   и перевод сообщений сервера об этом (DEC-034). Сервер присылает ключи (text, chart, lens_unknown…) и английские сообщения;
-   подписи к ключам — здесь, сообщения переводит I18N. */
+/* Labels for engraving tasks, measurements and missing context (REQ-020). */
 'use strict';
 const TaskText = (() => {
-  const KIND = {text: 'Надписи', line: 'Линии', fill: 'Заливка', tonal_image: 'Тоновое изображение', color_image: 'Цветное изображение',
-    mark: 'Маркировка', cleaning: 'Очистка', deep: 'Глубокая гравировка', relief: '3D-рельеф', cutting: 'Резка'};
-  // откуда у слоя задача: выбрана оператором или следует из самого слоя
-  const SOURCE = {operator: 'выбрана для слоя', work: 'задача всей работы', plan: 'по плану или плате', layer: 'по слою LightBurn',
-    role: 'по роли слоя'};
-  const BASIS = {chart: 'по эталонной карте', clean: 'относительно чистого титана этого снимка', as_shot: 'как снято, относительно камеры',
-    registration_scale: 'масштаб снимка по совмещению'};
-  const METHOD = {layer_mask_median: 'медиана пикселей слоя внутри его маски', grey_to_lightness_bins: 'L* по уровням серого картинки',
-    line_profile_peak: 'пик профиля поперёк линии относительно поверхности рядом', line_profile_stations: 'доля точек вдоль линии, где след виден',
-    line_profile_threshold: 'ширина профиля поперёк линии выше четверти его контраста', clean_witness_difference: 'разница L* с чистым титаном этого снимка'};
-  const METRIC = {lab: 'Цвет', lightness: 'Светлота L*', chroma: 'Насыщенность C*', tonal_profile: 'Тональный профиль', contrast: 'Контраст',
-    line_continuity: 'Непрерывность линии', line_visibility: 'Видимые линии', apparent_trace_width: 'Видимая ширина следа',
-    line_width_um: 'Ширина линии, мкм', text_legibility: 'Читаемость текста', dimensional_accuracy: 'Точность размеров', depth: 'Глубина',
-    relief_height: 'Высота рельефа', cut_through: 'Сквозной рез', kerf_width: 'Ширина пропила'};
-  const MISSING = {lens_unknown: 'линза неизвестна', batch_unknown: 'партия титана неизвестна', focus_unknown: 'фокус не записан',
-    camera_relative: 'без эталонной карты', unreferenced: 'без привязки к чистому титану', provisional: 'проверка ещё не принята',
-    settings_incomplete: 'в файле нет части настроек'};
-  const GOAL = {target_lab: 'Целевой цвет (L, a, b)', tonal_note: 'Тональное поведение', line_width_mm: 'Ширина линии, мм',
-    text_height_mm: 'Высота букв, мм', legibility_note: 'Требования к читаемости', note: 'Примечание к задаче'};
+  const KIND = {text: 'Lettering', line: 'Lines', fill: 'Fill', tonal_image: 'Tonal image', color_image: 'Color image',
+    mark: 'Marking', cleaning: 'Cleaning', deep: 'Deep engraving', relief: '3D relief', cutting: 'Cutting'};
+  const SOURCE = {operator: 'selected for the layer', work: 'whole work', plan: 'from the plan or plate',
+    layer: 'from the LightBurn layer', role: 'from the layer role'};
+  const BASIS = {chart: 'reference chart corrected', clean: 'relative to clean titanium in this photo',
+    as_shot: 'as photographed, relative to the camera', registration_scale: 'image scale from alignment'};
+  const METHOD = {layer_mask_median: 'median layer pixels within the mask', grey_to_lightness_bins: 'L* by image gray level',
+    line_profile_peak: 'cross-line profile peak relative to nearby surface', line_profile_stations: 'fraction of positions with a visible line',
+    line_profile_threshold: 'cross-line profile width above one-quarter contrast',
+    clean_witness_difference: 'L* difference from clean titanium in this photo'};
+  const METRIC = {lab: 'Color', lightness: 'Lightness L*', chroma: 'Chroma C*', tonal_profile: 'Tonal profile', contrast: 'Contrast',
+    line_continuity: 'Line continuity', line_visibility: 'Visible lines', apparent_trace_width: 'Apparent trace width',
+    line_width_um: 'Line width, µm', text_legibility: 'Text legibility', dimensional_accuracy: 'Dimensional accuracy', depth: 'Depth',
+    relief_height: 'Relief height', cut_through: 'Cut-through', kerf_width: 'Kerf width'};
+  const MISSING = {lens_unknown: 'lens unknown', batch_unknown: 'titanium batch unknown', focus_unknown: 'focus not recorded',
+    camera_relative: 'no reference chart', unreferenced: 'no clean titanium reference', provisional: 'review not yet accepted',
+    settings_incomplete: 'some settings are missing from the file'};
+  const GOAL = {target_lab: 'Target color (L, a, b)', tonal_note: 'Tonal behavior', line_width_mm: 'Line width, mm',
+    text_height_mm: 'Letter height, mm', legibility_note: 'Legibility requirements', note: 'Task note'};
   return {KIND, SOURCE, BASIS, METHOD, METRIC, MISSING, GOAL};
 })();
-
-I18N.add([
-  [/^unknown engraving task: /i, 'Неизвестная задача гравировки: '],
-  [/^this layer is not in the LightBurn file of the pair$/i, 'Этого слоя нет в файле LightBurn пары'],
-  [/^the target colour must be three numbers L, a, b$/i, 'Целевой цвет — три числа L, a, b (L от 0 до 100)'],
-  [/^the line width and the text height must be positive numbers of millimetres$/i, 'Ширина линии и высота букв — положительные числа в миллиметрах'],
-  [/^a task note must not exceed 500 characters$/i, 'Примечание к задаче — не длиннее 500 символов'],
-  [/^the task goals must be a JSON object$/i, 'Цели задачи записаны неверно'],
-  // чего фотография не измеряет (REQ-020): метрика показана недоступной с причиной
-  [/^line width in micrometres needs a calibrated image scale or an independent measurement/i,
-    'Ширина линии в микрометрах требует калиброванного масштаба снимка или независимого измерения; видимая ширина следа — только след на фото в масштабе совмещения'],
-  [/^text legibility is not measured from a photograph/i, 'Читаемость текста по фотографии не измеряется: нужна проверка чтения выгравированных символов'],
-  [/^dimensional accuracy needs a calibrated image scale or an independent measurement/i,
-    'Точность размеров требует калиброванного масштаба снимка или независимого измерения: совмещение само подгоняет геометрию файла к фото'],
-  [/^depth needs a physical measurement/i, 'Глубину нужно измерить физически — глубиномером или профилометром; фото поверхности её не показывает'],
-  [/^relief height needs a height map or profilometry/i, 'Для высоты рельефа нужна карта высот или профилометрия; фото поверхности её не показывает'],
-  [/^a cut through the part needs a physical check of the part/i, 'Сквозной рез проверяется на самой детали; фото поверхности его не показывает'],
-  [/^kerf width needs a calibrated image scale or an independent measurement$/i, 'Ширина пропила требует калиброванного масштаба снимка или независимого измерения'],
-]);

@@ -284,7 +284,8 @@ const ColorMap = (() => {
       return render(ctx);
     }
     const partition = chosen ? `device_id=${chosen.device_id}&lens_id=${App.lensParam(chosen.lens_id)}` : '';
-    const model = await get('/oxide/model' + (partition ? '?' + partition : '')).catch(() => null);
+    let model = null;
+    const modelRequest = get('/oxide/model' + (partition ? '?' + partition : '')).catch(() => null);
     const plane = state.plane || 'ab', band = state.band || [0, 100];
     const shown = () => data.points.filter((p) => p.display_lab[0] >= band[0] && p.display_lab[0] <= band[1]);
     const remember = (patch) => { sessionStorage.setItem('color-map', JSON.stringify({...f, target, plane, band, ...patch})); App.render({preserveScroll: true}); };
@@ -393,15 +394,15 @@ const ColorMap = (() => {
     const toleranceNote = Forms.watch(tolerance, 'searchTolerance', (v) => { f.tolerance = v === null ? '' : String(v); if (target) setTarget(target); });
     const toleranceRules = Forms.describe(tolerance, 'searchTolerance', {extra: 'пусто — допуск из правил выбранного лазера и линзы'});
     // colormap.time_limit: above 0 seconds; the box takes minutes:seconds («0:30») or minutes as a number; empty is no limit
-    const timeNote = Forms.notice({what: 'Ограничение времени', kept: 'Поиск остался прежним.'});
-    const maxTime = h('input', {type: 'text', inputmode: 'decimal', placeholder: 'м:сс', value: f.maxTime ? mmss(f.maxTime) : '',
-      'aria-label': 'Не дольше, минут:секунд на квадратный сантиметр', onChange: (e) => {
+    const timeNote = Forms.notice({what: 'Time limit', kept: 'The search remains unchanged.'});
+    const maxTime = h('input', {type: 'text', inputmode: 'decimal', placeholder: 'm:ss', value: f.maxTime ? mmss(f.maxTime) : '',
+      'aria-label': 'Maximum time, minutes:seconds per square centimeter', onChange: (e) => {
         const seconds = parseLimit(e.target.value);
-        if (Number.isNaN(seconds)) timeNote.say(`Введите время как минуты:секунды (например 0:30) или минуты числом, больше нуля. Введено: «${e.target.value.trim()}». Поиск остался прежним.`);
+        if (Number.isNaN(seconds)) timeNote.say(`Enter a time greater than zero as minutes:seconds (for example, 0:30) or a number of minutes. Entered: “${e.target.value.trim()}”. The search remains unchanged.`);
         else { timeNote.clear(); remember({maxTime: seconds}); }
       }});
     timeNote.attach(maxTime);
-    const timeRules = Forms.describe(maxTime, {unit: 'мин:с на см²', min: 0, minOpen: true}, {extra: 'минуты:секунды («0:30») или минуты числом; пусто — без ограничения'});
+    const timeRules = Forms.describe(maxTime, {unit: 'min:s per cm²', min: 0, minOpen: true}, {extra: 'minutes:seconds (0:30) or minutes as a number; leave empty for no limit'});
     drawPlot();
     if (target) setTarget(target);
 
@@ -423,11 +424,13 @@ const ColorMap = (() => {
         select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         select('Задача', 'task', data.options.tasks || [], f.task, Object.fromEntries((data.options.tasks || []).map((k) => [k, Tasks.name(k)]))),
-        h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime, timeRules), timeNote.error,
-        h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
-          'Скрыть цвета без чистого титана на снимке'),
-        h('label', {class: 'row small', title: 'Кружок меньше, чем у гравировки, которую не повторяли: при повторах цвет менялся'},
-          h('input', {type: 'checkbox', checked: f.doubtful, onChange: (e) => remember({doubtful: e.target.checked})}), 'Скрыть цвета, в которых не уверены (кружок меньше одиночной гравировки)'),
+        h('fieldset', {class: 'cm-evidence-filters stack'}, h('legend', {}, 'Evidence and time'),
+          h('label', {class: 'f'}, h('span', {}, 'Maximum time, min/cm²'), maxTime, timeRules), timeNote.error,
+          h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
+            'Hide colors without clean titanium in the photo'),
+          h('label', {class: 'row small', title: 'Repeated engravings produced different colors'},
+            h('input', {type: 'checkbox', checked: f.doubtful, onChange: (e) => remember({doubtful: e.target.checked})}), 'Hide uncertain colors')),
+
         h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается'),
           h('p', {class: 'muted small'}, 'Все измеренные цвета всех экспериментов. Выберите нужный цвет и увидите, где он встречался и какими настройками получен. '
             + 'Время гравировки — оценка по настройкам рецепта: 100 / (скорость × шаг строк) с на см² за проход и разворот на каждой строке, '
@@ -442,14 +445,29 @@ const ColorMap = (() => {
     const bandTo = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до'});
     const bandFromNote = Forms.watch(bandFrom, 'lightnessBand', (v) => remember({band: [v, band[1]]}), {required: true});
     const bandToNote = Forms.watch(bandTo, 'lightnessBand', (v) => remember({band: [band[0], v]}), {required: true});
+    const modelCaption = h('p', {class: 'cm-caption muted small', hidden: true});
     const mapCol = h('div', {class: 'os-col'},
       h('div', {class: 'os-col-head'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),
         ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
       h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'), bandFrom, Forms.describe(bandFrom, 'lightnessBand'), bandFromNote,
         h('span', {}, 'до'), bandTo, Forms.describe(bandTo, 'lightnessBand'), bandToNote,
         h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length} · колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — приблизить`)),
-      model && model.summary && model.summary.observations ? h('p', {class: 'cm-caption muted small'}, `Пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null,
+      modelCaption,
       stepNote, plotBox, detail);
+    modelRequest.then((loaded) => {
+      model = loaded;
+      if (model && model.summary && model.summary.observations) {
+        modelCaption.hidden = false;
+        modelCaption.textContent = `Dashed line: modeled oxide-film spiral (median deviation ${num(model.summary.median_de_coloured, 1)} ΔE across ${model.summary.coloured} colors)`;
+      }
+      const focused = document.activeElement;
+      const step = [...plotBox.querySelectorAll('button')].find((button) => button === focused)?.getAttribute('data-step');
+      const plotFocused = plotBox.querySelector('svg') === focused;
+      drawPlot();
+      const replacement = step ? [...plotBox.querySelectorAll('button')].find((button) => button.getAttribute('data-step') === step)
+        : plotFocused ? plotBox.querySelector('svg') : null;
+      if (replacement) replacement.focus();
+    });
     // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
     const search = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Какой цвет нужен')),
       h('div', {class: 'cm-target'}, targetSelector.el, field('Sort recipes', sort),

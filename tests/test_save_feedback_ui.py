@@ -132,7 +132,7 @@ def test_a_failed_change_stays_in_its_place_with_the_typed_value_and_the_error_b
   const t = track({w: 100, v: 1});
   const result = t.st.edit({w: 0}, {local: {w: 0}});
   await wait();
-  t.gates[0].rej(Object.assign(new Error('Ширина картинки должна быть от 1 до 1000 мм'), {kind: 'invalid'})); await wait();
+  t.gates[0].rej(Object.assign(new Error('the width of the picture must be 1..1000 mm'), {kind: 'invalid'})); await wait();
   out.failed = {result: (await result).message, status: t.st.status(), line: t.line(), shown: t.shown(), text: t.box().textContent, local: t.st.local(),
     alert: t.box().getAttribute('role'), redrawn: t.applied.map((x) => ({local: x.local, failed: x.failed})), confirmed: t.st.snapshot().confirmed};
   // the other field is saved: a success does not take the error away
@@ -141,9 +141,9 @@ def test_a_failed_change_stays_in_its_place_with_the_typed_value_and_the_error_b
   out.after_success = {status: t.st.status(), shown: t.shown(), local: t.st.local(), line: t.line()};
 """)
     failed = out["failed"]
-    assert failed["result"] == "Ширина картинки должна быть от 1 до 1000 мм" and failed["status"] == "failed" and failed["shown"]
+    assert failed["result"] == "the width of the picture must be 1..1000 mm" and failed["status"] == "failed" and failed["shown"]
     assert failed["line"] == "Работа: Не сохранено: на экране не то, что хранится" and failed["alert"] == "alert"
-    assert failed["text"] == ("Не удалось сохранить. Ширина картинки должна быть от 1 до 1000 мм"
+    assert failed["text"] == ("Не удалось сохранить. the width of the picture must be 1..1000 mm"
                               "Набрано, но не сохранено — Ширина: 0 (сохранено: 100).Закрыть")
     assert failed["local"] == {"w": 0} and failed["confirmed"] == {"w": 100, "v": 1}                          # what is typed and what is stored, apart
     assert failed["redrawn"] == [{"local": {"w": 0}, "failed": True}]                                         # the screen is drawn again with the typed value over it
@@ -283,7 +283,7 @@ def test_a_work_change_that_fails_keeps_what_was_typed_and_a_later_edit_does_not
 """)
     failed = out["failed"]
     assert failed["width"] == "70" and failed["status"] == "Работа: Не сохранено: на экране не то, что хранится" and failed["waiting"] is False
-    assert failed["failure"] == ("Не удалось сохранить. Нет связи с локальным сервисом. Запущено ли приложение?"
+    assert failed["failure"] == ("Не удалось сохранить. Cannot reach the local service. Is the application running?"
                                  "Набрано, но не сохранено — Ширина, мм: 70 (сохранено: 60).Закрыть")
     assert failed["preview"] == "/api/photo-works/7/preview.png?v=0"                                          # the stored work is drawn again, not the empty wait
     assert out["later"] == {"status": "Работа: Не сохранено: на экране не то, что хранится", "failure": True, "width": "70", "colour": True,
@@ -341,7 +341,7 @@ def test_changes_that_fail_after_the_work_was_left_reach_the_task_panel(tmp_path
   out.panel = require('vm').runInContext('Operations.items()', ctx).map((o) => ({title: o.title, state: o.state, error: o.error, recover: o.recover.label}));
 """)
     assert out["panel"] == [{"title": "Работа «Портрет»: изменения не сохранены", "state": "failed", "recover": "Открыть работу",
-                             "error": "Нет связи с локальным сервисом. Запущено ли приложение? Ширина, мм: 70 (сохранено: 60)"}]
+                             "error": "Cannot reach the local service. Is the application running? Ширина, мм: 70 (сохранено: 60)"}]
 
 
 # -- REQ-002: operations that go on while the person is elsewhere ----------------------------------------------------------------------
@@ -464,7 +464,7 @@ def test_a_watched_number_box_refuses_a_wrong_text_beside_itself_keeps_it_and_ap
   box.value = '12abc'; await box.dispatch('change');
   out.letters = [state()[0], state()[2], applied.slice()];
 """)
-    assert out["wrong"][0][0] == "true" and "Введено: 150" in out["wrong"][0][1] and out["wrong"][0][2:] == ["150", "polite", True]
+    assert out["wrong"][0][0] == "true" and "Entered: 150" in out["wrong"][0][1] and out["wrong"][0][2:] == ["150", "polite", True]
     assert out["wrong"][1:] == [[], ["150"]]                                         # nothing applied; the owner of the control is told what was typed
     assert out["zero"] == ["true", []]
     assert out["right"] == [None, "", [12.5]]
@@ -481,19 +481,19 @@ def test_the_goals_of_a_task_are_read_strictly_with_the_rule_beside_each_box_and
   await wait();
   const labelled = (text) => chooser.el.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text);
   const said = (text) => labelled(text).errorText();
-  const height = labelled('Высота букв, мм').firstControl(), width = labelled('Ширина линии, мм').firstControl();
-  out.rules = [labelled('Высота букв, мм').textContent.includes('допустимо: больше 0'), labelled('Высота букв, мм').textContent.includes('единица: мм')];
+  const height = labelled('Letter height, mm').firstControl(), width = labelled('Line width, mm').firstControl();
+  out.rules = [labelled('Letter height, mm').textContent.includes('allowed: greater than 0'), labelled('Letter height, mm').textContent.includes('unit: mm')];
   height.value = '-2'; width.value = '0.3x';
   out.checked = chooser.check();
-  out.said = [said('Высота букв, мм'), said('Ширина линии, мм'), height.value, width.value, height.getAttribute('aria-invalid')];
+  out.said = [said('Letter height, mm'), said('Line width, mm'), height.value, width.value, height.getAttribute('aria-invalid')];
   width.value = '0.3'; await width.dispatch('input');
-  out.cleared = [said('Ширина линии, мм'), width.getAttribute('aria-invalid')];
+  out.cleared = [said('Line width, mm'), width.getAttribute('aria-invalid')];
   height.value = '1,5'; await height.dispatch('input');
   out.right = [chooser.check(), chooser.body()];
 """ % json.dumps(tasks.vocabulary()), scripts=SCRIPTS + ["tasks.js"])
     assert out["rules"] == [True, True]
     assert out["checked"] is False
-    assert "Введено: -2" in out["said"][0] and out["said"][1].startswith("Введите число") and out["said"][2:] == ["-2", "0.3x", "true"]
+    assert "Entered: -2" in out["said"][0] and out["said"][1].startswith("Enter a number") and out["said"][2:] == ["-2", "0.3x", "true"]
     assert out["cleared"] == ["", None]
     assert out["right"] == [True, {"task": "text", "task_goals": {"text_height_mm": 1.5, "line_width_mm": 0.3}}]
 
@@ -516,8 +516,8 @@ def test_the_operating_point_form_refuses_wrong_numbers_beside_each_box_sends_no
   await press();
   out.right = [sent.length, sent[0], results.length, labelled('Мощность').errorText()];
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-calc.js"])
-    assert out["wrong"][0] == 0 and "Допустимо" in out["wrong"][1] and "Введено: 150" in out["wrong"][1]
-    assert "Введено: -5" in out["wrong"][2] and "целое" in out["wrong"][3] and out["wrong"][4:] == ["150", "-5"]
+    assert out["wrong"][0] == 0 and "Allowed" in out["wrong"][1] and "Entered: 150" in out["wrong"][1]
+    assert "Entered: -5" in out["wrong"][2] and "whole number" in out["wrong"][3] and out["wrong"][4:] == ["150", "-5"]
     assert out["right"][:1] == [1] and out["right"][1]["power"] == 30 and out["right"][1]["speed"] == 900 and out["right"][1]["passes"] == 2
     assert out["right"][1]["pulse_width"] == 200 and out["right"][2:] == [1, ""]
 
@@ -547,7 +547,7 @@ def test_closing_the_panel_does_not_stop_a_task_and_stopping_says_what_it_does_f
     assert out["asked"]["aborted"] is False and out["asked"]["title"] == "Остановить: Загрузка повторной фотографии?"
     assert out["asked"]["text"] == ("Передача прервётся, пока сервер не получил файл целиком, поэтому фотография в базу не попадёт. "
                                     "Выбрать файл придётся заново.")
-    assert out["asked"]["buttons"] == ["×", "Отмена", "Остановить"] and out["asked"]["dockInert"] is True and out["asked"]["toastsInert"] is False
+    assert out["asked"]["buttons"] == ["×", "Cancel", "Остановить"] and out["asked"]["dockInert"] is True and out["asked"]["toastsInert"] is False
     assert out["said_in_dialog"] is True                                                                   # the announcement area stays reachable
     assert out["stopped"] == {"aborted": True, "kind": "cancelled", "state": "cancelled", "result": "Загрузка остановлена, файл не добавлен.", "dockInert": False}
 
@@ -645,7 +645,7 @@ def test_the_connection_of_a_release_reports_failure_with_the_way_back_and_a_sto
     assert out["effect"] == ("Подключение остановится. Ничего не будет подключено: прочитанный файл удалится, а данные мастерской останутся такими, какими были.")
     assert out["cancelled"] == {"state": "cancelled", "result": "Подключение остановлено, ничего не изменилось."}
     assert out["failed"]["state"] == "failed" and out["failed"]["retry"] is True and out["failed"]["badge"] == "не удалось" and out["failed"]["alert"] is True
-    assert out["failed"]["error"] == "the release could not be connected: broken (сообщение сервера, без перевода)"
+    assert out["failed"]["error"] == "the release could not be connected: broken"
     assert out["went"] == ["/labs"]                                                                         # back where it was started, to choose the file again
     assert out["spoken"][-1].startswith("Подключение выпуска лаборатории: не удалось.")
 
@@ -723,13 +723,13 @@ def test_a_field_names_its_control_by_the_label_and_describes_it_with_unit_range
     out = run(tmp_path, """
   const input = h('input', {type: 'number', value: '0'});
   body.append(h('div', {}, 'x'));
-  const el = App.field('Ширина картинки', input, 'на титане', {required: true, unit: 'мм', constraint: 'допустимо: от 1 до 1000'});
+  const el = App.field('Ширина картинки', input, 'на титане', {required: true, unit: 'мм', constraint: 'допустимо: from 1 to 1000'});
   body.append(el);
   const byId = (id) => body.querySelectorAll('[id]').find((n) => n.getAttribute('id') === id);
   const names = (attr) => (input.getAttribute(attr) || '').split(' ').filter(Boolean).map((id) => byId(id).textContent);
   out.draw = {text: el.textContent, labelledby: names('aria-labelledby'), describedby: names('aria-describedby'), required: input.getAttribute('aria-required'),
     unit: el.querySelector('.f-unit').getAttribute('aria-hidden')};
-  el.setError('Допустимо: от 1 до 1000 мм. Введено: 0');
+  el.setError('Allowed: from 1 to 1000 мм. Entered: 0');
   out.error = {describedby: names('aria-describedby'), invalid: input.getAttribute('aria-invalid'), value: input.value, cls: el.className, text: el.errorText(),
     beside: el.lastChild.className.includes('f-error')};
   el.setError('Другое сообщение');
@@ -737,12 +737,12 @@ def test_a_field_names_its_control_by_the_label_and_describes_it_with_unit_range
   el.clearError();
   out.cleared = {describedby: names('aria-describedby'), invalid: input.getAttribute('aria-invalid'), value: input.value, cls: el.className, first: el.firstControl() === input};
 """)
-    assert out["draw"] == {"text": "Ширина картинкиобязательномм" "единица: мм · допустимо: от 1 до 1000" "на титане", "labelledby": ["Ширина картинки"],
-                           "describedby": ["единица: мм · допустимо: от 1 до 1000", "на титане"], "required": "true", "unit": "true"}
-    assert out["error"] == {"describedby": ["единица: мм · допустимо: от 1 до 1000", "на титане", "Допустимо: от 1 до 1000 мм. Введено: 0"], "invalid": "true",
-                            "value": "0", "cls": "f has-error", "text": "Допустимо: от 1 до 1000 мм. Введено: 0", "beside": True}
+    assert out["draw"] == {"text": "Ширина картинкиrequiredмм" "unit: мм · допустимо: from 1 to 1000" "на титане", "labelledby": ["Ширина картинки"],
+                           "describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане"], "required": "true", "unit": "true"}
+    assert out["error"] == {"describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане", "Allowed: from 1 to 1000 мм. Entered: 0"], "invalid": "true",
+                            "value": "0", "cls": "f has-error", "text": "Allowed: from 1 to 1000 мм. Entered: 0", "beside": True}
     assert out["again"] == {"errors": 1, "describedby": 3}
-    assert out["cleared"] == {"describedby": ["единица: мм · допустимо: от 1 до 1000", "на титане"], "invalid": None, "value": "0", "cls": "f", "first": True}
+    assert out["cleared"] == {"describedby": ["unit: мм · допустимо: from 1 to 1000", "на титане"], "invalid": None, "value": "0", "cls": "f", "first": True}
 
 
 @node
@@ -759,15 +759,15 @@ def test_numbers_are_read_strictly_and_a_wrong_value_is_refused_not_corrected(tm
   out.browser_bad_input = Forms.readNumber(bad, Q.power);
   out.words = ['power', 'pictureWidth', 'globalPasses', 'passes', 'focal', 'speed'].map((k) => Forms.constraint(Q[k]));
 """)
-    assert out["power"] == [None, "Допустимо: больше 0 и не больше 100 %. Введено: 0", 0.1, 100, "Допустимо: больше 0 и не больше 100 %. Введено: 100,5",
-                            "Допустимо: больше 0 и не больше 100 %. Введено: -3", "Введите число, %. Введено: «abc»", "Введите число, %. Введено: «12abc»",
-                            "Введите число, %. Введено: «0x10»", "Введите число, %. Введено: «Infinity»", 10, 12.5]
-    assert out["empty"] == [None, "Заполните это поле"]                                                      # an empty optional box is empty, not zero
-    assert out["passes"] == [1, "Нужно целое число. Введено: 2,5", "Допустимо: целое число, не меньше 1. Введено: 0", 3]
-    assert out["width"] == [1, 1000, "Допустимо: от 1 до 1000 мм. Введено: 1000,01", "Допустимо: от 1 до 1000 мм. Введено: 0,99"]
-    assert out["device"] == ["Допустимо: от 20 до 48 кГц. Введено: 60", 48, 20]                              # a laser's own range narrows the general one
-    assert out["browser_bad_input"] == {"ok": False, "message": "Введите число, %"}
-    assert out["words"] == ["больше 0 и не больше 100", "от 1 до 1000", "целое число, от 1 до 100", "целое число, не меньше 1", "от 20 до 1500", "больше 0"]
+    assert out["power"] == [None, "Allowed: greater than 0 and at most 100 %. Entered: 0", 0.1, 100, "Allowed: greater than 0 and at most 100 %. Entered: 100.5",
+                            "Allowed: greater than 0 and at most 100 %. Entered: -3", "Enter a number, %. Entered: “abc”", "Enter a number, %. Entered: “12abc”",
+                            "Enter a number, %. Entered: “0x10”", "Enter a number, %. Entered: “Infinity”", 10, 12.5]
+    assert out["empty"] == [None, "Complete this field"]                                                      # an empty optional box is empty, not zero
+    assert out["passes"] == [1, "Enter a whole number. Entered: 2.5", "Allowed: whole number, at least 1. Entered: 0", 3]
+    assert out["width"] == [1, 1000, "Allowed: from 1 to 1000 mm. Entered: 1000.01", "Allowed: from 1 to 1000 mm. Entered: 0.99"]
+    assert out["device"] == ["Allowed: from 20 to 48 kHz. Entered: 60", 48, 20]                              # a laser's own range narrows the general one
+    assert out["browser_bad_input"] == {"ok": False, "message": "Enter a number, %"}
+    assert out["words"] == ["greater than 0 and at most 100", "from 1 to 1000", "whole number, from 1 to 100", "whole number, at least 1", "from 20 to 1500", "greater than 0"]
 
 
 FORM = """
@@ -795,11 +795,11 @@ def test_a_form_marks_every_bad_field_beside_its_input_keeps_the_typed_text_and_
   out.after = {marks: [name, power, width].map((i) => i.getAttribute('aria-invalid')), form: f.error.hidden};
 """)
     assert out["values"] is None
-    assert out["marks"]["name"] == "Заполните это поле" and out["marks"]["power"] == "Допустимо: больше 0 и не больше 100 %. Введено: 150"
-    assert out["marks"]["width"] == "Введите число, мм. Введено: «12abc»"
+    assert out["marks"]["name"] == "Complete this field" and out["marks"]["power"] == "Allowed: greater than 0 and at most 100 %. Entered: 150"
+    assert out["marks"]["width"] == "Enter a number, mm. Entered: “12abc”"
     assert out["marks"]["invalid"] == ["true", "true", "true"] and out["marks"]["typed"] == ["", "150", "12abc"] and out["marks"]["focus"] is True
-    assert out["marks"]["form"] == "Не отправлено: исправьте поля «Название», «Мощность», «Ширина». Всё, что вы ввели, осталось в форме." and out["marks"]["role"] == "alert"
-    assert out["edited"] == {"power": "", "name": "Заполните это поле", "form": True}
+    assert out["marks"]["form"] == "Not submitted: correct fields “Название”, “Мощность”, “Ширина”. Your entries remain in the form." and out["marks"]["role"] == "alert"
+    assert out["edited"] == {"power": "", "name": "Complete this field", "form": True}
     assert out["fixed"] == {"name": "Лазер", "power": 50, "width": None} and out["after"] == {"marks": [None, None, None], "form": True}
 
 
@@ -807,19 +807,19 @@ def test_a_form_marks_every_bad_field_beside_its_input_keeps_the_typed_text_and_
 def test_what_the_server_says_goes_beside_the_field_it_names_else_it_stays_on_the_form_with_what_to_do(tmp_path):
     out = run(tmp_path, FORM + """
   name.value = 'Лазер'; power.value = '50';
-  f.fail(Object.assign(new Error('Проверьте заполнение полей формы'), {details: [{field: 'power', message: 'Значение должно быть больше 0'}, {field: 'passport', message: 'Заполните это поле'}]}));
+  f.fail(Object.assign(new Error('Check the form fields'), {details: [{field: 'power', message: 'Value must be greater than 0'}, {field: 'passport', message: 'Complete this field'}]}));
   out.named = {power: field('Мощность').errorText(), name: field('Название').errorText(), form: f.error.textContent, focus: doc.activeElement === power, typed: [name.value, power.value]};
   f.clear();
   f.fail(Object.assign(new Error('Название уже занято'), {kind: 'invalid', status: 422}));
   out.refusal = {form: f.error.textContent, marks: [field('Название').errorText(), field('Мощность').errorText()], typed: [name.value, power.value]};
-  f.fail(Object.assign(new Error('Нет связи с локальным сервисом. Запущено ли приложение?'), {kind: 'network'}));
+  f.fail(Object.assign(new Error('Cannot reach the local service. Is the application running?'), {kind: 'network'}));
   out.network = f.error.textContent;
 """)
-    assert out["named"] == {"power": "Значение должно быть больше 0", "name": "", "focus": True, "typed": ["Лазер", "50"],
-                            "form": "Сервер не принял поле «Мощность»: исправьте его и отправьте снова. Ещё: Заполните это поле."}
-    assert out["refusal"] == {"form": "Сервер не принял данные: Название уже занято. Всё, что вы ввели, осталось в форме — исправьте и отправьте снова.",
+    assert out["named"] == {"power": "Value must be greater than 0", "name": "", "focus": True, "typed": ["Лазер", "50"],
+                            "form": "The server rejected field “Мощность”: correct it and submit again. Also: Complete this field."}
+    assert out["refusal"] == {"form": "The server rejected the data: Название уже занято. Your entries remain in the form; correct them and submit again.",
                               "marks": ["", ""], "typed": ["Лазер", "50"]}
-    assert out["network"].startswith("Не получилось отправить: Нет связи с локальным сервисом.") and out["network"].endswith("исправьте и отправьте снова.")
+    assert out["network"].startswith("Could not submit: Cannot reach the local service.") and out["network"].endswith("correct them and submit again.")
 
 
 @node
@@ -836,10 +836,10 @@ def test_the_transport_keeps_which_fields_the_server_refused_and_a_refusal_witho
   out.list = {message: e1.message, status: e1.status, details: e1.details.map((d) => [d.field, d.path, d.message])};
   out.user = {message: e2.message, kind: e2.kind, details: e2.details === undefined};
 """)
-    assert out["list"] == {"message": "Проверьте заполнение полей формы", "status": 422,
-                           "details": [["power", "power", "Значение должно быть больше 0"], ["rated_power_w", "passport.rated_power_w", "Заполните это поле"],
-                                       ["frequency", "frequency", "Введите число"], ["limit", "limit", "Значение должно быть не больше 10"]]}
-    assert out["user"] == {"message": "Ширина картинки должна быть от 1 до 1000 мм", "kind": "invalid", "details": True}
+    assert out["list"] == {"message": "Check the form fields", "status": 422,
+                           "details": [["power", "power", "Value must be greater than 0"], ["rated_power_w", "passport.rated_power_w", "Complete this field"],
+                                       ["frequency", "frequency", "Enter a number"], ["limit", "limit", "Value must be at most 10"]]}
+    assert out["user"] == {"message": "the width of the picture must be 1..1000 mm", "kind": "invalid", "details": True}
 
 
 @node
@@ -1203,18 +1203,18 @@ def test_the_laser_form_refuses_what_is_not_a_number_and_a_step_it_cannot_read_a
   await button(form, 'Создать лазер').dispatch('click'); await wait();
   out.typed = {posted: post(), power: labelled(form, 'Номинальная мощность').errorText(), steps: labelled(form, 'Ступени длительности импульса').errorText(),
     values: ['Название', 'Номинальная мощность', 'Частота повторения до'].map((l) => inputOf(form, l).value), stepsText: steps.value,
-    unit: labelled(form, 'Номинальная мощность').querySelector('.f-unit').textContent, hint: labelled(form, 'Номинальная мощность').textContent.includes('допустимо: больше 0')};
+    unit: labelled(form, 'Номинальная мощность').querySelector('.f-unit').textContent, hint: labelled(form, 'Номинальная мощность').textContent.includes('allowed: greater than 0')};
   inputOf(form, 'Номинальная мощность').value = '60';
   steps.value = '1 CW\\n20 252';
   await button(form, 'Создать лазер').dispatch('click'); await wait();
   out.sent = {posted: post(), finished};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
-    assert out["empty"]["posted"] == [] and out["empty"]["marks"] == ["Заполните это поле", "Заполните это поле", "", "Заполните это поле", ""]
-    assert out["empty"]["error"].startswith("Не отправлено: исправьте поля «Название», «Номинальная мощность», «Частота повторения до».") and out["empty"]["focus"] is True
-    assert out["typed"]["posted"] == [] and out["typed"]["power"] == "Введите число, Вт. Введено: «6O»"
-    assert out["typed"]["steps"] == "Строка 3: частота среза. Введите число, кГц. Введено: «xyz»"
+    assert out["empty"]["posted"] == [] and out["empty"]["marks"] == ["Complete this field", "Complete this field", "", "Complete this field", ""]
+    assert out["empty"]["error"].startswith("Not submitted: correct fields “Название”, “Номинальная мощность”, “Частота повторения до”.") and out["empty"]["focus"] is True
+    assert out["typed"]["posted"] == [] and out["typed"]["power"] == "Enter a number, W. Entered: “6O”"
+    assert out["typed"]["steps"] == "Строка 3: частота среза. Enter a number, kHz. Entered: “xyz”"
     assert out["typed"]["values"] == ["JPT", "6O", "4000"] and out["typed"]["stepsText"] == "1 CW\n20 252\n5 xyz"        # nothing was corrected or dropped
-    assert out["typed"]["unit"] == "Вт" and out["typed"]["hint"] is True
+    assert out["typed"]["unit"] == "W" and out["typed"]["hint"] is True
     assert out["sent"]["posted"] == ["POST /devices"] and out["sent"]["finished"] == [5]
 
 
@@ -1235,8 +1235,8 @@ def test_a_refusal_of_the_laser_form_by_the_server_stays_on_the_form_with_the_ne
   await button(form, 'Создать лазер').dispatch('click'); await wait();
   out.second = {finished, passport: sent[1].passport, bodyKeys: Object.keys(sent[1])};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
-    assert out["refused"] == {"error": "Сервер не принял данные: Максимальная частота должна быть больше минимальной."
-                                       " Всё, что вы ввели, осталось в форме — исправьте и отправьте снова.",
+    assert out["refused"] == {"error": "The server rejected the data: maximum repetition rate must be above the minimum."
+                                       " Your entries remain in the form; correct them and submit again.",
                               "shown": True, "toasts": 0, "values": ["JPT", "60", "1"], "finished": []}
     assert out["edited"] == {"hidden": True}
     assert out["second"]["finished"] == [6] and out["second"]["passport"]["repetition_rate_khz"] == {"min": 1, "max": 4000}
@@ -1261,7 +1261,7 @@ def test_the_passport_edit_form_refuses_a_value_outside_the_rule_and_sends_the_r
   await button(form, 'Сохранить паспорт').dispatch('click'); await wait();
   out.sent = {finished, body: sent[0]};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
-    assert out["refused"] == {"sent": 0, "m2": "Допустимо: больше 0. Введено: -1", "steps": "Нужна хотя бы одна ступень: длительность, нс, и частота среза, кГц (или CW)", "m2Value": "-1"}
+    assert out["refused"] == {"sent": 0, "m2": "Allowed: greater than 0. Entered: -1", "steps": "Нужна хотя бы одна ступень: длительность, нс, и частота среза, кГц (или CW)", "m2Value": "-1"}
     assert out["sent"]["finished"] == [3]
     assert out["sent"]["body"] == {"serial": "S1", "description": "d", "passport": {"m2": 1.4, "m2_max": None, "beam_diameter_mm": 7, "default_pulse_width_ns": 200,
                                                                                      "open_items": ["a", "b"], "rated_power_w": 60,
@@ -1310,9 +1310,9 @@ def test_the_rig_form_and_its_chart_reference_say_what_is_wrong_beside_the_box_a
   await button(details, 'Сохранить эталонные значения').dispatch('click'); await wait();
   out.range = labelled(details, 'Эталонные значения Lab').errorText();
 """, scripts=SCRIPTS + ["screens/setup-forms.js"])
-    assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Заполните это поле" and "«Камера»" in out["empty"]["form"]
+    assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Complete this field" and "“Камера”" in out["empty"]["form"]
     assert out["refused"]["writes"] == ["PUT /setups/5"] and out["refused"]["kept"] == "Sony A7" and out["refused"]["toasts"] == 0
-    assert "осталось в форме" in out["refused"]["form"]                                       # said above the buttons, not in a toast that goes away
+    assert "remain in the form" in out["refused"]["form"]                                       # said above the buttons, not in a toast that goes away
     assert out["short"]["writes"] == [] and out["short"]["message"] == "Нужно ровно 24 тройки чисел [L, a, b]. Сейчас: 1" and out["short"]["kept"] == "[[50, 0, 0]]"
     assert out["range"] == "Тройка 4: L от 0 до 100, a и b от -128 до 127. Введено: [120, 0, 0]"
 
@@ -1339,7 +1339,7 @@ def test_the_controller_row_form_says_what_is_wrong_beside_the_box_and_keeps_wha
   out.added = {fields, changed};
 """, scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
     assert out["empty"]["key"] == "Укажите название настройки" and out["empty"]["value"] == "Укажите значение настройки" and out["empty"]["changed"] == 0 and out["empty"]["toasts"] == 0
-    assert "«Название настройки»" in out["empty"]["form"]
+    assert "“Название настройки”" in out["empty"]["form"]
     assert out["twice"]["key"] == "Такая настройка в этом разделе уже есть" and out["twice"]["value"] == "" and out["twice"]["kept"] == [" Power ", "35,5"] and out["twice"]["changed"] == 0
     assert out["added"]["fields"][1] == {"key": "Speed", "value": 35.5, "unit": None, "status": "confirmed"} and out["added"]["changed"] == 1
 
@@ -1369,12 +1369,12 @@ def test_the_lens_form_refuses_a_focal_length_outside_the_servers_bounds_and_kee
   out.sent = {created, writes: writes(), refreshed};
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-lens.js"])
     assert out["refused"]["writes"] == [] and out["refused"]["name"] == ""
-    assert out["refused"]["focal"] == "Допустимо: от 20 до 1500 мм. Введено: 19,9"
-    assert out["refused"]["fieldMm"] == "Допустимо: от 1 до 500 мм. Введено: 600"
-    assert out["refused"]["expansion"] == "Допустимо: от 0,2 до 20 ×. Введено: 0"
+    assert out["refused"]["focal"] == "Allowed: from 20 to 1500 mm. Entered: 19.9"
+    assert out["refused"]["fieldMm"] == "Allowed: from 1 to 500 mm. Entered: 600"
+    assert out["refused"]["expansion"] == "Allowed: from 0.2 to 20 ×. Entered: 0"
     assert out["refused"]["kept"] == ["F-theta 163", "19,9", "600", "0"]                       # nothing was corrected
-    assert "допустимо: от 20 до 1500" in out["refused"]["unit"]
-    assert out["refused"]["form"] == "Не отправлено: исправьте поля «Фокусное расстояние», «Поле линзы», «Расширитель пучка». Всё, что вы ввели, осталось в форме."
+    assert "allowed: from 20 to 1500" in out["refused"]["unit"]
+    assert out["refused"]["form"] == "Not submitted: correct fields “Фокусное расстояние”, “Поле линзы”, “Расширитель пучка”. Your entries remain in the form."
     assert out["sent"]["created"] == [{"name": "F-theta 163", "focal_length_mm": 254, "field_mm": 110, "expansion": 1, "note": None}]
     assert out["sent"]["writes"] == ["POST /lenses", "PUT /devices/3/lens"] and out["sent"]["refreshed"] == [3]
 
@@ -1409,9 +1409,9 @@ def test_the_spot_form_and_the_focal_dialog_say_what_is_wrong_beside_the_box_and
   await button(dialog, 'Сохранить').dispatch('click'); await wait();
   out.dialogSaved = {open: !!body.querySelector('.modal'), patched, refreshed: [...refreshed]};
 """, scripts=SCRIPTS + ["hardware.js", "screens/device-lens.js"])
-    assert out["spot"] == {"writes": [], "spot": "Допустимо: от 1 до 2000 мкм. Введено: 2500", "m2": "Допустимо: больше 0. Введено: 0", "kept": ["2500", "0"]}
+    assert out["spot"] == {"writes": [], "spot": "Allowed: from 1 to 2000 µm. Entered: 2500", "m2": "Allowed: greater than 0. Entered: 0", "kept": ["2500", "0"]}
     assert out["spotSaved"]["writes"] == ["PATCH /lenses/4"] and out["spotSaved"]["refreshed"] == [3]          # M² is unchanged (1,3 is 1.3): only the spot is written
-    assert out["dialogEmpty"] == {"open": True, "error": "Заполните это поле", "patched": 1}                # the spot saved one lens patch before
+    assert out["dialogEmpty"] == {"open": True, "error": "Complete this field", "patched": 1}                # the spot saved one lens patch before
     assert out["dialogRefused"]["open"] is True and out["dialogRefused"]["typed"] == "25" and out["dialogRefused"]["patched"] == 2
-    assert out["dialogRefused"]["form"].startswith("Сервер не принял данные: ") and "20" in out["dialogRefused"]["form"]
+    assert out["dialogRefused"]["form"].startswith("The server rejected the data: ") and "20" in out["dialogRefused"]["form"]
     assert out["dialogSaved"]["open"] is False and out["dialogSaved"]["patched"][-1] == {"focal_length_mm": 25} and out["dialogSaved"]["refreshed"] == [3, 3]

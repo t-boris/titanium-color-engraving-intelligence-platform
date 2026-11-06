@@ -1,6 +1,4 @@
-/* Уведомления и окна. Окно закрывается по Escape и щелчку вне него; фокус возвращается к вызвавшему элементу;
-   пока действие выполняется, его кнопка заблокирована. Уведомление закрывается само через шесть секунд,
-   наведение приостанавливает таймер. */
+/* Dialogs and notifications. Escape or an outside click closes the dialog and restores focus. */
 'use strict';
 Object.assign(App, (() => {
   const {h, btn} = App;
@@ -8,7 +6,7 @@ Object.assign(App, (() => {
   function toast(text, kind = '') {
     let box = document.querySelector('.toasts');
     if (!box) { box = h('div', {class: 'toasts', role: 'status', 'aria-live': 'polite'}); document.body.append(box); }
-    const t = h('div', {class: 'toast ' + kind}, text, ' ', h('button', {type: 'button', class: 'btn', 'aria-label': 'Закрыть', onClick: () => t.remove()}, '×'));
+    const t = h('div', {class: 'toast ' + kind}, text, ' ', h('button', {type: 'button', class: 'btn', 'aria-label': 'Close', onClick: () => t.remove()}, '×'));
     box.append(t);
     let timer = setTimeout(() => t.remove(), 6000);
     t.addEventListener('mouseenter', () => clearTimeout(timer));
@@ -62,7 +60,7 @@ Object.assign(App, (() => {
       try { await a.run({close}); } catch (e) { fail(e); } finally { b.disabled = false; }
     }, a.cls || ''));
     const box = h('div', {class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title},
-      h('div', {class: 'row'}, h('h3', {}, title), h('span', {class: 'spacer'}), h('button', {type: 'button', class: 'btn', 'aria-label': 'Закрыть', onClick: close}, '×')),
+      h('div', {class: 'row'}, h('h3', {}, title), h('span', {class: 'spacer'}), h('button', {type: 'button', class: 'btn', 'aria-label': 'Close', onClick: close}, '×')),
       body, h('div', {class: 'row', style: 'margin-top:14px'}, buttons));
     // the page behind the dialog (and a dialog under this one) can be reached neither by the keyboard nor by the pointer
     for (const part of [...document.body.children]) {
@@ -77,15 +75,14 @@ Object.assign(App, (() => {
     return {close, el: box};
   }
 
-  /** A confirmation. Its focus starts on «Отмена», so a quick Enter never confirms a deletion. */
+  /** A confirmation. Its focus starts on Cancel, so a quick Enter never confirms a deletion. */
   function confirmBox(title, text, okLabel, run) {
-    return modal(title, h('p', {}, text), [{label: 'Отмена', initial: true, run: (m) => m.close()},
+    return modal(title, h('p', {}, text), [{label: 'Cancel', initial: true, run: (m) => m.close()},
       {label: okLabel, cls: 'primary', run: async (m) => { await run(); m.close(); }}]);
   }
 
-  /** Вкладки: ``items`` — [id, подпись, узел]; возвращает ``list`` (полоса вкладок), ``panels`` (по одной панели на вкладку) и ``select``.
-      Открыта вкладка, запомненная браузером под ``remember`` (удобство одного зрителя: без хранилища просто не запоминается), иначе
-      ``initial``; стрелки влево и вправо переключают вкладки; ``onSelect(id)`` is called on every switch, the first one included. */
+  /** Tabs: ``items`` are [id, label, node]; the remembered or initial tab opens first. Arrow keys switch tabs.
+      ``onSelect(id)`` is called on every switch, including the initial selection. */
   function tabs(items, {initial, remember, label, prefix = 'tab', onSelect}) {
     const ids = items.map(([id]) => id);
     const saved = () => { try { return remember ? localStorage.getItem(remember) : null; } catch (_) { return null; } };
@@ -102,7 +99,7 @@ Object.assign(App, (() => {
         if (on) buttons[i].classList.add('active'); else buttons[i].classList.remove('active');
         panels[i].hidden = !on;
       });
-      try { if (remember) localStorage.setItem(remember, id); } catch (_) { /* окно без хранилища */ }
+      try { if (remember) localStorage.setItem(remember, id); } catch (_) { /* storage unavailable */ }
       if (onSelect) onSelect(id);
     }
     const list = h('div', {role: 'tablist', class: 'vw-tabs', 'aria-label': label}, buttons);
@@ -119,14 +116,14 @@ Object.assign(App, (() => {
     return {list, panels, select};
   }
 
-  /** Список «подпись: значение» для небольших сводок. */
+  /** A label/value list for short summaries. */
   function facts(rows) {
     return h('dl', {class: 'facts'}, rows.filter((r) => r && r[1] != null && r[1] !== '').map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
   }
 
-  /** Таблица из заголовков и строк (ячейка — строка, число или узел). */
+  /** A table of headings and rows. */
   function table(head, rows, empty, compact) {
-    if (!rows.length) return h('p', {class: 'muted'}, empty || 'Нет данных');
+    if (!rows.length) return h('p', {class: 'muted'}, empty || 'No data');
     return h('div', {class: 'tw' + (compact ? ' compact' : '')}, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', {}, t)))),
       h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c) => h('td', {}, c)))))));
   }

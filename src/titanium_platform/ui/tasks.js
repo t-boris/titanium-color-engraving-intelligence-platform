@@ -56,7 +56,7 @@ const Tasks = (() => {
       } else if (GOAL_QUANTITY[g]) {
         const input = h('input', {type: 'number', step: 'any', min: '0'});
         const q = GOAL_QUANTITY[g];
-        el = field(TaskText.GOAL[g] || g, input, null, {unit: 'мм', constraint: 'допустимо: больше 0'});
+        el = field(TaskText.GOAL[g] || g, input, null, {unit: 'mm', constraint: 'allowed: greater than 0'});
         reads[g] = () => (input.value.trim() === '' ? {ok: true, value: null} : Forms.parse(input.value, Forms.QUANTITIES[q], {}));
         input.addEventListener('input', () => el.clearError());
       } else {
