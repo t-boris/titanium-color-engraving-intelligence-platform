@@ -389,7 +389,7 @@ const IngestReview = (() => {
   // -- settings the LightBurn file lacks, supplied by the operator with provenance (REQ-015, REQ-016) --------------------
   const SUPPLIED = {power: ['Мощность', '%'], frequency: ['Частота', 'кГц'], speed: ['Скорость', 'мм/с'],
     pulse_width: ['Длительность импульса (Q-Pulse)', 'нс'], line_interval: ['Шаг линий', 'мм'], passes: ['Проходы', '']};
-  const stamp = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '');
+  const stamp = (iso) => (iso ? new Date(iso).toLocaleString('en-US', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '');
   const shortName = (setting) => (setting === 'pulse_width' ? 'Q-Pulse' : SUPPLIED[setting][0].toLowerCase());
   let reopenSupplied = null;     // the layer whose value was just saved or removed: open again when the page is drawn after the check
 

@@ -264,7 +264,7 @@
         t.label ? pill(t.label, t.kind) : null, x.taken_out ? pill('убрано из расчёта оператором', 'warn') : null];
     };
     // a layer the operator took out of every calculation (act-on-findings REQ-001): dimmed, said why, «Вернуть» on its line
-    const takenOut = (x) => h('p', {class: 'small'}, `Убрано из расчёта оператором ${new Date(x.taken_out.created_at).toLocaleString('ru-RU')}`
+    const takenOut = (x) => h('p', {class: 'small'}, `Убрано из расчёта оператором ${new Date(x.taken_out.created_at).toLocaleString('en-US')}`
       + (x.taken_out.note ? ` («${x.taken_out.note}»)` : '') + ': этот слой не считается в рецепте, на карте цветов, в палитре и в работах.');
     const giveBack = (x) => btn('Вернуть', async (ev) => {
       const self = ev.currentTarget;

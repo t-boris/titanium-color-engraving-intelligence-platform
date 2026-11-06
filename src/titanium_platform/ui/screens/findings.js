@@ -27,7 +27,7 @@
   const STATES = [['attention', 'Требуют внимания'], ['acknowledged', 'Учтённые'], ['hidden', 'Скрытые']];
   const SORTS = [['important', 'Сначала важные'], ['newest', 'Сначала новые'], ['delta', 'Больший ΔE'], ['setup', 'По лазеру и титану']];
   const STAGE = {measured: 'измерено', candidate: 'кандидат', repeated: 'повторено', validated: 'валидировано', production: 'производственное'};
-  const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-US', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
   const taskName = (t) => (t ? Tasks.name(t) : 'задача не определена');     // задачи — общий словарь (REQ-020, tasks.js)
   let goalNames = {};                     // цели руководства (/application-goals): задача исследования AI по-русски
   const stockName = (s) => (s ? [s.name, s.grade, s.batch].filter(Boolean).join(' · ') || 'титан без названия' : 'титан не указан');

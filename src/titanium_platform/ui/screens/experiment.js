@@ -21,7 +21,7 @@
     p.speed == null ? null : `${num(p.speed, 0)} мм/с`,
     p.pulse_width != null ? `${num(p.pulse_width, 0)} нс` : supplied(p, 'pulse_width') ? `${num(supplied(p, 'pulse_width').value, 0)} нс (введено оператором)` : (p.defaulted_settings || {}).pulse_width ? `${num(p.defaulted_settings.pulse_width.value, 0)} нс (по умолчанию лазера)` : 'Q-Pulse не задан',
     p.line_interval == null ? null : `шаг ${num(p.line_interval, 4)} мм`, p.passes == null ? null : `${p.passes} проход(а)`].filter(Boolean).join(' · ');
-  const when = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-US', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
 
   /** Что скрывает рамка, по сторонам в мм (REQ-024, REQ-027): из записи выравнивания проверки. */
   function frameNote(check) {
