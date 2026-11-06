@@ -1662,3 +1662,7 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 }
 /* Definition values must remain legible on the light study surface. */
 .theme-study-light .facts dd {color:var(--text)}
+/* Dialogs in the opt-in study variant use the same light surface as their text. */
+.theme-study-light .modal {background:var(--surface);color:var(--text);border-color:var(--line)}
+.theme-study-light .modal>.row:first-child,.theme-study-light .modal>.row:last-child {border-color:var(--line)}
+.theme-study-light .modal>.row:first-child .btn {background:#eef2f8;color:#253858;border-color:#aab8cc}

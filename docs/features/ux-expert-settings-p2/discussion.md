@@ -85,3 +85,7 @@ Further inspection of the light-study variant in MarkView found low-contrast def
 ### Implementation · 2026-11-06
 
 Long-name stress check in MarkView desktop browser at a 320px iframe viewport: replaced the visible first Works row name and equipment label in the disposable DOM with unbroken strings of 150 and 250 characters. In both normal and compact density, each wrapped (scrollWidth equaled clientWidth), and document scrollWidth remained 303px equal to clientWidth. This covers only the tested Works row, not all names, dropdowns, text enlargement or tablet interaction.
+
+### Implementation · 2026-11-06
+
+Inspected the light-study Research workflow in MarkView with a disposable workshop. The stock chooser dialog initially had dark text over a dark modal surface. Updated study-only modal colors and checked the actual chooser again: title, explanation, close button and list were readable in the desktop screenshot. This does not certify every dialog or satisfy the actual workshop-lighting/tablet comparison.
