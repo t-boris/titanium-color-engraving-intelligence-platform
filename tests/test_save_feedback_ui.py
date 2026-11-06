@@ -1192,27 +1192,27 @@ def test_the_laser_form_refuses_what_is_not_a_number_and_a_step_it_cannot_read_a
   serve({'/devices': () => ({status: 201, json: {id: 5}})});
   const form = DeviceForms.createForm((id) => finished.push(id));
   body.append(form);
-  await button(form, 'Создать лазер').dispatch('click'); await wait();
-  out.empty = {posted: post(), marks: ['Название', 'Номинальная мощность', 'Частота повторения от', 'Частота повторения до', 'Ступени длительности импульса'].map((l) => labelled(form, l).errorText()),
-    error: form.querySelector('.f-form-error').textContent, focus: doc.activeElement === inputOf(form, 'Название')};
-  inputOf(form, 'Название').value = 'JPT';
-  inputOf(form, 'Номинальная мощность').value = '6O';
-  inputOf(form, 'Частота повторения до').value = '4000';
-  const steps = inputOf(form, 'Ступени длительности импульса');
+  await button(form, 'Create laser').dispatch('click'); await wait();
+  out.empty = {posted: post(), marks: ['Name', 'Rated power', 'Repetition frequency from', 'Repetition frequency to', 'Pulse duration steps'].map((l) => labelled(form, l).errorText()),
+    error: form.querySelector('.f-form-error').textContent, focus: doc.activeElement === inputOf(form, 'Name')};
+  inputOf(form, 'Name').value = 'JPT';
+  inputOf(form, 'Rated power').value = '6O';
+  inputOf(form, 'Repetition frequency to').value = '4000';
+  const steps = inputOf(form, 'Pulse duration steps');
   steps.value = '1 CW\\n20 252\\n5 xyz';
-  await button(form, 'Создать лазер').dispatch('click'); await wait();
-  out.typed = {posted: post(), power: labelled(form, 'Номинальная мощность').errorText(), steps: labelled(form, 'Ступени длительности импульса').errorText(),
-    values: ['Название', 'Номинальная мощность', 'Частота повторения до'].map((l) => inputOf(form, l).value), stepsText: steps.value,
-    unit: labelled(form, 'Номинальная мощность').querySelector('.f-unit').textContent, hint: labelled(form, 'Номинальная мощность').textContent.includes('allowed: greater than 0')};
-  inputOf(form, 'Номинальная мощность').value = '60';
+  await button(form, 'Create laser').dispatch('click'); await wait();
+  out.typed = {posted: post(), power: labelled(form, 'Rated power').errorText(), steps: labelled(form, 'Pulse duration steps').errorText(),
+    values: ['Name', 'Rated power', 'Repetition frequency to'].map((l) => inputOf(form, l).value), stepsText: steps.value,
+    unit: labelled(form, 'Rated power').querySelector('.f-unit').textContent, hint: labelled(form, 'Rated power').textContent.includes('allowed: greater than 0')};
+  inputOf(form, 'Rated power').value = '60';
   steps.value = '1 CW\\n20 252';
-  await button(form, 'Создать лазер').dispatch('click'); await wait();
+  await button(form, 'Create laser').dispatch('click'); await wait();
   out.sent = {posted: post(), finished};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
     assert out["empty"]["posted"] == [] and out["empty"]["marks"] == ["Complete this field", "Complete this field", "", "Complete this field", ""]
-    assert out["empty"]["error"].startswith("Not submitted: correct fields “Название”, “Номинальная мощность”, “Частота повторения до”.") and out["empty"]["focus"] is True
+    assert out["empty"]["error"].startswith("Not submitted: correct fields “Name”, “Rated power”, “Repetition frequency to”.") and out["empty"]["focus"] is True
     assert out["typed"]["posted"] == [] and out["typed"]["power"] == "Enter a number, W. Entered: “6O”"
-    assert out["typed"]["steps"] == "Строка 3: частота среза. Enter a number, kHz. Entered: “xyz”"
+    assert out["typed"]["steps"] == "Line 3: cutoff frequency. Enter a number, kHz. Entered: “xyz”"
     assert out["typed"]["values"] == ["JPT", "6O", "4000"] and out["typed"]["stepsText"] == "1 CW\n20 252\n5 xyz"        # nothing was corrected or dropped
     assert out["typed"]["unit"] == "W" and out["typed"]["hint"] is True
     assert out["sent"]["posted"] == ["POST /devices"] and out["sent"]["finished"] == [5]
@@ -1226,13 +1226,13 @@ def test_a_refusal_of_the_laser_form_by_the_server_stays_on_the_form_with_the_ne
     ? {status: 422, json: {error: 'maximum repetition rate must be above the minimum', kind: 'invalid'}} : {status: 201, json: {id: 6}}; }});
   const form = DeviceForms.createForm((id) => finished.push(id));
   body.append(form);
-  inputOf(form, 'Название').value = 'JPT'; inputOf(form, 'Номинальная мощность').value = '60'; inputOf(form, 'Частота повторения до').value = '1';
-  await button(form, 'Создать лазер').dispatch('click'); await wait();
+  inputOf(form, 'Name').value = 'JPT'; inputOf(form, 'Rated power').value = '60'; inputOf(form, 'Repetition frequency to').value = '1';
+  await button(form, 'Create laser').dispatch('click'); await wait();
   out.refused = {error: form.querySelector('.f-form-error').textContent, shown: !form.querySelector('.f-form-error').hidden, toasts: body.querySelectorAll('.toast').length,
-    values: ['Название', 'Номинальная мощность', 'Частота повторения до'].map((l) => inputOf(form, l).value), finished: [...finished]};
-  inputOf(form, 'Частота повторения до').value = '4000'; await inputOf(form, 'Частота повторения до').dispatch('input');
+    values: ['Name', 'Rated power', 'Repetition frequency to'].map((l) => inputOf(form, l).value), finished: [...finished]};
+  inputOf(form, 'Repetition frequency to').value = '4000'; await inputOf(form, 'Repetition frequency to').dispatch('input');
   out.edited = {hidden: form.querySelector('.f-form-error').hidden};
-  await button(form, 'Создать лазер').dispatch('click'); await wait();
+  await button(form, 'Create laser').dispatch('click'); await wait();
   out.second = {finished, passport: sent[1].passport, bodyKeys: Object.keys(sent[1])};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
     assert out["refused"] == {"error": "The server rejected the data: maximum repetition rate must be above the minimum."
@@ -1252,16 +1252,16 @@ def test_the_passport_edit_form_refuses_a_value_outside_the_rule_and_sends_the_r
     pulse_steps: [{pulse_width_ns: 1, cutoff_khz: null}, {pulse_width_ns: 2, cutoff_khz: 1950}], rated_power_w: 60}};
   const form = DeviceForms.editForm(device, (id) => finished.push(id));
   body.append(form);
-  inputOf(form, 'M² вашего лазера').value = '-1';
-  inputOf(form, 'Ступени длительности импульса').value = '';
-  await button(form, 'Сохранить паспорт').dispatch('click'); await wait();
-  out.refused = {sent: sent.length, m2: labelled(form, 'M² вашего лазера').errorText(), steps: labelled(form, 'Ступени длительности импульса').errorText(), m2Value: inputOf(form, 'M² вашего лазера').value};
-  inputOf(form, 'M² вашего лазера').value = '1,4';
-  inputOf(form, 'Ступени длительности импульса').value = '1 CW\\n2 1950';
-  await button(form, 'Сохранить паспорт').dispatch('click'); await wait();
+  inputOf(form, 'Your laser’s M²').value = '-1';
+  inputOf(form, 'Pulse duration steps').value = '';
+  await button(form, 'Save specifications').dispatch('click'); await wait();
+  out.refused = {sent: sent.length, m2: labelled(form, 'Your laser’s M²').errorText(), steps: labelled(form, 'Pulse duration steps').errorText(), m2Value: inputOf(form, 'Your laser’s M²').value};
+  inputOf(form, 'Your laser’s M²').value = '1,4';
+  inputOf(form, 'Pulse duration steps').value = '1 CW\\n2 1950';
+  await button(form, 'Save specifications').dispatch('click'); await wait();
   out.sent = {finished, body: sent[0]};
 """, scripts=SCRIPTS + ["screens/device-forms.js"])
-    assert out["refused"] == {"sent": 0, "m2": "Allowed: greater than 0. Entered: -1", "steps": "Нужна хотя бы одна ступень: длительность, нс, и частота среза, кГц (или CW)", "m2Value": "-1"}
+    assert out["refused"] == {"sent": 0, "m2": "Allowed: greater than 0. Entered: -1", "steps": "Enter at least one step: pulse duration in ns and cutoff frequency in kHz (or CW)", "m2Value": "-1"}
     assert out["sent"]["finished"] == [3]
     assert out["sent"]["body"] == {"serial": "S1", "description": "d", "passport": {"m2": 1.4, "m2_max": None, "beam_diameter_mm": 7, "default_pulse_width_ns": 200,
                                                                                      "open_items": ["a", "b"], "rated_power_w": 60,
