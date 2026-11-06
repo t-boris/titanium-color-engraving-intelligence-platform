@@ -100,15 +100,15 @@ def test_the_window_of_a_copy_holds_the_most_tones_of_the_picture_at_its_own_sca
 
 
 @pytest.mark.parametrize("variants, extra, message", [
-    (EIGHT[:1], {}, "от 2 до 12 копий"),
-    (EIGHT + EIGHT[:5], {}, "от 2 до 12 копий"),
-    ([{"dither": "jarvis"}, {"dither": "jarvis"}], {}, "одинаковыми настройками"),
-    ([{"dither": "jarvis"}, {"gamma": 2}], {}, "неизвестные параметры: gamma"),
-    ([{"dither": "jarvis"}, {"dither": "sketch"}], {}, "градации серого или один из видов точками"),
-    ([{"dither": "jarvis"}, {"dot_width": 0.5}], {}, "поправка ширины точки"),
-    ([{"dither": "grayscale", "min_power": 30}, {"dither": "jarvis"}], {}, "Min мощность"),
-    ([{"dither": "jarvis"}, {"frequency": 5000}], {}, "копия 2: частота"),
-    (EIGHT[:2], {"copy_mm": 60}, "размер копии"),
+    (EIGHT[:1], {}, "2 to 12 copies"),
+    (EIGHT + EIGHT[:5], {}, "2 to 12 copies"),
+    ([{"dither": "jarvis"}, {"dither": "jarvis"}], {}, "identical settings"),
+    ([{"dither": "jarvis"}, {"gamma": 2}], {}, "unknown settings: gamma"),
+    ([{"dither": "jarvis"}, {"dither": "sketch"}], {}, "grayscale or a LightBurn dot mode"),
+    ([{"dither": "jarvis"}, {"dot_width": 0.5}], {}, "dot-width adjustment"),
+    ([{"dither": "grayscale", "min_power": 30}, {"dither": "jarvis"}], {}, "Min power"),
+    ([{"dither": "jarvis"}, {"frequency": 5000}], {}, "copy 2: frequency"),
+    (EIGHT[:2], {"copy_mm": 60}, "copy size"),
 ])
 def test_copies_that_compare_nothing_or_that_the_laser_cannot_engrave_are_refused(world, variants, extra, message):
     with pytest.raises(su.ValidationError, match=message):
@@ -126,7 +126,7 @@ def test_without_copies_the_plate_changes_one_setting_at_a_time_around_its_own_s
 
 
 def test_a_picture_that_is_not_an_image_is_refused(world):
-    with pytest.raises(su.ValidationError, match="картинка копий не прочитана"):
+    with pytest.raises(su.ValidationError, match="copy image could not be read"):
         make(world, EIGHT[:2], picture=b"not a picture")
 
 

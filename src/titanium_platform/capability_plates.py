@@ -239,26 +239,26 @@ def _passport_defaults(passport: dict, supplied: dict) -> tuple[dict, dict, dict
     repetition = passport["repetition_rate_khz"]
     steps = passport["pulse_steps"]
     values = {**DEFAULT_TEST, **supplied}
-    values["power"] = su._finite(values["power"], "мощность")
+    values["power"] = su._finite(values["power"], "power")
     if not 0 < values["power"] <= 100:
-        raise su.ValidationError("мощность должна быть больше 0 и не выше 100%")
-    values["frequency"] = su._finite(values["frequency"], "частота", True)
+        raise su.ValidationError("power must be greater than 0 and at most 100%")
+    values["frequency"] = su._finite(values["frequency"], "frequency", True)
     if not repetition["min"] <= values["frequency"] <= repetition["max"]:
-        raise su.ValidationError(f"частота должна быть в диапазоне {repetition['min']:g}–{repetition['max']:g} кГц для выбранного лазера")
-    values["speed"] = su._finite(values["speed"], "скорость", True)
+        raise su.ValidationError(f"frequency must be in the range {repetition['min']:g}–{repetition['max']:g} kHz for the selected laser")
+    values["speed"] = su._finite(values["speed"], "speed", True)
     if values["speed"] > 10000:
-        raise su.ValidationError("скорость теста не должна превышать 10000 мм/с")
+        raise su.ValidationError("test speed must not exceed 10000 mm/s")
     if values.get("pulse_width") in (None, ""):
-        raise su.ValidationError("выберите длительность импульса из ступеней лазера")
-    values["pulse_width"] = su._finite(values["pulse_width"], "длительность импульса", True)
+        raise su.ValidationError("select a pulse width supported by the laser")
+    values["pulse_width"] = su._finite(values["pulse_width"], "pulse width", True)
     devices.require_selectable(passport, values["pulse_width"])        # refused when outside the laser's range (DEC-089)
-    values["line_interval"] = su._finite(values["line_interval"], "шаг линий", True)
+    values["line_interval"] = su._finite(values["line_interval"], "line interval", True)
     if values["line_interval"] > 1:
-        raise su.ValidationError("шаг линий должен быть не больше 1 мм")
+        raise su.ValidationError("line interval must not exceed 1 mm")
     for key in ("passes", "global_passes"):
         n = values[key]
         if isinstance(n, bool) or int(n) != n or not 1 <= n <= 20:
-            raise su.ValidationError(f"{key}: укажите целое число от 1 до 20")
+            raise su.ValidationError(f"{key}: enter a whole number from 1 to 20")
         values[key] = int(n)
     clean = dict(CLEAN_DEFAULTS)
     clean["frequency"] = _clamp(clean["frequency"], repetition)
@@ -338,7 +338,7 @@ def _pulse_cutoff(values: dict, passport: dict) -> tuple[list[dict], list[dict],
     rate = passport["repetition_rate_khz"]
     steps = [s for s in passport["pulse_steps"] if s["cutoff_khz"] is not None]
     if not steps:
-        raise su.ValidationError("в паспорте лазера нет таблицы частоты среза импульсов")
+        raise su.ValidationError("the laser datasheet has no pulse cutoff frequency table")
     steps = _evenly_spaced(steps, 9)
     factors = (0.8, 1.0, 1.2)
     labels = _text("Q-PULSE / FREQUENCY CUTOFF", 4, 1, 0.24)
@@ -568,11 +568,11 @@ def _text_readability(values: dict, passport: dict) -> tuple[list[dict], list[di
     speed = float(values["speed"])
     spread = float(values.get("text_spread", 0.2))
     if not math.isfinite(spread) or not 0.04 <= spread <= 0.4:
-        raise su.ValidationError("разброс теста надписей должен быть от 4% до 40%")
+        raise su.ValidationError("lettering test spread must be from 4% to 40%")
     powers = sorted({round(max(1.0, min(100.0, power * factor)), 2) for factor in (1 - spread, 1, 1 + spread)})
     speeds = sorted({round(max(1.0, min(10000.0, speed * factor)), 1) for factor in (1 - spread * 1.25, 1, 1 + spread * 1.25)})
     if len(powers) < 3 or len(speeds) < 3:
-        raise su.ValidationError("для трёхточечного теста надписей задайте мощность 2–83% и скорость 2–8000 мм/с")
+        raise su.ValidationError("for the three-point lettering test use power 2–83% and speed 2–8000 mm/s")
     labels = _text("TEXT POWER X SPEED", 2.0, 1.0, 0.14)
     layers, cells = [], []
     x0, y0, pitch_x, pitch_y = 5.0, 10.0, 16.0, 12.0
@@ -628,17 +628,17 @@ def _small_patches(values: dict, passport: dict) -> tuple[list[dict], list[dict]
     try:
         side = float(values.get("patch_size_mm", 3.0))
     except (TypeError, ValueError):
-        raise su.ValidationError("размер квадрата должен быть числом от 3 до 5 мм") from None
+        raise su.ValidationError("square size must be a number from 3 to 5 mm") from None
     if not math.isfinite(side) or not 3 <= side <= 5:
-        raise su.ValidationError("размер квадрата должен быть от 3 до 5 мм")
+        raise su.ValidationError("square size must be from 3 to 5 mm")
     registration = values.get("registration", "full")
     if registration not in {"full", "none"}:
-        raise su.ValidationError("регистрация малой платы должна быть full или none")
+        raise su.ValidationError("small plate registration must be full or none")
     patch_specs = values.get("patches")
     if patch_specs is None:
         patch_specs = [{}]
     if not isinstance(patch_specs, list) or not 1 <= len(patch_specs) <= 4 or any(not isinstance(p, dict) for p in patch_specs):
-        raise su.ValidationError("задайте от одного до четырёх квадратов с параметрами")
+        raise su.ValidationError("provide one to four squares with settings")
     gap, pad = 0.8, 1.5
     max_width = float(values.get("max_width_mm", PLATE_DEFAULT_MM))
     max_height = float(values.get("max_height_mm", PLATE_DEFAULT_MM))
@@ -660,7 +660,7 @@ def _small_patches(values: dict, passport: dict) -> tuple[list[dict], list[dict]
     for i, spec in enumerate(patch_specs):
         unknown = set(spec) - RECIPE_KEYS
         if unknown:
-            raise su.ValidationError(f"квадрат {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
+            raise su.ValidationError(f"square {i + 1}: unknown settings: {', '.join(sorted(unknown))}")
         selected, _, _ = _passport_defaults(passport, {**values, **spec})
         x = x0 + (i % columns) * (side + gap)
         y = y0 + (i // columns) * (side + gap)
@@ -680,12 +680,12 @@ def _matrix_axis_values(axis: str, lower: float, upper: float, count: int, passp
         domain = sorted({float(step["pulse_width_ns"]) for step in passport["pulse_steps"]
                         if lower <= float(step["pulse_width_ns"]) <= upper})
         if len(domain) < count:
-            raise su.ValidationError(f"для оси Q-Pulse в выбранном диапазоне доступно только {len(domain)} ступеней; уменьшите число точек или расширьте диапазон")
+            raise su.ValidationError(f"only {len(domain)} Q-Pulse steps are available in the selected range; reduce the number of points or expand the range")
         return [float(item["value"]) for item in _evenly_spaced([{"value": v} for v in domain], count)]
     if axis == "passes":
         low, high = int(lower), int(upper)
         if lower != low or upper != high or high - low + 1 < count:
-            raise su.ValidationError("ось проходов должна использовать целые границы и содержать достаточно разных значений")
+            raise su.ValidationError("the passes axis must use whole-number bounds and contain enough distinct values")
         return [float(round(low + i * (high - low) / (count - 1))) for i in range(count)]
     return [round(lower + i * (upper - lower) / (count - 1), 4) for i in range(count)]
 
@@ -705,7 +705,7 @@ def _material_matrix(values: dict, passport: dict) -> tuple[list[dict], list[dic
     cell_w, cell_h = ((21.0, 15.5) if mark == "vector_text" else
                       (13.0, 10.5) if mark == "text" else (8.5, 7.5))
     if min(cell_w, cell_h) < 4.0:
-        raise su.ValidationError("выберите меньше точек по каждой оси, чтобы подписи и образцы оставались различимыми")
+        raise su.ValidationError("choose fewer points on each axis so labels and samples remain distinguishable")
     labels = _text(f"{x_meta['short']} X {y_meta['short']} MATERIAL TEST", 2.0, 1.0, 0.18)
     layers, cells = [], []
     for col, x_value in enumerate(x_values):
@@ -783,14 +783,14 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     x_axis = supplied.get("x_axis", "power")
     y_axis = supplied.get("y_axis", "speed")
     if x_axis not in MATRIX_AXES or y_axis not in MATRIX_AXES or x_axis == y_axis:
-        raise su.ValidationError("выберите две разные оси из мощности, скорости, частоты, Q-Pulse, интервала линий, проходов и wobble")
+        raise su.ValidationError("choose two different axes from power, speed, frequency, Q-Pulse, line interval, passes, and Wobble")
     geometry = supplied.get("geometry", "line")
     if geometry not in ("line", "fill", "text", "vector_text"):
-        raise su.ValidationError("образец матрицы должен быть линией, заливкой, заполненным или векторным текстом")
+        raise su.ValidationError("matrix geometry must be a line, fill, filled text, or vector text")
     if "line_interval" in (x_axis, y_axis) and geometry in ("line", "vector_text"):
-        raise su.ValidationError("интервал линий проверяется только на залитых участках; выберите заливку или другую ось")
+        raise su.ValidationError("line interval is tested only on filled areas; choose fill or another axis")
     if "wobble_size" in (x_axis, y_axis) and geometry not in ("line", "vector_text"):
-        raise su.ValidationError("wobble проверяется на векторной линии или однолинейном векторном тексте")
+        raise su.ValidationError("Wobble is tested on a vector line or single-line vector text")
     repetition = passport["repetition_rate_khz"]
     pulse_values = [float(step["pulse_width_ns"]) for step in passport["pulse_steps"]]
     domain = {"power": (1.0, 100.0), "frequency": (float(repetition["min"]), float(repetition["max"])),
@@ -803,9 +803,9 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
     try:
         wobble_step = float(supplied.get("wobble_step", 0.02))
     except (TypeError, ValueError):
-        raise su.ValidationError("шаг wobble должен быть числом") from None
+        raise su.ValidationError("Wobble step must be a number") from None
     if not math.isfinite(wobble_step) or not 0.001 <= wobble_step <= 1:
-        raise su.ValidationError("шаг wobble должен быть от 0,001 до 1 мм")
+        raise su.ValidationError("Wobble step must be from 0.001 to 1 mm")
     out = {"x_axis": x_axis, "y_axis": y_axis, "geometry": geometry, "wobble_step": wobble_step}
     for prefix, axis in (("x", x_axis), ("y", y_axis)):
         low_default, high_default = defaults[axis]
@@ -814,18 +814,18 @@ def _matrix_settings(values: dict, passport: dict) -> dict:
             high = float(supplied.get(f"{prefix}_max", high_default))
             count = int(supplied.get(f"{prefix}_count", 5))
         except (TypeError, ValueError):
-            raise su.ValidationError("границы и число точек матрицы должны быть числами") from None
+            raise su.ValidationError("matrix bounds and point counts must be numbers") from None
         if not math.isfinite(low) or not math.isfinite(high) or low >= high:
-            raise su.ValidationError("нижняя граница каждой оси должна быть строго ниже верхней")
+            raise su.ValidationError("each axis minimum must be strictly below its maximum")
         if low < domain[axis][0] or high > domain[axis][1]:
-            raise su.ValidationError(f"ось {MATRIX_AXES[axis]['label']} выходит за поддерживаемый диапазон лазера: {domain[axis][0]:g}–{domain[axis][1]:g} {MATRIX_AXES[axis]['unit']}")
+            raise su.ValidationError(f"the {MATRIX_AXES[axis]['label']} axis exceeds the laser’s supported range: {domain[axis][0]:g}–{domain[axis][1]:g} {MATRIX_AXES[axis]['unit']}")
         if not 2 <= count <= 7:
-            raise su.ValidationError("для каждой оси задайте от 2 до 7 точек")
+            raise su.ValidationError("provide 2 to 7 points per axis")
         if axis == "passes" and (low != round(low) or high != round(high)):
-            raise su.ValidationError("границы оси проходов должны быть целыми числами")
+            raise su.ValidationError("passes axis bounds must be whole numbers")
         out.update({f"{prefix}_min": low, f"{prefix}_max": high, f"{prefix}_count": count})
     if out["x_count"] * out["y_count"] > 28:
-        raise su.ValidationError("в сетке не более 28 ячеек: ещё два выходных слоя нужны для чистки и регистрации")
+        raise su.ValidationError("the grid can have at most 28 cells; cleaning and registration need two more output layers")
     return out
 
 
@@ -850,33 +850,33 @@ def _grey_axis(name: str, axis: dict, base: dict, passport: dict) -> tuple[str, 
     one whose steps are wide enough to measure)."""
     key = axis.get("axis")
     if key not in GREY_AXES:
-        raise su.ValidationError(f"{name}: выберите параметр из скорости, шага линий, частоты, длительности импульса, проходов и ширины полоски")
+        raise su.ValidationError(f"{name}: choose speed, line interval, frequency, pulse width, passes, or strip width")
     raw = axis.get("values")
     if raw is None and axis.get("factors"):
         if key == "width":
-            raise su.ValidationError(f"{name}: ширина полоски задаётся значениями в мм")
+            raise su.ValidationError(f"{name}: strip width values are in mm")
         raw = [round(base[key] * f, 4) for f in axis["factors"]]
     try:
         values = [float(v) for v in (raw or [])]
     except (TypeError, ValueError):
-        raise su.ValidationError(f"{name}: значения должны быть числами") from None
+        raise su.ValidationError(f"{name}: values must be numbers") from None
     if not values or len(set(values)) != len(values) or not all(math.isfinite(v) and v > 0 for v in values):
-        raise su.ValidationError(f"{name}: нужны разные положительные значения")
+        raise su.ValidationError(f"{name}: values must be distinct positive numbers")
     rate = passport["repetition_rate_khz"]
     for v in values:
         if key == "speed" and v > 10000:
-            raise su.ValidationError("скорость теста не должна превышать 10000 мм/с")
+            raise su.ValidationError("test speed must not exceed 10000 mm/s")
         if key == "line_interval" and not 0.001 <= v <= 1:
-            raise su.ValidationError("шаг линий слоя-изображения должен быть от 0,001 до 1 мм")
+            raise su.ValidationError("image-layer line interval must be from 0.001 to 1 mm")
         if key == "frequency" and not rate["min"] <= v <= rate["max"]:
-            raise su.ValidationError(f"частота должна быть в диапазоне {rate['min']:g}–{rate['max']:g} кГц для выбранного лазера")
+            raise su.ValidationError(f"frequency must be in the range {rate['min']:g}–{rate['max']:g} kHz for the selected laser")
         if key == "pulse_width":
             devices.require_selectable(passport, v)
         if key == "passes" and (int(v) != v or not 1 <= v <= 20):
-            raise su.ValidationError("проходы: укажите целые числа от 1 до 20")
+            raise su.ValidationError("passes: enter whole numbers from 1 to 20")
         if key == "width" and v / grayscale.RAMP_STEPS < GREY_MIN_STEP:
-            raise su.ValidationError(f"полоска шириной {v:g} мм даёт ступень {v / grayscale.RAMP_STEPS:g} мм, а ступень уже {GREY_MIN_STEP:g} мм "
-                                     f"на фотографии не измерить: задайте ширину не меньше {grayscale.RAMP_STEPS * GREY_MIN_STEP:g} мм")
+            raise su.ValidationError(f"a {v:g} mm strip produces a {v / grayscale.RAMP_STEPS:g} mm step; a step narrower than {GREY_MIN_STEP:g} mm "
+                                     f"cannot be measured in the photo: use a width of at least {grayscale.RAMP_STEPS * GREY_MIN_STEP:g} mm")
     return key, [int(v) if key == "passes" else v for v in values]
 
 
@@ -895,31 +895,31 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
     dither = supplied.get("dither") or plans.IMAGE_DITHER
     kind = photo_modes.mode(dither)
     if kind is None or kind.family not in (photo_modes.POWER, photo_modes.DOTS, photo_modes.EDGES) or kind.key != dither:
-        raise su.ValidationError("полоски — в градациях серого или в одном из видов точками LightBurn")
-    rows_key, row_values = _grey_axis("строки", supplied.get("rows") or GREY_DEFAULTS["rows"], values, passport)
-    cols_key, col_values = _grey_axis("столбцы", supplied.get("columns") or GREY_DEFAULTS["columns"], values, passport)
+        raise su.ValidationError("strips must use grayscale or a LightBurn dot mode")
+    rows_key, row_values = _grey_axis("rows", supplied.get("rows") or GREY_DEFAULTS["rows"], values, passport)
+    cols_key, col_values = _grey_axis("columns", supplied.get("columns") or GREY_DEFAULTS["columns"], values, passport)
     if rows_key == cols_key:
-        raise su.ValidationError("строки и столбцы должны менять разные параметры")
+        raise su.ValidationError("rows and columns must vary different parameters")
     if len(row_values) > GREY_MAX_ROWS or len(col_values) > GREY_MAX_COLUMNS:
-        raise su.ValidationError(f"не больше {GREY_MAX_ROWS} строк и {GREY_MAX_COLUMNS} столбцов: 28 полосок и два служебных слоя — все 30 слоёв LightBurn")
+        raise su.ValidationError(f"at most {GREY_MAX_ROWS} rows and {GREY_MAX_COLUMNS} columns: 28 strips and two auxiliary layers fill all 30 LightBurn layers")
     try:
         low = float(supplied.get("min_power", GREY_DEFAULTS["min_power"]))
         high = float(supplied.get("max_power", values["power"]))
     except (TypeError, ValueError):
-        raise su.ValidationError("Min и Max мощность должны быть числами") from None
+        raise su.ValidationError("Min and Max power must be numbers") from None
     dot_width = supplied.get("dot_width")
     if dot_width is not None:
         lo, hi = photo_modes.DOT_WIDTH_MM
         if dither == plans.IMAGE_DITHER or isinstance(dot_width, bool) or not isinstance(dot_width, (int, float)) \
                 or not lo <= dot_width <= hi:
-            raise su.ValidationError(f"поправка ширины точки — только в виде точками, от {lo:g} до {hi:g} мм")
+            raise su.ValidationError(f"dot-width adjustment applies only to dot modes and must be from {lo:g} to {hi:g} mm")
         dot_width = float(dot_width)
     if dither != plans.IMAGE_DITHER:
         low = high = float(values["power"])            # every dot fires at the layer's power
         if not 0 < high <= 100:
-            raise su.ValidationError("мощность точек: больше 0 и не больше 100 %")
+            raise su.ValidationError("dot power must be greater than 0 and at most 100%")
     elif not (math.isfinite(low) and math.isfinite(high) and 0 <= low < high <= 100):
-        raise su.ValidationError("Min и Max мощность: от 0 до 100 %, Min меньше Max")
+        raise su.ValidationError("Min and Max power must be from 0 to 100%, with Min below Max")
     columns = len(col_values)
     if "width" in (rows_key, cols_key):
         tile_w = None                  # each ramp has its own width; the plate's size limit is checked on the whole plate
@@ -927,7 +927,7 @@ def _grey_scales(values: dict, passport: dict) -> tuple[list[dict], list[dict], 
         width_limit = values.get("max_width_mm", PLATE_DEFAULT_MM) - 2 * (COMPACT_MARKER_SIZE["aruco_mm"] + COMPACT_MARKER_SIZE["margin_mm"])
         tile_w = min(grayscale.RAMP_STEPS * GREY_MAX_STEP, (width_limit - GREY_LABEL_WIDTH - 1 - (columns - 1) * GREY_GAP) / columns)
         if tile_w / grayscale.RAMP_STEPS < GREY_MIN_STEP:
-            raise su.ValidationError("полоски не помещаются по ширине платы: уменьшите число столбцов или увеличьте предельную ширину")
+            raise su.ValidationError("strips do not fit the plate width: reduce columns or increase the width limit")
         tile_w = math.floor(tile_w / grayscale.RAMP_STEPS * 10) / 10 * grayscale.RAMP_STEPS      # steps of whole tenths of a millimetre
 
     def ramp_width(r_value: float, c_value: float) -> float:
@@ -985,13 +985,13 @@ def _fill_widths(raw) -> list[float]:
     if raw is None:
         raw = FILL_DEFAULT_WIDTHS_MM
     if not isinstance(raw, (list, tuple)) or not 1 <= len(raw) <= FILL_MAX_WIDTHS:
-        raise su.ValidationError(f"задайте от одной до {FILL_MAX_WIDTHS} ширин полосок")
+        raise su.ValidationError(f"provide one to {FILL_MAX_WIDTHS} strip widths")
     try:
         widths = [float(w) for w in raw]
     except (TypeError, ValueError):
-        raise su.ValidationError("ширины полосок должны быть числами") from None
+        raise su.ValidationError("strip widths must be numbers") from None
     if len(set(widths)) != len(widths) or not all(math.isfinite(w) and FILL_MIN_WIDTH <= w <= PLATE_MAX_MM for w in widths):
-        raise su.ValidationError(f"ширины полосок должны быть разными, от {FILL_MIN_WIDTH:g} до {PLATE_MAX_MM:g} мм")
+        raise su.ValidationError(f"strip widths must be distinct and from {FILL_MIN_WIDTH:g} to {PLATE_MAX_MM:g} mm")
     return widths
 
 
@@ -1013,16 +1013,16 @@ def _fill_sizes(values: dict, passport: dict) -> tuple[list[dict], list[dict], d
     if specs is None:
         specs = [{}]
     if not isinstance(specs, list) or not 1 <= len(specs) <= FILL_MAX_RECIPES or any(not isinstance(r, dict) for r in specs):
-        raise su.ValidationError(f"задайте от одного до {FILL_MAX_RECIPES} рецептов заливки")
+        raise su.ValidationError(f"provide one to {FILL_MAX_RECIPES} fill recipes")
     widths = _fill_widths(values.get("widths_mm"))
     if len(specs) * len(widths) > FILL_MAX_STRIPS:
-        raise su.ValidationError(f"не больше {FILL_MAX_STRIPS} полосок (рецепты × ширины), а задано {len(specs) * len(widths)}: "
-                                 "ещё два слоя LightBurn занимают очистка и метки")
+        raise su.ValidationError(f"at most {FILL_MAX_STRIPS} strips (recipes × widths); {len(specs) * len(widths)} were requested: "
+                                 "cleaning and markers use two additional LightBurn layers")
     recipes = []
     for i, spec in enumerate(specs):
         unknown = set(spec) - RECIPE_KEYS
         if unknown:
-            raise su.ValidationError(f"рецепт {i + 1}: неизвестные параметры: {', '.join(sorted(unknown))}")
+            raise su.ValidationError(f"recipe {i + 1}: unknown settings: {', '.join(sorted(unknown))}")
         selected, _, _ = _passport_defaults(passport, {**values, **spec})
         recipes.append({**_process(selected), "global_passes": selected["global_passes"]})
     short = _fill_recipe_labels(recipes)
@@ -1068,18 +1068,18 @@ def _variation_picture(raw) -> np.ndarray:
         try:
             data = base64.b64decode(raw, validate=True)
         except ValueError:
-            raise su.ValidationError("картинка копий не прочитана: ожидается PNG или JPEG") from None
+            raise su.ValidationError("copy image could not be read: expected PNG or JPEG") from None
     found = None if not isinstance(data, (bytes, bytearray)) else photo_modes.decode_picture(bytes(data))
     if found is None:
-        raise su.ValidationError("картинка копий не прочитана: ожидается PNG или JPEG")
+        raise su.ValidationError("copy image could not be read: expected PNG or JPEG")
     grey, alpha = found
     opaque = alpha >= photo_modes.ALPHA_MIN
     if not opaque.any():
-        raise su.ValidationError("у картинки нет непрозрачной части: гравировать нечего")
+        raise su.ValidationError("the image has no opaque area to engrave")
     rows, cols = np.nonzero(opaque.any(axis=1))[0], np.nonzero(opaque.any(axis=0))[0]
     grey, alpha = grey[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1], alpha[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
     if grey.shape[0] < 16 or grey.shape[1] < 16:
-        raise su.ValidationError("картинка слишком мала: нужно хотя бы 16 × 16 точек")
+        raise su.ValidationError("the image is too small: at least 16 × 16 pixels are required")
     g8 = np.round(np.clip(grey, 0, 1) * 255).astype(np.uint8)
     if (alpha >= photo_modes.ALPHA_MIN).all():
         return g8
@@ -1146,29 +1146,29 @@ def variation_label(variant: dict, centre: dict | None) -> str:
 def _variant(raw, values: dict, passport: dict, n: int) -> dict:
     """One copy's settings: the plate's settings with the copy's own over them, each one the laser can engrave."""
     if not isinstance(raw, dict):
-        raise su.ValidationError(f"копия {n}: настройки задаются набором значений")
+        raise su.ValidationError(f"copy {n}: settings must be an object")
     unknown = set(raw) - VARIATION_KEYS
     if unknown:
-        raise su.ValidationError(f"копия {n}: неизвестные параметры: {', '.join(sorted(unknown))}")
+        raise su.ValidationError(f"copy {n}: unknown settings: {', '.join(sorted(unknown))}")
     dither = str(raw.get("dither") or values.get("dither") or "jarvis").lower()
     kind = photo_modes.mode(dither)
     if kind is None or kind.key != dither or kind.family not in (photo_modes.POWER, photo_modes.DOTS):
-        raise su.ValidationError(f"копия {n}: вид — градации серого или один из видов точками LightBurn")
+        raise su.ValidationError(f"copy {n}: choose grayscale or a LightBurn dot mode")
     merged = {**{k: values[k] for k in ("power", "frequency", "speed", "pulse_width", "line_interval", "passes", "global_passes")},
               **{k: v for k, v in raw.items() if k not in ("dither", "dot_width", "min_power")}}
     try:
         checked, _, _ = _passport_defaults(passport, merged)
     except su.ValidationError as exc:
-        raise su.ValidationError(f"копия {n}: {exc}") from None
+        raise su.ValidationError(f"copy {n}: {exc}") from None
     out = {"dither": dither, **_process(checked)}
     if kind.family == photo_modes.POWER:
         low = raw.get("min_power", values.get("min_power", 0.0))
         try:
             low = float(low)
         except (TypeError, ValueError):
-            raise su.ValidationError(f"копия {n}: Min мощность должна быть числом") from None
+            raise su.ValidationError(f"copy {n}: Min power must be a number") from None
         if not (math.isfinite(low) and 0 <= low < out["power"]):
-            raise su.ValidationError(f"копия {n}: Min мощность от 0 до Max, меньше Max")
+            raise su.ValidationError(f"copy {n}: Min power must be at least 0 and below Max")
         out["min_power"] = low
     else:
         out["min_power"] = out["power"]                  # every dot fires at the layer's power
@@ -1176,7 +1176,7 @@ def _variant(raw, values: dict, passport: dict, n: int) -> dict:
         if dot_width is not None:
             lo, hi = photo_modes.DOT_WIDTH_MM
             if isinstance(dot_width, bool) or not isinstance(dot_width, (int, float)) or not lo <= dot_width <= hi:
-                raise su.ValidationError(f"копия {n}: поправка ширины точки от {lo:g} до {hi:g} мм")
+                raise su.ValidationError(f"copy {n}: dot-width adjustment must be from {lo:g} to {hi:g} mm")
             out["dot_width"] = float(dot_width)
     return out
 
@@ -1207,24 +1207,24 @@ def _photo_variations(values: dict, passport: dict) -> tuple[list[dict], list[di
     except (TypeError, ValueError):
         step = math.nan
     if not (math.isfinite(step) and 0.05 <= step <= 1.0):
-        raise su.ValidationError("шаг изменений копий — число от 0,05 до 1")
+        raise su.ValidationError("copy variation step must be a number from 0.05 to 1")
     if specs is None:                                     # one change at a time around the centre (photo_quality.variants_around)
         specs = photo_quality.variants_around({"dither": str(centre_values.get("dither") or "jarvis").lower(),
                                                **{k: centre_values.get(k) for k in ("power", "min_power", "speed", "line_interval", "dot_width")}},
                                               step)
     if not isinstance(specs, list) or not VARIATION_MIN <= len(specs) <= VARIATION_MAX:
-        raise su.ValidationError(f"задайте от {VARIATION_MIN} до {VARIATION_MAX} копий: каждая копия с её шкалой — два слоя LightBurn")
+        raise su.ValidationError(f"provide {VARIATION_MIN} to {VARIATION_MAX} copies; each copy and scale use two LightBurn layers")
     variants = [_variant(raw, centre_values, passport, n) for n, raw in enumerate(specs, 1)]
     keys = [json.dumps(v, sort_keys=True) for v in variants]
     if len(set(keys)) != len(keys):
-        raise su.ValidationError("две копии с одинаковыми настройками ничего не сравнят: измените настройки одной из них")
+        raise su.ValidationError("identical settings cannot be compared; change one copy")
     try:
         copy_mm = float(supplied.get("copy_mm", VARIATION_DEFAULT_COPY_MM))
     except (TypeError, ValueError):
-        raise su.ValidationError("размер копии должен быть числом") from None
+        raise su.ValidationError("copy size must be a number") from None
     lo, hi = VARIATION_COPY_MM
     if not (math.isfinite(copy_mm) and lo <= copy_mm <= hi):
-        raise su.ValidationError(f"размер копии (длинная сторона) от {lo:g} до {hi:g} мм")
+        raise su.ValidationError(f"copy size (long side) must be from {lo:g} to {hi:g} mm")
     rows_px, cols_px = picture.shape[:2]
     width = copy_mm if cols_px >= rows_px else round(copy_mm * cols_px / rows_px, 2)
     height = copy_mm if rows_px > cols_px else round(copy_mm * rows_px / cols_px, 2)
@@ -1291,25 +1291,25 @@ BUILDERS = {"small_patches": _small_patches, "compact_capability": _compact_capa
 def preview(store: Store, device_id: int, material_id: int, test_type: str, settings: dict | None = None) -> dict:
     """Build a test plate without saving a plate or plan."""
     if test_type not in BUILDERS:
-        raise su.ValidationError("выберите тип экспериментальной платы")
+        raise su.ValidationError("select an experiment plate type")
     device = devices.get_device(store, device_id)
     lens = device.get("lens")
     if not lens:
-        raise su.ValidationError("сначала укажите линзу, установленную на этом лазере")
+        raise su.ValidationError("first select the lens installed on this laser")
     material_row = store.one("SELECT * FROM material_profile WHERE id=?", (material_id,))
     if material_row is None:
-        raise su.ValidationError("выберите материал с фактической маркой или партией")
+        raise su.ValidationError("select material with an actual grade or batch")
     if material_row["family"] != "Titanium":
-        raise su.ValidationError("для этого материала пока не задан рецепт очистки; титановую очистку применять нельзя")
+        raise su.ValidationError("no cleaning recipe is set for this material; titanium cleaning cannot be used")
     values, clean, _ = _passport_defaults(device["passport"], settings or {})
     limits = {}
     for axis in ("width", "height"):
         try:
             limit = float((settings or {}).get(f"max_{axis}_mm", PLATE_DEFAULT_MM))
         except (TypeError, ValueError):
-            raise su.ValidationError(f"максимальные размеры платы должны быть числами от 1 до {PLATE_MAX_MM:g} мм") from None
+            raise su.ValidationError(f"maximum plate dimensions must be numbers from 1 to {PLATE_MAX_MM:g} mm") from None
         if not math.isfinite(limit) or not 1 <= limit <= PLATE_MAX_MM:
-            raise su.ValidationError(f"максимальные размеры платы должны быть от 1 до {PLATE_MAX_MM:g} мм")
+            raise su.ValidationError(f"maximum plate dimensions must be from 1 to {PLATE_MAX_MM:g} mm")
         limits[axis] = limit
         values[f"max_{axis}_mm"] = limit
     if test_type == "frequency":
@@ -1358,12 +1358,12 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
             qr = markers["qr"]
             clean_regions.append(_rect(qr["x"], qr["y"], qr["size"], qr["size"]))
     if total_w > limits["width"] + 1e-6 or total_h > limits["height"] + 1e-6:
-        raise su.ValidationError(f"эта плата с метками занимает {total_w:.1f} × {total_h:.1f} мм; заданный предел — {limits['width']:g} × {limits['height']:g} мм")
+        raise su.ValidationError(f"this plate with markers occupies {total_w:.1f} × {total_h:.1f} mm; the specified limit is {limits['width']:g} × {limits['height']:g} mm")
     # the work field of the laser and its lens (the smaller of the lens field and the confirmed settings field); an
     # unknown field is reported as not checked, never as a fit (REQ-018)
     placement = plans.work_field_check({"device": device, "lens": lens}, total_w, total_h)
     if len(layers) + 1 + int(marked) > plans.MAX_LAYERS:
-        raise su.ValidationError("для этого теста слишком много слоёв LightBurn")
+        raise su.ValidationError("this test has too many LightBurn layers")
     # C01, the system layer of the markers and the engraved labels, burns with the operator's marker-layer settings
     # (DEC-027); an unmarked plate has no such layer.
     marker_layer = (plans.marker_layer_for(store, device["passport"]) | {
@@ -1373,7 +1373,7 @@ def preview(store: Store, device_id: int, material_id: int, test_type: str, sett
                "part_count": values.get("part_count")}) if values.get("series_identifier") else None
     title = TYPE_BY_ID[test_type]["name"]
     if series:
-        title += f" · часть {series['part_index']}/{series['part_count']}"
+        title += f" · part {series['part_index']}/{series['part_count']}"
     experiment = {"test_type": test_type, "test_name": title, "test_description": TYPE_BY_ID[test_type]["description"],
                   "device": {k: device.get(k) for k in ("id", "name", "manufacturer", "model", "serial", "title")},
                   "lens": {k: lens.get(k) for k in ("id", "name", "focal_length_mm", "field_mm", "expansion")},
@@ -1406,14 +1406,14 @@ def _persist_prepared(store: Store, result: dict, device_id: int, material_id: i
     cells = geometry["cells"]
     if supersede_plan_id is not None:
         if research_session_id is None:
-            raise su.ValidationError("для замены платы требуется исследование")
+            raise su.ValidationError("a study is required to replace a plate")
         changed = store.execute(
             "UPDATE plan SET status='Superseded' WHERE id=? AND research_session_id=? "
             "AND status IN ('Ready to export','Exported') "
             "AND NOT EXISTS (SELECT 1 FROM pair WHERE plan_id=? AND status!='Deleted')",
             (supersede_plan_id, research_session_id, supersede_plan_id))
         if changed.rowcount != 1:
-            raise su.ProtectedError("плата уже изменилась или к ней привязана фотография; замена отменена")
+            raise su.ProtectedError("the plate has changed or has a linked photo; replacement canceled")
     plate_id = store.execute(
         "INSERT INTO plate(experiment_id,device_id,lens_id,speed,geometry_json,cells_json,proposal_id,lens_json,material_id,test_type,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (ident, device["id"], lens["id"], result["values"]["speed"], json.dumps(geometry), json.dumps(cells), None,
@@ -1480,7 +1480,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
     if patches is None:
         patches = [{}]
     if not isinstance(patches, list) or not 1 <= len(patches) <= 4:
-        raise su.ValidationError("задайте от одного до четырёх квадратов с параметрами")
+        raise su.ValidationError("provide one to four squares with settings")
     prepared = []
     cursor = 0
     while cursor < len(patches):
@@ -1490,7 +1490,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
             try:
                 part = preview(store, device_id, material_id, "small_patches", candidate)
             except su.ValidationError as exc:
-                if str(exc).startswith("эта плата с метками занимает"):
+                if str(exc).startswith("this plate with markers occupies"):
                     last_size_error = exc
                     continue
                 raise
@@ -1498,7 +1498,7 @@ def preview_small_patch_parts(store: Store, device_id: int, material_id: int, se
             cursor = end
             break
         else:
-            raise last_size_error or su.ValidationError("даже один квадрат не помещается в заданный размер")
+            raise last_size_error or su.ValidationError("even one square does not fit the requested size")
     return [{"sample_indexes": list(range(start + 1, end + 1)), "prepared": part,
              "settings": {**settings, "patches": patches[start:end]}}
             for start, end, part in prepared]

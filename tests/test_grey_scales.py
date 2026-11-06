@@ -56,13 +56,13 @@ def test_the_plate_is_one_image_layer_per_tile_with_a_ramp_from_white_to_black(w
 
 def test_settings_the_laser_cannot_engrave_and_too_many_tiles_are_refused(world):
     s, laser, ti = world["store"], world["laser"]["id"], world["titanium"]["id"]
-    with pytest.raises(su.ValidationError, match="частота"):
+    with pytest.raises(su.ValidationError, match="frequency"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"columns": {"axis": "frequency", "values": [5000]}}})
-    with pytest.raises(su.ValidationError, match="не больше 7 строк и 4 столбцов"):
+    with pytest.raises(su.ValidationError, match="at most 7 rows and 4 columns"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"rows": {"axis": "line_interval", "values": [0.01 + k / 1000 for k in range(8)]}}})
-    with pytest.raises(su.ValidationError, match="разные параметры"):
+    with pytest.raises(su.ValidationError, match="different parameters"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"rows": {"axis": "speed", "values": [100, 200]}}})
-    with pytest.raises(su.ValidationError, match="Min меньше Max"):
+    with pytest.raises(su.ValidationError, match="Min below Max"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"min_power": 50}})
 
 
@@ -100,11 +100,11 @@ def test_a_width_axis_gives_each_ramp_its_own_width_and_a_column_the_width_of_it
 
 def test_a_ramp_too_narrow_for_its_steps_a_width_by_factors_and_a_plate_beyond_its_limit_are_refused(world):
     s, laser, ti = world["store"], world["laser"]["id"], world["titanium"]["id"]
-    with pytest.raises(su.ValidationError, match="шириной 15 мм даёт ступень 0.9375 мм.*не меньше 16 мм"):
+    with pytest.raises(su.ValidationError, match="15 mm strip produces a 0.9375 mm step.*at least 16 mm"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"rows": {"axis": "width", "values": [15, 40]}}})
-    with pytest.raises(su.ValidationError, match="ширина полоски задаётся значениями в мм"):
+    with pytest.raises(su.ValidationError, match="strip width values are in mm"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": {"columns": {"axis": "width", "factors": [1, 2]}}})
-    with pytest.raises(su.ValidationError, match="занимает 159.0 × 46.0 мм; заданный предел — 100 × 100 мм"):
+    with pytest.raises(su.ValidationError, match="occupies 159.0 × 46.0 mm; the specified limit is 100 × 100 mm"):
         cp.preview(s, laser, ti, "grey_scales", {**SETTINGS, "scales": WIDTHS})
 
 

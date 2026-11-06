@@ -138,7 +138,7 @@ def test_markerless_small_patch_can_be_only_six_millimeters_square(store):
     assert len(project.layer(0).regions) == 1
     assert project.layer(0).regions[0].width == pytest.approx(3.6)
     assert project.layer(1).regions[0].width == pytest.approx(3)
-    with pytest.raises(su.ValidationError, match="занимает 6.0"):
+    with pytest.raises(su.ValidationError, match="occupies 6.0"):
         cp.preview(store, laser["id"], titanium["id"], "small_patches",
                    {**JOB, "patch_size_mm": 3, "registration": "none", "max_width_mm": 5.9})
 
@@ -157,7 +157,7 @@ def test_four_small_patches_preserve_distinct_settings_and_reject_too_small_limi
     assert [layer.power for layer in project.layers[2:]] == [10, 20, 50, 100]
     assert all(len(layer.regions) == 1 and layer.regions[0].width == pytest.approx(5)
                for layer in project.layers[2:])
-    with pytest.raises(su.ValidationError, match="занимает 22.8"):
+    with pytest.raises(su.ValidationError, match="occupies 22.8"):
         cp.preview(store, laser["id"], titanium["id"], "small_patches",
                    {**JOB, **settings, "max_width_mm": 20})
 
@@ -201,7 +201,7 @@ def test_small_patches_split_into_two_independent_files_when_rectangular_limit_r
         assert len(project.layer(0).regions) == 7
         assert [layer.power for layer in project.layers[2:]] == ([10, 20] if index == 1 else [50, 100])
     before = len(store.query("SELECT id FROM plan"))
-    with pytest.raises(su.ValidationError, match="занимает"):
+    with pytest.raises(su.ValidationError, match="occupies"):
         cp.create_small_patch_parts(store, laser["id"], titanium["id"], {**JOB, **settings, "max_width_mm": 18})
     assert len(store.query("SELECT id FROM plan")) == before
 
@@ -391,10 +391,10 @@ def test_a_compact_registration_whose_qr_the_classic_detector_misses_is_still_re
 def test_material_matrix_rejects_interval_axis_for_vector_lines_and_more_than_28_cells(store):
     laser, _, titanium = hardware(store)
     from titanium_platform.setup import ValidationError
-    with pytest.raises(ValidationError, match="только на залитых"):
+    with pytest.raises(ValidationError, match="only on filled"):
         cp.preview(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
             "matrix": {"x_axis": "line_interval", "y_axis": "speed", "geometry": "line"}})
-    with pytest.raises(ValidationError, match="не более 28 ячеек"):
+    with pytest.raises(ValidationError, match="at most 28 cells"):
         cp.preview(store, laser["id"], titanium["id"], "material_matrix", {**JOB, 
             "matrix": {"x_axis": "power", "y_axis": "speed", "x_count": 7, "y_count": 5}})
 
@@ -580,7 +580,7 @@ def test_api_exports_minimal_markerless_coupon_requested_by_ui(tmp_path):
 def test_a_capability_plate_has_no_default_pulse_width(store):
     """DEC-043: the pulse width of a test plate is the operator's (or the AI's) explicit choice, never filled in."""
     laser, _, titanium = hardware(store)
-    with pytest.raises(su.ValidationError, match="выберите длительность импульса"):
+    with pytest.raises(su.ValidationError, match="select a pulse width"):
         cp.preview(store, laser["id"], titanium["id"], "calibration")
     assert "pulse_width" not in cp.DEFAULT_TEST
 
@@ -607,7 +607,7 @@ def test_a_plate_may_be_up_to_300_mm_but_never_larger_than_the_lens_field(store)
     with pytest.raises(su.ValidationError, match="larger than the work field 170 x 170 mm"):
         cp.preview(store, laser["id"], titanium["id"], "fill_sizes", full)            # 28 strips stack to 179 mm with the markers
     for limit in (0.5, 301, "wide"):
-        with pytest.raises(su.ValidationError, match="от 1 до 300 мм"):
+        with pytest.raises(su.ValidationError, match="from 1 to 300 mm"):
             cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {**FILL, "max_height_mm": limit})
     big = lenses.create_lens(store, "F-Theta 420", 420, 300)
     lenses.install(store, laser["id"], big["id"])
@@ -641,7 +641,7 @@ def test_a_fill_size_plate_makes_one_constant_power_scan_strip_per_recipe_and_wi
     assert settings["widths_mm"] == [5, 20, 50, 100]
     assert settings["recipes"] == [{"power": 20, "frequency": 48, "speed": 900, "pulse_width": 200, "line_interval": 0.025, "passes": 1,
                                     "global_passes": 1}]
-    with pytest.raises(su.ValidationError, match="занимает 114.2 × 35.0 мм; заданный предел — 100 × 100 мм"):
+    with pytest.raises(su.ValidationError, match="occupies 114.2 × 35.0 mm; the specified limit is 100 × 100 mm"):
         cp.preview(store, laser["id"], titanium["id"], "fill_sizes", JOB)
 
 
@@ -676,20 +676,20 @@ def test_a_fill_size_plate_refuses_what_it_cannot_make(store):
     def preview(**more):
         return cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {**FILL, **more})
 
-    with pytest.raises(su.ValidationError, match="от одного до 7 рецептов"):
+    with pytest.raises(su.ValidationError, match="one to 7 fill recipes"):
         preview(recipes=[{"power": p} for p in range(10, 90, 10)])
-    with pytest.raises(su.ValidationError, match="от одной до 5 ширин"):
+    with pytest.raises(su.ValidationError, match="one to 5 strip widths"):
         preview(widths_mm=[5, 10, 20, 30, 40, 50])
     for widths in ([2, 10], [10, 10], [301], [float("nan")]):
-        with pytest.raises(su.ValidationError, match="разными, от 3 до 300 мм"):
+        with pytest.raises(su.ValidationError, match="distinct and from 3 to 300 mm"):
             preview(widths_mm=widths)
-    with pytest.raises(su.ValidationError, match="не больше 28 полосок .*задано 35"):
+    with pytest.raises(su.ValidationError, match="at most 28 strips .*35 were requested"):
         preview(recipes=[{"power": p} for p in (10, 20, 30, 40, 50, 60, 70)], widths_mm=[5, 10, 20, 30, 40])
-    with pytest.raises(su.ValidationError, match="рецепт 2: неизвестные параметры: wobble_size"):
+    with pytest.raises(su.ValidationError, match="recipe 2: unknown settings: wobble_size"):
         preview(recipes=[{}, {"wobble_size": 0.1}])
-    with pytest.raises(su.ValidationError, match="частота должна быть в диапазоне"):
+    with pytest.raises(su.ValidationError, match="frequency must be in the range"):
         preview(recipes=[{"frequency": 9000}])
-    with pytest.raises(su.ValidationError, match="выберите длительность импульса"):
+    with pytest.raises(su.ValidationError, match="select a pulse width"):
         cp.preview(store, laser["id"], titanium["id"], "fill_sizes", {"max_width_mm": 150})
 
 
