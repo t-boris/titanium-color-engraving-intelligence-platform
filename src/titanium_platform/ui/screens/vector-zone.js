@@ -33,11 +33,15 @@
     const query = new URLSearchParams({device_id: first.work.device_id, material_id: first.work.material_id ?? ''});
     if (first.work.lens_id != null) query.set('lens_id', String(first.work.lens_id));
     query.set('row_mm', String(first.width_mm));
-    let {scales} = await get(`/grey-scales?${query}`);
+    let scales = [];
     let view = first, detail = null, shownKey = null, seq = 0, queue = Promise.resolve(), left = false;
-    let scalesWidth = first.width_mm, scalesRequest = null, selectedDetail = null;
+    let scalesWidth = null, scalesRequest = null, selectedDetail = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const list = h('div', {class: 'ge-scales'});
+    const scaleHeading = h('h3', {}, 'Zone scale');
+    const scaleStatus = h('div', {'aria-live': 'polite'});
+    const scaleListHost = h('div', {hidden: true}, list);
+    const scaleArea = h('div', {class: 'os-scroll'}, scaleStatus, scaleListHost);
     const slots = newSlots();
     /** Describe the zone's layer in the exported work. */
     const layer = (info) => (dotted(view)
@@ -65,13 +69,25 @@
         const width = request.width;
         query.set('row_mm', String(width));
         emptySlots(slots, 'Loading scales for the zone width…');
+        scaleListHost.hidden = true;
+        fill(scaleStatus, h('p', {class: 'small muted', role: 'status'}, 'Loading measured scales…'));
         get(`/grey-scales?${query}`).then((next) => {
           if (left || scalesRequest !== request || view.width_mm !== width) return;
           scalesRequest = null;
           scalesWidth = width;
           scales = next.scales;
+          fill(scaleHeading, `Zone scale (${scales.length} measured)`);
+          fill(scaleStatus, scales.length ? null : h('p', {class: 'muted small'},
+            'No grayscale scales exist for this laser, lens, and titanium. Engrave a grayscale test plate and add its photograph.'));
+          scaleListHost.hidden = !scales.length;
           showScale();
-        }).catch((e) => { if (!left && scalesRequest === request) { scalesRequest = null; error.textContent = e.message; error.hidden = false; } });
+        }).catch((e) => {
+          if (!left && scalesRequest === request) {
+            scalesRequest = null;
+            fill(scaleStatus, h('p', {class: 'alert bad', role: 'alert'}, `Could not load measured scales: ${e.message}`),
+              btn('Retry scales', showScale, 'btn-small'));
+          }
+        });
         return;
       }
       scalesRequest = null;
@@ -140,8 +156,7 @@
     };
     keys = key;
     return fill(root, head.el, h('div', {class: 'os-body ge-body'},
-      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Zone scale (${scales.length} measured)`)),
-        h('div', {class: 'os-scroll'}, scales.length ? list : h('p', {class: 'muted'}, 'No grayscale scales exist for this laser, lens, and titanium. Engrave a grayscale test plate and add its photograph.'))),
+      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, scaleHeading), scaleArea),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Zone on scale'), slots.title),
         h('div', {class: 'ge-work'}, picture.inputs, picture.tone, PhotoPanels.calibrationControls(slots.powers), slots.error, error, slots.bar, picture.out, picture.comparison, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));

@@ -164,7 +164,7 @@ JARVIS_ADVICE = {
     "take": {"dot_settings": JARVIS, "dot_width": 0.02}, "turn": None}
 
 
-def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=None, scale_data=None):
+def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=None, scale_data=None, setup=""):
     work = {**WORK, **(work or {})}
     scales = [scale(150, [1, 30]), scale(100, [2, 25])] if scales is None else scales
     (tmp_path / "data.json").write_text(json.dumps({"scales": scales, "scale": scale_data or scale_answer(), "work": work, "kinds": KINDS,
@@ -172,7 +172,8 @@ def run(tmp_path, query, body, work=None, engravings=(), scales=None, advice=Non
                                                     "objects": OBJECTS, "themes": THEMES, "advice": advice or ADVICE}),
                                         encoding="utf-8")
     script = tmp_path / "screen.js"
-    script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+    harness = HARNESS.replace("  const tree = await ctx.__screens['photo-engraving'].render", setup + "\n  const tree = await ctx.__screens['photo-engraving'].render")
+    script.write_text(harness % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
                                  "query": json.dumps(query), "body": body}, encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
@@ -318,6 +319,63 @@ def test_a_work_on_another_plate_of_its_scales_titanium_opens_on_that_scale_whic
 """, work={"scale": {**mode(100), "material_id": 4}, "material": {"name": "Small Plate", "grade": "Grade 5"}}, scales=scales)
     assert out["chosen"] == [False, True] and out["named"] == [True, True] and out["card"] == [["true", True]]   # the chosen scale's card open
 
+
+
+@node
+def test_photo_work_opens_and_keeps_its_prediction_while_scales_load_or_arrive_out_of_order(tmp_path):
+    setup = """
+  const originalFetch = ctx.fetch, pending = [];
+  ctx.fetch = async (url, opts) => {
+    if (String(url).split('?')[0] === '/api/grey-scales') await new Promise((resolve) => pending.push({resolve, url: String(url)}));
+    return originalFetch(url, opts);
+  };
+"""
+    out = run(tmp_path, {"work": "7"}, """
+  out.initial = [shown(tree), tree.textContent.includes('Loading measured scales'), pending.length];
+  const width = input(tree, (i) => i.getAttribute('type') === 'number' && i.getAttribute('min') === '1' && i.getAttribute('max') === '1000');
+  width.value = '100'; await width.dispatch('change'); await settle();
+  out.waiting = [shown(tree), pending.map((request) => new URLSearchParams(request.url.split('?')[1]).get('row_mm'))];
+  pending[1].resolve(); await settle();
+  out.afterNew = [shown(tree), chosen(tree), tree.textContent.includes('Work scales (2 measured)')];
+  pending[0].resolve(); await settle();
+  out.afterOld = [shown(tree), chosen(tree), tree.textContent.includes('Work scales (2 measured)')];
+""", setup=setup)
+    assert out["initial"] == ["/api/photo-works/7/preview.png?v=0", True, 1]
+    assert out["waiting"] == ["/api/photo-works/7/preview.png?v=1", ["60", "100"]]
+    assert out["afterNew"] == ["/api/photo-works/7/preview.png?v=1", [False, True], True]
+    assert out["afterOld"] == out["afterNew"]
+
+
+@node
+def test_photo_work_scale_list_uses_the_latest_server_order_after_resize(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const speeds = () => lines(tree).map((row) => row.querySelector('.lst-text').textContent.includes('150') ? 150 : 100);
+  out.before = speeds();
+  data.scales.reverse();
+  const width = input(tree, (i) => i.getAttribute('type') === 'number' && i.getAttribute('min') === '1' && i.getAttribute('max') === '1000');
+  width.value = '100'; await width.dispatch('change'); await settle();
+  out.after = speeds();
+""")
+    assert out["before"] == [150, 100] and out["after"] == [100, 150]
+
+
+@node
+def test_photo_work_keeps_its_prediction_when_scale_loading_fails_and_can_retry(tmp_path):
+    setup = """
+  const originalFetch = ctx.fetch;
+  let failScales = true;
+  ctx.fetch = async (url, opts) => {
+    if (String(url).split('?')[0] === '/api/grey-scales' && failScales) { failScales = false; return answer({error: 'scales unavailable'}, 503); }
+    return originalFetch(url, opts);
+  };
+"""
+    out = run(tmp_path, {"work": "7"}, """
+  out.failed = [shown(tree), tree.textContent.includes('scales unavailable'), !!button(tree, 'Retry scales')];
+  await button(tree, 'Retry scales').dispatch('click'); await settle();
+  out.recovered = [shown(tree), chosen(tree), tree.textContent.includes('Work scales (2 measured)')];
+""", setup=setup)
+    assert out["failed"] == ["/api/photo-works/7/preview.png?v=0", True, True]
+    assert out["recovered"] == ["/api/photo-works/7/preview.png?v=0", [False, True], True]
 
 
 @node

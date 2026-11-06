@@ -90,6 +90,63 @@ def run(tmp_path, body, routes=None, query=None, store=None, setup="") -> dict:
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
 @node
+def test_experiment_catalog_remains_usable_while_lasers_load_without_resetting_list_state(tmp_path):
+    setup = """
+  const original = ctx.fetch;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  ctx.fetch = async (url, opts) => { if (String(url).split('?')[0] === '/api/devices') await gate; return original(url, opts); };
+"""
+    out = run(tmp_path, """
+  const list = tree.querySelector('.ex-list');
+  const row = list.querySelector('.lst-main');
+  await row.dispatch('click'); await tick();
+  const detail = list.querySelector('.lst-det');
+  out.before = [titles(P(tree, '.ex-list', '.os-scroll')).length, !detail.hidden,
+    byText(tree, 'button', 'Advanced plate options').disabled];
+  release(); await tick(); await tick(); await tick();
+  out.after = [tree.querySelector('.ex-list') === list, list.querySelector('.lst-det') === detail, !detail.hidden,
+    byText(tree, 'button', 'Advanced plate options').disabled];
+""", setup=setup)
+    assert out["before"] == [3, True, True] and out["after"] == [True, True, True, False]
+
+
+@node
+def test_failed_laser_request_offers_retry_without_hiding_experiments(tmp_path):
+    routes = {**ROUTES, "/api/devices": {"status": 503, "json": {"error": "lasers unavailable"}}}
+    out = run(tmp_path, """
+  const task = tree.querySelector('.ex-task');
+  out.before = [titles(P(tree, '.ex-list', '.os-scroll')).length, task.textContent.includes('lasers unavailable'),
+    byText(tree, 'button', 'Advanced plate options').disabled];
+  data.routes['/api/devices'] = %(devices)s;
+  await byText(task, 'button', 'Retry').dispatch('click'); await tick(); await tick();
+  out.after = [titles(P(tree, '.ex-list', '.os-scroll')).length, byText(tree, 'button', 'Advanced plate options').disabled];
+""" % {"devices": json.dumps(ROUTES["/api/devices"])}, routes=routes)
+    assert out["before"] == [3, True, True] and out["after"] == [3, False]
+
+
+@node
+def test_existing_experiments_remain_visible_when_no_lasers_are_available(tmp_path):
+    out = run(tmp_path, """
+  out.rows = titles(P(tree, '.ex-list', '.os-scroll')).length;
+  out.disabled = byText(tree, 'button', 'Advanced plate options').disabled;
+  out.lasers = byText(tree, 'a', 'Lasers').getAttribute('href');
+""", routes={**ROUTES, "/api/devices": {"status": 200, "json": []}})
+    assert out == {"rows": 3, "disabled": True, "lasers": "#/devices"}
+
+
+@node
+def test_unknown_laser_filter_falls_back_to_the_full_experiment_catalog(tmp_path):
+    out = run(tmp_path, """
+  const list = tree.querySelector('.ex-list');
+  out.rows = titles(P(tree, '.ex-list', '.os-scroll')).length;
+  out.scopeHidden = list.querySelector('.ex-filters').hidden;
+  out.total = P(list, '.os-col-head').querySelectorAll('.pill')[0].textContent;
+""", query={"device": "999"})
+    assert out == {"rows": 3, "scopeHidden": True, "total": "3"}
+
+
+@node
 def test_catalogue_remains_usable_while_each_secondary_panel_loads_and_retries(tmp_path):
     setup = """
   const original = ctx.fetch, waiting = {};
@@ -267,6 +324,19 @@ def test_next_test_preview_does_not_block_the_catalog_and_must_finish_before_cre
 """, setup=setup)
     assert out["before"] == [True, True, 3] and out["beforePosts"] == 0
     assert out["after"] == [False, True, True]
+
+
+@node
+def test_next_test_preview_reports_an_unchecked_work_field_and_incomplete_time(tmp_path):
+    preview = {"revision": "partial", "summary": {"size_mm": {"width": 44, "height": 35}, "test_features": 9,
+        "work_field": {"checked": False, "note": "The lens work field is unknown; placement was not checked."}},
+        "time": {"seconds": 30, "complete": False}}
+    out = run(tmp_path, """
+  const task = tree.querySelector('.ex-task');
+  out.text = task.textContent;
+  out.enabled = !byText(task, 'button', 'Create next test').disabled;
+""", routes={**ROUTES, "/api/application-guide/preview": {"status": 200, "json": preview}})
+    assert out["enabled"] and "placement was not checked" in out["text"] and "known layers only" in out["text"]
 
 
 @node
@@ -551,7 +621,7 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
 
 def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_other_tests_and_screens_rely_on():
     for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskSlot,",
-                 "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown, {id: 'experiments',",
+                 "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(items, {id: 'experiments',",
                  "panel('Material findings', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, null, reload)"):
         assert part in SCREEN, part
     assert "{class: 'dashboard-hero'" not in SCREEN and "{class: 'experiment-dashboard'" not in SCREEN and "exp-columns" not in SCREEN     # the old page frame is gone

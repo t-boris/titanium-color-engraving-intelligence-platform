@@ -105,17 +105,54 @@ ADVICE = {"kind": "grayscale", "current": {}, "best": None, "at_best": False, "e
                     "softer": {"refused": "the settings are already at their limits: nothing known moves the engraving further that way"}}}
 
 
-def run(tmp_path, body, query=None, scale_data=None, **zone):
+def run(tmp_path, body, query=None, scale_data=None, setup="", **zone):
     (tmp_path / "data.json").write_text(json.dumps({"zone": {**ZONE, **zone}, "work": WORK, "scales": [scale(150, [1, 30]), scale(100, [2, 25])],
                                                     "scale": scale_data or scale_answer(), "kinds": KINDS, "advice": ADVICE}), encoding="utf-8")
     script = tmp_path / "zone.js"
-    script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+    harness = HARNESS.replace("  const tree = await ctx.__screens['vector-zone'].render", setup + "\n  const tree = await ctx.__screens['vector-zone'].render")
+    script.write_text(harness % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
                                  "query": json.dumps(query or {"work": "9", "zone": "1"}), "body": body}, encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2500:]
     return json.loads(done.stdout)
 
+
+
+@node
+def test_photo_zone_prediction_stays_available_while_scales_load(tmp_path):
+    setup = """
+  const originalFetch = ctx.fetch;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  ctx.fetch = async (url, opts) => { if (String(url).split('?')[0] === '/api/grey-scales') await gate; return originalFetch(url, opts); };
+"""
+    out = run(tmp_path, """
+  out.waiting = [shown(tree), tree.textContent.includes('Loading measured scales')];
+  release(); await settle();
+  out.ready = [shown(tree), chosen(tree), tree.textContent.includes('Zone scale (2 measured)')];
+""", setup=setup)
+    assert out["waiting"] == ["/api/vector/9/photo/1/preview.png?v=0", True]
+    assert out["ready"] == ["/api/vector/9/photo/1/preview.png?v=0", [False, True], True]
+
+
+@node
+def test_photo_zone_scale_failure_has_its_own_retry_and_keeps_the_prediction(tmp_path):
+    setup = """
+  const originalFetch = ctx.fetch;
+  let failScales = true;
+  ctx.fetch = async (url, opts) => {
+    if (String(url).split('?')[0] === '/api/grey-scales' && failScales) { failScales = false; return answer({error: 'scales unavailable'}, 503); }
+    return originalFetch(url, opts);
+  };
+"""
+    out = run(tmp_path, """
+  out.failed = [shown(tree), tree.textContent.includes('scales unavailable'), !!button(tree, 'Retry scales')];
+  await button(tree, 'Retry scales').dispatch('click'); await settle();
+  out.ready = [shown(tree), chosen(tree), tree.textContent.includes('Zone scale (2 measured)')];
+""", setup=setup)
+    assert out["failed"] == ["/api/vector/9/photo/1/preview.png?v=0", True, True]
+    assert out["ready"] == ["/api/vector/9/photo/1/preview.png?v=0", [False, True], True]
 
 
 @node

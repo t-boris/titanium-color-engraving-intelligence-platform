@@ -32,27 +32,31 @@
   const action = (route, label, primary) => h('a', {class: 'btn btn-small' + (primary ? ' primary' : ''), href: '#' + route}, label);
 
   App.register({id: 'experiments', async render(ctx) {
-    const [experiments, devices] = await Promise.all([get('/experiments'), get('/devices')]);
-    const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
-    const selectedDevice = devices.find((device) => device.id === rememberedDevice) || devices[0];
+    const firstDevices = get('/devices').then((value) => ({value}), (error) => ({error}));
+    const experiments = await get('/experiments');
+    let devices = [], selectedDevice = null, pendingDevices = firstDevices, deviceSequence = 0;
     const reload = () => App.render({preserveScroll: true});
+    const advanced = btn('Advanced plate options', () => PlateDialog.open(devices, null, reload), 'btn-small', true);
     const hero = h('div', {class: 'os-head ex-head'},
       h('div', {class: 'ex-title'}, h('h2', {}, 'Experiments'), h('p', {class: 'sub'}, 'Each experiment opens with its plate, photo overlay and result')),
       h('span', {class: 'spacer'}),
       h('div', {class: 'ex-actions'},
         action('/research', 'AI researcher'),
         action('/colors', 'Color map'),
-        btn('Advanced plate options', () => PlateDialog.open(devices, null, reload), 'btn-small', !devices.length),
+        advanced,
         action('/ingest', 'Add work and photo')));
-    if (!devices.length) return h('div', {class: 'os'}, hero,
-      h('div', {class: 'card empty'}, h('h3', {}, 'First add a laser and install a lens'), link('/devices', 'Lasers')));
 
     // ?device=<id>: the experiments of one laser, the list its page links to (no separate list there). The search, the state, the
     // engraving task (REQ-020), the order and the pages are the shared list's (ExperimentCards.list, DEC-090), the same as on the laser's page.
-    const laser = devices.find((device) => String(device.id) === String(ctx.query.device)) || null;
-    const shown = laser ? experiments.filter((e) => e.device_id === laser.id) : experiments;
-    const scope = laser ? h('div', {class: 'ex-filters'},
-      h('span', {class: 'row'}, pill(`Laser: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'All lasers'))) : null;
+    const laserId = ctx.query.device ? String(ctx.query.device) : null;
+    const shown = laserId ? experiments.filter((e) => String(e.device_id) === laserId) : experiments;
+    const scopeLabel = laserId ? pill(`Laser #${laserId}`, 'ok') : null;
+    const scope = laserId ? h('div', {class: 'ex-filters'},
+      h('span', {class: 'row'}, scopeLabel, link('/experiments', 'All lasers'))) : null;
+    const listCount = pill(laserId ? `${shown.length} of ${experiments.length}` : experiments.length);
+    const experimentList = (items) => ExperimentCards.list(items, {id: 'experiments', noResults: 'No results: change the search, status or laser.',
+      empty: experiments.length ? 'No results: change the search, status or laser.' : 'No experiments yet. Create a plate or add a work and photo.'});
+    const listBody = h('div', {class: 'os-scroll'}, experimentList(shown));
 
     const taskSlot = h('section', {class: 'os-col ex-task'});
     const findingsSlot = h('section', {class: 'os-col ex-find'});
@@ -227,15 +231,43 @@
         photoSlot.hidden = true;
       }
     }
-    loadContext();
+    async function loadDevices() {
+      const mine = ++deviceSequence;
+      loading(taskSlot, 'Work goal');
+      try {
+        const result = pendingDevices ? await pendingDevices : {value: await get('/devices')};
+        pendingDevices = null;
+        if (mine !== deviceSequence) return;
+        if (result.error) throw result.error;
+        devices = result.value;
+        const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
+        selectedDevice = devices.find((device) => device.id === rememberedDevice) || devices[0] || null;
+        advanced.disabled = !selectedDevice;
+        if (scopeLabel) {
+          const scoped = devices.find((device) => String(device.id) === laserId);
+          if (scoped) scopeLabel.textContent = `Laser: ${scoped.title || scoped.name}`;
+          else { scope.hidden = true; listCount.textContent = String(experiments.length); App.fill(listBody, experimentList(experiments)); }
+        }
+        if (!selectedDevice) {
+          App.fill(taskSlot, h('h3', {}, 'Work goal'), h('p', {class: 'muted'}, 'First add a laser and install a lens.'), link('/devices', 'Lasers'));
+          findingsSlot.hidden = true; photoSlot.hidden = true;
+          return;
+        }
+        findingsSlot.hidden = false;
+        loadContext();
+      } catch (e) {
+        if (mine !== deviceSequence) return;
+        failed(taskSlot, 'Laser information', e, loadDevices);
+        findingsSlot.hidden = true; photoSlot.hidden = true;
+      }
+    }
+    loadDevices();
     return h('div', {class: 'os ex'}, hero,
       h('div', {class: 'os-body ex-body'},
         h('section', {class: 'os-col ex-list'},
-          h('div', {class: 'os-col-head'}, h('h3', {}, 'Experiments'), pill(laser ? `${shown.length} of ${experiments.length}` : experiments.length),
+          h('div', {class: 'os-col-head'}, h('h3', {}, 'Experiments'), listCount,
             pill(`${experiments.filter((e) => e.needs_review).length} to review`, experiments.some((e) => e.needs_review) ? 'warn' : '')),
-          scope,
-          h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, {id: 'experiments', noResults: 'No results: change the search, status or laser.',
-            empty: experiments.length ? 'No results: change the search, status or laser.' : 'No experiments yet. Create a plate or add a work and photo.'}))),
+          scope, listBody),
         h('div', {class: 'ex-right'}, taskSlot, findingsSlot, photoSlot)));
   }});
 })();

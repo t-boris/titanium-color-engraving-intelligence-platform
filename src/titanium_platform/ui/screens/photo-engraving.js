@@ -173,7 +173,7 @@
     const rank = new Map(scales.map((sc, i) => [sc, i]));
     const best = (a, b) => rank.get(a) - rank.get(b);
     const now = chosen();
-    return App.list({id, items: scales, key, open: now ? key(now) : null, className: 'ge-scale-list',
+    const list = App.list({id, items: scales, key, open: now ? key(now) : null, className: 'ge-scale-list',
       row: (sc) => [scaleBar(display(sc)),
         h('span', {class: 'lst-text', title: `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`}, settingsText(sc.mode, sc.dpi)),
         sc === chosen() ? pill('выбрана', 'ok') : null],
@@ -182,15 +182,17 @@
       sorts: [['best', 'Лучшие первыми', best], ['fast', 'Быстрее', (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || best(a, b)],
         ['wide', 'Шире диапазон мощности', (a, b) => (b.span[1] - b.span[0]) - (a.span[1] - a.span[0]) || best(a, b)]],
       empty: 'Нет шкал под такой поиск.'});
+    list.setScales = (next) => { rank.clear(); next.forEach((sc, i) => rank.set(sc, i)); list.items = next; };
+    return list;
   }
 
   /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
       сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
   async function workScreen(id) {
     const first = await get('/photo-works/' + id);
-    let {scales} = await get(`/grey-scales?row_mm=${first.width_mm}`);
+    let scales = [];
     let view = first, detail = null, shownKey = null, current = null;
-    let scalesWidth = first.width_mm, scalesRequest = null, selectedDetail = null;
+    let scalesWidth = null, scalesRequest = null, selectedDetail = null;
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
     const slots = newSlots();
     const base = `/photo-works/${id}`;
@@ -235,9 +237,12 @@
     // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
     current = chosen();
-    const list = scaleList('ge.work.scales', scales, () => current, (item) => pick(item),
-      (sc) => sc === current && selectedDetail ? {...sc, ...selectedDetail} : sc);
-    const cards = (sc) => { current = sc; list.refresh(); };
+    let list = null;
+    const scaleHeading = h('h3', {}, 'Work scales');
+    const scaleStatus = h('div', {'aria-live': 'polite'});
+    const scaleListHost = h('div', {hidden: true});
+    const scaleArea = h('div', {class: 'os-scroll'}, scaleStatus, scaleListHost);
+    const cards = (sc) => { current = sc; if (list) list.refresh(); };
 
     function showScale() {
       if (detail) detail.stop();
@@ -246,15 +251,30 @@
         if (scalesRequest && scalesRequest.width === view.width_mm) return;
         const request = scalesRequest = {width: view.width_mm};
         const width = request.width;
-        emptySlots(slots, 'Загружаем шкалы на ширине работы…');
+        emptySlots(slots, 'Loading scales for the work width…');
+        scaleListHost.hidden = true;
+        fill(scaleStatus, h('p', {class: 'small muted', role: 'status'}, 'Loading measured scales…'));
         get(`/grey-scales?row_mm=${width}`).then((next) => {
           if (scalesRequest !== request || view.width_mm !== width) return;
           scalesRequest = null;
           scalesWidth = width;
           scales = next.scales;
-          list.items = scales;
+          if (!list && scales.length) {
+            current = chosen();
+            list = scaleList('ge.work.scales', scales, () => current, (item) => pick(item),
+              (sc) => sc === current && selectedDetail ? {...sc, ...selectedDetail} : sc);
+          } else if (list) list.setScales(scales);
+          fill(scaleHeading, `Work scales (${scales.length} measured)`);
+          fill(scaleStatus, scales.length ? null : h('p', {class: 'muted small'}, 'No measured scales are available. Engrave a grayscale plate and add its photograph.'));
+          if (scales.length) { if (list.el.parentNode !== scaleListHost) fill(scaleListHost, list.el); scaleListHost.hidden = false; }
           showScale();
-        }).catch((e) => { if (scalesRequest === request) { scalesRequest = null; error.textContent = e.message; error.hidden = false; } });
+        }).catch((e) => {
+          if (scalesRequest === request) {
+            scalesRequest = null;
+            fill(scaleStatus, h('p', {class: 'alert bad', role: 'alert'}, `Could not load measured scales: ${e.message}`),
+              btn('Retry scales', showScale, 'btn-small'));
+          }
+        });
         return;
       }
       scalesRequest = null;
@@ -316,8 +336,7 @@
     };
     keys = key;
     return fill(root, head.el, banner.el, h('div', {class: 'os-body ge-body'},
-      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Шкала работы (измерено ${scales.length})`)),
-        h('div', {class: 'os-scroll'}, scales.length ? list.el : h('p', {class: 'muted'}, 'Измеренных шкал нет: выгравируйте пластину «Шкалы серого» и добавьте её фотографию.'))),
+      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, scaleHeading), scaleArea),
       h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
         h('div', {class: 'ge-work'}, picture.inputs, picture.tone, PhotoPanels.calibrationControls(slots.powers, dotWidth.el), doc.view.el, slots.error, error, slots.bar, picture.out, picture.comparison, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
