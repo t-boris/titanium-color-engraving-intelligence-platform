@@ -79,8 +79,8 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `/api/photo-works/${work.id}/kinds`) return answer(data.kinds);
   if (path === `/api/plans/${work.id}` && method === 'DELETE') return answer(null, 204);
   if (path === `/api/photo-works/${work.id}/copy`) return answer({id: 8}, 201);
-  if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Шкалы серого · TCE-31'}, 201);
-  if (path === `/api/photo-works/${work.id}/variations`) return answer({plan_id: 32, name: 'Фотогравировка: одна картинка × несколько настроек · TCE-32'}, 201);
+  if (path === `/api/photo-works/${work.id}/width-ramp`) return answer({plan_id: 31, name: 'Grayscale strips · TCE-31'}, 201);
+  if (path === `/api/photo-works/${work.id}/variations`) return answer({plan_id: 32, name: 'Photo engraving: one picture × multiple settings · TCE-32'}, 201);
   if (path === `/api/photo-works/${work.id}/parts`) return answer(data.parts);
   if (path === `/api/photo-works/${work.id}/objects`) return answer({...data.objects, active: work.by_colour && work.colour_choice === 'objects'});
   if (path === `/api/photo-works/${work.id}/theme`) {
@@ -91,16 +91,16 @@ ctx.fetch = async (url, opts = {}) => {
   if (path === `/api/photo-works/${work.id}/ai-theme`) {
     remember();
     work = {...work, by_colour: true, colour_choice: 'objects', colouring: data.themes.warm,
-      ai_theme: {wish: body.wish.trim(), note: 'очки золотом, губы красные', photo: work.ai_photo}}; version++;
+      ai_theme: {wish: body.wish.trim(), note: 'gold glasses, red lips', photo: work.ai_photo}}; version++;
     return answer(view());
   }
   if (path === `/api/photo-works/${work.id}/engravings`) return answer(data.engravings);
   if (path === `/api/photo-works/${work.id}/advice`) return answer(data.advice);
-  if (path === '/api/photo-knowledge/plate') return answer({plan_id: 33, name: 'Фотогравировка: одна картинка × несколько настроек · TCE-33'}, 201);
+  if (path === '/api/photo-knowledge/plate') return answer({plan_id: 33, name: 'Photo engraving: one picture × multiple settings · TCE-33'}, 201);
   if (path === `/api/photo-works/${work.id}/ai`) {
     if (hold.length) await hold.shift();
     remember();
-    work = {...work, rules: data.ai_rules, ai: {wish: body.wish.trim(), note: 'платье фиолетовым, остальное как есть', photo: work.ai_photo, fresh: body.fresh,
+    work = {...work, rules: data.ai_rules, ai: {wish: body.wish.trim(), note: 'purple dress, leave the rest unchanged', photo: work.ai_photo, fresh: body.fresh,
       before: work.rules}};
     version++;
     return answer(view());
@@ -118,7 +118,7 @@ const named = (tree, i) => {
   const label = by ? tree.querySelectorAll('[id]').find((n) => n.getAttribute('id') === by) : null;
   return label ? label.textContent : i.getAttribute('aria-label');
 };
-const labelled = (tree, label) => input(tree, (i) => (i.getAttribute('aria-label') === label || named(tree, i) === label.replace(/, (?:мм|mm)$/, '')) && i.getAttribute('type') !== 'range');
+const labelled = (tree, label) => input(tree, (i) => (i.getAttribute('aria-label') === label || named(tree, i) === label.replace(/, mm$/, '')) && i.getAttribute('type') !== 'range');
 const button = (tree, text) => tree.querySelectorAll('button').find((b) => b.textContent === text);
 const shown = (tree) => { const img = tree.querySelectorAll('img').find((i) => (i.className || '').includes('pp-image')); return img ? img.getAttribute('src') : null; };
 const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
@@ -201,7 +201,7 @@ def scale_answer():
             "size": {"row_mm": 150, "how": "measured", "measured_mm": [38.4, 150], "from_mm": [150], "unknown_points": 0, "engravings": 2}}
 
 
-WORK = {"id": 7, "name": "Портрет", "identifier": "TCE-P-1", "created_at": "2026-10-21T10:00:00", "updated_at": "2026-10-21T10:05:00",
+WORK = {"id": 7, "name": "Portrait", "identifier": "TCE-P-1", "created_at": "2026-10-21T10:00:00", "updated_at": "2026-10-21T10:05:00",
         "image_name": "girl.png", "image_size": [240, 120], "scale": mode(100), "material": {"name": "Big Plate 150"}, "dpi": 1000,
         "min_power": 12, "max_power": 28, "width_mm": 60, "height_mm": 30, "by_colour": False, "colour_choice": "drawing", "contours": False,
         "time": {"seconds": 600}, "problem": None,
@@ -264,7 +264,7 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
   out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
 """, work={"id": 9})
     card = out["cards"][0]
-    assert "Портрет" in card and "60 × 30 mm" in card and "Min 12 % · Max 28 %" in card and "100 mm/s" in card
+    assert "Portrait" in card and "60 × 30 mm" in card and "Min 12 % · Max 28 %" in card and "100 mm/s" in card
     assert out["thumb"] == "/api/photo-works/9/thumb.png?v=2026-10-21T10%3A05%3A00"
     assert out["first"] == {"title": "New work · step 1 of 2: image", "buttons": ["×", "Cancel", "Next →"]}
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
@@ -287,7 +287,7 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
   let box = dialog();
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  labelled(box, 'Work name').value = 'Мото';
+  labelled(box, 'Work name').value = 'Motorcycle';
   labelled(box, 'Width on titanium, mm').value = '80';
   await button(box, 'Next →').dispatch('click'); await settle();
   await button(dialog(), '← Back').dispatch('click'); await settle();
@@ -299,7 +299,7 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
   await press({key: 'Escape'}); await settle();
   out.escaped = {open: !!dialog(), deleted: deleted(), went: ctx.__went, saved: saves()};
 """, work={"id": 9})
-    assert out["back"] == {"title": "New work · step 1 of 2: image", "name": "Мото", "width": "80", "file": "moto.jpg · 4 KB",
+    assert out["back"] == {"title": "New work · step 1 of 2: image", "name": "Motorcycle", "width": "80", "file": "moto.jpg · 4 KB",
                            "deleted": ["/api/plans/9"], "went": []}
     assert out["again"] == {"title": "New work · step 2 of 2: which engraving?", "posts": 2}
     assert out["escaped"] == {"open": False, "deleted": ["/api/plans/9", "/api/plans/9"], "went": [], "saved": []}
@@ -422,7 +422,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     predictionStatus: tree.querySelector('.ge-prediction-status').textContent};
 """)
     opened = out["opened"]
-    assert opened["chosen"] == [False, True] and opened["powers"] == ["12", "28"] and opened["width"] == "60" and opened["title"] == "Портрет"
+    assert opened["chosen"] == [False, True] and opened["powers"] == ["12", "28"] and opened["width"] == "60" and opened["title"] == "Portrait"
     assert opened["shown"] == "/api/photo-works/7/preview.png?v=0"
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"width_mm": 100}, {"by_colour": True}]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=3" and out["size"]
@@ -587,15 +587,15 @@ def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_fr
   const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('reduced image'));
   permission.checked = true; await permission.dispatch('change'); await settle();
   const wish = tree.querySelectorAll('textarea')[0];
-  wish.value = ' платье сделать фиолетовым '; await button(tree, 'Ask AI').dispatch('click'); await settle();
-  out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', with image'),
+  wish.value = ' make the dress purple '; await button(tree, 'Ask AI').dispatch('click'); await settle();
+  out.asked = {asks: asks(), note: tree.textContent.includes('AI: purple dress, leave the rest unchanged'), photo: tree.textContent.includes(', with image'),
                rule: select(tree, 'Rule: Clothing').value, shown: shown(tree)};
   await button(tree, 'Undo').dispatch('click'); await settle();
   out.back = {saves: saves(), undo: requests.filter((r) => r.path.endsWith('/undo')).length, rule: select(tree, 'Rule: Clothing').value,
               note: tree.textContent.includes('AI: '), redo: !button(tree, 'Redo').disabled};
 """)
     assert out["empty"] == {"asks": 0, "text": True}
-    assert out["asked"] == {"asks": [{"wish": " платье сделать фиолетовым ", "fresh": False}], "note": True, "photo": True, "rule": "colour",
+    assert out["asked"] == {"asks": [{"wish": " make the dress purple ", "fresh": False}], "note": True, "photo": True, "rule": "colour",
                             "shown": "/api/photo-works/7/preview.png?v=2"}
     assert out["back"] == {"saves": [{"ai_photo": True}], "undo": 1, "rule": "as_is", "note": False, "redo": True}
 
@@ -642,14 +642,14 @@ def test_undo_and_redo_in_the_head_bring_the_work_back_with_its_min_and_max_and_
 def test_the_ai_can_start_again_from_the_picture_and_every_part_can_be_put_back_as_it_is(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   out.plainOff = button(tree, 'Keep all parts as is').disabled;
-  tree.querySelectorAll('textarea')[0].value = 'платье фиолетовым';
+  tree.querySelectorAll('textarea')[0].value = 'purple dress';
   await button(tree, 'Start over from the image').dispatch('click'); await settle();
   out.asked = {asks: asks(), again: tree.textContent.includes(', started from image'), plainOff: button(tree, 'Keep all parts as is').disabled};
   await button(tree, 'Keep all parts as is').dispatch('click'); await settle();
   out.plain = {saves: saves(), rule: select(tree, 'Rule: Clothing').value, plainOff: button(tree, 'Keep all parts as is').disabled};
 """)
     assert out["plainOff"] is True
-    assert out["asked"] == {"asks": [{"wish": "платье фиолетовым", "fresh": True}], "again": True, "plainOff": False}
+    assert out["asked"] == {"asks": [{"wish": "purple dress", "fresh": True}], "again": True, "plainOff": False}
     assert out["plain"] == {"saves": [{"rules": []}], "rule": "as_is", "plainOff": True}
 
 
@@ -659,13 +659,13 @@ def band(gray, power, de, hex_, predicted_hex):
 
 
 ENGRAVINGS = [
-    {"pair_id": 41, "status": "Awaiting check", "photo_name": "IMG_2.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-22T09:00:00",
+    {"pair_id": 41, "status": "Awaiting check", "photo_name": "IMG_2.dng", "lightburn_name": "Portrait.lbrn2", "created_at": "2026-10-22T09:00:00",
      "accepted_at": None, "settings": None, "same_scale": None, "mode": None, "check": None},
-    {"pair_id": 40, "status": "Accepted", "photo_name": "IMG_1.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-22T08:00:00",
+    {"pair_id": 40, "status": "Accepted", "photo_name": "IMG_1.dng", "lightburn_name": "Portrait.lbrn2", "created_at": "2026-10-22T08:00:00",
      "accepted_at": "2026-10-22T08:10:00", "settings": {"power_range": [12, 28]}, "same_scale": True, "mode": None,
      "check": {"reason": None, "compared": 3, "median_de": 2.4, "max_de": 7.5, "within": 0.667, "confirmed": True, "others": 1, "tolerance_de": 5.0,
                "bands": [band(0.0, 28, 2.4, "#223344", "#203040"), band(1.0, 12, 1.1, "#ddccbb", "#ddcabb"), band(0.5, 20, 7.5, "#886644", "#776655")]}},
-    {"pair_id": 39, "status": "Accepted", "photo_name": "IMG_0.dng", "lightburn_name": "Портрет.lbrn2", "created_at": "2026-10-21T08:00:00",
+    {"pair_id": 39, "status": "Accepted", "photo_name": "IMG_0.dng", "lightburn_name": "Portrait.lbrn2", "created_at": "2026-10-21T08:00:00",
      "accepted_at": "2026-10-21T08:10:00", "settings": {"power_range": [12, 28]}, "same_scale": False,
      "mode": {"speed": 250, "frequency": 60, "pulse_width": 300, "line_interval": 0.0169, "passes": 1},
      "check": {"reason": "alone", "compared": 0, "bands": []}},
@@ -752,11 +752,11 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   await button(tree, 'Warm').dispatch('click'); await settle();
   await button(tree, 'Random').dispatch('click'); await settle();
   await button(row('Other (glasses…)'), 'Auto').dispatch('click'); await settle();
-  tree.querySelectorAll('label').find((l) => l.firstChild.textContent === 'Describe how to color the image').firstControl().value = ' очки золотом ';
+  tree.querySelectorAll('label').find((l) => l.firstChild.textContent === 'Describe how to color the image').firstControl().value = ' gold glasses ';
   await button(tree, 'Color as requested').dispatch('click'); await settle();
   out.saves = saves();
   out.themes = posts('/theme').map((b) => [b.name, typeof b.seed]);
-  out.ai = {asks: posts('/ai-theme'), note: tree.textContent.includes('AI: очки золотом, губы красные')};
+  out.ai = {asks: posts('/ai-theme'), note: tree.textContent.includes('AI: gold glasses, red lips')};
   await button(tree, 'Reset all to auto').dispatch('click'); await settle();
   out.cleared = saves().slice(-1)[0];
 """)
@@ -768,7 +768,7 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
                             {**objects_on, "colouring": {"lips": {"power": 12.15, "shift": -0.5}}},
                             {**objects_on, "colouring": {}}]                                          # «Auto» on the random theme's only object
     assert out["themes"] == [["warm", "undefined"], ["random", "number"]]                             # «Random»: new colours each time
-    assert out["ai"] == {"asks": [{"wish": " очки золотом "}], "note": True}
+    assert out["ai"] == {"asks": [{"wish": " gold glasses "}], "note": True}
     assert out["cleared"] == {**objects_on, "colouring": {}}
 
 
@@ -846,7 +846,7 @@ def test_colour_matching_keeps_tone_controls_enabled_and_sharpness_is_saved_and_
 @node
 def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_path):
     example = {'source': {'kind': 'export', 'id': 9, 'number': 5, 'layer': 23, 'sha256': 'abc'}, 'layer': 'C23',
-               'title': 'Портрет · файл №5', 'url': '#/vector?plan=9', 'photo': None, 'verdict': 'unrated',
+               'title': 'Portrait · file #5', 'url': '#/vector?plan=9', 'photo': None, 'verdict': 'unrated',
                'settings': {**mode(100), 'power': 30, 'min_power': 1}, 'at': '2026-10-27T10:00:00'}
     data = {**scale_answer(), 'examples': [example]}
     out = run(tmp_path, {'work': '7'}, """
@@ -854,16 +854,16 @@ def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_pat
   const block = () => tree.querySelector('.ge-result');
   const area = (a) => block().querySelectorAll('.ge-assessment').find((x) => x.getAttribute('data-aspect') === a);
   area('colour').querySelector('select').value = 'good';
-  area('colour').querySelector('textarea').value = 'Золото получилось';
+  area('colour').querySelector('textarea').value = 'Gold succeeded';
   await button(area('colour'), 'Save: color').dispatch('click'); await settle();
   area('photo').querySelector('select').value = 'bad';
-  area('photo').querySelector('textarea').value = 'Фотогравировка слишком светлая';
+  area('photo').querySelector('textarea').value = 'Photo engraving is too light';
   await button(area('photo'), 'Save: photo engraving').dispatch('click'); await settle();
   out.values = ['colour', 'photo'].map((a) => [area(a).querySelector('select').value, area(a).querySelector('textarea').value]);
   out.marks = requests.filter(r => r.path === '/api/photo-results/mark').map(r => r.body);
   out.marker = block().textContent.includes('Marker C23');
 """, scale_data=data)
-    assert out['marker'] and out['values'] == [['good', 'Золото получилось'], ['bad', 'Фотогравировка слишком светлая']]
+    assert out['marker'] and out['values'] == [['good', 'Gold succeeded'], ['bad', 'Photo engraving is too light']]
     assert [(r['source']['layer'], r['aspect'], r['verdict']) for r in out['marks']] == [(23, 'colour', 'good'), (23, 'photo', 'bad')]
 
 
@@ -1014,7 +1014,7 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
     assert out["ends"] == "1 %dots — from photo #149 (Jarvis)30 %"
     assert out["title"].endswith("dots use settings of dots from photo #149 (Jarvis)")
     text = out["text"]
-    assert "с карты цветов" not in text.replace("Color from map", "") and "оценка по шкале" not in text
+    assert "from the color map" not in text.replace("Color from map", "") and "estimate from scale" not in text
     assert "estimate from photo # 149 (Jarvis): this mode has not been engraved with these settings" in text
     assert "This is an estimate: this mode has not been engraved with these settings. Dot color is as in photo # 149 (Jarvis), which shows dots engraved with these settings." in text
     assert "— dot settings from photo #149 (Jarvis)." in text
@@ -1103,5 +1103,5 @@ def test_the_file_of_a_work_is_downloaded_with_the_one_wording_and_a_failed_down
   out.asked = requests.filter((r) => r.path.endsWith('/export.lbrn2')).map((r) => r.path);
 """)
     assert "Photo engraving" in out["orientation"][0] and out["orientation"][1] == "#/photo-engraving"
-    assert "Download LightBurn" in out["labels"] and "Файл LightBurn" not in out["labels"]
+    assert "Download LightBurn" in out["labels"] and "LightBurn file" not in out["labels"]
     assert out["inside"] is True and out["asked"] == ["/api/photo-works/7/export.lbrn2"]

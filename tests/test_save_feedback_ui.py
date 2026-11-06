@@ -340,7 +340,7 @@ def test_changes_that_fail_after_the_work_was_left_reach_the_task_panel(tmp_path
   release(); await settle();
   out.panel = require('vm').runInContext('Operations.items()', ctx).map((o) => ({title: o.title, state: o.state, error: o.error, recover: o.recover.label}));
 """)
-    assert out["panel"] == [{"title": "Work “Портрет”: changes not saved", "state": "failed", "recover": "Open work",
+    assert out["panel"] == [{"title": "Work “Portrait”: changes not saved", "state": "failed", "recover": "Open work",
                              "error": "Cannot reach the local service. Is the application running? Width, mm: 70 (saved: 60)"}]
 
 

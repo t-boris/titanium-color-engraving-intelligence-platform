@@ -51,23 +51,23 @@ const selectOf = (root, label) => root.querySelectorAll('.lst-select').find((l) 
 
 
 def experiment(key, title, status, **more) -> dict:
-    return {"key": key, "title": title, "status": status, "status_text": {"accepted": "Принят", "plate_ready": "Плата готова: ждёт фото", "needs_review": "Нужна проверка"}[status],
-            "kind": "Матрица параметров", "laser": "Laser A", "lens": "F-Theta", "material": "Titan 2", "tasks": ["text"], "checks": 1, "photos": 1, "layers_measured": 5,
+    return {"key": key, "title": title, "status": status, "status_text": {"accepted": "Accepted", "plate_ready": "Plate ready: awaiting photo", "needs_review": "Review needed"}[status],
+            "kind": "Parameter matrix", "laser": "Laser A", "lens": "F-Theta", "material": "Titan 2", "tasks": ["text"], "checks": 1, "photos": 1, "layers_measured": 5,
             "needs_review": 1 if status == "needs_review" else 0, "last_activity": "2026-10-18T10:00:00", "main_pair_id": 7, "device_id": 1, **more}
 
 
-FINDING = {"material_id": 1, "lens_id": 5, "purpose": "line", "status": "candidate", "summary": "Тонкие линии держатся при 30 % мощности", "next_test": "Повторить на другой заготовке",
+FINDING = {"material_id": 1, "lens_id": 5, "purpose": "line", "status": "candidate", "summary": "Thin lines hold at 30 % power", "next_test": "Repeat on another blank",
            "pair_id": 7, "parameters": {"power": 30, "frequency": 1950, "speed": 900}}
 ROUTES = {
-    "/api/experiments": {"status": 200, "json": [experiment("plan-3", "Плата текста", "plate_ready", main_pair_id=None, checks=0, photos=0),
-                                                 experiment("eng-a", "Тест Q-Pulse", "accepted"), experiment("eng-b", "Шаг строк", "needs_review")]},
+    "/api/experiments": {"status": 200, "json": [experiment("plan-3", "Text plate", "plate_ready", main_pair_id=None, checks=0, photos=0),
+                                                 experiment("eng-a", "Q-Pulse test", "accepted"), experiment("eng-b", "Line spacing", "needs_review")]},
     "/api/devices": {"status": 200, "json": [{"id": 1, "name": "Laser A", "title": "Laser A", "lens": {"id": 5, "name": "F-Theta"}, "passport": {"pulse_steps": []}}]},
     "/api/materials": {"status": 200, "json": [{"id": 1, "name": "Titan", "grade": "2", "batch": "A"}]},
     "/api/materials/1": {"status": 200, "json": {"id": 1, "name": "Titan", "grade": "2", "batch": "A"}},       # the stock selector reads the one record it shows
-    "/api/application-goals": {"status": 200, "json": [{"id": "text", "name": "Надписи", "objective": "Разборчивые буквы выбранного размера"},
-                                                       {"id": "line", "name": "Линии", "objective": "Тонкие линии"}]},
+    "/api/application-goals": {"status": 200, "json": [{"id": "text", "name": "Lettering", "objective": "Legible letters at the chosen size"},
+                                                       {"id": "line", "name": "Линии", "objective": "Thin lines"}]},
     "/api/devices/1/findings": {"status": 200, "json": [FINDING, {**FINDING, "purpose": "text", "status": "needs_test", "pair_id": 8}]},
-    "/api/application-guide": {"status": 200, "json": {"status": "ok", "message": "Сравнить надписи при трёх мощностях.", "next_step": "Создать плату надписей и сфотографировать её.",
+    "/api/application-guide": {"status": 200, "json": {"status": "ok", "message": "Compare lettering at three power levels.", "next_step": "Create a lettering plate and photograph it.",
                                                        "plate": {"test_type": "text_readability", "source_pair_id": 7, "settings": {"pulse_width": 200}}, "finding": FINDING,
                                                        "task": {"kind": "text"}, "pending_plan_id": None,
                                                        "support": {"pair_id": 7, "observation_ids": [11, 12], "engravings": 2, "photographs": 3, "missing_context": []}}},
@@ -179,7 +179,7 @@ def test_catalogue_remains_usable_while_each_secondary_panel_loads_and_retries(t
     assert len(out["rowsWhileWaiting"]) == 3
     assert out["requests"] == ["/api/application-guide", "/api/devices/1/findings", "/api/photo-knowledge"]
     assert out["taskReady"] and out["findingsStillLoading"]
-    assert "Retry" in out["failure"] and "Тонкие линии" in out["findings"]
+    assert "Retry" in out["failure"] and "Thin lines" in out["findings"]
     assert "No photo engraving types" in out["photo"] and out["detailsKept"]
 
 
@@ -221,13 +221,13 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
     assert tasks == ["All tasks · 3", "Lettering · 3"] and count == "showing 3 of 3"
     assert orders == [["recent", "Most recent"], ["review", "Needs review first"], ["title", "Title"]]
     assert out["rowsInScroll"] == out["rowsInList"] == 3 and out["cards"] == 0                           # one line each; the cards open under a line
-    assert out["cardTitles"] == ["Плата текста", "Тест Q-Pulse", "Шаг строк"]                             # the most recently active first, as the server sends
+    assert out["cardTitles"] == ["Text plate", "Q-Pulse test", "Line spacing"]                             # the most recently active first, as the server sends
     assert out["open"] == [["Open", "#/experiment/plan-3"], ["Open", "#/experiment/eng-a"], ["Open", "#/experiment/eng-b"]]
     assert out["task"]["head"] == "Work goal" and out["task"]["labels"][:2] == ["Goal", "Material"] and out["task"]["inScroll"] >= 2
-    assert out["task"]["next"] is True and "Laser A" not in out["task"]["result"] and "Разборчивые буквы выбранного размера" in out["task"]["result"]
+    assert out["task"]["next"] is True and "Laser A" not in out["task"]["result"] and "Legible letters at the chosen size" in out["task"]["result"]
     assert out["task"]["details"] == [out["task"]["details"][0]] and out["task"]["details"][0].startswith("Finding evidence and settings")
     assert "evidence: review #7, observations #11, #12" in out["task"]["details"][0] and "30%" in out["task"]["details"][0].replace(" ", "")   # the long lines are folded
-    assert "основание" not in out["task"]["result"].split("Основание вывода")[0] and "text readability" not in out["task"]["foot"]
+    assert "basis" not in out["task"]["result"].split("Finding basis")[0] and "text readability" not in out["task"]["foot"]
     assert out["task"]["foot"].startswith("Plate: lettering 3 × 3, three sizes")
     assert out["find"]["head"].startswith("Material findings") and len(out["find"]["cards"]) == 2 and out["find"]["link"] == "#/devices/1"
     assert out["footerInside"] is False
@@ -236,7 +236,7 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
 @node
 def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_their_choice_for_the_session(tmp_path):
     routes = {**ROUTES, "/api/experiments": {"status": 200, "json": [*ROUTES["/api/experiments"]["json"][:2],
-                                                                      experiment("eng-b", "Шаг строк", "needs_review", tasks=["line", "fill"])]}}
+                                                                      experiment("eng-b", "Line spacing", "needs_review", tasks=["line", "fill"])]}}
     out = run(tmp_path, """
   const scroll = P(tree, '.ex-list', '.os-scroll');
   const search = scroll.querySelector('.lst-search');
@@ -253,10 +253,10 @@ def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_thei
   out.ordered = titles(scroll);
   out.kept = JSON.parse(ctx.__store['list:experiments']); out.renders = ctx.__renders.length;
 """, routes=routes)
-    assert out["searched"] == ["Тест Q-Pulse"] and out["chipsSearched"] == ["All · 1", "Accepted · 1"]      # the search reads the title; the counts follow it
-    assert out["state"] == ["Шаг строк"]
+    assert out["searched"] == ["Q-Pulse test"] and out["chipsSearched"] == ["All · 1", "Accepted · 1"]      # the search reads the title; the counts follow it
+    assert out["state"] == ["Line spacing"]
     assert out["tasks"] == [["", "All tasks · 3"], ["text", "Lettering · 2"], ["line", "Lines · 1"], ["fill", "Fill · 1"]]    # only the tasks the experiments have
-    assert out["task"] == ["Плата текста", "Тест Q-Pulse"] and out["ordered"] == ["Плата текста", "Тест Q-Pulse"]
+    assert out["task"] == ["Text plate", "Q-Pulse test"] and out["ordered"] == ["Q-Pulse test", "Text plate"]
     assert out["kept"] == {"sort": "title", "filters": {"status": "", "task": "text"}, "search": "", "shown": 20}
     assert out["renders"] == 0                                                                                 # a choice narrows the list, the screen stays
 
@@ -265,10 +265,10 @@ def test_the_filters_sit_in_the_list_column_narrow_it_in_place_and_remember_thei
 def test_a_remembered_filter_narrows_the_list_and_an_empty_result_says_so_inside_the_list(tmp_path):
     accepted = run(tmp_path, "out.titles = titles(P(tree, '.ex-list', '.os-scroll'));",
                    store={"list:experiments": json.dumps({"filters": {"status": "accepted"}})})
-    assert accepted["titles"] == ["Тест Q-Pulse"]
+    assert accepted["titles"] == ["Q-Pulse test"]
     nothing = run(tmp_path, "const s = P(tree, '.ex-list', '.os-scroll'); out.rows = s.querySelectorAll('.lst-row').length; out.text = s.querySelector('.lst-empty').textContent;"
                             "out.pills = P(tree, '.ex-list', '.os-col-head').querySelectorAll('.pill').map((p) => p.textContent);"
-                            "out.page = kids(tree);", store={"list:experiments": json.dumps({"search": "нет такого"})})
+                            "out.page = kids(tree);", store={"list:experiments": json.dumps({"search": "no match"})})
     assert nothing["rows"] == 0 and nothing["text"] == "No results: change the search, status or laser." and nothing["pills"] == ["3", "1 to review"]
     assert nothing["page"] == ["os-head ex-head", "os-body ex-body"]                                       # the frame stays whole
     none = run(tmp_path, "out.text = P(tree, '.ex-list', '.os-scroll').querySelector('.lst-empty').textContent;",
@@ -278,7 +278,7 @@ def test_a_remembered_filter_narrows_the_list_and_an_empty_result_says_so_inside
 
 @node
 def test_a_long_list_shows_one_page_of_twenty_lines_and_the_rest_on_request(tmp_path):
-    many = [experiment(f"eng-{i}", f"Плата {i:02d}", "accepted", last_activity=f"2026-10-{i:02d}T10:00:00") for i in range(1, 26)]
+    many = [experiment(f"eng-{i}", f"Plate {i:02d}", "accepted", last_activity=f"2026-10-{i:02d}T10:00:00") for i in range(1, 26)]
     out = run(tmp_path, """
   const scroll = P(tree, '.ex-list', '.os-scroll');
   out.first = titles(scroll); out.count = scroll.querySelector('.lst-count').textContent;
@@ -289,9 +289,9 @@ def test_a_long_list_shows_one_page_of_twenty_lines_and_the_rest_on_request(tmp_
   await scroll.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.card = [scroll.querySelectorAll('article').length, topLink(scroll.querySelector('article')), scroll.querySelector('article').querySelector('img').getAttribute('src')];
 """, routes={**ROUTES, "/api/experiments": {"status": 200, "json": many[::-1]}})
-    assert len(out["first"]) == 20 and out["first"][:2] == ["Плата 25", "Плата 24"] and out["count"] == "showing 20 of 25"
+    assert len(out["first"]) == 20 and out["first"][:2] == ["Plate 25", "Plate 24"] and out["count"] == "showing 20 of 25"
     assert out["more"] == "Show 5 more" and out["all"] == 25 and out["after"] is None
-    assert out["card"] == [1, "Плата 25", "/api/pairs/7/photo.png?visibility=lifted&size=480"]           # the card opens under its line, built then
+    assert out["card"] == [1, "Plate 25", "/api/pairs/7/photo.png?visibility=lifted&size=480"]           # the card opens under its line, built then
 
 
 @node
@@ -431,14 +431,14 @@ def test_the_laser_page_shows_the_same_short_list_with_the_same_filters_and_keep
   out.accepted = titles(panel);
   out.kept = [JSON.parse(ctx.__store['list:laser-experiments']).filters, ctx.__store['list:experiments'] || null];
   out.api = Object.keys(ctx.ExperimentCards);
-  out.empty = ctx.ExperimentCards.list([], {empty: 'Пусто'}).querySelector('.lst-empty').textContent;
+  out.empty = ctx.ExperimentCards.list([], {empty: 'Empty'}).querySelector('.lst-empty').textContent;
 """)
     assert out["head"] == "Experiments for this laser3Open in all experiments"
     search, states, tasks, orders = out["toolbar"]
     assert search and states == ["All · 3", "Needs review · 1", "Awaiting photo · 1", "Accepted · 1"] and tasks == ["All tasks · 3", "Lettering · 3"]
     assert orders == ["Most recent", "Needs review first", "Title"]
-    assert out["accepted"] == ["Тест Q-Pulse"] and out["kept"][0] == {"status": "accepted", "task": ""} and out["kept"][1] is None   # its own choice, not the screen's
-    assert out["api"] == ["card", "list", "layers"] and out["empty"] == "Пусто"
+    assert out["accepted"] == ["Q-Pulse test"] and out["kept"][0] == {"status": "accepted", "task": ""} and out["kept"][1] is None   # its own choice, not the screen's
+    assert out["api"] == ["card", "list", "layers"] and out["empty"] == "Empty"
 
 
 # -- «Create plate»: the plate dialog ---------------------------------------------------------------------------------------------
@@ -484,7 +484,7 @@ def run_dialog(tmp_path, body) -> dict:
     from titanium_platform import capability_plates
     data = {"routes": {"/api/plate-types": {"status": 200, "json": capability_plates.PLATE_TYPES},
                        "/api/tasks": ROUTES["/api/tasks"],
-                       "/api/capability-plates": {"status": 201, "json": {"plan_id": 9, "name": "Плата · TCE-1",
+                       "/api/capability-plates": {"status": 201, "json": {"plan_id": 9, "name": "Plate · TCE-1",
                                                                           "summary": {"layers": 4, "work_field": {"checked": True}}}}},
             "devices": [{"id": 1, "name": "Laser A", "lens": {"id": 5, "name": "F-Theta", "focal_length_mm": 174, "field_mm": 170},
                          "passport": {"pulse_steps": [{"pulse_width_ns": 200, "cutoff_khz": 100}], "repetition_rate_khz": {"min": 1, "max": 4000}}}],
@@ -583,7 +583,7 @@ def test_the_plate_dialog_says_the_unit_and_the_permitted_values_of_every_number
 @node
 def test_a_refusal_of_the_server_stays_in_the_plate_dialog_with_everything_typed(tmp_path):
     out = run_dialog(tmp_path, """
-  data.routes['/api/capability-plates'] = {status: 400, json: {error: 'скорость теста не должна превышать 10000 мм/с', kind: 'invalid'}};
+  data.routes['/api/capability-plates'] = {status: 400, json: {error: 'test speed must not exceed 10000 mm/s', kind: 'invalid'}};
   const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, {type: 'fill_sizes'});
   await tick();
   const box = dialog.el;
@@ -604,7 +604,7 @@ def test_a_refusal_of_the_server_stays_in_the_plate_dialog_with_everything_typed
 """)
     assert out["open"] and out["kept"] == "900" and out["toasts"] == 0
     assert len(out["stock"]) == 1 and "Save blank failed" in out["stock"][0] and out["toastsAfter"] == 0
-    assert len(out["said"]) == 1 and "скорость теста не должна превышать 10000 мм/с" in out["said"][0] and "remain in the form" in out["said"][0]
+    assert len(out["said"]) == 1 and "test speed must not exceed 10000 mm/s" in out["said"][0] and "remain in the form" in out["said"][0]
 
 
 # -- the CSS ---------------------------------------------------------------------------------------------------------------------------
@@ -650,9 +650,9 @@ KNOWN = {"device_id": 1, "lens_id": 5, "material_id": 1, "picture_from": {"pair_
 
 @node
 def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_for_the_laser_and_titanium(tmp_path):
-    image = {**FINDING, "purpose": "image", "status": "needs_image_test", "summary": "Режим для изображения пока не подтверждён", "pair_id": 9}
+    image = {**FINDING, "purpose": "image", "status": "needs_image_test", "summary": "Image settings are not yet confirmed", "pair_id": 9}
     routes = {**ROUTES, "/api/photo-knowledge": {"status": 200, "json": KNOWN}, "/api/devices/1/findings": {"status": 200, "json": [FINDING, image]},
-              "/api/photo-knowledge/plate": {"status": 201, "json": {"plan_id": 12, "name": "Фотогравировка · TCE-12"}}}
+              "/api/photo-knowledge/plate": {"status": 201, "json": {"plan_id": 12, "name": "Photo engraving · TCE-12"}}}
     out = run(tmp_path, """
   const panel = tree.querySelectorAll('section').find((s) => has(s, 'ex-find') && s.textContent.includes('Photo engraving: laboratory recommendations'));
   out.head = panel.querySelector('.os-col-head').textContent;
@@ -689,5 +689,5 @@ def test_a_long_list_of_supporting_observations_is_a_count_and_a_list_not_a_sent
     long_ = run(tmp_path, "out.text = tree.querySelector('.ex-task').textContent; out.refs = tree.querySelectorAll('.srefs').length;"
                 "out.count = tree.querySelector('.srefs-count').textContent;", routes=routes)
     assert "observations #11, #12" in short["text"] and short["refs"] == 0                       # a few stay in the sentence, as before
-    assert "наблюдения №40" not in long_["text"] and long_["refs"] == 1 and long_["count"] == "12"
+    assert "observations #40" not in long_["text"] and long_["refs"] == 1 and long_["count"] == "12"
     assert "Evidence observations" in long_["text"] and "evidence: review #7" in long_["text"]
