@@ -67,37 +67,37 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
   out.cards = cards.map((a) => ({{text: a.textContent, img: a.querySelector('img').getAttribute('src'), link: a.querySelector('a').getAttribute('href'),
                                  buttons: a.querySelectorAll('button').map((b) => b.textContent)}}));
   out.heading = tree.querySelectorAll('h2')[0].textContent;
-  out.create = byText(tree, 'button', 'Новая работа') != null;
+  out.create = byText(tree, 'button', 'New work') != null;
   const mine = cards.find((a) => a.textContent.includes({json.dumps(first['name'])}));
-  await byText(mine, 'button', 'Открыть').dispatch('click');
+  await byText(mine, 'button', 'Open').dispatch('click');
   out.opened = ctx.location.hash;
-  await byText(mine, 'button', 'Сделать копию').dispatch('click'); await tick();
+  await byText(mine, 'button', 'Make a copy').dispatch('click'); await tick();
   out.copied = ctx.location.hash;
   out.copyPosts = ctx.requests.filter((r) => r.method === 'POST').map((r) => r.path);
   const other = cards.find((a) => a.textContent.includes('Витраж'));
-  await byText(other, 'button', 'Удалить').dispatch('click');
+  await byText(other, 'button', 'Delete').dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.question = dialog.textContent;
   out.deletedBeforeAnswer = ctx.requests.filter((r) => r.method === 'DELETE').length;
-  await byText(dialog, 'button', 'Удалить').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Delete').dispatch('click'); await tick();
   out.deleted = ctx.requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
   out.rendered = ctx.__renders.length;
-  await byText(tree, 'button', 'Новая работа').dispatch('click');
+  await byText(tree, 'button', 'New work').dispatch('click');
   out.newWork = ctx.location.hash;
 """)
-    assert out["heading"] == "Векторная работа" and out["create"] is True and len(out["cards"]) == 2
-    by_name = {card["text"].split("Открыть")[0]: card for card in out["cards"]}
+    assert out["heading"] == "Vector work" and out["create"] is True and len(out["cards"]) == 2
+    by_name = {card["text"].split("Open")[0]: card for card in out["cards"]}
     for entry in listed:
         card = next(card for name, card in by_name.items() if name.startswith(entry["name"]))
         assert card["img"].startswith(f"/api/vector/{entry['id']}/thumb.png?v=") and card["link"] == f"#/vector?plan={entry['id']}"
-        assert card["buttons"] == ["✎", "Открыть", "Сделать копию", "Удалить"]
-        assert f"цветов {entry['n_colours']} · областей {entry['regions']} · слоёв {entry['layers']}" in card["text"]
-    assert any("Раскраска: AI · Кубизм" in card["text"] for card in out["cards"])
-    assert any("Раскраска: Ближе к оригиналу" in card["text"] or "Раскраска: Сохранить тональность" in card["text"] for card in out["cards"])
+        assert card["buttons"] == ["✎", "Open", "Make a copy", "Delete"]
+        assert f"colors {entry['n_colours']} · regions {entry['regions']} · layers {entry['layers']}" in card["text"]
+    assert any("Coloring: AI · Кубизм" in card["text"] for card in out["cards"])
+    assert any("Coloring: Closer to original" in card["text"] or "Coloring: Preserve tonality" in card["text"] for card in out["cards"])
     assert any("По тонам" in card["text"] for card in out["cards"]) and any("Мозаика" in card["text"] for card in out["cards"])
     assert out["opened"] == f"#/vector?plan={first['id']}" and out["copied"] == "#/vector?plan=77" and out["copyPosts"] == [f"/api/vector/{first['id']}/copy"]
-    assert "Удалить работу «Витраж»?" in out["question"] or "Витраж" in out["question"]
-    assert "Сделать копию" in out["question"] and "вернуть работу будет нельзя" in out["question"] and out["deletedBeforeAnswer"] == 0     # asked first
+    assert "Delete work «Витраж»?" in out["question"] or "Витраж" in out["question"]
+    assert "Make a copy" in out["question"] and "deleted permanently" in out["question"] and out["deletedBeforeAnswer"] == 0     # asked first
     assert out["deleted"] == [f"/api/plans/{second['id']}"] and out["rendered"] >= 1
     assert out["newWork"] == "#/vector?new=1"
 
@@ -106,10 +106,10 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
 def test_without_works_the_list_offers_the_first_one(tmp_path):
     out = run(tmp_path, {"/api/vector": {"status": 200, "json": []}}, {}, """
   out.text = tree.textContent;
-  await byText(tree, 'button', 'Новая работа').dispatch('click');
+  await byText(tree, 'button', 'New work').dispatch('click');
   out.hash = ctx.location.hash;
 """)
-    assert "Работ пока нет" in out["text"] and out["hash"] == "#/vector?new=1"
+    assert "No works yet" in out["text"] and out["hash"] == "#/vector?new=1"
 
 
 # -- the workspace ---------------------------------------------------------------------------------------------------------------------
@@ -126,16 +126,16 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   out.first = state(); out.firstShown = shown();
   await byText(tree, 'button', 'AI').dispatch('click');
   out.afterClick = state(); out.afterClickShown = shown(); out.saved = ctx.__store['vw.tab'];
-  const list = tree.querySelectorAll('div').find((d) => d.getAttribute('role') === 'tablist' && d.getAttribute('aria-label') === 'Разделы работы');
+  const list = tree.querySelectorAll('div').find((d) => d.getAttribute('role') === 'tablist' && d.getAttribute('aria-label') === 'Work sections');
   await list.dispatch('keydown', {{key: 'ArrowRight'}});
   out.afterArrow = shown();
   const again = await screen({{plan: {j['id']}}});                          // the screen is built again, as after "Разбить заново"
   out.restored = again.querySelectorAll('div').filter((d) => d.getAttribute('role') === 'tabpanel' && d.getAttribute('id').startsWith('vw-tab-panel-') && !d.hidden).map((d) => d.getAttribute('id'));
   out.head = tree.querySelectorAll('header')[0].textContent;
-  out.back = tree.querySelectorAll('a').find((a) => a.textContent === '← Мои работы').getAttribute('href');
-  await byText(tree, 'button', 'Сделать копию').dispatch('click'); await tick();
+  out.back = tree.querySelectorAll('a').find((a) => a.textContent === '← My works').getAttribute('href');
+  await byText(tree, 'button', 'Make a copy').dispatch('click'); await tick();
   out.copied = ctx.location.hash;
-  await byText(tree, 'button', 'Файл LightBurn').dispatch('click');
+  await byText(tree, 'button', 'LightBurn file').dispatch('click');
   out.afterFile = shown();
   const edTabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('vw-ed-tab-')).map((b) => b.textContent);
   out.editorTabs = edTabs;
@@ -145,7 +145,7 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
     assert out["first"] == [["Разбиение", "false"], ["Document colors", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
-    assert "Векторная работа" in out["head"] and j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]
+    assert "Vector work" in out["head"] and j["name"] in out["head"] and "Engraving plan" in out["head"] and "split #" in out["head"] and "layers " in out["head"]
     assert out["back"] == "#/vector" and out["copied"] == "#/vector?plan=88" and out["afterFile"] == ["vw-tab-panel-file"]
     assert out["editorTabs"] == ["Кисть", "Слои", "Source colors", "Фото", "Надписи"]
 
@@ -199,7 +199,7 @@ def body(name: str) -> str:
     return json.dumps({"name": name}, separators=(",", ":"), ensure_ascii=False)
 
 
-PENCIL = "b.getAttribute('aria-label') && b.getAttribute('aria-label').startsWith('Переименовать работу')"
+PENCIL = "b.getAttribute('aria-label') && b.getAttribute('aria-label').startsWith('Rename work')"
 DIALOG = "const dialog = () => ctx.document.body.querySelector('.modal');"
 POSTS = "const posts = () => ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, r.body]);"
 TOASTS = "const toasts = () => ctx.document.body.querySelectorAll('.toast').map((t) => [t.className, t.textContent]);"
@@ -220,7 +220,7 @@ def test_the_pencil_on_a_card_opens_a_dialog_with_the_name_and_renames_in_place_
   out.dialog = [first.querySelector('h3').textContent, first.querySelector('input').value, first.querySelectorAll('button').map((b) => b.textContent)];
   out.fieldLabel = first.querySelector('label').textContent;
   first.querySelector('input').value = '  Imma + Boris  ';
-  await byText(first, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(first, 'button', 'Save').dispatch('click'); await tick();
   out.posts = posts();
   out.title = card.querySelector('h3').textContent;
   out.labels = [pencil.getAttribute('aria-label'), card.querySelector('a').getAttribute('aria-label')];
@@ -229,11 +229,11 @@ def test_the_pencil_on_a_card_opens_a_dialog_with_the_name_and_renames_in_place_
   await pencil.dispatch('click');                                     // the next rename starts from the name it has now
   out.again = dialog().querySelector('input').value;
 """)
-    assert out["pencil"] == ["✎", "Переименовать", f"Переименовать работу «{j['name']}»", True] and out["beforeTitle"] == j["name"]
-    assert out["dialog"] == ["Переименовать работу", j["name"], ["×", "Отмена", "Сохранить"]] and "Название" in out["fieldLabel"]
+    assert out["pencil"] == ["✎", "Rename", f"Rename work «{j['name']}»", True] and out["beforeTitle"] == j["name"]
+    assert out["dialog"] == ["Rename work", j["name"], ["×", "Cancel", "Save"]] and "Name" in out["fieldLabel"]
     assert out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Imma + Boris")]]                  # trimmed, one request
-    assert out["title"] == "Imma + Boris" and out["labels"] == ["Переименовать работу «Imma + Boris»", "Открыть работу Imma + Boris"] and out["closed"] is True
-    assert out["toasts"] == [["toast ok", "Работа переименована ×"]] and out["again"] == "Imma + Boris"
+    assert out["title"] == "Imma + Boris" and out["labels"] == ["Rename work «Imma + Boris»", "Open work Imma + Boris"] and out["closed"] is True
+    assert out["toasts"] == [["toast ok", "Work renamed ×"]] and out["again"] == "Imma + Boris"
 
 
 @node
@@ -246,19 +246,19 @@ def test_a_blank_name_is_refused_before_any_request_and_the_name_as_it_is_or_can
   const open = async () => {{ await card.querySelectorAll('button').find((b) => {PENCIL}).dispatch('click'); return dialog(); }};
   let d = await open();
   d.querySelector('input').value = '    ';
-  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(d, 'button', 'Save').dispatch('click'); await tick();
   out.blank = [posts().length, dialog() != null, toasts().map((t) => t[0] + ' ' + t[1]), d.querySelector('input').getAttribute('aria-invalid'),
     d.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent), d.querySelector('input').value];
   d.querySelector('input').value = ' ' + card.querySelector('h3').textContent + ' ';
-  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(d, 'button', 'Save').dispatch('click'); await tick();
   out.same = [posts().length, dialog() == null];
   d = await open();
   d.querySelector('input').value = 'Something else';
-  await byText(d, 'button', 'Отмена').dispatch('click'); await tick();
+  await byText(d, 'button', 'Cancel').dispatch('click'); await tick();
   out.cancel = [posts().length, dialog() == null, card.querySelector('h3').textContent];
 """)
     # refused before any request, the reason beside the field (no toast), what was typed kept, the dialog open for another try
-    assert out["blank"] == [0, True, [], "true", ["Впишите название работы"], "    "]
+    assert out["blank"] == [0, True, [], "true", ["Enter a work name"], "    "]
     assert out["same"] == [0, True] and out["cancel"] == [0, True, j["name"]]
 
 
@@ -294,8 +294,8 @@ def test_a_refused_rename_keeps_the_dialog_open_and_can_be_tried_again(work, job
   await card.querySelectorAll('button').find((b) => {PENCIL}).dispatch('click');
   const d = dialog();
   d.querySelector('input').value = 'Another';
-  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();
-  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick();        // the failure did not lock the dialog
+  await byText(d, 'button', 'Save').dispatch('click'); await tick();
+  await byText(d, 'button', 'Save').dispatch('click'); await tick();        // the failure did not lock the dialog
   out.posts = posts().length;
   out.open = dialog() != null;
   out.title = card.querySelector('h3').textContent;
@@ -323,15 +323,15 @@ def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is
   const d = dialog();
   out.prefill = d.querySelector('input').value;
   d.querySelector('input').value = 'Новое имя';
-  await byText(d, 'button', 'Сохранить').dispatch('click'); await tick(); await tick();
+  await byText(d, 'button', 'Save').dispatch('click'); await tick(); await tick();
   out.after = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label')];
   out.posts = posts();
   await byText(tree, 'button', 'Случайно').dispatch('click'); await tick(); await tick();       // an operation: the screen shows the server's view again
-  out.refreshed = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label'), head().querySelector('.sub').textContent.includes('разбиение №')];
+  out.refreshed = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label'), head().querySelector('.sub').textContent.includes('split #')];
 """)
-    assert out["before"] == [j["name"], 1, f"Переименовать работу «{j['name']}»"] and out["prefill"] == j["name"]
-    assert out["after"] == ["Новое имя", 1, "Переименовать работу «Новое имя»"] and out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Новое имя")]]
-    assert out["refreshed"] == ["Новое имя", 1, "Переименовать работу «Новое имя»", True]
+    assert out["before"] == [j["name"], 1, f"Rename work «{j['name']}»"] and out["prefill"] == j["name"]
+    assert out["after"] == ["Новое имя", 1, "Rename work «Новое имя»"] and out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Новое имя")]]
+    assert out["refreshed"] == ["Новое имя", 1, "Rename work «Новое имя»", True]
 
 
 def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_title_follows_the_new_name():
@@ -343,7 +343,7 @@ def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_titl
 
 @node
 def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following_the_picture(work, job, tmp_path):
-    """Feature work-size-and-splitting-a-region-again, REQ-001: «Размер…» opens two linked fields; the side typed last is sent, the head and the
+    """Feature work-size-and-splitting-a-region-again, REQ-001: «Size…» opens two linked fields; the side typed last is sent, the head and the
     editor show the work the server answers with."""
     c, j = work, job
     routes = routes_of(c, j)
@@ -354,7 +354,7 @@ def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following
   {DIALOG} {POSTS} {TOASTS}
   const head = () => tree.querySelectorAll('header')[0];
   out.before = head().querySelector('.sub').textContent;
-  await byText(head(), 'button', 'Размер…').dispatch('click');
+  await byText(head(), 'button', 'Size…').dispatch('click');
   const d = dialog();
   const inputs = () => d.querySelectorAll('input');
   out.prefill = inputs().map((i) => [d.querySelectorAll('span').find((x) => x.getAttribute('id') === i.getAttribute('aria-labelledby')).textContent, i.value]);
@@ -363,23 +363,23 @@ def test_the_header_changes_the_size_of_the_work_by_one_side_the_other_following
   inputs()[1].value = '90'; await inputs()[1].dispatch('input');
   out.linkedWidth = inputs()[0].value;
   out.text = d.textContent;
-  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick(); await tick(); await tick();
+  await byText(d, 'button', 'Resize').dispatch('click'); await tick(); await tick(); await tick();
   out.posts = posts().map(([path, body]) => [path, JSON.parse(body)]);
   out.closed = dialog() == null;
   out.after = head().querySelector('.sub').textContent;
   out.toasts = toasts().map((t) => t[1]);
-  await byText(head(), 'button', 'Размер…').dispatch('click');
+  await byText(head(), 'button', 'Size…').dispatch('click');
   const again = dialog();
   out.again = again.querySelectorAll('input').map((i) => i.value);
-  await byText(again, 'button', 'Изменить размер').dispatch('click'); await tick();      // the size as it is: closed without a request
+  await byText(again, 'button', 'Resize').dispatch('click'); await tick();      // the size as it is: closed without a request
   out.unchanged = [dialog() == null, posts().length];
 """)
-    assert out["before"].startswith("60.0 × 45.0 мм") and out["prefill"] == [["Ширина", "60"], ["Высота", "45"]]
+    assert out["before"].startswith("60.0 × 45.0 mm") and out["prefill"] == [["Width", "60"], ["Height", "45"]]
     assert out["linkedHeight"] == "22.5" and out["linkedWidth"] == "120"
-    assert "по пропорциям картинки" in out["text"] and "можно отменить" in out["text"]
+    assert "follows the image proportions" in out["text"] and "undo this change" in out["text"]
     assert out["posts"] == [[f"/api/vector/{j['id']}/size", {"height_mm": 90}]] and out["closed"] is True
-    assert out["after"].startswith("120.0 × 90.0 мм") and "разбиение № 2" in out["after"]
-    assert any("120.0 × 90.0 мм" in t for t in out["toasts"])
+    assert out["after"].startswith("120.0 × 90.0 mm") and "split #2" in out["after"]
+    assert any("120.0 × 90.0 mm" in t for t in out["toasts"])
     assert out["again"] == ["120", "90"] and out["unchanged"] == [True, 1]
 
 
@@ -389,18 +389,18 @@ def test_a_wrong_size_is_said_beside_its_box_with_nothing_sent_and_what_was_type
     c, j = work, job
     out = run(tmp_path, routes_of(c, j), {"plan": str(j["id"])}, f"""
   {DIALOG} {POSTS}
-  await byText(tree.querySelectorAll('header')[0], 'button', 'Размер…').dispatch('click');
+  await byText(tree.querySelectorAll('header')[0], 'button', 'Size…').dispatch('click');
   const d = dialog();
   const width = () => d.querySelectorAll('input')[0];
   const said = () => d.querySelectorAll('span').filter((x) => x.classList.contains('f-error')).map((x) => x.textContent);
   width().value = '-5'; await width().dispatch('input');
-  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  await byText(d, 'button', 'Resize').dispatch('click'); await tick();
   out.negative = [posts().length, said(), width().value, width().getAttribute('aria-invalid'), dialog() != null];
   width().value = ''; await width().dispatch('input');
-  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  await byText(d, 'button', 'Resize').dispatch('click'); await tick();
   out.empty = [posts().length, said()];
   width().value = '12abc'; await width().dispatch('input');
-  await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
+  await byText(d, 'button', 'Resize').dispatch('click'); await tick();
   out.letters = [posts().length, said()];
 """)
     assert out["negative"][0] == 0 and "Allowed" in out["negative"][1][0] and "Entered: -5" in out["negative"][1][0]

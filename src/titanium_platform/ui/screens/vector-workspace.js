@@ -1,30 +1,20 @@
-/* Векторная работа: список сохранённых работ и рамка одной работы на один экран (REQ-053, REQ-054, DEC-085).
-   Список (экран «Векторная работа» без работы): у каждой сохранённой работы миниатюра раскрашенной картинки, название, дата,
-   размер, алгоритм, число цветов и слоёв, способ раскраски; кнопки «Открыть», «Сделать копию» (новая работа с тем же состоянием,
-   старая остаётся) и «Удалить» с подтверждением. Рамка работы: шапка с названием и действиями, слева вкладки настроек, посередине
-   картинка редактора, справа его панель; страница не прокручивается, прокручиваются только длинные списки внутри своей панели.
-   Какая вкладка открыта, браузер помнит (удобство одного зрителя; App.tabs): после «Разбить заново» экран строится заново на той же вкладке.
-   Карандаш рядом с названием (в списке, в шапке работы и на длинной странице других способов) открывает окно «Переименовать работу»: меняется
-   только название, это не правка документа (REQ-055, DEC-086).
-   «Размер…» рядом с размером в шапке (фича work-size-and-splitting-a-region-again, REQ-001): окно «Размер работы» с шириной и высотой в мм,
-   связанными пропорциями картинки; разбиение не пересчитывается, а масштабируется — области, цвета, надписи и фотозоны остаются, шаг
-   можно отменить. */
+/* Vector work list, rename and size dialogs, and the workspace layout. */
 'use strict';
 const VectorWorkspace = (() => {
   const {h, fill, btn, num, field, get, post, del, go, toast, fail, modal, confirmBox} = App;
-  const MODE_NAME = {closest: 'Ближе к оригиналу', tonality: 'Сохранить тональность', random: 'Случайно', fewer_layers: 'Меньше слоёв (прежний режим)'};
-  const STRATEGY_NAME = {photo: 'Фото: цветные области', fill: 'Заливка силуэта', text: 'Текст', line: 'Линии (центральные)', color: 'Цветные области (обводка)'};
+  const MODE_NAME = {closest: 'Closer to original', tonality: 'Preserve tonality', random: 'Random', fewer_layers: 'Fewer layers (legacy mode)'};
+  const STRATEGY_NAME = {photo: 'Photo: color regions', fill: 'Silhouette fill', text: 'Text', line: 'Centerlines', color: 'Color regions (outline)'};
   const TAB_KEY = 'vw.tab';
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
 
 
-  // ---- переименование ------------------------------------------------------------------------------------------------------------
+  // ---- rename ------------------------------------------------------------------------------------------------------------
 
   // the words of the dialog for what is renamed: a work (vector or photo engraving) or an experiment
-  const WORDS = {work: {title: 'Переименовать работу', field: 'Название работы', blank: 'Впишите название работы', done: 'Работа переименована',
-                        button: 'Переименовать работу'},
-                 experiment: {title: 'Переименовать эксперимент', field: 'Название эксперимента', blank: 'Впишите название эксперимента',
-                              done: 'Эксперимент переименован', button: 'Переименовать эксперимент'}};
+  const WORDS = {work: {title: 'Rename work', field: 'Work name', blank: 'Enter a work name', done: 'Work renamed',
+                        button: 'Rename work'},
+                 experiment: {title: 'Rename experiment', field: 'Experiment name', blank: 'Enter an experiment name',
+                              done: 'Experiment renamed', button: 'Rename experiment'}};
 
   /** The dialog with the name in a field. A blank name is refused before any request, the name as it is closes the dialog without one,
       Enter saves (not while an input method is composing), and a second press while the first is being saved does nothing. ``base`` is
@@ -35,7 +25,7 @@ const VectorWorkspace = (() => {
       onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
     // the name is required; a blank one, and any refusal of the server, is said beside the field and the dialog stays open with the name as typed
     const form = Forms.create();
-    const nameField = form.add('name', 'Название', input, {required: true, read: () => (input.value.trim() ? {ok: true, value: input.value.trim()} : {ok: false, message: words.blank})});
+    const nameField = form.add('name', 'Name', input, {required: true, read: () => (input.value.trim() ? {ok: true, value: input.value.trim()} : {ok: false, message: words.blank})});
     async function save(close) {
       if (saving) return;
       const v = form.collect();
@@ -51,7 +41,7 @@ const VectorWorkspace = (() => {
       } catch (e) { saving = false; form.fail(e); }
     }
     box = modal(words.title, h('div', {class: 'stack'}, nameField, form.error), [
-      {label: 'Отмена', run: (m) => m.close()}, {label: 'Сохранить', cls: 'primary', run: (m) => save(m.close)}]);
+      {label: 'Cancel', run: (m) => m.close()}, {label: 'Save', cls: 'primary', run: (m) => save(m.close)}]);
     if (input.select) input.select();
   }
 
@@ -61,14 +51,14 @@ const VectorWorkspace = (() => {
     let shown = name;
     const words = WORDS[kind];
     const label = () => `${words.button} «${shown}»`;
-    const el = h('button', {type: 'button', class: 'btn btn-small vw-rename', title: 'Переименовать', 'aria-label': label(),
+    const el = h('button', {type: 'button', class: 'btn btn-small vw-rename', title: 'Rename', 'aria-label': label(),
       onClick: () => renameDialog(id, shown, (stored) => { shown = stored; el.setAttribute('aria-label', label()); renamed(stored); }, base, words)}, '✎');
     return el;
   }
 
-  // ---- список сохранённых работ --------------------------------------------------------------------------------------------------
+  // ---- saved works --------------------------------------------------------------------------------------------------
 
-  /** Способ раскраски одной строкой: ручной выбор и автоматические режимы названы так же, как в самой работе. */
+  /** Describe the selected coloring mode. */
   function colouringName(w) {
     if (w.mode === 'ai') return 'AI · ' + (w.ai_style === 'custom' ? `«${(w.ai_text || '').slice(0, 40)}»` : VectorColours.styleName(w.ai_style));
     return MODE_NAME[w.mode] || null;
@@ -78,48 +68,48 @@ const VectorWorkspace = (() => {
     const open = () => go('/vector?plan=' + w.id);
     const photo = w.strategy === 'photo';
     const how = colouringName(w);
-    const copy = btn('Сделать копию', async (ev) => {
+    const copy = btn('Make a copy', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(`/vector/${w.id}/copy`, {}); toast('Копия создана и открыта: старая работа осталась как была', 'ok'); go('/vector?plan=' + made.id); }
+      try { const made = await post(`/vector/${w.id}/copy`, {}); toast('Copy created and opened; the original work is unchanged', 'ok'); go('/vector?plan=' + made.id); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
-    const remove = btn('Удалить', () => confirmBox(`Удалить работу «${w.name}»?`,
-      'Исчезнут исходная картинка, разбиение и все варианты раскраски; вернуть работу будет нельзя. Чтобы сохранить её, сначала нажмите «Сделать копию».',
-      'Удалить', async () => { await del('/plans/' + w.id); toast('Работа удалена', 'ok'); App.render(); }), 'danger btn-small');
-    const thumb = h('a', {class: 'vw-thumb', href: '#/vector?plan=' + w.id, 'aria-label': 'Открыть работу ' + w.name},
+    const remove = btn('Delete', () => confirmBox(`Delete work “${w.name}”?`,
+      'The source image, split, and all coloring variants will be deleted permanently. Make a copy first if you want to keep them.',
+      'Delete', async () => { await del('/plans/' + w.id); toast('Work deleted', 'ok'); App.render(); }), 'danger btn-small');
+    const thumb = h('a', {class: 'vw-thumb', href: '#/vector?plan=' + w.id, 'aria-label': 'Open work ' + w.name},
       h('img', {src: `/api/vector/${w.id}/thumb.png?v=${encodeURIComponent(w.version + '-' + w.updated_at)}`, alt: '', loading: 'lazy'}));
     const title = h('h3', {}, w.name);
-    const pencil = renameButton(w.id, w.name, (stored) => { w.name = stored; fill(title, stored); thumb.setAttribute('aria-label', 'Открыть работу ' + stored); });
+    const pencil = renameButton(w.id, w.name, (stored) => { w.name = stored; fill(title, stored); thumb.setAttribute('aria-label', 'Open work ' + stored); });
     return h('article', {class: 'card vw-work-card'}, thumb,
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
-        h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
-        photo ? h('p', {class: 'small'}, `цветов ${w.n_colours} · областей ${w.regions} · слоёв ${w.layers}` + (w.zones ? ` · фотозон ${w.zones}` : '')) : h('p', {class: 'small'}, `областей ${w.regions} · слоёв ${w.layers}`),
-        h('p', {class: 'small'}, how ? `Раскраска: ${how}` : 'Ещё не раскрашена', w.variants ? ` · вариантов ${w.variants}` : ''),
+        h('p', {class: 'small'}, `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} mm · ` + (photo ? VectorSplit.name(w.algorithm) : STRATEGY_NAME[w.strategy] || w.strategy)),
+        photo ? h('p', {class: 'small'}, `colors ${w.n_colours} · regions ${w.regions} · layers ${w.layers}` + (w.zones ? ` · photo zones ${w.zones}` : '')) : h('p', {class: 'small'}, `regions ${w.regions} · layers ${w.layers}`),
+        h('p', {class: 'small'}, how ? `Coloring: ${how}` : 'Not colored yet', w.variants ? ` · variants ${w.variants}` : ''),
         ...VectorReview.cardLines(w),
-        h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
-        h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
+        h('p', {class: 'small muted'}, `updated ${when(w.updated_at)}`),
+        h('div', {class: 'row'}, btn('Open', open, 'primary btn-small'), copy, remove)));
   }
 
-  /** Экран «Векторная работа» без работы: сохранённые работы и кнопка новой. */
+  /** List saved vector works and create a new one. */
   async function list() {
     const works = await get('/vector');
-    const create = btn('Новая работа', () => go('/vector?new=1'), 'primary');
+    const create = btn('New work', () => go('/vector?new=1'), 'primary');
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Векторная работа'),
-        h('p', {class: 'sub'}, 'Сохранённые работы: что выбрано и как выглядит, хранится на этом компьютере. Откройте работу, чтобы продолжить, или сделайте копию, чтобы переделать, не потеряв прежнюю.')),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Vector work'),
+        h('p', {class: 'sub'}, 'Saved works, selections, and their appearance are stored on this computer. Open a work to continue or make a copy to revise it while keeping the original.')),
         h('span', {class: 'spacer'}), create),
       works.length ? h('div', {class: 'vw-works'}, works.map(workCard))
-        : h('div', {class: 'card empty'}, h('h3', {}, 'Работ пока нет'), h('p', {class: 'muted'}, 'Загрузите картинку: она разобьётся на цветные области, их можно раскрасить и выгрузить в LightBurn.'), create));
+        : h('div', {class: 'card empty'}, h('h3', {}, 'No works yet'), h('p', {class: 'muted'}, 'Upload an image to split it into color regions, color them, and export to LightBurn.'), create));
   }
 
-  // ---- рамка одной работы --------------------------------------------------------------------------------------------------------
+  // ---- work layout --------------------------------------------------------------------------------------------------------
 
-  // ---- размер работы ----------------------------------------------------------------------------------------------------------------
+  // ---- work size ----------------------------------------------------------------------------------------------------------------
 
   const mm = (v) => String(Math.round(v * 10) / 10);           // a field's value: a dot, one decimal at most
 
-  /** The dialog «Размер работы»: the width and the height in mm, linked by the picture's proportions; the side the operator typed last is
+  /** The dialog “Work size”: the width and the height in mm, linked by the picture's proportions; the side the operator typed last is
       what is sent (``resize({width_mm} | {height_mm})`` answers with the work, or null when the server refused and the error is shown).
       The size as it is closes the dialog without a request; Enter saves. */
   function sizeDialog(size, resize) {
@@ -131,8 +121,8 @@ const VectorWorkspace = (() => {
     const sideRule = Forms.QUANTITIES.workWidth;
     const width = Forms.numberInput(sideRule, {step: '0.1', value: mm(size.width), onKeydown: onEnter});
     const height = Forms.numberInput(sideRule, {step: '0.1', value: mm(size.height), onKeydown: onEnter});
-    const widthField = form.add('width', 'Ширина', width, {quantity: 'workWidth', required: true, read: () => (edited === 'width' ? Forms.readNumber(width, sideRule, {required: true}) : {ok: true, value: null})});
-    const heightField = form.add('height', 'Высота', height, {quantity: sideRule, required: true, read: () => (edited === 'height' ? Forms.readNumber(height, sideRule, {required: true}) : {ok: true, value: null})});
+    const widthField = form.add('width', 'Width', width, {quantity: 'workWidth', required: true, read: () => (edited === 'width' ? Forms.readNumber(width, sideRule, {required: true}) : {ok: true, value: null})});
+    const heightField = form.add('height', 'Height', height, {quantity: sideRule, required: true, read: () => (edited === 'height' ? Forms.readNumber(height, sideRule, {required: true}) : {ok: true, value: null})});
     width.addEventListener('input', () => { edited = 'width'; const w = parseFloat(width.value); height.value = w > 0 ? mm(w * ratio) : ''; });
     height.addEventListener('input', () => { edited = 'height'; const hh = parseFloat(height.value); width.value = hh > 0 ? mm(hh / ratio) : ''; });
     async function save(close) {
@@ -145,49 +135,47 @@ const VectorWorkspace = (() => {
       try {
         const work = await resize(edited === 'width' ? {width_mm: value} : {height_mm: value}, form);           // a refusal is told in this dialog, the boxes keep what was typed
         if (!work) { saving = false; return; }
-        toast(`Размер работы теперь ${num(work.document.size_mm.width, 1)} × ${num(work.document.size_mm.height, 1)} мм; разбиение и цвета те же`, 'ok');
+        toast(`Work size is now ${num(work.document.size_mm.width, 1)} × ${num(work.document.size_mm.height, 1)} mm; the split and colors are unchanged`, 'ok');
         close();
       } catch (e) { saving = false; throw e; }
     }
-    box = modal('Размер работы', h('div', {class: 'stack'},
-      h('p', {class: 'small muted'}, 'Одна сторона — ваше число, другая — по пропорциям картинки. Области, цвета, надписи и фотозоны остаются на своих '
-        + 'местах, разбиение не пересчитывается; шаг можно отменить (Ctrl+Z).'),
+    box = modal('Work size', h('div', {class: 'stack'},
+      h('p', {class: 'small muted'}, 'One side uses your value and the other follows the image proportions. Regions, colors, lettering, and photo zones stay in their '
+        + 'positions; the split is not recalculated. You can undo this change (Ctrl+Z).'),
       h('div', {class: 'toolbar'}, widthField, heightField), form.error), [
-      {label: 'Отмена', run: (m) => m.close()}, {label: 'Изменить размер', cls: 'primary', run: (m) => save(m.close)}]);
+      {label: 'Cancel', run: (m) => m.close()}, {label: 'Resize', cls: 'primary', run: (m) => save(m.close)}]);
     if (width.select) width.select();
   }
 
-  /** Шапка работы: название и сводка, «Размер…» (только с ``actions.resize``), «Сделать копию», план гравировки и «Файл LightBurn»
-      (открывает вкладку «Файл»). */
+  /** Work heading, size, copy, plan, and LightBurn file actions. */
   function header(j, actions) {
     const title = h('div', {class: 'vw-work-title'});
     let current = j.document.size_mm;
-    const size = actions.resize ? btn('Размер…', () => sizeDialog(current, actions.resize), 'btn-small vw-size') : null;
-    const copy = btn('Сделать копию', async (ev) => {
+    const size = actions.resize ? btn('Size…', () => sizeDialog(current, actions.resize), 'btn-small vw-size') : null;
+    const copy = btn('Make a copy', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(`/vector/${j.id}/copy`, {}); toast('Копия создана и открыта: эта работа осталась как была', 'ok'); go('/vector?plan=' + made.id); }
+      try { const made = await post(`/vector/${j.id}/copy`, {}); toast('Copy created and opened; this work is unchanged', 'ok'); go('/vector?plan=' + made.id); }
       catch (e) { fail(e); self.disabled = false; }
     });
-    const el = h('header', {class: 'vw-work-head'}, h('a', {class: 'btn btn-small', href: '#/vector'}, '← Мои работы'), title, h('span', {class: 'spacer'}),
-      h('a', {class: 'btn btn-small', href: '#/plans/' + j.id}, 'План гравировки'), copy, btn('Файл LightBurn', actions.file, 'primary'));
+    const el = h('header', {class: 'vw-work-head'}, h('a', {class: 'btn btn-small', href: '#/vector'}, '← My works'), title, h('span', {class: 'spacer'}),
+      h('a', {class: 'btn btn-small', href: '#/plans/' + j.id}, 'Engraving plan'), copy, btn('LightBurn file', actions.file, 'primary'));
     function update(next) {
       current = next.document.size_mm;
       const pencil = renameButton(next.id, next.name, (stored) => (actions.renamed ? actions.renamed(stored) : update({...next, name: stored})));
-      fill(title, h('p', {class: 'small muted'}, 'Векторная работа'), h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
-        h('p', {class: 'sub'}, `${num(current.width, 1)} × ${num(current.height, 1)} мм`, size ? [' ', size] : null,
-          ` · разбиение № ${next.document.version} · слоёв ${next.layers.length + (next.zones || []).length} из ${next.layer_cap}`
-          + ((next.zones || []).length ? `, из них фотозон ${next.zones.length}` : '')));
+      fill(title, h('p', {class: 'small muted'}, 'Vector work'), h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
+        h('p', {class: 'sub'}, `${num(current.width, 1)} × ${num(current.height, 1)} mm`, size ? [' ', size] : null,
+          ` · split #${next.document.version} · layers ${next.layers.length + (next.zones || []).length} of ${next.layer_cap}`
+          + ((next.zones || []).length ? `, including ${next.zones.length} photo zones` : '')));
     }
     update(j);
     return {el, update};
   }
 
-  /** Три колонки в один экран: вкладки слева, картинка редактора посередине, его панель справа (``editor.el`` ложится в сетку
-      обеими частями). */
+  /** Three columns: tabs, editor image, and editor panel. */
   function frame({head, items, editor, initial}) {
-    const box = App.tabs(items, {initial, remember: TAB_KEY, label: 'Разделы работы', prefix: 'vw-tab'});
-    const left = h('aside', {class: 'vw-left', 'aria-label': 'Настройки работы'}, box.list, h('div', {class: 'vw-panels'}, box.panels));
+    const box = App.tabs(items, {initial, remember: TAB_KEY, label: 'Work sections', prefix: 'vw-tab'});
+    const left = h('aside', {class: 'vw-left', 'aria-label': 'Work settings'}, box.list, h('div', {class: 'vw-panels'}, box.panels));
     return {el: h('div', {class: 'vw-work workspace'}, head, h('div', {class: 'vw-work-body'}, left, editor.el)), select: box.select};
   }
 
