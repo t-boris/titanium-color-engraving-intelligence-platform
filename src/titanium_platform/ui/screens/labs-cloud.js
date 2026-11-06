@@ -1,10 +1,4 @@
-/* Облако лабораторий (feature electron, REQ-086, REQ-087, DEC-058) — части экрана «Лаборатории», которые говорят с облаком через локальный
-   API (/api/cloud): вход и выход (страница входа открывается в новом окне, приложение ждёт ответа /api/cloud/account), блок «Облако» на
-   «Моей лаборатории» (публикация выпуска с той же подготовкой, что и в файл; незавершённая публикация продолжается тем же ключом; своя
-   лаборатория в облаке с выпусками, приглашениями и участниками), вкладка «Каталог лабораторий» (открытые без входа, закрытые — по
-   приглашению; «Подключить» ведёт в ту же полосу хода, что и файл) и проверка обновлений подключённых из облака лабораторий. Всё, что
-   пришло из облака (названия, авторы, ссылки, учётные записи), показывается только текстом (узлы h()). labs.js подключает модуль через
-   LabsCloud.install(...) со своими помощниками: полоса хода задачи, тело подготовки публикации, названия условий, окно различий. */
+/* Laboratory cloud sign-in, publishing, invitations, catalogue, and update checks. */
 'use strict';
 (() => {
   const {h, fill, btn, field, link, pill, get, post, del, toast, fail, confirmBox, facts, table} = App;
@@ -14,10 +8,10 @@
   const STATE = {reserved: 'reserved', exported: 'release saved', uploading: 'uploading', finalized: 'published', failed: 'incomplete'};
   const PUBLISH_PHASE = {waiting: 'waiting', reserving: 'reserving in the cloud', exporting: 'saving release', uploading: 'uploading to the cloud',
     finalizing: 'finishing', done: 'published', failed: 'not published', cancelled: 'canceled'};
-  const UPDATE_CHECKS = {manual: 'по кнопке', auto: 'автоматически (если разрешено на экране «Сеть»)'};
+  const UPDATE_CHECKS = {manual: 'manual', auto: 'automatic (when enabled on the Network screen)'};
   let shared = null;                 // labs.js: {followJob, previewBody, countsText, termsName, differencesDialog, mb}
   const accountText = (a) => (a ? [a.name, a.email].filter(Boolean).join(' · ') : '');
-  const releaseLine = (r) => `№ ${r.number} от ${day(r.created_at)} · ${short(r.content_sha256)}`;
+  const releaseLine = (r) => `#${r.number} from ${day(r.created_at)} · ${short(r.content_sha256)}`;
   // the orders of the short lists (DEC-090): by an ISO date, the newest or the oldest first
   const newest = (at) => (p, q) => String(at(q) || '').localeCompare(String(at(p) || ''));
   const oldest = (at) => (p, q) => String(at(p) || '').localeCompare(String(at(q) || ''));
@@ -80,7 +74,7 @@
       h('span', {class: 'small muted'}, `Cloud: ${own.api_url}`), h('span', {class: 'spacer'}), out);
   }
 
-  // ---- «Облако» on «Моя лаборатория» ----------------------------------------------------------------------------------------------
+  // ---- cloud on My laboratory ----------------------------------------------------------------------------------------------
 
   function publishBlock(own, terms, reload) {
     const termsSelect = h('select', {}, terms.map((t) => h('option', {value: t.id}, `${shared.termsName(t)} — ${(t.summary && t.summary.en) || ''}`)));
@@ -128,59 +122,59 @@
 
   function invitationsBlock(own, reload) {
     const made = h('div', {});
-    const invite = btn('Создать приглашение', async (ev) => {
+    const invite = btn('Create invitation', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try {
         const inv = await post('/cloud/invitations', {});
-        fill(made, h('p', {class: 'alert ok stack'}, h('span', {}, `Приглашение создано, действует до ${when(inv.expires_at)}. Передайте ссылку получателю: она показывается только сейчас.`),
+        fill(made, h('p', {class: 'alert ok stack'}, h('span', {}, `Invitation created, valid until ${when(inv.expires_at)}. Give the link to the recipient; it is shown only now.`),
           h('code', {class: 'cloud-link'}, inv.link)));
-        toast('Приглашение создано', 'ok');
+        toast('Invitation created', 'ok');
       } catch (e) { fail(e); } finally { self.disabled = false; }
     }, 'btn-small');
     // every invitation stays listed (accepted, revoked or waiting) and members come and go: both are short lists, the newest first
     const state = (i) => (i.revoked_at ? 'revoked' : i.accepted_by ? 'accepted' : 'waiting');
     const invitations = own.invitations.length ? App.list({id: 'cloud-invitations', items: own.invitations, key: (i) => i.id,
-      row: (i) => [h('span', {}, when(i.created_at)), h('span', {class: 'muted small'}, `действует до ${when(i.expires_at)}`),
-        i.revoked_at ? pill('отозвано', 'bad') : i.accepted_by ? [pill('принято', 'ok'), h('span', {class: 'small cloud-account lst-text'}, i.accepted_by)] : pill('ждёт')],
-      actions: (i) => [i.revoked_at || i.accepted_by ? null : btn('Отозвать', () => confirmBox('Отозвать приглашение?', 'Ссылка перестанет действовать.', 'Отозвать',
-        async () => { await del(`/cloud/invitations/${encodeURIComponent(i.id)}`); toast('Приглашение отозвано', 'ok'); reload(); }), 'danger btn-small')],
-      filters: [{key: 'state', label: 'Состояние приглашения', options: [['waiting', 'ждут'], ['accepted', 'приняты'], ['revoked', 'отозваны']], test: (i, v) => state(i) === v}],
-      sorts: [['new', 'Сначала новые', newest((i) => i.created_at)], ['old', 'Сначала старые', oldest((i) => i.created_at)]]}).el
-      : h('p', {class: 'muted'}, 'Приглашений нет');
+      row: (i) => [h('span', {}, when(i.created_at)), h('span', {class: 'muted small'}, `valid until ${when(i.expires_at)}`),
+        i.revoked_at ? pill('revoked', 'bad') : i.accepted_by ? [pill('accepted', 'ok'), h('span', {class: 'small cloud-account lst-text'}, i.accepted_by)] : pill('waiting')],
+      actions: (i) => [i.revoked_at || i.accepted_by ? null : btn('Revoke', () => confirmBox('Revoke invitation?', 'The link will stop working.', 'Revoke',
+        async () => { await del(`/cloud/invitations/${encodeURIComponent(i.id)}`); toast('Invitation revoked', 'ok'); reload(); }), 'danger btn-small')],
+      filters: [{key: 'state', label: 'Invitation status', options: [['waiting', 'waiting'], ['accepted', 'accepted'], ['revoked', 'revoked']], test: (i, v) => state(i) === v}],
+      sorts: [['new', 'Newest first', newest((i) => i.created_at)], ['old', 'Oldest first', oldest((i) => i.created_at)]]}).el
+      : h('p', {class: 'muted'}, 'No invitations');
     const members = own.members.length ? App.list({id: 'cloud-members', items: own.members, key: (m) => m.account_id,
-      row: (m) => [h('span', {class: 'cloud-account lst-text'}, m.account_id), h('span', {class: 'muted small'}, `с ${when(m.created_at)}`)],
-      actions: (m) => [btn('Исключить', () => confirmBox('Исключить участника?', 'Он перестанет видеть закрытую лабораторию и скачивать её выпуски; то, что он уже подключил, у него остаётся.',
-        'Исключить', async () => { await del(`/cloud/members/${encodeURIComponent(m.account_id)}`); toast('Участник исключён', 'ok'); reload(); }), 'danger btn-small')],
+      row: (m) => [h('span', {class: 'cloud-account lst-text'}, m.account_id), h('span', {class: 'muted small'}, `since ${when(m.created_at)}`)],
+      actions: (m) => [btn('Remove', () => confirmBox('Remove member?', 'They will lose access to the private laboratory and its releases; releases already connected remain with them.',
+        'Remove', async () => { await del(`/cloud/members/${encodeURIComponent(m.account_id)}`); toast('Member removed', 'ok'); reload(); }), 'danger btn-small')],
       search: (m) => m.account_id,
-      sorts: [['new', 'Сначала новые', newest((m) => m.created_at)], ['old', 'Сначала старые', oldest((m) => m.created_at)]]}).el
-      : h('p', {class: 'muted'}, 'Участников нет');
-    return h('div', {class: 'stack'}, h('h4', {}, 'Приглашения и участники'),
-      h('p', {class: 'small muted'}, own.lab.visibility === 'private' ? 'Закрытую лабораторию видят только приглашённые: ссылка приглашения действует один раз и ограниченное время.'
-        : 'Лаборатория открытая: её видят все и без приглашения. Приглашение всё же можно создать — так лаборатория появится у получателя среди его.'),
+      sorts: [['new', 'Newest first', newest((m) => m.created_at)], ['old', 'Oldest first', oldest((m) => m.created_at)]]}).el
+      : h('p', {class: 'muted'}, 'No members');
+    return h('div', {class: 'stack'}, h('h4', {}, 'Invitations and members'),
+      h('p', {class: 'small muted'}, own.lab.visibility === 'private' ? 'Only invitees can see a private laboratory. An invitation link is single-use and time-limited.'
+        : 'A public laboratory is visible without an invitation. An invitation can still add it to the recipient’s laboratories.'),
       h('div', {class: 'row'}, invite), made,
-      h('p', {class: 'small'}, h('strong', {}, 'Приглашения')), invitations,
-      h('p', {class: 'small'}, h('strong', {}, 'Участники')), members);
+      h('p', {class: 'small'}, h('strong', {}, 'Invitations')), invitations,
+      h('p', {class: 'small'}, h('strong', {}, 'Members')), members);
   }
 
   function labBlock(own, reload) {
     const lab = own.lab;
-    return h('div', {class: 'stack'}, h('h4', {}, 'Лаборатория в облаке: ', h('span', {class: 'lab-name'}, lab.name), ' ', pill(VISIBILITY[lab.visibility] || lab.visibility)),
+    return h('div', {class: 'stack'}, h('h4', {}, 'Laboratory in cloud: ', h('span', {class: 'lab-name'}, lab.name), ' ', pill(VISIBILITY[lab.visibility] || lab.visibility)),
       own.releases.length ? App.list({id: 'cloud-releases', items: own.releases, key: (r) => r.id || r.number,
-        row: (r) => [h('span', {}, `№ ${r.number}`), h('span', {class: 'muted'}, when(r.published_at)), h('span', {class: 'lst-text small'}, shared.countsText(r.counts)),
+        row: (r) => [h('span', {}, `#${r.number}`), h('span', {class: 'muted'}, when(r.published_at)), h('span', {class: 'lst-text small'}, shared.countsText(r.counts)),
           h('span', {class: 'muted small'}, shared.termsName(r.usage_terms)), h('span', {class: 'muted small'}, shared.mb(r.byte_size))],
-        sorts: [['new', 'Сначала новые', (p, q) => q.number - p.number], ['old', 'Сначала старые', (p, q) => p.number - q.number]]}).el
-        : h('p', {class: 'muted'}, 'Выпусков в облаке ещё нет'),
+        sorts: [['new', 'Newest first', (p, q) => q.number - p.number], ['old', 'Oldest first', (p, q) => p.number - q.number]]}).el
+        : h('p', {class: 'muted'}, 'No releases in the cloud yet'),
       invitationsBlock(own, reload));
   }
 
   function publicationsTable(list) {
     const rows = list.filter((p) => p.state !== 'finalized').map((p) => [when(p.created_at), STATE[p.state] || p.state, p.release_number == null ? '—' : String(p.release_number),
       p.error ? I18N.tr(p.error) : '—']);
-    return rows.length ? h('details', {class: 'small'}, h('summary', {}, 'Незавершённые и неудавшиеся публикации'), table(['Начата', 'Состояние', '№', 'Причина'], rows, '', true)) : null;
+    return rows.length ? h('details', {class: 'small'}, h('summary', {}, 'Incomplete and failed publications'), table(['Started', 'Status', '#', 'Reason'], rows, '', true)) : null;
   }
 
-  /** The «Облако» card of «Моя лаборатория»: /cloud/own is asked here, apart from /labs/own, so that the cloud's silence never hides the rest. */
+  /** The cloud card of My laboratory: /cloud/own is asked here, apart from /labs/own, so that the cloud's silence never hides the rest. */
   async function ownCard(terms, reload) {
     const el = h('div', {class: 'card stack cloud-own'}, h('h3', {}, 'Laboratory cloud'));
     let own;
@@ -200,7 +194,7 @@
     return fill(el, parts);
   }
 
-  // ---- «Каталог лабораторий» -------------------------------------------------------------------------------------------------------
+  // ---- laboratory catalogue -------------------------------------------------------------------------------------------------------
 
   function connectButton(latest, connected, label, progress, reload) {
     return btn(label, async (ev) => {
@@ -223,56 +217,56 @@
   function labDetails(lab) {
     const latest = lab.latest_release, c = lab.connected;
     return h('div', {class: 'stack'},
-      facts([['Автор', lab.author], ['Описание', lab.description], ['Ссылка', lab.url ? h('span', {class: 'lab-url'}, lab.url) : null],
-        ['Выпуск', latest ? releaseLine(latest) : 'выпусков ещё нет'], ['Содержимое', latest ? shared.countsText(latest.counts) : null],
-        ['Условия', latest ? shared.termsName(latest.usage_terms) : null], ['Размер', latest ? shared.mb(latest.byte_size) : null],
-        ['У вас', c ? `${c.status === 'connected' ? 'подключена' : 'отключена'}${c.current_release_number == null ? '' : `, выпуск № ${c.current_release_number}`}` : null]]),
-      lab.own ? h('p', {class: 'small muted'}, 'Результаты этой лаборатории уже здесь: это выпуски вашей мастерской.') : null);
+      facts([['Author', lab.author], ['Description', lab.description], ['Link', lab.url ? h('span', {class: 'lab-url'}, lab.url) : null],
+        ['Release', latest ? releaseLine(latest) : 'no releases yet'], ['Contents', latest ? shared.countsText(latest.counts) : null],
+        ['Terms', latest ? shared.termsName(latest.usage_terms) : null], ['Size', latest ? shared.mb(latest.byte_size) : null],
+        ['Your connection', c ? `${c.status === 'connected' ? 'connected' : 'disconnected'}${c.current_release_number == null ? '' : `, release #${c.current_release_number}`}` : null]]),
+      lab.own ? h('p', {class: 'small muted'}, 'This laboratory’s results are already here: they are releases from your workshop.') : null);
   }
 
-  /** The catalogue, a laboratory a line (name, visibility, whether it is the own one or connected here, its latest release), «Подключить»
-      (and «Открыть» when it is connected) at the end; a connection goes into ``progress``, which outlives the redraw after it. */
+  /** The catalogue, a laboratory a line (name, visibility, whether it is the own one or connected here, its latest release), Connect
+      (and Open when it is connected) at the end; a connection goes into ``progress``, which outlives the redraw after it. */
   function catalogueList(labs, progress, reload) {
     return App.list({id: 'labs-catalogue', items: labs, key: (lab) => lab.id,
       row: (lab) => {
         const latest = lab.latest_release, c = lab.connected;
-        return [h('span', {class: 'lab-name lst-text'}, lab.name), pill(VISIBILITY[lab.visibility] || lab.visibility), lab.own ? pill('ваша лаборатория', 'ok') : null,
-          c ? pill(c.status === 'connected' ? 'подключена' : 'отключена', c.status === 'connected' ? 'ok' : 'warn') : null, c && c.newer ? pill('есть новый выпуск', 'warn') : null,
-          h('span', {class: 'muted small'}, latest ? releaseLine(latest) : 'выпусков ещё нет')];
+        return [h('span', {class: 'lab-name lst-text'}, lab.name), pill(VISIBILITY[lab.visibility] || lab.visibility), lab.own ? pill('your laboratory', 'ok') : null,
+          c ? pill(c.status === 'connected' ? 'connected' : 'disconnected', c.status === 'connected' ? 'ok' : 'warn') : null, c && c.newer ? pill('new release available', 'warn') : null,
+          h('span', {class: 'muted small'}, latest ? releaseLine(latest) : 'no releases yet')];
       },
       details: labDetails,
       actions: (lab) => {
         const latest = lab.latest_release, c = lab.connected;
         if (!latest || lab.own) return [];
         return [connectButton(latest, c, c ? (c.newer ? `Review release #${latest.number}` : 'Review release again') : 'Review release', progress, reload),
-          c ? btn('Открыть', () => App.go(`/labs?tab=sources&source=${c.source_id}`), 'btn-small') : null];
+          c ? btn('Open', () => App.go(`/labs?tab=sources&source=${c.source_id}`), 'btn-small') : null];
       },
       search: (lab) => [lab.name, lab.author, lab.description].filter(Boolean).join(' '),
-      filters: [{key: 'here', label: 'У вас', options: [['connected', 'подключены'], ['new', 'не подключены']],
+      filters: [{key: 'here', label: 'Your connection', options: [['connected', 'connected'], ['new', 'not connected']],
         test: (lab, v) => (v === 'connected' ? !!lab.connected : !lab.connected && !lab.own)},
-      {key: 'visibility', label: 'Видимость', options: Object.entries(VISIBILITY), test: (lab, v) => lab.visibility === v}],
-      sorts: [['catalogue', 'Как в каталоге'], ['name', 'По названию', (p, q) => String(p.name).localeCompare(String(q.name), 'ru')],
-        ['recent', 'Сначала свежие выпуски', newest((lab) => (lab.latest_release || {}).created_at)]]}).el;
+      {key: 'visibility', label: 'Visibility', options: Object.entries(VISIBILITY), test: (lab, v) => lab.visibility === v}],
+      sorts: [['catalogue', 'Catalogue order'], ['name', 'By name', (p, q) => String(p.name).localeCompare(String(q.name), 'en')],
+        ['recent', 'Newest releases first', newest((lab) => (lab.latest_release || {}).created_at)]]}).el;
   }
 
   function acceptBlock(signedIn, reload) {
     const form = Forms.create();
-    const link = form.add('link', 'Ссылка приглашения', h('input', {placeholder: 'ссылка приглашения'}), {required: true, raw: true,
-      help: 'ссылку передал владелец закрытой лаборатории'});
-    const accept = btn('Принять приглашение', async (ev) => {
+    const link = form.add('link', 'Invitation link', h('input', {placeholder: 'invitation link'}), {required: true, raw: true,
+      help: 'link provided by the private laboratory owner'});
+    const accept = btn('Accept invitation', async (ev) => {
       const self = ev.currentTarget;
       const v = form.collect();
       if (!v) return;
       self.disabled = true;
       try {
         const got = await post('/cloud/invitations/accept', {link: v.link});
-        toast(`Приглашение принято: ${got.lab.name}`, 'ok');
+        toast(`Invitation accepted: ${got.lab.name}`, 'ok');
         reload();
       } catch (e) { form.fail(e); } finally { self.disabled = false; }
     }, 'btn-small');
-    return h('div', {class: 'card stack cloud-accept'}, h('h3', {}, 'Закрытые лаборатории'),
-      h('p', {class: 'small muted'}, signedIn ? 'Закрытая лаборатория появляется в каталоге после приглашения: вставьте ссылку, которую передал её владелец.'
-        : 'Чтобы видеть закрытые лаборатории и принимать приглашения, войдите в облако на вкладке «Моя лаборатория».'),
+    return h('div', {class: 'card stack cloud-accept'}, h('h3', {}, 'Private laboratories'),
+      h('p', {class: 'small muted'}, signedIn ? 'A private laboratory appears in the catalogue after an invitation. Paste the link provided by its owner.'
+        : 'To see private laboratories and accept invitations, sign in to the cloud on the My laboratory tab.'),
       signedIn ? h('div', {class: 'toolbar'}, link, accept) : null, signedIn ? form.error : null);
   }
 
@@ -281,10 +275,10 @@
     const progress = h('div', {class: 'stack cloud-progress', hidden: true});        // the same node in every redraw: a connection's end stays shown
     async function show() {
       let cat;
-      try { cat = await get('/cloud/catalogue'); } catch (e) { return fill(el, h('div', {class: 'card'}, h('p', {class: 'alert bad', role: 'alert'}, e.message), btn('Повторить', show))); }
-      fill(el, h('p', {class: 'small muted'}, `Облако: ${cat.api_url}` + (cat.signed_in ? '' : ' · без входа показываются только открытые лаборатории')),
+      try { cat = await get('/cloud/catalogue'); } catch (e) { return fill(el, h('div', {class: 'card'}, h('p', {class: 'alert bad', role: 'alert'}, e.message), btn('Retry', show))); }
+      fill(el, h('p', {class: 'small muted'}, `Cloud: ${cat.api_url}` + (cat.signed_in ? '' : ' · only public laboratories are shown while signed out')),
         progress, cat.labs.length ? catalogueList(cat.labs, progress, show)
-          : h('div', {class: 'card empty'}, h('h3', {}, 'В каталоге пока нет лабораторий'), h('p', {class: 'muted'}, 'Опубликованные выпуски появятся здесь; закрытые лаборатории — после приглашения.')),
+          : h('div', {class: 'card empty'}, h('h3', {}, 'No laboratories in the catalogue yet'), h('p', {class: 'muted'}, 'Published releases appear here; private laboratories appear after an invitation.')),
         acceptBlock(cat.signed_in, show));
     }
     await show();
@@ -294,31 +288,31 @@
   // ---- updates of the laboratories connected from the cloud --------------------------------------------------------------------------
 
   function resultsList(results, reload) {
-    if (!results.length) return h('p', {class: 'muted small'}, 'Лабораторий из облака нет: проверять нечего.');
+    if (!results.length) return h('p', {class: 'muted small'}, 'No cloud laboratories to check.');
     return h('ul', {class: 'stack small cloud-updates'}, results.map((r) => {
       const progress = h('div', {class: 'stack', hidden: true});
-      const text = r.error ? h('span', {class: 'bad'}, I18N.tr(r.error)) : !r.found ? 'в облаке больше не значится'
-        : r.newer ? `новый выпуск № ${r.latest.number} от ${day(r.latest.created_at)} · ${shared.countsText(r.latest.counts)}`
-          : `новее нет${r.current_release_number == null ? '' : ` (текущий № ${r.current_release_number})`}`;
+      const text = r.error ? h('span', {class: 'bad'}, I18N.tr(r.error)) : !r.found ? 'no longer listed in the cloud'
+        : r.newer ? `new release #${r.latest.number} from ${day(r.latest.created_at)} · ${shared.countsText(r.latest.counts)}`
+          : `no newer release${r.current_release_number == null ? '' : ` (current #${r.current_release_number})`}`;
       return h('li', {class: 'stack'}, h('div', {class: 'row'}, h('span', {class: 'lab-name'}, r.name), ' — ', text,
         r.newer ? connectButton(r.latest, {source_id: r.source_id}, 'Review release', progress, reload) : null), progress);
     }));
   }
 
-  /** The card of «Подключённые лаборатории» with «Проверить обновления» (shown when a laboratory came from the cloud). */
+  /** The card of Connected laboratories with Check updates (shown when a laboratory came from the cloud). */
   function updatesCard(sources, reload) {
     const cloud = sources.filter((s) => s.origin === 'cloud');
     if (!cloud.length) return null;
     const out = h('div', {class: 'stack'});
-    const check = btn('Проверить обновления', async (ev) => {
+    const check = btn('Check updates', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try { fill(out, resultsList(await post('/cloud/updates/check', {}), reload)); }
       catch (e) { fill(out, h('p', {class: 'alert bad', role: 'alert'}, e.message)); } finally { self.disabled = false; }
     }, 'btn-small');
-    return h('div', {class: 'card stack cloud-updates-card'}, h('h3', {}, 'Обновления из облака'),
-      h('p', {class: 'small muted'}, `Лабораторий, подключённых из облака: ${cloud.length}. Проверка спрашивает облако, вышел ли новый выпуск, и ничего не подключает сама. `
-        + 'Сама по себе она идёт только у лабораторий с автоматической проверкой и только когда проверка обновлений разрешена на экране «Сеть».'),
+    return h('div', {class: 'card stack cloud-updates-card'}, h('h3', {}, 'Cloud updates'),
+      h('p', {class: 'small muted'}, `Cloud-connected laboratories: ${cloud.length}. Checking asks the cloud about new releases and does not connect anything automatically. `
+        + 'Automatic checks run only for laboratories configured for them and when update checks are enabled on the Network screen.'),
       h('div', {class: 'row'}, check), out);
   }
 
@@ -329,7 +323,7 @@
     const newer = (due || []).filter((r) => r.newer);
     return newer.length ? h('div', {class: 'alert stack cloud-auto'}, newer.map((r) => {
       const progress = h('div', {class: 'stack', hidden: true});
-      return h('div', {class: 'stack'}, h('div', {class: 'row'}, h('span', {}, 'В облаке вышел новый выпуск лаборатории «', h('span', {class: 'lab-name'}, r.name), `»: № ${r.latest.number} от ${day(r.latest.created_at)}.`),
+      return h('div', {class: 'stack'}, h('div', {class: 'row'}, h('span', {}, 'A new cloud release is available for “', h('span', {class: 'lab-name'}, r.name), `”: #${r.latest.number} from ${day(r.latest.created_at)}.`),
         connectButton(r.latest, {source_id: r.source_id}, 'Review release', progress, reload)), progress);
     })) : null;
   }
@@ -340,21 +334,21 @@
     const mode = h('select', {}, Object.entries(UPDATE_CHECKS).map(([id, name]) => h('option', {value: id}, name)));
     mode.value = card.update_checks || 'manual';
     mode.addEventListener('change', async () => {
-      try { await App.put(`/cloud/sources/${card.id}`, {update_checks: mode.value}); toast('Проверка обновлений: ' + UPDATE_CHECKS[mode.value], 'ok'); }
+      try { await App.put(`/cloud/sources/${card.id}`, {update_checks: mode.value}); toast('Update checks: ' + UPDATE_CHECKS[mode.value], 'ok'); }
       catch (e) { mode.value = card.update_checks || 'manual'; fail(e); }
     });
     const out = h('div', {class: 'stack'});
-    const check = btn('Проверить обновления', async (ev) => {
+    const check = btn('Check updates', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       try { fill(out, resultsList(await post('/cloud/updates/check', {source_id: card.id}), reload)); }
       catch (e) { fill(out, h('p', {class: 'alert bad', role: 'alert'}, e.message)); } finally { self.disabled = false; }
     }, 'btn-small');
     const last = card.last_check;
-    return h('div', {class: 'card stack cloud-source'}, h('h3', {}, 'Облако'),
-      h('p', {class: 'small muted'}, `Лаборатория подключена из облака: ${card.url || '—'}. `
-        + (card.last_checked_at ? `Последняя проверка ${when(card.last_checked_at)}: ${last && last.newer ? `есть новый выпуск № ${last.latest.number}` : 'новее нет'}.` : 'Обновления ещё не проверялись.')),
-      h('div', {class: 'row'}, check, card.status === 'connected' ? field('Проверка обновлений', mode) : null), out);
+    return h('div', {class: 'card stack cloud-source'}, h('h3', {}, 'Cloud'),
+      h('p', {class: 'small muted'}, `Laboratory connected from the cloud: ${card.url || '—'}. `
+        + (card.last_checked_at ? `Last checked ${when(card.last_checked_at)}: ${last && last.newer ? `new release #${last.latest.number} available` : 'no newer release'}.` : 'Updates have not been checked yet.')),
+      h('div', {class: 'row'}, check, card.status === 'connected' ? field('Update checks', mode) : null), out);
   }
 
   globalThis.LabsCloud = {install: (helpers) => { shared = helpers; }, ownCard, catalogueTab, updatesCard, automaticNotices, sourceCard, PUBLISH_PHASE};

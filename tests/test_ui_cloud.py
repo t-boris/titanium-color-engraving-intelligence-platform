@@ -138,13 +138,13 @@ def test_laboratory_tabs_load_on_selection_and_retry_a_failed_catalogue(tmp_path
   await tab.dispatch('click'); await tick();
   out.failed = byRole(tree, 'tabpanel')[2].textContent;
   data.routes['/api/cloud/catalogue'] = {GET: {status: 200, json: {api_url: 'https://cloud.test', signed_in: false, labs: []}}};
-  await byText(byRole(tree, 'tabpanel')[2], 'button', 'Повторить').dispatch('click'); await tick();
+  await byText(byRole(tree, 'tabpanel')[2], 'button', 'Retry').dispatch('click'); await tick();
   out.recovered = byRole(tree, 'tabpanel')[2].textContent;
   await tab.dispatch('click'); await tick();
   out.catalogueRequests = ctx.requests.filter((r) => r.path === '/api/cloud/catalogue').length;
 """)
     assert "/api/cloud/catalogue" not in out["initial"] and "/api/labs/sources" not in out["initial"]
-    assert "Повторить" in out["failed"] and "В каталоге пока нет лабораторий" in out["recovered"]
+    assert "Retry" in out["failed"] and "No laboratories in the catalogue yet" in out["recovered"]
     assert out["catalogueRequests"] == 2
 
 
@@ -326,12 +326,12 @@ def test_a_pending_publication_is_continued_or_given_up_and_the_own_laboratory_l
   out.buttons = own.querySelectorAll('button').map((b) => b.textContent);
   out.names = own.querySelectorAll('.lab-name').map((n) => [n.textContent, n.children.length]);
   out.accounts = own.querySelectorAll('.cloud-account').map((n) => [n.textContent, n.children.length]);
-  await byText(own, 'button', 'Создать приглашение').dispatch('click'); await tick();
+  await byText(own, 'button', 'Create invitation').dispatch('click'); await tick();
   out.link = [own.querySelector('.cloud-link').textContent, own.querySelector('.cloud-link').children.length];
-  await byText(own, 'button', 'Исключить').dispatch('click'); await tick();
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Исключить').dispatch('click'); await tick();
-  await byText(own, 'button', 'Отозвать').dispatch('click'); await tick();
-  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Отозвать').dispatch('click'); await tick();
+  await byText(own, 'button', 'Remove').dispatch('click'); await tick();
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Remove').dispatch('click'); await tick();
+  await byText(own, 'button', 'Revoke').dispatch('click'); await tick();
+  await byText(ctx.document.body.querySelector('.modal'), 'button', 'Revoke').dispatch('click'); await tick();
   await byText(own, 'button', 'Abandon publication').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = dialog.textContent;
@@ -377,14 +377,14 @@ def test_the_catalogue_shows_cards_connects_from_the_cloud_into_the_progress_bar
   out.dialog = dialog ? dialog.textContent : null;
   const accept = panel.querySelector('.cloud-accept');
   accept.querySelector('input').value = 'https://cloud.test/invitations/tok-7';
-  await byText(accept, 'button', 'Принять приглашение').dispatch('click'); await tick();
+  await byText(accept, 'button', 'Accept invitation').dispatch('click'); await tick();
   out.sent = sent();
 """)
     assert out["hidden"] == [True, True, False]
     assert out["cards"][0] == ["Лаборатория <b>Север</b>", 0, ["Public"], ["Review release"]]
-    assert out["cards"][1][2] == ["Public", "подключена", "есть новый выпуск"] and out["cards"][1][3] == ["Review release #2", "Открыть"]
-    assert out["cards"][2] == ["Own lab", 0, ["Public", "ваша лаборатория"], []]
-    assert "Автор <i>Н</i>" in out["first"] and "<script>alert(1)</script>" in out["first"] and "№ 2 от 2026-10-23 · abcdef012345" in out["first"]
+    assert out["cards"][1][2] == ["Public", "connected", "new release available"] and out["cards"][1][3] == ["Review release #2", "Open"]
+    assert out["cards"][2] == ["Own lab", 0, ["Public", "your laboratory"], []]
+    assert "Автор <i>Н</i>" in out["first"] and "<script>alert(1)</script>" in out["first"] and "#2 from 2026-10-23 · abcdef012345" in out["first"]
     assert "измерений: 40 · установок: 2" in out["first"] and "CC BY 4.0" in out["first"] and "2,0 МБ" in out["first"]
     assert out["beforeConfirm"] == ["/api/cloud/releases/r-9/review"] and all(x in out["review"] for x in ("Fiber 60", "A. Author", "Commercial use", "a" * 64))
     assert "Лаборатория подключена" in out["finished"]
@@ -428,7 +428,7 @@ def test_connected_cloud_laboratories_are_checked_for_updates_by_the_button_and_
   out.auto = panel.querySelector('.cloud-auto').textContent;
   const updates = panel.querySelector('.cloud-updates-card');
   out.card = updates.textContent;
-  await byText(updates, 'button', 'Проверить обновления').dispatch('click'); await tick();
+  await byText(updates, 'button', 'Check updates').dispatch('click'); await tick();
   out.checked = updates.querySelector('.cloud-updates').textContent;
   await byText(updates.querySelector('.cloud-updates'), 'button', 'Review release').dispatch('click'); await tick(); await tick();
   await byText(updates.querySelector('.lab-inspect'), 'button', 'Connect laboratory').dispatch('click'); await tick(); await tick();
@@ -443,11 +443,11 @@ def test_connected_cloud_laboratories_are_checked_for_updates_by_the_button_and_
   out.sent = sent();
   out.automatic = ctx.requests.filter((r) => r.path.endsWith('/updates/automatic')).length;
 """)
-    assert "В облаке вышел новый выпуск лаборатории «Лаборатория <b>Север</b>»: № 2 от 2026-10-23." in out["auto"]
-    assert "Лабораторий, подключённых из облака: 1" in out["card"]
-    assert "Лаборатория <b>Север</b> — новый выпуск № 2 от 2026-10-23 · измерений: 40" in out["checked"]
+    assert "A new cloud release is available for “Лаборатория <b>Север</b>”: #2 from 2026-10-23." in out["auto"]
+    assert "Cloud-connected laboratories: 1" in out["card"]
+    assert "Лаборатория <b>Север</b> — new release #2 from 2026-10-23 · измерений: 40" in out["checked"]
     assert "Различия выпуска abcdef012345" in out["dialog"]
-    assert "Лаборатория подключена из облака: https://cloud.test/labs/lab-1" in out["one"] and "Обновления ещё не проверялись" in out["one"] and out["mode"] == "manual"
+    assert "Laboratory connected from the cloud: https://cloud.test/labs/lab-1" in out["one"] and "Updates have not been checked yet" in out["one"] and out["mode"] == "manual"
     assert out["sent"] == [["POST", "/api/cloud/updates/check", {}], ["POST", "/api/cloud/releases/r-9/review", {}],
                            ["POST", "/api/cloud/reviews/review-1/connect", {}], ["PUT", "/api/cloud/sources/4", {"update_checks": "auto"}]]
     assert out["automatic"] == 2                                                                                        # asked when the list is drawn, and again after the connection
@@ -495,10 +495,10 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
   out.written = [written.querySelectorAll('.lst-row').length, written.querySelector('.lst-count').textContent, lines(written)[0],
     written.querySelectorAll('.lst-act')[0].querySelector('a').getAttribute('href'), written.querySelectorAll('.lst-chip').map((c) => c.textContent)];
   const cloud = mine.querySelector('.cloud-own');
-  out.cloudReleases = lines(cloud.querySelectorAll('.lst')[0]).map((x) => x.slice(0, 3));
+  out.cloudReleases = lines(cloud.querySelectorAll('.lst')[0]).map((x) => x.slice(0, 2));
   const invited = cloud.querySelectorAll('.lst')[1];
   out.invitations = [lines(invited).map((x) => x.slice(0, 16)), invited.querySelectorAll('.lst-chip').map((c) => c.textContent),
-    invited.querySelectorAll('button').filter((b) => b.textContent === 'Отозвать').length];
+    invited.querySelectorAll('button').filter((b) => b.textContent === 'Revoke').length];
   await byText(tree, 'button', 'Подключённые лаборатории').dispatch('click'); await tick();
   out.sources = [connected.querySelectorAll('.lab-name').map((n) => n.textContent), connected.querySelectorAll('.lst-chip').map((c) => c.textContent),
     connected.querySelectorAll('.lst-act').map((a) => a.textContent)];
@@ -506,19 +506,19 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
   out.sourceDetails = connected.querySelectorAll('.lst-det').find((d) => !d.hidden).textContent;
   await byText(tree, 'button', 'Каталог лабораторий').dispatch('click'); await tick();
   out.catalogue = catalogue.querySelectorAll('.lst-chip').map((c) => c.textContent);
-  await catalogue.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('не подключены')).dispatch('click'); await tick();
+  await catalogue.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('not connected')).dispatch('click'); await tick();
   out.notConnected = catalogue.querySelectorAll('.lab-name').map((n) => n.textContent);
 """)
     rows, count, first, href, chips = out["written"]
     assert (rows, count) == (20, "showing 20 of 23") and first.startswith("2026-10-23 09:00") and "облако № 20" not in first
     assert href == "/api/labs/own/releases/x-23/file" and chips == ["All · 23", "в облаке · 5", "только файлом · 18"]
-    assert out["cloudReleases"] == ["№ 3", "№ 2"]                                                              # the newest first
+    assert out["cloudReleases"] == ["#3", "#2"]                                                              # the newest first
     lines, chips, revoke = out["invitations"]
-    assert lines == ["2026-10-03 10:00", "2026-10-02 10:00", "2026-10-01 10:00"] and chips == ["All · 3", "ждут · 1", "приняты · 1", "отозваны · 1"] and revoke == 1
+    assert lines == ["2026-10-03 10:00", "2026-10-02 10:00", "2026-10-01 10:00"] and chips == ["All · 3", "waiting · 1", "accepted · 1", "revoked · 1"] and revoke == 1
     names, chips, actions = out["sources"]
     assert names == ["Альфа", "Бета", "Гамма"] and chips == ["All · 3", "подключена · 2", "отключена · 1"] and actions == ["Открыть"] * 3
     assert "подключена 2026-10-22 10:00 · выпусков на компьютере: 1" in out["sourceDetails"]
-    assert out["catalogue"] == ["All · 3", "подключены · 1", "не подключены · 1", "All · 3", "Public · 2", "Private · 1"]
+    assert out["catalogue"] == ["All · 3", "connected · 1", "not connected · 1", "All · 3", "Public · 2", "Private · 1"]
     assert out["notConnected"] == ["Лаборатория <b>Север</b>"]                                               # the own laboratory is neither
 
 
