@@ -388,7 +388,7 @@ def test_the_header_entry_names_the_panel_counts_what_runs_and_opens_and_closes_
     out = run(tmp_path, """
   const entry = Operations.entry();
   body.append(entry);
-  const read = () => [entry.textContent, entry.getAttribute('aria-expanded'), entry.getAttribute('aria-controls'), entry.getAttribute('data-state')];
+  const read = () => [entry.getAttribute('aria-label'), entry.getAttribute('aria-expanded'), entry.getAttribute('aria-controls'), entry.getAttribute('data-state')];
   out.idle = read();
   const one = Operations.begin({kind: 'upload', title: 'Photo 1', stage: 'Uploading'}), two = Operations.begin({kind: 'upload', title: 'Photo 2', stage: 'Uploading'});
   out.running = read();
@@ -404,7 +404,7 @@ def test_the_header_entry_names_the_panel_counts_what_runs_and_opens_and_closes_
   entry.remove();
   const next = Operations.entry();
   body.append(next);
-  out.next = next.textContent;
+  out.next = next.getAttribute('aria-label');
 """)
     assert out["idle"] == ["Tasks", "false", "ops-panel", "idle"]
     assert out["running"][0] == "Tasks: running 2" and out["running"][3] == "running"

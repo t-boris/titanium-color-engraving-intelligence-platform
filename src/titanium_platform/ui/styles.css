@@ -38,7 +38,10 @@ h3 {font-size:17px;font-weight:650;letter-spacing:-.2px;margin-bottom:12px}
 .brand::after {content:"";position:absolute;left:9px;top:12px;width:18px;height:18px;border:1px solid #ffffffb0;border-radius:5px;transform:rotate(-10deg)}
 .brand small {display:block;font-size:11px;font-weight:500;letter-spacing:.65px;color:#98a6bf;margin-top:2px}
 .header-actions {display:flex;align-items:center;gap:10px}
-.app-version {font-size:12px;color:#98a6bf;letter-spacing:.3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.app-version {font-size:12px;font-weight:500;color:#98a6bf;letter-spacing:.3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.header-icon-button {position:relative;align-items:center;justify-content:center;width:38px;height:38px;min-height:38px;padding:0;border-radius:12px;color:#cbd5e8}
+.header-action-icon,.header-action-icon svg {display:block;width:20px;height:20px}
+.ops-entry[data-state=attention]::after,.ops-entry[data-state=running]::after {content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:currentColor}
 .app-version:empty {display:none}
 .update-banner {position:fixed;left:50%;top:84px;transform:translateX(-50%);z-index:90;display:flex;align-items:center;gap:14px;max-width:calc(100% - 32px);
   padding:10px 12px 10px 16px;border:1px solid #465672;border-left:4px solid var(--warning);border-radius:12px;background:#151d2bf2;color:var(--text);
@@ -1509,7 +1512,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible {outline:2px sol
 
 /* 11) ux-save-feedback-p0, second pass (REQ-002, REQ-003): the task panel's entry in the page header, the empty list of the panel, the way to a result
    that ended while the person was elsewhere */
-.ops-entry {min-height:32px;padding:4px 12px;font-size:13px;white-space:nowrap}
+.ops-entry {display:inline-flex;white-space:nowrap}
 .ops-entry[data-state=attention] {border-color:var(--danger);color:var(--danger)}
 .ops-entry[data-state=running] {border-color:var(--accent)}
 .ops-empty {margin:0;color:var(--muted)}

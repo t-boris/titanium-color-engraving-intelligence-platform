@@ -169,7 +169,8 @@ const Operations = (() => {
       remembered only while they are on the page. */
   const entries = new Set();
   function entry() {
-    const button = h('button', {type: 'button', class: 'btn ops-entry', 'aria-controls': 'ops-panel', 'aria-expanded': 'false'});
+    const button = h('button', {type: 'button', class: 'btn ops-entry header-icon-button', 'aria-controls': 'ops-panel', 'aria-expanded': 'false'});
+    button.innerHTML = '<svg class="header-action-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 9 1.5 1.5L12 8m-4 6 1.5 1.5L12 13m2-3h3m-3 5h3"></path></svg>';
     button.addEventListener('click', () => {                    // the panel stands at the end of the page: the keyboard goes into it when it opens and back when it shuts
       const on = !(dock && !dock.panel.hidden);
       opener = button;
@@ -186,7 +187,9 @@ const Operations = (() => {
     const bad = items.filter((o) => o.state === 'failed').length;
     const opened = !!(dock && !dock.panel.hidden);
     for (const button of [...entries]) {
-      button.textContent = running ? `Tasks: running ${running}` : bad ? `Tasks: need attention ${bad}` : 'Tasks';
+      const label = running ? `Tasks: running ${running}` : bad ? `Tasks: need attention ${bad}` : 'Tasks';
+      button.setAttribute('aria-label', label);
+      button.title = label;
       button.setAttribute('aria-expanded', String(opened));
       button.setAttribute('data-state', bad ? 'attention' : running ? 'running' : 'idle');
     }

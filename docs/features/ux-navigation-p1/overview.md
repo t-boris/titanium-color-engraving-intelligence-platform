@@ -2,7 +2,7 @@
 type: feature
 id: ux-navigation-p1
 title: "[P1] Пять разделов и понятные ориентиры"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n8, n10, n12, n60, n61, n62, n63, n64, n65; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
+  Permissions: known
   Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Data Model: known
+  Notifications: n/a
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Нужно сократить конкурирующие входы, сохранив функции и прежние сценарии.
+  Target Users: Проверка предназначена для операторов; результаты наблюдений пока отсутствуют.
+  Primary Workflow: Выбран прототип пяти разделов с проверкой типовых задач; конкретная группировка ещё не подтверждена.
+  Permissions: Текущий интерфейс предусматривает одного пользователя без входа; изменение прав в задачу не входит.
+  Failure Scenarios: Требуется сохранить старые ссылки, историю переходов и доступность функций; реальные проверки ещё предстоят.
+  Data Model: Код разделяет меню, маршруты экранов и принадлежность разделам; изменение модели предметных данных не требуется.
+  Notifications: Новых уведомлений задача не предусматривает; сохранение полезных статусов и версии уже задано REQ-002.
+  Security: Новых механизмов безопасности или изменений доступа в рамках этой задачи нет.
+  Analytics: Исследование задаёт показатели сравнения; исходные значения и численные цели появятся после замера.
+  Dependencies: Код маршрутизатора и исследование изучены; принятие структуры зависит от проверки прототипа на операторах.
+  Acceptance Criteria: Условия проверки и сохранения поведения заданы; доказательств понятности пяти разделов пока нет. Дополнительных решений владельца продукта сейчас не требуется.
+questions_left: 0
 ---
 
 # [P1] Пять разделов и понятные ориентиры

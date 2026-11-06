@@ -2,7 +2,7 @@
 type: feature
 id: ux-photo-lettering-panels-p1
 title: "[P1] Короткие формы фотогравировки и надписей"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n26, n27; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: n/a
+  Failure Scenarios: known
+  Data Model: known
+  Notifications: n/a
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Нужно сократить одновременно видимую форму через группировку, сохранив функции и физическую модель; улучшение удобства пока не измерено.
+  Target Users: Операторы мастерской, настраивающие фотогравировку и надписи.
+  Primary Workflow: Основные поля и группы заданы; пользователь выбрал сравнение с состоянием перед последним изменением. Дополнительных продуктовых решений не требуется.
+  Permissions: Новые права доступа не требуются.
+  Failure Scenarios: Существующие проверки ввода, ошибки сохранения, защита от поздних ответов и отмена должны сохраняться при перегруппировке.
+  Data Model: Параметры фото и надписей уже существуют; их значения и семантика сохраняются.
+  Notifications: Новые уведомления не предусмотрены; существующая обратная связь сохраняется.
+  Security: Изменения доступа и передачи данных не входят в задачу.
+  Analytics: Исследование предлагает сравнение выполнения задач до и после; исходных замеров и численных целей нет. Это не препятствует спецификации формы.
+  Dependencies: Код использует PhotoPanels для фоторабот и фотозон, Lettering — для надписей; точный ввод и прямые манипуляции уже реализованы.
+  Acceptance Criteria: Точка сравнения определена, сохранение функций и проверки доступности включены в приёмку. Проверка реального интерфейса остаётся работой этапа реализации.
+questions_left: 0
 ---
 
 # [P1] Короткие формы фотогравировки и надписей

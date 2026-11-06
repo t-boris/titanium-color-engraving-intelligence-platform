@@ -64,7 +64,7 @@ def test_a_server_that_does_not_answer_leaves_the_header_without_a_version_and_w
 def test_the_label_is_small_and_hidden_while_empty_and_the_header_keeps_its_height():
     assert re.search(r"\.app-version \{font-size:12px;", CSS) and ".app-version:empty {display:none}" in CSS
     # The version and the task entry remain available after removing the static role label.
-    assert "header-actions'}, menuButton, versionTag" in ROUTER and "Operations.entry()" in ROUTER and "get('/version')" in ROUTER
+    assert "' ', versionTag, h('small'" in ROUTER and "Operations.entry()" in ROUTER and "get('/version')" in ROUTER
     assert "Researcher / workshop" not in ROUTER
 
 

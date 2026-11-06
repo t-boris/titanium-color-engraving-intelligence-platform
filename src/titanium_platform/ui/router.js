@@ -45,7 +45,7 @@ Object.assign(App, (() => {
     '<path d="M12 2v3m0 14v3M4.9 4.9 7 7m10 10 2.1 2.1M2 12h3m14 0h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="6"/><path d="m9 12 2 2 4-4"/>',
     '<path d="M2 9.5a15 15 0 0 1 20 0M5.5 13a10 10 0 0 1 13 0M9 16.5a5 5 0 0 1 6 0"/><circle cx="12" cy="20" r="1.2"/>',
     '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M3 20h18M7 13h10"/><circle cx="18" cy="6" r="2.5"/><path d="m16.5 7.5-2 2"/>',
-    '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/><path d="M15 7.5V5h2v4"/>'];
+    '<ellipse cx="9" cy="5" rx="6" ry="2.5"/><path d="M3 5v11c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5M3 10.5C3 12 5.7 13 9 13s6-1 6-2.5M15 8h3v3"/><circle cx="19" cy="13" r="2"/><path d="M15 17h3v-2"/>'];
   function icon(i) {
     const el = h('span', {class: 'nav-icon', 'aria-hidden': 'true'});
     el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + ICONS[i] + '</svg>';
@@ -136,14 +136,16 @@ Object.assign(App, (() => {
             })) : null);
         })),
       h('p', {class: 'sidebar-note'}, 'Single-user mode. All actions are available; no sign-in is required.'));
-    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Menu');
+    const menuIcon = h('span', {class: 'header-action-icon', 'aria-hidden': 'true'});
+    menuIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON + '</svg>';
+    menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu header-icon-button', 'aria-label': 'Menu', title: 'Menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, menuIcon);
     setMenu(false);
     const versionTag = h('span', {class: 'app-version', title: 'Application version'});
     showVersion(versionTag);
     return [
       h('header', {class: 'app-header'},
-        h('a', {class: 'brand', href: '#/experiments'}, 'Laser workshop', h('small', {}, 'Materials · Settings · Works')),
-        h('div', {class: 'header-actions'}, menuButton, versionTag, typeof Operations !== 'undefined' ? Operations.entry() : null)),        // task count and application version
+        h('a', {class: 'brand', href: '#/experiments'}, 'Laser workshop', ' ', versionTag, h('small', {}, 'Materials · Settings · Works')),
+        h('div', {class: 'header-actions'}, menuButton, typeof Operations !== 'undefined' ? Operations.entry() : null)),
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 
