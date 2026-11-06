@@ -237,13 +237,13 @@ def test_the_export_card_is_the_one_place_for_the_action_the_readiness_and_the_f
     ready = lifecycle("file", files=files)
     blocked = lifecycle("prepared", ready=False, blockers=[{"code": "draft"}], files=[])
     out = run(tmp_path, {"ready": ready, "blocked": blocked}, """
-  const recipe = ctx.document.createElement('div'); recipe.textContent = 'ТАБЛИЦА СЛОЁВ';
-  const card = LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', recipe, recipeLabel: 'Полный рецепт и слои (3)'});
+  const recipe = ctx.document.createElement('div'); recipe.textContent = 'LAYER TABLE';
+  const card = LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', recipe, recipeLabel: 'Complete recipe and layers (3)'});
   const button = byText(card, 'button', 'Download LightBurn');
   out.main = [button.disabled, button.className];
   out.text = card.textContent;
   out.summaries = card.querySelectorAll('summary').map((s) => s.textContent);
-  out.hasRecipe = card.querySelectorAll('details').some((d) => d.textContent.includes('ТАБЛИЦА СЛОЁВ'));
+  out.hasRecipe = card.querySelectorAll('details').some((d) => d.textContent.includes('LAYER TABLE'));
   out.fileButtons = card.querySelectorAll('button').map((b) => [b.textContent, b.disabled]);
   out.chain = card.querySelectorAll('ol').length;
   const nochain = LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'v', withChain: false});
@@ -255,7 +255,7 @@ def test_the_export_card_is_the_one_place_for_the_action_the_readiness_and_the_f
   out.requests = ctx.requests.map((r) => r.path);
 """)
     assert out["main"][0] is False and "primary" in out["main"][1].split() and "Open and run it in LightBurn when ready" in out["text"]
-    assert out["summaries"] == ["Полный рецепт и слои (3)", "Previous files (2)"] and out["hasRecipe"]
+    assert out["summaries"] == ["Complete recipe and layers (3)", "Previous files (2)"] and out["hasRecipe"]
     assert out["chain"] == 1 and out["nochain"] == 0                                         # the chain is drawn once, where the screen wants it
     assert out["stopped"] == [True, True] and out["oldSummary"] == ["Previous files"]                  # no files yet, no recipe given: the one fold
     assert ["Download", False] in out["fileButtons"] and ["Download", True] not in out["fileButtons"]      # a file whose bytes are gone has no button
@@ -357,7 +357,7 @@ def test_returning_to_a_work_goes_there_with_a_short_note_and_leaves_every_other
 
 # -- the comparison against the engraving the operator chose --------------------------------------------------------------------------
 def review(number=1, name="IMG_1.DNG", engraving="e1", at="2026-10-21T10:00:00", kind="saved", rows=3, photo=None, promise_lost=False, **over):
-    layer_rows = [{"name": f"C0{i + 1} слой", "promised_name": f"C0{i + 1}", "promised_lab": [60.0, 5.0, 10.0], "got_lab": [60.0 - i, 5.0, 10.0],
+    layer_rows = [{"name": f"C0{i + 1} layer", "promised_name": f"C0{i + 1}", "promised_lab": [60.0, 5.0, 10.0], "got_lab": [60.0 - i, 5.0, 10.0],
                    "promised_srgb": [200, 190, 180], "got_srgb": [190, 180, 170], "delta_e": 1.0 + i, "dL": -float(i), "dC": 0.0, "dh": None, "area_mm2": 100.0 * (i + 1),
                    "beyond": i > 1, "causes": []} for i in range(rows)]
     return {"engraving_id": engraving, "photo_name": name, "reviewed_at": at, "export_number": number, "approximate": kind == "reconstructed", "promise_lost": promise_lost,
@@ -406,7 +406,7 @@ def test_a_single_engraving_still_shows_which_file_it_is_compared_with_and_a_los
 
 @node
 def test_the_colour_and_the_photo_assessments_are_separate_sections_and_neither_stands_in_for_the_other(tmp_path):
-    photo = [{"name": "Фотозона 1", "zone": 1, "median_de": 2.5, "max_de": 4.0, "profile_usable": True, "tone": {"levels": 9, "steps": 10, "black_L": 20.0, "white_L": 80.0},
+    photo = [{"name": "Photo zone 1", "zone": 1, "median_de": 2.5, "max_de": 4.0, "profile_usable": True, "tone": {"levels": 9, "steps": 10, "black_L": 20.0, "white_L": 80.0},
               "changed_settings": [], "latest_export": 1, "settings": {}, "latest_settings": {}}]
     both, colour_only = review(photo=photo), review()
     out = run(tmp_path, {"both": work_view([both]), "colour": work_view([colour_only])}, """
@@ -415,7 +415,7 @@ def test_the_colour_and_the_photo_assessments_are_separate_sections_and_neither_
   out.colour = sections(VR.view(data.colour, async () => true));
 """)
     assert [label for label, _ in out["both"]] == ["Color assessment", "Photo layer assessment"]
-    assert "Matched 3 of 3 expected layers" in out["both"][0][1] and "Фотозона" not in out["both"][0][1]
+    assert "Matched 3 of 3 expected layers" in out["both"][0][1] and "Photo zone" not in out["both"][0][1]
     assert "Photo layer prediction from earlier measurements: median error 2.5 ΔE" in out["both"][1][1]
     assert [label for label, _ in out["colour"]] == ["Color assessment"]                              # no photograph layer: no empty section
 
@@ -538,7 +538,7 @@ def rule(selector: str) -> str:
 
 
 def test_the_state_words_and_the_hint_of_a_narrow_header_stay_readable_to_a_screen_reader_and_the_current_step_differs_in_more_than_colour():
-    """display:none would remove the words «выполнено / сейчас / впереди» and the hint from assistive technology; they are clipped instead."""
+    """display:none would remove the words «done / current / upcoming» and the hint from assistive technology; they are clipped instead."""
     for selector in (".lc-word {", ".vw-chain .lc-hint {"):
         assert "clip:rect(0 0 0 0)" in rule(selector) and "display:none" not in rule(selector), selector
     current = rule(".lc-step.lc-current {")

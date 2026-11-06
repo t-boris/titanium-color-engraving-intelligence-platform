@@ -64,7 +64,7 @@ def params(power=40.0, frequency=330.0, speed=833.0) -> dict:
 
 def layer(name, lab, role="test patch", **extra) -> dict:
     return {"name": name, "lab": lab, "role": role, "parameters": params(), "pixels": 1200, "delta_e_from_clean_witness": 7.5, "submeasurements": [],
-            "notes": [], "relative_appearance": "тёмный на этом фото", **extra}
+            "notes": [], "relative_appearance": "dark in this photo", **extra}
 
 
 def pair(pair_id, provisional=False, layers=2, variants=1, findings=1, **extra) -> dict:
@@ -181,7 +181,7 @@ def test_a_raw_set_shows_its_map_cautions_and_three_tabs_and_every_old_table_is_
     assert len(out["variants"]) == 3 and "V0" in out["variants"][0] and "ΔE 12.3" in out["variants"][0] and "incomplete settings" in out["variants"][1]
     assert len(out["variantOpen"]) == 1 and "Difference from the cleaned background in this photo" in out["variantOpen"][0]   # one line each, details on click
     assert out["variantLinks"] == ["#/analysis/7"]
-    assert out["layerRows"] == ["C00 · тёмный на этом фотоΔE 7.5parts 1", "C01 · тёмный на этом фотоΔE 7.5"]          # one line per layer
+    assert out["layerRows"] == ["C00 · dark in this photoΔE 7.5parts 1", "C01 · dark in this photoΔE 7.5"]          # one line per layer
     assert len(out["layerOpen"]) == 1 and "Test area" in out["layerOpen"][0] and "pixels 1200" in out["layerOpen"][0]
     assert "a note of the layer" in out["layerOpen"][0] and "L 20.0 · a 1.0 · b 0.0" in out["layerOpen"][0]
     assert len(out["parts"]) == 1 and "C00 / sub1" in out["parts"][0] and "Layer part" in out["parts"][0]   # the measured part opens with its layer
@@ -353,8 +353,8 @@ def test_the_raw_layers_are_one_page_with_the_role_filter_and_the_sorts(tmp_path
     assert out["tab"] == "All layers (26)"
     assert out["first"]["rows"] == 20 and out["first"]["count"] == "showing 20 of 26"
     assert out["first"]["chips"] == ["All · 26", "Test area · 24", "Cleaning witness · 1", "Markers and labels · 1"]
-    assert out["witness"] == ["C025 · тёмный на этом фотоCleaning witness"]                                   # the witness has no ΔE of its own
-    assert out["contrast"] == ["C024 · тёмный на этом фотоMarkers and labelsΔE 12.0", "C023 · тёмный на этом фотоΔE 11.5"]
+    assert out["witness"] == ["C025 · dark in this photoCleaning witness"]                                   # the witness has no ΔE of its own
+    assert out["contrast"] == ["C024 · dark in this photoMarkers and labelsΔE 12.0", "C023 · dark in this photoΔE 11.5"]
     assert out["light"].startswith("C025 · ")                                                                 # L 45: the lightest layer
 
 
@@ -445,7 +445,7 @@ def test_a_recipe_counted_from_its_newest_engraving_says_from_which_and_offers_t
     older ones do not count, and offers to undo the decision."""
     routes = knowledge_routes()
     record = routes["/api/knowledge/5"]["json"]
-    record["counted_from"] = {"id": 6, "kind": "older_engravings", "engraving_ids": ["e1", "e2"], "note": "старые до чистки линзы",
+    record["counted_from"] = {"id": 6, "kind": "older_engravings", "engraving_ids": ["e1", "e2"], "note": "before lens cleaning",
                               "created_at": "2026-10-25T12:00:00+00:00",
                               "kept": {"engraving_id": "e3", "title": "Big Plate", "pair_ids": [140], "when": "2026-10-24T09:00:00+00:00", "lab": [40, 2, -16]}}
     out = run(tmp_path, {**routes, "/api/exclusions/6/revoke": {"status": 200, "json": {"exclusion": {"id": 6}, "run_id": 70}}},
@@ -459,7 +459,7 @@ def test_a_recipe_counted_from_its_newest_engraving_says_from_which_and_offers_t
   out.sent = ctx.requests.filter((r) => r.path === '/api/exclusions/6/revoke').map((r) => r.method);
 """)
     assert out["line"] == ["Counts from engraving “Big Plate” dated 10/24/2026 (photos #140); older engravings excluded: 2. "
-                           "Operator decision dated 10/25/2026: “старые до чистки линзы”."]
+                           "Operator decision dated 10/25/2026: “before lens cleaning”."]
     assert out["text"].startswith("Older engravings of this recipe will count again") and out["sent"] == ["POST"]
 
 
@@ -476,5 +476,5 @@ def test_the_columns_of_the_model_page_scroll_inside_and_the_page_stacks_on_a_na
     assert re.search(r"\.lm-body \{grid-template-columns:minmax\(220px,270px\) minmax\(0,1fr\) minmax\(400px,500px\)\}", CSS)
     assert re.search(r"\.lm-stage \{flex:1;min-height:0;display:flex;flex-direction:column", CSS) and re.search(r"\.lm-plot svg \{flex:1;min-width:0;min-height:0\}", CSS)
     assert re.search(r"\.lm-alerts \{[^}]*max-height:42%;overflow:auto", CSS) and re.search(r"\.kn-body \{grid-template-columns:minmax\(340px,480px\) minmax\(0,1fr\)\}", CSS)
-    narrow = re.search(r"@media \(max-width:1100px\) \{\s*\.lm-head \{(.*?)\n\}", CSS[CSS.index("16) модель цвета"):], re.S)
+    narrow = re.search(r"@media \(max-width:1100px\) \{\s*\.lm-head \{(.*?)\n\}", CSS[CSS.index("16) one laser and lens color model"):], re.S)
     assert narrow and "flex-wrap:wrap" in narrow.group(1) and ".lm-plot {flex:none" in narrow.group(1)       # a phone scrolls the page as before

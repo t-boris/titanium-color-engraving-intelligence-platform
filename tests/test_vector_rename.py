@@ -36,11 +36,11 @@ def test_a_rename_changes_the_name_everywhere_it_is_shown(work, job):
 
 def test_the_name_is_stripped_and_any_text_is_a_name(work, job):
     c, j = work, job
-    assert rename(c, j, "   Витраж №1 — «тест»  ").json()["name"] == "Витраж №1 — «тест»"
-    assert view(c, j)["name"] == "Витраж №1 — «тест»"
-    long = "Длинное название " * 40
+    assert rename(c, j, "   Stained glass №1 — “test”  ").json()["name"] == "Stained glass №1 — “test”"
+    assert view(c, j)["name"] == "Stained glass №1 — “test”"
+    long = "Long name " * 40
     assert rename(c, j, long).json()["name"] == long.strip() and view(c, j)["name"] == long.strip()          # no cap, as at creation
-    other = create(c, name="Витраж №1 — «тест»").json()
+    other = create(c, name="Stained glass №1 — “test”").json()
     assert rename(c, other, long.strip()).status_code == 200 and [w["name"] for w in works(c)] == [long.strip()] * 2        # the same name twice is fine
 
 
@@ -88,8 +88,10 @@ def test_a_rename_without_a_name_in_the_body_is_refused_the_same_way(work, job, 
     assert r.status_code == 422 and r.json()["error"] == "give the plan a name" and view(work, job)["name"] == "Portrait"
 
 
-def test_the_message_of_a_refused_rename_is_translated_in_the_interface():
-    assert "/^give the plan a name/i" in (UI / "i18n-more.js").read_text(encoding="utf-8")
+def test_the_message_of_a_refused_rename_is_preserved_in_the_interface(tmp_path):
+    from test_i18n_coverage import run_node
+    message = "give the plan a name"
+    assert run_node(tmp_path, [message], "console.log(JSON.stringify(data.map(tr)))") == [message]
 
 
 def test_an_unknown_or_deleted_work_is_not_found_and_a_plan_of_another_kind_is_refused(work, job):
@@ -115,12 +117,12 @@ def test_a_file_exported_before_keeps_its_name_and_the_next_one_gets_the_new_nam
     c, j = work, job
     first = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
     assert first.status_code == 200 and quote("Portrait") in first.headers["content-disposition"]
-    assert rename(c, j, "Новое имя").status_code == 200
+    assert rename(c, j, "New name").status_code == 200
     assert [e["name"] for e in view(c, j)["exports"]] == ["Portrait.lbrn2"]                                  # the saved file is as it was saved
     assert c["client"].get(f"/api/vector/{j['id']}/exports/1").content == first.content
     second = c["client"].get(f"/api/vector/{j['id']}/export.lbrn2")
-    assert second.status_code == 200 and quote("Новое имя") in second.headers["content-disposition"]
-    assert [e["name"] for e in view(c, j)["exports"]] == ["Portrait.lbrn2", "Новое имя.lbrn2"]
+    assert second.status_code == 200 and quote("New name") in second.headers["content-disposition"]
+    assert [e["name"] for e in view(c, j)["exports"]] == ["Portrait.lbrn2", "New name.lbrn2"]
     assert c["client"].get(f"/api/vector/{j['id']}/exports/1").headers["content-disposition"].count(quote("Portrait")) >= 1
 
 

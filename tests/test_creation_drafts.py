@@ -15,7 +15,7 @@ from titanium_platform import creation_drafts as cd
 from titanium_platform.api.app import create_app
 from titanium_platform.db import Store
 
-STATE = {"v": 1, "step": "result", "result": "colour", "name": "Портрет", "width_mm": "62.5", "method": {"colours": 9, "detail": "fine"},
+STATE = {"v": 1, "step": "result", "result": "colour", "name": "Portrait", "width_mm": "62.5", "method": {"colours": 9, "detail": "fine"},
          "waiting": {"for": "starter_test", "result": "colour"}}
 
 
@@ -34,7 +34,7 @@ def other_photo() -> bytes:
 
 
 def make(client, picture=None, **fields):
-    data = {"flow": "new", "state": json.dumps(STATE), "name": "Портрет", **fields}
+    data = {"flow": "new", "state": json.dumps(STATE), "name": "Portrait", **fields}
     files = {"picture": ("portrait.png", picture, "image/png")} if picture is not None else None
     return client.post("/api/creation/drafts", data=data, files=files)
 
@@ -60,7 +60,7 @@ def test_a_draft_keeps_its_form_and_its_picture_and_survives_closing_the_applica
     made = make(client, picture)
     assert made.status_code == 201
     draft = made.json()
-    assert draft["status"] == "open" and draft["state"] == STATE and draft["name"] == "Портрет" and draft["flow"] == "new"
+    assert draft["status"] == "open" and draft["state"] == STATE and draft["name"] == "Portrait" and draft["flow"] == "new"
     assert draft["image"] == {"name": "portrait.png", "type": "image/png", "size": len(picture)}
     app, again = reopen(world)
     with again as client:
@@ -129,15 +129,15 @@ def test_saving_again_keeps_what_was_not_sent_and_replaces_the_picture_without_l
     draft = make(client, photo()).json()
     first = next((path / "files" / "drafts").iterdir()).name
     moved = client.put(f"/api/creation/drafts/{draft['id']}", data={"state": json.dumps({**STATE, "step": "method"})}).json()
-    assert moved["state"]["step"] == "method" and moved["name"] == "Портрет" and moved["image"]["name"] == "portrait.png"
+    assert moved["state"]["step"] == "method" and moved["name"] == "Portrait" and moved["image"]["name"] == "portrait.png"
     other = other_photo()
     swapped = client.put(f"/api/creation/drafts/{draft['id']}", files={"picture": ("grey.png", other, "image/png")}).json()
     assert swapped["image"]["name"] == "grey.png" and swapped["state"]["step"] == "method"            # the form stays, the picture is the new one
     names = [p.name for p in (path / "files" / "drafts").iterdir()]
     assert len(names) == 1 and names[0] != first
     assert client.get(f"/api/creation/drafts/{draft['id']}/picture").content == other
-    renamed = client.put(f"/api/creation/drafts/{draft['id']}", data={"name": "  Новое имя  "}).json()
-    assert renamed["name"] == "Новое имя"
+    renamed = client.put(f"/api/creation/drafts/{draft['id']}", data={"name": "  New name  "}).json()
+    assert renamed["name"] == "New name"
 
 
 def test_a_draft_without_a_picture_is_kept_and_a_picture_can_be_added_later(world):
@@ -169,7 +169,7 @@ def test_a_form_that_is_not_an_object_or_too_large_or_of_an_unknown_screen_is_re
     for state in ("[1, 2]", "not json", '"text"'):
         refused = client.post("/api/creation/drafts", data={"flow": "new", "state": state})
         assert refused.status_code == 422 and refused.json()["error"] == "the unfinished task must be an object", state
-    big = client.post("/api/creation/drafts", data={"flow": "new", "state": json.dumps({"x": "я" * cd.MAX_STATE_BYTES})})
+    big = client.post("/api/creation/drafts", data={"flow": "new", "state": json.dumps({"x": "x" * cd.MAX_STATE_BYTES})})
     assert big.status_code == 422 and big.json()["error"] == "the unfinished task holds too much text"
     unknown = client.post("/api/creation/drafts", data={"flow": "somewhere", "state": "{}"})
     assert unknown.status_code == 422 and unknown.json()["error"] == "the unfinished task belongs to an unknown creation screen"
