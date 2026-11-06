@@ -100,25 +100,25 @@ def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chose
   await tick();
   const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Measurement source');
   out.options = select.options.map((o) => [o.value, o.textContent]);
-  out.first = [select.value, tree.querySelectorAll('p').filter((p) => p.textContent.includes('Измеренных цветов заливки')).map((p) => p.textContent).pop()];
+  out.first = [select.value, tree.querySelectorAll('p').filter((p) => p.textContent.includes('Measured fill colors')).map((p) => p.textContent).pop()];
   select.value = '1'; await select.dispatch('change'); await tick();
-  out.info = tree.querySelectorAll('p').filter((p) => p.textContent.includes('Измеренных цветов заливки')).map((p) => p.textContent).pop();
+  out.info = tree.querySelectorAll('p').filter((p) => p.textContent.includes('Measured fill colors')).map((p) => p.textContent).pop();
   out.hint = select.parentNode.textContent;
   const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text);
   tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'portrait.jpg'}];
-  labelled('Название работы').firstControl().value = 'Portrait';                      // the plan's name is required (ux-save-feedback-p0, REQ-003)
-  await byText(tree, 'button', 'Создать работу').dispatch('click'); await tick();
+  labelled('Work name').firstControl().value = 'Portrait';                      // the plan's name is required (ux-save-feedback-p0, REQ-003)
+  await byText(tree, 'button', 'Create work').dispatch('click'); await tick();
   out.created = sent().filter(([, path]) => path === '/api/vector');
-  const strategy = labelled('Стратегия').firstControl();
+  const strategy = labelled('Strategy').firstControl();
   strategy.value = 'fill'; await strategy.dispatch('change'); await tick();
   out.hiddenForTrace = select.parentNode.hidden;
 """)
     assert out["options"][0] == ["", "My measurements"] and out["first"][0] == ""                                            # the own measurements, chosen
-    assert "этого лазера, линзы и титана этой марки (с любой плиты): 1" in out["first"][1]
+    assert "this laser, lens, and titanium grade (from any plate): 1" in out["first"][1]
     assert out["options"][1] == ["1", "Лаборатория <b>Север</b>: Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm (photos 12)"]
     assert len(out["options"]) == 2                                                                                          # a setup without titanium colours nothing
-    assert "лаборатории «Лаборатория <b>Север</b>» (release dated 2026-10-20 · abcdef012345; Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm): 2" in out["info"]
-    assert "без привязки к эталону: 1" in out["info"] and "the same colour on this laser is not promised" in out["info"]           # the conditions, translated
+    assert "laboratory “Лаборатория <b>Север</b>” (release dated 2026-10-20 · abcdef012345; Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm): 2" in out["info"]
+    assert "without reference: 1" in out["info"] and "the same colour on this laser is not promised" in out["info"]           # the conditions, translated
     assert "signature not verified" in out["hint"]
     [(method, path, items)] = out["created"]
     assert method == "POST" and json.loads(dict(items)["source"]) == {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}

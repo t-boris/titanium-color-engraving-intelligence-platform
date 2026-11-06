@@ -242,7 +242,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
     assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ с/см²|не оценено)", title) for _, _, title in out["palette"])
     text = out["text"]
-    for part in ("Разбиение", "Document colors", "AI", "Файл", "LightBurn file", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
+    for part in ("Segmentation", "Document colors", "AI", "File", "LightBurn file", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
                  "Исходные цвета", "вне допуска", "Показать далёкие от оригинала", "C01", "2.00 см² · областей 2 · 1 с", "№ 2", "ΔE 17.70",
                  "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Palette: 4", "on split #0", "Авто",
                  "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"):
@@ -253,7 +253,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     strip, *folds = out["details"]                                  # the first fold is the strip under the head: the path of the file and the forecast (ux-accessible-layout-p0)
     assert strip.startswith("File lifecycle and prediction")
     assert folds[0].startswith("Important regions: faces, eyes, lips") and "Color details…" in text                   # the wide table is a window
-    assert folds[1:] == ["Полный рецепт и слои (4)", "Previous files", "Параметры работы",                              # the file tab folds its long parts (the recipe and
+    assert folds[1:] == ["Full recipe and layers (4)", "Previous files", "Work details",                              # the file tab folds its long parts (the recipe and
                          "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]                                      # the files made before), the layers why their sizes matter
     assert out["renders"] == 0
 
@@ -822,9 +822,9 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert out["pics"] == [["1", "/api/vector/7/photo/1.png?v=abc", "20", "0", "20", "10"]]
     assert out["fills"] == [["rgb(205,198,182)", "rgb(205,198,182)"], ["rgba(0,0,0,0)", "none"], ["rgba(0,0,0,0)", "none"]]
     assert out["totals"].startswith("Слоёв 2 из 29 (фотозон 1)") and "Фотозона 1" in out["layerRow"] and "C02 · Grayscale · 2–29 %" in out["layerRow"]
-    assert out["file"] == ["C00 Чистка (перекрёстная заливка)вся работа · 1 мин 40 с",
-                           "C01 C01 P10-F30-V500-I0.02областей 2 · 2.00 см² · 1 мин 40 с", "C02 Фотозона 1: Grayscaleобластей 2 · 2.00 см² · 1 мин 40 с"]
-    assert "Слоёв цвета: 1, фотозон: 1 из 29" in out["text"] and "1 и фотозон 1 из 29 доступных" in out["text"]
+    assert out["file"] == ["C00 Cleaning (cross-hatch)whole work · 1 min 40 s",
+                           "C01 C01 P10-F30-V500-I0.02regions 2 · 2.00 cm² · 1 min 40 s", "C02 Photo zone 1: Grayscaleregions 2 · 2.00 cm² · 1 min 40 s"]
+    assert "Color layers: 1, photo zones: 1 of 29" in out["text"] and "1 and photo zones 1 of 29 available" in out["text"]
     assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Grayscale · 2–29 %")
     assert "20 × 10 mm · 2.00 cm² · regions 2" in out["card"] and "Measured at zone width 20 mm: 1.9–29.1 %." in out["card"]
     assert "grays matched to colors: drawing preserved. Adjust grays and contours under “Open”." in out["card"]   # a zone made before 0.23

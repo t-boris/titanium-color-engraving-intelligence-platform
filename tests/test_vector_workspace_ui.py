@@ -141,8 +141,8 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   out.editorTabs = edTabs;
 """)
     assert has_class(out["root"], "workspace") and has_class(out["root"], "vw-work")
-    assert [name for name, _ in out["first"]] == ["Разбиение", "Document colors", "AI", "Варианты", "Result", "Файл"]
-    assert out["first"] == [["Разбиение", "false"], ["Document colors", "true"], ["AI", "false"], ["Варианты", "false"], ["Result", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
+    assert [name for name, _ in out["first"]] == ["Segmentation", "Document colors", "AI", "Variants", "Result", "File"]
+    assert out["first"] == [["Segmentation", "false"], ["Document colors", "true"], ["AI", "false"], ["Variants", "false"], ["Result", "false"], ["File", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert "Vector work" in out["head"] and j["name"] in out["head"] and "Engraving plan" in out["head"] and "split #" in out["head"] and "layers " in out["head"]
@@ -335,7 +335,7 @@ def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is
 
 
 def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_title_follows_the_new_name():
-    assert "VectorWorkspace.renameButton(j.id, j.name," in VECTOR_JS and "fill(heading, 'Векторная работа · ' + stored)" in VECTOR_JS
+    assert "VectorWorkspace.renameButton(j.id, j.name," in VECTOR_JS and "fill(heading, 'Vector work · ' + stored)" in VECTOR_JS
     assert "renamed: (name) => { shown = {...shown, name}; head.update(shown); }" in VECTOR_JS                          # the photo header keeps the stored name
     assert "return {list, header, frame, renameButton};" in (UI / "screens" / "vector-workspace.js").read_text(encoding="utf-8")
     assert re.search(r"\.vw-rename \{[^}]*flex:none", CSS) and re.search(r"\.vw-name-row \{[^}]*display:flex", CSS)
@@ -463,16 +463,16 @@ def test_the_tolerance_and_the_threshold_of_a_silhouette_work_are_checked_beside
   {POSTS}
   const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {{}}).textContent === text);
   const said = (text) => labelled(text).errorText();
-  const tol = labelled('Точность контура').firstControl(), thr = labelled('Порог ΔE').firstControl();
+  const tol = labelled('Outline precision').firstControl(), thr = labelled('ΔE threshold').firstControl();
   tol.value = '-1'; await tol.dispatch('input');
-  await byText(tree, 'button', 'Применить точность').dispatch('click'); await tick();
-  out.tolerance = [posts().length, said('Точность контура'), tol.value, tol.getAttribute('aria-invalid')];
+  await byText(tree, 'button', 'Apply precision').dispatch('click'); await tick();
+  out.tolerance = [posts().length, said('Outline precision'), tol.value, tol.getAttribute('aria-invalid')];
   thr.value = ''; await thr.dispatch('input');
-  await byText(tree, 'button', 'Применить порог').dispatch('click'); await tick();
-  out.empty = [posts().length, said('Порог ΔE')];
+  await byText(tree, 'button', 'Apply threshold').dispatch('click'); await tick();
+  out.empty = [posts().length, said('ΔE threshold')];
   thr.value = '4'; await thr.dispatch('input');
-  await byText(tree, 'button', 'Применить порог').dispatch('click'); await tick(); await tick();
-  out.refused = [posts().length, thr.value, thr.getAttribute('aria-invalid'), said('Порог ΔE')];
+  await byText(tree, 'button', 'Apply threshold').dispatch('click'); await tick(); await tick();
+  out.refused = [posts().length, thr.value, thr.getAttribute('aria-invalid'), said('ΔE threshold')];
 """)
     assert out["tolerance"][0] == 0 and "Entered: -1" in out["tolerance"][1] and out["tolerance"][2:] == ["-1", "true"]
     assert out["empty"] == [0, "Complete this field"]

@@ -27,24 +27,24 @@ const byText = (root, tag, text) => root.querySelectorAll(tag).find((el) => el.t
   const out = {};
   const tree = await ctx.__screens.vector.render({query: {new: '1', classic: '1'}});
   await tick(); await tick();
-  const field = tree.querySelectorAll('div').find((d) => d.classList.contains('f') && (d.querySelector('span') || {}).textContent === 'Допуск ΔE');
+  const field = tree.querySelectorAll('div').find((d) => d.classList.contains('f') && (d.querySelector('span') || {}).textContent === 'ΔE tolerance');
   const thr = field.querySelector('input');
   const remember = field.querySelectorAll('label').find((l) => l.classList.contains('row'));
   const sent = () => ctx.requests.filter((r) => r.method !== 'GET').map((r) => [r.method, r.path, typeof r.body === 'string' ? JSON.parse(r.body) : r.body.items]);
   out.shown = [thr.getAttribute('placeholder'), thr.getAttribute('aria-invalid'), field.textContent, remember.hidden];
-  const stockOf = () => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === 'Титан').textContent;
+  const stockOf = () => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === 'Titanium').textContent;
   const labelled = (text) => tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text);
-  const strategy = labelled('Стратегия').firstControl();
+  const strategy = labelled('Strategy').firstControl();
   out.stock = [stockOf()];
   strategy.value = 'fill'; await strategy.dispatch('change'); out.stock.push(stockOf());
   strategy.value = 'photo'; await strategy.dispatch('change'); await tick();
   tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'Inna Portrait.jpg'}];
-  labelled('Название работы').firstControl().value = 'Inna Portrait';                  // the plan's name is required (conversion: «give the plan a name»)
-  await byText(tree, 'button', 'Создать работу').dispatch('click'); await tick();
-  out.empty = [labelled('Допуск ΔE').errorText(), sent(), thr.getAttribute('aria-invalid'), tree.querySelectorAll('p').find((p) => p.getAttribute('role') === 'alert').textContent];
+  labelled('Work name').firstControl().value = 'Inna Portrait';                  // the plan's name is required (conversion: «give the plan a name»)
+  await byText(tree, 'button', 'Create work').dispatch('click'); await tick();
+  out.empty = [labelled('ΔE tolerance').errorText(), sent(), thr.getAttribute('aria-invalid'), tree.querySelectorAll('p').find((p) => p.getAttribute('role') === 'alert').textContent];
   thr.value = '5'; await thr.dispatch('input');
   out.typed = thr.getAttribute('aria-invalid');
-  await byText(tree, 'button', 'Создать работу').dispatch('click'); await tick(); await tick();
+  await byText(tree, 'button', 'Create work').dispatch('click'); await tick(); await tick();
   out.created = sent();
   out.after = [thr.getAttribute('placeholder'), remember.hidden];
   console.log(JSON.stringify(out));
@@ -76,28 +76,28 @@ def run(tmp_path, tolerance) -> dict:
 def test_with_no_tolerance_saved_the_form_asks_for_it_first_and_saves_the_typed_one_to_the_rules(tmp_path):
     out = run(tmp_path, None)
     placeholder, invalid, text, hidden = out["shown"]
-    assert placeholder == "задайте" and invalid == "true" and hidden is False
-    assert "Для этого лазера с линзой допуск не сохранён — задайте его" in text and "5 — две гравировки одного рецепта ещё совпадают" in text
-    assert "Запомнить для этого лазера с линзой" in text
-    assert out["empty"][:2] == ["Задайте допуск ΔE: для этого лазера с линзой он не сохранён", []]          # said beside the box; nothing is sent
-    assert "“Допуск ΔE”" in out["empty"][3] and "remain in the form" in out["empty"][3]
+    assert placeholder == "enter value" and invalid == "true" and hidden is False
+    assert "No tolerance is saved for this laser and lens; enter one" in text and "5 still matches two engravings of the same recipe" in text
+    assert "Remember for this laser and lens" in text
+    assert out["empty"][:2] == ["Set a ΔE tolerance: none is saved for this laser and lens", []]          # said beside the box; nothing is sent
+    assert "“ΔE tolerance”" in out["empty"][3] and "remain in the form" in out["empty"][3]
     assert out["typed"] == "false"
     (put, rules, body), (post, path, items), remembered = out["created"]
     assert (put, rules, body) == ("PUT", "/api/rules", {"device_id": 1, "lens_id": 2, "delta_tolerance": 5})
     assert (post, path) == ("POST", "/api/vector") and ["threshold", "5"] in items
     # ux-work-creation-p0: a made work leaves its laser, lens, titanium and (own) measurements as the choice the next new work starts from
     assert remembered == ["PUT", "/api/creation/context", {"device_id": 1, "lens_id": 2, "material_id": 3, "source": None}]
-    assert out["after"] == ["из правил: 5", True]
-    assert out["stock"][0].endswith("цвета — измерения титана этой марки с любой его пластины")             # «Фото»: every plate of the grade
-    assert out["stock"][1].endswith("рецепты — только измеренные на этой заготовке")                         # a silhouette: this plate
+    assert out["after"] == ["from rules: 5", True]
+    assert out["stock"][0].endswith("colors are measurements of this titanium grade from any plate")             # «Фото»: every plate of the grade
+    assert out["stock"][1].endswith("recipes are limited to those measured on this stock")                         # a silhouette: this plate
 
 
 @node
 def test_with_a_tolerance_saved_the_form_names_it_and_sends_nothing_to_the_rules(tmp_path):
     out = run(tmp_path, 5.0)
     placeholder, invalid, text, hidden = out["shown"]
-    assert placeholder == "из правил: 5" and invalid == "false" and hidden is True
-    assert "пусто — ΔE 5 из правил этого лазера с линзой; число здесь — только для этой работы" in text
+    assert placeholder == "from rules: 5" and invalid == "false" and hidden is True
+    assert "leave empty for ΔE 5 from this laser and lens rules; an entered value applies only to this work" in text
     assert out["empty"][1][0][:2] == ["POST", "/api/vector"] and ["threshold", "5"] not in out["empty"][1][0][2]   # empty: the rules decide
     assert [r[:2] for r in out["created"] if r[1] != "/api/creation/context"] == [["POST", "/api/vector"], ["POST", "/api/vector"]]   # never the rules
     assert [r[:2] for r in out["created"] if r[1] == "/api/creation/context"] == [["PUT", "/api/creation/context"]] * 2          # each work is remembered
@@ -111,32 +111,32 @@ FIELDS = """
   const box = (text) => labelled(text).firstControl();
   const type = async (text, value) => { box(text).value = value; await box(text).dispatch('input'); };
   const sent = () => ctx.requests.filter((r) => r.method === 'POST').length;
-  const create = async () => { await byText(tree, 'button', 'Создать работу').dispatch('click'); await tick(); await tick(); };
+  const create = async () => { await byText(tree, 'button', 'Create work').dispatch('click'); await tick(); await tick(); };
   tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'Inna Portrait.jpg'}];
-  await type('Название работы', 'Inna Portrait');
-  await type('Допуск ΔE', '5');
-  out.names = ['Ширина работы', 'Сглаживание границ', 'Допуск ΔE', 'Название работы'].map((t) => [t, labelled(t).textContent.includes('required'), box(t).getAttribute('aria-labelledby') !== null]);
+  await type('Work name', 'Inna Portrait');
+  await type('ΔE tolerance', '5');
+  out.names = ['Work width', 'Boundary smoothing', 'ΔE tolerance', 'Work name'].map((t) => [t, labelled(t).textContent.includes('required'), box(t).getAttribute('aria-labelledby') !== null]);
   // a wrong width, and a colour count outside the allowed 2..29: each says why beside its own box and keeps what was typed; nothing is sent
-  await type('Ширина работы', '0');
-  const strategy = box('Стратегия'); strategy.value = 'photo'; await strategy.dispatch('change'); await tick();
-  await type('Число цветов', '40');
+  await type('Work width', '0');
+  const strategy = box('Strategy'); strategy.value = 'photo'; await strategy.dispatch('change'); await tick();
+  await type('Number of colors', '40');
   await create();
-  out.wrong = [sent(), labelled('Ширина работы').errorText(), box('Ширина работы').value, box('Ширина работы').getAttribute('aria-invalid'),
-    labelled('Число цветов').errorText(), box('Число цветов').value, box('Число цветов').getAttribute('aria-describedby').includes('error')];
+  out.wrong = [sent(), labelled('Work width').errorText(), box('Work width').value, box('Work width').getAttribute('aria-invalid'),
+    labelled('Number of colors').errorText(), box('Number of colors').value, box('Number of colors').getAttribute('aria-describedby').includes('error')];
   // the markers take a layer: 29 is then too many
-  await type('Ширина работы', '60'); await type('Число цветов', '29');
-  const markers = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'checkbox' && (i.parentNode.textContent || '').includes('Регистрационные'));
+  await type('Work width', '60'); await type('Number of colors', '29');
+  const markers = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'checkbox' && (i.parentNode.textContent || '').includes('Registration'));
   markers.checked = true; await markers.dispatch('change');
   await create();
-  out.markers = [sent(), labelled('Число цветов').errorText()];
+  out.markers = [sent(), labelled('Number of colors').errorText()];
   // a silhouette work: the photograph's boxes are not read (a wrong colour count there does not stop it), the grey level is
   markers.checked = false; await markers.dispatch('change');
-  await type('Число цветов', '99');
+  await type('Number of colors', '99');
   strategy.value = 'fill'; await strategy.dispatch('change'); await tick();
-  await type('Порог серого', '300');
+  await type('Gray threshold', '300');
   await create();
-  out.grey = [sent(), labelled('Порог серого').errorText(), labelled('Число цветов').errorText()];
-  await type('Порог серого', '128');
+  out.grey = [sent(), labelled('Gray threshold').errorText(), labelled('Number of colors').errorText()];
+  await type('Gray threshold', '128');
   await create();
   out.created = [sent(), ctx.requests.filter((r) => r.method === 'POST').map((r) => r.body.items.filter(([k]) => ['grey_threshold', 'width_mm', 'name', 'n_colors'].includes(k)))[0]];
   console.log(JSON.stringify(out));
@@ -157,7 +157,7 @@ def run_fields(tmp_path) -> dict:
 @node
 def test_each_box_of_the_start_form_is_named_says_why_it_is_wrong_beside_itself_and_keeps_what_was_typed(tmp_path):
     out = run_fields(tmp_path)
-    assert all(named for _, _, named in out["names"]) and [t for t, required, _ in out["names"] if not required] == ["Допуск ΔE"]   # required unless the rules hold the tolerance
+    assert all(named for _, _, named in out["names"]) and [t for t, required, _ in out["names"] if not required] == ["ΔE tolerance"]   # required unless the rules hold the tolerance
     sent, width_error, width_kept, width_invalid, colours_error, colours_kept, colours_described = out["wrong"]
     assert sent == 0 and "Entered: 0" in width_error and width_kept == "0" and width_invalid == "true"       # the width must be above 0 (conversion.raster)
     assert "Allowed" in colours_error and "29" in colours_error and "Entered: 40" in colours_error and colours_kept == "40" and colours_described

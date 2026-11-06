@@ -58,7 +58,7 @@ def run(tmp_path, body, routes=None, shared=None):
 STARTS = """
   const tree = await ctx.__screens.vector.render({query: %s});
   await settle();
-  const stock = tree.querySelectorAll('.matpick').find((s) => s.getAttribute('aria-label') === 'Титан');       // the titanium is the stock selector, no longer a drop-down
+  const stock = tree.querySelectorAll('.matpick').find((s) => s.getAttribute('aria-label') === 'Titanium');       // the titanium is the stock selector, no longer a drop-down
   await settle();
   out.chosen = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, stock ? stock.value : null];
 """
@@ -74,7 +74,7 @@ def test_new_vector_work_opens_the_three_step_screen_and_the_one_page_form_stays
   await settle();
   out.classic = classic.querySelector('h2').textContent;
 """, shared=context())
-    assert out["wizard"] == "New work · step 1 of 3: Image and size" and out["classic"] == "Новая векторная работа"
+    assert out["wizard"] == "New work · step 1 of 3: Image and size" and out["classic"] == "New vector work"
 
 
 @node
@@ -121,7 +121,7 @@ def test_the_classic_form_changes_the_shared_choice_by_the_same_dialog_with_the_
   await settle();
   const strip = tree.querySelector('.work-context');
   out.strip = strip.textContent;
-  out.first = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Титан').value];
+  out.first = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Titanium').value];
   const open = strip.querySelectorAll('button').find((b) => b.textContent === 'Change…');
   await open.dispatch('click'); await settle();
   const dialog = ctx.document.body.querySelector('.modal');
@@ -135,12 +135,12 @@ def test_the_classic_form_changes_the_shared_choice_by_the_same_dialog_with_the_
   await apply.dispatch('click'); await settle();
   out.puts = puts;
   out.closed = ctx.document.body.querySelector('.modal') === null;
-  out.after = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Титан').value];
+  out.after = [labelled(tree, 'Laser').value, labelled(tree, 'Lens').value, labelled(tree, 'Titanium').value];
   out.strip2 = tree.querySelector('.work-context').textContent;
   out.focus = ctx.document.activeElement && ctx.document.activeElement.textContent;
   out.palette = ctx.requests.filter((r) => r.path === '/api/vector-palette').length;
 """, shared=context(), routes={"/api/creation/context/impact": OK({"changed": True, "warnings": [{"code": "titanium_differs"}], "now": {}, "after": {}})})
-    assert "Общий выбор мастерской" in out["strip"] and "Mopa 30" in out["strip"] and out["first"] == ["2", "3", "4"]
+    assert "Workshop selection" in out["strip"] and "Mopa 30" in out["strip"] and out["first"] == ["2", "3", "4"]
     assert out["title"] == "New work context" and out["hasSource"] is False                 # the form has its own source picker: the dialog leaves it out
     assert out["warned"] == [True, 0]                                                            # the warning is read before «Apply», and nothing is saved yet
     assert out["impactBody"] == {"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}
@@ -157,14 +157,14 @@ def test_an_opened_photograph_work_names_its_own_measurements_under_its_paramete
   const tree = await ctx.__screens.vector.render({query: {plan: String(data.plan)}});
   await tick();
   const dts = tree.querySelectorAll('dt');
-  const row = dts.find((d) => d.textContent === 'Измерения');
+  const row = dts.find((d) => d.textContent === 'Measurements');
   out.row = [row.textContent, row.parentNode.querySelectorAll('dd')[dts.indexOf(row)].textContent];
-  out.laser = dts.find((d) => d.textContent === 'Лазер') !== undefined;
+  out.laser = dts.find((d) => d.textContent === 'Laser') !== undefined;
 """
     (tmp_path / "own").mkdir()
     own = labs_run(tmp_path / "own", routes, body, plan=job["id"])
-    assert own["row"][0] == "Измерения" and own["row"][1] == "этой мастерской"
+    assert own["row"][0] == "Measurements" and own["row"][1] == "this workshop"
     routes[f"/api/vector/{job['id']}"] = ok(pinned)
     (tmp_path / "release").mkdir()
     release = labs_run(tmp_path / "release", routes, body, plan=job["id"])
-    assert release["row"][1] == "лаборатория Лаборатория <b>Север</b>"                  # the laboratory's name is shown as text, never as markup
+    assert release["row"][1] == "laboratory Лаборатория <b>Север</b>"                  # the laboratory's name is shown as text, never as markup

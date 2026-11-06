@@ -91,7 +91,7 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
     colours = source("screens/vector-colours.js") + source("screens/vector-editor.js") + source("screens/vector-photo.js") + source("screens/lettering.js")
     for op in vector_job.COLOURING_OPS:
         assert f"'{op}'" in colours, op
-    for label in ("Ближе к оригиналу", "Сохранить тональность", "Случайно", "Включить цвета без привязки"):
+    for label in ("Closer to original", "Preserve tonality", "Random", "Include uncalibrated colors"):
         assert label in colours, label
     assert "Принять" not in colours                                                    # DEC-001: nothing waits for acceptance
     split = source("screens/vector-split.js")
@@ -109,4 +109,4 @@ def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour
 def test_regions_without_evidence_are_counted_in_one_short_message_and_their_ids_shown_only_on_request():
     screen = source("screens/vector.js")
     assert "(${j.weak.join(', ')})" not in screen and "weakSummary(j.weak)" in screen
-    assert "h('p', {class: 'small', hidden: true}, weak.join(', '))" in screen and "btn('показать'" in screen
+    assert "h('p', {class: 'small', hidden: true}, weak.join(', '))" in screen and "btn('show'" in screen

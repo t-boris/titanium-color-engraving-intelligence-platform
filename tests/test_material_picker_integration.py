@@ -69,17 +69,17 @@ def test_the_vector_form_starts_with_the_workshops_record_and_sends_the_record_c
     out = run_node(tmp_path, port, VECTOR, FORM_DATA + HELPERS + r"""
       stub('/vector', {status: 201, json: {id: 99}}, 'POST');
       const box = mount(await ctx.__screens.vector.render({query: {new: '1', classic: '1'}}));
-      const stock = picker(box, 'Титан');
+      const stock = picker(box, 'Titanium');
       await stock.ready;
       await until(() => stock.record !== null);
       out.start = {pickers: qa(box, '.matpick').length, records: records(box), rows: lines(box).length, label: labelOf(stock), value: stock.value, urls: stockUrls()};
       stock.value = '41';                                                                        // the person chooses another record
       await until(() => stock.record !== null && stock.record.id === 41);
-      qa(box, 'input').find((i) => i.getAttribute('placeholder') === 'Название работы').value = 'Портрет';
+      qa(box, 'input').find((i) => i.getAttribute('placeholder') === 'Work name').value = 'Портрет';
       qa(box, 'input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'Inna.jpg'}];
-      const tolerance = qa(box, 'label').find((l) => (q(l, 'span') || {}).textContent === 'Допуск ΔE');
+      const tolerance = qa(box, 'label').find((l) => (q(l, 'span') || {}).textContent === 'ΔE tolerance');
       q(tolerance, 'input').value = '5';
-      await button(box, 'Создать работу').dispatch('click');
+      await button(box, 'Create work').dispatch('click');
       await until(() => sent('/api/vector').length === 1 && sent('/api/creation/context', 'PUT').length === 1);
       out.sent = {material: sent('/api/vector')[0].body.items.filter(([k]) => k === 'material_id'), remembered: JSON.parse(sent('/api/creation/context', 'PUT')[0].body).material_id,
         urls: stockUrls()};
@@ -96,7 +96,7 @@ def test_the_vector_form_without_any_stock_record_says_so_and_reads_no_catalogue
       const box = mount(await ctx.__screens.vector.render({query: {new: '1', classic: '1'}}));
       out.empty = {title: q(box, 'h3').textContent, pickers: qa(box, '.matpick').length, urls: stockUrls()};
     """, EXPORTS)
-    assert out["empty"]["title"] == "Сначала добавьте заготовку титана" and out["empty"]["pickers"] == 0
+    assert out["empty"]["title"] == "First add titanium stock" and out["empty"]["pickers"] == 0
     assert out["empty"]["urls"] == ["/api/materials?limit=1"]                                          # whether any exists, not all of them
 
 
