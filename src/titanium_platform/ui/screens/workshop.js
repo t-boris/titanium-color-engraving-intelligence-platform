@@ -174,22 +174,42 @@
 
   App.register({id: 'workshop', async render() {
     const root = h('div', {class: 'stack'});
-    const draw = async (notice = null) => {                 // ``notice``: the result of the last action, kept through the redraw
-      const [w, backups, copies] = await Promise.all([get('/workshop'), get('/workshop/backups'), get('/workshop/recovery-copies')]);
-      fill(root, h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Workshop'),
-        h('p', {class: 'sub'}, 'Workshop data, schema and backups. Restoring to another folder leaves the open workshop unchanged; replacing it requires a separate explicit choice.'))),
+    const w = await get('/workshop');
+    const backupSlot = h('section', {class: 'workshop-backups', tabindex: '-1', 'aria-label': 'Backups and restore'});
+    const recoverySlot = h('div', {});
+    let backupRequest = 0, recoveryRequest = 0;
+    const loading = (slot, text) => fill(slot, h('p', {class: 'muted', role: 'status'}, text));
+    const failure = (slot, error, retry) => fill(slot, h('div', {class: 'alert bad', role: 'alert'},
+      h('p', {}, error.message || String(error)), btn('Retry', retry, 'btn-small')));
+    async function loadBackups(notice = null) {
+      const request = ++backupRequest;
+      loading(backupSlot, 'Loading backups…');
+      try {
+        const backups = await get('/workshop/backups');
+        if (request === backupRequest) fill(backupSlot, backupsCard(w, backups, loadBackups, notice));
+      } catch (e) { if (request === backupRequest) failure(backupSlot, e, () => loadBackups(notice)); }
+    }
+    async function loadRecovery() {
+      const request = ++recoveryRequest;
+      loading(recoverySlot, 'Loading recovery copies…');
+      try {
+        const copies = await get('/workshop/recovery-copies');
+        if (request === recoveryRequest) fill(recoverySlot, recoveryCard(copies));
+      } catch (e) { if (request === recoveryRequest) failure(recoverySlot, e, loadRecovery); }
+    }
+    fill(root, h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Workshop'),
+      h('p', {class: 'sub'}, 'Workshop data, schema and backups. Restoring to another folder leaves the open workshop unchanged; replacing it requires a separate explicit choice.'))),
       h('nav', {'aria-label': 'Workshop tasks', class: 'card stack'}, h('h3', {}, 'Workshop tasks'),
         h('div', {class: 'row'},
-          btn('Backups and restore', () => { const card = root.querySelector('.workshop-backups'); if (card) { if (card.scrollIntoView) card.scrollIntoView({block: 'start'}); card.focus(); } }, 'btn-small'),
+          btn('Backups and restore', () => { if (backupSlot.scrollIntoView) backupSlot.scrollIntoView({block: 'start'}); backupSlot.focus(); }, 'btn-small'),
           App.link('/network', 'Connect a tablet or manage external services'),
           App.link('/labs', 'Connect or manage laboratories'),
           App.link('/setup', 'Materials and capture resources'))),
-      workshopCard(w, () => draw()),
-      (() => { const card = backupsCard(w, backups, draw, notice); card.classList.add('workshop-backups'); card.setAttribute('tabindex', '-1'); return card; })(),
-      h('details', {class: 'card'}, h('summary', {}, 'Database recovery copies'), recoveryCard(copies)),
+      workshopCard(w, (path) => { w.backup_dir = path; loadBackups(); }), backupSlot,
+      h('details', {class: 'card'}, h('summary', {}, 'Database recovery copies'), recoverySlot),
       h('details', {class: 'card'}, h('summary', {}, 'Diagnostics'), diagnosticsCard()));
-    };
-    await draw();
+    loadBackups();
+    loadRecovery();
     return root;
   }});
 })();

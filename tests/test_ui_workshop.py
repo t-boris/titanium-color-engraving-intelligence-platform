@@ -136,6 +136,29 @@ def test_workshop_tasks_link_to_maintenance_and_keep_backup_keyboard_access(tmp_
 
 
 @node
+def test_workshop_overview_does_not_wait_for_secondary_lists_and_each_failure_can_retry(tmp_path):
+    out = run(tmp_path, routes_of(), """
+  const original = ctx.fetch; let release; let failRecovery = true;
+  ctx.fetch = (url, opts) => {
+    const path = String(url).split('?')[0];
+    if (path === '/api/workshop/backups') return new Promise((resolve) => { release = () => original(url, opts).then(resolve); });
+    if (path === '/api/workshop/recovery-copies' && failRecovery) return Promise.reject(new Error('offline'));
+    return original(url, opts);
+  };
+  const tree = await Promise.race([ctx.__screens.workshop.render({query: {}}), new Promise((resolve) => setTimeout(() => resolve(null), 100))]);
+  out.ready = !!tree; out.overview = tree && tree.textContent.includes('/Users/me/.titanium-platform');
+  await tick();
+  const recovery = tree.querySelectorAll('details').find((d) => d.querySelector('summary').textContent === 'Database recovery copies');
+  out.failure = recovery.querySelectorAll('div').find((el) => el.getAttribute('role') === 'alert').textContent;
+  failRecovery = false; await byText(recovery, 'button', 'Retry').dispatch('click'); await tick();
+  out.retried = recovery.textContent.includes('schema-before-2-20261024T100000Z.sqlite');
+  release(); await tick(); out.backupsLoaded = tree.textContent.includes('/Volumes/Disk/titanium-backups/titanium-backup-20261024T120000Z');
+""")
+    assert out["ready"] and out["overview"] and "Cannot reach the local service" in out["failure"]
+    assert out["retried"] and out["backupsLoaded"]
+
+
+@node
 def test_restoring_goes_into_a_typed_folder_and_replacing_the_open_workshop_needs_the_typed_word(tmp_path):
     out = run(tmp_path, routes_of(), """
   const tree = await ctx.__screens.workshop.render({query: {}});
@@ -212,18 +235,18 @@ def test_the_recovery_copies_and_the_backups_show_ten_lines_the_newest_first_and
   out.second = names().length;
   await copies.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('before version update')).dispatch('click'); await tick();
   out.release = names();
-  const order = copies.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const order = copies.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   order.value = 'size'; await order.dispatch('change'); await tick();
   out.largest = copies.querySelectorAll('.lst-row').map((r) => line(r)[0][2]).slice(0, 3);
   await copies.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.details = copies.querySelector('.lst-det').hidden ? null : copies.querySelectorAll('dd').map((d) => d.textContent)[0];
 """)
     assert out["first"] == [f"{'schema-before' if i % 3 else 'titanium-before'}-{i}.sqlite" for i in range(25, 15, -1)]   # ten, the newest first
-    assert out["count"] == "показано 10 из 25" and out["more"] == "Показать ещё 10" and out["second"] == 20
-    assert out["chips"] == ["Все · 25", "before schema change · 17", "before version update · 8"]
+    assert out["count"] == "showing 10 of 25" and out["more"] == "Show 10 more" and out["second"] == 20
+    assert out["chips"] == ["All · 25", "before schema change · 17", "before version update · 8"]
     assert out["release"] == [f"titanium-before-{i}.sqlite" for i in (24, 21, 18, 15, 12, 9, 6, 3)]
     assert out["largest"] == ["7.0 MB", "6.0 MB", "5.0 MB"]
     assert out["details"] == "/Users/me/.titanium-platform/backups/copy-6.sqlite"                                        # the full path under the line
     lines, count, more, partial = out["backups"]
-    assert (lines, count, more) == (10, "показано 10 из 12", "Показать ещё 2")
+    assert (lines, count, more) == (10, "showing 10 of 12", "Show 2 more")
     assert partial == ["2026-10-05 12:00", "52 MB", "0.30.0 · schema 1", "312 files", "incomplete", "/Volumes/Disk/titanium-backups/titanium-backup-05"]
