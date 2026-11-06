@@ -41,3 +41,7 @@ Full rerun: pytest -q -rs -n 12, 3005 passed, 0 skipped. During that run a MarkV
 ### Implementation · 2026-11-06
 
 Lifecycle discrepancy: MarkView automatically changed this feature to implemented using prior merged commit 3641c79 (technical navigation only). This does not establish that the new branch's grid, density and study variant were merged or released, nor that REQ-001's workshop-lighting/tablet comparison or I-6 integrated review was completed. REQ-001 remains unticked. Do not treat the automatic feature status as proof of those remaining criteria.
+
+### Implementation · 2026-11-06
+
+Electron verification on 2026-11-06: development Electron 33.4.11 with isolated shell profile and seeded disposable workshop /tmp/titanium-expert-electron-fixture displayed version 0.40.0. Selected Compact in Display settings; created a disposable capture setup; opened the 24-patch reference editor; entering L=150 showed its error, retained input and focused the field; correcting to 40 saved the custom reference and Restore published values returned it to published. Opened a seeded laser, expanded Technical data and opened Charts; the group also displayed Pulse waveforms, Test report and Documents. Electron --smoke separately returned smoke=ok, ui=2. This is a desktop scenario, not tablet/workshop-lighting or before/after operator timing evidence.
