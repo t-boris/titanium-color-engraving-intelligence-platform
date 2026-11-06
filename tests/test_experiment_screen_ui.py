@@ -192,7 +192,7 @@ def test_the_measured_layers_of_a_matrix_are_a_short_list_worst_first_a_page_at_
     assert out["chips"] == ["All · 25", "Не сопоставимы · 1", "С замечаниями · 1", "Без замечаний · 23"]
     assert out["openBefore"] == 0 and len(out["open"]) == 1
     card = out["open"][0]
-    assert "Fill · from the LightBurn layer" in card and "1950 кГц" in card and "Разброс цвета в пробе: L* ±2.4" in card
+    assert "Fill · from the LightBurn layer" in card and "1950 кГц" in card and "Color variation in the sample: L* ±2.4" in card
     assert out["ordered"] == ["0", "1", "2"] and out["kept"] == ["0", "1", "2"]
 
 
@@ -215,7 +215,7 @@ def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_pic
     routes = routes_for(MATRIX)
     routes.update(api(**{"/api/pairs/59": composed(59, 100)}))
     out = run(tmp_path, routes, "eng-abc", """
-  const card = tree.querySelectorAll('div').find((d) => has(d, 'card') && (d.querySelector('h3') || {}).textContent === 'Состав работы');
+  const card = tree.querySelectorAll('div').find((d) => has(d, 'card') && (d.querySelector('h3') || {}).textContent === 'Work composition');
   const list = card.querySelector('.lst');
   const keys = () => list.querySelectorAll('.lst-row').map((r) => r.getAttribute('data-key'));
   out.tables = card.querySelectorAll('table').length;
@@ -224,18 +224,18 @@ def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_pic
   out.chips = list.querySelectorAll('.lst-chip').map((c) => c.textContent);
   const order = list.querySelector('select'); order.value = 'area'; await order.dispatch('change'); await tick();
   out.byArea = keys().slice(0, 2);
-  await list.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('фотогравировка')).dispatch('click'); await tick();
+  await list.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('photo engraving')).dispatch('click'); await tick();
   out.photo = keys();
   await list.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.open = list.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
 """)
     assert out["tables"] == 0
     assert len(out["keys"]) == 20 and out["keys"][:2] == ["0", "1"] and out["count"] == "showing 20 of 101"
-    assert "C00" in out["first"] and "заливка" in out["first"] and "10 мм²" in out["first"] and "видно 100.0%" in out["first"]
-    assert out["chips"] == ["All · 101", "заливка · 100", "фотогравировка · 1"]
+    assert "C00" in out["first"] and "fill" in out["first"] and "10 mm²" in out["first"] and "visible 100.0%" in out["first"]
+    assert out["chips"] == ["All · 101", "fill · 100", "photo engraving · 1"]
     assert out["byArea"] == ["99", "98"]
     assert out["photo"] == ["100"] and len(out["open"]) == 1
-    assert "картинка непрозрачна на 80.0%" in out["open"][0] and "гравирует 41.5%" in out["open"][0]
+    assert "image opaque over 80.0%" in out["open"][0] and "engraves 41.5%" in out["open"][0]
 
 
 @node
