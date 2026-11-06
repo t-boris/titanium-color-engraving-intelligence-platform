@@ -310,12 +310,21 @@ def test_main_navigation_groups_existing_routes_under_five_sections(tmp_path):
   out.groups = nav.querySelectorAll('.nav-link').map((a) => [a.textContent, a.getAttribute('href')]);
   out.children = nav.querySelectorAll('.nav-sublink').map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('aria-current')]);
   out.hash = ctx.location.hash;
+  out.groupChildren = {};
+  for (const id of ['works', 'experiments', 'colors', 'devices', 'workshop']) {
+    App.register({id, render: async () => h('div', {}, id)});
+    ctx.location.hash = '#/' + id; await App.render();
+    out.groupChildren[id] = shell.querySelector('.nav').querySelectorAll('.nav-sublink').map((a) => a.getAttribute('href'));
+  }
 """)
     assert out["groups"] == [["Works", "#/works"], ["Experiments", "#/experiments"], ["Colors and recipes", "#/colors"],
                              ["Equipment", "#/devices"], ["Workshop", "#/workshop"]]
     assert out["children"] == [["Experiment planner", "#/designer", None], ["Findings", "#/findings", "page"],
                                ["AI researcher", "#/research", None]]
     assert out["hash"] == "#/findings?tab=history"
+    assert out["groupChildren"] == {"works": ["#/vector", "#/photo-engraving"],
+                                     "experiments": ["#/designer", "#/findings", "#/research"], "colors": [],
+                                     "devices": ["#/setup"], "workshop": ["#/network", "#/labs"]}
 
 
 @node

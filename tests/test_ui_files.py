@@ -73,13 +73,12 @@ def test_the_laser_page_shows_the_one_experiment_list_filtered_by_it_and_no_list
     assert "ExperimentCards.list(items" in _screen("experiments.js") and "ctx.query.device" in _screen("experiments.js")
 
 
-def test_photo_engraving_is_the_fourth_section_and_the_other_photo_screens_open_from_it():
-    """REQ-059: the menu's fourth item is photo engraving; colour engraving (it is vector work) left the menu; the banded form and the
-    preview by LightBurn file left it too and open from the section; every address still opens its screen."""
+def test_photo_engraving_and_other_photo_screens_keep_their_routes():
+    """Photo engraving is available under Works; the existing photo screens and links remain usable."""
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[3] == "/photo-engraving" and "['/photo-engraving', 'Photo engraving']" in router and len(icons) == len(nav)
+    assert "/photo-engraving" in nav and "['/photo-engraving', 'Photo engraving']" in router and len(icons) == len(nav)
     assert not {"/artwork", "/photo", "/photo-preview"} & set(nav)
     for route, screen, file in (("artwork", "artwork", "artwork.js"), ("photo", "photo", "photo.js"), ("'photo-preview'", "photo-preview", "photo-preview.js"),
                                 ("'photo-engraving'", "photo-engraving", "photo-engraving.js")):
@@ -89,16 +88,16 @@ def test_photo_engraving_is_the_fourth_section_and_the_other_photo_screens_open_
     assert "photo: '/photo-engraving', 'photo-preview': '/photo-engraving'" in router
 
 
-def test_the_menu_starts_with_experiments_the_colour_map_and_vector_work_and_every_route_still_opens():
-    """vector-detail-and-colour-control, criterion 1: Vector Work is third; its addresses (#/vector, #/vector?plan=N) are unchanged."""
+def test_existing_navigation_routes_remain_available_after_grouping():
+    """The five main sections retain their existing destinations and vector work keeps its addresses."""
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[:3] == ["/experiments", "/colors", "/vector"] and len(icons) == len(nav) == len(set(nav))
-    assert nav[3:] == ["/photo-engraving", "/works", "/designer", "/findings", "/devices", "/setup", "/research", "/network", "/labs", "/workshop"]   # REQ-059: photo engraving fourth; ux-work-catalog-p0: the shared catalog of works right after the two kinds; electron: network, labs, then the workshop
+    assert set(nav) == {"/experiments", "/colors", "/vector", "/photo-engraving", "/works", "/designer", "/findings", "/devices", "/setup", "/research", "/network", "/labs", "/workshop"}
+    assert len(icons) == len(nav) == len(set(nav))
     assert "vector: 'vector'" in router and "App.register({id: 'vector'" in _screen("vector.js")
     vector_icon = '<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>'
-    assert vector_icon in icons_block(router, 2)                                                           # the vector icon moved with its entry
+    assert vector_icon in icons_block(router, nav.index("/vector"))
 
 
 def icons_block(router: str, index: int) -> str:
@@ -107,11 +106,11 @@ def icons_block(router: str, index: int) -> str:
     return re.findall(r"^\s+('<.*>')[,\]]?\s*$", block, re.M)[index]
 
 
-def test_the_findings_screen_is_in_the_menu_right_after_the_designer_with_an_icon_of_its_own():
+def test_findings_route_and_scripts_remain_available():
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[nav.index("/designer") + 1] == "/findings" and len(icons) == len(nav)
+    assert "/designer" in nav and "/findings" in nav and len(icons) == len(nav)
     assert "['/findings', 'Findings']" in router and "findings: 'findings'" in router
     assert "App.register({id: 'findings'" in _screen("findings.js")
     order = {s: i for i, s in enumerate(SCRIPTS)}
