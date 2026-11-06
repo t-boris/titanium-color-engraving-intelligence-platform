@@ -280,14 +280,14 @@ def test_nothing_found_and_an_empty_catalog_each_say_so_and_leave_a_way_out(serv
     seed(served, vectors=3)
     out = screen(served, """
   const s = await open();
-  const search = s.el.querySelector('.lst-search'); search.value = 'такого нет'; await search.dispatch('input');
+  const search = s.el.querySelector('.lst-search'); search.value = 'no matches'; await search.dispatch('input');
   await until(() => s.el.querySelector('.lst-none'), 'nothing found');
   out.none = s.el.querySelector('.lst-none').textContent;
   await byText(s.el.querySelector('.lst-none'), 'button', 'Clear search and filters').dispatch('click');
   await until(() => names(s).length === 3, 'the list again');
   out.after = names(s);
 """)
-    assert "No work matches these conditions." in out["none"] and "такого нет" in out["none"] and sorted(out["after"]) == ["V001", "V002", "V003"]
+    assert "No work matches these conditions." in out["none"] and "no matches" in out["none"] and sorted(out["after"]) == ["V001", "V002", "V003"]
 
 
 @node
@@ -381,8 +381,8 @@ def test_coming_back_from_a_work_far_down_the_list_shows_it_again_in_view_with_t
   out.restored = {rows: rowsOf(s2).length, count: count(s2), firstGet: gets()[0].url, gets: gets().length, address: ctx.location.hash,
     focus: active() === rowsOf(s2)[45].querySelector('.works-name'), scrolled: scrolled.includes(rowsOf(s2)[45]), notice: main.querySelector('.works-notice').textContent};
   // an operation afterwards reads the list again and does not shrink it to the first page
-  await choose(rowsOf(s2)[0], 'Rename…'); dialog().querySelector('input').value = 'Новое имя';
-  await byText(dialog(), 'button', 'Save').dispatch('click'); await until(() => names(s2).includes('Новое имя'), 'rename refreshed');
+  await choose(rowsOf(s2)[0], 'Rename…'); dialog().querySelector('input').value = 'New name';
+  await byText(dialog(), 'button', 'Save').dispatch('click'); await until(() => names(s2).includes('New name'), 'rename refreshed');
   out.afterRename = {rows: rowsOf(s2).length, count: count(s2), limit: gets().pop().url};
   // another search forgets the place
   const search = s2.el.querySelector('.lst-search'); search.value = 'v0'; await search.dispatch('input');
@@ -468,24 +468,24 @@ def test_rename_goes_through_the_owners_route_keeps_the_place_and_refreshes_the_
   input.value = 'V001'; await byText(box, 'button', 'Save').dispatch('click');
   out.unchanged = {posts: posts().length, closed: dialog() == null};
   await choose(rowNamed(s, 'V001'), 'Rename…');
-  const box2 = dialog(); box2.querySelector('input').value = ' Витраж ';
+  const box2 = dialog(); box2.querySelector('input').value = ' Stained glass ';
   const getsBefore = gets().length;
   await byText(box2, 'button', 'Save').dispatch('click');
-  await until(() => names(s).includes('Витраж'), 'renamed');
+  await until(() => names(s).includes('Stained glass'), 'renamed');
   out.renamed = {posts: posts(), closed: dialog() == null, names: names(s), refreshed: gets().length - getsBefore, toast: toasts(),
-    focus: active() === menuButton(rowNamed(s, 'Витраж')), dated: info(rowNamed(s, 'Витраж')).date};
+    focus: active() === menuButton(rowNamed(s, 'Stained glass')), dated: info(rowNamed(s, 'Stained glass')).date};
   await choose(rowNamed(s, 'P001'), 'Rename…');
-  const box3 = dialog(); box3.querySelector('input').value = 'Портрет';
+  const box3 = dialog(); box3.querySelector('input').value = 'Portrait';
   await byText(box3, 'button', 'Save').dispatch('click');
-  await until(() => names(s).includes('Портрет'), 'photo work renamed');
+  await until(() => names(s).includes('Portrait'), 'photo work renamed');
   out.photo = posts().pop();
 """)
     assert out["dialog"] == {"title": "Rename work", "value": "V001", "label": "Work name"}
     assert "Enter a work name" in out["emptyRefused"]["toast"] and out["emptyRefused"]["posts"] == 0 and out["emptyRefused"]["stillOpen"]
     assert out["unchanged"] == {"posts": 0, "closed": True}
-    assert out["renamed"]["posts"] == [f'/api/vector/{made["V001"]}/rename {{"name":"Витраж"}}'] and out["renamed"]["closed"] and out["renamed"]["refreshed"] >= 1
-    assert "Витраж" in out["renamed"]["names"] and "V001" not in out["renamed"]["names"] and "Work renamed" in out["renamed"]["toast"] and out["renamed"]["focus"] is True
-    assert out["photo"] == f'/api/photo-works/{made["P001"]}/rename {{"name":"Портрет"}}'
+    assert out["renamed"]["posts"] == [f'/api/vector/{made["V001"]}/rename {{"name":"Stained glass"}}'] and out["renamed"]["closed"] and out["renamed"]["refreshed"] >= 1
+    assert "Stained glass" in out["renamed"]["names"] and "V001" not in out["renamed"]["names"] and "Work renamed" in out["renamed"]["toast"] and out["renamed"]["focus"] is True
+    assert out["photo"] == f'/api/photo-works/{made["P001"]}/rename {{"name":"Portrait"}}'
 
 
 @node
@@ -494,7 +494,7 @@ def test_rename_of_a_work_that_has_gone_says_so_closes_and_the_catalog_is_read_a
     out = screen(served, f"""
   const s = await open();
   await choose(rowNamed(s, 'V001'), 'Rename…');
-  const box = dialog(); box.querySelector('input').value = 'Другое';
+  const box = dialog(); box.querySelector('input').value = 'Other';
   await fetch('http://127.0.0.1:{served["port"]}/api/plans/{made["V001"]}', {{method: 'DELETE'}});          // deleted elsewhere meanwhile
   const getsBefore = gets().length;
   await byText(box, 'button', 'Save').dispatch('click');
@@ -509,30 +509,30 @@ def test_rename_of_a_work_that_has_gone_says_so_closes_and_the_catalog_is_read_a
 def test_copy_makes_a_work_next_to_the_first_and_a_failed_copy_still_refreshes_the_catalog(real):
     client = real["client"]
     vector = create_vector_work(real)
-    client.post(f"/api/vector/{vector['id']}/rename", json={"name": "Копируемая векторная"})
-    photo = create_photo_work(client, name="Копируемое фото")
+    client.post(f"/api/vector/{vector['id']}/rename", json={"name": "Copyable vector"})
+    photo = create_photo_work(client, name="Copyable photo")
     out = screen(real, f"""
-  const s = await open({{q: 'Копируемая Копируемое'.split(' ')[0]}});
-  const both = await open({{q: 'Копируем'}});
+  const s = await open({{q: 'Copyableая Copyableое'.split(' ')[0]}});
+  const both = await open({{q: 'Copyable'}});
   out.start = names(both).sort();
-  await choose(rowNamed(both, 'Копируемое фото'), 'Make a copy');
+  await choose(rowNamed(both, 'Copyable photo'), 'Make a copy');
   await until(() => names(both).length === 3, 'the copy of the photo work');
-  out.copy = {{posts: posts(), names: names(both).sort(), toast: toasts(), focus: active() === menuButton(rowNamed(both, 'Копируемое фото'))}};
-  await choose(rowNamed(both, 'Копируемая векторная'), 'Make a copy');
+  out.copy = {{posts: posts(), names: names(both).sort(), toast: toasts(), focus: active() === menuButton(rowNamed(both, 'Copyable photo'))}};
+  await choose(rowNamed(both, 'Copyable vector'), 'Make a copy');
   await until(() => names(both).length === 4, 'the copy of the vector work');
   out.vector = {{posts: posts().pop(), names: names(both).sort(), types: rowsOf(both).map((r) => info(r).pills[0]).sort()}};
   await fetch('http://127.0.0.1:{real["port"]}/api/plans/{vector["id"]}', {{method: 'DELETE'}});          // deleted elsewhere meanwhile
-  const row = rowNamed(both, 'Копируемая векторная'), before = gets().length, postsBefore = posts().length;
+  const row = rowNamed(both, 'Copyable vector'), before = gets().length, postsBefore = posts().length;
   await choose(row, 'Make a copy');
   await until(() => names(both).length === 3, 'the failed copy');
   out.failed = {{names: names(both).sort(), refreshed: gets().length - before, toast: toasts(), posts: posts().length - postsBefore}};
 """)
-    assert out["start"] == ["Копируемая векторная", "Копируемое фото"]
-    assert out["copy"]["posts"] == [f'/api/photo-works/{photo["id"]}/copy {{}}'] and sum(1 for n in out["copy"]["names"] if n.startswith("Копируемое фото")) == 2
+    assert out["start"] == ["Copyable photo", "Copyable vector"]
+    assert out["copy"]["posts"] == [f'/api/photo-works/{photo["id"]}/copy {{}}'] and sum(1 for n in out["copy"]["names"] if n.startswith("Copyable photo")) == 2
     assert "Copy created" in out["copy"]["toast"] and out["copy"]["focus"] is True
-    assert out["vector"]["posts"] == f'/api/vector/{vector["id"]}/copy {{}}' and sum(1 for n in out["vector"]["names"] if n.startswith("Копируемая векторная")) == 2
+    assert out["vector"]["posts"] == f'/api/vector/{vector["id"]}/copy {{}}' and sum(1 for n in out["vector"]["names"] if n.startswith("Copyable vector")) == 2
     assert out["vector"]["types"].count("Vector") == 2 and out["vector"]["types"].count("Photo engraving") == 2
-    assert "Копируемая векторная" not in out["failed"]["names"] and len(out["failed"]["names"]) == 3 and out["failed"]["refreshed"] >= 1
+    assert "Copyable vector" not in out["failed"]["names"] and len(out["failed"]["names"]) == 3 and out["failed"]["refreshed"] >= 1
     assert out["failed"]["posts"] == 1 and "plan 2 not found" in out["failed"]["toast"].split("Copy created")[-1]
 
 
@@ -542,11 +542,11 @@ def test_real_works_are_listed_as_what_they_are_and_a_mixed_work_is_one_row_with
     mixed = create_vector_work(real)
     colouring(real, mixed, op="photo_add", regions=of_colour(real, mixed, RED))
     add_inscription(real, mixed)
-    for work, name in ((plain, "Подлинная простая"), (mixed, "Подлинная смешанная")):
+    for work, name in ((plain, "Original simple"), (mixed, "Original mixed")):
         real["client"].post(f"/api/vector/{work['id']}/rename", json={"name": name})
-    photo = create_photo_work(real["client"], name="Подлинное фото")
+    photo = create_photo_work(real["client"], name="Original photo")
     out = screen(real, """
-  const s = await open({q: 'Подлинн'});
+  const s = await open({q: 'Original'});
   out.rows = rowsOf(s).map(info);
   const thumbs = [];
   for (const row of rowsOf(s)) { const src = info(row).img; const res = await fetch('http://127.0.0.1:' + PORT + src); thumbs.push([res.status, res.headers.get('content-type')]); }
@@ -560,12 +560,12 @@ def test_real_works_are_listed_as_what_they_are_and_a_mixed_work_is_one_row_with
   }
 """)
     by_name = {r["name"]: r for r in out["rows"]}
-    assert sorted(by_name) == ["Подлинная простая", "Подлинная смешанная", "Подлинное фото"] and len(out["rows"]) == 3
-    assert by_name["Подлинная смешанная"]["pills"][0] == "Mixed" and by_name["Подлинная смешанная"]["parts"] == "1 photo zone · 1 lettering item"
-    assert by_name["Подлинная простая"]["pills"][0] == "Vector" and by_name["Подлинная простая"]["parts"] is None
-    assert by_name["Подлинное фото"]["pills"][0] == "Photo engraving" and by_name["Подлинное фото"]["size"] == "60.0 × 30.0 mm"
-    assert by_name["Подлинная смешанная"]["size"] == "60.0 × 45.0 mm"
-    assert by_name["Подлинная простая"]["href"] == f"#/vector?plan={plain['id']}" and by_name["Подлинное фото"]["href"] == f"#/photo-engraving?work={photo['id']}"
+    assert sorted(by_name) == sorted(["Original simple", "Original mixed", "Original photo"]) and len(out["rows"]) == 3
+    assert by_name["Original mixed"]["pills"][0] == "Mixed" and by_name["Original mixed"]["parts"] == "1 photo zone · 1 lettering item"
+    assert by_name["Original simple"]["pills"][0] == "Vector" and by_name["Original simple"]["parts"] is None
+    assert by_name["Original photo"]["pills"][0] == "Photo engraving" and by_name["Original photo"]["size"] == "60.0 × 30.0 mm"
+    assert by_name["Original mixed"]["size"] == "60.0 × 45.0 mm"
+    assert by_name["Original simple"]["href"] == f"#/vector?plan={plain['id']}" and by_name["Original photo"]["href"] == f"#/photo-engraving?work={photo['id']}"
     assert out["thumbs"] == [[200, "image/png"]] * 3 and sorted(out["editors"]) == [["/photo-engraving", 200], ["/vector", 200], ["/vector", 200]]
 
 
@@ -578,7 +578,7 @@ def test_delete_asks_first_cancel_has_the_focus_and_one_confirmation_deletes_onc
   const box = dialog();
   out.asked = {title: box.querySelector('h3').textContent, text: box.querySelector('p').textContent, focus: active().textContent, deletes: deletes().length,
     buttons: box.querySelectorAll('button').map((b) => b.textContent)};
-  await active().dispatch('click');                                  // «Отмена», which has the focus: a quick Enter confirms nothing
+  await active().dispatch('click');                                  // «Cancel», which has the focus: a quick Enter confirms nothing
   out.cancelled = {closed: dialog() == null, deletes: deletes().length, names: names(s), focus: active() === menuButton(rowNamed(s, 'V002'))};
   await choose(rowNamed(s, 'P001'), 'Delete…');
   out.photoText = dialog().querySelector('p').textContent;
