@@ -1,27 +1,27 @@
-/* Пояснения к строкам протокола испытаний лазера и к величинам расчёта рабочей точки (REQ-017). Только текст. */
+/* Explanations for laser test-report rows and operating-point calculations (REQ-017). */
 'use strict';
 const GlossaryReport = (() => {
   const ROWS = {
-    'Mode of operation': 'Режим работы: импульсный или непрерывный (CW). MOPA-лазер умеет и то и другое: ступень 1 нс в таблице среза — это CW.',
-    'Nominal average output power': 'Средняя выходная мощность на частоте 48 кГц и длительности 200 нс — там, где лазер выдаёт полную мощность. Норма — от 60 Вт, у вашего образца измерено 62,6 Вт: лазер в норме.',
-    'Central emission wavelength': 'Длина волны излучения. 1064 нм — ближний инфракрасный свет иттербиевого волоконного лазера; титан поглощает его хорошо. Измерено 1067 нм при допуске 1055–1075.',
-    'Emission bandwidth (FWHM)': 'Ширина спектра излучения на половине высоты. Чем уже, тем «чище» одна длина волны; измерено 12,3 нм при допуске до 15 нм. На цвет повлиять не должно.',
-    'Output power adjusting range': 'Диапазон регулировки мощности: от 0 до 100 % от номинала; проверено.',
-    'Extended pulse repetition rate': 'Частота повторения импульсов: 1–4000 кГц, проверено. Это тысячи импульсов в секунду: на 100 кГц лазер даёт 100 000 импульсов в секунду.',
-    'Long-term average power instability': 'Дрейф средней мощности за 5 часов работы: допускается не более 5 %. Для калибровки цвета важно: мощность не должна «плыть» между платами.',
-    'Output beam diameter': 'Диаметр пучка на выходе лазера (до линзы), 7 мм при допуске 6,5–7,5 мм. Вместе с фокусным расстоянием линзы определяет размер пятна на металле.',
-    'Control interfaces': 'Управляющий интерфейс: цифровые линии DB-25. Проверен.'};
+    'Mode of operation': 'Pulsed or continuous-wave (CW) operation. A MOPA laser supports both; the 1 ns step in the cutoff table represents CW.',
+    'Nominal average output power': 'Average output power at 48 kHz and 200 ns, where the laser reaches full power. The minimum is 60 W; this unit measured 62.6 W and meets the specification.',
+    'Central emission wavelength': 'Emission wavelength. 1064 nm is near-infrared light from a ytterbium fiber laser and is readily absorbed by titanium. The measured 1067 nm is within the 1055–1075 nm tolerance.',
+    'Emission bandwidth (FWHM)': 'Emission bandwidth at half maximum. A narrower spectrum is closer to a single wavelength; the measured 12.3 nm is within the 15 nm limit. It should not affect color.',
+    'Output power adjusting range': 'Power adjustment from 0 to 100% of the rated value; verified.',
+    'Extended pulse repetition rate': 'Verified pulse repetition rate: 1–4000 kHz. At 100 kHz the laser produces 100,000 pulses per second.',
+    'Long-term average power instability': 'Average power drift over five hours must not exceed 5%. Stable power between plates matters for color calibration.',
+    'Output beam diameter': 'Beam diameter before the lens: 7 mm within a 6.5–7.5 mm tolerance. Together with lens focal length, it determines the spot size on metal.',
+    'Control interfaces': 'Digital control interface: DB-25. Verified.'};
 
-  const COLUMNS = 'Минимум — нижний допуск; Типичное — ожидаемое значение; Максимум — верхний допуск; Результат — что измерили на вашем экземпляре. «Проверено» — характеристика проверена без числа.';
+  const COLUMNS = 'Min and Max are the tolerance limits; Typical is the expected value; Result is the measured value for this laser. “Verified” means the property was checked without a numerical result.';
 
   const FIGURES = {
-    output_power: ['Выходная мощность', 'Вт', 'Сколько средней мощности лазер реально даёт при выбранных мощности и частоте. Ниже частоты среза она меньше заданной.'],
-    pulse_energy: ['Энергия импульса', 'мДж', 'Энергия одного импульса = мощность ÷ частота. Именно она за один импульс «ударяет» по металлу, и для цвета важна не меньше, чем средняя мощность.'],
-    pulse_pitch: ['Шаг между импульсами', 'мкм', 'Расстояние между центрами соседних пятен вдоль линии = скорость ÷ частота. Сравните с диаметром пятна: меньше пятна — импульсы перекрываются.'],
-    dose: ['Доза за все проходы', 'Дж/см²', 'Энергия, приходящаяся на квадратный сантиметр за все проходы = мощность ÷ (скорость × интервал линий) × число проходов. Главная сводная величина «сколько тепла получил металл».'],
-    density: ['Импульсов на мм²', 'шт.', 'Сколько импульсов попадает на каждый квадратный миллиметр заливки.'],
-    coverage: ['Скорость покрытия', 'мм²/с', 'Сколько площади лазер закрашивает в секунду = скорость × интервал ÷ число проходов. Показывает, как быстро получится готовая работа.'],
-    fluence: ['Плотность энергии', 'Дж/см²', 'Энергия импульса, делённая на площадь пятна. Считается, когда задан диаметр пятна.'],
-    overlap: ['Перекрытие импульсов', '%', 'Какую долю диаметра пятна перекрывает следующий импульс. Считается, когда задан диаметр пятна.']};
+    output_power: ['Output power', 'W', 'Actual average laser output at the selected power and frequency. Below the cutoff frequency it is lower than the setting.'],
+    pulse_energy: ['Pulse energy', 'mJ', 'Energy per pulse = power ÷ frequency. It is important to color alongside average power.'],
+    pulse_pitch: ['Pulse pitch', 'µm', 'Distance between neighboring spot centers along a line = speed ÷ frequency. Pulses overlap when this is less than the spot diameter.'],
+    dose: ['Dose across all passes', 'J/cm²', 'Energy per square centimeter across all passes = power ÷ (speed × line spacing) × passes. This summarizes the energy delivered to the metal.'],
+    density: ['Pulses per mm²', 'pulses', 'Number of pulses delivered per square millimeter of fill.'],
+    coverage: ['Coverage rate', 'mm²/s', 'Area covered per second = speed × spacing ÷ passes. This indicates how quickly the work can be completed.'],
+    fluence: ['Fluence', 'J/cm²', 'Pulse energy divided by spot area. Calculated when the spot diameter is known.'],
+    overlap: ['Pulse overlap', '%', 'Fraction of the spot diameter overlapped by the next pulse. Calculated when the spot diameter is known.']};
   return {ROWS, COLUMNS, FIGURES};
 })();
