@@ -34,7 +34,7 @@ const posted = () => ctx.requests.filter((r) => r.path === '/api/predictions/pho
   await settle();
   out.opened = {titanium: stock(tree).value, laser: select(tree, 'Лазер').value, lens: select(tree, 'Линза').value,
                 note: tree.textContent.includes('Файл работы «Inna Portrait-P1-17.lbrn2» уже выбран'),
-                says: tree.textContent.includes('Этот режим измерен здесь:Big Plate 150 · Grade 5 · 3 мм · JPT M7 · F-Theta · 174 мм')};
+                says: tree.textContent.includes('Этот режим измерен здесь:Big Plate 150 · Grade 5 · 3 мм · JPT M7 · F-Theta · 174 mm')};
   stock(tree).value = '3';
   tree.querySelectorAll('button').find((b) => b.textContent === 'Показать прогноз').dispatch('click'); await settle();
   tree.querySelectorAll('button').find((b) => b.textContent === 'Показать на нём').dispatch('click'); await settle();

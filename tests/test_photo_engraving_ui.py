@@ -256,10 +256,10 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
   const tiles = () => box.querySelectorAll('button.ge-kind');
   const marked = () => tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
   out.second = {title: box.querySelector('h3').textContent, tiles: tiles().length, pictures: tiles().map((b) => b.querySelector('img').getAttribute('src')),
-                marked: marked(), create: !!button(box, 'Create in “Градации серого”'), back: !!button(box, '← Back'), went: [...ctx.__went]};
-  await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
+                marked: marked(), create: !!button(box, 'Create in “Grayscale”'), back: !!button(box, '← Back'), went: [...ctx.__went]};
+  await tiles().find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
   out.picked = {marked: marked(), open: !!dialog(), saved: saves()};
-  await button(box, 'Create in “Джарвис”').dispatch('click'); await settle();
+  await button(box, 'Create in “Jarvis”').dispatch('click'); await settle();
   out.saved = saves(); out.went = ctx.__went; out.open = !!dialog();
   out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
 """, work={"id": 9})
@@ -272,8 +272,8 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
     second = out["second"]
     assert second["title"] == "New work · step 2 of 2: which engraving?" and second["tiles"] == 10 and second["went"] == []
     assert second["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1"            # the work's own picture in each kind
-    assert second["marked"] == ["Градации серого selected"] and second["create"] and second["back"]
-    assert out["picked"] == {"marked": ["Джарвис selected"], "open": True, "saved": []}      # a click chooses; nothing is saved yet
+    assert second["marked"] == ["Grayscale selected"] and second["create"] and second["back"]
+    assert out["picked"] == {"marked": ["Jarvis selected"], "open": True, "saved": []}      # a click chooses; nothing is saved yet
     assert out["saved"] == [{"kind": "jarvis"}] and out["went"] == ["/photo-engraving?work=9"] and not out["open"]
     assert out["deleted"] == []
 
@@ -543,7 +543,7 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   await button(box, 'Дальше →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.tiles = dialog().querySelectorAll('button.ge-kind').length;
-  await button(dialog(), 'Create in “Градации серого”').dispatch('click'); await settle();
+  await button(dialog(), 'Create in “Grayscale”').dispatch('click'); await settle();
   out.went = ctx.__went; out.saved = saves();
 """, work={"id": 9})
     assert out["first"] == {"chosen": [True, False], "powers": ["1", "30"], "table": True, "works": False}
@@ -705,15 +705,15 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.current = tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
   out.estimates = tiles().map((b) => b.textContent.includes('оценка'));
   out.keep = !!button(box, 'Закрыть');
-  await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
+  await tiles().find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
   out.closed = !dialog();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
   out.minMax = !!labelled(tree, 'Min power, % (white)');
   out.dot = labelled(tree, 'Dot power, %').value;
   out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').includes('/closeup.png'));
-  out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Джарвис»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
-  out.ramp = !!button(tree, 'Проба этого вида') && tree.textContent.includes('в виде «Джарвис» на мощности точек 12,5 %');
+  out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Jarvis»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
+  out.ramp = !!button(tree, 'Проба этого вида') && tree.textContent.includes('в виде «Jarvis» на мощности точек 12,5 %');
   await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
   out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
   await button(tree, 'Отменить').dispatch('click'); await settle();
@@ -721,15 +721,15 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.saved = saves();
 """)
     assert not out["before"] and out["title"] == "Какая гравировка?"                     # an existing work asks only when the button is clicked
-    assert out["tiles"] == ["Градации серого", "Порог", "Упорядоченный (Байер)", "Аткинсон", "Растр (Флойд-Стейнберг)", "Стаки", "Джарвис",
-                            "Газетный растр", "Полутона", "Эскиз"]
-    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Градации серого сейчас"] and out["keep"]
+    assert out["tiles"] == ["Grayscale", "Threshold", "Ordered (Bayer)", "Atkinson", "Dither (Floyd–Steinberg)", "Stucki", "Jarvis",
+                            "Newsprint", "Halftone", "Sketch"]
+    assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Grayscale сейчас"] and out["keep"]
     assert out["estimates"] == [False] + [True] * 9                                       # grayscale is measured, the dot kinds estimated
-    assert out["closed"] and out["kind"] == "Вид: Джарвис" and not out["minMax"] and out["dot"] == "12.5"
+    assert out["closed"] and out["kind"] == "Вид: Jarvis" and not out["minMax"] and out["dot"] == "12.5"
     assert out["byColour"] and out["closeup"] and out["says"] == [True, True, True] and out["ramp"]
     # the strip runs over the scale's measured powers 1..30 %: a click at three quarters of it is 22.75 %, rounded to 0.1 %
     assert out["saved"] == [{"kind": "jarvis"}, {"dot_power": 22.8}] and out["mark"].startswith("left:75.172")
-    assert out["undone"] == "Вид: Джарвис"                                                # undo takes back the power first
+    assert out["undone"] == "Вид: Jarvis"                                                # undo takes back the power first
 
 
 @node
@@ -942,7 +942,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
   await button(tree, 'Отменить').dispatch('click'); await settle();
   out.undone = [tick().checked, width().value];
   await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
-  await dialog().querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Градации серого').dispatch('click'); await settle();
+  await dialog().querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Grayscale').dispatch('click'); await settle();
   out.grey = box().hidden;
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None})
     assert out["first"] == [False, False, ""] and out["empty"] == 0                       # off; a tick on an empty field waits for the width
@@ -982,14 +982,14 @@ def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the
   out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body); out.went = ctx.__went.slice(-1);
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None}, advice=JARVIS_ADVICE)
     says = out["says"]
-    assert "Что известно о виде «Джарвис» на этом лазере и титане" in says and "измерено, но не подобрано" in says
+    assert "Что известно о виде «Jarvis» на этом лазере и титане" in says and "измерено, но не подобрано" in says
     assert "Лучшее измеренное: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №118." in says
     assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №120)" in says
     assert out["titles"]["Темнее"] == "мощность 12,5 % → 17,5 % — измерено по фото №120"
     assert out["titles"]["Чётче"] == "поправка ширины точки выкл. → 0,01 мм — по опыту процесса: ещё не измерено"
     assert "Точки: 22 %, 180 мм/с, шаг 0,012 мм, поправка точки 0,02 мм." in says
     # what the proposed plate finds out and how big it is
-    assert ("Копия 1 — центр, остальные меняют по одной настройке: мощность 22 % → 17,6 %; скорость 180 мм/с → 252 мм/с; вид Джарвис → Аткинсон; "
+    assert ("Копия 1 — центр, остальные меняют по одной настройке: мощность 22 % → 17,6 %; скорость 180 мм/с → 252 мм/с; вид Jarvis → Atkinson; "
             "по фото станет видно, какая лучше. Плата 65 × 45 мм: 4 копии по 18 × 12 мм, под каждой полоска серого.") in says
     assert out["saves"] == [{"dot_settings": {**JARVIS, "power": 17.5}}, {"dot_width": 0.01}, {"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "jarvis"}] and out["went"] == ["/experiment/plan-33"]
@@ -1010,14 +1010,14 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
   out.title = tree.querySelector('.ge-settings').textContent;
   out.text = tree.textContent;
 """, work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
-    assert out["source"].startswith("Точкипо фото № 149 (Джарвис): 25 % · 125 мм/с")
-    assert out["ends"] == "1 %точки — по фото № 149 (Джарвис)30 %"
-    assert out["title"].endswith("точки — на настройках точек по фото № 149 (Джарвис)")
+    assert out["source"].startswith("Точкипо фото № 149 (Jarvis): 25 % · 125 мм/с")
+    assert out["ends"] == "1 %точки — по фото № 149 (Jarvis)30 %"
+    assert out["title"].endswith("точки — на настройках точек по фото № 149 (Jarvis)")
     text = out["text"]
     assert "с карты цветов" not in text.replace("Цвет с карты", "") and "оценка по шкале" not in text
-    assert "оценка по фото № 149 (Джарвис): этот вид на этих настройках ещё не гравировался" in text
-    assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Джарвис), где сфотографированы точки этих настроек." in text
-    assert "— настройки точек по фото № 149 (Джарвис)." in text
+    assert "оценка по фото № 149 (Jarvis): этот вид на этих настройках ещё не гравировался" in text
+    assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Jarvis), где сфотографированы точки этих настроек." in text
+    assert "— настройки точек по фото № 149 (Jarvis)." in text
 
 
 # a kind whose every engraving on the titanium came out a negative (DEC-006): the dots of another kind stand in for its best
@@ -1032,16 +1032,16 @@ def test_a_kind_that_came_out_a_negative_says_so_and_takes_the_dark_dots_of_anot
     out = run(tmp_path, {"work": "7"}, """
   const box = () => tree.querySelector('.pq-advisor');
   out.says = box().textContent;
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять тёмные точки «Джарвис»').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять тёмные точки «Jarvis»').dispatch('click'); await settle();
   out.saves = saves();
   await box().querySelectorAll('button').find((b) => b.textContent === 'Сделать плату: 4 копии').dispatch('click'); await settle();
   out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body);
 """, work={"kind": "atkinson", "dot_power": 10.2, "dot_width": None}, advice=FAILED_ADVICE)
     says = out["says"]
     assert "не получился" in says and "Лучшее измеренное" not in says and "ещё не фотографировался" not in says
-    assert ("«Аткинсон» на этом титане не получился: фото № 147, 10,2 % — точки не темнее титана (L* 92): картинки не видно или она вышла "
-            "негативом. Вместо них — лучшие тёмные точки вида «Джарвис» на этом титане: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, "
-            "поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №149; для «Аткинсон» это предположение, пока его не сфотографируют на этих точках.") in says
+    assert ("«Atkinson» на этом титане не получился: фото № 147, 10,2 % — точки не темнее титана (L* 92): картинки не видно или она вышла "
+            "негативом. Вместо них — лучшие тёмные точки вида «Jarvis» на этом титане: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, "
+            "поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №149; для «Atkinson» это предположение, пока его не сфотографируют на этих точках.") in says
     assert "Лаборатория предлагает: та же картинка вокруг лучших точек другого вида." in says
     assert out["saves"] == [{"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "atkinson", "dot_width": True}]

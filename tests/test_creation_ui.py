@@ -828,7 +828,7 @@ photo_path = "S.scales = [{mode: {device_id: 1, lens_id: 2, material_id: 3, key:
 def test_a_photograph_asks_which_kind_of_engraving_before_it_is_kept_with_the_persons_picture_in_every_kind(tmp_path):
     out = run(tmp_path, photo_path + """
   out.label = button(tree, FORWARD).textContent;
-  out.line = tree.textContent.includes('Вид гравировки: Градации серого');
+  out.line = tree.textContent.includes('Вид гравировки: Grayscale');
   await ask(tree);
   out.title = dialog().querySelector('h3').textContent;
   out.names = kindNames();

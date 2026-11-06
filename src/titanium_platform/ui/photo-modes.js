@@ -1,50 +1,50 @@
-/* Виды фотогравировки LightBurn по-русски (REQ-054, DEC-095): что задаёт серый уровень, какие настройки слоя важны, что платформа умеет
-   предсказывать. Ключи — строки ditherMode из файла; состав и семейства те же, что в photo_modes.py (их сверяет тест). */
+/* LightBurn photo engraving modes (REQ-054, DEC-095): how tone is produced, relevant settings and prediction support.
+   Keys are ditherMode values; modes and families match photo_modes.py. */
 'use strict';
 const PhotoModes = (() => {
-  const FAMILY = {power: 'серый задаёт мощность', dots: 'серый задаёт плотность точек', edges: 'точки ложатся по краям рисунка', depth: 'серый задаёт глубину'};
-  const PREDICT = {curve: 'предсказывается по кривой «мощность → цвет», измеренной на тех же настройках',
-    profile: 'предсказывается по тональному профилю «серый → цвет», измеренному в этом режиме на тех же настройках',
-    none: 'платформа не предсказывает результат'};
-  const DOTS = 'Каждая точка бьёт на мощности слоя или не бьёт; тон — доля площади под точками, белое не гравируется. ';
+  const FAMILY = {power: 'gray controls power', dots: 'gray controls dot density', edges: 'dots follow image edges', depth: 'gray controls depth'};
+  const PREDICT = {curve: 'predicted from a power-to-color curve measured with the same settings',
+    profile: 'predicted from a gray-to-color tonal profile measured in this mode with the same settings',
+    none: 'the platform does not predict the result'};
+  const DOTS = 'Each dot fires at layer power or does not fire; tone is the fraction covered by dots, and white is not engraved. ';
   const MODES = {
-    grayscale: {label: 'градации серого', family: 'power', predict: 'curve',
-      controls: 'Серый уровень задаёт мощность: Min — для самого светлого, Max — для самого тёмного, между ними линейно (правило оператора, Q-024). '
-        + 'Белое тоже гравируется на мощности Min: нетронутым его оставляет только Min = 0. На титане мощность ведёт оксид по цветам, поэтому серый меняет не только яркость, но и оттенок.',
-      settings: 'Min и Max мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    threshold: {label: 'порог', family: 'dots', predict: 'none',
-      controls: 'Темнее середины серого точка бьёт на полной мощности, светлее — нет. Уровня порога в настройках нет: его сдвигает «Яркость». Промежуточных тонов нет, измерять нечего.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы, яркость'},
-    ordered: {label: 'упорядоченный (Байер)', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Рисунок точек — фиксированная решётка Байера; для крупных сплошных областей и логотипов.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    atkinson: {label: 'Аткинсон', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Рассеяние ошибки; слабее в очень светлых и очень тёмных местах.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    dither: {label: 'растр (Флойд-Стейнберг)', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Рассеяние ошибки; на больших ровных местах бывают полосы.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    stucki: {label: 'Стаки', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Рассеяние ошибки на широкой окрестности; слабее в полутонах.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    jarvis: {label: 'Джарвис', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Рассеяние ошибки на широкой окрестности; обычный совет LightBurn для фотографий.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы, поправка ширины точки'},
-    newsprint: {label: 'газетный растр', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Решётка пятен, крупнее там, где темнее; узор виден, гладко выходит при высоком DPI.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    halftone: {label: 'полутона', family: 'dots', predict: 'profile',
-      controls: DOTS + 'Круглые точки решётки: линий на дюйм (около четверти DPI) и угол решётки.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы, линий на дюйм, угол'},
-    sketch: {label: 'эскиз', family: 'edges', predict: 'none',
-      controls: 'Выделение краёв: точки ложатся там, где линии рисунка, ровные области остаются пустыми. Для линейных рисунков и рукописного текста.',
-      settings: 'мощность, скорость, частота, длительность импульса, шаг строк, проходы'},
-    '3dslice': {label: '3D-слайс', family: 'depth', predict: 'none',
-      controls: 'Серый — глубина: каждый проход бьёт пиксели темнее своего уровня, самый тёмный получает все проходы, белый — ни одного. Для рельефа, а не тона.',
-      settings: 'число проходов, проход очистки, мощность, скорость, частота, длительность импульса, шаг строк'},
+    grayscale: {label: 'grayscale', family: 'power', predict: 'curve',
+      controls: 'Gray controls power: Min for the lightest and Max for the darkest, with a linear range between them (operator rule, Q-024). '
+        + 'White is also engraved at Min power; only Min = 0 leaves it untouched. On titanium, power changes oxide color, so gray changes both brightness and hue.',
+      settings: 'Min and Max power, speed, frequency, pulse duration, line spacing, passes'},
+    threshold: {label: 'threshold', family: 'dots', predict: 'none',
+      controls: 'Dots darker than mid-gray fire at full power; lighter dots do not. Brightness shifts the threshold. There are no intermediate tones to measure.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes, brightness'},
+    ordered: {label: 'ordered (Bayer)', family: 'dots', predict: 'profile',
+      controls: DOTS + 'A fixed Bayer grid is suited to large solid areas and logos.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    atkinson: {label: 'Atkinson', family: 'dots', predict: 'profile',
+      controls: DOTS + 'Error diffusion is weaker in very light and very dark areas.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    dither: {label: 'dither (Floyd–Steinberg)', family: 'dots', predict: 'profile',
+      controls: DOTS + 'Error diffusion may produce bands in large uniform areas.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    stucki: {label: 'Stucki', family: 'dots', predict: 'profile',
+      controls: DOTS + 'Error diffusion over a wide neighborhood is weaker in midtones.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    jarvis: {label: 'Jarvis', family: 'dots', predict: 'profile',
+      controls: DOTS + 'Error diffusion over a wide neighborhood; commonly recommended by LightBurn for photographs.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes, dot width adjustment'},
+    newsprint: {label: 'newsprint', family: 'dots', predict: 'profile',
+      controls: DOTS + 'A grid of spots grows larger in darker areas. The pattern is visible and becomes smoother at high DPI.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    halftone: {label: 'halftone', family: 'dots', predict: 'profile',
+      controls: DOTS + 'A grid of round dots, controlled by lines per inch (about one quarter of DPI) and grid angle.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes, lines per inch, angle'},
+    sketch: {label: 'sketch', family: 'edges', predict: 'none',
+      controls: 'Edge detection places dots along image lines and leaves uniform areas empty. Suited to line drawings and handwriting.',
+      settings: 'power, speed, frequency, pulse duration, line spacing, passes'},
+    '3dslice': {label: '3D slice', family: 'depth', predict: 'none',
+      controls: 'Gray controls depth: each pass fires pixels darker than its level; the darkest receive every pass and white receives none. This is for relief, not tone.',
+      settings: 'number of passes, cleaning pass, power, speed, frequency, pulse duration, line spacing'},
   };
   const ALIASES = {dithered: 'dither', passthrough: 'threshold', 'pass-through': 'threshold'};
   const get = (key) => MODES[ALIASES[key] || key] || null;
-  const label = (key) => (get(key) || {}).label || key || 'не указан';
+  const label = (key) => (get(key) || {}).label || key || 'not specified';
   return {MODES, FAMILY, PREDICT, get, label};
 })();
