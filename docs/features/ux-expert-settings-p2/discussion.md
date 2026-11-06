@@ -65,3 +65,7 @@ Touch-target follow-up: list chips, filter selects and row action buttons now ha
 ### Implementation · 2026-11-06
 
 The same simulated coarse-pointer check also measured width: representative visible Works chips, selects and row-action buttons had minimum rendered width and height of 44px in both density modes. Actual touch interaction on a physical tablet is still unverified.
+
+### Implementation · 2026-11-06
+
+Keyboard follow-up: in the MarkView browser on the disposable setup, 71 successive Tab presses moved from Patch 1 L to Patch 24 b; intermediate focus was sampled at Patch 1 a/b, Patch 2 L, Patch 12 b and Patch 23 b/Patch 24 L/a/b. The browser tool's Shift+Tab command left focus unchanged even on an ordinary summary control, so it was not used as evidence of an application defect. In development Electron 0.40.0 on a separate disposable workshop, actual Shift+Tab moved Patch 1 a to Patch 1 L and Patch 2 L to Patch 1 b; Tab moved back to Patch 1 a. This is not a complete screen-reader audit.
