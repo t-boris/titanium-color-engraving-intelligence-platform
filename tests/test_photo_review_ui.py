@@ -27,8 +27,8 @@ SCRIPTS = ["app.js", "photo-modes.js", "dialogs.js", "list.js", "filepick.js", "
            "screens/ingest-dialogs.js", "screens/ingest-tasks.js", "screens/ingest-stages.js", "screens/lifecycle.js", "screens/ingest-review.js"]
 SETTINGS = {"x": {"param": "power", "first": 20, "last": 50}, "y": {"param": "speed", "first": 900, "last": 300},
             "fixed": {"frequency": 330, "pulse_width": 4, "line_interval": 0.003, "passes": 1}}
-STAGE_NAMES = ["Файлы", "Совмещение", "Проверка", "Принятие"]
-TOOL_NAMES = ["Углы работы", "Привязка по детали", "Сдвиг и поворот схемы", "Матрица параметров", "Слои файла", "Задачи гравировки"]
+STAGE_NAMES = ["Files", "Alignment", "Review", "Acceptance"]
+TOOL_NAMES = ["Work corners", "Align by detail", "Move and rotate layout", "Parameter matrix", "File layers", "Engraving tasks"]
 
 SCRIPT = """
 const fs = require('fs');
@@ -58,7 +58,7 @@ const withText = (t, part) => buttons(t).filter((b) => text(b).includes(part));
 const visible = (el) => { for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden) return false; return true; };
 const primaries = (t) => buttons(t).filter((b) => b.classList.contains('primary'));
 const stageButtons = (t) => t.querySelectorAll('ol').find((o) => o.classList.contains('rv-steps')).querySelectorAll('button');
-const toolButtons = (t) => t.querySelectorAll('nav').find((n) => n.getAttribute('aria-label') === 'Ручные инструменты').querySelectorAll('button');
+const toolButtons = (t) => t.querySelectorAll('nav').find((n) => n.getAttribute('aria-label') === 'Manual tools').querySelectorAll('button');
 const panels = (t) => t.querySelectorAll('section').filter((s) => s.classList.contains('rv-panel'));
 const shownStage = (t) => stageButtons(t).filter((b) => b.getAttribute('aria-current') === 'step').map((b) => b.getAttribute('aria-controls').replace('rv-panel-', ''));
 const head = (t) => t.querySelectorAll('section').find((s) => s.classList.contains('rv-head'));
@@ -136,7 +136,7 @@ def test_the_review_is_the_four_stages_in_order_and_opens_on_the_stage_the_serve
         got = out[name]
         assert got["names"] == STAGE_NAMES, name
         assert got["shown"] == [stage] and got["visiblePanels"] == [f"rv-panel-{stage}"], (name, got)         # one stage in view, marked as the current step
-        assert "Этапы проверки" in got["labelled"] and "Ручные инструменты" in got["labelled"]
+        assert "Review stages" in got["labelled"] and "Manual tools" in got["labelled"]
     assert out["ready"]["states"][3].split()[-1] == "shown" and "current" in out["ready"]["states"][3]
     assert [s.split()[1] for s in out["checked"]["states"]] == ["done", "done", "current", "todo"]
     assert out["done"]["names"] == []                                        # an accepted pair has the read-only bar (below), not the buttons of the stages
@@ -162,16 +162,16 @@ def test_every_stage_shows_completeness_its_blockers_and_exactly_one_primary_act
         for key, stage in seen.items():
             assert len(stage["primary"]) == 1 and stage["primary"][0][2], (name, key, stage["primary"])      # exactly one, and on the screen
             assert stage["shown"] == [key]
-            assert stage["pill"].startswith("выполнено этапов:")
-    assert out["fresh"]["files"]["primary"][0][:2] == ["Проверить пару", False]
-    assert out["checked"]["files"]["primary"][0][:2] == ["Далее: совмещение", False]
-    assert out["checked"]["alignment"]["primary"][0][:2] == ["Далее: проверка", False]
-    assert out["checked"]["review"]["primary"][0][:2] == ["Маски проверены: контуры лежат на нужных деталях", False]
-    assert out["checked"]["accept"]["primary"][0][:2] == ["Принять наблюдения", True]            # not acceptable: the masks are not reviewed
-    assert any("Маски слоёв ещё не проверены" in b for b in out["checked"]["accept"]["blockers"])
-    assert out["ready"]["accept"]["primary"][0][:2] == ["Принять наблюдения", False] and out["ready"]["accept"]["blockers"] == []
-    assert out["differs"]["files"]["primary"][0][:2] == ["Далее: совмещение", True]                  # blocked until the file is confirmed
-    assert out["differs"]["files"]["reason"].startswith("Станет доступно")
+            assert stage["pill"].startswith("stages complete:")
+    assert out["fresh"]["files"]["primary"][0][:2] == ["Review pair", False]
+    assert out["checked"]["files"]["primary"][0][:2] == ["Next: alignment", False]
+    assert out["checked"]["alignment"]["primary"][0][:2] == ["Next: review", False]
+    assert out["checked"]["review"]["primary"][0][:2] == ["Masks reviewed: outlines cover the correct details", False]
+    assert out["checked"]["accept"]["primary"][0][:2] == ["Accept observations", True]            # not acceptable: the masks are not reviewed
+    assert any("Layer masks have not been reviewed" in b for b in out["checked"]["accept"]["blockers"])
+    assert out["ready"]["accept"]["primary"][0][:2] == ["Accept observations", False] and out["ready"]["accept"]["blockers"] == []
+    assert out["differs"]["files"]["primary"][0][:2] == ["Next: alignment", True]                  # blocked until the file is confirmed
+    assert out["differs"]["files"]["reason"].startswith("Available once")
 
 
 # -- REQ-001: the review stage ----------------------------------------------------------------------------------------------------
@@ -247,7 +247,7 @@ def test_each_tool_opens_its_region_moves_the_focus_there_and_closes_again(tmp_p
     for key, expanded, hidden, focused, controls, role, label in out["steps"]:
         assert expanded == "true" and hidden is False and focused and controls and role == "region", key
     assert out["allOpen"] == [True] * 6 and out["afterClose"] == ["false", True]
-    assert out["regionText"] == {"layers": "Слои файла", "tasks": "Задачи гравировки", "matrix": "Матрица параметров", "corners": "Углы работы на фотографии"}
+    assert out["regionText"] == {"layers": "Слои файла", "tasks": "Engraving tasks", "matrix": "Матрица параметров", "corners": "Углы работы на фотографии"}
 
 
 def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(tmp_path, states):
@@ -258,7 +258,7 @@ def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(
     assert pairs["ready"]["check"]["alignment"]["valid"] and pairs["ready"]["review"]["advisories"] == []
     out = run_node(tmp_path, pairs, routes_for(states), """
   const tree = await draw('ready');
-  await byText(tree, 'Привязка по детали').dispatch('click'); await settle();
+  await byText(tree, 'Align by detail').dispatch('click'); await settle();
   const box = region(tree, 'anchor');
   const choose = box.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Кандидат на деталь');
   out.requests = ctx.requests.filter((r) => r.path.endsWith('anchor-candidates')).map((r) => [r.method, r.path]);
@@ -288,14 +288,14 @@ def test_the_detail_tool_says_why_it_has_nothing_to_offer_and_what_to_use_instea
     pid = ids["ready"]
     out = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/anchor-candidates": {"status": 422, "json": {"error": "check the photograph before choosing a detail", "kind": "invalid"}}}, """
   let tree = await draw('ready');
-  await byText(tree, 'Привязка по детали').dispatch('click'); await settle();
+  await byText(tree, 'Align by detail').dispatch('click'); await settle();
   out.failed = [text(region(tree, 'anchor')), withText(region(tree, 'anchor'), 'Повторить').length];
   ctx.fetch = async (url) => ({ok: true, status: 200, headers: {get: () => 'application/json'}, json: async () => ({candidates: []}), text: async () => '{}'});
   await byText(region(tree, 'anchor'), 'Повторить').dispatch('click'); await settle();
   out.empty = text(region(tree, 'anchor'));
   tree = await draw('fresh');
   const before = ctx.requests.length;
-  await byText(tree, 'Привязка по детали').dispatch('click'); await settle();
+  await byText(tree, 'Align by detail').dispatch('click'); await settle();
   out.unchecked = text(region(tree, 'anchor'));
   out.askedServer = ctx.requests.length - before;
 """)
@@ -321,14 +321,14 @@ def test_a_matrix_pair_has_its_matrix_tool_open_and_no_detail_tool(tmp_path):
     out = run_node(tmp_path, {"unconfirmed": unconfirmed, "confirmed": confirmed}, {}, """
   for (const name of ['unconfirmed', 'confirmed']) {
     const tree = await draw(name), before = ctx.requests.length;
-    await byText(tree, 'Привязка по детали').dispatch('click'); await settle();
+    await byText(tree, 'Align by detail').dispatch('click'); await settle();
     out[name] = {matrixOpen: !region(tree, 'matrix').hidden, expanded: toolButtons(tree)[3].getAttribute('aria-expanded'),
       matrixTitle: text(region(tree, 'matrix').querySelector('h3')), anchor: text(region(tree, 'anchor')), asked: ctx.requests.length - before,
       blockers: head(tree).querySelectorAll('li').filter((l) => l.classList.contains('rv-blocker')).map(text)};
   }
 """)
     assert out["unconfirmed"]["matrixOpen"] and out["unconfirmed"]["expanded"] == "true"                    # the matrix settings wait for the operator: the tool is open
-    assert any("Параметры матрицы ещё не подтверждены" in b and "Матрица параметров" in b for b in out["unconfirmed"]["blockers"])
+    assert any("The matrix settings have not been confirmed" in b and "Parameter matrix" in b for b in out["unconfirmed"]["blockers"])
     assert not out["confirmed"]["matrixOpen"] and out["confirmed"]["matrixTitle"] == "Матрица параметров"
     for name in ("unconfirmed", "confirmed"):
         assert "нет привязки по детали" in out[name]["anchor"] and out[name]["asked"] == 0, name              # explained, and the server is not asked
@@ -341,34 +341,34 @@ def test_a_blocker_is_explained_in_russian_and_links_to_the_tool_that_resolves_i
   let tree = await draw('differs');
   const row = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
   out.differs = {text: text(row), tools: row.querySelectorAll('button').map(text)};
-  await byText(row, 'Подтвердить использованный файл').dispatch('click'); await settle();
+  await byText(row, 'Confirm the file used').dispatch('click'); await settle();
   out.confirmDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Confirm the file used');
   ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Cancel').dispatch('click'); await settle();
-  await byText(row, 'Исправить пару').dispatch('click'); await settle();
+  await byText(row, 'Correct pair').dispatch('click'); await settle();
   out.fixDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Correct pair');
   ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Cancel').dispatch('click'); await settle();
 
   tree = await draw('blank');
   const lost = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
   out.blank = {text: text(lost), tools: lost.querySelectorAll('button').map(text), corners: toolButtons(tree)[0].getAttribute('aria-expanded'), anchor: toolButtons(tree)[1].getAttribute('aria-expanded')};
-  await byText(lost, 'Привязка по детали').dispatch('click'); await settle();
+  await byText(lost, 'Align by detail').dispatch('click'); await settle();
   out.blankAfter = [toolButtons(tree)[1].getAttribute('aria-expanded'), ctx.document.activeElement === region(tree, 'anchor')];
 
   tree = await draw('checked');
   const masks = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
   out.masks = {text: text(masks), tools: masks.querySelectorAll('button').map(text)};
-  await byText(masks, 'Проверить маски слоёв').dispatch('click'); await settle();
+  await byText(masks, 'Review layer masks').dispatch('click'); await settle();
   out.focusedPrimary = ctx.document.activeElement && text(ctx.document.activeElement);
 """)
-    assert "Файл отличается от определения платы" in out["differs"]["text"]
-    assert out["differs"]["tools"] == ["Подтвердить использованный файл", "Исправить пару"]
+    assert "The file differs from the plate definition" in out["differs"]["text"]
+    assert out["differs"]["tools"] == ["Confirm the file used", "Correct pair"]
     assert out["confirmDialog"] and out["fixDialog"]
-    assert "Фотография не совмещена с файлом" in out["blank"]["text"]
-    assert out["blank"]["tools"] == ["Углы работы", "Привязка по детали"]
+    assert "The photograph is not aligned with the file" in out["blank"]["text"]
+    assert out["blank"]["tools"] == ["Work corners", "Align by detail"]
     assert out["blank"]["corners"] == "true" and out["blank"]["anchor"] == "false"                  # the next step on a failed alignment is open from the start
     assert out["blankAfter"] == ["true", True]
-    assert out["masks"]["tools"] == ["Проверить маски слоёв"] and "Маски слоёв ещё не проверены" in out["masks"]["text"]
-    assert out["focusedPrimary"] == "Маски проверены: контуры лежат на нужных деталях"
+    assert out["masks"]["tools"] == ["Review layer masks"] and "Layer masks have not been reviewed" in out["masks"]["text"]
+    assert out["focusedPrimary"] == "Masks reviewed: outlines cover the correct details"
 
 
 def test_a_later_stage_lists_what_is_unresolved_before_it_and_sends_the_operator_there(tmp_path, states):
@@ -381,13 +381,13 @@ def test_a_later_stage_lists_what_is_unresolved_before_it_and_sends_the_operator
   await stageButtons(tree)[3].dispatch('click');
   const row = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
   out.accept = {text: text(row), primary: primaries(tree).map((b) => [text(b), b.disabled])};
-  await byText(row, 'Подтвердить использованный файл').dispatch('click'); await settle();
+  await byText(row, 'Confirm the file used').dispatch('click'); await settle();
   out.shownAfter = shownStage(tree);
-  await withText(head(tree), 'Файлы')[0] && 0;
+  await withText(head(tree), 'Files')[0] && 0;
 """)
-    assert "На более раннем этапе есть нерешённое" in out["review"]["earlier"] and "Файлы" in out["review"]["earlier"]
+    assert "An earlier stage has unresolved issues" in out["review"]["earlier"] and "Files" in out["review"]["earlier"]
     assert out["review"]["primary"][0][1] is True                                                   # nothing leads on from a stage with an earlier blocker
-    assert "Этап: Файлы" in out["accept"]["text"] and out["accept"]["primary"] == [["Принять наблюдения", True]]
+    assert "Stage: Files" in out["accept"]["text"] and out["accept"]["primary"] == [["Accept observations", True]]
     assert out["shownAfter"] == ["files"]                                                           # the tool of that blocker lives there
 
 
@@ -404,12 +404,12 @@ def test_a_warning_shows_what_needs_attention_with_the_tool_that_looks_into_it(t
   out.notes = notes.map((n) => [text(n.querySelector('div')), n.querySelectorAll('button').map(text)]);
   out.stillAcceptable = (await (async () => { await stageButtons(tree)[3].dispatch('click'); return primaries(tree).map((b) => b.disabled); })());
   await stageButtons(tree)[0].dispatch('click');
-  await byText(notes[0], 'Привязка по детали').dispatch('click'); await settle();
+  await byText(notes[0], 'Align by detail').dispatch('click'); await settle();
   out.opened = toolButtons(tree)[1].getAttribute('aria-expanded');
 """)
     by_tool = {tuple(tools): note for note, tools in out["notes"]}
-    assert "Alignment starts from one manually placed detail" in by_tool[("Привязка по детали",)]           # the check's own sentence
-    assert any(note.startswith("Не измерены слои: 1") for note in by_tool.values()) and ("Слои файла",) in by_tool
+    assert "Alignment starts from one manually placed detail" in by_tool[("Align by detail",)]           # the check's own sentence
+    assert any(note.startswith("Unmeasured layers: 1") for note in by_tool.values()) and ("File layers",) in by_tool
     assert out["stillAcceptable"] == [False] and out["opened"] == "true"                                          # a warning does not block what the server allows
 
 
@@ -421,12 +421,12 @@ def test_a_setting_the_file_lacks_is_a_note_with_a_tool_that_opens_the_fields_fo
     assert [a["code"] for a in pair["review"]["advisories"]].count("settings_missing") == 1
     out = run_node(tmp_path, {"lacking": pair}, {}, """
   const tree = await draw('lacking');
-  const note = head(tree).querySelectorAll('li').find((l) => text(l).includes('В файле нет настроек у слоёв'));
+  const note = head(tree).querySelectorAll('li').find((l) => text(l).includes('Settings are missing from the file for'));
   out.note = text(note);
   const box = tree.querySelectorAll('details').find((d) => d.classList.contains('rv-more') && text(d.querySelector('summary')) === 'Ввести недостающие настройки слоёв');
   out.open = box.hasAttribute('open');
   await stageButtons(tree)[2].dispatch('click');
-  await byText(head(tree), 'Ввести недостающие настройки').dispatch('click');
+  await byText(head(tree), 'Enter missing settings').dispatch('click');
   out.after = [shownStage(tree), ctx.document.activeElement && ctx.document.activeElement.localName];
 """)
     assert "r1c1" in out["note"] and out["open"] is True                                                   # open from the start: the pair lacks a setting
@@ -483,10 +483,10 @@ def test_while_the_pair_is_checked_again_nothing_on_the_page_can_accept_it(tmp_p
   await stageButtons(fresh)[3].dispatch('click');
   out.after = primaries(fresh).map((b) => [text(b), b.disabled]);
 """)
-    assert out["before"] == [["Принять наблюдения", False]]
-    assert out["during"]["primary"] == [["Принять наблюдения", True]] and "Идёт пересчёт" in out["during"]["reason"] and out["during"]["again"] is True
+    assert out["before"] == [["Accept observations", False]]
+    assert out["during"]["primary"] == [["Accept observations", True]] and "Recalculation is in progress" in out["during"]["reason"] and out["during"]["again"] is True
     assert "Совмещаем фото и измеряем слои" in out["during"]["status"] and out["reloaded"] == 1
-    assert out["after"] == [["Принять наблюдения", True]]
+    assert out["after"] == [["Accept observations", True]]
 
 
 def test_a_failed_recheck_is_said_and_gives_the_page_back(tmp_path, states):
@@ -501,7 +501,7 @@ def test_a_failed_recheck_is_said_and_gives_the_page_back(tmp_path, states):
   out.again = again.disabled; out.reloads = reloads.length;
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text);
 """)
-    assert "Проверка не завершилась" in out["status"] and out["primary"] == [["Принять наблюдения", False]]      # the state did not change: neither does the page
+    assert "Проверка не завершилась" in out["status"] and out["primary"] == [["Accept observations", False]]      # the state did not change: neither does the page
     assert out["again"] is False and out["reloads"] == 0 and len(out["toast"]) == 1 and "photograph could not be read" in out["toast"][0] or "фотограф" in out["toast"][0]
 
 
@@ -568,8 +568,8 @@ def test_an_accepted_pair_is_read_only_with_every_stage_done_its_provenance_and_
   out.heading = tree.querySelectorAll('h3').map(text);
   out.note = text(tree.querySelectorAll('p').find((p) => text(p).includes('Ручные инструменты')));
 """)
-    assert [item.split("выполнено")[0][1:] for item in out["bar"]] == STAGE_NAMES and all(item.endswith("выполнено") for item in out["bar"])
-    assert out["tools"] == ["Этапы проверки"] and out["buttons"] == ["Поправить совмещение этого фото", "Удалить пару"]
+    assert [item.split("done")[0][1:] for item in out["bar"]] == STAGE_NAMES and all(item.endswith("done") for item in out["bar"])
+    assert out["tools"] == ["Review stages"] and out["buttons"] == ["Поправить совмещение этого фото", "Удалить пару"]
     assert out["heading"] == ["Что записано при принятии"] and "новую пару" in out["note"]
 
 
@@ -582,8 +582,8 @@ def test_the_pages_before_a_review_show_the_stage_bar_for_reading_only(tmp_path)
   out.current = bar.querySelectorAll('span').filter((s) => s.getAttribute('aria-current') === 'step').map((s) => text(s));
   out.label = bar.getAttribute('aria-label');
 """)
-    assert [item[1:].split("впереди")[0].split("сейчас")[0] for item in out["items"]] == STAGE_NAMES
-    assert out["buttons"] == 0 and len(out["current"]) == 1 and out["current"][0].startswith("1Файлы") and out["label"] == "Этапы проверки"
+    assert [item[1:].split("upcoming")[0].split("current")[0] for item in out["items"]] == STAGE_NAMES
+    assert out["buttons"] == 0 and len(out["current"]) == 1 and out["current"][0].startswith("1Files") and out["label"] == "Review stages"
     source = (UI_DIR / "screens" / "ingest.js").read_text(encoding="utf-8")
     assert source.count("IngestStages.upload()") == 2                                          # a new pair and a re-photograph
 
@@ -621,7 +621,7 @@ def test_accepting_a_result_of_a_vector_work_returns_to_that_work_and_other_resu
     other = {**routes_for(states), f"/api/pairs/{pid}/accept": {"status": 200, "json": {"work_review": None}}}
     script = """
   const tree = await draw('ready');
-  await byText(tree, 'Принять наблюдения').dispatch('click'); await settle();
+  await byText(tree, 'Accept observations').dispatch('click'); await settle();
   out.went = went.slice();
 """
     back = run_node(tmp_path, pairs, routes, script)

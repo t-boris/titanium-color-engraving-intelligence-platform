@@ -1,4 +1,4 @@
-/* The review of a pair as four stages: Файлы → Совмещение → Проверка → Принятие (ux-photo-review-p0: REQ-001, REQ-002, DEC-001).
+/* The review of a pair as four stages: Files → Alignment → Review → Acceptance (ux-photo-review-p0: REQ-001, REQ-002, DEC-001).
 
    What the screen shows is what the server derived (``pair.review``, src/titanium_platform/pair_review.py): the stage to work on, the
    blocking conditions (exactly those ``accept_pair`` refuses on) with the tools that resolve them, and the advisory notes. This file
@@ -12,58 +12,58 @@
 const IngestStages = (() => {
   const {h, fill, btn, pill} = App;
 
-  const STAGES = [['files', 'Файлы'], ['alignment', 'Совмещение'], ['review', 'Проверка'], ['accept', 'Принятие']];
+  const STAGES = [['files', 'Files'], ['alignment', 'Alignment'], ['review', 'Review'], ['accept', 'Acceptance']];
   const KEYS = STAGES.map(([key]) => key);
   const NAME = Object.fromEntries(STAGES);
   const HINT = {
-    files: 'Файл LightBurn и фотография читаются, файл совпадает с определением платы, настройки слоёв известны.',
-    alignment: 'Контуры из файла лежат на тех же местах фотографии. Если автоматика не справилась или сомневается, поправьте совмещение вручную.',
-    review: 'Фотография с контурами и короткий итог. Проверьте, что контуры лежат на нужных деталях; метрики и слои свёрнуты.',
-    accept: 'Принятые наблюдения неизменяемы и входят в знания лазера. Здесь видно, что именно будет записано и откуда это взято.',
+    files: 'The LightBurn file and photograph are readable, the file matches the plate definition, and layer settings are known.',
+    alignment: 'File outlines align with the photograph. Adjust alignment manually if automatic alignment failed or is uncertain.',
+    review: 'Review the photograph, outlines and short summary. Check that outlines cover the correct details; metrics and layers are collapsed.',
+    accept: 'Accepted observations are immutable and enter the laser’s knowledge. Review exactly what will be recorded and its source.',
   };
   const MANUAL = ['corners', 'anchor', 'shift', 'matrix', 'layers', 'tasks'];
-  const TOOLS = {corners: 'Углы работы', anchor: 'Привязка по детали', shift: 'Сдвиг и поворот схемы', matrix: 'Матрица параметров',
-    layers: 'Слои файла', tasks: 'Задачи гравировки'};
-  const CONTEXT = {check: 'Проверить пару', restart: 'Найти заново по RAW и LightBurn', file: 'Исправить пару',
-    file_confirm: 'Подтвердить использованный файл', supplied: 'Ввести недостающие настройки', masks: 'Проверить маски слоёв'};
+  const TOOLS = {corners: 'Work corners', anchor: 'Align by detail', shift: 'Move and rotate layout', matrix: 'Parameter matrix',
+    layers: 'File layers', tasks: 'Engraving tasks'};
+  const CONTEXT = {check: 'Review pair', restart: 'Find again using RAW and LightBurn', file: 'Correct pair',
+    file_confirm: 'Confirm the file used', supplied: 'Enter missing settings', masks: 'Review layer masks'};
 
   // What stands in the way of acceptance, said for the operator; the codes are those of pair_review.py. The server's own sentence (if it
   // has one) is printed under it, translated, so nothing the check said is lost.
   const BLOCKER = {
-    not_checked: 'Пара ещё не проверена: фотография не совмещена с файлом, слои не измерены.',
-    file_unreadable: 'Файл LightBurn не читается.',
-    photo_unreadable: 'Фотографию не удалось прочитать.',
-    identifier_unknown: 'Идентификатор эксперимента на плате неизвестен этой системе.',
-    identifier_deleted: 'Идентификатор на плате принадлежит удалённому эксперименту.',
-    other_laser: 'Плата сделана для другого лазера, чем выбран для пары.',
-    matrix_incomplete: 'Настройки матрицы прочитаны не полностью.',
-    matrix_pulse_width: 'Длительность импульса матрицы вне диапазона этого лазера.',
-    matrix_unconfirmed: 'Параметры матрицы ещё не подтверждены.',
-    no_chart: 'Калибровочная карта на фотографии не подтверждена.',
-    no_colour_basis: 'У фотографии нет основы для измерения цвета.',
-    plate_cells_missing: 'В файле LightBurn не найдены ячейки платы.',
-    file_unconfirmed: 'Файл отличается от определения платы: исправьте пару или подтвердите, что гравировали именно этим файлом.',
-    alignment_lost: 'Поправка совмещения потеряла слишком много распознанных деталей.',
-    alignment_failed: 'Фотография не совмещена с файлом.',
-    masks_unreviewed: 'Маски слоёв ещё не проверены на этой фотографии.',
-    no_measured_layer: 'Не измерен ни один читаемый сопоставимый слой.',
-    not_ready: 'Пара не готова к принятию.',
+    not_checked: 'The pair has not been reviewed: the photograph is not aligned with the file and layers are not measured.',
+    file_unreadable: 'The LightBurn file cannot be read.',
+    photo_unreadable: 'The photograph could not be read.',
+    identifier_unknown: 'The experiment identifier on the plate is unknown to this system.',
+    identifier_deleted: 'The identifier on the plate belongs to a deleted experiment.',
+    other_laser: 'The plate was made for a different laser than the one selected for the pair.',
+    matrix_incomplete: 'The matrix settings were not fully read.',
+    matrix_pulse_width: 'The matrix pulse duration is outside this laser’s range.',
+    matrix_unconfirmed: 'The matrix settings have not been confirmed.',
+    no_chart: 'The calibration chart in the photograph has not been confirmed.',
+    no_colour_basis: 'The photograph has no basis for color measurement.',
+    plate_cells_missing: 'No plate cells were found in the LightBurn file.',
+    file_unconfirmed: 'The file differs from the plate definition. Correct the pair or confirm that this exact file was used for engraving.',
+    alignment_lost: 'The alignment adjustment lost too many detected details.',
+    alignment_failed: 'The photograph is not aligned with the file.',
+    masks_unreviewed: 'Layer masks have not been reviewed on this photograph.',
+    no_measured_layer: 'No readable, comparable layer was measured.',
+    not_ready: 'The pair is not ready to accept.',
   };
   const advisoryText = (a) => {
     const names = (a.names || []).map((n) => I18N.name(n)).join(', ');
-    const more = a.count > (a.names || []).length ? ' и др.' : '';
+    const more = a.count > (a.names || []).length ? ' and others' : '';
     switch (a.code) {
-      case 'layers_skipped': return `Не измерены слои: ${a.count} (${names}${more}).`;
-      case 'layers_incomparable': return `Слои без сопоставимых настроек, в модель не попадут: ${a.count} (${names}${more}).`;
-      case 'settings_missing': return `В файле нет настроек у слоёв: ${a.count} (${names}${more}). Их можно ввести вручную.`;
-      case 'qr_offset': return 'QR-код на фотографии сдвинут относительно основной матрицы; его контур и измерение поправлены отдельно.';
-      default: return a.detail ? I18N.tr(a.detail) : 'Проверка оставила замечание.';
+      case 'layers_skipped': return `Unmeasured layers: ${a.count} (${names}${more}).`;
+      case 'layers_incomparable': return `Layers with non-comparable settings, excluded from the model: ${a.count} (${names}${more}).`;
+      case 'settings_missing': return `Settings are missing from the file for ${a.count} layers (${names}${more}). You can enter them manually.`;
+      case 'qr_offset': return 'The QR code is offset from the main matrix in the photograph; its outline and measurement were adjusted separately.';
+      default: return a.detail ? I18N.tr(a.detail) : 'The review reported a note.';
     }
   };
 
   const toolName = (key) => TOOLS[key] || CONTEXT[key] || key;
-  const stateText = (state, count) => (state === 'done' ? 'выполнено' : state === 'current'
-    ? (count ? `нужно решить: ${count}` : 'сейчас') : count ? `впереди, проблем: ${count}` : 'впереди');
+  const stateText = (state, count) => (state === 'done' ? 'done' : state === 'current'
+    ? (count ? `needs resolution: ${count}` : 'current') : count ? `upcoming, issues: ${count}` : 'upcoming');
 
   /** The stage bar. ``onSelect`` null draws it for reading only (the upload pages, an accepted pair). */
   function bar(stages, {shown = null, onSelect = null} = {}) {
@@ -75,18 +75,18 @@ const IngestStages = (() => {
         ? h('button', {type: 'button', ...attrs, 'aria-controls': `rv-panel-${key}`, onClick: () => onSelect(key)}, body)
         : h('span', {...attrs, tabindex: null}, body));
     });
-    return h('nav', {'aria-label': 'Этапы проверки'}, h('ol', {class: 'rv-steps'}, items));
+    return h('nav', {'aria-label': 'Review stages'}, h('ol', {class: 'rv-steps'}, items));
   }
 
   /** The stage bar of the pages that come before a review (a new pair, a re-photograph): the files stage is the one in progress. */
   const upload = () => bar(KEYS.map((key) => ({key, state: key === 'files' ? 'current' : 'todo', blockers: []})), {shown: 'files'});
 
   /** What invalidates a review, said to the operator (the same list as ``INVALIDATED_BY`` in pair_review.py). */
-  const invalidation = () => h('details', {class: 'rv-note'}, h('summary', {}, 'Что сбрасывает проверку масок'),
-    h('p', {class: 'muted small'}, 'Проверка масок относится к конкретному результату измерения. Она сбрасывается, если после неё заменить файл LightBurn, '
-      + 'пересчитать совмещение (углы, привязка по детали, сдвиг схемы, «Найти заново», повторная проверка), ввести или убрать настройку слоя, '
-      + 'исправить матрицу параметров. Если после повторной проверки расхождения с платой другие, подтверждение файла тоже снимается. '
-      + 'Выбор задачи гравировки и подтверждение файла проверку масок не сбрасывают. Принятая пара неизменяема; поправка совмещения — новая пара.'));
+  const invalidation = () => h('details', {class: 'rv-note'}, h('summary', {}, 'What resets mask review'),
+    h('p', {class: 'muted small'}, 'Mask review applies to a specific measurement result. It resets if you replace the LightBurn file, '
+      + 'recalculate alignment (corners, detail alignment, layout movement, Find again or recheck), add or remove a layer setting, '
+      + 'or correct the parameter matrix. If plate discrepancies differ after recheck, file confirmation is also cleared. '
+      + 'Choosing an engraving task and confirming the file do not reset mask review. An accepted pair is immutable; an alignment correction creates a new pair.'));
 
   /** The review screen. ``panels`` {stage: [nodes]}, ``regions`` {tool: {el} | {build}}, ``actions`` the things the stages do
       (check, restart, file, file_confirm, supplied, masks, reviewMasks, accept), ``state`` {checked, ready, masksReviewed}, ``status`` a
@@ -117,8 +117,8 @@ const IngestStages = (() => {
     };
     const toggleTool = (key) => { if (wrappers[key].hidden) openTool(key); else setOpen(key, false); };
 
-    const toolsBar = h('nav', {class: 'rv-tools', 'aria-label': 'Ручные инструменты'},
-      h('span', {class: 'muted small'}, 'Ручные инструменты:'),
+    const toolsBar = h('nav', {class: 'rv-tools', 'aria-label': 'Manual tools'},
+      h('span', {class: 'muted small'}, 'Manual tools:'),
       ...MANUAL.map((key) => (buttons[key] = h('button', {type: 'button', class: 'btn rv-tool', 'aria-expanded': 'false',
         'aria-controls': `rv-region-${key}`, onClick: () => toggleTool(key)}, TOOLS[key]))));
     const regionsHost = h('div', {class: 'stack rv-regions'}, ...MANUAL.map((key) => (wrappers[key] = h('div', {class: 'rv-region',
@@ -131,20 +131,20 @@ const IngestStages = (() => {
     const toolButton = (key) => h('button', {type: 'button', class: 'btn btn-small', onClick: () => use(key)}, toolName(key));
 
     const primary = () => {
-      if (shown === 'files' && !state.checked) return {label: 'Проверить пару', run: actions.check};
-      if (shown === 'files') return {label: 'Далее: совмещение', run: () => show('alignment'), disabled: has('files')};
-      if (shown === 'alignment') return {label: 'Далее: проверка', run: () => show('review'), disabled: has('files') || has('alignment')};
-      if (shown === 'review' && state.masksReviewed) return {label: 'Далее: принятие', run: () => show('accept'), disabled: KEYS.slice(0, 3).some(has)};
-      if (shown === 'review') return {label: 'Маски проверены: контуры лежат на нужных деталях', run: actions.reviewMasks, disabled: !state.ready};
-      return {label: 'Принять наблюдения', run: actions.accept, disabled: !review.acceptable};
+      if (shown === 'files' && !state.checked) return {label: 'Review pair', run: actions.check};
+      if (shown === 'files') return {label: 'Next: alignment', run: () => show('alignment'), disabled: has('files')};
+      if (shown === 'alignment') return {label: 'Next: review', run: () => show('review'), disabled: has('files') || has('alignment')};
+      if (shown === 'review' && state.masksReviewed) return {label: 'Next: acceptance', run: () => show('accept'), disabled: KEYS.slice(0, 3).some(has)};
+      if (shown === 'review') return {label: 'Masks reviewed: outlines cover the correct details', run: actions.reviewMasks, disabled: !state.ready};
+      return {label: 'Accept observations', run: actions.accept, disabled: !review.acceptable};
     };
 
     const blockerRow = (b) => {
       const known = BLOCKER[b.code];
       return h('li', {class: 'rv-blocker'},
-        h('div', {class: 'rv-what'}, h('strong', {}, known || (b.detail ? I18N.tr(b.detail) : 'Проверка нашла проблему.')),
+        h('div', {class: 'rv-what'}, h('strong', {}, known || (b.detail ? I18N.tr(b.detail) : 'The review found a problem.')),
           known && b.detail ? h('span', {class: 'muted small'}, I18N.tr(b.detail)) : null,
-          shown === 'accept' ? h('span', {class: 'muted small'}, `Этап: ${NAME[b.stage]}`) : null),
+          shown === 'accept' ? h('span', {class: 'muted small'}, `Stage: ${NAME[b.stage]}`) : null),
         h('div', {class: 'rv-fix'}, ...b.tools.map((key) => h('button', {type: 'button', class: 'btn btn-small',
           onClick: () => { if (b.stage !== shown && !MANUAL.includes(key)) show(b.stage); use(key); }}, toolName(key)))));
     };
@@ -156,20 +156,20 @@ const IngestStages = (() => {
       const earlier = shown === 'accept' ? [] : [...new Set(review.blockers.filter((b) => KEYS.indexOf(b.stage) < at).map((b) => b.stage))];
       const done = review.stages.filter((s) => s.state === 'done').length;
       const act = primary(), off = act.disabled || busy;
-      const reason = busy ? 'Идёт пересчёт: дождитесь его конца.' : act.disabled && here.length ? 'Станет доступно, когда будет решено то, что указано выше.'
-        : act.disabled ? 'Сначала решите то, что мешает на более раннем этапе.' : null;
+      const reason = busy ? 'Recalculation is in progress; wait until it finishes.' : act.disabled && here.length ? 'Available once the issues above are resolved.'
+        : act.disabled ? 'First resolve the issue in the earlier stage.' : null;
       const notes = review.advisories || [];
       fill(headHost, h('section', {class: 'card stack rv-head', 'aria-labelledby': 'rv-head-title'},
-        h('div', {class: 'row'}, h('h3', {id: 'rv-head-title'}, `Этап ${at + 1} из ${KEYS.length}: ${NAME[shown]}`), h('span', {class: 'spacer'}),
-          pill(`выполнено этапов: ${done} из ${KEYS.length}`, done === KEYS.length ? 'ok' : '')),
+        h('div', {class: 'row'}, h('h3', {id: 'rv-head-title'}, `Stage ${at + 1} of ${KEYS.length}: ${NAME[shown]}`), h('span', {class: 'spacer'}),
+          pill(`stages complete: ${done} of ${KEYS.length}`, done === KEYS.length ? 'ok' : '')),
         h('p', {class: 'muted small'}, HINT[shown]),
-        here.length ? h('div', {class: 'stack'}, h('strong', {}, 'Что мешает принять результат'), h('ul', {class: 'rv-list'}, here.map(blockerRow)))
-          : h('div', {class: 'alert ok', role: 'status'}, shown === 'accept' ? 'Всё проверено: наблюдения можно принять.' : 'На этом этапе ничего не мешает принять результат.'),
-        earlier.length ? h('div', {class: 'alert warn', role: 'status'}, 'На более раннем этапе есть нерешённое: ',
+        here.length ? h('div', {class: 'stack'}, h('strong', {}, 'What prevents acceptance'), h('ul', {class: 'rv-list'}, here.map(blockerRow)))
+          : h('div', {class: 'alert ok', role: 'status'}, shown === 'accept' ? 'Everything is reviewed; observations can be accepted.' : 'Nothing in this stage prevents acceptance.'),
+        earlier.length ? h('div', {class: 'alert warn', role: 'status'}, 'An earlier stage has unresolved issues: ',
           earlier.map((key, i) => [i ? ', ' : '', h('button', {type: 'button', class: 'btn btn-small', onClick: () => show(key)}, NAME[key])])) : null,
-        notes.length ? h('div', {class: 'stack'}, h('strong', {}, 'На что обратить внимание'),
+        notes.length ? h('div', {class: 'stack'}, h('strong', {}, 'Items to review'),
           h('ul', {class: 'rv-list'}, notes.slice(0, 4).map(advisoryRow)),
-          notes.length > 4 ? h('details', {}, h('summary', {}, `Ещё ${notes.length - 4}`), h('ul', {class: 'rv-list'}, notes.slice(4).map(advisoryRow))) : null) : null,
+          notes.length > 4 ? h('details', {}, h('summary', {}, `${notes.length - 4} more`), h('ul', {class: 'rv-list'}, notes.slice(4).map(advisoryRow))) : null) : null,
         h('div', {class: 'row'}, btn(act.label, (ev) => { const self = ev.currentTarget; act.run(self); }, 'primary', off), reason ? h('span', {class: 'muted small'}, reason) : null)));
     }
 
@@ -179,8 +179,8 @@ const IngestStages = (() => {
       fill(barHost, bar(review.stages, {shown, onSelect: show}));
       drawHead();
       const count = review.blockers.filter((b) => stage === 'accept' || b.stage === stage).length;
-      announce.textContent = `Этап ${KEYS.indexOf(stage) + 1} из ${KEYS.length}: ${NAME[stage]}. ${count
-        ? `Нерешённых проблем: ${count}.` : 'Проблем на этом этапе нет.'}`;
+      announce.textContent = `Stage ${KEYS.indexOf(stage) + 1} of ${KEYS.length}: ${NAME[stage]}. ${count
+        ? `Unresolved issues: ${count}.` : 'No issues in this stage.'}`;
     }
     show(shown);
 
