@@ -123,7 +123,7 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
     assert out["root"].split() == ["os", "lm"]                                                           # the page frame; the section rail stays (DEC-081)
     assert "Карта цветов и подбор параметров" in out["head"] and "Данные разных лазеров и линз" in out["head"]
     assert ["← Карта цветов", "#/colors"] in out["links"] and ["Спланировать эксперимент", "#/designer?device=1&lens=2"] in out["links"]
-    assert out["selects"] == ["Лазер", "Линза"] and out["dialog"] == "Целевой цвет"                         # the pickers and the target-colour dialog stay
+    assert out["selects"] == ["Laser", "Lens"] and out["dialog"] == "Целевой цвет"                         # the pickers and the target-colour dialog stay
     assert [name for name, _ in out["sets"]] == ["Калиброванные наблюдения | измеренных цветов 3 · в модели 4", "Предварительно · пара 7 | IMG_7.DNG · слоёв 2 · вариантов 1",
                                                  "пара 5 | IMG_5.DNG · слоёв 2 · вариантов 1"]
     assert [pressed for _, pressed in out["sets"]] == ["true", "false", "false"]                          # the calibrated observations come first
@@ -406,7 +406,7 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
     assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 кГц · 833 мм/с · импульс 4 · интервал 0.003 · проходов 1" in out["factText"]
     assert "не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте" in out["factText"]
     assert "Утвердить для производства" in out["buttons"] and "Подтвердить запись" in out["buttons"]            # the operator's decisions stay on the page
-    assert out["buttons"].count("Откатить переход") == 1                                                      # only a transition can be rolled back
+    assert out["buttons"].count("Roll back transition") == 1                                                      # only a transition can be rolled back
     assert "История2" in out["history"] and out["rows"] == 2 and "повышено автоматически" in out["history"] and "Кандидат" in out["history"]      # a line per event, the newest first
     assert "Наблюдения-основания3" in out["evidence"] and "Номера наблюдений: 3" in out["evidence"]
     assert out["refs"] == [["#480", "#/analysis/580"], ["#481", "#/analysis/581"], ["#482", "#/analysis/582"]]       # each number is a link to its photograph
