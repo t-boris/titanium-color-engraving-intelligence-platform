@@ -7,7 +7,8 @@ const ControllerRows = (() => {
   const UNREAD = 'see photo';
   const isUnread = (value) => value === UNREAD || value === '\u0441\u043c. \u0444\u043e\u0442\u043e';
   const settingName = (key) => key.replace(/: \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430$/, ': handwritten note');
-  const unitName = (unit) => ({'\u043c\u043c': 'mm', '\u043c\u043c/\u0441': 'mm/s', '\u043a\u0413\u0446': 'kHz', '\u043c\u043a\u0441': 'µs', '\u043c\u0441': 'ms', '\u0412': 'V'}[unit] || unit || '');
+  const legacyUnits = new Map([['\u043c\u043c', 'mm'], ['\u043c\u043c/\u0441', 'mm/s'], ['\u043a\u0413\u0446', 'kHz'], ['\u043c\u043a\u0441', 'µs'], ['\u043c\u0441', 'ms'], ['\u0412', 'V']]);
+  const unitName = (unit) => legacyUnits.get(unit) || unit || '';
   const STATUS = {printed: ['printed', 'ok'], handwritten: ['handwritten', 'warn'], confirmed: ['confirmed', 'ok']};
   const parse = (text) => (/^-?\d+([.,]\d+)?$/.test(text.trim()) ? +text.trim().replace(',', '.') : text.trim());
   const small = (title, label, onClick, text) => h('button', {type: 'button', class: 'btn btn-small', title, 'aria-label': label, onClick}, text);
