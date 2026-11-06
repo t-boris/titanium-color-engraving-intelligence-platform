@@ -10,7 +10,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-UNREAD = "\u0441\u043c. \u0444\u043e\u0442\u043e"  # legacy stored marker for a value not read from its photograph
+UNREAD = "see photo"
+LEGACY_UNREAD = "\u0441\u043c. \u0444\u043e\u0442\u043e"
+
+def is_unread(value):
+    """Recognize current and legacy markers in existing equipment passports."""
+    return value in (UNREAD, LEGACY_UNREAD)
 NOTE_SUFFIX = ": \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430"   # a row that records a handwritten doubt next to the setting with the same name
 POWER_PLAUSIBLE = (0.5, 1.5)           # a measured power outside this share of the rated power is not believed
 USED, WAITING, REFERENCE, UNKNOWN = "used", "waiting", "reference", "unknown"

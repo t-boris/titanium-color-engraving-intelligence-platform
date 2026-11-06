@@ -31,6 +31,15 @@ def test_the_unit_has_derived_questions_and_no_stale_stored_ones():
     assert kinds(qs).count("unread") == 7 and "unconfirmed" in kinds(qs) and "lens" in kinds(qs) and "serial" not in kinds(qs)
 
 
+
+def test_legacy_unread_marker_remains_an_open_question():
+    from titanium_platform.characterization import LEGACY_UNREAD
+    u, p = unit_passport()
+    f = field(p, "Galvo 1 Scale")
+    f["value"] = LEGACY_UNREAD
+    questions = dv.open_questions(dv.validate_passport(p), u["serial"])
+    assert any(q["kind"] == "unread" and q["key"] == f["key"] for q in questions)
+
 def test_filling_in_a_value_removes_its_question():
     u, p = unit_passport()
     p = dv.validate_passport(p)

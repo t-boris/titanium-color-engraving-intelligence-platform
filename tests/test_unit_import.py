@@ -50,7 +50,7 @@ def test_the_unit_file_is_a_valid_passport(unit):
 def test_handwritten_controller_values_are_flagged_and_never_certain(unit):
     fields = [f for t in unit["passport"]["controller"]["tabs"] for f in t["fields"]]
     by_key = {f["key"]: f for f in fields}
-    assert by_key["Galvo 1 Scale"]["status"] == "handwritten" and by_key["Galvo 1 Scale"]["value"] == "см. фото"
+    assert by_key["Galvo 1 Scale"]["status"] == "handwritten" and by_key["Galvo 1 Scale"]["value"] == "see photo"
     assert by_key["Max PWM"]["value"] == 200.0 and by_key["Max PWM"]["status"] == "printed"
     assert not [f for f in fields if f["status"] == "confirmed"]                       # only the operator may confirm
     unread = {f["key"] for f in fields if f["value"] == dv.UNREAD}                    # every unread value is an open question,
@@ -100,7 +100,7 @@ def test_the_digitised_waveforms_agree_with_the_passport_within_a_few_percent(st
     first, second = charts["waveforms"]
     assert 0.9 < first["stats"]["ratio"] < 1.2 and first["stats"]["peak_kw"] == pytest.approx(8.7, abs=0.4)
     assert 0.6 < second["stats"]["ratio"] < 1.0 and second["stats"]["peak_kw"] == pytest.approx(10.0, abs=0.5)
-    assert first["approximate"] and second["approximate"] and "детектор" in second["note"]
+    assert first["approximate"] and second["approximate"] and "detector" in second["note"]
 
 
 
@@ -181,7 +181,7 @@ def test_running_the_import_again_never_overwrites_what_the_operator_changed(tmp
             if t["key"] == "field":
                 t["fields"] = [f for f in t["fields"] if f["key"] != "Special pos. Y"]
                 next(f for f in t["fields"] if f["key"] == "Galvo 1 Scale").update(value=78.585, status="confirmed")
-                t["fields"].append({"key": "Lens focal length", "value": 160, "unit": "мм", "status": "confirmed"})
+                t["fields"].append({"key": "Lens focal length", "value": 160, "unit": "mm", "status": "confirmed"})
         dv.update_device(store, d["id"], passport=d["passport"] | {"controller": controller, "m2": 1.3, "open_items": ["my note"]})
     finally:
         store.close()

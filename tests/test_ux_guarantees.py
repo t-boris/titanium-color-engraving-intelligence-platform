@@ -13,7 +13,7 @@ what those tests did not prove or no longer prove after the nine features, each 
 * the file a photograph pair was made from is not discarded when the operator attaches another one, and the derived review of a pair is
   never stored with its measurements;
 * the gate of ``accept_pair`` refuses in every state in which the gate of 0.38.1 refused, with the same words and in the same order;
-* «Разбить заново» changes nothing until it is confirmed, and cancelling it changes nothing (node).
+* «Split again» changes nothing until it is confirmed, and cancelling it changes nothing (node).
 
 Nothing here states a physical limit or a number of the laser: sizes are the ones the tests chose. What only a real browser can prove
 (layout, focus, a screen reader) is not claimed: see section 5 of the results file."""
@@ -324,14 +324,14 @@ def test_a_late_palette_answer_for_an_older_width_cannot_replace_the_palette_of_
     if (String(url).startsWith('/api/grey-scales?') && new URLSearchParams(String(url).split('?')[1]).get('row_mm') === '120') await delayed;
     return result;
   };
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   data.scale = %s;
   width.value = '120'; await width.dispatch('change'); await settle();
   out.waiting = tree.textContent.includes('Loading scales for the work width');
   data.scale = %s;
   width.value = '90'; await width.dispatch('change'); await settle(); await wait(50); await settle();
   out.fresh = snapshot();
-  out.widthNow = labelled(tree, 'Ширина на титане, мм').value;
+  out.widthNow = labelled(tree, 'Width on titanium, mm').value;
   release(); await settle(); await wait(50); await settle();
   out.late = snapshot();
   out.asked = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
@@ -350,7 +350,7 @@ def test_a_late_palette_answer_for_an_older_width_cannot_replace_the_palette_of_
 # removes both halves at once. The two below each need one of them: (a) the identity of the request, (b) the width of the work. The list of
 # scales is told apart by the time per cm² it names (the card of the work's scale prints it), which the test sets before each request.
 PALETTE_PROBE = """
-  const widthBox = labelled(tree, 'Ширина на титане, мм');
+  const widthBox = labelled(tree, 'Width on titanium, mm');
   const mark = (seconds) => { data.scales = data.scales.map((s) => ({...s, time_s_per_cm2: seconds})); };           // what the next list will say
   const marker = () => (tree.querySelector('.ge-scale.is-chosen').textContent.match(/(\\d+) s\\/cm²/) || [])[1];
   const listed = () => requests.filter((r) => r.path === '/api/grey-scales').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));

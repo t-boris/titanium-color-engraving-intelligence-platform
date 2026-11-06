@@ -1355,9 +1355,14 @@ def test_legacy_unread_controller_value_is_not_changed_by_an_empty_edit(tmp_path
   out.before = [input.value, input.getAttribute('placeholder'), field.value === ControllerRows.UNREAD];
   await input.dispatch('change');
   out.after = [input.value, field.value === ControllerRows.UNREAD, changed];
+  const legacy = {key: 'Speed', value: String.fromCodePoint(1089, 1084, 46, 32, 1092, 1086, 1090, 1086), status: 'handwritten'};
+  const oldInput = ControllerRows.row(legacy, [legacy], {help: false, change: () => changed++})[1];
+  await oldInput.dispatch('change');
+  out.legacy = [oldInput.value, ControllerRows.isUnread(legacy.value), changed];
 """, scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
     assert out["before"] == ["", "Not read from photo", True]
     assert out["after"] == ["", True, 0]
+    assert out["legacy"] == ["", True, 0]
 
 
 @node

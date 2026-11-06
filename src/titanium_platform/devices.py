@@ -21,7 +21,7 @@ from typing import Any
 
 from . import setup as su
 from . import lenses
-from .characterization import UNREAD, characterize
+from .characterization import UNREAD, characterize, is_unread
 from .db import Store, now
 
 DOCUMENT_KINDS = ("test_report", "cutoff_table", "waveform", "controller_config", "packing_list", "manual", "other")
@@ -282,7 +282,7 @@ def open_questions(passport: dict, serial: str | None, lens: dict | None = None)
     out, unconfirmed = [], []
     for tab in (passport.get("controller") or {}).get("tabs", []):
         for f in tab["fields"]:
-            if f["value"] == UNREAD:
+            if is_unread(f["value"]):
                 out.append({"kind": "unread", "tab": tab["key"], "key": f["key"]})
             elif f["status"] == "handwritten":
                 unconfirmed.append({"tab": tab["key"], "key": f["key"]})

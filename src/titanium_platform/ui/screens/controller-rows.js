@@ -4,7 +4,8 @@ const ControllerRows = (() => {
   const {h, pill} = App;
   const {TAB, HELP} = GlossaryController;
   // Preserve the legacy stored sentinel while displaying an English placeholder.
-  const UNREAD = '\u0441\u043c. \u0444\u043e\u0442\u043e';
+  const UNREAD = 'see photo';
+  const isUnread = (value) => value === UNREAD || value === '\u0441\u043c. \u0444\u043e\u0442\u043e';
   const STATUS = {printed: ['printed', 'ok'], handwritten: ['handwritten', 'warn'], confirmed: ['confirmed', 'ok']};
   const parse = (text) => (/^-?\d+([.,]\d+)?$/.test(text.trim()) ? +text.trim().replace(',', '.') : text.trim());
   const small = (title, label, onClick, text) => h('button', {type: 'button', class: 'btn btn-small', title, 'aria-label': label, onClick}, text);
@@ -22,16 +23,16 @@ const ControllerRows = (() => {
       return h('select', {'aria-label': f.key, onChange: (e) => { f.value = e.target.value === 'yes'; f.status = 'confirmed'; ctx.change(); }},
         ['yes', 'no'].map((v) => h('option', {value: v, selected: (v === 'yes') === f.value}, v)));
     }
-    return h('input', {value: f.value === UNREAD ? '' : f.value, placeholder: 'Not read from photo', 'aria-label': f.key, style: 'min-width:90px', onChange: (e) => {
+    return h('input', {value: isUnread(f.value) ? '' : f.value, placeholder: 'Not read from photo', 'aria-label': f.key, style: 'min-width:90px', onChange: (e) => {
       const v = parse(e.target.value);
-      if (v === '' || v === f.value) { e.target.value = f.value === UNREAD ? '' : f.value; return; }
-      f.value = v; f.status = v === UNREAD ? 'handwritten' : 'confirmed'; ctx.change();
+      if (v === '' || v === f.value) { e.target.value = isUnread(f.value) ? '' : f.value; return; }
+      f.value = v; f.status = isUnread(v) ? 'handwritten' : 'confirmed'; ctx.change();
     }});
   }
 
   /** ctx: {help: show explanations, change: redraw the card}. */
   function row(f, fields, ctx) {
-    const unread = f.value === UNREAD;
+    const unread = isUnread(f.value);
     const confirm = f.status !== 'confirmed' && !unread
       ? small('Confirm: value checked against the original', 'Confirm ' + f.key, () => { f.status = 'confirmed'; ctx.change(); }, '✓') : null;
     const remove = small('Remove setting from the list', 'Remove ' + f.key, () => { fields.splice(fields.indexOf(f), 1); ctx.change(); }, '×');
@@ -63,5 +64,5 @@ const ControllerRows = (() => {
     };
     return h('div', {class: 'stack'}, h('div', {class: 'row'}, ...boxes, small('Add a setting to this section', 'Add setting', add, '+ Add')), form.error);
   }
-  return {UNREAD, STATUS, working, row, addForm, small};
+  return {UNREAD, isUnread, STATUS, working, row, addForm, small};
 })();

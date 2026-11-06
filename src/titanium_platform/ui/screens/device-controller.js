@@ -3,7 +3,7 @@
 const DeviceController = (() => {
   const {h, patch, toast, fail, table} = App;
   const {TAB} = GlossaryController;
-  const {UNREAD, working, row, addForm, small} = ControllerRows;
+  const {isUnread, working, row, addForm, small} = ControllerRows;
 
   function controllerCard(d, reload, wanted) {
     const c = working(d.passport.controller), photo = d.documents.find((x) => x.kind === 'controller_config');
@@ -28,8 +28,8 @@ const DeviceController = (() => {
     window.onbeforeunload = () => (state === 'saving' || state === 'error' ? 'Some changes have not been saved' : null);
 
     function draw() {
-      const all = c.tabs.flatMap((t) => t.fields), unread = all.filter((f) => f.value === UNREAD).length;
-      const count = (s) => all.filter((f) => f.status === s && f.value !== UNREAD).length;
+      const all = c.tabs.flatMap((t) => t.fields), unread = all.filter((f) => isUnread(f.value)).length;
+      const count = (s) => all.filter((f) => f.status === s && !isUnread(f.value)).length;
       const cur = c.tabs.find((t) => t.key === section);
       const tabs = h('div', {class: 'row', role: 'tablist'}, c.tabs.map((t) => h('button', {type: 'button', role: 'tab', 'aria-selected': t.key === section,
         class: 'btn btn-small' + (t.key === section ? ' primary' : ''), onClick: () => { section = t.key; keep(); draw(); }}, `${TAB[t.key]} · ${t.fields.length}`)));
