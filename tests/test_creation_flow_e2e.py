@@ -104,10 +104,17 @@ def test_a_work_is_made_from_the_picture_through_the_three_steps_and_the_task_is
     assert client.put("/api/creation/context", json={"device_id": laser["id"], "lens_id": lens["id"], "material_id": titanium["id"]}).status_code == 200
     with serve(client.app) as base:
         out = run(tmp_path, base, """
+  const originalFetch = ctx.fetch;
+  ctx.fetch = async (url, opts) => {
+    if (String(url).includes('/preview/')) await wait(600);  // slower real preview responses must not race the test
+    return originalFetch(url, opts);
+  };
   const tree = await screen();
   out.context = tree.querySelector('.work-context').textContent;
   await fillPicture(tree, 'Inna portrait', '60');
   await button(tree, 'Next →').dispatch('click'); await settle();
+  const previewDeadline = Date.now() + 20000;
+  while ((tiles(tree).length !== 4 || tiles(tree).some((tile) => !tile.querySelector('img'))) && Date.now() < previewDeadline) await wait(25);
   out.second = heading(tree);
   out.tiles = tiles(tree).map((t) => [t.querySelector('strong').textContent, t.querySelector('img') !== null, t.textContent.includes('ready to create'), t.textContent.includes('measurements needed')]);
   out.alts = tiles(tree).map((t) => t.querySelector('img') && t.querySelector('img').getAttribute('alt'));
