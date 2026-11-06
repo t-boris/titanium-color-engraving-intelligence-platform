@@ -518,7 +518,7 @@ def test_accepting_sends_one_request_hands_over_through_the_hook_and_a_refusal_i
     toast: ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text), disabled: accept.disabled};
 """)
     assert out["ok"]["requests"] == ["POST"] and out["ok"]["went"] == [f"/analysis/{pid}"]
-    assert any("Наблюдения приняты. Вывод записан в работу «Лист 3»" in t for t in out["ok"]["toast"]) and out["ok"]["disabled"] is True
+    assert any("Observations accepted. The conclusion was saved to “Лист 3”" in t for t in out["ok"]["toast"]) and out["ok"]["disabled"] is True
     refused = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/accept": {"status": 422, "json": {"error": "review the layer masks overlaid on the photograph before accepting", "kind": "invalid"}}}, """
   const tree = await draw('ready');
   await primaries(tree)[0].dispatch('click'); await settle();
@@ -548,9 +548,9 @@ def test_the_accept_stage_shows_the_provenance_the_measurement_rules_and_the_eng
 """)
     facts = " | ".join(out["facts"])
     pair = pairs["ready"]
-    assert f"код {pair['engraving_id'][:8]}" in facts and "LightBurn «plate.lbrn2», фотография «plate.png»" in facts
-    assert "Совмещение: по маркерам" in facts and "по калибровочной карте на фотографии" in facts and "измерено слоёв: 6 из 6" in facts
-    assert "служебные" in facts and "в модель знаний не входят" in facts and "Настройки, введённые оператором: нет" in facts
+    assert f"ID {pair['engraving_id'][:8]}" in facts and "LightBurn «plate.lbrn2», photo “plate.png”" in facts
+    assert "Alignment: using markers" in facts and "calibrated against the reference chart in the photo" in facts and "measured layers: 6 of 6" in facts
+    assert "auxiliary" in facts and "excluded from the knowledge model" in facts and "Operator-supplied settings: none" in facts
     assert any(href.startswith("#/experiment/") for _, href in out["links"])                         # the link to the engraved version's experiment
     assert "danger" in out["rejectClass"]
     assert out["dialog"] and "не попадёт в выводы" in out["dialog"][0] and "версия гравировки" in out["dialog"][0]
@@ -566,11 +566,11 @@ def test_an_accepted_pair_is_read_only_with_every_stage_done_its_provenance_and_
   out.tools = tree.querySelectorAll('nav').map((n) => n.getAttribute('aria-label'));
   out.buttons = buttons(tree).map(text);
   out.heading = tree.querySelectorAll('h3').map(text);
-  out.note = text(tree.querySelectorAll('p').find((p) => text(p).includes('Ручные инструменты')));
+  out.note = text(tree.querySelectorAll('p').find((p) => text(p).includes('Manual tools')));
 """)
     assert [item.split("done")[0][1:] for item in out["bar"]] == STAGE_NAMES and all(item.endswith("done") for item in out["bar"])
-    assert out["tools"] == ["Review stages"] and out["buttons"] == ["Поправить совмещение этого фото", "Удалить пару"]
-    assert out["heading"] == ["Что записано при принятии"] and "новую пару" in out["note"]
+    assert out["tools"] == ["Review stages"] and out["buttons"] == ["Correct this photo’s alignment", "Delete pair"]
+    assert out["heading"] == ["What was recorded on acceptance"] and "a new pair" in out["note"]
 
 
 # -- the pages before a review, the hook, and the files ---------------------------------------------------------------------------------

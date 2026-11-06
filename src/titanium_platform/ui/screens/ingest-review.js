@@ -585,20 +585,20 @@ const IngestReview = (() => {
 
   /** How the photograph was aligned with the file, in words (the alignment method of the check). */
   const methodLabel = (alignment) => alignment.method === 'markers'
-        ? `по маркерам${alignment.marker_count != null ? ` (${alignment.marker_count})` : ''}`
-        : alignment.method === 'marker templates' ? 'по узорам 4 меток'
+        ? `using markers${alignment.marker_count != null ? ` (${alignment.marker_count})` : ''}`
+        : alignment.method === 'marker templates' ? 'using four marker patterns'
         : alignment.method === 'two marker + QR' ? (alignment.qr_used_as_anchor === false
-          ? 'по двум меткам; QR подтвердил плату' : 'по двум меткам и QR-коду платы')
-        : alignment.method === 'picture' ? `по вложенной картинке (корреляция ${num((alignment.picture || {}).zncc, 2)})`
-        : alignment.method === 'picture at ruler scale' ? `по картинкам файла и масштабу линейки (совпало картинок: ${((alignment.located || {}).pictures || []).length})`
-        : alignment.method === 'element anchors' ? `по элементам-якорям (${(alignment.element_matches || []).length})`
-        : alignment.method === 'geometry' ? `по деталям рисунка (${(alignment.element_matches || []).length})`
-        : alignment.method === 'single distinctive detail' ? 'по одной характерной детали'
-        : alignment.method === 'element anchor' ? 'по детали, поставленной вручную'
-        : alignment.method === 'manual shift' ? 'поправлено перемещением всей схемы'
-        : alignment.method === 'manual rotation' ? 'поправлено поворотом всей схемы'
-        : alignment.method === 'manual transform' ? 'поправлено масштабом или зеркалом всей схемы'
-        : 'вручную по углам';
+          ? 'using two markers; QR confirmed the plate' : 'using two markers and the plate QR code')
+        : alignment.method === 'picture' ? `using the embedded image (correlation ${num((alignment.picture || {}).zncc, 2)})`
+        : alignment.method === 'picture at ruler scale' ? `using file images and ruler scale (matched images: ${((alignment.located || {}).pictures || []).length})`
+        : alignment.method === 'element anchors' ? `using anchor elements (${(alignment.element_matches || []).length})`
+        : alignment.method === 'geometry' ? `using design details (${(alignment.element_matches || []).length})`
+        : alignment.method === 'single distinctive detail' ? 'using one distinctive detail'
+        : alignment.method === 'element anchor' ? 'using a manually placed detail'
+        : alignment.method === 'manual shift' ? 'corrected by moving the whole layout'
+        : alignment.method === 'manual rotation' ? 'corrected by rotating the whole layout'
+        : alignment.method === 'manual transform' ? 'corrected by scaling or mirroring the whole layout'
+        : 'manually using corners';
 
   /** The long record of what the check found: the colour chart, the alignment and everything it was based on. Warnings and problems are not
       here: they are the header's blockers and notes (pair.review). */
@@ -704,8 +704,8 @@ const IngestReview = (() => {
   }
 
   // -- what the acceptance records ------------------------------------------------------------------------------------------
-  const COLOUR_BASIS = {reference_chart_corrected: 'по калибровочной карте на фотографии',
-    raw_camera_relative: 'относительно RAW камеры; в стандартные прогнозы не входит'};
+  const COLOUR_BASIS = {reference_chart_corrected: 'calibrated against the reference chart in the photo',
+    raw_camera_relative: 'relative to the RAW camera; excluded from standard predictions'};
 
   /** HOOK(ux-engraving-lifecycle-p0). The ONE place where an accepted pair hands over to what comes next. Today it says what was
       written and opens the analysis of the pair. The feature that returns to the originating work with a summary of prediction
@@ -714,7 +714,7 @@ const IngestReview = (() => {
   async function afterAccepted(pair, outcome) {
     // ux-engraving-lifecycle-p0 REQ-002: a result that belongs to a vector work takes the operator back to that work with the summary
     if (typeof Lifecycle !== 'undefined' && Lifecycle.returnToWork(outcome.work_review)) return;
-    toast(outcome.work_review ? `Наблюдения приняты. Вывод записан в работу «${outcome.work_review.work}»` : 'Наблюдения приняты', 'ok');
+    toast(outcome.work_review ? `Observations accepted. The conclusion was saved to “${outcome.work_review.work}”` : 'Observations accepted', 'ok');
     go('/analysis/' + pair.id);
   }
 
@@ -727,36 +727,36 @@ const IngestReview = (() => {
     const supplied = layers.reduce((n, l) => n + Object.keys(l.supplied_settings || {}).length, 0);
     const mode = check.color_measurement && check.color_measurement.mode;
     const experiment = link('/experiment/' + (pair.plan_id && pair.plan_mode !== 'Restored from file' ? 'plan-' + pair.plan_id : 'eng-' + pair.engraving_id),
-      'открыть эксперимент');
+      'open experiment');
     const fact = (label, ...body) => h('li', {}, h('strong', {}, label + ': '), ...body);
     const accepted = pair.status === 'Accepted';
-    return h('div', {class: 'card stack'}, h('h3', {}, accepted ? 'Что записано при принятии' : 'Что будет записано при принятии'),
+    return h('div', {class: 'card stack'}, h('h3', {}, accepted ? 'What was recorded on acceptance' : 'What will be recorded on acceptance'),
       h('ul', {class: 'rv-facts'},
-        fact('Версия гравировки', `${pair.engraving_title ? I18N.name(pair.engraving_title) : 'Гравировка'} · код ${String(pair.engraving_id || '').slice(0, 8)} · `, experiment),
-        fact('Исходные файлы', `LightBurn «${pair.lightburn_name}», фотография «${pair.photo_name}»`),
-        confirmed ? fact('Подтверждение файла', `«${confirmed.text}»${confirmed.at ? ' · ' + confirmed.at.slice(0, 16).replace('T', ' ') : ''}`) : null,
-        fact('Совмещение', check.alignment && check.alignment.valid ? methodLabel(check.alignment) : 'не выполнено'),
-        fact('Правила измерения', `цвет ${COLOUR_BASIS[mode] || 'без определённой основы'}; измерено слоёв: ${measured.length} из ${layers.length}. `
-          + 'Чистка, метки и подписи записываются как служебные и в модель знаний не входят.'),
-        fact('Настройки, введённые оператором', supplied ? `${supplied}, с пометкой «введено оператором»` : 'нет')));
+        fact('Engraving version', `${pair.engraving_title ? I18N.name(pair.engraving_title) : 'Engraving'} · ID ${String(pair.engraving_id || '').slice(0, 8)} · `, experiment),
+        fact('Source files', `LightBurn «${pair.lightburn_name}», photo “${pair.photo_name}”`),
+        confirmed ? fact('File confirmation', `«${confirmed.text}»${confirmed.at ? ' · ' + confirmed.at.slice(0, 16).replace('T', ' ') : ''}`) : null,
+        fact('Alignment', check.alignment && check.alignment.valid ? methodLabel(check.alignment) : 'not completed'),
+        fact('Measurement rules', `color ${COLOUR_BASIS[mode] || 'without a defined basis'}; measured layers: ${measured.length} of ${layers.length}. `
+          + 'Cleaning, markers, and labels are recorded as auxiliary and excluded from the knowledge model.'),
+        fact('Operator-supplied settings', supplied ? `${supplied}, marked “operator-supplied”` : 'none')));
   }
 
   /** An accepted pair: immutable. The stage bar shows everything done; the manual tools are in the correction, which is a new pair. */
   function acceptedView(pair) {
     return h('div', {class: 'stack'}, IngestStages.bar(pair.review.stages),
-      h('div', {class: 'alert ok'}, 'Принятые измерения неизменяемы и участвуют в знаниях лазера.'),
+      h('div', {class: 'alert ok'}, 'Accepted measurements are immutable and contribute to laser knowledge.'),
       provenanceCard(pair),
-      h('p', {class: 'muted small'}, 'Ручные инструменты (углы, привязка по детали, сдвиг схемы, матрица, слои, задачи) работают в исправлении: оно создаёт новую пару, '
-        + 'а принятая остаётся неизменной, пока исправление не принято.'),
-      h('div', {class: 'row'}, link('/analysis/' + pair.id, 'Открыть анализ'), link('/ingest?rephoto=' + pair.id, 'Повторная фотография этого изделия'),
-        btn('Поправить совмещение этого фото', async (ev) => {
-          const control = ev.currentTarget; control.disabled = true; control.textContent = 'Создаём исправление…';
+      h('p', {class: 'muted small'}, 'Manual tools (corners, detail alignment, layout movement, matrix, layers, tasks) are available in a correction. It creates a new pair, '
+        + 'while the accepted pair stays unchanged until the correction is accepted.'),
+      h('div', {class: 'row'}, link('/analysis/' + pair.id, 'Open analysis'), link('/ingest?rephoto=' + pair.id, 'Photograph this work again'),
+        btn('Correct this photo’s alignment', async (ev) => {
+          const control = ev.currentTarget; control.disabled = true; control.textContent = 'Creating correction…';
           try { const revision = await post(`/pairs/${pair.id}/alignment-revisions`); go('/ingest?pair=' + revision.id); }
-          catch (error) { control.disabled = false; control.textContent = 'Поправить совмещение этого фото'; fail(error); }
+          catch (error) { control.disabled = false; control.textContent = 'Correct this photo’s alignment'; fail(error); }
         }),
-        btn('Удалить пару', () => confirmBox('Удалить принятую пару',
-          'Пара исчезнет из карты цветов и перестанет участвовать в рекомендациях. Загруженные копии файлов будут удалены; неизменяемые измерения останутся в аудите.', 'Удалить',
-          async () => { await del('/pairs/' + pair.id); toast('Запись удалена', 'ok'); go('/experiments'); }), 'danger')));
+        btn('Delete pair', () => confirmBox('Delete accepted pair',
+          'The pair will be removed from the color map and recommendations. Uploaded file copies will be deleted; immutable measurements will remain in the audit.', 'Delete',
+          async () => { await del('/pairs/' + pair.id); toast('Record deleted', 'ok'); go('/experiments'); }), 'danger')));
   }
 
   /** The tool regions that are not drawn from the check: what a manual tool says when the pair has nothing for it. */
@@ -802,7 +802,7 @@ const IngestReview = (() => {
       h('div', {class: 'row'},
         check ? btn('Повторить проверку', (ev) => { const self = ev.currentTarget; run({}, self); }) : null,
         check ? btn('Найти заново по RAW и LightBurn', (ev) => { const self = ev.currentTarget; run({reset_alignment: true}, self); }) : null,
-        btn('Удалить пару', () => confirmBox('Удалить пару', 'Действие необратимо.', 'Удалить', async () => { await del('/pairs/' + pair.id); toast('Запись удалена', 'ok'); go('/experiments'); }), 'danger')));
+        btn('Delete pair', () => confirmBox('Delete pair', 'Действие необратимо.', 'Delete', async () => { await del('/pairs/' + pair.id); toast('Record deleted', 'ok'); go('/experiments'); }), 'danger')));
 
     // -- the panels of the four stages, built once; the stage bar only shows and hides them, so nothing typed into one is lost ------------
     const panels = {files: [], alignment: [], review: [], accept: []};
