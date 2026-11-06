@@ -62,6 +62,9 @@ INNER_OF = {
 }
 # Messages that end in a dynamic part after a colon which is data, not a server message: it is shown as it is.
 DATA_TAILS = {
+    "copy 7: unknown settings: ": "unknown LightBurn setting tags",
+    "recipe 7: unknown settings: ": "unknown LightBurn setting tags",
+    "square 7: unknown settings: ": "unknown LightBurn setting tags",
     "currently supported model: ": "the configured model name",
     "unknown tool: ": "the supplied tool name",
     "plate cells not found in the LightBurn file: ": "the names of the plate cells",

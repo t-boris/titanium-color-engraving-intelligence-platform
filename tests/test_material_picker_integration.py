@@ -1,6 +1,6 @@
 """The selector of a stock record in every place that used to build a drop-down of all records (feature ux-growing-collections-p0, REQ-001,
 criterion 3: «the choice of a stock record offers search and the records used last, keeping the difference between a grade and one concrete
-batch/sheet»). Seven places: the form of a new vector work, the «Проверить у себя» dialog of a laboratory, the plate dialog (with its «new
+batch/sheet»). Seven places: the form of a new vector work, the «Test in your workshop» dialog of a laboratory, the plate dialog (with its «new
 material» form), the photo-engraving preview, the dialog that changes the workshop's shared choice, the filter of the experiments overview
 and the upload form of a work with its photograph. For each, with two hundred stock records in the real application (the screens run in node
 over the small DOM and reach the real API of a server on a free port): (1) no option or row per record is drawn, the control is one line;
@@ -100,7 +100,7 @@ def test_the_vector_form_without_any_stock_record_says_so_and_reads_no_catalogue
     assert out["empty"]["urls"] == ["/api/materials?limit=1"]                                          # whether any exists, not all of them
 
 
-# -- 2. the dialog «Проверить у себя» of a connected laboratory ---------------------------------------------------------------------
+# -- 2. the dialog «Test in your workshop» of a connected laboratory ---------------------------------------------------------------------
 CARD = {"id": 4, "name": "Лаборатория Север", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 1, "withdrawals": 0, "release_withdrawn": False,
         "lab": {"name": "Лаборатория Север"}, "withdrawal_list": [],
         "current": {"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "abcdef0123456789ffff", "verified": False, "status": "kept",
@@ -122,10 +122,10 @@ LABS_OPEN = r"""
       stub('/labs/transfers', {status: 200, json: []}, 'GET');
       stub('/labs/transfers', {status: 201, json: {plan_id: 77, name: 'Перенос'}}, 'POST');
       const tree = mount(await ctx.__screens.labs.render({query: {source: '4'}}));
-      await until(() => button(tree, 'Палитра'));
-      await button(tree, 'Палитра').dispatch('click');
-      await until(() => button(tree, 'Проверить у себя'));
-      await button(tree, 'Проверить у себя').dispatch('click');
+      await until(() => button(tree, 'Palette'));
+      await button(tree, 'Palette').dispatch('click');
+      await until(() => button(tree, 'Test in your workshop'));
+      await button(tree, 'Test in your workshop').dispatch('click');
 """
 
 
@@ -139,7 +139,7 @@ def test_the_transfer_dialog_of_a_laboratory_picks_the_own_titanium_in_the_selec
     out = run_node(tmp_path, port, LABS, HELPERS + labs_open() + r"""
       await until(() => q(doc.body, '.modal'));
       const dialog = q(doc.body, '.modal');
-      const stock = picker(dialog, 'Свой титан');
+      const stock = picker(dialog, 'Your titanium');
       await stock.ready;
       out.start = {pickers: qa(dialog, '.matpick').length, records: records(dialog), selects: qa(dialog, 'select').map((s) => s.getAttribute('aria-label')), label: labelOf(stock), value: stock.value};
       // the selector's own dialog opens above this one; a choice there leaves this one open and gives the focus back to the button that opened it
@@ -153,12 +153,12 @@ def test_the_transfer_dialog_of_a_laboratory_picks_the_own_titanium_in_the_selec
       await until(() => count(inner) === 'showing 1 of 1');
       await button(rows(inner)[0], 'Choose').dispatch('click');
       out.after = {dialogs: qa(doc.body, '.modal').length, inertBelow: dialog.parentNode.hasAttribute('inert'), value: stock.value, focus: doc.activeElement === opener};
-      await button(dialog, 'Создать пластину').dispatch('click');
+      await button(dialog, 'Create plate').dispatch('click');
       await until(() => sent('/api/labs/transfers').length === 1);
       out.posted = JSON.parse(sent('/api/labs/transfers')[0].body);
       out.urls = stockUrls();
     """, EXPORTS)
-    assert out["start"]["pickers"] == 1 and out["start"]["records"] == 0 and out["start"]["selects"] == ["Свой лазер"]       # the laser stays a drop-down, the titanium is one line
+    assert out["start"]["pickers"] == 1 and out["start"]["records"] == 0 and out["start"]["selects"] == ["Your laser"]       # the laser stays a drop-down, the titanium is one line
     assert out["start"]["value"] == "200" and out["start"]["label"].startswith("Лист 200 · ")           # nothing used yet: the newest record
     assert out["nested"] == {"dialogs": 2, "inertBelow": True}
     assert out["after"] == {"dialogs": 1, "inertBelow": False, "value": "137", "focus": True}
@@ -172,7 +172,7 @@ def test_the_transfer_dialog_without_any_stock_record_says_so_and_reads_no_catal
       await until(() => qa(doc.body, '.toast.bad').length > 0);
       out.refused = {toast: qa(doc.body, '.toast.bad').map((t) => t.textContent), dialogs: qa(doc.body, '.modal').length, urls: stockUrls()};
     """, EXPORTS)
-    assert any("Сначала добавьте лазер и заготовку титана" in t for t in out["refused"]["toast"]) and out["refused"]["dialogs"] == 0
+    assert any("First add a laser and titanium stock" in t for t in out["refused"]["toast"]) and out["refused"]["dialogs"] == 0
     assert out["refused"]["urls"] == ["/api/materials?limit=1"]                                         # whether any exists, not all of them
 
 

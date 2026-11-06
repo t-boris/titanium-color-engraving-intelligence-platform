@@ -1,6 +1,6 @@
-"""The cloud on the laboratories screen (feature electron, REQ-086, REQ-087, DEC-058): the «Облако» block of «Моя лаборатория» (sign-in in a new
+"""The cloud on the laboratories screen (feature electron, REQ-086, REQ-087, DEC-058): the «Облако» block of «My laboratory» (sign-in in a new
 window and the wait for the account, publishing with the same preview as a file, a pending publication continued or given up, the own cloud
-laboratory with invitations and members), the «Каталог лабораторий» tab (cards, «Подключить» into the same progress bar, «Принять приглашение»),
+laboratory with invitations and members), the «Laboratory catalog» tab (cards, «Подключить» into the same progress bar, «Принять приглашение»),
 «Проверить обновления» for the laboratories connected from the cloud with the differences view, and the cloud card of one such laboratory.
 Run in node over the small DOM of the other screen tests with a fake server; everything the cloud sends reaches the screen as text only."""
 import json
@@ -134,7 +134,7 @@ def test_laboratory_tabs_load_on_selection_and_retry_a_failed_catalogue(tmp_path
     out = run(tmp_path, routes, """
   const tree = await ctx.__screens.labs.render({query: {}}); await tick();
   out.initial = ctx.requests.map((r) => r.path);
-  const tab = byText(tree, 'button', 'Каталог лабораторий');
+  const tab = byText(tree, 'button', 'Laboratory catalog');
   await tab.dispatch('click'); await tick();
   out.failed = byRole(tree, 'tabpanel')[2].textContent;
   data.routes['/api/cloud/catalogue'] = {GET: {status: 200, json: {api_url: 'https://cloud.test', signed_in: false, labs: []}}};
@@ -184,7 +184,7 @@ def test_sign_in_opens_the_clouds_page_in_a_new_window_and_the_block_fills_in_wh
   out.after = tree.querySelector('.cloud-own').textContent;
   out.sent = sent();
 """.replace("data.signedInAccount", json.dumps({"signed_in": True, "account": ACCOUNT, "signed_in_at": "2026-10-24T10:00:00+00:00", "api_url": "https://cloud.test", "switched_on": True})))
-    assert out["tabs"] == ["Моя лаборатория", "Подключённые лаборатории", "Каталог лабораторий"]
+    assert out["tabs"] == ["My laboratory", "Connected laboratories", "Laboratory catalog"]
     assert "You are signed out" in out["before"] and "Publish to cloud" not in out["before"]
     assert out["opened"] == [url] and "Complete sign-in in your browser" in out["waiting"]
     assert out["sent"] == [["POST", "/api/cloud/signin", {}]]
@@ -300,9 +300,9 @@ def test_a_signed_in_owner_publishes_after_the_same_preview_and_follows_the_job_
 """)
     assert out["account"] == ["Мастерская <b>Север</b> · north@example.org", 0]                                           # the account's name is text
     assert out["disabledBefore"] is True and out["selects"] == [["Cloud usage terms", "CC-BY-4.0"], ["Visibility", "public"]]
-    assert "Фотографий12" in out["preview"].replace("\n", "") and "Выпуск можно записать." in out["preview"] and out["disabledAfter"] is False
-    assert out["progress"] == "50" and "uploading to the cloud · 0,5 МБ из 1,0 МБ (50 %)" in out["running"]
-    assert "Published release #1 · измерений: 40 · установок: 2." in out["finished"]
+    assert "Photographs12" in out["preview"].replace("\n", "") and "The release can be saved." in out["preview"] and out["disabledAfter"] is False
+    assert out["progress"] == "50" and "uploading to the cloud · 0,5 MB of 1,0 MB (50 %)" in out["running"]
+    assert "Published release #1 · measurements: 40 · setups: 2." in out["finished"]
     assert out["sent"] == [["POST", "/api/labs/own/preview", {"selection": None}], ["POST", "/api/cloud/publish", {"terms": "CC-BY-4.0", "visibility": "private"}]]
     assert "Published releases remain in the cloud" in out["dialog"] and out["signedOut"] == ["POST", "/api/cloud/signout", {}]
 
@@ -385,10 +385,10 @@ def test_the_catalogue_shows_cards_connects_from_the_cloud_into_the_progress_bar
     assert out["cards"][1][2] == ["Public", "connected", "new release available"] and out["cards"][1][3] == ["Review release #2", "Open"]
     assert out["cards"][2] == ["Own lab", 0, ["Public", "your laboratory"], []]
     assert "Автор <i>Н</i>" in out["first"] and "<script>alert(1)</script>" in out["first"] and "#2 from 2026-10-23 · abcdef012345" in out["first"]
-    assert "измерений: 40 · установок: 2" in out["first"] and "CC BY 4.0" in out["first"] and "2,0 МБ" in out["first"]
+    assert "measurements: 40 · setups: 2" in out["first"] and "CC BY 4.0" in out["first"] and "2,0 MB" in out["first"]
     assert out["beforeConfirm"] == ["/api/cloud/releases/r-9/review"] and all(x in out["review"] for x in ("Fiber 60", "A. Author", "Commercial use", "a" * 64))
-    assert "Лаборатория подключена" in out["finished"]
-    assert out["dialog"] and "Различия выпуска abcdef012345" in out["dialog"] and "Против выпуска 0123456789ab" in out["dialog"]       # the existing differences view
+    assert "Laboratory connected" in out["finished"]
+    assert out["dialog"] and "Release differences abcdef012345" in out["dialog"] and "Compared with release 0123456789ab" in out["dialog"]       # the existing differences view
     assert out["sent"] == [["POST", "/api/cloud/releases/r-9/review", {}], ["POST", "/api/cloud/reviews/review-1/connect", {}],
                            ["POST", "/api/cloud/invitations/accept", {"link": "https://cloud.test/invitations/tok-7"}]]
 
@@ -445,8 +445,8 @@ def test_connected_cloud_laboratories_are_checked_for_updates_by_the_button_and_
 """)
     assert "A new cloud release is available for “Лаборатория <b>Север</b>”: #2 from 2026-10-23." in out["auto"]
     assert "Cloud-connected laboratories: 1" in out["card"]
-    assert "Лаборатория <b>Север</b> — new release #2 from 2026-10-23 · измерений: 40" in out["checked"]
-    assert "Различия выпуска abcdef012345" in out["dialog"]
+    assert "Лаборатория <b>Север</b> — new release #2 from 2026-10-23 · measurements: 40" in out["checked"]
+    assert "Release differences abcdef012345" in out["dialog"]
     assert "Laboratory connected from the cloud: https://cloud.test/labs/lab-1" in out["one"] and "Updates have not been checked yet" in out["one"] and out["mode"] == "manual"
     assert out["sent"] == [["POST", "/api/cloud/updates/check", {}], ["POST", "/api/cloud/releases/r-9/review", {}],
                            ["POST", "/api/cloud/reviews/review-1/connect", {}], ["PUT", "/api/cloud/sources/4", {"update_checks": "auto"}]]
@@ -461,13 +461,13 @@ def test_with_the_cloud_switched_off_or_unreachable_the_rest_of_the_screen_still
   const tree = await ctx.__screens.labs.render({query: {}});
   await tick();
   out.own = tree.querySelector('.cloud-own').textContent;
-  await byText(tree, 'button', 'Каталог лабораторий').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Laboratory catalog').dispatch('click'); await tick();
   out.catalogue = byRole(tree, 'tabpanel')[2].textContent;
   out.publicForm = tree.querySelectorAll('h3').map((x) => x.textContent);
 """)
     assert "Cloud access is disabled" in out["own"] and "Sign in" not in out["own"]
     assert "the cloud of laboratories is switched off in the network settings of this workshop" in out["catalogue"]
-    assert "Публичные сведения" in out["publicForm"] and "Публикация" in out["publicForm"] and "Отзыв опубликованного" in out["publicForm"]
+    assert "Public details" in out["publicForm"] and "Publication" in out["publicForm"] and "Withdraw published data" in out["publicForm"]
 
 
 @node
@@ -499,25 +499,25 @@ def test_the_written_releases_the_connected_laboratories_the_catalogue_and_the_i
   const invited = cloud.querySelectorAll('.lst')[1];
   out.invitations = [lines(invited).map((x) => x.slice(0, 16)), invited.querySelectorAll('.lst-chip').map((c) => c.textContent),
     invited.querySelectorAll('button').filter((b) => b.textContent === 'Revoke').length];
-  await byText(tree, 'button', 'Подключённые лаборатории').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Connected laboratories').dispatch('click'); await tick();
   out.sources = [connected.querySelectorAll('.lab-name').map((n) => n.textContent), connected.querySelectorAll('.lst-chip').map((c) => c.textContent),
     connected.querySelectorAll('.lst-act').map((a) => a.textContent)];
   await connected.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.sourceDetails = connected.querySelectorAll('.lst-det').find((d) => !d.hidden).textContent;
-  await byText(tree, 'button', 'Каталог лабораторий').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Laboratory catalog').dispatch('click'); await tick();
   out.catalogue = catalogue.querySelectorAll('.lst-chip').map((c) => c.textContent);
   await catalogue.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('not connected')).dispatch('click'); await tick();
   out.notConnected = catalogue.querySelectorAll('.lab-name').map((n) => n.textContent);
 """)
     rows, count, first, href, chips = out["written"]
-    assert (rows, count) == (20, "showing 20 of 23") and first.startswith("2026-10-23 09:00") and "облако № 20" not in first
-    assert href == "/api/labs/own/releases/x-23/file" and chips == ["All · 23", "в облаке · 5", "только файлом · 18"]
+    assert (rows, count) == (20, "showing 20 of 23") and first.startswith("2026-10-23 09:00") and "cloud #20" not in first
+    assert href == "/api/labs/own/releases/x-23/file" and chips == ["All · 23", "in cloud · 5", "file only · 18"]
     assert out["cloudReleases"] == ["#3", "#2"]                                                              # the newest first
     lines, chips, revoke = out["invitations"]
     assert lines == ["2026-10-03 10:00", "2026-10-02 10:00", "2026-10-01 10:00"] and chips == ["All · 3", "waiting · 1", "accepted · 1", "revoked · 1"] and revoke == 1
     names, chips, actions = out["sources"]
-    assert names == ["Альфа", "Бета", "Гамма"] and chips == ["All · 3", "подключена · 2", "отключена · 1"] and actions == ["Открыть"] * 3
-    assert "подключена 2026-10-22 10:00 · выпусков на компьютере: 1" in out["sourceDetails"]
+    assert names == ["Альфа", "Бета", "Гамма"] and chips == ["All · 3", "connected · 2", "disconnected · 1"] and actions == ["Open"] * 3
+    assert "connected 2026-10-22 10:00 · releases on this computer: 1" in out["sourceDetails"]
     assert out["catalogue"] == ["All · 3", "connected · 1", "not connected · 1", "All · 3", "Public · 2", "Private · 1"]
     assert out["notConnected"] == ["Лаборатория <b>Север</b>"]                                               # the own laboratory is neither
 
@@ -538,21 +538,21 @@ def test_the_public_details_and_the_withdrawal_keep_what_was_typed_and_say_what_
   const inputOf = (root, text) => labelled(root, text).firstControl();
   const sentBodies = () => ctx.requests.filter((r) => r.method !== 'GET' && r.path !== '/api/cloud/updates/automatic').map((r) => [r.method, r.path, typeof r.body === 'string' ? JSON.parse(r.body) : r.body]);
   // the withdrawal: nothing typed
-  await byText(tree, 'button', 'Отозвать').dispatch('click'); await tick();
-  out.empty = {sent: sentBodies().length, target: labelled(tree, 'Идентификатор').errorText(), reason: labelled(tree, 'Причина').errorText(),
+  await byText(tree, 'button', 'Withdraw').dispatch('click'); await tick();
+  out.empty = {sent: sentBodies().length, target: labelled(tree, 'Identifier').errorText(), reason: labelled(tree, 'Reason').errorText(),
     form: tree.querySelectorAll('.f-form-error').filter((e) => !e.hidden).map((e) => e.textContent)};
-  inputOf(tree, 'Идентификатор').value = 'abc-uuid';
-  inputOf(tree, 'Причина').value = '  Wrong   colours ';
-  await byText(tree, 'button', 'Отозвать').dispatch('click'); await tick();
-  out.refused = {sent: sentBodies(), kept: [inputOf(tree, 'Идентификатор').value, inputOf(tree, 'Причина').value],
+  inputOf(tree, 'Identifier').value = 'abc-uuid';
+  inputOf(tree, 'Reason').value = '  Wrong   colours ';
+  await byText(tree, 'button', 'Withdraw').dispatch('click'); await tick();
+  out.refused = {sent: sentBodies(), kept: [inputOf(tree, 'Identifier').value, inputOf(tree, 'Reason').value],
     form: tree.querySelectorAll('.f-form-error').filter((e) => !e.hidden).map((e) => e.textContent), toasts: ctx.document.body.querySelectorAll('.toast').length};
   // the public details: sent as typed, with the laser's boxes
-  inputOf(tree, 'Название лаборатории').value = ' North lab ';
-  await byText(tree, 'button', 'Сохранить').dispatch('click'); await tick();
+  inputOf(tree, 'Laboratory name').value = ' North lab ';
+  await byText(tree, 'button', 'Save').dispatch('click'); await tick();
   out.saved = sentBodies().filter((r) => r[0] === 'PUT')[0];
 """)
     assert out["empty"]["sent"] == 0 and out["empty"]["target"] == "Complete this field" and out["empty"]["reason"] == "Complete this field"
-    assert out["empty"]["form"] == ["Not submitted: correct fields “Идентификатор”, “Причина”. Your entries remain in the form."]
+    assert out["empty"]["form"] == ["Not submitted: correct fields “Identifier”, “Reason”. Your entries remain in the form."]
     assert out["refused"]["sent"] == [["POST", "/api/labs/own/withdrawals", {"target_kind": "release", "target_id": "abc-uuid", "reason": "  Wrong   colours ", "replacement_release_id": None}]]
     assert out["refused"]["kept"] == ["abc-uuid", "  Wrong   colours "] and out["refused"]["toasts"] == 0
     assert out["refused"]["form"] == ["The server rejected the data: this laboratory never published what is to be withdrawn."

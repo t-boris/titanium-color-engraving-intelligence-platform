@@ -192,15 +192,15 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
   out.head = tree.querySelector('h2').textContent;
   out.sub = tree.querySelector('p').textContent;
   out.setups = tree.querySelectorAll('div').filter((d) => d.classList.contains('lab-setup-card')).map((d) => [d.querySelector('strong').textContent, d.querySelectorAll('button').map((b) => b.textContent)]);
-  await byText(tree, 'button', 'Палитра').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Palette').dispatch('click'); await tick();
   out.palette = sent();
   const colour = tree.querySelector('.lab-colours').querySelector('.lst-row');                // a colour is a line of the short list
   out.colour = colour.textContent;
-  await byText(colour, 'button', 'Проверить у себя').dispatch('click'); await tick();
+  await byText(colour, 'button', 'Test in your workshop').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialogSelects = dialog.querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
   out.dialogStock = dialog.querySelectorAll('.matpick').map((p) => p.getAttribute('aria-label'));          // the own titanium is the stock selector, no longer a drop-down
-  await byText(dialog, 'button', 'Создать пластину').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Create plate').dispatch('click'); await tick();
   out.transfer = sent().pop();
   out.notice = tree.querySelectorAll('a').map((a) => a.getAttribute('href')).filter((href) => href.includes('/plans/'));
 """.replace("data.frozenSource", json.dumps({**SOURCE, "frozen": FROZEN, "conditions": [SOURCE["conditions"][0], FROZEN], "versions": 0})))
@@ -209,12 +209,12 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
     assert conditions == ["the colours and curves are another laboratory's measurements on its laser: the same colour on this laser is not promised"]   # the frozen reason stands apart
     assert file == "/api/photo-works/7/export.lbrn2" and buttons == ["Update source"]                                    # no earlier source to go back to
     assert out["head"].startswith("Лаборатория <b>Север</b>") and "<script>alert(1)</script>" in out["sub"]                   # the release's text, as text
-    assert out["setups"] == [["Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm", ["Палитра", "Шкалы серого"]],
-                             ["Волоконный 60 Вт · lens unknown", ["Шкалы серого"]]]
+    assert out["setups"] == [["Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm", ["Palette", "Grayscale scales"]],
+                             ["Волоконный 60 Вт · lens unknown", ["Grayscale scales"]]]
     assert out["palette"] == [["POST", "/api/labs/palette", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}]]
-    assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "reference chart corrected" in out["colour"] and "гравировок 2" in out["colour"] and "all 2 agree" in out["colour"]
-    assert "40.0 % · 30.0 кГц · 500 мм/с · 200 нс · шаг 0.0200 мм · проходов 1" in out["colour"]
-    assert out["dialogSelects"] == ["Свой лазер"] and out["dialogStock"] == ["Свой титан"]
+    assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "reference chart corrected" in out["colour"] and "engravings 2" in out["colour"] and "all 2 agree" in out["colour"]
+    assert "40.0 % · 30.0 kHz · 500 mm/s · 200 ns · interval 0.0200 mm · passes 1" in out["colour"]
+    assert out["dialogSelects"] == ["Your laser"] and out["dialogStock"] == ["Your titanium"]
     assert out["transfer"] == ["POST", "/api/labs/transfers", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "entry_id": "e1", "device_id": 1, "material_id": 3}]
     assert out["notice"] == ["#/plans/77"]
 
@@ -241,13 +241,13 @@ def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their
   await tick();
   const card = (title) => tree.querySelectorAll('.card').find((c) => c.querySelector('h3') && c.querySelector('h3').textContent === title);
   const lines = (root) => root.querySelectorAll('.lst-main').map((m) => m.textContent);
-  const releases = card('Выпуски');
+  const releases = card('Releases');
   out.releases = [lines(releases), releases.querySelectorAll('.lst-row').map((r) => r.querySelectorAll('button').map((b) => b.textContent))];
   out.releaseChips = releases.querySelectorAll('.lst-chip').map((c) => c.textContent);
   await releases.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   const open = releases.querySelectorAll('.lst-det').find((d) => !d.hidden);
   out.releaseDetails = [open.querySelectorAll('dt').map((d) => d.textContent), open.querySelectorAll('a').map((a) => a.getAttribute('href'))];
-  await byText(tree, 'button', 'Палитра').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Palette').dispatch('click'); await tick();
   const palette = tree.querySelector('.lab-colours');
   out.palette = [palette.querySelectorAll('.lst-row').length, palette.querySelector('.lst-count').textContent, palette.querySelector('.lst-foot').textContent];
   out.paletteChips = palette.querySelectorAll('.lst-chip').map((c) => c.textContent);
@@ -255,26 +255,26 @@ def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their
   out.orders = order.options.map((o) => o.textContent);
   order.value = 'light'; await order.dispatch('change'); await tick();
   out.lightest = palette.querySelector('strong').textContent;
-  await palette.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('с оговоркой')).dispatch('click'); await tick();
+  await palette.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('with caution')).dispatch('click'); await tick();
   out.cautious = palette.querySelectorAll('.lst-row').map((r) => r.querySelector('strong').textContent);
-  const done = card('Проверено у себя');
+  const done = card('Tested in your workshop');
   out.transfers = [lines(done), done.querySelectorAll('.lst-act').map((a) => a.querySelector('a').getAttribute('href'))];
-  await done.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('измерены')).dispatch('click'); await tick();
+  await done.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('measured')).dispatch('click'); await tick();
   await done.querySelectorAll('.lst-main')[0].dispatch('click'); await tick();
   out.transferDetails = done.querySelectorAll('.lst-det').find((d) => !d.hidden).querySelectorAll('a').map((a) => a.getAttribute('href'));
 """)
     lines, buttons = out["releases"]
     assert [x[:16] for x in lines] == ["2026-10-03 09:00", "2026-10-02 09:00", "2026-10-01 09:00"]                    # the newest first
-    assert "текущий" in lines[0] and "работ: 1" in lines[0] and "отозван" in lines[1] and "файлы удалены" in lines[2]
-    assert buttons == [["Различия", "Удалить файлы"], ["Различия", "Удалить файлы"], ["Различия"]]
-    assert out["releaseChips"] == ["All · 3", "на компьютере · 2", "файлы удалены · 1"]
-    assert out["releaseDetails"] == [["Хеш", "Подпись", "Файлы", "Работы"], ["#/vector?plan=12"]]
+    assert "current" in lines[0] and "works: 1" in lines[0] and "withdrawn" in lines[1] and "files removed" in lines[2]
+    assert buttons == [["Differences", "Remove files"], ["Differences", "Remove files"], ["Differences"]]
+    assert out["releaseChips"] == ["All · 3", "on this computer · 2", "files removed · 1"]
+    assert out["releaseDetails"] == [["Hash", "Signature", "Files", "Works"], ["#/vector?plan=12"]]
     assert out["palette"] == [20, "showing 20 of 25", "Show 5 more"]
     assert out["paletteChips"] == ["All · 25", "reference chart corrected · 9", "relative to clean titanium · 8", "as photographed, unreferenced · 8",
-                                   "All · 25", "без оговорок · 20", "с оговоркой · 5"]
-    assert out["orders"] == ["Как в выпуске", "Сначала светлые", "Сначала тёмные", "Больше гравировок"]
+                                   "All · 25", "without cautions · 20", "with caution · 5"]
+    assert out["orders"] == ["Release order", "Lightest first", "Darkest first", "Most engravings"]
     assert out["lightest"] == "L 68.0 · a 0.0 · b 0.0"
     assert out["cautious"] == ["L 60.0 · a 0.0 · b 0.0", "L 50.0 · a 0.0 · b 0.0", "L 40.0 · a 0.0 · b 0.0", "L 30.0 · a 0.0 · b 0.0", "L 20.0 · a 0.0 · b 0.0"]
     transfers, plans = out["transfers"]
-    assert [x.split(" · ")[0] for x in transfers] == ["Перенос 2", "Перенос 1", "Перенос 0"] and "средняя ΔE 1.5" in transfers[1] and "ждёт фото" in transfers[0]
+    assert [x.split(" · ")[0] for x in transfers] == ["Перенос 2", "Перенос 1", "Перенос 0"] and "mean ΔE 1.5" in transfers[1] and "awaiting photo" in transfers[0]
     assert plans == ["#/plans/72", "#/plans/71", "#/plans/70"] and out["transferDetails"] == ["#/analysis/91"]
