@@ -60,7 +60,8 @@ def pair(request: Request, response: Response, body: dict):
 @router.get("/ca")
 def certificate(request: Request):
     """The workshop's CA certificate, to install on the tablet once (DEC-047)."""
-    certs = lan_of(request).ensure_certificates()
+    network = lan_of(request)
+    certs = network.certs or network.ensure_certificates()
     return Response(certs.ca_pem(), media_type="application/x-x509-ca-cert", headers={"Content-Disposition": f'attachment; filename="{CA_FILE}"'})
 
 
