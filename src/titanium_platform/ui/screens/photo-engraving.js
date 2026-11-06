@@ -120,15 +120,15 @@
     return {el, update};
   }
 
-  const DOT_WIDTH_ABOUT = 'Поправка ширины точки LightBurn (Dot Width Correction): точка лазера шире пикселя картинки, и без поправки '
-    + 'картинка выходит темнее; LightBurn уменьшает каждую точку на эту ширину. Пишется в слой файла и в «Пробу этого вида»; тона вида, '
-    + 'измеренные при одной ширине точки, к другой не подходят. Только в видах точками.';
+  const DOT_WIDTH_ABOUT = 'LightBurn Dot Width Correction accounts for a laser dot wider than an image pixel; without correction '
+    + 'the image comes out darker. LightBurn reduces each dot by this width. It is recorded in the file layer and the test for this mode; tones '
+    + 'measured at one dot width do not apply to another. Dot modes only.';
   /** The dot width correction of a dot kind (0.28.0): a check box and the laser's dot width in mm, saved in the work by ``save({dot_width})``.
       A width turns the correction on, an empty field or a cleared box turns it off; a ticked box on an empty field waits for a width. In
       greyscale there is no correction: the field is hidden and the width waits in the work. */
   function dotWidthBox(save) {
-    const on = h('input', {type: 'checkbox', 'aria-label': 'Поправка ширины точки'});
-    const width = Forms.numberInput(Forms.QUANTITIES.dotWidth, {step: '0.001', 'aria-label': 'Ширина точки лазера'});
+    const on = h('input', {type: 'checkbox', 'aria-label': 'Dot width correction'});
+    const width = Forms.numberInput(Forms.QUANTITIES.dotWidth, {step: '0.001', 'aria-label': 'Laser dot width'});
     const given = () => { const r = Forms.parse(width.value, Forms.QUANTITIES.dotWidth); return r.ok ? r.value : null; };
     on.addEventListener('change', () => {
       if (!on.checked) save({dot_width: null});
@@ -137,8 +137,8 @@
     // a width outside what LightBurn takes is kept in the box with the reason beside it and is not saved; an empty box switches the correction off
     const wrong = Forms.watch(width, 'dotWidth', (value) => { on.checked = value != null; save({dot_width: value}); });
     const rules = Forms.describe(width, 'dotWidth');
-    const el = h('label', {class: 'ge-power ge-dotwidth', title: DOT_WIDTH_ABOUT}, on, h('span', {class: 'small'}, 'Поправка ширины точки'), width,
-      h('span', {class: 'small'}, 'мм'), rules, wrong);
+    const el = h('label', {class: 'ge-power ge-dotwidth', title: DOT_WIDTH_ABOUT}, on, h('span', {class: 'small'}, 'Dot width correction'), width,
+      h('span', {class: 'small'}, 'mm'), rules, wrong);
     function show(view) {
       el.hidden = !dotted(view) || !!view.problem;
       on.checked = view.dot_width != null;
@@ -147,7 +147,7 @@
     return {el, show};
   }
 
-  /** The measured grey scales as a short list (DEC-090): a line a scale — its colour bar, its settings and «выбрана» on the chosen one — the
+  /** The measured grey scales as a short list (DEC-090): a line a scale — its colour bar, its settings and “selected” on the chosen one — the
       best first (the server's order: scales a recipe refers to, then the most engraved and measured), pages of 20. A line opens the scale's
       card (its titanium, engravings, widths, confirmation); pressing the card chooses the scale. ``chosen()`` is the scale chosen now: the list
       opens on it. */
@@ -159,18 +159,17 @@
     const list = App.list({id, items: scales, key, open: now ? key(now) : null, className: 'ge-scale-list',
       row: (sc) => [scaleBar(display(sc)),
         h('span', {class: 'lst-text', title: `${settingsText(sc.mode, sc.dpi)} · ${titaniumLabel(sc)}`}, settingsText(sc.mode, sc.dpi)),
-        sc === chosen() ? pill('выбрана', 'ok') : null],
+        sc === chosen() ? pill('selected', 'ok') : null],
       details: (sc) => scaleCard(display(sc), sc === chosen(), () => choose(sc)),
       search: (sc) => `${settingsText(sc.mode, sc.dpi)} ${titaniumLabel(sc)}`,
-      sorts: [['best', 'Лучшие первыми', best], ['fast', 'Быстрее', (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || best(a, b)],
-        ['wide', 'Шире диапазон мощности', (a, b) => (b.span[1] - b.span[0]) - (a.span[1] - a.span[0]) || best(a, b)]],
-      empty: 'Нет шкал под такой поиск.'});
+      sorts: [['best', 'Best first', best], ['fast', 'Fastest', (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || best(a, b)],
+        ['wide', 'Widest power range', (a, b) => (b.span[1] - b.span[0]) - (a.span[1] - a.span[0]) || best(a, b)]],
+      empty: 'No scales match this search.'});
     list.setScales = (next) => { rank.clear(); next.forEach((sc, i) => rank.set(sc, i)); list.items = next; };
     return list;
   }
 
-  /** Работа на один экран: шкалы слева (выбранная — шкала работы), картинка и её прогноз посередине, вкладки справа. Изменения уходят на
-      сервер по очереди, в том порядке, в каком сделаны, и показывается ответ на последнее; другая шкала приходит со своими Min и Max. */
+  /** Render the work and serialize changes in their original order. */
   async function workScreen(id) {
     const first = await get('/photo-works/' + id);
     let scales = [];
@@ -181,19 +180,19 @@
     const base = `/photo-works/${id}`;
     // Every change of the work goes through ``doc`` (save-state.js, BUG-002, BUG-011): one after another in the order made, an answer is shown
     // only when it is the answer to the newest change, a change that failed stays in its control with the error beside the work.
-    const doc = SaveState.create({label: 'Работа', confirmed: first, names: SAVED_NAMES,
+    const doc = SaveState.create({label: 'Work', confirmed: first, names: SAVED_NAMES,
       send: async (request) => { const previous = view; const next = await post(request.path, request.body); picture.compare(previous, next); view = next; return next; },
       apply: (next, info) => { if (info.reverted || info.edits.some((e) => e.meta.again)) shownKey = null; shown(); },
       reload: async () => { view = await get(base); doc.adopt(view); },
-      onOrphanFailure: (lost) => { if (typeof Operations !== 'undefined') Operations.report({title: `Работа «${view.name}»: изменения не сохранены`, message: `${lost.message} ${lost.describe}`.trim(),
-        context: {route: `/photo-engraving?work=${id}`, label: 'Фотогравировка'}, recover: {label: 'Открыть работу', route: `/photo-engraving?work=${id}`}, details: [['Работа', `№ ${id}`]]}); }});
+      onOrphanFailure: (lost) => { if (typeof Operations !== 'undefined') Operations.report({title: `Work “${view.name}”: changes not saved`, message: `${lost.message} ${lost.describe}`.trim(),
+        context: {route: `/photo-engraving?work=${id}`, label: 'Photo engraving'}, recover: {label: 'Open work', route: `/photo-engraving?work=${id}`}, details: [['Work', `#${id}`]]}); }});
     /** The work as the controls draw it: as the server has it, with the fields that could not be saved as they were typed. */
     const drawn = () => {
       const own = doc.local();
       const kept = KEPT_IN_CONTROLS.filter((k) => k in own);
       return kept.length ? {...view, ...SaveState.pick(own, kept)} : view;
     };
-    // надписи: прогноз сервера уже рисует их врезанными, слой поверх прогноза — ручки и контур (inscriptions-in-works, REQ-005)
+    // inscriptions are included in the server prediction; the overlay supplies handles and outlines
     let tab = null;
     const lettering = Lettering.create(view, {act: async (op) => !(await send(`${base}/texts`, op)), palette: () => get(`${base}/palette`),
       size: (v) => ({width: v.width_mm, height: v.height_mm}), drawn: false, open: () => tab === 'texts',
@@ -212,10 +211,10 @@
     const ai = aiTab(base, save, (wish, fresh) => send(`${base}/ai`, {wish, fresh}));
     const colour = colourTab(base, save, (path, body) => send(path, body));
     const engraved = engravingsBlock(id);
-    const tabs = App.tabs([['picture', 'Картинка', picture.details], ['colour', 'Раскраска', colour.el], ['ai', 'AI', ai.el], ['scale', 'Шкала', slots.scale],
-      ['confirm', 'Подтверждение', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
-      ['points', 'Точки', slots.points], ['texts', 'Надписи', lettering.el]],
-    {initial: 'picture', remember: 'ge.work.tab', label: 'Картинка и шкала', prefix: 'ge-tab', onSelect: (id) => { tab = id; lettering.opened(); }});
+    const tabs = App.tabs([['picture', 'Image', picture.details], ['colour', 'Coloring', colour.el], ['ai', 'AI', ai.el], ['scale', 'Scale', slots.scale],
+      ['confirm', 'Confirmation', h('div', {class: 'stack'}, engraved.el, slots.confirm)],
+      ['points', 'Dots', slots.points], ['texts', 'Inscriptions', lettering.el]],
+    {initial: 'picture', remember: 'ge.work.tab', label: 'Image and scale', prefix: 'ge-tab', onSelect: (id) => { tab = id; lettering.opened(); }});
     const chosen = () => scales.find((sc) => sameScale(sc, view.scale)) || null;
     // at the work's width, for its kind and where its dots' colour comes from (the scale or a recipe of the colour map)
     const scaleKey = (v, mode = v.scale) => `${modeQuery(mode)}&row_mm=${v.width_mm}&kind=${v.kind || GRAYSCALE}&dots=${fromMap(v) ? v.dot_recipe.entry : ''}`;
@@ -270,7 +269,7 @@
         map: () => go(DotPick.address(view))} : null;
       if (sc) detail = scaleDetail(sc, slots, {initial: [view.min_power, view.max_power], changed: (lo, hi) => save({min_power: lo, max_power: hi}), rowMm: view.width_mm, dot,
         loaded: (data) => { selectedDetail = data; cards(chosen()); }});
-      else { detail = null; emptySlots(slots, 'Шкала этой работы не измерена: выберите шкалу слева.'); }
+      else { detail = null; emptySlots(slots, 'This work’s scale has not been measured; select a scale on the left.'); }
     }
     function shown() {
       head.update(view);
@@ -293,9 +292,9 @@
       return doc.edit({path, body}, {local: unsaved, calculates: true, retryable: !!unsaved, meta: {again}});
     }
     function save(changes) { return send(`/photo-works/${id}/settings`, changes, false, changes); }
-    /** «Отменить» или «Повторить» (``kind``): работа становится такой, какой была до последнего изменения (или после отменённого). */
+    /** Undo or redo the latest work change. */
     function step(kind) { return (view[kind] || 0) > 0 ? send(`/photo-works/${id}/${kind}`, {}, true) : Promise.resolve(null); }
-    /** Другая шкала: картинка остаётся, Min и Max становятся измеренным диапазоном новой шкалы (их присылает сервер). */
+    /** Selecting another scale preserves the image and uses its measured Min and Max. */
     function pick(item) {
       if (scaleKey(view, item.mode) === shownKey) return;
       if (detail) detail.stop();
@@ -303,7 +302,7 @@
       shownKey = null;
       selectedDetail = null;
       cards(item);
-      emptySlots(slots, 'Загружаем шкалу…');
+      emptySlots(slots, 'Loading scale…');
       save({scale: item.mode});
     }
     shown();
@@ -313,14 +312,14 @@
       const t = ev.target;
       if (document.querySelector('.modal-bg')) return;
       if (ev.key === 'Escape' && tab === 'texts' && lettering.escape()) return;
-      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // в поле ввода клавиши — его
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;   // input fields handle their own keys
       const z = ev.code === 'KeyZ' || (ev.key || '').toLowerCase() === 'z', y = ev.code === 'KeyY' || (ev.key || '').toLowerCase() === 'y';
       if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (z || y)) { ev.preventDefault(); step(z && !ev.shiftKey ? 'undo' : 'redo'); }
     };
     keys = key;
     return fill(root, head.el, banner.el, h('div', {class: 'os-body ge-body'},
       h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, scaleHeading), scaleArea),
-      h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Картинка на шкале'), slots.title),
+      h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Image on scale'), slots.title),
         h('div', {class: 'ge-work'}, picture.inputs, picture.tone, PhotoPanels.calibrationControls(slots.powers, dotWidth.el), doc.view.el, slots.error, error, slots.bar, picture.out, picture.comparison, picture.foot)),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }

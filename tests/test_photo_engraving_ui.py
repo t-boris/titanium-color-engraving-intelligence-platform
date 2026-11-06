@@ -123,7 +123,7 @@ const button = (tree, text) => tree.querySelectorAll('button').find((b) => b.tex
 const shown = (tree) => { const img = tree.querySelectorAll('img').find((i) => (i.className || '').includes('pp-image')); return img ? img.getAttribute('src') : null; };
 const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
 const lines = (tree) => tree.querySelector('.ge-scale-list').querySelectorAll('.lst-main');      // a line a scale (DEC-090)
-const chosen = (tree) => lines(tree).map((m) => m.textContent.includes('выбрана'));
+const chosen = (tree) => lines(tree).map((m) => m.textContent.includes('selected'));
 /** The scale on line ``i`` chosen: its line opens its card, the card is pressed. */
 const pickScale = async (tree, i) => { await lines(tree)[i].dispatch('click'); await settle(); await tree.querySelector('button.ge-scale').dispatch('click'); };
 const powers = (tree) => [labelled(tree, 'Min power, %% (white)').value, labelled(tree, 'Max power, %% (black)').value];
@@ -435,7 +435,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     # stays beside the work with what was typed and what is stored, until it is corrected or closed
     assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
                               "predictionStatus": "Showing the previous prediction; recalculation failed. Check the error and try again.",
-                              "status": "Работа: Not saved: the screen differs from the saved values",
+                              "status": "Work: Not saved: the screen differs from the saved values",
                               "error": "Could not save. the width of the picture must be 1..1000 mm"
                               "Entered but not saved — Width, mm: 0 (saved: 100).Close"}
 
@@ -519,7 +519,7 @@ def test_a_work_whose_scale_is_not_measured_says_why_and_a_measured_scale_can_be
 """, work={"scale": {**mode(999)}, "problem": "no colour has been measured at this mode: there is nothing to predict from"})
     opened = out["opened"]
     assert opened["chosen"] == [False, False] and opened["sliders"] == 0 and opened["tone"]               # nothing to predict: no powers, no tone
-    assert "no colour has been measured at this mode: there is nothing to predict from" in opened["text"] and "Шкала этой работы не измерена: выберите шкалу слева." in opened["text"]
+    assert "no colour has been measured at this mode: there is nothing to predict from" in opened["text"] and "This work’s scale has not been measured; select a scale on the left." in opened["text"]
     assert out["saves"] == [{"scale": mode(100)}] and out["chosen"] == [False, True] and out["powers"] == ["2", "25"]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=1"
 
@@ -850,7 +850,7 @@ def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_pat
                'settings': {**mode(100), 'power': 30, 'min_power': 1}, 'at': '2026-10-27T10:00:00'}
     data = {**scale_answer(), 'examples': [example]}
     out = run(tmp_path, {'work': '7'}, """
-  await button(tree, 'Шкала').dispatch('click'); await settle();
+  await button(tree, 'Scale').dispatch('click'); await settle();
   const block = () => tree.querySelector('.ge-result');
   const area = (a) => block().querySelectorAll('.ge-assessment').find((x) => x.getAttribute('data-aspect') === a);
   area('colour').querySelector('select').value = 'good';
@@ -925,7 +925,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
     out = run(tmp_path, {"work": "7"}, """
   const box = () => tree.querySelector('.ge-dotwidth');
   const tick = () => input(box(), (i) => i.getAttribute('type') === 'checkbox');
-  const width = () => labelled(tree, 'Ширина точки лазера');
+  const width = () => labelled(tree, 'Laser dot width');
   out.first = [box().hidden, tick().checked, width().value];
   tick().checked = true; await tick().dispatch('change'); await settle();
   out.empty = saves().length;
@@ -956,7 +956,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
 @node
 def test_a_dot_width_outside_what_lightburn_takes_stays_in_the_box_with_the_reason_and_is_not_saved(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  const width = () => labelled(tree, 'Ширина точки лазера');
+  const width = () => labelled(tree, 'Laser dot width');
   const before = saves().length;
   width().value = '0.5'; await width().dispatch('change'); await settle();
   out.wrong = {saved: saves().length - before, kept: width().value, invalid: width().getAttribute('aria-invalid'),
@@ -1067,7 +1067,7 @@ def test_a_grayscale_work_past_its_scales_turn_is_told_so_offered_no_step_and_ta
 @node
 def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_opens_its_card_only_on_a_click(tmp_path):
     """DEC-090: 22 measured scales show 20 lines in the server's order (the best first) and «Show 2 more»; only the chosen scale's card is
-    open; another line opens its card, the card chooses the scale; «Быстрее» puts the fastest scale first."""
+    open; another line opens its card, the card chooses the scale; «Fastest» puts the fastest scale first."""
     scales = [{**scale(100 + i, [1, 30 - i]), "time_s_per_cm2": 90 - i} for i in range(22)]
     out = run(tmp_path, {"scales": "1"}, """
   const list = tree.querySelector('.ge-scale-list');
@@ -1083,10 +1083,10 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
   out.fastest = lines(tree)[0].textContent;
 """, work={"id": 9}, scales=scales)
     assert out["lines"] == 20 and out["count"] == "showing 20 of 22" and out["more"] == "Show 2 more"
-    assert "100 mm/s" in out["first"][0] and "выбрана" in out["first"][0] and "101 mm/s" in out["first"][1]
+    assert "100 mm/s" in out["first"][0] and "selected" in out["first"][0] and "101 mm/s" in out["first"][1]
     assert out["cards"] == 1 and out["chosen"] == 0                                                 # the chosen scale's card, nothing else
     assert out["after"]["chosen"] == 3 and out["after"]["cards"] == ["true"]
-    assert out["sorts"] == ["Лучшие первыми", "Быстрее", "Шире диапазон мощности"]
+    assert out["sorts"] == ["Best first", "Fastest", "Widest power range"]
     assert "121 mm/s" in out["fastest"]
 
 
