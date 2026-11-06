@@ -712,7 +712,7 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.dot = labelled(tree, 'Dot power, %').value;
   out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').includes('/closeup.png'));
-  out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Jarvis»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
+  out.says = ['Each dot engraves at 12,5 %', 'This is an estimate', 'in Jarvis mode: power 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
   out.ramp = !!button(tree, 'Test this mode') && tree.textContent.includes('in “Jarvis” mode, at dot power 12,5%');
   await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
   out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
@@ -796,8 +796,8 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
   const text = () => tree.textContent;
   out.mapped = {source: tree.querySelector('.ge-dotsource').textContent, slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
                 ends: tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent, title: tree.querySelector('.ge-settings').textContent,
-                says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
-                       'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1 — настройки цвета с карты цветов',
+                says: ['estimate from the color map', 'using settings for the selected color on the color map', 'The dot color comes from the color map',
+                       'power 20 % (Min = Max — each dot uses that power), 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1 — color settings from the color map',
                        '60 mm: between measurements 40 and 80 mm', 'using color-map settings (500 mm/s'].map((t) => text().includes(t))};
   await button(tree, 'Another color').dispatch('click'); await settle();
   out.went = [...ctx.__went];
@@ -1015,9 +1015,9 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
     assert out["title"].endswith("dots use settings of dots from photo #149 (Jarvis)")
     text = out["text"]
     assert "с карты цветов" not in text.replace("Color from map", "") and "оценка по шкале" not in text
-    assert "оценка по фото № 149 (Jarvis): этот вид на этих настройках ещё не гравировался" in text
-    assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Jarvis), где сфотографированы точки этих настроек." in text
-    assert "— настройки точек from photo #149 (Jarvis)." in text
+    assert "estimate from photo # 149 (Jarvis): this mode has not been engraved with these settings" in text
+    assert "This is an estimate: this mode has not been engraved with these settings. Dot color is as in photo # 149 (Jarvis), which shows dots engraved with these settings." in text
+    assert "— dot settings from photo #149 (Jarvis)." in text
 
 
 # a kind whose every engraving on the titanium came out a negative (DEC-006): the dots of another kind stand in for its best

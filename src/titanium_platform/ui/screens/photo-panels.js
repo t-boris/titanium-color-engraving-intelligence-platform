@@ -633,71 +633,71 @@ const PhotoPanels = (() => {
           + CHOICE_ABOUT + ' Contours: ' + CONTOURS_ABOUT + ' The prediction and LightBurn file use the same image; the prediction is recalculated when the scale, Min, Max, '
           + 'width, matching, or contours change.'));
     }
-    /** Работа в виде точками: картинка рядом с точками на титане издалека (оценка по шкале), точки вблизи, мощность и файл. */
+    /** Display dot-mode predictions, measurements, closeups, power, and file settings. */
     function showDots(view, info, sc) {
       const t = info.time, d = info.dots, name = kindName(view.kind), measured = d.measured, mapped = d.source === 'map';
       const photo = d.source === 'photo', from = photo ? recipeFrom(d.recipe) : null;
-      const shot = photo && d.recipe.photo ? `фото № ${d.recipe.photo.pair_id} (${kindName(d.recipe.photo.kind)})` : null;     // the photograph of the dots
+      const shot = photo && d.recipe.photo ? `photo # ${d.recipe.photo.pair_id} (${kindName(d.recipe.photo.kind)})` : null;     // the photograph of the dots
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;
-      const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
-      const estimate = mapped ? 'оценка по карте цветов: этот вид на этих настройках ещё не гравировался'
-        : photo ? `оценка${shot ? ' по ' + shot : ''}: этот вид на этих настройках ещё не гравировался` : 'оценка по шкале: этот вид ещё не гравировался';
-      const source = mapped ? 'с карты цветов' : photo ? from : 'со шкалы';
+      const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} mm`;
+      const estimate = mapped ? 'estimate from the color map: this mode has not been engraved with these settings'
+        : photo ? `estimate${shot ? ' from ' + shot : ''}: this mode has not been engraved with these settings` : 'estimate from the scale: this mode has not been engraved';
+      const source = mapped ? 'from the color map' : photo ? from : 'from the scale';
       const settings = settingsText(firedSettings(view), info.dpi);
       fill(out,
-        h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка (как её видит LightBurn)'), h('span', {}, `${name} на титане — ${measured ? 'по измеренной пробе' : 'оценка'}`)),
-        h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Картинка и она же в виде «${name}» на титане`})));
+        h('div', {class: 'pp-captions'}, h('span', {}, 'Image (as seen by LightBurn)'), h('span', {}, `${name} on titanium — ${measured ? 'from a measured sample' : 'estimate'}`)),
+        h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: `Image and its ${name} prediction on titanium`})));
       if (stage) stage(out.querySelector('.pp-stage'), info.shown && info.shown.width);
       const atSize = mapped ? recipeSizeText(view.dot_recipe.size) : photo ? null : sizeText(info.scale_size);    // photo dots: measured on a picture
       fill(foot,
-        h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
-        h('span', {class: 'row'}, 'точки ', hexChip(d.hex), ` ${value(d.power, 1)} % ${source} на титане `, hexChip(d.clean_hex)),
-        measured ? pill(`измерено: ${measured.tones} тонов этого вида`, 'ok') : pill(estimate, 'warn'),
+        h('span', {}, h('strong', {}, `Engraving time: ≈ ${duration(t.seconds)}`), ` for ${size}`),
+        h('span', {class: 'row'}, 'dots ', hexChip(d.hex), ` ${value(d.power, 1)} % ${source} on titanium `, hexChip(d.clean_hex)),
+        measured ? pill(`measured: ${measured.tones} tones in this mode`, 'ok') : pill(estimate, 'warn'),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null);
       fill(details,
-        measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %${mapped ? ' на настройках цвета с карты цветов' : photo ? ` на настройках точек ${from}` : ''}. `
-          + `Цвета картинки — как сфотографирована проба этого вида на этих настройках и этом титане: ${measured.tones} тонов. `
-          + (mapped || photo ? 'To change dot color, select “Another color” above the image; ' : 'Мощность точек меняется на полосе шкалы; ')
-          + 'на других настройках снова будет оценка, пока их не измерить.')
+        measured ? h('p', {}, h('strong', {}, `${name}. `), `Each dot engraves at ${value(d.power, 1)} %${mapped ? ' using color settings from the color map' : photo ? ` using dot settings ${from}` : ''}. `
+          + `The image colors are based on the photographed sample for this mode, settings, and titanium: ${measured.tones} tones. `
+          + (mapped || photo ? 'To change dot color, select “Another color” above the image; ' : 'Change dot power on the scale strip; ')
+          + 'other settings will remain estimates until measured.')
           : h('p', {}, h('strong', {}, `${name}. `), mapped
-            ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках цвета, выбранного на карте цветов: это цвет его заливки при ширине работы `, hexChip(d.hex)]
-            : photo ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках точек ${from}: это цвет точек на том фото `, hexChip(d.hex)]
-              : [`Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex)],
-            '; между точками — очищенный титан ', hexChip(d.clean_hex), `. Тон — сколько точек: они покрывают ${value(d.struck_share * 100, 0)} % картинки, `
-            + 'издалека глаз смешивает их с титаном. '
+            ? [`Each dot engraves at ${value(d.power, 1)} % using settings for the selected color on the color map: this is its fill color at the work width `, hexChip(d.hex)]
+            : photo ? [`Each dot engraves at ${value(d.power, 1)} % using dot settings ${from}: this is the dot color in that photo `, hexChip(d.hex)]
+              : [`Each dot engraves at ${value(d.power, 1)} % — this is the scale color at this power `, hexChip(d.hex)],
+            '; between dots is cleaned titanium ', hexChip(d.clean_hex), `. Tone depends on the number of dots: they cover ${value(d.struck_share * 100, 0)} % of the image, `
+            + 'and from a distance the eye blends them with the titanium. '
             + (mapped || photo ? 'To change dot color, select “Another color” above the image. To return dots to the scale, select “Back to scale” or click the scale strip.'
               : 'Change dot power by clicking a color on the scale strip. For another measured color, select “Color from map”.')),
         measured ? h('ul', {class: 'small'}, measured.notes.map((n) => h('li', {}, I18N.tr(n))))
-          : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. '
-            + (mapped ? 'Цвет точки взят с карты цветов — это цвет сплошной заливки этих настроек: в тёмных местах точки сливаются в такую же заливку, '
-              + 'а отдельная точка — самая короткая строка, и на титане она может выйти светлее или другого оттенка. '
-              : photo ? `Цвет точки — ${shot ? `как на ${shot}, где сфотографированы точки этих настроек` : 'по ближайшей сфотографированной гравировке'}. `
-              : 'Цвет точки взят со шкалы, измеренной строками; точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. ')
-            + 'Узор точек — по опубликованному алгоритму; LightBurn ставит точки своим кодом, узор может отличаться, доля точек — та же.'),
-        mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: оценка — по цвету, каким он был при выборе. '
+          : h('p', {class: 'alert warn small'}, 'This is an estimate: this mode has not been engraved with these settings. '
+            + (mapped ? 'The dot color comes from the color map’s solid fill at these settings. In dark areas the dots merge into a similar fill, '
+              + 'but an individual dot is the shortest line and may appear lighter or a different hue on titanium. '
+              : photo ? `Dot color is ${shot ? `as in ${shot}, which shows dots engraved with these settings` : 'based on the closest photographed engraving'}. `
+              : 'The dot color comes from a scale measured in lines. A dot is the shortest line, and titanium color depends on line length, so actual dots may have a different hue. ')
+            + 'The dot pattern uses a published algorithm. LightBurn places dots using its own code, so the pattern may differ, though the dot coverage is the same.'),
+        mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'This color is no longer in the color map measurements; the estimate uses its color when selected. '
           + 'Select a color again (“Another color”) or return dots to the scale.') : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         variations ? variationsOffer(view, variations) : null,
         advisor ? advisor.el : null,
-        h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
-          h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
-            + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — ${source}.`)),
-        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
-          + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
-          h('span', {class: 'muted small'}, ' — оценка сверху: строки на всю ширину картинки, как в градациях серого; белые места лазер в виде точками пролетает быстрее.')),
+        h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Closeup of ${name} dots`}),
+          h('figcaption', {class: 'small muted'}, `Dot closeup: a square ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} mm from the center of the image, dot for dot at ${info.dpi} dpi `
+            + `(each dot is ${info.closeup_px} screen pixels), dot color: ${source}.`)),
+        h('p', {}, h('strong', {}, `Engraving time: ≈ ${duration(t.seconds)}`), ` for ${size}${sc ? ` at scale ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
+          + (cleaning ? `, cleaning ≈ ${duration(cleaning.seconds)}` : ''),
+          h('span', {class: 'muted small'}, ' — upper estimate: full-width image lines as in grayscale; in dot mode the laser travels faster over white areas.')),
         toneText(view),
         atSize ? h('p', {class: 'small'}, pill(atSize.short, atSize.tone), ' ', atSize.long, h('span', {class: 'muted'}, ' ' + SIZE_ABOUT)) : null,
-        h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой; C01 — ` : ''}`
-          + `слой-изображение в режиме «${name}»: мощность ${value(d.power, 1)} % (Min = Max — каждая точка бьёт на ней), ${settings}${mapped ? ' — настройки цвета с карты цветов' : photo ? ` — настройки точек ${from}` : ''}. `
-          + `Картинка — как загружена, ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле: точки ставит LightBurn.`),
-        h('p', {class: 'muted small'}, 'Подбор серых под цвета, контуры и правила частей — для градаций серого: в виде точками все точки одного цвета, и картинка '
-          + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));
+        h('p', {class: 'small'}, layer ? layer(info) : `LightBurn file: ${cleaning ? `C00 — cleaning ${cleaning.name} over the image rectangle first; C01 — ` : ''}`
+          + `image layer in ${name} mode: power ${value(d.power, 1)} % (Min = Max — each dot uses that power), ${settings}${mapped ? ' — color settings from the color map' : photo ? ` — dot settings ${from}` : ''}. `
+          + `Image as uploaded, ${value(info.size_mm.width, 1)} mm wide, with the top-left corner at the origin: LightBurn places the dots.`),
+        h('p', {class: 'muted small'}, 'Grayscale matching, contours, and part rules apply to grayscale mode. In dot mode all dots have the same color and the image '
+          + 'is engraved as uploaded. Choose Mode above the image to return to grayscale; its settings are preserved.'));
     }
     const inputs = h('div', {class: 'ge-inputs'}, kind,
-      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width, Forms.describe(width, 'pictureWidth')), widthNote,
-      h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
+      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Width, mm'), width, Forms.describe(width, 'pictureWidth')), widthNote,
+      h('label', {class: 'row', title: 'Grays are matched to image colors on this scale'}, byColour, h('span', {class: 'small'}, 'Match grayscale to colors')),
       choice,
-      h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
+      h('label', {class: 'row', title: 'Contours: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Contours')));
     return {inputs, tone: tone.el, out, foot, details, comparison, compare, show, waiting, failed};
   }
 
