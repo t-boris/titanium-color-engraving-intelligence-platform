@@ -68,8 +68,13 @@
         DeviceView.passportCard(d),
         h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Изменить паспорт: серийный номер, диаметр пятна, ступени, открытые вопросы')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
     }
-    const nav = h('div', {class: 'row', role: 'tablist'}, TABS.map(([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, role: 'tab', 'aria-selected': key === tab,
-      class: 'btn' + (key === tab ? ' primary' : '')}, label + (counts[key] ? ` · ${counts[key]}` : ''))));
+    const technical = new Set(['charts', 'pulses', 'report', 'documents']);
+    const tabLink = ([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, 'aria-current': key === tab ? 'page' : null,
+      class: 'btn' + (key === tab ? ' primary' : '')}, label + (counts[key] ? ` · ${counts[key]}` : ''));
+    const nav = h('nav', {class: 'stack device-navigation', 'aria-label': 'Разделы лазера'},
+      h('div', {class: 'row'}, TABS.filter(([key]) => !technical.has(key)).map(tabLink)),
+      h('details', {class: 'device-technical', open: technical.has(tab)}, h('summary', {}, 'Технические данные'),
+        h('div', {class: 'row'}, TABS.filter(([key]) => technical.has(key)).map(tabLink))));
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, d.title), h('p', {class: 'sub'}, [d.manufacturer, d.model].filter(Boolean).join(' · '))), h('span', {class: 'spacer'}),
         openPill, link('/devices', 'Все лазеры'),
