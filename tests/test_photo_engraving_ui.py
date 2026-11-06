@@ -256,10 +256,10 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
   const tiles = () => box.querySelectorAll('button.ge-kind');
   const marked = () => tiles().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.querySelector('strong').textContent + ' ' + b.querySelector('.pill').textContent);
   out.second = {title: box.querySelector('h3').textContent, tiles: tiles().length, pictures: tiles().map((b) => b.querySelector('img').getAttribute('src')),
-                marked: marked(), create: !!button(box, 'Создать в «Градации серого»'), back: !!button(box, '← Назад'), went: [...ctx.__went]};
+                marked: marked(), create: !!button(box, 'Create in “Градации серого”'), back: !!button(box, '← Back'), went: [...ctx.__went]};
   await tiles().find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
   out.picked = {marked: marked(), open: !!dialog(), saved: saves()};
-  await button(box, 'Создать в «Джарвис»').dispatch('click'); await settle();
+  await button(box, 'Create in “Джарвис”').dispatch('click'); await settle();
   out.saved = saves(); out.went = ctx.__went; out.open = !!dialog();
   out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
 """, work={"id": 9})
@@ -270,10 +270,10 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
     assert out["sent"] == [{"picture": "moto.jpg", "name": "moto", "width_mm": "80"}]   # no scale: the best measured one is taken
     second = out["second"]
-    assert second["title"] == "Новая работа · шаг 2 из 2: какая гравировка?" and second["tiles"] == 10 and second["went"] == []
+    assert second["title"] == "New work · step 2 of 2: which engraving?" and second["tiles"] == 10 and second["went"] == []
     assert second["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1"            # the work's own picture in each kind
-    assert second["marked"] == ["Градации серого выбрано"] and second["create"] and second["back"]
-    assert out["picked"] == {"marked": ["Джарвис выбрано"], "open": True, "saved": []}      # a click chooses; nothing is saved yet
+    assert second["marked"] == ["Градации серого selected"] and second["create"] and second["back"]
+    assert out["picked"] == {"marked": ["Джарвис selected"], "open": True, "saved": []}      # a click chooses; nothing is saved yet
     assert out["saved"] == [{"kind": "jarvis"}] and out["went"] == ["/photo-engraving?work=9"] and not out["open"]
     assert out["deleted"] == []
 
@@ -290,7 +290,7 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
   labelled(box, 'Название работы').value = 'Мото';
   labelled(box, 'Ширина на титане, мм').value = '80';
   await button(box, 'Дальше →').dispatch('click'); await settle();
-  await button(dialog(), '← Назад').dispatch('click'); await settle();
+  await button(dialog(), '← Back').dispatch('click'); await settle();
   box = dialog();
   out.back = {title: box.querySelector('h3').textContent, name: labelled(box, 'Название работы').value, width: labelled(box, 'Ширина на титане, мм').value,
               file: box.querySelector('.file-name').textContent, deleted: deleted(), went: [...ctx.__went]};
@@ -301,7 +301,7 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
 """, work={"id": 9})
     assert out["back"] == {"title": "Новая работа · шаг 1 из 2: картинка", "name": "Мото", "width": "80", "file": "moto.jpg · 4 KB",
                            "deleted": ["/api/plans/9"], "went": []}
-    assert out["again"] == {"title": "Новая работа · шаг 2 из 2: какая гравировка?", "posts": 2}
+    assert out["again"] == {"title": "New work · step 2 of 2: which engraving?", "posts": 2}
     assert out["escaped"] == {"open": False, "deleted": ["/api/plans/9", "/api/plans/9"], "went": [], "saved": []}
 
 
@@ -543,7 +543,7 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   await button(box, 'Дальше →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.tiles = dialog().querySelectorAll('button.ge-kind').length;
-  await button(dialog(), 'Создать в «Градации серого»').dispatch('click'); await settle();
+  await button(dialog(), 'Create in “Градации серого”').dispatch('click'); await settle();
   out.went = ctx.__went; out.saved = saves();
 """, work={"id": 9})
     assert out["first"] == {"chosen": [True, False], "powers": ["1", "30"], "table": True, "works": False}

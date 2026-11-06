@@ -1,6 +1,6 @@
-/* «Какая гравировка?» as the last step of «Новая работа» of a photograph (BUG-003, REQ-071; shared with feature ux-work-creation-p0).
+/* “Which engraving?” as the last step of “New work” of a photograph (BUG-003, REQ-071; shared with feature ux-work-creation-p0).
    The work is made first, on its scale, so that its own picture can be shown in every kind (the tiles of PhotoPanels.kindTiles). The question is
-   answered in one dialog, and the work exists only if the person confirms it: «Создать в «…»» keeps the work in the chosen kind; «← Назад», ×,
+   answered in one dialog, and the work exists only if the person confirms it: “Create in …” keeps the work in the chosen kind; “← Back”, ×,
    Escape or a click outside delete the work the caller made, so no half-made work is left. ``open`` only runs this dialog: what comes before
    it (the picture, the name, the width) and after it (opening the work) belongs to the caller — the dialog of photo engraving and the
    creation screen both call it, so the question and its rules are the same in both. */
@@ -9,25 +9,25 @@ const PhotoKindStep = (() => {
   const {h, post, del, modal, fail} = App;
   const {kindTiles, kindName, GRAYSCALE, KINDS_ABOUT} = PhotoPanels;
 
-  const TITLE = 'Новая работа · шаг 2 из 2: какая гравировка?';
+  const TITLE = 'New work · step 2 of 2: which engraving?';
 
   /** The dialog for the work ``id`` (made and not yet kept). Options, all optional:
       ``title``    the dialog's title; ``initial`` the kind marked at the start (grayscale);
       ``onChoose`` called with the kind at every click on a tile;
-      ``before``   async, called when «Создать в…» is pressed and before the kind is saved; if it throws, the work is not kept and the dialog stays;
+      ``before``   async, called when “Create in …” is pressed and before the kind is saved; if it throws, the work is not kept and the dialog stays;
       ``failed``   async, called when saving the kind failed (the dialog stays, the work is not kept);
       ``onKept``   called with the chosen kind after the dialog is closed, the work being kept in it;
-      ``onLeft``   called as ``{back}`` after the dialog is closed without keeping the work (it is being deleted); ``back`` is true for «← Назад». */
+      ``onLeft``   called as ``{back}`` after the dialog is closed without keeping the work (it is being deleted); ``back`` is true for “← Back”. */
   function open(id, {title = TITLE, initial = GRAYSCALE, onChoose = null, before = null, failed = null, onKept = null, onLeft = null} = {}) {
     let chosen = initial, kept = false, back = false;
-    const label = () => `Создать в «${kindName(chosen)}»`;
+    const label = () => `Create in “${kindName(chosen)}”`;
     const tiles = kindTiles(`/photo-works/${id}`, chosen, (key) => {
       chosen = key; tiles.mark(key); create.textContent = label();
       if (onChoose) onChoose(key);
-    }, 'выбрано');
+    }, 'selected');
     const dialog = modal(title, h('div', {class: 'stack'},
-      h('p', {class: 'small'}, 'Под каждым видом — ваша картинка, какой она выйдет на титане на шкале работы; щелчок выбирает вид. ' + KINDS_ABOUT), tiles.el), [
-      {label: '← Назад', run: (m) => { back = true; m.close(); }},
+      h('p', {class: 'small'}, 'Each option previews your image on titanium using this work’s scale. Select an option. ' + KINDS_ABOUT), tiles.el), [
+      {label: '← Back', run: (m) => { back = true; m.close(); }},
       {label: label(), cls: 'primary', run: async (m) => {
         kept = true;                                      // from here the work stays, even if the dialog is closed while it is saved
         try {

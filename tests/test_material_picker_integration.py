@@ -306,7 +306,7 @@ def test_the_dialog_of_the_shared_choice_selects_the_workshops_record_and_saves_
       const context = await App.get('/creation/context');
       let saved = null;
       const dialog = (await ctx.WorkContext.change(context, (c) => { saved = c; }, {source: false})).el;
-      const stock = picker(dialog, 'Титан');
+      const stock = picker(dialog, 'Stock');
       await until(() => stock.record !== null && sent('/api/creation/context/impact').length >= 1);
       out.start = {pickers: qa(dialog, '.matpick').length, records: records(dialog), value: stock.value, label: labelOf(stock), selects: qa(dialog, 'select').map((s) => s.getAttribute('aria-label') || '')};
       const before = sent('/api/creation/context/impact').length;
@@ -321,13 +321,13 @@ def test_the_dialog_of_the_shared_choice_selects_the_workshops_record_and_saves_
       await button(rows(inner)[0], 'Choose').dispatch('click');
       await until(() => sent('/api/creation/context/impact').length === before + 1);
       out.impact = JSON.parse(sent('/api/creation/context/impact').pop().body).material_id;
-      await button(dialog, 'Применить').dispatch('click');
+      await button(dialog, 'Apply').dispatch('click');
       await until(() => saved !== null);
       out.saved = {put: JSON.parse(sent('/api/creation/context', 'PUT')[0].body).material_id, material: saved.material_id};
       out.urls = stockUrls();
     """, ("WorkContext", "MaterialPicker"))
     assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
-    assert "Титан" not in out["start"]["selects"]                                              # the laser and the lens are drop-downs, the titanium is not
+    assert "Stock" not in out["start"]["selects"]                                              # the laser and the lens are drop-downs, the titanium is not
     assert out["impact"] == 150 and out["saved"] == {"put": 150, "material": 150}
     bounded(out["urls"])
 
@@ -415,5 +415,5 @@ def test_the_upload_page_names_the_missing_stock_record_without_reading_the_cata
       const box = mount(await ctx.__screens.ingest.render({query: {}}));
       out.empty = {title: qa(box, 'h3').map((n) => n.textContent), links: qa(box, 'a').map((a) => a.getAttribute('href')), pickers: qa(box, '.matpick').length, urls: stockUrls()};
     """, EXPORTS)
-    assert "Добавьте использованный титан" in out["empty"]["title"] and "#/setup?tab=material" in out["empty"]["links"] and out["empty"]["pickers"] == 0
+    assert "Add the titanium stock used" in out["empty"]["title"] and "#/setup?tab=material" in out["empty"]["links"] and out["empty"]["pickers"] == 0
     assert out["empty"]["urls"] == ["/api/materials?limit=1"]

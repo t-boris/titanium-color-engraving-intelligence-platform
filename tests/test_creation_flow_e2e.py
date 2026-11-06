@@ -217,13 +217,13 @@ def test_a_photograph_asks_which_kind_on_the_real_routes_going_back_deletes_the_
   const picture = await fetch(BASE + out.kinds[1][1]);
   out.picture = [picture.status, picture.headers.get('content-type')];
   out.made = (await named()).length;
-  await dialog().querySelectorAll('button').find((b) => b.textContent === '← Назад').dispatch('click'); await settle(); await pending; await wait(300);
+  await dialog().querySelectorAll('button').find((b) => b.textContent === '← Back').dispatch('click'); await settle(); await pending; await wait(300);
   out.afterBack = (await named()).length;
   out.back = [heading(tree), !button(tree, FORWARD).disabled, [...ctx.__went]];
   pending = button(tree, FORWARD).dispatch('click'); await wait(600); await settle();
   await kinds()[1].dispatch('click');
-  out.label = dialog().querySelectorAll('button').find((b) => b.textContent.startsWith('Создать в')).textContent;
-  await dialog().querySelectorAll('button').find((b) => b.textContent.startsWith('Создать в')).dispatch('click'); await settle(); await pending; await wait(300);
+  out.label = dialog().querySelectorAll('button').find((b) => b.textContent.startsWith('Create in')).textContent;
+  await dialog().querySelectorAll('button').find((b) => b.textContent.startsWith('Create in')).dispatch('click'); await settle(); await pending; await wait(300);
   out.went = [...ctx.__went];
   out.alerts = alerts(tree);
 """)
@@ -233,7 +233,7 @@ def test_a_photograph_asks_which_kind_on_the_real_routes_going_back_deletes_the_
     assert out["made"] == 1 and out["afterBack"] == 0                                                       # made to show the kinds, deleted by «← Назад»
     assert out["back"] == ["Новая работа · шаг 3 из 3: Настройки и создание", True, []]
     chosen = out["kinds"][1][1].split("?")[0].rsplit("/", 1)[1].removesuffix(".png")
-    assert out["label"].startswith("Создать в «") and out["alerts"] == [], out["alerts"]
+    assert out["label"].startswith("Create in “") and out["alerts"] == [], out["alerts"]
     [went] = out["went"]
     work_id = int(went.split("=")[1])
     assert went == f"/photo-engraving?work={work_id}"

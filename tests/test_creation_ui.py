@@ -158,7 +158,7 @@ let pending = null;                                                          // 
 const ask = async (tree) => { pending = button(tree, FORWARD).dispatch('click'); await settle(); };
 const kinds = () => dialog().querySelectorAll('.ge-kind');
 const kindNames = () => kinds().map((k) => k.querySelector('strong').textContent);
-const keep = () => dialog().querySelectorAll('button').filter((b) => b.textContent.startsWith('Создать в'))[0];
+const keep = () => dialog().querySelectorAll('button').filter((b) => b.textContent.startsWith('Create in'))[0];
 const dialogButton = (text) => dialog().querySelectorAll('button').find((b) => b.textContent === text);
 /** Choose a stock record the way a person does: the selector's own dialog opens above the box, the row of the record is chosen there (the titanium is no longer a drop-down). */
 const chooseStock = async (box, name) => {
@@ -852,9 +852,9 @@ def test_a_photograph_asks_which_kind_of_engraving_before_it_is_kept_with_the_pe
     assert out["title"] == "Новая работа · какая гравировка?" and len(out["names"]) == 4
     assert out["pictures"] == [f"/api/photo-works/77/kinds/{k}.png" for k in ("grayscale", "threshold", "dither", "sketch")]
     assert all(alt.startswith("Картинка в виде «") for alt in out["alts"])
-    assert out["marked"] == ["true", "false", "false", "false"] and out["keepLabel"] == f"Создать в «{out['names'][0]}»"       # grayscale is the start
+    assert out["marked"] == ["true", "false", "false", "false"] and out["keepLabel"] == f"Create in “{out['names'][0]}”"       # grayscale is the start
     assert out["before"] == [1, 1, 0, []]                       # the work exists to show the kinds, but is not kept: no task closed, no screen left
-    assert out["after"] == [["false", "false", "true", "false"], f"Создать в «{out['names'][2]}»"]
+    assert out["after"] == [["false", "false", "true", "false"], f"Create in “{out['names'][2]}”"]
     assert out["saved"] == [{"kind": "dither"}] and out["order"] == [True, True]                  # the chosen kind reaches the work before the task is closed
     assert out["complete"] == {"work_kind": "photo", "work_id": 77} and out["went"] == ["/photo-engraving?work=77"]
     assert out["deleted"] == [] and out["dialogGone"] is True
@@ -879,7 +879,7 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
   await ask(tree);
   out.names = kindNames();
   await kinds()[3].dispatch('click'); await settle();
-  await dialogButton('← Назад').dispatch('click'); await settle(); await pending;
+  await dialogButton('← Back').dispatch('click'); await settle(); await pending;
   out.back = [S.deleted || [], sent('POST', '/api/creation/drafts/1/complete').length, [...ctx.__went], dialog() === null, open().map((d) => d.id)];
   out.form = [heading(tree), labelled(tree, 'Название работы') === undefined, tree.textContent.includes('Портрет Инны'), tree.textContent.includes('ширина 72 мм')];
   out.enabled = !button(tree, FORWARD).disabled;

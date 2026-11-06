@@ -95,7 +95,7 @@ def test_new_work_shows_the_shared_laser_lens_and_titanium_and_is_made_on_the_sc
     [sent] = out["sent"]
     assert json.loads(sent["scale"])["speed"] == 100 and json.loads(sent["scale"])["device_id"] == 1      # not the first scale listed: that is another laser's
     assert "row_mm=" in out["asked"][-1] and "device_id=1&lens_id=2&material_id=3" in out["asked"][-1]
-    assert out["second"] == "Новая работа · шаг 2 из 2: какая гравировка?"                                   # BUG-003: the kind step is still the second
+    assert out["second"] == "New work · step 2 of 2: which engraving?"                                   # BUG-003: the kind step is still the second
     assert out["remembered"] == 0                                                                           # the own measurements: the context is the same as before
 
 
@@ -158,7 +158,7 @@ def test_the_dialog_of_new_work_changes_the_shared_choice_by_the_creation_dialog
     assert out["put"] == [{"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}] and "Sheet" in out["shown"] and out["stillOpen"] == 1
     [sent] = out["posts"]
     assert json.loads(sent["scale"])["material_id"] == 4                                                       # the work is made on the new choice's own scale
-    assert out["second"] == "Новая работа · шаг 2 из 2: какая гравировка?"                                      # BUG-003: the kind step is still the second
+    assert out["second"] == "New work · step 2 of 2: which engraving?"                                      # BUG-003: the kind step is still the second
 
 
 @node
@@ -174,4 +174,4 @@ def test_the_dialog_of_photo_engraving_and_the_creation_screen_ask_which_kind_of
     creation = (UI / "screens" / "creation.js").read_text(encoding="utf-8")
     assert "PhotoKindStep.open(" in engraving and "PhotoKindStep.open(" in creation                          # BUG-003: the same question in both places
     assert "kindTiles(" in shared and "kindTiles(" not in engraving and "kindTiles(" not in creation          # the tiles are drawn in one place only
-    assert "Какая гравировка" in shared
+    assert "which engraving" in shared
