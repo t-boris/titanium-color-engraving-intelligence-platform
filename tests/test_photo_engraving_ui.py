@@ -590,9 +590,9 @@ def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_fr
   wish.value = ' платье сделать фиолетовым '; await button(tree, 'Ask AI').dispatch('click'); await settle();
   out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', with image'),
                rule: select(tree, 'Rule: Clothing').value, shown: shown(tree)};
-  await button(tree, 'Отменить').dispatch('click'); await settle();
+  await button(tree, 'Undo').dispatch('click'); await settle();
   out.back = {saves: saves(), undo: requests.filter((r) => r.path.endsWith('/undo')).length, rule: select(tree, 'Rule: Clothing').value,
-              note: tree.textContent.includes('AI: '), redo: !button(tree, 'Повторить').disabled};
+              note: tree.textContent.includes('AI: '), redo: !button(tree, 'Redo').disabled};
 """)
     assert out["empty"] == {"asks": 0, "text": True}
     assert out["asked"] == {"asks": [{"wish": " платье сделать фиолетовым ", "fresh": False}], "note": True, "photo": True, "rule": "colour",
@@ -617,12 +617,12 @@ def test_without_a_key_the_ai_button_is_off_and_says_why_while_rules_can_still_b
 def test_undo_and_redo_in_the_head_bring_the_work_back_with_its_min_and_max_and_follow_ctrl_z(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   ctx.document.body.append(tree);
-  out.start = {undo: button(tree, 'Отменить').disabled, redo: button(tree, 'Повторить').disabled, powers: powers(tree)};
+  out.start = {undo: button(tree, 'Undo').disabled, redo: button(tree, 'Redo').disabled, powers: powers(tree)};
   const max = labelled(tree, 'Max power, % (black)');
   max.value = '25'; await max.dispatch('change'); await wait(300); await settle();
-  out.changed = {saves: saves(), powers: powers(tree), undo: button(tree, 'Отменить').disabled};
-  await button(tree, 'Отменить').dispatch('click'); await settle();
-  out.undone = {powers: powers(tree), undo: button(tree, 'Отменить').disabled, redo: button(tree, 'Повторить').disabled};
+  out.changed = {saves: saves(), powers: powers(tree), undo: button(tree, 'Undo').disabled};
+  await button(tree, 'Undo').dispatch('click'); await settle();
+  out.undone = {powers: powers(tree), undo: button(tree, 'Undo').disabled, redo: button(tree, 'Redo').disabled};
   await press({key: 'z', ctrlKey: true, shiftKey: true}); await settle();
   out.redone = powers(tree);
   await press({key: 'z', metaKey: true, target: tree.querySelectorAll('textarea')[0]}); await settle();
@@ -676,16 +676,16 @@ ENGRAVINGS = [
 def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engraved_and_the_upload_for_it(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   const links = tree.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
-  out.upload = links.find(([t]) => t === 'Загрузить фото гравировки');
-  out.pairs = links.filter(([t]) => t.startsWith('№')).map(([t, href]) => [t, href]);
+  out.upload = links.find(([t]) => t === 'Upload an engraving photo');
+  out.pairs = links.filter(([t]) => t.startsWith('#')).map(([t, href]) => [t, href]);
   const text = tree.textContent;
-  out.text = ['ждёт проверки', 'подтверждает прогноз: медиана 2,4 ΔE', 'сравнено серых 3', 'по 1 другой гравировке',
-    'Выгравирована с другими настройками, чем шкала работы: 250 mm/s', 'Других гравировок с этими настройками нет'].map((t) => text.includes(t));
+  out.text = ['awaiting review', 'confirms prediction: median 2,4 ΔE', '3 grays compared', 'uses 1 other engraving',
+    'Engraved with settings different from the work’s scale: 250 mm/s', 'There are no other engravings with these settings'].map((t) => text.includes(t));
   const strips = tree.querySelectorAll('div').filter((d) => (d.className || '') === 'ge-strip ge-compare');
   out.strips = strips.map((st) => st.children.map((c) => c.getAttribute('style')));
 """, engravings=ENGRAVINGS)
-    assert out["upload"] == ["Загрузить фото гравировки", "#/ingest?plan=7&material=3"]
-    assert out["pairs"] == [["№41 · IMG_2.dng", "#/ingest?pair=41"], ["№40 · IMG_1.dng", "#/analysis/40"], ["№39 · IMG_0.dng", "#/analysis/39"]]
+    assert out["upload"] == ["Upload an engraving photo", "#/ingest?plan=7&material=3"]
+    assert out["pairs"] == [["#41 · IMG_2.dng", "#/ingest?pair=41"], ["#40 · IMG_1.dng", "#/analysis/40"], ["#39 · IMG_0.dng", "#/analysis/39"]]
     assert out["text"] == [True] * 6
     assert out["strips"] == [["background:#ddcabb", "background:#776655", "background:#203040"],          # white (Min) first
                              ["background:#ddccbb", "background:#886644", "background:#223344"]]
@@ -716,7 +716,7 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.ramp = !!button(tree, 'Test this mode') && tree.textContent.includes('in “Jarvis” mode, at dot power 12,5%');
   await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
   out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
-  await button(tree, 'Отменить').dispatch('click'); await settle();
+  await button(tree, 'Undo').dispatch('click'); await settle();
   out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
   out.saved = saves();
 """)
@@ -939,7 +939,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
   width().value = '0.025'; await width().dispatch('change'); await settle();
   width().value = ''; await width().dispatch('change'); await settle();
   out.saves = saves();
-  await button(tree, 'Отменить').dispatch('click'); await settle();
+  await button(tree, 'Undo').dispatch('click'); await settle();
   out.undone = [tick().checked, width().value];
   await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).dispatch('click'); await settle();
   await dialog().querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Grayscale').dispatch('click'); await settle();
@@ -1094,14 +1094,14 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
 def test_the_file_of_a_work_is_downloaded_with_the_one_wording_and_a_failed_download_stays_beside_the_button(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   const head = tree.querySelector('.os-head');
-  out.orientation = [head.textContent, head.querySelectorAll('a').find((a) => a.textContent === '← Мои работы').getAttribute('href')];
+  out.orientation = [head.textContent, head.querySelectorAll('a').find((a) => a.textContent === '← My works').getAttribute('href')];
   const labels = () => head.querySelectorAll('button').map((b) => b.textContent);
   out.labels = labels();
-  const button = head.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
+  const button = head.querySelectorAll('button').find((b) => b.textContent === 'Download LightBurn');
   out.inside = Boolean(button) && button.parentNode.className === 'lc-download';
   await button.dispatch('click'); await settle();
   out.asked = requests.filter((r) => r.path.endsWith('/export.lbrn2')).map((r) => r.path);
 """)
-    assert "Фотогравировка" in out["orientation"][0] and out["orientation"][1] == "#/photo-engraving"
-    assert "Скачать LightBurn" in out["labels"] and "Файл LightBurn" not in out["labels"]
+    assert "Photo engraving" in out["orientation"][0] and out["orientation"][1] == "#/photo-engraving"
+    assert "Download LightBurn" in out["labels"] and "Файл LightBurn" not in out["labels"]
     assert out["inside"] is True and out["asked"] == ["/api/photo-works/7/export.lbrn2"]

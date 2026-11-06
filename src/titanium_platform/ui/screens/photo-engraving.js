@@ -1,24 +1,10 @@
-/* Фотогравировка (REQ-059, REQ-061): работы на измеренных шкалах. Шкала — постоянные настройки (лазер, линза, титан, скорость,
-   частота, импульс, шаг строк, проходы) с измеренной кривой «мощность → цвет»; в градациях серого серый картинки задаёт мощность от Min
-   (белый) до Max (чёрный), и на титане мощность даёт цвет. Вид гравировки (0.21.0): «Новая работа» вторым шагом спрашивает «Какая гравировка?»
-   и показывает картинку в каждом виде; в видах точками каждая точка бьёт на одной мощности — цвет шкалы при ней, между точками очищенный
-   титан; пока такой вид не гравировался, это оценка по шкале. Раскраска по объектам (0.21.0), как в раскраске: губам, очкам, волосам,
-   кускам фона — каждому свой основной цвет шкалы (щелчком по цвету, темой, «Случайно» или по просьбе AI), светлое и тёмное объекта
-   ложатся вокруг этого цвета в его семействе.
-   Работа — картинка на шкале, как векторная работа (DEC-104): список «Мои работы» (открыть, сделать копию, переименовать, удалить),
-   «Новая работа» в два шага (картинка, название, ширина; затем «Какая гравировка?»), сама работа на один экран: шкалы слева, картинка рядом с прогнозом посередине, справа
-   вкладки; шкала, Min и Max, ширина и подбор серых сохраняются в работе сразу. Страница «Шкалы серого» показывает, какой серый каким
-   цветом выходит на каждой шкале и подтверждают ли это эксперименты.
-   Цвет зависит от размера гравировки (DEC-107): от длины строки, у картинки — её ширины. Шкала показывает, при какой ширине она измерена;
-   работа берёт цвета при своей ширине — измеренные, между двумя измеренными или ближайшие, и говорит какие.
-   Адреса: #/photo-engraving — мои работы; ?work=<id> — работа; ?scales=1 (или ?scale=<режим>) — шкалы серого. Другие виды —
-   #/photo-preview (прогноз по файлу LightBurn) и #/photo (непрерывная полосами). */
+/* Photo engraving works, measured scales, previews, and engraving review. */
 'use strict';
 (() => {
   const {h, fill, btn, link, pill, get, post, del, form, field, go, toast, modal, confirmBox, duration, table, fail} = App;
   const {value, when, materialLabel, titaniumLabel, settingsText, modeQuery, GRAYSCALE, dotted, fromMap, firedSettings, kindName, hexChip, mm, mmList, scaleBar, scaleCard, newSlots, emptySlots,
     scaleDetail, sameScale, workPicture, colourTab, aiTab, kindChooser} = PhotoPanels;
-  let keys = null;                                     // клавиши открытой работы (Ctrl+Z, Ctrl+Shift+Z), как в редакторе векторной работы
+  let keys = null;                                     // keyboard shortcuts for the open work, as in the vector editor
   document.addEventListener('keydown', (ev) => { if (keys) keys(ev); });
   const PICTURES = 'image/png,image/jpeg,image/tiff,image/bmp,image/webp';
   const PREVIEW_GAP = 8;                     // px of white between the picture and its look in the preview (prediction.GAP)
@@ -43,25 +29,23 @@
     document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
-  const PAIR_STATUS = {'Awaiting check': ['ждёт проверки', 'warn'], 'Needs correction': ['нужно исправить', 'warn'], 'Ready to accept': ['готова к принятию', 'warn'],
-    Accepted: ['принята', 'ok']};
-  const NOT_COMPARED = {no_points: 'Фото не дало ясных цветов этих настроек: слой не найден или серые на нём не различить.',
-    kind: 'На фото нет эталонной карты, а цвета шкалы исправлены по карте (или наоборот): сравнить их нельзя.',
-    alone: 'Других гравировок с этими настройками нет: сравнивать не с чем, эта гравировка сама стала шкалой.',
-    outside: 'Мощности этой гравировки — вне диапазона, измеренного другими гравировками.',
-    other_size: (c) => `Других гравировок этих настроек при ширине около ${mm(c.row_mm)} нет (шкала измерена при ${mmList(c.size.measured_mm)}): цвет при другой `
-      + 'ширине — не прогноз для этой. Эта гравировка сама стала шкалой для своей ширины.'};
+  const PAIR_STATUS = {'Awaiting check': ['awaiting review', 'warn'], 'Needs correction': ['needs correction', 'warn'], 'Ready to accept': ['ready to accept', 'warn'],
+    Accepted: ['accepted', 'ok']};
+  const NOT_COMPARED = {no_points: 'The photo did not yield clear colors for these settings: the layer was not found or its grays could not be distinguished.',
+    kind: 'The photo has no reference chart but the scale colors are chart-corrected, or vice versa, so they cannot be compared.',
+    alone: 'There are no other engravings with these settings to compare; this engraving itself became the scale.',
+    outside: 'This engraving’s power is outside the range measured by other engravings.',
+    other_size: (c) => `No other engravings with these settings have a width near ${mm(c.row_mm)} (the scale was measured at ${mmList(c.size.measured_mm)}); color at another `
+      + 'width cannot predict this one. This engraving itself became the scale for its width.'};
   const notCompared = (c) => (typeof NOT_COMPARED[c.reason] === 'function' ? NOT_COMPARED[c.reason](c) : NOT_COMPARED[c.reason] || c.reason);
 
-  /** Гравировки работы (0.19.3), вверху вкладки «Подтверждение»: «Загрузить фото гравировки» и каждая фотография этой работы — её
-      состояние и, когда она принята, каждый серый картинки: какой цвет предсказывали другие гравировки этих настроек и какой получился,
-      ΔE между ними, медиана и подтверждено ли (не больше 5 ΔE), как в подтверждении шкалы. ``load(view)`` загружает их заново. */
+  /** Compare accepted engravings with predictions from other measurements. */
   function engravingsBlock(id) {
-    const el = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Загружаем гравировки работы…'));
+    const el = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Loading work engravings…'));
     let seq = 0;
     function strip(bands, key, label) {
       return h('div', {class: 'ge-strip-row'}, h('span', {class: 'small muted'}, label),
-        h('div', {class: 'ge-strip ge-compare'}, bands.map((b) => h('span', {style: `background:${b[key]}`, title: `серый ${Math.round(b.gray * 255)} · ${value(b.power, 1)} % · ΔE ${value(b.de, 1)}`}))));
+        h('div', {class: 'ge-strip ge-compare'}, bands.map((b) => h('span', {style: `background:${b[key]}`, title: `gray ${Math.round(b.gray * 255)} · ${value(b.power, 1)} % · ΔE ${value(b.de, 1)}`}))));
     }
     function entry(e) {
       const [label, tone] = PAIR_STATUS[e.status] || [e.status, 'warn'];
@@ -69,68 +53,67 @@
       const c = e.check;
       const bands = c ? [...c.bands].sort((a, b) => a.power - b.power) : [];
       return h('li', {class: 'ge-entry stack'},
-        h('div', {class: 'ge-entry-head'}, h('span', {}, link(where, `№${e.pair_id} · ${e.photo_name}`), ` · ${when(e.accepted_at || e.created_at)}`), pill(label, tone)),
-        e.same_scale === false ? h('p', {class: 'small alert warn'}, `Выгравирована с другими настройками, чем шкала работы: ${settingsText(e.mode)}; сравнивается с гравировками этих настроек.`) : null,
-        e.settings && e.settings.power_range ? h('p', {class: 'small muted'}, `Min ${value(e.settings.power_range[0], 1)} % · Max ${value(e.settings.power_range[1], 1)} % в файле`
-          + (e.row_mm != null ? ` · ширина ${mm(e.row_mm)}` : '')) : null,
-        e.status !== 'Accepted' ? h('p', {class: 'small muted'}, 'Сравнение появится, когда проверку фото примут: откройте её по ссылке.') : null,
+        h('div', {class: 'ge-entry-head'}, h('span', {}, link(where, `#${e.pair_id} · ${e.photo_name}`), ` · ${when(e.accepted_at || e.created_at)}`), pill(label, tone)),
+        e.same_scale === false ? h('p', {class: 'small alert warn'}, `Engraved with settings different from the work’s scale: ${settingsText(e.mode)}; compared with engravings using those settings.`) : null,
+        e.settings && e.settings.power_range ? h('p', {class: 'small muted'}, `Min ${value(e.settings.power_range[0], 1)} % · Max ${value(e.settings.power_range[1], 1)} % in file`
+          + (e.row_mm != null ? ` · width ${mm(e.row_mm)}` : '')) : null,
+        e.status !== 'Accepted' ? h('p', {class: 'small muted'}, 'Comparison will appear after the photo review is accepted; open it using the link.') : null,
         c && c.reason ? h('p', {class: 'small'}, notCompared(c)) : null,
         c && !c.reason ? h('div', {class: 'stack'},
-          h('p', {class: 'small'}, pill(c.confirmed ? `подтверждает прогноз: медиана ${value(c.median_de, 1)} ΔE` : `не подтверждает: медиана ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn'),
-            ` сравнено серых ${c.compared}, в пределах ${c.tolerance_de} ΔE — ${value(c.within * 100, 0)} %, наибольшая разница ${value(c.max_de, 1)} ΔE; `
-            + `прогноз — по ${c.others} ${c.others === 1 ? 'другой гравировке' : 'другим гравировкам'} этих настроек`
-            + (c.size && c.size.how === 'between' ? `, между измерениями при ширине ${mmList(c.size.from_mm)}.` : c.size && c.size.from_mm.length ? ` при ширине ${mm(c.size.from_mm[0])}.` : '.')),
-          strip(bands, 'predicted_hex', 'Прогноз'), strip(bands, 'hex', 'Получилось'),
-          h('details', {}, h('summary', {class: 'small'}, 'По серым'),
-            table(['Серый', 'Мощность, %', 'Прогноз', 'Получилось', 'ΔE'], bands.map((b) => [String(Math.round(b.gray * 255)), value(b.power, 1),
+          h('p', {class: 'small'}, pill(c.confirmed ? `confirms prediction: median ${value(c.median_de, 1)} ΔE` : `does not confirm: median ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn'),
+            ` ${c.compared} grays compared; ${value(c.within * 100, 0)} % within ${c.tolerance_de} ΔE; maximum difference ${value(c.max_de, 1)} ΔE; `
+            + `prediction uses ${c.others} other ${c.others === 1 ? 'engraving' : 'engravings'} with these settings`
+            + (c.size && c.size.how === 'between' ? `, between measurements at widths ${mmList(c.size.from_mm)}.` : c.size && c.size.from_mm.length ? ` at width ${mm(c.size.from_mm[0])}.` : '.')),
+          strip(bands, 'predicted_hex', 'Prediction'), strip(bands, 'hex', 'Actual'),
+          h('details', {}, h('summary', {class: 'small'}, 'By gray'),
+            table(['Gray', 'Power, %', 'Prediction', 'Actual', 'ΔE'], bands.map((b) => [String(Math.round(b.gray * 255)), value(b.power, 1),
               hexChip(b.predicted_hex), hexChip(b.hex), b.de > c.tolerance_de ? pill(value(b.de, 1), 'warn') : value(b.de, 1)]), '', true))) : null);
     }
     async function load(view) {
       const mine = ++seq;
-      const upload = link(`/ingest?plan=${id}` + (view.scale && view.scale.material_id ? `&material=${view.scale.material_id}` : ''), 'Загрузить фото гравировки');
+      const upload = link(`/ingest?plan=${id}` + (view.scale && view.scale.material_id ? `&material=${view.scale.material_id}` : ''), 'Upload an engraving photo');
       try {
         const list = await get(`/photo-works/${id}/engravings`);
         if (mine !== seq) return;
-        fill(el, h('h4', {}, 'Гравировки этой работы'),
-          h('p', {class: 'small'}, 'Каждый серый выгравированной работы сравнивается с цветом, который для него предсказывают остальные гравировки этих настроек, — так '
-            + 'эксперимент подтверждает прогноз или поправляет шкалу. Файл LightBurn работы несёт её имя: фото, загруженное с этим файлом, привяжется к работе само.'),
+        fill(el, h('h4', {}, 'Engravings of this work'),
+          h('p', {class: 'small'}, 'Each gray in the engraved work is compared with the color predicted by other engravings using these settings; this lets an '
+            + 'experiment confirm the prediction or adjust the scale. The LightBurn file carries the work name, so a photo uploaded with it links to the work automatically.'),
           h('p', {}, upload),
-          list.length ? h('ul', {class: 'ge-entries'}, list.map(entry)) : h('p', {class: 'muted small'}, 'Фото гравировок этой работы пока нет.'));
+          list.length ? h('ul', {class: 'ge-entries'}, list.map(entry)) : h('p', {class: 'muted small'}, 'There are no engraving photos for this work yet.'));
       } catch (e) { if (mine === seq) fill(el, h('p', {class: 'alert bad'}, e.message), h('p', {}, upload)); }
     }
     return {el, load};
   }
 
-  /** Шапка работы: «← Мои работы», название с карандашом и сводка, «Отменить» и «Повторить» (``step('undo' | 'redo')``), «Шкалы серого»,
-      «Сделать копию» и «Скачать LightBurn». */
+  /** Render work heading and actions. */
   function workHead(first, step) {
     const title = h('div', {class: 'ge-title'});
-    const undo = btn('Отменить', () => step('undo'), 'btn-small'), redo = btn('Повторить', () => step('redo'), 'btn-small');
-    const copy = btn('Сделать копию', async (ev) => {
+    const undo = btn('Undo', () => step('undo'), 'btn-small'), redo = btn('Redo', () => step('redo'), 'btn-small');
+    const copy = btn('Make a copy', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(`/photo-works/${first.id}/copy`, {}); toast('Копия создана и открыта: эта работа осталась как была', 'ok'); go('/photo-engraving?work=' + made.id); }
+      try { const made = await post(`/photo-works/${first.id}/copy`, {}); toast('Copy created and opened; this work remains unchanged', 'ok'); go('/photo-engraving?work=' + made.id); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
     // the one wording and behaviour of a file download (ux-engraving-lifecycle-p0): one press at a time, a failure stays beside the button with a retry
-    const file = Lifecycle.downloadButton(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2', 'Скачать LightBurn', {cls: 'primary btn-small'}).el;
+    const file = Lifecycle.downloadButton(`/photo-works/${first.id}/export.lbrn2`, 'picture.lbrn2', 'Download LightBurn', {cls: 'primary btn-small'}).el;
     const check = h('a', {class: 'btn btn-small', href: `#/photo-preview?work=${first.id}`,
-      title: 'Файл работы в «Предпросмотре фотогравировки» — с титаном, лазером и линзой её шкалы'}, 'Файл в предпросмотре');
-    const context = h('p', {class: 'sub muted', 'aria-label': 'Лазер, линза и титан этой работы'});     // the work's own, saved in it (ux-work-creation-p0)
-    const el = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'), title,
-      h('div', {class: 'row', role: 'group', 'aria-label': 'Отмена и повтор'}, undo, redo),
-      h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), copy, check, file);
+      title: 'Open the work file in Photo engraving preview with its scale’s titanium, laser, and lens'}, 'Preview file');
+    const context = h('p', {class: 'sub muted', 'aria-label': 'Laser, lens, and titanium for this work'});     // the work's own, saved in it (ux-work-creation-p0)
+    const el = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← My works'), title,
+      h('div', {class: 'row', role: 'group', 'aria-label': 'Undo and redo'}, undo, redo),
+      h('a', {class: 'btn btn-small', href: '#/photo-engraving?scales=1'}, 'Grayscale scales'), copy, check, file);
     let shown = first;
     function update(next) {
       shown = next;
       undo.disabled = !(next.undo > 0);
       redo.disabled = !(next.redo > 0);
-      undo.setAttribute('title', `Отменить (Ctrl+Z); шагов: ${next.undo || 0}`);
-      redo.setAttribute('title', `Повторить (Ctrl+Shift+Z); шагов: ${next.redo || 0}`);
+      undo.setAttribute('title', `Undo (Ctrl+Z); steps: ${next.undo || 0}`);
+      redo.setAttribute('title', `Redo (Ctrl+Shift+Z); steps: ${next.redo || 0}`);
       const pencil = VectorWorkspace.renameButton(next.id, next.name, (stored) => update({...shown, name: stored}), '/photo-works');
-      fill(title, h('p', {class: 'small muted'}, 'Фотогравировка'), h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
-        h('p', {class: 'sub'}, `${next.image_name || 'картинка'} · ${next.image_size[0]} × ${next.image_size[1]} пикс. · ${value(next.width_mm, 1)} × ${value(next.height_mm, 1)} мм`
-          + ` · изменена ${when(next.updated_at)}`), context);
+      fill(title, h('p', {class: 'small muted'}, 'Photo engraving'), h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
+        h('p', {class: 'sub'}, `${next.image_name || 'image'} · ${next.image_size[0]} × ${next.image_size[1]} px · ${value(next.width_mm, 1)} × ${value(next.height_mm, 1)} mm`
+          + ` · updated ${when(next.updated_at)}`), context);
       App.workContextText(next).then((text) => { context.textContent = text; });
     }
     update(first);
