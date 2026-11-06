@@ -343,55 +343,53 @@ const PhotoPanels = (() => {
       toMap('Another color'), btn('Back to scale', back, 'btn-small'));
   }
 
-  // ---- работа ------------------------------------------------------------------------------------------------------------------------
+  // ---- work ------------------------------------------------------------------------------------------------------------------------
 
-  /** «Проба на ширине работы» (DEC-107): пластина с одной полоской серого шириной с работу на настройках её шкалы, Min и Max. Её фото
-      измеряет шкалу при ширине работы до того, как гравируется картинка; кнопка (``path`` — куда её просить) открывает созданный эксперимент. Главная кнопка, пока
-      при этой ширине шкала не измерена. */
+  /** Offer a width-matched gray-ramp plate. */
   function rampOffer(view, size, path) {
     const dots = dotted(view);
-    const make = btn(dots ? 'Проба этого вида' : 'Проба на ширине работы', async (ev) => {
+    const make = btn(dots ? 'Test this mode' : 'Test at work width', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       const end = App.landing(self);
       try {
         const made = await post(path, {});
-        if (end.stillHere()) toast(`Создано: ${made.name}`, 'ok');
-        end.go('/experiment/plan-' + made.plan_id, {title: 'Плата создана', message: `Создано: ${made.name}. Откройте эксперимент: выгравируйте плату, сфотографируйте и загрузите.`, openLabel: 'Открыть плату', goOptions: {}});
+        if (end.stillHere()) toast(`Created: ${made.name}`, 'ok');
+        end.go('/experiment/plan-' + made.plan_id, {title: 'Plate created', message: `Created: ${made.name}. Open the experiment, engrave the plate, photograph it, and upload the photo.`, openLabel: 'Open plate', goOptions: {}});
       } catch (e) { fail(e); self.disabled = false; }
     }, (dots ? view.picture && !view.picture.estimate : size && size.how === 'measured') ? 'btn-small' : 'primary btn-small');
     if (dots) {
-      const corrected = view.dot_width != null ? `, с поправкой ширины точки ${value(view.dot_width, 3)} мм` : '';
-      const at = fromMap(view) ? `на настройках ${fromPhoto(view.dot_recipe) ? `точек ${recipeFrom(view.dot_recipe)}` : 'цвета с карты'} (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)${corrected}`
-        : `на мощности точек ${value(view.dot_power, 1)} %${corrected} и настройках шкалы`;
-      return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину в виде «${kindName(view.kind)}» `
-        + `${at}: выгравируйте её, сфотографируйте и загрузите — вид будет измерен на этих настройках, и картинка покажется по измеренным тонам вместо оценки.`));
+      const corrected = view.dot_width != null ? `, with dot-width adjustment ${value(view.dot_width, 3)} mm` : '';
+      const at = fromMap(view) ? `using ${fromPhoto(view.dot_recipe) ? `dot settings ${recipeFrom(view.dot_recipe)}` : 'color-map settings'} (${settingsText(view.dot_recipe.settings)}, ${value(view.dot_recipe.settings.power, 1)} %)${corrected}`
+        : `at dot power ${value(view.dot_power, 1)}%${corrected} and the scale settings`;
+      return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` A plate with one gray strip ${mm(view.width_mm)} wide in “${kindName(view.kind)}” mode, `
+        + `${at}. Engrave, photograph, and upload it to measure this mode at these settings and show measured tones instead of an estimate.`));
     }
-    return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` Пластина с одной полоской серого ${mm(view.width_mm)} в ширину на настройках шкалы, `
-      + `Min ${value(view.min_power, 1)} % и Max ${value(view.max_power, 1)} %: выгравируйте её, сфотографируйте и загрузите — шкала будет измерена при ширине работы.`));
+    return h('p', {class: 'small'}, make, h('span', {class: 'muted'}, ` A plate with one gray strip ${mm(view.width_mm)} wide using the scale settings, `
+      + `Min ${value(view.min_power, 1)}% and Max ${value(view.max_power, 1)}%. Engrave, photograph, and upload it to measure the scale at the work width.`));
   }
 
-  /** «Подобрать настройки» (feature photo-engraving-quality, REQ-002): a plate of eight copies of a part of the picture, the first at the
+  /** “Find settings” (feature photo-engraving-quality, REQ-002): a plate of eight copies of a part of the picture, the first at the
       work's settings and every other with one setting changed, a grey ramp at the same settings under each; ``path`` is where to ask for it.
       Its photograph shows which setting makes the picture darker, lighter, sharper or softer, and which copy is best. */
   function variationsOffer(view, path) {
     const dots = dotted(view);
-    const make = btn('Подобрать настройки: 8 копий', async (ev) => {
+    const make = btn('Find settings: 8 copies', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
       const end = App.landing(self);
       try {
         const made = await post(path, {});
-        if (end.stillHere()) toast(`Создано: ${made.name}`, 'ok');
-        end.go('/experiment/plan-' + made.plan_id, {title: 'Плата создана', message: `Создано: ${made.name}. Откройте эксперимент: выгравируйте плату, сфотографируйте и загрузите.`, openLabel: 'Открыть плату', goOptions: {}});
+        if (end.stillHere()) toast(`Created: ${made.name}`, 'ok');
+        end.go('/experiment/plan-' + made.plan_id, {title: 'Plate created', message: `Created: ${made.name}. Open the experiment, engrave the plate, photograph it, and upload the photo.`, openLabel: 'Open plate', goOptions: {}});
       } catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
     const changes = dots
-      ? 'мощность −20 % и +20 %, скорость +40 %, шаг строк ×1,69, поправка ширины точки вкл./выкл. и два других вида точками'
-      : 'Max −20 % и +20 %, Min ±3, шаг строк ×1,5 и ×0,75, скорость ×0,7 и ×1,4';
-    return h('p', {class: 'small ge-variations'}, make, h('span', {class: 'muted'}, ' Пластина: часть картинки с самым богатым тоном в её настоящем размере — '
-      + `восемь копий. Первая — на настройках работы, у остальных по одному изменению: ${changes}. Под каждой копией — полоска серого на тех же `
-      + 'настройках. Выгравируйте, сфотографируйте и загрузите — по фото будет видно, что делает картинку темнее, светлее, чётче или мягче.'));
+      ? 'power −20% and +20%, speed +40%, line interval ×1.69, dot-width adjustment on/off, and two other dot modes'
+      : 'Max −20% and +20%, Min ±3, line interval ×1.5 and ×0.75, speed ×0.7 and ×1.4';
+    return h('p', {class: 'small ge-variations'}, make, h('span', {class: 'muted'}, ' Plate: the image area with the richest tones at its actual size — '
+      + `eight copies. The first uses the work settings; each other copy changes one setting: ${changes}. Each copy has a gray strip with the same `
+      + 'settings. Engrave, photograph, and upload it to see which changes make the image darker, lighter, sharper, or softer.'));
   }
 
   const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет'], ['objects', 'Раскраска по объектам']];

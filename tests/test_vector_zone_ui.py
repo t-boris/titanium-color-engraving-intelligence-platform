@@ -212,7 +212,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   out.width = [width.value, !!width.disabled];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.layer = tree.textContent.includes('LightBurn file: layer C03 is a grayscale image after the color layers: Min 12 %, Max 28 %');
-  out.missing = [!!button(tree, 'Проба на ширине работы'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
+  out.missing = [!!button(tree, 'Test at work width'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
   out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые').querySelectorAll('option').map((o) => o.textContent);
   out.tabs = tree.querySelectorAll('button').filter((t) => t.getAttribute('role') === 'tab').map((t) => t.textContent);
   out.steps = [button(tree, 'Undo').disabled, button(tree, 'Redo').disabled];

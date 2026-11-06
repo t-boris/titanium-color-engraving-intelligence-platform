@@ -408,12 +408,12 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
                   tree.textContent.includes('Файл LightBurn: C00 — чистка CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 по прямоугольнику картинки, первой')];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.between = tree.textContent.includes('100 mm: between measurements 38,4 and 150 mm');
-  const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Проба на ширине работы');
-  out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('полоской серого 100 mm в ширину')};
+  const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Test at work width');
+  out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('one gray strip 100 mm wide')};
   await ramp.dispatch('click'); await settle();
   out.ramp.posted = requests.filter((r) => r.path.endsWith('/width-ramp')).map((r) => r.method); out.ramp.went = ctx.__went.slice(-1);
-  const tries = tree.querySelectorAll('button').find((b) => b.textContent === 'Подобрать настройки: 8 копий');
-  out.tries = {says: tries.parentNode.textContent.includes('Max −20 % и +20 %, Min ±3')};
+  const tries = tree.querySelectorAll('button').find((b) => b.textContent === 'Find settings: 8 copies');
+  out.tries = {says: tries.parentNode.textContent.includes('Max −20% and +20%, Min ±3')};
   await tries.dispatch('click'); await settle();
   out.tries.posted = requests.filter((r) => r.path.endsWith('/variations')).map((r) => r.method); out.tries.went = ctx.__went.slice(-1);
   width.value = '0'; await width.dispatch('change'); await settle();
@@ -713,7 +713,7 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').includes('/closeup.png'));
   out.says = ['Каждая точка бьёт на 12,5 %', 'Это оценка', 'в режиме «Jarvis»: мощность 12,5 % (Min = Max'].map((t) => tree.textContent.includes(t));
-  out.ramp = !!button(tree, 'Проба этого вида') && tree.textContent.includes('в виде «Jarvis» на мощности точек 12,5 %');
+  out.ramp = !!button(tree, 'Test this mode') && tree.textContent.includes('in “Jarvis” mode, at dot power 12,5%');
   await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
   out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
   await button(tree, 'Отменить').dispatch('click'); await settle();
@@ -798,7 +798,7 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
                 ends: tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent, title: tree.querySelector('.ge-settings').textContent,
                 says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
                        'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1 — настройки цвета с карты цветов',
-                       '60 mm: between measurements 40 and 80 mm', 'на настройках цвета с карты (500 mm/s'].map((t) => text().includes(t))};
+                       '60 mm: between measurements 40 and 80 mm', 'using color-map settings (500 mm/s'].map((t) => text().includes(t))};
   await button(tree, 'Another color').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   await button(tree, 'Back to scale').dispatch('click'); await settle();
@@ -931,7 +931,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
   out.empty = saves().length;
   width().value = '0.02'; await width().dispatch('change'); await settle();
   out.on = [tick().checked, width().value];
-  out.ramp = tree.textContent.includes('на мощности точек 12,5 %, с поправкой ширины точки 0,02 мм и настройках шкалы');
+  out.ramp = tree.textContent.includes('at dot power 12,5%, with dot-width adjustment 0,02 mm and the scale settings');
   tick().checked = false; await tick().dispatch('change'); await settle();
   out.off = [tick().checked, width().value];
   tick().checked = true; await tick().dispatch('change'); await settle();
