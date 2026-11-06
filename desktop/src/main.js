@@ -69,7 +69,13 @@ ipcMain.handle('picker:browse', async (_event, mode) => {
   if (mode === 'existing' && kind === 'empty') return {error: 'В этой папке нет мастерской. Чтобы создать новую, нажмите «Создать новую мастерскую…».'};
   return {folder};
 });
-ipcMain.handle('picker:open', (_event, folder) => openWorkshop(folder));
+ipcMain.handle('picker:open', (_event, folder, mode) => {
+  const kind = picker.classify(folder);
+  const problem = picker.problemOf(folder, kind);
+  if (problem) return {error: problem};
+  if (kind === 'empty' && mode !== 'new') return {error: 'В этой папке больше нет мастерской. Выберите другую папку.'};
+  return openWorkshop(folder);
+});
 
 /** Start the core on `folder` and open the window; the error with the core's log tail when it fails. */
 async function openWorkshop(folder) {

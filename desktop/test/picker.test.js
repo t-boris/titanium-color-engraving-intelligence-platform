@@ -36,6 +36,9 @@ test('the start screen offers the last workshop, the console application one and
   assert.deepEqual(offered.map((c) => [c.folder, c.why]), [['/last', 'last'], [path.join('/home', '.titanium-platform'), 'console']]);
   const none = picker.choices({settings: picker.DEFAULTS, home: '/elsewhere', exists: () => false, readdir: () => [], stat: () => ({isDirectory: () => true})});
   assert.deepEqual(none, []);
+  const missing = picker.choices({settings: {...picker.DEFAULTS, lastWorkshop: '/missing'}, home: '/elsewhere', ...fsx});
+  assert.equal(missing[0].why, 'last');
+  assert.match(missing[0].problem, /нет/);
 });
 
 test('an opened workshop becomes the last one and the first recent one; settings survive a round trip and a broken file', () => {

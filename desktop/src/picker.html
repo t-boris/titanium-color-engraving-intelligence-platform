@@ -11,6 +11,10 @@
   .card { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 14px; }
   .choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #eee; }
   .choice:first-child { border-top: 0; }
+  .last-choice { padding: 4px 0 14px; }
+  .unavailable { color: #b00020; margin: 6px 0 0; }
+  summary { cursor: pointer; padding: 8px 0; }
+  button:focus-visible, summary:focus-visible { outline: 3px solid #145de0; outline-offset: 3px; }
   .folder { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #444; word-break: break-all; }
   button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c8c8cc; background: #fff; cursor: pointer; }
   button.primary { background: #0a60ff; color: #fff; border-color: #0a60ff; }
@@ -31,7 +35,7 @@
     <button type="button" id="create-new">Создать новую мастерскую…</button>
   </div>
   <div class="status" id="status" role="status"></div>
-  <pre id="log" hidden></pre>
+  <details id="log-details" hidden><summary>Подробности запуска</summary><pre id="log"></pre></details>
 </div>
 <script src="picker.js"></script>
 </body>

@@ -38,7 +38,10 @@ function choices({settings, home = os.homedir(), exists = fs.existsSync, readdir
   const add = (folder, label, why) => {
     if (!folder || seen.has(folder)) return;
     const state = kind(folder);
-    if (state !== 'workshop') return;
+    if (state !== 'workshop') {
+      if (why === 'last') { seen.add(folder); out.push({folder, label, why, problem: problemOf(folder, state) || 'В папке больше нет мастерской.'}); }
+      return;
+    }
     seen.add(folder);
     out.push({folder, label, why});
   };

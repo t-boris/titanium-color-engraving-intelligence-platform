@@ -4,6 +4,7 @@
   const known = document.getElementById('known');
   const status = document.getElementById('status');
   const log = document.getElementById('log');
+  const logDetails = document.getElementById('log-details');
   const buttons = () => Array.from(document.querySelectorAll('button'));
   const el = (tag, attrs = {}, ...children) => {
     const node = document.createElement(tag);
@@ -12,33 +13,45 @@
     return node;
   };
 
-  function busy(text) { status.textContent = text; status.className = 'status busy'; log.hidden = true; buttons().forEach((b) => { b.disabled = true; }); }
+  function busy(text) { status.textContent = text; status.className = 'status busy'; logDetails.hidden = true; buttons().forEach((b) => { b.disabled = true; }); }
   function failed(message, tail) {
     status.textContent = message; status.className = 'status';
-    log.hidden = !tail; log.textContent = tail || '';
+    logDetails.hidden = !tail; logDetails.open = false; log.textContent = tail || '';
     buttons().forEach((b) => { b.disabled = false; });
   }
 
-  async function open(folder) {
+  async function open(folder, mode = 'existing') {
     busy('Запускаем ядро мастерской…');
-    const result = await window.shell.picker.open(folder);
-    if (result && result.error) failed(result.error, result.logTail);
+    try {
+      const result = await window.shell.picker.open(folder, mode);
+      if (result && result.error) failed(result.error, result.logTail);
+    } catch (e) { failed(String(e)); }
   }
 
   async function browse(mode) {
     const result = await window.shell.picker.browse(mode);
     if (!result) return;
     if (result.error) { failed(result.error); return; }
-    await open(result.folder);
+    await open(result.folder, mode);
   }
 
   async function list() {
     const choices = await window.shell.picker.choices();
     known.replaceChildren();
     if (!choices.length) { known.append(el('em', {}, 'Известных мастерских пока нет: откройте папку или создайте новую.')); return; }
-    for (const c of choices) {
-      known.append(el('div', {class: 'choice'}, el('div', {}, el('div', {}, c.label), el('div', {class: 'folder'}, c.folder)),
-        el('button', {type: 'button', class: 'primary', onClick: () => open(c.folder)}, 'Открыть')));
+    const other = choices.filter((c) => c.why !== 'last');
+    const last = choices.find((c) => c.why === 'last');
+    if (last) {
+      const info = el('div', {}, el('strong', {}, last.label), el('div', {class: 'folder'}, last.folder));
+      if (last.problem) info.append(el('p', {class: 'unavailable'}, last.problem + ' Выберите другую папку ниже.'));
+      known.append(el('div', {class: 'choice last-choice'}, info,
+        last.problem ? '' : el('button', {type: 'button', class: 'primary', onClick: () => open(last.folder)}, 'Продолжить')));
+    }
+    if (other.length) {
+      const details = el('details', {}, el('summary', {}, 'Другие известные мастерские'));
+      for (const c of other) details.append(el('div', {class: 'choice'}, el('div', {}, el('div', {}, c.label), el('div', {class: 'folder'}, c.folder)),
+        el('button', {type: 'button', onClick: () => open(c.folder)}, 'Открыть')));
+      known.append(details);
     }
   }
 

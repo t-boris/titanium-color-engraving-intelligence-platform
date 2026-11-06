@@ -8,6 +8,6 @@ contextBridge.exposeInMainWorld('shell', {
   picker: {
     choices: () => ipcRenderer.invoke('picker:choices'),
     browse: (mode) => ipcRenderer.invoke('picker:browse', mode),
-    open: (folder) => ipcRenderer.invoke('picker:open', folder),
+    open: (folder, mode) => ipcRenderer.invoke('picker:open', folder, mode),
   },
 });
