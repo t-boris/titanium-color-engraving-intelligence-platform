@@ -57,7 +57,7 @@ jobs:
           from titanium_platform import __version__
           from titanium_platform.api.app import create_app
           import tempfile
-          with TestClient(create_app(tempfile.mkdtemp())) as c:
+          with TestClient(create_app(tempfile.mkdtemp()), base_url="http://127.0.0.1") as c:
               assert c.get("/api/version").json()["version"] == __version__ != "0.0.0+source"
               home = c.get("/")
               assert home.status_code == 200 and "Laser workshop" in home.text
