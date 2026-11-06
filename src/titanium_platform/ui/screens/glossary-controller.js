@@ -10,7 +10,7 @@ const GlossaryController = (() => {
     'Galvo 1 Scale': 'Size correction along the first galvanometer axis, matching the marked size to the requested size; handwritten.',
     'Galvo 2 Scale': 'Size correction along the second galvanometer axis; handwritten.',
     'Laser type': 'Source type. “Fiber” means a fiber laser.', 'Enable PWM signal': 'Enables the frequency signal to the laser. Required for a pulsed laser.',
-    'Max PWM': 'Maximum pulse repetition frequency permitted by the controller, in kHz.', 'Max PWM: \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430': 'Handwritten number beside Max PWM; not read, see the photo.',
+    'Max PWM': 'Maximum pulse repetition frequency permitted by the controller, in kHz.', 'Max PWM: handwritten note': 'Handwritten number beside Max PWM; not read, see the photo.', 'Max PWM: \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430': 'Handwritten number beside Max PWM; not read, see the photo.',
     'Min PWM': 'Minimum pulse repetition frequency in kHz.', 'Enable Tickle': 'Low-power pulses between marks keep the laser ready and make the first pulse consistent.',
     'Pulse Width': 'Input control pulse width in µs. This is not the emitted pulse duration, which is set by the laser.', 'Pulse Period': 'Frequency of low-power tickle pulses in kHz.',
     'FPK Start power': 'Initial First Pulse Killer power in percent.', 'FPK Increment power': 'Power increment after the first pulse in percent.',

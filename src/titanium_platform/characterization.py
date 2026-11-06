@@ -16,7 +16,9 @@ LEGACY_UNREAD = "\u0441\u043c. \u0444\u043e\u0442\u043e"
 def is_unread(value):
     """Recognize current and legacy markers in existing equipment passports."""
     return value in (UNREAD, LEGACY_UNREAD)
-NOTE_SUFFIX = ": \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430"   # a row that records a handwritten doubt next to the setting with the same name
+NOTE_SUFFIX = ": handwritten note"
+LEGACY_NOTE_SUFFIX = ": \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430"
+NOTE_SUFFIXES = (NOTE_SUFFIX, LEGACY_NOTE_SUFFIX)
 POWER_PLAUSIBLE = (0.5, 1.5)           # a measured power outside this share of the rated power is not believed
 USED, WAITING, REFERENCE, UNKNOWN = "used", "waiting", "reference", "unknown"
 
@@ -37,7 +39,7 @@ def setting(passport: dict, tab: str, key: str) -> dict | None:
     if f is None:
         return None
     number = _number(f["value"])
-    contested = (key + NOTE_SUFFIX) in fields and f["status"] != "confirmed"
+    contested = any(key + suffix in fields for suffix in NOTE_SUFFIXES) and f["status"] != "confirmed"
     ok = number is not None and f["status"] in ("printed", "confirmed") and not contested
     return {"value": number, "raw": f["value"], "unit": f.get("unit"), "status": f["status"], "contested": contested, "state": USED if ok else WAITING}
 
@@ -129,7 +131,7 @@ def unresolved(passport: dict) -> list[dict]:
     for tab in (passport.get("controller") or {}).get("tabs", []):
         fields = {f["key"]: f for f in tab["fields"]}
         for key, f in fields.items():
-            note = fields.get(key + NOTE_SUFFIX)
+            note = next((fields[key + suffix] for suffix in NOTE_SUFFIXES if key + suffix in fields), None)
             if note is not None and f["status"] != "confirmed":
                 out.append({"tab": tab["key"], "key": key, "unit": f.get("unit"),
                             "values": [{"value": f["value"], "status": f["status"]}, {"value": note["value"], "status": note["status"]}]})

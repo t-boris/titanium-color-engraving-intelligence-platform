@@ -41,7 +41,7 @@ def template_passport(**extra) -> dict:
 
 def with_controller(passport: dict, *fields) -> dict:
     """``passport`` with laser-control fields (key, value, status)."""
-    tabs = [{"key": "laser_control", "fields": [{"key": k, "value": v, "unit": "кГц", "status": s} for k, v, s in fields]}]
+    tabs = [{"key": "laser_control", "fields": [{"key": k, "value": v, "unit": "kHz", "status": s} for k, v, s in fields]}]
     return dv.validate_passport(passport | {"controller": {"software": "EZCAD", "source": None, "tabs": tabs}})
 
 
@@ -85,7 +85,7 @@ def test_a_plan_whose_marker_layer_names_a_pulse_width_outside_the_range_is_refu
 
 
 def test_the_research_tools_refuse_a_pulse_width_outside_the_range_with_the_range(hardware):
-    session = research.create_session(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], "line", "непрерывная линия")
+    session = research.create_session(hardware["store"], hardware["laser"]["id"], hardware["material"]["id"], "line", "continuous line")
     for tool in ("preview_test", "create_test"):
         with pytest.raises(su.ValidationError, match=OFF_STEP):
             research.call_tool(hardware["store"], session["id"], tool, {"test_type": "calibration", "settings": {"pulse_width": 600}})
@@ -128,7 +128,7 @@ def test_conflicting_printed_and_handwritten_max_pwm_are_shown_together_and_neit
     passport = unit_passport()
     c = ch.characterize(passport)
     (conflict,) = [u for u in c["unresolved"] if u["key"] == "Max PWM"]
-    assert conflict["values"] == [{"value": 200.0, "status": "printed"}, {"value": "см. фото", "status": "handwritten"}]
+    assert conflict["values"] == [{"value": 200.0, "status": "printed"}, {"value": "see photo", "status": "handwritten"}]
     freq = next(i for i in c["items"] if i["key"] == "frequency_range")
     assert freq["unresolved"] == [conflict] and "Max PWM" in freq["waiting_for"]
     assert c["controller_limits_khz"]["max"] is None                       # neither 200 nor 4000 is asserted as the controller's limit
@@ -167,11 +167,20 @@ def test_a_measured_power_is_used_only_within_half_to_one_and_a_half_times_the_r
 @pytest.mark.parametrize("status, contested, narrows", [("printed", False, True), ("confirmed", False, True), ("handwritten", False, False),
                                                         ("printed", True, False), ("confirmed", True, True)])
 def test_only_an_uncontested_printed_or_a_confirmed_controller_limit_narrows_the_frequency_range(status, contested, narrows):
-    fields = [("Min PWM", 30.0, status)] + ([("Min PWM: рукописная пометка", "см. фото", "handwritten")] if contested else [])
+    fields = [("Min PWM", 30.0, status)] + ([("Min PWM: handwritten note", "see photo", "handwritten")] if contested else [])
     c = ch.characterize(with_controller(template_passport(), *fields))
     assert (c["frequency_range_khz"]["min"] == 30.0) is narrows and (c["controller_limits_khz"]["min"] == 30.0) is narrows
     if not narrows:
         assert c["frequency_range_khz"]["min"] == 1 and "Min PWM" in next(i for i in c["items"] if i["key"] == "frequency_range")["waiting_for"]
+
+
+@pytest.mark.parametrize("suffix", [ch.NOTE_SUFFIX, ch.LEGACY_NOTE_SUFFIX])
+def test_both_note_formats_keep_an_unconfirmed_controller_limit_out_of_calculations(suffix):
+    passport = with_controller(template_passport(), ("Max PWM", 200.0, "printed"),
+                               ("Max PWM" + suffix, ch.UNREAD, "handwritten"))
+    result = ch.characterize(passport)
+    assert result["controller_limits_khz"]["max"] is None
+    assert any(item["key"] == "Max PWM" for item in result["unresolved"])
 
 
 def test_contradictory_controller_limits_are_excluded_and_flagged():

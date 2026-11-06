@@ -6,6 +6,8 @@ const ControllerRows = (() => {
   // Preserve the legacy stored sentinel while displaying an English placeholder.
   const UNREAD = 'see photo';
   const isUnread = (value) => value === UNREAD || value === '\u0441\u043c. \u0444\u043e\u0442\u043e';
+  const settingName = (key) => key.replace(/: \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430$/, ': handwritten note');
+  const unitName = (unit) => ({'\u043c\u043c': 'mm', '\u043c\u043c/\u0441': 'mm/s', '\u043a\u0413\u0446': 'kHz', '\u043c\u043a\u0441': 'µs', '\u043c\u0441': 'ms', '\u0412': 'V'}[unit] || unit || '');
   const STATUS = {printed: ['printed', 'ok'], handwritten: ['handwritten', 'warn'], confirmed: ['confirmed', 'ok']};
   const parse = (text) => (/^-?\d+([.,]\d+)?$/.test(text.trim()) ? +text.trim().replace(',', '.') : text.trim());
   const small = (title, label, onClick, text) => h('button', {type: 'button', class: 'btn btn-small', title, 'aria-label': label, onClick}, text);
@@ -20,10 +22,10 @@ const ControllerRows = (() => {
   /** Use a yes/no selector for booleans and a text input otherwise; empty input is not accepted. */
   function valueInput(f, ctx) {
     if (typeof f.value === 'boolean') {
-      return h('select', {'aria-label': f.key, onChange: (e) => { f.value = e.target.value === 'yes'; f.status = 'confirmed'; ctx.change(); }},
+      return h('select', {'aria-label': settingName(f.key), onChange: (e) => { f.value = e.target.value === 'yes'; f.status = 'confirmed'; ctx.change(); }},
         ['yes', 'no'].map((v) => h('option', {value: v, selected: (v === 'yes') === f.value}, v)));
     }
-    return h('input', {value: isUnread(f.value) ? '' : f.value, placeholder: 'Not read from photo', 'aria-label': f.key, style: 'min-width:90px', onChange: (e) => {
+    return h('input', {value: isUnread(f.value) ? '' : f.value, placeholder: 'Not read from photo', 'aria-label': settingName(f.key), style: 'min-width:90px', onChange: (e) => {
       const v = parse(e.target.value);
       if (v === '' || v === f.value) { e.target.value = isUnread(f.value) ? '' : f.value; return; }
       f.value = v; f.status = isUnread(v) ? 'handwritten' : 'confirmed'; ctx.change();
@@ -34,10 +36,11 @@ const ControllerRows = (() => {
   function row(f, fields, ctx) {
     const unread = isUnread(f.value);
     const confirm = f.status !== 'confirmed' && !unread
-      ? small('Confirm: value checked against the original', 'Confirm ' + f.key, () => { f.status = 'confirmed'; ctx.change(); }, '✓') : null;
-    const remove = small('Remove setting from the list', 'Remove ' + f.key, () => { fields.splice(fields.indexOf(f), 1); ctx.change(); }, '×');
-    return [h('div', {title: HELP[f.key] || ''}, h('strong', {}, f.key), ctx.help && HELP[f.key] ? h('div', {class: 'small muted'}, HELP[f.key]) : null),
-      valueInput(f, ctx), f.unit || '', unread ? pill('not read', 'bad') : pill(...STATUS[f.status]), h('span', {class: 'row'}, confirm, remove)];
+      ? small('Confirm: value checked against the original', 'Confirm ' + settingName(f.key), () => { f.status = 'confirmed'; ctx.change(); }, '✓') : null;
+    const remove = small('Remove setting from the list', 'Remove ' + settingName(f.key), () => { fields.splice(fields.indexOf(f), 1); ctx.change(); }, '×');
+    const key = settingName(f.key), help = HELP[key] || HELP[f.key];
+    return [h('div', {title: help || ''}, h('strong', {}, key), ctx.help && help ? h('div', {class: 'small muted'}, help) : null),
+      valueInput(f, ctx), unitName(f.unit), unread ? pill('not read', 'bad') : pill(...STATUS[f.status]), h('span', {class: 'row'}, confirm, remove)];
   }
 
   function addForm(fields, ctx) {

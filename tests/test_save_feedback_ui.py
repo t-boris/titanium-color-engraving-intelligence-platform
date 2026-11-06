@@ -1359,10 +1359,16 @@ def test_legacy_unread_controller_value_is_not_changed_by_an_empty_edit(tmp_path
   const oldInput = ControllerRows.row(legacy, [legacy], {help: false, change: () => changed++})[1];
   await oldInput.dispatch('change');
   out.legacy = [oldInput.value, ControllerRows.isUnread(legacy.value), changed];
+  const suffix = String.fromCodePoint(1088,1091,1082,1086,1087,1080,1089,1085,1072,1103,32,1087,1086,1084,1077,1090,1082,1072);
+  const legacyNote = {key: 'Max PWM: ' + suffix, value: legacy.value, unit: String.fromCodePoint(1082,1043,1094), status: 'handwritten'};
+  const rendered = ControllerRows.row(legacyNote, [legacyNote], {help: true, change: () => changed++});
+  out.legacyDisplay = [rendered[0].textContent, rendered[1].getAttribute('aria-label'), rendered[2], legacyNote.key];
 """, scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
     assert out["before"] == ["", "Not read from photo", True]
     assert out["after"] == ["", True, 0]
     assert out["legacy"] == ["", True, 0]
+    assert out["legacyDisplay"][:3] == ["Max PWM: handwritten noteHandwritten number beside Max PWM; not read, see the photo.", "Max PWM: handwritten note", "kHz"]
+    assert out["legacyDisplay"][3] != "Max PWM: handwritten note"  # rendering does not rewrite the stored key
 
 
 @node
