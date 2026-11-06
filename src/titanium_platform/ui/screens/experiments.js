@@ -35,34 +35,9 @@
   const action = (route, label, primary) => h('a', {class: 'btn btn-small' + (primary ? ' primary' : ''), href: '#' + route}, label);
 
   App.register({id: 'experiments', async render(ctx) {
-    const [experiments, devices, goals] = await Promise.all([get('/experiments'), get('/devices'), get('/application-goals')]);
+    const [experiments, devices] = await Promise.all([get('/experiments'), get('/devices')]);
     const rememberedDevice = Number(sessionStorage.getItem('experiment-dashboard-device'));
     const selectedDevice = devices.find((device) => device.id === rememberedDevice) || devices[0];
-    const rememberedMaterial = Number(sessionStorage.getItem('experiment-dashboard-material'));
-    // the record the overview is about: the one remembered in this window, else the one used last; asked one at a time, never the whole catalogue
-    // (ux-growing-collections-p0, REQ-001)
-    const selectedMaterial = (rememberedMaterial ? await MaterialPicker.one(rememberedMaterial).catch(() => null) : null) || await MaterialPicker.lastUsed();
-    const selectedGoal = goals.find((goal) => goal.id === sessionStorage.getItem('experiment-dashboard-goal')) || goals[0];
-    let findings = [];
-    if (selectedDevice) {
-      try { findings = await get(`/devices/${selectedDevice.id}/findings`); } catch (_) { /* Остальной обзор доступен. */ }
-    }
-    findings = findings.filter((finding) => finding.material_id === selectedMaterial?.id &&
-      finding.lens_id === selectedDevice?.lens?.id);
-    // what the laboratory knows of each kind of photo engraving here and the experiment it proposes (photo-engraving-quality REQ-005)
-    const setup = selectedDevice && selectedMaterial ? {device_id: selectedDevice.id, lens_id: selectedDevice.lens?.id ?? null, material_id: selectedMaterial.id} : null;
-    let photoKinds = null;
-    if (setup) {
-      try { photoKinds = await get(`/photo-knowledge?device_id=${setup.device_id}${setup.lens_id == null ? '' : `&lens_id=${setup.lens_id}`}&material_id=${setup.material_id}`); }
-      catch (_) { /* Остальной обзор доступен. */ }
-    }
-    let guide = null;
-    if (selectedDevice && selectedMaterial && selectedGoal) {
-      try { guide = await get(`/application-guide?device_id=${selectedDevice.id}&material_id=${selectedMaterial.id}&goal=${selectedGoal.id}`); }
-      catch (error) { guide = {status: 'error', message: error.message, next_step: 'Проверьте материал и параметры лазера.'}; }
-    }
-    const latest = new Map();
-    for (const finding of findings) if (!latest.has(finding.purpose)) latest.set(finding.purpose, finding);
     const reload = () => App.render({preserveScroll: true});
     const hero = h('div', {class: 'os-head ex-head'},
       h('div', {class: 'ex-title'}, h('h2', {}, 'Эксперименты'), h('p', {class: 'sub'}, 'Каждый эксперимент открывается целиком: плата, фото с наложением, результат')),
@@ -82,6 +57,21 @@
     const scope = laser ? h('div', {class: 'ex-filters'},
       h('span', {class: 'row'}, pill(`Лазер: ${laser.title || laser.name}`, 'ok'), link('/experiments', 'Все лазеры'))) : null;
 
+    const taskSlot = h('section', {class: 'os-col ex-task'});
+    const findingsSlot = h('section', {class: 'os-col ex-find'});
+    const photoSlot = h('section', {class: 'os-col ex-find'});
+    const loading = (slot, title) => App.fill(slot, h('h3', {}, title), h('p', {role: 'status'}, 'Загрузка…'));
+    const failed = (slot, title, error, retry) => App.fill(slot, h('h3', {}, title),
+      h('p', {class: 'alert bad', role: 'alert'}, error.message), btn('Повторить', retry, 'btn-small'));
+    const put = (slot, contents) => App.fill(slot, ...Array.from(contents.childNodes));
+    loading(taskSlot, 'Рабочая задача'); loading(findingsSlot, 'Выводы для материала'); loading(photoSlot, 'Фотогравировка');
+    let goals, selectedMaterial, selectedGoal, setup, findings = [], photoKinds = null;
+    let findingsReady = false;
+    function showFindings() {
+      if (!findingsReady) return;
+      const latest = new Map();
+      for (const finding of findings.filter((f) => f.material_id === selectedMaterial?.id && f.lens_id === selectedDevice?.lens?.id))
+        if (!latest.has(finding.purpose)) latest.set(finding.purpose, finding);
     // the image purpose of a capability plate cannot judge a picture; the photographed photo engravings of this titanium can
     const photoBest = (photoKinds?.kinds || []).filter((k) => k.best && k.best.score != null).sort((a, b) => b.best.score - a.best.score)[0];
     const insightCards = [...latest.values()].sort((a, b) =>
@@ -100,6 +90,10 @@
             ? h('p', {}, 'Измеренный режим: ' + settingSummary(finding.parameters || finding.evidence?.parameters)) : null,
           link(`/analysis/${finding.pair_id}`, `Измерения · проверка №${finding.pair_id}`)));
     });
+      put(findingsSlot, panel('Выводы для материала', latest.size, insightCards,
+        'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.', link(`/devices/${selectedDevice.id}`, selectedDevice.name)));
+    }
+    function showTask(guide) {
     const devicePicker = devices.length > 1 ? h('select', {class: 'dashboard-device', 'aria-label': 'Лазер для выводов',
       onChange: (event) => { sessionStorage.setItem('experiment-dashboard-device', event.target.value); reload(); }},
       devices.map((device) => h('option', {value: device.id, selected: device.id === selectedDevice.id}, device.name))) : null;
@@ -160,6 +154,52 @@
           guide?.pending_plan_id ? link('/plans/' + guide.pending_plan_id, 'Открыть созданную плату') : null)),
       guide?.plate ? h('p', {class: 'dashboard-task-foot'},
         `Плата: ${PLATE_TYPE[guide.plate.test_type] || guide.plate.test_type} · чистка перед тестом · исходная проверка ${guide.plate.source_pair_id ? '№' + guide.plate.source_pair_id : 'ещё не создана'}`) : null));
+      put(taskSlot, taskPanel);
+    }
+    async function loadFindings() {
+      loading(findingsSlot, 'Выводы для материала');
+      try { findings = await get(`/devices/${selectedDevice.id}/findings`); findingsReady = true; showFindings(); }
+      catch (e) { failed(findingsSlot, 'Выводы для материала', e, loadFindings); }
+    }
+    async function loadPhoto() {
+      if (!setup) { photoSlot.hidden = true; return; }
+      photoSlot.hidden = false; loading(photoSlot, 'Фотогравировка');
+      try {
+        photoKinds = await get(`/photo-knowledge?device_id=${setup.device_id}${setup.lens_id == null ? '' : `&lens_id=${setup.lens_id}`}&material_id=${setup.material_id}`);
+        put(photoSlot, panel('Фотогравировка: что предлагает лаборатория', photoKinds.kinds.filter((k) => k.proposal).length,
+          PhotoQuality.kindCards(photoKinds, setup), 'Видов фотогравировки нет.'));
+        // Do not replace a finding while someone is reading or operating its disclosure.
+        if (!findingsSlot.contains(document.activeElement) && !Array.from(findingsSlot.querySelectorAll('details')).some((d) => d.open)) showFindings();
+      } catch (e) { failed(photoSlot, 'Фотогравировка', e, loadPhoto); }
+    }
+    async function loadGuide() {
+      if (!selectedMaterial || !selectedGoal) { showTask(null); return; }
+      loading(taskSlot, 'Рабочая задача');
+      try { showTask(await get(`/application-guide?device_id=${selectedDevice.id}&material_id=${selectedMaterial.id}&goal=${selectedGoal.id}`)); }
+      catch (e) { failed(taskSlot, 'Рабочая задача', e, loadGuide); }
+    }
+    async function loadGoals() {
+      loading(taskSlot, 'Рабочая задача');
+      try {
+        goals = await get('/application-goals');
+        selectedGoal = goals.find((goal) => goal.id === sessionStorage.getItem('experiment-dashboard-goal')) || goals[0];
+        loadGuide();
+      } catch (e) { failed(taskSlot, 'Рабочая задача', e, loadGoals); }
+    }
+    async function loadContext() {
+      loading(taskSlot, 'Рабочая задача'); loading(findingsSlot, 'Выводы для материала'); loading(photoSlot, 'Фотогравировка');
+      try {
+        const rememberedMaterial = Number(sessionStorage.getItem('experiment-dashboard-material'));
+        selectedMaterial = (rememberedMaterial ? await MaterialPicker.one(rememberedMaterial).catch(() => null) : null) || await MaterialPicker.lastUsed();
+        setup = selectedMaterial ? {device_id: selectedDevice.id, lens_id: selectedDevice.lens?.id ?? null, material_id: selectedMaterial.id} : null;
+        loadFindings(); loadPhoto(); loadGoals();
+      } catch (e) {
+        failed(taskSlot, 'Рабочая задача', e, loadContext);
+        App.fill(findingsSlot, h('p', {class: 'small'}, 'Нужны данные материала.'));
+        photoSlot.hidden = true;
+      }
+    }
+    loadContext();
     return h('div', {class: 'os ex'}, hero,
       h('div', {class: 'os-body ex-body'},
         h('section', {class: 'os-col ex-list'},
@@ -168,11 +208,6 @@
           scope,
           h('div', {class: 'os-scroll'}, ExperimentCards.list(shown, {id: 'experiments', noResults: 'Ничего не найдено: измените поиск, состояние или лазер.',
             empty: experiments.length ? 'Ничего не найдено: измените поиск, состояние или лазер.' : 'Экспериментов пока нет. Создайте плату или добавьте работу и фото.'}))),
-        h('div', {class: 'ex-right'}, taskPanel,
-          panel('Выводы для материала', latest.size, insightCards,
-            'Принятый тест возможностей добавит сюда выводы по линиям, тексту, цвету и изображению.',
-            link(`/devices/${selectedDevice.id}`, selectedDevice.name)),
-          photoKinds ? panel('Фотогравировка: что предлагает лаборатория', photoKinds.kinds.filter((k) => k.proposal).length,
-            PhotoQuality.kindCards(photoKinds, setup), 'Видов фотогравировки нет.') : null)));
+        h('div', {class: 'ex-right'}, taskSlot, findingsSlot, photoSlot)));
   }});
 })();

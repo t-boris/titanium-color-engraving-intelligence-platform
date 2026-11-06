@@ -76,10 +76,10 @@ ROUTES = {
 }
 
 
-def run(tmp_path, body, routes=None, query=None, store=None) -> dict:
+def run(tmp_path, body, routes=None, query=None, store=None, setup="") -> dict:
     (tmp_path / "data.json").write_text(json.dumps({"routes": routes or ROUTES, "query": query or {}, "store": store or {}}), encoding="utf-8")
     script = tmp_path / "screen.js"
-    script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
+    script.write_text(HARNESS.replace("  const tree = await ctx.__screens.experiments.render", setup + "\n  const tree = await ctx.__screens.experiments.render") % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "data": json.dumps(str(tmp_path / "data.json")),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "glue": json.dumps(GLUE), "body": body}, encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
@@ -87,6 +87,43 @@ def run(tmp_path, body, routes=None, query=None, store=None) -> dict:
 
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
+@node
+def test_catalogue_remains_usable_while_each_secondary_panel_loads_and_retries(tmp_path):
+    setup = """
+  const original = ctx.fetch, waiting = {};
+  ctx.fetch = (url, opts) => {
+    const path = String(url).split('?')[0];
+    if (['/api/devices/1/findings', '/api/application-guide', '/api/photo-knowledge'].includes(path))
+      return new Promise((resolve) => { waiting[path] = {resolve, url, opts}; });
+    return original(url, opts);
+  };
+  const complete = async (path) => { const call = waiting[path]; call.resolve(await original(call.url, call.opts)); };
+  const failRequest = (path) => waiting[path].resolve({ok: false, status: 503, headers: {get: () => 'application/json'}, json: async () => ({error: 'offline'})});
+"""
+    routes = {**ROUTES, "/api/photo-knowledge": {"status": 200, "json": {"kinds": []}}}
+    out = run(tmp_path, """
+  out.rowsWhileWaiting = titles(P(tree, '.ex-list', '.os-scroll'));
+  out.requests = Object.keys(waiting).sort();
+  await complete('/api/application-guide'); await tick(); await tick();
+  out.taskReady = !!byText(tree, 'button', 'Создать следующий тест');
+  out.findingsStillLoading = tree.querySelectorAll('.ex-find')[0].textContent.includes('Загрузка');
+  failRequest('/api/devices/1/findings'); await tick(); await tick();
+  out.failure = tree.querySelectorAll('.ex-find')[0].textContent;
+  const retry = byText(tree.querySelectorAll('.ex-find')[0], 'button', 'Повторить').dispatch('click');
+  await complete('/api/devices/1/findings'); await retry; await tick(); await tick();
+  out.findings = tree.querySelectorAll('.ex-find')[0].textContent;
+  const details = tree.querySelectorAll('.ex-find')[0].querySelector('details'); details.open = true;
+  await complete('/api/photo-knowledge'); await tick(); await tick();
+  out.photo = tree.querySelectorAll('.ex-find')[1].textContent;
+  out.detailsKept = tree.querySelectorAll('.ex-find')[0].querySelector('details') === details && details.open;
+""", routes=routes, setup=setup)
+    assert len(out["rowsWhileWaiting"]) == 3
+    assert out["requests"] == ["/api/application-guide", "/api/devices/1/findings", "/api/photo-knowledge"]
+    assert out["taskReady"] and out["findingsStillLoading"]
+    assert "Повторить" in out["failure"] and "Тонкие линии" in out["findings"]
+    assert "Видов фотогравировки нет" in out["photo"] and out["detailsKept"]
+
+
 @node
 def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the_findings_on_the_right(tmp_path):
     out = run(tmp_path, """
@@ -118,7 +155,7 @@ def test_the_screen_is_one_frame_with_the_list_on_the_left_and_the_task_over_the
     assert "os" in classes and "ex" in classes and "workspace" not in classes                 # the side menu stays
     assert out["top"] == ["os-head ex-head", "os-body ex-body"] and out["title"] == "Эксперименты"
     assert out["actions"] == [["AI-исследователь", "#/research", False], ["Карта цветов", "#/colors", False], ["Создать плату", None, True], ["Добавить работу и фото", "#/ingest", False]]
-    assert out["columns"] == ["os-col ex-list", "ex-right"] and out["right"] == ["os-col ex-task", "os-col ex-find"]
+    assert out["columns"] == ["os-col ex-list", "ex-right"] and out["right"] == ["os-col ex-task", "os-col ex-find", "os-col ex-find"]
     assert out["listParts"] == ["os-col-head", "os-scroll"] and out["listHead"].startswith("Эксперименты") and out["pills"] == ["3", "1 к проверке"]
     search, states, state_group, tasks, orders, count = out["toolbar"]                                  # the shared list's search, filters and order, in the list column
     assert search and state_group and states == ["Все · 3", "Нужна проверка · 1", "Ждут фото · 1", "Приняты · 1"]
@@ -446,7 +483,7 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
 
 
 def test_the_source_builds_the_frame_from_the_shared_classes_and_keeps_what_other_tests_and_screens_rely_on():
-    for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskPanel,",
+    for part in ("h('div', {class: 'os ex'}, hero,", "h('div', {class: 'os-body ex-body'},", "h('section', {class: 'os-col ex-list'},", "h('div', {class: 'ex-right'}, taskSlot,",
                  "h('section', {class: 'os-col ex-task'},", "{class: 'os-col ex-find'}", "ExperimentCards.list(shown, {id: 'experiments',",
                  "panel('Выводы для материала', latest.size, insightCards,", "App.post('/application-guide/next-plate'", "PlateDialog.open(devices, null, reload)"):
         assert part in SCREEN, part
