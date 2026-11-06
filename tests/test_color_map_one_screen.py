@@ -546,21 +546,21 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
   await circle('Test 1').dispatch('click'); await tick();
   out.fill = action().textContent;
   out.under = detail().children.findIndex((c) => has(c, 'dp-action'));
-  await byText(action(), 'button', 'Точки этим цветом').dispatch('click'); await tick(); await tick();
+  await byText(action(), 'button', 'Use for dots').dispatch('click'); await tick(); await tick();
   out.saved = ctx.requests.filter((r) => r.path === '/api/photo-works/37/settings').map((r) => [r.method, JSON.parse(r.body)]);
   out.went = [...ctx.__went]; out.toasts = ctx.__toasts;
 """)
     assert out["asked"] == ["/api/colors?dots=37&setup=laser%3A1%2Flens%3A2"] and out["root"] == "os cm cm-picking"
-    assert out["banner"].startswith("Цвет точек для работы «Inna Portrait 2» · Atkinson · 100 мм") and "на титане Grade 5" in out["banner"]
-    assert "с шагом строк от 0,0085 мм" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
+    assert out["banner"].startswith("Dot color for work “Inna Portrait 2” · Atkinson · 100 mm") and "titanium Grade 5" in out["banner"]
+    assert "line spacing of at least 0.0085 mm" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
     assert out["setup"] == ["Лазер и линзаJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
     assert out["pale"] == ["1", "0.18", "1"]                                                          # what cannot be the dots is pale
-    assert out["step"] == "Для точек этот цвет не подходит: its step is finer than 0.0085 mm: there the dots merge."            # the server's reason
-    assert out["tone"] == "Точки этим цветомТочки встанут на эту шкалу серого при 12,5 %: 150 мм/с · 60 кГц · 300 нс · шаг 0,0212 мм."
-    assert out["fill"] == "Точки этим цветомТочки будут бить на настройках этой заливки: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм; шаг строк станет шагом точек."
+    assert out["step"] == "This color cannot be used for dots: its step is finer than 0.0085 mm: there the dots merge."            # the server's reason
+    assert out["tone"] == "Use for dotsDots will use this gray scale at 12.5%: 150 mm/s · 60 kHz · 300 ns · spacing 0.0212 mm."
+    assert out["fill"] == "Use for dotsDots will use this fill’s settings: 20% · 500 mm/s · 60 kHz · 300 ns · spacing 0.02 mm; line spacing becomes dot spacing."
     assert out["under"] == 2                                                                          # right under the picked colour
     assert out["saved"] == [["POST", {"dot_colour": "g-fill"}]] and out["went"] == ["/photo-engraving?work=37"]
-    assert out["toasts"] == ["Цвет точек выбран: работа покажет точки этим цветом"]
+    assert out["toasts"] == ["Dot color selected: the work will show dots in this color"]
 
 
 @node
@@ -581,13 +581,13 @@ def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_w
   const circle = tree.querySelectorAll('circle').find((c) => c.querySelector('title') && c.querySelector('title').textContent.startsWith('Test 1 ·'));
   await circle.dispatch('click'); await tick();
   const action = tree.querySelectorAll('div').find((d) => has(d, 'cm-detail')).querySelector('.dp-action');
-  await byText(action, 'button', 'Точки этим цветом').dispatch('click'); await tick(); await tick();
+  await byText(action, 'button', 'Use for dots').dispatch('click'); await tick(); await tick();
   out.saved = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
   out.went = [...ctx.__went]; out.toasts = ctx.__toasts;
 """)
     back = "/vector?plan=41" if opened else "/vector-zone?work=41&zone=2"
     assert out["asked"] == ["/api/colors?dots=41&zone=2&setup=laser%3A1%2Flens%3A2"]
-    assert out["banner"] == "Цвет точек для фотозоны 2 работы «Яня портрет - 1» · Jarvis · 150 мм"
-    assert out["back"] == [f"#{back}", "← К работе без изменений" if opened else "← К зоне без изменений"]
+    assert out["banner"] == "Dot color for photo zone 2 of work “Яня портрет - 1” · Jarvis · 150 mm"
+    assert out["back"] == [f"#{back}", "← Return to work without changes" if opened else "← Return to zone without changes"]
     assert out["saved"] == [["/api/vector/41/photo/2/settings", {"dot_colour": "g-fill"}]] and out["went"] == [back]
-    assert out["toasts"] == ["Цвет точек выбран: зона покажет точки этим цветом"]
+    assert out["toasts"] == ["Dot color selected: the zone will show dots in this color"]
