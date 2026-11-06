@@ -14,20 +14,20 @@ from .db import Store, now
 def _setting_label(row: dict) -> str:
     p = row["parameters"]
     parts = [row["name"]]
-    for key, unit in (("power", "%"), ("frequency", "кГц"), ("speed", "мм/с"), ("pulse_width", "нс")):
+    for key, unit in (("power", "%"), ("frequency", "kHz"), ("speed", "mm/s"), ("pulse_width", "ns")):
         if p.get(key) is not None:
             parts.append(f"{p[key]} {unit}")
     if p.get("line_interval") is not None and p.get("layer_type") != "Cut":
-        parts.append(f"шаг {p['line_interval']} мм")
+        parts.append(f"interval {p['line_interval']} mm")
     if p.get("passes") is not None:
-        parts.append(f"{p['passes']} проход(а)")
+        parts.append(f"{p['passes']} passes")
     wobble = p.get("source_settings") or {}
     if wobble.get("wobbleEnable", {}).get("Value") == "1":
         step = wobble.get("wobbleStep", {}).get("Value", "?")
         size = wobble.get("wobbleSize", {}).get("Value", "?")
-        parts.append(f"Wobble: диаметр {size} мм, шаг {step} мм")
+        parts.append(f"Wobble: diameter {size} mm, interval {step} mm")
     elif wobble.get("wobbleEnable", {}).get("Value") == "0":
-        parts.append("Wobble: выкл.")
+        parts.append("Wobble: off")
     return " · ".join(parts)
 
 
@@ -50,43 +50,43 @@ def _use_cases(rows: list[dict]) -> list[dict]:
                                    ("power", "frequency", "speed", "pulse_width", "passes")))
     evidence = ({"layer_index": best["layer_index"], "name": best["name"],
                  "line_metrics": best["line_metrics"]} if best else {})
-    label = _setting_label(best) if best else "не найден"
+    label = _setting_label(best) if best else "not found"
     if reliable:
-        line_summary = f"На этом фото линия «{label}» — предварительный кандидат: непрерывность {best['line_metrics']['median_continuity_percent']:.0f}%."
+        line_summary = f"On this photo, line “{label}” is a preliminary candidate: continuity {best['line_metrics']['median_continuity_percent']:.0f}%."
         if not complete:
-            line_summary += " Q-Pulse или другая обязательная настройка не записана в файле; повторить этот режим точно пока нельзя."
+            line_summary += " Q-Pulse or another required setting is missing from the file, so these settings cannot yet be repeated exactly."
     elif best:
         m = best["line_metrics"]
-        line_summary = (f"Подтверждённой непрерывной линии нет. Лучший измеренный участок «{label}»: "
-                        f"различимо {m.get('visible_line_count', 0)}/{m.get('line_count', 0)}, "
-                        f"непрерывность {m.get('median_continuity_percent', 0):.0f}%; его нельзя считать готовым режимом.")
+        line_summary = (f"No continuous line is confirmed. Best measured area “{label}”: "
+                        f"visible {m.get('visible_line_count', 0)}/{m.get('line_count', 0)}, "
+                        f"continuity {m.get('median_continuity_percent', 0):.0f}%; this is not a production-ready recipe.")
     else:
-        line_summary = "На этом снимке нет сравнимых измерений одиночных линий."
-    line_next = (f"Проверить фактический Q-Pulse и повторить «{label}» 2–3 раза на небольшом участке; затем сравнить соседние значения мощности и скорости при прочих равных."
-                 if best else "Сделать компактную матрицу одиночных линий по мощности и скорости.")
+        line_summary = "This photo has no comparable single-line measurements."
+    line_next = (f"Check the actual Q-Pulse and repeat “{label}” 2–3 times on a small area; then compare neighboring power and speed values with other settings held constant."
+                 if best else "Make a compact power-speed matrix of single lines.")
     return [
         {"purpose": "line", "status": "candidate" if reliable and complete else "incomplete_settings" if reliable else "insufficient",
          "summary": line_summary, "parameters": params if reliable and complete else None,
          "evidence": evidence, "next_test": line_next},
         {"purpose": "text", "status": "needs_text_test",
-         "summary": "Читаемость символов пока не измерена. Отклик камеры и видимость одиночной линии не доказывают качество текста."
-                    + (f" Для следующей пробы тонкого штриха можно начать с «{_setting_label(text_seed)}»"
-                       f" (видимая ширина {text_seed['line_metrics']['median_apparent_trace_width_mm']:.3f} мм)." if thin else
-                       f" Для следующей пробы можно начать с «{label}»." if best else "")
-                    + (" Перед повторением нужно установить фактический Q-Pulse: он отсутствует в файле." if text_seed and
+         "summary": "Character legibility has not been measured. Camera response and single-line visibility do not establish text quality."
+                    + (f" For the next fine-stroke test, start with “{_setting_label(text_seed)}”"
+                       f" (apparent width {text_seed['line_metrics']['median_apparent_trace_width_mm']:.3f} mm)." if thin else
+                       f" For the next test, start with “{label}”." if best else "")
+                    + (" Before repeating, determine the actual Q-Pulse; it is absent from the file." if text_seed and
                        text_seed["parameters"].get("pulse_width") is None else ""),
          "parameters": None, "evidence": {"layer_index": text_seed["layer_index"], "name": text_seed["name"],
                                          "parameters": text_seed["parameters"],
                                          "line_metrics": text_seed["line_metrics"]} if text_seed else {},
-         "next_test": "Выгравировать короткий текст несколькими размерами и толщинами штриха рядом с выбранным режимом линии; оценить долю распознаваемых символов и целостность тонких штрихов на повторных RAW-фото."},
+         "next_test": "Engrave short text at several sizes and stroke widths near the selected line settings; assess recognizable characters and fine-stroke integrity in repeat RAW photos."},
         {"purpose": "color", "status": "needs_color_test",
-         "summary": "Из этой платы нельзя выбрать требуемый цвет: относительные значения камеры не задают воспроизводимый цвет титана.",
+         "summary": "This plate cannot select the desired color: camera-relative values do not define reproducible titanium color.",
          "parameters": None, "evidence": {},
-         "next_test": "Сделать отдельную компактную цветовую матрицу, снять RAW с эталонной картой и повторить перспективные ячейки."},
+         "next_test": "Make a separate compact color matrix, photograph RAW with a reference chart, and repeat promising cells."},
         {"purpose": "image", "status": "needs_image_test",
-         "summary": "Режим для изображения пока не подтверждён: эта плата не оценивает полутона, детали и равномерность заливки вместе.",
+         "summary": "Image settings are not confirmed: this plate does not evaluate halftones, detail, and fill uniformity together.",
          "parameters": None, "evidence": {},
-         "next_test": "После выбора линий и цвета выгравировать малый фрагмент изображения с тонкими деталями, заливками и полутонами."},
+         "next_test": "After selecting lines and color, engrave a small image fragment with fine details, fills, and halftones."},
     ]
 
 
@@ -105,19 +105,19 @@ def _text_case(rows: list[dict]) -> dict:
             scored.append((min(contrasts), row, contrasts))
     if not scored:
         return {"purpose": "text", "status": "insufficient",
-                "summary": "Надписи или чистый фон на фото не измерены; сравнить варианты пока нельзя.",
+                "summary": "Lettering or the clean background was not measured in the photo, so variants cannot yet be compared.",
                 "parameters": None, "evidence": {},
-                "next_test": "Повторить RAW-фото той же платы при ровном освещении и проверить совмещение элементов."}
+                "next_test": "Retake a RAW photo of the same plate under even lighting and check element alignment."}
     score, best, contrasts = max(scored, key=lambda item: item[0])
     return {"purpose": "text", "status": "contrast_candidate",
-            "summary": (f"На этой фотографии «{_setting_label(best)}» даёт наибольший минимальный контраст {len(contrasts)} образцов текста "
-                        f"относительно очищенного фона: ΔL* {score:.1f}. Это кандидат по контрасту; читаемость букв, "
-                        "четкость кромок и повторяемость ещё не подтверждены."),
+            "summary": (f"In this photo, “{_setting_label(best)}” gives the highest minimum contrast across {len(contrasts)} text samples "
+                        f"against the cleaned background: ΔL* {score:.1f}. This is a contrast candidate; letter legibility, "
+                        "edge sharpness, and repeatability are not yet confirmed."),
             "parameters": None,
             "evidence": {"layer_index": best["layer_index"], "name": best["name"],
                          "parameters": best["parameters"], "contrast_by_size": contrasts,
                          "background_Lstar": background},
-            "next_test": "Сравнить буквы на изделии и RAW в масштабе 1:1: просветы, кромки и повторяемость; затем повторить лучший читаемый вариант на новом маленьком участке."}
+            "next_test": "Compare letters on the workpiece and RAW photo at 1:1 for gaps, edges, and repeatability; repeat the best legible option on a new small area."}
 
 
 def _matrix_line_case(rows: list[dict]) -> dict | None:
@@ -133,13 +133,13 @@ def _matrix_line_case(rows: list[dict]) -> dict | None:
     visible = metrics.get("visible_line_count", 0) > 0
     continuous = visible and metrics.get("median_continuity_percent", 0) >= 90
     return {"purpose": "line", "status": "candidate" if continuous and complete else "incomplete_settings" if continuous else "insufficient",
-            "summary": (f"В уточняющей матрице сильнейший отклик у «{_setting_label(best)}»: "
-                        f"непрерывность {metrics.get('median_continuity_percent', 0):.0f}%. "
-                        "Это кандидат по фото; повторяемость и качество линии на изделии ещё не подтверждены."),
+            "summary": (f"In the refinement matrix, “{_setting_label(best)}” has the strongest response: "
+                        f"continuity {metrics.get('median_continuity_percent', 0):.0f}%. "
+                        "This is a photo-based candidate; repeatability and line quality on the workpiece remain unconfirmed."),
             "parameters": best["parameters"] if continuous and complete else None,
             "evidence": {"layer_index": best["layer_index"], "name": best["name"],
                          "parameters": best["parameters"], "line_metrics": metrics},
-            "next_test": "Повторить выбранный режим линии на новом маленьком участке и сравнить кромку, контраст и непрерывность."}
+            "next_test": "Repeat the selected line settings on a new small area and compare edges, contrast, and continuity."}
 
 
 FINDING_FIELDS = ("status", "summary", "parameters_json", "evidence_json", "next_test")
@@ -208,8 +208,8 @@ def _compact_interpretation(rows: list[dict]) -> tuple[list[str], list[str]]:
         strong = [r for r in line_rows if r["line_metrics"].get("visible_line_count", 0) > 0
                   and r["line_metrics"].get("median_continuity_percent", 0) >= 90]
         if strong:
-            examples = ", ".join(f"{r['parameters']['power']:g}% / {r['parameters']['speed']:g} мм/с" for r in strong)
-            signals.append(f"Наиболее непрерывные линии на этом фото: {examples}. Это кандидаты для повторной проверки, не готовые режимы гравировки.")
+            examples = ", ".join(f"{r['parameters']['power']:g}% / {r['parameters']['speed']:g} mm/s" for r in strong)
+            signals.append(f"Most continuous lines in this photo: {examples}. These are candidates for retesting, not production-ready engraving settings.")
         by_speed: dict[float, list[dict]] = {}
         for row in line_rows:
             by_speed.setdefault(row["parameters"]["speed"], []).append(row)
@@ -219,10 +219,10 @@ def _compact_interpretation(rows: list[dict]) -> tuple[list[str], list[str]]:
                                 and high["line_metrics"].get("visible_line_count", 0) == 0
                                 for low in group for high in group)]
         if contradictory:
-            signals.append("В матрице есть немонотонные результаты по мощности при скорости "
+            signals.append("The matrix has non-monotonic power results at speed "
                            + ", ".join(f"{speed:g}" for speed in sorted(contradictory))
-                           + " мм/с. По одной фотографии нельзя считать это порогом возможностей лазера.")
-            next_steps.append("Сфотографировать ту же пластину ещё раз в RAW при другом направлении света и сверить спорные линии по отдельным фрагментам. Новый титан для этой проверки не нужен.")
+                           + " mm/s. One photo does not establish a laser capability threshold.")
+            next_steps.append("Retake a RAW photo of the same plate with light from another direction and compare the disputed lines in detail. No new titanium is needed.")
     gap = next((r["line_metrics"] for r in rows if r["name"].startswith("LINE-GAP-") and r["line_metrics"]), None)
     if gap and gap.get("groups"):
         full = [g for g in gap["groups"] if g["visible_line_count"] == g["line_count"]]
@@ -231,35 +231,35 @@ def _compact_interpretation(rows: list[dict]) -> tuple[list[str], list[str]]:
             first = min(full, key=lambda g: g["spacing_um"])
             previous = max((g for g in partial if g["spacing_um"] < first["spacing_um"]),
                            key=lambda g: g["spacing_um"], default=None)
-            lead = (f"При {first['spacing_um']} мкм алгоритм видит {first['visible_line_count']}/{first['line_count']} линий"
-                    + (f", при {previous['spacing_um']} мкм — {previous['visible_line_count']}/{previous['line_count']}" if previous else ""))
-            signals.append(lead + ". Это область для уточнения; отдельность соседних дорожек ещё не измерена.")
+            lead = (f"At {first['spacing_um']} µm the algorithm sees {first['visible_line_count']}/{first['line_count']} lines"
+                    + (f", at {previous['spacing_um']} µm: {previous['visible_line_count']}/{previous['line_count']}" if previous else ""))
+            signals.append(lead + ". This range needs refinement; separation between adjacent tracks has not been measured.")
             if previous:
-                next_steps.append(f"Следующий компактный тест зазоров сосредоточить между {previous['spacing_um']} и {first['spacing_um']} мкм и измерять контраст промежутка между соседними линиями.")
+                next_steps.append(f"Focus the next compact gap test between {previous['spacing_um']} and {first['spacing_um']} µm and measure contrast between adjacent lines.")
     wobble = [r for r in rows if r["name"].startswith("WOBBLE-")]
     if len(wobble) >= 2:
         low, high = min(wobble, key=lambda r: r["lab"][0]), max(wobble, key=lambda r: r["lab"][0])
-        signals.append(f"Среди Wobble-участков относительный L* меняется от {low['lab'][0]:.1f} до {high['lab'][0]:.1f}; геометрия следа и повторяемость пока не измерены.")
+        signals.append(f"Among Wobble areas, relative L* ranges from {low['lab'][0]:.1f} to {high['lab'][0]:.1f}; mark geometry and repeatability have not been measured.")
     hatches = [r for r in rows if r["name"].startswith("HATCH-")]
     if len(hatches) >= 2:
         hatches.sort(key=lambda r: r["parameters"].get("line_interval") or 0)
-        signals.append("При шагах заливки " + ", ".join(f"{r['parameters']['line_interval']:g} мм: L* {r['lab'][0]:.1f}" for r in hatches)
-                       + ". Средняя яркость не показывает равномерность или нужный цвет.")
+        signals.append("At fill intervals " + ", ".join(f"{r['parameters']['line_interval']:g} mm: L* {r['lab'][0]:.1f}" for r in hatches)
+                       + ". Average lightness does not establish uniformity or the desired color.")
     frequencies = [r for r in rows if r["name"].startswith("FREQUENCY-") and r["line_metrics"]]
     if len(frequencies) >= 2:
         continuities = [r["line_metrics"].get("median_continuity_percent", 0) for r in frequencies]
         visible = sum(r["line_metrics"].get("visible_line_count", 0) > 0 for r in frequencies)
         strongest = max(frequencies, key=lambda r: (r["line_metrics"].get("visible_line_count", 0),
                                                      r["line_metrics"].get("median_continuity_percent", 0)))
-        signals.append(f"Из {len(frequencies)} частотных линий на фото уверенно различимы {visible}; "
-                       f"непрерывность {min(continuities):.0f}–{max(continuities):.0f}%. "
-                       f"Наибольший отклик у {strongest['parameters']['frequency']:g} кГц "
-                       f"({strongest['line_metrics'].get('median_continuity_percent', 0):.0f}% непрерывности), "
-                       "но это ещё не режим для текста.")
+        signals.append(f"Of {len(frequencies)} frequency lines in the photo, {visible} are clearly visible; "
+                       f"continuity {min(continuities):.0f}–{max(continuities):.0f}%. "
+                       f"The strongest response is at {strongest['parameters']['frequency']:g} kHz "
+                       f"({strongest['line_metrics'].get('median_continuity_percent', 0):.0f}% continuity), "
+                       "but these are not yet text settings.")
         if strongest["line_metrics"].get("median_continuity_percent", 0) < 90:
-            next_steps.append("Частоту для текста пока не фиксировать: при неизменных мощности, скорости и Q-Pulse повторить лучшие частотные варианты на коротких тонких линиях и буквах.")
+            next_steps.append("Do not fix a frequency for text yet: repeat the best frequency candidates on short fine lines and letters with power, speed, and Q-Pulse unchanged.")
     if line_rows:
-        next_steps.append("После проверки фото повторить выбранные режимы линий на маленькой плате по 2–3 раза. В файле должны быть явно записаны Q-Pulse и все параметры Wobble; сравнивать также ширину и контраст фона.")
+        next_steps.append("After reviewing the photo, repeat selected line settings 2–3 times on a small plate. Record Q-Pulse and all Wobble settings explicitly; also compare width and background contrast.")
     return signals, next_steps
 
 
@@ -279,7 +279,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
     rows = []
     for r in obs:
         evidence = json.loads(r["evidence_json"] or "{}")
-        rows.append({"layer_index": r["layer_index"], "name": evidence.get("layer_name") or f"Слой {r['layer_index']}",
+        rows.append({"layer_index": r["layer_index"], "name": evidence.get("layer_name") or f"Layer {r['layer_index']}",
                      "lab": json.loads(r["lab_json"]), "parameters": json.loads(r["parameters_json"]),
                      "role": evidence.get("role", "test feature"), "submeasurements": evidence.get("submeasurements", []),
                      "line_metrics": evidence.get("line_metrics")})
@@ -295,21 +295,21 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
         spread, row_a, row_b = farthest
         lightness = [r["lab"][0] for r in test_rows]
         lightness_range = [float(min(lightness)), float(max(lightness))]
-        finding = (f"Самые различающиеся измеренные участки: «{row_a['name']}» и «{row_b['name']}» "
-                   f"(ΔE {spread:.1f}); диапазон измеренной L*: {min(lightness):.1f}–{max(lightness):.1f}.")
+        finding = (f"Most different measured areas: “{row_a['name']}” and “{row_b['name']}” "
+                   f"(ΔE {spread:.1f}); measured L* range: {min(lightness):.1f}–{max(lightness):.1f}.")
         extrema = {"delta_e": float(spread), "first": _setting_label(row_a), "second": _setting_label(row_b)}
     elif test_rows:
-        finding = "Измерен один участок; сравнить отклик между режимами пока нельзя."
+        finding = "One area was measured; responses across settings cannot yet be compared."
         extrema = None
     else:
-        finding = "Принятая пара не содержит измеренных тестовых участков; сохранены только чистка, метки или технические результаты."
+        finding = "The accepted pair has no measured test areas; only cleaning, markers, or technical results were retained."
         extrema = None
 
-    limits = ["Lab здесь используется только как числовой сигнал различия участков на фотографии, не как подбор цвета гравировки. Сравнение внутри платы само по себе не определяет порог видимого следа или реальную выходную мощность."]
+    limits = ["Lab is used only as a numerical signal of differences between areas in this photo, not to select an engraving color. Comparison within one plate alone does not establish the visible-mark threshold or actual output power."]
     measurement_modes = {json.loads(r["evidence_json"] or "{}").get("color_measurement", {}).get("mode") for r in obs}
     measurement_modes.discard(None)
     if "raw_camera_relative" in measurement_modes:
-        limits.append("Значения получены из RAW без эталонной карты: это относительные измерения камеры, сохранённые для этой платы и не используемые в рекомендациях стандартного цвета.")
+        limits.append("Values come from RAW without a reference chart: they are camera-relative measurements retained for this plate and excluded from standard color recommendations.")
     test_type = plate["test_type"]
     line_grid = [r for r in test_rows if r["name"].startswith("LINE-P") and r["line_metrics"]]
     visible_lines = sum(r["line_metrics"]["visible_line_count"] for r in line_grid)
@@ -318,10 +318,10 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
     gap_metrics = next((r["line_metrics"] for r in test_rows if r["name"].startswith("LINE-GAP-") and r["line_metrics"]), None)
     gap = {key: value for key, value in gap_metrics.items() if key != "lines"} if gap_metrics else None
     if test_type == "compact_capability" and line_grid:
-        finding = (f"На фотографии различимы {visible_lines} из {len(line_grid)} тестовых одиночных линий; "
-                   f"в группе зазоров — {gap['visible_line_count']} из {gap['line_count']} линий."
-                   if gap else f"На фотографии различимы {visible_lines} из {len(line_grid)} тестовых одиночных линий.")
-        limits.append("Видимость определяется по контрасту относительно окружения на этой фотографии; отсутствие обнаруженного следа не доказывает, что лазер физически не оставил след.")
+        finding = (f"The photo shows {visible_lines} of {len(line_grid)} test single lines; "
+                   f"the gap group shows {gap['visible_line_count']} of {gap['line_count']} lines."
+                   if gap else f"The photo shows {visible_lines} of {len(line_grid)} test single lines.")
+        limits.append("Visibility is determined by contrast with the surroundings in this photo; a mark not being detected does not prove the laser left no physical mark.")
     matrix_line = _matrix_line_case(test_rows) if test_type == "material_matrix" else None
     text_matrix = test_type == "material_matrix" and any(r["name"].startswith("TEXT-MATRIX-") for r in test_rows)
     use_cases = (_use_cases(test_rows) if test_type == "compact_capability" else
@@ -329,7 +329,7 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
                  [matrix_line] if matrix_line else [])
     signals, next_steps = _compact_interpretation(test_rows) if test_type == "compact_capability" else ([], [])
     if any(r["parameters"].get("pulse_width") is None for r in rows):
-        limits.append("У части слоёв Q-Pulse не записан в LightBurn: его значение остаётся неизвестным и не подставляется из определения платы.")
+        limits.append("Q-Pulse is absent from some LightBurn layers; it remains unknown and is not substituted from the plate definition.")
     incomplete_wobble = []
     for row in test_rows:
         settings = row["parameters"].get("source_settings") or {}
@@ -338,14 +338,14 @@ def report_for_pair(store: Store, pair_id: int) -> dict | None:
         ):
             incomplete_wobble.append(row["name"])
     if incomplete_wobble:
-        limits.append("У включённых Wobble-слоёв не записаны шаг или размер: " + ", ".join(incomplete_wobble)
-                      + ". Название слоя не заменяет реальные настройки файла.")
+        limits.append("Enabled Wobble layers are missing interval or size: " + ", ".join(incomplete_wobble)
+                      + ". A layer name does not replace actual file settings.")
     if test_type == "line_resolution":
-        limits.append("Среднее измерение группы линий не определяет минимально различимый зазор и не является измерением оптического диаметра пятна.")
+        limits.append("The average measurement of a line group does not establish the smallest distinguishable gap or measure optical spot diameter.")
     elif test_type in ("hatch_interval", "offset_fill", "fill_sizes"):
-        limits.append("Среднее значение участка не оценивает пространственную равномерность заливки; для этого нужен анализ распределения пикселей внутри каждой ячейки.")
+        limits.append("An area average does not assess spatial fill uniformity; that requires analyzing the pixel distribution within each cell.")
     elif test_type == "power_speed":
-        limits.append("По среднему сигналу линии нельзя подтвердить её непрерывность или паспортный максимум скорости.")
+        limits.append("A line’s average signal cannot confirm its continuity or the datasheet maximum speed.")
 
     return {"pair_id": pair_id, "plate_id": plate["id"], "test_type": test_type,
             "test_name": cp.TYPE_BY_ID[test_type]["name"], "test_description": cp.TYPE_BY_ID[test_type]["description"],

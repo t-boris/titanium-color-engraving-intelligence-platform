@@ -52,7 +52,7 @@ def test_accepted_test_result_is_processed_with_hardware_and_material_provenance
     assert report["measured_features"] == 2
     assert report["operation_measurements"] == 1
     assert report["max_separation"]["delta_e"] > 30
-    assert "порог видимого следа" in report["limitations"][0]
+    assert "visible-mark threshold" in report["limitations"][0]
     assert [r["name"] for r in report["rows"] if r["role"] == "test feature"] == [x["name"] for x in plans.get_plan(store, made["plan_id"])["layers"][:2]]
     assert report["operation_rows"][0]["name"] == "Cleaning witness"
     assert [r["pair_id"] for r in capability_results.for_device(store, laser["id"])] == [pair_id]
@@ -74,7 +74,7 @@ def test_capability_findings_are_available_in_the_pair_report_and_device_api(tmp
         report = client.get(f"/api/pairs/{pair_id}/report").json()
         history = client.get(f"/api/devices/{laser['id']}/capability-results").json()
         assert report["capability"]["test_type"] == "hatch_interval"
-        assert report["capability"]["finding"].startswith("Самые различающиеся")
+        assert report["capability"]["finding"].startswith("Most different")
         assert history[0]["pair_id"] == pair_id and history[0]["lens"]["id"] == lens["id"]
         assert history[0]["material"]["batch"] == "API-19"
 
@@ -87,8 +87,8 @@ def test_compact_capability_reports_line_evidence_without_color_tolerance_column
     _, pair_id = accepted_capability_pair(store, laser, material, "compact_capability", with_line_metrics=True)
     report = analysis.report_for_pair(store, pair_id)
     assert report["capability"]["line_response"]["visible"] == 1
-    assert "1 из 2" in report["capability"]["finding"]
-    assert any("кандидаты для повторной проверки" in signal for signal in report["capability"]["signals"])
+    assert "1 of 2" in report["capability"]["finding"]
+    assert any("candidates for retesting" in signal for signal in report["capability"]["signals"])
     assert any("Q-Pulse" in step for step in report["capability"]["next_steps"])
     assert not any("delta E tolerance" in note for note in report["limitations"])
     use_cases = {item["purpose"]: item for item in report["capability"]["use_cases"]}
