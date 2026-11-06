@@ -141,13 +141,13 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   out.editorTabs = edTabs;
 """)
     assert has_class(out["root"], "workspace") and has_class(out["root"], "vw-work")
-    assert [name for name, _ in out["first"]] == ["Разбиение", "Цвета", "AI", "Варианты", "Результат", "Файл"]
-    assert out["first"] == [["Разбиение", "false"], ["Цвета", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
+    assert [name for name, _ in out["first"]] == ["Разбиение", "Document colors", "AI", "Варианты", "Результат", "Файл"]
+    assert out["first"] == [["Разбиение", "false"], ["Document colors", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert "Векторная работа" in out["head"] and j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]
     assert out["back"] == "#/vector" and out["copied"] == "#/vector?plan=88" and out["afterFile"] == ["vw-tab-panel-file"]
-    assert out["editorTabs"] == ["Кисть", "Слои", "Цвета", "Фото", "Надписи"]
+    assert out["editorTabs"] == ["Кисть", "Слои", "Source colors", "Фото", "Надписи"]
 
 
 def has_class(classes: str, name: str) -> bool:
@@ -172,7 +172,7 @@ def test_the_colour_table_opens_in_a_window_and_the_ai_tab_says_when_the_library
   out.reason = ai.querySelectorAll('p').filter((p) => p.className === 'alert warn' && !p.hidden).map((p) => p.textContent);
 """)
     assert "исходный цвет и цвет титана" in out["window"] and "Изменить" in out["window"] and out["wide"] is True
-    assert out["lines"] == len(view["colours"]) and "показано" in out["window"]                  # one line per source colour (DEC-090)
+    assert out["lines"] == len(view["colours"]) and "showing" in out["window"]                  # one line per source colour (DEC-090)
     (opened,) = out["opened"]
     assert opened.startswith("Исходный цвет") and "Цвет титана" in opened and "Рецепт" in opened
     assert out["disabled"] is True and len(out["reason"]) == 1 and "библиотека" in out["reason"][0] and "OPENAI_API_KEY" not in out["reason"][0]
@@ -305,7 +305,7 @@ def test_a_refused_rename_keeps_the_dialog_open_and_can_be_tried_again(work, job
 """)
     # the refusal of the server is said under the dialog's field, not in a toast; the name typed stays and a second try is sent
     assert out["posts"] == 2 and out["open"] is True and out["title"] == j["name"] and out["toasts"] == []
-    assert out["beside"][1] == "Another" and "Назовите план" in out["said"][0] and "осталось в форме" in out["said"][0]
+    assert out["beside"][1] == "Another" and "give the plan a name" in out["said"][0] and "remain in the form" in out["said"][0]
 
 
 @node
@@ -403,9 +403,9 @@ def test_a_wrong_size_is_said_beside_its_box_with_nothing_sent_and_what_was_type
   await byText(d, 'button', 'Изменить размер').dispatch('click'); await tick();
   out.letters = [posts().length, said()];
 """)
-    assert out["negative"][0] == 0 and "Допустимо" in out["negative"][1][0] and "Введено: -5" in out["negative"][1][0]
+    assert out["negative"][0] == 0 and "Allowed" in out["negative"][1][0] and "Entered: -5" in out["negative"][1][0]
     assert out["negative"][2:] == ["-5", "true", True]
-    assert out["empty"] == [0, ["Заполните это поле"]]
+    assert out["empty"] == [0, ["Complete this field"]]
     assert out["letters"][0] == 0 and len(out["letters"][1]) == 1
 
 
@@ -442,10 +442,10 @@ def test_the_split_colours_the_colour_settings_and_the_ai_description_are_checke
   text.value = 'x'.repeat(401); await text.dispatch('input'); await go.dispatch('click'); await tick();
   out.longText = [posted() - mark, said(labelled('Своё описание')), text.value.length];
 """)
-    assert out["colours"][:2] == [True, 0] and "Допустимо" in out["colours"][2][0] and "Введено: 99" in out["colours"][2][0]
+    assert out["colours"][:2] == [True, 0] and "Allowed" in out["colours"][2][0] and "Entered: 99" in out["colours"][2][0]
     assert out["colours"][3:] == ["99", "true"]
     assert out["asked"] == [True, []]
-    assert out["time"][0] == 0 and "Введено: 0" in out["time"][1][0] and out["time"][2] == "0"
+    assert out["time"][0] == 0 and "Entered: 0" in out["time"][1][0] and out["time"][2] == "0"
     assert out["blankText"] == [0, ["Опишите, как должна выглядеть раскраска"], False]
     assert out["longText"][0] == 0 and "400" in out["longText"][1][0] and out["longText"][2] == 401
 
@@ -474,6 +474,6 @@ def test_the_tolerance_and_the_threshold_of_a_silhouette_work_are_checked_beside
   await byText(tree, 'button', 'Применить порог').dispatch('click'); await tick(); await tick();
   out.refused = [posts().length, thr.value, thr.getAttribute('aria-invalid'), said('Порог ΔE')];
 """)
-    assert out["tolerance"][0] == 0 and "Введено: -1" in out["tolerance"][1] and out["tolerance"][2:] == ["-1", "true"]
-    assert out["empty"] == [0, "Заполните это поле"]
+    assert out["tolerance"][0] == 0 and "Entered: -1" in out["tolerance"][1] and out["tolerance"][2:] == ["-1", "true"]
+    assert out["empty"] == [0, "Complete this field"]
     assert out["refused"][:3] == [1, "4", "true"] and out["refused"][3]                                      # sent once; the number stays, the refusal stands under it

@@ -88,15 +88,15 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
     out = run(tmp_path, plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0}, by_colour=True, colour_choice="nearest", contours=True),
                               zone(2, 4, "jarvis", {**SETTINGS, "min_power": 20.0, "power": 20.0}, regions=("r4",), by_colour=True),
                               zone(3, 5, "grayscale", None, problem="the width of the picture must be 1..1000 mm")]))
-    assert out["rows"] == ["C02 P50-F1950-V1800-I0.01областей 1", "C03 Photo 1 grayscale P29Фотозона 1 · Градации серогообластей 2",
-                           "C04 Photo 2 jarvis P20Фотозона 2 · Джарвисобластей 1", "Фотозона 3Фотозона 3 · Градации серогоне гравируетсяобластей 2"]
+    assert out["rows"] == ["C02 P50-F1950-V1800-I0.01областей 1", "C03 Photo 1 grayscale P29Фотозона 1 · Grayscaleобластей 2",
+                           "C04 Photo 2 jarvis P20Фотозона 2 · Jarvisобластей 1", "Фотозона 3Фотозона 3 · Grayscaleне гравируетсяобластей 2"]
     layer, gray, dots, bad = out["details"]
     assert layer.startswith("50.0 % · 1950.0 кГц · 1800 мм/с · Q-Pulse 2 нс · шаг заливки 0.0100 мм · 1 проход(а)")
     assert "Прогнозный цвет—" in layer and layer.endswith("Областей1")                           # no prediction: said, not left out
     assert gray.startswith("Min 2.0 % – Max 29.0 % · 60.0 кГц · 150 мм/с · Q-Pulse 350 нс · шаг строк 0.0212 мм · 1 проход(а)")
-    assert gray.endswith("Изображение (Image), режим «Градации серого»: картинка работы в областях зоны, вне зоны прозрачна; "
+    assert gray.endswith("Изображение (Image), режим «Grayscale»: картинка работы в областях зоны, вне зоны прозрачна; "
                          "серые подобраны под цвета: ближайший цвет · контуры")                         # how its greys are chosen (0.23.0)
-    assert dots.startswith("точки 20.0 % · 60.0 кГц") and dots.endswith("режим «Джарвис»: картинка работы в областях зоны, вне зоны прозрачна")
+    assert dots.startswith("точки 20.0 % · 60.0 кГц") and dots.endswith("режим «Jarvis»: картинка работы в областях зоны, вне зоны прозрачна")
     assert bad == "the width of the picture must be 1..1000 mm"
     assert out["chips"] == [["/api/vector/22/photo/1.png?v=k1", "vw-ed-zone-chip"], ["/api/vector/22/photo/2.png?v=k2", "vw-ed-zone-chip"]]
     assert out["pictures"] == [["/api/vector/22/photo/1.png?v=k1", "Фотозона 1", "plan-zone-pic"], ["/api/vector/22/photo/2.png?v=k2", "Фотозона 2", "plan-zone-pic"]]
@@ -107,7 +107,7 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
 @node
 def test_a_work_engraved_only_as_photo_zones_still_has_its_layers_and_its_export(tmp_path):
     out = run(tmp_path, plan([zone(1, 2, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0})], layers=False))
-    assert out["rows"] == ["C02 Photo 1 grayscale P29Фотозона 1 · Градации серогообластей 2"] and out["export"] is False
+    assert out["rows"] == ["C02 Photo 1 grayscale P29Фотозона 1 · Grayscaleобластей 2"] and out["export"] is False
 
 
 def layers(n):
