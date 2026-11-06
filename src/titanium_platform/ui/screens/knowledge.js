@@ -1,24 +1,21 @@
-/* Знание о цвете: стадия, доказательства, история и решения оператора (REQ-005, DEC-006, DEC-011).
-   В производство — только явное действие; автоматически стадия не понижается; «под вопросом» можно подтвердить или понизить вручную.
-   Страница на один экран (REQ-044, DEC-080): слева сведения и решения, справа история и наблюдения-основания; длинное прокручивается в своей панели. */
+/* Color knowledge: evidence, history and operator decisions (REQ-005, DEC-006, DEC-011). Promotion to production requires explicit approval. */
 'use strict';
 const KnowledgeView = (() => {
   const {h, btn, field, link, pill, get, post, modal, num, labText, swatch, facts} = App;
-  const STAGE = {measured: 'Измерено', candidate: 'Кандидат', repeated: 'Повторено', validated: 'Валидировано', production: 'Производственное'};
-  const EVENT = {created: 'создано', promoted: 'повышено автоматически', questioned: 'помечено «под вопросом»', approved: 'утверждено в производство',
-    demoted: 'понижено вручную', confirmed: 'флаг снят', rollback: 'откат'};
-  const stab = (s) => (s.assessed ? `дисперсия ${num(s.variance)}` : 'не оценена');
-  /** Повторяемость стенда (REQ-009): расхождение снимков одной гравировки; есть только у пересъёмок, скорректированных по карте. */
+  const STAGE = {measured: 'Measured', candidate: 'Candidate', repeated: 'Repeated', validated: 'Validated', production: 'Production'};
+  const EVENT = {created: 'created', promoted: 'promoted automatically', questioned: 'marked questioned', approved: 'approved for production',
+    demoted: 'demoted manually', confirmed: 'flag cleared', rollback: 'rollback'};
+  const stab = (s) => (s.assessed ? `variance ${num(s.variance)}` : 'not assessed');
+  /** Repeatability compares chart-corrected photographs of the same engraving (REQ-009). */
   const rig = (r) => (r && r.assessed
-    ? `ΔE ${num(r.mean_delta_e)} в среднем, до ${num(r.max_delta_e)} · снимков одной гравировки: ${r.photos}`
-    : 'не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте');
-  const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с`;
+    ? `ΔE ${num(r.mean_delta_e)} average, up to ${num(r.max_delta_e)} · photographs of one engraving: ${r.photos}`
+    : 'not assessed: requires repeat photographs of one engraving corrected using a reference chart');
+  const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} kHz · ${num(p.speed, 0)} mm/s`;
 
-  /** Кнопка, открывающая окно решения; после успеха экран перерисовывается. ``form`` (Forms.create()) — поля решения: окно остаётся открытым, пока
-      они не верны, а отказ сервера показан под ними, с набранным (ux-save-feedback-p0, REQ-003); ``run(values)`` получает прочитанные значения. */
+  /** Open a decision dialog, validate fields, and report server refusals without discarding input. */
   function decision(label, body, run, cls, form = null) {
     return btn(label, () => modal(label, h('div', {class: 'stack'}, ...body, form ? form.error : null), [
-      {label: 'Отмена', run: (m) => m.close()},
+      {label: 'Cancel', run: (m) => m.close()},
       {label, cls: cls || 'primary', run: async (m) => {
         const values = form ? form.collect() : {};
         if (!values) return;
@@ -30,38 +27,37 @@ const KnowledgeView = (() => {
   function actions(k, kid) {
     const acts = [];
     if (k.stage === 'validated') {
-      acts.push(decision('Утвердить для производства', [h('p', {}, 'Производственным цвет становится только по вашему явному действию.')],
+      acts.push(decision('Approve for production', [h('p', {}, 'A color becomes production-ready only through your explicit approval.')],
         () => post(`/knowledge/${kid}/approve`, {confirm: true})));
     }
     if (k.stage === 'production') {
       const form = Forms.create();
       const to = h('select', {}, ['validated', 'repeated', 'candidate', 'measured'].map((x) => h('option', {value: x}, STAGE[x])));
-      acts.push(decision('Понизить вручную', [form.add('to', 'Новая стадия', to, {required: true}),
-        form.add('why', 'Причина', h('input', {placeholder: 'причина'}), {raw: true, help: 'необязательно; без причины в истории будет «manual demotion»'})],
+      acts.push(decision('Demote manually', [form.add('to', 'New stage', to, {required: true}),
+        form.add('why', 'Reason', h('input', {placeholder: 'reason'}), {raw: true, help: 'optional; without a reason, history records “manual demotion”'})],
       (v) => post(`/knowledge/${kid}/demote`, {confirm: true, to_stage: v.to, reason: v.why}), 'danger', form));
     }
     if (k.counted_from) {
-      acts.push(decision('Отменить «с последней гравировки»', [h('p', {}, 'Старые гравировки этого рецепта снова будут считаться; знание, выводы и работы '
-        + 'пересчитаются.')], () => post(`/exclusions/${k.counted_from.id}/revoke`, {})));
+      acts.push(decision('Undo “count from last engraving”', [h('p', {}, 'Older engravings of this recipe will count again; knowledge, findings and work '
+        + 'will be recalculated.')], () => post(`/exclusions/${k.counted_from.id}/revoke`, {})));
     }
     if (k.questioned) {
-      acts.push(decision('Подтвердить запись', [h('div', {class: 'alert warn'}, I18N.tr(k.doubt.reason)),
+      acts.push(decision('Confirm record', [h('div', {class: 'alert warn'}, I18N.tr(k.doubt.reason)),
         SourceRefs.observations(k.doubt.observation_ids)], () => post(`/knowledge/${kid}/confirm-questioned`)));
     }
     return acts;
   }
 
-  /** The operator's «Считать с последней гравировки» on this recipe (act-on-findings REQ-002): which engraving it counts from, how many older
-      ones do not count. */
+  /** Show the operator’s count-from decision and excluded older engravings. */
   function countedFrom(x) {
     const kept = x.kept || {};
-    const at = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '—');
+    const at = (iso) => (iso ? new Date(iso).toLocaleDateString('en-US') : '—');
     const photos = kept.pair_ids || [];
     const long = photos.length > SourceRefs.SHORT;                 // a few photographs are named in the sentence; many are a count with a list (ux-growing-collections-p0 REQ-002)
-    return h('div', {class: 'alert warn small'}, `Считается с гравировки${kept.title ? ` «${kept.title}»` : ''} от ${at(kept.when)}`
-      + (photos.length && !long ? ` (фото № ${photos.join(', ')})` : '') + `; старых не считается: ${(x.engraving_ids || []).length}. `
-      + `Решение оператора от ${at(x.created_at)}` + (x.note ? `: «${x.note}»` : '') + '.',
-    long ? SourceRefs.photos(photos, {label: 'Фото этой гравировки'}) : null);
+    return h('div', {class: 'alert warn small'}, `Counts from engraving${kept.title ? ` “${kept.title}”` : ''} dated ${at(kept.when)}`
+      + (photos.length && !long ? ` (photos #${photos.join(', #')})` : '') + `; older engravings excluded: ${(x.engraving_ids || []).length}. `
+      + `Operator decision dated ${at(x.created_at)}` + (x.note ? `: “${x.note}”` : '') + '.',
+    long ? SourceRefs.photos(photos, {label: 'Photographs of this engraving'}) : null);
   }
 
   async function render(kid) {
@@ -72,31 +68,31 @@ const KnowledgeView = (() => {
     const back = `/colors?device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`;
     const ids = s ? s.observation_ids : [];
     return h('div', {class: 'os kn'},
-      h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#' + back}, '← К модели цвета'), h('h2', {}, 'Знание о цвете'), pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''),
-        h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: `#/setup?tab=rules&device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`}, 'Правила оценки')),
-      k.questioned ? h('div', {class: 'alert bad kn-alert'}, [h('strong', {}, 'Под вопросом. '), I18N.tr(k.doubt.reason)]) : null,
+      h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#' + back}, '← Back to color model'), h('h2', {}, 'Color knowledge'), pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : ''),
+        h('span', {class: 'spacer'}), h('a', {class: 'btn btn-small', href: `#/setup?tab=rules&device=${k.device_id}&lens=${App.lensParam(k.lens_id)}`}, 'Assessment rules')),
+      k.questioned ? h('div', {class: 'alert bad kn-alert'}, [h('strong', {}, 'Questioned. '), I18N.tr(k.doubt.reason)]) : null,
       h('div', {class: 'os-body kn-body'},
-        h('section', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Сведения')),
+        h('section', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Details')),
           h('div', {class: 'os-scroll stack'}, facts([
-            ['Стадия', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')],
-            ['Параметры', params(k.parameters) + ` · импульс ${k.parameters.pulse_width} · интервал ${k.parameters.line_interval} · проходов ${k.parameters.passes}`]]),
+            ['Stage', pill(STAGE[k.stage], k.stage === 'production' ? 'ok' : '')],
+            ['Settings', params(k.parameters) + ` · pulse ${k.parameters.pulse_width} · spacing ${k.parameters.line_interval} · passes ${k.parameters.passes}`]]),
           // REQ-001 of ux-evidence-summaries-p0: the colour and how far it is trusted on the first level (every observation of an entry is
           // chart-corrected); Lab and the figures of the calculation are one fold away
           s ? EvidenceSummary.summary({...s, measurement: 'calibrated', engravings: s.independent_engravings}, {lead: swatch(s.lab)}) : null,
-          EvidenceSummary.disclosure('Цифры расчёта: цвет Lab, уверенность, ожидаемая ошибка', facts([
-            ['Цвет', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
-            ['Независимых гравировок', s ? s.independent_engravings : '—'], ['Уверенность', s ? num(s.confidence) : '—'],
-            ['Совпали по цвету', s ? App.agreed(s.agreement) + (s.caution ? ` · ${App.CAUTION[s.caution]}` : '') : '—'],
-            ['Ожидаемая ошибка ΔE', s ? num(s.expected_delta_e) : '—'], ['Стабильность', s ? stab(s.stability) : '—'],
-            ['Повторяемость стенда', s ? rig(s.rig_repeatability) : '—']])),
+          EvidenceSummary.disclosure('Calculation details: Lab color, confidence and expected error', facts([
+            ['Color', s ? h('span', {}, swatch(s.lab), labText(s.lab)) : '—'],
+            ['Independent engravings', s ? s.independent_engravings : '—'], ['Confidence', s ? num(s.confidence) : '—'],
+            ['Color agreement', s ? App.agreed(s.agreement) + (s.caution ? ` · ${App.CAUTION[s.caution]}` : '') : '—'],
+            ['Expected ΔE error', s ? num(s.expected_delta_e) : '—'], ['Stability', s ? stab(s.stability) : '—'],
+            ['Capture setup repeatability', s ? rig(s.rig_repeatability) : '—']])),
           s && s.attribution_note ? h('div', {class: 'alert warn'}, I18N.tr(s.attribution_note)) : null,
           k.counted_from ? countedFrom(k.counted_from) : null, h('div', {class: 'row'}, actions(k, kid)),
-          // «знание», «стадия», «основание» through what they are for; the technical number is in the fold (ux-save-feedback-p0, REQ-003)
+          // Explain the terms by their purpose; the technical identifier stays in the disclosure (ux-save-feedback-p0, REQ-003).
           h('div', {class: 'stack kn-terms'}, Terms.note('knowledge', kid), Terms.note('stage'), Terms.note('basis')))),
         h('div', {class: 'kn-right'},
-          h('section', {class: 'os-col kn-history'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'История'), pill(k.history_total ?? k.history.length)), h('div', {class: 'os-scroll'}, history.el)),
-          s ? h('section', {class: 'os-col kn-evidence'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Наблюдения-основания'), pill(ids.length)),
-            h('div', {class: 'os-scroll'}, SourceRefs.observations(ids, {label: 'Номера наблюдений'}))) : null)));
+          h('section', {class: 'os-col kn-history'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'History'), pill(k.history_total ?? k.history.length)), h('div', {class: 'os-scroll'}, history.el)),
+          s ? h('section', {class: 'os-col kn-evidence'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Supporting observations'), pill(ids.length)),
+            h('div', {class: 'os-scroll'}, SourceRefs.observations(ids, {label: 'Observation IDs'}))) : null)));
   }
   return {render, STAGE, stab, rig, params};
 })();

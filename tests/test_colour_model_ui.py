@@ -116,7 +116,7 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
   out.opened = right.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   const det = right.querySelectorAll('.lst-det').find((d) => !d.hidden);
   out.signals = det.querySelectorAll('.ev-signal').map((p) => p.textContent);
-  out.fold = det.querySelectorAll('details').map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.textContent.includes('стабильность дисперсия 1.50')]);
+  out.fold = det.querySelectorAll('details').map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.textContent.includes('стабильность variance 1.50')]);
   await byText(tree, 'button', 'Целевой цвет').dispatch('click');
   out.dialog = ctx.document.body.querySelector('.modal').getAttribute('aria-label');
 """)
@@ -132,9 +132,9 @@ def test_the_model_page_is_one_screen_with_the_sets_on_the_left_the_map_in_the_m
     assert out["plot"] == 1 and out["circles"] == 3                                                       # one map, a circle for every measured colour
     assert "Модель цветовых параметров" in out["right"] and out["rows"] == 4
     assert out["knowledgeLinks"] == [["Открыть", f"#/knowledge/{k}"] for k in (1, 2, 3, 4)]               # every line opens its entry's page
-    assert "31.0 % · 300 кГц · 1000 мм/с · L 41.0 · a 2.0 · b -3.0Измерено" in out["right"]                   # one line: settings, colour, stage
-    assert len(out["opened"]) == 1 and "31.0 % · 300 кГц · 1000 мм/с · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
-    assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность дисперсия 1.50" in out["opened"][0]
+    assert "31.0 % · 300 kHz · 1000 mm/s · L 41.0 · a 2.0 · b -3.0Measured" in out["right"]                   # one line: settings, colour, stage
+    assert len(out["opened"]) == 1 and "31.0 % · 300 kHz · 1000 mm/s · Q-Pulse 4 нс · шаг 0.003 мм · 1 проход(а)" in out["opened"][0]
+    assert "независимых 1" in out["opened"][0] and "уверенность —" in out["opened"][0] and "стабильность variance 1.50" in out["opened"][0]
     assert out["signals"][0] == "reference chart corrected" and out["signals"][-1] == "1 independent engraving"       # the signals first (REQ-001) ...
     assert out["fold"] == [[False, "Цифры: цвет Lab, уверенность, ошибка ΔE, стабильность", True]]          # ... the figures in a closed fold
     assert out["tabs"] == 0                                                                               # the model is a single list, no tabs
@@ -299,7 +299,7 @@ def test_the_model_shows_one_page_of_its_entries_with_the_stage_doubt_and_task_f
   out.first = {rows: right.querySelectorAll('.lst-row').length, count: count(), more: more(), chips: chips(), ids: ids(),
     selects: right.querySelectorAll('label').filter((l) => has(l, 'lst-select')).map((l) => l.querySelector('span').textContent)};
   out.bare = right.querySelectorAll('.lst-main')[4].textContent;
-  await chip('Производственное'); out.production = [count(), ids()];
+  await chip('Production'); out.production = [count(), ids()];
   await chip('All');
   await choose('Под вопросом', 'yes'); out.questioned = [count(), ids()];
   await right.querySelectorAll('.lst-main')[0].dispatch('click'); await tick(); out.doubt = opened();
@@ -314,10 +314,10 @@ def test_the_model_shows_one_page_of_its_entries_with_the_stage_doubt_and_task_f
     assert out["head"] == "Модель цветовых параметров45"                                                  # the count of the whole model
     first = out["first"]
     assert first["rows"] == 20 and first["count"] == "showing 20 of 45" and first["more"] == "Show 20 more"     # one page, not 45 lines
-    assert first["chips"] == ["All · 45", "Измерено · 32", "Валидировано · 8", "Производственное · 5"]          # a stage with no entry is not offered
+    assert first["chips"] == ["All · 45", "Measured · 32", "Validated · 8", "Production · 5"]          # a stage with no entry is not offered
     assert first["selects"] == ["Под вопросом", "Задача", "Sort order"]
     assert first["ids"][:13] == [9, 18, 27, 36, 45, 5, 10, 15, 20, 25, 30, 35, 40]                           # the further an entry got, the higher
-    assert out["bare"] == "75.0 % · 300 кГц · 1000 мм/сПроизводственное"                                     # an entry without evidence: no colour
+    assert out["bare"] == "75.0 % · 300 kHz · 1000 mm/sProduction"                                     # an entry without evidence: no colour
     assert out["production"] == ["showing 5 of 5", [9, 18, 27, 36, 45]]
     assert out["questioned"] == ["showing 6 of 6", [35, 7, 14, 21, 28, 42]]
     assert len(out["doubt"]) == 1 and "Под вопросом. a doubt" in out["doubt"][0] and "Задача: Fill" in out["doubt"][0]
@@ -396,19 +396,19 @@ def test_the_knowledge_page_is_two_columns_with_the_facts_and_decisions_on_the_l
   out.refs = cols[2].querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
   out.note = tree.querySelectorAll('div').filter((d) => has(d, 'alert') && !has(d, 'kn-alert')).map((d) => d.textContent);
 """)
-    assert out["root"].split() == ["os", "kn"] and "Знание о цвете" in out["head"] and "Валидировано" in out["head"]
-    assert ["← К модели цвета", "#/colors?device=1&lens=2"] in out["links"] and ["Правила оценки", "#/setup?tab=rules&device=1&lens=2"] in out["links"]
-    assert len(out["alert"]) == 1 and out["alert"][0].startswith("Под вопросом. a doubt") and any(n.startswith("an attribution note") for n in out["note"])
+    assert out["root"].split() == ["os", "kn"] and "Color knowledge" in out["head"] and "Validated" in out["head"]
+    assert ["← Back to color model", "#/colors?device=1&lens=2"] in out["links"] and ["Assessment rules", "#/setup?tab=rules&device=1&lens=2"] in out["links"]
+    assert len(out["alert"]) == 1 and out["alert"][0].startswith("Questioned. a doubt") and any(n.startswith("an attribution note") for n in out["note"])
     assert out["columns"] == ["os-col", "os-col kn-history", "os-col kn-evidence"]
-    assert out["facts"] == ["Стадия", "Параметры", "Цвет", "Независимых гравировок", "Уверенность", "Совпали по цвету", "Ожидаемая ошибка ΔE", "Стабильность", "Повторяемость стенда"]
+    assert out["facts"] == ["Stage", "Settings", "Color", "Independent engravings", "Confidence", "Color agreement", "Expected ΔE error", "Stability", "Capture setup repeatability"]
     assert out["signals"] == ["reference chart corrected", "2 independent engravings"]            # the entry carries no agreement or sources: only what it has is said
-    assert out["fold"] == [[False, "Цифры расчёта: цвет Lab, уверенность, ожидаемая ошибка", 7]]      # Lab and the figures are one fold away, closed
-    assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 кГц · 833 мм/с · импульс 4 · интервал 0.003 · проходов 1" in out["factText"]
-    assert "не оценена: её дают только пересъёмки одной гравировки, скорректированные по эталонной карте" in out["factText"]
-    assert "Утвердить для производства" in out["buttons"] and "Подтвердить запись" in out["buttons"]            # the operator's decisions stay on the page
+    assert out["fold"] == [[False, "Calculation details: Lab color, confidence and expected error", 7]]      # Lab and the figures are one fold away, closed
+    assert "L 42.3 · a 2.1 · b -16.1" in out["factText"] and "40.0 % · 330 kHz · 833 mm/s · pulse 4 · spacing 0.003 · passes 1" in out["factText"]
+    assert "not assessed: requires repeat photographs of one engraving corrected using a reference chart" in out["factText"]
+    assert "Approve for production" in out["buttons"] and "Confirm record" in out["buttons"]            # the operator's decisions stay on the page
     assert out["buttons"].count("Roll back transition") == 1                                                      # only a transition can be rolled back
-    assert "История2" in out["history"] and out["rows"] == 2 and "повышено автоматически" in out["history"] and "Кандидат" in out["history"]      # a line per event, the newest first
-    assert "Наблюдения-основания3" in out["evidence"] and "Номера наблюдений: 3" in out["evidence"]
+    assert "History2" in out["history"] and out["rows"] == 2 and "promoted automatically" in out["history"] and "Candidate" in out["history"]      # a line per event, the newest first
+    assert "Supporting observations3" in out["evidence"] and "Observation IDs: 3" in out["evidence"]
     assert out["refs"] == [["#480", "#/analysis/580"], ["#481", "#/analysis/581"], ["#482", "#/analysis/582"]]       # each number is a link to its photograph
 
 
@@ -436,7 +436,7 @@ def test_the_knowledge_page_of_a_production_colour_offers_the_manual_demotion_an
   out.buttons = tree.querySelectorAll('button').map((b) => b.textContent);
 """)
     assert "#/colors?device=1&lens=unknown" in out["links"] and "#/setup?tab=rules&device=1&lens=unknown" in out["links"]
-    assert "Понизить вручную" in out["buttons"] and "Утвердить для производства" not in out["buttons"]
+    assert "Demote manually" in out["buttons"] and "Approve for production" not in out["buttons"]
 
 
 @node
@@ -450,17 +450,17 @@ def test_a_recipe_counted_from_its_newest_engraving_says_from_which_and_offers_t
                               "kept": {"engraving_id": "e3", "title": "Big Plate", "pair_ids": [140], "when": "2026-10-24T09:00:00+00:00", "lab": [40, 2, -16]}}
     out = run(tmp_path, {**routes, "/api/exclusions/6/revoke": {"status": 200, "json": {"exclusion": {"id": 6}, "run_id": 70}}},
               {"id": "knowledge", "arg": 5}, """
-  out.line = tree.querySelectorAll('div').filter((d) => has(d, 'alert') && d.textContent.startsWith('Считается')).map((d) => d.textContent);
+  out.line = tree.querySelectorAll('div').filter((d) => has(d, 'alert') && d.textContent.startsWith('Counts from')).map((d) => d.textContent);
   ctx.document.body.append(tree);
-  await tree.querySelectorAll('button').find((b) => b.textContent === 'Отменить «с последней гравировки»').dispatch('click'); await tick();
+  await tree.querySelectorAll('button').find((b) => b.textContent === 'Undo “count from last engraving”').dispatch('click'); await tick();
   const modal = ctx.document.body.querySelector('.modal');
   out.text = modal.querySelector('p').textContent;
-  await modal.querySelectorAll('button').find((b) => b.textContent === 'Отменить «с последней гравировки»').dispatch('click'); await tick(); await tick();
+  await modal.querySelectorAll('button').find((b) => b.textContent === 'Undo “count from last engraving”').dispatch('click'); await tick(); await tick();
   out.sent = ctx.requests.filter((r) => r.path === '/api/exclusions/6/revoke').map((r) => r.method);
 """)
-    assert out["line"] == ["Считается с гравировки «Big Plate» от 24.10.2026 (фото № 140); старых не считается: 2. "
-                           "Решение оператора от 25.10.2026: «старые до чистки линзы»."]
-    assert out["text"].startswith("Старые гравировки этого рецепта снова будут считаться") and out["sent"] == ["POST"]
+    assert out["line"] == ["Counts from engraving “Big Plate” dated 10/24/2026 (photos #140); older engravings excluded: 2. "
+                           "Operator decision dated 10/25/2026: “старые до чистки линзы”."]
+    assert out["text"].startswith("Older engravings of this recipe will count again") and out["sent"] == ["POST"]
 
 
 # -- the frame ---------------------------------------------------------------------------------------------------------------------------

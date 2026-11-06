@@ -170,10 +170,10 @@ def test_the_knowledge_page_reads_the_first_page_of_the_history_and_counts_the_o
           out.second = {{count: count(history), pages: requests('/history').length}};
         """, ("KnowledgeView",))
     assert out["history"]["rows"] == 20 and out["history"]["count"] == "showing 20 of 45" and out["history"]["more"]
-    assert out["history"]["head"] == "История45"                                                         # the size of the history is told without reading it all
+    assert out["history"]["head"] == "History45"                                                         # the size of the history is told without reading it all
     assert out["history"]["entry"] == [f"/api/knowledge/{kid}?history_limit=0"]                         # the entry comes without its events
     assert out["history"]["pages"] == ["offset=0&limit=20&order=newest"]
     assert behind > 5 and out["evidence"]["count"] == str(behind) and out["evidence"]["drawn"] == 0 and out["evidence"]["toggle"]    # a count, the numbers on request
-    assert out["evidence"]["head"] == f"Наблюдения-основания{behind}" and out["evidence"]["text"].startswith("Номера наблюдений: ")
+    assert out["evidence"]["head"] == f"Supporting observations{behind}" and out["evidence"]["text"].startswith("Observation IDs: ")
     assert out["second"] == {"count": "showing 40 of 45", "pages": 2}
     assert out["terms"] == [["What is a knowledge record?", True], ["What is a stage?", False], ["What is evidence?", False]]
