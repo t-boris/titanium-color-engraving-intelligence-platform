@@ -1,33 +1,33 @@
-/* Пояснения к настройкам контроллера EZCAD: названия разделов и что делает каждая настройка. Только текст, без логики. */
+/* EZCAD controller setting categories and descriptions. */
 'use strict';
 const GlossaryController = (() => {
-  const TAB = {field: 'Поле', laser_control: 'Лазер', port: 'Порты', other: 'Прочее', workspace: 'Рабочая область'};
+  const TAB = {field: 'Field', laser_control: 'Laser', port: 'Ports', other: 'Other', workspace: 'Workspace'};
   const HELP = {
-    'Field Size': 'Размер рабочего поля линзы, мм. Скан-голова рисует только внутри квадрата такой стороны.',
-    'Offset X': 'Сдвиг поля по X, мм. 0 — центр поля совпадает с центром линзы.', 'Offset Y': 'Сдвиг поля по Y, мм.',
-    'Angle': 'Поворот всего поля, градусы. 0 — без поворота.', 'After Mark Goto': 'Куда перейти после гравировки. «No Move» — зеркала остаются где закончили.',
-    'Special pos. X': 'Особая позиция X, мм: куда уходит луч, если выбрано «Special pos».', 'Special pos. Y': 'Особая позиция Y, мм.',
-    'Galvo 1 Scale': 'Поправка размера по оси первого гальванометра. Подгоняет напечатанный размер к заданному; вписано от руки.',
-    'Galvo 2 Scale': 'Поправка размера по оси второго гальванометра; вписано от руки.',
-    'Laser type': 'Тип источника. «Fiber» — волоконный лазер.', 'Enable PWM signal': 'Включён ли сигнал частоты на лазер. Для импульсного лазера нужен.',
-    'Max PWM': 'Наибольшая частота повторения импульсов, которую контроллер разрешит, кГц.', 'Max PWM: рукописная пометка': 'Число, написанное от руки рядом с Max PWM; не прочитано, см. фото.',
-    'Min PWM': 'Наименьшая частота повторения, кГц.', 'Enable Tickle': 'Подпитка: слабые импульсы между метками, чтобы лазер не «остывал» и первый импульс был ровным.',
-    'Pulse Width': 'Ширина управляющего импульса на входе, мкс. Это не длительность импульса излучения: ту задаёт лазер.', 'Pulse Period': 'Частота слабых импульсов подпитки, кГц.',
-    'FPK Start power': 'Начальная мощность подавления первого импульса (First Pulse Killer), %.', 'FPK Increment power': 'Шаг роста мощности после первого импульса, %.',
-    'FirstPulseKiller': 'Время подавления «гигантского» первого импульса после паузы, мкс.', 'Fiber Serial': 'Протокол обмена с лазером, здесь IPG_YLP.',
-    'Open MO Delay': 'Задержка включения задающего генератора (MO) перед меткой, мс.', 'SPI Wave': 'Номер формы импульса для лазеров SPI; для JPT не используется.',
-    'Simmer Cur': 'Ток «дежурного» режима, %.', 'Analog MinV': 'Наименьшее аналоговое напряжение управления, В.', 'Analog MaxV': 'Наибольшее аналоговое напряжение, В.',
-    'VT1': 'Задержка аналогового управления 1, мкс.', 'VT2': 'Задержка аналогового управления 2, мкс.',
-    'Laser power IO: Port': 'Порт управления мощностью лазера.', 'Red Light Pointer IO: Outport': 'Выходной порт красной указки.', 'Red Light Pointer IO: Inport': 'Входной порт красной указки.',
-    'Marking IO: Outport': 'Выход «идёт гравировка».', 'Marking Finish IO: Outport': 'Выход «гравировка закончена».', 'Marking Finish IO: Pulse width': 'Длительность сигнала «закончено», мс.',
-    'Start Mark IO: Inport': 'Вход кнопки старта; вписано от руки.', 'Start Mark IO: Pulse Mode': 'Старт по импульсу, а не по уровню сигнала.',
-    'Door IO: Inport': 'Вход датчика дверцы.', 'Laser Ready IO: Inport': 'Вход «лазер готов».', 'Laser Ready IO: Outport': 'Выход «лазер готов».',
-    'Start Mark Delay': 'Пауза перед началом метки, мс.', 'Finish Mark Delay': 'Пауза после метки, мс.', 'Min Power Delay': 'Задержка при минимальной мощности, мс.',
-    'Max Power Delay': 'Задержка при максимальной мощности, мс.', 'Analog current FPK': 'Длительность аналогового управления FPK, мкс.',
-    'Red light pointer: light Speed': 'Скорость красной указки при обводке контура, мм/с.', 'Red light pointer: Offset Pos X': 'Сдвиг указки по X, мм; от руки.',
-    'Red light pointer: Offset Pos Y': 'Сдвиг указки по Y, мм; от руки.', 'Red light pointer: Size ScaleX': 'Масштаб указки по X: подгоняет контур указки под реальный размер; от руки.',
-    'Red light pointer: Size ScaleY': 'Масштаб указки по Y; от руки.', 'EZCAD version': 'Версия программы EZCAD.', 'Show workspace': 'Показывать рабочую область в окне.',
-    'Left bottom corner X': 'Левый нижний угол рабочей области по X, мм: −85 — половина поля 170 мм.', 'Left bottom corner Y': 'Левый нижний угол по Y, мм.',
-    'Size Width': 'Ширина рабочей области, мм.', 'Size Height': 'Высота рабочей области, мм.', 'Machine number (S/N)': 'Номер станка; вписан от руки, не прочитан.'};
+    'Field Size': 'Lens field size in mm. The scan head marks only within a square of this side length.',
+    'Offset X': 'Field offset along X in mm. At 0, the field center coincides with the lens center.', 'Offset Y': 'Field offset along Y in mm.',
+    'Angle': 'Rotation of the entire field in degrees. 0 means no rotation.', 'After Mark Goto': 'Where to move after marking. “No Move” leaves the mirrors at the end position.',
+    'Special pos. X': 'Special X position in mm: where the beam moves when “Special pos” is selected.', 'Special pos. Y': 'Special Y position in mm.',
+    'Galvo 1 Scale': 'Size correction along the first galvanometer axis, matching the marked size to the requested size; handwritten.',
+    'Galvo 2 Scale': 'Size correction along the second galvanometer axis; handwritten.',
+    'Laser type': 'Source type. “Fiber” means a fiber laser.', 'Enable PWM signal': 'Enables the frequency signal to the laser. Required for a pulsed laser.',
+    'Max PWM': 'Maximum pulse repetition frequency permitted by the controller, in kHz.', 'Max PWM: \u0440\u0443\u043a\u043e\u043f\u0438\u0441\u043d\u0430\u044f \u043f\u043e\u043c\u0435\u0442\u043a\u0430': 'Handwritten number beside Max PWM; not read, see the photo.',
+    'Min PWM': 'Minimum pulse repetition frequency in kHz.', 'Enable Tickle': 'Low-power pulses between marks keep the laser ready and make the first pulse consistent.',
+    'Pulse Width': 'Input control pulse width in µs. This is not the emitted pulse duration, which is set by the laser.', 'Pulse Period': 'Frequency of low-power tickle pulses in kHz.',
+    'FPK Start power': 'Initial First Pulse Killer power in percent.', 'FPK Increment power': 'Power increment after the first pulse in percent.',
+    'FirstPulseKiller': 'Duration of suppression of the oversized first pulse after a pause, in µs.', 'Fiber Serial': 'Laser communication protocol, here IPG_YLP.',
+    'Open MO Delay': 'Delay before enabling the master oscillator (MO) ahead of a mark, in ms.', 'SPI Wave': 'Pulse waveform number for SPI lasers; unused for JPT.',
+    'Simmer Cur': 'Standby current in percent.', 'Analog MinV': 'Minimum analog control voltage in V.', 'Analog MaxV': 'Maximum analog control voltage in V.',
+    'VT1': 'Analog control delay 1 in µs.', 'VT2': 'Analog control delay 2 in µs.',
+    'Laser power IO: Port': 'Laser power control port.', 'Red Light Pointer IO: Outport': 'Red pointer output port.', 'Red Light Pointer IO: Inport': 'Red pointer input port.',
+    'Marking IO: Outport': 'Marking in progress output.', 'Marking Finish IO: Outport': 'Marking complete output.', 'Marking Finish IO: Pulse width': 'Marking complete signal duration in ms.',
+    'Start Mark IO: Inport': 'Start button input; handwritten.', 'Start Mark IO: Pulse Mode': 'Start on a pulse rather than a signal level.',
+    'Door IO: Inport': 'Door sensor input.', 'Laser Ready IO: Inport': 'Laser ready input.', 'Laser Ready IO: Outport': 'Laser ready output.',
+    'Start Mark Delay': 'Delay before marking in ms.', 'Finish Mark Delay': 'Delay after marking in ms.', 'Min Power Delay': 'Delay at minimum power in ms.',
+    'Max Power Delay': 'Delay at maximum power in ms.', 'Analog current FPK': 'Duration of analog FPK control in µs.',
+    'Red light pointer: light Speed': 'Red pointer speed when tracing an outline, in mm/s.', 'Red light pointer: Offset Pos X': 'Pointer X offset in mm; handwritten.',
+    'Red light pointer: Offset Pos Y': 'Pointer Y offset in mm; handwritten.', 'Red light pointer: Size ScaleX': 'Pointer X scale, matching its outline to the actual size; handwritten.',
+    'Red light pointer: Size ScaleY': 'Pointer Y scale; handwritten.', 'EZCAD version': 'EZCAD software version.', 'Show workspace': 'Show the workspace in the window.',
+    'Left bottom corner X': 'Workspace lower-left X coordinate in mm: −85 is half of a 170 mm field.', 'Left bottom corner Y': 'Workspace lower-left Y coordinate in mm.',
+    'Size Width': 'Workspace width in mm.', 'Size Height': 'Workspace height in mm.', 'Machine number (S/N)': 'Machine serial number; handwritten and not read.'};
   return {TAB, HELP};
 })();

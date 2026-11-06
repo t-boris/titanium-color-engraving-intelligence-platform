@@ -1,5 +1,5 @@
-/* Работы: общий каталог векторных работ и фотогравировок (feature ux-work-catalog-p0). Строка каталога — это строка App.list (styles.css, .lst-*);
-   здесь только то, что нужно каталогу: миниатюра, ячейки строки, меню действий и вид «галерея» того же списка. */
+/* Works: the shared vector and photo engraving catalog (feature ux-work-catalog-p0). Catalog rows use App.list (styles.css, .lst-*);
+   these styles cover thumbnails, cells, action menus, and the gallery view of the same list. */
 .works-thumb {display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:48px;border-radius:8px;background:#0e1420;border:1px solid var(--line);overflow:hidden;
   color:var(--muted);font-weight:700}
 .works-thumb img {display:block;width:100%;height:100%;object-fit:contain}
@@ -16,7 +16,7 @@
 .works-view {display:inline-flex;gap:4px}
 .works-view .btn[aria-pressed=true] {background:var(--accent-soft);border-color:#6f86c4;color:var(--text)}
 
-/* the menu of a row and the «Новая работа» menu */
+/* the menu of a row and the “New work” menu */
 .works-list .lst-rows {overflow:visible}
 .works-menu-wrap {position:relative;display:inline-block}
 .works-menu {position:absolute;z-index:20;right:0;top:calc(100% + 4px);min-width:200px;display:flex;flex-direction:column;padding:4px;border:1px solid var(--line-2);border-radius:10px;
