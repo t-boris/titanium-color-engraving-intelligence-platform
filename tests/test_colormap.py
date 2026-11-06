@@ -97,7 +97,7 @@ def test_each_colour_says_where_it_came_from_and_with_which_settings(world):
     pid = pair_with(world, [WITNESS, (5, [20.0, 8.0, 21.0], 50.0, "test feature")])
     (p,) = colormap.collect(world["store"])["points"]
     assert p["pair_id"] == pid and p["layer_name"] == "C05" and p["photo"] == "photo3.png" and p["experiment"].startswith("eng-")
-    assert p["setup"] == f"laser:{world['laser']['id']}/lens:unknown" and p["setup_label"] == "JPT YDFLP-E-60-M7-M-R · линза неизвестна"
+    assert p["setup"] == f"laser:{world['laser']['id']}/lens:unknown" and p["setup_label"] == "JPT YDFLP-E-60-M7-M-R · lens unknown"
     assert p["material"] == "Grade 2 sheet · Grade 2" and p["parameters"]["power"] == 50.0
 
 
@@ -105,7 +105,7 @@ def test_filters_narrow_the_points_but_the_options_describe_everything(world):
     pair_with(world, [WITNESS, (1, [20.0, 8.0, 21.0], 50.0, "test feature")], seed=3)
     data = colormap.collect(world["store"], setup="laser:99/lens:unknown")
     assert data["points"] == [] and data["options"]["setups"] == [
-        {"key": f"laser:{world['laser']['id']}/lens:unknown", "label": "JPT YDFLP-E-60-M7-M-R · линза неизвестна",
+        {"key": f"laser:{world['laser']['id']}/lens:unknown", "label": "JPT YDFLP-E-60-M7-M-R · lens unknown",
          "device_id": world["laser"]["id"], "lens_id": None}]
     assert len(colormap.collect(world["store"], measurement="relative")["points"]) == 1
     assert colormap.collect(world["store"], measurement="calibrated")["points"] == []
@@ -152,7 +152,7 @@ def test_a_grayscale_work_gives_one_colour_per_step_of_its_grey_to_power_profile
     steps = [p for p in colormap.collect(world["store"])["points"] if p.get("source") == "tonal"]
     assert [p["parameters"]["power"] for p in steps] == [12.9, 9.5, 6.0] and not any(p["referenced"] for p in steps)
     assert all(p["parameters"]["frequency"] == 60.0 and p["parameters"]["speed"] == 128.0 and p["parameters"]["pulse_width"] == 300.0 for p in steps)
-    assert steps[0]["layer_name"] == "C07 · серый 0.30" and steps[0]["lab"] == [2.0, 0.1, -0.4]
+    assert steps[0]["layer_name"] == "C07 · gray 0.30" and steps[0]["lab"] == [2.0, 0.1, -0.4]
     assert colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3)["matches"] == []             # no reference: not part of the search
     found = colormap.search(world["store"], [7.2, -0.4, 1.9], limit=3, include_unreferenced=True)["matches"][0]
     assert found["parameters"]["power"] == 6.0 and found["source"] == "tonal"
@@ -334,7 +334,7 @@ def test_the_screen_shows_the_time_of_every_colour_filters_by_it_and_says_how_th
     from pathlib import Path
     screen = (Path(colormap.__file__).parent / "ui" / "screens" / "color-map.js").read_text(encoding="utf-8")
     assert "h('p', {class: 'muted'}, timeText(p))" in screen and "(оценка)" in screen          # every colour and every entry, an estimate
-    assert "'Не дольше, мин/см²'" in screen and "q.set('max_time_s_per_cm2', f.maxTime)" in screen   # stored in seconds
-    assert "placeholder: 'м:сс'" in screen and "value: f.maxTime ? mmss(f.maxTime) : ''" in screen   # shown as minutes:seconds
+    assert "'Maximum time, min/cm²'" in screen and "q.set('max_time_s_per_cm2', f.maxTime)" in screen   # stored in seconds
+    assert "placeholder: 'm:ss'" in screen and "value: f.maxTime ? mmss(f.maxTime) : ''" in screen   # shown as minutes:seconds
     assert "p.set('tolerance_de', f.tolerance)" in screen and "o.by === 'time_within_tolerance'" in screen
     assert "первыми идут самые быстрые" in screen

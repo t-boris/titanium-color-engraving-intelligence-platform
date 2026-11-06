@@ -63,12 +63,12 @@ NUMBERS = {"height_mm": (0.3, 500.0, 5.0), "width_pct": (10.0, 400.0, 100.0), "s
 CHOICES = {"align": ALIGNS, "layout": LAYOUTS, "letters": LETTERS, "backing": BACKINGS}
 FLAGS = ("inside", "flip")
 ENTRIES = ("entry_id", "backing_entry_id")
-DEFAULTS = {"text": "Надпись", "font": None, **{k: v[2] for k, v in NUMBERS.items()}, "align": "center", "layout": "line", "letters": "upright",
+DEFAULTS = {"text": "Lettering", "font": None, **{k: v[2] for k, v in NUMBERS.items()}, "align": "center", "layout": "line", "letters": "upright",
             "inside": False, "flip": False, "points": [], "entry_id": None, "gap_mm": 0.3, "backing": "none", "backing_entry_id": None}
 FIELDS = tuple(DEFAULTS)
 OPS = ("text_add", "text_set", "text_delete", "text_copy")
 COPY_SHIFT_MM = 3.0
-SAMPLE = "Надпись Abc"
+SAMPLE = "Lettering Abc"
 
 _lock = threading.Lock()
 _memo: OrderedDict = OrderedDict()
@@ -398,7 +398,7 @@ def _face_metrics(face: dict, font) -> tuple[float, float]:
     """The face's cap height and line height in font units (the cap height measured on «H» when the font does not give it)."""
     cap = face.get("cap")
     if not cap:
-        for char in "HНאA":
+        for char in "H\u041dאA":
             gid = font.get_nominal_glyph(ord(char))
             if gid:
                 extents = font.get_glyph_extents(gid)

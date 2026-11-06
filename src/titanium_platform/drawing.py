@@ -6,12 +6,12 @@ distant powers (grey-blue next to tan, a black forehead), and the plain picture 
 shadows on the drop to dark. Two steps keep the drawing. Both measure on the titanium (millimetres, or a share of the picture's width for its
 edges), never in pixels, so the preview (at preview size) and the LightBurn file (at the layer's DPI) are the same picture:
 
-* :func:`choose` ("Сохранить рисунок"): the picture's tones laid along one path of the scale (:func:`path`): from its lightest grey to its
+* :func:`choose` ("Preserve drawing"): the picture's tones laid along one path of the scale (:func:`path`): from its lightest grey to its
   darkest in power order, lightness never rising, the colour moving as little as it can at each step. Neighbouring tones get neighbouring
   powers, so a gradient of the skin stays a gradient and a hue swing of the scale at one lightness (a blue bump) is skipped. The picture's
   lightness is smoothed over ``SMOOTH_MM`` keeping its edges (JPEG blocks and skin grain would become spots), its contrast over ``DETAIL_MM``
   raised by ``DETAIL_GAIN`` (lips, eyes, the nose's shading), stretched over the path (``STRETCH``) with mid-tones lifted (``MIDTONES``);
-  each pixel takes the grey of the path at its lightness. The picture's own hues are not matched: that is "Ближайший цвет".
+  each pixel takes the grey of the path at its lightness. The picture's own hues are not matched: that is "Nearest color".
 * :func:`contours`: where the picture has an edge (``EDGE_DE`` across ``EDGE_SHARE`` of its width, not less than ``LINE_MM``: a lip's
   border is a feature of the picture and as soft at any size) that the predicted engraving does not keep (less than ``KEPT_DE`` across it)
   along at least ``MIN_LINE_MM``, the edge is drawn ``LINE_MM`` wide in the darkest grey of the scale, or in the lightest where the
@@ -29,7 +29,7 @@ from scipy import stats
 
 from . import grayscale, prediction
 
-# "Сохранить рисунок" (this module), "Ближайший цвет" (``grayscale.grey_for_colours``) and "Раскраска по объектам" (``colouring``: the drawing
+# "Preserve drawing" (this module), "Nearest color" (``grayscale.grey_for_colours``) and "Color by object" (``colouring``: the drawing
 # kept, each object with a main colour of its own along a path through it)
 CHOICES = ("drawing", "nearest", "objects")
 PATH_RISE_L = 0.5                   # L*: how much the lightness may rise along the path (the measurement's noise)

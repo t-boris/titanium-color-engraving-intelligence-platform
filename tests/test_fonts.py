@@ -184,4 +184,4 @@ def test_the_preview_of_an_empty_text_draws_the_sample(client):
     """inscriptions-in-works REQ-001 c4: while the inscription has no text, each font shows the sample."""
     face = next(f for f in client.get("/api/fonts").json()["families"] if f["family"] == "Test Sans")["faces"][0]["id"]
     preview = lambda **params: client.get("/api/fonts/preview.svg", params={"face": face, **params}).text    # noqa: E731
-    assert preview(text="") == preview() == preview(text="Надпись Abc") != preview(text="HOH")
+    assert preview(text="") == preview() == preview(text="Lettering Abc") != preview(text="HOH")

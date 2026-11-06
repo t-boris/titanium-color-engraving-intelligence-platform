@@ -640,7 +640,7 @@ def knowledge(store: Store, device_id: int, lens_id: int | None, material_id: in
 
 
 def everywhere(store: Store) -> list[dict]:
-    """What is known of photo engraving on every laser, lens and titanium where one was photographed (the «Выводы» screen): the
+    """What is known of photo engraving on every laser, lens and titanium where one was photographed (the “Findings” screen): the
     :func:`knowledge` of each, with the names of its laser and lens (``setup``) and its titanium."""
     out = []
     setups = store.query("SELECT DISTINCT p.device_id, p.lens_id, d.name AS laser, l.name AS lens FROM pair p JOIN laser_device d ON d.id=p.device_id "
@@ -650,8 +650,8 @@ def everywhere(store: Store) -> list[dict]:
         for material_id in sorted({i["material_id"] for i in items if i["material_id"] is not None}):
             stock = store.one("SELECT name, grade, batch FROM material_profile WHERE id=?", (material_id,))
             out.append({**knowledge(store, row["device_id"], row["lens_id"], material_id, items),
-                        "setup": f"{row['laser']} · {row['lens'] or 'линза неизвестна'}",
-                        "titanium": " · ".join(x for x in (stock["name"], stock["grade"], stock["batch"]) if x) if stock else f"титан № {material_id}"})
+                        "setup": f"{row['laser']} · {row['lens'] or 'lens unknown'}",
+                        "titanium": " · ".join(x for x in (stock["name"], stock["grade"], stock["batch"]) if x) if stock else f"titanium #{material_id}"})
     return out
 
 
@@ -704,7 +704,7 @@ def proposed_plate(store: Store, device_id: int, lens_id: int | None, material_i
         return next_plate(store, proposal["pair_id"])
     if known["picture_from"] is None:
         raise su.ValidationError("no photo-variations plate was photographed yet: make the first from a photo work or zone "
-                                 "(«Подобрать настройки: 8 копий»)")
+                                 "(“Tune settings: 8 copies”)")
     made = plate_around(store, known["picture_from"]["plan_id"], proposal["centre"], proposal["step"],
                         {"kind": "proposal", "for": kind, "from": proposal.get("source")})
     store.audit("photo_variations_proposed", kind=kind, plan_id=made["plan_id"])

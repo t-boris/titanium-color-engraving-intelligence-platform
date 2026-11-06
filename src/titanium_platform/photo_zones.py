@@ -61,7 +61,7 @@ LASSO_SHARE = 0.5           # a region is inside a lasso (or an old zone, after 
 FILE_PX_PER_MM = 20.0       # the zone's picture in the file has this many pixels a mm (fewer when the layer's DPI is lower): its
                             # transparent edge follows the smoothed borders to 0.05 mm, and a zone of a whole 150 mm work stays under 9 Mpx
 PREVIEW_PX = ps.PREVIEW_SIDE
-TILE_PX = 240               # the longer side of a zone's picture in one kind (the tiles of «Вид»)
+TILE_PX = 240               # the longer side of a zone's picture in one kind (the tiles of “Kind”)
 KEEP_DECODED = 2            # decoded pictures kept in memory: the work open now and the one before
 
 KEEP_CUTS = 2               # cut zones kept in memory: the tiles of every kind of a zone are drawn from one cut
@@ -161,7 +161,7 @@ def best_scale(store: Store, plan: Mapping, width_mm: float) -> ps.Mode:
             continue
         ranked.append(((not curve.referenced, -_engravings(curve), -len(curve.points)), len(ranked), mode))
     if not ranked:
-        raise ZoneError("no grey scale is measured on this laser, lens and titanium: engrave the grey-ramp plate (Фотогравировка → Шкалы серого) "
+        raise ZoneError("no grey scale is measured on this laser, lens and titanium: engrave the grey-ramp plate (Photo engraving → Gray scales) "
                         "to make a photo zone")
     return min(ranked)[2]
 

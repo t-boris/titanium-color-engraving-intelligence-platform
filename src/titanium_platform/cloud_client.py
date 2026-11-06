@@ -471,7 +471,7 @@ def _owned(store: Store) -> dict:
 
 
 def own(store: Store) -> dict:
-    """The «Облако» block of «Моя лаборатория»: the account, the own cloud laboratory with its releases, the publications made from
+    """The “Cloud” block of “My laboratory”: the account, the own cloud laboratory with its releases, the publications made from
     here (pending first), the invitations and the members."""
     state = cloud_session.account(store)
     out = {**state, "lab": None, "releases": [], "invitations": [], "members": [], "publications": publications(store), "pending": pending(store),

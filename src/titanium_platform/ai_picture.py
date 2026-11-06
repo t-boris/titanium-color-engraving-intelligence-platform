@@ -1,6 +1,6 @@
 """Asking the language model how each part of a photo engraving work should look (REQ-062, DEC-105).
 
-The operator says in their own words what to change ("всё как есть, черно-белое, платье фиолетовым, кожу равномерно светлой"); the model
+The operator says in their own words what to change (“keep the composition, use black and white, make the dress purple and skin evenly light”); the model
 answers with one rule per part of the picture (:mod:`picture_rules`). What it may answer and what is done with it is decided here, not by
 the model:
 

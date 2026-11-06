@@ -170,7 +170,7 @@ def test_a_work_with_missing_data_stays_in_the_list_and_says_what_is_missing(sho
     unknown_material = add_vector(shop, "Gone material", raw={"strategy": "photo", "size_mm": {"width": 10, "height": 10}, "history": [{"at": MID}], "material_id": 9999})
     junk = add_photo(shop, "Junk sizes", raw={"image_size": [0, "x"], "width_mm": "wide", "updated_at": 5, "scale": []})
     by_id = {item["id"]: item for item in listed(shop)["items"]}
-    assert by_id[nameless]["name"] == f"Работа № {nameless}"
+    assert by_id[nameless]["name"] == f"Work #{nameless}"
     assert (by_id[no_size]["width_mm"], by_id[no_size]["height_mm"], by_id[no_size]["missing"]) == (None, None, ["size"])
     assert by_id[no_size]["updated_at"] == MID
     assert by_id[no_date]["updated_at"] == by_id[no_date]["created_at"] and by_id[no_date]["missing"] == []     # the creation time stands in for the date

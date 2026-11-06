@@ -1,4 +1,4 @@
-"""Transfer experiments (feature electron REQ-085, «Проверить у себя»): a colour of a connected laboratory release engraved on the own
+"""Transfer experiments (feature electron REQ-085, “Check on your laser”): a colour of a connected laboratory release engraved on the own
 laser to see what it gives there. The release's complete recipe becomes a test plate of one cell on the own laser with the lens on it
 now; the own laser's limits are checked first and settings it cannot take are refused, never changed to fit. The plate is an own
 experiment like any other: photographed and accepted, it is measured with the own laser, lens, titanium and conditions, and its colour

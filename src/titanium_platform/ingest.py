@@ -436,10 +436,10 @@ def create_rephoto(store: Store, source_pair_id: int, *, photo_name: str, photo_
     if Path(photo_name).suffix.lower() not in ph.RAW_EXTENSIONS and not non_raw_allowed(store):
         raise IngestError("A RAW photograph is required for measurement")
     if not photo_bytes:
-        raise IngestError("Файл фотографии пуст")
+        raise IngestError("The photo file is empty")
     original_file = Path(source["lightburn_path"])
     if not original_file.is_file():
-        raise IngestError("Файл LightBurn исходной пары не найден")
+        raise IngestError("The original pair’s LightBurn file was not found")
     source_data = json.loads(source["data_json"] or "{}")
     prior_root = source_data.get("rephoto_of")
     root = store.one("SELECT status FROM pair WHERE id=?", (prior_root,)) if prior_root else None
@@ -509,7 +509,7 @@ def create_matrix_pair(store: Store, *, device_id: int, lens_id: int | None, pho
     if Path(photo_name).suffix.lower() not in ph.RAW_EXTENSIONS and not non_raw_allowed(store):
         raise IngestError("A RAW photograph is required for measurement")
     if not photo_bytes:
-        raise IngestError("Файл фотографии пуст")
+        raise IngestError("The photo file is empty")
     index = 0
     if grid is None:
         detection = _detect_matrices(store, photo_name, photo_bytes)
@@ -732,10 +732,10 @@ def rename_engraving(store: Store, engraving_id: str, title: str) -> None:
     """Rename one physical engraving across all of its photographs."""
     clean = title.strip()
     if not clean or len(clean) > 120:
-        raise IngestError("Название гравировки должно содержать от 1 до 120 символов")
+        raise IngestError("Engraving name must contain 1 to 120 characters")
     rows = store.query("SELECT id FROM pair WHERE engraving_id=? AND status!='Deleted'", (engraving_id,))
     if not rows:
-        raise KeyError("гравировка не найдена")
+        raise KeyError("engraving not found")
     store.execute("UPDATE pair SET engraving_title=? WHERE engraving_id=?", (clean, engraving_id))
     store.audit("engraving_renamed", engraving_id=engraving_id, title=clean)
 

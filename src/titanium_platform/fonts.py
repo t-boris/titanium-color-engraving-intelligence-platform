@@ -49,7 +49,7 @@ MAC_DIRS = (("C:/Windows/Fonts", os.path.join(os.environ.get("LOCALAPPDATA", "~"
 SUFFIXES = (".ttf", ".otf", ".ttc")
 MAX_OWN_BYTES = 64 * 1024 * 1024
 # a script is covered when every one of its sample letters is in the font
-SCRIPTS = {"latin": "AaZz", "cyrillic": "АаЯяЖж", "greek": "ΑαΩω", "hebrew": "אבשת", "arabic": "ابتج", "armenian": "Աաֆ",
+SCRIPTS = {"latin": "AaZz", "cyrillic": "\u0410\u0430\u042f\u044f\u0416\u0436", "greek": "ΑαΩω", "hebrew": "אבשת", "arabic": "ابتج", "armenian": "Աաֆ",
            "georgian": "აბგ", "devanagari": "कखग", "thai": "กขค", "japanese": "あア", "korean": "한국", "chinese": "中文"}
 KINDS = ("serif", "sans", "handwriting", "display", "monospace", "symbol", "other")
 GOOGLE_KINDS = {"Serif": "serif", "Sans Serif": "sans", "Handwriting": "handwriting", "Display": "display", "Monospace": "monospace"}

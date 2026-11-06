@@ -1,4 +1,4 @@
-"""«Перепроверить все работы» (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089).
+"""“Recheck all work” (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089).
 
 After the measurement changed, every accepted photograph of the workshop is measured again with the code as it is now, in the background,
 one photograph at a time, after a full backup of the workshop: accepting a new measurement deletes the old photograph's files, so only the

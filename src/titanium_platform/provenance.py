@@ -1,7 +1,7 @@
 """Where a number on a screen comes from: the observations behind a knowledge entry, a finding or a colour, resolved to their photographs
 (feature ux-growing-collections-p0, REQ-002).
 
-A screen that shows «наблюдения № 4, 5, 9, …» as a count and an expandable list asks here, a page of numbers at a time, for the photograph
+A screen that shows “observations #4, #5, #9, …” as a count and an expandable list asks here, a page of numbers at a time, for the photograph
 and layer each number belongs to, so that every number is a link to the analysis of its photograph and none is lost when the list is long.
 """
 from __future__ import annotations

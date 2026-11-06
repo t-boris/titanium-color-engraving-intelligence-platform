@@ -165,7 +165,7 @@ def _entry(kind: str, row, facts: dict, names: dict, photographs: dict) -> dict:
     stamp = quote(f"{facts['version']}-{updated or ''}", safe="")
     missing = [name for name, absent in (("size", facts["width"] is None or facts["height"] is None), ("date", updated is None),
                                          ("laser", laser is None), ("material", material is None)) if absent]
-    return {"key": key_of(kind, plan_id), "id": plan_id, "kind": kind, "type": MIXED if mixed else kind, "name": _text(row["name"]) or f"Работа № {plan_id}",
+    return {"key": key_of(kind, plan_id), "id": plan_id, "kind": kind, "type": MIXED if mixed else kind, "name": _text(row["name"]) or f"Work #{plan_id}",
             "width_mm": facts["width"], "height_mm": facts["height"], "state": state_of(facts["exports"], checks, accepted),
             "created_at": row["created_at"], "updated_at": updated, "checks": checks, "zones": facts["zones"], "texts": facts["texts"],
             "laser": laser, "lens": lens, "material": material, "missing": missing, "broken": facts["broken"],

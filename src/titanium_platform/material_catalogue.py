@@ -42,7 +42,7 @@ def _text(m: dict) -> str:
     """What a search looks in, in the order a line of the catalogue shows it (name, grade, batch, thickness) and then the rest, without case
     and spacing. The whole phrase typed is looked for in it, as the search of every list does (``list.js``): «grade 5» finds the sheets of
     Grade 5 and not every sheet of another grade with a «5» somewhere in it."""
-    thickness = "" if m["thickness_mm"] is None else f"{m['thickness_mm']:g} мм"
+    thickness = "" if m["thickness_mm"] is None else f"{m['thickness_mm']:g} mm"
     return _plain(" ".join(str(part or "") for part in (m["name"], m["grade"], m["batch"], thickness, m["family"], m["surface"])))
 
 

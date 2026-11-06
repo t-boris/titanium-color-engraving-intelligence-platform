@@ -131,7 +131,7 @@ def _pair_info(source: dict, names: tuple[dict, dict, dict], kept: set[int]) -> 
             "date": source["date"], "laser": laser, "lens": lens, "engraving_id": source["engraving_id"],
             "origin": origin_of(source.get("plan_mode"), source.get("matrix", False)), "work_id": source["plan_id"] if source.get("plan_mode") == pl.MODE_VECTOR else None,
             "device_id": source["device_id"], "lens_id": source["lens_id"], "setup": su.setup_key(source["device_id"], source["lens_id"]),
-            "setup_label": f"{laser} · {lens or 'линза неизвестна'}", "material": material, "material_id": source["material_id"],
+            "setup_label": f"{laser} · {lens or 'lens unknown'}", "material": material, "material_id": source["material_id"],
             "titanium": titanium, "titanium_key": titanium_key, "batch": context.get("batch")}
 
 
@@ -289,7 +289,7 @@ def _tonal_points(pair_id: int, check: dict, info: dict, kind: str, clean, nomin
                       "layer_type": "Image", "grayscale": True}
             task = _task(rep.get("task") or tasks.derive_from_parameters(params))
             out.append({"id": f"tonal-{pair_id}-{rep['index']}-{step['gray']}", "pair_id": pair_id, "layer_index": rep["index"],
-                        "layer_name": f"{rep.get('name')} · серый {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
+                        "layer_name": f"{rep.get('name')} · gray {step['gray']:.2f}", "measurement": kind, "approximate": approximate,
                         "referenced": referenced, "provisional": provisional, "lab": lab, "delta": None, "display_lab": display,
                         "parameters": params, "source": "tonal", "image_mode": seen.key if seen else None, "task": task, **_time(params),
                         "observation_ids": [observations[rep.get("name")]] if rep.get("name") in (observations or {}) else [],

@@ -78,7 +78,7 @@ def export_rows(store: Store, plan_id: int, number: int | None = None) -> list[d
             out.append({'source': {'kind': 'export', 'id': plan_id, 'number': export['number'], 'layer': layer.index,
                                    'sha256': hashlib.sha256(raw).hexdigest()},
                         'key': f"export:{plan_id}:{export['number']}:{layer.index}",
-                        'title': f"{plan['name']} · файл №{export['number']}", 'device_id': plan['device_id'], 'lens_id': plan['lens_id'],
+                        'title': f"{plan['name']} · file #{export['number']}", 'device_id': plan['device_id'], 'lens_id': plan['lens_id'],
                         'material_id': plan.get('material_id'), 'settings': settings, 'image': image,
                         'zone': zone.get('number'), 'zone_regions': zone.get('regions'),
                         'processing': {k: zone.get(k) for k in ('by_colour', 'colour_choice', 'contours', 'tone', 'sharpness')},

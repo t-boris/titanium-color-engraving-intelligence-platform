@@ -509,7 +509,7 @@ def _marks(store: Store) -> dict[str, dict]:
 
 
 def _with_mark(f: dict, row: dict | None) -> dict:
-    """The finding with its mark, its state now («учтено» or «скрыто» only while it is the finding they were given for) and the ΔE it is
+    """The finding with its mark, its state now (“addressed” or “hidden” only while it is the finding they were given for) and the ΔE it is
     about, as the list shows and sorts it."""
     mark = {"status": None, "pinned": False, "note": None, "status_at": None, "changed": False}
     state = "attention"
@@ -568,13 +568,13 @@ def get_finding(store: Store, finding_id: int) -> dict:
 
 
 # -- what can be done about a finding (feature act-on-findings) -------------------------------------------------------------------
-REMEDIES = ("exclude_measurement", "count_from_latest")       # decided here; «Перемерить фото» and «Подтвердить запись» have their own routes
+REMEDIES = ("exclude_measurement", "count_from_latest")       # decided here; “Remeasure photo” and “Confirm record” have their own routes
 
 
 def remedies(f: dict) -> list[dict]:
-    """The actions a finding of the latest run offers on its substance, in the order «Что сделать» shows them: take the measurement
+    """The actions a finding of the latest run offers on its substance, in the order “Actions” shows them: take the measurement
     out and re-measure its photograph (an anomaly), count the recipe from its newest engraving (an anomaly, an unstable or questioned
-    recipe of two or more engravings), confirm a questioned knowledge entry. A gap keeps its «Предложить эксперимент»."""
+    recipe of two or more engravings), confirm a questioned knowledge entry. A gap keeps its “Propose experiment”."""
     sub, evidence = f.get("subkind"), f.get("evidence") or {}
     out = []
     if f["kind"] == "anomaly" and sub == "observation" and evidence.get("observation_ids"):
@@ -606,7 +606,7 @@ def remedy(store: Store, finding_id: int, action: str, note: str | None = None, 
 
 
 # -- the one next step a finding recommends (feature ux-evidence-summaries-p0, REQ-002, DEC-001) -----------------------------------
-# What a finding offers (``remedies``, in the order «Что сделать» shows them) says what can be done, not what to do first: an exclusion
+# What a finding offers (``remedies``, in the order “Actions” shows them) says what can be done, not what to do first: an exclusion
 # or a recalculation changes what the model counts, and the cause of a measurement that looks wrong is not known yet. DEC-001: check the
 # cause before a corrective change. The first rule below that fits the finding wins; the rules are data, so the order is read and tested
 # as it stands. ``offers``: any of these remedies is offered now; ``evidence``: the finding has something to open; ``busy``: every work is

@@ -350,7 +350,7 @@ def options(store: Store, mode: ps.Mode, state: Mapping, width_mm: float) -> lis
 
 def objects_listed(store: Store, mode: ps.Mode, upload: dict, state: Mapping, width_mm: float) -> dict:
     """The objects of the picture to colour: each one's key, kind, piece, share, own colour and box, the colour it is tinted in on the
-    picture of the objects and its main colour (or None: «Авто»), the scale's colours to choose from (none while the scale is not measured)
+    picture of the objects and its main colour (or None: “Auto”), the scale's colours to choose from (none while the scale is not measured)
     and the themes, whether the objects are coloured now (``active``) and why lips or eyes are missing (``notes``)."""
     found = objects(upload)
     tints = {o["id"]: (ob.PIECE_TINTS[(o["piece"] - 1) % len(ob.PIECE_TINTS)] if o["piece"] else ob.TINTS[o["kind"]]) for o in found["objects"]}

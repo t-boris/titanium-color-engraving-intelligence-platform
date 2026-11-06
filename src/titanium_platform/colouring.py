@@ -11,7 +11,7 @@ keeps its own drawing in the colours of one stretch of the scale:
   path, the object's middle tone on the main colour (a power curve of the tone); ``shift`` (-1 darker .. 1 lighter) moves the middle
   tone up or down the path by ``SHIFT_SPAN`` of it. Each pixel takes the grey of the path at its lightness.
 
-An object without a main colour keeps the greys it has (the whole picture laid along one path, ``drawing.choose``: «Авто»). Ready
+An object without a main colour keeps the greys it has (the whole picture laid along one path, ``drawing.choose``: “Auto”). Ready
 themes (:func:`theme`) give every object a main colour from the scale's own colours (``candidates``): warm, cool, contrasting or
 random. Pure functions on numpy arrays; nothing here reads the store.
 """
@@ -25,7 +25,7 @@ import numpy as np
 from . import color, drawing, grayscale, prediction
 
 MAX_STEP = 5.0                  # dE: the most a path through a main colour moves between neighbouring colours
-SHIFT_SPAN = 0.25               # «светлее/темнее» at its end (1 or -1) moves the middle tone this share of the path's lightness
+SHIFT_SPAN = 0.25               # “lighter/darker” at its end (1 or -1) moves the middle tone this share of the path's lightness
 STRETCH = (2.0, 98.0)           # percentiles of an object's tones laid over its path, darkest to lightest
 GAMMA = (0.15, 6.0)             # the power curve that puts the middle tone on the main colour stays within these
 CANDIDATE_DE = 8.0              # dE: the scale's colours offered for a theme are at least this far apart

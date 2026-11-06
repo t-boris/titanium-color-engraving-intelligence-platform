@@ -348,7 +348,7 @@ def test_no_zone_is_made_on_a_titanium_without_a_measured_grey_scale(world):
         obs.add(store, world["w"], lab(rgb), power=power, speed=500, line_interval=0.02, material_id=other, layer_type="Scan")
     job = create(world, other)
     refused(world, job, {"op": "photo_add", "regions": of_colour(world, job, RED)},
-            "no grey scale is measured on this laser, lens and titanium: engrave the grey-ramp plate (Фотогравировка → Шкалы серого) to make a photo zone")
+            "no grey scale is measured on this laser, lens and titanium: engrave the grey-ramp plate (Photo engraving → Gray scales) to make a photo zone")
 
 
 def test_the_list_picture_shows_the_zone_as_it_will_come_out(world):
