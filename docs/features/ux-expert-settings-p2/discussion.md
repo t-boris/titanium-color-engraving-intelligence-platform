@@ -89,3 +89,15 @@ Long-name stress check in MarkView desktop browser at a 320px iframe viewport: r
 ### Implementation · 2026-11-06
 
 Inspected the light-study Research workflow in MarkView with a disposable workshop. The stock chooser dialog initially had dark text over a dark modal surface. Updated study-only modal colors and checked the actual chooser again: title, explanation, close button and list were readable in the desktop screenshot. This does not certify every dialog or satisfy the actual workshop-lighting/tablet comparison.
+
+### Implementation · 2026-11-06
+
+While checking the light-study stock chooser with actual Tab in MarkView, focus left the dialog after its sort selector. The browser/OS skipped buttons even though the old trap assumed native Tab would visit every focusable element. The shared dialog now explicitly traverses rendered, enabled controls and skips hidden or inert ones. After the fix, Tab moved from sort to the first Choose button; 30 further Tab presses stayed in the dialog, and Escape returned focus to the opener. Existing dialog regressions and a new skipped-control case are run separately.
+
+### Implementation · 2026-11-06
+
+Verified the updated dialog traversal in development Electron 0.40.0 on a disposable workshop: Tab moved from Sort order to the first Choose button, Shift+Tab returned to Sort order, and Escape closed the chooser and returned focus to Material and stock: choose. This supplements the MarkView 30-Tab check; it does not establish a full screen-reader or tablet audit.
+
+### Implementation · 2026-11-06
+
+After the shared dialog focus change, pytest -q -rs -n 12 completed with 3005 passed, 0 skipped; the additional test for skipping a non-rendered control was added after collection began and passed in the targeted dialog run (4 passed). Desktop Node tests passed 36/36 and the 0.40.0 wheel built. No release or CI result is implied.
