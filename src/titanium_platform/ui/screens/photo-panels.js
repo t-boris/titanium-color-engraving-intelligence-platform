@@ -392,45 +392,44 @@ const PhotoPanels = (() => {
       + 'settings. Engrave, photograph, and upload it to see which changes make the image darker, lighter, sharper, or softer.'));
   }
 
-  const CHOICES = [['drawing', 'Сохранить рисунок'], ['nearest', 'Ближайший цвет'], ['objects', 'Раскраска по объектам']];
-  const CHOICE_ABOUT = '«Сохранить рисунок»: тона картинки раскладываются по одной плавной полосе шкалы — от самого светлого её цвета к самому тёмному, '
-    + 'светлота только убывает, оттенок не скачет; соседние тона получают соседние мощности, поэтому кожа остаётся ровной, с градиентом, без пятен. '
-    + 'Зерно и квадраты JPEG сглаживаются (до 0,25 мм), губы, глаза и тени лица (до 1,5 мм) подчёркиваются, средние тона светлеют. Оттенки картинки '
-    + 'не повторяются — вся картинка в цветах этой полосы. «Ближайший цвет»: серый, который на шкале даёт ближайший цвет, даже если он намного '
-    + 'темнее или светлее. «Раскраска по объектам»: как «Сохранить рисунок», но объекты, которым во вкладке «Раскраска» дан свой цвет, — в нём.';
-  const CONTOURS_ABOUT = 'только при подборе серых под цвета: где граница картинки (губы, глаза, блики) на титане потерялась бы, она обводится '
-    + 'линией 0,3 мм — самым тёмным серым шкалы, на тёмном или у светлого блика — самым светлым. Внутри части с правилом «Один тон» не обводится.';
+  const CHOICES = [['drawing', 'Preserve image'], ['nearest', 'Nearest color'], ['objects', 'Color by object']];
+  const CHOICE_ABOUT = '“Preserve image” maps image tones along a smooth scale from lightest to darkest. Neighboring tones receive neighboring powers, '
+    + 'keeping skin gradients smooth. JPEG grain and blocks are smoothed (up to 0.25 mm), lips, eyes, and facial shadows emphasized (up to 1.5 mm), '
+    + 'and midtones lightened. Image hues are not reproduced. “Nearest color” selects the gray with the closest scale color, even when much lighter or darker. '
+    + '“Color by object” preserves the image except for objects assigned their own color on the Coloring tab.';
+  const CONTOURS_ABOUT = 'Only when matching grays to colors: image boundaries that would be lost on titanium are outlined with a 0.3 mm line, '
+    + 'using the darkest scale gray, or the lightest on dark areas or bright highlights. Areas using “One tone” are not outlined.';
 
-  /** Что сказать о подборе серых (``colour_match`` с сервера): насколько сохранён рисунок или насколько близки цвета. */
+  /** Describe how well grayscale matching preserves the image or matches colors. */
   function matchText(match) {
     if (!match) return null;
-    if (match.manually_adjusted) return h('p', {class: 'small'}, 'После подбора серые скорректированы вручную. Превью и файл используют эти изменения; показатели автоматического подбора к ним не относятся.');
-    const used = `использовано серых ${match.greys_used} из ${match.greys_available}`;
+    if (match.manually_adjusted) return h('p', {class: 'small'}, 'Grays were adjusted manually after matching. The preview and file use these changes; automatic matching metrics do not apply to them.');
+    const used = `grays used: ${match.greys_used} of ${match.greys_available}`;
     if (match.choice === 'objects') {
       const done = match.objects || [];
-      return h('p', {}, h('strong', {}, 'Раскраска по объектам: '), done.length
-        ? h('span', {}, `в своих цветах ${done.length} ${done.length === 1 ? 'объект' : done.length < 5 ? 'объекта' : 'объектов'} — `,
+      return h('p', {}, h('strong', {}, 'Color by object: '), done.length
+        ? h('span', {}, `${done.length} ${done.length === 1 ? 'object' : 'objects'} in assigned colors — `,
           ...done.flatMap((o, i) => [i ? ', ' : '', hexChip(o.hex), objectName(o.key)]),
-          `; остальное — как «Сохранить рисунок». Порядок светлого и тёмного совпадает с картинкой${match.order == null ? '' : ` на ${value(match.order * 100, 0)} %`}; ${used}.`)
-        : 'ни одному объекту цвет ещё не дан — вся картинка как при «Сохранить рисунок». Цвета объектов — во вкладке «Раскраска».');
+          `; the rest uses “Preserve image”. Light-dark order matches the image${match.order == null ? '' : ` by ${value(match.order * 100, 0)}%`}; ${used}.`)
+        : 'no objects have assigned colors yet; the whole image uses “Preserve image”. Assign object colors on the Coloring tab.');
     }
     if (match.choice === 'nearest') {
-      return h('p', {}, h('strong', {}, 'Подбор по цвету: '), `ближайшие цвета шкалы отличаются от цветов картинки в среднем на ${value(match.median_de, 1)} ΔE `
-        + `(у 90 % пикселей — не больше ${value(match.p90_de, 1)}); ${used}.`);
+      return h('p', {}, h('strong', {}, 'Color matching: '), `nearest scale colors differ from the image colors by a median ${value(match.median_de, 1)} ΔE `
+        + `(90% of pixels within ${value(match.p90_de, 1)}); ${used}.`);
     }
-    return h('p', {}, h('strong', {}, 'Рисунок сохранён: '), `тона картинки разложены по плавной полосе шкалы из ${match.path} серых `
-      + `(L* от ${value(match.reach[1], 0)} до ${value(match.reach[0], 0)})${match.order == null ? '' : `, порядок светлого и тёмного совпадает с картинкой `
-      + `на ${value(match.order * 100, 0)} %`}; оттенки картинки не повторяются (в среднем ${value(match.median_de, 1)} ΔE от её цветов); ${used}.`);
+    return h('p', {}, h('strong', {}, 'Image preserved: '), `image tones use a smooth scale path of ${match.path} grays `
+      + `(L* ${value(match.reach[1], 0)} to ${value(match.reach[0], 0)})${match.order == null ? '' : `, with light-dark order matching the image `
+      + `by ${value(match.order * 100, 0)}%`}; image hues are not reproduced (median ${value(match.median_de, 1)} ΔE from its colors); ${used}.`);
   }
 
-  /** Что сказать о контурах работы: выключены, обводить нечего или какую долю картинки занимают линии. */
+  /** Describe whether outlines are used and how much of the image they cover. */
   function contoursText(view, info) {
     if (!view.by_colour) return null;
-    if (!view.contours) return h('p', {class: 'small muted'}, 'Контуры выключены: границы, которые на титане теряются, не обводятся.');
+    if (!view.contours) return h('p', {class: 'small muted'}, 'Outlines are off: boundaries that would be lost on titanium are not outlined.');
     const share = info.contours_report ? info.contours_report.share : 0;
-    return h('p', {class: 'small'}, h('strong', {}, 'Контуры: '), share > 0
-      ? `границы, которые на титане потерялись бы, обведены линией 0,3 мм — ${value(share * 100, share < 0.001 ? 2 : 1)} % картинки.`
-      : 'на титане не теряется ни одна граница картинки — обводить нечего.');
+    return h('p', {class: 'small'}, h('strong', {}, 'Outlines: '), share > 0
+      ? `boundaries that would be lost on titanium are outlined with a 0.3 mm line — ${value(share * 100, share < 0.001 ? 2 : 1)}% of the image.`
+      : 'no image boundaries would be lost on titanium; nothing to outline.');
   }
 
   const TONE = {brightness: 0, contrast: 0, gamma: 1};          // the picture's greys as they are (photo_state.TONE)

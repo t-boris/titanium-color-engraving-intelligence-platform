@@ -222,7 +222,7 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
     assert out["opened"] == {"chosen": [False, True], "powers": ["12", "28"], "shown": "/api/vector/9/photo/1/preview.png?v=0"}
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
     assert out["layer"] and out["missing"] == [False, False, False]                   # no ramp, no original picture, no cleaning of its own
-    assert out["choices"] == ["Сохранить рисунок", "Ближайший цвет"]                            # «Раскраска по объектам» comes with its tab
+    assert out["choices"] == ["Preserve image", "Nearest color"]                            # «Color by object» comes with its tab
     assert out["tabs"] == ["Image", "Results", "Scale", "Confirmation", "Points"] and out["steps"] == [True, True]
 
 
@@ -234,12 +234,12 @@ def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_s
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label'));
   colour.checked = true; await colour.dispatch('change'); await settle();
   const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые');
-  out.kept = tree.textContent.includes('Рисунок сохранён: тона картинки разложены по плавной полосе шкалы из 180 серых');
+  out.kept = tree.textContent.includes('Image preserved: image tones use a smooth scale path of 180 grays');
   choice.value = 'nearest'; await choice.dispatch('change'); await settle();
   const contours = labelled(tree, 'Контуры');
   contours.checked = true; await contours.dispatch('change'); await settle();
-  out.said = [tree.textContent.includes('Подбор по цвету: ближайшие цвета шкалы отличаются от цветов картинки в среднем на 16,2 ΔE'),
-              tree.textContent.includes('обведены линией 0,3 мм — 1,2 % картинки')];
+  out.said = [tree.textContent.includes('Color matching: nearest scale colors differ from the image colors by a median 16,2 ΔE'),
+              tree.textContent.includes('outlined with a 0.3 mm line — 1,2% of the image')];
   out.shown = shown(tree);
   await tree.querySelectorAll('button.ge-scale')[0].dispatch('click'); await settle(); await wait(300); await settle();
   out.scale = {chosen: chosen(tree), powers: powers(tree)};

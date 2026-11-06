@@ -445,20 +445,20 @@ def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_sai
     out = run(tmp_path, {"work": "7"}, """
   const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые'), contours = labelled(tree, 'Контуры');
   const said = () => tree.textContent;
-  out.before = {choice: !!choice.disabled, value: choice.value, contours: !!contours.disabled, on: contours.checked, said: said().includes('Контуры выключены'),
+  out.before = {choice: !!choice.disabled, value: choice.value, contours: !!contours.disabled, on: contours.checked, said: said().includes('Outlines are off'),
                 options: choice.querySelectorAll('option').map((o) => o.textContent)};
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();
-  out.drawing = {choice: !!choice.disabled, contours: !!contours.disabled, off: said().includes('Контуры выключены'),
-                 kept: said().includes('Рисунок сохранён: тона картинки разложены по плавной полосе шкалы из 180 серых (L* от 87 до 42), порядок светлого и тёмного совпадает с картинкой на 98 %')};
+  out.drawing = {choice: !!choice.disabled, contours: !!contours.disabled, off: said().includes('Outlines are off'),
+                 kept: said().includes('Image preserved: image tones use a smooth scale path of 180 grays (L* 87 to 42), with light-dark order matching the image by 98%')};
   contours.checked = true; await contours.dispatch('change'); await settle();
-  out.lined = said().includes('обведены линией 0,3 мм — 1,2 % картинки') && said().includes('Подобранные серые и контуры');
+  out.lined = said().includes('outlined with a 0.3 mm line — 1,2% of the image') && said().includes('Подобранные серые и контуры');
   choice.value = 'nearest'; await choice.dispatch('change'); await settle();
-  out.nearest = said().includes('Подбор по цвету: ближайшие цвета шкалы отличаются от цветов картинки в среднем на 16,2 ΔE');
+  out.nearest = said().includes('Color matching: nearest scale colors differ from the image colors by a median 16,2 ΔE');
   out.saves = saves();
 """)
     assert out["before"] == {"choice": True, "value": "drawing", "contours": True, "on": False, "said": False,
-                             "options": ["Сохранить рисунок", "Ближайший цвет", "Раскраска по объектам"]}
+                             "options": ["Preserve image", "Nearest color", "Color by object"]}
     assert out["drawing"] == {"choice": False, "contours": False, "off": True, "kept": True}
     assert out["lined"] and out["nearest"]
     assert out["saves"] == [{"by_colour": True}, {"contours": True}, {"colour_choice": "nearest"}]
@@ -746,7 +746,7 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   out.selected = row('Губы').getAttribute('aria-current');
   await swatch('Цвет шкалы 12,15 %').dispatch('click'); await settle();
   out.coloured = {chosen: swatch('Цвет шкалы 12,15 %').className.includes('is-chosen'), text: row('Губы').textContent.includes('12,15 %'),
-                  choice: select(tree, 'Как подбирать серые').value, said: tree.textContent.includes('Раскраска по объектам: в своих цветах 1 объект')};
+                  choice: select(tree, 'Как подбирать серые').value, said: tree.textContent.includes('Color by object: 1 object in assigned colors')};
   const shift = input(tree, (i) => i.getAttribute('aria-label') === 'Светлее или темнее: Губы');
   shift.value = '-0.5'; await shift.dispatch('change'); await settle();
   await button(tree, 'Тёплая').dispatch('click'); await settle();
