@@ -25,19 +25,19 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 10; i++) await wait(0); };
 const named = (tree, label) => tree.querySelectorAll('label').find((l) => l.firstChild && l.firstChild.textContent === label);
 const select = (tree, label) => tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label) || (named(tree, label) ? named(tree, label).firstControl() : undefined);
-const stock = (tree) => tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Титан');       // the titanium is the stock selector, no longer a drop-down
+const stock = (tree) => tree.querySelectorAll('.matpick').find((p) => p.getAttribute('aria-label') === 'Stock');       // the titanium is the stock selector, no longer a drop-down
 const posted = () => ctx.requests.filter((r) => r.path === '/api/predictions/photo')
   .map((r) => Object.fromEntries(r.body.fields.map(([k, v]) => [k, v && typeof v === 'object' ? v.name : String(v)])));
 (async () => {
   const out = {};
   const tree = await ctx.__screens['photo-preview'].render({query: %(query)s});
   await settle();
-  out.opened = {titanium: stock(tree).value, laser: select(tree, 'Лазер').value, lens: select(tree, 'Линза').value,
-                note: tree.textContent.includes('Файл работы «Inna Portrait-P1-17.lbrn2» уже выбран'),
-                says: tree.textContent.includes('Этот режим измерен здесь:Big Plate 150 · Grade 5 · 3 мм · JPT M7 · F-Theta · 174 mm')};
+  out.opened = {titanium: stock(tree).value, laser: select(tree, 'Laser').value, lens: select(tree, 'Lens').value,
+                note: tree.textContent.includes('Work file “Inna Portrait-P1-17.lbrn2” is already selected'),
+                says: tree.textContent.includes('This mode was measured here:Big Plate 150 · Grade 5 · 3 mm · JPT M7 · F-Theta · 174 mm')};
   stock(tree).value = '3';
-  tree.querySelectorAll('button').find((b) => b.textContent === 'Показать прогноз').dispatch('click'); await settle();
-  tree.querySelectorAll('button').find((b) => b.textContent === 'Показать на нём').dispatch('click'); await settle();
+  tree.querySelectorAll('button').find((b) => b.textContent === 'Show prediction').dispatch('click'); await settle();
+  tree.querySelectorAll('button').find((b) => b.textContent === 'Show using this setup').dispatch('click'); await settle();
   out.posted = posted().map((p) => [p.material_id, p.device_id, p.lens_id, p.lightburn]);
   out.titanium = stock(tree).value;
   console.log(JSON.stringify(out));
@@ -95,25 +95,25 @@ const response = (data, status = 200) => ({ok: status < 300, status, headers: {g
   const tree = await ctx.__screens['photo-preview'].render({query: %(query)s});
   ctx.document.body.append(tree);
   await settle();
-  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Показать прогноз');
+  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Show prediction');
   const status = tree.querySelectorAll('[role]').find((e) => e.getAttribute('role') === 'status' && e.getAttribute('aria-live') === 'polite');
-  const old = tree.textContent.includes('Файл «Inna Portrait-P1-17.lbrn2»');
+  const old = tree.textContent.includes('File “Inna Portrait-P1-17.lbrn2”');
   delayed = true;
   const first = button.dispatch('click'); await settle();
-  const waiting = [status.textContent, tree.textContent.includes('Файл «Inna Portrait-P1-17.lbrn2»')];
+  const waiting = [status.textContent, tree.textContent.includes('File “Inna Portrait-P1-17.lbrn2”')];
   const second = button.dispatch('click'); await settle();
   pending[1](response({...%(refused)s, file: 'new.lbrn2'})); await second; await settle();
   pending[0](response({error: 'late failure'}, 500)); await first; await settle();
-  const latest = [tree.textContent.includes('Файл «new.lbrn2»'), status.textContent, tree.textContent.includes('late failure')];
+  const latest = [tree.textContent.includes('File “new.lbrn2”'), status.textContent, tree.textContent.includes('late failure')];
   const third = button.dispatch('click'); await settle();
   pending[2](response({error: 'offline'}, 500)); await third; await settle();
-  console.log(JSON.stringify({old, waiting, latest, failure: [status.textContent, tree.textContent.includes('Файл «new.lbrn2»')]}));
+  console.log(JSON.stringify({old, waiting, latest, failure: [status.textContent, tree.textContent.includes('File “new.lbrn2”')]}));
 })().catch((e) => { console.error(e.stack); process.exit(1); });
 """.replace("%(refused)s", json.dumps(REFUSED))
     out = run(tmp_path, {"work": "7"}, body)
-    assert out["old"] and out["waiting"][1] and "предыдущий прогноз" in out["waiting"][0]
+    assert out["old"] and out["waiting"][1] and "previous prediction" in out["waiting"][0]
     assert out["latest"] == [True, "", False]
-    assert out["failure"][1] and "не удалось" in out["failure"][0]
+    assert out["failure"][1] and "failed" in out["failure"][0]
 
 
 @node
@@ -144,7 +144,7 @@ const response = (data, code = 200) => ({ok: code < 300, status: code, headers: 
   const afterLate = [img.src, status()];
   images[0].onerror();
   const afterError = [img.src, status()];
-  const retry = tree.querySelectorAll('button').find((b) => b.textContent === 'Повторить пересчёт');
+  const retry = tree.querySelectorAll('button').find((b) => b.textContent === 'Retry calculation');
   await retry.dispatch('click'); await wait(300);
   pending[2](response({...%(layer)s, preview: '/new.png'})); await settle();
   images[1].onload();
@@ -153,7 +153,7 @@ const response = (data, code = 200) => ({ok: code < 300, status: code, headers: 
 """.replace("%(layer)s", json.dumps(layer))
     out = run(tmp_path, {"work": "7"}, body)
     assert out["initial"].startswith("/old.png?")
-    assert out["beforeLoad"][0] == out["initial"] and "предыдущий прогноз" in out["beforeLoad"][1]
+    assert out["beforeLoad"][0] == out["initial"] and "previous prediction" in out["beforeLoad"][1]
     assert out["afterLate"] == out["beforeLoad"]
-    assert out["afterError"][0] == out["initial"] and "не удалось" in out["afterError"][1]
+    assert out["afterError"][0] == out["initial"] and "failed" in out["afterError"][1]
     assert out["final"][0].startswith("/new.png?min_power=30") and out["final"][1] == ""

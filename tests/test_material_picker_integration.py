@@ -264,15 +264,15 @@ def test_the_photo_preview_selects_the_record_of_the_address_names_the_records_i
                   measured_on: [{device_id: laser.id, lens_id: laser.lens.id, material_id: 88}, {device_id: laser.id, lens_id: laser.lens.id, material_id: 90}]}]};
       stub('/predictions/photo', {status: 200, json: refused}, 'POST');
       const box = mount(await ctx.__screens['photo-preview'].render({query: {material: '137'}}));
-      const stock = picker(box, 'Титан');
+      const stock = picker(box, 'Stock');
       await until(() => stock.record !== null);
       out.start = {pickers: qa(box, '.matpick').length, records: records(box), value: stock.value, label: labelOf(stock), urls: stockUrls()};
       qa(box, 'input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'a.lbrn2'}];
-      await button(box, 'Показать прогноз').dispatch('click');
-      await until(() => sent('/api/predictions/photo').length === 1 && button(box, 'Показать на нём'));
-      out.first = {material: sent('/api/predictions/photo')[0].body.items.filter(([k]) => k === 'material_id'), says: box.textContent.includes('Этот режим измерен здесь:'),
-        lines: qa(box, '.row').filter((r) => r.textContent.includes('Показать на нём')).map((r) => qa(r, '.small')[0].textContent.split(' · ').slice(0, 2).join(' · '))};
-      await qa(box, 'button').filter((b) => b.textContent === 'Показать на нём')[1].dispatch('click');          // «Показать на нём»: the second record it offers
+      await button(box, 'Show prediction').dispatch('click');
+      await until(() => sent('/api/predictions/photo').length === 1 && button(box, 'Show using this setup'));
+      out.first = {material: sent('/api/predictions/photo')[0].body.items.filter(([k]) => k === 'material_id'), says: box.textContent.includes('This mode was measured here:'),
+        lines: qa(box, '.row').filter((r) => r.textContent.includes('Show using this setup')).map((r) => qa(r, '.small')[0].textContent.split(' · ').slice(0, 2).join(' · '))};
+      await qa(box, 'button').filter((b) => b.textContent === 'Show using this setup')[1].dispatch('click');          // «Show using this setup»: the second record it offers
       await until(() => sent('/api/predictions/photo').length === 2);
       out.second = {value: stock.value, material: sent('/api/predictions/photo')[1].body.items.filter(([k]) => k === 'material_id')};
       out.urls = stockUrls();
@@ -289,13 +289,13 @@ def test_the_photo_preview_without_any_stock_record_offers_an_empty_catalogue_an
     store, port = bare
     out = run_node(tmp_path, port, PREVIEW, HELPERS + r"""
       const box = mount(await ctx.__screens['photo-preview'].render({query: {}}));
-      const stock = picker(box, 'Титан');
+      const stock = picker(box, 'Stock');
       await stock.ready;
       const dialog = await opened(stock);
       await until(() => dialog.textContent.includes('No stock records yet.'));
       out.empty = {label: labelOf(stock), value: stock.value, text: dialog.textContent.includes('No stock records yet.'), urls: stockUrls()};
     """, EXPORTS)
-    assert out["empty"]["label"] == "выберите титан" and out["empty"]["value"] == "" and out["empty"]["text"]
+    assert out["empty"]["label"] == "choose titanium" and out["empty"]["value"] == "" and out["empty"]["text"]
     bounded(out["empty"]["urls"])
 
 
