@@ -227,8 +227,8 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
   out.borders = svg().querySelectorAll('g').filter((g) => g.classList.contains('vw-borders')).length;
   out.outlines = svg().childNodes.at(-1).getAttribute('class') + ': ' + svg().childNodes.at(-1).childNodes.map((p) => p.getAttribute('class')).join(' | ');
   out.viewBox = svg().getAttribute('viewBox');
-  out.undo = byText(tree, 'button', 'Отменить').disabled;
-  out.redo = byText(tree, 'button', 'Повторить').disabled;
+  out.undo = byText(tree, 'button', 'Undo').disabled;
+  out.redo = byText(tree, 'button', 'Redo').disabled;
   out.palette = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className, b.getAttribute('title')]);
   out.details = tree.querySelectorAll('details').map((d) => d.querySelector('summary').textContent);
   out.rows = tree.querySelectorAll('span').filter((x) => (x.className || '').startsWith('vw-rows')).map((x) => [x.textContent, x.className, x.getAttribute('title')]);
@@ -240,21 +240,21 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
                                " | vw-outline vw-halo vw-sel | vw-outline vw-sel")   # above the regions: zones, then hover, then selection on top
     classes = {eid: cls for eid, cls, _ in out["palette"]}
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
-    assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ с/см²|не оценено)", title) for _, _, title in out["palette"])
+    assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ s/cm²|not estimated)", title) for _, _, title in out["palette"])
     text = out["text"]
-    for part in ("Segmentation", "Document colors", "AI", "File", "LightBurn file", "Слоёв 3 из 29 · время слоёв цвета 2 мин 05 с · средний ΔE 3.10", "Слои титана",
-                 "Исходные цвета", "вне допуска", "Показать далёкие от оригинала", "C01", "2.00 см² · областей 2 · 1 с", "№ 2", "ΔE 17.70",
-                 "Дальше допуска ΔE 3: цветов 1, областей 2 (25.0 % площади)", "Palette: 4", "on split #0", "Авто",
-                 "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"):
+    for part in ("Segmentation", "Document colors", "AI", "File", "LightBurn file", "Layers 3 of 29 · color layer time 2 min 05 s · mean ΔE 3.10", "Titanium layers",
+                 "Source colors", "outside tolerance", "Show colors far from the original", "C01", "2.00 cm² · regions 2 · 1 s", "№ 2", "ΔE 17.70",
+                 "Beyond ΔE tolerance 3: 1 colors, 2 regions (25.0% of area)", "Palette: 4", "on split #0", "Auto",
+                 "2 of 3 layers: color was not measured at their row length (↔)"):
         assert part in text, part
-    assert out["rows"] == [["↔ 12.5 мм", "vw-rows muted", "строки 12.5 мм: цвет рецепта измерен при 12.0 мм"],             # each layer's row length
-                           ["↔ 40.0 мм", "vw-rows warn vw-bad", "строки 40.0 мм: цвет рецепта измерен при 4.4 мм, при такой длине — нет; на титане может выйти другим"],
-                           ["↔ 30.0 мм", "vw-rows warn vw-bad", "строки 30.0 мм: цвет взят между измерениями при 20.0 и 50.0 мм"]]
+    assert out["rows"] == [["↔ 12.5 mm", "vw-rows muted", "rows 12.5 mm: recipe color measured at 12.0 mm"],             # each layer's row length
+                           ["↔ 40.0 mm", "vw-rows warn vw-bad", "rows 40.0 mm: recipe color measured at 4.4 mm, not at this length; the titanium color may differ"],
+                           ["↔ 30.0 mm", "vw-rows warn vw-bad", "rows 30.0 mm: color interpolated between measurements at 20.0 and 50.0 mm"]]
     strip, *folds = out["details"]                                  # the first fold is the strip under the head: the path of the file and the forecast (ux-accessible-layout-p0)
     assert strip.startswith("File lifecycle and prediction")
     assert folds[0].startswith("Important regions: faces, eyes, lips") and "Color details…" in text                   # the wide table is a window
     assert folds[1:] == ["Full recipe and layers (4)", "Previous files", "Work details",                              # the file tab folds its long parts (the recipe and
-                         "2 из 3 слоёв: цвет при длине их строк (↔) не измерен"]                                      # the files made before), the layers why their sizes matter
+                         "2 of 3 layers: color was not measured at their row length (↔)"]                                      # the files made before), the layers why their sizes matter
     assert out["renders"] == 0
 
 
@@ -286,15 +286,15 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   svg().setAttribute('data-mark', 'first');
   out.scopeRegion = tree.querySelector('.vw-ed-tool-status').textContent;
   await swatch('e14').dispatch('click');
-  out.active = section('Активный цвет').textContent;
+  out.active = section('Active color').textContent;
   await path('r1').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Весь исходный цвет').dispatch('click');
+  await byText(tree, 'button', 'Entire source color').dispatch('click');
   out.scopeColour = tree.querySelector('.vw-ed-tool-status').textContent;
   await path('r1').dispatch('pointermove', {clientX: 5, clientY: 5});
   out.hotColour = classed('vw-hot');
   out.tip = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
   await path('r1').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Заливка похожих').dispatch('click');
+  await byText(tree, 'button', 'Fill similar').dispatch('click');
   out.scopeFill = tree.querySelector('.vw-ed-tool-status').textContent;
   await path('r3').dispatch('pointermove', {clientX: 25, clientY: 5});
   out.hotBeforeReach = classed('vw-hot');
@@ -302,8 +302,8 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   out.hotFill = classed('vw-hot');
   out.tipFill = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
   await path('r3').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Авто').dispatch('click');
-  await byText(tree, 'button', 'Участок').dispatch('click');
+  await byText(tree, 'button', 'Auto').dispatch('click');
+  await byText(tree, 'button', 'Region').dispatch('click');
   await path('r2').dispatch('click'); await tick();
   out.posted = posted();
   out.reach = ctx.requests.filter((r) => r.path.endsWith('/reach')).map((r) => r.url);
@@ -311,10 +311,10 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   out.svgFetches = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
 """)
     assert "one region" in out["scopeRegion"] and "all regions with the source color" in out["scopeColour"] and "similar neighboring regions" in out["scopeFill"]
-    assert "Загрузка" not in out["active"] and "не оценено" in out["active"] and "автоматика его не выбирает" in out["active"]
+    assert "Загрузка" not in out["active"] and "not estimated" in out["active"] and "not selected automatically" in out["active"]
     assert out["hotColour"] == ["r1", "r2"] and out["hotBeforeReach"] == ["r3"] and out["hotFill"] == ["r3", "r4"]
-    assert out["tip"].startswith("Область r1 · исходный цвет № 1 · титан: ΔE 1.16") and "рецепт: 10.0 % · 30.0 кГц · 500 мм/с" in out["tip"]
-    assert "весь исходный цвет № 1, областей 2" in out["tip"] and "заливка похожих (ΔE 8), областей 2" in out["tipFill"]
+    assert out["tip"].startswith("Region r1 · source color #1 · titanium: ΔE 1.16") and "recipe: 10.0 % · 30.0 kHz · 500 mm/s" in out["tip"]
+    assert "entire source color #1, 2 regions" in out["tip"] and "fill similar (ΔE 8), 2 regions" in out["tipFill"]
     assert out["posted"] == [{"op": "paint", "region": "r1", "scope": "region", "entry_id": "e14"},
                              {"op": "paint", "region": "r1", "scope": "colour", "entry_id": "e14"},
                              {"op": "paint", "region": "r3", "scope": "fill", "entry_id": "e14", "similarity_de": 8},
@@ -328,7 +328,7 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
     out = run_editor(tmp_path, routes(), """
   await path('r4').dispatch('click', {altKey: true});
   out.altPicked = tree.querySelectorAll('button').filter((b) => b.classList.contains('picked')).map((b) => b.getAttribute('data-entry'));
-  await byText(tree, 'button', 'Пипетка').dispatch('click');
+  await byText(tree, 'button', 'Eyedropper').dispatch('click');
   await path('r3').dispatch('click');
   out.pipettePicked = tree.querySelectorAll('button').filter((b) => b.classList.contains('picked')).map((b) => b.getAttribute('data-entry'));
   await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
@@ -339,36 +339,36 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   await byText(section('Selection'), 'button', 'Merge regions').dispatch('click'); await tick();
   await byText(section('Selection'), 'button', 'Exclude from engraving').dispatch('click'); await tick();
   out.selectedAfter = classed('vw-sel');
-  const layerBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Отметить слой'));
+  const layerBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Mark layer'));
   for (const box of layerBoxes.slice(0, 2)) { box.checked = true; await box.dispatch('change'); }
-  out.target = byLabel(tree, 'select', 'Каким цветом титана станут отмеченные слои').value;
-  await byText(tree, 'button', 'Слить в один').dispatch('click'); await tick();
-  out.layersChecked = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Отметить слой') && i.checked).length;
-  const colourBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Отметить исходный цвет'));
+  out.target = byLabel(tree, 'select', 'Titanium color for marked layers').value;
+  await byText(tree, 'button', 'Merge into one').dispatch('click'); await tick();
+  out.layersChecked = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Mark layer') && i.checked).length;
+  const colourBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Mark source color'));
   for (const box of colourBoxes.slice(0, 2)) { box.checked = true; await box.dispatch('change'); }
-  await byText(tree, 'button', 'Объединить исходные цвета').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Отменить').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Повторить').dispatch('click'); await tick();        // nothing to redo: nothing is sent
+  await byText(tree, 'button', 'Merge source colors').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Undo').dispatch('click'); await tick();
+  await byText(tree, 'button', 'Redo').dispatch('click'); await tick();        // nothing to redo: nothing is sent
   out.posted = posted();
-  const far = section('Исходные цвета').querySelector('input');
+  const far = section('Source colors').querySelector('input');
   far.checked = true; await far.dispatch('change');
   out.far = [svg().getAttribute('class'), tagged('vw-far')];
-  await byText(tree, 'button', 'Оригинал').dispatch('click');
+  await byText(tree, 'button', 'Original').dispatch('click');
   out.original = [svg().getAttribute('class'), svg().querySelector('image').getAttribute('href')];
-  await byText(tree, 'button', 'Исходные цвета').dispatch('click');
+  await byText(tree, 'button', 'Source colors').dispatch('click');
   out.source = path('r1').getAttribute('fill');
-  await byText(tree, 'button', 'Титан').dispatch('click');
-  await byText(tree, 'button', 'Кисть').dispatch('click');
-  await byLabel(tree, 'button', 'Увеличить').dispatch('click');
+  await byText(tree, 'button', 'Titanium').dispatch('click');
+  await byText(tree, 'button', 'Brush').dispatch('click');
+  await byLabel(tree, 'button', 'Zoom in').dispatch('click');
   out.zoomed = svg().getAttribute('viewBox');
-  await path('r1').dispatch('pointerdown', {clientX: 50, clientY: 50, button: 1});    // «Выделение» draws a lasso: the middle button pans
+  await path('r1').dispatch('pointerdown', {clientX: 50, clientY: 50, button: 1});    // «Selection» draws a lasso: the middle button pans
   await path('r1').dispatch('pointermove', {clientX: 60, clientY: 50});
   await path('r1').dispatch('pointerup', {clientX: 60, clientY: 50});
   await path('r1').dispatch('click', {clientX: 60, clientY: 50});                    // the end of a drag is not a click
   out.panned = svg().getAttribute('viewBox');
   await path('r1').dispatch('wheel', {deltaY: -100, clientX: 50, clientY: 50});
   out.wheeled = svg().getAttribute('viewBox');
-  await byText(tree, 'button', 'Вписать').dispatch('click');
+  await byText(tree, 'button', 'Fit').dispatch('click');
   out.fit = svg().getAttribute('viewBox');
   out.postedAfterDrag = posted().length;
 """)
@@ -390,7 +390,7 @@ def test_the_merge_of_areas_is_offered_only_for_a_connected_selection_and_says_w
     out = run_editor(tmp_path, routes(), """
   const merge = () => byText(section('Selection'), 'button', 'Merge regions');
   const shown = () => [merge().disabled, section('Selection').textContent];
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   out.one = shown();
   await path('r3').dispatch('click', {shiftKey: true});          // r1 and r3 do not border one another
@@ -421,7 +421,7 @@ def test_if_the_neighbours_cannot_be_read_the_merge_stays_offered_and_the_server
     r = routes()
     r["/api/vector/7/neighbours"] = {"status": 500, "json": {"error": "boom", "kind": "internal"}}
     out = run_editor(tmp_path, r, """
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   await path('r3').dispatch('click', {shiftKey: true});
   const merge = byText(section('Selection'), 'button', 'Merge regions');
@@ -437,8 +437,8 @@ def test_if_the_neighbours_cannot_be_read_the_merge_stays_offered_and_the_server
 @node
 def test_a_merge_that_makes_a_new_split_version_loads_its_picture_and_keeps_the_view_and_the_selection(tmp_path):
     out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
-  await byLabel(tree, 'button', 'Увеличить').dispatch('click');
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byLabel(tree, 'button', 'Zoom in').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true});
   svg().setAttribute('data-mark', 'first');
@@ -495,7 +495,7 @@ def routes_with_sources():
 @node
 def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_where_it_comes_from(tmp_path):
     out = run_editor(tmp_path, routes_with_sources(), """
-  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Отметить исходный цвет № ${k}`).closest('.lst-row');
+  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Mark source color #${k}`).closest('.lst-row');
   out.folded = [1, 2, 3].map((k) => row(k).textContent.includes('гравировк'));                 // where a colour is known from: under its line
   const opened = [];
   for (const k of [1, 2, 3]) {                                                                 // each line opened in turn: the line and what it opens
@@ -505,8 +505,8 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
   }
   out.rows = opened.map(([text]) => text);
   out.buttons = opened.map(([, buttons]) => buttons);
-  out.active = tree.textContent.includes('Авто');
-  await byText(row(1), 'button', 'Заменить').dispatch('click'); await tick(); await tick();
+  out.active = tree.textContent.includes('Auto');
+  await byText(row(1), 'button', 'Replace').dispatch('click'); await tick(); await tick();
   let dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.getAttribute('aria-label');
   out.better = dialog.querySelectorAll('div').filter((d) => (d.className || '').split(' ').includes('vw-better')).length;    // e11 is already confirmed by repeats
@@ -523,10 +523,10 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
     assert out["folded"] == [False, False, False]
     assert "verified by repetition" in rows[0] and "3 engravings: 2 tests, 1 work" in rows[0] and "all 3 agree" in rows[0]
     assert "one engraving, not repeated" in rows[1] and "1 engraving: 1 test" in rows[1]
-    assert "не гравируется" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
-    assert out["buttons"] == [["Выбрать области", "Заменить", "Не гравировать"], ["Выбрать области", "Заменить", "Автоматически", "Не гравировать"],
-                              ["Выбрать области", "Гравировать"]]                    # «Выбрать области» (ux-accessible-layout-p0) is new on every line
-    assert out["title"] == "Цвет группы № 1" and out["better"] == 0 and out["openAtFirst"] == [True]
+    assert "not engraved" in rows[2] and "гравировк" not in rows[2]                                  # an excluded colour has no titanium colour to explain
+    assert out["buttons"] == [["Select regions", "Replace", "Do not engrave"], ["Select regions", "Replace", "Automatic", "Do not engrave"],
+                              ["Select regions", "Engrave"]]                    # «Select regions» (ux-accessible-layout-p0) is new on every line
+    assert out["title"] == "Group color #1" and out["better"] == 0 and out["openAtFirst"] == [True]
     detail = out["detail"]
     assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 from the target sample · uncertain: engravings disagree" in detail.split("Selected measured titanium color:")[1]
     assert "uncertain: engravings disagree" in detail and "Color evidence: 2 independent engravings (1 test, 1 work)" in detail
@@ -537,8 +537,8 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
 @node
 def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_orders_and_filters_by_stability(tmp_path):
     out = run_editor(tmp_path, routes_with_sources(), """
-  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Отметить исходный цвет № ${k}`).closest('.lst-row');
-  await byText(row(2), 'button', 'Заменить').dispatch('click'); await tick(); await tick();       // its colour was engraved once
+  const row = (k) => tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Mark source color #${k}`).closest('.lst-row');
+  await byText(row(2), 'button', 'Replace').dispatch('click'); await tick(); await tick();       // its colour was engraved once
   const dialog = ctx.document.body.querySelector('.modal');
   const order = (root) => root.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
   const block = dialog.querySelectorAll('div').find((d) => (d.className || '').split(' ').includes('vw-better'));
@@ -578,17 +578,17 @@ def test_brush_target_selector_ranks_measured_colors_and_filters_unknown_time(tm
   time.value = 'unknown'; await time.dispatch('change'); await tick(); out.unknown = order();
   await dialog.querySelector('.lst-rows').querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e14').dispatch('click');
   await byText(dialog, 'button', 'Apply').dispatch('click'); await tick();
-  out.active = section('Активный цвет').textContent; out.writes = posted();
+  out.active = section('Active color').textContent; out.writes = posted();
 """)
     assert out["first"][0] == "e14" and out["unknown"] == ["e14"]
     assert "not a measured titanium color" in out["note"]
-    assert "автоматика его не выбирает" in out["active"] and out["writes"] == []
+    assert "not selected automatically" in out["active"] and out["writes"] == []
 
 
 @node
 def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selected_region(tmp_path):
     out = run_editor(tmp_path, routes(), """
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   await path('r3').dispatch('click', {shiftKey: true});
   await byText(section('Selection'), 'button', 'Color selection…').dispatch('click'); await tick(); await tick();
@@ -603,7 +603,7 @@ def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selecte
 
 
 def test_the_wording_of_leaving_an_area_unengraved_and_the_new_styles_are_present():
-    assert "'Не гравировать'" in EDITOR and "'Гравировать'" in EDITOR and "'Исключить'" not in EDITOR and "'Исключить'" not in COLOURS
+    assert "'Do not engrave'" in EDITOR and "'Engrave'" in EDITOR and "'Исключить'" not in EDITOR and "'Исключить'" not in COLOURS
     assert "excluded: ['not engraved', '']" in COLOURS and "steady-stable" in CSS and "steady-doubtful" in CSS and ".vw-better" in CSS
     assert "VectorEditor.create(j, run, {pick})" in COLOURS and "tools.pick(" in EDITOR
 
@@ -715,7 +715,7 @@ def test_photo_zone_inspector_treats_a_held_slider_key_as_one_change(tmp_path):
 @node
 def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tmp_path):
     out = run_editor(tmp_path, zone_routes(zoned=False), """
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   const lasso = async (extra = {}) => {
     await path('r1').dispatch('pointerdown', {clientX: 5, clientY: 30, button: 0});
     for (const [x, y] of [[30, 30], [30, 60], [5, 60]]) await path('r1').dispatch('pointermove', {clientX: x, clientY: y});
@@ -738,7 +738,7 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
   out.added = classed('vw-sel');
   await byText(section('Selection'), 'button', 'Create photo zone').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
-  out.photoTab = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
+  out.photoTab = tree.querySelectorAll('button').find((b) => b.textContent === 'Photo' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
 """)
     assert out["drawn"] == [4] and out["lines"] == 0                                 # the lasso is drawn while dragged, then removed
     assert out["selected"] == ["r1", "r2"] and out["removed"] == [] and out["added"] == ["r1", "r2"]
@@ -753,7 +753,7 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
 def test_a_min_power_above_the_max_is_said_under_the_max_and_sent_only_once_either_is_changed_to_agree(tmp_path):
     """ux-save-feedback-p0, REQ-003: prediction_store.check_power_range states 0 <= Min <= Max <= 100; nothing is sent while the two disagree."""
     out = run_editor(tmp_path, zone_routes(), """
-  await byText(tree, 'button', 'Фото').dispatch('click');
+  await byText(tree, 'button', 'Photo').dispatch('click');
   await wait(5);
   const zone = section('Photo zones');
   const lowBox = () => byLabel(zone, 'input', 'Min power for photo zone 1, %'), highBox = () => byLabel(zone, 'input', 'Max power for photo zone 1, %');   // drawn again after a save
@@ -776,14 +776,14 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   out.pics = svg().querySelectorAll('image').filter((im) => im.classList.contains('vw-zone-pic'))
     .map((im) => ['data-zone', 'href', 'x', 'y', 'width', 'height'].map((k) => im.getAttribute(k)));
   out.fills = ['r1', 'r3', 'r4'].map((rid) => [path(rid).getAttribute('fill'), path(rid).getAttribute('stroke')]);
-  out.totals = tree.textContent.match(/Слоёв [0-9][^·]+/)[0];
+  out.totals = tree.textContent.match(/Layers [0-9][^·]+/)[0];
   out.file = tree.querySelectorAll('div').filter((d) => d.className === 'vw-line').map((d) => d.textContent);
-  out.layerRow = section('Слои титана').textContent;
+  out.layerRow = section('Titanium layers').textContent;
   out.zoneOutline = drawn('vw-zone');
   out.zonesShownBefore = svg().getAttribute('class').includes('show-zones');
   await path('r3').dispatch('pointermove', {clientX: 75, clientY: 30});
   out.tip = tree.querySelectorAll('div').find((d) => d.className === 'vw-ed-tip').textContent;
-  await byText(tree, 'button', 'Фото').dispatch('click');
+  await byText(tree, 'button', 'Photo').dispatch('click');
   await wait(5);
   out.zonesShown = svg().getAttribute('class').includes('show-zones');
   const zone = section('Photo zones');
@@ -811,21 +811,21 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   out.opened = ctx.__went;
   await byText(zone, 'button', 'Select').dispatch('click');
   out.selectedZone = classed('vw-sel');
-  out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
+  out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Photo' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
   out.selection = section('Selection').textContent;
   await byText(section('Selection'), 'button', 'Return to colors').dispatch('click'); await tick();
-  await byText(tree, 'button', 'Фото').dispatch('click');
+  await byText(tree, 'button', 'Photo').dispatch('click');
   await byText(section('Photo zones'), 'button', 'Return to colors').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
   out.scalesFetched = ctx.requests.filter((r) => r.path === '/api/grey-scales').map((r) => r.url);
 """)
     assert out["pics"] == [["1", "/api/vector/7/photo/1.png?v=abc", "20", "0", "20", "10"]]
     assert out["fills"] == [["rgb(205,198,182)", "rgb(205,198,182)"], ["rgba(0,0,0,0)", "none"], ["rgba(0,0,0,0)", "none"]]
-    assert out["totals"].startswith("Слоёв 2 из 29 (фотозон 1)") and "Фотозона 1" in out["layerRow"] and "C02 · Grayscale · 2–29 %" in out["layerRow"]
+    assert out["totals"].startswith("Layers 2 of 29 (photo zones 1)") and "Photo zone 1" in out["layerRow"] and "C02 · Grayscale · 2–29 %" in out["layerRow"]
     assert out["file"] == ["C00 Cleaning (cross-hatch)whole work · 1 min 40 s",
                            "C01 C01 P10-F30-V500-I0.02regions 2 · 2.00 cm² · 1 min 40 s", "C02 Photo zone 1: Grayscaleregions 2 · 2.00 cm² · 1 min 40 s"]
     assert "Color layers: 1, photo zones: 1 of 29" in out["text"] and "1 and photo zones 1 of 29 available" in out["text"]
-    assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Grayscale · 2–29 %")
+    assert out["tip"].startswith("Region r3 · source color #2 · photo zone 1: C02 · Grayscale · 2–29 %")
     assert "20 × 10 mm · 2.00 cm² · regions 2" in out["card"] and "Measured at zone width 20 mm: 1.9–29.1 %." in out["card"]
     assert "grays matched to colors: drawing preserved. Adjust grays and contours under “Open”." in out["card"]   # a zone made before 0.23
     assert out["tiles"] == [["Grayscale", "true"], ["Jarvis ≈", "false"]]
@@ -855,9 +855,9 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
   const tab = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') === 'tab');
   const tool = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') !== 'tab').getAttribute('aria-pressed');
   const panelOf = (el) => { for (let n = el; n; n = n.parentNode) if (n.classList && n.classList.contains('vw-ed-inspector')) return 'inspector'; return null; };
-  out.before = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
-  await tab('Фото').dispatch('click');
-  out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
+  out.before = [tool('Brush'), tool('Selection'), panelOf(section('Selection'))];
+  await tab('Photo').dispatch('click');
+  out.on = [tool('Brush'), tool('Selection'), panelOf(section('Selection'))];
   out.status = tree.querySelector('.vw-ed-tool-status').textContent;
   out.stage = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-ed-stage')).className;
   out.empty = section('Photo zones').textContent;
@@ -868,8 +868,8 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
   out.actions = section('Selection').querySelectorAll('button').map((b) => b.textContent);
   await byText(section('Selection'), 'button', 'Create photo zone').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
-  await tab('Кисть').dispatch('click');
-  out.back = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
+  await tab('Brush').dispatch('click');
+  out.back = [tool('Brush'), tool('Selection'), panelOf(section('Selection'))];
 """)
     assert out["before"] == ["true", "false", "inspector"]
     assert out["on"] == ["false", "true", "inspector"] and "tool-select" in out["stage"]
@@ -887,7 +887,7 @@ def test_escape_drops_the_selection_a_lasso_being_drawn_and_the_line_under_the_p
     out = run_editor(tmp_path, zone_routes(zoned=True), """
   ctx.document.body.append(tree);                                                  // on screen, as the app shows it
   const esc = (target) => ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: target || tree});
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true});
   await path('r2').dispatch('pointermove', {clientX: 20, clientY: 20});
@@ -934,7 +934,7 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
     plain = zone_routes()
     plain["/api/vector/7"]["json"].update(zones=[dotted], device_id=1, lens_id=2)                       # the work's laser and lens, as the job has them
     out = run_editor(tmp_path, plain, """
-  await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
+  await byText(tree, 'button', 'Photo').dispatch('click'); await wait(5);
   const zone = section('Photo zones');
   out.plain = [!!byText(zone, 'button', 'Color from map'), !byText(zone, 'button', 'Use scale'), !!byLabel(zone, 'input', 'Dot power for photo zone 1, %')];
   await byText(zone, 'button', 'Color from map').dispatch('click');
@@ -946,7 +946,7 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
     mapped = zone_routes()
     mapped["/api/vector/7"]["json"]["zones"] = [{**dotted, "dot_recipe": recipe, "tone": {"brightness": 20, "contrast": 0, "gamma": 1}, "tone_used": True}]
     out = run_editor(tmp_path, mapped, """
-  await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
+  await byText(tree, 'button', 'Photo').dispatch('click'); await wait(5);
   const zone = section('Photo zones');
   out.card = zone.textContent;
   out.buttons = [!!byText(zone, 'button', 'Another color'), !byLabel(zone, 'input', 'Dot power for photo zone 1, %')];
@@ -969,15 +969,15 @@ def many_colours(n):
 
 @node
 def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sorted_and_opened_on_a_click(tmp_path):
-    """DEC-090: 33 source colours and 33 layers show 30 lines each and «Show 3 more»; «Сначала дальние (ΔE)» puts the farthest colour
-    first; where a colour is known from and «Не гравировать» are under its line, only once it is opened."""
+    """DEC-090: 33 source colours and 33 layers show 30 lines each and «Show 3 more»; «Largest ΔE first» puts the farthest colour
+    first; where a colour is known from and «Do not engrave» are under its line, only once it is opened."""
     j = many_colours(33)
     out = run_editor(tmp_path, {**routes(), "/api/vector/7": {"status": 200, "json": j}, "/api/vector/7/colouring": {"status": 200, "json": j}}, """
-  const colours = section('Исходные цвета'), layers = section('Слои титана');
+  const colours = section('Source colors'), layers = section('Titanium layers');
   const mains = (root) => root.querySelectorAll('.lst-main');
   out.colourLines = mains(colours).length; out.colourCount = colours.querySelector('.lst-count').textContent;
   out.layerLines = mains(layers).length; out.layerCount = layers.querySelector('.lst-count').textContent;
-  out.closed = [colours.querySelectorAll('button').some((b) => b.textContent === 'Не гравировать'), colours.querySelectorAll('.lst-det').filter((d) => !d.hidden).length];
+  out.closed = [colours.querySelectorAll('button').some((b) => b.textContent === 'Do not engrave'), colours.querySelectorAll('.lst-det').filter((d) => !d.hidden).length];
   const sort = colours.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   out.sorts = sort.querySelectorAll('option').map((o) => o.textContent);
   sort.value = 'far'; await sort.dispatch('change'); await tick();
@@ -987,17 +987,17 @@ def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sort
   await colours.querySelector('.lst-foot').querySelector('button').dispatch('click'); await tick();
   out.all = mains(colours).length;
   let stopped = false;                                    // the small DOM bubbles anyway: that the box stops its click is what a browser obeys
-  const box = colours.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Отметить исходный цвет № 1');
+  const box = colours.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Mark source color #1');
   await box.dispatch('click', {stopPropagation() { stopped = true; }});
   out.boxStops = stopped;
 """)
     assert (out["colourLines"], out["colourCount"]) == (30, "showing 30 of 33")
     assert (out["layerLines"], out["layerCount"]) == (30, "showing 30 of 33")
     assert out["closed"] == [False, 0]                                                            # nothing open until a line is clicked
-    assert out["sorts"] == ["По номеру", "Сначала дальние (ΔE)", "Больше площадь"]
+    assert out["sorts"] == ["By number", "Largest ΔE first", "Largest area first"]
     assert out["farthest"] == ["№ 33", "№ 32"]
     (opened,) = out["opened"]
-    assert opened.startswith("Исходный цвет № 33") and "все 2 совпали" not in opened and "Не гравировать" in opened and "рецепт: " in opened
+    assert opened.startswith("Source color #33") and "все 2 совпали" not in opened and "Do not engrave" in opened and "recipe: " in opened
     assert out["all"] == 33 and out["boxStops"] is True
 
 
@@ -1007,7 +1007,7 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
     2..8 colours, refuses another number before any request and sends ``split_region`` once."""
     out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
   const finer = () => byText(section('Selection'), 'button', 'Split finer…');
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');
   out.one = finer().disabled; out.oneReason = section('Selection').textContent;
   await path('r2').dispatch('click', {shiftKey: true});
@@ -1019,19 +1019,19 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
   const input = dialog.querySelector('input');
   out.prefill = input.value;
   input.value = '12';
-  await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Split').dispatch('click'); await tick();
   out.refusedPosts = posted().length;
   out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
   out.beside = {text: dialog.querySelector('.f-error').textContent, invalid: input.getAttribute('aria-invalid'), kept: input.value,
     described: input.getAttribute('aria-describedby').split(' ').some((id) => dialog.querySelector('.f-error').getAttribute('id') === id)};
   input.value = '4';
-  await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick(); await tick(); await tick();
+  await byText(dialog, 'button', 'Split').dispatch('click'); await tick(); await tick(); await tick();
   out.posted = posted();
   out.closed = ctx.document.body.querySelector('.modal') == null;
 """)
     assert out["one"] is False and out["two"] is True
     assert "Merge requires at least two" in out["oneReason"] and "Select one region to split it finer" in out["twoReason"]
-    assert "Разбить область мельче" in out["dialog"] and "Внешняя граница и соседи остаются как были" in out["dialog"] and out["prefill"] == "3"
+    assert "Split region into smaller pieces" in out["dialog"] and "The outer boundary and neighbors remain unchanged" in out["dialog"] and out["prefill"] == "3"
     # the wrong number is refused beside its box, which keeps it and is tied to the words; no request and no toast (ux-save-feedback-p0, REQ-003)
     assert out["refusedPosts"] == 0 and out["toasts"] == []
     assert out["beside"] == {"text": "Allowed: whole number, from 2 to 8. Entered: 12", "invalid": "true", "kept": "12", "described": True}

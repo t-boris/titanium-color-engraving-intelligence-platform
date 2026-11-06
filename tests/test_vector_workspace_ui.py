@@ -147,7 +147,7 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert "Vector work" in out["head"] and j["name"] in out["head"] and "Engraving plan" in out["head"] and "split #" in out["head"] and "layers " in out["head"]
     assert out["back"] == "#/vector" and out["copied"] == "#/vector?plan=88" and out["afterFile"] == ["vw-tab-panel-file"]
-    assert out["editorTabs"] == ["Кисть", "Слои", "Source colors", "Фото", "Надписи"]
+    assert out["editorTabs"] == ["Brush", "Layers", "Source colors", "Photo", "Lettering"]
 
 
 def has_class(classes: str, name: str) -> bool:

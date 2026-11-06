@@ -276,10 +276,10 @@ PICTURE = """
   ctx.document.body.append(tree);                                                  // on screen, as the app shows it
   const stage = () => tree.querySelectorAll('div').find((d) => d.classList.contains('vw-ed-stage'));
   const box = () => svg().getAttribute('viewBox');
-  const regions = () => section('Области');
+  const regions = () => section('Regions');
   const rows = () => regions().querySelectorAll('div').filter((d) => d.classList.contains('lst-row'));
   const rowOf = (rid) => rows().find((r) => r.getAttribute('data-key') === rid);
-  const choose = (rid) => regions().querySelectorAll('button').find((b) => /^(Выбрать область|Снять выбор с области) /.test(b.getAttribute('aria-label') || '') && b.getAttribute('aria-label').endsWith(' ' + rid));
+  const choose = (rid) => regions().querySelectorAll('button').find((b) => /^(Select region|Deselect region) /.test(b.getAttribute('aria-label') || '') && b.getAttribute('aria-label').endsWith(' ' + rid));
   const note = () => regions().querySelectorAll('p').find((p) => p.getAttribute('role') === 'status').textContent;
   const tab = (id) => tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'vw-ed-tab-' + id);
   const kb = (target, k, extra = {}) => { let prevented = false;
@@ -296,7 +296,7 @@ def test_the_picture_takes_the_keyboard_arrows_pan_plus_and_minus_zoom_and_zero_
   out.stage = [stage().getAttribute('tabindex'), stage().getAttribute('aria-label')];
   out.fit = box();
   out.fitPan = [await kb(stage(), 'ArrowRight'), box()];                          // the whole picture is in view: there is nothing to pan to
-  out.zoomIn = [await kb(stage(), '+'), box()];                                    // the same view as the «Увеличить» button gives
+  out.zoomIn = [await kb(stage(), '+'), box()];                                    // the same view as the «Zoom in» button gives
   out.right = [await kb(stage(), 'ArrowRight'), box()];
   out.down = [await kb(stage(), 'ArrowDown'), box()];
   out.left = [await kb(stage(), 'ArrowLeft'), box()];
@@ -305,13 +305,13 @@ def test_the_picture_takes_the_keyboard_arrows_pan_plus_and_minus_zoom_and_zero_
   await kb(stage(), '='); await kb(stage(), 'ArrowRight');
   out.zero = [await kb(stage(), '0'), box()];
   out.other = [await kb(stage(), 'a'), await kb(stage(), 'ArrowRight', {ctrlKey: true}), box()];                  // not the picture's keys: left alone
-  const inner = tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Увеличить');
+  const inner = tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Zoom in');
   out.inner = [await kb(inner, 'ArrowRight'), box()];                                // a key of a control inside is that control's
-  const pan = (word) => tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Сдвинуть вид ${word}`);
+  const pan = (word) => tree.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Pan view ${word}`);
   await kb(stage(), '+');
   const before = box(); const moved = [];
-  for (const word of ['вправо', 'вниз', 'влево', 'вверх']) { await pan(word).dispatch('click'); moved.push(box()); }
-  out.buttons = [before, moved, tree.querySelectorAll('button').filter((b) => (b.getAttribute('aria-label') || '').startsWith('Сдвинуть вид')).length];
+  for (const word of ['right', 'down', 'left', 'up']) { await pan(word).dispatch('click'); moved.push(box()); }
+  out.buttons = [before, moved, tree.querySelectorAll('button').filter((b) => (b.getAttribute('aria-label') || '').startsWith('Pan view')).length];
   out.posted = posted().length;
 """)
     assert out["stage"][0] == "0" and "arrow keys" in out["stage"][1] and "Source colors" in out["stage"][1]
@@ -333,17 +333,17 @@ def test_every_region_is_a_line_the_keyboard_can_choose_and_the_choice_is_the_on
     out = run_editor(tmp_path, routes(), PICTURE + """
   out.lines = rows().map((r) => r.getAttribute('data-key'));
   out.first = [rowOf('r4').textContent, rowOf('r5').textContent];
-  out.empty = [note(), classed('vw-sel'), tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed')];
+  out.empty = [note(), classed('vw-sel'), tree.querySelectorAll('button').find((b) => b.textContent === 'Selection').getAttribute('aria-pressed')];
   await choose('r1').dispatch('click'); await tick();
   out.one = [classed('vw-sel'), note(), choose('r1').getAttribute('aria-label'), choose('r1').getAttribute('aria-pressed'),
-    tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed'), section('Selection').textContent.includes('Selected regions: 1')];
+    tree.querySelectorAll('button').find((b) => b.textContent === 'Selection').getAttribute('aria-pressed'), section('Selection').textContent.includes('Selected regions: 1')];
   await choose('r2').dispatch('click'); await tick();
   out.two = [classed('vw-sel'), choose('r2').getAttribute('aria-pressed'), choose('r3').getAttribute('aria-pressed')];
   await choose('r1').dispatch('click'); await tick();                              // a second press takes the region out
   out.off = [classed('vw-sel'), choose('r1').getAttribute('aria-label')];
-  await byText(regions(), 'button', 'Выбрать все').dispatch('click'); await tick();
+  await byText(regions(), 'button', 'Select all').dispatch('click'); await tick();
   out.all = [classed('vw-sel').length, note()];
-  await byText(regions(), 'button', 'Снять выбор со всех').dispatch('click'); await tick();
+  await byText(regions(), 'button', 'Clear selection').dispatch('click'); await tick();
   out.none = [classed('vw-sel'), note()];
   await choose('r3').focus(); await choose('r3').dispatch('focusin');                // the keyboard outlines a line's region as the pointer does
   out.hot = classed('vw-hot');
@@ -352,12 +352,12 @@ def test_every_region_is_a_line_the_keyboard_can_choose_and_the_choice_is_the_on
   out.posted = posted().length;
 """)
     assert out["lines"] == ["r1", "r2", "r3", "r4", "r5"]
-    assert "исходный цвет № 2" in out["first"][0] and "титан" in out["first"][0] and "не гравируется" in out["first"][1]      # r5's colour is excluded
-    assert out["empty"][0].startswith("Выбрано областей: 0") and out["empty"][1] == []
-    assert out["one"] == [["r1"], out["one"][1], "Снять выбор с области r1", "true", "true", True] and out["one"][1].startswith("Выбрано областей: 1")
+    assert "source color #2" in out["first"][0] and "titanium" in out["first"][0] and "not engraved" in out["first"][1]      # r5's colour is excluded
+    assert out["empty"][0].startswith("Selected regions: 0") and out["empty"][1] == []
+    assert out["one"] == [["r1"], out["one"][1], "Deselect region r1", "true", "true", True] and out["one"][1].startswith("Selected regions: 1")
     assert out["two"] == [["r1", "r2"], "true", "false"]
-    assert out["off"] == [["r2"], "Выбрать область r1"]
-    assert out["all"][0] == 5 and out["all"][1].startswith("Выбрано областей: 5")
+    assert out["off"] == [["r2"], "Select region r1"]
+    assert out["all"][0] == 5 and out["all"][1].startswith("Selected regions: 5")
     assert out["none"] == [[], out["empty"][0]]
     assert out["hot"] == ["r3"] and out["hotAfter"] == []
     assert out["posted"] == 0                                                        # choosing changes nothing in the work
@@ -368,7 +368,7 @@ def test_regions_chosen_from_the_list_are_merged_and_painted_from_the_selection_
     out = run_editor(tmp_path, routes(), PICTURE + """
   await tab('colours').dispatch('click');                                           // a side tab, as a person arrives from the keyboard
   await choose('r1').dispatch('click'); await choose('r2').dispatch('click'); await tick();
-  await byText(regions(), 'button', 'К действиям с выделением').dispatch('click'); await tick();
+  await byText(regions(), 'button', 'Go to selection actions').dispatch('click'); await tick();
   const where = ctx.document.activeElement;
   out.focus = [where === section('Selection'), where && where.getAttribute('tabindex'),
     tab('brush').getAttribute('aria-selected')];
@@ -390,8 +390,8 @@ def test_a_layer_and_a_source_colour_choose_their_regions_and_an_empty_or_stale_
     out = run_editor(tmp_path, r, PICTURE + """
   const layers = tree.querySelectorAll('div').find((d) => d.classList.contains('vw-ed-layers'));
   const colours = tree.querySelectorAll('div').filter((d) => d.classList.contains('vw-ed-list')).find((d) => !d.classList.contains('vw-ed-layers'));
-  const layerBtns = layers.querySelectorAll('button').filter((b) => b.textContent === 'Выбрать области');
-  const colourBtns = colours.querySelectorAll('button').filter((b) => b.textContent === 'Выбрать области');
+  const layerBtns = layers.querySelectorAll('button').filter((b) => b.textContent === 'Select regions');
+  const colourBtns = colours.querySelectorAll('button').filter((b) => b.textContent === 'Select regions');
   out.counts = [layerBtns.length, colourBtns.length, layerBtns.map((b) => b.disabled), colourBtns.map((b) => b.disabled)];
   await tab('layers').dispatch('click');
   await layerBtns[0].dispatch('click'); await tick();
@@ -400,7 +400,7 @@ def test_a_layer_and_a_source_colour_choose_their_regions_and_an_empty_or_stale_
   out.layer2 = classed('vw-sel');                                                  // the stale id is left out, the real one chosen
   out.layer3 = [layerBtns[2].disabled, classed('vw-sel')];                         // nothing to choose: the button is off (a browser sends no click to it)
   await colourBtns[1].dispatch('click'); await tick();
-  out.colour = [classed('vw-sel'), tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed')];
+  out.colour = [classed('vw-sel'), tree.querySelectorAll('button').find((b) => b.textContent === 'Selection').getAttribute('aria-pressed')];
   out.posted = posted().length;
 """)
     assert out["counts"] == [3, 3, [False, False, True], [False, False, False]]
@@ -415,11 +415,11 @@ def test_the_regions_of_a_photo_zone_are_told_apart_in_the_list_and_a_space_on_a
     out = run_editor(tmp_path, zone_routes(zoned=True), PICTURE + """
   out.zoned = [rowOf('r3').textContent, rowOf('r1').textContent];
   const space = (target) => onDocument(target, {key: ' ', code: 'Space'});
-  const button = byText(tree, 'button', 'Вписать');
+  const button = byText(tree, 'button', 'Fit');
   out.space = [await space(button), await space(stage()), await space(tree.querySelectorAll('div').find((d) => d.getAttribute('role') === 'button' && d.classList.contains('lst-main')))];        // a button presses; the picture pans
   await ctx.document.dispatch('keyup', {code: 'Space'});
 """)
-    assert "фотозона 1" in out["zoned"][0] and "фотозона" not in out["zoned"][1]
+    assert "photo zone 1" in out["zoned"][0] and "photo zone" not in out["zoned"][1]
     assert out["space"] == [False, True, False]            # on a button or a line of a list the browser presses it; elsewhere Space is «pan with the drag»
 
 
@@ -657,7 +657,7 @@ def test_the_panel_slides_out_by_its_button_and_keeps_the_focus_and_the_selectio
   toggle().focus();
   await toggle().dispatch('click');
   out.open = [state(), here()];                                                          // the focus is on the panel's shown tab
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   await path('r1').dispatch('click');                                                    // the picture's click selects; the panel stays open
   out.selected = [classed('vw-sel'), state()];
   await escape(closer());                                                                // Esc from the panel: it shuts, the selection stays, the focus goes back
@@ -674,7 +674,7 @@ def test_the_panel_slides_out_by_its_button_and_keeps_the_focus_and_the_selectio
   await escape(stage());
   out.second = [state(), classed('vw-sel')];
 """)
-    assert out["start"] == [[False, "false"], True, "Панель: кисть, слои, цвета, надписи"]
+    assert out["start"] == [[False, "false"], True, "Panel: brush, layers, colors, lettering"]
     assert out["open"] == [[True, "true"], "vw-ed-tab-brush"]
     assert out["selected"] == [["r1"], [True, "true"]]
     assert out["escaped"] == [[False, "false"], "btn vw-ed-panel-toggle", ["r1"]]
@@ -686,7 +686,7 @@ def test_the_panel_slides_out_by_its_button_and_keeps_the_focus_and_the_selectio
 @node
 def test_a_region_chosen_on_the_picture_slides_the_panel_out_on_a_narrow_screen_only(tmp_path):
     out = run_editor(tmp_path, routes(), SLIDE + """
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   narrow(false);
   await path('r1').dispatch('click'); await tick();
   out.wide = [state(), classed('vw-sel')];                                               // a wide screen has the panel in a column already
@@ -700,7 +700,7 @@ def test_a_region_chosen_on_the_picture_slides_the_panel_out_on_a_narrow_screen_
   await path('r3').dispatch('click', {shiftKey: true}); await tick();
   out.again = [state(), classed('vw-sel')];
   await closer().dispatch('click');
-  await byText(tree.querySelectorAll('div').find((d) => d.getAttribute('aria-label') === 'Инструмент'), 'button', 'Кисть').dispatch('click');
+  await byText(tree.querySelectorAll('div').find((d) => d.getAttribute('aria-label') === 'Tool'), 'button', 'Brush').dispatch('click');
   await path('r1').dispatch('click'); await tick();                                      // the brush paints: nothing is selected, the panel stays shut
   out.brush = [state(), classed('vw-sel')];
 """)
@@ -836,7 +836,7 @@ STRIP = """
     const chain = h('div', {class: 'vw-chain'}), forecast = h('div', {}), preview = h('div', {class: 'small' + (caution ? ' alert warn' : ' muted')});
     fill(chain, LC.chain(data.ready));
     fill(forecast, h('div', {class: 'ev-applic alert warn'}, h('span', {class: 'pill warn'}, 'измерено при другой ширине')));
-    fill(preview, 'Превью: для 5 из 5 слоёв использованы измерения другой ширины.');
+    fill(preview, 'Превью: для 5 из 5 layers использованы измерения другой ширины.');
     return {chain, forecast, preview};
   };
   const line = (strip) => strip.el.querySelector('summary').textContent;
@@ -896,7 +896,7 @@ def test_on_a_phone_the_picture_is_scrolled_up_when_a_choice_opens_the_panel_and
     out = run_editor(tmp_path, routes(), SLIDE + """
   const scrolled = [];
   stage().scrollIntoView = (o) => scrolled.push(o && o.block);
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await byText(tree, 'button', 'Selection').dispatch('click');
   ctx.matchMedia = (q) => ({matches: q.includes('1100')});                                // a tablet: the panel slides in from the side, the picture stays
   await path('r1').dispatch('click');
   out.tablet = [state()[0], scrolled.slice()];
