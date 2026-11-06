@@ -106,7 +106,7 @@ def test_a_work_is_made_from_the_picture_through_the_three_steps_and_the_task_is
         out = run(tmp_path, base, """
   const tree = await screen();
   out.context = tree.querySelector('.work-context').textContent;
-  await fillPicture(tree, 'Портрет Инны', '60');
+  await fillPicture(tree, 'Inna portrait', '60');
   await button(tree, 'Next →').dispatch('click'); await settle();
   out.second = heading(tree);
   out.tiles = tiles(tree).map((t) => [t.querySelector('strong').textContent, t.querySelector('img') !== null, t.textContent.includes('ready to create'), t.textContent.includes('measurements needed')]);
@@ -136,9 +136,9 @@ def test_a_work_is_made_from_the_picture_through_the_three_steps_and_the_task_is
     plan_id = int(went.split("=")[1])
     assert went == f"/vector?plan={plan_id}"
     plan = pl.get_plan(world["store"], plan_id)
-    assert plan["name"] == "Портрет Инны" and plan["device_id"] == laser["id"] and plan["material_id"] == titanium["id"]
+    assert plan["name"] == "Inna portrait" and plan["device_id"] == laser["id"] and plan["material_id"] == titanium["id"]
     assert client.get("/api/rules", params={"device_id": laser["id"], "lens_id": lens["id"]}).json()["delta_tolerance"] == 5.0   # typed once, kept for the next
-    assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Портрет Инны"] == []   # the made work closed its task: nothing is offered again
+    assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Inna portrait"] == []   # the made work closed its task: nothing is offered again
     assert not list((Path(world["store"].data_dir) / "files" / "drafts").glob("*"))      # ... and its picture is not kept
 
 
@@ -151,7 +151,7 @@ def test_a_restarted_screen_finds_the_task_the_first_one_left_with_its_picture_a
     with serve(client.app) as base:
         first = run(tmp_path, base, """
   const tree = await screen();
-  await fillPicture(tree, 'До перезапуска', '45');
+  await fillPicture(tree, 'Before restart', '45');
   await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[0].dispatch('click');
   await button(tree, 'Next →').dispatch('click'); await settle();
@@ -162,7 +162,7 @@ def test_a_restarted_screen_finds_the_task_the_first_one_left_with_its_picture_a
 """, name="first.js")
         assert first["step"].endswith("Settings and creation")
         # the application is closed here: the second run knows nothing of the first but what the workshop kept
-        [draft] = [d for d in client.get("/api/creation/drafts").json() if d["name"] == "До перезапуска"]
+        [draft] = [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Before restart"]
         assert draft["image"]["name"] == "portrait.png" and draft["state"]["result"] == "colour" and draft["state"]["step"] == "method"
         assert draft["state"]["method"]["colours"] == "9" and draft["state"]["width_mm"] == "45"
         second = run(tmp_path, base, f"""
@@ -186,12 +186,12 @@ def test_a_restarted_screen_finds_the_task_the_first_one_left_with_its_picture_a
         assert second["head"].endswith("Settings and creation") and second["colours"] == ["9"] and second["create"] is False
         assert second["picture"] == [f"/api/creation/drafts/{draft['id']}/picture?v=0"] and second["pictureStatus"][0] == 200
         assert second["pictureStatus"][1].startswith("image/")
-        assert second["first"][:2] == ["До перезапуска", "45"] and "portrait.png" in second["first"][2]
+        assert second["first"][:2] == ["Before restart", "45"] and "portrait.png" in second["first"][2]
         assert second["tiles"] == ["true", "false", "false", "false"]
         assert second["alerts"] == [] and second["went"][0].startswith("/vector?plan="), second
         plan = pl.get_plan(world["store"], int(second["went"][0].split("=")[1]))
-        assert plan["name"] == "До перезапуска"
-        assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "До перезапуска"] == []
+        assert plan["name"] == "Before restart"
+        assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Before restart"] == []
 
 
 @node
@@ -204,9 +204,9 @@ def test_a_photograph_asks_which_kind_on_the_real_routes_going_back_deletes_the_
   const FORWARD = 'Next: engraving mode →';
   const dialog = () => body.querySelector('.modal');
   const kinds = () => dialog().querySelectorAll('.ge-kind');
-  const named = async () => (await (await fetch(BASE + '/api/photo-works')).json()).filter((w) => w.name === 'Фото Инны');
+  const named = async () => (await (await fetch(BASE + '/api/photo-works')).json()).filter((w) => w.name === 'Inna photo');
   const tree = await screen();
-  await fillPicture(tree, 'Фото Инны', '60');
+  await fillPicture(tree, 'Inna photo', '60');
   await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[1].dispatch('click');
   await button(tree, 'Next →').dispatch('click'); await settle();
@@ -238,9 +238,9 @@ def test_a_photograph_asks_which_kind_on_the_real_routes_going_back_deletes_the_
     work_id = int(went.split("=")[1])
     assert went == f"/photo-engraving?work={work_id}"
     kept = client.get(f"/api/photo-works/{work_id}").json()
-    assert kept["name"] == "Фото Инны" and kept["kind"] == chosen != "grayscale"                          # the kind marked in the question is the kind of the work
-    assert [w["id"] for w in client.get("/api/photo-works").json() if w["name"] == "Фото Инны"] == [work_id]
-    assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Фото Инны"] == []        # the task is closed only now
+    assert kept["name"] == "Inna photo" and kept["kind"] == chosen != "grayscale"                          # the kind marked in the question is the kind of the work
+    assert [w["id"] for w in client.get("/api/photo-works").json() if w["name"] == "Inna photo"] == [work_id]
+    assert [d for d in client.get("/api/creation/drafts").json() if d["name"] == "Inna photo"] == []        # the task is closed only now
 
 
 @node
@@ -260,7 +260,7 @@ def test_in_a_workshop_with_nothing_measured_the_gate_names_the_starter_test_and
     with TestClient(app) as client, serve(app) as base:
         out = run(tmp_path / "run", base, """
   const tree = await screen();
-  await fillPicture(tree, 'Первый опыт', '50');
+  await fillPicture(tree, 'First experiment', '50');
   await button(tree, 'Next →').dispatch('click'); await settle();
   out.status = tiles(tree).map((t) => t.textContent.includes('measurements needed'));
   await tiles(tree)[1].dispatch('click');
@@ -287,7 +287,7 @@ def test_in_a_workshop_with_nothing_measured_the_gate_names_the_starter_test_and
         assert out["makeEnabled"] is True and "Test created: Calibration matrix" in out["made"]                  # the vector starter test is made on the real route
         assert any(href.startswith("#/experiment/plan-") for href in out["links"]), out["links"]
         assert "What becomes available: Accepted test measurements" in out["made"]                           # ... and still says what its measurements will give
-        assert len(drafts) == 1 and drafts[0]["name"] == "Первый опыт" and drafts[0]["status"] == "open"        # the task waits, with its picture
+        assert len(drafts) == 1 and drafts[0]["name"] == "First experiment" and drafts[0]["status"] == "open"        # the task waits, with its picture
         assert drafts[0]["image"]["name"] == "portrait.png" and drafts[0]["state"]["waiting"]["result"] == "silhouette"
         assert client.get("/api/photo-works").json() == []                                                         # nothing half-made: no work was created
         assert vector_job.listing(store) == []

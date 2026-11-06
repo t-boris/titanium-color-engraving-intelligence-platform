@@ -68,7 +68,7 @@ on('GET /api/creation/context', () => reply(200, S.context));
 on('PUT /api/creation/context', (req) => { S.context = {...S.context, ...req.json}; return reply(200, S.context); });
 on('POST /api/creation/context/impact', (req) => reply(200, S.impact ? S.impact(req.json) : {changed: true, warnings: [], now: {}, after: {}}));
 on('GET /api/creation/readiness', (req) => reply(200, readyFor(req.query.get('result'))));
-on('POST /api/creation/starter-plate', (req) => reply(201, {plan_id: S.planId, name: 'Плата · ' + req.json.result}));
+on('POST /api/creation/starter-plate', (req) => reply(201, {plan_id: S.planId, name: 'Plate · ' + req.json.result}));
 on('GET /api/creation/drafts', () => reply(200, open().map(view)));
 const save = (draft, req) => {
   const f = req.form;
@@ -107,12 +107,12 @@ on('GET /api/lenses', () => reply(200, S.lenses));
 on('GET /api/materials', () => reply(200, S.materials));
 on('GET /api/materials/:id', (req, id) => { const m = S.materials.find((x) => x.id === +id); return m ? reply(200, m) : reply(404, {error: 'not found'}); });   // the stock selector reads one record
 on('GET /api/labs/choices', () => reply(200, S.labs || []));
-on('GET /api/plate-types', () => reply(200, [{id: 'grey_scales', name: 'Шкалы серого'}, {id: 'calibration', name: 'Калибровка'}]));
+on('GET /api/plate-types', () => reply(200, [{id: 'grey_scales', name: 'Grayscale strips'}, {id: 'calibration', name: 'Calibration'}]));
 on('GET /api/rules', () => reply(200, {delta_tolerance: S.tolerance}));
 on('PUT /api/rules', (req) => { S.tolerance = req.json.delta_tolerance; return reply(200, {delta_tolerance: S.tolerance}); });
 on('POST /api/vector', async () => { if (S.vectorHold) await S.vectorHold; return S.refuseVector ? refuse(S.refuseVector) : reply(201, {id: S.vectorId}); });
 on('POST /api/photo-works', () => (S.refusePhoto ? refuse(S.refusePhoto) : reply(201, {id: S.photoId, created_at: 'T0'})));
-// the question «Какая гравировка?» (PhotoKindStep) asks the made work for its kinds, saves the chosen one and deletes a work that is not kept
+// the question «Which engraving?» (PhotoKindStep) asks the made work for its kinds, saves the chosen one and deletes a work that is not kept
 on('GET /api/photo-works/:id', (req, id) => (S.photoGone ? reply(404, {error: 'no such work', kind: 'not_found'}) : reply(200, {id: +id, created_at: S.photoStamp || 'T0'})));
 on('GET /api/photo-works/:id/kinds', () => reply(200, S.kindsAnswer || {kind: 'grayscale', problem: null, kinds: ['grayscale', 'threshold', 'dither', 'sketch'].map((key) => ({
   key, family: key === 'grayscale' ? 'power' : key === 'sketch' ? 'edges' : 'dots', basis: 'documented', estimate: key !== 'grayscale', picture: `/api/photo-works/${S.photoId}/kinds/${key}.png`,
@@ -143,7 +143,7 @@ async function screen(query = {}) {
   return tree;
 }
 /** Step 1 filled in: a picture, a name and a width. */
-async function fillPicture(tree, {name = 'Портрет', width = '80', file = 'portrait.png'} = {}) {
+async function fillPicture(tree, {name = 'Portrait', width = '80', file = 'portrait.png'} = {}) {
   const input = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'file');
   input.files = [{name: file, size: 2048}];
   await input.dispatch('change');
@@ -152,7 +152,7 @@ async function fillPicture(tree, {name = 'Портрет', width = '80', file = 
   return input;
 }
 const tiles = (tree) => tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'radio');
-/** A photograph asks «Какая гравировка?» before it is kept (BUG-003): the button of step 3 opens the question, its last button keeps the work. */
+/** A photograph asks «Which engraving?» before it is kept (BUG-003): the button of step 3 opens the question, its last button keeps the work. */
 const FORWARD = 'Next: engraving mode →';
 let pending = null;                                                          // the click that opened the question stays unanswered until the person answers it
 const ask = async (tree) => { pending = button(tree, FORWARD).dispatch('click'); await settle(); };
@@ -233,7 +233,7 @@ def test_the_second_step_shows_the_persons_own_picture_as_four_comparable_tiles_
     assert "LightBurn file: one layer for each fill color used" in out["tiles"][0][3]         # export suitability stays visible
     assert "measurements needed" in out["tiles"][1][3] and "missing: laser" in out["tiles"][3][3] and "ready to create" in out["tiles"][0][3]
     assert sorted(out["previews"]) == sorted(f"/api/creation/drafts/1/preview/{r}.png?width_mm=80" for r in ("colour", "photo", "silhouette", "lines"))
-    assert out["fileSent"]["flow"] == "new" and out["fileSent"]["picture"] == {"file": "portrait.png", "size": 2048} and out["fileSent"]["name"] == "Портрет"
+    assert out["fileSent"]["flow"] == "new" and out["fileSent"]["picture"] == {"file": "portrait.png", "size": 2048} and out["fileSent"]["name"] == "Portrait"
     assert json.loads(out["fileSent"]["state"])["width_mm"] == "80"
 
 
@@ -264,7 +264,7 @@ def test_a_tile_that_cannot_be_drawn_says_so_and_the_others_still_work_and_choos
 def test_going_back_keeps_the_picture_the_name_the_size_the_result_and_every_setting_and_the_task_holds_them_all(tmp_path):
     out = run(tmp_path, """
   const tree = await screen();
-  const file = await fillPicture(tree, {name: 'Портрет Инны', width: '72'});
+  const file = await fillPicture(tree, {name: 'Inna portrait', width: '72'});
   await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[0].dispatch('click'); await settle();
   await button(tree, 'Next →').dispatch('click'); await settle();
@@ -286,10 +286,10 @@ def test_going_back_keeps_the_picture_the_name_the_size_the_result_and_every_set
 """)
     assert out["third"] == "New work · step 3 of 3: Settings and creation"
     assert out["second"] == ["New work · step 2 of 3: Choose a result", ["true", "false", "false", "false"]]
-    assert out["first"][:3] == ["New work · step 1 of 3: Image and size", "Портрет Инны", "72"] and out["first"][4] == "portrait.png"
+    assert out["first"][:3] == ["New work · step 1 of 3: Image and size", "Inna portrait", "72"] and out["first"][4] == "portrait.png"
     assert "portrait.png" in out["first"][3]
     assert out["again"] == ["7", "fine"]
-    assert out["saved"]["result"] == "colour" and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Портрет Инны"
+    assert out["saved"]["result"] == "colour" and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Inna portrait"
     assert out["saved"]["method"]["colours"] == "7" and out["saved"]["method"]["detail"] == "fine"
     assert out["pictures"] == 1                                                    # the picture travels once; going back and forth never sends it again
 
@@ -478,7 +478,7 @@ def test_a_context_that_lost_a_record_says_which_one_and_a_change_in_the_screen_
 def test_an_opened_works_own_context_is_read_only_and_names_its_release_and_the_shared_choice_cannot_change_it(tmp_path):
     out = run(tmp_path, """
   const own = ctx.WorkContext.own({device: {title: 'Mopa 30'}, lens: {name: 'F-Theta', focal_length_mm: 100}, material: {name: 'Sheet', grade: 'Grade 2', batch: 'B7'},
-    source: {kind: 'release', lab_name: 'Север', release_created_at: '2026-10-20T00:00:00Z', content_sha256: 'abcdef0123456789'}});
+    source: {kind: 'release', lab_name: 'North', release_created_at: '2026-10-20T00:00:00Z', content_sha256: 'abcdef0123456789'}});
   body.append(own);
   out.text = own.textContent;
   out.buttons = own.querySelectorAll('button').length;
@@ -487,7 +487,7 @@ def test_an_opened_works_own_context_is_read_only_and_names_its_release_and_the_
   const workshop = ctx.WorkContext.own({device: {name: 'JPT'}, lens: null, material: null, source: null});
   out.plain = workshop.textContent;
 """)
-    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "batch B7", "Север", "release dated 2026-10-20", "Recorded with this work. The shared selection for new work does not change it."):
+    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "batch B7", "North", "release dated 2026-10-20", "Recorded with this work. The shared selection for new work does not change it."):
         assert word in out["text"]
     assert out["buttons"] == 0                                                      # nothing here can change the work's own context
     assert "JPT 60" in out["sharedText"] and "Mopa 30" not in out["sharedText"]
@@ -522,7 +522,7 @@ def test_without_measurements_the_screen_names_a_concrete_starter_test_and_the_r
   out.waiting = JSON.parse(sent('PUT', '/api/creation/drafts/1').pop().form.state).waiting;
 """)
     assert "the following is still missing" in out["gate"] and "Measurements needed" in out["gate"] and "Requires a measured grayscale scale for this laser, lens, and titanium." in out["gate"]
-    assert "Starter test: Шкалы серого" in out["gate"]
+    assert "Starter test: Grayscale strips" in out["gate"]
     assert "Once the test measurements are accepted, a measured grayscale scale will become available for photo engraving." in out["gate"]
     assert ["Add capture setup", "#/setup?tab=rigs"] in out["links"]                  # a photography setup is missing: the way to add it
     assert "Your entries are saved in the task" in out["gate"]
@@ -536,24 +536,24 @@ def test_a_vector_starter_test_is_made_by_the_experiment_guide_and_a_refusal_lea
     out = run(tmp_path, """
   S.readiness.silhouette = {result: 'silhouette', ready: false, missing: ['measurements'], context: S.context, measured: 0,
     starter_test: {result: 'silhouette', needs_rig: false, becomes: 'validated_recipes', device_id: 1, material_id: 3, test_type: 'calibration', task: 'fill',
-      guide: {status: 'needs_test', message: 'Нет рецептов заливки', next_step: 'Создайте калибровочную плату', pending_plan_id: null}}};
+      guide: {status: 'needs_test', message: 'No fill recipes', next_step: 'Create a calibration plate', pending_plan_id: null}}};
 """ + async_gate.replace("__TILE__", "2") + """
   out.card = labelled(tree, 'Missing prerequisites').textContent;
   on('POST /api/creation/starter-plate', () => refuse('no plate is proposed for this task yet'));
   await button(tree, 'Create starter test').dispatch('click'); await settle();
   out.refused = [body.querySelector('.toasts').textContent.includes('no plate is proposed') || body.querySelector('.toasts').textContent.length > 0, button(tree, 'Create starter test').disabled];
-  on('POST /api/creation/starter-plate', (req) => reply(201, {plan_id: 31, name: 'Плата заливки'}));
+  on('POST /api/creation/starter-plate', (req) => reply(201, {plan_id: 31, name: 'Fill plate'}));
   await button(tree, 'Create starter test').dispatch('click'); await settle();
   out.made = labelled(tree, 'Missing prerequisites').textContent;
   out.link = tree.querySelectorAll('a').filter((a) => a.textContent === 'Open test').map((a) => a.getAttribute('href'));
   out.posts = sent('POST', '/api/creation/starter-plate').map((r) => r.json);
   out.works = sent('POST', '/api/vector').length;
 """)
-    assert "Starter test: Калибровка — Нет рецептов заливки" in out["card"] and "Создайте калибровочную плату" in out["card"]
+    assert "Starter test: Calibration — No fill recipes" in out["card"] and "Create a calibration plate" in out["card"]
     assert "Accepted test measurements are added to the measured colors for this laser, lens, and titanium." in out["card"]
     assert "the test may need repeating" in out["card"]                              # honest: a recipe enters a work when it is validated
     assert out["refused"][1] is False                                                       # the button is usable again after a refusal
-    assert "Test created: Плата заливки." in out["made"] and out["link"] == ["#/experiment/plan-31"]
+    assert "Test created: Fill plate." in out["made"] and out["link"] == ["#/experiment/plan-31"]
     assert out["posts"] == [{"result": "silhouette"}, {"result": "silhouette"}] and out["works"] == 0
 
 
@@ -594,8 +594,8 @@ def test_a_readiness_check_that_fails_is_told_and_does_not_open_the_gate(tmp_pat
 @node
 def test_a_restart_finds_the_task_where_it_was_left_with_picture_name_size_result_and_settings_and_says_the_missing_part_is_added(tmp_path):
     out = run(tmp_path, """
-  S.drafts.push({id: 5, status: 'open', flow: 'new', name: 'Портрет Инны', image: {name: 'portrait.png', type: 'image/png', size: 5},
-    state: {v: 1, step: 'method', result: 'silhouette', name: 'Портрет Инны', width_mm: '72', waiting: {for: 'starter_test', result: 'silhouette'},
+  S.drafts.push({id: 5, status: 'open', flow: 'new', name: 'Inna portrait', image: {name: 'portrait.png', type: 'image/png', size: 5},
+    state: {v: 1, step: 'method', result: 'silhouette', name: 'Inna portrait', width_mm: '72', waiting: {for: 'starter_test', result: 'silhouette'},
       method: {tolerance: '0.2', grey: '120', clean: false, markers: true}}});
   S.seq = 6;
   const tree = await screen({draft: '5'});
@@ -614,19 +614,19 @@ def test_a_restart_finds_the_task_where_it_was_left_with_picture_name_size_resul
 """)
     assert out["head"] == "New work · step 3 of 3: Settings and creation"
     assert out["thumb"][0] == "/api/creation/drafts/5/picture?v=0"                        # the picture comes from the workshop, not from the person again
-    assert "Портрет Инны" in out["summary"] and "Silhouette · width 72 mm" in out["summary"]
+    assert "Inna portrait" in out["summary"] and "Silhouette · width 72 mm" in out["summary"]
     assert "The missing prerequisites are available. You can create the work; the image, name, and settings are unchanged." in out["note"]
     assert out["focus"] == out["head"]                                                    # the keyboard returns to the heading of the step
     assert ["number", "0.2", False] in out["method"] and ["number", "120", False] in out["method"]
     assert out["picturesSent"] == 0 and out["create"] is False
-    assert out["back"][:2] == ["Портрет Инны", "72"] and "portrait.png" in out["back"][2] and out["back"][3] == ["Task image: portrait.png"]
+    assert out["back"][:2] == ["Inna portrait", "72"] and "portrait.png" in out["back"][2] and out["back"][3] == ["Task image: portrait.png"]
 
 
 @node
 def test_a_task_without_its_picture_starts_at_the_first_step_and_a_finished_or_unknown_task_is_not_offered(tmp_path):
     out = run(tmp_path, """
-  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'Без картинки', image: null, state: {v: 1, step: 'result', result: 'colour', name: 'Без картинки', width_mm: '50'}});
-  S.drafts.push({id: 2, status: 'completed', flow: 'new', name: 'Готовая', image: null, state: {}});
+  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'No image', image: null, state: {v: 1, step: 'result', result: 'colour', name: 'No image', width_mm: '50'}});
+  S.drafts.push({id: 2, status: 'completed', flow: 'new', name: 'Completed', image: null, state: {}});
   S.seq = 3;
   const first = await screen({draft: '1'});
   out.noPicture = [heading(first), labelled(first, 'Work name').value, labelled(first, 'Width on titanium, mm').value];
@@ -637,15 +637,15 @@ def test_a_task_without_its_picture_starts_at_the_first_step_and_a_finished_or_u
   const unknown = await screen({draft: '44'});
   out.unknown = unknown.textContent.includes('This task has already been completed or canceled');
 """)
-    assert out["noPicture"] == ["New work · step 1 of 3: Image and size", "Без картинки", "50"]
+    assert out["noPicture"] == ["New work · step 1 of 3: Image and size", "No image", "50"]
     assert out["done"] == ["New work · step 1 of 3: Image and size", True] and out["unknown"] is True
 
 
 @node
 def test_other_open_tasks_are_offered_on_a_new_creation_and_each_can_be_resumed_or_cancelled_after_a_confirmation(tmp_path):
     out = run(tmp_path, """
-  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'Первая', image: {name: 'a.png'}, state: {step: 'result', result: 'lines'}});
-  S.drafts.push({id: 2, status: 'open', flow: 'new', name: 'Вторая', image: {name: 'b.png'}, state: {}});
+  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'First', image: {name: 'a.png'}, state: {step: 'result', result: 'lines'}});
+  S.drafts.push({id: 2, status: 'open', flow: 'new', name: 'Second', image: {name: 'b.png'}, state: {}});
   S.seq = 3;
   const tree = await screen();
   const list = labelled(tree, 'Unfinished tasks');
@@ -662,9 +662,9 @@ def test_other_open_tasks_are_offered_on_a_new_creation_and_each_can_be_resumed_
   out.discarded = ctx.requests.filter((r) => r.path.endsWith('/discard')).map((r) => r.path);
   out.open = open().map((d) => d.id);
 """)
-    assert "Unfinished tasks: 2" in out["list"] and "Вторая" in out["list"] and "Первая" in out["list"]
+    assert "Unfinished tasks: 2" in out["list"] and "Second" in out["list"] and "First" in out["list"]
     assert out["went"] == ["/new?draft=2"]                                                  # the newest first
-    assert out["confirm"] == "Cancel task “Вторая”?" and out["discardedAfterCancel"] == 0
+    assert out["confirm"] == "Cancel task “Second”?" and out["discardedAfterCancel"] == 0
     assert out["discarded"] == ["/api/creation/drafts/2/discard"] and out["open"] == [1]
 
 
@@ -673,7 +673,7 @@ def test_a_task_that_cannot_be_saved_is_told_beside_the_form_and_the_form_keeps_
     out = run(tmp_path, """
   S.refuseDraft = 'the picture is empty';
   const tree = await screen();
-  await fillPicture(tree, {name: 'Портрет'});
+  await fillPicture(tree, {name: 'Portrait'});
   await button(tree, 'Next →').dispatch('click'); await settle();
   out.alerts = alerts(tree);
   out.step = heading(tree);
@@ -684,19 +684,19 @@ def test_a_task_that_cannot_be_saved_is_told_beside_the_form_and_the_form_keeps_
   S.refuseUpdate = 'the picture of this unfinished task is not kept';
   const name = labelled(tree, 'Work name');
   await button(tree, '← Back').dispatch('click'); await settle();
-  labelled(tree, 'Work name').value = 'Другое'; await labelled(tree, 'Work name').dispatch('input');
+  labelled(tree, 'Work name').value = 'Other'; await labelled(tree, 'Work name').dispatch('input');
   await wait(700); await settle();
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
 """)
     assert out["alerts"] == ["Could not submit: the picture is empty. Your entries remain in the form; correct them and submit again."] and out["step"].startswith("New work · step 1 of 3")
-    assert out["kept"] == ["Портрет", "80"] and out["later"].startswith("New work · step 2 of 3")
+    assert out["kept"] == ["Portrait", "80"] and out["later"].startswith("New work · step 2 of 3")
     assert any(n.startswith("Task not saved: the picture of this unfinished task is not kept") for n in out["note"])
 
 
 # -- creating the work, completing the task ---------------------------------------------------------------------------------------------------
 create_path = """
   const tree = await screen();
-  await fillPicture(tree, {name: 'Портрет Инны', width: '72'});
+  await fillPicture(tree, {name: 'Inna portrait', width: '72'});
   await button(tree, 'Next →').dispatch('click'); await settle();
   await tiles(tree)[__TILE__].dispatch('click');
   await button(tree, 'Next →').dispatch('click'); await settle();
@@ -719,7 +719,7 @@ def test_creating_a_vector_work_sends_the_context_and_the_settings_then_closes_t
 """)
     assert out["order"] == ["GET /api/creation/drafts/1/picture", "POST /api/vector", "POST /api/creation/drafts/1/complete"]       # the work first, then the task
     f = out["fields"]
-    assert (f["device_id"], f["lens_id"], f["material_id"], f["name"], f["width_mm"], f["strategy"]) == ("1", "2", "3", "Портрет Инны", "72", "photo")
+    assert (f["device_id"], f["lens_id"], f["material_id"], f["name"], f["width_mm"], f["strategy"]) == ("1", "2", "3", "Inna portrait", "72", "photo")
     assert f["n_colors"] == "9" and f["algorithm"] == "slic" and f["detail"] == "medium" and f["image"] == {"file": "portrait.png", "size": 10}
     assert "threshold" not in f                                                             # the delta E tolerance comes from the rules unless the person types one
     assert out["complete"] == {"work_kind": "vector", "work_id": 99} and out["went"] == ["/vector?plan=99"] and out["open"] == 0
@@ -750,7 +750,7 @@ def test_silhouette_and_lines_use_the_trace_settings_and_a_photo_work_is_made_on
   out.complete = sent('POST', '/api/creation/drafts/1/complete')[0].json;
 """)
     assert json.loads(out["photo"]["scale"])["key"] == "mine"                              # the scale of the context's own laser, not the first one listed
-    assert out["photo"]["name"] == "Портрет Инны" and out["photo"]["width_mm"] == "72" and "source" not in out["photo"]
+    assert out["photo"]["name"] == "Inna portrait" and out["photo"]["width_mm"] == "72" and "source" not in out["photo"]
     assert out["scalesAsked"] == "/api/grey-scales?device_id=1&lens_id=2&material_id=3&row_mm=72"
     assert out["went"] == ["/photo-engraving?work=77"] and out["complete"] == {"work_kind": "photo", "work_id": 77}
 
@@ -772,7 +772,7 @@ def test_a_photo_work_without_a_scale_of_the_context_is_not_made_on_another_lase
 
 @node
 def test_a_lab_release_in_the_context_is_sent_as_the_source_of_a_photo_work_and_a_colour_work(tmp_path):
-    release = {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "label": "Север"}
+    release = {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "label": "North"}
     out = run(tmp_path, f"S.context.source = {json.dumps(release)};" + create_path.replace("__TILE__", "1") + """
   await ask(tree);
   out.photo = Object.fromEntries(sent('POST', '/api/photo-works')[0].body.items);
@@ -820,7 +820,7 @@ def test_when_the_task_cannot_be_closed_the_work_still_exists_and_opens_and_the_
     assert "Work created, but the task remains unfinished; cancel it" in out["toast"]
 
 
-# -- BUG-003 inside the wizard: a photograph asks «Какая гравировка?» before the work is kept ------------------------------------------------
+# -- BUG-003 inside the wizard: a photograph asks «Which engraving?» before the work is kept ------------------------------------------------
 photo_path = "S.scales = [{mode: {device_id: 1, lens_id: 2, material_id: 3, key: 'mine'}}];" + create_path.replace("__TILE__", "1")
 
 
@@ -881,7 +881,7 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
   await kinds()[3].dispatch('click'); await settle();
   await dialogButton('← Back').dispatch('click'); await settle(); await pending;
   out.back = [S.deleted || [], sent('POST', '/api/creation/drafts/1/complete').length, [...ctx.__went], dialog() === null, open().map((d) => d.id)];
-  out.form = [heading(tree), labelled(tree, 'Work name') === undefined, tree.textContent.includes('Портрет Инны'), tree.textContent.includes('width 72 mm')];
+  out.form = [heading(tree), labelled(tree, 'Work name') === undefined, tree.textContent.includes('Inna portrait'), tree.textContent.includes('width 72 mm')];
   out.enabled = !button(tree, FORWARD).disabled;
   out.focus = ctx.document.activeElement === button(tree, FORWARD);
   out.line = tree.textContent.includes('Engraving mode: ' + out.names[3]);
@@ -895,7 +895,7 @@ def test_going_back_from_the_question_deletes_the_work_keeps_the_picture_and_set
     assert out["form"][0] == "New work · step 3 of 3: Settings and creation" and out["form"][2] is True and out["form"][3] is True
     assert out["line"] is True                                              # the step names the kind the person marked
     assert out["enabled"] is True and out["focus"] is True                  # the keyboard returns to the button that opened the question
-    assert out["saved"]["kind"] == "sketch" and out["saved"]["hold"] is None and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Портрет Инны"
+    assert out["saved"]["kind"] == "sketch" and out["saved"]["hold"] is None and out["saved"]["width_mm"] == "72" and out["saved"]["name"] == "Inna portrait"
     assert out["again"][0] == 2 and out["again"][1] == ["false", "false", "false", "true"]               # a new work for the new question, the same kind marked
     assert out["kept"] == [[{"kind": "sketch"}], 1, ["/photo-engraving?work=77"]]
 
@@ -952,8 +952,8 @@ def test_the_task_points_at_the_work_made_for_the_question_until_it_is_kept_and_
 def test_a_window_closed_in_the_question_gets_its_leftover_work_deleted_when_the_task_is_opened_again_but_only_that_very_work(tmp_path):
     draft = """
   S.scales = [{mode: {device_id: 1, lens_id: 2, material_id: 3, key: 'mine'}}];
-  S.drafts.push({id: 5, status: 'open', flow: 'new', name: 'Портрет Инны', image: {name: 'portrait.png', type: 'image/png', size: 5},
-    state: {v: 1, step: 'method', result: 'photo', name: 'Портрет Инны', width_mm: '72', kind: 'dither', hold: {id: 77, created_at: 'T0'}}});
+  S.drafts.push({id: 5, status: 'open', flow: 'new', name: 'Inna portrait', image: {name: 'portrait.png', type: 'image/png', size: 5},
+    state: {v: 1, step: 'method', result: 'photo', name: 'Inna portrait', width_mm: '72', kind: 'dither', hold: {id: 77, created_at: 'T0'}}});
   S.seq = 6;
 """
     out = run(tmp_path, draft + """
@@ -1019,7 +1019,7 @@ def test_cancelling_the_task_from_the_screen_asks_first_deletes_nothing_made_and
   out.discarded = [sent('POST', '/api/creation/drafts/1/discard').length, open().length, [...ctx.__went]];
   out.works = [sent('POST', '/api/vector').length, sent('POST', '/api/photo-works').length, ctx.requests.filter((r) => r.method === 'DELETE').length];
 """)
-    assert out["asked"] == "Cancel task “Портрет Инны”? / true"
+    assert out["asked"] == "Cancel task “Inna portrait”? / true"
     assert out["after"] == [0, 1] and out["discarded"] == [1, 0, ["/vector"]] and out["works"] == [0, 0, 0]
 
 
@@ -1030,7 +1030,7 @@ def test_the_bar_offers_the_unfinished_task_on_any_screen_hides_on_the_creation_
   const bar = body.querySelector('.creation-bar');
   await ctx.Creation.refreshBar(); await settle();
   out.none = [bar.hidden, body.classList.contains('has-creation-bar')];
-  S.drafts.push({id: 3, status: 'open', flow: 'new', name: 'Портрет', image: {name: 'p.png'}, state: {step: 'method', result: 'photo', waiting: {for: 'starter_test', result: 'photo'}}});
+  S.drafts.push({id: 3, status: 'open', flow: 'new', name: 'Portrait', image: {name: 'p.png'}, state: {step: 'method', result: 'photo', waiting: {for: 'starter_test', result: 'photo'}}});
   S.readiness.photo = {result: 'photo', ready: false, missing: ['measurements'], context: S.context, measured: 0, starter_test: {}};
   S.seq = 4;
   await ctx.Creation.refreshBar(); await settle();
@@ -1053,7 +1053,7 @@ def test_the_bar_offers_the_unfinished_task_on_any_screen_hides_on_the_creation_
   out.afterDiscard = [bar.hidden, body.classList.contains('has-creation-bar')];
 """)
     assert out["none"] == [True, False]
-    assert out["shown"][0] is False and "Unfinished work “Портрет”." in out["shown"][1] and "Waiting for the starter test and acceptance of its measurements." in out["shown"][1]
+    assert out["shown"][0] is False and "Unfinished work “Portrait”." in out["shown"][1] and "Waiting for the starter test and acceptance of its measurements." in out["shown"][1]
     assert out["shown"][2] == "Unfinished work" and out["shown"][3] is True
     assert "The missing prerequisites are available; you can continue." in out["ready"]
     assert out["onWizard"] is True and out["onVectorNew"] is True                            # the screen itself needs no reminder of itself
@@ -1064,7 +1064,7 @@ def test_the_bar_offers_the_unfinished_task_on_any_screen_hides_on_the_creation_
 def test_the_bar_says_how_many_tasks_are_open_and_a_failed_list_leaves_it_hidden_instead_of_breaking_the_page(tmp_path):
     out = run(tmp_path, """
   const bar = body.querySelector('.creation-bar');
-  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'Первая', image: {name: 'a.png'}, state: {}});
+  S.drafts.push({id: 1, status: 'open', flow: 'new', name: 'First', image: {name: 'a.png'}, state: {}});
   S.drafts.push({id: 2, status: 'open', flow: 'new', name: null, image: {name: 'second.png'}, state: {}});
   await ctx.Creation.refreshBar(); await settle();
   out.two = bar.textContent;
@@ -1157,19 +1157,19 @@ def test_the_measured_scale_of_the_context_is_the_one_of_its_own_laser_lens_and_
 def test_a_photo_works_own_laser_lens_titanium_and_source_are_written_in_one_line(tmp_path):
     out = run(tmp_path, """
   out.line = await ctx.App.workContextText({scale: {device_id: 2, lens_id: 2}, material: {name: 'Sheet', grade: 'Grade 2', batch: 'B7'}, source: null});
-  out.release = await ctx.App.workContextText({scale: {device_id: 1, lens_id: null}, material: null, source: {kind: 'release', lab_name: 'Север'}});
+  out.release = await ctx.App.workContextText({scale: {device_id: 1, lens_id: null}, material: null, source: {kind: 'release', lab_name: 'North'}});
   on('GET /api/devices', () => refuse('workshop is busy', 500));
   out.unreadable = await ctx.App.workContextText({scale: {device_id: 1, lens_id: 2}, material: null, source: null});
 """)
     assert out["line"] == "Laser: Mopa 30 · lens: F-Theta · 174 mm · stock: Sheet · Grade 2 · batch B7 · measurements: this workshop"
-    assert out["release"] == "Laser: JPT 60 · lens: Unknown · stock: not specified · measurements: laboratory Север"
+    assert out["release"] == "Laser: JPT 60 · lens: Unknown · stock: not specified · measurements: laboratory North"
     assert out["unreadable"] == ""                                                            # no lists, no line: the work screen stays as it was
 
 
 @node
 def test_a_new_test_plate_starts_on_the_shared_laser_and_titanium_unless_the_caller_names_others_and_remembers_where_it_was_made(tmp_path):
     out = run(tmp_path, """
-  on('POST /api/capability-plates', () => reply(201, {plan_id: 9, name: 'Плата', summary: {layers: 4, work_field: {checked: true}}}));
+  on('POST /api/capability-plates', () => reply(201, {plan_id: 9, name: 'Plate', summary: {layers: 4, work_field: {checked: true}}}));
   const devices = [{id: 1, name: 'JPT', title: 'JPT 60', lens: {id: 2}, passport: {pulse_steps: [{pulse_width_ns: 200, cutoff_khz: 100}], repetition_rate_khz: {min: 1, max: 4000}}},
     {id: 2, name: 'Mopa', title: 'Mopa 30', lens: {id: 5}, passport: {pulse_steps: [{pulse_width_ns: 200, cutoff_khz: 100}], repetition_rate_khz: {min: 1, max: 4000}}}];
   const materials = [{id: 3, family: 'Titanium', name: 'Plate', grade: 'Grade 5'}, {id: 4, family: 'Titanium', name: 'Sheet', grade: 'Grade 2'}];

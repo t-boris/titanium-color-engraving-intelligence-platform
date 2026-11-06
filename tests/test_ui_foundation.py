@@ -29,7 +29,7 @@ const count = (l) => l.el.querySelector('.lst-count').textContent;
 const wait = async (n = 4) => { for (let i = 0; i < n; i++) await tick(); };
 const shell = new El('div'); shell.setAttribute('id', 'app'); doc.body.append(shell);
 const mount = (l) => { shell.append(l.el); return l; };
-const ITEMS = Array.from({length: 45}, (_, i) => ({id: i + 1, kind: i %% 3 === 0 ? 'a' : 'b', name: 'элемент ' + (i + 1)}));
+const ITEMS = Array.from({length: 45}, (_, i) => ({id: i + 1, kind: i %% 3 === 0 ? 'a' : 'b', name: 'item ' + (i + 1)}));
 (async () => {
   const out = {};
 %(body)s
@@ -56,21 +56,21 @@ def test_typing_in_the_search_keeps_the_same_field_and_its_focus(tmp_path):
   const input = l.el.querySelector('.lst-search');
   input.focus();
   const same = [];
-  for (const text of ['э', 'эл', 'элем', 'элемент 4']) {
+  for (const text of ['i', 'it', 'item', 'item 4']) {
     input.value = text; await input.dispatch('input'); await wait();
     same.push([l.el.querySelector('.lst-search') === input, doc.activeElement === input, input.value]);
   }
   out.same = same; out.rows = rows(l); out.count = count(l);
 """)
-    assert all(a and b for a, b, _ in out["same"]) and [v for *_, v in out["same"]] == ["э", "эл", "элем", "элемент 4"]
+    assert all(a and b for a, b, _ in out["same"]) and [v for *_, v in out["same"]] == ["i", "it", "item", "item 4"]
     assert out["count"] == "showing 7 of 7"
 
 
 @node
 def test_a_chip_row_and_an_opened_line_keep_the_focus_after_the_redraw(tmp_path):
     out = run(tmp_path, """
-  const l = mount(App.list({items: ITEMS, key: (x) => x.id, row: (x) => x.name, details: (x) => h('p', {}, 'подробно ' + x.id),
-    filters: [{key: 'kind', label: 'Вид', options: [['a', 'Первые'], ['b', 'Вторые']], test: (x, v) => x.kind === v}]}));
+  const l = mount(App.list({items: ITEMS, key: (x) => x.id, row: (x) => x.name, details: (x) => h('p', {}, 'details ' + x.id),
+    filters: [{key: 'kind', label: 'Kind', options: [['a', 'First'], ['b', 'Second']], test: (x, v) => x.kind === v}]}));
   await l.ready;
   const chip = l.el.querySelectorAll('.lst-chip').find((c) => c.getAttribute('data-value') === 'a');
   chip.focus(); await chip.dispatch('click'); await wait();
@@ -92,7 +92,7 @@ SERVER = """
   const l = mount(App.list({
     load: (q) => { asked.push(q); const all = ITEMS.filter((x) => !q.search || x.name.includes(q.search));
       const answer = {items: all.slice(q.offset, q.offset + q.limit), total: all.length, counts: {}};
-      if (failNext && q.offset > 0) { failNext = false; return Promise.reject(new Error('сервер не ответил')); }
+      if (failNext && q.offset > 0) { failNext = false; return Promise.reject(new Error('server did not respond')); }
       return new Promise((resolve) => gates.push(() => resolve(answer))); },
     key: (x) => x.id, row: (x) => x.name, search: true}));
   gates.shift()(); await l.ready;
@@ -116,27 +116,27 @@ def test_a_second_click_on_show_more_while_one_is_on_its_way_asks_once(tmp_path)
 def test_a_late_page_of_an_old_search_does_not_join_the_new_list(tmp_path):
     out = run(tmp_path, SERVER + """
   l.el.querySelector('.lst-foot').querySelector('button').dispatch('click'); await wait();          // the page of the old list is on its way
-  const input = l.el.querySelector('.lst-search'); input.value = 'элемент 4'; await input.dispatch('input'); await new Promise((r) => setTimeout(r, 300));
+  const input = l.el.querySelector('.lst-search'); input.value = 'item 4'; await input.dispatch('input'); await new Promise((r) => setTimeout(r, 300));
   const [late, fresh] = gates.splice(0, 2);                                                         // the new search was asked second
   fresh(); await wait(); late(); await wait();                                                      // the old answer arrives last
   out.rows = rows(l); out.count = count(l);
 """)
-    assert out["rows"] == [f"элемент {n}" for n in (4, 40, 41, 42, 43, 44, 45)] and out["count"] == "showing 7 of 7"
+    assert out["rows"] == [f"item {n}" for n in (4, 40, 41, 42, 43, 44, 45)] and out["count"] == "showing 7 of 7"
 
 
 @node
 def test_a_failed_page_keeps_the_rows_the_search_and_offers_a_retry(tmp_path):
     out = run(tmp_path, SERVER + """
   failNext = true;
-  const input = l.el.querySelector('.lst-search'); input.value = 'элемент'; input.focus();
+  const input = l.el.querySelector('.lst-search'); input.value = 'item'; input.focus();
   l.el.querySelector('.lst-foot').querySelector('button').dispatch('click'); await wait();
   out.alert = l.el.querySelector('.lst-fail').textContent; out.rows = rows(l).length; out.count = count(l);
   out.search = [l.el.querySelector('.lst-search') === input, input.value];
   l.el.querySelector('.lst-retry').dispatch('click'); await wait(); gates.shift()(); await wait();
   out.after = [rows(l).length, l.el.querySelector('.lst-fail'), count(l)];
 """)
-    assert out["alert"].startswith("Could not load the list: сервер не ответил") and out["rows"] == 20 and out["count"] == "showing 20 of 45"
-    assert out["search"] == [True, "элемент"]
+    assert out["alert"].startswith("Could not load the list: server did not respond") and out["rows"] == 20 and out["count"] == "showing 20 of 45"
+    assert out["search"] == [True, "item"]
     assert out["after"] == [40, None, "showing 40 of 45"]
 
 
@@ -144,7 +144,7 @@ def test_a_failed_page_keeps_the_rows_the_search_and_offers_a_retry(tmp_path):
 def test_a_first_read_that_fails_is_said_beside_the_list_with_a_retry(tmp_path):
     out = run(tmp_path, """
   let fail = true;
-  const l = mount(App.list({load: async (q) => { if (fail) throw new Error('нет связи'); return {items: ITEMS.slice(0, 3), total: 3, counts: {}}; },
+  const l = mount(App.list({load: async (q) => { if (fail) throw new Error('no connection'); return {items: ITEMS.slice(0, 3), total: 3, counts: {}}; },
     key: (x) => x.id, row: (x) => x.name}));
   await l.ready;
   out.failed = [l.el.querySelector('.lst-fail').getAttribute('role'), l.el.querySelector('.lst-empty')];
@@ -153,44 +153,44 @@ def test_a_first_read_that_fails_is_said_beside_the_list_with_a_retry(tmp_path):
   out.after = [rows(l), l.el.querySelector('.lst-fail')];
 """)
     assert out["failed"] == ["alert", None]                                               # an error is not «nothing found»
-    assert out["after"] == [["элемент 1", "элемент 2", "элемент 3"], None]
+    assert out["after"] == [["item 1", "item 2", "item 3"], None]
 
 
 # -- REQ-004: nothing found is not an empty collection; the reset keeps the sort and the selection ----------------------------------------
 @node
 def test_nothing_found_offers_a_reset_that_clears_every_condition_and_keeps_the_sort(tmp_path):
     out = run(tmp_path, """
-  const l = mount(App.list({items: ITEMS, key: (x) => x.id, row: (x) => x.name, search: (x) => x.name, empty: 'Пусто',
-    filters: [{key: 'kind', label: 'Вид', options: [['a', 'Первые'], ['b', 'Вторые']], test: (x, v) => x.kind === v}],
-    sorts: [['id', 'По порядку', (p, q) => p.id - q.id], ['back', 'С конца', (p, q) => q.id - p.id]], noResults: 'Таких нет.'}));
+  const l = mount(App.list({items: ITEMS, key: (x) => x.id, row: (x) => x.name, search: (x) => x.name, empty: 'Empty',
+    filters: [{key: 'kind', label: 'Kind', options: [['a', 'First'], ['b', 'Second']], test: (x, v) => x.kind === v}],
+    sorts: [['id', 'In order', (p, q) => p.id - q.id], ['back', 'Reverse', (p, q) => q.id - p.id]], noResults: 'No matches.'}));
   await l.ready;
   const sort = l.el.querySelectorAll('select')[0]; sort.value = 'back'; await sort.dispatch('change'); await wait();
   await l.el.querySelectorAll('.lst-chip').find((c) => c.getAttribute('data-value') === 'a').dispatch('click'); await wait();
-  const input = l.el.querySelector('.lst-search'); input.value = 'нет такого'; await input.dispatch('input'); await wait();
-  out.none = [l.el.querySelector('.lst-empty').textContent, count(l), l.el.querySelector('.lst-none').textContent.includes('нет такого'), l.el.querySelector('.lst-reset').hidden];
+  const input = l.el.querySelector('.lst-search'); input.value = 'no match'; await input.dispatch('input'); await wait();
+  out.none = [l.el.querySelector('.lst-empty').textContent, count(l), l.el.querySelector('.lst-none').textContent.includes('no match'), l.el.querySelector('.lst-reset').hidden];
   await l.el.querySelector('.lst-none').querySelector('button').dispatch('click'); await wait();
   out.reset = [count(l), l.state().sort, l.state().search, l.state().filters.kind, input.value, rows(l)[0], l.el.querySelector('.lst-reset').hidden];
 """)
-    assert out["none"] == ["Таких нет.", "showing 0 of 0", True, False]
-    assert out["reset"] == ["showing 20 of 45", "back", "", "", "", "элемент 45", True]
+    assert out["none"] == ["No matches.", "showing 0 of 0", True, False]
+    assert out["reset"] == ["showing 20 of 45", "back", "", "", "", "item 45", True]
 
 
 @node
 def test_an_empty_collection_is_told_apart_from_nothing_found(tmp_path):
     out = run(tmp_path, """
-  const l = mount(App.list({items: [], row: (x) => x.name, search: (x) => x.name, empty: 'Материалов нет'}));
+  const l = mount(App.list({items: [], row: (x) => x.name, search: (x) => x.name, empty: 'No materials'}));
   await l.ready;
   out.text = l.el.querySelector('.lst-empty').textContent; out.reset = l.el.querySelector('.lst-none');
 """)
-    assert out["text"] == "Материалов нет" and out["reset"] is None
+    assert out["text"] == "No materials" and out["reset"] is None
 
 
 # -- REQ-003: the object in use stays findable ---------------------------------------------------------------------------------------------
 PINNED = """
   let chosen = %(chosen)s;
   const l = mount(App.list({items: ITEMS, key: (x) => x.id, row: (x) => x.name, search: (x) => x.name, selected: () => chosen,
-    filters: [{key: 'kind', label: 'Вид', options: [['a', 'Первые'], ['b', 'Вторые']], test: (x, v) => x.kind === v}],
-    details: (x) => h('p', {}, 'подробно ' + x.id)}));
+    filters: [{key: 'kind', label: 'Kind', options: [['a', 'First'], ['b', 'Second']], test: (x, v) => x.kind === v}],
+    details: (x) => h('p', {}, 'details ' + x.id)}));
   await l.ready;
   const pin = () => l.el.querySelector('.lst-pin');
 """
@@ -232,8 +232,8 @@ def test_opening_a_line_that_is_not_shown_never_ends_in_a_silent_null(tmp_path):
   const gone = await l.open(999);
   out.gone = [gone, pin().querySelector('.lst-pin-note').textContent];
 """)
-    assert out["far"] == ["подробно 33", 40, None]
-    assert out["hidden"][0] == "подробно 2" and out["hidden"][1].startswith("The selected row is hidden")
+    assert out["far"] == ["details 33", 40, None]
+    assert out["hidden"][0] == "details 2" and out["hidden"][1].startswith("The selected row is hidden")
     assert out["gone"][0] is None and out["gone"][1].startswith("The selected item is unavailable")
 
 
@@ -255,12 +255,12 @@ def test_a_server_list_asks_the_screen_for_a_selection_it_has_not_loaded(tmp_pat
 @node
 def test_a_confirmation_starts_on_cancel_keeps_tab_inside_and_gives_the_focus_back(tmp_path):
     out = run(tmp_path, """
-  const opener = h('button', {type: 'button'}, 'Удалить'); shell.append(opener); opener.focus();
+  const opener = h('button', {type: 'button'}, 'Delete'); shell.append(opener); opener.focus();
   let ran = 0;
-  const m = App.confirmBox('Удалить работу?', 'Это нельзя отменить.', 'Удалить', async () => { ran += 1; });
+  const m = App.confirmBox('Delete work?', 'This cannot be undone.', 'Delete', async () => { ran += 1; });
   const names = () => doc.activeElement && doc.activeElement.textContent;
   out.start = names(); out.inert = shell.hasAttribute('inert');
-  const buttons = m.el.querySelectorAll('button');                                  // ×, Отмена, Удалить: the browser moves between them itself
+  const buttons = m.el.querySelectorAll('button');                                  // ×, Cancel, Delete: the browser moves between them itself
   const close = buttons[0], last = buttons[buttons.length - 1];
   last.focus(); await doc.dispatch('keydown', {key: 'Tab', shiftKey: false}); out.forward = names();      // Tab from the last wraps to the first
   close.focus(); await doc.dispatch('keydown', {key: 'Tab', shiftKey: true}); out.backward = names();     // Shift+Tab from the first wraps to the last
@@ -269,15 +269,15 @@ def test_a_confirmation_starts_on_cancel_keeps_tab_inside_and_gives_the_focus_ba
   out.closed = [doc.body.querySelector('.modal'), ran, shell.hasAttribute('inert'), doc.activeElement === opener];
 """)
     assert out["start"] == "Cancel" and out["inert"] is True
-    assert (out["forward"], out["backward"], out["fromBehind"]) == ("×", "Удалить", "×")
+    assert (out["forward"], out["backward"], out["fromBehind"]) == ("×", "Delete", "×")
     assert out["closed"] == [None, 0, False, True]                              # Escape never confirms
 
 
 @node
 def test_only_the_dialog_on_top_answers_escape_and_the_one_below_is_inert_until_then(tmp_path):
     out = run(tmp_path, """
-  const first = App.modal('Первое', h('input', {}), [{label: 'ОК', run: (m) => m.close()}]);
-  const second = App.modal('Второе', h('p', {}, 'вложенное'), [{label: 'Закрыть', run: (m) => m.close()}]);
+  const first = App.modal('First', h('input', {}), [{label: 'OK', run: (m) => m.close()}]);
+  const second = App.modal('Second', h('p', {}, 'nested'), [{label: 'Close', run: (m) => m.close()}]);
   out.under = first.el.parentNode.hasAttribute('inert');
   await doc.dispatch('keydown', {key: 'Escape'});
   out.afterOne = [doc.body.querySelectorAll('.modal').length, first.el.parentNode.hasAttribute('inert'), shell.hasAttribute('inert')];
@@ -291,8 +291,8 @@ def test_only_the_dialog_on_top_answers_escape_and_the_one_below_is_inert_until_
 def test_when_the_opener_is_gone_the_focus_goes_to_the_main_area(tmp_path):
     out = run(tmp_path, """
   const main = h('main', {id: 'main', tabindex: '-1'}); shell.append(main);
-  const opener = h('button', {type: 'button'}, 'Открыть'); main.append(opener); opener.focus();
-  const m = App.modal('Окно', h('p', {}, 'текст'), [{label: 'Закрыть', run: (d) => d.close()}]);
+  const opener = h('button', {type: 'button'}, 'Open'); main.append(opener); opener.focus();
+  const m = App.modal('Dialog', h('p', {}, 'text'), [{label: 'Close', run: (d) => d.close()}]);
   opener.remove();
   m.close();
   out.focus = doc.activeElement && doc.activeElement.getAttribute('id');
@@ -307,8 +307,8 @@ def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
   const saved = {};
   ctx.localStorage = {getItem: (key) => saved[key] || null, setItem: (key, value) => { saved[key] = value; }};
   ctx.window.innerWidth = 1200;
-  App.register({id: 'experiments', render: async () => h('div', {}, 'экран')});
-  App.register({id: 'findings', render: async () => h('div', {}, 'выводы')});
+  App.register({id: 'experiments', render: async () => h('div', {}, 'screen')});
+  App.register({id: 'findings', render: async () => h('div', {}, 'findings')});
   await App.render();
   const rail = () => shell.querySelector('.rail-toggle');
   const nav = () => shell.querySelector('.sidebar');
@@ -318,7 +318,7 @@ def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
   await pin().dispatch('click');
   out.pinned = [nav().classList.contains('is-pinned'), pin().getAttribute('aria-pressed'), saved['navigation.pinned'], rail().getAttribute('aria-expanded')];
   ctx.location.hash = '#/findings'; await App.render();
-  out.next = [nav().classList.contains('is-pinned'), pin().textContent, shell.textContent.includes('Исследователь / мастер')];
+  out.next = [nav().classList.contains('is-pinned'), pin().textContent, shell.textContent.includes('Researcher / workshop')];
   await pin().dispatch('click');
   out.compact = [nav().classList.contains('is-pinned'), saved['navigation.pinned'], doc.activeElement === rail()];
   await App.render(); out.kept = !nav().classList.contains('is-pinned');
@@ -332,18 +332,18 @@ def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
 def test_the_skip_link_moves_the_focus_to_the_content_and_leaves_the_address_alone(tmp_path):
     out = run(tmp_path, """
   const root = shell;
-  App.register({id: 'experiments', render: async () => h('div', {}, 'экран')});
-  App.register({id: 'findings', render: async () => h('div', {}, 'выводы')});
+  App.register({id: 'experiments', render: async () => h('div', {}, 'screen')});
+  App.register({id: 'findings', render: async () => h('div', {}, 'findings')});
   ctx.location.hash = '#/findings/7?tab=x';
   App.start(); await wait(6);
   out.afterRender = [doc.activeElement && doc.activeElement.getAttribute('id'), ctx.location.hash];       // a new screen starts at its content
   doc.activeElement.blur();
-  const skip = h('a', {class: 'skip', href: '#main'}, 'Перейти к содержимому'); doc.body.append(skip);
+  const skip = h('a', {class: 'skip', href: '#main'}, 'Skip to content'); doc.body.append(skip);
   let stopped = false;
   await doc.dispatch('click', {target: skip, preventDefault() { stopped = true; }}); await wait();
   out.skip = [stopped, doc.activeElement && doc.activeElement.getAttribute('id'), ctx.location.hash];
   ctx.location.hash = '#main'; await handlers.hashchange(); await wait();
-  out.hashchange = [ctx.location.hash, doc.activeElement && doc.activeElement.getAttribute('id'), root.textContent.includes('выводы')];
+  out.hashchange = [ctx.location.hash, doc.activeElement && doc.activeElement.getAttribute('id'), root.textContent.includes('findings')];
 """)
     assert out["afterRender"] == ["main", "#/findings/7?tab=x"]
     assert out["skip"] == [True, "main", "#/findings/7?tab=x"]
