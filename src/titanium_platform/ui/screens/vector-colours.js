@@ -37,30 +37,34 @@ const VectorColours = (() => {
 
   const ORDERS = [['near', 'Ближайшие к исходному цвету'], ['stable', 'Самые стабильные'], ['fast', 'Самые быстрые']];
   const RANK = {stable: 2, single: 1, doubtful: 0};
-  const trustOf = (e) => e.confidence ?? 1 / 3;                   // одна гравировка стоит столько же, сколько в agreement.SINGLE
   const BETTER = 6;                                               // сколько более стабильных цветов предложить взамен
 
   /** Выбор цвета титана из палитры (REQ-051): у каждого цвета видно, откуда он известен (тесты и работы) и насколько он стабилен; порядок и фильтр
       по повтору; взамен ненадёжного цвета предлагаются более стабильные, ближайшие к нему. Ближайшие к исходному цвету — первыми; снятые без
       привязки — с пунктиром. The colours are a short list (DEC-090): a line each with its square, ΔE and steadiness, pages of 30; the square
       chooses the colour, the line opens what it is and where it is known from. */
-  const pick = (j, ...rest) => pickFrom(() => palette(j), ...rest);
+  const pick = (j, title, sourceLab, current, onPick) => pickFrom(() => palette(j), title, sourceLab, current, onPick,
+    {imageUrl: `/api/plans/${j.id}/source-image`});
   /** The same window over any list of measured colours (``load``: a promise of them), as the photo work's inscriptions need it. */
-  async function pickFrom(load, title, sourceLab, current, onPick) {
+  async function pickFrom(load, title, sourceLab, current, onPick, options = {}) {
     let entries;
     try { entries = await load(); } catch (e) { return fail(e); }
     const now = entries.find((e) => e.id === current) || null;
     let chosen = now;
-    const near = (a, b) => de(a.lab, sourceLab) - de(b.lab, sourceLab);
-    const compare = {near, fast: (a, b) => (a.time_s_per_cm2 ?? Infinity) - (b.time_s_per_cm2 ?? Infinity) || near(a, b),
-      stable: (a, b) => RANK[steadiness(b)] - RANK[steadiness(a)] || trustOf(b) - trustOf(a) || near(a, b)};
+    let targetLab = [...sourceLab];
+    const idOrder = (a, b) => String(a.id).localeCompare(String(b.id));
+    const near = (a, b) => de(a.lab, targetLab) - de(b.lab, targetLab) || idOrder(a, b);
+    const rate = (e) => Number.isFinite(e.time_s_per_cm2) ? e.time_s_per_cm2 : Infinity;
+    const confidence = (e) => Number.isFinite(e.confidence) ? e.confidence : -Infinity;
+    const compare = {near, fast: (a, b) => (rate(a) === rate(b) ? near(a, b) : rate(a) - rate(b)),
+      stable: (a, b) => RANK[steadiness(b)] - RANK[steadiness(a)] || (confidence(a) === confidence(b) ? 0 : confidence(b) - confidence(a)) || near(a, b)};
     const better = h('div', {}), choice = h('p', {class: 'small'});
     const swatchOf = (e, text) => h('button', {type: 'button',
       class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (chosen && e.id === chosen.id ? ' picked' : ''),
       style: `background:rgb(${e.srgb.join(',')})`, 'data-entry': e.id, title: text, 'aria-label': text, onClick: () => choose(e)});
-    const text = (e) => `${labText(e.lab)} · ΔE ${num(de(e.lab, sourceLab))} · ${STEADY[steadiness(e)][0]} · ${originText(e.sources)} · ${seconds(e.time_s_per_cm2)}`;
+    const text = (e) => `${labText(e.lab)} · ΔE ${num(de(e.lab, targetLab))} · ${STEADY[steadiness(e)][0]} · ${originText(e.sources)} · ${seconds(e.time_s_per_cm2)}`;
     const detail = (e) => h('div', {class: 'stack small'},
-      h('div', {}, chip(e.srgb), ' ', labText(e.lab), ` · ΔE ${num(de(e.lab, sourceLab))} до исходного цвета`,
+      h('div', {}, chip(e.srgb), ' ', labText(e.lab), ` · ΔE ${num(de(e.lab, targetLab))} from the target sample`,
         now && now.id !== e.id ? ` · ΔE ${num(de(e.lab, now.lab))} до текущего` : ''),
       h('div', {}, pill(...STEADY[steadiness(e)]), ' ', `Уверенность ${e.confidence == null ? 'не оценена' : num(e.confidence)} · ${agreed(e.agreement)}`,
         e.caution ? [' ', pill(CAUTION[e.caution], 'warn')] : null),
@@ -71,11 +75,13 @@ const VectorColours = (() => {
       sourcesBlock(e.sources || [], e.agreement, e.lab, true),
       chosen && chosen.id === e.id ? null : h('div', {}, btn('Выбрать этот цвет', () => choose(e), 'btn-small')));
     const colours = App.list({items: entries, page: 30, key: (e) => String(e.id), open: now ? String(now.id) : null,
-      row: (e) => [swatchOf(e, text(e)), h('span', {class: 'lst-text'}, `ΔE ${num(de(e.lab, sourceLab))} · ${STEADY[steadiness(e)][0]}`),
+      row: (e) => [swatchOf(e, text(e)), h('span', {class: 'lst-text'}, `ΔE ${num(de(e.lab, targetLab))} · ${STEADY[steadiness(e)][0]}`),
         h('span', {class: 'muted small'}, seconds(e.time_s_per_cm2))],
       details: detail, search: (e) => [labText(e.lab), originText(e.sources), ...(e.sources || []).map((s) => s.title)].join(' '),
       filters: [{key: 'steady', label: 'Повтор', options: [['stable', 'проверены повтором'], ['single', 'одна гравировка'], ['doubtful', 'сомнительные']],
-        test: (e, v) => steadiness(e) === v}],
+        test: (e, v) => steadiness(e) === v},
+        {key: 'time', label: 'Time per cm²', select: true, options: [['60', 'up to 1 minute'], ['300', 'up to 5 minutes'], ['unknown', 'time not estimated']],
+          test: (e, v) => v === 'unknown' ? !Number.isFinite(e.time_s_per_cm2) : Number.isFinite(e.time_s_per_cm2) && e.time_s_per_cm2 <= Number(v)}],
       sorts: ORDERS.map(([k, name]) => [k, name, compare[k]]), empty: 'Нет цветов под такой фильтр.'});
     function choose(e) { chosen = e; paint(); colours.refresh(); }
     function paint() {
@@ -85,11 +91,15 @@ const VectorColours = (() => {
         h('strong', {}, 'Стабильнее и похоже на текущий цвет'),
         stabler.length ? h('div', {class: 'vw-swatches'}, stabler.map((e) => swatchOf(e, `ΔE ${num(de(e.lab, now.lab))} до текущего · ${text(e)}`)))
           : h('span', {class: 'muted'}, 'Цветов, проверенных повтором, в палитре нет.')) : null);
-      fill(choice, chosen ? ['Выбран: ', chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, sourceLab))} до исходного цвета · ${STEADY[steadiness(chosen)][0]}`]
+      fill(choice, chosen ? ['Selected measured titanium color: ', chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, targetLab))} from the target sample · ${STEADY[steadiness(chosen)][0]}`]
         : h('span', {class: 'muted'}, 'Выберите цвет'));
     }
+    const target = App.targetColor({initial: targetLab, imageUrl: options.imageUrl, submitLabel: 'Find recipes', onSelect: (lab) => {
+      targetLab = lab; paint(); colours.refresh();
+    }});
     paint();
     modal(title, h('div', {class: 'stack'},
+      target.el,
       h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Зелёная точка — цвет проверен повтором, красная — гравировки расходятся; `
         + 'у остальных одна гравировка. «Откуда» — из каких тестов и работ цвет известен. Квадрат выбирает цвет, строка открывает, откуда он известен.'),
       now ? h('p', {class: 'small'}, 'Сейчас: ', chip(now.srgb), ' ', pill(...STEADY[steadiness(now)]), ` ${originText(now.sources)}`) : null,
@@ -153,7 +163,7 @@ const VectorColours = (() => {
       actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Вернуть', () => run({op: 'restore', variant: v.number}, place))]),
       details: (v) => h('div', {class: 'stack small'},
         h('div', {}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
-          + (v.totals.seconds == null ? 'время не оценено' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`),
+          + (v.totals.seconds == null ? 'time not estimated' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`),
         elsewhere(v) ? h('div', {class: 'muted'}, `На разбиении № ${v.version}: вернуть можно отменой.`) : null),
       search: (v) => `№ ${v.number} ${way(v)}`,
       sorts: [['new', 'Сначала новые', (a, b) => b.number - a.number],

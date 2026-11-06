@@ -7,17 +7,10 @@
    найденными рецептами — «Точки этим цветом». */
 'use strict';
 const ColorMap = (() => {
-  const {h, fill, btn, link, pill, get, num, swatch, labText} = App;
+  const {h, fill, btn, field, link, pill, get, num, swatch, labText} = App;
   const SVG = 'http://www.w3.org/2000/svg';
 
-  // sRGB (#rrggbb) -> Lab (D65), как в приложении
-  function hexToLab(hex) {
-    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-    const X = (0.4124564 * c[0] + 0.3575761 * c[1] + 0.1804375 * c[2]) / 0.95047, Y = 0.2126729 * c[0] + 0.7151522 * c[1] + 0.072175 * c[2],
-      Z = (0.0193339 * c[0] + 0.119192 * c[1] + 0.9503041 * c[2]) / 1.08883;
-    const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
-    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
-  }
+  const hexToLab = App.hexToLab; // sRGB to D65 Lab, shared with the editor's target selector
   const settings = (p) => [p.power == null ? null : `${num(p.power, 1)}%`, p.frequency == null ? null : `${num(p.frequency, 0)} кГц`,
     p.speed == null ? null : `${num(p.speed, 0)} мм/с`, p.pulse_width == null ? 'Q-Pulse не записан' : `${num(p.pulse_width, 0)} нс`,
     p.line_interval == null ? null : `шаг ${num(p.line_interval, 4)} мм`, p.passes == null ? null : `${p.passes} проход(а)`].filter(Boolean).join(' · ');
@@ -268,7 +261,7 @@ const ColorMap = (() => {
   async function render(ctx) {
     const state = JSON.parse(sessionStorage.getItem('color-map') || '{}');
     const f = {setup: state.setup || '', material: state.material || '', measurement: state.measurement || '', task: state.task || '', hide: !!state.hide, doubtful: !!state.doubtful,
-      within: !!state.within, provisional: !!state.provisional, maxTime: state.maxTime || null, tolerance: state.tolerance ?? ''};
+      within: !!state.within, provisional: !!state.provisional, maxTime: state.maxTime || null, tolerance: state.tolerance ?? '', sort: state.sort || 'recommended'};
     const dotsOf = ctx.query.dots || null;                 // picking the colour of a photo work's dots: the map is that of its laser and lens
     if (dotsOf && ctx.query.setup) f.setup = ctx.query.setup;
     const q = new URLSearchParams();
@@ -300,6 +293,7 @@ const ColorMap = (() => {
         ...values.map((v) => h('option', {value: v, selected: v === current}, names ? names[v] : v))));
 
     let target = state.target || null, picked = null;
+    let searchSeq = 0;
     const results = h('div', {class: 'stack'}), detail = h('div', {class: 'cm-detail stack', hidden: true}), plotBox = h('div', {class: 'cm-plot'});
     const stepNote = h('p', {class: 'small cm-step-note', role: 'status', 'aria-live': 'polite'});           // which circle a key press picked
     // REQ-001 of ux-evidence-summaries-p0: the picked colour shows its swatch and the independent signals (repeat, where measured, what it rests
@@ -320,14 +314,16 @@ const ColorMap = (() => {
     // a colour taken from the picker or from a circle of the map is tidied to a tenth; a colour typed into the boxes is searched exactly as typed
     const tidy = (lab) => lab.map((v) => +(+v).toFixed(1));
     async function setTarget(lab) {
+      const mine = ++searchSeq;
       target = lab.map(Number);
       searchForm.clear();
-      L.value = target[0]; A.value = target[1]; B.value = target[2]; chip.replaceChildren(swatch(target));
+      targetSelector.set(target);
       sessionStorage.setItem('color-map', JSON.stringify({...f, target}));
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
       for (const k of ['setup', 'material', 'measurement', 'task']) if (f[k]) p.set(k, f[k]);
       if (f.maxTime) p.set('max_time_s_per_cm2', f.maxTime);
       if (f.tolerance !== '') p.set('tolerance_de', f.tolerance);
+      if (f.sort !== 'recommended') p.set('sort', f.sort);
       if (f.within) p.set('include_unreferenced', 'true');
       if (f.provisional) p.set('include_provisional', 'true');
       if (f.doubtful) p.set('hide_doubtful', 'true');
@@ -335,7 +331,8 @@ const ColorMap = (() => {
       try {
         [r, film] = await Promise.all([get('/colors/search?' + p),
           get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}${partition ? '&' + partition : ''}`).catch(() => null)]);
-      } catch (e) { searchForm.fail(e); return; }                              // the refusal stands under the boxes, the typed colour stays in them
+      } catch (e) { if (mine === searchSeq) searchForm.fail(e); return; }      // old searches cannot report errors over the current target
+      if (mine !== searchSeq) return;
       drawPlot();
       // one entry per recipe: the same settings, laser and lens, titanium stock and kind of measurement; a re-photograph of one
       // engraving is not another repetition (DEC-021), so engravings and photographs are counted apart
@@ -352,7 +349,10 @@ const ColorMap = (() => {
       // At most 12 recipes are asked for (``limit``), so the results stay a plain list; the engravings each recipe is known from are
       // folded under its card (REQ-005, DEC-090), while the one colour picked on the map shows them open.
       const o = r.order || {};
-      const order = o.by === 'time_within_tolerance'
+      const order = o.by === 'time' ? 'Sorted by estimated time per area; recipes without a time estimate are last.'
+        : o.by === 'stability' ? 'Sorted by confidence in repeatability, then by color difference.'
+        : f.sort === 'distance' ? 'Sorted by color difference from the target sample.'
+        : o.by === 'time_within_tolerance'
         ? `Внутри допуска ΔE ${num(o.tolerance_de, 1)}${o.tolerance_source === 'rules' ? ' (из правил лазера и линзы)' : ''} рецептов: ${o.within_tolerance}; `
           + 'среди них первыми идут самые быстрые по оценке времени, остальные — по расстоянию.'
         : 'Допуск ΔE не задан: записи идут по расстоянию. Задайте допуск, и среди близких цветов первыми пойдут самые быстрые.';
@@ -378,16 +378,15 @@ const ColorMap = (() => {
           btn('Снять ограничение времени', () => remember({maxTime: null}), 'btn-small')) : null,
         film ? h('div', {class: 'stack'}, pill('Прогноз модели, не измерение', 'warn'), filmCard(film)) : null);
     }
-    const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(tidy(hexToLab(e.target.value)))});
-    // the search takes the three numbers as they are (api.routes_work.search_colors: any number); an empty or a non-number box is said beside it
-    const searchForm = Forms.create();
-    const L = Forms.numberInput(Forms.QUANTITIES.targetL, {value: target ? target[0] : 40});
-    const A = Forms.numberInput(Forms.QUANTITIES.targetAB, {value: target ? target[1] : 5});
-    const B = Forms.numberInput(Forms.QUANTITIES.targetAB, {value: target ? target[2] : 15});
-    const fieldL = searchForm.add('L', 'L', L, {quantity: 'targetL', required: true});
-    const fieldA = searchForm.add('a', 'a', A, {quantity: 'targetAB', required: true});
-    const fieldB = searchForm.add('b', 'b', B, {quantity: 'targetAB', required: true});
-    const chip = h('span', {});
+    const imageUrl = pick ? (pick.work.zone == null ? `/api/photo-works/${encodeURIComponent(pick.work.id)}/picture`
+      : `/api/plans/${encodeURIComponent(pick.work.id)}/source-image`) : null;
+    const targetSelector = App.targetColor({initial: target, onSelect: setTarget, imageUrl});
+    const searchForm = targetSelector.form;
+    const sort = h('select', {'aria-label': 'Sort recipes', onChange: (e) => {
+      f.sort = e.target.value; sessionStorage.setItem('color-map', JSON.stringify({...f, target}));
+      if (target) setTarget(target);
+    }}, ...[['recommended', 'Recommended'], ['distance', 'Closest color'], ['time', 'Fastest'], ['stability', 'Most stable']]
+      .map(([value, label]) => h('option', {value, selected: f.sort === value}, label)));
     // DEC-075: внутри допуска ΔE поиск ставит первыми самые быстрые рецепты; пусто — допуск из правил выбранного лазера и линзы
     // colormap.delta_tolerance: not negative; a wrong one stays in the box with the reason beside it, and the search is not changed
     const tolerance = Forms.numberInput(Forms.QUANTITIES.searchTolerance, {value: f.tolerance, placeholder: 'из правил', 'aria-label': 'Допуск ΔE'});
@@ -403,7 +402,6 @@ const ColorMap = (() => {
       }});
     timeNote.attach(maxTime);
     const timeRules = Forms.describe(maxTime, {unit: 'мин:с на см²', min: 0, minOpen: true}, {extra: 'минуты:секунды («0:30») или минуты числом; пусто — без ограничения'});
-    const find = btn('Найти', () => { const v = searchForm.collect(); if (v) setTarget([v.L, v.a, v.b]); }, 'primary');
     drawPlot();
     if (target) setTarget(target);
 
@@ -454,9 +452,8 @@ const ColorMap = (() => {
       stepNote, plotBox, detail);
     // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
     const search = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Какой цвет нужен')),
-      h('div', {class: 'cm-target'}, h('div', {class: 'row'}, picker, chip),
-        h('div', {class: 'cm-lab'}, fieldL, fieldA, fieldB), searchForm.error,
-        h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance, toleranceRules, toleranceNote), find),
+      h('div', {class: 'cm-target'}, targetSelector.el, field('Sort recipes', sort),
+        h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance, toleranceRules, toleranceNote)),
         h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».')),
       h('div', {class: 'os-scroll'}, results));
     return h('div', {class: 'os cm' + (pick ? ' cm-picking' : '')}, head, pick ? DotPick.banner(pick) : null, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));

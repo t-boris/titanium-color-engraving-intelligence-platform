@@ -5,6 +5,7 @@ import json
 import hashlib
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from pydantic import BaseModel
@@ -253,13 +254,14 @@ def all_colors(request: Request, setup: str | None = None, material: str | None 
 def search_colors(request: Request, L: float, a: float, b: float, limit: int = 12, setup: str | None = None,
                   material: str | None = None, measurement: str | None = None, include_unreferenced: bool = False,
                   include_provisional: bool = False, task: str | None = None, max_time_s_per_cm2: float | None = None,
-                  tolerance_de: float | None = None, hide_doubtful: bool = False):
+                  tolerance_de: float | None = None, hide_doubtful: bool = False,
+                  sort: Literal["recommended", "distance", "time", "stability"] = "recommended"):
     """Where did a wanted colour occur: the nearest recipes, with their settings, task, evidence, estimated engraving time and
     the experiments they came from; within the delta E tolerance the fastest first (DEC-075). Observed evidence only; the film
     model's settings are a prediction and come from /colors/settings."""
     return colormap.search(store_of(request), [L, a, b], limit=max(1, min(limit, 60)), setup=setup, material=material,
                            measurement=measurement, include_unreferenced=include_unreferenced, include_provisional=include_provisional,
-                           task=task or None, max_time_s_per_cm2=max_time_s_per_cm2, tolerance_de=tolerance_de, hide_doubtful=hide_doubtful)
+                           task=task or None, max_time_s_per_cm2=max_time_s_per_cm2, tolerance_de=tolerance_de, hide_doubtful=hide_doubtful, sort=sort)
 
 
 def _partition(device_id: int | None, lens_id: str | None) -> tuple[int, int | None] | None:

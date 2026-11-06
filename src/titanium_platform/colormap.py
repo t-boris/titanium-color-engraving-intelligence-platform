@@ -514,7 +514,7 @@ def fastest_first(entries: list[dict], tolerance: float | None) -> list[dict]:
 
 
 def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced: bool = False, include_provisional: bool = False,
-           tolerance_de: float | None = None, hide_doubtful: bool = False, **filters) -> dict:
+           tolerance_de: float | None = None, hide_doubtful: bool = False, sort: str = "recommended", **filters) -> dict:
     """The recipes whose colour is nearest to ``lab``: one entry per recipe, with how many independent engravings gave it, in how
     many photographs, and from which experiments. Colours without a clean reference and provisional colours are left out unless
     asked for; their numbers are returned. Every entry is observed evidence (REQ-020): it links its observations and the checks
@@ -541,9 +541,23 @@ def search(store: Store, lab: list[float], limit: int = 12, include_unreferenced
         entries.append({**entry, "best": {**stand, "display_lab": found["lab"]}, "distance": color.delta_e(lab, found["lab"]),
                         "time_s_per_cm2": stand["time_s_per_cm2"], "confidence": found["confidence"], "found": found})
     tolerance, source = _search_tolerance(store, data, tolerance_de, filters.get("setup"))
-    ranked = fastest_first(entries, tolerance)[:limit]
+    if sort == "recommended":
+        ranked = fastest_first(entries, tolerance)
+        order_by = "distance" if tolerance is None else "time_within_tolerance"
+    elif sort == "distance":
+        ranked = sorted(entries, key=lambda e: e["distance"])
+        order_by = "distance"
+    elif sort == "time":
+        ranked = sorted(entries, key=lambda e: (math.inf if e["time_s_per_cm2"] is None else e["time_s_per_cm2"], e["distance"]))
+        order_by = "time"
+    elif sort == "stability":
+        ranked = sorted(entries, key=lambda e: (-agreement.trust(e), e["distance"]))
+        order_by = "stability"
+    else:
+        raise ValueError("unknown color search order")
+    ranked = ranked[:limit]
     return {"target": lab, "evidence": "observed",
-            "order": {"by": "distance" if tolerance is None else "time_within_tolerance", "tolerance_de": tolerance,
+            "order": {"by": order_by, "tolerance_de": tolerance,
                       "tolerance_source": source,
                       "within_tolerance": None if tolerance is None else sum(e["distance"] <= tolerance for e in entries)},
             "matches": [{**e["best"], "distance": round(float(e["distance"]), 2), "repeats": len(e["engravings"]),

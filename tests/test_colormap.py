@@ -299,6 +299,11 @@ def test_within_the_tolerance_the_search_puts_the_fastest_recipe_first_and_says_
     assert [m["pair_id"] for m in fastest["matches"]] == [quick, near, far]
     assert fastest["order"] == {"by": "time_within_tolerance", "tolerance_de": 3.0, "tolerance_source": "request", "within_tolerance": 2}
     assert [m["within_tolerance"] for m in fastest["matches"]] == [True, True, False]
+    # Explicit orders rank the entire candidate set before applying the result limit.
+    assert colormap.search(world["store"], wanted, sort="time", limit=1)["matches"][0]["pair_id"] == far
+    assert colormap.search(world["store"], wanted, sort="distance", tolerance_de=3, limit=1)["matches"][0]["pair_id"] == near
+    stable = colormap.search(world["store"], wanted, sort="stability", limit=1)
+    assert stable["order"]["by"] == "stability" and stable["matches"][0]["pair_id"] == near
 
 
 def test_the_search_takes_the_saved_tolerance_of_the_laser_and_lens_it_is_narrowed_to(world):
@@ -318,6 +323,9 @@ def test_the_api_passes_the_time_filter_and_the_tolerance(tmp_path):
     assert client.get("/api/colors", params={"max_time_s_per_cm2": 30}).json()["counts"]["slower"] == 0
     found = client.get("/api/colors/search", params={"L": 50, "a": 0, "b": 0, "tolerance_de": 2.5, "max_time_s_per_cm2": 30}).json()
     assert found["order"]["by"] == "time_within_tolerance" and found["order"]["tolerance_de"] == 2.5
+    sorted_result = client.get("/api/colors/search", params={"L": 50, "a": 0, "b": 0, "sort": "time"})
+    assert sorted_result.status_code == 200 and sorted_result.json()["order"]["by"] == "time"
+    assert client.get("/api/colors/search", params={"L": 50, "a": 0, "b": 0, "sort": "invalid"}).status_code == 422
     bad = client.get("/api/colors", params={"max_time_s_per_cm2": -1})
     assert bad.status_code == 422 and bad.json()["error"] == "the longest engraving time per square centimetre must be a positive number of seconds"
 

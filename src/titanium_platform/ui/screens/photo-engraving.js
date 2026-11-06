@@ -212,7 +212,8 @@
     let tab = null;
     const lettering = Lettering.create(view, {act: async (op) => !(await send(`${base}/texts`, op)), palette: () => get(`${base}/palette`),
       size: (v) => ({width: v.width_mm, height: v.height_mm}), drawn: false, open: () => tab === 'texts',
-      pick: (title, lab, entryId, onPick) => VectorColours.pickFrom(() => get(`${base}/palette`), title, lab, entryId, onPick)});
+      pick: (title, lab, entryId, onPick) => VectorColours.pickFrom(() => get(`${base}/palette`), title, lab, entryId, onPick,
+        {imageUrl: `/api${base}/picture`})});
     const picture = workPicture(save, () => kindChooser(base, view.kind || GRAYSCALE, (kind) => save({kind})),
       {ramp: `${base}/width-ramp`, variations: `${base}/variations`, advice: base, original: `/api${base}/picture`, stage: (el, cols) => lettering.attach(el, cols, PREVIEW_GAP)});
     doc.onChange((state) => {

@@ -1103,6 +1103,13 @@ body.is-workspace {--os-h:calc(100vh - 76px - 20px)}
 
 /* === lt: Надписи в работах (inscriptions-in-works): вкладка «Надписи», окно шрифтов, слой надписей над картинкой === */
 .lt-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px 8px}
+.target-color {gap:8px}
+.target-sampler>summary {cursor:pointer}
+.target-sampler>div {gap:8px;padding:8px 0}
+.target-image {display:block;max-width:100%;max-height:260px;object-fit:contain;object-position:left top;cursor:crosshair}
+.target-image:not([src]) {display:none}
+.target-image:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.target-sampler input[type=number] {width:6em}
 .lt-group {border:1px solid var(--line);border-radius:8px;padding:0 10px}
 .lt-group>summary {cursor:pointer;font-weight:600;padding:9px 0}
 .lt-group>summary:focus-visible {outline:2px solid var(--accent);outline-offset:2px}

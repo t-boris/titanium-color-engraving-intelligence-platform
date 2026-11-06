@@ -145,14 +145,103 @@ const App = (() => {
         + 'повторное фото той же гравировки повтором не считается.') : null);
   }
 
-  function swatch(lab) {
+  function labRgb(lab) {
     const [L, a, b] = lab;
     const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
     const f = (t) => (t ** 3 > 216 / 24389 ? t ** 3 : (116 * t - 16) / (24389 / 27));
     const [X, Y, Z] = [f(fx) * 0.95047, f(fy), f(fz) * 1.08883];
     const lin = [3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z, -0.969266 * X + 1.8760108 * Y + 0.041556 * Z, 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z];
     const c = lin.map((v) => Math.round(255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055))));
+    return c;
+  }
+  function swatch(lab) {
+    const c = labRgb(lab);
     return h('span', {class: 'sw', style: `background:rgb(${c[0]},${c[1]},${c[2]})`, title: labText(lab)});
+  }
+  function hexToLab(hex) {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const X = (0.4124564 * c[0] + 0.3575761 * c[1] + 0.1804375 * c[2]) / 0.95047, Y = 0.2126729 * c[0] + 0.7151522 * c[1] + 0.072175 * c[2],
+      Z = (0.0193339 * c[0] + 0.119192 * c[1] + 0.9503041 * c[2]) / 1.08883;
+    const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  }
+
+  /** A requested screen colour, not a measurement of titanium. Both picker and numeric entry feed the same Lab target. */
+  function targetColor({initial = null, onSelect, imageUrl = null, submitLabel = 'Find'} = {}) {
+    const form = Forms.create(), current = initial ? initial.map(Number) : null;
+    const values = current || [40, 5, 15];
+    const inputs = values.map((value, i) => Forms.numberInput(Forms.QUANTITIES[i ? 'targetAB' : 'targetL'], {value}));
+    const fields = inputs.map((input, i) => form.add(['L', 'a', 'b'][i], ['L', 'a', 'b'][i], input,
+      {quantity: i ? 'targetAB' : 'targetL', required: true}));
+    const sample = h('span', {class: 'target-color-swatch'});
+    const picker = h('input', {type: 'color', 'aria-label': 'Target color'});
+    function set(lab) {
+      inputs.forEach((input, i) => { input.value = String(lab[i]); });
+      picker.value = '#' + labRgb(lab).map((v) => v.toString(16).padStart(2, '0')).join('');
+      fill(sample, swatch(lab), ' ', labText(lab));
+    }
+    function choose(lab) { set(lab); form.clear(); if (onSelect) onSelect(lab); }
+    picker.addEventListener('input', () => choose(hexToLab(picker.value).map((x) => +x.toFixed(1))));
+    const apply = btn(submitLabel, () => { const v = form.collect(); if (v) choose([v.L, v.a, v.b]); }, 'btn-small');
+    const source = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Choose an image to sample'});
+    const image = h('img', {class: 'target-image', alt: 'Image for selecting a target color', tabindex: '0'});
+    const x = h('input', {type: 'number', min: '0', step: '1', value: '0', 'aria-label': 'Sample X coordinate in pixels', disabled: true});
+    const y = h('input', {type: 'number', min: '0', step: '1', value: '0', 'aria-label': 'Sample Y coordinate in pixels', disabled: true});
+    const note = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'}, 'Choose an image.');
+    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
+    const take = btn('Sample color', () => {
+      const px = Number(x.value), py = Number(y.value);
+      if (!image.naturalWidth || !Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0 || px >= image.naturalWidth || py >= image.naturalHeight) {
+        note.textContent = 'Enter whole-number coordinates within the image.'; return;
+      }
+      try {
+        const ctx = canvas.getContext('2d', {willReadFrequently: true});
+        ctx.clearRect(0, 0, 1, 1); ctx.drawImage(image, px, py, 1, 1, 0, 0, 1, 1);
+        const c = ctx.getImageData(0, 0, 1, 1).data;
+        if (c[3] !== 255) { note.textContent = 'This pixel is transparent; choose an opaque pixel.'; return; }
+        const hex = '#' + Array.from(c.slice(0, 3)).map((v) => v.toString(16).padStart(2, '0')).join('');
+        choose(hexToLab(hex).map((v) => +v.toFixed(1)));
+        note.textContent = `Image sample: x ${px}, y ${py}. This is not a measured titanium color.`;
+      } catch (_) { note.textContent = 'Could not read the image. Choose another file.'; }
+    }, 'btn-small', true);
+    let objectUrl = null, started = false;
+    function loadImage(url) {
+      started = true; take.disabled = true; x.disabled = true; y.disabled = true;
+      note.textContent = 'Loading image…'; image.src = url;
+    }
+    image.addEventListener('load', () => {
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+      x.max = String(image.naturalWidth - 1); y.max = String(image.naturalHeight - 1);
+      x.value = String(Math.floor((image.naturalWidth - 1) / 2)); y.value = String(Math.floor((image.naturalHeight - 1) / 2));
+      x.disabled = false; y.disabled = false; take.disabled = false;
+      note.textContent = 'Click the image or enter coordinates and select Sample color.';
+    });
+    image.addEventListener('error', () => {
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+      take.disabled = true; x.disabled = true; y.disabled = true; note.textContent = 'Image unavailable. Choose a file.';
+    });
+    image.addEventListener('click', (event) => {
+      const box = image.getBoundingClientRect();
+      if (!box.width || !box.height || !image.naturalWidth) return;
+      x.value = String(Math.min(image.naturalWidth - 1, Math.max(0, Math.floor((event.clientX - box.left) / box.width * image.naturalWidth))));
+      y.value = String(Math.min(image.naturalHeight - 1, Math.max(0, Math.floor((event.clientY - box.top) / box.height * image.naturalHeight))));
+      take.click();
+    });
+    source.addEventListener('change', () => {
+      if (!source.files || !source.files[0]) return;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(source.files[0]); loadImage(objectUrl);
+    });
+    const sampler = h('details', {class: 'target-sampler'}, h('summary', {}, 'Sample a color from an image'),
+      h('div', {class: 'stack'}, h('p', {class: 'small muted'}, 'The file is read on this device; the sample color depends on the image and display.'),
+        source, image, h('div', {class: 'row'}, field('X, px', x), field('Y, px', y), take), note));
+    sampler.addEventListener('toggle', () => { if (sampler.open && imageUrl && !started) loadImage(imageUrl); });
+    if (current) set(current); else { picker.value = '#7a5a34'; fill(sample, 'No color selected'); }
+    const el = h('div', {class: 'target-color stack'},
+      h('div', {class: 'row'}, picker, h('span', {class: 'small'}, 'Target sample: ', sample)),
+      h('p', {class: 'small muted'}, 'This screen sample is not a measured titanium color.'),
+      h('div', {class: 'cm-lab'}, fields), form.error, apply, sampler);
+    return {el, set, picker, inputs, form, sample, apply, choose, imageUrl};
   }
 
   // Seams other modules plug into without the screens knowing about them (operations.js, the task panel): ``observe(method, path, body)`` and
@@ -260,5 +349,5 @@ const App = (() => {
       go: (route, notice = {}) => (origin ? ops.finish(origin, {route, ...notice}) : (App.go(route, {preserveScroll: true}), true))};
   }
 
-  return {h, fill, btn, field, link, pill, labText, num, duration, timeBlock, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, api, get, post, put, patch, del, form, formProgress, hooks, validationDetails, landing};
+  return {h, fill, btn, field, link, pill, labText, num, duration, timeBlock, agreed, CAUTION, plural, originText, steadiness, STEADY, sourcesBlock, swatch, labRgb, hexToLab, targetColor, api, get, post, put, patch, del, form, formProgress, hooks, validationDetails, landing};
 })();

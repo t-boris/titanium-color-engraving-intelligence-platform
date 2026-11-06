@@ -317,7 +317,7 @@ def test_a_brush_click_paints_the_area_the_source_colour_or_the_fill_the_hover_o
   out.sameSvg = svg().getAttribute('data-mark') === 'first';
   out.svgFetches = ctx.requests.filter((r) => r.path.endsWith('/split.svg')).length;
 """)
-    assert "одну область" in out["scopeRegion"] and "все области исходного цвета" in out["scopeColour"] and "похожих соседей" in out["scopeFill"]
+    assert "one region" in out["scopeRegion"] and "all regions with the source color" in out["scopeColour"] and "similar neighboring regions" in out["scopeFill"]
     assert "Загрузка" not in out["active"] and "не оценено" in out["active"] and "автоматика его не выбирает" in out["active"]
     assert out["hotColour"] == ["r1", "r2"] and out["hotBeforeReach"] == ["r3"] and out["hotFill"] == ["r3", "r4"]
     assert out["tip"].startswith("Область r1 · исходный цвет № 1 · титан: ΔE 1.16") and "рецепт: 10.0 % · 30.0 кГц · 500 мм/с" in out["tip"]
@@ -535,7 +535,7 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
                               ["Выбрать области", "Гравировать"]]                    # «Выбрать области» (ux-accessible-layout-p0) is new on every line
     assert out["title"] == "Цвет группы № 1" and out["better"] == 0 and out["openAtFirst"] == [True]
     detail = out["detail"]
-    assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 до исходного цвета · сомнительный" in detail.split("Выбран:")[1]   # the square chose it
+    assert "L 55.0 · a -20.0 · b 40.0 · ΔE 43.87 from the target sample · сомнительный" in detail.split("Selected measured titanium color:")[1]
     assert "сомнительный: гравировки расходятся" in detail and "Откуда мы знаем этот цвет: 2 независимые гравировки (1 тест, 1 работа)" in detail
     assert ["векторная работа", "#/vector?plan=22"] in out["links"] and ["эксперимент", "#/experiment/eng-0"] in out["links"]
     assert out["posted"] == [{"op": "set_colour", "colour": 0, "entry_id": "e13"}] and out["closed"] is True
@@ -552,7 +552,7 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
   out.better = [block.textContent, order(block)];
   const grid = () => dialog.querySelector('.lst-rows');
   out.near = order(grid());
-  const sorter = dialog.querySelector('select');
+  const sorter = dialog.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
   sorter.value = 'stable'; await sorter.dispatch('change'); out.stable = order(grid());
   sorter.value = 'fast'; await sorter.dispatch('change'); out.fast = order(grid());
   out.classes = Object.fromEntries(grid().querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className]));
@@ -569,6 +569,27 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
     assert out["chips"] == ["Все · 4", "проверены повтором · 2", "одна гравировка · 1", "сомнительные · 1"]
     assert out["repeated"] == ["e11", "e14"] and out["searched"] == ["e14"] and out["now"] is True
     assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
+
+
+@node
+def test_brush_target_selector_ranks_measured_colors_and_filters_unknown_time(tmp_path):
+    out = run_editor(tmp_path, routes_with_sources(), """
+  await byText(tree, 'button', 'Choose brush color from a sample…').dispatch('click'); await tick(); await tick();
+  const dialog = ctx.document.body.querySelector('.modal'), target = dialog.querySelector('.target-color');
+  const fields = target.querySelectorAll('input').filter((e) => e.getAttribute('type') === 'number').slice(0, 3);
+  fields[0].value = '35'; fields[1].value = '20'; fields[2].value = '-60';
+  await byText(target, 'button', 'Find recipes').dispatch('click'); await tick();
+  const order = () => dialog.querySelector('.lst-rows').querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
+  out.first = order(); out.note = target.textContent;
+  const time = dialog.querySelectorAll('label').find((l) => l.textContent.startsWith('Time per cm²')).querySelector('select');
+  time.value = 'unknown'; await time.dispatch('change'); await tick(); out.unknown = order();
+  await dialog.querySelector('.lst-rows').querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e14').dispatch('click');
+  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick();
+  out.active = section('Активный цвет').textContent; out.writes = posted();
+""")
+    assert out["first"][0] == "e14" and out["unknown"] == ["e14"]
+    assert "not a measured titanium color" in out["note"]
+    assert "автоматика его не выбирает" in out["active"] and out["writes"] == []
 
 
 @node
@@ -795,7 +816,7 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
 """)
     assert out["before"] == ["true", "false", "vw-ed-tab-panel-brush"]
     assert out["on"] == ["false", "true", "vw-ed-tab-panel-photo"] and "tool-select" in out["stage"]
-    assert "выделение" in out["status"] and "выбирает область" in out["status"]
+    assert "selection" in out["status"] and "selects a region" in out["status"]
     assert "Обведите мышью (лассо) области на картинке" in out["empty"] and "в «Выделении» выше" in out["empty"]
     assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Фото» selects, it does not paint
     assert "Сделать фотозоной" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]

@@ -200,6 +200,10 @@ const VectorEditor = (() => {
     autoBtn.setAttribute('title', 'Кисть возвращает автоматический выбор цвета');
     const activeBox = h('div', {class: 'vw-ed-active'});
     const paletteHead = h('h4', {}, 'Палитра'), paletteNote = h('p', {class: 'small muted'});
+    const targetPicker = tools.pick ? btn('Choose brush color from a sample…', () => {
+      const ref = refColour();
+      return tools.pick(j, 'Brush color', ref ? ref.lab : [50, 0, 0], state.active, (entryId) => setActive(entryId));
+    }, 'btn-small') : null;
     const grid = h('div', {class: 'vw-swatches vw-ed-palette', role: 'group', 'aria-label': 'Измеренные цвета титана'});
     const paletteFoot = h('div', {class: 'lst-foot'});
     // the layers and the source colours are short lists (DEC-090): one line each, what it is and its other actions under it on a click,
@@ -246,7 +250,7 @@ const VectorEditor = (() => {
           h('p', {class: 'small muted'}, 'Alt+щелчок кистью — пипетка.'), scopeBox),
         selectionSlots.brush,
         h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Активный цвет'), h('span', {class: 'spacer'}), autoBtn), activeBox),
-        h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, grid, paletteFoot))],
+        h('section', {class: 'vw-ed-section'}, paletteHead, paletteNote, targetPicker, grid, paletteFoot))],
       ['layers', 'Слои', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Слои титана'), layersAbout, layersBox, layerMerge))],
       ['colours', 'Цвета', h('div', {class: 'vw-ed-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Исходные цвета'),
         h('label', {class: 'row small'}, farBox, h('span', {}, 'Показать далёкие от оригинала')), farNote, coloursBox, colourMerge),
@@ -743,9 +747,9 @@ const VectorEditor = (() => {
 
     // --- панель -----------------------------------------------------------------------------------------------------------
     function showToolStatus() {
-      const scopes = {region: 'одну область', colour: 'все области исходного цвета', fill: 'похожих соседей'};
-      toolStatus.textContent = state.tool === 'brush' ? `Инструмент: кисть. Щелчок изменит ${scopes[state.scope]}.`
-        : state.tool === 'select' ? 'Инструмент: выделение. Щелчок выбирает область.' : 'Инструмент: пипетка. Щелчок выбирает цвет.';
+      const scopes = {region: 'one region', colour: 'all regions with the source color', fill: 'similar neighboring regions'};
+      toolStatus.textContent = state.tool === 'brush' ? `Tool: brush. Clicking will change ${scopes[state.scope]}.`
+        : state.tool === 'select' ? 'Tool: selection. Clicking selects a region.' : 'Tool: eyedropper. Clicking selects a color.';
     }
     function setTool(t) {
       state.tool = t;
@@ -996,7 +1000,7 @@ const VectorEditor = (() => {
         l.index != null ? h('strong', {}, `C${String(l.index).padStart(2, '0')}`) : null,
         sizeNote(l.size),
         h('span', {class: 'lst-text muted'}, `${area(l.area_mm2)} · областей ${count}` + ((l.texts || []).length ? ` · надписей ${l.texts.length}` : '')
-          + ` · ${x.seconds == null ? 'время не оценено' : duration(x.seconds)}`)];
+          + ` · ${x.seconds == null ? 'time not estimated' : duration(x.seconds)}`)];
     }
 
     /** What a layer's line opens: the layer's name in the file, its recipe, the length of its rows and where its colour is known from. */

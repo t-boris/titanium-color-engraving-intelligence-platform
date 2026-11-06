@@ -98,7 +98,7 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
   out.detailInMiddle = middle.querySelectorAll('div').some((d) => has(d, 'cm-detail') && d.hidden === true);
   out.rightTitle = right.querySelector('h3').textContent;
   out.target = right.querySelector('.cm-target').querySelectorAll('input').length;
-  out.findButton = !!byText(right, 'button', 'Найти');
+  out.findButton = !!byText(right, 'button', 'Find');
   out.rightScroll = right.children.filter((c) => has(c, 'os-scroll')).length;
 """)
     assert out["root"] == "os cm" and out["cols"] == ["os-col", "os-col", "os-col"] and out["h2"] == "Карта цветов"
@@ -108,7 +108,23 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
     assert [s for s, _ in out["details"]] == ["Как это считается"] and "Время гравировки — оценка по настройкам рецепта" in out["details"][0][1]
     assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "◀", "▶", "+", "−", "Весь вид"]
     assert out["plot"] == [["div"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
-    assert out["rightTitle"] == "Какой цвет нужен" and out["target"] == 5 and out["findButton"] is True and out["rightScroll"] == 1      # the picker, L, a, b and the tolerance
+    assert out["rightTitle"] == "Какой цвет нужен" and out["target"] == 8 and out["findButton"] is True and out["rightScroll"] == 1      # plus image and coordinate controls
+
+
+@node
+def test_sorting_requests_a_new_server_ranked_result(tmp_path):
+    out = run(tmp_path, routes_of(), """
+  const right = tree.querySelector('.os-body').children[2];
+  const sort = right.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort recipes');
+  const fields = right.querySelector('.target-color').querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number');
+  fields[0].value = '50'; fields[1].value = '0'; fields[2].value = '0';
+  await byText(right, 'button', 'Find').dispatch('click'); await tick(); await tick();
+  sort.value = 'time'; await sort.dispatch('change'); await tick(); await tick();
+  out.search = ctx.requests.filter((r) => r.path === '/api/colors/search').map((r) => r.url);
+  out.remembered = JSON.parse(ctx.sessionStorage.getItem('color-map')).sort;
+""")
+    assert len(out["search"]) == 2 and "sort=time" in out["search"][-1]
+    assert out["remembered"] == "time"
 
 
 @node
@@ -217,12 +233,13 @@ def test_the_find_button_searches_the_typed_colour_with_the_tolerance_and_the_fi
   ctx.sessionStorage.setItem('color-map', JSON.stringify({setup: 'd1:l1', task: 'color', maxTime: 45, tolerance: ''}));
   tree = await screen();
   const right = tree.querySelector('.os-body').children[2];
-  const [, L, A, B, tol] = right.querySelector('.cm-target').querySelectorAll('input');
+  const [, L, A, B] = right.querySelector('.target-color').querySelectorAll('input');
+  const tol = right.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Допуск ΔE');
   L.value = '62'; A.value = '-3.5'; B.value = '11'; tol.value = '2.5';
   await tol.dispatch('change');                                                  // a tolerance alone does not search before a colour is chosen
   out.searchedByTolerance = ctx.requests.filter((r) => r.path === '/api/colors/search').length;
   const before = ctx.requests.length;
-  await byText(right, 'button', 'Найти').dispatch('click'); await tick(); await tick();
+  await byText(right, 'button', 'Find').dispatch('click'); await tick(); await tick();
   out.search = ctx.requests.slice(before).filter((r) => r.path === '/api/colors/search').map((r) => r.url);
 """)
     assert out["searchedByTolerance"] == 0 and len(out["search"]) == 1
