@@ -126,7 +126,7 @@ def test_the_classic_form_changes_the_shared_choice_by_the_same_dialog_with_the_
   await open.dispatch('click'); await settle();
   const dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.querySelector('h3').textContent;
-  out.hasSource = dialog.textContent.includes('Источник измерений');
+  out.hasSource = dialog.textContent.includes('Measurement source');
   const laser = dialog.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Laser');
   laser.value = '1'; await laser.dispatch('change'); await settle();
   out.warned = [dialog.textContent.includes('The titanium grade is different'), puts.length];

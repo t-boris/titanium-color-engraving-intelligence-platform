@@ -90,7 +90,7 @@ def test_new_work_shows_the_shared_laser_lens_and_titanium_and_is_made_on_the_sc
   out.second = dialog().querySelector('h3').textContent;
   out.remembered = requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').length;
 """, scales=scales)
-    for word in ("Работа делается на", "JPT 60", "F-Theta", "Big Plate 150", "Grade 5", "измерения этой мастерской"):
+    for word in ("Работа делается на", "JPT 60", "F-Theta", "Big Plate 150", "Grade 5", "This workshop’s measurements"):
         assert word in out["shown"]
     [sent] = out["sent"]
     assert json.loads(sent["scale"])["speed"] == 100 and json.loads(sent["scale"])["device_id"] == 1      # not the first scale listed: that is another laser's
@@ -128,7 +128,7 @@ CHANGE = """
   out.heading = box.querySelector('.work-context').textContent.slice(0, 40);
   await open.dispatch('click'); await settle();
   const nested = ctx.document.body.querySelectorAll('.modal')[1];
-  out.nested = [nested.querySelector('h3').textContent, nested.textContent.includes('Источник измерений')];
+  out.nested = [nested.querySelector('h3').textContent, nested.textContent.includes('Measurement source')];
   const stock = nested.querySelectorAll('.matpick').find((x) => x.getAttribute('aria-label') === 'Stock');            // the titanium is the stock selector, no longer a drop-down
   await button(stock, 'Choose…').dispatch('click'); await settle();                                              // its own dialog opens above this one
   const chooser = ctx.document.body.querySelectorAll('.modal')[2];

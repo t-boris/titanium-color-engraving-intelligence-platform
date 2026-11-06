@@ -487,7 +487,7 @@ def test_an_opened_works_own_context_is_read_only_and_names_its_release_and_the_
   const workshop = ctx.WorkContext.own({device: {name: 'JPT'}, lens: null, material: null, source: null});
   out.plain = workshop.textContent;
 """)
-    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "batch B7", "Север", "выпуск от 2026-10-20", "Recorded with this work. The shared selection for new work does not change it."):
+    for word in ("Mopa 30", "F-Theta", "Sheet", "Grade 2", "batch B7", "Север", "release dated 2026-10-20", "Recorded with this work. The shared selection for new work does not change it."):
         assert word in out["text"]
     assert out["buttons"] == 0                                                      # nothing here can change the work's own context
     assert "JPT 60" in out["sharedText"] and "Mopa 30" not in out["sharedText"]

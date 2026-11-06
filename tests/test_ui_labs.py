@@ -1,5 +1,5 @@
 """The laboratories screens (feature electron, REQ-083..085): the menu entry «Лаборатории», the source picker of a new vector or photo work,
-the source banner of an open pinned work with «Обновить источник» and «Вернуться к прежнему источнику», and the card of a connected laboratory.
+the source banner of an open pinned work with «Update source» and «Return to previous source», and the card of a connected laboratory.
 Run in node over the small DOM of the other screen tests with a fake server; the text a release carries reaches the screen as text only."""
 import json
 import re
@@ -98,7 +98,7 @@ def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chose
     out = run(tmp_path, routes, """
   const tree = await ctx.__screens.vector.render({query: {new: '1', classic: '1'}});
   await tick();
-  const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Источник измерений');
+  const select = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Measurement source');
   out.options = select.options.map((o) => [o.value, o.textContent]);
   out.first = [select.value, tree.querySelectorAll('p').filter((p) => p.textContent.includes('Измеренных цветов заливки')).map((p) => p.textContent).pop()];
   select.value = '1'; await select.dispatch('change'); await tick();
@@ -113,13 +113,13 @@ def test_a_new_vector_work_offers_the_own_measurements_first_and_sends_the_chose
   strategy.value = 'fill'; await strategy.dispatch('change'); await tick();
   out.hiddenForTrace = select.parentNode.hidden;
 """)
-    assert out["options"][0] == ["", "Мои измерения"] and out["first"][0] == ""                                            # the own measurements, chosen
+    assert out["options"][0] == ["", "My measurements"] and out["first"][0] == ""                                            # the own measurements, chosen
     assert "этого лазера, линзы и титана этой марки (с любой плиты): 1" in out["first"][1]
-    assert out["options"][1] == ["1", "Лаборатория <b>Север</b>: Волоконный 60 Вт · линза 174 мм · titanium · Grade 5 · 1 мм (фото 12)"]
+    assert out["options"][1] == ["1", "Лаборатория <b>Север</b>: Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm (photos 12)"]
     assert len(out["options"]) == 2                                                                                          # a setup without titanium colours nothing
-    assert "лаборатории «Лаборатория <b>Север</b>» (выпуск от 2026-10-20 · abcdef012345; Волоконный 60 Вт · линза 174 мм · titanium · Grade 5 · 1 мм): 2" in out["info"]
+    assert "лаборатории «Лаборатория <b>Север</b>» (release dated 2026-10-20 · abcdef012345; Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm): 2" in out["info"]
     assert "без привязки к эталону: 1" in out["info"] and "the same colour on this laser is not promised" in out["info"]           # the conditions, translated
-    assert "подпись не проверена" in out["hint"]
+    assert "signature not verified" in out["hint"]
     [(method, path, items)] = out["created"]
     assert method == "POST" and json.loads(dict(items)["source"]) == {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}
     assert out["hiddenForTrace"] is True                                                                                     # a traced work takes the own measurements
@@ -142,29 +142,29 @@ def test_an_open_pinned_vector_work_shows_its_source_and_updates_it_only_through
   const banner = tree.querySelector('.lab-banner');
   out.banner = [banner.hidden, banner.textContent, banner.querySelector('.lab-name').childNodes.map((n) => n.nodeType)];
   out.buttons = banner.querySelectorAll('button').map((b) => b.textContent);
-  await byText(banner, 'button', 'Обновить источник').dispatch('click'); await tick();
+  await byText(banner, 'button', 'Update source').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = dialog.textContent;
   out.colours = [dialog.querySelectorAll('.lst-main').map((m) => m.textContent), dialog.querySelectorAll('.lst-chip').map((c) => c.textContent)];
   out.beforeConfirm = sent().filter(([, path]) => path.endsWith('/source'));
-  await byText(dialog, 'button', 'Подтвердить').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Confirm').dispatch('click'); await tick();
   out.afterConfirm = sent().filter(([, path]) => path.endsWith('/source'));
   out.updated = tree.querySelector('.lab-banner').textContent;
 """, plan=job["id"])
     hidden, text, kinds = out["banner"]
     assert hidden is False and kinds == [3]                                                                                  # the laboratory's name is a text node
-    assert "Лаборатория <b>Север</b>" in text and "выпуск от 2026-10-20 · abcdef012345" in text and "отозванных измерений исключено: 1" in text
-    assert "Волоконный 60 Вт · линза 174 мм · titanium · Grade 5 · 1 мм" in text
+    assert "Лаборатория <b>Север</b>" in text and "release dated 2026-10-20 · abcdef012345" in text and "withdrawn measurements excluded: 1" in text
+    assert "Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm" in text
     assert "the same colour on this laser is not promised" in text and "a newer release of this laboratory is connected" in text        # every condition, translated
-    assert "заморожен" not in text and out["buttons"] == ["Обновить источник", "Вернуться к прежнему источнику"]             # versions > 0
+    assert "frozen" not in text and out["buttons"] == ["Update source", "Return to previous source"]             # versions > 0
     assert out["beforeConfirm"] == [["POST", f"/api/vector/{job['id']}/source", {}]]                                                  # the preview changes nothing
-    assert "Работа перейдёт на источник: Лаборатория <b>Север</b>, выпуск от 2026-10-23 · 0123456789ab" in out["dialog"]
-    assert "изменятся: 1; пропадут: 1; наибольшая разница ΔE 2.0" in out["dialog"] and "в новом источнике не измерен" in out["dialog"]
-    assert "зона 1: шкала измерена в новом источнике" in out["dialog"]
+    assert "Work will move to source: Лаборатория <b>Север</b>, release dated 2026-10-23 · 0123456789ab" in out["dialog"]
+    assert "changed: 1; missing: 1; largest difference ΔE 2.0" in out["dialog"] and "not measured in new source" in out["dialog"]
+    assert "zone 1: scale measured in the new source" in out["dialog"]
     colours, chips = out["colours"]                                                                        # a colour a line, the lost and the largest changes first
-    assert "в новом источнике не измерен" in colours[0] and colours[1].endswith("ΔE 2.0") and chips == ["All · 2", "пропадут · 1", "изменятся · 1"]
+    assert "not measured in new source" in colours[0] and colours[1].endswith("ΔE 2.0") and chips == ["All · 2", "missing · 1", "changed · 1"]
     assert out["afterConfirm"][-1] == ["POST", f"/api/vector/{job['id']}/source", {"confirm": True}]
-    assert "0123456789ab" in out["updated"] and "прежних источников: 2" in out["updated"] and "более новый выпуск" not in out["updated"]   # drawn from the returned work
+    assert "0123456789ab" in out["updated"] and "previous sources: 2" in out["updated"] and "более новый выпуск" not in out["updated"]   # drawn from the returned work
 
 
 @node
@@ -205,14 +205,14 @@ def test_a_frozen_source_is_shown_apart_and_the_connected_laboratory_card_offers
   out.notice = tree.querySelectorAll('a').map((a) => a.getAttribute('href')).filter((href) => href.includes('/plans/'));
 """.replace("data.frozenSource", json.dumps({**SOURCE, "frozen": FROZEN, "conditions": [SOURCE["conditions"][0], FROZEN], "versions": 0})))
     reason, conditions, file, buttons = out["frozen"]
-    assert "Результат заморожен." in reason and "other versions of the algorithms (palette)" in reason
+    assert "Result frozen." in reason and "other versions of the algorithms (palette)" in reason
     assert conditions == ["the colours and curves are another laboratory's measurements on its laser: the same colour on this laser is not promised"]   # the frozen reason stands apart
-    assert file == "/api/photo-works/7/export.lbrn2" and buttons == ["Обновить источник"]                                    # no earlier source to go back to
+    assert file == "/api/photo-works/7/export.lbrn2" and buttons == ["Update source"]                                    # no earlier source to go back to
     assert out["head"].startswith("Лаборатория <b>Север</b>") and "<script>alert(1)</script>" in out["sub"]                   # the release's text, as text
-    assert out["setups"] == [["Волоконный 60 Вт · линза 174 мм · titanium · Grade 5 · 1 мм", ["Палитра", "Шкалы серого"]],
-                             ["Волоконный 60 Вт · линза неизвестна", ["Шкалы серого"]]]
+    assert out["setups"] == [["Волоконный 60 Вт · lens 174 mm · titanium · Grade 5 · 1 mm", ["Палитра", "Шкалы серого"]],
+                             ["Волоконный 60 Вт · lens unknown", ["Шкалы серого"]]]
     assert out["palette"] == [["POST", "/api/labs/palette", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1"}]]
-    assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "по эталонной карте" in out["colour"] and "гравировок 2" in out["colour"] and "all 2 agree" in out["colour"]
+    assert "L 50.0 · a 10.0 · b 10.0" in out["colour"] and "reference chart corrected" in out["colour"] and "гравировок 2" in out["colour"] and "all 2 agree" in out["colour"]
     assert "40.0 % · 30.0 кГц · 500 мм/с · 200 нс · шаг 0.0200 мм · проходов 1" in out["colour"]
     assert out["dialogSelects"] == ["Свой лазер"] and out["dialogStock"] == ["Свой титан"]
     assert out["transfer"] == ["POST", "/api/labs/transfers", {"release_id": "r-1", "laser": "L1", "lens": "N1", "material": "M1", "entry_id": "e1", "device_id": 1, "material_id": 3}]
@@ -270,7 +270,7 @@ def test_a_laboratorys_releases_palette_and_transfers_are_short_lists_with_their
     assert out["releaseChips"] == ["All · 3", "на компьютере · 2", "файлы удалены · 1"]
     assert out["releaseDetails"] == [["Хеш", "Подпись", "Файлы", "Работы"], ["#/vector?plan=12"]]
     assert out["palette"] == [20, "showing 20 of 25", "Show 5 more"]
-    assert out["paletteChips"] == ["All · 25", "по эталонной карте · 9", "относительно чистого титана · 8", "как снято, без привязки · 8",
+    assert out["paletteChips"] == ["All · 25", "reference chart corrected · 9", "relative to clean titanium · 8", "as photographed, unreferenced · 8",
                                    "All · 25", "без оговорок · 20", "с оговоркой · 5"]
     assert out["orders"] == ["Как в выпуске", "Сначала светлые", "Сначала тёмные", "Больше гравировок"]
     assert out["lightest"] == "L 68.0 · a 0.0 · b 0.0"
