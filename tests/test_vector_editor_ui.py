@@ -229,7 +229,7 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
   out.viewBox = svg().getAttribute('viewBox');
   out.undo = byText(tree, 'button', 'Undo').disabled;
   out.redo = byText(tree, 'button', 'Redo').disabled;
-  out.palette = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className, b.getAttribute('title')]);
+  out.palette = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className, b.getAttribute('title'), b.getAttribute('aria-label')]);
   out.details = tree.querySelectorAll('details').map((d) => d.querySelector('summary').textContent);
   out.rows = tree.querySelectorAll('span').filter((x) => (x.className || '').startsWith('vw-rows')).map((x) => [x.textContent, x.className, x.getAttribute('title')]);
 """)
@@ -238,9 +238,12 @@ def test_the_picture_is_painted_in_titanium_and_the_panel_shows_layers_colours_t
     assert out["borders"] == 0                                                       # read once as data, not left in the page
     assert out["outlines"] == ("vw-outlines: vw-outline vw-halo vw-zone | vw-outline vw-zone | vw-outline vw-halo vw-hot | vw-outline vw-hot"
                                " | vw-outline vw-halo vw-sel | vw-outline vw-sel")   # above the regions: zones, then hover, then selection on top
-    classes = {eid: cls for eid, cls, _ in out["palette"]}
+    classes = {eid: cls for eid, cls, _, _ in out["palette"]}
     assert set(classes) == {"e11", "e12", "e13", "e14"} and "as-shot" in classes["e14"] and "not-auto" in classes["e14"] and "as-shot" not in classes["e11"]
-    assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ s/cm²|not estimated)", title) for _, _, title in out["palette"])
+    assert all(re.search(r"(ΔE [\d.]+ · )?([\d.]+ s/cm²|not estimated)", title) for _, _, title, _ in out["palette"])
+    assert all(label == title and "10.0 % · 30.0 kHz · 500 mm/s · Q-Pulse 4 ns" in label and " · L " in label
+               and " · a " in label and " · b " in label for _, _, title, label in out["palette"])
+    assert len({label for _, _, _, label in out["palette"]}) == len(out["palette"])
     text = out["text"]
     for part in ("Segmentation", "Document colors", "AI", "File", "LightBurn file", "Layers 3 of 29 · color layer time 2 min 05 s · mean ΔE 3.10", "Titanium layers",
                  "Source colors", "outside tolerance", "Show colors far from the original", "C01", "2.00 cm² · regions 2 · 1 s", "№ 2", "ΔE 17.70",

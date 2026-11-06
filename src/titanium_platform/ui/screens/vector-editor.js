@@ -831,7 +831,7 @@ const VectorEditor = (() => {
           btn(`Show ${Math.min(PALETTE_PAGE, rest)} more`, () => { paletteShown += PALETTE_PAGE; renderPalette(); syncActive(); }, 'btn-small'));
       }
       fill(grid, shown.map((e) => {
-        const title = [d(e) == null ? null : `ΔE ${num(d(e))}`, seconds(e.time_s_per_cm2), e.basis === 'as-shot' ? 'captured without reference' : null,
+        const title = [e.parameters ? params(e.parameters) : null, labText(e.lab), d(e) == null ? null : `ΔE ${num(d(e))}`, seconds(e.time_s_per_cm2), e.basis === 'as-shot' ? 'captured without reference' : null,
           e.automatic ? null : 'excluded from automatic selection', e.sources ? `${STEADY[steadiness(e)][0]}; ${originText(e.sources)}` : null].filter(Boolean).join(' · ');
         return h('button', {type: 'button', class: `vw-swatch steady-${steadiness(e)}` + (e.basis === 'as-shot' ? ' as-shot' : '') + (e.automatic ? '' : ' not-auto') + (same(e.id, state.active) ? ' picked' : ''),
           style: `background:${rgb(e.srgb)}`, 'data-entry': e.id, title, 'aria-label': title, 'aria-pressed': same(e.id, state.active) ? 'true' : 'false',
