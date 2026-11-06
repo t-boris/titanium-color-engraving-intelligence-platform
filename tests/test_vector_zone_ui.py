@@ -291,15 +291,15 @@ def test_the_kind_of_a_zone_is_chosen_from_its_picture_in_each_kind_and_a_dot_ki
   await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
   const box = dialog();
   out.pictures = box.querySelectorAll('button.ge-kind').map((b) => b.querySelector('img').getAttribute('src'));
-  await box.querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Джарвис').dispatch('click'); await settle();
+  await box.querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
   out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
   out.dot = labelled(tree, 'Dot power, %').value;
-  out.layer = tree.textContent.includes('LightBurn file: layer C03 is an image in Джарвис mode, at 12,5 % power');
+  out.layer = tree.textContent.includes('LightBurn file: layer C03 is an image in Jarvis mode, at 12,5 % power');
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').startsWith('/api/vector/9/photo/1/closeup.png'));
   out.saves = saves();
 """)
     assert out["pictures"][6] == "/api/vector/9/photo/1/kinds/jarvis.png?v=1"
-    assert out["kind"] == "Вид: Джарвис" and out["dot"] == "12.5" and out["layer"] and out["closeup"]
+    assert out["kind"] == "Вид: Jarvis" and out["dot"] == "12.5" and out["layer"] and out["closeup"]
     assert out["saves"] == [{"kind": "jarvis"}]
 
 
@@ -318,8 +318,8 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
   const max = labelled(tree, 'Dot power, %');
   max.value = '13'; await max.dispatch('change'); await wait(300); await settle();
   out.mapped = [!!button(tree, 'Другой цвет'), !!button(tree, 'На шкалу'), !labelled(tree, 'Dot power, %'),
-                tree.textContent.includes('с карты цветов: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi)'),
-                tree.textContent.includes('LightBurn file: layer C03 is an image in Джарвис mode, at 13 % power (Min = Max for every dot), 500 мм/с')];
+                tree.textContent.includes('с карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi)'),
+                tree.textContent.includes('LightBurn file: layer C03 is an image in Jarvis mode, at 13 % power (Min = Max for every dot), 500 mm/s')];
   await button(tree, 'На шкалу').dispatch('click'); await wait(300); await settle();
   out.saves = saves();
 """.replace("RECIPE_JSON", json.dumps(RECIPE)), kind="jarvis", dot_power=12.5)
@@ -362,7 +362,7 @@ def test_a_zone_says_what_the_laboratory_knows_of_its_kind_and_a_step_lighter_sa
   await box().querySelectorAll('button').find((b) => b.textContent === 'Светлее').dispatch('click'); await settle();
   out.saved = requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
 """)
-    assert "Что известно о виде «градации серого»" in out["says"] and "ещё не фотографировался" in out["says"]
+    assert "Что известно о виде «grayscale»" in out["says"] and "ещё не фотографировался" in out["says"]
     assert "Светлее: мощность 28 % → 25,5 % (по опыту процесса)" in out["says"]
     assert out["refused"] == [["Мягче", "the settings are already at their limits: nothing known moves the engraving further that way"]]
     assert out["saved"] == [{"min_power": 12.0, "max_power": 25.5}]

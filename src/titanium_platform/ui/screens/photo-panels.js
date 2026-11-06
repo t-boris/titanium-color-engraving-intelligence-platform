@@ -1,7 +1,4 @@
-/* Панели фотогравировки (0.23.0, DEC-116): шкалы и их подробности, картинка на шкале с прогнозом, «Раскраска» по объектам, «AI» для
-   частей картинки и «Какая гравировка?» — одни и те же у работы фотогравировки (photo-engraving.js) и у фотозоны векторной работы
-   (vector-zone.js). Каждая панель берёт адрес API того, чему принадлежит (``/photo-works/<id>`` или ``/vector/<id>/photo/<n>``), и функции,
-   которые сохраняют изменение; сама ничего не знает о том, работа это или зона. */
+/* Shared photo engraving panels for scales, predictions, coloring, AI, and engraving modes. */
 'use strict';
 const PhotoPanels = (() => {
   const {h, fill, btn, link, pill, get, post, toast, modal, labText, duration, table, fail} = App;
@@ -10,76 +7,76 @@ const PhotoPanels = (() => {
   const TABLE_STEP = 17;                        // the 16 greys of the table: 255, 238, ... 0, the steps of the plate's ramp
   const value = (v, d = 2) => (v == null ? '—' : String(+(+v).toFixed(d)).replace('.', ','));
   const when = (iso) => (iso || '').replace('T', ' ').slice(0, 16);
-  const materialLabel = (m) => (m ? [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} мм` : null, m.batch].filter(Boolean).join(' · ') : 'титан не указан');
-  /** Титан шкалы (DEC-110): все пластины одной марки — один титан, какого бы размера, толщины и партии ни были; запись без марки — сама по себе. */
+  const materialLabel = (m) => (m ? [m.name, m.grade, m.thickness_mm != null ? `${m.thickness_mm} mm` : null, m.batch].filter(Boolean).join(' · ') : 'titanium unspecified');
+  /** Plates of the same grade share a titanium family; a record without a grade stands alone. */
   const titaniumLabel = (sc) => {
     const m = sc.material;
     if (!m || !m.grade) return materialLabel(m);
     const on = ((sc.titanium || {}).measured_on || []).map((t) => t.name);
-    return `${m.family && m.family.toLowerCase() !== 'titanium' ? m.family : 'Титан'} ${m.grade}` + (on.length ? ` · измерена на ${on.join(', ')}` : '');
+    return `${m.family && m.family.toLowerCase() !== 'titanium' ? m.family : 'Titanium'} ${m.grade}` + (on.length ? ` · measured on ${on.join(', ')}` : '');
   };
-  /** Шкала работы: те же лазер, линза и настройки и та же пластина или другая пластина того же титана. */
+  /** A matching scale uses the same laser, lens, settings, and titanium. */
   const sameScale = (sc, m) => modeQuery({...sc.mode, material_id: null}) === modeQuery({...m, material_id: null})
     && (sc.mode.material_id === m.material_id || ((sc.titanium || {}).records || []).includes(m.material_id));
-  const HOW = {'grey ramp': 'пластина шкал серого', 'tonal profile': 'фотогравировка'};
-  const REFERENCE = {chart: ['цвета по эталонной карте', 'ok'], 'clean titanium': ['цвета относительно камеры, приведены к чистому титану', 'warn'],
-    'as photographed': ['цвета относительно камеры, как сняты', 'warn']};
+  const HOW = {'grey ramp': 'gray-scale plate', 'tonal profile': 'photo engraving'};
+  const REFERENCE = {chart: ['colors calibrated against reference chart', 'ok'], 'clean titanium': ['camera-relative colors normalized to bare titanium', 'warn'],
+    'as photographed': ['camera-relative colors as photographed', 'warn']};
 
-  const settingsText = (m, dpi) => `${value(m.speed, 1)} мм/с · ${value(m.frequency, 1)} кГц · ${m.pulse_width == null ? 'импульс не указан' : value(m.pulse_width, 0) + ' нс'}`
-    + ` · шаг ${value(m.line_interval, 4)} мм${dpi ? ` (${dpi} dpi)` : ''} · проходов ${m.passes ?? 1}${m.global_passes > 1 ? ` · глобально ${m.global_passes}×` : ''}`;
+  const settingsText = (m, dpi) => `${value(m.speed, 1)} mm/s · ${value(m.frequency, 1)} kHz · ${m.pulse_width == null ? 'pulse unspecified' : value(m.pulse_width, 0) + ' ns'}`
+    + ` · interval ${value(m.line_interval, 4)} mm${dpi ? ` (${dpi} dpi)` : ''} · passes ${m.passes ?? 1}${m.global_passes > 1 ? ` · global ${m.global_passes}×` : ''}`;
   const modeQuery = (m) => new URLSearchParams(Object.entries({device_id: m.device_id, lens_id: App.lensParam(m.lens_id), material_id: m.material_id,
     speed: m.speed, frequency: m.frequency, pulse_width: m.pulse_width, line_interval: m.line_interval, passes: m.passes ?? 1, global_passes: m.global_passes ?? 1})
     .filter(([, v]) => v != null)).toString();
   const GRAYSCALE = 'grayscale';
   const dotted = (v) => !!v.kind && v.kind !== GRAYSCALE;                                    // a dot kind: every dot at one power
-  /** Цвет точек с карты цветов (0.25.0, DEC-118): у вида точками с выбранным на карте рецептом точки бьют на его настройках, а не на шкале. */
+  /** Dots using a map recipe fire at its settings rather than the scale settings. */
   const fromMap = (v) => dotted(v) && !!v.dot_recipe;
-  /** Настройки, на которых гравируется слой: рецепт точек с карты или шкала работы. */
+  /** Settings used for the layer: the dot recipe or the work scale. */
   const firedSettings = (v) => (fromMap(v) ? v.dot_recipe.settings : v.scale);
   const kindName = (key) => { const t = PhotoModes.label(key); return t.charAt(0).toUpperCase() + t.slice(1); };
   const {fromPhoto, recipeFrom} = PhotoQuality;                    // where a recipe's dots come from (BUG-008)
   const greyChip = (level) => h('span', {class: 'sw', style: `background:rgb(${level},${level},${level})`});
-  const hexChip = (hex) => (hex ? h('span', {class: 'sw', style: `background:${hex}`}) : h('span', {class: 'sw ge-none', title: 'не измерено'}));
+  const hexChip = (hex) => (hex ? h('span', {class: 'sw', style: `background:${hex}`}) : h('span', {class: 'sw ge-none', title: 'not measured'}));
 
   function confirmationPill(c) {
-    if (!c || c.median_de == null) return pill(c && c.engravings > 1 ? 'гравировки не пересекаются по мощности' : 'одна гравировка: подтвердить нечем', 'warn');
-    return pill(`${c.confirmed ? 'подтверждена' : 'не подтверждена'}: медиана ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn');
+    if (!c || c.median_de == null) return pill(c && c.engravings > 1 ? 'engravings do not overlap in power' : 'one engraving: nothing to compare', 'warn');
+    return pill(`${c.confirmed ? 'confirmed' : 'not confirmed'}: median ${value(c.median_de, 1)} ΔE`, c.confirmed ? 'ok' : 'warn');
   }
 
-  const mm = (v) => `${value(v, 1)} мм`;
-  const mmList = (list) => list.map((v) => value(v, 1)).join(' и ') + ' мм';
+  const mm = (v) => `${value(v, 1)} mm`;
+  const mmList = (list) => list.map((v) => value(v, 1)).join(' and ') + ' mm';
 
-  /** Как цвета шкалы относятся к ширине (``size`` прогноза, DEC-107): короткая плашка и строка пояснения. */
+  /** Explain how the scale relates to scan width. */
   function sizeText(size) {
     if (!size) return null;
-    if (size.how === 'measured') return {short: `шкала измерена при ширине ${mm(size.from_mm[0])}`, tone: 'ok',
-      long: `Цвета измерены при ширине ${mm(size.from_mm[0])}${size.measured_mm.length > 1 ? ` (шкала измерена при ${mmList(size.measured_mm)})` : ''}.`};
-    if (size.how === 'between') return {short: `${mm(size.row_mm)}: между измерениями ${mmList(size.from_mm)}`, tone: 'warn',
-      long: `При ширине ${mm(size.row_mm)} шкала не измерялась: цвета взяты между измерениями при ${mmList(size.from_mm)}. Чтобы проверить, выгравируйте пробу этой ширины.`};
-    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: шкала измерена при ${mmList(size.measured_mm)}`, tone: 'warn',
-      long: `Шкала измерена при ширине ${mmList(size.measured_mm)}, при ${mm(size.row_mm)} — нет: цвета взяты при ${mm(size.from_mm[0])} и на этой ширине могут выйти другими.`};
-    return {short: 'ширина измерений неизвестна', tone: 'warn', long: 'Неизвестно, при какой ширине измерена шкала: её файлы LightBurn недоступны.'};
+    if (size.how === 'measured') return {short: `scale measured at width ${mm(size.from_mm[0])}`, tone: 'ok',
+      long: `Colors measured at width ${mm(size.from_mm[0])}${size.measured_mm.length > 1 ? ` (scale measured at ${mmList(size.measured_mm)})` : ''}.`};
+    if (size.how === 'between') return {short: `${mm(size.row_mm)}: between measurements ${mmList(size.from_mm)}`, tone: 'warn',
+      long: `The scale was not measured at ${mm(size.row_mm)}; colors are interpolated between ${mmList(size.from_mm)}. Engrave a sample at this width to check.`};
+    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: scale measured at ${mmList(size.measured_mm)}`, tone: 'warn',
+      long: `The scale was measured at ${mmList(size.measured_mm)}, not ${mm(size.row_mm)}. Colors use ${mm(size.from_mm[0])} and may differ at this width.`};
+    return {short: 'measurement width unknown', tone: 'warn', long: 'The scale measurement width is unknown because its LightBurn files are unavailable.'};
   }
-  /** То же для цвета точек с карты цветов (``size`` рецепта при ширине работы, ``palette.at_size``): цвет его заливки, а не шкалы. */
+  /** Explain measurement width for a dot recipe from the color map. */
   function recipeSizeText(size) {
     if (!size) return null;
-    if (size.how === 'measured') return {short: `цвет измерен при ширине ${mm(size.from_mm[0])}`, tone: 'ok', long: `Цвет заливки измерен при ширине ${mm(size.from_mm[0])}.`};
-    if (size.how === 'between') return {short: `${mm(size.row_mm)}: между измерениями ${mmList(size.from_mm)}`, tone: 'warn',
-      long: `При ширине ${mm(size.row_mm)} этот цвет не измерялся: он взят между измерениями при ${mmList(size.from_mm)}.`};
-    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: цвет измерен при ${mmList(size.measured_mm)}`, tone: 'warn',
-      long: `Цвет заливки измерен при ширине ${mmList(size.measured_mm)}, при ${mm(size.row_mm)} — нет: он взят при ${mm(size.from_mm[0])} и на этой ширине может выйти другим.`};
-    return {short: 'ширина измерений неизвестна', tone: 'warn', long: 'Неизвестно, при какой ширине измерен этот цвет: его файлы LightBurn недоступны.'};
+    if (size.how === 'measured') return {short: `color measured at width ${mm(size.from_mm[0])}`, tone: 'ok', long: `Fill color measured at width ${mm(size.from_mm[0])}.`};
+    if (size.how === 'between') return {short: `${mm(size.row_mm)}: between measurements ${mmList(size.from_mm)}`, tone: 'warn',
+      long: `This color was not measured at ${mm(size.row_mm)}; it is interpolated between ${mmList(size.from_mm)}.`};
+    if (size.how === 'outside') return {short: `${mm(size.row_mm)}: color measured at ${mmList(size.measured_mm)}`, tone: 'warn',
+      long: `Fill color was measured at ${mmList(size.measured_mm)}, not ${mm(size.row_mm)}. It uses ${mm(size.from_mm[0])} and may differ at this width.`};
+    return {short: 'measurement width unknown', tone: 'warn', long: 'The color measurement width is unknown because its LightBurn files are unavailable.'};
   }
-  const SIZE_ABOUT = 'Цвет на титане зависит от длины строки гравировки (у картинки — от её ширины): лазер возвращается к точке через строку, '
-    + 'и на коротких строках титан не успевает остыть.';
+  const SIZE_ABOUT = 'Titanium color depends on scan-line length (the image width): the laser returns after each line, '
+    + 'and on short lines the titanium has less time to cool.';
 
   const greySegments = (levels) => Array.from({length: BAR_SEGMENTS}, (_, i) => levels[255 - Math.round(i * 255 / (BAR_SEGMENTS - 1))]);
   /** A selected scale carries the detail response's greys: the card and picture strip then use identical powers, colours and unknowns. */
   function scaleBar(sc) {
     const rows = sc.greys ? greySegments(sc.greys.levels) : sc.bar;
-    return h('span', {class: 'ge-bar', role: 'img', 'aria-label': 'Цвета шкалы'}, rows.map((row) => h('span', {
+    return h('span', {class: 'ge-bar', role: 'img', 'aria-label': 'Scale colors'}, rows.map((row) => h('span', {
       class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
-      title: `${row.level != null ? `серый ${row.level} · ` : ''}мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}`})));
+      title: `${row.level != null ? `gray ${row.level} · ` : ''}power ${value(row.power)} %${row.hex ? '' : ' · not measured'}`})));
   }
 
   /** Scale cards use the displayed scan width and, for the selected scale, the current Min/Max. */
@@ -91,15 +88,15 @@ const PhotoPanels = (() => {
       scaleBar(sc),
       h('span', {class: 'ge-ends small'}, h('span', {}, `P ${value(ends[0], 1)} %`), h('span', {}, `P ${value(ends[1], 1)} %`)),
       sc.size && sc.size.row_mm != null ? h('span', {class: 'small muted', title: size ? size.long : ''},
-        `Цвета при ширине ${mm(sc.size.row_mm)}`,
-        sc.size.how === 'outside' ? ` · по измерению ${mmList(sc.size.from_mm)}` : '') : null,
+        `Colors at width ${mm(sc.size.row_mm)}`,
+        sc.size.how === 'outside' ? ` · from measurement at ${mmList(sc.size.from_mm)}` : '') : null,
       h('strong', {}, settingsText(sc.mode, sc.dpi)),
-      sc.results && sc.results.total ? h('span', {class: 'small ge-result-summary'}, `Фото: удачно ${sc.results.good} · неудачно ${sc.results.bad} · без оценки ${sc.results.unrated}`) : null,
+      sc.results && sc.results.total ? h('span', {class: 'small ge-result-summary'}, `Photos: good ${sc.results.good} · bad ${sc.results.bad} · unrated ${sc.results.unrated}`) : null,
       sc.examples && sc.examples.length ? h('span', {class: 'ge-scale-examples'}, sc.examples.slice(0, 3).map((r) => h('span', {class: 'small'},
-        r.photo ? h('img', {src: r.photo, loading: 'lazy', alt: `Фото гравировки: ${r.title}`}) : null,
-        `${r.title} · ${r.layer} · фото: ${{good: 'удачно', bad: 'неудачно', unrated: 'без оценки'}[r.verdict]}; цвет: ${{good: 'удачно', bad: 'неудачно', unrated: 'без оценки'}[((r.assessments || {}).colour || {}).verdict || 'unrated']}`))) : null,
-      h('span', {class: 'small muted'}, `${titaniumLabel(sc)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} с/см²`),
-      sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `измерена при ширине ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
+        r.photo ? h('img', {src: r.photo, loading: 'lazy', alt: `Engraving photo: ${r.title}`}) : null,
+        `${r.title} · ${r.layer} · photo: ${{good: 'good', bad: 'bad', unrated: 'unrated'}[r.verdict]}; color: ${{good: 'good', bad: 'bad', unrated: 'unrated'}[((r.assessments || {}).colour || {}).verdict || 'unrated']}`))) : null,
+      h('span', {class: 'small muted'}, `${titaniumLabel(sc)} · ${kinds} · ${value(sc.time_s_per_cm2, 0)} s/cm²`),
+      sc.sizes && sc.sizes.length ? h('span', {class: 'small muted'}, `measured at widths ${mmList(sc.sizes.map((z) => z.row_mm))}`) : null,
       h('span', {class: 'row'}, confirmationPill(sc.confirmation), pill(...(REFERENCE[sc.reference] || [sc.reference]))));
   }
 
@@ -111,7 +108,7 @@ const PhotoPanels = (() => {
     const lo = levels[255].power, hi = levels[0].power;
     const strip = h('div', {class: 'ge-strip' + (dot ? ' ge-pickable' : ''), 'aria-label': dot ? 'Цвет точек при каждой мощности: щёлкните, чтобы выбрать' : 'Цвет каждого серого'},
       segments.map((row) => h('span', {class: row.hex ? '' : 'ge-none', style: row.hex ? `background:${row.hex}` : '',
-        title: dot ? `мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}` : `серый ${row.level} · мощность ${value(row.power)} %${row.hex ? '' : ' · не измерено'}`})));
+        title: dot ? `power ${value(row.power)} %${row.hex ? '' : ' · not measured'}` : `gray ${row.level} · power ${value(row.power)} %${row.hex ? '' : ' · not measured'}`})));
     if (!dot) {
       return h('div', {class: 'stack ge-greybar'}, strip, h('div', {class: 'ge-strip ge-ramp', 'aria-hidden': 'true'}),
         h('div', {class: 'ge-ends small'}, h('span', {}, `белый 255 · Min ${value(lo, 1)} %`), h('span', {}, `чёрный 0 · Max ${value(hi, 1)} %`)));
@@ -160,7 +157,7 @@ const PhotoPanels = (() => {
   function fillsBlock(fills) {
     if (!fills.length) return null;
     return h('details', {}, h('summary', {}, `Заливки с теми же настройками (${fills.length}) — для сравнения, в шкалу не входят`),
-      h('p', {class: 'small muted'}, 'Заливка и серый картинки на той же мощности выходят разным цветом (на ваших данных — до 36 ΔE в светлой и средней части), поэтому шкала строится только по фотогравировкам и пластинам шкал серого.'),
+      h('p', {class: 'small muted'}, 'Fill and an image gray at the same power produce different colors (up to 36 ΔE in your light and mid tones), so the scale uses only photo engravings and gray-scale plates.'),
       table(['Мощность, %', 'Цвет заливки', 'Разница со шкалой', 'Где'], fills.map((f) => [value(f.power), h('span', {class: 'ge-lab'}, hexChip(f.hex), ' ', labLines(f.lab)),
         f.de == null ? h('span', {class: 'muted'}, f.curve_lab ? 'другой способ измерения' : 'вне шкалы') : pill(`${value(f.de, 1)} ΔE`, f.de > SPREAD_LIMIT ? 'warn' : 'ok'),
         sourceText(f.source)]), '', true));
@@ -325,7 +322,7 @@ const PhotoPanels = (() => {
         assessment('colour', 'Цвет'), assessment('photo', 'Фотогравировка'));
     });
     return h('section', {class: 'ge-results stack'}, h('h4', {}, 'Результаты по маркерам LightBurn'),
-      h('p', {class: 'small muted'}, 'Цвет и фотогравировка оцениваются отдельно для этого слоя и версии файла. Неудачные измерения сохраняются.'), cards);
+      h('p', {class: 'small muted'}, 'Color and photo engraving are assessed separately for this layer and file version. Unsuccessful measurements are retained.'), cards);
   }
 
   function exportedResults(planId, zone = null) {
@@ -636,7 +633,7 @@ const PhotoPanels = (() => {
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
         info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
       fill(details,
-        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
+        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
           + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
           h('span', {class: 'muted small'}, ` — оценка: ${cleaning ? 'сначала чистка по прямоугольнику картинки, затем ' : ''}строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.`)),
         info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
@@ -706,7 +703,7 @@ const PhotoPanels = (() => {
         h('figure', {class: 'ge-closeup'}, h('img', {src: info.closeup, alt: `Точки вида «${name}» вблизи`}),
           h('figcaption', {class: 'small muted'}, `Точки вблизи: квадрат ${value(info.closeup_mm, 0)} × ${value(info.closeup_mm, 0)} мм из середины картинки, точка в точку при ${info.dpi} dpi `
             + `(каждая точка — ${info.closeup_px} пикселя экрана), цвет точки — ${source}.`)),
-        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} с/см²` : ''}`
+        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
           + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
           h('span', {class: 'muted small'}, ' — оценка сверху: строки на всю ширину картинки, как в градациях серого; белые места лазер в виде точками пролетает быстрее.')),
         toneText(view),
@@ -749,7 +746,7 @@ const PhotoPanels = (() => {
     const wish = h('input', {type: 'text', placeholder: 'например: очки золотом, фон синий, губы красные'});
     const wishField = wishForm.add('wish', 'Как раскрасить — своими словами', wish, {required: true, maxLength: 400});
     const aiNote = h('div');
-    const palette = h('div', {class: 'ge-palette', role: 'group', 'aria-label': 'Цвета шкалы'});
+    const palette = h('div', {class: 'ge-palette', role: 'group', 'aria-label': 'Scale colors'});
     const list = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем объекты картинки…'));
     const notes = h('ul', {class: 'small'});
     const overlay = h('div');
@@ -858,7 +855,7 @@ const PhotoPanels = (() => {
       h('h4', {}, 'Объекты'),
       h('p', {class: 'small muted'}, 'Выберите объект в списке и щёлкните его цвет на полосе цветов шкалы.'),
       palette, list, notes, overlay,
-      h('p', {class: 'small muted'}, 'Цвета шкалы — при Min и Max работы, не ближе 8 ΔE друг к другу. Картинку AI получает, только если это разрешено во вкладке «AI». '
+      h('p', {class: 'small muted'}, 'Scale colors — при Min и Max работы, не ближе 8 ΔE друг к другу. Картинку AI получает, только если это разрешено во вкладке «AI». '
         + 'Объекты находит модель людей (кожа, волосы, одежда, другое), губы и глаза — поиск лица, куски фона — по их цвету.'));
     return {el, show};
   }

@@ -264,7 +264,7 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
   out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
 """, work={"id": 9})
     card = out["cards"][0]
-    assert "Портрет" in card and "60 × 30 мм" in card and "Min 12 % · Max 28 %" in card and "100 мм/с" in card
+    assert "Портрет" in card and "60 × 30 мм" in card and "Min 12 % · Max 28 %" in card and "100 mm/s" in card
     assert out["thumb"] == "/api/photo-works/9/thumb.png?v=2026-10-21T10%3A05%3A00"
     assert out["first"] == {"title": "Новая работа · шаг 1 из 2: картинка", "buttons": ["×", "Отмена", "Дальше →"]}
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
@@ -314,8 +314,8 @@ def test_a_work_on_another_plate_of_its_scales_titanium_opens_on_that_scale_whic
     scales = [{**scale(speed, span), "material": grade5, "titanium": titanium} for speed, span in ((150, [1, 30]), (100, [2, 25]))]
     out = run(tmp_path, {"work": "7"}, """
   out.chosen = chosen(tree);
-  out.named = lines(tree).map((m) => m.querySelector('.lst-text').getAttribute('title').includes('Титан Grade 5 · измерена на Big Plate 150'));
-  out.card = tree.querySelectorAll('button.ge-scale').map((b) => [b.getAttribute('aria-pressed'), b.textContent.includes('Титан Grade 5 · измерена на Big Plate 150')]);
+  out.named = lines(tree).map((m) => m.querySelector('.lst-text').getAttribute('title').includes('Titanium Grade 5 · measured on Big Plate 150'));
+  out.card = tree.querySelectorAll('button.ge-scale').map((b) => [b.getAttribute('aria-pressed'), b.textContent.includes('Titanium Grade 5 · measured on Big Plate 150')]);
 """, work={"scale": {**mode(100), "material_id": 4}, "material": {"name": "Small Plate", "grade": "Grade 5"}}, scales=scales)
     assert out["chosen"] == [False, True] and out["named"] == [True, True] and out["card"] == [["true", True]]   # the chosen scale's card open
 
@@ -407,9 +407,9 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
   out.cleaning = [tree.textContent.includes('из них чистка ≈ 42 s'),
                   tree.textContent.includes('Файл LightBurn: C00 — чистка CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 по прямоугольнику картинки, первой')];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
-  out.between = tree.textContent.includes('100 мм: между измерениями 38,4 и 150 мм');
+  out.between = tree.textContent.includes('100 mm: between measurements 38,4 and 150 mm');
   const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Проба на ширине работы');
-  out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('полоской серого 100 мм в ширину')};
+  out.ramp = {main: ramp.className.includes('primary'), says: ramp.parentNode.textContent.includes('полоской серого 100 mm в ширину')};
   await ramp.dispatch('click'); await settle();
   out.ramp.posted = requests.filter((r) => r.path.endsWith('/width-ramp')).map((r) => r.method); out.ramp.went = ctx.__went.slice(-1);
   const tries = tree.querySelectorAll('button').find((b) => b.textContent === 'Подобрать настройки: 8 копий');
@@ -531,7 +531,7 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   out.first = {chosen: chosen(tree), powers: powers(tree), table: tree.textContent.includes('Серый картинки (0–255)'), works: requests.some((r) => r.path.startsWith('/api/photo-works'))};
   const sizeButtons = (t) => t.querySelectorAll('button').filter((b) => (b.getAttribute('title') || '').startsWith('измерено гравировок'));
   out.widths = sizeButtons(tree).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
-  await button(tree, '38,4 мм').dispatch('click'); await settle();
+  await button(tree, '38,4 mm').dispatch('click'); await settle();
   out.asked = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.pressed = sizeButtons(tree).map((b) => b.getAttribute('aria-pressed'));
   await pickScale(tree, 1); await settle();
@@ -547,7 +547,7 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   out.went = ctx.__went; out.saved = saves();
 """, work={"id": 9})
     assert out["first"] == {"chosen": [True, False], "powers": ["1", "30"], "table": True, "works": False}
-    assert out["widths"] == [["38,4 мм", "false"], ["150 мм", "true"]]                    # shown at the size most measured, the others a click away
+    assert out["widths"] == [["38,4 mm", "false"], ["150 mm", "true"]]                    # shown at the size most measured, the others a click away
     assert out["asked"] == ["150", "38.4"] and out["pressed"] == ["true", "false"]
     assert out["second"] == {"chosen": [False, True], "powers": ["2", "25"]}
     sent = out["sent"][0]
@@ -680,7 +680,7 @@ def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engrav
   out.pairs = links.filter(([t]) => t.startsWith('№')).map(([t, href]) => [t, href]);
   const text = tree.textContent;
   out.text = ['ждёт проверки', 'подтверждает прогноз: медиана 2,4 ΔE', 'сравнено серых 3', 'по 1 другой гравировке',
-    'Выгравирована с другими настройками, чем шкала работы: 250 мм/с', 'Других гравировок с этими настройками нет'].map((t) => text.includes(t));
+    'Выгравирована с другими настройками, чем шкала работы: 250 mm/s', 'Других гравировок с этими настройками нет'].map((t) => text.includes(t));
   const strips = tree.querySelectorAll('div').filter((d) => (d.className || '') === 'ge-strip ge-compare');
   out.strips = strips.map((st) => st.children.map((c) => c.getAttribute('style')));
 """, engravings=ENGRAVINGS)
@@ -797,8 +797,8 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
   out.mapped = {source: tree.querySelector('.ge-dotsource').textContent, slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
                 ends: tree.querySelectorAll('.ge-ends').slice(-1)[0].textContent, title: tree.querySelector('.ge-settings').textContent,
                 says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
-                       'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi) · проходов 1 — настройки цвета с карты цветов',
-                       '60 мм: между измерениями 40 и 80 мм', 'на настройках цвета с карты (500 мм/с'].map((t) => text().includes(t))};
+                       'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1 — настройки цвета с карты цветов',
+                       '60 mm: between measurements 40 and 80 mm', 'на настройках цвета с карты (500 mm/s'].map((t) => text().includes(t))};
   await button(tree, 'Другой цвет').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   await button(tree, 'На шкалу').dispatch('click'); await settle();
@@ -806,12 +806,12 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
               mark: !!tree.querySelector('.ge-dotmark'), title: tree.querySelector('.ge-settings').textContent};
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
     m = out["mapped"]
-    assert m["source"] == "Точкис карты цветов: 20 % · 500 мм/с · 60 кГц · 300 нс · шаг 0,02 мм (1000 dpi) · проходов 1Другой цветНа шкалу"
+    assert m["source"] == "Точкис карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Другой цветНа шкалу"
     assert not m["slider"] and not m["mark"] and m["ends"] == "1 %точки — с карты цветов30 %" and m["says"] == [True] * 6
-    assert m["title"].startswith("шкала: 100 мм/с") and m["title"].endswith("точки — на настройках цвета с карты цветов")
+    assert m["title"].startswith("шкала: 100 mm/s") and m["title"].endswith("точки — на настройках цвета с карты цветов")
     assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
     assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Цвет с карты", "slider": "12.5", "mark": True,
-                           "title": "100 мм/с · 60 кГц · 250 нс · шаг 0,0254 мм (1000 dpi) · проходов 1"}
+                           "title": "100 mm/s · 60 kHz · 250 ns · interval 0,0254 mm (1000 dpi) · passes 1"}
 
 
 @node
@@ -1010,7 +1010,7 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
   out.title = tree.querySelector('.ge-settings').textContent;
   out.text = tree.textContent;
 """, work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
-    assert out["source"].startswith("Точкипо фото № 149 (Jarvis): 25 % · 125 мм/с")
+    assert out["source"].startswith("Точкипо фото № 149 (Jarvis): 25 % · 125 mm/s")
     assert out["ends"] == "1 %точки — по фото № 149 (Jarvis)30 %"
     assert out["title"].endswith("точки — на настройках точек по фото № 149 (Jarvis)")
     text = out["text"]
@@ -1083,11 +1083,11 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
   out.fastest = lines(tree)[0].textContent;
 """, work={"id": 9}, scales=scales)
     assert out["lines"] == 20 and out["count"] == "showing 20 of 22" and out["more"] == "Show 2 more"
-    assert "100 мм/с" in out["first"][0] and "выбрана" in out["first"][0] and "101 мм/с" in out["first"][1]
+    assert "100 mm/s" in out["first"][0] and "выбрана" in out["first"][0] and "101 mm/s" in out["first"][1]
     assert out["cards"] == 1 and out["chosen"] == 0                                                 # the chosen scale's card, nothing else
     assert out["after"]["chosen"] == 3 and out["after"]["cards"] == ["true"]
     assert out["sorts"] == ["Лучшие первыми", "Быстрее", "Шире диапазон мощности"]
-    assert "121 мм/с" in out["fastest"]
+    assert "121 mm/s" in out["fastest"]
 
 
 @node
