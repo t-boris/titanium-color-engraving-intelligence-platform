@@ -277,7 +277,7 @@ const IngestReview = (() => {
         zoomOut, zoomIn,
         btn('Вписать', () => setZoom(100))));
     // the tool «Сдвиг и поворот схемы»: it moves the whole overlay on the photograph and checks the pair again with the result
-    const shiftCard = h('div', {class: 'card stack'}, h('h3', {}, 'Сдвиг, поворот и масштаб всей схемы'),
+    const shiftCard = h('div', {class: 'card stack'}, h('h3', {}, 'Move, rotate, and scale the whole layout'),
       h('p', {class: 'muted small'}, 'Все контуры двигаются вместе, размеры в файле LightBurn сохраняются. Можно поправить и совмещение, которое программа считает верным.'),
       h('div', {class: 'row overlay-controls'}, h('span', {}, 'Поворот схемы на фото'), rotationRange, Forms.describe(rotationRange, 'schemeRotation'),
         rotationNumber, Forms.describe(rotationNumber, 'schemeRotation'), h('span', {}, '°'), rotationNote,
@@ -356,7 +356,7 @@ const IngestReview = (() => {
     const host = h('div', {class: 'stack'});
     const say = (title, text, extra = null) => App.fill(host, h('div', {class: 'card stack'}, h('h3', {}, title), h('p', {class: 'small', role: 'status'}, text), extra));
     const title = 'Привязать по одной детали';
-    if (pair.matrix) say(title, 'У матрицы параметров нет привязки по детали: сетка находится целиком. Поправьте её положение в «Углы работы», а границы сетки — в «Матрица параметров».');
+    if (pair.matrix) say(title, 'A parameter matrix cannot be aligned by one detail: the entire grid is located together. Adjust its position using Work corners and its boundaries using Parameter matrix.');
     else if (!pair.check?.image_size) say(title, 'Детали файла показываются на фотографии после первой проверки пары. Сначала проверьте пару.');
     else {
       const load = async () => {
@@ -546,7 +546,7 @@ const IngestReview = (() => {
     const labels = m.labels || {};
     const readings = (obj) => Object.entries(obj || {}).map(([k, v]) => `${+k + 1}: ${(v || []).join(' / ') || '—'}`).join(' · ');
     const others = (m.others || []);
-    return h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Матрица параметров'), h('span', {class: 'spacer'}),
+    return h('div', {class: 'card stack'}, h('div', {class: 'row'}, h('h3', {}, 'Parameter matrix'), h('span', {class: 'spacer'}),
         m.confirmed ? pill(m.confirmed_at ? `параметры подтверждены ${stamp(m.confirmed_at)}` : 'параметры подтверждены', 'ok') : pill('параметры ждут подтверждения', 'warn')),
       // the generated file is a record of what the photograph and the operator said, never evidence of its own (REQ-036)
       h('p', {class: 'muted small'}, 'Настройки ячеек восстановлены по фотографии матрицы и подтверждаются оператором; файл LightBurn этой пары создан из них '
@@ -611,8 +611,8 @@ const IngestReview = (() => {
         !relative && check.chart.residual != null ? ` · остаточная ошибка коррекции ΔE ${num(check.chart.residual, 1)}${check.chart.max_residual != null ? ` (порог ${num(check.chart.max_residual, 1)})` : ''}` : '',
         !relative && check.chart.grey_ramp ? h('span', {class: 'muted small'},
           ` · серая шкала после коррекции L* ${check.chart.grey_ramp.corrected.map((v) => num(v, 0)).join(' · ')} (эталон ${check.chart.grey_ramp.reference.map((v) => num(v, 0)).join(' · ')})`) : ''),
-      h('p', {}, 'Выравнивание: ', check.alignment.valid ? pill(methodLabel(check.alignment), 'ok')
-        : pill('не выполнено', 'warn')),
+      h('p', {}, 'Alignment: ', check.alignment.valid ? pill(methodLabel(check.alignment), 'ok')
+        : pill('not completed', 'warn')),
       ...(check.alignment.valid && check.alignment.residual_px != null ? [h('p', {},
         `Остаток по краям опорных меток: ${num(check.alignment.residual_px, 1)} пикс. · Размеры взяты из LightBurn в миллиметрах${check.alignment.reflected ? ' · фотография отражена' : ''}.`)] : []),
       ...(check.alignment.valid && check.alignment.method === 'element anchors' && check.alignment.anchoring && check.alignment.anchoring.details ? (() => {
@@ -633,7 +633,7 @@ const IngestReview = (() => {
       ...(check.alignment.valid && check.alignment.method === 'picture' && hiddenMargins(check.alignment) ? [h('p', {class: 'small'},
         `Рамка закрывает края картинки, мм (ориентировочно ±1,5): ${hiddenMargins(check.alignment)}. Скрытое не измеряется.`)] : []),
       ...(check.alignment.anchoring && check.alignment.anchoring.refused && check.alignment.method !== 'element anchors' ? [h('p', {class: 'small'},
-        `Автоматическое выравнивание по элементам не выполнено: ${I18N.tr(check.alignment.anchoring.refused)}.`)] : []),
+        `Automatic alignment using elements was not completed: ${I18N.tr(check.alignment.anchoring.refused)}.`)] : []),
       ...(check.alignment.geometry_confirmation && check.alignment.geometry_confirmation.refused && !check.alignment.valid ? [h('p', {class: 'small'},
         `Совпадение целых фигур найдено, но элементы файла его не подтвердили, и оно не использовано: ${I18N.tr(check.alignment.geometry_confirmation.refused)}.`)] : []),
       ...(check.alignment.valid && check.alignment.qr_used_as_anchor === false &&
@@ -774,35 +774,35 @@ const IngestReview = (() => {
       if (button) button.disabled = true;
       stages.setBusy(true);
       const start = Date.now();
-      const tick = () => { status.className = 'muted small'; status.textContent = `Совмещаем фото и измеряем слои… ${Math.floor((Date.now() - start) / 1000)} с`; };
+      const tick = () => { status.className = 'muted small'; status.textContent = `Aligning photo and measuring layers… ${Math.floor((Date.now() - start) / 1000)} s`; };
       tick(); const timer = setInterval(tick, 1000);
       try {
         const checked = await post(`/pairs/${pair.id}/check`, body || {});
         clearInterval(timer);
         await reload();
         const problem = checked.check?.problems?.[0];
-        toast(checked.status === 'Ready to accept' ? 'Совмещение выполнено. Проверьте контуры на фото и примите наблюдения.'
-          : problem ? `Проверка завершена: ${I18N.tr(problem)}` : 'Проверка завершена; требуется уточнение.',
+        toast(checked.status === 'Ready to accept' ? 'Alignment complete. Review the outlines on the photo and accept the observations.'
+          : problem ? `Check complete: ${I18N.tr(problem)}` : 'Check complete; clarification is needed.',
         checked.status === 'Ready to accept' ? 'ok' : 'warn');
       } catch (e) {
-        clearInterval(timer); status.className = 'alert bad'; status.textContent = `Проверка не завершилась: ${e.message}`;
+        clearInterval(timer); status.className = 'alert bad'; status.textContent = `Check failed: ${e.message}`;
         stages.setBusy(false);
         if (button) button.disabled = false;
         fail(e);
       }
     };
-    const identity = h('div', {class: 'card'}, h('h3', {}, pair.engraving_title ? I18N.name(pair.engraving_title) : (pair.rephoto_of ? 'Повторная фотография той же гравировки' : 'Гравировка')),
-      h('p', {}, `LightBurn: ${pair.lightburn_name} · Фото: ${pair.photo_name}`),
-      pair.plan_mode === 'Vector job' ? h('p', {class: 'small'}, 'Работа: ', link('/vector?plan=' + pair.plan_id, `«${pair.plan_name}»`), '; после принятия вывод по гравировке запишется в неё.') : null,
-      pair.plan_mode === 'Photo engraving work' ? h('p', {class: 'small'}, 'Работа фотогравировки: ', link('/photo-engraving?work=' + pair.plan_id, `«${pair.plan_name}»`),
-        '; после принятия каждый её серый сравнится с прогнозом на вкладке «Подтверждение».') : null,
-      pair.rephoto_of ? h('p', {class: 'muted small'}, `Исходная пара №${pair.rephoto_of} · LightBurn, лазер, линза и титан унаследованы.`,
-        pair.plan_id ? ' ' : null, pair.plan_id ? link('/plans/' + pair.plan_id, pair.plan_mode === 'Restored from file' ? 'План, восстановленный из файла' : 'Экспериментальная плата') : null) : null,
-      pair.correction_of ? h('p', {class: 'alert warn'}, `Исправление совмещения снимка №${pair.correction_of}. До принятия этой коррекции прежний результат активен; после принятия он уйдёт из выводов, а история останется в журнале.`) : null,
+    const identity = h('div', {class: 'card'}, h('h3', {}, pair.engraving_title ? I18N.name(pair.engraving_title) : (pair.rephoto_of ? 'Another photo of the same engraving' : 'Engraving')),
+      h('p', {}, `LightBurn: ${pair.lightburn_name} · Photo: ${pair.photo_name}`),
+      pair.plan_mode === 'Vector job' ? h('p', {class: 'small'}, 'Work: ', link('/vector?plan=' + pair.plan_id, `«${pair.plan_name}»`), '; the engraving conclusion will be saved to it on acceptance.') : null,
+      pair.plan_mode === 'Photo engraving work' ? h('p', {class: 'small'}, 'Photo engraving work: ', link('/photo-engraving?work=' + pair.plan_id, `«${pair.plan_name}»`),
+        '; on acceptance, each gray will be compared with the prediction on the Confirmation tab.') : null,
+      pair.rephoto_of ? h('p', {class: 'muted small'}, `Original pair #${pair.rephoto_of} · LightBurn file, laser, lens, and titanium inherited.`,
+        pair.plan_id ? ' ' : null, pair.plan_id ? link('/plans/' + pair.plan_id, pair.plan_mode === 'Restored from file' ? 'Plan restored from file' : 'Experiment plate') : null) : null,
+      pair.correction_of ? h('p', {class: 'alert warn'}, `Alignment correction for photo #${pair.correction_of}. The previous result remains active until this correction is accepted; afterward it is excluded from conclusions and its history remains in the audit.`) : null,
       h('div', {class: 'row'},
-        check ? btn('Повторить проверку', (ev) => { const self = ev.currentTarget; run({}, self); }) : null,
-        check ? btn('Найти заново по RAW и LightBurn', (ev) => { const self = ev.currentTarget; run({reset_alignment: true}, self); }) : null,
-        btn('Delete pair', () => confirmBox('Delete pair', 'Действие необратимо.', 'Delete', async () => { await del('/pairs/' + pair.id); toast('Record deleted', 'ok'); go('/experiments'); }), 'danger')));
+        check ? btn('Check again', (ev) => { const self = ev.currentTarget; run({}, self); }) : null,
+        check ? btn('Find again using RAW and LightBurn', (ev) => { const self = ev.currentTarget; run({reset_alignment: true}, self); }) : null,
+        btn('Delete pair', () => confirmBox('Delete pair', 'This action cannot be undone.', 'Delete', async () => { await del('/pairs/' + pair.id); toast('Record deleted', 'ok'); go('/experiments'); }), 'danger')));
 
     // -- the panels of the four stages, built once; the stage bar only shows and hides them, so nothing typed into one is lost ------------
     const panels = {files: [], alignment: [], review: [], accept: []};
@@ -813,62 +813,62 @@ const IngestReview = (() => {
     const realDifferences = check ? (check.discrepancies || []).filter((d) => d.from_file != null) : [];
     const supplied = check ? await suppliedSettingsCard(pair, reload) : null;
     const suppliedBox = supplied ? h('details', {class: 'rv-more', open: (review.advisories || []).some((a) => a.code === 'settings_missing')},
-      h('summary', {}, 'Ввести недостающие настройки слоёв'), supplied) : null;
+      h('summary', {}, 'Enter missing layer settings'), supplied) : null;
 
     if (!check) {
-      panels.files.push(h('p', {class: 'muted'}, 'Нажмите «Проверить пару»: будут прочитаны параметры слоёв, выровнена фотография и измерены области гравировки.'));
-      panels.alignment.push(h('p', {class: 'muted'}, 'Совмещение появится после первой проверки пары. Углы работы и привязку по детали можно задать и до неё.'));
-      panels.review.push(h('p', {class: 'muted'}, 'Контуры на фотографии и итог появятся после совмещения.'));
-      panels.accept.push(h('p', {class: 'muted'}, 'Принять можно только проверенную пару.'));
+      panels.files.push(h('p', {class: 'muted'}, 'Select “Check pair” to read layer settings, align the photo, and measure engraved areas.'));
+      panels.alignment.push(h('p', {class: 'muted'}, 'Alignment appears after the first check. You can set work corners or align by a detail before checking.'));
+      panels.review.push(h('p', {class: 'muted'}, 'Outlines and results appear on the photo after alignment.'));
+      panels.accept.push(h('p', {class: 'muted'}, 'Only a checked pair can be accepted.'));
     } else {
       if (realDifferences.length) {
         const conf = pair.file_confirmation;
-        panels.files.push(h('div', {class: 'card stack'}, h('h3', {}, 'Сравнение с определением платы'),
-          conf ? h('div', {class: 'alert ok'}, 'Использованный файл подтверждён. Ниже сохранены реальные отличия параметров.')
-            : h('div', {class: 'alert warn'}, 'Параметры файла отличаются от определения платы. Исправьте пару или подтвердите использованный файл.'),
+        panels.files.push(h('div', {class: 'card stack'}, h('h3', {}, 'Comparison with plate definition'),
+          conf ? h('div', {class: 'alert ok'}, 'The file used has been confirmed. Actual differences in settings are retained below.')
+            : h('div', {class: 'alert warn'}, 'File settings differ from the plate definition. Correct the pair or confirm the file used.'),
           IngestDialogs.discrepancyTable(realDifferences),
-          conf ? h('p', {class: 'alert ok'}, `Подтверждено: «${conf.text}» · ${conf.at.slice(0, 16).replace('T', ' ')}`)
-            : h('div', {class: 'row'}, btn('Исправить пару', () => IngestDialogs.fixFile(pair, reload)),
-              btn('Подтвердить использованный файл', () => IngestDialogs.confirmFile(pair, {...check, discrepancies: realDifferences}, reload)))));
+          conf ? h('p', {class: 'alert ok'}, `Confirmed: «${conf.text}» · ${conf.at.slice(0, 16).replace('T', ' ')}`)
+            : h('div', {class: 'row'}, btn('Correct pair', () => IngestDialogs.fixFile(pair, reload)),
+              btn('Confirm the file used', () => IngestDialogs.confirmFile(pair, {...check, discrepancies: realDifferences}, reload)))));
       }
       if (suppliedBox) panels.files.push(suppliedBox);
-      if (!realDifferences.length && !suppliedBox) panels.files.push(h('p', {class: 'muted'}, 'К файлам замечаний нет: оба читаются, расхождений с платой и недостающих настроек не найдено.'));
-      panels.alignment.push(h('div', {class: 'card stack'}, h('h3', {}, 'Совмещение фотографии с файлом'),
-        h('p', {}, 'Выравнивание: ', check.alignment.valid ? pill(methodLabel(check.alignment), 'ok') : pill('не выполнено', 'warn'),
-          check.alignment.valid && check.alignment.residual_px != null ? ` · остаток по краям опорных меток ${num(check.alignment.residual_px, 1)} пикс.` : ''),
+      if (!realDifferences.length && !suppliedBox) panels.files.push(h('p', {class: 'muted'}, 'Both files can be read. No differences from the plate or missing settings were found.'));
+      panels.alignment.push(h('div', {class: 'card stack'}, h('h3', {}, 'Photo alignment with file'),
+        h('p', {}, 'Alignment: ', check.alignment.valid ? pill(methodLabel(check.alignment), 'ok') : pill('not completed', 'warn'),
+          check.alignment.valid && check.alignment.residual_px != null ? ` · marker edge residual ${num(check.alignment.residual_px, 1)} px` : ''),
         h('p', {class: 'muted small'}, check.alignment.valid
-          ? 'Совмещение можно поправить вручную, даже если программа считает его верным: «Углы работы», «Привязка по детали», «Сдвиг и поворот схемы».'
-          : 'Программа не смогла совместить фотографию с файлом. Поставьте четыре угла работы или привязку по одной детали.'),
-        h('details', {class: 'rv-more'}, h('summary', {}, 'Подробности совмещения и калибровочной карты'), resultsCard(check))));
+          ? 'You can adjust alignment manually even when it appears correct: use Work corners, Align by detail, or Move and rotate layout.'
+          : 'The photo could not be aligned with the file. Set four work corners or align by one detail.'),
+        h('details', {class: 'rv-more'}, h('summary', {}, 'Alignment and reference chart details'), resultsCard(check))));
       if (view) {
         panels.review.push(view.view);
         const composed = Composition.card(check, pair.id), images = imageLayersCard(check);
-        panels.review.push(h('details', {class: 'card rv-more'}, h('summary', {}, 'Измеренные слои и метрики'),
-          h('div', {class: 'stack'}, h('p', {class: 'small'}, 'Слои файла, их результат и задачи гравировки — в инструментах выше («Слои файла», «Задачи гравировки»).'),
-            h('div', {class: 'row'}, btn('Открыть слои файла', () => stages.open('layers'))), composed, images)));
-      } else panels.review.push(h('div', {class: 'alert warn'}, 'Фотография ещё не совмещена с файлом: контуры появятся после совмещения.'));
+        panels.review.push(h('details', {class: 'card rv-more'}, h('summary', {}, 'Measured layers and metrics'),
+          h('div', {class: 'stack'}, h('p', {class: 'small'}, 'File layers, their results, and engraving tasks are available in the tools above.'),
+            h('div', {class: 'row'}, btn('Open file layers', () => stages.open('layers'))), composed, images)));
+      } else panels.review.push(h('div', {class: 'alert warn'}, 'The photo is not aligned with the file yet. Outlines appear after alignment.'));
       panels.review.push(IngestStages.invalidation());
       panels.accept.push(provenanceCard(pair));
-      panels.accept.push(h('div', {class: 'card stack'}, h('h3', {}, 'Отклонить результат'),
-        h('p', {class: 'small'}, 'Если фотография или проверка не годятся, результат можно отклонить: он не попадёт в выводы и знания лазера. Запись пары, её проверка, '
-          + 'подтверждения и версия гравировки остаются в журнале; загруженные копии файлов удаляются.'),
-        h('div', {class: 'row'}, btn('Отклонить результат', () => confirmBox('Отклонить результат',
-          'Результат этой пары не попадёт в выводы и знания лазера. Пара будет помечена удалённой, загруженные копии файлов удалены. В журнале останутся запись пары с проверкой и подтверждениями, версия гравировки и имена файлов.',
-          'Отклонить', async () => { await del('/pairs/' + pair.id); toast('Результат отклонён', 'ok'); go('/experiments'); }), 'danger'))));
+      panels.accept.push(h('div', {class: 'card stack'}, h('h3', {}, 'Reject result'),
+        h('p', {class: 'small'}, 'If the photo or check is unsuitable, you can reject the result; it will be excluded from conclusions and laser knowledge. The pair record, check, '
+          + 'confirmations, and engraving version remain in the audit; uploaded file copies are deleted.'),
+        h('div', {class: 'row'}, btn('Reject result', () => confirmBox('Reject result',
+          'This result will be excluded from conclusions and laser knowledge. The pair will be marked deleted and uploaded file copies removed. The pair record, check, confirmations, engraving version, and file names remain in the audit.',
+          'Reject', async () => { await del('/pairs/' + pair.id); toast('Result rejected', 'ok'); go('/experiments'); }), 'danger'))));
       panels.accept.push(IngestStages.invalidation());
     }
 
     // -- the manual tools: always present, with or without a warning (DEC-001) -------------------------------------------------------------
-    const layersCard = h('div', {class: 'card stack'}, h('h3', {}, 'Слои файла'),
-      check ? IngestDialogs.layersTable(check.layers) : h('p', {class: 'muted small'}, 'Слои появятся после первой проверки пары.'));
+    const layersCard = h('div', {class: 'card stack'}, h('h3', {}, 'File layers'),
+      check ? IngestDialogs.layersTable(check.layers) : h('p', {class: 'muted small'}, 'Layers appear after the first check.'));
     const regions = {
       corners: {build: () => cornersCard(pair, run, aligned).card},
       anchor: {build: () => anchorRegion(pair, run)},
-      shift: {el: view ? view.shiftCard : explained('Сдвиг, поворот и масштаб всей схемы',
-        'Схему можно двигать, когда она уже наложена на фотографию. Сначала проверьте пару или поставьте четыре угла работы.', btn('Открыть углы работы', () => stages.open('corners')))},
-      matrix: {el: pair.matrix ? matrixCard(pair, reload) : explained('Матрица параметров',
-        'Эта пара — не фотография матрицы параметров: настройки слоёв заданы файлом LightBurn. Их видно в «Слои файла», а недостающие вводятся в «Ввести недостающие настройки слоёв».',
-        btn('Открыть слои файла', () => stages.open('layers')))},
+      shift: {el: view ? view.shiftCard : explained('Move, rotate, and scale the whole layout',
+        'The layout can be moved once it is overlaid on the photo. Check the pair or set four work corners first.', btn('Open work corners', () => stages.open('corners')))},
+      matrix: {el: pair.matrix ? matrixCard(pair, reload) : explained('Parameter matrix',
+        'This pair is not a photo of a parameter matrix. Layer settings come from the LightBurn file; see File layers and enter any missing settings.',
+        btn('Open file layers', () => stages.open('layers')))},
       layers: {el: layersCard},
       tasks: {el: IngestTasks.card(pair, reload)},          // REQ-020: задача каждого слоя и метрики с основанием
     };

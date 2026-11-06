@@ -195,10 +195,10 @@ def test_the_review_stage_shows_the_photograph_with_contours_and_a_summary_and_k
 """)
     assert out["images"] == [f"/api/pairs/{pid}/photo.png", f"/api/pairs/{pid}/vector-overlay.png"] and out["visible"]
     assert any("измерены" in line and "из" in line for line in out["summary"])                      # the summary line
-    assert out["more"] == [["Измеренные слои и метрики", False]]                                      # collapsed
+    assert out["more"] == [["Measured layers and metrics", False]]                                      # collapsed
     assert out["layersListInPanel"] == 0                                                              # the layers are in their tool, not on the stage
     assert out["controlsInPanel"] == 2                                                                # only the view controls (turn and zoom) stay with the photograph
-    assert out["shiftCardInRegion"] == ["Сдвиг, поворот и масштаб всей схемы"] and out["shiftHidden"] is True
+    assert out["shiftCardInRegion"] == ["Move, rotate, and scale the whole layout"] and out["shiftHidden"] is True
 
 
 # -- REQ-002 / DEC-001: the manual tools ------------------------------------------------------------------------------------------
@@ -247,7 +247,7 @@ def test_each_tool_opens_its_region_moves_the_focus_there_and_closes_again(tmp_p
     for key, expanded, hidden, focused, controls, role, label in out["steps"]:
         assert expanded == "true" and hidden is False and focused and controls and role == "region", key
     assert out["allOpen"] == [True] * 6 and out["afterClose"] == ["false", True]
-    assert out["regionText"] == {"layers": "Слои файла", "tasks": "Engraving tasks", "matrix": "Матрица параметров", "corners": "Углы работы на фотографии"}
+    assert out["regionText"] == {"layers": "File layers", "tasks": "Engraving tasks", "matrix": "Parameter matrix", "corners": "Углы работы на фотографии"}
 
 
 def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(tmp_path, states):
@@ -329,9 +329,9 @@ def test_a_matrix_pair_has_its_matrix_tool_open_and_no_detail_tool(tmp_path):
 """)
     assert out["unconfirmed"]["matrixOpen"] and out["unconfirmed"]["expanded"] == "true"                    # the matrix settings wait for the operator: the tool is open
     assert any("The matrix settings have not been confirmed" in b and "Parameter matrix" in b for b in out["unconfirmed"]["blockers"])
-    assert not out["confirmed"]["matrixOpen"] and out["confirmed"]["matrixTitle"] == "Матрица параметров"
+    assert not out["confirmed"]["matrixOpen"] and out["confirmed"]["matrixTitle"] == "Parameter matrix"
     for name in ("unconfirmed", "confirmed"):
-        assert "нет привязки по детали" in out[name]["anchor"] and out[name]["asked"] == 0, name              # explained, and the server is not asked
+        assert "cannot be aligned by one detail" in out[name]["anchor"] and out[name]["asked"] == 0, name              # explained, and the server is not asked
 
 
 # -- REQ-002: blockers and warnings with their tools ------------------------------------------------------------------------------
@@ -423,7 +423,7 @@ def test_a_setting_the_file_lacks_is_a_note_with_a_tool_that_opens_the_fields_fo
   const tree = await draw('lacking');
   const note = head(tree).querySelectorAll('li').find((l) => text(l).includes('Settings are missing from the file for'));
   out.note = text(note);
-  const box = tree.querySelectorAll('details').find((d) => d.classList.contains('rv-more') && text(d.querySelector('summary')) === 'Ввести недостающие настройки слоёв');
+  const box = tree.querySelectorAll('details').find((d) => d.classList.contains('rv-more') && text(d.querySelector('summary')) === 'Enter missing layer settings');
   out.open = box.hasAttribute('open');
   await stageButtons(tree)[2].dispatch('click');
   await byText(head(tree), 'Enter missing settings').dispatch('click');
@@ -471,10 +471,10 @@ def test_while_the_pair_is_checked_again_nothing_on_the_page_can_accept_it(tmp_p
   let release = null;
   const original = ctx.fetch;
   ctx.fetch = (url, opts) => (String(url).endsWith('/check') ? new Promise((resolve) => { release = () => resolve(original(url, opts)); }) : original(url, opts));
-  const again = byText(tree, 'Повторить проверку');
+  const again = byText(tree, 'Check again');
   const pending = again.dispatch('click');
   await settle();
-  out.during = {primary: primaries(tree).map((b) => [text(b), b.disabled]), reason: text(head(tree)), again: again.disabled, status: text(tree.querySelectorAll('p').find((p) => (p.getAttribute('role') === 'status' && text(p).includes('Совмещаем'))))};
+  out.during = {primary: primaries(tree).map((b) => [text(b), b.disabled]), reason: text(head(tree)), again: again.disabled, status: text(tree.querySelectorAll('p').find((p) => (p.getAttribute('role') === 'status' && text(p).includes('Aligning'))))};
   release(); await pending; await settle();
   out.reloaded = reloads.length;
   // the page is drawn again from the new state of the pair: the check cleared the review of the masks
@@ -485,7 +485,7 @@ def test_while_the_pair_is_checked_again_nothing_on_the_page_can_accept_it(tmp_p
 """)
     assert out["before"] == [["Accept observations", False]]
     assert out["during"]["primary"] == [["Accept observations", True]] and "Recalculation is in progress" in out["during"]["reason"] and out["during"]["again"] is True
-    assert "Совмещаем фото и измеряем слои" in out["during"]["status"] and out["reloaded"] == 1
+    assert "Aligning photo and measuring layers" in out["during"]["status"] and out["reloaded"] == 1
     assert out["after"] == [["Accept observations", True]]
 
 
@@ -494,14 +494,14 @@ def test_a_failed_recheck_is_said_and_gives_the_page_back(tmp_path, states):
     pid = ids["ready"]
     out = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/check": {"status": 422, "json": {"error": "the photograph could not be read", "kind": "invalid"}}}, """
   const tree = await draw('ready');
-  const again = byText(tree, 'Повторить проверку');
+  const again = byText(tree, 'Check again');
   await again.dispatch('click'); await settle();
-  out.status = text(tree.querySelectorAll('p').find((p) => text(p).includes('Проверка не завершилась')));
+  out.status = text(tree.querySelectorAll('p').find((p) => text(p).includes('Check failed')));
   out.primary = primaries(tree).map((b) => [text(b), b.disabled]);
   out.again = again.disabled; out.reloads = reloads.length;
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text);
 """)
-    assert "Проверка не завершилась" in out["status"] and out["primary"] == [["Accept observations", False]]      # the state did not change: neither does the page
+    assert "Check failed" in out["status"] and out["primary"] == [["Accept observations", False]]      # the state did not change: neither does the page
     assert out["again"] is False and out["reloads"] == 0 and len(out["toast"]) == 1 and "photograph could not be read" in out["toast"][0] or "фотограф" in out["toast"][0]
 
 
@@ -537,11 +537,11 @@ def test_the_accept_stage_shows_the_provenance_the_measurement_rules_and_the_eng
   const facts = tree.querySelectorAll('li').filter((l) => !l.classList.contains('rv-blocker')).map(text);
   out.facts = facts;
   out.links = tree.querySelectorAll('a').map((a) => [text(a), a.getAttribute('href')]);
-  const reject = byText(tree, 'Отклонить результат');
+  const reject = byText(tree, 'Reject result');
   out.rejectClass = reject.getAttribute('class');
   await reject.dispatch('click'); await settle();
   out.dialog = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('modal')).map(text);
-  const confirm = ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Отклонить');
+  const confirm = ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Reject');
   await confirm.dispatch('click'); await settle();
   out.deleted = ctx.requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
   out.went = [...went];
@@ -553,7 +553,7 @@ def test_the_accept_stage_shows_the_provenance_the_measurement_rules_and_the_eng
     assert "auxiliary" in facts and "excluded from the knowledge model" in facts and "Operator-supplied settings: none" in facts
     assert any(href.startswith("#/experiment/") for _, href in out["links"])                         # the link to the engraved version's experiment
     assert "danger" in out["rejectClass"]
-    assert out["dialog"] and "не попадёт в выводы" in out["dialog"][0] and "версия гравировки" in out["dialog"][0]
+    assert out["dialog"] and "excluded from conclusions" in out["dialog"][0] and "engraving version" in out["dialog"][0]
     assert out["deleted"] == [f"/api/pairs/{pid}"] and out["went"] == ["/experiments"]
 
 
@@ -606,7 +606,7 @@ def test_the_stage_script_is_loaded_after_what_it_uses_and_before_what_uses_it()
 def test_the_review_keeps_the_texts_and_expressions_other_tests_and_screens_depend_on():
     review = (UI_DIR / "screens" / "ingest-review.js").read_text(encoding="utf-8")
     for part in ("let corrected = pair.check?.chart?.usable === true, visibility = corrected ? 'normal' : 'lifted'", "await suppliedSettingsCard(pair, reload)",
-                 "IngestTasks.card(pair, reload)", "IngestDialogs.layersTable(check.layers)", "h('h3', {}, 'Слои файла')", "I18N.name(pair.engraving_title)"):
+                 "IngestTasks.card(pair, reload)", "IngestDialogs.layersTable(check.layers)", "h('h3', {}, 'File layers')", "I18N.name(pair.engraving_title)"):
         assert part in review, part
     stages = (UI_DIR / "screens" / "ingest-stages.js").read_text(encoding="utf-8")
     assert "accept stays disabled" not in stages and "review.acceptable" in stages                         # the accept button follows the server's verdict only
