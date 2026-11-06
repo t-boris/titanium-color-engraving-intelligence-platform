@@ -80,7 +80,7 @@ def pair_detail(pid, matrix=False, layers=2):
 
 
 def experiment(key, **over):
-    base = {"key": key, "title": "Тест материала", "status": "accepted", "status_text": "Принят", "kind": "Матрица параметров", "plan_id": None,
+    base = {"key": key, "title": "Material test", "status": "accepted", "status_text": "Accepted", "kind": "Parameter matrix", "plan_id": None,
             "engraving_id": "abc", "device_id": 1, "lens_id": 2, "main_pair_id": None, "created_at": "2026-10-18T17:56:06+00:00", "tasks": ["fill"],
             "laser": "JPT YDFLP", "lens": "F-Theta", "material": "Big Plate 150 · Grade 5", "plate": None, "pairs": [], "findings": []}
     return {**base, **over}
@@ -91,16 +91,16 @@ def api(**routes) -> dict:
 
 
 MATRIX = experiment("eng-abc", main_pair_id=59, pairs=[pair_summary(59, name="IMG_3305.DNG")])
-WORK = experiment("eng-work", kind="Готовая работа", main_pair_id=51, pairs=[pair_summary(51, alignment="picture", name="IMG_3296.DNG", grayscale_image=True)])
-PLATE = experiment("plan-22", status="plate_ready", status_text="Плата готова: ждёт фото", kind="Векторная работа", plan_id=22, engraving_id=None,
-                   plate={"plan_id": 22, "name": "Imma + Boris", "mode": "Vector job", "status": "Ready to export", "test_name": "Векторная работа", "description": "Описание платы",
+WORK = experiment("eng-work", kind="Finished work", main_pair_id=51, pairs=[pair_summary(51, alignment="picture", name="IMG_3296.DNG", grayscale_image=True)])
+PLATE = experiment("plan-22", status="plate_ready", status_text="Plate ready: awaiting photo", kind="Vector work", plan_id=22, engraving_id=None,
+                   plate={"plan_id": 22, "name": "Imma + Boris", "mode": "Vector job", "status": "Ready to export", "test_name": "Vector work", "description": "Plate description",
                           "layers": 16, "band_count": None, "identifier": "TCE-A-22", "proposal": {"id": 3, "device_id": 1, "lens_id": 2},
                           "engraving_task": {"kind": "color_image", "goals": {}, "basis": "explicit"}})
-BOTH = experiment("plan-5", status="needs_review", status_text="Нужна проверка", kind="Тест возможностей лазера", plan_id=5, engraving_id=None, main_pair_id=70,
-                  plate={"plan_id": 5, "name": "Плата 5", "mode": "Laser capability test", "test_name": "Тест", "layers": 9, "identifier": "TCE-A-5", "proposal": None},
+BOTH = experiment("plan-5", status="needs_review", status_text="Review needed", kind="Laser capability test", plan_id=5, engraving_id=None, main_pair_id=70,
+                  plate={"plan_id": 5, "name": "Plate 5", "mode": "Laser capability test", "test_name": "Test", "layers": 9, "identifier": "TCE-A-5", "proposal": None},
                   pairs=[pair_summary(70, status="Needs correction", name="IMG_70.DNG"), pair_summary(71, name="IMG_71.DNG")],
-                  findings=[{"purpose": "color", "status": "candidate", "summary": "Цвет найден", "next_test": "Повторить", "history": [
-                      {"valid_from": "2026-10-18T10:00:00+00:00", "replaced_at": "2026-10-19T10:00:00+00:00", "summary": "Прежний вывод"}]}])
+                  findings=[{"purpose": "color", "status": "candidate", "summary": "Color found", "next_test": "Repeat", "history": [
+                      {"valid_from": "2026-10-18T10:00:00+00:00", "replaced_at": "2026-10-19T10:00:00+00:00", "summary": "Previous finding"}]}])
 
 
 def routes_for(*experiments) -> dict:
@@ -135,7 +135,7 @@ def test_an_experiment_with_a_matrix_is_one_screen_with_the_photo_on_the_left_an
   out.layersHeading = side.querySelectorAll('h3').map((h) => h.textContent);
   out.alerts = side.querySelectorAll('div').filter((d) => has(d, 'alert')).map((d) => d.textContent);
 """)
-    assert out["root"] == "os experiment" and "Тест материала" in out["head"] and "Принят" in out["head"] and "Fill" in out["head"]   # task pill beside the title
+    assert out["root"] == "os experiment" and "Material test" in out["head"] and "Accepted" in out["head"] and "Fill" in out["head"]   # task pill beside the title
     assert out["back"] == "#/experiments" and out["addPhoto"] == "#/ingest?rephoto=59"
     assert out["tabs"] == [["Result", False], ["Matrix", False], ["Reviews (1)", False], ["Work", False]] and out["shown"] == ["ep-tab-panel-result"]
     assert out["photoTools"] == ["Hide outlines", "Increase brightness", "Re-measure"] and out["legend"] == ["What the lines mean"]
@@ -201,7 +201,7 @@ def composed(pid, count):
     out = pair_detail(pid, matrix=True, layers=2)
     fills = [{"index": i, "name": f"C{i:02d}", "type": "Cut", "kind": "fill", "engraves": True, "hidden": False, "area_mm2": 10.0 + i,
               "visible_percent": 100.0 - i * 0.5} for i in range(count)]
-    picture = {"index": count, "name": "Фото", "type": "Image", "kind": "photo", "mode": "jarvis", "engraves": True, "hidden": False,
+    picture = {"index": count, "name": "Photo", "type": "Image", "kind": "photo", "mode": "jarvis", "engraves": True, "hidden": False,
                "area_mm2": 5.0, "visible_percent": 100.0, "opaque_percent": 80.0, "struck_percent": 41.5, "dot_density_percent": None}
     out["check"]["composition"] = {"px_per_mm": 10, "marked_mm2": 2000.0, "cleaning_layer": None, "layers": fills + [picture], "lines": [],
                                    "share": {"fill_only": 99.0, "photo_only": 0.5, "both": 0.5}, "mixed": True, "picture_over_fills": False}
@@ -210,7 +210,7 @@ def composed(pid, count):
 
 @node
 def test_the_composition_of_a_hundred_layer_file_is_a_short_list_with_what_a_picture_covers_under_its_line(tmp_path):
-    """findings-you-can-manage-short-lists-re-check REQ-005: «Состав работы» of a matrix plate had a row per layer (a hundred); now a line
+    """findings-you-can-manage-short-lists-re-check REQ-005: «Work contents» of a matrix plate had a row per layer (a hundred); now a line
     per layer, twenty at a time, in the file's order or by area, the kinds as chips, and the picture's coverage under its line."""
     routes = routes_for(MATRIX)
     routes.update(api(**{"/api/pairs/59": composed(59, 100)}))
@@ -286,9 +286,9 @@ def test_a_plate_without_photos_shows_its_picture_slot_the_plate_and_its_actions
     assert out["tabs"] == ["Plate"] and out["shown"] == ["ep-tab-panel-plate"]
     assert "No photo yet" in out["nophoto"] and out["nophotoLink"] == ["#/ingest?plan=22"]
     assert out["head"] == ["#/ingest?plan=22", "#/ingest?plan=22"]                                  # the title row and the empty picture slot both offer it
-    assert "Imma + Boris" in out["plate"] and "Описание платы" in out["plate"] and "16 layers" in out["plate"] and "Task:" in out["plate"]
+    assert "Imma + Boris" in out["plate"] and "Plate description" in out["plate"] and "16 layers" in out["plate"] and "Task:" in out["plate"]
     links = dict((text, href) for text, href in out["links"])
-    assert links["Open and edit plate"] == "#/plans/22" and "Скачать .lbrn2" not in links      # the file is a button now, one for every plan
+    assert links["Open and edit plate"] == "#/plans/22" and "Download .lbrn2" not in links      # the file is a button now, one for every plan
     assert links["Open AI researcher"] == "#/research" and links["planner proposal #3"].startswith("#/designer?device=1&lens=")
 
 
@@ -378,7 +378,7 @@ def test_a_plate_whose_path_cannot_be_read_is_still_shown_with_its_other_actions
   out.links = side.querySelectorAll('a').map((a) => a.textContent);
   out.side = side.textContent;
 """)
-    assert out["chains"] == 0 and "Open and edit plate" in out["links"] and "Файл LightBurn:" not in out["side"]
+    assert out["chains"] == 0 and "Open and edit plate" in out["links"] and "LightBurn file:" not in out["side"]
 
 
 @node
@@ -411,7 +411,7 @@ def test_a_photo_work_is_shown_as_the_work_opened_and_exported_on_its_own_screen
     assert out["tabs"][-1] == "Photo engraving work" and "Plate" not in out["tabs"]
     assert "Inna Portrait" in out["side"] and "TCE-P-41F96DBB" in out["side"] and "layers" not in out["side"].split("Photo engraving work")[-1]
     links = dict(out["links"])
-    assert links["Open work"] == "#/photo-engraving?work=28" and "Скачать .lbrn2" not in links
+    assert links["Open work"] == "#/photo-engraving?work=28" and "Download .lbrn2" not in links
     assert "Open and edit plate" not in links and "Open AI researcher" not in links
 
 
@@ -447,7 +447,7 @@ def test_checks_conclusions_and_the_two_deletions_keep_their_actions(tmp_path):
     assert [row[0].split("IMG")[0] for row in out["checks"]] == ["Review #71", "Review #70"] and out["checks"][0][1] is False and out["checks"][1][1] is True   # newest first, the main one is shown
     assert out["links"] == [["Analysis", "#/analysis/71"], ["Review and accept", "#/ingest?pair=70"]]
     assert out["before"] == "/api/pairs/70/overlay.png" and out["after"] == "/api/pairs/71/overlay.png" and out["current"][0].startswith("Review #71")
-    assert "Цвет найден" in out["findings"] and "Previous finding versions: 1" in out["findings"] and "Candidate" in out["findings"]
+    assert "Color found" in out["findings"] and "Previous finding versions: 1" in out["findings"] and "Candidate" in out["findings"]
     assert "all reviews (2)" in out["question"] and out["deletedBefore"] == 0                      # asked first
     assert out["deleted"] == ["/api/pairs/70", "/api/pairs/71", "/api/plans/5"]                    # each check on its own, then the plate
 
@@ -560,7 +560,7 @@ def test_the_experiment_page_takes_the_screen_with_the_photo_filling_its_column_
 @node
 def test_the_pencil_beside_the_title_renames_the_experiment_with_one_request(tmp_path):
     routes = routes_for(WORK)
-    routes["/api/experiments/eng-work/rename"] = {"status": 200, "json": {"id": "eng-work", "name": "Inna Portrait 150 мм"}}
+    routes["/api/experiments/eng-work/rename"] = {"status": 200, "json": {"id": "eng-work", "name": "Inna Portrait 150 mm"}}
     out = run(tmp_path, routes, "eng-work", """
   const head = tree.querySelectorAll('header').find((x) => has(x, 'ep-head'));
   const pencil = head.querySelectorAll('button').find((b) => has(b, 'vw-rename'));
@@ -568,21 +568,21 @@ def test_the_pencil_beside_the_title_renames_the_experiment_with_one_request(tmp
   await pencil.dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = [dialog.querySelector('h3').textContent, dialog.querySelector('input').value];
-  dialog.querySelector('input').value = '  Inna Portrait 150 мм ';
+  dialog.querySelector('input').value = '  Inna Portrait 150 mm ';
   await byText(dialog, 'button', 'Save').dispatch('click'); await tick(); await tick();
   out.posts = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, r.body]);
   out.title = head.querySelector('h2').textContent;
   out.label = pencil.getAttribute('aria-label');
   out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
 """)
-    assert out["pencil"] == ["✎", "Rename experiment «Тест материала»"]
-    assert out["dialog"] == ["Rename experiment", "Тест материала"]
-    assert out["posts"] == [["/api/experiments/eng-work/rename", json.dumps({"name": "Inna Portrait 150 мм"}, separators=(",", ":"), ensure_ascii=False)]]
-    assert out["title"] == "Inna Portrait 150 мм" and out["label"] == "Rename experiment «Inna Portrait 150 мм»"
+    assert out["pencil"] == ["✎", "Rename experiment «Material test»"]
+    assert out["dialog"] == ["Rename experiment", "Material test"]
+    assert out["posts"] == [["/api/experiments/eng-work/rename", json.dumps({"name": "Inna Portrait 150 mm"}, separators=(",", ":"), ensure_ascii=False)]]
+    assert out["title"] == "Inna Portrait 150 mm" and out["label"] == "Rename experiment «Inna Portrait 150 mm»"
     assert out["toasts"] == ["Experiment renamed ×"]
 
 
-# -- a photographed photo engraving judged as a picture, and the copies of a «Подобрать настройки» plate (photo-engraving-quality) --------
+# -- a photographed photo engraving judged as a picture, and the copies of a «Find settings» plate (photo-engraving-quality) --------
 def judged(score, findings, **tone):
     scales = [{"mm": 0.2, "kept": 0.3, "grain_L": 2.0}, {"mm": 0.4, "kept": 0.55, "grain_L": 2.4}, {"mm": 0.8, "kept": 0.8, "grain_L": 2.6},
               {"mm": 0.1, "kept": None, "reason": "finer than the photograph"}]
@@ -612,7 +612,7 @@ def variations_detail(pid):
 def test_a_photographed_variations_plate_ranks_its_copies_says_what_each_change_did_and_makes_the_next_plate(tmp_path):
     routes = routes_for(PORTRAIT)
     routes.update(api(**{"/api/pairs/111": variations_detail(111), "/api/pairs/111/prediction-review": REVIEW, "/api/prediction-reviews": OVERALL}))
-    routes["/api/pairs/111/next-variations"] = {"status": 201, "json": {"plan_id": 40, "name": "Фотогравировка · TCE-40"}}
+    routes["/api/pairs/111/next-variations"] = {"status": 201, "json": {"plan_id": 40, "name": "Photoгравировка · TCE-40"}}
     out = run(tmp_path, routes, "plan-32", """
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
   const box = side.querySelectorAll('div').find((d) => has(d, 'pq-variations'));

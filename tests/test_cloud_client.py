@@ -215,7 +215,7 @@ def test_a_private_laboratory_is_reached_by_invitation_and_members_are_listed_an
     world.sign_in(author["store"], "acc-author", "A. Author")
     release = done(cloud_client.publish(author["store"], terms=TERMS, visibility="private", wait=True))["result"]["release"]
     assert cloud_client.catalogue(reader)["labs"] == []                                             # no account: not even listed
-    world.sign_in(reader, "acc-reader", "Читатель")
+    world.sign_in(reader, "acc-reader", "Reader")
     assert cloud_client.catalogue(reader)["labs"] == []
     with pytest.raises(CloudError) as none:
         cloud_client.invite(reader)

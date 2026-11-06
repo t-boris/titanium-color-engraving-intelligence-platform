@@ -227,7 +227,7 @@ def run_screen(tmp_path, pair_id, report, body, routes=None) -> dict:
 def test_the_measured_elements_are_a_short_list_out_of_tolerance_and_largest_delta_e_first_with_the_measurements_under_a_line(store, w, tmp_path):
     """findings-you-can-manage-short-lists-re-check REQ-005: a plate of 25 bands is a page of 20 lines (colour, name, ΔE to the planned
     colour, «outside tolerance»), the ones out of the saved tolerance (6.0) first, then the largest ΔE; the measurements and the settings of a
-    band open under its line; a chip keeps only those out of tolerance; «По порядку» puts them back in band order."""
+    band open under its line; a chip keeps only those out of tolerance; «In order» puts them back in band order."""
     plan_id = cv.create_continuous(store, *w["setup"], "tonal", ramp(), 50, 25, "T")
     layers = pl.get_plan(store, plan_id)["layers"]
     off = {l["index"]: (l["index"] * 7 % 25) / 5 for l in layers} | {9: 8.0, 16: 7.0}          # ΔE of each band; 9 and 16 out of tolerance
@@ -271,7 +271,7 @@ def test_a_layer_the_operator_took_out_says_so_on_its_line_and_gives_it_back(sto
     layers = pl.get_plan(store, plan_id)["layers"]
     pair = accepted_pair(store, w, plan_id, {l["index"]: (l["prediction"]["lab"][0], 0, 0) for l in layers})
     second = next(r for r in an.report_for_pair(store, pair)["rows"] if r["name"] == "B02")
-    x = exclusions.exclude_measurement(store, second["observation_id"], note="блик")["exclusion"]
+    x = exclusions.exclude_measurement(store, second["observation_id"], note="glare")["exclusion"]
     report = an.report_for_pair(store, pair)
     assert [r["taken_out"]["id"] if r["taken_out"] else None for r in sorted(report["rows"], key=lambda r: r["layer_index"])] == [None, x["id"], None]
     out = run_screen(tmp_path, pair, report, """
@@ -288,5 +288,5 @@ def test_a_layer_the_operator_took_out_says_so_on_its_line_and_gives_it_back(sto
 """ % {"id": x["id"]}, routes={f"/api/exclusions/{x['id']}/revoke": {"status": 200, "json": {"exclusion": {"id": x["id"]}, "run_id": 9}}})
     assert "excluded" in out["cls"] and out["main"].endswith("excluded from calculations by operator")
     assert out["buttons"] == [["Restore"]]                                          # only the taken-out line has an action
-    assert out["open"].startswith("Excluded from calculations by operator ") and "(«блик»): this layer is excluded from the recipe" in out["open"]
+    assert out["open"].startswith("Excluded from calculations by operator ") and "(«glare»): this layer is excluded from the recipe" in out["open"]
     assert out["sent"] == ["POST"]

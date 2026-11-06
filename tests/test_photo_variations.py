@@ -211,7 +211,7 @@ from titanium_platform import photo_quality as pq  # noqa: E402
 
 def test_a_photo_work_orders_its_picture_at_its_own_settings_and_at_one_change_each(app_world):
     client, store = app_world["client"], app_world["client"].app.state.store
-    work = create_work(client, name="Яна")
+    work = create_work(client, name="Yana")
     dotted = settings(client, work, kind="jarvis", dot_width=0.02)
     answer = client.post(f"/api/photo-works/{work['id']}/variations")
     assert answer.status_code == 201, answer.text
@@ -222,7 +222,7 @@ def test_a_photo_work_orders_its_picture_at_its_own_settings_and_at_one_change_e
     assert [c["label"].split(" ", 1)[1] for c in copies["copies"][1:]] == [
         f"J P{pq._round('power', dotted['dot_power'] * 0.8):g}", f"J P{pq._round('power', dotted['dot_power'] * 1.2):g}",
         f"J V{round(centre['speed'] * 1.4)}", f"J I{centre['line_interval'] * 1.69:.4f}".replace("I0.", "I.").rstrip("0"), "J D0", "A", "S"]
-    assert copies["picture"]["source"] == {"kind": "photo_work", "plan_id": work["id"]} and copies["picture"]["name"] == "Яна"
+    assert copies["picture"]["source"] == {"kind": "photo_work", "plan_id": work["id"]} and copies["picture"]["name"] == "Yana"
     # a window of the work's picture as large as the work engraves it (the work is 60 mm wide): 18 mm across, not the whole picture shrunk
     assert copies["copy_mm"] == pytest.approx(18, abs=0.1)
     file = plans.export_lbrn2(plan)

@@ -85,8 +85,8 @@ def test_the_callback_is_refused_for_a_state_that_is_not_pending_and_a_wrong_cod
 
 
 def test_the_refresh_token_is_kept_in_a_private_file_and_access_tokens_are_renewed_with_it(store, world, verifier):
-    account = world.sign_in(store, "acc-1", "Мастерская Север")
-    assert account["signed_in"] and account["account"] == {"id": "acc-1", "name": "Мастерская Север", "email": "acc-1@example.org"}
+    account = world.sign_in(store, "acc-1", "North Workshop")
+    assert account["signed_in"] and account["account"] == {"id": "acc-1", "name": "North Workshop", "email": "acc-1@example.org"}
     path = cloud_session.session_path(store)
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600 and stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
     kept = json.loads(path.read_text(encoding="utf-8"))

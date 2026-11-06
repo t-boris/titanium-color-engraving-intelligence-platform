@@ -1,6 +1,6 @@
-"""«Новая векторная работа» and the delta E tolerance (0.22.4): the tolerance is never invented, so the form shows at once whether the
+"""“New vector work” and the delta E tolerance (0.22.4): the tolerance is never invented, so the form shows at once whether the
 rules of the chosen laser and lens hold one; with none it asks for it before anything is sent and saves the typed value to the rules
-(«Запомнить», on by default); with one it names it and a typed value is for the work only. Run in node over the small DOM of the
+(“Remember”, on by default); with one it names it and a typed value is for the work only. Run in node over the small DOM of the
 other screen tests."""
 import json
 import shutil
@@ -88,7 +88,7 @@ def test_with_no_tolerance_saved_the_form_asks_for_it_first_and_saves_the_typed_
     # ux-work-creation-p0: a made work leaves its laser, lens, titanium and (own) measurements as the choice the next new work starts from
     assert remembered == ["PUT", "/api/creation/context", {"device_id": 1, "lens_id": 2, "material_id": 3, "source": None}]
     assert out["after"] == ["from rules: 5", True]
-    assert out["stock"][0].endswith("colors are measurements of this titanium grade from any plate")             # «Фото»: every plate of the grade
+    assert out["stock"][0].endswith("colors are measurements of this titanium grade from any plate")             # “Photo”: every plate of the grade
     assert out["stock"][1].endswith("recipes are limited to those measured on this stock")                         # a silhouette: this plate
 
 
