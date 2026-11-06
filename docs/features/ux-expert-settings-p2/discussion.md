@@ -81,3 +81,7 @@ Additional low-window check in same-origin desktop browser frames at 800×400: W
 ### Implementation · 2026-11-06
 
 Further inspection of the light-study variant in MarkView found low-contrast definition values on the Workshop screen (light text on white); corrected them to use the theme text color and checked computed colors. The Network screen was also inspected on the disposable server. Other screens and the physical workshop/tablet evaluation remain unverified.
+
+### Implementation · 2026-11-06
+
+Long-name stress check in MarkView desktop browser at a 320px iframe viewport: replaced the visible first Works row name and equipment label in the disposable DOM with unbroken strings of 150 and 250 characters. In both normal and compact density, each wrapped (scrollWidth equaled clientWidth), and document scrollWidth remained 303px equal to clientWidth. This covers only the tested Works row, not all names, dropdowns, text enlargement or tablet interaction.
