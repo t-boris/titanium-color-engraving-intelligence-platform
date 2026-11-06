@@ -1093,7 +1093,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.tabs = tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab' && b.getAttribute('id').startsWith('vw-tab-')).map((b) => b.textContent);
   const screen = tree;                                            // the screen is the workspace itself
   out.inScreen = ['Алгоритм разбиения', 'Число цветов', 'Разбить заново', 'Слои титана', 'Исходные цвета', 'Подробно по цветам…', 'Варианты раскраски', 'Раскрасить с помощью AI',
-                  'Скачать LightBurn', '← Мои работы', 'Сделать копию']
+                  'Скачать LightBurn', '← My works', 'Make a copy']
     .filter((t) => !screen.textContent.includes(t) && !screen.querySelectorAll('select, input, button').some((c) => c.getAttribute('aria-label') === t));
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
 """)

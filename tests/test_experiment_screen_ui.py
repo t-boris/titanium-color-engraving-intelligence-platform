@@ -569,17 +569,17 @@ def test_the_pencil_beside_the_title_renames_the_experiment_with_one_request(tmp
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = [dialog.querySelector('h3').textContent, dialog.querySelector('input').value];
   dialog.querySelector('input').value = '  Inna Portrait 150 мм ';
-  await byText(dialog, 'button', 'Сохранить').dispatch('click'); await tick(); await tick();
+  await byText(dialog, 'button', 'Save').dispatch('click'); await tick(); await tick();
   out.posts = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, r.body]);
   out.title = head.querySelector('h2').textContent;
   out.label = pencil.getAttribute('aria-label');
   out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
 """)
-    assert out["pencil"] == ["✎", "Переименовать эксперимент «Тест материала»"]
-    assert out["dialog"] == ["Переименовать эксперимент", "Тест материала"]
+    assert out["pencil"] == ["✎", "Rename experiment «Тест материала»"]
+    assert out["dialog"] == ["Rename experiment", "Тест материала"]
     assert out["posts"] == [["/api/experiments/eng-work/rename", json.dumps({"name": "Inna Portrait 150 мм"}, separators=(",", ":"), ensure_ascii=False)]]
-    assert out["title"] == "Inna Portrait 150 мм" and out["label"] == "Переименовать эксперимент «Inna Portrait 150 мм»"
-    assert out["toasts"] == ["Эксперимент переименован ×"]
+    assert out["title"] == "Inna Portrait 150 мм" and out["label"] == "Rename experiment «Inna Portrait 150 мм»"
+    assert out["toasts"] == ["Experiment renamed ×"]
 
 
 # -- a photographed photo engraving judged as a picture, and the copies of a «Подобрать настройки» plate (photo-engraving-quality) --------
