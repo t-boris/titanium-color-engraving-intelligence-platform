@@ -1,34 +1,30 @@
-/* Форма непрерывной фотогравировки: режим, изображение, число полос, предпросмотр и создание плана (REQ-004, REQ-012, DEC-032).
-   Предпросмотр и создание плана используют один расчёт на сервере; «Создать план» доступно только после предпросмотра
-   с теми же значениями. Любое изменение значений предпросмотр сбрасывает; смена числа полос сразу перерисовывает картину полос.
-   Число полос ограничено палитрой LightBurn: 30 выходных слоёв, один остаётся маркерам (DEC-044, DEC-066).
-   ?plan=<id> открывает форму, заполненную по существующему плану: исправление создаёт новый план, старый не меняется. */
+/* Continuous photo engraving previews and creates plans with matching settings (REQ-004, REQ-012, DEC-032). Revisions create a new plan. */
 'use strict';
 const PhotoForm = (() => {
   const {h, fill, btn, field, link, get, form, toast, go, modal, swatch, labText} = App;
   // the reason of a doubt joins one message per broken threshold with '; ' (knowledge.refresh): each is translated
   const doubt = (reason) => reason.split('; ').map((part) => I18N.tr(part)).join('; ');
 
-  /** Предупреждение тонального режима: каждая запись под вопросом с причиной и ссылкой на её наблюдения (DEC-018). */
+  /** Tonal mode warning: each questioned record includes its reason and observations (DEC-018). */
   function questionedWarning(w, palette = []) {
     const entries = w.entries || w.knowledge_ids.map((id) => ({knowledge_id: id, lab: (palette.find((e) => e.id === id) || {}).lab}));
-    return h('div', {class: 'alert warn stack'}, h('p', {}, h('strong', {}, 'Используются производственные параметры под вопросом. '),
-      'В тональном режиме отдельное подтверждение не требуется; посмотрите наблюдения каждой записи.'),
-      entries.map((e) => h('div', {class: 'row'}, e.lab ? [swatch(e.lab), labText(e.lab)] : null, h('span', {class: 'small'}, e.reason ? doubt(e.reason) : 'Параметры под вопросом'),
-        link('/knowledge/' + e.knowledge_id, `Наблюдения записи K${e.knowledge_id}`))));
+    return h('div', {class: 'alert warn stack'}, h('p', {}, h('strong', {}, 'Questioned production settings are in use. '),
+      'Tonal mode does not require separate confirmation; review each record’s observations.'),
+      entries.map((e) => h('div', {class: 'row'}, e.lab ? [swatch(e.lab), labText(e.lab)] : null, h('span', {class: 'small'}, e.reason ? doubt(e.reason) : 'Questioned settings'),
+        link('/knowledge/' + e.knowledge_id, `Observations for record K${e.knowledge_id}`))));
   }
 
-  /** Окно включения параметров под вопросом в этот план цветового пути: разрешение только для создаваемого плана (REQ-004). */
+  /** Include questioned settings only in the new color-path plan (REQ-004). */
   function questionedDialog(all, state, done) {
     const picked = new Set(state.allowed);
     const rows = all.map((e) => h('div', {class: 'alert warn'},
       h('label', {class: 'row'}, h('input', {type: 'checkbox', checked: picked.has(e.id), onChange: (ev) => { if (ev.target.checked) picked.add(e.id); else picked.delete(e.id); }}), swatch(e.lab), labText(e.lab)),
-      h('p', {class: 'small'}, (e.doubt && doubt(e.doubt.reason)) || 'Параметры под вопросом'), link('/knowledge/' + e.id, 'Наблюдения')));
-    modal('Включить параметры под вопросом в этот план', h('div', {class: 'stack'},
-      h('p', {}, 'Разрешение действует только для создаваемого плана и не переходит в другие. Стадия знания и флаг не изменятся.'),
-      ...(rows.length ? rows : [h('p', {}, 'Нет производственных параметров под вопросом')])), [
-      {label: 'Отмена', run: (x) => x.close()},
-      {label: 'Применить к этому плану', cls: 'primary', run: (x) => { state.allowed = [...picked]; state.path = state.path.filter((id) => !all.some((e) => e.id === id) || picked.has(id)); x.close(); done(); }}]);
+      h('p', {class: 'small'}, (e.doubt && doubt(e.doubt.reason)) || 'Questioned settings'), link('/knowledge/' + e.id, 'Observations')));
+    modal('Include questioned settings in this plan', h('div', {class: 'stack'},
+      h('p', {}, 'Permission applies only to the new plan. The knowledge stage and flag do not change.'),
+      ...(rows.length ? rows : [h('p', {}, 'No questioned production settings')])), [
+      {label: 'Cancel', run: (x) => x.close()},
+      {label: 'Apply to this plan', cls: 'primary', run: (x) => { state.allowed = [...picked]; state.path = state.path.filter((id) => !all.some((e) => e.id === id) || picked.has(id)); x.close(); done(); }}]);
   }
 
   async function render(ctx, lists, parts) {
@@ -43,14 +39,14 @@ const PhotoForm = (() => {
     const pick = App.laserLensPicker(lists, {device: revising ? revising.device_id : begin.device, lens: revising ? App.lensParam(revising.lens_id) : begin.lens,
       onChange: async () => { state.path = []; state.allowed = []; await loadPalette(); invalidate(); }});
     const img = h('input', {type: 'file', accept: 'image/*'});
-    const name = h('input', {placeholder: 'Название плана', value: revising ? `${revising.name} — исправление` : ''});
+    const name = h('input', {placeholder: 'Plan name', value: revising ? `${revising.name} — revision` : ''});
     // the width and the number of bands are read as the server reads them (conversion.raster: above 0; conversion._check_bands: a whole number from 1 to the
     // layers LightBurn has, which the screen asks the server for); a wrong one is said beside its box and kept, as is a refusal of the server
     const width = Forms.numberInput(Forms.QUANTITIES.workWidth, {value: revising && revising.size_mm ? revising.size_mm.width : 80});
     const bands = Forms.numberInput({...Forms.QUANTITIES.bandCount, max: maxBands}, {value: revising ? Math.min(revising.band_count, maxBands) : maxBands});
     let form_ = Forms.create();
     const markers = h('input', {type: 'checkbox', checked: revising ? revising.markers_enabled : false});
-    // REQ-020: тоновое изображение для тонового режима, цветное — для цветового пути; задача записывается в план
+    // REQ-020: record a tonal-image or color-image task according to the selected mode.
     const DEFAULT_TASK = {tonal: 'tonal_image', color_path: 'color_image'};
     const task = Tasks.chooser((revising && revising.engraving_task && revising.engraving_task.kind) || DEFAULT_TASK[state.mode]);
     let all = [], palette = [];
@@ -76,7 +72,7 @@ const PhotoForm = (() => {
 
     async function loadPalette() {
       all = await get(`/palette?${pick.query()}&include_questioned=true`);
-      // тональный режим берёт и записи под вопросом (с предупреждением); цветовой путь — только явно включённые в этот план
+      // Tonal mode includes questioned records with a warning; color path includes only explicitly permitted records.
       palette = state.mode === 'tonal' ? all : all.filter((e) => !e.questioned || state.allowed.includes(e.id));
     }
     function invalidate() { state.preview = null; previewSig = null; draw(); }
@@ -87,20 +83,20 @@ const PhotoForm = (() => {
       try { state.preview = await form('/continuous/preview', body(false)); previewSig = signature(); draw(); } catch (e) { form_.fail(e); }
     }
     async function doCreate(ev) {
-      if (!state.preview || previewSig !== signature()) return show('Сначала сделайте актуальный предпросмотр');
+      if (!state.preview || previewSig !== signature()) return show('Create a current preview first');
       const self = ev.currentTarget;
       self.disabled = true;
       try {
         const p = await form('/continuous', body(true));
         if (!revising) App.rememberContext({device: pick.deviceId(), lens: pick.lensId()});
-        toast(revising ? 'Исправленный план создан; прежний план не изменён' : 'План создан', 'ok'); go('/plans/' + p.id);
+        toast(revising ? 'Revised plan created; the previous plan is unchanged' : 'Plan created', 'ok'); go('/plans/' + p.id);
       } catch (e) { form_.fail(e); self.disabled = false; }
     }
 
     function sourcePicture() {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
       sourceUrl = picture() ? URL.createObjectURL(picture()) : null;
-      return sourceUrl ? h('figure', {}, h('img', {src: sourceUrl, style: 'width:100%', alt: 'Исходная фотография'}), h('figcaption', {class: 'muted small'}, 'Исходная фотография')) : null;
+      return sourceUrl ? h('figure', {}, h('img', {src: sourceUrl, style: 'width:100%', alt: 'Source photograph'}), h('figcaption', {class: 'muted small'}, 'Source photograph')) : null;
     }
 
     function draw() {
@@ -109,37 +105,37 @@ const PhotoForm = (() => {
       const modeBtns = MODES.map(([id, label]) => h('button', {type: 'button', class: 'btn' + (state.mode === id ? ' primary' : ''), 'aria-pressed': state.mode === id,
         onClick: async () => { if (state.mode === id) return; state.mode = id; state.path = []; state.allowed = []; state.preview = null; task.set(DEFAULT_TASK[id]); await loadPalette(); draw(); }}, label));
       form_ = Forms.create();
-      const photoField = form_.add('image', 'Фотография', App.filePick(img, 'Выбрать фотографию'), {required: true, help: revising && !img.files[0] ? 'сейчас — изображение исправляемого плана' : null,
-        read: () => (picture() ? {ok: true, value: picture()} : {ok: false, message: 'Добавьте фотографию для гравировки'})});
-      const widthField = form_.add('width_mm', 'Ширина работы', width, {quantity: 'workWidth', required: true});
-      const bandsField = form_.add('bands', 'Число полос', bands, {quantity: {...Forms.QUANTITIES.bandCount, max: maxBands}, required: true,
-        help: 'из 30 выходных слоёв LightBurn один остаётся для маркеров; картина полос обновляется при изменении'});
+      const photoField = form_.add('image', 'Photograph', App.filePick(img, 'Choose photograph'), {required: true, help: revising && !img.files[0] ? 'currently using the image from the plan being revised' : null,
+        read: () => (picture() ? {ok: true, value: picture()} : {ok: false, message: 'Add a photograph for engraving'})});
+      const widthField = form_.add('width_mm', 'Work width', width, {quantity: 'workWidth', required: true});
+      const bandsField = form_.add('bands', 'Number of bands', bands, {quantity: {...Forms.QUANTITIES.bandCount, max: maxBands}, required: true,
+        help: 'one of 30 LightBurn output layers is reserved for markers; the band preview updates when this changes'});
       fill(host,
-        h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Непрерывная фотогравировка'), h('p', {class: 'sub'}, 'Одна передаточная функция, два режима. Параметры между измеренными наборами не интерполируются.')),
-          h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Подрежим фотогравировки'}, modeBtns), link('/colors', 'Карта цветов')),
-        revising ? h('div', {class: 'alert ok'}, 'Исправление плана ', link('/plans/' + revising.id, `«${revising.name}»`),
-          ': значения и изображение взяты из него. Будет создан новый план; прежний останется без изменений. Чтобы взять другое изображение, выберите его.') : null,
-        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),
-          photoField, field('Название плана', name), widthField, bandsField), form_.error,
-        task.el, h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))),
+        h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Continuous photo engraving'), h('p', {class: 'sub'}, 'One transfer function, two modes. Settings are not interpolated between measured sets.')),
+          h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Photo engraving mode'}, modeBtns), link('/colors', 'Color map')),
+        revising ? h('div', {class: 'alert ok'}, 'Revising plan ', link('/plans/' + revising.id, `«${revising.name}»`),
+          ': its values and image are used. A new plan will be created and the previous one remains unchanged. Choose another image to replace it.') : null,
+        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Laser', pick.laser), field('Lens', pick.lens, 'palette measurements use this laser and lens'),
+          photoField, field('Plan name', name), widthField, bandsField), form_.error,
+        task.el, h('label', {class: 'row'}, markers, h('span', {}, 'Registration markers and identifier outside the image'))),
         state.mode === 'color_path' ? pathPicker(palette, state, () => invalidate()) : null,
-        state.mode === 'color_path' ? h('div', {class: 'card toolbar'}, btn('Включить параметры под вопросом в этот план', () => questionedDialog(questioned, state, async () => { await loadPalette(); invalidate(); }), '', !questioned.length),
-          h('span', {class: 'muted small'}, state.allowed.length ? `Включено в этот план: ${state.allowed.map((id) => 'K' + id).join(', ')}` : questioned.length ? 'Записи под вопросом по умолчанию исключены' : 'Записей под вопросом нет')) : null,
-        state.mode === 'tonal' && all.some((e) => e.questioned) ? h('div', {class: 'alert warn'}, 'Среди допустимых цветов есть производственные «под вопросом». В тональном режиме они используются с предупреждением и без отдельного подтверждения.') : null,
-        !palette.length ? h('div', {class: 'alert warn'}, 'Для выбранного режима нет калиброванной передаточной функции: нет валидированных или производственных цветов этого лазера с этой линзой.') : null,
+        state.mode === 'color_path' ? h('div', {class: 'card toolbar'}, btn('Include questioned settings in this plan', () => questionedDialog(questioned, state, async () => { await loadPalette(); invalidate(); }), '', !questioned.length),
+          h('span', {class: 'muted small'}, state.allowed.length ? `Included in this plan: ${state.allowed.map((id) => 'K' + id).join(', ')}` : questioned.length ? 'Questioned records are excluded by default' : 'No questioned records')) : null,
+        state.mode === 'tonal' && all.some((e) => e.questioned) ? h('div', {class: 'alert warn'}, 'Eligible colors include questioned production records. Tonal mode uses them with a warning and no separate confirmation.') : null,
+        !palette.length ? h('div', {class: 'alert warn'}, 'No calibrated transfer function is available for this mode: there are no validated or production colors for this laser and lens.') : null,
         err,
-        h('div', {class: 'row'}, btn('Предпросмотр', doPreview, 'primary'), btn(revising ? 'Создать исправленный план' : 'Создать план', doCreate, 'primary', !(p && previewSig === signature()))),
+        h('div', {class: 'row'}, btn('Preview', doPreview, 'primary'), btn(revising ? 'Create revised plan' : 'Create plan', doCreate, 'primary', !(p && previewSig === signature()))),
         p ? h('div', {class: 'stack'}, ...p.warnings.map((w) => questionedWarning(w, all)),
-          h('div', {class: 'card stack'}, h('h3', {}, `Полосы: ${p.bands} · различных наборов параметров: ${p.distinct_entries} · пустых полос: ${p.empty_bands}`),
-            h('div', {class: 'grid g2'}, sourcePicture(), h('figure', {}, h('img', {class: 'banding', src: p.banding_png, style: 'width:100%;image-rendering:pixelated', alt: 'Полосы в прогнозных цветах титана'}),
-              h('figcaption', {class: 'muted small'}, 'Каждая полоса — в прогнозном цвете её измеренного набора параметров'))),
+          h('div', {class: 'card stack'}, h('h3', {}, `Bands: ${p.bands} · distinct setting sets: ${p.distinct_entries} · empty bands: ${p.empty_bands}`),
+            h('div', {class: 'grid g2'}, sourcePicture(), h('figure', {}, h('img', {class: 'banding', src: p.banding_png, style: 'width:100%;image-rendering:pixelated', alt: 'Bands in predicted titanium colors'}),
+              h('figcaption', {class: 'muted small'}, 'Each band shows the predicted color of its measured setting set'))),
             bandTable(p))) : null);
     }
     let timer = null;
     bands.addEventListener('input', () => {
       clearTimeout(timer);
       if (previewSig) invalidate();
-      if (picture() && +bands.value >= 1 && +bands.value <= maxBands) timer = setTimeout(doPreview, 350);    // картина полос для нового N
+      if (picture() && +bands.value >= 1 && +bands.value <= maxBands) timer = setTimeout(doPreview, 350);    // update the band preview for the new count
     });
     [width, markers, img, name].forEach((el) => el.addEventListener('input', () => { if (previewSig) invalidate(); }));
     img.addEventListener('change', () => { if (previewSig) invalidate(); });

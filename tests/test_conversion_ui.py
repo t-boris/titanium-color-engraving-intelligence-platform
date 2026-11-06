@@ -43,7 +43,7 @@ def test_the_banding_picture_is_shown_on_the_photo_artwork_and_plan_screens():
 
 def test_colour_path_offers_the_per_plan_inclusion_of_questioned_entries_and_every_warning_entry_is_listed():
     form = source("screens/photo-form.js")
-    assert "Включить параметры под вопросом в этот план" in form and "state.allowed = [...picked]" in form
+    assert "Include questioned settings in this plan" in form and "state.allowed = [...picked]" in form
     assert "include_questioned=true" in form and "!e.questioned || state.allowed.includes(e.id)" in form
     assert "entries.map((e)" in form and "w.knowledge_ids[0]" not in form and "w.knowledge_ids[0]" not in source("screens/plan.js")
 
