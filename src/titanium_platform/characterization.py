@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-UNREAD = "см. фото"                    # value of a setting that exists but could not be read from its photograph
+UNREAD = "\u0441\u043c. \u0444\u043e\u0442\u043e"  # legacy stored marker for a value not read from its photograph
 NOTE_SUFFIX = ": рукописная пометка"   # a row that records a handwritten doubt next to the setting with the same name
 POWER_PLAUSIBLE = (0.5, 1.5)           # a measured power outside this share of the rated power is not believed
 USED, WAITING, REFERENCE, UNKNOWN = "used", "waiting", "reference", "unknown"
