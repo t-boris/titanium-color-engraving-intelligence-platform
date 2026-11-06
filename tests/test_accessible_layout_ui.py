@@ -617,12 +617,12 @@ def test_the_colour_map_picks_one_circle_at_a_time_by_two_buttons_and_says_which
   await tree.querySelectorAll('circle')[0].dispatch('click'); await tick();               // a click on a circle picks it and says nothing about steps
   out.clicked = note();
 """)
-    assert out["names"] == ["Предыдущий цвет на карте", "Следующий цвет на карте"] and out["start"] == [True, ""]
+    assert out["names"] == ["Previous color on map", "Next color on map"] and out["start"] == [True, ""]
     texts = [n for n, *_ in out["forward"]]
-    assert [t.split(":")[0] for t in texts] == ["Цвет 1 из 3", "Цвет 2 из 3", "Цвет 3 из 3", "Цвет 1 из 3"]
+    assert [t.split(":")[0] for t in texts] == ["Color 1 of 3", "Color 2 of 3", "Color 3 of 3", "Color 1 of 3"]
     assert [t.split(": ")[1].split(" · ")[0] for t in texts] == ["Test 3", "Test 1", "Test 2", "Test 3"]
     assert all(hidden is False and held for _, hidden, held in out["forward"])           # the card of the colour opens; the focus stays on the button
-    assert out["back"][0].startswith("Цвет 3 из 3: Test 2") and out["back"][1] is True and out["picked"] == 1
+    assert out["back"][0].startswith("Color 3 of 3: Test 2") and out["back"][1] is True and out["picked"] == 1
     assert out["clicked"] == ""
 
 
@@ -634,7 +634,7 @@ def test_a_map_with_no_circle_in_view_offers_no_step(tmp_path):
   out.steps = tree.querySelectorAll('button').filter((b) => b.getAttribute('data-step')).length;
   out.text = tree.querySelector('.cm-plot').textContent;
 """)
-    assert out["steps"] == 0 and "Нет цветов под такие условия" in out["text"]
+    assert out["steps"] == 0 and "No colors match these conditions" in out["text"]
 
 
 # -- REQ-002 c3: on a narrow screen the panel slides out to the selected object --------------------------------------------------------

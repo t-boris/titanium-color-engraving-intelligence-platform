@@ -463,6 +463,6 @@ def test_the_screens_choose_show_and_filter_by_task():
     assert "IngestTasks.card(pair, reload)" in screen("ingest-review.js") and "/tasks`" in screen("ingest-tasks.js")
     assert "Tasks.badge(l.task)" in screen("experiment.js") and "Tasks.metrics(l.metrics" in screen("experiment.js")
     assert "Tasks.metrics(row.metrics)" in screen("analysis.js")
-    assert "q.set('task'" in screen("color-map.js") and "Прогноз модели, не измерение" in screen("color-map.js")
+    assert "q.set('task'" in screen("color-map.js") and "Model prediction, not a measurement" in screen("color-map.js")
     # the experiments and a laser's experiments are one shared list filtered by task (DEC-090)
     assert "{key: 'task', label: 'Task'" in screen("experiment-cards.js") and "task: taskPicker.value" in screen("device-view.js")

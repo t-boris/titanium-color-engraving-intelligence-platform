@@ -102,15 +102,15 @@ def test_the_map_is_one_workspace_of_three_columns_filters_map_and_colour_search
   out.findButton = !!byText(right, 'button', 'Find');
   out.rightScroll = right.children.filter((c) => has(c, 'os-scroll')).length;
 """)
-    assert out["root"] == "os cm" and out["cols"] == ["os-col", "os-col", "os-col"] and out["h2"] == "Карта цветов"
-    assert "Показано цветов: 3 · по эталонной карте 2 · относительно камеры 1" in out["head"] and "Выберите лазер и линзу" in out["head"]
-    assert out["filterTitle"] == "Фильтры" and out["selects"] == 4 and out["checkbox"] is True and out["filtersScroll"] is True
+    assert out["root"] == "os cm" and out["cols"] == ["os-col", "os-col", "os-col"] and out["h2"] == "Color map"
+    assert "Colors shown: 3 · calibrated with reference card 2 · relative to camera 1" in out["head"] and "Select a laser and lens" in out["head"]
+    assert out["filterTitle"] == "Filters" and out["selects"] == 4 and out["checkbox"] is True and out["filtersScroll"] is True
     assert out["evidenceGroup"] == ["Evidence and time", 3]
-    assert out["labels"][:5] == ["Лазер и линза", "Материал", "Как измерен", "Задача", "Maximum time, min/cm²"]
-    assert [s for s, _ in out["details"]] == ["Как это считается"] and "Время гравировки — оценка по настройкам рецепта" in out["details"][0][1]
-    assert out["middleTitle"] == "Карта цветов" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "◀", "▶", "+", "−", "Весь вид"]
+    assert out["labels"][:5] == ["Laser and lens", "Material", "Measurement method", "Task", "Maximum time, min/cm²"]
+    assert [s for s, _ in out["details"]] == ["How this is calculated"] and "Engraving time is estimated from recipe settings" in out["details"][0][1]
+    assert out["middleTitle"] == "Color map" and out["planes"] == ["a* × b*", "a* × L*", "b* × L*", "◀", "▶", "+", "−", "Full view"]
     assert out["plot"] == [["div"]] and out["circles"] == 3 and out["detailInMiddle"] is True              # the picked colour is described under the map
-    assert out["rightTitle"] == "Какой цвет нужен" and out["target"] == 8 and out["findButton"] is True and out["rightScroll"] == 1      # plus image and coordinate controls
+    assert out["rightTitle"] == "Target color" and out["target"] == 8 and out["findButton"] is True and out["rightScroll"] == 1      # plus image and coordinate controls
 
 
 @node
@@ -155,10 +155,10 @@ def test_the_long_explanation_is_folded_and_the_counts_are_one_line_in_the_head(
     world["counts"].update(unreferenced=4, provisional=2, slower=5)
     out = run(tmp_path, routes_of(world), """
   out.sub = tree.querySelector('.sub').textContent;
-  out.outside = tree.querySelectorAll('p').filter((p) => p.textContent.includes('Время гравировки — оценка')).map((p) => p.parentNode.localName);
-  out.provisionalNote = tree.querySelector('details').textContent.includes('Предварительные цвета обведены');
+  out.outside = tree.querySelectorAll('p').filter((p) => p.textContent.includes('Engraving time is estimated')).map((p) => p.parentNode.localName);
+  out.provisionalNote = tree.querySelector('details').textContent.includes('Provisional colors have');
 """)
-    assert "из них без привязки к чистому титану 4" in out["sub"] and "предварительных (проверка ещё не принята) 2" in out["sub"] and "скрыто как более долгие" in out["sub"]
+    assert "without clean titanium reference 4" in out["sub"] and "provisional (check not yet accepted) 2" in out["sub"] and "hidden as slower" in out["sub"]
     assert out["outside"] == ["details"] and out["provisionalNote"] is True
 
 
@@ -171,8 +171,8 @@ def test_with_a_laser_and_lens_chosen_the_head_links_to_their_model_and_without_
   tree = await screen();
   out.link = tree.querySelector('.os-head').querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
 """)
-    assert out["plot"] == ["Нет цветов под такие условия."] and out["cols"] == 3
-    assert out["link"] == [["Модель и прогноз параметров для этого лазера с линзой", "#/colors?device=1&lens=1"]]
+    assert out["plot"] == ["No colors match these conditions."] and out["cols"] == 3
+    assert out["link"] == [["Model and predicted settings for this laser and lens", "#/colors?device=1&lens=1"]]
 
 
 # -- the filters still ask the server again ------------------------------------------------------------------------------------------------
@@ -182,14 +182,14 @@ def test_a_filter_is_remembered_and_the_next_query_carries_it(tmp_path):
   const left = () => tree.querySelector('.os-body').children[0];
   const again = async () => { tree = await screen(); };                          // the router draws the screen again after each change
   const pick = async (label, value) => { const s = labelled(left(), label).querySelector('select'); s.value = value; await s.dispatch('change'); await again(); };
-  await pick('Как измерен', 'relative'); await pick('Материал', 'Grade 5');
+  await pick('Measurement method', 'relative'); await pick('Material', 'Grade 5');
   out.stored = JSON.parse(ctx.__store['color-map']);
   const limit = labelled(left(), 'Maximum time, min/cm²').querySelector('input'); limit.value = '0:30'; await limit.dispatch('change'); await again();
   const box = left().querySelectorAll('input').find((i) => i.getAttribute('type') === 'checkbox'); box.checked = true; await box.dispatch('change'); await again();
   out.after = JSON.parse(ctx.__store['color-map']);
   const before = ctx.requests.length; await again();
   out.query = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
-  out.selected = labelled(left(), 'Как измерен').querySelector('select').value;
+  out.selected = labelled(left(), 'Measurement method').querySelector('select').value;
   const bad = labelled(left(), 'Maximum time, min/cm²').querySelector('input'); bad.value = 'abc'; await bad.dispatch('change');
   const note = left().querySelectorAll('p').find((p) => p.getAttribute('role') === 'alert' && !p.hidden);
   out.refusal = {toasts: ctx.__toasts || [], beside: note && note.textContent, kept: bad.value, invalid: bad.getAttribute('aria-invalid'),
@@ -233,7 +233,7 @@ def test_a_picked_colour_is_described_under_the_map_and_the_search_fills_the_lis
   out.detailShown = !detail.hidden; out.detail = detail.textContent; out.detailTitle = detail.querySelector('h3').textContent;
   out.pickedCircle = middle.querySelectorAll('circle').filter((c) => c.getAttribute('stroke') === '#ffffff').length;
   const before = ctx.requests.length;
-  await byText(detail, 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  await byText(detail, 'button', 'Find this color among all').dispatch('click'); await tick(); await tick();
   const list = right.children.find((c) => has(c, 'os-scroll'));
   out.requests = ctx.requests.slice(before).map((r) => r.url);
   out.list = list.textContent; out.hits = list.querySelectorAll('article').length;
@@ -241,11 +241,11 @@ def test_a_picked_colour_is_described_under_the_map_and_the_search_fills_the_lis
   out.target = JSON.parse(ctx.__store['color-map']).target;
   out.targetMark = middle.querySelectorAll('circle').some((c) => c.getAttribute('stroke') === '#ffd166');
 """)
-    assert out["hiddenAtFirst"] is True and out["detailShown"] is True and out["detailTitle"] == "Выбранный цвет"
-    assert "L 80.0 · a 4.0 · b 30.0" in out["detail"] and "reference chart corrected" in out["detail"] and "время ≈ 41.0 с на см² (оценка)" in out["detail"]
+    assert out["hiddenAtFirst"] is True and out["detailShown"] is True and out["detailTitle"] == "Selected color"
+    assert "L 80.0 · a 4.0 · b 30.0" in out["detail"] and "reference chart corrected" in out["detail"] and "time ≈ 41.0 s per cm² (estimate)" in out["detail"]
     assert out["pickedCircle"] == 1
     assert out["requests"][0].startswith("/api/colors/search?L=80&a=4&b=30&limit=12") and any(u.startswith("/api/colors/settings?L=80&a=4&b=30") for u in out["requests"])
-    assert "Где встречался такой цвет" in out["list"] and out["hits"] == 1 and "ΔE 0.4" in out["list"] and "в допуске" in out["list"]
+    assert "Where this color was found" in out["list"] and out["hits"] == 1 and "ΔE 0.4" in out["list"] and "within tolerance" in out["list"]
     assert out["fields"][1:4] == ["80", "4", "30"] and out["target"] == [80, 4, 30] and out["targetMark"] is True
 
 
@@ -256,7 +256,7 @@ def test_the_find_button_searches_the_typed_colour_with_the_tolerance_and_the_fi
   tree = await screen();
   const right = tree.querySelector('.os-body').children[2];
   const [, L, A, B] = right.querySelector('.target-color').querySelectorAll('input');
-  const tol = right.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Допуск ΔE');
+  const tol = right.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'ΔE tolerance');
   L.value = '62'; A.value = '-3.5'; B.value = '11'; tol.value = '2.5';
   await tol.dispatch('change');                                                  // a tolerance alone does not search before a colour is chosen
   out.searchedByTolerance = ctx.requests.filter((r) => r.path === '/api/colors/search').length;
@@ -304,13 +304,13 @@ def test_the_filter_hides_the_doubtful_colours_and_the_next_questions_carry_it(t
   out.map = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
   const middle = tree.querySelector('.os-body').children[1];
   await middle.querySelectorAll('circle')[0].dispatch('click');
-  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Find this color among all').dispatch('click'); await tick(); await tick();
   out.search = ctx.requests.filter((r) => r.path === '/api/colors/search').map((r) => r.url).pop();
-  out.explained = tree.querySelector('details').textContent.includes('такие цвета помечены «сомнительный» и их можно скрыть');
+  out.explained = tree.querySelector('details').textContent.includes('these colors are marked uncertain and can be hidden');
 """)
     assert "Repeated engravings produced different colors" in out["title"]
-    assert "сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub0"] and "скрыто" not in out["sub0"]
-    assert out["stored"] is True and out["checked"] is True and "скрыто сомнительных (кружок меньше, чем у одной гравировки) 1" in out["sub1"]
+    assert "uncertain (circle smaller than for one engraving) 1" in out["sub0"] and "hidden" not in out["sub0"]
+    assert out["stored"] is True and out["checked"] is True and "uncertain hidden (circle smaller than for one engraving) 1" in out["sub1"]
     assert len(out["map"]) == 1 and "hide_doubtful=true" in out["map"][0] and "hide_doubtful=true" in out["search"] and out["explained"] is True
 
 
@@ -332,18 +332,18 @@ def test_a_picked_colour_shows_its_confidence_and_every_engraving_it_is_known_fr
   await pickByTitle('Test 3'); out.doubt = read();
 """)
     three = out["three"]
-    assert "Уверенность: 0.50 (2 of 3 agree)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
+    assert "Confidence: 0.50 (2 of 3 agree)" in three["text"] and three["dot"] == [4.0]                    # the circle is the one the map draws
     assert three["summary"] == "Color evidence: 3 independent engravings (2 tests, 1 work)" and "Settings color: " in three["text"] and "L 80.5 · a 4.0 · b 30.0" in three["text"]
     assert len(three["rows"]) == 3 and "Third try" in three["rows"][0] and "First try" in three["rows"][2] and "ΔE 20.5 from the settings color" in three["rows"][2]
-    assert three["pills"].count("agrees") == 2 and three["pills"].count("disagrees") == 1 and "сомнительный" not in three["pills"]
+    assert three["pills"].count("agrees") == 2 and three["pills"].count("disagrees") == 1 and "uncertain" not in three["pills"]
     assert three["pills"].count("test") == 2 and three["pills"].count("work") == 1                      # every engraving says what it was (REQ-051)
     assert ["review #23", "#/analysis/23"] in three["links"] and ["experiment", "#/experiment/eng-1"] in three["links"] and "photos IMG_3.DNG" in three["rows"][0]
     assert "within ΔE 5" in three["text"] and "another photo of the same engraving is not an independent repetition" in three["text"]
     once = out["once"]
-    assert "Уверенность: не оценена, гравировка не повторялась" in once["text"] and once["summary"] == "Color evidence: one engraving (test)"
+    assert "Confidence: not assessed; engraving not repeated" in once["text"] and once["summary"] == "Color evidence: one engraving (test)"
     assert len(once["rows"]) == 1 and "Test 2" in once["rows"][0] and "agrees" not in once["pills"] and "Settings color:" not in once["text"]
     doubt = out["doubt"]
-    assert "Уверенность: 0.17 (1 of 2 agree)" in doubt["text"] and "сомнительный" in doubt["pills"] and "color varied with the same settings" in doubt["text"]
+    assert "Confidence: 0.17 (1 of 2 agree)" in doubt["text"] and "uncertain" in doubt["pills"] and "color varied with the same settings" in doubt["text"]
     assert doubt["dot"][0] == pytest.approx(4 / 1.5) and "Older" in doubt["rows"][1] and "ΔE 27.0 from the settings color" in doubt["rows"][1]
 
 
@@ -355,7 +355,7 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
     out = run(tmp_path, routes, """
   const [, middle, right] = tree.querySelector('.os-body').children;
   await middle.querySelectorAll('circle')[0].dispatch('click');
-  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  await byText(middle.querySelectorAll('div').find((d) => has(d, 'cm-detail')), 'button', 'Find this color among all').dispatch('click'); await tick(); await tick();
   const list = right.children.find((c) => has(c, 'os-scroll'));
   const card = list.querySelectorAll('article')[0];
   const folded = card.querySelectorAll('details').find((d) => has(d, 'cm-sources'));
@@ -365,13 +365,13 @@ def test_a_found_recipe_shows_the_same_confidence_and_sources_and_says_what_the_
   tree = await screen();
   const list2 = tree.querySelector('.os-body').children[2].children.find((c) => has(c, 'os-scroll'));
   out.hidden = list2.querySelectorAll('.alert').map((a) => a.textContent);
-  const show = byText(list2, 'button', 'Показать и их'); await show.dispatch('click');
+  const show = byText(list2, 'button', 'Show these too'); await show.dispatch('click');
   out.shown = JSON.parse(ctx.__store['color-map']).doubtful;
 """)
-    assert "Уверенность: 0.50 (2 of 3 agree)" in out["card"] and "получался 3 раза" in out["card"] and out["card"].count("уверенность 0.50") == 0       # said once
+    assert "Confidence: 0.50 (2 of 3 agree)" in out["card"] and "produced 3 times" in out["card"] and out["card"].count("confidence 0.50") == 0       # said once
     assert out["summary"] == "Color evidence: 3 independent engravings (2 tests, 1 work)" and out["rows"] == 3
-    assert out["once"] == ["Среди найденных рецептов сомнительных (при повторах цвет менялся): 2; они помечены. "]
-    assert out["hidden"] == ["2 рецептов с сомнительным цветом в поиске не участвуют: при повторах цвет менялся. Показать и их"] and out["shown"] is False
+    assert out["once"] == ["Uncertain recipes among the results (colors changed across repeats): 2; these are marked. "]
+    assert out["hidden"] == ["2 recipes with uncertain colors are excluded from search because repeated engravings produced different colors. Show these too"] and out["shown"] is False
 
 
 @node
@@ -388,7 +388,7 @@ def test_the_engravings_of_every_found_recipe_are_folded_and_those_of_the_picked
   await middle.querySelectorAll('circle')[0].dispatch('click');
   const detail = middle.querySelectorAll('div').find((d) => has(d, 'cm-detail'));
   out.picked = detail.querySelectorAll('details').filter((d) => has(d, 'cm-sources')).map((d) => d.hasAttribute('open'));
-  await byText(detail, 'button', 'Найти такой же среди всех').dispatch('click'); await tick(); await tick();
+  await byText(detail, 'button', 'Find this color among all').dispatch('click'); await tick(); await tick();
   const list = right.children.find((c) => has(c, 'os-scroll'));
   out.found = list.querySelectorAll('article').map((a) => a.querySelectorAll('details').filter((d) => has(d, 'cm-sources'))
     .map((d) => [d.hasAttribute('open'), d.querySelector('summary').textContent, d.querySelectorAll('li').length]));
@@ -403,7 +403,7 @@ def test_the_engravings_of_every_found_recipe_are_folded_and_those_of_the_picked
 def test_the_screen_is_one_screen_frame_and_only_the_found_recipes_scroll():
     assert ("h('div', {class: 'os cm' + (pick ? ' cm-picking' : '')}, head, pick ? DotPick.banner(pick) : null, "
             "h('div', {class: 'os-body cm-body'}, filters, mapCol, search))") in SCREEN               # picking a work's dots: a strip under the head
-    assert "h('details', {class: 'cm-about'}, h('summary', {}, 'Как это считается')" in SCREEN and "h('div', {class: 'os-scroll'}, results)" in SCREEN
+    assert "h('details', {class: 'cm-about'}, h('summary', {}, 'How this is calculated')" in SCREEN and "h('div', {class: 'os-scroll'}, results)" in SCREEN
     assert "svg.style.cssText = 'width:100%;height:100%;cursor:grab;touch-action:none;outline:none';" in SCREEN and "max-width:820px" not in SCREEN       # the box around the map sets its size
     section = CSS[CSS.index("/* === cm:"):CSS.index("/* === end cm === */")]
     assert re.search(r"\.cm-body \{grid-template-columns:minmax\(250px,290px\) minmax\(0,1fr\) minmax\(280px,340px\)\}", section)       # three columns
@@ -436,8 +436,8 @@ def test_the_diameter_of_a_circle_grows_one_and_a_half_times_per_agreeing_repeat
     assert by_title["Test 1"] == pytest.approx(4 / 1.5) and by_title["Test 3"] == pytest.approx(9)
     assert by_title["Test 4"] == 14 and by_title["Test 5"] == 2 and by_title["Test 6"] == pytest.approx(4)
     titles = " ".join(out["titles"])
-    assert "уверенность не оценена (одна гравировка)" in titles and "уверенность 0.60 (all 3 agree)" in titles and "уверенность 0.17 (1 of 2 agree)" in titles
-    assert "каждый повтор с тем же цветом увеличивает его в 1,5 раза" in SCREEN
+    assert "confidence not assessed (one engraving)" in titles and "confidence 0.60 (all 3 agree)" in titles and "confidence 0.17 (1 of 2 agree)" in titles
+    assert "each repeat with the same color increases it by a factor of 1.5" in SCREEN
 
 
 # -- zoom and pan of the map -------------------------------------------------------------------------------------------------------------------
@@ -487,7 +487,7 @@ def test_the_wheel_zooms_a_drag_moves_the_map_circles_keep_their_size_and_a_pick
   await svg().querySelectorAll('circle')[0].dispatch('click');
   await tick();
   out.afterPick = view();
-  await byText(tree.querySelector('.cm-zoombar'), 'button', 'Весь вид').dispatch('click');
+  await byText(tree.querySelector('.cm-zoombar'), 'button', 'Full view').dispatch('click');
   out.reset = view(); out.r2 = radii();
   await svg().dispatch('keydown', {key: '+'});
   out.key = view();
@@ -553,7 +553,7 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
     assert out["asked"] == ["/api/colors?dots=37&setup=laser%3A1%2Flens%3A2"] and out["root"] == "os cm cm-picking"
     assert out["banner"].startswith("Dot color for work “Inna Portrait 2” · Atkinson · 100 mm") and "titanium Grade 5" in out["banner"]
     assert "line spacing of at least 0.0085 mm" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
-    assert out["setup"] == ["Лазер и линзаJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
+    assert out["setup"] == ["Laser and lensJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
     assert out["pale"] == ["1", "0.18", "1"]                                                          # what cannot be the dots is pale
     assert out["step"] == "This color cannot be used for dots: its step is finer than 0.0085 mm: there the dots merge."            # the server's reason
     assert out["tone"] == "Use for dotsDots will use this gray scale at 12.5%: 150 mm/s · 60 kHz · 300 ns · spacing 0.0212 mm."
