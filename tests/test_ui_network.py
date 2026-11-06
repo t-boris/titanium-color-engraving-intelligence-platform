@@ -67,7 +67,7 @@ def test_the_menu_has_the_network_screen_before_the_laboratories_and_its_files_a
     router = (UI_DIR / "router.js").read_text(encoding="utf-8")
     nav = re.findall(r"\['(/[\w-]+)', '", router[router.index("const NAV"):router.index("const ROUTE_ID")])
     icons = re.findall(r"^\s+'<", router[router.index("const ICONS"):router.index("function icon")], re.M)
-    assert nav[-3:] == ["/network", "/labs", "/workshop"] and "['/network', 'Сеть']" in router and "network: 'network'" in router and len(icons) == len(nav)
+    assert nav[-3:] == ["/network", "/labs", "/workshop"] and "['/network', 'Network']" in router and "network: 'network'" in router and len(icons) == len(nav)
     scripts = re.findall(r'<script src="(/[^"]+)"', (UI_DIR / "index.html").read_text(encoding="utf-8"))
     order = {s: i for i, s in enumerate(scripts)}
     assert order["/i18n-lan.js"] < order["/i18n-gaps.js"] < order["/app.js"] < order["/screens/network.js"]
@@ -93,17 +93,17 @@ def test_the_screen_shows_the_network_the_code_the_certificate_and_the_devices_a
   out.switches = el.querySelectorAll('.switch').map((i) => i.checked);
   out.address = [el.querySelector('.cloud-address').textContent, el.querySelector('.cloud-address').querySelector('input').value];
 """)
-    assert "Локальная сеть" in out["text"] and "Код для планшета" in out["text"] and "Сертификат мастерской" in out["text"] and "Подключённые планшеты" in out["text"]
-    assert out["code"] == "482913" and "действует ещё 4:59" in out["text"]
+    assert "Local network" in out["text"] and "Tablet code" in out["text"] and "Workshop certificate" in out["text"] and "Connected tablets" in out["text"]
+    assert out["code"] == "482913" and "expires in 4:59" in out["text"]
     assert out["fingerprint"] == STATUS["fingerprint"] and out["download"] == "/api/lan/ca"
     assert out["urls"] == ["https://192.168.1.20:8766"] and "https://192.168.1.20:8766/pair" in out["text"]
     assert out["devices"] == [{"text": "iPad <b>bench</b>", "children": 0}, {"text": "Old", "children": 0}]
-    assert "работает" in out["pills"] and "подключён" in out["pills"] and any(p.startswith("отозван") for p in out["pills"])
+    assert "running" in out["pills"] and "connected" in out["pills"] and any(p.startswith("revoked") for p in out["pills"])
     assert out["enabled"] is True
-    assert "телеметрии нет" in out["text"] and "AI-исследователь" in out["text"] and "Google Fonts" in out["text"] and "обновлений" in out["text"]
+    assert "no telemetry" in out["text"] and "AI researcher" in out["text"] and "Google Fonts" in out["text"] and "update" in out["text"]
     assert out["switches"] == [True, True, False, True]                                                     # the cloud is on by default
-    assert "Облако лабораторий" in out["text"] and out["address"][0].startswith("Адрес облака лабораторий") and out["address"][1] == ""   # the default address is not typed in
-    assert "стандартный адрес https://labs.example.test" in out["address"][0]
+    assert "Laboratory cloud" in out["text"] and out["address"][0].startswith("Laboratory cloud address") and out["address"][1] == ""   # the default address is not typed in
+    assert "the default https://labs.example.test" in out["address"][0]
 
 
 @node
@@ -116,28 +116,28 @@ def test_the_buttons_ask_for_a_code_apply_the_settings_revoke_after_confirmation
     out = run(tmp_path, routes, """
   const el = await ctx.__screens.network.render({query: {}});
   ctx.document.body.append(el);
-  await byText(el, 'button', 'Другой код').dispatch('click'); await tick();
+  await byText(el, 'button', 'Another code').dispatch('click'); await tick();
   const inputs = el.querySelectorAll('input');
   inputs[0].checked = false; inputs[1].value = '9443'; inputs[2].value = 'Studio';
-  await byText(el, 'button', 'Применить').dispatch('click'); await tick();
-  await byText(el, 'button', 'Отозвать').dispatch('click'); await tick();
+  await byText(el, 'button', 'Apply').dispatch('click'); await tick();
+  await byText(el, 'button', 'Revoke').dispatch('click'); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.dialog = dialog.textContent;
-  await byText(dialog, 'button', 'Отозвать').dispatch('click'); await tick();
-  await byText(el, 'button', 'Переименовать').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Revoke').dispatch('click'); await tick();
+  await byText(el, 'button', 'Rename').dispatch('click'); await tick();
   const rename = ctx.document.body.querySelector('.modal');
   rename.querySelector('input').value = 'Bench';
-  await byText(rename, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(rename, 'button', 'Save').dispatch('click'); await tick();
   const ai = el.querySelectorAll('.switch')[0];
   ai.checked = false; await ai.dispatch('change'); await tick();
   const address = el.querySelector('.cloud-address');
   address.querySelector('input').value = ' http://127.0.0.1:9000 ';
-  await byText(address, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(address, 'button', 'Save').dispatch('click'); await tick();
   out.address = address.querySelector('input').value;
   out.sent = sent();
   out.renders = ctx.__renders.length;
 """)
-    assert "iPad <b>bench</b>" in out["dialog"] and "при следующем запросе ему будет отказано" in out["dialog"]
+    assert "iPad <b>bench</b>" in out["dialog"] and "its next request will be denied" in out["dialog"]
     assert out["sent"] == [["POST", "/api/lan/code", {}], ["PUT", "/api/lan", {"enabled": False, "port": 9443, "name": "Studio"}],
                            ["POST", "/api/lan/devices/5/revoke", {}], ["PUT", "/api/lan/devices/5", {"name": "Bench"}], ["PUT", "/api/network", {"ai": False}],
                            ["PUT", "/api/cloud/settings", {"api_url": "http://127.0.0.1:9000"}]]
@@ -160,11 +160,11 @@ def test_the_openai_key_is_entered_on_the_network_screen_and_only_its_ending_is_
   const input = box.querySelector('input');
   out.type = input.getAttribute('type');
   input.value = 'sk-proj-secret-secret-1234';
-  await byText(box, 'button', 'Сохранить ключ').dispatch('click'); await tick();
+  await byText(box, 'button', 'Save key').dispatch('click'); await tick();
   out.cleared = input.value;
   out.sent = sent();
 """)
-    assert "ключ не задан" in out["before"] and "ai/openai.key" in out["before"] and out["type"] == "password"
+    assert "key not set" in out["before"] and "ai/openai.key" in out["before"] and out["type"] == "password"
     assert out["sent"] == [["PUT", "/api/network/ai-key", {"key": "sk-proj-secret-secret-1234"}]] and out["cleared"] == ""
 
 
@@ -178,31 +178,31 @@ def test_a_port_outside_the_servers_range_is_refused_beside_the_box_and_a_refuse
   const el = await ctx.__screens.network.render({query: {}});
   ctx.document.body.append(el);
   const port = el.querySelectorAll('input')[1];
-  const lan = () => el.querySelectorAll('label').filter((l) => l.textContent.startsWith('Порт'))[0];
+  const lan = () => el.querySelectorAll('label').filter((l) => l.textContent.startsWith('Port'))[0];
   const problems = [];
   for (const typed of ['80', '70000', '8766.5', 'abc', '']) {
     port.value = typed;
-    await byText(el, 'button', 'Применить').dispatch('click'); await tick();
+    await byText(el, 'button', 'Apply').dispatch('click'); await tick();
     problems.push([typed, lan().errorText(), port.value, port.getAttribute('aria-invalid')]);
   }
   out.problems = problems;
   out.sentWhileInvalid = sent().length;
   port.value = '1024';
-  await byText(el, 'button', 'Применить').dispatch('click'); await tick();
+  await byText(el, 'button', 'Apply').dispatch('click'); await tick();
   out.sent = sent();
   const address = el.querySelector('.cloud-address');
   address.querySelector('input').value = 'ftp://x';
-  await byText(address, 'button', 'Сохранить').dispatch('click'); await tick();
+  await byText(address, 'button', 'Save').dispatch('click'); await tick();
   out.refused = {kept: address.querySelector('input').value, message: address.querySelector('.f-form-error').textContent, shown: !address.querySelector('.f-form-error').hidden,
     toasts: ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent)};
 """)
-    assert out["problems"] == [["80", "Допустимо: целое число, от 1024 до 65535. Введено: 80", "80", "true"],
-                               ["70000", "Допустимо: целое число, от 1024 до 65535. Введено: 70000", "70000", "true"],
-                               ["8766.5", "Нужно целое число. Введено: 8766,5", "8766.5", "true"],
-                               ["abc", "Введите число. Введено: «abc»", "abc", "true"],
-                               ["", "Заполните это поле", "", "true"]]
+    assert out["problems"] == [["80", "Allowed: whole number, from 1024 to 65535. Entered: 80", "80", "true"],
+                               ["70000", "Allowed: whole number, from 1024 to 65535. Entered: 70000", "70000", "true"],
+                               ["8766.5", "Enter a whole number. Entered: 8766.5", "8766.5", "true"],
+                               ["abc", "Enter a number. Entered: “abc”", "abc", "true"],
+                               ["", "Complete this field", "", "true"]]
     assert out["sentWhileInvalid"] == 0
     assert out["sent"][-1][:2] == ["PUT", "/api/lan"] and out["sent"][-1][2]["port"] == 1024
-    assert out["refused"] == {"kept": "ftp://x", "shown": True, "toasts": ["Доступ по локальной сети включён ×"],          # only the earlier success
-                              "message": "Сервер не принял данные: the address must start with https:// (сообщение сервера, без перевода)."
-                                         " Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."}
+    assert out["refused"] == {"kept": "ftp://x", "shown": True, "toasts": ["Local network access enabled ×"],          # only the earlier success
+                              "message": "The server rejected the data: the address must start with https://."
+                                         " Your entries remain in the form; correct them and submit again."}
