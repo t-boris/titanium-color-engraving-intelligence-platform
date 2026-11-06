@@ -1,27 +1,18 @@
-/* Работы: общий каталог векторных работ и фотогравировок (feature ux-work-catalog-p0, REQ-001, REQ-002).
-   Один список на App.list с порциями по 20 с сервера (GET /api/works: поиск, тип, лазер, линза, заготовка, порядок, счётчики). Каталог ничего не
-   создаёт и не хранит: строка — это сама работа (тот же владелец и тот же номер), «Открыть» ведёт в её прежний редактор (#/vector?plan=N или
-   #/photo-engraving?work=N), а переименование, копия и удаление — прежние операции своего вида (rename и copy у /vector и /photo-works,
-   DELETE /plans/N) за меню строки; удаление спрашивает через App.confirmBox. Смешанная работа — одна строка с числом фотозон и надписей.
-   Вид (список или галерея) — только оформление того же списка: поиск, фильтры, порядок и показанные порции у обоих видов одни.
-   Состояние живёт в адресе (#/works?view=gallery&q=…&type=…&laser=…&sort=…&at=<работа>), и возврат из редактора (кнопка «Назад») открывает
-   каталог там, где его оставили: тот же вид, поиск, фильтры, порядок, столько же порций и фокус на работе, которую открывали; если работы
-   уже нет или она не подходит под условия, это сказано рядом со списком, а список показан сначала.
-   Старые экраны #/vector и #/photo-engraving и их адреса остаются (n50): каталог их не заменяет, а лежит рядом. */
+/* Paged catalog of vector and photo work. Existing work routes and operations remain its source of truth (REQ-001, REQ-002). */
 'use strict';
 const Works = (() => {
-  const {h, btn, pill, plural, num, field, get, post, del, toast, fail, modal, confirmBox} = App;
+  const {h, btn, pill, num, field, get, post, del, toast, fail, modal, confirmBox} = App;
   const VIEW_KEY = 'works.view';
   const FILTERS = ['type', 'laser', 'lens', 'material'];
   const DEFAULT_SORT = 'modified';
-  const TYPE = {vector: 'Векторная', mixed: 'Смешанная', photo: 'Фотогравировка'};
-  const TYPE_CHIPS = [['vector', 'Векторные'], ['mixed', 'Смешанные'], ['photo', 'Фотогравировка']];
+  const TYPE = {vector: 'Vector', mixed: 'Mixed', photo: 'Photo engraving'};
+  const TYPE_CHIPS = [['vector', 'Vector'], ['mixed', 'Mixed'], ['photo', 'Photo engraving']];
   // the same words as the chain of an engraving: prepared -> file received -> result added -> checked
-  const STATE = {prepared: ['Подготовлена', ''], exported: ['Файл получен', ''], result: ['Результат добавлен', 'warn'], checked: ['Проверена', 'ok']};
-  const SORTS = [['modified', 'Сначала недавно изменённые'], ['oldest', 'Сначала давно изменённые'], ['name', 'По названию']];
-  const NONE_LABEL = {laser: 'лазер не указан', lens: 'линза не известна', material: 'заготовка не указана'};
-  const NOUN = {laser: 'лазер', lens: 'линза', material: 'заготовка'};
-  const KINDS = {vector: ['Векторная работа', 'цветные области, заливка, текст, линии'], photo: ['Фотогравировка', 'картинка в градациях серого']};
+  const STATE = {prepared: ['Prepared', ''], exported: ['File exported', ''], result: ['Result added', 'warn'], checked: ['Checked', 'ok']};
+  const SORTS = [['modified', 'Recently modified'], ['oldest', 'Oldest modified'], ['name', 'Name']];
+  const NONE_LABEL = {laser: 'laser not specified', lens: 'lens unknown', material: 'stock not specified'};
+  const NOUN = {laser: 'laser', lens: 'lens', material: 'stock'};
+  const KINDS = {vector: ['Vector work', 'color regions, fill, lettering and lines'], photo: ['Photo engraving', 'grayscale image']};
   const when = (iso) => (iso ? String(iso).replace('T', ' ').slice(0, 16) : '—');
 
   const stored = {
@@ -33,7 +24,7 @@ const Works = (() => {
   // ---- creating a work: one entry, so that the creation flows can be pointed elsewhere without touching the catalog ----------------
 
   /** Start a new work of ``kind`` (``vector`` or ``photo``). The catalog creates nothing itself: it hands over to the creation screen (Creation.start,
-      feature ux-work-creation-p0), the one entry for every work. A photograph starts with «Фотогравировка» chosen as the result; a vector work
+      feature ux-work-creation-p0), the one entry for every work. A photograph starts with «Photo engraving» chosen as the result; a vector work
       leaves the choice (colour areas, silhouette, lines) to the person, who sees their own picture in each. */
   function startCreation(kind) {
     Creation.start({result: kind === 'photo' ? 'photo' : null});
@@ -144,7 +135,7 @@ const Works = (() => {
       return answer;
     }
     const options = (name) => (answer) => ((answer.facets || {})[name] || []).map(({value, name: label}) => [value,
-      value === 'none' ? NONE_LABEL[name] : (label || `${NOUN[name]} № ${value}`)]);
+      value === 'none' ? NONE_LABEL[name] : (label || `${NOUN[name]} #${value}`)]);
 
     // -- a row
     function thumb(w) {
@@ -155,29 +146,29 @@ const Works = (() => {
     }
     function parts(w) {
       const bits = [];
-      if (w.zones) bits.push(plural(w.zones, ['фотозона', 'фотозоны', 'фотозон']));
-      if (w.texts) bits.push(plural(w.texts, ['надпись', 'надписи', 'надписей']));
+      if (w.zones) bits.push(`${w.zones} ${w.zones === 1 ? 'photo zone' : 'photo zones'}`);
+      if (w.texts) bits.push(`${w.texts} ${w.texts === 1 ? 'lettering item' : 'lettering items'}`);
       return bits.length ? h('span', {class: 'works-parts small muted'}, bits.join(' · ')) : null;
     }
     function equipment(w) {
-      const text = [w.laser ? (w.laser.name || `лазер № ${w.laser.id}`) : NONE_LABEL.laser,
-        w.lens ? (w.lens.name || `линза № ${w.lens.id}`) : NONE_LABEL.lens,
-        w.material ? (w.material.name || `заготовка № ${w.material.id}`) : NONE_LABEL.material].join(' · ');
+      const text = [w.laser ? (w.laser.name || `laser #${w.laser.id}`) : NONE_LABEL.laser,
+        w.lens ? (w.lens.name || `lens #${w.lens.id}`) : NONE_LABEL.lens,
+        w.material ? (w.material.name || `stock #${w.material.id}`) : NONE_LABEL.material].join(' · ');
       return h('span', {class: 'works-equipment small muted', title: text}, text);
     }
     function row(w) {
       const [stateName, stateKind] = STATE[w.state] || [w.state, ''];
-      const size = w.width_mm == null || w.height_mm == null ? '—' : `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} мм`;
+      const size = w.width_mm == null || w.height_mm == null ? '—' : `${num(w.width_mm, 1)} × ${num(w.height_mm, 1)} mm`;
       if (w.broken) {
-        return [h('span', {class: 'works-thumb empty', 'aria-hidden': 'true'}, '!'), h('span', {class: 'lst-text works-name'}, w.name), pill('Данные работы не читаются', 'bad'),
+        return [h('span', {class: 'works-thumb empty', 'aria-hidden': 'true'}, '!'), h('span', {class: 'lst-text works-name'}, w.name), pill('Work data cannot be read', 'bad'),
           h('span', {class: 'works-size small'}, size), equipment(w), h('span', {class: 'works-date small muted'}, when(w.updated_at))];
       }
       // a plain click leaves for the editor and the catalog keeps the place; a click that opens a new tab or window leaves the catalog as it is
       const here_ = (ev) => { if (!(ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey || ev.button)) remember(w.key); };
       const link = (cls, kids, extra = {}) => h('a', {class: cls, href: '#' + w.open, onClick: here_, ...extra}, kids);
       return [link('works-thumb-link', thumb(w), {tabindex: '-1', 'aria-hidden': 'true'}), link('lst-text works-name', w.name, {title: w.name}),
-        pill(TYPE[w.type] || w.type), parts(w), h('span', {class: 'works-size small', title: 'Размер'}, size), pill(stateName, stateKind), equipment(w),
-        h('span', {class: 'works-date small muted', title: 'Изменена'}, when(w.updated_at))];
+        pill(TYPE[w.type] || w.type), parts(w), h('span', {class: 'works-size small', title: 'Size'}, size), pill(stateName, stateKind), equipment(w),
+        h('span', {class: 'works-date small muted', title: 'Modified'}, when(w.updated_at))];
     }
 
     // -- the operations of a row: the owners' own routes, then the catalog is read again whether they worked or not
@@ -198,17 +189,17 @@ const Works = (() => {
 
     function renameDialog(w) {
       let saving = false, box = null;
-      const input = h('input', {value: w.name, autocomplete: 'off', 'aria-label': 'Название работы',
+      const input = h('input', {value: w.name, autocomplete: 'off', 'aria-label': 'Work name',
         onKeydown: (ev) => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); save(box.close).catch(fail); } }});
       async function save(close) {
         if (saving) return;
         const title = input.value.trim();
-        if (!title) throw new Error('Впишите название работы');
+        if (!title) throw new Error('Enter a work name');
         if (title === w.name) { close(); return; }
         saving = true;
         try {
           await post(`${w.base}/${w.id}/rename`, {name: title});
-          toast('Работа переименована', 'ok');
+          toast('Work renamed', 'ok');
           close();
           await list.refresh();
         } catch (e) {
@@ -218,8 +209,8 @@ const Works = (() => {
           throw e;
         }
       }
-      box = modal('Переименовать работу', h('div', {class: 'stack'}, field('Название', input)),
-        [{label: 'Отмена', run: (m) => m.close()}, {label: 'Сохранить', cls: 'primary', run: (m) => save(m.close)}], () => focusMenu(w.key));
+      box = modal('Rename work', h('div', {class: 'stack'}, field('Name', input)),
+        [{label: 'Cancel', run: (m) => m.close()}, {label: 'Save', cls: 'primary', run: (m) => save(m.close)}], () => focusMenu(w.key));
       if (input.select) input.select();
     }
 
@@ -227,24 +218,24 @@ const Works = (() => {
       return operate(w, async () => {
         try {
           await post(`${w.base}/${w.id}/copy`, {});
-          toast('Копия создана: старая работа осталась как была', 'ok');
+          toast('Copy created; the original work remains unchanged', 'ok');
         } catch (e) { fail(e); }
         await list.refresh();
         focusMenu(w.key);
       });
     }
 
-    const WARNING = {vector: 'Исчезнут исходная картинка, разбиение и все варианты раскраски; вернуть работу будет нельзя. Чтобы сохранить её, сначала сделайте копию.',
-      photo: 'Исчезнут картинка и настройки работы; вернуть работу будет нельзя. Чтобы сохранить её, сначала сделайте копию.'};
+    const WARNING = {vector: 'The source image, segmentation and all coloring variants will be deleted and cannot be restored. Make a copy first to preserve them.',
+      photo: 'The image and work settings will be deleted and cannot be restored. Make a copy first to preserve them.'};
     function deleteWork(w) {
       const index = keysShown().indexOf(w.key);
       const all = keysShown();
       const neighbours = [all[index + 1], all[index - 1]].filter(Boolean);
-      const photographed = w.checks ? ' У работы есть фотографии гравировки: пока они не удалены, работу удалить нельзя.' : '';
-      confirmBox(`Удалить работу «${w.name}»?`, WARNING[w.kind] + photographed, 'Удалить', () => operate(w, async () => {
+      const photographed = w.checks ? ' This work has engraving photographs and cannot be deleted until they are removed.' : '';
+      confirmBox(`Delete work “${w.name}”?`, WARNING[w.kind] + photographed, 'Delete', () => operate(w, async () => {
         try {
           await del('/plans/' + w.id);
-          toast('Работа удалена', 'ok');
+          toast('Work deleted', 'ok');
           if (at === w.key) at = null;
         } catch (e) { fail(e); }                                           // refused (a photograph is linked) or already gone: said, then read again
         await list.refresh();
@@ -254,9 +245,9 @@ const Works = (() => {
 
     function actions(w) {
       if (w.broken) return [];                                             // the owners' operations read the data of the work: none of them can act on this one
-      return [menu({label: `Действия с работой «${w.name}»`, text: '⋯', cls: 'btn-small', items: [
-        {label: 'Переименовать…', run: () => renameDialog(w)}, {label: 'Сделать копию', run: () => copyWork(w)},
-        {label: 'Удалить…', run: () => deleteWork(w), danger: true}]}).el];
+      return [menu({label: `Actions for work “${w.name}”`, text: '⋯', cls: 'btn-small', items: [
+        {label: 'Rename…', run: () => renameDialog(w)}, {label: 'Make a copy', run: () => copyWork(w)},
+        {label: 'Delete…', run: () => deleteWork(w), danger: true}]}).el];
     }
 
     // -- the view: the same list, drawn compactly or as a gallery
@@ -267,31 +258,31 @@ const Works = (() => {
       for (const [name, button] of Object.entries(viewButtons)) button.setAttribute('aria-pressed', String(name === view));
       sync();
     }
-    const viewSwitch = h('div', {class: 'works-view', role: 'group', 'aria-label': 'Вид каталога'},
-      ...[['list', 'Список'], ['gallery', 'Галерея']].map(([name, text]) => {
+    const viewSwitch = h('div', {class: 'works-view', role: 'group', 'aria-label': 'Catalog view'},
+      ...[['list', 'List'], ['gallery', 'Gallery']].map(([name, text]) => {
         viewButtons[name] = h('button', {type: 'button', class: 'btn btn-small', 'aria-pressed': 'false', onClick: () => setView(name)}, text);
         return viewButtons[name];
       }));
-    const create = menu({label: 'Новая работа', text: 'Новая работа', cls: 'primary', caret: true,
+    const create = menu({label: 'New work', text: 'New work', cls: 'primary', caret: true,
       items: Object.entries(KINDS).map(([kind, [name, hint]]) => ({label: `${name}: ${hint}`, run: () => startCreation(kind)}))});
 
     // -- the list
     const given = addressed ? {sort: query.sort || DEFAULT_SORT, search: query.q || '', filters: Object.fromEntries(FILTERS.map((k) => [k, query[k] || '']))} : {};
     list = App.list({id: 'works', className: 'works-list', key: (w) => w.key, load, search: true, initial: given, onChange: changed,
       filters: [
-        {key: 'type', label: 'Тип', all: 'All', options: TYPE_CHIPS},
-        {key: 'laser', label: 'Лазер', select: true, all: 'любой', options: options('laser')},
-        {key: 'lens', label: 'Линза', select: true, all: 'любая', options: options('lens')},
-        {key: 'material', label: 'Заготовка', select: true, all: 'любая', options: options('material')}],
+        {key: 'type', label: 'Type', all: 'All', options: TYPE_CHIPS},
+        {key: 'laser', label: 'Laser', select: true, all: 'any', options: options('laser')},
+        {key: 'lens', label: 'Lens', select: true, all: 'any', options: options('lens')},
+        {key: 'material', label: 'Stock', select: true, all: 'any', options: options('material')}],
       sorts: SORTS, row, actions,
       rowClass: (w) => (w.broken ? 'works-broken' : ''),
-      empty: 'Работ пока нет. Создайте первую кнопкой «Новая работа»: векторную из картинки или фотогравировку.',
-      noResults: 'Работ по этим условиям нет.'});
+      empty: 'No work yet. Use “New work” to create vector artwork from an image or a photo engraving.',
+      noResults: 'No work matches these conditions.'});
 
     el.append(
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Работы'),
-        h('p', {class: 'sub'}, 'Векторные работы и фотогравировки в одном списке. Работа открывается в своём редакторе; смешанная работа — один документ с областями, '
-          + 'фотозонами и надписями. Хранятся на этом компьютере.')),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Works'),
+        h('p', {class: 'sub'}, 'Vector work and photo engravings share one list. Each opens in its editor; mixed work is one document with regions, '
+          + 'photo zones and lettering. Work is stored on this computer.')),
         h('span', {class: 'spacer'}), viewSwitch, create.el),
       notice, list.el);
     setView(view);
@@ -321,15 +312,15 @@ const Works = (() => {
       sync();
       const actions_ = [];
       let text;
-      if (found === null) text = 'Работа, из которой вы вернулись, больше не существует. Список показан с начала.';
+      if (found === null) text = 'The work you returned from no longer exists. The list starts at the beginning.';
       else {
-        text = `Работа «${found.name}» не показана: она дальше в списке или не подходит под выбранные поиск и фильтры. Список показан с начала.`;
-        actions_.push(h('a', {class: 'btn btn-small', href: '#' + found.open}, 'Открыть работу'));
+        text = `Work “${found.name}” is not shown: it is later in the list or does not match the current search and filters. The list starts at the beginning.`;
+        actions_.push(h('a', {class: 'btn btn-small', href: '#' + found.open}, 'Open work'));
         const s = list.state();
         if (s.search || FILTERS.some((k) => s.filters[k])) actions_.push(btn('Clear search and filters', () => { fill(notice); list.reset(); }, 'btn-small'));
       }
       fill(notice, h('div', {class: 'alert warn works-gone'}, h('span', {}, text, ' '), ...actions_,
-        btn('Закрыть', () => fill(notice), 'btn-small')));
+        btn('Close', () => fill(notice), 'btn-small')));
     }
 
     return {el, list, ready, address, startCreation, state: () => ({view, at})};
