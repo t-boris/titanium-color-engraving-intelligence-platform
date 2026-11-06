@@ -618,17 +618,17 @@ def test_a_photographed_variations_plate_ranks_its_copies_says_what_each_change_
   const box = side.querySelectorAll('div').find((d) => has(d, 'pq-variations'));
   out.text = box.textContent;
   out.layer = side.querySelectorAll('div').find((d) => has(d, 'pq-layer')).textContent;
-  await byText(box, 'button', 'Сделать следующую плату').dispatch('click'); for (let i = 0; i < 4; i++) await tick();
+  await byText(box, 'button', 'Create next plate').dispatch('click'); for (let i = 0; i < 4; i++) await tick();
   out.posted = ctx.requests.filter((r) => r.path.endsWith('/next-variations')).map((r) => r.method);
   out.went = ctx.location.hash;
 """)
     text = out["text"]
-    assert "Лучше всех — копия 2 J P20 (оценка 0,81)." in text
-    assert "2 J P20 — 0,81" in text and "1 J P25 V125 F60 PW200 I.01 — 0,42 · Тени слились: всё темнее 30 % серого выходит одним тоном" in text
-    assert "мощность 25 % → 20 %: светлее на 3,1 L*, контраст +2 L*, тени открылись на 20 %, тонов +2, чётче (+10 % деталей)" in text
-    assert "Следующая плата: та же картинка вокруг копии 2, изменения вдвое меньше (шаг 0,5 от первых)." in text
+    assert "Best: copy 2 J P20 (score 0,81)." in text
+    assert "2 J P20 — 0,81" in text and "1 J P25 V125 F60 PW200 I.01 — 0,42 · Blocked shadows: everything darker than 30 % gray produces one tone" in text
+    assert "power 25 % → 20 %: lighter by 3,1 L*, contrast +2 L*, shadows opened by 20 %, tones +2, sharper (+10 % detail)" in text
+    assert "Next plate: the same image around copy 2, with half-sized changes (step 0,5 of the initial changes)." in text
     layer = out["layer"]
-    assert "PV1-PICTURE" in layer and "оценка 0,42" in layer and "Различимых тонов 9 из 16, от чёрного до белого 25 L* (31 → 56), в среднем L* 44." in layer
-    assert "Детали сохранились: 0,2 мм — 30 %, 0,4 мм — 55 %, 0,8 мм — 80 %; зерно ±2,4 L*." in layer
-    assert "Что поменять: мощность меньше, поправка ширины точки больше, шаг строк больше (по опыту процесса)" in layer
+    assert "PV1-PICTURE" in layer and "score 0,42" in layer and "Distinguishable tones: 9 of 16; black-to-white range 25 L* (31 → 56), mean L* 44." in layer
+    assert "Detail retained: 0,2 mm — 30 %, 0,4 mm — 55 %, 0,8 mm — 80 %; grain ±2,4 L*." in layer
+    assert "Suggested changes: power decrease, dot width correction increase, line interval increase (based on process experience)" in layer
     assert out["posted"] == ["POST"] and out["went"] == "#/experiment/plan-40"

@@ -359,10 +359,10 @@ def test_a_zone_says_what_the_laboratory_knows_of_its_kind_and_a_step_lighter_sa
   const box = () => tree.querySelector('.pq-advisor');
   out.says = box().textContent;
   out.refused = box().querySelectorAll('button').filter((b) => b.disabled).map((b) => [b.textContent, b.getAttribute('title')]);
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Светлее').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Lighter').dispatch('click'); await settle();
   out.saved = requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
 """)
-    assert "Что известно о виде «grayscale»" in out["says"] and "ещё не фотографировался" in out["says"]
-    assert "Светлее: мощность 28 % → 25,5 % (по опыту процесса)" in out["says"]
-    assert out["refused"] == [["Мягче", "the settings are already at their limits: nothing known moves the engraving further that way"]]
+    assert "What is known about “grayscale”" in out["says"] and "not yet been photographed" in out["says"]
+    assert "Lighter: power 28 % → 25,5 % (based on process experience)" in out["says"]
+    assert out["refused"] == [["Softer", "the settings are already at their limits: nothing known moves the engraving further that way"]]
     assert out["saved"] == [{"min_power": 12.0, "max_power": 25.5}]

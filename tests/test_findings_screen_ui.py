@@ -88,10 +88,10 @@ def test_the_findings_say_what_each_setting_does_to_a_photo_engraving_on_every_l
     assert out["hidden"] is False and out["hash"] == "#/findings?tab=photo"
     assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 1есть предложениеДальше: Jarvis — измерено, но не подобрано"]   # one place: open at once
     jarvis, = out["cards"]
-    assert jarvis.startswith("Jarvisизмерено, но не подобрано")
-    assert "Лучшее: 30 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,62 по фото №41" in jarvis
-    assert "мощность вдвое больше: темнее на 6 L*, оценка −0,1 (по фото №41, №42)" in jarvis
-    assert "мощность 30 % → 24 %" in jarvis and "Картинки для платы ещё нет" in jarvis
+    assert jarvis.startswith("Jarvismeasured, not optimized")
+    assert "Best: 30 %, 125 mm/s, 60 kHz, 200 ns, interval 0,01 mm — automatic score 0,62 from photo #41" in jarvis
+    assert "power doubled: darker by 6 L*, score −0,1 (from photos #41, #42)" in jarvis
+    assert "power 30 % → 24 %" in jarvis and "No image is available for the plate yet" in jarvis
     assert out["buttons"] == ["Открыть фото № 41"]               # the row's one step; no picture to engrave the plate from yet: no plate to press
 
 
@@ -111,10 +111,10 @@ def test_a_kind_that_came_out_a_negative_on_a_titanium_is_counted_and_its_card_s
 """, routes={**ROUTES, "/api/analysis/photo-queue": {"status": 200, "json": queued([place])}})
     assert out["rows"] == ["JPT M7 · F-Theta · Grade 5 sheet · Grade 5измерено видов: 1 из 2не получилось видов: 1есть предложениеДальше: Atkinson — не получился"]
     card = out["cards"][1]
-    assert card.startswith("Atkinsonне получился")
-    assert ("«Atkinson» на этом титане не получился: фото № 143, 15 % — точки не темнее титана (L* 74): картинки не видно или она вышла "
-            "негативом; фото № 120, 8 % — картинка едва видна: тёмное темнее светлого всего на 4 L*.") in card
-    assert "Нужны точки темнее титана: по опыту процесса — больше мощность, меньше скорость или шаг строк." in card
+    assert card.startswith("Atkinsonunsuccessful")
+    assert ("“Atkinson” was unsuccessful on this titanium: photo #143, 15 % — dots are no darker than titanium (L* 74): the image is invisible or "
+            "negative; photo #120, 8 % — image is barely visible: dark areas are darker than light areas by only 4 L*.") in card
+    assert "Dots darker than titanium are needed. Process experience suggests higher power, lower speed, or a smaller line interval." in card
 
 
 @node

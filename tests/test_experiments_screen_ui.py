@@ -660,23 +660,23 @@ def test_the_laboratory_proposes_the_next_plate_of_each_kind_of_photo_engraving_
   out.image = tree.querySelectorAll('article').find((a) => a.textContent.startsWith('Image')).textContent;
   out.asked = ctx.requests.filter((r) => r.path === '/api/photo-knowledge').map((r) => r.url);
   out.buttons = panel.querySelectorAll('article').map((a) => a.querySelectorAll('button').map((b) => b.textContent));
-  await byText(panel.querySelectorAll('article')[1], 'button', 'Сделать плату: 3 копии').dispatch('click'); await tick(); await tick();
+  await byText(panel.querySelectorAll('article')[1], 'button', 'Create plate: 3 copies').dispatch('click'); await tick(); await tick();
   out.made = ctx.requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => JSON.parse(r.body));
   out.went = ctx.location.hash;
 """, routes=routes)
     assert out["head"].startswith("Photo engraving: laboratory recommendations3")                    # three kinds have an experiment proposed
     assert out["asked"] == ["/api/photo-knowledge?device_id=1&lens_id=5&material_id=1"]
     jarvis, atkinson, stucki, grey = out["cards"]
-    assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №7)" in jarvis                 # what the power does here
-    assert "Плата 42 × 25 мм: 2 копии по 18 × 12 мм" in jarvis and "мощность 20 % → 18 %" in jarvis
-    assert "Картинки для платы ещё нет: сделайте первую плату из фотоработы или фотозоны" in stucki   # nothing to engrave it from yet
-    assert out["buttons"] == [["Сделать следующую плату"], ["Сделать плату: 3 копии"], [], []]
+    assert "power doubled: darker by 6 L*, score +0,1 (from photos #7)" in jarvis                 # what the power does here
+    assert "Plate 42 × 25 mm: 2 copies, each 18 × 12 mm" in jarvis and "power 20 % → 18 %" in jarvis
+    assert "No image is available for the plate yet. Create the first plate from a photo work or photo zone" in stucki   # nothing to engrave it from yet
+    assert out["buttons"] == [["Create next plate"], ["Create plate: 3 copies"], [], []]
     # the image purpose of the capability plate no longer says only «needs a test»: what the photographs measured is said there
     assert out["image"].startswith("ImagePhoto measured") and "the best result was “Jarvis” (score 0.81 from photo #7)" in out["image"]
-    assert jarvis.startswith("Jarvisпоиск идёт") and "Лучшее: 20 %, 125 мм/с, 60 кГц, 200 нс, шаг 0,01 мм — автоматическая оценка 0,81 по фото №7" in jarvis
-    assert "Следующая плата вокруг копии 2 J P20, изменения вдвое меньше." in jarvis and jarvis.endswith("Сделать следующую плату")
-    assert "Ещё не фотографировался на этом лазере и титане." in atkinson and "на лучших настройках другого вида точками" in atkinson
-    assert "Начните со шкал серого (Фотогравировка → Шкалы серого)." in grey
+    assert jarvis.startswith("Jarvissearch in progress") and "Best: 20 %, 125 mm/s, 60 kHz, 200 ns, interval 0,01 mm — automatic score 0,81 from photo #7" in jarvis
+    assert "Next plate around copy 2 J P20, with half-sized changes." in jarvis and jarvis.endswith("Create next plate")
+    assert "Not yet photographed on this laser and titanium." in atkinson and "using the best settings from another dot mode" in atkinson
+    assert "Start with grayscale scales (Photo engraving → Grayscale scales)." in grey
     assert out["made"] == [{"device_id": 1, "lens_id": 5, "material_id": 1, "kind": "atkinson"}] and out["went"] == "#/experiment/plan-12"
 
 

@@ -974,23 +974,23 @@ def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the
   const box = () => tree.querySelector('.pq-advisor');
   out.says = box().textContent;
   out.titles = Object.fromEntries(box().querySelectorAll('button').map((b) => [b.textContent, b.getAttribute('title')]));
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Темнее').dispatch('click'); await settle();
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Чётче').dispatch('click'); await settle();
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять лучшие настройки').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Darker').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Sharper').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Use best settings').dispatch('click'); await settle();
   out.saves = saves();
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Сделать плату: 4 копии').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Create plate: 4 copies').dispatch('click'); await settle();
   out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body); out.went = ctx.__went.slice(-1);
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None}, advice=JARVIS_ADVICE)
     says = out["says"]
-    assert "Что известно о виде «Jarvis» на этом лазере и титане" in says and "измерено, но не подобрано" in says
-    assert "Лучшее измеренное: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №118." in says
-    assert "мощность вдвое больше: темнее на 6 L*, оценка +0,1 (по фото №120)" in says
-    assert out["titles"]["Темнее"] == "мощность 12,5 % → 17,5 % — измерено по фото №120"
-    assert out["titles"]["Чётче"] == "поправка ширины точки выкл. → 0,01 мм — по опыту процесса: ещё не измерено"
-    assert "Точки: 22 %, 180 мм/с, шаг 0,012 мм, поправка точки 0,02 мм." in says
+    assert "What is known about “Jarvis” on this laser and titanium" in says and "measured, not optimized" in says
+    assert "Best measured: 22 %, 180 mm/s, 60 kHz, 250 ns, interval 0,012 mm, dot correction 0,02 mm — automatic score 0,9 from photo #118." in says
+    assert "power doubled: darker by 6 L*, score +0,1 (from photos #120)" in says
+    assert out["titles"]["Darker"] == "power 12,5 % → 17,5 % — measured from photos #120"
+    assert out["titles"]["Sharper"] == "dot width correction off → 0,01 mm — based on process experience: not yet measured"
+    assert "Dots: 22 %, 180 mm/s, interval 0,012 mm, dot correction 0,02 mm." in says
     # what the proposed plate finds out and how big it is
-    assert ("Копия 1 — центр, остальные меняют по одной настройке: мощность 22 % → 17,6 %; скорость 180 мм/с → 252 мм/с; вид Jarvis → Atkinson; "
-            "по фото станет видно, какая лучше. Плата 65 × 45 мм: 4 копии по 18 × 12 мм, под каждой полоска серого.") in says
+    assert ("Copy 1 is the baseline; each other copy changes one setting: power 22 % → 17,6 %; speed 180 mm/s → 252 mm/s; mode Jarvis → Atkinson. "
+            "The photo will show which is best. Plate 65 × 45 mm: 4 copies, each 18 × 12 mm, each with a grayscale strip below.") in says
     assert out["saves"] == [{"dot_settings": {**JARVIS, "power": 17.5}}, {"dot_width": 0.01}, {"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "jarvis"}] and out["went"] == ["/experiment/plan-33"]
 
@@ -1032,17 +1032,17 @@ def test_a_kind_that_came_out_a_negative_says_so_and_takes_the_dark_dots_of_anot
     out = run(tmp_path, {"work": "7"}, """
   const box = () => tree.querySelector('.pq-advisor');
   out.says = box().textContent;
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять тёмные точки «Jarvis»').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Use dark dots from “Jarvis”').dispatch('click'); await settle();
   out.saves = saves();
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Сделать плату: 4 копии').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Create plate: 4 copies').dispatch('click'); await settle();
   out.plate = requests.filter((r) => r.path === '/api/photo-knowledge/plate').map((r) => r.body);
 """, work={"kind": "atkinson", "dot_power": 10.2, "dot_width": None}, advice=FAILED_ADVICE)
     says = out["says"]
-    assert "не получился" in says and "Лучшее измеренное" not in says and "ещё не фотографировался" not in says
-    assert ("«Atkinson» на этом титане не получился: фото № 147, 10,2 % — точки не темнее титана (L* 92): картинки не видно или она вышла "
-            "негативом. Вместо них — лучшие тёмные точки вида «Jarvis» на этом титане: 22 %, 180 мм/с, 60 кГц, 250 нс, шаг 0,012 мм, "
-            "поправка точки 0,02 мм — автоматическая оценка 0,9 по фото №149; для «Atkinson» это предположение, пока его не сфотографируют на этих точках.") in says
-    assert "Лаборатория предлагает: та же картинка вокруг лучших точек другого вида." in says
+    assert "unsuccessful" in says and "Best measured" not in says and "not yet been photographed" not in says
+    assert ("“Atkinson” was unsuccessful on this titanium: photo #147, 10,2 % — dots are no darker than titanium (L* 92): the image is invisible or "
+            "negative. Using the best dark dots from “Jarvis” on this titanium instead: 22 %, 180 mm/s, 60 kHz, 250 ns, interval 0,012 mm, "
+            "dot correction 0,02 mm — automatic score 0,9 from photo #149; for “Atkinson” this remains an estimate until photographed with these dot settings.") in says
+    assert "Lab suggestion: the same image around the best dots from another mode." in says
     assert out["saves"] == [{"dot_settings": JARVIS, "dot_width": 0.02}]
     assert out["plate"] == [{"device_id": 1, "lens_id": 2, "material_id": 3, "kind": "atkinson", "dot_width": True}]
 
@@ -1055,12 +1055,12 @@ def test_a_grayscale_work_past_its_scales_turn_is_told_so_offered_no_step_and_ta
   const box = () => tree.querySelector('.pq-advisor');
   out.says = box().textContent;
   out.disabled = box().querySelectorAll('button').filter((b) => b.disabled).map((b) => b.textContent);
-  await box().querySelectorAll('button').find((b) => b.textContent === 'Взять диапазон до разворота').dispatch('click'); await settle();
+  await box().querySelectorAll('button').find((b) => b.textContent === 'Use range before reversal').dispatch('click'); await settle();
   out.saves = saves();
 """, advice=past)
-    assert "Max 28 % — дальше 14,5 %, где тона этой шкалы разворачиваются: там больше мощности — светлее, а не темнее" in out["says"]
+    assert "Max 28 % — beyond 14,5 %, where this scale’s tones reverse: more power becomes lighter" in out["says"]
     assert "Min 12 %, Max 14,5 %." in out["says"]
-    assert out["disabled"] == ["Темнее", "Светлее", "Чётче", "Мягче"]
+    assert out["disabled"] == ["Darker", "Lighter", "Sharper", "Softer"]
     assert out["saves"] == [{"min_power": 12.0, "max_power": 14.5}]
 
 
