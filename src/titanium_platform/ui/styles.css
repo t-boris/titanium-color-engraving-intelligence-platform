@@ -1649,3 +1649,9 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 .dashboard-panel-head>a,.dashboard-file,.vw-work-title h2,.vw-name-row h2,.lm-title h2,.lm-set-title h3,.ep-title h2,.ep-check-name {
   max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere
 }
+/* Keep the experimental first-screen panels and their sticky list bars readable. */
+.theme-study-light .os-col,.theme-study-light .os-scroll .lst-bar,.theme-study-light .dashboard-item,.theme-study-light .dashboard-insight {background:#fff;color:var(--text);border-color:var(--line)}
+.theme-study-light .nav-link[aria-current=page] .nav-icon {color:#354eaa;opacity:1}
+.theme-study-light .dashboard-item-type,.theme-study-light .dashboard-insight-preview {color:var(--muted)}
+.theme-study-light .alert.bad {background:#fff1f3;color:#8c1d34;border-color:#c48191}
+.theme-study-light .alert.warn {background:#fff5dc;color:#704900;border-color:#c69b44}

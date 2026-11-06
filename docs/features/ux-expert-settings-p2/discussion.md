@@ -49,3 +49,7 @@ Electron verification on 2026-11-06: development Electron 33.4.11 with isolated 
 ### Implementation · 2026-11-06
 
 MarkView browser keyboard check on disposable reference editor: starting at Patch 1 L, successive Tab presses focused Patch 1 a, Patch 1 b and Patch 2 L. This confirms the beginning of the declared traversal, not a complete keyboard or screen-reader audit.
+
+### Implementation · 2026-11-06
+
+Additional MarkView browser inspection of the light study preview found dark-on-dark first-screen panels. Updated the study-only colors for one-screen panels, sticky list toolbar and dashboard cards; screenshot review showed readable headings and text. Also checked the empty color-map and laser charts screens. This does not establish contrast across all screens, actual workshop conditions or tablet usability.
