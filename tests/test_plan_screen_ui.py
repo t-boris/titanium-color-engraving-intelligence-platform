@@ -95,7 +95,7 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
     assert "Прогнозный цвет—" in layer and layer.endswith("Областей1")                           # no prediction: said, not left out
     assert gray.startswith("Min 2.0 % – Max 29.0 % · 60.0 кГц · 150 мм/с · Q-Pulse 350 нс · шаг строк 0.0212 мм · 1 проход(а)")
     assert gray.endswith("Изображение (Image), режим «Grayscale»: картинка работы в областях зоны, вне зоны прозрачна; "
-                         "серые подобраны под цвета: ближайший цвет · контуры")                         # how its greys are chosen (0.23.0)
+                         "grays matched to colors: nearest color · contours")                         # how its greys are chosen (0.23.0)
     assert dots.startswith("точки 20.0 % · 60.0 кГц") and dots.endswith("режим «Jarvis»: картинка работы в областях зоны, вне зоны прозрачна")
     assert bad == "the width of the picture must be 1..1000 mm"
     assert out["chips"] == [["/api/vector/22/photo/1.png?v=k1", "vw-ed-zone-chip"], ["/api/vector/22/photo/2.png?v=k2", "vw-ed-zone-chip"]]

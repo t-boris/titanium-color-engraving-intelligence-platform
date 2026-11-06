@@ -1,10 +1,4 @@
-/* Фотозоны векторной работы (REQ-073, DEC-114): выделенные области гравируются фотогравировкой самой картинки работы — градациями серого
-   на измеренной шкале или видом точками (Джарвис и другие) — вместо плоских цветов титана, и картина выходит частью векторной, частью
-   фотогравировкой. Вкладка «Фото» редактора: каждая фотозона с видом гравировки (плитки зоны в каждом виде — щелчок выбирает), шкалой
-   серого (палитрой: у каждой измеренной шкалы полоса её цветов, щелчок выбирает), Min и Max или мощностью точек и «Цветами по картинке»;
-   цвет точек — со шкалы или с карты цветов («Цвет с карты», 0.27.0); «Открыть» показывает зону на своём экране, как работу фотогравировки
-   (vector-zone.js, 0.23.0), там же яркость, контраст и гамма картинки. Каждое изменение — одно действие
-   редактора: оно отменяется и повторяется, как любое другое. Картинку зоны на рисунке работы показывает редактор (vector-editor.js). */
+/* Vector photo zones use grayscale or dot engraving in selected regions. Each edit supports undo and redo (REQ-073, DEC-114). */
 'use strict';
 const VectorPhoto = (() => {
   const {h, fill, btn, get, go, num} = App;
@@ -12,28 +6,28 @@ const VectorPhoto = (() => {
   const SCALE_KEYS = ['speed', 'frequency', 'pulse_width', 'line_interval', 'passes'];
   const scalesCache = new Map();
   const kindsCache = new Map();
-  const value = (v, d = 1) => (v == null ? '—' : String(+(+v).toFixed(d)));                 // как числа редактора: точка, без лишних нулей
+  const value = (v, d = 1) => (v == null ? '—' : String(+(+v).toFixed(d)));                 // decimal point with no unnecessary trailing zeros
   const kindName = (key) => { const t = PhotoModes.label(key); return t.charAt(0).toUpperCase() + t.slice(1); };
   const dotted = (zone) => zone.kind !== GRAYSCALE;
   const sameScale = (mode, scale) => SCALE_KEYS.every((k) => String(mode[k] ?? '') === String(scale[k] ?? ''));
-  const settingsText = (m) => `${value(m.speed, 0)} мм/с · ${value(m.frequency, 0)} кГц · ${m.pulse_width == null ? 'импульс не указан' : value(m.pulse_width, 0) + ' нс'}`;
-  const stepText = (m) => `шаг ${value(m.line_interval, 4)} мм`;
-  const area = (mm2) => (mm2 == null ? '—' : mm2 >= 100 ? `${num(mm2 / 100, 2)} см²` : `${num(mm2, 1)} мм²`);
+  const settingsText = (m) => `${value(m.speed, 0)} mm/s · ${value(m.frequency, 0)} kHz · ${m.pulse_width == null ? 'pulse not specified' : value(m.pulse_width, 0) + ' ns'}`;
+  const stepText = (m) => `spacing ${value(m.line_interval, 4)} mm`;
+  const area = (mm2) => (mm2 == null ? '—' : mm2 >= 100 ? `${num(mm2 / 100, 2)} cm²` : `${num(mm2, 1)} mm²`);
   const layerOf = (zone) => (zone.index == null ? '' : `C${String(zone.index).padStart(2, '0')}`);
-  /** Что зона выжжет — коротко, для заголовка и строки слоя. */
+  /** Summarize the zone for its heading and layer row. */
   const zoneSummary = (zone) => [layerOf(zone), kindName(zone.kind),
     !dotted(zone) ? `${value(zone.min_power)}–${value(zone.max_power)} %`
-      : zone.dot_recipe ? `точки ${value(zone.dot_recipe.settings.power)} % ${recipeFrom(zone.dot_recipe)}` : `точки ${value(zone.dot_power)} %`,
-    zone.tone_used ? `яркость ${value(zone.tone.brightness, 0)} %, контраст ${value(zone.tone.contrast, 0)} %, гамма ${value(zone.tone.gamma, 2)}` : null]
+      : zone.dot_recipe ? `dots ${value(zone.dot_recipe.settings.power)} % ${recipeFrom(zone.dot_recipe)}` : `dots ${value(zone.dot_power)} %`,
+    zone.tone_used ? `brightness ${value(zone.tone.brightness, 0)} %, contrast ${value(zone.tone.contrast, 0)} %, gamma ${value(zone.tone.gamma, 2)}` : null]
     .filter(Boolean).join(' · ');
   const {recipeFrom} = PhotoQuality;                    // where the zone's dots come from: the colour map or a photograph (BUG-008)
-  const CHOICE = {drawing: 'рисунок сохранён', nearest: 'ближайший цвет', objects: 'раскраска по объектам'};
-  /** Как подобраны серые зоны (0.23.0) — коротко, как у работы фотогравировки; у вида точками — ничего: точка бьёт на одной мощности. */
-  const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'серые самой картинки'
-    : [`серые подобраны под цвета: ${CHOICE[zone.colour_choice] || CHOICE.drawing}`, zone.contours ? 'контуры' : null,
-      zone.rules && zone.rules.length ? `правил для частей: ${zone.rules.length}` : null].filter(Boolean).join(' · '));
+  const CHOICE = {drawing: 'drawing preserved', nearest: 'nearest color', objects: 'color by object'};
+  /** Summarize gray selection; dotted modes use one power. */
+  const greysText = (zone) => (dotted(zone) ? '' : !zone.by_colour ? 'image grayscale'
+    : [`grays matched to colors: ${CHOICE[zone.colour_choice] || CHOICE.drawing}`, zone.contours ? 'contours' : null,
+      zone.rules && zone.rules.length ? `part rules: ${zone.rules.length}` : null].filter(Boolean).join(' · '));
 
-  /** Измеренные шкалы серого лазера, линзы и титана работы, лучшие первыми: один запрос на работу (он долгий — грузится в фоне). */
+  /** Load measured scales for this laser, lens and stock in the background. */
   function scales(j, zone) {
     const query = new URLSearchParams({device_id: j.device_id ?? '', material_id: j.material_id ?? ''});
     if (j.lens_id != null) query.set('lens_id', String(j.lens_id));
@@ -43,32 +37,32 @@ const VectorPhoto = (() => {
     return scalesCache.get(key).catch((e) => { scalesCache.delete(key); throw e; });
   }
 
-  /** Плитки «Вида» зоны: зона в каждом виде гравировки, один запрос на её состояние (адрес её картинки меняется с каждым изменением). */
+  /** Load previews for each engraving kind for this zone state. */
   function kinds(j, zone) {
     const key = `${j.id}:${zone.number}:${zone.picture}`;
     if (!kindsCache.has(key)) kindsCache.set(key, get(`/vector/${j.id}/photo/${zone.number}/kinds`));
     return kindsCache.get(key).catch((e) => { kindsCache.delete(key); throw e; });
   }
 
-  /** Полоса цветов шкалы по измеренным мощностям; у шкалы зоны её мощности (Min..Max или мощность точек) — ярко, остальное приглушено. */
+  /** Show measured colors, highlighting the zone’s selected powers. */
   function bar(sc, zone) {
     const inside = (p) => (!zone ? true : dotted(zone) ? Math.abs(p - zone.dot_power) <= (sc.span[1] - sc.span[0]) / 40
       : p >= zone.min_power && p <= zone.max_power);
-    return h('div', {class: 'vp-bar', role: 'img', 'aria-label': `Цвета шкалы от ${value(sc.span[0])} до ${value(sc.span[1])} %`},
+    return h('div', {class: 'vp-bar', role: 'img', 'aria-label': `Scale colors from ${value(sc.span[0])} to ${value(sc.span[1])} %`},
       sc.bar.map((b) => h('span', {class: inside(b.power) ? '' : 'off', style: `background:${b.hex}`, title: `${value(b.power)} %`})));
   }
 
-  /** Шкала — кнопка: полоса её цветов и её настройки; у выбранной полоса показывает мощности зоны. */
+  /** Render a scale as a selectable button. */
   const scaleButton = (sc, zone, chosen, choose) => h('button', {type: 'button', class: 'vp-scale-pick' + (chosen ? ' picked' : ''),
     'aria-pressed': chosen ? 'true' : 'false', onClick: chosen ? null : choose},
   bar(sc, chosen ? zone : null), h('span', {class: 'small'}, settingsText(sc.mode)),
-  h('span', {class: 'small muted'}, `${stepText(sc.mode)} · ${value(sc.span[0])}–${value(sc.span[1])} %` + (sc.referenced ? '' : ' · без карты')));
+  h('span', {class: 'small muted'}, `${stepText(sc.mode)} · ${value(sc.span[0])}–${value(sc.span[1])} %` + (sc.referenced ? '' : ' · without chart')));
 
-  /** Вкладка «Фото». ctx: act(op) — одно действие редактора; select(ids) — выделить области; outline(ids) — обвести при наведении. */
+  /** Create the Photo tab; ctx supplies edit, selection and outline actions. */
   function create(j, ctx) {
     const list = h('div', {class: 'vp-zones'});
     const about = h('p', {class: 'small muted'});
-    const el = h('div', {class: 'vw-ed-pane vp-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Фотозоны'), about, list));
+    const el = h('div', {class: 'vw-ed-pane vp-pane'}, h('section', {class: 'vw-ed-section'}, h('h4', {}, 'Photo zones'), about, list));
     let known = null, scalesError = null, rendering = 0;
     const opened = new Set();                        // zones whose list of other scales is open: it stays open after a change
 
@@ -78,25 +72,25 @@ const VectorPhoto = (() => {
       const found = await Promise.all(zones.map((z) => (z.problem ? null : kinds(j, z).catch((e) => ({error: e.message})))));
       if (turn !== rendering) return;                                    // a newer state of the work came meanwhile
       fill(about, zones.length
-        ? 'Области зоны гравируются фотогравировкой картинки работы, а не цветами: в файле — отдельный слой изображения после слоёв цвета, '
-          + 'прозрачный вне зоны. Вид, шкала и мощности — у каждой зоны свои; всё отменяется (Ctrl+Z).'
+        ? 'Zone regions engrave the work image as a photograph rather than flat colors. The file has a separate image layer after the color layers, '
+          + 'transparent outside the zone. Each zone has its own kind, scale and powers; changes can be undone (Ctrl+Z).'
         : 'No photo zones yet. Select regions on the canvas with a click or lasso, then choose Create photo zone in the inspector. '
           + 'For example, engrave a face as a photo while the rest remains vector artwork.');
       fill(list, zones.map((zone, i) => card(zone, found[i])));
     }
 
     function card(zone, got) {
-      const tiles = h('div', {class: 'vp-kinds', role: 'group', 'aria-label': `Вид гравировки фотозоны ${zone.number}`});
+      const tiles = h('div', {class: 'vp-kinds', role: 'group', 'aria-label': `Engraving kind for photo zone ${zone.number}`});
       const scaleBox = h('div', {class: 'vp-scale'});
       const box = h('article', {class: 'vp-zone' + (zone.problem ? ' bad' : '')},
-        h('div', {class: 'row vp-head'}, h('strong', {}, `Фотозона ${zone.number}`), h('span', {class: 'spacer'}), open(zone),
-          btn('Выделить', () => ctx.select(zone.regions)), btn('Вернуть в цвета', () => ctx.act({op: 'photo_delete', zone: zone.number}))),
-        h('p', {class: 'small muted'}, `${zoneSummary(zone)} · ${value(zone.box.width)} × ${value(zone.box.height)} мм · ${area(zone.area_mm2)} · областей ${zone.regions.length}`),
+        h('div', {class: 'row vp-head'}, h('strong', {}, `Photo zone ${zone.number}`), h('span', {class: 'spacer'}), open(zone),
+          btn('Select', () => ctx.select(zone.regions)), btn('Return to colors', () => ctx.act({op: 'photo_delete', zone: zone.number}))),
+        h('p', {class: 'small muted'}, `${zoneSummary(zone)} · ${value(zone.box.width)} × ${value(zone.box.height)} mm · ${area(zone.area_mm2)} · regions ${zone.regions.length}`),
         zone.problem ? h('p', {class: 'alert bad small'}, I18N.tr(zone.problem)) : null,
-        h('h5', {}, 'Вид'), tiles,
-        h('h5', {}, 'Шкала серого'), scaleBox,
+        h('h5', {}, 'Kind'), tiles,
+        h('h5', {}, 'Gray scale'), scaleBox,
         powers(zone),
-        zone.estimate ? h('p', {class: 'small muted'}, 'Точки показаны оценкой по шкале: этот вид на этой мощности ещё не сфотографирован.') : null);
+        zone.estimate ? h('p', {class: 'small muted'}, 'Dots are estimated from the scale: this kind has not yet been photographed at this power.') : null);
       box.addEventListener('mouseenter', () => ctx.outline(zone.regions));
       box.addEventListener('mouseleave', () => ctx.outline(null));
       fillKinds(tiles, zone, got);
@@ -104,15 +98,15 @@ const VectorPhoto = (() => {
       return box;
     }
 
-    /** «Открыть»: зона на своём экране, как работа фотогравировки — подбор серых, контуры, шкала и прогноз рядом с картинкой. */
+    /** Open the zone’s detailed photo engraving screen. */
     function open(zone) {
-      const b = btn('Открыть', () => go(`/vector-zone?work=${j.id}&zone=${zone.number}`), 'primary');
-      b.setAttribute('title', 'Зона на своём экране, как фотогравировка: подбор серых, контуры, шкала, картинка рядом с прогнозом');
+      const b = btn('Open', () => go(`/vector-zone?work=${j.id}&zone=${zone.number}`), 'primary');
+      b.setAttribute('title', 'Open the zone’s detailed screen with gray matching, contours, scale, image and prediction');
       return b;
     }
 
     function fillKinds(tiles, zone, got) {
-      if (zone.problem) return fill(tiles, h('p', {class: 'small muted'}, 'Виды покажутся, когда шкала зоны будет измерена.'));
+      if (zone.problem) return fill(tiles, h('p', {class: 'small muted'}, 'Kinds appear once the zone’s scale is measured.'));
       if (got.error) return fill(tiles, h('p', {class: 'alert bad small'}, got.error));
       fill(tiles, got.kinds.map((k) => h('button', {type: 'button', class: 'vp-kind' + (k.key === zone.kind ? ' picked' : ''),
         'aria-pressed': k.key === zone.kind ? 'true' : 'false', title: PhotoModes.get(k.key) ? PhotoModes.get(k.key).controls : k.key,
@@ -120,10 +114,10 @@ const VectorPhoto = (() => {
       h('img', {src: k.picture, alt: '', loading: 'lazy'}), h('span', {}, kindName(k.key) + (k.estimate ? ' ≈' : '')))));
     }
 
-    /** Шкала зоны и все измеренные шкалы лазера, линзы и титана работы: у каждой полоса её цветов, щелчок делает её шкалой зоны. */
+    /** Show measured scales for this laser, lens and stock. */
     async function fillScale(scaleBox, zone) {
       const now = h('p', {class: 'small'}, `${settingsText(zone.scale)} · ${stepText(zone.scale)}`);
-      if (!known && !scalesError) fill(scaleBox, now, h('p', {class: 'small muted'}, 'Загружаем измеренные шкалы…'));
+      if (!known && !scalesError) fill(scaleBox, now, h('p', {class: 'small muted'}, 'Loading measured scales…'));
       if (!known && !scalesError) {
         try { known = await scales(j, zone); } catch (e) { scalesError = e.message; }
       }
@@ -133,44 +127,44 @@ const VectorPhoto = (() => {
         global_passes: sc.mode.global_passes, ...Object.fromEntries(SCALE_KEYS.map((k) => [k, sc.mode[k]]))}});
       const others = known.filter((sc) => sc !== chosen);
       const list = others.length ? h('details', {class: 'vp-scales', open: !chosen || opened.has(zone.number)},
-        h('summary', {class: 'small'}, `Другие шкалы этого лазера и титана: ${others.length}`),
-        h('div', {class: 'vp-scale-list', role: 'group', 'aria-label': `Шкала серого фотозоны ${zone.number}`}, others.map((sc) => scaleButton(sc, zone, false, choose(sc)))))
+        h('summary', {class: 'small'}, `Other scales for this laser and titanium: ${others.length}`),
+        h('div', {class: 'vp-scale-list', role: 'group', 'aria-label': `Gray scale for photo zone ${zone.number}`}, others.map((sc) => scaleButton(sc, zone, false, choose(sc)))))
         : null;
       if (list) list.addEventListener('toggle', () => (list.open ? opened.add(zone.number) : opened.delete(zone.number)));
       fill(scaleBox, chosen ? scaleButton(chosen, zone, true) : h('p', {class: 'alert warn small'}, `${settingsText(zone.scale)} · ${stepText(zone.scale)}: `
-        + 'эта шкала больше не измерена — выберите другую'),
-      zone.span ? h('p', {class: 'small muted'}, `Измерено при ширине зоны ${value(zone.width_mm)} мм: ${value(zone.span[0])}–${value(zone.span[1])} %.`) : null,
+        + 'this scale is no longer measured; choose another'),
+      zone.span ? h('p', {class: 'small muted'}, `Measured at zone width ${value(zone.width_mm)} mm: ${value(zone.span[0])}–${value(zone.span[1])} %.`) : null,
       list);
     }
 
     function powers(zone) {
       const number = (label, start, min, max) => h('input', {type: 'number', step: '0.1', min, max, value: start, 'aria-label': label});
       if (dotted(zone)) {
-        const swatches = zone.dots ? h('span', {class: 'small muted'}, h('span', {class: 'sw', style: `background:${zone.dots.hex}`}), ' точка на ',
-          h('span', {class: 'sw', style: `background:${zone.dots.clean_hex}`}), ' чистом титане') : null;
+        const swatches = zone.dots ? h('span', {class: 'small muted'}, h('span', {class: 'sw', style: `background:${zone.dots.hex}`}), ' dot on ',
+          h('span', {class: 'sw', style: `background:${zone.dots.clean_hex}`}), ' clean titanium') : null;
         const recipe = zone.dot_recipe;
-        const toMap = btn(recipe ? 'Другой цвет' : 'Цвет с карты', () => go(DotPick.zoneAddress(j, zone.number, 'editor')), 'btn-small');
-        toMap.setAttribute('title', `Открыть карту цветов и выбрать там любой измеренный цвет для точек фотозоны ${zone.number}: точки будут бить на настройках этого цвета`);
+        const toMap = btn(recipe ? 'Another color' : 'Color from map', () => go(DotPick.zoneAddress(j, zone.number, 'editor')), 'btn-small');
+        toMap.setAttribute('title', `Open the color map and choose a measured color for photo zone ${zone.number}; dots use that color’s settings`);
         if (recipe) {
-          const back = btn('На шкалу', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: zone.dot_power}), 'btn-small');
-          back.setAttribute('title', `Вернуть точки на шкалу зоны при ${value(zone.dot_power)} %`);
+          const back = btn('Use scale', () => ctx.act({op: 'photo_set', zone: zone.number, dot_power: zone.dot_power}), 'btn-small');
+          back.setAttribute('title', `Return dots to the zone scale at ${value(zone.dot_power)} %`);
           return h('div', {class: 'vp-powers'},
-            h('p', {class: 'small'}, `Точки ${recipeFrom(recipe)}: ${value(recipe.settings.power)} % · ${settingsText(recipe.settings)} · ${stepText(recipe.settings)}`),
+            h('p', {class: 'small'}, `Dots ${recipeFrom(recipe)}: ${value(recipe.settings.power)} % · ${settingsText(recipe.settings)} · ${stepText(recipe.settings)}`),
             h('div', {class: 'row small'}, swatches, toMap, back),
-            recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: выберите другой или верните точки на шкалу.') : null,
-            h('p', {class: 'small muted'}, 'Каждая точка бьёт на настройках этого цвета; тон — сколько точек. В файле Min = Max.'));
+            recipe.missing ? h('p', {class: 'alert warn small'}, 'This color is no longer in the color map measurements. Choose another or return dots to the scale.') : null,
+            h('p', {class: 'small muted'}, 'Each dot uses this color’s settings; tone is controlled by the number of dots. In the file Min = Max.'));
         }
         // the dots' power must lie inside the powers the scale was measured at, at this width (photo_zones.change): the work says them (``zone.span``);
         // a power outside is refused beside the box and stays in it; nothing is sent
-        const rule = zone.span ? {...Forms.QUANTITIES.photoPower, label: 'Мощность точек', min: zone.span[0], max: zone.span[1], source: 'photo_zones.change (the measured span)'} : Forms.QUANTITIES.photoPower;
-        const power = number(`Мощность точек фотозоны ${zone.number}, %`, zone.dot_power, rule.min, rule.max);
+        const rule = zone.span ? {...Forms.QUANTITIES.photoPower, label: 'Dot power', min: zone.span[0], max: zone.span[1], source: 'photo_zones.change (the measured span)'} : Forms.QUANTITIES.photoPower;
+        const power = number(`Dot power for photo zone ${zone.number}, %`, zone.dot_power, rule.min, rule.max);
         const powerNote = Forms.watch(power, rule, (v) => ctx.act({op: 'photo_set', zone: zone.number, dot_power: v}));
-        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power, Forms.describe(power, rule)), powerNote, swatches,
-          h('div', {class: 'row small'}, toMap, h('span', {class: 'muted'}, 'любой измеренный цвет этого лазера и титана')),
-          h('p', {class: 'small muted'}, 'Каждая точка бьёт на этой мощности; тон — сколько точек. В файле Min = Max.'));
+        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Dot power, %'), power, Forms.describe(power, rule)), powerNote, swatches,
+          h('div', {class: 'row small'}, toMap, h('span', {class: 'muted'}, 'any measured color for this laser and titanium')),
+          h('p', {class: 'small muted'}, 'Each dot fires at this power; tone is controlled by the number of dots. In the file Min = Max.'));
       }
-      const low = number(`Min мощность фотозоны ${zone.number}, %`, zone.min_power, 0, 100);
-      const high = number(`Max мощность фотозоны ${zone.number}, %`, zone.max_power, 0, 100);
+      const low = number(`Min power for photo zone ${zone.number}, %`, zone.min_power, 0, 100);
+      const high = number(`Max power for photo zone ${zone.number}, %`, zone.max_power, 0, 100);
       // each end is read as the rule states (0..100 %); a wrong one is said beside its own box and nothing is sent until both are right
       let conflict = false;                                               // Min above Max is said under Max until either is changed
       const send = () => {
@@ -179,20 +173,20 @@ const VectorPhoto = (() => {
         if (Number(low.value) > Number(high.value)) {                      // prediction_store.check_power_range: Min is not above Max
           conflict = true;
           high.setAttribute('aria-invalid', 'true');
-          highNote.textContent = `Min ${low.value} % не может быть больше Max ${high.value} %. Введено: ${high.value}`;
+          highNote.textContent = `Min ${low.value} % cannot exceed Max ${high.value} %. Entered: ${high.value}`;
           return;
         }
         ctx.act({op: 'photo_set', zone: zone.number, min_power: Number(low.value), max_power: Number(high.value)});
       };
       const lowNote = Forms.watch(low, 'photoPower', send), highNote = Forms.watch(high, 'photoPower', send);
-      const tone = h('input', {type: 'checkbox', checked: !!zone.by_colour, 'aria-label': `Цвета по картинке, фотозона ${zone.number}`});
+      const tone = h('input', {type: 'checkbox', checked: !!zone.by_colour, 'aria-label': `Match image colors, photo zone ${zone.number}`});
       tone.addEventListener('change', () => ctx.act({op: 'photo_set', zone: zone.number, by_colour: tone.checked}));
       return h('div', {class: 'vp-powers'},
         h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low, Forms.describe(low, 'photoPower')), lowNote,
           h('label', {class: 'row'}, h('span', {}, 'Max, %'), high, Forms.describe(high, 'photoPower')), highNote),
-        h('label', {class: 'row small'}, tone, h('span', {}, 'Цвета по картинке: серые подобраны так, чтобы цвета титана шли за цветами картинки, '
-          + 'как у векторных областей вокруг. Выключено — гравируются серые самой картинки.')),
-        zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Как подбирать серые и контуры — в «Открыть».`) : null);
+        h('label', {class: 'row small'}, tone, h('span', {}, 'Match image colors: grays are selected so titanium colors follow the image colors, '
+          + 'as in surrounding vector regions. When off, the image’s own grays are engraved.')),
+        zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Adjust grays and contours under “Open”.`) : null);
     }
 
     /** Basic settings for a selected zone; detailed editing remains on the dedicated screen. */

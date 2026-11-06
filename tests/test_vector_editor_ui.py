@@ -755,8 +755,8 @@ def test_a_min_power_above_the_max_is_said_under_the_max_and_sent_only_once_eith
     out = run_editor(tmp_path, zone_routes(), """
   await byText(tree, 'button', 'Фото').dispatch('click');
   await wait(5);
-  const zone = section('Фотозоны');
-  const lowBox = () => byLabel(zone, 'input', 'Min мощность фотозоны 1, %'), highBox = () => byLabel(zone, 'input', 'Max мощность фотозоны 1, %');   // drawn again after a save
+  const zone = section('Photo zones');
+  const lowBox = () => byLabel(zone, 'input', 'Min power for photo zone 1, %'), highBox = () => byLabel(zone, 'input', 'Max power for photo zone 1, %');   // drawn again after a save
   const sent = () => ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body)).filter((b) => b.op === 'photo_set');
   const said = () => zone.querySelectorAll('span').filter((x) => x.classList.contains('f-error') && x.textContent).map((x) => x.textContent);
   highBox().value = '20'; await highBox().dispatch('change'); await tick();
@@ -786,7 +786,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   await byText(tree, 'button', 'Фото').dispatch('click');
   await wait(5);
   out.zonesShown = svg().getAttribute('class').includes('show-zones');
-  const zone = section('Фотозоны');
+  const zone = section('Photo zones');
   out.card = zone.textContent;
   await zone.querySelector('article').dispatch('mouseenter');
   out.hot = [classed('vw-hot'), drawn('vw-hot')];
@@ -796,26 +796,26 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   const picked = zone.querySelectorAll('button').find((b) => b.className === 'vp-scale-pick picked');
   out.picked = [picked.textContent, picked.getAttribute('aria-pressed')];
   out.bar = picked.querySelector('div').childNodes.map((x) => x.className);
-  const others = byLabel(zone, 'div', 'Шкала серого фотозоны 1').querySelectorAll('button');
+  const others = byLabel(zone, 'div', 'Gray scale for photo zone 1').querySelectorAll('button');
   out.others = others.map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.querySelector('div').childNodes.map((x) => x.className)]);
   out.othersOpen = zone.querySelector('details').hasAttribute('open');
   await zone.querySelectorAll('button').find((b) => b.textContent.startsWith('Jarvis')).dispatch('click'); await tick();
   await others[0].dispatch('click'); await tick();
-  const low = byLabel(zone, 'input', 'Min мощность фотозоны 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
+  const low = byLabel(zone, 'input', 'Min power for photo zone 1, %'); low.value = '5'; await low.dispatch('change'); await tick();
   // ux-save-feedback-p0, REQ-003: a power outside 0..100 % is said beside its box, kept in it, and nothing is saved
-  const high = byLabel(zone, 'input', 'Max мощность фотозоны 1, %'), saved = ctx.requests.length;
+  const high = byLabel(zone, 'input', 'Max power for photo zone 1, %'), saved = ctx.requests.length;
   high.value = '150'; await high.dispatch('change'); await tick();
   out.powerWrong = [ctx.requests.length - saved, high.getAttribute('aria-invalid'), high.value, zone.querySelectorAll('span').filter((x) => x.classList.contains('f-error') && x.textContent).map((x) => x.textContent)];
-  const tone = byLabel(zone, 'input', 'Цвета по картинке, фотозона 1'); tone.checked = false; await tone.dispatch('change'); await tick();
-  await byText(zone, 'button', 'Открыть').dispatch('click');
+  const tone = byLabel(zone, 'input', 'Match image colors, photo zone 1'); tone.checked = false; await tone.dispatch('change'); await tick();
+  await byText(zone, 'button', 'Open').dispatch('click');
   out.opened = ctx.__went;
-  await byText(zone, 'button', 'Выделить').dispatch('click');
+  await byText(zone, 'button', 'Select').dispatch('click');
   out.selectedZone = classed('vw-sel');
   out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
   out.selection = section('Selection').textContent;
   await byText(section('Selection'), 'button', 'Return to colors').dispatch('click'); await tick();
   await byText(tree, 'button', 'Фото').dispatch('click');
-  await byText(section('Фотозоны'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
+  await byText(section('Photo zones'), 'button', 'Return to colors').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
   out.scalesFetched = ctx.requests.filter((r) => r.path === '/api/grey-scales').map((r) => r.url);
 """)
@@ -826,12 +826,12 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
                            "C01 C01 P10-F30-V500-I0.02областей 2 · 2.00 см² · 1 мин 40 с", "C02 Фотозона 1: Grayscaleобластей 2 · 2.00 см² · 1 мин 40 с"]
     assert "Слоёв цвета: 1, фотозон: 1 из 29" in out["text"] and "1 и фотозон 1 из 29 доступных" in out["text"]
     assert out["tip"].startswith("Область r3 · исходный цвет № 2 · фотозона 1: C02 · Grayscale · 2–29 %")
-    assert "20 × 10 мм · 2.00 см² · областей 2" in out["card"] and "Измерено при ширине зоны 20 мм: 1.9–29.1 %." in out["card"]
-    assert "серые подобраны под цвета: рисунок сохранён. Как подбирать серые и контуры — в «Открыть»." in out["card"]   # a zone made before 0.23
+    assert "20 × 10 mm · 2.00 cm² · regions 2" in out["card"] and "Measured at zone width 20 mm: 1.9–29.1 %." in out["card"]
+    assert "grays matched to colors: drawing preserved. Adjust grays and contours under “Open”." in out["card"]   # a zone made before 0.23
     assert out["tiles"] == [["Grayscale", "true"], ["Jarvis ≈", "false"]]
-    assert out["picked"] == ["1000 мм/с · 60 кГц · 350 нсшаг 0.0212 мм · 1.9–29.1 %", "true"]
-    assert out["others"] == [["500 мм/с · 60 кГц · 200 нсшаг 0.0212 мм · 3–40 % · без карты", "false", ["", ""]]] and not out["othersOpen"]
-    assert "Другие шкалы этого лазера и титана: 1" in out["card"]
+    assert out["picked"] == ["1000 mm/s · 60 kHz · 350 nsspacing 0.0212 mm · 1.9–29.1 %", "true"]
+    assert out["others"] == [["500 mm/s · 60 kHz · 200 nsspacing 0.0212 mm · 3–40 % · without chart", "false", ["", ""]]] and not out["othersOpen"]
+    assert "Other scales for this laser and titanium: 1" in out["card"]
     assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
     assert out["selectedZone"] == ["r3", "r4"] and "in photo zones: 2" in out["selection"] and "Add to photo zone 1" in out["selection"]
     assert out["stayed"] == "true"                                                   # «Выделить» keeps «Фото»: the selection is shown there
@@ -860,7 +860,7 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
   out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
   out.status = tree.querySelector('.vw-ed-tool-status').textContent;
   out.stage = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-ed-stage')).className;
-  out.empty = section('Фотозоны').textContent;
+  out.empty = section('Photo zones').textContent;
   await path('r1').dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true});
   out.selected = classed('vw-sel');
@@ -935,9 +935,9 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
     plain["/api/vector/7"]["json"].update(zones=[dotted], device_id=1, lens_id=2)                       # the work's laser and lens, as the job has them
     out = run_editor(tmp_path, plain, """
   await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
-  const zone = section('Фотозоны');
-  out.plain = [!!byText(zone, 'button', 'Цвет с карты'), !byText(zone, 'button', 'На шкалу'), !!byLabel(zone, 'input', 'Мощность точек фотозоны 1, %')];
-  await byText(zone, 'button', 'Цвет с карты').dispatch('click');
+  const zone = section('Photo zones');
+  out.plain = [!!byText(zone, 'button', 'Color from map'), !byText(zone, 'button', 'Use scale'), !!byLabel(zone, 'input', 'Dot power for photo zone 1, %')];
+  await byText(zone, 'button', 'Color from map').dispatch('click');
   out.went = [...ctx.__went];
 """)
     assert out["plain"] == [True, True, True] and out["went"] == ["/colors?dots=7&zone=1&setup=laser%3A1%2Flens%3A2&from=editor"]
@@ -947,15 +947,15 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
     mapped["/api/vector/7"]["json"]["zones"] = [{**dotted, "dot_recipe": recipe, "tone": {"brightness": 20, "contrast": 0, "gamma": 1}, "tone_used": True}]
     out = run_editor(tmp_path, mapped, """
   await byText(tree, 'button', 'Фото').dispatch('click'); await wait(5);
-  const zone = section('Фотозоны');
+  const zone = section('Photo zones');
   out.card = zone.textContent;
-  out.buttons = [!!byText(zone, 'button', 'Другой цвет'), !byLabel(zone, 'input', 'Мощность точек фотозоны 1, %')];
-  await byText(zone, 'button', 'На шкалу').dispatch('click'); await tick();
+  out.buttons = [!!byText(zone, 'button', 'Another color'), !byLabel(zone, 'input', 'Dot power for photo zone 1, %')];
+  await byText(zone, 'button', 'Use scale').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
 """)
-    assert "Точки с карты цветов: 30 % · 500 мм/с · 60 кГц · 300 нс · шаг 0.02 мм" in out["card"] and out["buttons"] == [True, True]
-    assert "Jarvis · точки 30 % с карты цветов · яркость 20 %, контраст 0 %, гамма 1" in out["card"]
-    assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «На шкалу»: the scale's power puts it back
+    assert "Dots с карты цветов: 30 % · 500 mm/s · 60 kHz · 300 ns · spacing 0.02 mm" in out["card"] and out["buttons"] == [True, True]
+    assert "Jarvis · dots 30 % с карты цветов · brightness 20 %, contrast 0 %, gamma 1" in out["card"]
+    assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «Use scale»: the scale's power puts it back
 
 
 def many_colours(n):
