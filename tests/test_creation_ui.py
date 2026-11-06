@@ -527,7 +527,7 @@ def test_without_measurements_the_screen_names_a_concrete_starter_test_and_the_r
     assert ["Добавить установку съёмки", "#/setup?tab=rigs"] in out["links"]                  # a photography setup is missing: the way to add it
     assert "Введённое сохранено в задаче" in out["gate"]
     assert out["create"] is True and out["works"] == [0, 0, 0]                              # nothing is created while the gate is closed
-    assert out["dialog"] == "Создать экспериментальную плату"
+    assert out["dialog"] == "Create experiment plate"
     assert out["waiting"] == {"for": "starter_test", "result": "photo"}                     # the task remembers what the person went to do
 
 
@@ -851,7 +851,7 @@ def test_a_photograph_asks_which_kind_of_engraving_before_it_is_kept_with_the_pe
     assert out["label"] == "Дальше: какая гравировка →" and out["line"] is True                       # the button says what comes next; the kind is told on the step
     assert out["title"] == "Новая работа · какая гравировка?" and len(out["names"]) == 4
     assert out["pictures"] == [f"/api/photo-works/77/kinds/{k}.png" for k in ("grayscale", "threshold", "dither", "sketch")]
-    assert all(alt.startswith("Картинка в виде «") for alt in out["alts"])
+    assert all(alt.startswith("Image in ") for alt in out["alts"])
     assert out["marked"] == ["true", "false", "false", "false"] and out["keepLabel"] == f"Create in “{out['names'][0]}”"       # grayscale is the start
     assert out["before"] == [1, 1, 0, []]                       # the work exists to show the kinds, but is not kept: no task closed, no screen left
     assert out["after"] == [["false", "false", "true", "false"], f"Create in “{out['names'][2]}”"]
@@ -1175,11 +1175,11 @@ def test_a_new_test_plate_starts_on_the_shared_laser_and_titanium_unless_the_cal
   const materials = [{id: 3, family: 'Titanium', name: 'Plate', grade: 'Grade 5'}, {id: 4, family: 'Titanium', name: 'Sheet', grade: 'Grade 2'}];
   S.context = {...S.context, device_id: 2, material_id: 4};
   let box = await ctx.PlateDialog.open(devices, materials, null, {type: 'grey_scales'}); await settle();
-  out.shared = [labelled(box.el, 'Лазер').value, labelled(box.el, 'Заготовка').value];
+  out.shared = [labelled(box.el, 'Laser').value, labelled(box.el, 'Blank').value];
   box.close();
   box = await ctx.PlateDialog.open(devices, materials, null, {type: 'grey_scales', device: 1, material: 3}); await settle();
-  out.named = [labelled(box.el, 'Лазер').value, labelled(box.el, 'Заготовка').value];
-  await button(box.el, 'Создать плату').dispatch('click'); await settle();
+  out.named = [labelled(box.el, 'Laser').value, labelled(box.el, 'Blank').value];
+  await button(box.el, 'Create plate').dispatch('click'); await settle();
   out.put = sent('PUT', '/api/creation/context').map((r) => r.json);
 """)
     assert out["shared"] == ["2", "4"] and out["named"] == ["1", "3"]

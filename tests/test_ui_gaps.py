@@ -66,9 +66,9 @@ def test_the_lens_tab_saves_the_measured_spot_on_the_lens_and_m2_on_the_laser():
 
 
 def test_a_plate_against_an_unknown_work_field_is_labelled_not_checked_in_the_dialog_and_on_the_plan():
-    label = "поле линзы неизвестно — размещение не проверено"
+    label = "lens field unknown — placement not checked"
     assert label in source("screens/plate-dialog.js") and "summary.work_field" in source("screens/plate-dialog.js")
-    assert label in source("screens/plan.js") and "p.work_field" in source("screens/plan.js")
+    assert "lens field is unknown; placement was not checked" in source("screens/plan.js") and "p.work_field" in source("screens/plan.js")
 
 
 def test_the_laser_card_shows_unresolved_controller_values_together():
@@ -128,7 +128,7 @@ def test_the_review_screen_prints_every_note_of_a_layer_whether_it_was_measured_
     # skipped layer: its notes beside the status; measured layer: its notes under the colour
     assert "pill(l.readable ? 'skipped' : 'unreadable', 'warn'), ' ', l.notes.map((n) => I18N.tr(n)).join('; ')" in dialogs
     assert "if (l.notes?.length) details.push(h('div', {class: 'muted small'}, l.notes.map((n) => I18N.tr(n)).join('; ')));" in dialogs
-    assert "IngestDialogs.layersTable(check.layers)" in review and "h('h3', {}, 'Слои файла')" in review
+    assert "IngestDialogs.layersTable(check.layers)" in review and "h('h3', {}, 'File layers')" in review
 
 
 def test_the_matrix_review_shows_the_recognised_labels_the_uncertain_values_and_whose_reconstruction_the_settings_are():
@@ -216,7 +216,7 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     script = tmp_path / "review.js"
     script.write_text(REVIEW % {"dom": json.dumps(str(UI_DIR.parents[2] / "tests" / "ui_dom.js")), "data": json.dumps(str(tmp_path / "data.json")),
                                 "ui": json.dumps(str(UI_DIR) + "/"), "tables": json.dumps(TABLES), "glue": json.dumps(REVIEW_GLUE), "body": """
-  const files = listOf(tree, 'Слои файла');
+  const files = listOf(tree, 'File layers');
   out.files = {keys: keys(files), count: files.querySelector('.lst-count').textContent, lines: lines(files).slice(0, 3).map((m) => m.textContent),
     chips: files.querySelectorAll('.lst-chip').map((c) => c.textContent)};
   await lines(files)[0].dispatch('click'); await tick();

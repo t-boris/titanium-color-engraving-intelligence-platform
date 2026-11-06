@@ -186,15 +186,15 @@ def test_the_plate_dialog_selects_the_preset_record_adds_a_new_one_and_sends_the
       stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Плата · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
       const list = await App.get('/devices');
       const dialog = await ctx.PlateDialog.open(list, null, null, {type: 'fill_sizes', material: 137});
-      const stock = picker(dialog.el, 'Заготовка');
+      const stock = picker(dialog.el, 'Blank');
       await until(() => stock.record !== null);
       out.preset = {pickers: qa(dialog.el, '.matpick').length, records: records(dialog.el), value: stock.value, label: labelOf(stock), urls: stockUrls()};
       // a record added in the dialog's own form is the one chosen
-      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'Например: лист Grade 2').value = 'Новый лист';
-      await button(dialog.el, 'Сохранить заготовку').dispatch('click');
+      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'Новый лист';
+      await button(dialog.el, 'Save blank').dispatch('click');
       await until(() => stock.record !== null && stock.record.name === 'Новый лист');
       out.added = {value: stock.value, label: labelOf(stock), created: sent('/api/materials').length, records: records(dialog.el)};
-      await button(dialog.el, 'Создать плату').dispatch('click');
+      await button(dialog.el, 'Create plate').dispatch('click');
       await until(() => sent('/api/capability-plates').length === 1);
       out.plate = JSON.parse(sent('/api/capability-plates')[0].body).material_id;
       out.urls = stockUrls().filter((u) => u !== '/api/materials');
@@ -211,18 +211,18 @@ def test_the_plate_dialog_starts_with_the_workshops_record_and_refuses_a_plate_w
     out = run_node(tmp_path, port, PLATE, HELPERS + r"""
       const list = await App.get('/devices');
       const dialog = await ctx.PlateDialog.open(list, [], null, {type: 'fill_sizes'});        // an array from an old caller is not read
-      const stock = picker(dialog.el, 'Заготовка');
+      const stock = picker(dialog.el, 'Blank');
       await until(() => stock.record !== null);
       out.start = {value: stock.value, label: labelOf(stock), records: records(dialog.el)};
-      await button(stock, 'Снять выбор').dispatch('click');
+      await button(stock, 'Clear selection').dispatch('click');
       out.cleared = {value: stock.value, label: labelOf(stock)};
-      await button(dialog.el, 'Создать плату').dispatch('click');
+      await button(dialog.el, 'Create plate').dispatch('click');
       out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};      // said in the dialog, beside the field
       out.urls = stockUrls();
     """, ("PlateDialog", "MaterialPicker"))
     assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ") and out["start"]["records"] == 0
-    assert out["cleared"] == {"value": "", "label": "выберите конкретную заготовку"}
-    assert out["refused"]["posted"] == 0 and any("конкретную заготовку" in t for t in out["refused"]["toast"])
+    assert out["cleared"] == {"value": "", "label": "select a specific blank"}
+    assert out["refused"]["posted"] == 0 and any("specific blank" in t for t in out["refused"]["toast"])
     bounded(out["urls"])
 
 
@@ -231,21 +231,21 @@ def test_the_plate_dialog_with_no_stock_record_asks_for_one_and_chooses_the_reco
     out = run_node(tmp_path, port, PLATE, HELPERS + r"""
       stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Плата · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
       const dialog = await ctx.PlateDialog.open(await App.get('/devices'), null, null, {type: 'fill_sizes'});
-      const stock = picker(dialog.el, 'Заготовка');
+      const stock = picker(dialog.el, 'Blank');
       await stock.ready;
       out.none = {value: stock.value, label: labelOf(stock), cleared: q(stock, '.matpick-clear').hidden};
-      await button(dialog.el, 'Создать плату').dispatch('click');
+      await button(dialog.el, 'Create plate').dispatch('click');
       out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};
-      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'Например: лист Grade 2').value = 'Первый лист';
-      await button(dialog.el, 'Сохранить заготовку').dispatch('click');
+      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'Первый лист';
+      await button(dialog.el, 'Save blank').dispatch('click');
       await until(() => stock.record !== null && stock.record.name === 'Первый лист');
-      await button(dialog.el, 'Создать плату').dispatch('click');
+      await button(dialog.el, 'Create plate').dispatch('click');
       await until(() => sent('/api/capability-plates').length === 1);
       out.plate = JSON.parse(sent('/api/capability-plates')[0].body).material_id;
       out.urls = stockUrls().filter((u) => u !== '/api/materials');
     """, ("PlateDialog", "MaterialPicker"))
-    assert out["none"] == {"value": "", "label": "выберите конкретную заготовку", "cleared": True}
-    assert out["refused"]["posted"] == 0 and any("конкретную заготовку" in t for t in out["refused"]["toast"])
+    assert out["none"] == {"value": "", "label": "select a specific blank", "cleared": True}
+    assert out["refused"]["posted"] == 0 and any("specific blank" in t for t in out["refused"]["toast"])
     assert out["plate"] == 1                                                                              # the record added in the form is the one the plate is made on
     bounded(out["urls"])
 

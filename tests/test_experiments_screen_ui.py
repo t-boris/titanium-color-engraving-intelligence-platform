@@ -459,14 +459,14 @@ const card = (input) => {                                                   // w
   while (!(el.className || '').split(' ').includes('card')) el = el.parentNode;
   return el.style.display;
 };
-/** Open the dialog for a plate type, choose the stock, let ``fill`` set the card, press «Создать плату»: the body it sends. */
+/** Open the dialog for a plate type, choose the stock, let ``fill`` set the card, press «Create plate»: the body it sends. */
 async function made(preset, fill) {
   const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, preset);
   await tick();
-  labelled(dialog.el, 'Заготовка').value = '1';
+  labelled(dialog.el, 'Blank').value = '1';
   fill(dialog.el);
   const before = ctx.requests.length;
-  await dialog.el.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  await dialog.el.querySelectorAll('button').find((b) => b.textContent === 'Create plate').dispatch('click');
   for (let i = 0; i < 5; i += 1) await tick();
   const sent = ctx.requests.slice(before).find((r) => r.path === '/api/capability-plates' && r.method === 'POST');
   return sent ? JSON.parse(sent.body) : null;
@@ -502,14 +502,14 @@ def run_dialog(tmp_path, body) -> dict:
 def test_the_plate_dialog_sends_the_recipes_and_widths_of_a_fill_size_plate_and_a_grey_ramp_width_axis(tmp_path):
     out = run_dialog(tmp_path, """
   out.fill = await made({type: 'fill_sizes'}, (box) => {
-    out.fillCard = card(labelled(box, 'Ширины полосок заливки')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
-    labelled(box, 'Ширины полосок заливки').value = '5, 40, 120';
-    labelled(box, 'Параметр рецептов заливки').value = 'speed';
-    labelled(box, 'Значения рецептов заливки').value = '150, 300';
+    out.fillCard = card(labelled(box, 'Fill strip widths')); out.greyCard = card(labelled(box, 'Grayscale scale rows'));
+    labelled(box, 'Fill strip widths').value = '5, 40, 120';
+    labelled(box, 'Fill recipe parameter').value = 'speed';
+    labelled(box, 'Fill recipe values').value = '150, 300';
   });
   out.oneRecipe = await made({type: 'fill_sizes'}, () => {});
   out.grey = await made({type: 'grey_scales'}, (box) => {
-    const rows = labelled(box, 'Строки шкал серого');
+    const rows = labelled(box, 'Grayscale scale rows');
     out.greyAxes = rows.options.map((o) => [o.value, o.textContent]);
     rows.value = 'width';
     box.querySelectorAll('input').find((i) => i.value === '0.0127, 0.0169, 0.0212, 0.0254').value = '20, 40, 70';
@@ -520,7 +520,7 @@ def test_the_plate_dialog_sends_the_recipes_and_widths_of_a_fill_size_plate_and_
     assert fill["test_type"] == "fill_sizes" and fill["widths_mm"] == [5, 40, 120] and fill["recipes"] == [{"speed": 150}, {"speed": 300}]
     assert (fill["max_width_mm"], fill["max_height_mm"], fill["pulse_width"]) == (150, 150, 200)     # strips up to 100 mm do not fit 100 mm
     assert out["oneRecipe"]["recipes"] == [{}] and out["oneRecipe"]["widths_mm"] == [5, 20, 50, 100]   # the plate's own settings, the default widths
-    assert ["width", "Ширина полоски, мм"] in out["greyAxes"]
+    assert ["width", "Strip width, mm"] in out["greyAxes"]
     assert out["grey"]["scales"]["rows"] == {"axis": "width", "values": [20, 40, 70]} and out["grey"]["max_width_mm"] == 100
 
 
@@ -530,11 +530,11 @@ def test_the_plate_dialog_sends_the_picture_of_a_photo_variations_plate_its_kind
   ctx.btoa = (text) => Buffer.from(text, 'binary').toString('base64');
   out.none = await made({type: 'photo_variations'}, () => {});
   out.photo = await made({type: 'photo_variations'}, (box) => {
-    out.photoCard = card(labelled(box, 'Картинка копий (PNG или JPEG)')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
-    labelled(box, 'Картинка копий (PNG или JPEG)').files = [{name: 'yana.png', arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer}];
-    labelled(box, 'Вид копий').value = 'grayscale';
-    labelled(box, 'Размер копии (длинная сторона)').value = '24';
-    labelled(box, 'Min мощность копий (градации серого)').value = '2';
+    out.photoCard = card(labelled(box, 'Copy image (PNG or JPEG)')); out.greyCard = card(labelled(box, 'Grayscale scale rows'));
+    labelled(box, 'Copy image (PNG or JPEG)').files = [{name: 'yana.png', arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer}];
+    labelled(box, 'Copy mode').value = 'grayscale';
+    labelled(box, 'Copy size (long side)').value = '24';
+    labelled(box, 'Copy Min power (grayscale)').value = '2';
   });
 """)
     assert out["none"] is None                                                       # nothing is sent without a picture
@@ -550,33 +550,33 @@ def test_the_plate_dialog_says_the_unit_and_the_permitted_values_of_every_number
   const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, {type: 'fill_sizes'});
   await tick();
   const box = dialog.el;
-  labelled(box, 'Заготовка').value = '1';
-  out.words = {width: words(labelled(box, 'Ширины полосок заливки')), power: words(labelled(box, 'Базовая мощность')), speed: words(labelled(box, 'Базовая скорость')),
-    frequency: words(labelled(box, 'Базовая частота')), size: words(labelled(box, 'Максимальная ширина платы')), passes: words(labelled(box, 'Глобальные проходы'))};
+  labelled(box, 'Blank').value = '1';
+  out.words = {width: words(labelled(box, 'Fill strip widths')), power: words(labelled(box, 'Base power')), speed: words(labelled(box, 'Base speed')),
+    frequency: words(labelled(box, 'Base frequency')), size: words(labelled(box, 'Maximum plate width')), passes: words(labelled(box, 'Global passes'))};
   // a width below the least the server takes: nothing is sent, the reason stands beside the box and the typed text stays
-  labelled(box, 'Ширины полосок заливки').value = '5, 2, 40';
+  labelled(box, 'Fill strip widths').value = '5, 2, 40';
   const before = ctx.requests.length;
-  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Create plate').dispatch('click');
   for (let i = 0; i < 5; i += 1) await tick();
-  out.wrong = {posted: ctx.requests.slice(before).filter((r) => r.method === 'POST').length, kept: labelled(box, 'Ширины полосок заливки').value,
-    invalid: labelled(box, 'Ширины полосок заливки').getAttribute('aria-invalid'), beside: box.querySelectorAll('.f-error').map((n) => n.textContent),
+  out.wrong = {posted: ctx.requests.slice(before).filter((r) => r.method === 'POST').length, kept: labelled(box, 'Fill strip widths').value,
+    invalid: labelled(box, 'Fill strip widths').getAttribute('aria-invalid'), beside: box.querySelectorAll('.f-error').map((n) => n.textContent),
     summary: box.querySelectorAll('.f-form-error').map((n) => n.textContent), toasts: ctx.document.body.querySelectorAll('.toast').length};
   // the laser's own range: 5000 kHz is above what this laser takes
-  labelled(box, 'Ширины полосок заливки').value = '5, 20';
-  labelled(box, 'Базовая частота').value = '5000';
-  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  labelled(box, 'Fill strip widths').value = '5, 20';
+  labelled(box, 'Base frequency').value = '5000';
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Create plate').dispatch('click');
   for (let i = 0; i < 5; i += 1) await tick();
   out.laser = box.querySelectorAll('.f-error').map((n) => n.textContent);
 """)
-    assert "from 3 to 300" in out["words"]["width"] and "unit: mm" in out["words"]["width"] and "не больше 5" in out["words"]["width"]
+    assert "from 3 to 300" in out["words"]["width"] and "unit: mm" in out["words"]["width"] and "at most 5" in out["words"]["width"]
     assert "greater than 0 and at most 100" in out["words"]["power"] and "unit: %" in out["words"]["power"]
     assert "greater than 0 and at most 10000" in out["words"]["speed"] and "unit: mm/s" in out["words"]["speed"]
     assert "from 1 to 4000" in out["words"]["frequency"] and "unit: kHz" in out["words"]["frequency"]       # the laser's own range
     assert "from 1 to 300" in out["words"]["size"] and "from 1 to 20" in out["words"]["passes"] and "whole number" in out["words"]["passes"]
     wrong = out["wrong"]
     assert wrong["posted"] == 0 and wrong["kept"] == "5, 2, 40" and wrong["invalid"] == "true" and wrong["toasts"] == 0
-    assert any("Значение 2: Allowed: from 3 to 300 mm. Entered: 2" in text for text in wrong["beside"])
-    assert any("Ширины полосок заливки" in text and "remain in the form" in text for text in wrong["summary"])
+    assert any("Value 2: Allowed: from 3 to 300 mm. Entered: 2" in text for text in wrong["beside"])
+    assert any("Fill strip widths" in text and "remain in the form" in text for text in wrong["summary"])
     assert any("Allowed: from 1 to 4000 kHz. Entered: 5000" in text for text in out["laser"])
 
 
@@ -587,23 +587,23 @@ def test_a_refusal_of_the_server_stays_in_the_plate_dialog_with_everything_typed
   const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, {type: 'fill_sizes'});
   await tick();
   const box = dialog.el;
-  labelled(box, 'Заготовка').value = '1';
-  labelled(box, 'Базовая скорость').value = '900';
-  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  labelled(box, 'Blank').value = '1';
+  labelled(box, 'Base speed').value = '900';
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Create plate').dispatch('click');
   for (let i = 0; i < 6; i += 1) await tick();
-  out.kept = labelled(box, 'Базовая скорость').value;
+  out.kept = labelled(box, 'Base speed').value;
   out.open = !!box.parentNode;
   out.said = box.querySelectorAll('.f-form-error').map((n) => n.textContent).filter(Boolean);
   out.toasts = ctx.document.body.querySelectorAll('.toast').length;
   // the form of a new stock record inside the dialog: its refusal stands beside it too
   data.routes['/api/materials'] = {status: 400, json: {error: 'material name is required', kind: 'invalid'}};
-  await box.querySelectorAll('button').find((b) => b.textContent === 'Сохранить заготовку').dispatch('click');
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Save blank').dispatch('click');
   for (let i = 0; i < 6; i += 1) await tick();
-  out.stock = box.querySelectorAll('.f-form-error').map((n) => n.textContent).filter((t) => t.startsWith('Запись'));
+  out.stock = box.querySelectorAll('.f-form-error').map((n) => n.textContent).filter((t) => t.startsWith('Save blank'));
   out.toastsAfter = ctx.document.body.querySelectorAll('.toast').length;
 """)
     assert out["open"] and out["kept"] == "900" and out["toasts"] == 0
-    assert len(out["stock"]) == 1 and "Запись заготовки failed" in out["stock"][0] and out["toastsAfter"] == 0
+    assert len(out["stock"]) == 1 and "Save blank failed" in out["stock"][0] and out["toastsAfter"] == 0
     assert len(out["said"]) == 1 and "скорость теста не должна превышать 10000 мм/с" in out["said"][0] and "remain in the form" in out["said"][0]
 
 
@@ -615,7 +615,7 @@ def test_the_list_and_the_right_column_share_the_height_and_only_the_list_and_lo
     assert re.search(r"\.ex-filters \{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)", CSS) and re.search(r"\.ex-filters>input,\.ex-filters>\.row \{grid-column:1 / -1\}", CSS)
     assert re.search(r"\.ex-list \.exp-card \{grid-template-columns:64px minmax\(0,1fr\)", CSS) and re.search(r"\.ex-list \.exp-thumb \{width:64px;height:64px\}", CSS)
     assert re.search(r"\.ex-insights \{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)", CSS)
-    narrow = re.search(r"@media \(max-width:1100px\) \{\s*\.ex-body \{(.*?)\n\}", CSS[CSS.index("ex-: «Эксперименты»"):], re.S)
+    narrow = re.search(r"@media \(max-width:1100px\) \{\s*\.ex-body \{(.*?)\n\}", CSS[CSS.index("ex-: Experiments on one screen"):], re.S)
     assert narrow and "grid-template-columns:minmax(0,1fr)" in narrow.group(1) and ".ex-find {flex:none;min-height:0}" in CSS     # a phone scrolls the page as before
 
 
