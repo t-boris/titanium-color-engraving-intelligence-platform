@@ -65,7 +65,7 @@ def test_the_grade_filter_lists_concrete_records_and_counts_what_each_option_wou
     assert page["total"] == 10 and {m["grade"] for m in page["items"]} == {"Grade 2"}
     assert len({m["batch"] for m in page["items"]}) == 10                                    # a grade has a record per batch or sheet
     options = dict(page["options"]["grades"])
-    assert options["grade 2"] == "Grade 2" and options[mc.NO_GRADE] == "без марки"
+    assert options["grade 2"] == "Grade 2" and options[mc.NO_GRADE] == "No grade"
     assert page["counts"]["grade"]["grade 2"] == 10 and page["counts"]["grade"][""] == 40     # counts ignore the filter they belong to
     narrowed = mc.page(store, family="steel", limit=100)
     assert narrowed["counts"]["grade"][""] == narrowed["total"] and narrowed["counts"]["family"][""] == 40

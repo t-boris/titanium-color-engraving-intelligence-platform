@@ -12,7 +12,7 @@ from .setup import _plain
 
 SORTS = ("id", "recent", "name", "grade", "thickness", "newest")      # ``id`` is the order of the plain list that older screens read
 PAGE_MAX = 200
-NO_GRADE = "__none__"                      # the value of the filter «без марки»: records that name no grade
+NO_GRADE = "__none__"                      # filter value for records with no grade
 FILTERS = ("family", "grade")
 
 
@@ -95,7 +95,7 @@ def page(store: Store, *, search: str = "", family: str = "", grade: str = "", s
         for m in every:
             value = of(m)
             if field == "grade" and value == NO_GRADE:
-                names.setdefault(value, "без марки")
+                names.setdefault(value, "No grade")
             elif value:
                 names.setdefault(value, (m[field] or "").strip())
         counts = {value: sum(1 for m in every if passes(m, field) and of(m) == value) for value in names}

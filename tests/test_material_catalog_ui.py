@@ -52,12 +52,12 @@ def test_the_catalogue_draws_twenty_compact_rows_whatever_its_size(tmp_path, cou
     shown = min(20, count)
     assert out["first"] == {"rows": shown, "count": f"showing {shown} of {count}", "editor": False}   # no form is drawn until a record is chosen
     first = out["parts"][0]
-    assert first["name"] == f"Лист {count}" and first["batch"] == [f"партия B-{count:04d}"]       # the newest first while nothing has been used
+    assert first["name"] == f"Лист {count}" and first["batch"] == [f"batch B-{count:04d}"]       # the newest first while nothing has been used
     grades = ("Grade 2", "Grade 5", "Ti-6Al-4V", None)
     for row, number in zip(out["parts"], range(count, count - 4, -1)):
         grade = grades[(number - 1) % 4]
-        assert row["grade"] == ([grade] if grade else []) and (grade or "марка не указана" in row["text"])    # the grade and the batch are told apart; a missing grade is said
-        assert row["thickness"] == [f"{+(0.5 + ((number - 1) % 5) * 0.5):g} мм"]
+        assert row["grade"] == ([grade] if grade else []) and (grade or "grade not specified" in row["text"])    # the grade and the batch are told apart; a missing grade is said
+        assert row["thickness"] == [f"{+(0.5 + ((number - 1) % 5) * 0.5):g} mm"]
     assert out["more"] is (count > 20)
     if count > 20:
         assert out["second"] == {"count": f"showing 40 of {count}", "asked": ["/api/materials?offset=20&limit=20&sort=recent"]}
@@ -74,7 +74,7 @@ def test_a_search_a_grade_and_an_order_are_asked_of_the_server_and_kept_in_the_a
       out.found = {names: rows(box).map((r) => qa(r, 'strong')[0].textContent), asked: requests('/api/materials?').pop().url, focus: doc.activeElement === search};
       await button(box, 'Clear search and filters').dispatch('click');
       await until(() => count(box) === 'showing 20 of 200');
-      const grade = qa(box, 'label').find((l) => l.textContent.startsWith('Марка')).querySelector('select');
+      const grade = qa(box, 'label').find((l) => l.textContent.startsWith('Grade')).querySelector('select');
       out.options = grade.options.map((o) => o.textContent);
       grade.value = 'grade 5';
       await grade.dispatch('change');
@@ -92,12 +92,12 @@ def test_a_search_a_grade_and_an_order_are_asked_of_the_server_and_kept_in_the_a
       out.none = q(box, '.lst-empty').textContent;
     """, EXPORTS)
     assert out["found"] == {"names": ["Лист 137"], "asked": "/api/materials?offset=0&limit=20&sort=recent&search=b-0137", "focus": True}   # the cursor stays in the field
-    assert out["options"][:3] == ["all · 200", "Grade 2 · 50", "Grade 5 · 50"] and "без марки · 50" in out["options"]
-    assert out["orders"] == ["Недавно использованные", "По названию", "По марке", "По толщине", "Недавно добавленные"]
+    assert out["options"][:3] == ["all · 200", "Grade 2 · 50", "Grade 5 · 50"] and "No grade · 50" in out["options"]
+    assert out["orders"] == ["Recently used", "Name", "Grade", "Thickness", "Recently added"]
     assert "grade=grade+5" in out["grade"]["asked"] and "sort=thickness" in out["grade"]["asked"]
     assert out["grade"]["hash"].startswith("#/setup?tab=material") and "grade=grade+5" in out["grade"]["hash"] and "sort=thickness" in out["grade"]["hash"]
-    assert out["grade"]["thicknesses"] == ["0.5 мм"] * 3
-    assert out["none"] == "Ни одна заготовка не подходит под поиск и фильтры."
+    assert out["grade"]["thicknesses"] == ["0.5 mm"] * 3
+    assert out["none"] == "No stock records match the search and filters."
 
 
 def test_adding_and_editing_are_separate_forms_and_the_editor_is_for_the_chosen_record_only(small, tmp_path):
@@ -105,39 +105,39 @@ def test_adding_and_editing_are_separate_forms_and_the_editor_is_for_the_chosen_
     out = run_node(tmp_path, port, FILES, OPEN % "{}" + """
       const editors = () => qa(box, '.mat-editor').map((e) => e.getAttribute('aria-label'));
       out.start = editors();
-      await button(box, 'Добавить материал').dispatch('click');
-      out.add = {editors: editors(), focus: doc.activeElement === qa(q(box, '.mat-editor'), 'input')[0], save: button(q(box, '.mat-editor'), 'Сохранить материал') !== null,
-        create: button(q(box, '.mat-editor'), 'Добавить материал') !== null};
+      await button(box, 'Add material').dispatch('click');
+      out.add = {editors: editors(), focus: doc.activeElement === qa(q(box, '.mat-editor'), 'input')[0], save: button(q(box, '.mat-editor'), 'Save material') !== null,
+        create: button(q(box, '.mat-editor'), 'Add material') !== null};
       const target = rows(box)[2];
-      await button(target, 'Изменить').dispatch('click');
-      await until(() => editors()[0] === 'Материал № ' + target.getAttribute('data-key'));
+      await button(target, 'Edit').dispatch('click');
+      await until(() => editors()[0] === 'Material #' + target.getAttribute('data-key'));
       const form = q(box, '.mat-editor');
       out.edit = {editors: editors(), id: target.getAttribute('data-key'), name: qa(form, 'input')[0].value, batch: qa(form, 'input')[3].value,
-        save: button(form, 'Сохранить материал') !== null, create: button(form, 'Добавить материал') !== null, focus: doc.activeElement === qa(form, 'input')[0],
+        save: button(form, 'Save material') !== null, create: button(form, 'Add material') !== null, focus: doc.activeElement === qa(form, 'input')[0],
         hash: ctx.location.hash};
-      await button(rows(box)[5], 'Изменить').dispatch('click');                                  // another record: the editor is replaced, never doubled
-      await until(() => editors()[0] === 'Материал № ' + rows(box)[5].getAttribute('data-key'));
+      await button(rows(box)[5], 'Edit').dispatch('click');                                  // another record: the editor is replaced, never doubled
+      await until(() => editors()[0] === 'Material #' + rows(box)[5].getAttribute('data-key'));
       out.another = editors();
-      await button(box, 'Добавить материал').dispatch('click');                                  // adding while editing: the add form replaces the editor
+      await button(box, 'Add material').dispatch('click');                                  // adding while editing: the add form replaces the editor
       out.back = {editors: editors(), hash: ctx.location.hash};
     """, EXPORTS)
     assert out["start"] == []
-    assert out["add"] == {"editors": ["Добавить материал"], "focus": True, "save": False, "create": True}
-    assert out["edit"]["editors"] == [f"Материал № {out['edit']['id']}"] and out["edit"]["name"] == "Лист 198" and out["edit"]["batch"] == "B-0198"
+    assert out["add"] == {"editors": ["Add material"], "focus": True, "save": False, "create": True}
+    assert out["edit"]["editors"] == [f"Material #{out['edit']['id']}"] and out["edit"]["name"] == "Лист 198" and out["edit"]["batch"] == "B-0198"
     assert out["edit"]["save"] and not out["edit"]["create"] and out["edit"]["focus"] and f"material={out['edit']['id']}" in out["edit"]["hash"]
     assert len(out["another"]) == 1
-    assert out["back"]["editors"] == ["Добавить материал"] and "material=" not in out["back"]["hash"]
+    assert out["back"]["editors"] == ["Add material"] and "material=" not in out["back"]["hash"]
 
 
 def test_a_new_record_is_saved_once_and_appears_in_the_list(small, tmp_path):
     store, port = small
     out = run_node(tmp_path, port, FILES, OPEN % "{}" + """
-      await button(box, 'Добавить материал').dispatch('click');
+      await button(box, 'Add material').dispatch('click');
       const form = q(box, '.mat-editor');
       const [name, family, grade, batch, thickness, surface] = qa(form, 'input');
       name.value = 'Новый лист'; grade.value = 'Grade 7'; batch.value = 'N-77'; thickness.value = '1.5';
       const gate = hold('/api/materials', 'POST');
-      const save = button(form, 'Добавить материал');
+      const save = button(form, 'Add material');
       const first = save.dispatch('click');
       await until(() => gate.seen);
       out.during = {disabled: save.disabled};
@@ -146,15 +146,15 @@ def test_a_new_record_is_saved_once_and_appears_in_the_list(small, tmp_path):
       out.posts = requests('/api/materials').filter((x) => x.method === 'POST').length;
       gate.release();
       await first;
-      await until(() => q(box, '.mat-editor') && q(box, '.mat-editor').getAttribute('aria-label').startsWith('Материал №'));
+      await until(() => q(box, '.mat-editor') && q(box, '.mat-editor').getAttribute('aria-label').startsWith('Material #'));
       await until(() => rows(box)[0] && qa(rows(box)[0], 'strong')[0].textContent === 'Новый лист');
       out.saved = {body: JSON.parse(requests('/api/materials').filter((x) => x.method === 'POST')[0].body), editor: q(box, '.mat-editor').getAttribute('aria-label'),
         toast: qa(doc.body, '.toast').map((t) => t.textContent), first: q(rows(box)[0], '.lst-main').textContent, count: count(box), hash: ctx.location.hash};
     """, EXPORTS)
     assert out["during"] == {"disabled": True} and out["posts"] == 1
     assert out["saved"]["body"] == {"name": "Новый лист", "family": "Titanium", "grade": "Grade 7", "batch": "N-77", "thickness_mm": 1.5, "surface": None}
-    assert out["saved"]["editor"] == "Материал № 201" and "Материал сохранён" in out["saved"]["toast"][0]
-    assert "Grade 7" in out["saved"]["first"] and "партия N-77" in out["saved"]["first"] and "1.5 мм" in out["saved"]["first"]
+    assert out["saved"]["editor"] == "Material #201" and "Material saved" in out["saved"]["toast"][0]
+    assert "Grade 7" in out["saved"]["first"] and "batch N-77" in out["saved"]["first"] and "1.5 mm" in out["saved"]["first"]
     assert out["saved"]["count"] == "showing 20 of 201" and "material=201" in out["saved"]["hash"]
     assert store.one("SELECT name, batch FROM material_profile WHERE id=201")["batch"] == "N-77"
 
@@ -163,21 +163,21 @@ def test_a_refused_save_keeps_the_form_and_what_was_typed(small, tmp_path):
     """A missing name is refused beside its box before anything is sent (ux-save-feedback-p0, REQ-003); what was typed stays, the form is the same one."""
     store, port = small
     out = run_node(tmp_path, port, FILES, OPEN % "{}" + """
-      await button(box, 'Добавить материал').dispatch('click');
+      await button(box, 'Add material').dispatch('click');
       const form = q(box, '.mat-editor');
       const inputs = qa(form, 'input');
       inputs[2].value = 'Grade 9';                                                                  // a name is missing
       inputs[4].value = '-1';                                                                       // and a thickness below zero
-      const save = button(form, 'Добавить материал');
+      const save = button(form, 'Add material');
       await save.dispatch('click');
       const field = (text) => qa(form, 'label').find((l) => l.firstChild.textContent === text);
-      out.refused = {name: field('Название').errorText(), thickness: field('Толщина').errorText(), enabled: !save.disabled, same: q(box, '.mat-editor') === form, grade: inputs[2].value,
+      out.refused = {name: field('Name').errorText(), thickness: field('Thickness').errorText(), enabled: !save.disabled, same: q(box, '.mat-editor') === form, grade: inputs[2].value,
         thicknessKept: inputs[4].value, summary: q(form, '.f-form-error').textContent, toasts: qa(doc.body, '.toast.bad').length,
         posts: requests('/api/materials').filter((x) => x.method === 'POST').length, count: count(box), invalid: inputs[0].getAttribute('aria-invalid')};
     """, EXPORTS)
     assert out["refused"]["same"] and out["refused"]["enabled"] and out["refused"]["grade"] == "Grade 9" and out["refused"]["posts"] == 0 and out["refused"]["toasts"] == 0
     assert out["refused"]["name"] == "Complete this field" and out["refused"]["thickness"] == "Allowed: greater than 0 mm. Entered: -1" and out["refused"]["thicknessKept"] == "-1"
-    assert out["refused"]["summary"] == "Not submitted: correct fields “Название”, “Толщина”. Your entries remain in the form." and out["refused"]["invalid"] == "true"
+    assert out["refused"]["summary"] == "Not submitted: correct fields “Name”, “Thickness”. Your entries remain in the form." and out["refused"]["invalid"] == "true"
     assert out["refused"]["count"] == "showing 20 of 200"
 
 
@@ -186,7 +186,7 @@ def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_
     out = run_node(tmp_path, port, FILES, OPEN % "{}" + """
       const row = rows(box)[0];
       const id = row.getAttribute('data-key');
-      await button(row, 'Изменить').dispatch('click');
+      await button(row, 'Edit').dispatch('click');
       await until(() => q(box, '.mat-editor') !== null);
       const form = q(box, '.mat-editor');
       const inputs = qa(form, 'input');
@@ -198,7 +198,7 @@ def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_
       out.typed = {same: q(box, '.mat-editor') === form, name: inputs[0].value, pinned: q(box, '.lst-pin-note') !== null,
         note: q(box, '.lst-pin-note') ? q(box, '.lst-pin-note').textContent.trim() : null, pinnedName: q(box, '.lst-pin') ? qa(q(box, '.lst-pin'), 'strong')[0].textContent : null};
       const gate = hold('/api/materials/' + id, 'PUT');
-      const save = button(form, 'Сохранить материал');
+      const save = button(form, 'Save material');
       const first = save.dispatch('click');
       await until(() => gate.seen);
       save.dispatch('click');
@@ -213,7 +213,7 @@ def test_a_change_is_saved_once_and_the_typed_text_survives_a_search(small, tmp_
     assert out["typed"]["same"] and out["typed"]["name"] == "Переименованный лист"                # the search did not take the typed text away
     assert out["typed"]["pinned"] and out["typed"]["pinnedName"] == "Лист 200"                       # the record being edited is kept in view though the search hides it
     assert out["typed"]["note"].startswith("The selected row")
-    assert out["puts"] == 1 and out["saved"]["body"] == "Переименованный лист" and out["saved"]["editor"] == f"Материал № {out['saved']['id']}"
+    assert out["puts"] == 1 and out["saved"]["body"] == "Переименованный лист" and out["saved"]["editor"] == f"Material #{out['saved']['id']}"
     assert store.one("SELECT name FROM material_profile WHERE id=?", (out["saved"]["id"],))["name"] == "Переименованный лист"
 
 
@@ -227,7 +227,7 @@ def test_the_record_named_in_the_address_opens_and_is_kept_in_view_beyond_the_fi
       await until(() => q(box, '.lst-pin') === null);
       out.cleared = {editors: qa(box, '.mat-editor').length, hash: ctx.location.hash, focus: doc.activeElement && doc.activeElement.textContent};
     """, EXPORTS)
-    assert out["open"]["editor"] == "Материал № 37" and out["open"]["name"] == "Лист 37" and out["open"]["rows"] == 20
+    assert out["open"]["editor"] == "Material #37" and out["open"]["name"] == "Лист 37" and out["open"]["rows"] == 20
     assert out["open"]["note"].startswith("The selected row is beyond the displayed portion of the list.") and out["open"]["pinned"] == "Лист 37"
     assert out["cleared"]["editors"] == 0 and "material=" not in out["cleared"]["hash"]
 
@@ -236,11 +236,11 @@ def test_a_record_that_is_not_there_is_said_not_skipped(small, tmp_path):
     store, port = small
     out = run_node(tmp_path, port, FILES, OPEN % "{material: '99999'}" + """
       out.alert = {role: q(box, '.alert.bad').getAttribute('role'), text: q(box, '.alert.bad').textContent, pin: q(box, '.lst-pin-note').textContent.trim(), rows: rows(box).length};
-      await button(q(box, '.alert.bad'), 'Закрыть').dispatch('click');
+      await button(q(box, '.alert.bad'), 'Close').dispatch('click');
       await until(() => q(box, '.alert.bad') === null);
       out.closed = {hash: ctx.location.hash, editors: qa(box, '.mat-editor').length};
     """, EXPORTS)
-    assert out["alert"]["role"] == "alert" and "Материал № 99999 недоступен" in out["alert"]["text"] and out["alert"]["rows"] == 20
+    assert out["alert"]["role"] == "alert" and "Material #99999 is unavailable" in out["alert"]["text"] and out["alert"]["rows"] == 20
     assert out["alert"]["pin"].startswith("The selected item is unavailable")
     assert "material=" not in out["closed"]["hash"] and out["closed"]["editors"] == 0
 
@@ -251,7 +251,7 @@ def test_a_failed_read_keeps_the_screen_and_offers_a_retry(small, tmp_path):
       breakNext('/api/materials?');
       const el = await ctx.MaterialCatalog.tab({query: {}});
       const box = mount(el);
-      out.failed = {alert: q(box, '.lst-fail').getAttribute('role'), text: q(box, '.lst-fail').textContent, rows: rows(box).length, add: button(box, 'Добавить материал') !== null};
+      out.failed = {alert: q(box, '.lst-fail').getAttribute('role'), text: q(box, '.lst-fail').textContent, rows: rows(box).length, add: button(box, 'Add material') !== null};
       await q(box, '.lst-retry').dispatch('click');
       await until(() => rows(box).length === 20);
       out.retried = {fail: q(box, '.lst-fail') !== null, count: count(box)};
@@ -266,4 +266,4 @@ def test_an_empty_catalogue_invites_the_first_record(tmp_path):
           out.empty = q(box, '.lst-empty').textContent;
           out.rows = rows(box).length;
         """, EXPORTS)
-    assert out == {"empty": "Материалов пока нет. Добавьте первую заготовку.", "rows": 0}
+    assert out == {"empty": "No materials yet. Add the first stock record.", "rows": 0}

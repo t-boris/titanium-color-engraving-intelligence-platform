@@ -1,24 +1,24 @@
 /* The catalogue of titanium stock records: compact rows instead of a stack of forms (ux-growing-collections-p0, REQ-001, REQ-003, REQ-004).
    A line of the list is one concrete batch or sheet: name, grade (alloy), batch, thickness. The grade is what records of one titanium have
    in common and is a filter; the batch or sheet is the record. Adding and editing are separate forms: the editor opens only for the record
-   chosen with «Изменить» (or for the one the address names), above the list, so a search or a new page never takes the typed text away.
+   chosen with “Edit” (or for the one the address names), above the list, so a search or a new page never takes the typed text away.
    The records are read from the server a page of twenty at a time (GET /materials?limit=20 with a search, a filter and an order), so a
    workshop with thousands of sheets draws twenty lines. The record being edited or just saved stays in view as the list's pinned line. */
 'use strict';
 const MaterialCatalog = (() => {
   const {h, fill, btn, get, post, put, toast} = App;
-  const SORTS = [['recent', 'Недавно использованные'], ['name', 'По названию'], ['grade', 'По марке'], ['thickness', 'По толщине'], ['newest', 'Недавно добавленные']];
-  const mm = (v) => `${+v} мм`;
+  const SORTS = [['recent', 'Recently used'], ['name', 'Name'], ['grade', 'Grade'], ['thickness', 'Thickness'], ['newest', 'Recently added']];
+  const mm = (v) => `${+v} mm`;
 
   /** The words of a line: each part says what it is, so the grade and the batch are never taken for one another. */
   const parts = (m) => ({grade: m.grade || null, batch: m.batch || null, thickness: m.thickness_mm == null ? null : mm(m.thickness_mm)});
   const row = (m) => {
     const p = parts(m);
-    const text = [m.name, p.grade, p.batch && `партия ${p.batch}`, p.thickness].filter(Boolean).join(' · ');
+    const text = [m.name, p.grade, p.batch && `batch ${p.batch}`, p.thickness].filter(Boolean).join(' · ');
     return [h('strong', {class: 'lst-text', title: text}, m.name),
-      p.grade ? h('span', {class: 'pill mat-grade', title: 'Марка, сплав'}, p.grade) : h('span', {class: 'muted small'}, 'марка не указана'),
-      p.batch ? h('span', {class: 'small mat-batch', title: 'Конкретная партия или лист'}, `партия ${p.batch}`) : h('span', {class: 'muted small'}, 'партия не указана'),
-      p.thickness ? h('span', {class: 'small mat-thickness'}, p.thickness) : h('span', {class: 'muted small'}, 'толщина не указана'),
+      p.grade ? h('span', {class: 'pill mat-grade', title: 'Grade or alloy'}, p.grade) : h('span', {class: 'muted small'}, 'grade not specified'),
+      p.batch ? h('span', {class: 'small mat-batch', title: 'Specific batch or sheet'}, `batch ${p.batch}`) : h('span', {class: 'muted small'}, 'batch not specified'),
+      p.thickness ? h('span', {class: 'small mat-thickness'}, p.thickness) : h('span', {class: 'muted small'}, 'thickness not specified'),
       m.family && m.family.toLowerCase() !== 'titanium' ? h('span', {class: 'pill'}, m.family) : null];
   };
 
@@ -27,12 +27,12 @@ const MaterialCatalog = (() => {
   function fields(m = {}) {
     const form = Forms.create();
     const grid = h('div', {class: 'grid g2'},
-      form.add('name', 'Название', h('input', {value: m.name || '', placeholder: 'Например, Grade 2 · лист A'}), {required: true}),
-      form.add('family', 'Материал', h('input', {value: m.family || 'Titanium', placeholder: 'Titanium, Steel, Brass…'}), {required: true}),
-      form.add('grade', 'Марка / сплав', h('input', {value: m.grade || '', placeholder: 'Grade 2, Ti-6Al-4V…'})),
-      form.add('batch', 'Партия или лист', h('input', {value: m.batch || '', placeholder: 'номер партии или листа'})),
-      form.add('thickness_mm', 'Толщина', Forms.numberInput(Forms.QUANTITIES.thickness, {value: m.thickness_mm ?? '', placeholder: 'мм'}), {quantity: 'thickness'}),
-      form.add('surface', 'Поверхность / подготовка', h('input', {value: m.surface || '', placeholder: 'шлифовка, полировка…'})));
+      form.add('name', 'Name', h('input', {value: m.name || '', placeholder: 'For example, Grade 2 · sheet A'}), {required: true}),
+      form.add('family', 'Material', h('input', {value: m.family || 'Titanium', placeholder: 'Titanium, Steel, Brass…'}), {required: true}),
+      form.add('grade', 'Grade / alloy', h('input', {value: m.grade || '', placeholder: 'Grade 2, Ti-6Al-4V…'})),
+      form.add('batch', 'Batch or sheet', h('input', {value: m.batch || '', placeholder: 'batch or sheet number'})),
+      form.add('thickness_mm', 'Thickness', Forms.numberInput(Forms.QUANTITIES.thickness, {value: m.thickness_mm ?? '', placeholder: 'mm'}), {quantity: 'thickness'}),
+      form.add('surface', 'Surface / preparation', h('input', {value: m.surface || '', placeholder: 'sanding, polishing…'})));
     return {first: form.entries[0].input, grid, form, collect: form.collect};
   }
 
@@ -50,23 +50,23 @@ const MaterialCatalog = (() => {
   /** The form that adds a record. */
   function addForm({saved, cancel}) {
     const f = fields();
-    return {first: f.first, el: h('div', {class: 'card stack mat-editor', role: 'group', 'aria-label': 'Добавить материал'}, h('strong', {}, 'Добавить материал'), f.grid, f.form.error,
-      h('div', {class: 'row'}, saveButton('Добавить материал', async () => {
+    return {first: f.first, el: h('div', {class: 'card stack mat-editor', role: 'group', 'aria-label': 'Add material'}, h('strong', {}, 'Add material'), f.grid, f.form.error,
+      h('div', {class: 'row'}, saveButton('Add material', async () => {
         const body = f.collect();
         if (!body) return;
-        const made = await post('/materials', body); toast('Материал сохранён', 'ok'); saved(made);
-      }, f.form), btn('Отмена', cancel)))};
+        const made = await post('/materials', body); toast('Material saved', 'ok'); saved(made);
+      }, f.form), btn('Cancel', cancel)))};
   }
 
   /** The form that changes the record ``m``. */
   function editForm(m, {saved, cancel}) {
     const f = fields(m);
-    return {first: f.first, el: h('div', {class: 'card stack mat-editor', role: 'group', 'aria-label': `Материал № ${m.id}`}, h('strong', {}, `Материал № ${m.id}`), f.grid, f.form.error,
-      h('div', {class: 'row'}, saveButton('Сохранить материал', async () => {
+    return {first: f.first, el: h('div', {class: 'card stack mat-editor', role: 'group', 'aria-label': `Material #${m.id}`}, h('strong', {}, `Material #${m.id}`), f.grid, f.form.error,
+      h('div', {class: 'row'}, saveButton('Save material', async () => {
         const body = f.collect();
         if (!body) return;
-        const made = await put('/materials/' + m.id, body); toast('Материал сохранён', 'ok'); saved(made);
-      }, f.form), btn('Закрыть', cancel)))};
+        const made = await put('/materials/' + m.id, body); toast('Material saved', 'ok'); saved(made);
+      }, f.form), btn('Close', cancel)))};
   }
 
   /** The catalogue as a tab body. ``query``: the address (``material`` — the record open for editing, kept in the address). */
@@ -80,7 +80,7 @@ const MaterialCatalog = (() => {
     const editor = h('div', {class: 'mat-editor-box'});
     let lst = null;
     let opened = null;                                         // 'add', 'edit' or null: which form is open
-    const addButton = btn('Добавить материал', () => showAdd(), 'primary');
+    const addButton = btn('Add material', () => showAdd(), 'primary');
 
     const rowButton = (id) => {
       const line = [...lst.el.querySelectorAll('.lst-row')].find((r) => r.getAttribute('data-key') === String(id));
@@ -110,7 +110,7 @@ const MaterialCatalog = (() => {
       let record;
       try { record = await get('/materials/' + id); }
       catch (e) {                                              // a record the address names that is not there: said, not silently skipped
-        fill(editor, h('div', {class: 'alert bad', role: 'alert'}, `Материал № ${id} недоступен: ${e.message || e}. `, btn('Закрыть', () => close('add'), 'btn-small')));
+        fill(editor, h('div', {class: 'alert bad', role: 'alert'}, `Material #${id} is unavailable: ${e.message || e}. `, btn('Close', () => close('add'), 'btn-small')));
         if (redraw) lst.refresh();
         return;
       }
@@ -130,25 +130,25 @@ const MaterialCatalog = (() => {
         const page = await get('/materials?' + q);
         return {items: page.items, total: page.total, counts: page.counts, options: page.options};
       },
-      row, actions: (m) => [btn('Изменить', () => showEdit(m.id), 'btn-small')],
-      filters: [{key: 'family', label: 'Материал', select: true, options: (a) => (a.options || {}).families || []},
-        {key: 'grade', label: 'Марка', select: true, options: (a) => (a.options || {}).grades || []}],
+      row, actions: (m) => [btn('Edit', () => showEdit(m.id), 'btn-small')],
+      filters: [{key: 'family', label: 'Material', select: true, options: (a) => (a.options || {}).families || []},
+        {key: 'grade', label: 'Grade', select: true, options: (a) => (a.options || {}).grades || []}],
       sorts: SORTS, initial: {sort: cur.sort || undefined, search: cur.search, filters: {family: cur.family, grade: cur.grade}},
       selected: () => cur.material || null, selectedItem: (key) => get('/materials/' + key),
       clearSelection: () => close('add'),
-      empty: 'Материалов пока нет. Добавьте первую заготовку.', noResults: 'Ни одна заготовка не подходит под поиск и фильтры.',
+      empty: 'No materials yet. Add the first stock record.', noResults: 'No stock records match the search and filters.',
       onChange: (s) => keep({search: s.search, sort: s.sort === SORTS[0][0] ? '' : s.sort, grade: s.filters.grade, family: s.filters.family})});
 
     const opening = cur.material ? showEdit(cur.material, false) : Promise.resolve();
     const root = h('div', {class: 'stack mat'}, h('div', {class: 'alert'},
-      'Добавьте отдельную запись для каждой партии или листа. При загрузке результата выберите именно выгравированную заготовку. '
-      + 'Для других материалов сначала нужен свой рецепт очистки; титановая очистка к ним не применяется.'),
-    h('div', {class: 'row'}, h('p', {class: 'muted small'}, 'Марка (сплав) общая для партий; каждая партия или лист — своя запись.'), h('span', {class: 'spacer'}), addButton),
+      'Add a separate record for each batch or sheet. When uploading a result, select the stock that was engraved. '
+      + 'Other materials need their own cleaning recipe; titanium cleaning does not apply to them.'),
+    h('div', {class: 'row'}, h('p', {class: 'muted small'}, 'A grade (alloy) can cover multiple batches; each batch or sheet has its own record.'), h('span', {class: 'spacer'}), addButton),
     editor, lst.el);
     return {el: root, list: lst, ready: Promise.all([lst.ready, opening])};
   }
 
-  /** The «Титан» tab of the settings screen. */
+  /** The “Stock” tab of the settings screen. */
   async function tab(ctx) {
     const made = catalog(ctx.query);
     await made.ready;
