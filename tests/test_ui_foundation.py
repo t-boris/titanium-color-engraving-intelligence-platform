@@ -302,6 +302,33 @@ def test_when_the_opener_is_gone_the_focus_goes_to_the_main_area(tmp_path):
 
 # -- BUG-015: the skip link --------------------------------------------------------------------------------------------------------------
 @node
+def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
+    out = run(tmp_path, """
+  const saved = {};
+  ctx.localStorage = {getItem: (key) => saved[key] || null, setItem: (key, value) => { saved[key] = value; }};
+  ctx.window.innerWidth = 1200;
+  App.register({id: 'experiments', render: async () => h('div', {}, 'экран')});
+  App.register({id: 'findings', render: async () => h('div', {}, 'выводы')});
+  await App.render();
+  const rail = () => shell.querySelector('.rail-toggle');
+  const nav = () => shell.querySelector('.sidebar');
+  const pin = () => shell.querySelector('.nav-pin');
+  await rail().dispatch('click');
+  out.open = nav().classList.contains('is-open');
+  await pin().dispatch('click');
+  out.pinned = [nav().classList.contains('is-pinned'), pin().getAttribute('aria-pressed'), saved['navigation.pinned'], rail().getAttribute('aria-expanded')];
+  ctx.location.hash = '#/findings'; await App.render();
+  out.next = [nav().classList.contains('is-pinned'), pin().textContent, shell.textContent.includes('Исследователь / мастер')];
+  await pin().dispatch('click');
+  out.compact = [nav().classList.contains('is-pinned'), saved['navigation.pinned'], doc.activeElement === rail()];
+  await App.render(); out.kept = !nav().classList.contains('is-pinned');
+""")
+    assert out["open"] and out["pinned"] == [True, "true", "1", "true"]
+    assert out["next"] == [True, "Свернуть меню", False]
+    assert out["compact"] == [False, "0", True] and out["kept"]
+
+
+@node
 def test_the_skip_link_moves_the_focus_to_the_content_and_leaves_the_address_alone(tmp_path):
     out = run(tmp_path, """
   const root = shell;

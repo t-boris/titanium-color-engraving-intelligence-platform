@@ -128,7 +128,7 @@
       undo.setAttribute('title', `Отменить (Ctrl+Z); шагов: ${next.undo || 0}`);
       redo.setAttribute('title', `Повторить (Ctrl+Shift+Z); шагов: ${next.redo || 0}`);
       const pencil = VectorWorkspace.renameButton(next.id, next.name, (stored) => update({...shown, name: stored}), '/photo-works');
-      fill(title, h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
+      fill(title, h('p', {class: 'small muted'}, 'Фотогравировка'), h('div', {class: 'vw-name-row'}, h('h2', {title: next.name}, next.name), pencil),
         h('p', {class: 'sub'}, `${next.image_name || 'картинка'} · ${next.image_size[0]} × ${next.image_size[1]} пикс. · ${value(next.width_mm, 1)} × ${value(next.height_mm, 1)} мм`
           + ` · изменена ${when(next.updated_at)}`), context);
       App.workContextText(next).then((text) => { context.textContent = text; });

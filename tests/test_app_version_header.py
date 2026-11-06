@@ -63,8 +63,9 @@ def test_a_server_that_does_not_answer_leaves_the_header_without_a_version_and_w
 
 def test_the_label_is_small_and_hidden_while_empty_and_the_header_keeps_its_height():
     assert re.search(r"\.app-version \{font-size:12px;", CSS) and ".app-version:empty {display:none}" in CSS
-    # the header row is: menu button, version label, the task panel's entry (feature ux-save-feedback-p0), then the user chip; the label stays beside the chip
-    assert re.search(r"header-actions'\}, menuButton, versionTag, [^\n]*\n\s*h\('span', \{class: 'user-chip'", ROUTER) and "get('/version')" in ROUTER
+    # The version and the task entry remain available after removing the static role label.
+    assert "header-actions'}, menuButton, versionTag" in ROUTER and "Operations.entry()" in ROUTER and "get('/version')" in ROUTER
+    assert "Исследователь / мастер" not in ROUTER
 
 
 def test_the_server_reports_the_version_the_package_has(tmp_path):

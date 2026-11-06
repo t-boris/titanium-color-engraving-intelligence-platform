@@ -50,7 +50,9 @@ Object.assign(App, (() => {
   // Разделы висят слева узкой полосой со значками на каждой странице; кнопка ☰ вверху полосы (на узком экране «Меню» в шапке) открывает
   // поверх страницы окно с названиями: оно закрывается кликом вне его, Esc и переходом в раздел (DEC-081).
   const MENU_ICON = '<path d="M4 6h16M4 12h16M4 18h16"/>';
-  let sidebar = null, menuButton = null, railButton = null;
+  let sidebar = null, menuButton = null, railButton = null, pinButton = null;
+  const pinKey = 'navigation.pinned';
+  const pinned = () => { try { return localStorage.getItem(pinKey) === '1'; } catch (_) { return false; } };
 
   // Версия приложения в шапке (REQ-057, DEC-099): один запрос к серверу, дальше значение берётся из памяти; если сервер не ответил, метка пуста и скрыта.
   let appVersion = null, versionAsked = false;
@@ -90,31 +92,44 @@ Object.assign(App, (() => {
   function setMenu(open) {
     if (!sidebar) return;
     if (open) sidebar.classList.add('is-open'); else sidebar.classList.remove('is-open');
-    for (const b of [menuButton, railButton]) if (b) b.setAttribute('aria-expanded', String(open));
+    const visible = open || (window.innerWidth > 1000 && sidebar.classList.contains('is-pinned'));
+    for (const b of [menuButton, railButton]) if (b) b.setAttribute('aria-expanded', String(visible));
   }
   const menuOpen = () => !!sidebar && sidebar.classList.contains('is-open');
   function toggleMenu() {
+    if (window.innerWidth > 1000 && sidebar.classList.contains('is-pinned')) { setPinned(false); return; }
     setMenu(!menuOpen());
     if (menuOpen()) sidebar.querySelector('a').focus();
+  }
+  function setPinned(next) {
+    try { localStorage.setItem(pinKey, next ? '1' : '0'); } catch (_) { /* navigation still works without storage */ }
+    sidebar.classList.toggle('is-pinned', next);
+    pinButton.setAttribute('aria-pressed', String(next));
+    pinButton.textContent = next ? 'Свернуть меню' : 'Закрепить меню';
+    setMenu(false);
+    if (!next) railButton.focus();
   }
   function shell(active, main) {
     const toggleIcon = h('span', {class: 'nav-icon', 'aria-hidden': 'true'});
     toggleIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON + '</svg>';
     railButton = h('button', {type: 'button', class: 'rail-toggle', title: 'Разделы', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu},
       toggleIcon, h('span', {class: 'nav-text'}, 'Разделы'));
-    sidebar = h('aside', {class: 'sidebar', id: 'app-navigation', 'aria-label': 'Разделы приложения'}, railButton,
+    pinButton = btn('', () => setPinned(!sidebar.classList.contains('is-pinned')), 'btn-small nav-pin');
+    pinButton.setAttribute('aria-pressed', String(pinned()));
+    pinButton.textContent = pinned() ? 'Свернуть меню' : 'Закрепить меню';
+    sidebar = h('aside', {class: 'sidebar' + (pinned() ? ' is-pinned' : ''), id: 'app-navigation', 'aria-label': 'Разделы приложения'}, railButton, pinButton,
       h('nav', {class: 'nav', 'aria-label': 'Основная навигация'},
         NAV.map(([r, l], i) => h('a', {class: 'nav-link', href: '#' + r, title: l, 'aria-current': r === active ? 'page' : null,
           onClick: () => setMenu(false)}, icon(i), h('span', {class: 'nav-text'}, l)))),
       h('p', {class: 'sidebar-note'}, 'Единственный пользователь. Все действия доступны; вход не требуется.'));
     menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Меню');
+    setMenu(false);
     const versionTag = h('span', {class: 'app-version', title: 'Версия приложения'});
     showVersion(versionTag);
     return [
       h('header', {class: 'app-header'},
         h('a', {class: 'brand', href: '#/experiments'}, 'Лазерная мастерская', h('small', {}, 'Материалы · Режимы · Работы')),
-        h('div', {class: 'header-actions'}, menuButton, versionTag, typeof Operations !== 'undefined' ? Operations.entry() : null,        // the task panel, with the count of running tasks
-          h('span', {class: 'user-chip', title: 'Вход не требуется'}, 'Исследователь / мастер'))),
+        h('div', {class: 'header-actions'}, menuButton, versionTag, typeof Operations !== 'undefined' ? Operations.entry() : null)),        // task count and application version
       h('div', {class: 'app-layout'}, sidebar, main)];
   }
 
@@ -159,6 +174,7 @@ Object.assign(App, (() => {
 
   let nextNavigationOptions = null;
   const start = () => {
+    addEventListener('resize', () => setMenu(menuOpen()));
     document.addEventListener('click', (ev) => {
       if (menuOpen() && !sidebar.contains(ev.target) && !(menuButton && menuButton.contains(ev.target))) setMenu(false);
     });

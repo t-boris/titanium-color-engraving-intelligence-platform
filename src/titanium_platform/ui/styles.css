@@ -49,14 +49,19 @@ h3 {font-size:17px;font-weight:650;letter-spacing:-.2px;margin-bottom:12px}
 /* Разделы: узкая полоса со значками слева на каждой странице; кнопка ☰ открывает поверх страницы окно с названиями (DEC-081). */
 .app-layout {display:block;padding-left:56px;min-height:calc(100vh - 76px)}
 .sidebar {position:fixed;top:76px;left:0;bottom:0;z-index:30;width:56px;display:flex;flex-direction:column;overflow:hidden;
-  padding:10px 6px;background:linear-gradient(180deg,#101622,#0c111b);border-right:1px solid #252e3f;transition:width .16s ease}
+  padding:10px 6px;background:linear-gradient(180deg,#101622,#0c111b);border-right:1px solid #252e3f}
 .sidebar.is-open {width:min(290px,86vw);overflow-y:auto;padding:10px 14px;box-shadow:20px 0 60px #000a}
 .nav {display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .nav-link,.rail-toggle {position:relative;display:flex;align-items:center;gap:12px;min-height:42px;padding:9px;border-radius:11px;border:1px solid transparent;white-space:nowrap;
   color:#a8b4c9;font-size:13px;font-weight:500;line-height:1.4;transition:background .18s,color .18s,border-color .18s}
 .rail-toggle {width:100%;background:transparent;font-family:inherit;cursor:pointer;text-align:left}
-.sidebar:not(.is-open) .nav-text {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.sidebar:not(.is-open) .sidebar-note {display:none}
+.sidebar:not(.is-open):not(.is-pinned) .nav-text {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sidebar:not(.is-open):not(.is-pinned) .sidebar-note,.sidebar:not(.is-open):not(.is-pinned) .nav-pin {display:none}
+.nav-pin {margin:6px 0;text-align:left}
+@media (min-width:1001px) {
+  .sidebar.is-pinned {width:290px;overflow-y:auto;padding:10px 14px;transition:none}
+  .app-layout:has(>.sidebar.is-pinned) {padding-left:290px}
+}
 .nav-link:hover,.rail-toggle:hover {background:#1a2435;border-color:#303b50;color:#edf2ff;text-decoration:none}
 .nav-link[aria-current=page] {background:linear-gradient(110deg,#35446580,#232e474d);border-color:#53658b80;color:#f0f3ff;box-shadow:inset 0 1px 0 #ffffff08,0 4px 18px #0002}
 .nav-link[aria-current=page]::before {content:"";position:absolute;left:-7px;top:11px;bottom:11px;width:3px;border-radius:0 4px 4px 0;background:#adc5ff;box-shadow:0 0 16px #9cbbff70}
@@ -343,6 +348,7 @@ svg[role=img] {display:block;border:1px solid #485776;border-radius:14px;box-sha
   .sidebar {display:none;top:66px}
   .sidebar.is-open {display:flex}
   .rail-toggle {display:none}
+  .nav-pin {display:none}
   .main {padding:22px 16px 48px}
   .user-chip {display:none}
 }

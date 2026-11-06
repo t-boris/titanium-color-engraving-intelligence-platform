@@ -174,7 +174,7 @@ const VectorWorkspace = (() => {
     function update(next) {
       current = next.document.size_mm;
       const pencil = renameButton(next.id, next.name, (stored) => (actions.renamed ? actions.renamed(stored) : update({...next, name: stored})));
-      fill(title, h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
+      fill(title, h('p', {class: 'small muted'}, 'Векторная работа'), h('div', {class: 'vw-name-row'}, h('h2', {}, next.name), pencil),
         h('p', {class: 'sub'}, `${num(current.width, 1)} × ${num(current.height, 1)} мм`, size ? [' ', size] : null,
           ` · разбиение № ${next.document.version} · слоёв ${next.layers.length + (next.zones || []).length} из ${next.layer_cap}`
           + ((next.zones || []).length ? `, из них фотозон ${next.zones.length}` : '')));

@@ -977,6 +977,7 @@ def test_many_grey_scales_are_one_line_each_best_first_by_pages_and_a_scale_open
 def test_the_file_of_a_work_is_downloaded_with_the_one_wording_and_a_failed_download_stays_beside_the_button(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   const head = tree.querySelector('.os-head');
+  out.orientation = [head.textContent, head.querySelectorAll('a').find((a) => a.textContent === '← Мои работы').getAttribute('href')];
   const labels = () => head.querySelectorAll('button').map((b) => b.textContent);
   out.labels = labels();
   const button = head.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
@@ -984,5 +985,6 @@ def test_the_file_of_a_work_is_downloaded_with_the_one_wording_and_a_failed_down
   await button.dispatch('click'); await settle();
   out.asked = requests.filter((r) => r.path.endsWith('/export.lbrn2')).map((r) => r.path);
 """)
+    assert "Фотогравировка" in out["orientation"][0] and out["orientation"][1] == "#/photo-engraving"
     assert "Скачать LightBurn" in out["labels"] and "Файл LightBurn" not in out["labels"]
     assert out["inside"] is True and out["asked"] == ["/api/photo-works/7/export.lbrn2"]

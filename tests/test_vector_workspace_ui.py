@@ -145,7 +145,7 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
     assert out["first"] == [["Разбиение", "false"], ["Цвета", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
-    assert j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]
+    assert "Векторная работа" in out["head"] and j["name"] in out["head"] and "План гравировки" in out["head"] and "разбиение № " in out["head"] and "слоёв " in out["head"]
     assert out["back"] == "#/vector" and out["copied"] == "#/vector?plan=88" and out["afterFile"] == ["vw-tab-panel-file"]
     assert out["editorTabs"] == ["Кисть", "Слои", "Цвета", "Фото", "Надписи"]
 
