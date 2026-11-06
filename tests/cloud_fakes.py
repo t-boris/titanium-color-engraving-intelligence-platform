@@ -174,7 +174,7 @@ class World:
         assert returned.status_code == 302, returned.text
         return returned.headers["location"]
 
-    def sign_in(self, store, account: str = "acc-author", name: str = "Автор", port: int = 8765) -> dict:
+    def sign_in(self, store, account: str = "acc-author", name: str = "Author", port: int = 8765) -> dict:
         """The whole sign-in of ``store`` through the real core: start, the browser's part, the callback's exchange."""
         store.set_setting(cloud_session.API_URL_SETTING, self.base)
         started = cloud_session.start(store, port)

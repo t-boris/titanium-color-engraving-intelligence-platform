@@ -93,7 +93,7 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
         assert f"'{op}'" in colours, op
     for label in ("Closer to original", "Preserve tonality", "Random", "Include uncalibrated colors"):
         assert label in colours, label
-    assert "Принять" not in colours                                                    # DEC-001: nothing waits for acceptance
+    assert "Accept" not in colours                                                    # DEC-001: nothing waits for acceptance
     split = source("screens/vector-split.js")
     assert "post(`/vector/${j.id}/split`" in split and "'Split again'" in split and "no face found" in split
 

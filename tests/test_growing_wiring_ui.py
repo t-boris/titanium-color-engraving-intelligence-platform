@@ -1,4 +1,4 @@
-"""The screens that place the catalogue and the selector (feature ux-growing-collections-p0, REQ-001): the «Титан» tab of the settings
+"""The screens that place the catalogue and the selector (feature ux-growing-collections-p0, REQ-001): the «Titanium» tab of the settings
 screen is the paged catalogue, and the start of a research session chooses its stock record in the selector instead of a drop-down of all.
 Run in node over a small DOM against the real server."""
 from growing_ui import fill_materials, node, run_node, serving
@@ -41,15 +41,15 @@ def test_a_research_session_is_started_with_a_record_chosen_in_the_selector(tmp_
           out.empty = {toast: [stock.errorText()], posts: requests('/research/sessions').filter((x) => x.method === 'POST').length, toasts: qa(doc.body, '.toast.bad').length};
           picker.value = '41';
           await until(() => picker.record !== null);
-          qa(box, 'textarea')[0].value = 'Читаемый текст на Grade 2';
+          qa(box, 'textarea')[0].value = 'Legible text on Grade 2';
           await start.dispatch('click');
           const posts = requests('/research/sessions').filter((x) => x.method === 'POST');
           out.sent = {count: posts.length, body: JSON.parse(posts[0].body), went: ctx.__went};
         """, ("MaterialPicker",))
-    assert out["start"]["value"] == "300" and out["start"]["label"].startswith("Лист 300 · ") and out["start"]["disabled"] is False        # nothing used yet: the newest record
+    assert out["start"]["value"] == "300" and out["start"]["label"].startswith("Sheet 300 · ") and out["start"]["disabled"] is False        # nothing used yet: the newest record
     assert out["start"]["lists"] == ["/api/materials?limit=1", "/api/materials?limit=1&sort=recent"] and out["start"]["fieldLabel"]            # no list of three hundred
     assert out["empty"] == {"toast": ["Select stock: a specific batch or sheet"], "posts": 0, "toasts": 0}
-    assert out["sent"]["count"] == 1 and out["sent"]["body"]["material_id"] == 41 and out["sent"]["body"]["target"] == "Читаемый текст на Grade 2"
+    assert out["sent"]["count"] == 1 and out["sent"]["body"]["material_id"] == 41 and out["sent"]["body"]["target"] == "Legible text on Grade 2"
     assert out["sent"]["went"] == "/research/77"
 
 
@@ -66,10 +66,10 @@ def test_a_research_session_cannot_be_started_without_any_stock_record(tmp_path)
 
 
 def test_a_source_of_a_colour_with_many_photographs_is_a_count_with_a_list_and_a_short_one_stays_in_the_line(tmp_path):
-    """The block «Откуда мы знаем этот цвет» (shared by the colour map and the vector picker): a few analysis links stay in the line, many
+    """The block «How we know this color» (shared by the colour map and the vector picker): a few analysis links stay in the line, many
     become a count with a list of every link."""
     out = run_node(tmp_path, 0, ["screens/source-refs.js"], """
-      const source = (pairs, photos) => ({title: 'Плата', origin: 'work', experiment: 'e1', work_id: null, provisional: false, lab: [50, 0, 0], date: '2026-10-20T10:00:00',
+      const source = (pairs, photos) => ({title: 'Plate', origin: 'work', experiment: 'e1', work_id: null, provisional: false, lab: [50, 0, 0], date: '2026-10-20T10:00:00',
         pair_ids: Array.from({length: pairs}, (_, i) => 100 + i), photos: Array.from({length: photos}, (_, i) => 'IMG_' + i + '.CR3'), layers: ['C01'],
         measurement: 'calibrated', agrees: true, delta_e: 1});
       const few = mount(App.sourcesBlock([source(2, 2)], {limit: 5}, [50, 0, 0]));

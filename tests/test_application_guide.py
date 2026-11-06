@@ -126,8 +126,8 @@ def test_next_text_plate_uses_only_same_material_and_lens_evidence(store):
     store.execute(
         "INSERT INTO capability_finding(pair_id,purpose,status,summary,parameters_json,evidence_json,next_test,created_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
-        (pair_id, "line", "candidate", "линия", json.dumps({"power": 40, "speed": 1200,
-         "frequency": 48, "pulse_width": 200, "line_interval": 0.025, "passes": 1}), "{}", "повтор", now()))
+        (pair_id, "line", "candidate", "line", json.dumps({"power": 40, "speed": 1200,
+         "frequency": 48, "pulse_width": 200, "line_interval": 0.025, "passes": 1}), "{}", "repeat", now()))
     selected = application_guide.suggest(store, laser["id"], material["id"], "text")
     assert selected["plate"]["settings"]["power"] == 40
     assert selected["plate"]["settings"]["speed"] == 1200

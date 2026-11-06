@@ -612,7 +612,7 @@ def variations_detail(pid):
 def test_a_photographed_variations_plate_ranks_its_copies_says_what_each_change_did_and_makes_the_next_plate(tmp_path):
     routes = routes_for(PORTRAIT)
     routes.update(api(**{"/api/pairs/111": variations_detail(111), "/api/pairs/111/prediction-review": REVIEW, "/api/prediction-reviews": OVERALL}))
-    routes["/api/pairs/111/next-variations"] = {"status": 201, "json": {"plan_id": 40, "name": "Photoгравировка · TCE-40"}}
+    routes["/api/pairs/111/next-variations"] = {"status": 201, "json": {"plan_id": 40, "name": "Photo engraving · TCE-40"}}
     out = run(tmp_path, routes, "plan-32", """
   const side = tree.querySelectorAll('aside').find((s) => has(s, 'ep-side'));
   const box = side.querySelectorAll('div').find((d) => has(d, 'pq-variations'));

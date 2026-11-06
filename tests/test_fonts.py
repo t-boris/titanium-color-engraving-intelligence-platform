@@ -105,7 +105,7 @@ def test_a_family_opens_on_its_regular_face(client, tmp_path):
 
 def test_a_preview_draws_the_text_in_the_font(client):
     face = client.get("/api/fonts").json()["families"][0]["faces"][0]["id"]
-    answer = client.get("/api/fonts/preview.svg", params={"face": face, "text": "HП"})
+    answer = client.get("/api/fonts/preview.svg", params={"face": face, "text": "H\u041f"})
     assert answer.status_code == 200 and answer.headers["content-type"].startswith("image/svg+xml") and "<path" in answer.text
     assert client.get("/api/fonts/preview.svg", params={"face": "nope"}).status_code == 404
 

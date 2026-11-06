@@ -424,7 +424,7 @@ class FakeResponses:
 
 class FakeClient:
     """Stands in for the OpenAI client: the real API is never called by the tests."""
-    def __init__(self, text="Плата проверяет пробелы. Гипотеза: при росте мощности плёнка толще."):
+    def __init__(self, text="The plate tests gaps. Hypothesis: the film gets thicker as power increases."):
         self.responses = FakeResponses(text)
 
 
@@ -438,7 +438,7 @@ def test_the_language_model_explains_a_proposal_without_changing_its_settings_or
 
     explained = ds.explain(store, p["id"], research.proposal_explainer(client))
 
-    assert explained["explanation"] == "Плата проверяет пробелы. Гипотеза: при росте мощности плёнка толще."
+    assert explained["explanation"] == "The plate tests gaps. Hypothesis: the film gets thicker as power increases."
     assert store.one("SELECT data_json FROM proposal WHERE id=?", (p["id"],))["data_json"] == stored          # byte-identical
     assert explained["parameters"] == p["parameters"] and observations == [tuple(r) for r in store.query("SELECT * FROM observation ORDER BY id")]
     call = client.responses.calls[0]
@@ -475,7 +475,7 @@ def test_with_a_key_the_explanation_uses_the_researchers_client(tmp_path, monkey
     from fastapi.testclient import TestClient
     from titanium_platform import research
     from titanium_platform.api.app import create_app
-    fake = FakeClient("Пояснение")
+    fake = FakeClient("Explanation")
     monkeypatch.setattr(research, "_api_key", lambda: "test-key")
     monkeypatch.setattr(research, "openai_client", lambda: fake)
     app = create_app(tmp_path / "data")
@@ -486,7 +486,7 @@ def test_with_a_key_the_explanation_uses_the_researchers_client(tmp_path, monkey
         p = client.post("/api/designer/propose", json={"device_id": w["device"]["id"], "lens_id": w["lens"]["id"], **GROUP}).json()
         assert client.get(f"/api/designer/proposals/{p['id']}").json()["explanation_available"] is True
         explained = client.post(f"/api/designer/proposals/{p['id']}/explanation").json()
-    assert explained["explanation"] == "Пояснение" and explained["parameters"] == p["parameters"] and len(fake.responses.calls) == 1
+    assert explained["explanation"] == "Explanation" and explained["parameters"] == p["parameters"] and len(fake.responses.calls) == 1
 
 
 def test_an_accepted_proposal_links_to_its_plate_the_photograph_of_it_and_the_measured_result(tmp_path):

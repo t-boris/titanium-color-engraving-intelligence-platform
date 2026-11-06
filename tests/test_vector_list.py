@@ -115,9 +115,9 @@ def test_a_work_saved_before_its_plan_kept_the_counts_is_read_once_from_its_docu
 def test_the_ai_style_and_the_operators_text_reach_the_list_until_another_mode_colours(work, job, model):
     c, j = work, job
     model()
-    assert ai_op(c, j, style="custom", text="как витраж").status_code == 200
+    assert ai_op(c, j, style="custom", text="like stained glass").status_code == 200
     item = works(c)[0]
-    assert (item["mode"], item["ai_style"], item["ai_text"], item["variants"]) == ("ai", "custom", "как витраж", 2)
+    assert (item["mode"], item["ai_style"], item["ai_text"], item["variants"]) == ("ai", "custom", "like stained glass", 2)
     assert ai_op(c, j, style="cubism").status_code == 200
     assert (works(c)[0]["ai_style"], works(c)[0]["ai_text"]) == ("cubism", None)
     colouring(c, j, op="assign", mode="closest")

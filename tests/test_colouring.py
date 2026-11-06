@@ -55,7 +55,7 @@ def test_an_object_with_a_main_colour_keeps_its_drawing_in_that_colours_family_a
     base = drawing.choose(lab, opaque, SCALE, LO, HI, 6.0)
     got = colouring.colour(lab, opaque, labels, objects, {"background": {"power": 32, "shift": 0}}, SCALE, LO, HI, 6.0, base)
     face, back = labels == 0, labels == 1
-    assert np.array_equal(got["grey8"][face], base["grey8"][face])               # «Авто»: as the whole picture laid along one path
+    assert np.array_equal(got["grey8"][face], base["grey8"][face])               # «Auto»: as the whole picture laid along one path
     powers = grayscale.grey_power(got["grey8"][back] / 255, LO, HI)
     assert powers.min() > 24                                                     # the background in the blues only
     middle = np.median(got["lab"][back], axis=0)

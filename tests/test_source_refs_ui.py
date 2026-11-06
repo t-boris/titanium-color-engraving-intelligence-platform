@@ -1,4 +1,4 @@
-"""Source numbers behind a count (feature ux-growing-collections-p0, REQ-002): «Наблюдения-основания: 24» with a button instead of a line of
+"""Source numbers behind a count (feature ux-growing-collections-p0, REQ-002): «Supporting observations: 24» with a button instead of a line of
 twenty-four numbers, every number a link, long lists fifty at a time, the photographs behind observation numbers asked of the real server for
 the page that is shown, and a failed request leaving the numbers on the screen as plain text with a retry. The screen runs in node over a
 small DOM; only a real browser and a screen reader can say how it looks and sounds."""
@@ -31,9 +31,9 @@ def test_a_short_list_is_open_and_a_long_one_is_a_count_with_a_button(tmp_path):
       await until(() => qa(short, 'a').length === 2 + 1);
       out.short = {count: q(short, '.srefs-count').textContent, toggle: q(short, '.srefs-toggle') !== null, hidden: q(short, '.srefs-list').hidden,
         links: qa(short, 'a').map((a) => a.getAttribute('href'))};
-      const none = mount(ctx.SourceRefs.refs([], {label: 'Фото'}));
+      const none = mount(ctx.SourceRefs.refs([], {label: 'Photo'}));
       out.none = none.textContent;
-      const long = mount(ctx.SourceRefs.refs(Array.from({length: 24}, (_, i) => i + 1), {href, label: 'Наблюдения-основания'}));
+      const long = mount(ctx.SourceRefs.refs(Array.from({length: 24}, (_, i) => i + 1), {href, label: 'Supporting observations'}));
       const toggle = q(long, '.srefs-toggle'), list = q(long, '.srefs-list');
       out.closed = {count: q(long, '.srefs-count').textContent, expanded: toggle.getAttribute('aria-expanded'), controls: toggle.getAttribute('aria-controls') === list.getAttribute('id'),
         hidden: list.hidden, drawn: qa(long, 'a').length, caption: toggle.textContent, kind: toggle.localName, type: toggle.getAttribute('type'), name: list.getAttribute('aria-label')};
@@ -45,9 +45,9 @@ def test_a_short_list_is_open_and_a_long_one_is_a_count_with_a_button(tmp_path):
       out.closedAgain = {expanded: toggle.getAttribute('aria-expanded'), hidden: list.hidden, caption: toggle.textContent, count: q(long, '.srefs-count').textContent};
     """, EXPORTS)
     assert out["short"] == {"count": "3", "toggle": False, "hidden": False, "links": ["#/analysis/3", "#/analysis/1", "#/analysis/2"]}   # repeats are one number
-    assert out["none"] == "Фото: none"
+    assert out["none"] == "Photo: none"
     assert out["closed"] == {"count": "24", "expanded": "false", "controls": True, "hidden": True, "drawn": 0, "caption": "Show IDs", "kind": "button",
-                             "type": "button", "name": "Наблюдения-основания"}
+                             "type": "button", "name": "Supporting observations"}
     assert out["open"] == {"expanded": "true", "hidden": False, "caption": "Hide IDs", "status": "showing 24 of 24", "first": "#1", "last": "#24", "more": False}
     assert out["closedAgain"] == {"expanded": "false", "hidden": True, "caption": "Show IDs", "count": "24"}
 

@@ -1,4 +1,4 @@
-"""Inscriptions on the screens (feature inscriptions-in-works, REQ-001..REQ-005): the «Надписи» tab of the vector editor and of a photo work,
+"""Inscriptions on the screens (feature inscriptions-in-works, REQ-001..REQ-005): the «Inscriptions» tab of the vector editor and of a photo work,
 the font window and the layer of inscriptions over the picture. Static checks of the shared module against the server's contract (its
 fields, limits, choices, scripts and kinds), then the screens run in node over the small DOM of the other screen tests with inscriptions
 shaped as the API sends them: each change of an inscription is one operation of its work, a drag on the picture moves, turns or sizes it
@@ -107,10 +107,10 @@ FONTS = {"families": [
 
 def editor_routes(**over) -> dict:
     j = view()
-    j["texts"] = [text("t1"), text("t2", text="Шалом", layout="path", points=[[0, 0], [10, 0]], x=5.0, y=15.0, entry_id="e12",
-                                   srgb=[150, 60, 90], problem="its font has no letters «Ж»: choose a font that has them")]
+    j["texts"] = [text("t1"), text("t2", text="Shalom", layout="path", points=[[0, 0], [10, 0]], x=5.0, y=15.0, entry_id="e12",
+                                   srgb=[150, 60, 90], problem="its font has no letters «\u0416»: choose a font that has them")]
     j["text_defaults"] = lettering.DEFAULTS
-    j["export_blocked"] = "inscription 2 cannot be engraved: its font has no letters «Ж»: choose a font that has them"
+    j["export_blocked"] = "inscription 2 cannot be engraved: its font has no letters «\u0416»: choose a font that has them"
     j["layers"][2]["texts"] = ["t1"]
     j.update(over)
     out = routes(j)
@@ -197,7 +197,7 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
   await byText(pane, 'button', 'Copy').dispatch('click'); await tick();
   await byText(pane, 'button', 'Remove').dispatch('click'); await tick();
   const ta = pane.querySelectorAll('textarea')[0];
-  ta.value = 'HOH\\nвторая'; await ta.dispatch('change'); await tick();
+  ta.value = 'HOH\\nsecond'; await ta.dispatch('change'); await tick();
   out.ops = textOps();
 """)
     assert "show-texts" in out["svgClass"]
@@ -212,9 +212,9 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
     assert out["ops"] == [{"op": "text_add", "text": {}}, {"op": "text_set", "id": "t1", "changes": {"height_mm": 12}},
                           {"op": "text_set", "id": "t1", "changes": {"entry_id": "e12"}}, {"op": "text_set", "id": "t1", "changes": {"layout": "circle"}},
                           {"op": "text_copy", "id": "t1"}, {"op": "text_delete", "id": "t1"},
-                          {"op": "text_set", "id": "t1", "changes": {"text": "HOH\nвторая"}}]
-    assert "inscription 2 cannot be engraved: its font has no letters «Ж»: choose a font that has them" in out["text"]
-    assert "надписей 1" in out["text"]                                       # the layer that engraves it says so among the layers
+                          {"op": "text_set", "id": "t1", "changes": {"text": "HOH\nsecond"}}]
+    assert "inscription 2 cannot be engraved: its font has no letters «\u0416»: choose a font that has them" in out["text"]
+    assert "inscriptions 1" in out["text"]                                       # the layer that engraves it says so among the layers
 
 
 @node
@@ -641,7 +641,7 @@ def test_a_bulk_download_by_a_category_alone_is_offered_in_the_font_window(tmp_p
 @node
 def test_the_kind_filter_narrows_the_list_and_favourites_stay_marked_when_the_window_opens_again(tmp_path):
     """inscriptions-in-works REQ-001 c3: the filter by kind (serif, sans serif, handwriting ...) and the favourites, which this browser
-    keeps: a star marks a family, «Избранные» lists the marked ones, and the next window shows them marked still."""
+    keeps: a star marks a family, «Favorites» lists the marked ones, and the next window shows them marked still."""
     out = run_editor(tmp_path, editor_routes(), OPEN + FONT_WINDOW + """
   const kept = new Map();                     // the browser's storage of this screen
   ctx.localStorage = {getItem: (k) => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => { kept.set(k, String(v)); }};

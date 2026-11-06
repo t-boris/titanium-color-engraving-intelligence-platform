@@ -86,7 +86,7 @@ ZONE = {"number": 1, "regions": ["p12", "p13"], "kind": "grayscale", "scale": mo
         "index": 3, "width_mm": 24.5, "area_mm2": 310.2, "box": {"x": 10, "y": 12, "width": 24.5, "height": 18.2}, "span": [1, 30],
         "referenced": True, "dots": None, "estimate": False, "problem": None, "name": "C03", "dpi": 1000, "time": {"seconds": 95},
         "ai_missing": None, "ai_photo": False}
-WORK = {"id": 9, "name": "Портрет", "device_id": 1, "lens_id": 2, "material_id": 3}
+WORK = {"id": 9, "name": "Portrait", "device_id": 1, "lens_id": 2, "material_id": 3}
 KINDS = {"zone": 1, "kind": "grayscale", "kinds": [
     {"key": k, "family": "power" if k == "grayscale" else "edges" if k == "sketch" else "dots", "basis": "documented", "estimate": k != "grayscale",
      "picture": f"/api/vector/9/photo/1/kinds/{k}.png?v=1", **({"min_power": 12, "max_power": 28} if k == "grayscale" else {"power": 12.5, "hex": "#3355aa",
@@ -212,12 +212,12 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   out.width = [width.value, !!width.disabled];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.layer = tree.textContent.includes('LightBurn file: layer C03 is a grayscale image after the color layers: Min 12 %, Max 28 %');
-  out.missing = [!!button(tree, 'Test at work width'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
+  out.missing = [!!button(tree, 'Test at work width'), tree.textContent.includes('Original color image'), tree.textContent.includes('cleaning')];
   out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'How to match grayscale').querySelectorAll('option').map((o) => o.textContent);
   out.tabs = tree.querySelectorAll('button').filter((t) => t.getAttribute('role') === 'tab').map((t) => t.textContent);
   out.steps = [button(tree, 'Undo').disabled, button(tree, 'Redo').disabled];
 """)
-    assert out["head"] == ["Photo zone 1", "Work “Портрет” · C03 · Regions: 2 · 24,5 × 18,2 mm", "#/vector?plan=9"]
+    assert out["head"] == ["Photo zone 1", "Work “Portrait” · C03 · Regions: 2 · 24,5 × 18,2 mm", "#/vector?plan=9"]
     assert out["scales"] == [{"device_id": "1", "material_id": "3", "lens_id": "2", "row_mm": "24.5"}]  # the zone's size, as well as its setup
     assert out["opened"] == {"chosen": [False, True], "powers": ["12", "28"], "shown": "/api/vector/9/photo/1/preview.png?v=0"}
     assert out["width"] == ["24.5", True] and out["widths"][0] == "24.5"                       # the zone's width is its regions', its scale read at it
@@ -325,7 +325,7 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
 """.replace("RECIPE_JSON", json.dumps(RECIPE)), kind="jarvis", dot_power=12.5)
     assert out["offered"] and out["went"] == ["/colors?dots=9&zone=1&setup=laser%3A1%2Flens%3A2"]
     assert out["mapped"] == [True, True, True, True, True]
-    assert out["saves"] == [{"dot_power": 13}, {"dot_power": 13}]                              # «На шкалу»: back on the scale at its power
+    assert out["saves"] == [{"dot_power": 13}, {"dot_power": 13}]                              # «Use scale»: back on the scale at its power
 
 
 @node

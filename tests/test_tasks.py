@@ -73,7 +73,7 @@ def test_the_operators_layer_choice_wins_over_the_work_the_plan_and_the_layer_an
     assert eff(operator="text", work="fill", plan="color_image") | {} == {"kind": "text", "basis": "explicit", "source": "operator",
                                                                              "mode": "Scan", "derived": "fill"}
     assert eff(work="mark", plan="color_image")["source"] == "work" and eff(plan="color_image")["kind"] == "color_image"
-    assert eff()["basis"] == "derived" and eff(operator="layer", work="text")["kind"] == "fill"       # "по слою LightBurn"
+    assert eff()["basis"] == "derived" and eff(operator="layer", work="text")["kind"] == "fill"       # "by LightBurn layer"
     assert tasks.effective("Scan", None, "registration, QR and engraved labels", operator="text")["basis"] == "derived"
     with pytest.raises(su.ValidationError, match="unknown engraving task"):
         tasks.require("engraving")

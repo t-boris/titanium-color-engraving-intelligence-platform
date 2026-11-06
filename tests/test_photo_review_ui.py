@@ -502,14 +502,14 @@ def test_a_failed_recheck_is_said_and_gives_the_page_back(tmp_path, states):
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text);
 """)
     assert "Check failed" in out["status"] and out["primary"] == [["Accept observations", False]]      # the state did not change: neither does the page
-    assert out["again"] is False and out["reloads"] == 0 and len(out["toast"]) == 1 and "photograph could not be read" in out["toast"][0] or "фотограф" in out["toast"][0]
+    assert out["again"] is False and out["reloads"] == 0 and len(out["toast"]) == 1 and "photograph could not be read" in out["toast"][0]
 
 
 # -- acceptance and rejection ------------------------------------------------------------------------------------------------------
 def test_accepting_sends_one_request_hands_over_through_the_hook_and_a_refusal_is_shown_and_redrawn(tmp_path, states):
     pairs, ids, _ = states
     pid = ids["ready"]
-    accepted = {"status": 200, "json": {"observations": [1, 2], "work_review": {"work": "Лист 3"}}}
+    accepted = {"status": 200, "json": {"observations": [1, 2], "work_review": {"work": "Sheet 3"}}}
     out = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/accept": accepted}, """
   const tree = await draw('ready');
   const accept = primaries(tree)[0];
@@ -518,7 +518,7 @@ def test_accepting_sends_one_request_hands_over_through_the_hook_and_a_refusal_i
     toast: ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map(text), disabled: accept.disabled};
 """)
     assert out["ok"]["requests"] == ["POST"] and out["ok"]["went"] == [f"/analysis/{pid}"]
-    assert any("Observations accepted. The conclusion was saved to “Лист 3”" in t for t in out["ok"]["toast"]) and out["ok"]["disabled"] is True
+    assert any("Observations accepted. The conclusion was saved to “Sheet 3”" in t for t in out["ok"]["toast"]) and out["ok"]["disabled"] is True
     refused = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/accept": {"status": 422, "json": {"error": "review the layer masks overlaid on the photograph before accepting", "kind": "invalid"}}}, """
   const tree = await draw('ready');
   await primaries(tree)[0].dispatch('click'); await settle();
@@ -616,7 +616,7 @@ def test_the_review_keeps_the_texts_and_expressions_other_tests_and_screens_depe
 def test_accepting_a_result_of_a_vector_work_returns_to_that_work_and_other_results_stay_on_the_analysis(tmp_path, states):
     pairs, ids, _ = states
     pid = ids["ready"]
-    summary = {"summary": {"route": "/vector?plan=7&accepted=%d" % pid, "work": "Лев"}, "review": {"summary": {"beyond_layers": 2}}}
+    summary = {"summary": {"route": "/vector?plan=7&accepted=%d" % pid, "work": "Lion"}, "review": {"summary": {"beyond_layers": 2}}}
     routes = {**routes_for(states), f"/api/pairs/{pid}/accept": {"status": 200, "json": {"work_review": summary}}}
     other = {**routes_for(states), f"/api/pairs/{pid}/accept": {"status": 200, "json": {"work_review": None}}}
     script = """

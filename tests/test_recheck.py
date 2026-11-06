@@ -1,4 +1,4 @@
-"""«Перепроверить все работы» (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089): a full backup first, every accepted
+"""«Recheck all work» (feature findings-you-can-manage-short-lists-re-check, REQ-004, DEC-089): a full backup first, every accepted
 photograph measured again with the measurement as it is now, one analysis run at the end, a report kept after a restart; a stop between
 photographs; no photograph changes while it runs."""
 import json
@@ -85,7 +85,7 @@ def test_a_stop_takes_effect_between_photographs_and_the_conclusions_are_still_d
     holder = {}
 
     def remeasure(s, pair_id, on_accepted=None):
-        rc.stop(s, holder["id"])                                                 # the operator presses «Остановить» during the first
+        rc.stop(s, holder["id"])                                                 # the operator presses «Stop» during the first
         return real(s, pair_id, on_accepted=on_accepted)
     monkeypatch.setattr(ig, "remeasure_pair", remeasure)
     real_save = rc._save

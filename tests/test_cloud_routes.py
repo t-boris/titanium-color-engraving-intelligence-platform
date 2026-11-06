@@ -1,5 +1,5 @@
 """The cloud over the local API (electron REQ-086, REQ-087, DEC-058): under the desktop shell the sign-in's callback is the one address
-the browser reaches without the session cookie, and only while its state is pending; the whole flow from «Войти» to a publication,
+the browser reaches without the session cookie, and only while its state is pending; the whole flow from «Sign in» to a publication,
 the catalogue, a connection from the cloud as a job, invitations, the check for updates and the settings; the cloud routes are the
 workshop's own computer's and obey the network switch."""
 from __future__ import annotations
@@ -81,8 +81,8 @@ def test_under_the_desktop_shell_the_callback_passes_without_the_cookie_only_whi
         assert shown.status_code == 422 and "Sign-in was canceled" in shown.text
         assert desktop.get("/api/cloud/account").json()["signed_in"] is False
         # the real thing
-        account = signed_in(desktop, world, "acc-desktop", "Настольная")
-        assert account["signed_in"] and account["account"]["name"] == "Настольная" and account["switched_on"] is True
+        account = signed_in(desktop, world, "acc-desktop", "Desktop")
+        assert account["signed_in"] and account["account"]["name"] == "Desktop" and account["switched_on"] is True
         assert bare.get("/api/cloud/account").status_code == 403                                                  # still guarded
         assert desktop.post("/api/cloud/signout").json()["signed_in"] is False
         assert desktop.post("/api/cloud/signin/cancel", json={}).json()["signed_in"] is False

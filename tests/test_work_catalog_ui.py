@@ -512,7 +512,7 @@ def test_copy_makes_a_work_next_to_the_first_and_a_failed_copy_still_refreshes_t
     client.post(f"/api/vector/{vector['id']}/rename", json={"name": "Copyable vector"})
     photo = create_photo_work(client, name="Copyable photo")
     out = screen(real, f"""
-  const s = await open({{q: 'Copyableая Copyableое'.split(' ')[0]}});
+  const s = await open({{q: 'Copyable vector Copyable photo'.split(' ')[0]}});
   const both = await open({{q: 'Copyable'}});
   out.start = names(both).sort();
   await choose(rowNamed(both, 'Copyable photo'), 'Make a copy');

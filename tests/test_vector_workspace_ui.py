@@ -58,7 +58,7 @@ def works_routes(c, extra=None) -> dict:
 def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_and_deletes_with_a_question(work, job, model, tmp_path):
     c, first = work, job
     model()
-    second = create(c, name="Витраж", n_colors=4, algorithm="tonal").json()
+    second = create(c, name="Stained glass", n_colors=4, algorithm="tonal").json()
     ai_op(c, second, style="cubism")
     listed = c["client"].get("/api/vector").json()
     routes = works_routes(c, {f"/api/vector/{first['id']}/copy": {"status": 201, "json": {"id": 77}}, f"/api/plans/{second['id']}": {"status": 200, "json": {}}})
@@ -74,7 +74,7 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
   await byText(mine, 'button', 'Make a copy').dispatch('click'); await tick();
   out.copied = ctx.location.hash;
   out.copyPosts = ctx.requests.filter((r) => r.method === 'POST').map((r) => r.path);
-  const other = cards.find((a) => a.textContent.includes('Витраж'));
+  const other = cards.find((a) => a.textContent.includes('Stained glass'));
   await byText(other, 'button', 'Delete').dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.question = dialog.textContent;
@@ -96,7 +96,7 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
     assert any("Coloring: Closer to original" in card["text"] or "Coloring: Preserve tonality" in card["text"] for card in out["cards"])
     assert any("By tone" in card["text"] for card in out["cards"]) and any("Mosaic" in card["text"] for card in out["cards"])
     assert out["opened"] == f"#/vector?plan={first['id']}" and out["copied"] == "#/vector?plan=77" and out["copyPosts"] == [f"/api/vector/{first['id']}/copy"]
-    assert "Delete work «Витраж»?" in out["question"] or "Витраж" in out["question"]
+    assert "Delete work «Stained glass»?" in out["question"] or "Stained glass" in out["question"]
     assert "Make a copy" in out["question"] and "deleted permanently" in out["question"] and out["deletedBeforeAnswer"] == 0     # asked first
     assert out["deleted"] == [f"/api/plans/{second['id']}"] and out["rendered"] >= 1
     assert out["newWork"] == "#/vector?new=1"
@@ -129,7 +129,7 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   const list = tree.querySelectorAll('div').find((d) => d.getAttribute('role') === 'tablist' && d.getAttribute('aria-label') === 'Work sections');
   await list.dispatch('keydown', {{key: 'ArrowRight'}});
   out.afterArrow = shown();
-  const again = await screen({{plan: {j['id']}}});                          // the screen is built again, as after "Разбить заново"
+  const again = await screen({{plan: {j['id']}}});                          // the screen is built again, as after "Split again"
   out.restored = again.querySelectorAll('div').filter((d) => d.getAttribute('role') === 'tabpanel' && d.getAttribute('id').startsWith('vw-tab-panel-') && !d.hidden).map((d) => d.getAttribute('id'));
   out.head = tree.querySelectorAll('header')[0].textContent;
   out.back = tree.querySelectorAll('a').find((a) => a.textContent === '← My works').getAttribute('href');
@@ -312,8 +312,8 @@ def test_a_refused_rename_keeps_the_dialog_open_and_can_be_tried_again(work, job
 def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is_refreshed(work, job, tmp_path):
     c, j = work, job
     routes = routes_of(c, j)
-    routes[f"/api/vector/{j['id']}/rename"] = {"status": 200, "json": {"id": j["id"], "name": "Новое имя"}}
-    routes[f"/api/vector/{j['id']}/colouring"] = {"status": 200, "json": {**routes[f"/api/vector/{j['id']}"]["json"], "name": "Новое имя"}}    # the server's answer after the rename
+    routes[f"/api/vector/{j['id']}/rename"] = {"status": 200, "json": {"id": j["id"], "name": "New name"}}
+    routes[f"/api/vector/{j['id']}/colouring"] = {"status": 200, "json": {**routes[f"/api/vector/{j['id']}"]["json"], "name": "New name"}}    # the server's answer after the rename
     out = run(tmp_path, routes, {"plan": str(j["id"])}, f"""
   {DIALOG} {POSTS}
   const head = () => tree.querySelectorAll('header')[0];
@@ -322,7 +322,7 @@ def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is
   await pencils()[0].dispatch('click');
   const d = dialog();
   out.prefill = d.querySelector('input').value;
-  d.querySelector('input').value = 'Новое имя';
+  d.querySelector('input').value = 'New name';
   await byText(d, 'button', 'Save').dispatch('click'); await tick(); await tick();
   out.after = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label')];
   out.posts = posts();
@@ -330,8 +330,8 @@ def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is
   out.refreshed = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label'), head().querySelector('.sub').textContent.includes('split #')];
 """)
     assert out["before"] == [j["name"], 1, f"Rename work «{j['name']}»"] and out["prefill"] == j["name"]
-    assert out["after"] == ["Новое имя", 1, "Rename work «Новое имя»"] and out["posts"] == [[f"/api/vector/{j['id']}/rename", body("Новое имя")]]
-    assert out["refreshed"] == ["Новое имя", 1, "Rename work «Новое имя»", True]
+    assert out["after"] == ["New name", 1, "Rename work «New name»"] and out["posts"] == [[f"/api/vector/{j['id']}/rename", body("New name")]]
+    assert out["refreshed"] == ["New name", 1, "Rename work «New name»", True]
 
 
 def test_the_long_page_of_the_other_strategies_uses_the_same_pencil_and_the_title_follows_the_new_name():

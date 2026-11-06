@@ -104,8 +104,8 @@ def test_a_negative_bend_bends_the_other_way_and_the_offset_moves_the_text_along
 
 
 def test_the_letters_of_several_scripts_and_right_to_left(data):
-    g = geo(data, text="HП ОH")          # Latin H, Cyrillic П and a Cyrillic О the test font does not have
-    assert g["missing"] == ["О"] and g["letters"].area == pytest.approx(mm2(2 * AREA["H"] + AREA["П"]))
+    g = geo(data, text="H\u041f \u041eH")          # Latin H, Cyrillic \u041f and a Cyrillic \u041e the test font does not have
+    assert g["missing"] == ["\u041e"] and g["letters"].area == pytest.approx(mm2(2 * AREA["H"] + AREA["\u041f"]))
     assert geo(data, text="אגדה")["missing"] == ["ג", "ד", "ה"]      # named in the order of the text, though set right to left
     hebrew = geo(data, text="אב")["letters"].geoms
     alef = max(hebrew, key=lambda p: p.area)
@@ -375,8 +375,8 @@ def test_the_operations_of_a_works_list(data):
     assert texts[0]["height_mm"] == 8.0 and texts[0]["font"]["family"] in ("Test Sans", "Other Serif")   # a tenth of the shorter side
     texts = L.operate(data, texts, {"op": "text_copy", "id": "t1"}, WORK, ok, lambda: "e1")
     assert [t["id"] for t in texts] == ["t1", "t2"] and texts[1]["x"] == 53
-    texts = L.operate(data, texts, {"op": "text_set", "id": "t2", "changes": {"text": "П", "entry_id": "e2"}}, WORK, ok, lambda: "e1")
-    assert texts[1]["text"] == "П" and texts[1]["entry_id"] == "e2"
+    texts = L.operate(data, texts, {"op": "text_set", "id": "t2", "changes": {"text": "\u041f", "entry_id": "e2"}}, WORK, ok, lambda: "e1")
+    assert texts[1]["text"] == "\u041f" and texts[1]["entry_id"] == "e2"
     with pytest.raises(su.ValidationError, match="measured colour of this laser"):
         L.operate(data, texts, {"op": "text_set", "id": "t2", "changes": {"entry_id": "e9"}}, WORK, ok, lambda: "e1")
     with pytest.raises(su.ValidationError, match="is not on this computer any more"):
@@ -418,15 +418,15 @@ def test_a_moved_font_is_found_by_its_family_and_style(data):
 
 
 def test_the_font_window_draws_the_text_and_the_missing_letters_red(data):
-    svg = L.preview_svg(data, face(data)["face"], "HО")
+    svg = L.preview_svg(data, face(data)["face"], "H\u041e")
     assert svg.startswith("<svg") and 'fill="#1f1f1f"' in svg and 'fill="#d32f2f"' in svg
-    assert 'fill="#d32f2f"' not in L.preview_svg(data, face(data)["face"], "HП")
+    assert 'fill="#d32f2f"' not in L.preview_svg(data, face(data)["face"], "H\u041f")
 
 
 def test_the_font_window_draws_the_outline_the_file_gets_and_the_sample_while_the_text_is_empty(data):
     """inscriptions-in-works REQ-001 c4: the text drawn in the font window is the outline of the letters the file gets (the geometry the
     work cuts and engraves), filled as fonts are (non-zero), point for point; an empty text shows the sample."""
-    svg = L.preview_svg(data, face(data)["face"], "HOП", height_mm=10)
+    svg = L.preview_svg(data, face(data)["face"], "HO\u041f", height_mm=10)
     d = re.search(r'<path fill="#1f1f1f" fill-rule="nonzero" d="([^"]*)"/>', svg).group(1)
     rings = [np.array(re.findall(r"[ML]([-\d.]+) ([-\d.]+)", part), np.float64) for part in d.split("Z") if part.strip()]
     lo, hi = np.vstack(rings).min(axis=0), np.vstack(rings).max(axis=0)
@@ -435,12 +435,12 @@ def test_the_font_window_draws_the_outline_the_file_gets_and_the_sample_while_th
     for ring in rings:                                     # each contour adds its turn (+1 or -1) to the points inside it
         turn = 1 if np.dot(ring[:, 0], np.roll(ring[:, 1], -1)) > np.dot(ring[:, 1], np.roll(ring[:, 0], -1)) else -1
         winding += turn * shapely.contains_xy(Polygon(ring), xs, ys)
-    letters = geo(data, size=None, text="HOП", height_mm=10)["letters"]
+    letters = geo(data, size=None, text="HO\u041f", height_mm=10)["letters"]
     x0, y0, x1, y1 = letters.bounds
     dx, dy = (x0 + x1 - lo[0] - hi[0]) / 2, (y0 + y1 - lo[1] - hi[1]) / 2               # the window's drawing laid on the work's
     drawn, engraved = winding != 0, shapely.contains_xy(letters, xs + dx, ys + dy)
     assert drawn.sum() > 100_000 and (drawn != engraved).sum() == 0
-    assert drawn.sum() * 0.0173 ** 2 == pytest.approx(mm2(AREA["H"] + AREA["O"] + AREA["П"], height=10), rel=0.01)
+    assert drawn.sum() * 0.0173 ** 2 == pytest.approx(mm2(AREA["H"] + AREA["O"] + AREA["\u041f"], height=10), rel=0.01)
     sample = L.preview_svg(data, face(data)["face"], L.SAMPLE)
     assert L.preview_svg(data, face(data)["face"], "") == sample and L.preview_svg(data, face(data)["face"], None) == sample
 

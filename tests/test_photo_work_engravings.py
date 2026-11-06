@@ -19,7 +19,7 @@ def ramp_width(client):
     return min(size["row_mm"] for sc in client.get("/api/grey-scales").json()["scales"] for size in sc["sizes"])
 
 
-def create(client, name="Портрет", width_mm=None):
+def create(client, name="Portrait", width_mm=None):
     width_mm = ramp_width(client) if width_mm is None else width_mm
     picture = cv2.imencode(".png", (synth.structured_picture(5) * 255).astype(np.uint8))[1].tobytes()
     answer = client.post("/api/photo-works", data={"width_mm": width_mm, "name": name}, files={"picture": ("portrait.png", picture, "image/png")})
@@ -88,7 +88,7 @@ def test_the_file_of_a_work_names_it_and_its_photograph_is_linked_measured_and_c
     assert after["engravings"] == before["engravings"] + 1                                               # it counts in its scale
     assert after["confirmation"]["engravings"] == before["confirmation"]["engravings"] + 1
 
-    lighter = client.post(f"/api/photo-works/{work['id']}/copy", json={"name": "Портрет светлее"}).json()
+    lighter = client.post(f"/api/photo-works/{work['id']}/copy", json={"name": "Lighter portrait"}).json()
     lighter = client.get(f"/api/photo-works/{lighter['id']}").json()
     pid2, report2, _ = engrave(client, lighter, lighter=12.0)
     assert report2["problems"] == [] and store.one("SELECT plan_id FROM pair WHERE id=?", (pid2,))["plan_id"] == lighter["id"]
@@ -128,7 +128,7 @@ def test_a_work_on_another_plate_of_the_scales_grade_is_on_that_scale_and_its_en
 def test_an_engraving_wider_than_the_scale_was_measured_is_not_checked_against_another_size_until_one_was_engraved_at_its_own(app_world):
     client = app_world["client"]
     ramp = ramp_width(client)
-    work = create(client, name="Шире", width_mm=round(ramp * 2.5, 1))
+    work = create(client, name="Wider", width_mm=round(ramp * 2.5, 1))
     shown = client.get(f"/api/photo-works/{work['id']}").json()["picture"]
     assert shown["scale_size"]["how"] == "outside" and shown["scale_size"]["measured_mm"] == [ramp]       # predicted from the ramps, and said
     assert any("were not measured at this mode" in note for note in shown["notes"]), shown["notes"]
@@ -141,7 +141,7 @@ def test_an_engraving_wider_than_the_scale_was_measured_is_not_checked_against_a
     assert check["size"]["how"] == "outside" and check["size"]["measured_mm"] == [ramp]
     assert client.get(f"/api/photo-works/{work['id']}").json()["picture"]["scale_size"]["how"] == "measured"   # its own size now
 
-    again = client.post(f"/api/photo-works/{work['id']}/copy", json={"name": "Шире ещё раз"}).json()
+    again = client.post(f"/api/photo-works/{work['id']}/copy", json={"name": "Wider again"}).json()
     again = client.get(f"/api/photo-works/{again['id']}").json()
     pid2, _, _ = engrave(client, again)
     accept(client, pid2)
@@ -152,7 +152,7 @@ def test_an_engraving_wider_than_the_scale_was_measured_is_not_checked_against_a
 
 def test_a_ramp_as_wide_as_the_work_is_ordered_from_it_and_once_measured_the_work_is_predicted_at_its_own_width(app_world):
     client, store = app_world["client"], app_world["client"].app.state.store
-    work = create(client, name="Проба ширины", width_mm=round(ramp_width(client) * 2, 1))
+    work = create(client, name="Width test", width_mm=round(ramp_width(client) * 2, 1))
     before = client.get(f"/api/photo-works/{work['id']}").json()["picture"]["scale_size"]
     assert before["how"] in ("outside", "between"), before                  # not measured at its width (between: another test's width)
     made = client.post(f"/api/photo-works/{work['id']}/width-ramp")
@@ -181,7 +181,7 @@ def test_a_ramp_as_wide_as_the_work_is_ordered_from_it_and_once_measured_the_wor
 
 def test_a_work_without_photographs_has_no_engravings_and_its_file_still_opens_in_lightburn_terms(app_world):
     client = app_world["client"]
-    work = create(client, name="Без фото")
+    work = create(client, name="No photo")
     assert client.get(f"/api/photo-works/{work['id']}/engravings").json() == []
     project = lightburn.parse_bytes(client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content)
     assert project.identifier == work["identifier"] and plans.MODE_PHOTO_WORK
@@ -196,13 +196,13 @@ def wavy(grey):
 
 def test_a_picture_matched_on_the_photograph_is_read_as_matched_even_when_its_colours_do_not_darken_step_by_step(app_world):
     client = app_world["client"]
-    work = create(client, name="Волны")
+    work = create(client, name="Waves")
     store = client.app.state.store
     data = client.get(f"/api/photo-works/{work['id']}/export.lbrn2").content
     photo = synth.engraved_picture(data, lambda grey: np.clip(color.lab_to_srgb8(wavy(grey).reshape(-1, 3)).reshape(*np.shape(grey), 3), 0, 255),
                                    px_per_mm=PICTURE_PX / work["width_mm"])
     device = store.one("SELECT device_id, lens_id FROM pair ORDER BY id LIMIT 1")
-    pid = ig.create_pair(store, device_id=device["device_id"], lens_id=device["lens_id"], stand_id=None, lightburn_name="Волны.lbrn2",
+    pid = ig.create_pair(store, device_id=device["device_id"], lens_id=device["lens_id"], stand_id=None, lightburn_name="Waves.lbrn2",
                          lightburn_bytes=data, photo_name="waves.png", context={"material_id": work["scale"]["material_id"]},
                          photo_bytes=cv2.imencode(".png", photo)[1].tobytes())
     report = ig.check_pair(store, pid)

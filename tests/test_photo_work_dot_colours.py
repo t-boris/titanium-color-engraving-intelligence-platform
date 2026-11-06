@@ -117,7 +117,7 @@ def test_the_map_of_the_works_laser_and_lens_tells_each_colour_what_it_gives_the
 
 def test_a_fill_makes_every_dot_fire_at_its_settings_at_its_colour_at_the_works_width(world):
     client, store = world["client"], world["store"]
-    work = create(client, name="Фиолетовые точки")
+    work = create(client, name="Purple dots")
     dotted = settings(client, work, kind="jarvis")
     picked = settings(client, work, dot_colour=group(the_map(client, work), 500))
     recipe = picked["dot_recipe"]
@@ -126,7 +126,7 @@ def test_a_fill_makes_every_dot_fire_at_its_settings_at_its_colour_at_the_works_
     assert recipe["lab"] == pytest.approx(between(60), abs=0.01) and (recipe["engravings"], recipe["missing"]) == (2, False)
     dots = picked["picture"]["dots"]
     assert (dots["source"], dots["power"], picked["picture"]["estimate"]) == ("map", 20.0, True) and dots["lab"] == pytest.approx(recipe["lab"])
-    assert picked["dot_power"] == dotted["dot_power"]                             # the scale's power waits for «На шкалу»
+    assert picked["dot_power"] == dotted["dot_power"]                             # the scale's power waits for «Use scale»
     assert picked["dpi"] == 1270 and picked["picture"]["dpi"] == 1270             # the step of the fill is the dots' pitch
     plan = photo_work._work(store, work["id"])
     mode = photo_work.mode_of(plan)
@@ -213,7 +213,7 @@ def test_a_colour_that_cannot_be_the_dots_is_refused_with_the_reason(world):
 
 def test_a_ramp_of_the_kind_at_the_fills_settings_once_photographed_replaces_the_estimate(world):
     client, store = world["client"], world["store"]
-    work = settings(client, create(client, name="Проба фиолетовых точек"), kind="jarvis")
+    work = settings(client, create(client, name="Purple dot test"), kind="jarvis")
     picked = settings(client, work, dot_colour=group(the_map(client, work), 500))
     made = client.post(f"/api/photo-works/{work['id']}/width-ramp")
     assert made.status_code == 201, made.text

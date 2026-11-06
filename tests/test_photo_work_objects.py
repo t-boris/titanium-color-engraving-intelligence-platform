@@ -131,7 +131,7 @@ def ai_colours(brief):
     darkest = min(brief["colours"], key=lambda c: c["lab"][0])
     lightest = max(brief["colours"], key=lambda c: c["lab"][0])
     return {"colours": {"clothes": {"power": darkest["power"], "shift": -0.5}, "face_skin": {"power": lightest["power"]}, "lips": {"power": 1}},
-            "note": "платье тёмным, кожа светлая"}
+            "note": "dark dress, light skin"}
 
 
 def test_the_ai_gets_the_wish_the_objects_and_the_scales_colours_and_its_colours_are_kept_with_its_note_and_undone(app_world, parts_model, model):
@@ -139,16 +139,16 @@ def test_the_ai_gets_the_wish_the_objects_and_the_scales_colours_and_its_colours
     fake = model(ai_colours)
     work = create(client)
     settings(client, work, colour_choice="nearest")
-    answer = client.post(f"/api/photo-works/{work['id']}/ai-theme", json={"wish": "  платье тёмным  "})
+    answer = client.post(f"/api/photo-works/{work['id']}/ai-theme", json={"wish": "  dark dress  "})
     assert answer.status_code == 200, answer.text
     done = answer.json()
     brief = sent(fake.calls[0])
-    assert brief["wish"] == "платье тёмным" and [o["key"] for o in brief["objects"]] == ["face_skin", "clothes"] and brief["current"] == {}
+    assert brief["wish"] == "dark dress" and [o["key"] for o in brief["objects"]] == ["face_skin", "clothes"] and brief["current"] == {}
     assert brief["colours"] == [{"power": c["power"], "lab": c["lab"]} for c in found(client, work)["options"]]
     assert isinstance(fake.calls[0]["input"][0]["content"], str)                                    # numbers only: no picture
     assert (done["by_colour"], done["colour_choice"], set(done["colouring"])) == (True, "objects", {"clothes", "face_skin"})   # no lips here
     assert done["colouring"]["clothes"]["shift"] == -0.5 and done["colouring"]["face_skin"]["shift"] == 0
-    assert {k: done["ai_theme"][k] for k in ("wish", "photo", "note")} == {"wish": "платье тёмным", "photo": False, "note": "платье тёмным, кожа светлая"}
+    assert {k: done["ai_theme"][k] for k in ("wish", "photo", "note")} == {"wish": "dark dress", "photo": False, "note": "dark dress, light skin"}
     back = step(client, work, "undo").json()
     assert (back["colour_choice"], back["colouring"], back["ai_theme"]) == ("nearest", {}, None)
 
@@ -158,11 +158,11 @@ def test_a_bad_ai_theme_is_sent_back_once_and_a_second_one_changes_nothing(app_w
     unmeasured = {"colours": {"clothes": {"power": 77.7}}, "note": "?"}
     fake = model(unmeasured, ai_colours)
     work = create(client)
-    assert client.post(f"/api/photo-works/{work['id']}/ai-theme", json={"wish": "ярче"}).json()["colour_choice"] == "objects"
+    assert client.post(f"/api/photo-works/{work['id']}/ai-theme", json={"wish": "brighter"}).json()["colour_choice"] == "objects"
     assert "Rejected: the AI chose a colour that is not among the measured colours of this titanium" in fake.calls[1]["input"][2]["content"]
     other = create(client)
     model({"colours": {"clothes": {"power": found(client, other)["options"][0]["power"], "shift": 3}}})
-    refused = client.post(f"/api/photo-works/{other['id']}/ai-theme", json={"wish": "ярче"})
+    refused = client.post(f"/api/photo-works/{other['id']}/ai-theme", json={"wish": "brighter"})
     assert refused.status_code == 422 and refused.json()["error"] == "the AI made an object lighter or darker beyond -1..1"
     kept = client.get(f"/api/photo-works/{other['id']}").json()
     assert (kept["colouring"], kept["ai_theme"], kept["undo"]) == ({}, None, 0)

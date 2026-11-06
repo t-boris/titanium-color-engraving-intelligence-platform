@@ -65,7 +65,7 @@ def test_the_label_is_small_and_hidden_while_empty_and_the_header_keeps_its_heig
     assert re.search(r"\.app-version \{font-size:12px;", CSS) and ".app-version:empty {display:none}" in CSS
     # The version and the task entry remain available after removing the static role label.
     assert "header-actions'}, menuButton, versionTag" in ROUTER and "Operations.entry()" in ROUTER and "get('/version')" in ROUTER
-    assert "Исследователь / мастер" not in ROUTER
+    assert "Researcher / workshop" not in ROUTER
 
 
 def test_the_server_reports_the_version_the_package_has(tmp_path):

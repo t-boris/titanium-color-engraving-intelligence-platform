@@ -65,7 +65,7 @@ ROUTES = {
     "/api/materials": {"status": 200, "json": [{"id": 1, "name": "Titan", "grade": "2", "batch": "A"}]},
     "/api/materials/1": {"status": 200, "json": {"id": 1, "name": "Titan", "grade": "2", "batch": "A"}},       # the stock selector reads the one record it shows
     "/api/application-goals": {"status": 200, "json": [{"id": "text", "name": "Lettering", "objective": "Legible letters at the chosen size"},
-                                                       {"id": "line", "name": "Линии", "objective": "Thin lines"}]},
+                                                       {"id": "line", "name": "Lines", "objective": "Thin lines"}]},
     "/api/devices/1/findings": {"status": 200, "json": [FINDING, {**FINDING, "purpose": "text", "status": "needs_test", "pair_id": 8}]},
     "/api/application-guide": {"status": 200, "json": {"status": "ok", "message": "Compare lettering at three power levels.", "next_step": "Create a lettering plate and photograph it.",
                                                        "plate": {"test_type": "text_readability", "source_pair_id": 7, "settings": {"pulse_width": 200}}, "finding": FINDING,

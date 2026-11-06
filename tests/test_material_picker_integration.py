@@ -21,7 +21,7 @@ EXPORTS = ("MaterialPicker",)
 FORM_DATA = "ctx.FormData = class { constructor() { this.items = []; } append(k, v) { this.items.push([k, typeof v === 'object' && v ? v.name : String(v)]); } };"
 HELPERS = r"""
 const stockUrls = () => requests('/api/materials').map((x) => x.url);                      // every read of the catalogue, pages and single records
-const records = (root) => qa(root, 'option').filter((o) => /^Лист \d+/.test(o.textContent)).length;     // an option per record: what the drop-down was
+const records = (root) => qa(root, 'option').filter((o) => /^Sheet \d+/.test(o.textContent)).length;     // an option per record: what the drop-down was
 const picker = (root, name) => qa(root, '.matpick').find((p) => p.getAttribute('aria-label') === name);
 const labelOf = (p) => q(p, '.matpick-label').textContent;
 const sent = (url, method = 'POST') => log.filter((x) => x.url === url && x.method === method);
@@ -46,7 +46,7 @@ def workshop(tmp_path):
         store = app.state.store
         laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
         lenses.install(store, laser["id"], lenses.create_lens(store, "F-Theta 174", 174, 110)["id"])
-        su.save_capture_setup(store, "Стенд 1", "Canon R5", "LED 5600K", "90", "ColorChecker")
+        su.save_capture_setup(store, "Stand 1", "Canon R5", "LED 5600K", "90", "ColorChecker")
         fill_materials(store, 200)
         creation_context.save(store, {"material_id": 88})
         yield store, port
@@ -59,7 +59,7 @@ def bare(tmp_path):
         store = app.state.store
         laser = devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r")
         lenses.install(store, laser["id"], lenses.create_lens(store, "F-Theta 174", 174, 110)["id"])
-        su.save_capture_setup(store, "Стенд 1", "Canon R5", "LED 5600K", "90", "ColorChecker")
+        su.save_capture_setup(store, "Stand 1", "Canon R5", "LED 5600K", "90", "ColorChecker")
         yield store, port
 
 
@@ -75,7 +75,7 @@ def test_the_vector_form_starts_with_the_workshops_record_and_sends_the_record_c
       out.start = {pickers: qa(box, '.matpick').length, records: records(box), rows: lines(box).length, label: labelOf(stock), value: stock.value, urls: stockUrls()};
       stock.value = '41';                                                                        // the person chooses another record
       await until(() => stock.record !== null && stock.record.id === 41);
-      qa(box, 'input').find((i) => i.getAttribute('placeholder') === 'Work name').value = 'Портрет';
+      qa(box, 'input').find((i) => i.getAttribute('placeholder') === 'Work name').value = 'Portrait';
       qa(box, 'input').find((i) => i.getAttribute('type') === 'file').files = [{name: 'Inna.jpg'}];
       const tolerance = qa(box, 'label').find((l) => (q(l, 'span') || {}).textContent === 'ΔE tolerance');
       q(tolerance, 'input').value = '5';
@@ -84,7 +84,7 @@ def test_the_vector_form_starts_with_the_workshops_record_and_sends_the_record_c
       out.sent = {material: sent('/api/vector')[0].body.items.filter(([k]) => k === 'material_id'), remembered: JSON.parse(sent('/api/creation/context', 'PUT')[0].body).material_id,
         urls: stockUrls()};
     """, EXPORTS)
-    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ")            # the remembered number is selected
+    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Sheet 88 · ")            # the remembered number is selected
     assert (out["start"]["pickers"], out["start"]["records"], out["start"]["rows"]) == (1, 0, 0)       # one line, not an option per record
     bounded(out["start"]["urls"] + out["sent"]["urls"])
     assert out["sent"]["material"] == [["material_id", "41"]] and out["sent"]["remembered"] == 41   # the number the work is made with, and the next start
@@ -101,10 +101,10 @@ def test_the_vector_form_without_any_stock_record_says_so_and_reads_no_catalogue
 
 
 # -- 2. the dialog «Test in your workshop» of a connected laboratory ---------------------------------------------------------------------
-CARD = {"id": 4, "name": "Лаборатория Север", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 1, "withdrawals": 0, "release_withdrawn": False,
-        "lab": {"name": "Лаборатория Север"}, "withdrawal_list": [],
+CARD = {"id": 4, "name": "North Laboratory", "status": "connected", "connected_at": "2026-10-20T10:00:00", "kept": 1, "withdrawals": 0, "release_withdrawn": False,
+        "lab": {"name": "North Laboratory"}, "withdrawal_list": [],
         "current": {"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "abcdef0123456789ffff", "verified": False, "status": "kept",
-                    "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Автор"}, "counts": {"measurements": 40}},
+                    "terms": {"id": "CC-BY-4.0"}, "attribution": {"name": "Author"}, "counts": {"measurements": 40}},
         "releases": [{"release_id": "r-1", "release_number": 3, "created_at": "2026-10-20T09:00:00Z", "content_sha256": "abcdef0123456789ffff", "verified": False,
                       "status": "kept", "withdrawn": False, "works": []}]}
 PALETTE = {"source": SOURCE, "conditions": [], "entries": [
@@ -120,7 +120,7 @@ LABS_OPEN = r"""
       stub('/labs/choices', {status: 200, json: %(choices)s});
       stub('/labs/palette', {status: 200, json: %(palette)s}, 'POST');
       stub('/labs/transfers', {status: 200, json: []}, 'GET');
-      stub('/labs/transfers', {status: 201, json: {plan_id: 77, name: 'Перенос'}}, 'POST');
+      stub('/labs/transfers', {status: 201, json: {plan_id: 77, name: 'Transfer'}}, 'POST');
       const tree = mount(await ctx.__screens.labs.render({query: {source: '4'}}));
       await until(() => button(tree, 'Palette'));
       await button(tree, 'Palette').dispatch('click');
@@ -159,7 +159,7 @@ def test_the_transfer_dialog_of_a_laboratory_picks_the_own_titanium_in_the_selec
       out.urls = stockUrls();
     """, EXPORTS)
     assert out["start"]["pickers"] == 1 and out["start"]["records"] == 0 and out["start"]["selects"] == ["Your laser"]       # the laser stays a drop-down, the titanium is one line
-    assert out["start"]["value"] == "200" and out["start"]["label"].startswith("Лист 200 · ")           # nothing used yet: the newest record
+    assert out["start"]["value"] == "200" and out["start"]["label"].startswith("Sheet 200 · ")           # nothing used yet: the newest record
     assert out["nested"] == {"dialogs": 2, "inertBelow": True}
     assert out["after"] == {"dialogs": 1, "inertBelow": False, "value": "137", "focus": True}
     assert out["posted"]["material_id"] == 137 and out["posted"]["entry_id"] == "e1" and out["posted"]["release_id"] == "r-1"
@@ -183,25 +183,25 @@ PLATE = ["hardware.js", "tasks.js", PICKER, "screens/plate-dialog.js"]
 def test_the_plate_dialog_selects_the_preset_record_adds_a_new_one_and_sends_the_chosen_record(workshop, tmp_path):
     store, port = workshop
     out = run_node(tmp_path, port, PLATE, HELPERS + r"""
-      stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Плата · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
+      stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Plate · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
       const list = await App.get('/devices');
       const dialog = await ctx.PlateDialog.open(list, null, null, {type: 'fill_sizes', material: 137});
       const stock = picker(dialog.el, 'Blank');
       await until(() => stock.record !== null);
       out.preset = {pickers: qa(dialog.el, '.matpick').length, records: records(dialog.el), value: stock.value, label: labelOf(stock), urls: stockUrls()};
       // a record added in the dialog's own form is the one chosen
-      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'Новый лист';
+      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'New sheet';
       await button(dialog.el, 'Save blank').dispatch('click');
-      await until(() => stock.record !== null && stock.record.name === 'Новый лист');
+      await until(() => stock.record !== null && stock.record.name === 'New sheet');
       out.added = {value: stock.value, label: labelOf(stock), created: sent('/api/materials').length, records: records(dialog.el)};
       await button(dialog.el, 'Create plate').dispatch('click');
       await until(() => sent('/api/capability-plates').length === 1);
       out.plate = JSON.parse(sent('/api/capability-plates')[0].body).material_id;
       out.urls = stockUrls().filter((u) => u !== '/api/materials');
     """, ("PlateDialog", "MaterialPicker"))
-    assert out["preset"]["value"] == "137" and out["preset"]["label"].startswith("Лист 137 · ")             # the preset number is selected
+    assert out["preset"]["value"] == "137" and out["preset"]["label"].startswith("Sheet 137 · ")             # the preset number is selected
     assert (out["preset"]["pickers"], out["preset"]["records"]) == (1, 0)
-    assert out["added"]["value"] == "201" and out["added"]["label"].startswith("Новый лист") and out["added"]["created"] == 1 and out["added"]["records"] == 0
+    assert out["added"]["value"] == "201" and out["added"]["label"].startswith("New sheet") and out["added"]["created"] == 1 and out["added"]["records"] == 0
     assert out["plate"] == 201                                                                                # the number of the record the plate is made on
     bounded(out["preset"]["urls"] + out["urls"])
 
@@ -220,7 +220,7 @@ def test_the_plate_dialog_starts_with_the_workshops_record_and_refuses_a_plate_w
       out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};      // said in the dialog, beside the field
       out.urls = stockUrls();
     """, ("PlateDialog", "MaterialPicker"))
-    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ") and out["start"]["records"] == 0
+    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Sheet 88 · ") and out["start"]["records"] == 0
     assert out["cleared"] == {"value": "", "label": "select a specific blank"}
     assert out["refused"]["posted"] == 0 and any("specific blank" in t for t in out["refused"]["toast"])
     bounded(out["urls"])
@@ -229,16 +229,16 @@ def test_the_plate_dialog_starts_with_the_workshops_record_and_refuses_a_plate_w
 def test_the_plate_dialog_with_no_stock_record_asks_for_one_and_chooses_the_record_that_is_added(bare, tmp_path):
     store, port = bare
     out = run_node(tmp_path, port, PLATE, HELPERS + r"""
-      stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Плата · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
+      stub('/capability-plates', {status: 201, json: {plan_id: 9, name: 'Plate · TCE-1', summary: {layers: 4, work_field: {checked: true}}}}, 'POST');
       const dialog = await ctx.PlateDialog.open(await App.get('/devices'), null, null, {type: 'fill_sizes'});
       const stock = picker(dialog.el, 'Blank');
       await stock.ready;
       out.none = {value: stock.value, label: labelOf(stock), cleared: q(stock, '.matpick-clear').hidden};
       await button(dialog.el, 'Create plate').dispatch('click');
       out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};
-      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'Первый лист';
+      qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'For example: Grade 2 sheet').value = 'First sheet';
       await button(dialog.el, 'Save blank').dispatch('click');
-      await until(() => stock.record !== null && stock.record.name === 'Первый лист');
+      await until(() => stock.record !== null && stock.record.name === 'First sheet');
       await button(dialog.el, 'Create plate').dispatch('click');
       await until(() => sent('/api/capability-plates').length === 1);
       out.plate = JSON.parse(sent('/api/capability-plates')[0].body).material_id;
@@ -277,9 +277,9 @@ def test_the_photo_preview_selects_the_record_of_the_address_names_the_records_i
       out.second = {value: stock.value, material: sent('/api/predictions/photo')[1].body.items.filter(([k]) => k === 'material_id')};
       out.urls = stockUrls();
     """, EXPORTS)
-    assert out["start"]["value"] == "137" and out["start"]["label"].startswith("Лист 137 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
+    assert out["start"]["value"] == "137" and out["start"]["label"].startswith("Sheet 137 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
     assert out["first"]["material"] == [["material_id", "137"]] and out["first"]["says"]
-    assert [line.split(" · ")[0] for line in out["first"]["lines"]] == ["Лист 88", "Лист 90"]              # the records it names are read one by one
+    assert [line.split(" · ")[0] for line in out["first"]["lines"]] == ["Sheet 88", "Sheet 90"]              # the records it names are read one by one
     assert out["second"] == {"value": "90", "material": [["material_id", "90"]]}
     bounded(out["start"]["urls"] + out["urls"])
     assert sorted(set(out["urls"])) == sorted({"/api/materials/137", "/api/materials/88", "/api/materials/90"})   # nothing else was read
@@ -326,7 +326,7 @@ def test_the_dialog_of_the_shared_choice_selects_the_workshops_record_and_saves_
       out.saved = {put: JSON.parse(sent('/api/creation/context', 'PUT')[0].body).material_id, material: saved.material_id};
       out.urls = stockUrls();
     """, ("WorkContext", "MaterialPicker"))
-    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
+    assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Sheet 88 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
     assert "Stock" not in out["start"]["selects"]                                              # the laser and the lens are drop-downs, the titanium is not
     assert out["impact"] == 150 and out["saved"] == {"put": 150, "material": 150}
     bounded(out["urls"])
@@ -359,7 +359,7 @@ def test_the_experiments_overview_is_about_the_remembered_record_and_a_choice_in
       out.chosen = {remembered: ctx.__store['experiment-dashboard-material'], renders: ctx.__renders.length};
       out.urls = stockUrls();
     """, EXPORTS)
-    assert out["start"]["value"] == "120" and out["start"]["label"].startswith("Лист 120 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
+    assert out["start"]["value"] == "120" and out["start"]["label"].startswith("Sheet 120 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
     assert out["start"]["guide"] == ["120"] or out["start"]["guide"] == []                           # the guide, when asked, is about that record
     assert out["chosen"] == {"remembered": "33", "renders": 1}                                        # remembered for the window, and the overview is drawn again
     bounded(out["urls"])
@@ -404,7 +404,7 @@ def test_the_upload_form_selects_the_record_of_the_address_and_sends_the_chosen_
       out.sent = {url: Xhr.sent[0].url, context: JSON.parse(material[1]).material_id};
       out.urls = stockUrls();
     """, EXPORTS)
-    assert out["start"]["value"] == "137" and out["start"]["label"].startswith("Лист 137 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
+    assert out["start"]["value"] == "137" and out["start"]["label"].startswith("Sheet 137 · ") and (out["start"]["pickers"], out["start"]["records"]) == (1, 0)
     assert out["sent"] == {"url": "/api/pairs", "context": 64}                                          # the number reaches the upload as it did from the drop-down
     bounded(out["start"]["urls"] + out["urls"])
 

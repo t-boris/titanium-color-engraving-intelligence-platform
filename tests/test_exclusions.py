@@ -1,6 +1,6 @@
-"""Acting on a finding (feature act-on-findings): «Убрать измерение» takes one measured layer out of every calculation and holds through a
-re-measure (REQ-001, DEC-001), «Считать с последней гравировки» counts a recipe from its newest engraving (REQ-002, DEC-003), every remedy
-shows its effect first and recalculates once (REQ-004, DEC-004), and «Вернуть» undoes either (REQ-005)."""
+"""Acting on a finding (feature act-on-findings): «Remove measurement» takes one measured layer out of every calculation and holds through a
+re-measure (REQ-001, DEC-001), «Count from the latest engraving» counts a recipe from its newest engraving (REQ-002, DEC-003), every remedy
+shows its effect first and recalculates once (REQ-004, DEC-004), and «Restore» undoes either (REQ-005)."""
 from __future__ import annotations
 
 import json
@@ -213,8 +213,8 @@ def test_a_measurement_taken_out_stays_out_when_its_photograph_is_measured_again
 
 
 def test_measuring_an_old_photograph_again_does_not_make_its_engraving_the_newest(store):
-    """A re-measure revises the measurement of the same photograph: the photograph keeps the date it was first accepted, so «Считать с
-    последней гравировки» still keeps the engraving photographed last, and the colour map dates the re-measured layers as before."""
+    """A re-measure revises the measurement of the same photograph: the photograph keeps the date it was first accepted, so «Count from the
+    latest engraving» still keeps the engraving photographed last, and the colour map dates the re-measured layers as before."""
     w = base.plate_world(store, default_pulse_width=200)
     older, newer = remeasure.accepted(w), remeasure.accepted(w)
     store.execute("UPDATE pair SET accepted_at=? WHERE id=?", ("2026-10-20T10:00:00+00:00", older))

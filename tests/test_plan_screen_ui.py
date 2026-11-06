@@ -164,7 +164,7 @@ def test_the_plan_screen_offers_one_download_with_the_readiness_and_the_files_ma
     assert "LightBurn file: ready to export" in out["card"] and "Open and run it in LightBurn when ready" in out["card"] and out["chain"] == 1
     assert "Previous files (1)" in out["folds"]
     assert out["requests"] == ["/api/plans/22/export.lbrn2"] and out["saved"] == [["blob:x", "Inna_Boris.lbrn2"]] and out["renders"] == 1
-    assert "Экспортировать в LightBurn" not in out["card"]
+    assert "Export to LightBurn" not in out["card"]
 
 
 @node

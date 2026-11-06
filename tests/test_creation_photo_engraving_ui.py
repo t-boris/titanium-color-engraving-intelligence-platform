@@ -1,5 +1,5 @@
 """«New work» of photo engraving and the work screen, with the shared context (feature ux-work-creation-p0, REQ-001, REQ-002). The two-step
-dialog of BUG-003 (the picture, then «Какая гравировка?») is the base and is tested in test_photo_engraving_ui.py; here only what the shared context
+dialog of BUG-003 (the picture, then «Which engraving?») is the base and is tested in test_photo_engraving_ui.py; here only what the shared context
 adds to it: the hand-over to the creation screen when nothing is measured, the context shown and its scale used, and the work's own context line.
 The harness of that file is reused with a small server for the creation routes added in front of its own."""
 import json

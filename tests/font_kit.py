@@ -5,7 +5,7 @@ Every font has a cap height of 700 units in 1000. Its letters are rectangles who
 
 * ``H``: two stems 100 x 700 and a bar between them 300 x 100, as three overlapping contours (the stems and a bar 500 wide): 170 000 units²;
 * ``O``: a ring, 600 x 700 outside and 400 x 500 inside: 220 000 units²;
-* ``П`` (Cyrillic): two stems 100 x 600 under a roof 600 x 100: 180 000 units²;
+* ``\u041f`` (Cyrillic): two stems 100 x 600 under a roof 600 x 100: 180 000 units²;
 * ``א`` (Hebrew alef) a block 500 x 700 (350 000) and ``ב`` (bet) a block 200 x 700 (140 000): the order of a right-to-left run is seen in
   where the larger one lies;
 * every other letter of the script samples (so that Latin, Cyrillic and Hebrew count as covered) a block 400 x 500 (200 000);
@@ -24,10 +24,10 @@ from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 
 UPEM, CAP = 1000, 700
-AREA = {"H": 170_000, "O": 220_000, "П": 180_000, "א": 350_000, "ב": 140_000, "box": 200_000, "H_H": 770_000, "ا": 350_000, "ب": 140_000}
+AREA = {"H": 170_000, "O": 220_000, "\u041f": 180_000, "א": 350_000, "ב": 140_000, "box": 200_000, "H_H": 770_000, "ا": 350_000, "ب": 140_000}
 ADVANCE = {".notdef": 500, "space": 300, "H": 600, "O": 700, "Pe": 700, "alef": 600, "bet": 300, "box": 500,     # by glyph
            "H_H": 1200, "alef-ar": 600, "beh-ar": 300}
-SAMPLES = "AaZzАаЯяЖжשת"                      # the rest of fonts.SCRIPTS' samples of Latin, Cyrillic and Hebrew
+SAMPLES = "AaZz\u0410\u0430\u042f\u044f\u0416\u0436שת"                      # the rest of fonts.SCRIPTS' samples of Latin, Cyrillic and Hebrew
 KERN = -50                                    # the kerning of the pair H O in the shaping font, units
 SHAPING = f"""
 languagesystem DFLT dflt;
@@ -74,7 +74,7 @@ def _build(path: Path, family: str, style: str, weight: int, cap: int, shaping: 
         "bet": _glyph((50, 0, 250, 700)),
         "box": _glyph((50, 0, 450, 500)),
     }
-    cmap = {ord(" "): "space", ord("H"): "H", ord("O"): "O", ord("П"): "Pe", ord("א"): "alef", ord("ב"): "bet"}
+    cmap = {ord(" "): "space", ord("H"): "H", ord("O"): "O", ord("\u041f"): "Pe", ord("א"): "alef", ord("ב"): "bet"}
     cmap.update({ord(c): "box" for c in SAMPLES})
     if shaping:
         glyphs.update({"H_H": _glyph((50, 0, 1150, 700)), "alef-ar": _glyph((50, 0, 550, 700)), "beh-ar": _glyph((50, 0, 250, 700))})

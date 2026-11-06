@@ -291,7 +291,7 @@ def test_the_picture_of_the_result_paints_each_region_in_the_colour_its_layer_me
 
 
 def test_the_promised_and_the_received_pictures_are_drawn_at_one_scale(work, job):
-    # ux-engraving-lifecycle-p0 REQ-003: «ожидали / получилось» are compared side by side, so both are the same picture size of the same work
+    # ux-engraving-lifecycle-p0 REQ-003: «expected / actual» are compared side by side, so both are the same picture size of the same work
     c, j = work, job
     exported(c, j)
     work_errors.after_acceptance(c["store"], engrave(c, j, labs={0: [90.0, 60.0, 40.0]}))

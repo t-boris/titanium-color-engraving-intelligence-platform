@@ -130,12 +130,12 @@ def test_a_whole_works_label_counts_layers_and_photo_zones_apart(tmp_path):
 @node
 def test_the_fold_is_closed_unless_asked_and_holds_what_it_is_given(tmp_path):
     out = component(tmp_path, """
-  const closed = ES.disclosure('Подробности', [App.h('p', {}, 'Lab 1'), App.h('p', {}, 'Lab 2')]);
-  const open = ES.disclosure('Подробности', App.h('p', {}, 'x'), true);
+  const closed = ES.disclosure('Details', [App.h('p', {}, 'Lab 1'), App.h('p', {}, 'Lab 2')]);
+  const open = ES.disclosure('Details', App.h('p', {}, 'x'), true);
   out.closed = [closed.hasAttribute('open'), closed.querySelector('summary').textContent, closed.querySelectorAll('p').length];
   out.open = open.hasAttribute('open');
 """)
-    assert out["closed"] == [False, "Подробности", 2] and out["open"] is True
+    assert out["closed"] == [False, "Details", 2] and out["open"] is True
 
 
 # -- on the colour map ------------------------------------------------------------------------------------------------------------------

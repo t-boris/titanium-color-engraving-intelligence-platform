@@ -568,7 +568,7 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
 def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_was_opened(tmp_path, opened):
     routes = picking()
     world = routes["/api/colors"]["json"]
-    world["dots"]["work"] = {**world["dots"]["work"], "id": 41, "name": "Яня портрет - 1", "zone": 2, "kind": "jarvis", "width_mm": 150}
+    world["dots"]["work"] = {**world["dots"]["work"], "id": 41, "name": "Yanya portrait - 1", "zone": 2, "kind": "jarvis", "width_mm": 150}
     routes["/api/vector/41/photo/2/settings"] = {"status": 200, "json": {}}
     query = {"dots": "41", "zone": "2", "setup": "laser:1/lens:2", **({"from": opened} if opened else {})}
     out = run(tmp_path, routes, f"""
@@ -587,7 +587,7 @@ def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_w
 """)
     back = "/vector?plan=41" if opened else "/vector-zone?work=41&zone=2"
     assert out["asked"] == ["/api/colors?dots=41&zone=2&setup=laser%3A1%2Flens%3A2"]
-    assert out["banner"] == "Dot color for photo zone 2 of work “Яня портрет - 1” · Jarvis · 150 mm"
+    assert out["banner"] == "Dot color for photo zone 2 of work “Yanya portrait - 1” · Jarvis · 150 mm"
     assert out["back"] == [f"#{back}", "← Return to work without changes" if opened else "← Return to zone without changes"]
     assert out["saved"] == [["/api/vector/41/photo/2/settings", {"dot_colour": "g-fill"}]] and out["went"] == [back]
     assert out["toasts"] == ["Dot color selected: the zone will show dots in this color"]

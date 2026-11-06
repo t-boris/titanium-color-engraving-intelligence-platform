@@ -347,7 +347,7 @@ def test_new_measurements_move_the_current_prediction_and_never_rewrite_what_an_
 
 
 def test_a_replacement_of_a_current_colour_is_undone_by_one_undo_and_neither_touches_the_files_already_made(work, job):
-    """The replacement the result tab offers is an ordinary edit of the work (the tab's «Отменить замену» sends one undo). It changes the
+    """The replacement the result tab offers is an ordinary edit of the work (the tab's «Undo replacement» sends one undo). It changes the
     work, not the file made before: that file's record, its saved promise and its place in the list of files stay as they were."""
     c, j = work, job
     ids = palette_ids(c)

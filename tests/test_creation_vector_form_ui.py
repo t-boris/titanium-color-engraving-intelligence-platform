@@ -1,4 +1,4 @@
-"""The vector work entry and the shared context (feature ux-work-creation-p0, REQ-001): «Новая работа» opens the three-step creation screen, the
+"""The vector work entry and the shared context (feature ux-work-creation-p0, REQ-001): «New work» opens the three-step creation screen, the
 one-page form stays at ``&classic=1`` and starts from the laser, lens and titanium the workshop chose last (the address wins), and an opened
 photograph work names its own measurements. Run in node over the small DOM of the other screen tests."""
 import json
@@ -167,4 +167,4 @@ def test_an_opened_photograph_work_names_its_own_measurements_under_its_paramete
     routes[f"/api/vector/{job['id']}"] = ok(pinned)
     (tmp_path / "release").mkdir()
     release = labs_run(tmp_path / "release", routes, body, plan=job["id"])
-    assert release["row"][1] == "laboratory Лаборатория <b>Север</b>"                  # the laboratory's name is shown as text, never as markup
+    assert release["row"][1] == "laboratory Laboratory <b>North</b>"                  # the laboratory's name is shown as text, never as markup

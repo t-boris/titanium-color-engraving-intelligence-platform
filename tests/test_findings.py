@@ -91,7 +91,7 @@ def test_ai_insights_are_hypotheses_and_never_measured_conclusions(store, w):
     pair = store.one("SELECT pair_id FROM observation WHERE id=?", (observation,))["pair_id"]
     session = store.execute("INSERT INTO research_session(device_id,lens_id,material_id,goal,target,model,status,created_at,updated_at) "
                             "VALUES (?,?,?,?,?,?,?,?,?)", (*w["setup"], w["stock"]["id"], "line", "thin dark line", "m", "active", now(), now())).lastrowid
-    claim = "Линия при 40 % и 900 мм/с непрерывна на этой заготовке"
+    claim = "The line at 40 % and 900 mm/s is continuous on this blank"
     store.execute("INSERT INTO research_insight(session_id,purpose,claim,confidence,evidence_pair_ids_json,created_at) VALUES (?,?,?,?,?,?)",
                   (session, "line", claim, "candidate", json.dumps([pair]), now()))
 
@@ -195,7 +195,7 @@ def test_a_finding_takes_the_task_stated_for_its_observations_else_the_one_their
     session = store.execute("INSERT INTO research_session(device_id,lens_id,material_id,goal,target,model,status,created_at,updated_at) "
                             "VALUES (?,?,?,?,?,?,?,?,?)", (*w["setup"], w["stock"]["id"], "color", "blue", "m", "active", now(), now())).lastrowid
     store.execute("INSERT INTO research_insight(session_id,purpose,claim,confidence,evidence_pair_ids_json,created_at) VALUES (?,?,?,?,?,?)",
-                  (session, "color", "Синий получается при 30 %", "hypothesis", "[]", now()))
+                  (session, "color", "Blue is produced at 30 %", "hypothesis", "[]", now()))
 
     found = run(store)
 
@@ -517,7 +517,7 @@ def test_pinned_findings_come_first_and_a_note_and_pin_outlast_runs_and_reopenin
     last = found[-1]
 
     fd.mark(store, last["id"], "pin")
-    fd.mark(store, last["id"], "note", "проверить на новом листе ")
+    fd.mark(store, last["id"], "note", "check on a new sheet ")
     fd.mark(store, last["id"], "hide")
     fd.mark(store, last["id"], "reopen")
     fd.run_analysis(store, "manual")
@@ -525,7 +525,7 @@ def test_pinned_findings_come_first_and_a_note_and_pin_outlast_runs_and_reopenin
     now_found = latest(store, sort="important")["findings"]
     first = now_found[0]
     assert first["key"] == last["key"] and first["state"] == "attention"
-    assert first["mark"] == {"status": None, "pinned": True, "note": "проверить на новом листе", "status_at": first["mark"]["status_at"],
+    assert first["mark"] == {"status": None, "pinned": True, "note": "check on a new sheet", "status_at": first["mark"]["status_at"],
                              "changed": False}
     marked = [json.loads(r["detail_json"]) for r in store.query("SELECT detail_json FROM audit WHERE action='finding_marked' ORDER BY id")]
     assert [m["mark"] for m in marked] == ["pin", "note", "hide", "reopen"] and {m["key"] for m in marked} == {last["key"]}

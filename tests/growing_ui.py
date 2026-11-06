@@ -109,8 +109,8 @@ def fill_materials(store, count: int) -> None:
     grades = ("Grade 2", "Grade 5", "Ti-6Al-4V", None)
     with store.transaction():
         for i in range(count):
-            su.save_material(store, f"Лист {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
-                             surface="шлифовка" if i % 2 else None, family="Titanium" if i % 7 else "Steel")
+            su.save_material(store, f"Sheet {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
+                             surface="brushed" if i % 2 else None, family="Titanium" if i % 7 else "Steel")
 
 
 def run_node(tmp_path, port, files, body, exports=()) -> dict:

@@ -63,7 +63,7 @@ NEGATIVE = list(np.linspace(92, 88, 16))         # dots lighter than the titaniu
 
 
 def photographed_plate(w):
-    """A photographed «Подобрать настройки» plate of the world (``test_photo_variations.make``): copy 2 (power 20 %) keeps every tone, the
+    """A photographed «Find settings» plate of the world (``test_photo_variations.make``): copy 2 (power 20 %) keeps every tone, the
     others block the shadows. Its plate, its geometry row and the accepted pair."""
     s = w["store"]
     s.set_setting("allow_non_raw_photos", True)
@@ -117,7 +117,7 @@ def test_a_zone_that_cannot_write_the_dot_width_gets_the_best_engraving_without_
 
 
 def test_the_experiment_proposed_for_a_zone_starts_from_the_best_it_can_engrave_not_from_a_dot_width_engraving(world):
-    """A photo zone writes no dot width correction: its «Лучшее измеренное» and the plate the laboratory proposes around it are the same
+    """A photo zone writes no dot width correction: its «Best measured» and the plate the laboratory proposes around it are the same
     engraving made without one, even when an engraving with a dot width scored better (the live data: Jarvis at 0.02 mm on photo 139)."""
     w = world
     dotted = accepted(w, [layer("C04", "jarvis", LINEAR, power=30.0, speed=150.0, dot_width=0.02)])
@@ -156,7 +156,7 @@ def test_an_engraving_that_shows_no_picture_is_never_the_best_and_a_dot_kind_tha
 
 
 def test_the_plate_proposed_to_a_zone_is_made_around_an_engraving_it_can_reproduce(world):
-    """DEC-005: «Сделать плату» on a zone's panel makes the plate the panel shows, not one around an engraving with a dot width."""
+    """DEC-005: «Create plate» on a zone's panel makes the plate the panel shows, not one around an engraving with a dot width."""
     w = world
     s, a = w["store"], (w["laser"], w["lens"], w["titanium"])
     photographed_plate(w)
@@ -267,7 +267,7 @@ def photographed_jarvis(app_world):
 def test_choosing_a_kind_fills_in_its_best_photographed_engraving_and_a_step_darker_is_applied(app_world):
     client = app_world["client"]
     pid = photographed_jarvis(app_world)
-    work = create_work(client, name="Яна")
+    work = create_work(client, name="Yana")
     jarvis = change_work(client, work, kind="jarvis")
     recipe = jarvis["dot_recipe"]
     assert recipe["source"] == "photo" and recipe["settings"] == JARVIS and recipe["lab"] == [30.0, 0.0, 0.0] and recipe["size"] is None

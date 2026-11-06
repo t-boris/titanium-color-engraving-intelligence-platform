@@ -1,4 +1,4 @@
-"""The kind of engraving of a photo work (0.21.0): «Какая гравировка?» shows the work's picture in every kind that colours titanium, a dot
+"""The kind of engraving of a photo work (0.21.0): «Which engraving?» shows the work's picture in every kind that colours titanium, a dot
 kind fires every dot at one power taken on the scale (its colour the scale's at that power, the cleaned titanium between the dots), and
 the work keeps its kind, the dots' power, its undo and its file."""
 import json
@@ -144,7 +144,7 @@ def test_the_dots_power_is_chosen_inside_the_measured_powers_kept_through_other_
 
 def test_the_file_of_a_dot_kind_cleans_first_then_engraves_the_picture_as_uploaded_in_that_kind_at_the_dots_power(app_world):
     client = app_world["client"]
-    work = create(client, name="Точки")
+    work = create(client, name="Dots")
     settings(client, work, by_colour=True, contours=True)                                       # grayscale's own settings wait for it
     dotted = settings(client, work, kind="jarvis")
     power = dotted["dot_power"]
@@ -180,7 +180,7 @@ def test_a_work_saved_before_the_kinds_opens_in_grayscale_with_no_object_coloure
 
 def test_a_ramp_in_the_works_dot_kind_once_photographed_replaces_the_estimate_with_the_tones_it_measured(app_world):
     client, store = app_world["client"], app_world["client"].app.state.store
-    work = create(client, name="Проба точек")
+    work = create(client, name="Dot test")
     dotted = settings(client, work, kind="jarvis")
     power, dots = dotted["dot_power"], dotted["picture"]["dots"]
     made = client.post(f"/api/photo-works/{work['id']}/width-ramp")

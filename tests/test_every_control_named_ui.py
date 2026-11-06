@@ -4,7 +4,7 @@ lens, measured colours, vector works of every kind, a photo work, a proposal), t
 tests, their requests going to that server, and every input, select and textarea they draw is checked:
 
 * it has a name by one of the four ways a browser takes it (aria-label, aria-labelledby, label[for], a wrapping label with text of its own);
-* a number or range control says its unit («мм», «%», «без единицы» ...) in its name or its description, and, when it has an end of its own
+* a number or range control says its unit (“mm”, “%”, “unitless” ...) in its name or its description, and, when it has an end of its own
   (``min``/``max``), says the permitted values too.
 
 The screens that cannot be built here are listed with the reason; the real-browser sweep (headless Chrome over CDP, the browser's own
@@ -157,8 +157,8 @@ const screens = [
 const unbuilt = [];
 // The buttons that open a dialog (their words say so: a window, a form to fill) are pressed, the dialog is audited and closed. A button that
 // destroys or sends something is never pressed.
-const OPENS = /…$|^(Новая работа|Создать плату|Размер|Выбрать настройки|Целевой цвет|Подробно|New work|Create plate|Size|Choose settings|Target color|Details)/i;
-const NEVER = /Удал|Сброс|Убрать|Очист|Отмен|Закрыть|Принять|Подтверд|Отправ|Сохран|Запуст|Скачать|Выход|delete|reset|remove|clear|cancel|close|accept|confirm|send|save|start|download|sign out/i;
+const OPENS = /…$|^(New work|Create plate|Size|Choose settings|Target color|Details)/i;
+const NEVER = /delete|reset|remove|clear|cancel|close|accept|confirm|send|save|start|download|sign out/i;
 const dialogs = [];
 async function openDialogs(tree, where) {
   const opened = new Set();

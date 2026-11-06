@@ -3,16 +3,15 @@
 The messages are collected from the Python sources of the package and of its API (every ``raise <UserError>(...)``,
 including the ``KeyError`` of a record that is not found and the ``HTTPException`` of an upload, and the data sites listed
 below), expanded for f-strings with conditional parts, and each variant is run through the real translation tables with
-node. A message with no rule would reach the operator in English, so this test fails when a new one is added without a
-translation.
+node. Messages are already in English; the tests check that details survive the interface unchanged.
 
 A *wrapper* embeds another server message: ``f"Photograph: {exc}"`` in a handler of PhotoError, ``"...: " + "; ".join(x)``
 of a list of messages, ``[f"...: {m}" for m in problems]``. The collector follows the embedded part to the messages it can be
 (raised with the caught classes, appended to the joined list, returned by the function the list comes from), and every
-wrapper is translated with each of those real inner messages and with all of them joined: the translation must contain
-the inner message's own translation (it translates recursively) and nothing may stay untranslated.
+wrapper is checked with each real inner message and with all of them joined, so embedded details remain visible.
 """
 import ast
+import re
 import itertools
 import json
 import shutil
@@ -394,7 +393,7 @@ def wrapped_cases() -> list[tuple[str, int, str, list[str]]]:
     return out
 
 
-MARK = "без перевода"
+MARK = "\u0431\u0435\u0437 \u043f\u0435\u0440\u0435\u0432\u043e\u0434\u0430"
 NODE = "const fs=require('fs'),vm=require('vm');\n" \
        f"const ui={json.dumps(str(UI) + '/')};\n" \
        f"const code={json.dumps(TABLES)}.map(f=>fs.readFileSync(ui+f,'utf8')).join('\\n')+';globalThis.__I=I18N;';\n" \
@@ -499,3 +498,18 @@ def test_server_names_and_operator_text_are_preserved(tmp_path):
     names = ["Calibration plate", "Plate TCE-0A1B2C3D (speed 900)", "waveform", "Operator's custom name"]
     out = run_node(tmp_path, names, "console.log(JSON.stringify(data.map((s)=>ctx.__I.name(s))));\n")
     assert out == names
+
+
+def test_application_and_test_code_contain_no_cyrillic_literals():
+    """English is the application language; legacy data markers use explicit Unicode escapes."""
+    root = Path(__file__).resolve().parents[1]
+    extensions = {".py", ".js", ".ts", ".html", ".css", ".sh", ".json"}
+    folders = ("src", "desktop/src", "cloud/titanium_cloud", "packaging", "tools", "tests")
+    cyrillic = re.compile(r"[\u0400-\u04ff]")
+    offenders = []
+    for folder in folders:
+        for path in (root / folder).rglob("*"):
+            if path.is_file() and path.suffix in extensions:
+                if cyrillic.search(path.read_text(encoding="utf-8")):
+                    offenders.append(str(path.relative_to(root)))
+    assert not offenders, "Non-English Cyrillic text in code: " + ", ".join(offenders)

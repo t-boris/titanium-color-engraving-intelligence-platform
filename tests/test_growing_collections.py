@@ -22,8 +22,8 @@ def fill(store, count: int) -> None:
     grades = ("Grade 2", "Grade 5", "Ti-6Al-4V", None)
     with store.transaction():
         for i in range(count):
-            su.save_material(store, f"Лист {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
-                             surface="шлифовка" if i % 2 else None, family="Titanium" if i % 7 else "Steel")
+            su.save_material(store, f"Sheet {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
+                             surface="brushed" if i % 2 else None, family="Titanium" if i % 7 else "Steel")
 
 
 # -- the catalogue ----------------------------------------------------------------------------------------------------------------------
@@ -40,7 +40,7 @@ def test_a_page_of_twenty_comes_out_of_a_catalogue_of_any_size(store, count):
     fill(store, count)
     first = mc.page(store, sort="newest", limit=20)
     assert (len(first["items"]), first["total"], first["all"]) == (20, count, count)
-    assert first["items"][0]["name"] == f"Лист {count}"
+    assert first["items"][0]["name"] == f"Sheet {count}"
     # consecutive pages are the whole catalogue, each record once, nothing skipped
     seen = []
     for offset in range(0, count, 20):
@@ -50,12 +50,12 @@ def test_a_page_of_twenty_comes_out_of_a_catalogue_of_any_size(store, count):
 
 def test_search_finds_a_record_by_name_batch_grade_surface_and_thickness_whatever_the_case(store):
     fill(store, 200)
-    assert [m["name"] for m in mc.page(store, search="b-0137")["items"]] == ["Лист 137"]
+    assert [m["name"] for m in mc.page(store, search="b-0137")["items"]] == ["Sheet 137"]
     assert mc.page(store, search="  GRADE   5 ")["total"] == 50                               # case and spacing do not matter; a «5» elsewhere does not match
-    assert [m["name"] for m in mc.page(store, search="grade 5 b-0002")["items"]] == ["Лист 2"]   # the phrase runs over the fields in the order of a line
+    assert [m["name"] for m in mc.page(store, search="grade 5 b-0002")["items"]] == ["Sheet 2"]   # the phrase runs over the fields in the order of a line
     assert mc.page(store, search="2.5 mm")["total"] == 40                                    # the thickness of a record is searched too
     assert mc.page(store, search="0137")["total"] == 1                                       # a part of a batch number
-    nothing = mc.page(store, search="нет такого")
+    nothing = mc.page(store, search="no match")
     assert (nothing["total"], nothing["all"]) == (0, 200)                                    # «nothing found» is told from «nothing added»
 
 
@@ -80,7 +80,7 @@ def test_the_order_puts_used_records_first_then_the_newest(store, tmp_path):
     obs.add(store, w, (50, 0, 0), material_id=2)
     first = mc.page(store, sort="recent")["items"]
     assert [m["id"] for m in first][:2] == [2, 6] and first[0]["last_used_at"] and first[1]["last_used_at"] is None
-    assert [m["name"] for m in mc.page(store, sort="name")["items"]] == [f"Лист {i}" for i in range(1, 7)]
+    assert [m["name"] for m in mc.page(store, sort="name")["items"]] == [f"Sheet {i}" for i in range(1, 7)]
     thick = [m["thickness_mm"] for m in mc.page(store, sort="thickness")["items"]]
     assert thick == sorted(thick)
     grades = [m["grade"] for m in mc.page(store, sort="grade")["items"]]
@@ -107,14 +107,14 @@ def test_a_page_is_asked_over_the_api_and_one_record_by_its_number(client):
     page = client.get("/api/materials", params={"limit": 20, "offset": 20, "sort": "id"}).json()
     assert [m["id"] for m in page["items"]] == list(range(21, 41)) and page["total"] == 45 and page["all"] == 45
     filtered = client.get("/api/materials", params={"limit": 5, "search": "b-0007"}).json()
-    assert [m["name"] for m in filtered["items"]] == ["Лист 7"]
+    assert [m["name"] for m in filtered["items"]] == ["Sheet 7"]
     as_list = client.get("/api/materials", params={"search": "b-0007"}).json()
-    assert isinstance(as_list, list) and [m["name"] for m in as_list] == ["Лист 7"]              # without ``limit`` the answer is a list still
+    assert isinstance(as_list, list) and [m["name"] for m in as_list] == ["Sheet 7"]              # without ``limit`` the answer is a list still
     assert len(client.get("/api/materials", params={"limit": 5000}).json()["items"]) == 45                 # the cap is 200 a page; here that is every record
     one_row = client.get("/api/materials", params={"limit": 0}).json()
     assert (one_row["limit"], len(one_row["items"])) == (1, 1)                                             # a page holds at least one record
     one = client.get("/api/materials/7").json()
-    assert one["name"] == "Лист 7" and "last_used_at" in one
+    assert one["name"] == "Sheet 7" and "last_used_at" in one
     gone = client.get("/api/materials/9999")
     assert gone.status_code == 404 and gone.json()["error"] == "titanium stock 9999 not found"
 

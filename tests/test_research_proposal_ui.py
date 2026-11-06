@@ -15,20 +15,20 @@ def test_proposal_is_displayed_before_creation_and_retry_does_not_create_implici
     code = r"""
 const {context, load} = require(%(dom)s);
 const ctx = context({});
-const info = {context_signature:'sig', name:'Тест линий', description:'Сравнить линии', summary:{size_mm:{width:20,height:30}}, test_settings:{speed:500}, time_unavailable_reason:'Время не оценено'};
-const message = {id: 42, role:'assistant', content:'Предлагаю тест', tool_trace:[{tool:'preview_test', result:info, arguments:{}}]};
-const active = {id:1, goal:'line', target:'Найти линию', model:'test', insights:[], plans:[], photos:[], messages:[message], memory:null, device_id:2, lens_id:3, material_id:4};
-const sessions = [{id:1, goal:'line', target:'Найти линию', device_name:'Лазер', lens_name:'Линза', material_name:'Титан'}];
+const info = {context_signature:'sig', name:'Line test', description:'Compare lines', summary:{size_mm:{width:20,height:30}}, test_settings:{speed:500}, time_unavailable_reason:'Time not estimated'};
+const message = {id: 42, role:'assistant', content:'I suggest a test', tool_trace:[{tool:'preview_test', result:info, arguments:{}}]};
+const active = {id:1, goal:'line', target:'Find a line', model:'test', insights:[], plans:[], photos:[], messages:[message], memory:null, device_id:2, lens_id:3, material_id:4};
+const sessions = [{id:1, goal:'line', target:'Find a line', device_name:'Laser', lens_name:'Lens', material_name:'Titanium'}];
 let attempts = 0;
 const answer = (json, status=200) => ({ok:status<300,status,headers:{get:()=> 'application/json'},json:async()=>json});
 ctx.fetch = async (url, opts={}) => {
   const path = String(url).split('?')[0];
-  if (path === '/api/devices') return answer([{id:2,name:'Лазер',lens:{name:'Линза'}}]);
+  if (path === '/api/devices') return answer([{id:2,name:'Laser',lens:{name:'Lens'}}]);
   if (path === '/api/materials') return answer([{id:4}]);
-  if (path === '/api/application-goals') return answer([{id:'line',name:'Линии'}]);
+  if (path === '/api/application-goals') return answer([{id:'line',name:'Lines'}]);
   if (path === '/api/research/sessions') return answer(sessions);
   if (path === '/api/research/sessions/1') return answer(active);
-  if (path === '/api/research/sessions/1/proposals/42/0/create') { attempts++; return attempts === 1 ? answer({error:'Нет связи'}, 503) : answer({plan_id:88,plan_url:'#/plans/88'}); }
+  if (path === '/api/research/sessions/1/proposals/42/0/create') { attempts++; return attempts === 1 ? answer({error:'No connection'}, 503) : answer({plan_id:88,plan_url:'#/plans/88'}); }
   return answer({error:path},404);
 };
 ctx.requestAnimationFrame = () => {};
@@ -60,8 +60,8 @@ load(ctx,%(ui)s,[...%(tables)s,'app.js','dialogs.js',{code:glue},'screens/resear
     proc = subprocess.run(['node', str(script)], capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
-    assert out['before']['attempts'] == 0 and '20 × 30 mm' in out['before']['text'] and 'Время не оценено' in out['before']['text']
-    assert 'Нет связи' in out['failure']['text'] and not out['failure']['disabled']
+    assert out['before']['attempts'] == 0 and '20 × 30 mm' in out['before']['text'] and 'Time not estimated' in out['before']['text']
+    assert 'No connection' in out['failure']['text'] and not out['failure']['disabled']
     assert out['done']['hidden'] and out['done']['href'] == '#/plans/88' and out['done']['attempts'] == 2
     assert 'Plate #77' in out['beforeConfirm']['text'] and out['beforeConfirm']['attempts'] == out['afterCancel'] == 2
     assert out['afterConfirm'] == 3

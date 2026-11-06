@@ -819,7 +819,7 @@ def test_the_keyboard_goes_to_the_cards_heading_when_the_download_button_is_gone
     out = lcui.run(tmp_path, {"routes": lcui.DOWNLOAD, "ready": lc_answer("prepared")}, """
   const host = ctx.document.createElement('div'); ctx.document.body.append(host);
   // the screen draws the card again without a download button (here: only the heading is left), so the heading is the nearest place
-  const bare = () => { const c = ctx.document.createElement('div'); c.className = 'lc-export'; const hd = ctx.document.createElement('h4'); hd.textContent = 'Файл LightBurn'; c.append(hd); return c; };
+  const bare = () => { const c = ctx.document.createElement('div'); c.className = 'lc-export'; const hd = ctx.document.createElement('h4'); hd.textContent = 'LightBurn file'; c.append(hd); return c; };
   host.append(LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', reload: async () => { host.replaceChildren(bare()); }}));
   const btn = byText(host, 'button', 'Download LightBurn'); btn.focus();
   await btn.dispatch('click'); await tick();
@@ -835,8 +835,8 @@ STRIP = """
   const boxes = (caution) => {
     const chain = h('div', {class: 'vw-chain'}), forecast = h('div', {}), preview = h('div', {class: 'small' + (caution ? ' alert warn' : ' muted')});
     fill(chain, LC.chain(data.ready));
-    fill(forecast, h('div', {class: 'ev-applic alert warn'}, h('span', {class: 'pill warn'}, 'измерено при другой ширине')));
-    fill(preview, 'Превью: для 5 из 5 layers использованы измерения другой ширины.');
+    fill(forecast, h('div', {class: 'ev-applic alert warn'}, h('span', {class: 'pill warn'}, 'measured at another width')));
+    fill(preview, 'Preview: all 5 layers use measurements at another width.');
     return {chain, forecast, preview};
   };
   const line = (strip) => strip.el.querySelector('summary').textContent;
@@ -865,7 +865,7 @@ def test_the_strip_is_open_on_a_wide_screen_and_folded_on_a_narrow_one_and_its_l
 """)
     assert out["wide"] == [True, "summary", 4]
     assert out["narrow"][0] is False and out["parts"] == 4
-    assert "current: File downloaded" in out["narrow"][1] and "prediction: измерено при другой ширине" in out["narrow"][1] and "caveat" in out["narrow"][1]
+    assert "current: File downloaded" in out["narrow"][1] and "prediction: measured at another width" in out["narrow"][1] and "caveat" in out["narrow"][1]
     assert out["narrow"][2] == "true"
     assert out["states"] == [False, True, False]
     assert "caveat" not in out["calm"][0] and out["calm"][1] is None
@@ -965,7 +965,7 @@ def test_the_header_button_takes_the_keyboard_into_the_task_panel_and_escape_and
     out = run_tasks(tmp_path, """
   const entry = Operations.entry();
   body.append(entry);
-  Operations.begin({kind: 'upload', title: 'Фото 1', stage: 'Загрузка'});
+  Operations.begin({kind: 'upload', title: 'Photo 1', stage: 'Loading'});
   const panel = () => body.querySelector('.ops-panel');
   const where = () => { const a = doc.activeElement; return a && (a.getAttribute('aria-label') || a.textContent); };
   entry.focus();

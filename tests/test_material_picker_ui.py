@@ -32,16 +32,16 @@ def test_the_record_used_last_is_chosen_at_once_and_told_by_its_grade_batch_and_
     store, port = workshop
     out = run_node(tmp_path, port, FILES, """
       const changes = [];
-      const picker = ctx.MaterialPicker.create({initial: 'recent', name: 'Материал и заготовка', onChange: (m) => changes.push(m && m.id)});
+      const picker = ctx.MaterialPicker.create({initial: 'recent', name: 'Material and stock', onChange: (m) => changes.push(m && m.id)});
       mount(picker);
       await picker.ready;
       out.chosen = {value: picker.value, label: q(picker, '.matpick-label').textContent, changes, record: picker.record.name,
         asked: requests('/api/materials').map((x) => x.url), role: picker.getAttribute('role'), name: picker.getAttribute('aria-label')};
     """, EXPORTS)
     assert out["chosen"]["value"] == "7" and out["chosen"]["changes"] == [7]
-    assert out["chosen"]["label"] == "Лист 7 · Ti-6Al-4V · batch B-0007 · 1 mm"                      # the grade and the batch are told apart
+    assert out["chosen"]["label"] == "Sheet 7 · Ti-6Al-4V · batch B-0007 · 1 mm"                      # the grade and the batch are told apart
     assert out["chosen"]["asked"] == ["/api/materials?limit=1&sort=recent"]                           # one record asked of the server, not the catalogue
-    assert (out["chosen"]["role"], out["chosen"]["name"]) == ("group", "Материал и заготовка")
+    assert (out["chosen"]["role"], out["chosen"]["name"]) == ("group", "Material and stock")
 
 
 def test_the_dialog_offers_recent_records_a_search_and_pages_and_gives_the_focus_back(workshop, tmp_path):
@@ -69,12 +69,12 @@ def test_the_dialog_offers_recent_records_a_search_and_pages_and_gives_the_focus
         inert: doc.body.children.map((c) => c.hasAttribute('inert'))};
     """, EXPORTS)
     assert out["dialog"]["title"] == "Choose stock" and out["dialog"]["modal"] == "true" and out["dialog"]["count"] == "showing 20 of 200"
-    assert out["dialog"]["recent"] == ["Лист 7 · Ti-6Al-4V · batch B-0007 · 1 mm", "Лист 42 · Grade 5 · batch B-0042 · 1 mm"]     # the latest use first
-    assert out["dialog"]["firstRow"] == "Лист 1" and out["dialog"]["pinned"] == ["Selected"]       # the record chosen now stays in view though the page does not hold it
+    assert out["dialog"]["recent"] == ["Sheet 7 · Ti-6Al-4V · batch B-0007 · 1 mm", "Sheet 42 · Grade 5 · batch B-0042 · 1 mm"]     # the latest use first
+    assert out["dialog"]["firstRow"] == "Sheet 1" and out["dialog"]["pinned"] == ["Selected"]       # the record chosen now stays in view though the page does not hold it
     assert all("limit=" in url for url in out["dialog"]["asked"])
-    assert "Лист 137" in out["row"] and "batch B-0137" in out["row"]
+    assert "Sheet 137" in out["row"] and "batch B-0137" in out["row"]
     assert {k: v for k, v in out["after"].items() if k != "label"} == {"open": False, "value": "137", "changes": [7, 137], "focus": True, "inert": [False]}
-    assert out["after"]["label"].startswith("Лист 137 · ") and "batch B-0137" in out["after"]["label"]
+    assert out["after"]["label"].startswith("Sheet 137 · ") and "batch B-0137" in out["after"]["label"]
 
 
 def test_the_grade_narrows_the_dialog_and_escape_closes_it_without_a_choice(workshop, tmp_path):
@@ -104,7 +104,7 @@ def test_a_record_can_be_set_from_outside_cleared_and_a_missing_one_is_said(work
     store, port = workshop
     out = run_node(tmp_path, port, FILES, """
       const changes = [];
-      const picker = ctx.MaterialPicker.create({allowEmpty: true, empty: 'не выбрана', onChange: (m) => changes.push(m && m.id)});
+      const picker = ctx.MaterialPicker.create({allowEmpty: true, empty: 'not selected', onChange: (m) => changes.push(m && m.id)});
       mount(picker);
       await picker.ready;
       out.empty = {value: picker.value, label: q(picker, '.matpick-label').textContent, clear: q(picker, '.matpick-clear').hidden};
@@ -119,10 +119,10 @@ def test_a_record_can_be_set_from_outside_cleared_and_a_missing_one_is_said(work
       await q(picker, '.matpick-clear').dispatch('click');
       out.cleared = {value: picker.value, label: q(picker, '.matpick-label').textContent, changes, clear: q(picker, '.matpick-clear').hidden};
     """, EXPORTS)
-    assert out["empty"] == {"value": "", "label": "не выбрана", "clear": True}
-    assert out["set"]["value"] == "12" and out["set"]["label"].startswith("Лист 12 · ") and out["set"]["clear"] is False
+    assert out["empty"] == {"value": "", "label": "not selected", "clear": True}
+    assert out["set"]["value"] == "12" and out["set"]["label"].startswith("Sheet 12 · ") and out["set"]["clear"] is False
     assert out["missing"]["value"] == "99999" and out["missing"]["record"] is None and out["missing"]["label"].startswith("Stock #99999 is unavailable")
-    assert out["cleared"] == {"value": "", "label": "не выбрана", "changes": [None], "clear": True}
+    assert out["cleared"] == {"value": "", "label": "not selected", "changes": [None], "clear": True}
 
 
 def test_late_stock_responses_cannot_replace_a_newer_choice_or_clear(workshop, tmp_path):
@@ -149,7 +149,7 @@ def test_late_stock_responses_cannot_replace_a_newer_choice_or_clear(workshop, t
       out.cleared = {value: other.value, record: other.record, changes};
     """, EXPORTS)
     assert out["selected"]["value"] == "13" and out["selected"]["record"] == 13
-    assert out["selected"]["label"].startswith("Лист 13 · ")
+    assert out["selected"]["label"].startswith("Sheet 13 · ")
     assert out["cleared"] == {"value": "", "record": None, "changes": []}
 
 
@@ -204,4 +204,4 @@ def test_a_catalogue_of_two_thousand_is_never_read_whole(tmp_path):
           out.label = q(picker, '.matpick-label').textContent;
         """, EXPORTS)
     assert out["rows"] == 20 and out["count"] == "showing 20 of 2000" and out["unbounded"] == 0
-    assert out["label"].startswith("Лист 2000 · ")                                                  # nothing used yet: the newest record
+    assert out["label"].startswith("Sheet 2000 · ")                                                  # nothing used yet: the newest record

@@ -155,7 +155,7 @@ def test_the_beam_diameter_of_the_test_report_is_used():
 
 # -- the field ---------------------------------------------------------------------------------------------
 def settings_passport(width, status="confirmed"):
-    return {"controller": {"software": "EZCAD", "source": None, "tabs": [{"key": "field", "fields": [{"key": "Field Size", "value": width, "unit": "мм", "status": status}]}]}}
+    return {"controller": {"software": "EZCAD", "source": None, "tabs": [{"key": "field", "fields": [{"key": "Field Size", "value": width, "unit": "mm", "status": status}]}]}}
 
 
 def test_the_lens_field_alone_is_a_work_field():

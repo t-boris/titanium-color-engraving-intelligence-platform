@@ -7,8 +7,8 @@ from growing_ui import node, run_node
 pytestmark = node
 FILES = ["screens/set-list.js"]
 EXPORTS = ("SetList",)
-SETS = """const sets = Array.from({length: 50}, (_, i) => ({id: 'raw-' + (i + 1), title: 'Набор ' + (i + 1), note: i % 5 === 0 ? 'калибровка' : 'RAW · ' + (i + 1) + ' пар'}));
-sets.unshift({id: 'cal', title: 'Откалиброванные наблюдения', note: 'по эталонной карте'});"""
+SETS = """const sets = Array.from({length: 50}, (_, i) => ({id: 'raw-' + (i + 1), title: 'Set ' + (i + 1), note: i % 5 === 0 ? 'calibration' : 'RAW · ' + (i + 1) + ' pairs'}));
+sets.unshift({id: 'cal', title: 'Calibrated observations', note: 'using the reference chart'});"""
 
 
 def test_the_list_shows_twenty_sets_and_the_rest_by_an_explicit_button(tmp_path):
@@ -25,7 +25,7 @@ def test_the_list_shows_twenty_sets_and_the_rest_by_an_explicit_button(tmp_path)
       await qa(box, '.lm-set')[3].dispatch('click');
       out.chosen = chosen;
     """, EXPORTS)
-    assert out["first"] == {"rows": 20, "count": "showing 20 of 51", "pressed": 1, "firstTitle": "Откалиброванные наблюдения", "pin": False}
+    assert out["first"] == {"rows": 20, "count": "showing 20 of 51", "pressed": 1, "firstTitle": "Calibrated observations", "pin": False}
     assert out["all"] == {"rows": 51, "titles": 51, "count": "showing 51 of 51"}
     assert out["chosen"] == ["raw-3"]
 
@@ -39,11 +39,11 @@ def test_a_set_the_page_leaves_out_stays_in_view_and_a_search_finds_a_set(tmp_pa
         pressed: qa(q(box, '.lst-pin'), '.lm-set')[0].getAttribute('aria-pressed')};
       const search = q(box, '.lst-search');
       search.focus();
-      search.value = 'набор 7';
+      search.value = 'set 7';
       await search.dispatch('input');
       await until(() => count(box) === 'showing 1 of 1');
       out.found = {titles: qa(q(box, '.lst-rows'), 'strong').map((s) => s.textContent), focus: doc.activeElement === search,
-        note: q(box, '.lst-pin-note').textContent.trim()};                           // raw-44 is not «Набор 7»: hidden by the search, said
+        note: q(box, '.lst-pin-note').textContent.trim()};                           // raw-44 is not «Set 7»: hidden by the search, said
       search.value = 'zzz';
       await search.dispatch('input');
       await until(() => q(box, '.lst-none') !== null);
@@ -52,9 +52,9 @@ def test_a_set_the_page_leaves_out_stays_in_view_and_a_search_finds_a_set(tmp_pa
       await until(() => rows(box).length === 20);
       out.back = {rows: rows(box).length, search: search.value, count: count(box)};
     """, EXPORTS)
-    assert (out["beyond"]["rows"], out["beyond"]["lines"]) == (20, 21) and out["beyond"]["pinned"] == "Набор 44" and out["beyond"]["pressed"] == "true"
+    assert (out["beyond"]["rows"], out["beyond"]["lines"]) == (20, 21) and out["beyond"]["pinned"] == "Set 44" and out["beyond"]["pressed"] == "true"
     assert out["beyond"]["note"].startswith("The selected row is beyond the displayed portion of the list.")
-    assert out["found"]["titles"] == ["Набор 7"] and out["found"]["focus"] is True                 # the search is typed in without losing the cursor
+    assert out["found"]["titles"] == ["Set 7"] and out["found"]["focus"] is True                 # the search is typed in without losing the cursor
     assert out["found"]["note"].startswith("The selected row is hidden by the search or filters.")
     assert out["none"]["text"] == "No sets match this name." and out["none"]["conditions"] == "Conditions: search “zzz”." and out["none"]["rows"] == 0
     assert out["back"] == {"rows": 20, "search": "", "count": "showing 20 of 51"}

@@ -154,10 +154,10 @@ def test_an_inscription_whose_font_is_gone_or_whose_colour_is_no_longer_measured
     view = world["client"].get(f"/api/vector/{job['id']}").json()
     assert view["export_blocked"] == ("inscription 1 cannot be engraved: its titanium colour is no longer measured on this laser, lens and "
                                       "titanium stock: choose another")
-    plan["colouring"]["texts"][0].update(entry_id=view["texts"][0]["entry_id"] or vector_job._palette(store, plan)[0]["id"], text="HЖЩ")
+    plan["colouring"]["texts"][0].update(entry_id=view["texts"][0]["entry_id"] or vector_job._palette(store, plan)[0]["id"], text="H\u0416\u0429")
     vector_job.cv._persist(store, plan, plan["status"], plan["markers_enabled"])
     view = world["client"].get(f"/api/vector/{job['id']}").json()
-    assert view["export_blocked"] == "inscription 1 cannot be engraved: its font has no letters «Щ»: choose a font that has them"
+    assert view["export_blocked"] == "inscription 1 cannot be engraved: its font has no letters «\u0429»: choose a font that has them"
 
 
 def test_a_photo_zone_under_an_inscription_is_not_engraved_there(world):

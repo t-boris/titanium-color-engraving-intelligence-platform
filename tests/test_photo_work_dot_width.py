@@ -1,6 +1,6 @@
 """The dot width correction of a photo work's dot kind (K2 of 0.21.0): LightBurn shrinks each dot of a dithered picture by the width the
 laser's dot really has (``dotWidth`` in mm with ``useDotCorrection``, as the operator's own files carry them). The work keeps it with its
-dot settings and its undo, its file and its «Проба этого вида» are engraved with it, and the tones measured at one dot width are not
+dot settings and its undo, its file and its «Test this kind» are engraved with it, and the tones measured at one dot width are not
 taken for another."""
 import json
 
@@ -37,7 +37,7 @@ def test_the_image_layer_carries_the_dot_width_as_lightburn_writes_it_and_reads_
 
 def test_a_dot_kind_corrects_the_dot_width_in_its_file_keeps_it_through_other_kinds_and_undo(app_world):
     client = app_world["client"]
-    work = create(client, name="Ширина точки")
+    work = create(client, name="Dot width")
     assert work["dot_width"] is None
     dotted = settings(client, work, kind="jarvis")
     corrected = settings(client, work, dot_width=0.0204)
@@ -82,7 +82,7 @@ def test_a_work_and_its_steps_saved_before_the_dot_width_open_without_the_correc
 
 def test_the_ramp_of_the_kind_is_engraved_at_the_works_dot_width_and_its_tones_count_only_at_that_width(app_world):
     client, store = app_world["client"], app_world["client"].app.state.store
-    work = create(client, name="Проба ширины точки")
+    work = create(client, name="Dot width test")
     dotted = settings(client, work, kind="jarvis")
     corrected = settings(client, work, dot_width=0.025)
     dots = corrected["picture"]["dots"]

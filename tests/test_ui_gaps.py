@@ -201,15 +201,15 @@ def review_pair():
               "tools": ["corners", "anchor", "shift", "matrix", "layers", "tasks"],
               "stages": [{"key": key, "state": state, "blockers": ["masks_unreviewed"] if key == "review" else []}
                          for key, state in (("files", "done"), ("alignment", "done"), ("review", "current"), ("accept", "todo"))]}
-    return {"id": 77, "status": "Needs correction", "lightburn_name": "work.lbrn2", "photo_name": "IMG_77.DNG", "engraving_title": "Работа",
+    return {"id": 77, "status": "Needs correction", "lightburn_name": "work.lbrn2", "photo_name": "IMG_77.DNG", "engraving_title": "Work",
             "device_id": 1, "matrix": None, "layer_tasks": {}, "work_task": None, "plan_task": None, "file_confirmation": None, "check": check,
             "review": review}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fields_and_choices_under_a_line(tmp_path):
-    """A file of 30 layers: «Слои файла», «Settings missing from the LightBurn file» and «Задачи гравировки» each show a page of 20 lines;
-    the layers not measured come first in «Слои файла»; the result, the fields of the missing settings and the task choice open under a
+    """A file of 30 layers: «File layers», «Settings missing from the LightBurn file» and «Engraving tasks» each show a page of 20 lines;
+    the layers not measured come first in «File layers»; the result, the fields of the missing settings and the task choice open under a
     line; a task chosen for a layer is sent and the layer stays open when the page is drawn again."""
     routes = {"/api/pairs/77/tasks": {"status": 200, "json": {}}}
     (tmp_path / "data.json").write_text(json.dumps({"pair": review_pair(), "routes": routes}), encoding="utf-8")

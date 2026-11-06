@@ -175,9 +175,9 @@ def test_a_device_named_by_stored_work_cannot_be_deleted_and_the_refusal_leaves_
 # -- documents ---------------------------------------------------------------------------------------------
 def test_a_document_is_stored_byte_for_byte_and_removed_with_its_file(store):
     d = jpt(store)
-    doc = dv.add_document(store, d["id"], "test_report", "Протокол испытаний", "IMG 3262.JPG", JPEG)
+    doc = dv.add_document(store, d["id"], "test_report", "Test report", "IMG 3262.JPG", JPEG)
     stored = dv.get_document(store, d["id"], doc["id"])
-    assert open(stored["path"], "rb").read() == JPEG and doc["media_type"] == "image/jpeg" and doc["size"] == len(JPEG) and doc["title"] == "Протокол испытаний"
+    assert open(stored["path"], "rb").read() == JPEG and doc["media_type"] == "image/jpeg" and doc["size"] == len(JPEG) and doc["title"] == "Test report"
     assert " " not in stored["path"].rsplit("/files/", 1)[1]
     assert [x["id"] for x in dv.get_device(store, d["id"])["documents"]] == [doc["id"]]
     dv.delete_document(store, d["id"], doc["id"])
@@ -283,7 +283,7 @@ def test_api_job_settings_are_checked_and_a_device_with_stored_work_is_kept(clie
 def test_api_documents_round_trip_and_errors(client):
     d = client.post("/api/devices/from-template", json={"template": TEMPLATE}).json()
     url = f"/api/devices/{d['id']}/documents"
-    r = client.post(url, data={"kind": "waveform", "title": "Форма импульса"}, files={"file": ("IMG_3263.jpg", io.BytesIO(JPEG), "image/jpeg")})
+    r = client.post(url, data={"kind": "waveform", "title": "Pulse waveform"}, files={"file": ("IMG_3263.jpg", io.BytesIO(JPEG), "image/jpeg")})
     assert r.status_code == 201
     doc = r.json()
     got = client.get(f"{url}/{doc['id']}")

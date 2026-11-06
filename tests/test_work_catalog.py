@@ -233,12 +233,12 @@ def test_a_photographed_work_says_so_and_goes_back_when_the_photograph_is_delete
 
 # -- search ------------------------------------------------------------------------------------------------------------------------------------
 def test_search_finds_every_word_in_any_order_and_case_in_the_name_the_equipment_and_the_number(shop):
-    portrait = add_vector(shop, "Портрет Анны", laser=0, lens=0, material=0)
-    landscape = add_photo(shop, "Пейзаж", laser=1, lens=1, material=1)
-    nameless = add_vector(shop, "Другая", laser=1, lens=None, material=0)
-    for query, expected in (("портрет", ["Портрет Анны"]), ("ПОРТРЕТ анны", ["Портрет Анны"]), ("анны   портрет", ["Портрет Анны"]), ("beta", ["Другая", "Пейзаж"]),
-                            ("f-theta 254", ["Пейзаж"]), ("sheet five", ["Пейзаж"]), ("sheet five beta", ["Пейзаж"]), ("sheet", ["Другая", "Пейзаж", "Портрет Анны"]), (f"№{landscape}", ["Пейзаж"]), ("портрет пейзаж", []),
-                            ("нет такого", []), ("", ["Другая", "Пейзаж", "Портрет Анны"])):
+    portrait = add_vector(shop, "Anna portrait", laser=0, lens=0, material=0)
+    landscape = add_photo(shop, "Landscape", laser=1, lens=1, material=1)
+    nameless = add_vector(shop, "Other", laser=1, lens=None, material=0)
+    for query, expected in (("portrait", ["Anna portrait"]), ("PORTRAIT anna", ["Anna portrait"]), ("anna   portrait", ["Anna portrait"]), ("beta", ["Other", "Landscape"]),
+                            ("f-theta 254", ["Landscape"]), ("sheet five", ["Landscape"]), ("sheet five beta", ["Landscape"]), ("sheet", ["Other", "Landscape", "Anna portrait"]), (f"№{landscape}", ["Landscape"]), ("portrait landscape", []),
+                            ("no match", []), ("", ["Other", "Landscape", "Anna portrait"])):
         assert sorted(names(listed(shop, q=query, sort="name"))) == sorted(expected), query
     assert portrait and nameless
 

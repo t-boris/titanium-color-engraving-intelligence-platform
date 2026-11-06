@@ -1,4 +1,4 @@
-"""The network screen (feature electron, REQ-082, DEC-047, REQ-080; REQ-086): the menu entry «Сеть», the local network card with its addresses,
+"""The network screen (feature electron, REQ-082, DEC-047, REQ-080; REQ-086): the menu entry «Network», the local network card with its addresses,
 the pairing code with its countdown, the certificate fingerprint and download, the devices with rename and revoke, the switches of what
 may be reached outside this computer and the address of the cloud of laboratories. Run in node over the small DOM of the other screen tests with a fake server; a device's name
 reaches the screen as text only."""
