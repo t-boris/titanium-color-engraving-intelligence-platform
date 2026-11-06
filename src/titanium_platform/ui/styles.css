@@ -1655,3 +1655,8 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 .theme-study-light .dashboard-item-type,.theme-study-light .dashboard-insight-preview {color:var(--muted)}
 .theme-study-light .alert.bad {background:#fff1f3;color:#8c1d34;border-color:#c48191}
 .theme-study-light .alert.warn {background:#fff5dc;color:#704900;border-color:#c69b44}
+
+/* List filters and row actions must remain usable on touch in either density. */
+@media (pointer:coarse) {
+  .lst-chip,.lst-select select,.lst-act .btn {min-width:44px;min-height:44px}
+}

@@ -57,3 +57,11 @@ Additional MarkView browser inspection of the light study preview found dark-on-
 ### Implementation · 2026-11-06
 
 Additional MarkView browser check on disposable capture setup: simulated 200% page enlargement with CSS zoom in a 1052×907 window, both compact and normal density. L=150 retained the entered value, remained focused and displayed its validation message; the reference input measured about 198–209×90 CSS screen pixels and the document width (1035) stayed within the viewport (1052). Visually inspected the compact error. This is a desktop CSS-zoom simulation for one form, not browser text-only zoom, a low-window audit, screen-reader testing or a physical tablet.
+
+### Implementation · 2026-11-06
+
+Touch-target follow-up: list chips, filter selects and row action buttons now have a 44px minimum height under pointer:coarse in both normal and compact modes. In the MarkView desktop browser, simulated activation of that media rule using its CSSOM contents and measured 44px for representative Works list controls in both modes. This is not a physical tablet or full touch-usability assessment.
+
+### Implementation · 2026-11-06
+
+The same simulated coarse-pointer check also measured width: representative visible Works chips, selects and row-action buttons had minimum rendered width and height of 44px in both density modes. Actual touch interaction on a physical tablet is still unverified.
