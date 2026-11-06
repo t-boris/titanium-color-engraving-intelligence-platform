@@ -2,7 +2,7 @@
 type: feature
 id: ux-object-inspector-p1
 title: "[P1] Холст, выделение и единая панель свойств"
-status: draft
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n25, n30; поручение пользователя создать задачи MarkView из исследования.
@@ -10,15 +10,28 @@ understanding:
   Problem: known
   Target Users: known
   Primary Workflow: known
-  Permissions: unknown
-  Failure Scenarios: partial
-  Data Model: partial
-  Notifications: unknown
-  Security: unknown
-  Analytics: unknown
+  Permissions: n/a
+  Failure Scenarios: known
+  Data Model: known
+  Notifications: known
+  Security: n/a
+  Analytics: partial
   Dependencies: known
   Acceptance Criteria: known
 updated: 2026-11-05
+understanding_notes:
+  Problem: Документы и код подтверждают конкурирующие панели цвета; эффект перестройки ещё не измерен.
+  Target Users: Оператор, редактирующий области, фотозоны и надписи векторной работы.
+  Primary Workflow: "Ответ A определяет границу: основные свойства фотозоны — в инспекторе, подробные — на существующем экране. Группировка регулировок задана соседним утверждённым требованием."
+  Permissions: Изменения ролей и прав доступа не входят в задачу.
+  Failure Scenarios: Нужно сохранить проверки выделения, обработку ошибок, защиту от устаревших ответов и общую историю отмены.
+  Data Model: Области, выделение, фотозоны и надписи уже существуют; новые предметные сущности не требуются.
+  Notifications: REQ-002 задаёт заметную смену режима и объяснение недоступности действий рядом с ними.
+  Security: Новые операции с доступом или передачей данных не заявлены.
+  Analytics: Предусмотрено сравнение одинаковых задач до и после; исходные замеры и численные цели отсутствуют, новая телеметрия не заявлена.
+  Dependencies: Код подтверждает отдельный редактор фотозоны и общую историю работы. Учитывается утверждённая группировка регулировок; P0 из REQ-002 предшествует перестройке P1.
+  Acceptance Criteria: Продуктовых вопросов не осталось. Критерии включают отдельный подробный редактор, доступность и сохранение предметных гарантий; фактическая приёмка ещё не выполнена.
+questions_left: 0
 ---
 
 # [P1] Холст, выделение и единая панель свойств
