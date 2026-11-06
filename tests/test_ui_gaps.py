@@ -228,14 +228,14 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
   out.supplied.fields = supplied.querySelectorAll('label').filter((l) => l.firstControl() && l.firstControl().getAttribute('type') === 'number').map((l) => l.firstChild.textContent);   // named by the visible label
   await lines(supplied)[2].dispatch('click'); await tick();
   out.supplied.given = opened(supplied);
-  const tasks = listOf(tree, 'Задачи гравировки');
+  const tasks = listOf(tree, 'Engraving tasks');
   out.tasks = {keys: keys(tasks), count: tasks.querySelector('.lst-count').textContent, choicesBefore: tasks.querySelectorAll('select').length};
   await lines(tasks)[1].dispatch('click'); await tick();
-  const choice = tasks.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Задача слоя C01');
+  const choice = tasks.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Task for layer C01');
   choice.value = 'text'; await choice.dispatch('change'); for (let i = 0; i < 4; i++) await tick();
   out.tasks.sent = ctx.requests.filter((r) => r.method === 'PUT').map((r) => [r.path, JSON.parse(r.body)]);
   out.tasks.reloads = reloads.length;
-  const again = listOf(await draw(), 'Задачи гравировки');
+  const again = listOf(await draw(), 'Engraving tasks');
   out.tasks.reopened = again.querySelectorAll('.lst-row').filter((r) => (r.className || '').split(' ').includes('open')).map((r) => r.getAttribute('data-key'));
 """}, encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
