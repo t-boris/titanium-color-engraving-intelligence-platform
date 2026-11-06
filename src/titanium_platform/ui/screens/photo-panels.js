@@ -836,27 +836,22 @@ const PhotoPanels = (() => {
     return {el, show};
   }
 
-  const PART_NAMES = {background: 'Фон', hair: 'Волосы', body_skin: 'Кожа тела', face_skin: 'Кожа лица', clothes: 'Одежда', other: 'Другое'};
-  const RULES = [['as_is', 'Как есть'], ['photo', 'Цвета фото'], ['neutral', 'Чёрно-белое'], ['colour', 'Цвет'], ['even', 'Один тон']];
+  const PART_NAMES = {background: 'Background', hair: 'Hair', body_skin: 'Body skin', face_skin: 'Face skin', clothes: 'Clothing', other: 'Other'};
+  const RULES = [['as_is', 'As is'], ['photo', 'Photo colors'], ['neutral', 'Black and white'], ['colour', 'Color'], ['even', 'Single tone']];
   const WITH_TARGET = ['colour', 'even'];
-  const AI_MISSING = {library: 'AI недоступен: в окружении приложения нет библиотеки openai (как её поставить — в README). Правила частей можно задать вручную.',
-    key: 'AI выключен: не задан ключ OpenAI (его вводят на экране «Сеть»). Правила частей можно задать вручную.'};
+  const AI_MISSING = {library: 'AI is unavailable because the openai library is missing from the application environment. See the README for installation; part rules can still be set manually.',
+    key: 'AI is disabled because no OpenAI key is configured. Set one on the Network screen; part rules can still be set manually.'};
 
-  /** Вкладка «AI» работы (REQ-062): пожелание своими словами, разрешение отправить уменьшенную картинку, «Попросить AI» (от нынешних
-      правил: AI меняет то, о чём просят) и «Заново с картинки» (AI начинает с картинки без правил), его ответ; части картинки, найденные
-      моделью, с правилом каждой (его можно поменять вручную), цветом-целью и тем, насколько близко к нему подходят серые шкалы, «Все части
-      как есть»; части поверх картинки. Серые всегда подбираются на шкале работы, не моделью; любой шаг отменяет «Отменить» в шапке.
-      ``save`` сохраняет правила и разрешение, ``ask(wish, fresh)`` спрашивает AI; оба отдают ошибку или null. ``base`` — адрес API работы
-      или фотозоны. */
+  /** Manage AI suggestions and per-part rules for the work image. */
   function aiTab(base, save, ask) {
     const wishForm = Forms.create();
-    const wish = h('textarea', {rows: 3, placeholder: 'например: всё как есть, чёрно-белое; платье фиолетовым, ярким; кожу равномерно светлой'});
-    const wishField = wishForm.add('wish', 'Что изменить в картинке', wish, {required: true, maxLength: 400});     // ai_colouring.MAX_TEXT
+    const wish = h('textarea', {rows: 3, placeholder: 'for example: keep everything black and white; make the dress bright purple and the skin evenly light'});
+    const wishField = wishForm.add('wish', 'What to change in the image', wish, {required: true, maxLength: 400});     // ai_colouring.MAX_TEXT
     const photo = h('input', {type: 'checkbox'});
     const status = h('p', {class: 'small', role: 'status', hidden: true});
     const missing = h('p', {class: 'alert warn small', hidden: true});
     const answer = h('div', {class: 'stack'});
-    const table_ = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем части картинки…'));
+    const table_ = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Finding image parts…'));
     const overlay = h('div');
     let view = null, parts = null, asking = false;
     photo.addEventListener('change', () => save({ai_photo: photo.checked}));
@@ -865,7 +860,7 @@ const PhotoPanels = (() => {
       if (!wishForm.collect()) { status.hidden = true; return; }
       asking = true;
       enable();
-      status.textContent = 'AI думает… обычно это до минуты.';
+      status.textContent = 'AI is working… This usually takes up to a minute.';
       status.hidden = false;
       const failed = await ask(wish.value, fresh);
       asking = false;
@@ -873,12 +868,12 @@ const PhotoPanels = (() => {
       status.hidden = !failed;
       enable();
     }
-    const button = btn('Попросить AI', () => request(false), 'primary btn-small');
-    const again = btn('Заново с картинки', () => request(true), 'btn-small');
-    button.setAttribute('title', 'AI видит нынешние правила частей и меняет то, о чём вы просите');
-    again.setAttribute('title', 'AI начинает с картинки без правил частей: его ответ заменяет их все');
-    const plain = btn('Все части как есть', () => save({rules: []}), 'btn-small');
-    plain.setAttribute('title', 'Убрать правила всех частей: картинка гравируется как есть');
+    const button = btn('Ask AI', () => request(false), 'primary btn-small');
+    const again = btn('Start over from the image', () => request(true), 'btn-small');
+    button.setAttribute('title', 'AI sees the current part rules and changes what you request');
+    again.setAttribute('title', 'AI starts from the image without part rules and replaces all existing rules');
+    const plain = btn('Keep all parts as is', () => save({rules: []}), 'btn-small');
+    plain.setAttribute('title', 'Remove all part rules and engrave the image as is');
     function enable() {
       button.disabled = again.disabled = asking || !!(view && view.ai_missing);
       plain.disabled = !(view && view.rules.length);
@@ -890,19 +885,19 @@ const PhotoPanels = (() => {
     function rows() {
       if (!parts) return;
       const report = (view.picture && view.picture.rules_report) || [];
-      fill(table_, parts.length ? table(['Часть', 'Доля', 'Цвет', 'Правило', 'ΔE к цели'], parts.map((p) => {
+      fill(table_, parts.length ? table(['Part', 'Share', 'Color', 'Rule', 'ΔE to target'], parts.map((p) => {
         const name = PART_NAMES[p.part] || p.part;
         const rule = view.rules.find((r) => r.part === p.part) || {kind: 'as_is'};
-        const select = h('select', {'aria-label': `Правило: ${name}`}, RULES.map(([kind, label]) => h('option', {value: kind}, label)));
+        const select = h('select', {'aria-label': `Rule: ${name}`}, RULES.map(([kind, label]) => h('option', {value: kind}, label)));
         select.value = rule.kind;
         select.addEventListener('change', () => setRule(p.part, select.value, rule.hex || p.hex));
-        const target = WITH_TARGET.includes(rule.kind) ? h('input', {type: 'color', value: rule.hex || p.hex, 'aria-label': `Цвет-цель: ${name}`}) : null;
+        const target = WITH_TARGET.includes(rule.kind) ? h('input', {type: 'color', value: rule.hex || p.hex, 'aria-label': `Target color: ${name}`}) : null;
         if (target) target.addEventListener('change', () => setRule(p.part, rule.kind, target.value));
         const near = report.find((r) => r.part === p.part);
-        return [h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${p.tint}`, title: 'цвет части на картинке частей'}), ` ${name}`),
+        return [h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${p.tint}`, title: 'part color in the parts image'}), ` ${name}`),
           h('span', {class: 'ge-nowrap'}, `${value(p.share * 100, 1)} %`), hexChip(p.hex), h('span', {class: 'row ge-rule'}, select, target),
           near && near.median_de != null ? `≈ ${value(near.median_de, 1)}` : h('span', {class: 'muted'}, '—')];
-      }), '', true) : h('p', {class: 'muted'}, 'Модель не нашла на картинке частей: правила задать не для чего.'));
+      }), '', true) : h('p', {class: 'muted'}, 'The model found no parts in the image to assign rules to.'));
     }
     function show(next) {
       view = next;
@@ -911,26 +906,26 @@ const PhotoPanels = (() => {
       missing.hidden = !view.ai_missing;
       enable();
       if (!wish.value && view.ai) wish.value = view.ai.wish;
-      fill(answer, view.ai ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai.note || 'без пояснения',
-        h('span', {class: 'muted'}, ` — на «${view.ai.wish}»${view.ai.fresh ? ', заново с картинки' : ''}${view.ai.photo ? ', с картинкой' : ''}`)) : null);
+      fill(answer, view.ai ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai.note || 'no explanation',
+        h('span', {class: 'muted'}, ` — for “${view.ai.wish}”${view.ai.fresh ? ', started from image' : ''}${view.ai.photo ? ', with image' : ''}`)) : null);
       rows();
     }
     get(`${base}/parts`).then((found) => {
       parts = found.parts;
-      fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Части на картинке'),
-        h('img', {class: 'pp-image', src: found.picture, alt: 'Части картинки, каждая своим цветом'})));
+      fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Parts in the image'),
+        h('img', {class: 'pp-image', src: found.picture, alt: 'Image parts, each shown in a different color'})));
       if (view) rows();
     }, (e) => fill(table_, h('p', {class: 'alert bad'}, e.message)));
     const el = h('div', {class: 'stack'},
-      h('p', {class: 'small'}, 'Скажите своими словами, что изменить в картинке. AI предложит правило для каждой части — фона, волос, кожи, одежды; '
-        + 'серые подбираются на шкале работы по вашим измерениям, поэтому видно, что на этом титане достижимо.'),
-      wishField, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Отправить AI уменьшенную картинку (без этого — только числа: части и их цвета)')),
+      h('p', {class: 'small'}, 'Describe what to change in the image. AI will suggest a rule for each part, such as the background, hair, skin, and clothing; '
+        + 'grays are matched on the work scale using your measurements, showing what can be achieved on this titanium.'),
+      wishField, h('label', {class: 'small ge-check'}, photo, h('span', {}, 'Send AI a reduced image (otherwise only part and color data is sent)')),
       h('div', {class: 'row'}, button, again), missing, status, answer,
-      h('div', {class: 'row ge-parts-head'}, h('h4', {}, 'Части картинки'), plain), table_, overlay,
-      h('p', {class: 'small muted'}, 'Как есть — серые картинки; цвета фото — для каждого пикселя серый с ближайшим цветом на шкале; чёрно-белое — только серые, '
-        + 'которые на титане выходят почти серыми; цвет — цель, светлое и тёмное части сохраняются; один тон — один серый на всю часть: он стирает всё внутри неё (глаза, брови и губы — часть кожи лица, '
-        + 'поэтому ровную светлую кожу лучше задать цветом). '
-        + '«ΔE к цели» — медиана ΔE между желаемым цветом и тем, что даёт шкала. Ответ AI и любое изменение отменяются кнопкой «Отменить» вверху (Ctrl+Z).'));
+      h('div', {class: 'row ge-parts-head'}, h('h4', {}, 'Image parts'), plain), table_, overlay,
+      h('p', {class: 'small muted'}, 'As is uses image grays; Photo colors chooses the gray whose scale color is closest to each pixel; Black and white uses only grays '
+        + 'that appear nearly gray on titanium; Color targets a color while preserving the part’s light and dark areas; Single tone uses one gray for the whole part and erases internal detail (eyes, eyebrows, and lips are part of face skin, '
+        + 'so use Color for evenly light skin). '
+        + 'ΔE to target is the median ΔE between the desired color and the scale result. Undo an AI response or other change with Undo above (Ctrl+Z).'));
     return {el, show};
   }
 

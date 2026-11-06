@@ -559,17 +559,17 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
 @node
 def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_target_colour(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.table = tree.textContent.includes('Кожа лица') && tree.textContent.includes('Одежда') && tree.textContent.includes('50 %');
+  out.table = tree.textContent.includes('Face skin') && tree.textContent.includes('Clothing') && tree.textContent.includes('50 %');
   out.overlay = tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/parts.png?v=1');
-  const clothes = select(tree, 'Правило: Одежда');
+  const clothes = select(tree, 'Rule: Clothing');
   out.before = clothes.value;
   clothes.value = 'even'; await clothes.dispatch('change'); await settle();
-  const colour = input(tree, (i) => i.getAttribute('aria-label') === 'Цвет-цель: Одежда');
+  const colour = input(tree, (i) => i.getAttribute('aria-label') === 'Target color: Clothing');
   out.colour = colour.value;
   colour.value = '#ff0000'; await colour.dispatch('change'); await settle();
-  const face = select(tree, 'Правило: Кожа лица');
+  const face = select(tree, 'Rule: Face skin');
   face.value = 'neutral'; await face.dispatch('change'); await settle();
-  select(tree, 'Правило: Одежда').value = 'as_is'; await select(tree, 'Правило: Одежда').dispatch('change'); await settle();
+  select(tree, 'Rule: Clothing').value = 'as_is'; await select(tree, 'Rule: Clothing').dispatch('change'); await settle();
   out.saves = saves();
 """)
     assert out["table"] and out["overlay"] and out["before"] == "as_is" and out["colour"] == "#3355aa"      # the part's own colour to start from
@@ -582,16 +582,16 @@ def test_the_ai_tab_shows_the_parts_and_a_rule_set_by_hand_is_saved_with_its_tar
 @node
 def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_from_the_head(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  await button(tree, 'Попросить AI').dispatch('click'); await settle();
+  await button(tree, 'Ask AI').dispatch('click'); await settle();
   out.empty = {asks: asks().length, text: tree.textContent.includes('Complete this field')};            // the reason stands beside the box, nothing is sent
-  const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('уменьшенную картинку'));
+  const permission = input(tree, (i) => i.getAttribute('type') === 'checkbox' && i.parentNode.textContent.includes('reduced image'));
   permission.checked = true; await permission.dispatch('change'); await settle();
   const wish = tree.querySelectorAll('textarea')[0];
-  wish.value = ' платье сделать фиолетовым '; await button(tree, 'Попросить AI').dispatch('click'); await settle();
-  out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', с картинкой'),
-               rule: select(tree, 'Правило: Одежда').value, shown: shown(tree)};
+  wish.value = ' платье сделать фиолетовым '; await button(tree, 'Ask AI').dispatch('click'); await settle();
+  out.asked = {asks: asks(), note: tree.textContent.includes('AI: платье фиолетовым, остальное как есть'), photo: tree.textContent.includes(', with image'),
+               rule: select(tree, 'Rule: Clothing').value, shown: shown(tree)};
   await button(tree, 'Отменить').dispatch('click'); await settle();
-  out.back = {saves: saves(), undo: requests.filter((r) => r.path.endsWith('/undo')).length, rule: select(tree, 'Правило: Одежда').value,
+  out.back = {saves: saves(), undo: requests.filter((r) => r.path.endsWith('/undo')).length, rule: select(tree, 'Rule: Clothing').value,
               note: tree.textContent.includes('AI: '), redo: !button(tree, 'Повторить').disabled};
 """)
     assert out["empty"] == {"asks": 0, "text": True}
@@ -603,9 +603,9 @@ def test_asking_the_ai_sends_the_wish_shows_its_note_and_the_answer_is_undone_fr
 @node
 def test_without_a_key_the_ai_button_is_off_and_says_why_while_rules_can_still_be_set(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.disabled = button(tree, 'Попросить AI').disabled;
-  out.text = tree.textContent.includes('AI выключен: не задан ключ OpenAI (его вводят на экране «Сеть»)');
-  const clothes = select(tree, 'Правило: Одежда');
+  out.disabled = button(tree, 'Ask AI').disabled;
+  out.text = tree.textContent.includes('AI is disabled because no OpenAI key is configured');
+  const clothes = select(tree, 'Rule: Clothing');
   clothes.value = 'photo'; await clothes.dispatch('change'); await settle();
   out.saves = saves();
 """, work={"ai_missing": "key"})
@@ -641,12 +641,12 @@ def test_undo_and_redo_in_the_head_bring_the_work_back_with_its_min_and_max_and_
 @node
 def test_the_ai_can_start_again_from_the_picture_and_every_part_can_be_put_back_as_it_is(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.plainOff = button(tree, 'Все части как есть').disabled;
+  out.plainOff = button(tree, 'Keep all parts as is').disabled;
   tree.querySelectorAll('textarea')[0].value = 'платье фиолетовым';
-  await button(tree, 'Заново с картинки').dispatch('click'); await settle();
-  out.asked = {asks: asks(), again: tree.textContent.includes(', заново с картинки'), plainOff: button(tree, 'Все части как есть').disabled};
-  await button(tree, 'Все части как есть').dispatch('click'); await settle();
-  out.plain = {saves: saves(), rule: select(tree, 'Правило: Одежда').value, plainOff: button(tree, 'Все части как есть').disabled};
+  await button(tree, 'Start over from the image').dispatch('click'); await settle();
+  out.asked = {asks: asks(), again: tree.textContent.includes(', started from image'), plainOff: button(tree, 'Keep all parts as is').disabled};
+  await button(tree, 'Keep all parts as is').dispatch('click'); await settle();
+  out.plain = {saves: saves(), rule: select(tree, 'Rule: Clothing').value, plainOff: button(tree, 'Keep all parts as is').disabled};
 """)
     assert out["plainOff"] is True
     assert out["asked"] == {"asks": [{"wish": "платье фиолетовым", "fresh": True}], "again": True, "plainOff": False}
