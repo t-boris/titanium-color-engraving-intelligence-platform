@@ -701,32 +701,29 @@ const PhotoPanels = (() => {
     return {inputs, tone: tone.el, out, foot, details, comparison, compare, show, waiting, failed};
   }
 
-  const OBJECT_NAMES = {background: 'Фон', hair: 'Волосы', face_skin: 'Кожа лица', body_skin: 'Кожа тела', clothes: 'Одежда', other: 'Другое (очки…)',
-    lips: 'Губы', eyes: 'Глаза'};
-  /** Имя объекта по его ключу: вид, у кусков фона — ещё номер («Фон 2»). */
+  const OBJECT_NAMES = {background: 'Background', hair: 'Hair', face_skin: 'Face skin', body_skin: 'Body skin', clothes: 'Clothing', other: 'Other (glasses…)',
+    lips: 'Lips', eyes: 'Eyes'};
+  /** Name an object by its key and number background pieces. */
   const objectName = (key) => { const [kind, piece] = String(key).split('-'); return (OBJECT_NAMES[kind] || kind) + (piece ? ` ${+piece + 1}` : ''); };
-  const THEMES = [['warm', 'Тёплая', 'Кожа — самым светлым тёплым цветом шкалы, губы — самым красным, остальное — тёплыми цветами по своей светлоте'],
-    ['cool', 'Холодная', 'Кожа и губы тёплые, остальное — холодными цветами шкалы по своей светлоте'],
-    ['contrast', 'Контрастная', 'Крупные объекты первыми, каждый — цветом шкалы, самым далёким от уже данных'],
-    ['random', 'Случайно', 'Каждому объекту — случайный цвет шкалы; ещё раз — другие цвета']];
-  const COLOURING_ABOUT = 'Как в раскраске: каждому объекту — свой основной цвет шкалы. Его светлые и тёмные места ложатся вокруг этого цвета, '
-    + 'по соседним цветам шкалы (шаг не больше 5 ΔE, в одном семействе — от золотого не прыгает в синий), поэтому губы остаются губами, очки — очками. '
-    + '«Светлее/темнее» сдвигает тона объекта по его семейству. Объект без цвета — «Авто»: как вся картинка при «Сохранить рисунок».';
+  const THEMES = [['warm', 'Warm', 'Use the lightest warm scale color for skin, the reddest for lips, and warm colors according to brightness for the rest'],
+    ['cool', 'Cool', 'Keep skin and lips warm; use cool scale colors according to brightness for the rest'],
+    ['contrast', 'Contrast', 'Color larger objects first, choosing the scale color farthest from those already assigned'],
+    ['random', 'Random', 'Give each object a random scale color; select again for different colors']];
+  const COLOURING_ABOUT = 'Each object gets a main scale color. Its light and dark areas are mapped around that color, '
+    + 'using neighboring colors in the same family (steps no greater than 5 ΔE), so details such as lips and glasses remain distinct. '
+    + 'Lighter/darker shifts the object tones within their color family. An object with no assigned color uses Auto, as with Preserve image.';
 
-  /** Вкладка «Раскраска» (0.21.0): объекты картинки — фон и его куски, волосы, кожа, одежда, губы, глаза, другое (очки) — каждому свой
-      основной цвет: выберите объект, щёлкните цвет шкалы; «Светлее/темнее»; «Авто» убирает цвет. Темы и «Случайно» дают цвета всем сразу,
-      AI — по просьбе своими словами (с картинкой, если разрешено во вкладке «AI»). Любой шаг отменяет «Отменить» в шапке. ``save`` сохраняет
-      настройки работы, ``send(path, body)`` — тему или просьбу к AI; оба отдают ошибку или null. ``base`` — адрес API работы или фотозоны. */
+  /** Assign scale colors to detected image objects, manually or with AI. */
   function colourTab(base, save, send) {
     const status = h('p', {class: 'small', role: 'status', hidden: true});
     const themes = h('div', {class: 'row'});
     // ai_colouring.MAX_TEXT: the description is 1 to 400 characters once trimmed; a longer text is refused with its length instead of being cut at 400 as it is typed
     const wishForm = Forms.create();
-    const wish = h('input', {type: 'text', placeholder: 'например: очки золотом, фон синий, губы красные'});
-    const wishField = wishForm.add('wish', 'Как раскрасить — своими словами', wish, {required: true, maxLength: 400});
+    const wish = h('input', {type: 'text', placeholder: 'for example: gold glasses, blue background, red lips'});
+    const wishField = wishForm.add('wish', 'Describe how to color the image', wish, {required: true, maxLength: 400});
     const aiNote = h('div');
     const palette = h('div', {class: 'ge-palette', role: 'group', 'aria-label': 'Scale colors'});
-    const list = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Ищем объекты картинки…'));
+    const list = h('div', {class: 'stack'}, h('p', {class: 'muted small'}, 'Finding image objects…'));
     const notes = h('ul', {class: 'small'});
     const overlay = h('div');
     const blocked = h('p', {class: 'alert warn small', hidden: true});
@@ -734,7 +731,7 @@ const PhotoPanels = (() => {
     const colours = () => (view && view.colouring) || {};
     const options = () => (found && found.options) || [];
     const hexOf = (c) => { const o = options().find((x) => Math.abs(x.power - c.power) < 0.01); return o ? o.hex : null; };
-    /** Цвета объектов ``next`` (ключ → цвет): работа переходит на раскраску по объектам. */
+    /** Assign object colors and switch the work to object coloring. */
     const colourWith = (next) => save({by_colour: true, colour_choice: 'objects', colouring: next});
     function setColour(key, power) {
       const was = colours()[key];
@@ -748,7 +745,7 @@ const PhotoPanels = (() => {
       if (!v) { status.hidden = true; return; }                          // the reason stands beside the box
       asking = true;
       enable();
-      status.textContent = 'AI думает… обычно это до минуты.';
+      status.textContent = 'AI is working… This usually takes up to a minute.';
       status.hidden = false;
       const failed = await send(`${base}/ai-theme`, {wish: wish.value});
       asking = false;
@@ -756,11 +753,11 @@ const PhotoPanels = (() => {
       status.hidden = !failed;
       enable();
     }
-    const askButton = btn('Раскрасить по просьбе', ask, 'primary btn-small');
-    askButton.setAttribute('title', 'AI видит объекты, их цвета на фото и цвета шкалы и даёт каждому объекту основной цвет шкалы');
+    const askButton = btn('Color as requested', ask, 'primary btn-small');
+    askButton.setAttribute('title', 'AI uses the objects, their photo colors, and the scale colors to assign each object a main scale color');
     wish.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ask(); } });
-    const auto = btn('Всё — авто', () => colourWith({}), 'btn-small');
-    auto.setAttribute('title', 'Убрать цвета всех объектов: вся картинка как при «Сохранить рисунок»');
+    const auto = btn('Reset all to auto', () => colourWith({}), 'btn-small');
+    auto.setAttribute('title', 'Remove all object colors and use Preserve image for the whole image');
     fill(themes, THEMES.map(([name, label, about]) => {
       const b = btn(label, () => send(`${base}/theme`, name === 'random' ? {name, seed: Math.floor(Math.random() * 1e9)} : {name}), 'btn-small');
       b.setAttribute('title', about);
@@ -779,26 +776,26 @@ const PhotoPanels = (() => {
       const picked = options().length && selected ? (colours()[selected] || null) : null;
       fill(palette, options().map((o) => {
         const b = h('button', {type: 'button', class: 'ge-swatch' + (picked && Math.abs(picked.power - o.power) < 0.01 ? ' is-chosen' : ''), style: `background:${o.hex}`,
-          title: `${value(o.power)} % · L* ${value(o.lab[0], 0)}`, 'aria-label': `Цвет шкалы ${value(o.power)} %`, disabled: off || !selected,
+          title: `${value(o.power)} % · L* ${value(o.lab[0], 0)}`, 'aria-label': `Scale color ${value(o.power)} %`, disabled: off || !selected,
           onClick: () => setColour(selected, o.power)});
         return b;
       }));
       fill(list, found.objects.length ? h('ul', {class: 'ge-objects'}, found.objects.map((o) => {
         const c = colours()[o.key] || null;
         const shift = h('input', {type: 'range', min: '-1', max: '1', step: '0.25', value: String(c ? c.shift : 0), disabled: off || !c,
-          'aria-label': `Светлее или темнее: ${objectName(o.key)}`, title: 'Темнее ← → светлее'});
-        const shiftNote = Forms.describe(shift, 'objectShift', {extra: 'меньше нуля — темнее, больше — светлее; шаг 0,25'});
+          'aria-label': `Lighter or darker: ${objectName(o.key)}`, title: 'Darker ← → lighter'});
+        const shiftNote = Forms.describe(shift, 'objectShift', {extra: 'below zero is darker, above zero is lighter; step 0.25'});
         shift.addEventListener('change', () => setShift(o.key, +shift.value));
-        const clearIt = btn('Авто', () => clear(o.key), 'btn-small');
+        const clearIt = btn('Auto', () => clear(o.key), 'btn-small');
         clearIt.disabled = off || !c;
-        clearIt.setAttribute('title', 'Убрать цвет объекта: как при «Сохранить рисунок»');
+        clearIt.setAttribute('title', 'Remove the object color and use Preserve image');
         return h('li', {class: 'ge-object' + (o.key === selected ? ' is-selected' : ''), 'aria-current': o.key === selected ? 'true' : null,
           onClick: (ev) => { if (ev.target.closest('button,input')) return; selected = o.key; rows(); }},
-          h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${o.tint}`, title: 'цвет объекта на картинке объектов'}), objectName(o.key)),
-          h('span', {class: 'small muted ge-nowrap'}, `${value(o.share * 100, 1)} % · на фото `, hexChip(o.hex)),
-          h('span', {class: 'row ge-nowrap'}, c ? hexChip(hexOf(c)) : pill('авто', 'muted'), c ? `${value(c.power)} %` : null),
-          h('span', {class: 'row ge-nowrap'}, h('span', {class: 'small muted'}, 'темнее'), shift, shiftNote, h('span', {class: 'small muted'}, 'светлее'), clearIt));
-      })) : h('p', {class: 'muted'}, 'На картинке не нашлось объектов: раскрашивать нечего.'));
+          h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${o.tint}`, title: 'object color in the object image'}), objectName(o.key)),
+          h('span', {class: 'small muted ge-nowrap'}, `${value(o.share * 100, 1)} % · in photo `, hexChip(o.hex)),
+          h('span', {class: 'row ge-nowrap'}, c ? hexChip(hexOf(c)) : pill('auto', 'muted'), c ? `${value(c.power)} %` : null),
+          h('span', {class: 'row ge-nowrap'}, h('span', {class: 'small muted'}, 'darker'), shift, shiftNote, h('span', {class: 'small muted'}, 'lighter'), clearIt));
+      })) : h('p', {class: 'muted'}, 'No objects were found in the image.'));
       fill(notes, (found.notes || []).map((n) => h('li', {}, I18N.tr(n))));
     }
     async function load() {
@@ -810,32 +807,32 @@ const PhotoPanels = (() => {
         if (key !== foundKey) return;
         found = next;
         if (!selected || !found.objects.some((o) => o.key === selected)) selected = found.objects.length ? found.objects[0].key : null;
-        fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Объекты на картинке'),
-          h('img', {class: 'pp-image', src: found.picture, alt: 'Объекты картинки, каждый своим цветом'})));
+        fill(overlay, h('details', {}, h('summary', {class: 'small'}, 'Objects in the image'),
+          h('img', {class: 'pp-image', src: found.picture, alt: 'Image objects, each shown in a different color'})));
         rows();
       } catch (e) { if (key === foundKey) fill(list, h('p', {class: 'alert bad'}, e.message)); }
     }
     function show(next) {
       view = next;
-      blocked.textContent = dotted(view) ? 'Раскраска по объектам — для градаций серого: в виде точками каждая точка бьёт на одной мощности. Вид меняется кнопкой «Вид» над картинкой; цвета объектов сохранены.'
-        : !view.picture ? 'Шкала этой работы не измерена: цветов, чтобы раскрашивать, нет.' : '';
+      blocked.textContent = dotted(view) ? 'Object coloring applies to grayscale: in dot mode each dot uses the same power. Use Mode above the image to change modes; object colors are preserved.'
+        : !view.picture ? 'This work’s scale has not been measured, so there are no colors to use.' : '';
       blocked.hidden = !blocked.textContent;
       if (!wish.value && view.ai_theme) wish.value = view.ai_theme.wish;
-      fill(aiNote, view.ai_theme ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai_theme.note || 'без пояснения',
-        h('span', {class: 'muted'}, ` — на «${view.ai_theme.wish}»${view.ai_theme.photo ? ', с картинкой' : ''}`)) : null);
+      fill(aiNote, view.ai_theme ? h('p', {class: 'small'}, h('strong', {}, 'AI: '), view.ai_theme.note || 'no explanation',
+        h('span', {class: 'muted'}, ` — for “${view.ai_theme.wish}”${view.ai_theme.photo ? ', with image' : ''}`)) : null);
       enable();
       load();
     }
     const el = h('div', {class: 'stack'},
       h('p', {class: 'small'}, COLOURING_ABOUT),
       blocked,
-      h('h4', {}, 'Темы'), themes,
+      h('h4', {}, 'Themes'), themes,
       h('div', {class: 'row ge-ask'}, wishField, askButton), status, aiNote,
-      h('h4', {}, 'Объекты'),
-      h('p', {class: 'small muted'}, 'Выберите объект в списке и щёлкните его цвет на полосе цветов шкалы.'),
+      h('h4', {}, 'Objects'),
+      h('p', {class: 'small muted'}, 'Select an object in the list, then click its color on the scale strip.'),
       palette, list, notes, overlay,
-      h('p', {class: 'small muted'}, 'Scale colors — при Min и Max работы, не ближе 8 ΔE друг к другу. Картинку AI получает, только если это разрешено во вкладке «AI». '
-        + 'Объекты находит модель людей (кожа, волосы, одежда, другое), губы и глаза — поиск лица, куски фона — по их цвету.'));
+      h('p', {class: 'small muted'}, 'Scale colors use the work’s Min and Max and are at least 8 ΔE apart. AI receives the image only if enabled in the AI tab. '
+        + 'A people model finds skin, hair, clothing, and other objects; face detection finds lips and eyes, and background pieces are found by color.'));
     return {el, show};
   }
 

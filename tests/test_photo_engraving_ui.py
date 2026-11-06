@@ -740,34 +740,34 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   const swatch = (label) => tree.querySelectorAll('button.ge-swatch').find((b) => b.getAttribute('aria-label') === label);
   const posts = (end) => requests.filter((r) => r.path.endsWith(end)).map((r) => r.body);
   out.listed = objects().map((li) => li.childNodes[0].textContent.trim());
-  out.first = {current: row('Фон').getAttribute('aria-current'), auto: row('Губы').textContent.includes('авто'), swatches: tree.querySelectorAll('button.ge-swatch').length,
+  out.first = {current: row('Background').getAttribute('aria-current'), auto: row('Lips').textContent.includes('auto'), swatches: tree.querySelectorAll('button.ge-swatch').length,
                note: tree.textContent.includes('1 eye is behind glasses or something else worn'), overlay: tree.querySelectorAll('img').some((i) => i.getAttribute('src') === '/api/photo-works/7/objects.png?v=1')};
-  await row('Губы').dispatch('click'); await settle();
-  out.selected = row('Губы').getAttribute('aria-current');
-  await swatch('Цвет шкалы 12,15 %').dispatch('click'); await settle();
-  out.coloured = {chosen: swatch('Цвет шкалы 12,15 %').className.includes('is-chosen'), text: row('Губы').textContent.includes('12,15 %'),
+  await row('Lips').dispatch('click'); await settle();
+  out.selected = row('Lips').getAttribute('aria-current');
+  await swatch('Scale color 12,15 %').dispatch('click'); await settle();
+  out.coloured = {chosen: swatch('Scale color 12,15 %').className.includes('is-chosen'), text: row('Lips').textContent.includes('12,15 %'),
                   choice: select(tree, 'How to match grayscale').value, said: tree.textContent.includes('Color by object: 1 object in assigned colors')};
-  const shift = input(tree, (i) => i.getAttribute('aria-label') === 'Светлее или темнее: Губы');
+  const shift = input(tree, (i) => i.getAttribute('aria-label') === 'Lighter or darker: Lips');
   shift.value = '-0.5'; await shift.dispatch('change'); await settle();
-  await button(tree, 'Тёплая').dispatch('click'); await settle();
-  await button(tree, 'Случайно').dispatch('click'); await settle();
-  await button(row('Другое (очки…)'), 'Авто').dispatch('click'); await settle();
-  tree.querySelectorAll('label').find((l) => l.firstChild.textContent === 'Как раскрасить — своими словами').firstControl().value = ' очки золотом ';
-  await button(tree, 'Раскрасить по просьбе').dispatch('click'); await settle();
+  await button(tree, 'Warm').dispatch('click'); await settle();
+  await button(tree, 'Random').dispatch('click'); await settle();
+  await button(row('Other (glasses…)'), 'Auto').dispatch('click'); await settle();
+  tree.querySelectorAll('label').find((l) => l.firstChild.textContent === 'Describe how to color the image').firstControl().value = ' очки золотом ';
+  await button(tree, 'Color as requested').dispatch('click'); await settle();
   out.saves = saves();
   out.themes = posts('/theme').map((b) => [b.name, typeof b.seed]);
   out.ai = {asks: posts('/ai-theme'), note: tree.textContent.includes('AI: очки золотом, губы красные')};
-  await button(tree, 'Всё — авто').dispatch('click'); await settle();
+  await button(tree, 'Reset all to auto').dispatch('click'); await settle();
   out.cleared = saves().slice(-1)[0];
 """)
-    assert out["listed"] == ["Фон", "Фон 2", "Кожа лица", "Другое (очки…)", "Губы"]
+    assert out["listed"] == ["Background", "Background 2", "Face skin", "Other (glasses…)", "Lips"]
     assert out["first"] == {"current": "true", "auto": True, "swatches": 4, "note": True, "overlay": True}
     assert out["selected"] == "true" and out["coloured"] == {"chosen": True, "text": True, "choice": "objects", "said": True}
     objects_on = {"by_colour": True, "colour_choice": "objects"}
     assert out["saves"] == [{**objects_on, "colouring": {"lips": {"power": 12.15, "shift": 0}}},
                             {**objects_on, "colouring": {"lips": {"power": 12.15, "shift": -0.5}}},
-                            {**objects_on, "colouring": {}}]                                          # «Авто» on the random theme's only object
-    assert out["themes"] == [["warm", "undefined"], ["random", "number"]]                             # «Случайно»: new colours each time
+                            {**objects_on, "colouring": {}}]                                          # «Auto» on the random theme's only object
+    assert out["themes"] == [["warm", "undefined"], ["random", "number"]]                             # «Random»: new colours each time
     assert out["ai"] == {"asks": [{"wish": " очки золотом "}], "note": True}
     assert out["cleared"] == {**objects_on, "colouring": {}}
 
