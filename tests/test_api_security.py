@@ -121,6 +121,6 @@ def test_the_cloud_sign_in_callback_passes_the_desktop_guard_only_as_a_get_for_a
     assert bare.get("/api/cloud/callback?state=pending-state&state=other-state&code=c").status_code == 403       # one state, not two
     assert bare.post("/api/cloud/callback", params={"state": "pending-state", "code": "c"}).status_code == 403
     passed = bare.get("/api/cloud/callback", params={"state": "pending-state", "code": "c"})
-    assert passed.status_code != 403 and "Вход не выполнен" in passed.text                                     # the route refuses on its own: nothing pending in cloud_session
+    assert passed.status_code != 403 and "Sign-in failed" in passed.text                                     # the route refuses on its own: nothing pending in cloud_session
     desktop.app.state.guard.callback_check = None
     assert bare.get("/api/cloud/callback", params={"state": "pending-state", "code": "c"}).status_code == 403

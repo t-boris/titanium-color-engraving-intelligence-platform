@@ -17,19 +17,19 @@ from .common import store_of
 
 router = APIRouter(prefix="/api/cloud")
 
-# The page the browser shows after the sign-in page sent it back: Russian, no script, nothing of the workshop in it.
-PAGE = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+# The browser callback page has no script or workshop data.
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>body{{margin:0;background:#f3f5f7;color:#1b1f23;font:16px/1.45 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}}
 main{{max-width:420px;margin:12vh auto;padding:24px;background:#fff;border:1px solid #d5dbe1;border-radius:12px}}h1{{font-size:1.3rem;margin:0 0 8px}}
 p{{margin:8px 0}}.muted{{color:#5f6b76;font-size:.92rem}}@media (prefers-color-scheme:dark){{body{{background:#0d1117;color:#e6edf3}}
 main{{background:#161b22;border-color:#3a434d}}.muted{{color:#9aa7b4}}}}</style></head><body><main><h1>{title}</h1><p>{text}</p>{detail}</main></body></html>"""
-REASONS = {"unknown_state": "Приложение не ждало этот вход: начните вход заново с экрана «Лаборатории».",
-           "denied": "Вход отменён: вы не разрешили приложению доступ к облаку. Если передумаете, нажмите «Войти» ещё раз.",
-           "provider_error": "Служба входа ответила ошибкой: начните вход заново с экрана «Лаборатории».",
-           "bad_code": "Код входа не принят службой входа (он уже использован или принадлежит другому запуску): начните вход заново.",
-           "no_session": "Служба входа не назвала аккаунт: начните вход заново.",
-           "unreachable": "Служба входа или облако сейчас недоступны: проверьте подключение к интернету и попробуйте снова.",
-           "switched_off": "Облако выключено в настройках сети этой мастерской."}
+REASONS = {"unknown_state": "This sign-in was not expected. Start again from the Laboratories screen.",
+           "denied": "Sign-in was canceled because access to the cloud was not granted. Select Sign in to try again.",
+           "provider_error": "The sign-in service returned an error. Start again from the Laboratories screen.",
+           "bad_code": "The sign-in code was not accepted. It may have been used already or belong to another session. Start again.",
+           "no_session": "The sign-in service did not identify an account. Start again.",
+           "unreachable": "The sign-in service or cloud is unavailable. Check your internet connection and try again.",
+           "switched_off": "Cloud access is disabled in this workshop's network settings."}
 
 
 def _port(request: Request) -> int:
@@ -67,9 +67,9 @@ def callback(request: Request, state: str = "", code: str = "", error: str = "",
     try:
         cloud_session.complete(store_of(request), state, code, error or None, error_description or None)
     except CloudError as exc:
-        reason = REASONS.get(exc.code, "Вход не выполнен. Вернитесь в приложение и попробуйте снова.")
-        return _page("Вход не выполнен", reason, str(exc), status=422)
-    return _page("Вход выполнен", "Вход выполнен, вернитесь в приложение. Эту страницу можно закрыть.")
+        reason = REASONS.get(exc.code, "Sign-in failed. Return to the app and try again.")
+        return _page("Sign-in failed", reason, str(exc), status=422)
+    return _page("Signed in", "Sign-in complete. Return to the app. You can close this page.")
 
 
 @router.post("/signout")
@@ -123,7 +123,7 @@ def cancel_job(job_id: str):
 # -- the own laboratory in the cloud --------------------------------------------------------------------------------------------------------
 @router.get("/own")
 def own(request: Request):
-    """The «Облако» block of «Моя лаборатория»: the account, the own cloud laboratory, its releases, publications, invitations and members."""
+    """The My Laboratory cloud block: account, laboratory, releases, publications, invitations and members."""
     return cloud_client.own(store_of(request))
 
 

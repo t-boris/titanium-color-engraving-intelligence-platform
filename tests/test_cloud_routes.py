@@ -44,7 +44,7 @@ def signed_in(client: TestClient, world: World, account: str, name: str = "") ->
     back = world.browser(started.json()["url"], account, name)                     # sign-in, consent, the cloud's /auth/return
     assert back.startswith("http://127.0.0.1:80/api/cloud/callback?state=") and ".80&code=" in back
     page = TestClient(client.app, base_url="http://127.0.0.1").get(back)
-    assert page.status_code == 200 and "Вход выполнен, вернитесь в приложение" in page.text and "<script" not in page.text
+    assert page.status_code == 200 and "Sign-in complete. Return to the app." in page.text and '<html lang="en">' in page.text and "<script" not in page.text
     return client.get("/api/cloud/account").json()
 
 
@@ -70,15 +70,15 @@ def test_under_the_desktop_shell_the_callback_passes_without_the_cookie_only_whi
         state = started["state"]
         assert bare.post("/api/cloud/callback", params={"state": state, "code": "c"}).status_code == 403          # GET only
         assert bare.get("/api/cloud/callback", params={"state": state, "code": "c", "extra": "1"}).status_code != 403
-        # a wrong code: the page says so in Russian, and the state is spent: the address no longer passes the guard
+        # A wrong code spends the state, so the address no longer passes the guard.
         again = desktop.post("/api/cloud/signin").json()
         wrong = bare.get("/api/cloud/callback", params={"state": again["state"], "code": "not-a-code"})
-        assert wrong.status_code == 422 and "Вход не выполнен" in wrong.text and "Код входа не принят службой входа" in wrong.text
+        assert wrong.status_code == 422 and "Sign-in failed" in wrong.text and "The sign-in code was not accepted" in wrong.text
         assert bare.get("/api/cloud/callback", params={"state": again["state"], "code": "not-a-code"}).status_code == 403
         # the operator declined on the consent page: the page says so, nothing is signed in
         declined = desktop.post("/api/cloud/signin").json()
         shown = bare.get("/api/cloud/callback", params={"state": declined["state"], "error": "access_denied", "error_description": "The user denied"})
-        assert shown.status_code == 422 and "Вход отменён" in shown.text
+        assert shown.status_code == 422 and "Sign-in was canceled" in shown.text
         assert desktop.get("/api/cloud/account").json()["signed_in"] is False
         # the real thing
         account = signed_in(desktop, world, "acc-desktop", "Настольная")
