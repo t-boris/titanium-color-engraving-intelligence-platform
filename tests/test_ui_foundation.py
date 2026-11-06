@@ -302,6 +302,23 @@ def test_when_the_opener_is_gone_the_focus_goes_to_the_main_area(tmp_path):
 
 # -- BUG-015: the skip link --------------------------------------------------------------------------------------------------------------
 @node
+def test_main_navigation_groups_existing_routes_under_five_sections(tmp_path):
+    out = run(tmp_path, """
+  App.register({id: 'findings', render: async () => h('div', {}, 'findings')});
+  ctx.location.hash = '#/findings?tab=history'; await App.render();
+  const nav = shell.querySelector('.nav');
+  out.groups = nav.querySelectorAll('.nav-link').map((a) => [a.textContent, a.getAttribute('href')]);
+  out.children = nav.querySelectorAll('.nav-sublink').map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('aria-current')]);
+  out.hash = ctx.location.hash;
+""")
+    assert out["groups"] == [["Works", "#/works"], ["Experiments", "#/experiments"], ["Colors and recipes", "#/colors"],
+                             ["Equipment", "#/devices"], ["Workshop", "#/workshop"]]
+    assert out["children"] == [["Experiment planner", "#/designer", None], ["Findings", "#/findings", "page"],
+                               ["AI researcher", "#/research", None]]
+    assert out["hash"] == "#/findings?tab=history"
+
+
+@node
 def test_navigation_can_be_pinned_and_compacted_across_screens(tmp_path):
     out = run(tmp_path, """
   const saved = {};

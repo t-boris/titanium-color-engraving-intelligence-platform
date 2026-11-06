@@ -7,6 +7,13 @@ Object.assign(App, (() => {
   const NAV = [['/experiments', 'Experiments'], ['/colors', 'Color map'], ['/vector', 'Vector work'], ['/photo-engraving', 'Photo engraving'],
     ['/works', 'Works'], ['/designer', 'Experiment planner'], ['/findings', 'Findings'], ['/devices', 'Lasers'], ['/setup', 'Settings'], ['/research', 'AI researcher'],
     ['/network', 'Network'], ['/labs', 'Laboratories'], ['/workshop', 'Workshop']];
+  const GROUPS = [
+    {label: 'Works', main: 4, children: [2, 3]},
+    {label: 'Experiments', main: 0, children: [5, 6, 9]},
+    {label: 'Colors and recipes', main: 1, children: []},
+    {label: 'Equipment', main: 7, children: [8]},
+    {label: 'Workshop', main: 12, children: [10, 11]},
+  ];
   const ROUTE_ID = {experiments: 'experiments', experiment: 'experiment', setup: 'setup', ingest: 'ingest', analysis: 'analysis', colors: 'colors', knowledge: 'colors',
     artwork: 'artwork', photo: 'photo', 'photo-preview': 'photo-preview', 'photo-engraving': 'photo-engraving', works: 'works', vector: 'vector', new: 'new', 'vector-zone': 'vector-zone', plans: 'plan', designer: 'designer',
     findings: 'findings', devices: 'devices', research: 'research', network: 'network', labs: 'labs', workshop: 'workshop'};
@@ -116,8 +123,18 @@ Object.assign(App, (() => {
     pinButton.textContent = pinned() ? 'Collapse menu' : 'Pin menu';
     sidebar = h('aside', {class: 'sidebar' + (pinned() ? ' is-pinned' : ''), id: 'app-navigation', 'aria-label': 'Application sections'}, railButton, pinButton,
       h('nav', {class: 'nav', 'aria-label': 'Main navigation'},
-        NAV.map(([r, l], i) => h('a', {class: 'nav-link', href: '#' + r, title: l, 'aria-current': r === active ? 'page' : null,
-          onClick: () => setMenu(false)}, icon(i), h('span', {class: 'nav-text'}, l)))),
+        GROUPS.map(({label, main, children}) => {
+          const [r] = NAV[main];
+          const selected = r === active || children.some((i) => NAV[i][0] === active);
+          return h('div', {class: 'nav-group' + (selected ? ' is-active' : '')},
+            h('a', {class: 'nav-link', href: '#' + r, title: label, 'aria-current': r === active ? 'page' : null,
+              onClick: () => setMenu(false)}, icon(main), h('span', {class: 'nav-text'}, label)),
+            selected && children.length ? h('div', {class: 'nav-submenu'}, children.map((i) => {
+              const [path, name] = NAV[i];
+              return h('a', {class: 'nav-sublink', href: '#' + path, 'aria-current': path === active ? 'page' : null,
+                onClick: () => setMenu(false)}, name);
+            })) : null);
+        })),
       h('p', {class: 'sidebar-note'}, 'Single-user mode. All actions are available; no sign-in is required.'));
     menuButton = h('button', {type: 'button', class: 'btn btn-small mobile-menu', 'aria-controls': 'app-navigation', 'aria-expanded': 'false', onClick: toggleMenu}, 'Menu');
     setMenu(false);

@@ -26,7 +26,7 @@ def test_the_sections_are_a_rail_of_icons_on_every_page_and_a_button_opens_them_
     assert re.search(r"\.sidebar\.is-open \{width:min\(290px,86vw\)", CSS) and ".sidebar:not(.is-open):not(.is-pinned) .nav-text {position:absolute" in CSS
     assert "body.is-workspace .sidebar" not in CSS and "body.is-workspace .app-layout" not in CSS      # no page folds the menu away any more
     assert "railButton = h('button', {type: 'button', class: 'rail-toggle'" in ROUTER and "'aria-controls': 'app-navigation'" in ROUTER
-    assert "h('a', {class: 'nav-link', href: '#' + r, title: l" in ROUTER and "h('span', {class: 'nav-text'}, l)" in ROUTER     # an icon with a name for the popup
+    assert "h('a', {class: 'nav-link', href: '#' + r, title: label" in ROUTER and "h('span', {class: 'nav-text'}, label)" in ROUTER
     assert "onClick: () => setMenu(false)" in ROUTER                                                  # choosing a section closes the popup
     assert "ev.key === 'Escape' && menuOpen()" in ROUTER and "!sidebar.contains(ev.target)" in ROUTER   # Esc and a click outside close it
     narrow = re.search(r"@media \(max-width:1000px\) \{(.*?)\n\}", CSS[CSS.index("5) responsive layout"):], re.S)
