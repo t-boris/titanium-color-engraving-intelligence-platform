@@ -53,3 +53,7 @@ MarkView browser keyboard check on disposable reference editor: starting at Patc
 ### Implementation · 2026-11-06
 
 Additional MarkView browser inspection of the light study preview found dark-on-dark first-screen panels. Updated the study-only colors for one-screen panels, sticky list toolbar and dashboard cards; screenshot review showed readable headings and text. Also checked the empty color-map and laser charts screens. This does not establish contrast across all screens, actual workshop conditions or tablet usability.
+
+### Implementation · 2026-11-06
+
+Additional MarkView browser check on disposable capture setup: simulated 200% page enlargement with CSS zoom in a 1052×907 window, both compact and normal density. L=150 retained the entered value, remained focused and displayed its validation message; the reference input measured about 198–209×90 CSS screen pixels and the document width (1035) stayed within the viewport (1052). Visually inspected the compact error. This is a desktop CSS-zoom simulation for one form, not browser text-only zoom, a low-window audit, screen-reader testing or a physical tablet.
