@@ -77,3 +77,7 @@ Responsive MarkView browser check using same-origin iframe viewports on a dispos
 ### Implementation · 2026-11-06
 
 Additional low-window check in same-origin desktop browser frames at 800×400: Works loaded 20 rows in both densities, document width stayed 783px (client width 783px), and the last row action could be scrolled into view and focused (its bounds were y=236–264 in the 400px viewport). Scrolling was invoked explicitly; automatic keyboard scrolling and actual tablet use were not established.
+
+### Implementation · 2026-11-06
+
+Further inspection of the light-study variant in MarkView found low-contrast definition values on the Workshop screen (light text on white); corrected them to use the theme text color and checked computed colors. The Network screen was also inspected on the disposable server. Other screens and the physical workshop/tablet evaluation remain unverified.

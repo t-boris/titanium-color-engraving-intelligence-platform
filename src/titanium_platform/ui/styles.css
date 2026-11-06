@@ -1660,3 +1660,5 @@ body.theme-study-light {color-scheme:light;--bg:#f3f5f9;--surface:#fff;--surface
 @media (pointer:coarse) {
   .lst-chip,.lst-select select,.lst-act .btn {min-width:44px;min-height:44px}
 }
+/* Definition values must remain legible on the light study surface. */
+.theme-study-light .facts dd {color:var(--text)}
