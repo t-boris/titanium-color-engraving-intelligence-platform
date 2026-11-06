@@ -363,24 +363,24 @@ def test_an_upload_is_registered_by_the_transport_and_stays_in_the_panel_while_t
   out.moved = {dock: body.querySelector('.ops-dock').isConnected, inApp: app.contains(body.querySelector('.ops-dock')), state: op().state};
   await body.querySelector('.ops-toggle').dispatch('click');                              // the panel opens from anywhere
   out.opened = {panel: body.querySelector('.ops-panel').hidden, expanded: body.querySelector('.ops-toggle').getAttribute('aria-expanded'),
-    row: row().textContent.includes('Передаём файл на сервер: 40 %'), bar: row().querySelector('progress').getAttribute('value'), stop: !button(row(), 'Остановить').hidden};
+    row: row().textContent.includes('Uploading file to server: 40 %'), bar: row().querySelector('progress').getAttribute('value'), stop: !button(row(), 'Stop').hidden};
   xhr.progress(100, 100);
   const bar = row().querySelector('progress');
-  out.last_byte = {stage: op().stage, value: bar.getAttribute('value'), stop: !button(row(), 'Остановить').hidden};      // after the last byte it cannot be stopped
+  out.last_byte = {stage: op().stage, value: bar.getAttribute('value'), stop: !button(row(), 'Stop').hidden};      // after the last byte it cannot be stopped
   xhr.finish(201, {id: 5}); await sent;
   out.done = {state: op().state, result: op().result, button: body.querySelector('.ops-toggle').textContent, badge: row().querySelector('.pill').textContent,
-    where: row().textContent.includes('Начато в разделе')};
+    where: row().textContent.includes('Started in')};
   out.spoken = spoken();
 """)
-    assert out["running"] == {"title": "Загрузка фотографии гравировки", "stage": "Передаём файл на сервер: 40 %", "progress": 40, "button": "Задачи — идёт: 1",
-                              "details": [["Файл", "IMG_1.dng"], ["Адрес", "/pairs"]], "dock": True, "panel": True, "where": "/ingest"}
+    assert out["running"] == {"title": "Uploading engraving photograph", "stage": "Uploading file to server: 40 %", "progress": 40, "button": "Tasks — running: 1",
+                              "details": [["File", "IMG_1.dng"], ["Address", "/pairs"]], "dock": True, "panel": True, "where": "/ingest"}
     assert out["moved"] == {"dock": True, "inApp": False, "state": "running"}
     assert out["opened"] == {"panel": False, "expanded": "true", "row": True, "bar": "40", "stop": True}
-    assert out["last_byte"] == {"stage": "Файл передан, сервер разбирает его", "value": None, "stop": False}
-    assert out["done"] == {"state": "done", "result": "Файл загружен", "button": "Задачи — завершено: 1", "badge": "готово", "where": True}
+    assert out["last_byte"] == {"stage": "File uploaded; server is processing it", "value": None, "stop": False}
+    assert out["done"] == {"state": "done", "result": "File uploaded", "button": "Tasks — finished: 1", "badge": "done", "where": True}
     # the start, the change of stage and the end: three messages for a hundred progress events, and never a clock
-    assert out["spoken"] == ["Загрузка фотографии гравировки: Передаём файл на сервер", "Загрузка фотографии гравировки: Файл передан, сервер разбирает его",
-                             "Загрузка фотографии гравировки: Файл загружен"]
+    assert out["spoken"] == ["Uploading engraving photograph: Uploading file to server", "Uploading engraving photograph: File uploaded; server is processing it",
+                             "Uploading engraving photograph: File uploaded"]
 
 
 @node
@@ -406,12 +406,12 @@ def test_the_header_entry_names_the_panel_counts_what_runs_and_opens_and_closes_
   body.append(next);
   out.next = next.textContent;
 """)
-    assert out["idle"] == ["Задачи", "false", "ops-panel", "idle"]
-    assert out["running"][0] == "Задачи: идёт 2" and out["running"][3] == "running"
-    assert out["oneLeft"][0] == "Задачи: идёт 1"
-    assert out["failed"][0] == "Задачи: требуют внимания 1" and out["failed"][3] == "attention"
+    assert out["idle"] == ["Tasks", "false", "ops-panel", "idle"]
+    assert out["running"][0] == "Tasks: running 2" and out["running"][3] == "running"
+    assert out["oneLeft"][0] == "Tasks: running 1"
+    assert out["failed"][0] == "Tasks: need attention 1" and out["failed"][3] == "attention"
     assert out["opened"] == ["true", False, "ops-panel"] and out["closed"] == ["false", True]
-    assert out["next"] == "Задачи: требуют внимания 1"
+    assert out["next"] == "Tasks: need attention 1"
 
 
 @node
@@ -534,22 +534,22 @@ def test_closing_the_panel_does_not_stop_a_task_and_stopping_says_what_it_does_f
   out.closed = {aborted: !!xhr.aborted, state: Operations.items()[0].state};
   Operations.open(true);
   const dock = body.querySelector('.ops-dock');
-  await button(body.querySelector('.ops-item'), 'Остановить').dispatch('click');
+  await button(body.querySelector('.ops-item'), 'Stop').dispatch('click');
   const dialog = body.querySelector('.modal');
   out.asked = {aborted: !!xhr.aborted, title: dialog.getAttribute('aria-label'), text: dialog.querySelector('p').textContent,
     buttons: dialog.querySelectorAll('button').map((b) => b.textContent), dockInert: dock.hasAttribute('inert'), toastsInert: body.querySelector('.toasts') ? body.querySelector('.toasts').hasAttribute('inert') : false};
   Operations.announce('проверка'); out.said_in_dialog = body.querySelector('.toasts').querySelectorAll('p').map((p) => p.textContent).includes('проверка');
-  await button(dialog, 'Остановить').dispatch('click'); await wait();
+  await button(dialog, 'Stop').dispatch('click'); await wait();
   const error = await sent;
   out.stopped = {aborted: !!xhr.aborted, kind: error.kind, state: Operations.items()[0].state, result: Operations.items()[0].result, dockInert: dock.hasAttribute('inert')};
 """)
     assert out["closed"] == {"aborted": False, "state": "running"}
-    assert out["asked"]["aborted"] is False and out["asked"]["title"] == "Остановить: Загрузка повторной фотографии?"
-    assert out["asked"]["text"] == ("Передача прервётся, пока сервер не получил файл целиком, поэтому фотография в базу не попадёт. "
-                                    "Выбрать файл придётся заново.")
-    assert out["asked"]["buttons"] == ["×", "Cancel", "Остановить"] and out["asked"]["dockInert"] is True and out["asked"]["toastsInert"] is False
+    assert out["asked"]["aborted"] is False and out["asked"]["title"] == "Stop: Uploading repeat photograph?"
+    assert out["asked"]["text"] == ("The upload will stop before the server receives the entire file, so the photograph will not be added. "
+                                    "You will need to choose the file again.")
+    assert out["asked"]["buttons"] == ["×", "Cancel", "Stop"] and out["asked"]["dockInert"] is True and out["asked"]["toastsInert"] is False
     assert out["said_in_dialog"] is True                                                                   # the announcement area stays reachable
-    assert out["stopped"] == {"aborted": True, "kind": "cancelled", "state": "cancelled", "result": "Загрузка остановлена, файл не добавлен.", "dockInert": False}
+    assert out["stopped"] == {"aborted": True, "kind": "cancelled", "state": "cancelled", "result": "Upload stopped; the file was not added.", "dockInert": False}
 
 
 RECHECK = """
@@ -576,13 +576,13 @@ def test_a_recheck_is_followed_after_the_screen_that_started_it_is_gone_and_anno
   out.end = {state: op().state, result: op().result, progress: op().progress, polls: calls.filter((c) => c === 'GET /recheck/3').length};
   out.spoken = spoken();
 """)
-    assert out["started"] == {"title": "Перепроверка всех работ", "stage": "Делаю резервную копию мастерской", "progress": None, "cancel": True,
-                              "details": [["Номер перепроверки", 3]], "where": "/findings"}
+    assert out["started"] == {"title": "Rechecking all work", "stage": "Backing up the workshop", "progress": None, "cancel": True,
+                              "details": [["Recheck ID", 3]], "where": "/findings"}
     assert out["end"]["state"] == "done" and out["end"]["progress"] is None and out["end"]["polls"] >= 3
-    assert out["end"]["result"] == "Перепроверка закончена: заменено 1, оставлено прежних 1, не удалось 1. Выводы пересчитаны."
-    assert out["spoken"][0] == "Перепроверка всех работ: Делаю резервную копию мастерской"
+    assert out["end"]["result"] == "Recheck finished: replaced 1, kept 1, failed 1. Findings recalculated."
+    assert out["spoken"][0] == "Rechecking all work: Backing up the workshop"
     # one message for the photographs (their numbers change, the stage does not), one for the analysis, one for the end
-    assert [m.split(": ", 1)[1].split(" ")[0] for m in out["spoken"][1:]] == ["Перемеряю", "Пересчитываю", "Перепроверка"]
+    assert [m.split(": ", 1)[1].split(" ")[0] for m in out["spoken"][1:]] == ["Remeasuring", "Recalculating", "Recheck"]
     assert len(out["spoken"]) == 4
 
 
@@ -592,22 +592,22 @@ def test_stopping_a_recheck_explains_the_backup_first_and_waits_for_the_server_t
   await App.post('/recheck', {});
   const op = Operations.items()[0];
   Operations.open(true);
-  await button(body.querySelector('.ops-item'), 'Остановить').dispatch('click');
+  await button(body.querySelector('.ops-item'), 'Stop').dispatch('click');
   const dialog = body.querySelector('.modal');
   out.text = dialog.querySelector('p').textContent;
   out.before = {stops, calls: calls.filter((c) => c.endsWith('/stop')).length};
-  await button(dialog, 'Остановить').dispatch('click'); await wait();
-  out.asked = {stops, stopping: op.stopping, state: op.state, stage: body.querySelector('.ops-stage').textContent, stop: body.querySelector('.ops-item').querySelectorAll('button').find((b) => b.textContent === 'Остановить').disabled};
+  await button(dialog, 'Stop').dispatch('click'); await wait();
+  out.asked = {stops, stopping: op.stopping, state: op.state, stage: body.querySelector('.ops-stage').textContent, stop: body.querySelector('.ops-item').querySelectorAll('button').find((b) => b.textContent === 'Stop').disabled};
   gateState = 'cancelled';
   await until(() => op.state !== 'running');
   out.end = {state: op.state, result: op.result};
 """)
-    assert out["text"] == ("Перепроверка остановится после фотографии, которая измеряется сейчас. Уже перемеренные фотографии останутся заменёнными, "
-                           "выводы будут сделаны по ним. Вернуть прежнее можно только из резервной копии, которую программа делает в начале.")
+    assert out["text"] == ("The recheck will stop after the current photograph. Already remeasured photographs remain replaced and "
+                           "findings will use those measurements. The previous state can only be restored from the backup made at the start.")
     assert out["before"] == {"stops": 0, "calls": 0}
     assert out["asked"]["stops"] == 1 and out["asked"]["stopping"] is True and out["asked"]["state"] == "running" and out["asked"]["stop"] is True
-    assert out["asked"]["stage"].endswith("(остановка запрошена)")
-    assert out["end"] == {"state": "cancelled", "result": "Перепроверка остановлена: заменено 1, оставлено прежних 0, не удалось 0. Выводы сделаны по тому, что успели измерить."}
+    assert out["asked"]["stage"].endswith("(stop requested)")
+    assert out["end"] == {"state": "cancelled", "result": "Recheck stopped: replaced 1, kept 0, failed 0. Findings use the measurements completed so far."}
 
 
 @node
@@ -624,9 +624,9 @@ def test_the_connection_of_a_release_reports_failure_with_the_way_back_and_a_sto
   const op = Operations.items()[0];
   out.started = {title: op.title, stage: op.stage, progress: op.progress, where: op.context.route};
   Operations.open(true);
-  await button(body.querySelector('.ops-item'), 'Остановить').dispatch('click');
+  await button(body.querySelector('.ops-item'), 'Stop').dispatch('click');
   out.effect = body.querySelector('.modal').querySelector('p').textContent;
-  await button(body.querySelector('.modal'), 'Остановить').dispatch('click');
+  await button(body.querySelector('.modal'), 'Stop').dispatch('click');
   await until(() => op.state !== 'running');
   out.cancelled = {state: op.state, result: op.result};
   // a second release fails in the check
@@ -635,19 +635,19 @@ def test_the_connection_of_a_release_reports_failure_with_the_way_back_and_a_sto
   await until(() => failed.state !== 'running');
   const row = body.querySelectorAll('.ops-item')[0];                   // the newest is on top
   ctx.location.hash = '#/network';
-  const retry = button(row, 'Выбрать файл снова');
+  const retry = button(row, 'Choose file again');
   out.failed = {state: failed.state, error: failed.error, retry: !retry.hidden, badge: row.querySelector('.pill').textContent, alert: row.querySelector('p.alert') !== null};
   await retry.dispatch('click');
   out.went = ctx.__went;
   out.spoken = spoken().slice(-3);
 """)
-    assert out["started"] == {"title": "Подключение выпуска лаборатории", "stage": "проверка файла · 5.0 МБ из 10.0 МБ", "progress": 50, "where": "/labs"}
-    assert out["effect"] == ("Подключение остановится. Ничего не будет подключено: прочитанный файл удалится, а данные мастерской останутся такими, какими были.")
-    assert out["cancelled"] == {"state": "cancelled", "result": "Подключение остановлено, ничего не изменилось."}
-    assert out["failed"]["state"] == "failed" and out["failed"]["retry"] is True and out["failed"]["badge"] == "не удалось" and out["failed"]["alert"] is True
+    assert out["started"] == {"title": "Connecting laboratory release", "stage": "checking file · 5.0 MB of 10.0 MB", "progress": 50, "where": "/labs"}
+    assert out["effect"] == ("Connection will stop. Nothing will be connected, the read file will be removed, and workshop data will remain unchanged.")
+    assert out["cancelled"] == {"state": "cancelled", "result": "Connection stopped; nothing changed."}
+    assert out["failed"]["state"] == "failed" and out["failed"]["retry"] is True and out["failed"]["badge"] == "failed" and out["failed"]["alert"] is True
     assert out["failed"]["error"] == "the release could not be connected: broken"
     assert out["went"] == ["/labs"]                                                                         # back where it was started, to choose the file again
-    assert out["spoken"][-1].startswith("Подключение выпуска лаборатории: не удалось.")
+    assert out["spoken"][-1].startswith("Connecting laboratory release: failed.")
 
 
 @node
@@ -660,12 +660,12 @@ def test_a_check_that_the_server_answers_at_the_end_runs_in_the_panel_and_cannot
   await wait();
   const op = Operations.items()[0];
   Operations.open(true);
-  out.running = {title: op.title, details: op.details, stop: !button(body.querySelector('.ops-item'), 'Остановить') || body.querySelector('.ops-item').querySelectorAll('button').find((b) => b.textContent === 'Остановить').hidden};
+  out.running = {title: op.title, details: op.details, stop: !button(body.querySelector('.ops-item'), 'Stop') || body.querySelector('.ops-item').querySelectorAll('button').find((b) => b.textContent === 'Stop').hidden};
   release(); await done; await wait();
   out.end = {state: op.state, result: op.result};
 """)
-    assert out["running"] == {"title": "Проверка загруженной фотографии", "details": [["Пара (фото и гравировка)", "№ 12"]], "stop": True}
-    assert out["end"] == {"state": "done", "result": "Проверка закончена"}
+    assert out["running"] == {"title": "Checking uploaded photograph", "details": [["Pair (photo and engraving)", "#12"]], "stop": True}
+    assert out["end"] == {"state": "done", "result": "Check finished"}
 
 
 @node
@@ -681,8 +681,8 @@ def test_a_server_that_stops_answering_is_waited_for_and_then_reported_not_forgo
   await until(() => op.state !== 'running');
   out.end = {state: op.state, error: op.error, button: body.querySelector('.ops-toggle').textContent, attention: body.querySelector('.ops-dock').getAttribute('data-state')};
 """)
-    assert out["end"] == {"state": "failed", "error": "Не удаётся узнать, чем закончилась задача: сервис не отвечает. Откройте раздел и проверьте результат.",
-                          "button": "Задачи — требуют внимания: 1", "attention": "attention"}
+    assert out["end"] == {"state": "failed", "error": "The task result is unknown because the service is not responding. Open the section to check the result.",
+                          "button": "Tasks — need attention: 1", "attention": "attention"}
 
 
 @node
@@ -690,8 +690,8 @@ def test_the_clock_of_a_task_is_for_the_eyes_only(tmp_path):
     out = run(tmp_path, """
   const sent = App.formProgress('/pairs', new FakeForm(), () => {});
   Operations.open(true);
-  const clock = body.querySelector('.ops-item').querySelectorAll('span').find((s) => s.textContent.startsWith('Идёт'));
-  out.clock = {hidden: clock.getAttribute('aria-hidden'), text: /^Идёт \\d+:\\d\\d$/.test(clock.textContent)};
+  const clock = body.querySelector('.ops-item').querySelectorAll('span').find((s) => s.textContent.startsWith('Running'));
+  out.clock = {hidden: clock.getAttribute('aria-hidden'), text: /^Running \\d+:\\d\\d$/.test(clock.textContent)};
   out.live = body.querySelector('.ops-panel').getAttribute('aria-live');
   FakeXhr.all[0].progress(50, 100); FakeXhr.all[0].finish(201, {});
   await sent;
@@ -1173,7 +1173,7 @@ def test_the_upload_form_speaks_its_stage_once_and_keeps_the_counters_for_the_ey
     assert out["checking"]["text"].endswith(" 0 с") and out["checking"]["hidden"] == ["true"]
     assert len(out["checking"]["spoken_text"]) == 1 and not any(c.isdigit() for c in out["checking"]["spoken_text"][0])
     # the upload and the check that follows it are both in the panel (the screen may be left during either)
-    assert out["panel"] == [["Проверка загруженной фотографии", "done"], ["Загрузка повторной фотографии", "done"]]
+    assert out["panel"] == [["Checking uploaded photograph", "done"], ["Uploading repeat photograph", "done"]]
 
 
 # -- a form of the product moved to the form layer: the laser passport -------------------------------------------------------------------
