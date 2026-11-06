@@ -105,3 +105,7 @@ After the shared dialog focus change, pytest -q -rs -n 12 completed with 3005 pa
 ### Implementation · 2026-11-06
 
 The prior coarse-pointer sizing applied under main, but dialogs are body-level siblings: the stock chooser close button measured 34×34px in the simulated coarse-pointer check. Added 44px minimum sizing for dialog buttons and selects in both densities. MarkView desktop simulation using the actual coarse-pointer CSSOM rules measured close at 44×44, both selects at 44px height and representative Choose buttons at least 44px high. This is not a physical tablet usability assessment.
+
+### Implementation · 2026-11-06
+
+MarkView browser first-run light-study scenario on a new disposable 0.40.0 workshop: vector and photo-engraving empty states opened. Created synthetic laser/lens/stock only in that workshop, selected a synthetic 64×64 PNG in New work, reviewed the four generated previews, chose Color regions and reached settings. With no measurements the UI explained the missing measurements and disabled Create work. Back returned to the result step with Color regions still selected and all four images loaded. No work or measurement was created and no operator timing, physical engraving, export or tablet test is claimed.
