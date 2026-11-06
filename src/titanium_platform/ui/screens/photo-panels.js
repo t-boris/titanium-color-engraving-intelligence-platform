@@ -278,7 +278,7 @@ const PhotoPanels = (() => {
 
   /** Actual photo layers and numbered exports, with operator judgements independent of the automatic tonal score. */
   function resultCards(rows, changed) {
-    const labels = {good: ['Удачно', 'ok'], bad: ['Неудачно', 'bad'], unrated: ['Без оценки', 'warn']};
+    const labels = {good: ['Good', 'ok'], bad: ['Bad', 'bad'], unrated: ['Unrated', 'warn']};
     const cards = rows.map((row) => {
       function assessment(aspect, label) {
         const current = (row.assessments || {})[aspect] || {verdict: aspect === 'photo' ? row.verdict || 'unrated' : 'unrated', note: ''};
@@ -287,10 +287,10 @@ const PhotoPanels = (() => {
         verdict.value = current.verdict;
         // photo_results.mark: the note is at most 1000 characters once trimmed; a longer one is refused with its length, not cut at 1000 as it is pasted
         const form = Forms.create();
-        const noteBox = h('textarea', {rows: 2, placeholder: 'Что получилось на этом маркере…'});
+        const noteBox = h('textarea', {rows: 2, placeholder: 'What happened on this marker…'});
         noteBox.value = current.note || '';
-        const note = form.add('note', 'Комментарий', noteBox, {maxLength: 1000, empty: ''});
-        const save = btn(`Сохранить: ${label.toLowerCase()}`, async () => {
+        const note = form.add('note', 'Comment', noteBox, {maxLength: 1000, empty: ''});
+        const save = btn(`Save: ${label.toLowerCase()}`, async () => {
           const v = form.collect();
           if (!v) return;
           save.disabled = true;
@@ -305,14 +305,14 @@ const PhotoPanels = (() => {
           h('div', {class: 'row'}, h('strong', {}, label), status, verdict, save), note, form.error);
       }
       const p = row.settings;
-      return h('article', {class: 'ge-result stack'}, h('div', {class: 'row'}, h('strong', {}, `Маркер ${row.layer}`), link(row.url.replace(/^#/, ''), row.title),
+      return h('article', {class: 'ge-result stack'}, h('div', {class: 'row'}, h('strong', {}, `Marker ${row.layer}`), link(row.url.replace(/^#/, ''), row.title),
         h('span', {class: 'small muted'}, when(row.at))),
-        row.photo ? h('a', {href: row.url}, h('img', {class: 'ge-result-photo', src: row.photo, loading: 'lazy', alt: `Фотография гравировки ${row.title}`}))
-          : h('p', {class: 'small muted'}, 'Фото не добавлено. Оценка результата со слов оператора.'),
-        h('p', {class: 'small'}, `Min ${value(p.min_power, 1)} / Max ${value(p.power, 1)} % · ${settingsText(p)}${row.width_mm != null ? ` · ширина ${mm(row.width_mm)}` : ''}`),
-        assessment('colour', 'Цвет'), assessment('photo', 'Фотогравировка'));
+        row.photo ? h('a', {href: row.url}, h('img', {class: 'ge-result-photo', src: row.photo, loading: 'lazy', alt: `Engraving photo ${row.title}`}))
+          : h('p', {class: 'small muted'}, 'No photo added. The assessment is based on the operator’s report.'),
+        h('p', {class: 'small'}, `Min ${value(p.min_power, 1)} / Max ${value(p.power, 1)} % · ${settingsText(p)}${row.width_mm != null ? ` · width ${mm(row.width_mm)}` : ''}`),
+        assessment('colour', 'Color'), assessment('photo', 'Photo engraving'));
     });
-    return h('section', {class: 'ge-results stack'}, h('h4', {}, 'Результаты по маркерам LightBurn'),
+    return h('section', {class: 'ge-results stack'}, h('h4', {}, 'Results by LightBurn marker'),
       h('p', {class: 'small muted'}, 'Color and photo engraving are assessed separately for this layer and file version. Unsuccessful measurements are retained.'), cards);
   }
 
@@ -321,27 +321,26 @@ const PhotoPanels = (() => {
     async function load() {
       try {
         const data = await get(`/photo-results/work/${planId}${zone != null ? `?zone=${zone}` : ''}`);
-        fill(el, data.results.length ? resultCards(data.results, load) : h('p', {class: 'small muted'}, 'Сначала экспортируйте файл LightBurn: оценка будет привязана к его версии.'));
+        fill(el, data.results.length ? resultCards(data.results, load) : h('p', {class: 'small muted'}, 'Export a LightBurn file first; assessments are linked to its version.'));
       } catch (e) { fill(el, h('p', {class: 'small muted'}, e.message)); }
     }
     load();
     return el;
   }
 
-  /** Откуда цвет точек: на шкале — кнопка «Цвет с карты»; с карты цветов — его цвет и настройки, «Другой цвет» и «На шкалу»
-      (``back()`` возвращает точки на шкалу при прежней мощности). */
+  /** Choose dot color from the map or return to the scale at the same power. */
   function dotSourceBox(dot, back) {
     const toMap = (label) => (dot.map ? btn(label, () => dot.map(), 'btn-small') : null);
     if (!dot.recipe) {
-      const b = toMap('Цвет с карты');
-      b.setAttribute('title', 'Открыть карту цветов и выбрать там любой измеренный цвет для точек: точки будут бить на настройках этого цвета');
+      const b = toMap('Color from map');
+      b.setAttribute('title', 'Open the color map to select a measured dot color; dots use that color’s settings');
       return h('div', {class: 'row ge-dotsource'}, b);
     }
     const r = dot.recipe;
-    return h('div', {class: 'row ge-dotsource ge-dotsource-map'}, h('span', {class: 'small'}, 'Точки'), hexChip(dot.hex),
+    return h('div', {class: 'row ge-dotsource ge-dotsource-map'}, h('span', {class: 'small'}, 'Dots'), hexChip(dot.hex),
       h('span', {class: 'small'}, `${recipeFrom(r)}: ${value(r.settings.power, 1)} % · ${settingsText(r.settings, dot.dpi)}`),
-      r.missing ? pill('цвет больше не измерен', 'warn') : null,
-      toMap('Другой цвет'), btn('На шкалу', back, 'btn-small'));
+      r.missing ? pill('color is no longer measured', 'warn') : null,
+      toMap('Another color'), btn('Back to scale', back, 'btn-small'));
   }
 
   // ---- работа ------------------------------------------------------------------------------------------------------------------------
@@ -669,7 +668,7 @@ const PhotoPanels = (() => {
       fill(details,
         measured ? h('p', {}, h('strong', {}, `${name}. `), `Каждая точка бьёт на ${value(d.power, 1)} %${mapped ? ' на настройках цвета с карты цветов' : photo ? ` на настройках точек ${from}` : ''}. `
           + `Цвета картинки — как сфотографирована проба этого вида на этих настройках и этом титане: ${measured.tones} тонов. `
-          + (mapped || photo ? 'Другой цвет точек — «Другой цвет» над картинкой; ' : 'Мощность точек меняется на полосе шкалы; ')
+          + (mapped || photo ? 'To change dot color, select “Another color” above the image; ' : 'Мощность точек меняется на полосе шкалы; ')
           + 'на других настройках снова будет оценка, пока их не измерить.')
           : h('p', {}, h('strong', {}, `${name}. `), mapped
             ? [`Каждая точка бьёт на ${value(d.power, 1)} % на настройках цвета, выбранного на карте цветов: это цвет его заливки при ширине работы `, hexChip(d.hex)]
@@ -677,8 +676,8 @@ const PhotoPanels = (() => {
               : [`Каждая точка бьёт на ${value(d.power, 1)} % — это цвет шкалы при этой мощности `, hexChip(d.hex)],
             '; между точками — очищенный титан ', hexChip(d.clean_hex), `. Тон — сколько точек: они покрывают ${value(d.struck_share * 100, 0)} % картинки, `
             + 'издалека глаз смешивает их с титаном. '
-            + (mapped || photo ? 'Другой цвет точек — «Другой цвет» над картинкой, вернуть точки на шкалу — «На шкалу» или щелчок по полосе шкалы.'
-              : 'Мощность точек меняется на полосе шкалы: щёлкните по цвету, который нужен точкам. Любой другой измеренный цвет — «Цвет с карты».')),
+            + (mapped || photo ? 'To change dot color, select “Another color” above the image. To return dots to the scale, select “Back to scale” or click the scale strip.'
+              : 'Change dot power by clicking a color on the scale strip. For another measured color, select “Color from map”.')),
         measured ? h('ul', {class: 'small'}, measured.notes.map((n) => h('li', {}, I18N.tr(n))))
           : h('p', {class: 'alert warn small'}, 'Это оценка: этот вид на этих настройках ещё не гравировался. '
             + (mapped ? 'Цвет точки взят с карты цветов — это цвет сплошной заливки этих настроек: в тёмных местах точки сливаются в такую же заливку, '
@@ -687,7 +686,7 @@ const PhotoPanels = (() => {
               : 'Цвет точки взят со шкалы, измеренной строками; точка — самая короткая строка, а цвет на титане зависит от длины строки, поэтому настоящие точки могут выйти другого оттенка. ')
             + 'Узор точек — по опубликованному алгоритму; LightBurn ставит точки своим кодом, узор может отличаться, доля точек — та же.'),
         mapped && view.dot_recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: оценка — по цвету, каким он был при выборе. '
-          + 'Выберите цвет заново («Другой цвет») или верните точки на шкалу.') : null,
+          + 'Select a color again (“Another color”) or return dots to the scale.') : null,
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         variations ? variationsOffer(view, variations) : null,
         advisor ? advisor.el : null,

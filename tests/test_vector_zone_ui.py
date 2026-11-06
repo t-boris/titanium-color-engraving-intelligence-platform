@@ -311,16 +311,16 @@ RECIPE = {"entry": "e-violet", "settings": {"power": 20, "speed": 500, "frequenc
 @node
 def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_goes_back_on_the_scale(tmp_path):
     out = run(tmp_path, """
-  out.offered = !!button(tree, 'Цвет с карты') && !button(tree, 'На шкалу');
-  await button(tree, 'Цвет с карты').dispatch('click'); await settle();
+  out.offered = !!button(tree, 'Color from map') && !button(tree, 'Back to scale');
+  await button(tree, 'Color from map').dispatch('click'); await settle();
   out.went = [...ctx.__went];
   zone = {...zone, dot_recipe: RECIPE_JSON}; version++;
   const max = labelled(tree, 'Dot power, %');
   max.value = '13'; await max.dispatch('change'); await wait(300); await settle();
-  out.mapped = [!!button(tree, 'Другой цвет'), !!button(tree, 'На шкалу'), !labelled(tree, 'Dot power, %'),
+  out.mapped = [!!button(tree, 'Another color'), !!button(tree, 'Back to scale'), !labelled(tree, 'Dot power, %'),
                 tree.textContent.includes('с карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi)'),
                 tree.textContent.includes('LightBurn file: layer C03 is an image in Jarvis mode, at 13 % power (Min = Max for every dot), 500 mm/s')];
-  await button(tree, 'На шкалу').dispatch('click'); await wait(300); await settle();
+  await button(tree, 'Back to scale').dispatch('click'); await wait(300); await settle();
   out.saves = saves();
 """.replace("RECIPE_JSON", json.dumps(RECIPE)), kind="jarvis", dot_power=12.5)
     assert out["offered"] and out["went"] == ["/colors?dots=9&zone=1&setup=laser%3A1%2Flens%3A2"]

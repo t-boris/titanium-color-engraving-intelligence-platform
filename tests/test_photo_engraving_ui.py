@@ -781,9 +781,9 @@ VIOLET = {"entry": "a1b2c3d4e5f6", "settings": {"power": 20, "speed": 500, "freq
 @node
 def test_a_dot_kind_takes_its_dots_colour_from_the_colour_map_and_goes_back_to_the_scale(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.onScale = {map: !!button(tree, 'Цвет с карты'), slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
-                 says: tree.textContent.includes('Любой другой измеренный цвет — «Цвет с карты»')};
-  await button(tree, 'Цвет с карты').dispatch('click'); await settle();
+  out.onScale = {map: !!button(tree, 'Color from map'), slider: !!labelled(tree, 'Dot power, %'), mark: !!tree.querySelector('.ge-dotmark'),
+                 says: tree.textContent.includes('For another measured color, select “Color from map”')};
+  await button(tree, 'Color from map').dispatch('click'); await settle();
   out.went = [...ctx.__went];
 """, work={"kind": "jarvis", "dot_power": 12.5})
     assert out["onScale"] == {"map": True, "slider": True, "mark": True, "says": True}
@@ -799,18 +799,18 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
                 says: ['оценка по карте цветов', 'на настройках цвета, выбранного на карте цветов', 'Цвет точки взят с карты цветов',
                        'мощность 20 % (Min = Max — каждая точка бьёт на ней), 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1 — настройки цвета с карты цветов',
                        '60 mm: between measurements 40 and 80 mm', 'на настройках цвета с карты (500 mm/s'].map((t) => text().includes(t))};
-  await button(tree, 'Другой цвет').dispatch('click'); await settle();
+  await button(tree, 'Another color').dispatch('click'); await settle();
   out.went = [...ctx.__went];
-  await button(tree, 'На шкалу').dispatch('click'); await settle();
+  await button(tree, 'Back to scale').dispatch('click'); await settle();
   out.back = {saved: saves(), source: tree.querySelector('.ge-dotsource').textContent, slider: labelled(tree, 'Dot power, %').value,
               mark: !!tree.querySelector('.ge-dotmark'), title: tree.querySelector('.ge-settings').textContent};
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
     m = out["mapped"]
-    assert m["source"] == "Точкис карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Другой цветНа шкалу"
+    assert m["source"] == "Dotsс карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Another colorBack to scale"
     assert not m["slider"] and not m["mark"] and m["ends"] == "1 %dots — с карты цветов30 %" and m["says"] == [True] * 6
     assert m["title"].startswith("scale: 100 mm/s") and m["title"].endswith("dots use settings of the color map recipe")
     assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
-    assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Цвет с карты", "slider": "12.5", "mark": True,
+    assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Color from map", "slider": "12.5", "mark": True,
                            "title": "100 mm/s · 60 kHz · 250 ns · interval 0,0254 mm (1000 dpi) · passes 1"}
 
 
@@ -855,13 +855,13 @@ def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_pat
   const area = (a) => block().querySelectorAll('.ge-assessment').find((x) => x.getAttribute('data-aspect') === a);
   area('colour').querySelector('select').value = 'good';
   area('colour').querySelector('textarea').value = 'Золото получилось';
-  await button(area('colour'), 'Сохранить: цвет').dispatch('click'); await settle();
+  await button(area('colour'), 'Save: color').dispatch('click'); await settle();
   area('photo').querySelector('select').value = 'bad';
   area('photo').querySelector('textarea').value = 'Фотогравировка слишком светлая';
-  await button(area('photo'), 'Сохранить: фотогравировка').dispatch('click'); await settle();
+  await button(area('photo'), 'Save: photo engraving').dispatch('click'); await settle();
   out.values = ['colour', 'photo'].map((a) => [area(a).querySelector('select').value, area(a).querySelector('textarea').value]);
   out.marks = requests.filter(r => r.path === '/api/photo-results/mark').map(r => r.body);
-  out.marker = block().textContent.includes('Маркер C23');
+  out.marker = block().textContent.includes('Marker C23');
 """, scale_data=data)
     assert out['marker'] and out['values'] == [['good', 'Золото получилось'], ['bad', 'Фотогравировка слишком светлая']]
     assert [(r['source']['layer'], r['aspect'], r['verdict']) for r in out['marks']] == [(23, 'colour', 'good'), (23, 'photo', 'bad')]
@@ -1010,11 +1010,11 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
   out.title = tree.querySelector('.ge-settings').textContent;
   out.text = tree.textContent;
 """, work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
-    assert out["source"].startswith("Точкипо фото № 149 (Jarvis): 25 % · 125 mm/s")
+    assert out["source"].startswith("Dotsпо фото № 149 (Jarvis): 25 % · 125 mm/s")
     assert out["ends"] == "1 %dots — по фото № 149 (Jarvis)30 %"
     assert out["title"].endswith("dots use settings of dots по фото № 149 (Jarvis)")
     text = out["text"]
-    assert "с карты цветов" not in text.replace("Цвет с карты", "") and "оценка по шкале" not in text
+    assert "с карты цветов" not in text.replace("Color from map", "") and "оценка по шкале" not in text
     assert "оценка по фото № 149 (Jarvis): этот вид на этих настройках ещё не гравировался" in text
     assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Jarvis), где сфотографированы точки этих настроек." in text
     assert "— настройки точек по фото № 149 (Jarvis)." in text
