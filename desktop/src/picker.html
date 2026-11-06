@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'">
-<title>Запуск мастерской</title>
+<title>Start workshop</title>
 <style>
   body { font: 15px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 32px; color: #1d1d1f; background: #f5f5f7; }
   h1 { font-size: 22px; margin: 0 0 6px; }
@@ -26,16 +26,16 @@
 </style>
 </head>
 <body>
-<h1>Запуск мастерской</h1>
-<p class="lead">Данные мастерской хранятся в папке на этом компьютере и не зависят от приложения. Вход не требуется.</p>
-<div class="card" id="known"><em>Ищем мастерские…</em></div>
+<h1>Start workshop</h1>
+<p class="lead">Workshop data is stored in a folder on this computer independently of the application. No sign-in is required.</p>
+<div class="card" id="known"><em>Looking for workshops…</em></div>
 <div class="card">
   <div class="actions">
-    <button type="button" id="open-existing">Открыть папку мастерской…</button>
-    <button type="button" id="create-new">Создать новую мастерскую…</button>
+    <button type="button" id="open-existing">Open workshop folder…</button>
+    <button type="button" id="create-new">Create new workshop…</button>
   </div>
   <div class="status" id="status" role="status"></div>
-  <details id="log-details" hidden><summary>Подробности запуска</summary><pre id="log"></pre></details>
+  <details id="log-details" hidden><summary>Startup details</summary><pre id="log"></pre></details>
 </div>
 <script src="picker.js"></script>
 </body>

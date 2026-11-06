@@ -1,4 +1,4 @@
-/* The desktop shell (feature electron, DEC-022, DEC-046, REQ-080): one instance; «Запуск мастерской» first; the Python core as a
+/* The desktop shell (feature electron, DEC-022, DEC-046, REQ-080): one instance; workshop startup first; the Python core as a
    loopback child with a per-launch session secret; the window opened once at the core's session address; the core restarted once if
    it dies and an error shown after the second death; on quit the core is terminated and awaited so the port and the lock are free.
    The window is isolated (contextIsolation, sandbox, no node integration), navigates only within the core's origin, sends links to
@@ -41,6 +41,7 @@ function coreLog(line) { console.log('[core]', line); note('core', line); }
 
 async function start() {
   settings = picker.readSettings(userData());
+  if (!fs.existsSync(picker.settingsPath(userData()))) settings = picker.previousSettings(userData()) || settings;
   Menu.setApplicationMenu(Menu.buildFromTemplate([{role: 'appMenu'}, {role: 'editMenu'}, {role: 'viewMenu'}, {role: 'windowMenu'}].filter((m) => process.platform === 'darwin' || m.role !== 'appMenu')));
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(guards.permissionAllowed(permission)));
   if (SMOKE) return smoke();
@@ -50,7 +51,7 @@ async function start() {
 }
 
 function openPicker() {
-  pickerWindow = new BrowserWindow({width: 760, height: 560, title: 'Запуск мастерской', show: false,
+  pickerWindow = new BrowserWindow({width: 760, height: 560, title: 'Start workshop', show: false,
     webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js')}});
   pickerWindow.once('ready-to-show', () => pickerWindow.show());
   pickerWindow.on('closed', () => { pickerWindow = null; if (!mainWindow && !sidecar) app.quit(); });
@@ -60,20 +61,20 @@ function openPicker() {
 ipcMain.handle('picker:choices', () => picker.choices({settings}));
 ipcMain.handle('picker:browse', async (_event, mode) => {
   const result = await dialog.showOpenDialog(pickerWindow, {properties: ['openDirectory', 'createDirectory'],
-    title: mode === 'new' ? 'Папка новой мастерской (пустая)' : 'Папка мастерской', buttonLabel: mode === 'new' ? 'Создать здесь' : 'Открыть'});
+    title: mode === 'new' ? 'New workshop folder (empty)' : 'Workshop folder', buttonLabel: mode === 'new' ? 'Create here' : 'Open'});
   if (result.canceled || !result.filePaths.length) return null;
   const folder = result.filePaths[0];
   const kind = picker.classify(folder);
   const problem = picker.problemOf(folder, kind);
   if (problem) return {error: problem};
-  if (mode === 'existing' && kind === 'empty') return {error: 'В этой папке нет мастерской. Чтобы создать новую, нажмите «Создать новую мастерскую…».'};
+  if (mode === 'existing' && kind === 'empty') return {error: 'There is no workshop in this folder. Select “Create new workshop…” to create one.'};
   return {folder};
 });
 ipcMain.handle('picker:open', (_event, folder, mode) => {
   const kind = picker.classify(folder);
   const problem = picker.problemOf(folder, kind);
   if (problem) return {error: problem};
-  if (kind === 'empty' && mode !== 'new') return {error: 'В этой папке больше нет мастерской. Выберите другую папку.'};
+  if (kind === 'empty' && mode !== 'new') return {error: 'This folder no longer contains a workshop. Choose another folder.'};
   return openWorkshop(folder);
 });
 
@@ -91,7 +92,7 @@ async function openWorkshop(folder) {
   } catch (error) {
     note('shell', `the core did not start: ${error.message}`);
     sidecar = null;
-    return {error: `Ядро мастерской не запустилось: ${error.message}`, logTail: error.logTail || ''};
+    return {error: `The workshop service did not start: ${error.message}`, logTail: error.logTail || ''};
   }
   settings = picker.remember(settings, folder);
   try { picker.writeSettings(userData(), settings); } catch (e) { console.warn('settings not saved', e); }
@@ -110,7 +111,7 @@ function openMain(ready) {
   const origin = sidecar.url();
   installPolicy(origin);
   watchRequests(session.defaultSession.webRequest, origin, note);
-  mainWindow = new BrowserWindow({width: 1440, height: 920, title: 'Лазерная мастерская', show: false,
+  mainWindow = new BrowserWindow({width: 1440, height: 920, title: 'Laser workshop', show: false,
     webPreferences: {contextIsolation: true, sandbox: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js')}});
   mainWindow.webContents.on('will-navigate', (event, url) => { if (!guards.navigationAllowed(url, origin)) { event.preventDefault(); if (guards.windowOpenDecision(url) === 'external') shell.openExternal(url); } });
   mainWindow.webContents.setWindowOpenHandler(({url}) => { if (guards.windowOpenDecision(url) === 'external') shell.openExternal(url); return {action: 'deny'}; });
@@ -150,9 +151,9 @@ async function onCoreDeath(decision, {code, signal, logTail}) {
       logTail = error.logTail || logTail;
     }
   }
-  const answer = await dialog.showMessageBox(mainWindow || undefined, {type: 'error', title: 'Ядро мастерской остановилось',
-    message: 'Ядро мастерской остановилось и не смогло запуститься снова.',
-    detail: `Последние строки его журнала:\n\n${logTail || '(пусто)'}`, buttons: ['Запустить снова', 'Выйти'], defaultId: 0, cancelId: 1});
+  const answer = await dialog.showMessageBox(mainWindow || undefined, {type: 'error', title: 'Workshop service stopped',
+    message: 'The workshop service stopped and could not restart.',
+    detail: `Last lines of its log:\n\n${logTail || '(empty)'}`, buttons: ['Restart', 'Quit'], defaultId: 0, cancelId: 1});
   note('shell', answer.response === 0 ? 'the operator chose to start the core again' : 'the operator chose to quit');
   if (answer.response === 0) { sidecar.deaths = 0; sidecar.stopping = false; onCoreDeath('restart', {code, signal, logTail}); } else app.quit();
 }
@@ -171,10 +172,10 @@ async function checkForUpdates(origin) {
   if (!(await updateChecksAllowed(origin))) return;
   const latest = await updater.fetchLatest(app.getVersion());
   if (!latest || !latest.newer || !mainWindow) return;
-  const answer = await dialog.showMessageBox(mainWindow, {type: 'info', title: 'Есть новая версия',
-    message: `Доступна версия ${latest.version}${latest.prerelease ? ' (предварительная)' : ''}.`,
-    detail: 'Обновление устанавливается вручную: откройте страницу выпуска и загрузите установщик. Текущая работа не прерывается.',
-    buttons: ['Открыть страницу выпуска', 'Позже'], defaultId: 0, cancelId: 1});
+  const answer = await dialog.showMessageBox(mainWindow, {type: 'info', title: 'Update available',
+    message: `Version ${latest.version}${latest.prerelease ? ' (prerelease)' : ''} is available.`,
+    detail: 'Install the update manually by opening the release page and downloading the installer. Your current work will not be interrupted.',
+    buttons: ['Open release page', 'Later'], defaultId: 0, cancelId: 1});
   if (answer.response === 0) shell.openExternal(latest.url);
 }
 

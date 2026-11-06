@@ -25,8 +25,8 @@ test('a folder is a workshop, empty, missing or something else', () => {
   assert.equal(kind('/f'), 'not-a-folder');
   assert.equal(picker.problemOf('/w', 'workshop'), null);
   assert.equal(picker.problemOf('/e', 'empty'), null);
-  assert.match(picker.problemOf('/o', 'other'), /пустую папку/);
-  assert.match(picker.problemOf('/x', 'missing'), /нет/);
+  assert.match(picker.problemOf('/o', 'other'), /empty folder/);
+  assert.match(picker.problemOf('/x', 'missing'), /does not exist/);
 });
 
 test('the start screen offers the last workshop, the console application one and recent ones, each once, only when they exist', () => {
@@ -38,7 +38,7 @@ test('the start screen offers the last workshop, the console application one and
   assert.deepEqual(none, []);
   const missing = picker.choices({settings: {...picker.DEFAULTS, lastWorkshop: '/missing'}, home: '/elsewhere', ...fsx});
   assert.equal(missing[0].why, 'last');
-  assert.match(missing[0].problem, /нет/);
+  assert.match(missing[0].problem, /does not exist/);
 });
 
 test('an opened workshop becomes the last one and the first recent one; settings survive a round trip and a broken file', () => {
@@ -52,4 +52,15 @@ test('an opened workshop becomes the last one and the first recent one; settings
   fs.writeFileSync(picker.settingsPath(userData), '{broken');
   assert.deepEqual(picker.readSettings(userData), picker.DEFAULTS);
   assert.deepEqual(picker.readSettings(path.join(userData, 'absent')), picker.DEFAULTS);
+});
+
+
+test('prior shell settings are recovered only when the candidate is unambiguous', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-migrate-'));
+  const current = path.join(parent, 'current'), old = path.join(parent, 'old');
+  const saved = {...picker.DEFAULTS, lastWorkshop: '/missing-workshop', recentWorkshops: ['/missing-workshop'], updateChecks: true};
+  picker.writeSettings(old, saved);
+  assert.deepEqual(picker.previousSettings(current), saved);
+  picker.writeSettings(path.join(parent, 'another'), {...saved, lastWorkshop: '/other'});
+  assert.equal(picker.previousSettings(current), null);
 });

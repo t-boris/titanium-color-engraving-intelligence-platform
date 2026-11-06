@@ -21,7 +21,7 @@
   }
 
   async function open(folder, mode = 'existing') {
-    busy('Запускаем ядро мастерской…');
+    busy('Starting the workshop service…');
     try {
       const result = await window.shell.picker.open(folder, mode);
       if (result && result.error) failed(result.error, result.logTail);
@@ -38,19 +38,19 @@
   async function list() {
     const choices = await window.shell.picker.choices();
     known.replaceChildren();
-    if (!choices.length) { known.append(el('em', {}, 'Известных мастерских пока нет: откройте папку или создайте новую.')); return; }
+    if (!choices.length) { known.append(el('em', {}, 'No known workshops yet. Open a folder or create one.')); return; }
     const other = choices.filter((c) => c.why !== 'last');
     const last = choices.find((c) => c.why === 'last');
     if (last) {
       const info = el('div', {}, el('strong', {}, last.label), el('div', {class: 'folder'}, last.folder));
-      if (last.problem) info.append(el('p', {class: 'unavailable'}, last.problem + ' Выберите другую папку ниже.'));
+      if (last.problem) info.append(el('p', {class: 'unavailable'}, last.problem + ' Choose another folder below.'));
       known.append(el('div', {class: 'choice last-choice'}, info,
-        last.problem ? '' : el('button', {type: 'button', class: 'primary', onClick: () => open(last.folder)}, 'Продолжить')));
+        last.problem ? '' : el('button', {type: 'button', class: 'primary', onClick: () => open(last.folder)}, 'Continue')));
     }
     if (other.length) {
-      const details = el('details', {}, el('summary', {}, 'Другие известные мастерские'));
+      const details = el('details', {}, el('summary', {}, 'Other known workshops'));
       for (const c of other) details.append(el('div', {class: 'choice'}, el('div', {}, el('div', {}, c.label), el('div', {class: 'folder'}, c.folder)),
-        el('button', {type: 'button', onClick: () => open(c.folder)}, 'Открыть')));
+        el('button', {type: 'button', onClick: () => open(c.folder)}, 'Open')));
       known.append(details);
     }
   }

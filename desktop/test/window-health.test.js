@@ -4,8 +4,8 @@ const {EventEmitter} = require('node:events');
 const assert = require('node:assert/strict');
 const {WindowHealth, withTimeout, requestNote, watchRequests, watchWindow, PROBE_SCRIPT} = require('../src/window-health');
 
-const blank = {children: 0, readyState: 'complete', styleSheets: 0, scripts: 85, text: 'Перейти к содержимому'};
-const drawn = {children: 2, readyState: 'complete', styleSheets: 1, scripts: 85, text: 'Мастерская'};
+const blank = {children: 0, readyState: 'complete', styleSheets: 0, scripts: 85, text: 'Skip to content'};
+const drawn = {children: 2, readyState: 'complete', styleSheets: 1, scripts: 85, text: 'Workshop'};
 
 /** A health check on a fake clock: every sleep advances it, `answers` are what the page says one probe after another (the last one repeats). */
 function rig(answers, options = {}) {
@@ -38,7 +38,7 @@ test('a page that never draws is described in the log and reloaded once; the rel
   const {health, lines, state} = rig([blank]);
   assert.equal(await health.check('loaded'), 'reloaded');
   assert.equal(state.reloads, 1);
-  assert.match(lines.join('\n'), /interface not drawn \(loaded\): the page loaded but #app is empty \{"children":0,"readyState":"complete","styleSheets":0,"scripts":85,"text":"Перейти к содержимому"\}/);
+  assert.match(lines.join('\n'), /interface not drawn \(loaded\): the page loaded but #app is empty \{"children":0,"readyState":"complete","styleSheets":0,"scripts":85,"text":"Skip to content"\}/);
   assert.match(lines.join('\n'), /reloading the window once, ignoring the cache/);
   const after = rig([drawn]);
   after.health.reloads = 1;
