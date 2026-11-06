@@ -191,7 +191,7 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
   await byText(group('Letter color'), 'button', 'Choose…').dispatch('click'); await tick(); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e12').dispatch('click');
-  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+  await byText(dialog, 'button', 'Apply').dispatch('click'); await tick(); await tick();
   await byText(group('Layout'), 'button', 'Circle').dispatch('click'); await tick();
   out.hidden = tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for')).map((d) => d.getAttribute('data-for') + ':' + d.hidden);
   await byText(pane, 'button', 'Copy').dispatch('click'); await tick();
@@ -225,9 +225,9 @@ def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_ba
     await byText(group(label), 'button', 'Choose…').dispatch('click'); await tick(); await tick();
     const dialog = ctx.document.body.querySelector('.modal');
     const swatch = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
-    const seen = {text: dialog.textContent, letters: swatch('e14').getAttribute('title'), now: dialog.textContent.includes('Сейчас:')};
+    const seen = {text: dialog.textContent, letters: swatch('e14').getAttribute('title'), now: dialog.textContent.includes('Current:')};
     await swatch(entry).dispatch('click');
-    await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+    await byText(dialog, 'button', 'Apply').dispatch('click'); await tick(); await tick();
     return seen;
   };
   out.letters = await choose('Letter color', 'e13');
@@ -238,7 +238,7 @@ def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_ba
     assert "Letter color for inscription #1 (ΔE to letter color)" in out["letters"]["text"] and out["letters"]["now"] is True
     assert "Backing color for inscription #1 (ΔE to letter color)" in out["backing"]["text"] and out["backing"]["now"] is False   # clean titanium now
     assert "ΔE 0.00" in out["letters"]["letters"] and "ΔE 0.00" in out["backing"]["letters"]          # ΔE to the letters' colour (e14)
-    assert "«Откуда» — из каких тестов и работ цвет известен" in out["letters"]["text"]                # the editor's window, as it is
+    assert "Sources shows the tests and works behind each color" in out["letters"]["text"]                # the editor's window, as it is
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}},
                           {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": "e11"}},
                           {"op": "text_set", "id": "t1", "changes": {"backing_entry_id": None}}]
@@ -825,10 +825,10 @@ def test_a_photo_works_inscription_takes_its_colours_in_the_editors_window_over_
   out.text = dialog.textContent;
   out.swatches = dialog.querySelectorAll('button').map((b) => b.getAttribute('data-entry')).filter(Boolean);
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e13').dispatch('click');
-  await dialog.querySelectorAll('button').find((b) => b.textContent === 'Применить').dispatch('click'); await settle();
+  await dialog.querySelectorAll('button').find((b) => b.textContent === 'Apply').dispatch('click'); await settle();
   out.ops = requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body);
 """)
     assert out["letters"] == ["Choose…"]                                                  # no squares to click in the tab any more
-    assert "Letter color for inscription #1 (ΔE to letter color)" in out["text"] and "«Откуда» — из каких тестов и работ цвет известен" in out["text"]
+    assert "Letter color for inscription #1 (ΔE to letter color)" in out["text"] and "Sources shows the tests and works behind each color" in out["text"]
     assert sorted(set(out["swatches"])) == sorted(e["id"] for e in PALETTE)
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}}]

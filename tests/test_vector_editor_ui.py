@@ -515,7 +515,7 @@ def test_a_source_colour_can_be_replaced_from_the_editor_and_every_colour_says_w
   await chip('e13').dispatch('click'); await tick();
   out.detail = dialog.textContent;
   out.links = dialog.querySelectorAll('a').map((a) => [a.textContent, a.getAttribute('href')]);
-  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+  await byText(dialog, 'button', 'Apply').dispatch('click'); await tick(); await tick();
   out.posted = posted();
   out.closed = ctx.document.body.querySelector('.modal') === null;
 """)
@@ -550,16 +550,16 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
   sorter.value = 'fast'; await sorter.dispatch('change'); out.fast = order(grid());
   out.classes = Object.fromEntries(grid().querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className]));
   out.chips = dialog.querySelectorAll('.lst-chip').map((c) => c.textContent);
-  await dialog.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('проверены повтором')).dispatch('click'); out.repeated = order(grid());
+  await dialog.querySelectorAll('.lst-chip').find((c) => c.textContent.startsWith('verified by repeat')).dispatch('click'); out.repeated = order(grid());
   const search = dialog.querySelector('.lst-search'); search.value = 'e14 work'; await search.dispatch('input'); await tick(); await tick();
   out.searched = order(grid());                                                                   // the titles of the engravings it is known from
-  out.now = dialog.textContent.includes('Сейчас:');
+  out.now = dialog.textContent.includes('Current:');
 """)
-    assert "Стабильнее и похоже на текущий цвет" in out["better"][0] and out["better"][1] == ["e11", "e14"]          # confirmed by repeats, nearest to the current colour first
+    assert "More stable and similar to the current color" in out["better"][0] and out["better"][1] == ["e11", "e14"]          # confirmed by repeats, nearest to the current colour first
     assert out["near"] == ["e12", "e11", "e13", "e14"]                                                            # by dE to the source colour of this row
     assert out["stable"] == ["e11", "e14", "e12", "e13"]                                                           # confirmed (the more confident first), once, doubtful
     assert out["fast"] == ["e12", "e11", "e13", "e14"]                                                             # equal times keep the order by dE; e14 has no estimate: last
-    assert out["chips"] == ["All · 4", "проверены повтором · 2", "одна гравировка · 1", "сомнительные · 1"]
+    assert out["chips"] == ["All · 4", "verified by repeat · 2", "one engraving · 1", "uncertain · 1"]
     assert out["repeated"] == ["e11", "e14"] and out["searched"] == ["e14"] and out["now"] is True
     assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
 
@@ -577,7 +577,7 @@ def test_brush_target_selector_ranks_measured_colors_and_filters_unknown_time(tm
   const time = dialog.querySelectorAll('label').find((l) => l.textContent.startsWith('Time per cm²')).querySelector('select');
   time.value = 'unknown'; await time.dispatch('change'); await tick(); out.unknown = order();
   await dialog.querySelector('.lst-rows').querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e14').dispatch('click');
-  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick();
+  await byText(dialog, 'button', 'Apply').dispatch('click'); await tick();
   out.active = section('Активный цвет').textContent; out.writes = posted();
 """)
     assert out["first"][0] == "e14" and out["unknown"] == ["e14"]
@@ -595,7 +595,7 @@ def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selecte
   const dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.textContent;
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e13').dispatch('click');
-  await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
+  await byText(dialog, 'button', 'Apply').dispatch('click'); await tick(); await tick();
   out.posted = posted();
 """)
     assert "Titanium color for selected regions (2)" in out["title"]

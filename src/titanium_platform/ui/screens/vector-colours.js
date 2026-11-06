@@ -35,14 +35,11 @@ const VectorColours = (() => {
   const confidence = (e) => h('span', {}, e.confidence == null ? 'не оценено' : num(e.confidence), h('div', {class: 'muted small'}, agreed(e.agreement)),
     e.caution ? pill(e.caution === 'superseded' ? 'заменён' : 'цвет менялся', 'bad') : null);
 
-  const ORDERS = [['near', 'Ближайшие к исходному цвету'], ['stable', 'Самые стабильные'], ['fast', 'Самые быстрые']];
+  const ORDERS = [['near', 'Closest to original color'], ['stable', 'Most stable'], ['fast', 'Fastest']];
   const RANK = {stable: 2, single: 1, doubtful: 0};
-  const BETTER = 6;                                               // сколько более стабильных цветов предложить взамен
+  const BETTER = 6;                                               // maximum number of more stable replacement colors
 
-  /** Выбор цвета титана из палитры (REQ-051): у каждого цвета видно, откуда он известен (тесты и работы) и насколько он стабилен; порядок и фильтр
-      по повтору; взамен ненадёжного цвета предлагаются более стабильные, ближайшие к нему. Ближайшие к исходному цвету — первыми; снятые без
-      привязки — с пунктиром. The colours are a short list (DEC-090): a line each with its square, ΔE and steadiness, pages of 30; the square
-      chooses the colour, the line opens what it is and where it is known from. */
+  /** Choose measured titanium colors, showing provenance and stability. */
   const pick = (j, title, sourceLab, current, onPick) => pickFrom(() => palette(j), title, sourceLab, current, onPick,
     {imageUrl: `/api/plans/${j.id}/source-image`});
   /** The same window over any list of measured colours (``load``: a promise of them), as the photo work's inscriptions need it. */
@@ -65,34 +62,34 @@ const VectorColours = (() => {
     const text = (e) => `${labText(e.lab)} · ΔE ${num(de(e.lab, targetLab))} · ${STEADY[steadiness(e)][0]} · ${originText(e.sources)} · ${seconds(e.time_s_per_cm2)}`;
     const detail = (e) => h('div', {class: 'stack small'},
       h('div', {}, chip(e.srgb), ' ', labText(e.lab), ` · ΔE ${num(de(e.lab, targetLab))} from the target sample`,
-        now && now.id !== e.id ? ` · ΔE ${num(de(e.lab, now.lab))} до текущего` : ''),
-      h('div', {}, pill(...STEADY[steadiness(e)]), ' ', `Уверенность ${e.confidence == null ? 'не оценена' : num(e.confidence)} · ${agreed(e.agreement)}`,
+        now && now.id !== e.id ? ` · ΔE ${num(de(e.lab, now.lab))} from current` : ''),
+      h('div', {}, pill(...STEADY[steadiness(e)]), ' ', `Confidence ${e.confidence == null ? 'not assessed' : num(e.confidence)} · ${agreed(e.agreement)}`,
         e.caution ? [' ', pill(CAUTION[e.caution], 'warn')] : null),
-      h('div', {class: 'muted'}, `${BASIS[e.basis] || ''} · гравировок ${e.engravings}, фото ${e.photographs} · ${seconds(e.time_s_per_cm2)}`),
+      h('div', {class: 'muted'}, `${BASIS[e.basis] || ''} · engravings ${e.engravings}, photos ${e.photographs} · ${seconds(e.time_s_per_cm2)}`),
       h('div', {class: 'muted'}, params(e.parameters)),
-      e.automatic ? null : h('div', {class: 'muted'}, e.caution ? `Этот цвет автоматика не выбирает: ${CAUTION[e.caution]}; выбрать вручную можно.`
-        : 'Этот цвет автоматика не выбирает (снят без привязки или медленнее предела времени); выбрать вручную можно.'),
+      e.automatic ? null : h('div', {class: 'muted'}, e.caution ? `Automatic selection excludes this color: ${CAUTION[e.caution]}; you can select it manually.`
+        : 'Automatic selection excludes this color (uncalibrated or slower than the time limit); you can select it manually.'),
       sourcesBlock(e.sources || [], e.agreement, e.lab, true),
-      chosen && chosen.id === e.id ? null : h('div', {}, btn('Выбрать этот цвет', () => choose(e), 'btn-small')));
+      chosen && chosen.id === e.id ? null : h('div', {}, btn('Select this color', () => choose(e), 'btn-small')));
     const colours = App.list({items: entries, page: 30, key: (e) => String(e.id), open: now ? String(now.id) : null,
       row: (e) => [swatchOf(e, text(e)), h('span', {class: 'lst-text'}, `ΔE ${num(de(e.lab, targetLab))} · ${STEADY[steadiness(e)][0]}`),
         h('span', {class: 'muted small'}, seconds(e.time_s_per_cm2))],
       details: detail, search: (e) => [labText(e.lab), originText(e.sources), ...(e.sources || []).map((s) => s.title)].join(' '),
-      filters: [{key: 'steady', label: 'Повтор', options: [['stable', 'проверены повтором'], ['single', 'одна гравировка'], ['doubtful', 'сомнительные']],
+      filters: [{key: 'steady', label: 'Repeatability', options: [['stable', 'verified by repeat'], ['single', 'one engraving'], ['doubtful', 'uncertain']],
         test: (e, v) => steadiness(e) === v},
         {key: 'time', label: 'Time per cm²', select: true, options: [['60', 'up to 1 minute'], ['300', 'up to 5 minutes'], ['unknown', 'time not estimated']],
           test: (e, v) => v === 'unknown' ? !Number.isFinite(e.time_s_per_cm2) : Number.isFinite(e.time_s_per_cm2) && e.time_s_per_cm2 <= Number(v)}],
-      sorts: ORDERS.map(([k, name]) => [k, name, compare[k]]), empty: 'Нет цветов под такой фильтр.'});
+      sorts: ORDERS.map(([k, name]) => [k, name, compare[k]]), empty: 'No colors match this filter.'});
     function choose(e) { chosen = e; paint(); colours.refresh(); }
     function paint() {
       const stabler = now && steadiness(now) !== 'stable'
         ? entries.filter((e) => e.id !== now.id && steadiness(e) === 'stable').sort((a, b) => de(a.lab, now.lab) - de(b.lab, now.lab)).slice(0, BETTER) : [];
       fill(better, now && steadiness(now) !== 'stable' ? h('div', {class: 'stack small vw-better'},
-        h('strong', {}, 'Стабильнее и похоже на текущий цвет'),
-        stabler.length ? h('div', {class: 'vw-swatches'}, stabler.map((e) => swatchOf(e, `ΔE ${num(de(e.lab, now.lab))} до текущего · ${text(e)}`)))
-          : h('span', {class: 'muted'}, 'Цветов, проверенных повтором, в палитре нет.')) : null);
+        h('strong', {}, 'More stable and similar to the current color'),
+        stabler.length ? h('div', {class: 'vw-swatches'}, stabler.map((e) => swatchOf(e, `ΔE ${num(de(e.lab, now.lab))} from current · ${text(e)}`)))
+          : h('span', {class: 'muted'}, 'The palette has no colors verified by repeat.')) : null);
       fill(choice, chosen ? ['Selected measured titanium color: ', chip(chosen.srgb), ' ', labText(chosen.lab), ` · ΔE ${num(de(chosen.lab, targetLab))} from the target sample · ${STEADY[steadiness(chosen)][0]}`]
-        : h('span', {class: 'muted'}, 'Выберите цвет'));
+        : h('span', {class: 'muted'}, 'Select a color'));
     }
     const target = App.targetColor({initial: targetLab, imageUrl: options.imageUrl, submitLabel: 'Find recipes', onSelect: (lab) => {
       targetLab = lab; paint(); colours.refresh();
@@ -100,11 +97,11 @@ const VectorColours = (() => {
     paint();
     modal(title, h('div', {class: 'stack'},
       target.el,
-      h('p', {class: 'muted small'}, `Все измеренные цвета этого лазера, линзы и титана этой марки (с любой плиты): ${entries.length}. Зелёная точка — цвет проверен повтором, красная — гравировки расходятся; `
-        + 'у остальных одна гравировка. «Откуда» — из каких тестов и работ цвет известен. Квадрат выбирает цвет, строка открывает, откуда он известен.'),
-      now ? h('p', {class: 'small'}, 'Сейчас: ', chip(now.srgb), ' ', pill(...STEADY[steadiness(now)]), ` ${originText(now.sources)}`) : null,
-      better, colours.el, choice), [{label: 'Отмена', run: (m) => m.close()},
-      {label: 'Применить', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
+      h('p', {class: 'muted small'}, `All measured colors for this laser, lens, and titanium grade (from any plate): ${entries.length}. A green dot means verified by repeat; red means engravings differ; `
+        + 'the others have one engraving. Sources shows the tests and works behind each color. Select a square to choose a color or open its row for details.'),
+      now ? h('p', {class: 'small'}, 'Current: ', chip(now.srgb), ' ', pill(...STEADY[steadiness(now)]), ` ${originText(now.sources)}`) : null,
+      better, colours.el, choice), [{label: 'Cancel', run: (m) => m.close()},
+      {label: 'Apply', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
   }
 
   /** «Подробно по цветам» as a short list (DEC-090): a line per source colour — its colour and number, the titanium colour, how it was chosen,
