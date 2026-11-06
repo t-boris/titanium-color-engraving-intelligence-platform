@@ -722,6 +722,10 @@ body.is-workspace .main {max-width:none;padding:10px 16px}
 .vw-work .vw-ed-stage {flex:1;height:auto;min-height:0}
 .vw-work .vw-ed-panel {display:flex;flex-direction:column;gap:8px;max-height:none;min-height:0;overflow:hidden;padding:0;border:1px solid var(--line-2);border-radius:14px;background:#111826}
 .vw-work .vw-ed-panel>.vw-tabs {flex:none}
+.vw-ed-inspector {flex:0 1 auto;max-height:45%;overflow:auto;padding:10px 12px;border-bottom:1px solid var(--line)}
+.vw-ed-inspector[hidden] {display:none}
+.vw-ed-inspector [hidden] {display:none}
+.vw-ed-inspector h3 {margin:0 0 8px;font-size:14px}
 .vw-ed-panes {flex:1;min-height:0;overflow:auto;padding:4px 12px 12px}
 .vw-ed-pane {display:flex;flex-direction:column;gap:12px}
 .vw-work .vw-ed-list {max-height:none;gap:0}

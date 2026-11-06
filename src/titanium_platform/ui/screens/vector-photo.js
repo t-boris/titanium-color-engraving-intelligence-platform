@@ -80,8 +80,8 @@ const VectorPhoto = (() => {
       fill(about, zones.length
         ? 'Области зоны гравируются фотогравировкой картинки работы, а не цветами: в файле — отдельный слой изображения после слоёв цвета, '
           + 'прозрачный вне зоны. Вид, шкала и мощности — у каждой зоны свои; всё отменяется (Ctrl+Z).'
-        : 'Фотозон нет. Обведите мышью (лассо) области на картинке или щёлкните по ним (Shift+щелчок добавляет) и нажмите «Сделать фотозоной» '
-          + 'в «Выделении» выше. Например, лицо: оно выйдет фотогравировкой, остальное — векторами.');
+        : 'No photo zones yet. Select regions on the canvas with a click or lasso, then choose Create photo zone in the inspector. '
+          + 'For example, engrave a face as a photo while the rest remains vector artwork.');
       fill(list, zones.map((zone, i) => card(zone, found[i])));
     }
 
@@ -195,9 +195,86 @@ const VectorPhoto = (() => {
         zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Как подбирать серые и контуры — в «Открыть».`) : null);
     }
 
+    /** Basic settings for a selected zone; detailed editing remains on the dedicated screen. */
+    function inspect(zone) {
+      const change = (changes) => ctx.act({op: 'photo_set', zone: zone.number, ...changes});
+      const labelForKind = (key) => key.replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+      const available = j.zone_kinds || [zone.kind];
+      const kind = h('select', {'aria-label': 'Engraving kind'}, available.map((key) => h('option', {value: key}, labelForKind(key))));
+      kind.value = zone.kind;
+      kind.addEventListener('change', () => change({kind: kind.value}));
+      function commitRange(range, send) {
+        const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']);
+        let held = false, dirty = false;
+        const finish = () => { if (!held) return; held = false; if (dirty) send(); dirty = false; };
+        range.addEventListener('keydown', (event) => { if (keys.has(event.key)) held = true; });
+        range.addEventListener('keyup', (event) => { if (keys.has(event.key)) finish(); });
+        range.addEventListener('blur', finish);
+        range.addEventListener('change', () => { if (held) dirty = true; else send(); });
+      }
+      const tone = {brightness: 0, contrast: 0, gamma: 1, ...(zone.tone || {})};
+      function adjustment(key, label, quantity, step) {
+        const rule = Forms.QUANTITIES[quantity];
+        const range = h('input', {type: 'range', min: rule.min, max: rule.max, step, value: tone[key], 'aria-label': `${label} slider`});
+        const exact = h('input', {type: 'number', min: rule.min, max: rule.max, step: 'any', value: tone[key], 'aria-label': label});
+        const commit = (v) => { tone[key] = Number(v); change({tone: {...tone}}); };
+        const note = Forms.watch(exact, quantity, (v) => { range.value = String(v); commit(v); });
+        range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; });
+        commitRange(range, () => commit(range.value));
+        return h('div', {class: 'stack'}, h('label', {class: 'small'}, label, range, exact, Forms.describe(exact, quantity)), note);
+      }
+      const matched = h('input', {type: 'checkbox', checked: !!zone.by_colour, disabled: dotted(zone), 'aria-label': 'Match image colors'});
+      matched.addEventListener('change', () => change({by_colour: matched.checked}));
+      function calibration() {
+        if (dotted(zone) && zone.dot_recipe) return h('p', {class: 'small muted'}, 'Dot power comes from the selected color recipe. Open the detailed editor to change its source.');
+        const dot = dotted(zone);
+        const rule = dot && zone.span ? {...Forms.QUANTITIES.photoPower, min: zone.span[0], max: zone.span[1]} : Forms.QUANTITIES.photoPower;
+        const control = (label, value, onChange) => {
+          const range = h('input', {type: 'range', min: rule.min, max: rule.max, step: 0.1, value, 'aria-label': `${label} slider`});
+          const exact = h('input', {type: 'number', min: rule.min, max: rule.max, step: 'any', value, 'aria-label': label});
+          const note = Forms.watch(exact, rule, (v) => { range.value = String(v); onChange(); });
+          range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; });
+          commitRange(range, onChange);
+          return {exact, note, el: h('label', {class: 'small'}, label, range, exact, Forms.describe(exact, rule), note)};
+        };
+        if (dot) {
+          const power = control('Dot power, %', zone.dot_power, () => change({dot_power: Number(power.exact.value)}));
+          return power.el;
+        }
+        let low, high;
+        const send = () => {
+          if (![low, high].every((part) => Forms.readNumber(part.exact, rule, {required: true}).ok)) return;
+          if (Number(low.exact.value) > Number(high.exact.value)) {
+            high.exact.setAttribute('aria-invalid', 'true'); high.note.textContent = 'Min power must not exceed Max.'; return;
+          }
+          high.exact.removeAttribute('aria-invalid'); high.note.textContent = '';
+          change({min_power: Number(low.exact.value), max_power: Number(high.exact.value)});
+        };
+        low = control('Min power, % (white)', zone.min_power, send);
+        high = control('Max power, % (black)', zone.max_power, send);
+        return h('div', {class: 'stack'}, low.el, high.el);
+      }
+      const scale = zone.scale || {};
+      const measured = zone.span ? `Measured power range: ${value(zone.span[0])}–${value(zone.span[1])}%.` : 'This scale is not measured.';
+      return h('div', {class: 'stack vp-inspector'}, h('h4', {}, `Photo zone ${zone.number}`),
+        h('p', {class: 'small'}, `Size: ${value(zone.box.width)} × ${value(zone.box.height)} mm · Regions: ${zone.regions.length}`),
+        h('label', {class: 'f'}, h('span', {}, 'Engraving kind'), kind),
+        h('p', {class: 'small'}, `Scale: ${value(scale.speed, 0)} mm/s · ${value(scale.frequency, 0)} kHz · ${value(scale.line_interval, 4)} mm spacing`),
+        h('p', {class: 'small muted'}, measured),
+        zone.problem ? h('p', {class: 'alert bad small'}, I18N.tr(zone.problem)) : null,
+        adjustment('brightness', 'Image brightness, %', 'toneBrightness', 1),
+        adjustment('contrast', 'Image contrast, %', 'toneContrast', 1),
+        h('label', {class: 'row small'}, matched, h('span', {}, 'Match image colors')),
+        h('details', {class: 'ge-gamma-calibration'}, h('summary', {}, 'Gamma calibration'),
+          h('p', {class: 'small muted'}, 'Gamma adjusts midtones while leaving black and white unchanged.'), adjustment('gamma', 'Image gamma', 'toneGamma', 0.05)),
+        h('details', {class: 'ge-calibration'}, h('summary', {}, 'Power calibration'),
+          h('p', {class: 'small muted'}, 'Power maps the image tones to the measured scale. Values outside the measured range have no prediction.'), calibration()),
+        btn('Open detailed photo editor', () => go(`/vector-zone?work=${j.id}&zone=${zone.number}`), 'primary btn-small'));
+    }
+
     function update(next) { j = next; render(); }
     render();
-    return {el, update};
+    return {el, update, inspect};
   }
 
   return {create, zoneSummary, greysText, kindName};

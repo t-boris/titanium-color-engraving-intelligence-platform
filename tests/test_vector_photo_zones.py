@@ -492,6 +492,21 @@ def test_a_zone_made_before_its_greys_could_be_chosen_reads_them_as_the_drawing_
 
 
 # -- a zone on its own screen, as a photo work opens (0.23.0, DEC-116) -----------------------------------------------------------------
+def test_inspector_and_detailed_zone_editor_share_undo_history(world):
+    job = create(world)
+    client = world["client"]
+    colouring(world, job, op="photo_add", regions=of_colour(world, job, RED))
+    from_inspector = colouring(world, job, op="photo_set", zone=1, tone={"brightness": 15, "contrast": 0, "gamma": 1})
+    assert from_inspector["zones"][0]["tone"]["brightness"] == 15
+    opened = client.get(f"/api/vector/{job['id']}/photo/1").json()
+    assert opened["tone"]["brightness"] == 15
+    restored = client.post(f"/api/vector/{job['id']}/photo/1/undo").json()
+    assert restored["tone"]["brightness"] == 0
+    changed = client.post(f"/api/vector/{job['id']}/photo/1/settings", json={"tone": {"brightness": -10, "contrast": 0, "gamma": 1}}).json()
+    assert changed["tone"]["brightness"] == -10
+    assert colouring(world, job, op="undo")["zones"][0]["tone"]["brightness"] == 0
+
+
 def test_a_zone_opens_on_its_own_screen_with_its_picture_beside_its_look_and_its_changes_are_steps_of_the_work(world):
     job = create(world)
     client = world["client"]

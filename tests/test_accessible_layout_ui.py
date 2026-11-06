@@ -314,7 +314,7 @@ def test_the_picture_takes_the_keyboard_arrows_pan_plus_and_minus_zoom_and_zero_
   out.buttons = [before, moved, tree.querySelectorAll('button').filter((b) => (b.getAttribute('aria-label') || '').startsWith('Сдвинуть вид')).length];
   out.posted = posted().length;
 """)
-    assert out["stage"][0] == "0" and "стрелки" in out["stage"][1] and "списке «Области»" in out["stage"][1]
+    assert out["stage"][0] == "0" and "arrow keys" in out["stage"][1] and "Source colors" in out["stage"][1]
     assert out["fit"] == "0 0 40 20" and out["fitPan"] == [True, "0 0 40 20"]
     assert out["zoomIn"] == [True, "6.6667 3.3333 26.6667 13.3333"]                  # the numbers the button gives (test_pipette_selection_...)
     assert out["right"][1] == "12 3.3333 26.6667 13.3333"                            # a fifth of the view (5.3333), held inside the picture
@@ -336,7 +336,7 @@ def test_every_region_is_a_line_the_keyboard_can_choose_and_the_choice_is_the_on
   out.empty = [note(), classed('vw-sel'), tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed')];
   await choose('r1').dispatch('click'); await tick();
   out.one = [classed('vw-sel'), note(), choose('r1').getAttribute('aria-label'), choose('r1').getAttribute('aria-pressed'),
-    tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed'), section('Выделение').textContent.includes('Выбрано областей: 1')];
+    tree.querySelectorAll('button').find((b) => b.textContent === 'Выделение').getAttribute('aria-pressed'), section('Selection').textContent.includes('Selected regions: 1')];
   await choose('r2').dispatch('click'); await tick();
   out.two = [classed('vw-sel'), choose('r2').getAttribute('aria-pressed'), choose('r3').getAttribute('aria-pressed')];
   await choose('r1').dispatch('click'); await tick();                              // a second press takes the region out
@@ -370,13 +370,13 @@ def test_regions_chosen_from_the_list_are_merged_and_painted_from_the_selection_
   await choose('r1').dispatch('click'); await choose('r2').dispatch('click'); await tick();
   await byText(regions(), 'button', 'К действиям с выделением').dispatch('click'); await tick();
   const where = ctx.document.activeElement;
-  out.focus = [where === section('Выделение'), where && where.getAttribute('tabindex'),
+  out.focus = [where === section('Selection'), where && where.getAttribute('tabindex'),
     tab('brush').getAttribute('aria-selected')];
   await wait(5);
-  await byText(section('Выделение'), 'button', 'Слить в один контур').dispatch('click'); await tick();
+  await byText(section('Selection'), 'button', 'Merge regions').dispatch('click'); await tick();
   out.posted = posted();
 """)
-    assert out["focus"] == [True, "-1", "true"]                                      # the selection's own tab is shown, with the focus on its box
+    assert out["focus"] == [True, "-1", "false"]                                     # the persistent inspector receives focus without changing tabs
     assert out["posted"] == [{"op": "merge_regions", "regions": ["r1", "r2"]}]
 
 
@@ -395,7 +395,7 @@ def test_a_layer_and_a_source_colour_choose_their_regions_and_an_empty_or_stale_
   out.counts = [layerBtns.length, colourBtns.length, layerBtns.map((b) => b.disabled), colourBtns.map((b) => b.disabled)];
   await tab('layers').dispatch('click');
   await layerBtns[0].dispatch('click'); await tick();
-  out.layer1 = [classed('vw-sel'), ctx.document.activeElement === section('Выделение')];
+  out.layer1 = [classed('vw-sel'), ctx.document.activeElement === section('Selection')];
   await layerBtns[1].dispatch('click'); await tick();
   out.layer2 = classed('vw-sel');                                                  // the stale id is left out, the real one chosen
   out.layer3 = [layerBtns[2].disabled, classed('vw-sel')];                         // nothing to choose: the button is off (a browser sends no click to it)
@@ -693,7 +693,7 @@ def test_a_region_chosen_on_the_picture_slides_the_panel_out_on_a_narrow_screen_
   await path('r1').dispatch('click'); await tick();                                      // the same region again takes the selection off
   narrow(true);
   await path('r2').dispatch('click'); await tick();
-  out.narrow = [state(), classed('vw-sel'), ctx.document.activeElement === section('Выделение')];
+  out.narrow = [state(), classed('vw-sel'), ctx.document.activeElement === section('Selection')];
   await closer().dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true}); await tick();                    // the last region taken off: nothing selected, nothing to show
   out.empty = [state(), classed('vw-sel')];

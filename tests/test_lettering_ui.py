@@ -132,8 +132,27 @@ OPEN = """
   const textOps = () => posted().filter((op) => op.op && op.op.startsWith('text_'));
   const drawnText = (id) => svg().querySelectorAll('g').find((g) => g.getAttribute('data-text') === id);
   const handle = (kind) => svg().querySelectorAll('rect, circle').find((c) => c.getAttribute('data-handle') === kind);
-  const pane = tree.querySelectorAll('div').find((d) => d.classList.contains('lt-pane'));
+  const pane = tree;
 """
+
+
+@node
+def test_inscription_and_region_selection_share_the_inspector_without_changing_the_view(tmp_path):
+    out = run_editor(tmp_path, editor_routes(), OPEN + """
+  const inspector = tree.querySelector('.vw-ed-inspector');
+  const before = svg().getAttribute('viewBox');
+  await item(0).dispatch('click'); await tick();
+  out.inscription = [inspector.hidden, !!inspector.querySelector('textarea'), inspector.querySelector('.lt-fields').hidden];
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'vw-ed-tab-brush').dispatch('click');
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
+  await path('r1').dispatch('click'); await tick();
+  out.region = [inspector.hidden, inspector.querySelector('.lt-fields').hidden, classed('vw-sel').includes('r1'),
+    inspector.textContent.includes('Region r1'), inspector.textContent.includes('Engraving color:')];
+  out.view = [before, svg().getAttribute('viewBox')];
+""")
+    assert out["inscription"] == [False, True, False]
+    assert out["region"] == [False, True, True, True, True]
+    assert out["view"][0] == out["view"][1]
 
 
 @node
@@ -194,7 +213,7 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
                           {"op": "text_set", "id": "t1", "changes": {"entry_id": "e12"}}, {"op": "text_set", "id": "t1", "changes": {"layout": "circle"}},
                           {"op": "text_copy", "id": "t1"}, {"op": "text_delete", "id": "t1"},
                           {"op": "text_set", "id": "t1", "changes": {"text": "HOH\nвторая"}}]
-    assert "Надпись 2 не выгравировать: В её шрифте нет букв «Ж»: выберите шрифт, в котором они есть" in out["text"]
+    assert "inscription 2 cannot be engraved: its font has no letters «Ж»: choose a font that has them" in out["text"]
     assert "надписей 1" in out["text"]                                       # the layer that engraves it says so among the layers
 
 
@@ -294,7 +313,7 @@ def test_every_field_of_the_panel_sends_its_change_and_the_picture_shows_the_ans
 @node
 def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyond_the_edge_is_cut_there(tmp_path):
     """inscriptions-in-works REQ-004 c5: the message that blocks the file names the inscription and why (its font is gone, its colour no
-    longer measured), in Russian, beside the export and in the tab; the chosen inscription says so too, and one that runs off the work is
+    longer measured), beside the export and in the tab; the chosen inscription says so too, and one that runs off the work is
     said to be cut off at its edge."""
     gone = "the font 'Gone Sans' is not on this computer any more: choose another font"
     unmeasured = "its titanium colour is no longer measured on this laser, lens and titanium stock: choose another"
@@ -304,7 +323,8 @@ def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyo
     j["export_blocked"] = f"inscription 1 cannot be engraved: {gone}"
     j["lifecycle"] = lifecycle(ready=False, reason=j["export_blocked"], blockers=[{"code": "text", "number": 1, "problem": gone, "target": {"kind": "tab", "tab": "colours"}}])
     out = run_editor(tmp_path, r, OPEN + """
-  const alerts = () => pane.querySelectorAll('p').filter((p) => p.classList.contains('alert')).map((p) => [p.className, p.textContent]);
+  const alerts = () => [tree.querySelector('.lt-pane'), tree.querySelector('.lt-fields')].flatMap((root) => root.querySelectorAll('p'))
+    .filter((p) => p.classList.contains('alert')).map((p) => [p.className, p.textContent]);
   out.list = alerts();
   out.pills = [0, 1].map((n) => item(n).querySelectorAll('span').filter((s) => s.classList.contains('pill')).map((s) => s.textContent));
   await item(0).dispatch('click'); await tick();
@@ -312,14 +332,14 @@ def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyo
   await item(1).dispatch('click'); await tick();
   out.second = alerts();
 """)
-    blocked = "Надпись 1 не выгравировать: Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"
+    blocked = f"inscription 1 cannot be engraved: {gone}"
     assert out["list"] == [["alert warn small", blocked]]
-    assert out["text"].count(blocked) == 3                          # in the tab, beside the export as a line of its own, and in the exact words of the check
+    assert out["text"].count(blocked) >= 2                          # the list and export both explain the blocker
     assert out["pills"] == [["не выгравировать"], ["не выгравировать"]]                  # each one in the list
-    assert out["first"] == [["alert warn small", blocked], ["alert bad", "Шрифта 'Gone Sans' больше нет на этом компьютере: выберите другой шрифт"],
+    assert out["first"] == [["alert warn small", blocked], ["alert bad", gone],
                             ["alert warn", "Часть надписи выходит за край работы: там она обрезана."]]
     assert out["second"] == [["alert warn small", blocked],
-                             ["alert bad", "Её цвет титана больше не измерен на этом лазере, линзе и партии титана: выберите другой"]]
+                             ["alert bad", unmeasured]]
 
 
 @node

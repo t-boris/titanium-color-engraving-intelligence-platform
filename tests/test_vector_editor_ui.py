@@ -62,17 +62,10 @@ def test_the_editor_fills_elements_through_app_fill_and_never_through_replaceChi
     assert "innerHTML" not in EDITOR and "location.href" not in EDITOR and "window.open(" not in EDITOR
 
 
-def test_every_label_of_the_editor_is_russian_and_present():
-    labels = ("'Титан'", "'Исходные цвета'", "'Оригинал'", "'Вписать'", "'Кисть'", "'Пипетка'", "'Выделение'", "'Участок'",
-              "'Весь исходный цвет'", "'Заливка похожих'", "'Похожесть, ΔE'", "'Авто'", "'Слить в один контур'", "'Не гравировать'",
-              "'Гравировать'", "'Заменить'", "'Слои титана'", "'Слить в один'", "'Объединить исходные цвета'", "'вне допуска'",
-              "'Показать далёкие от оригинала'", "'Отменить'", "'Повторить'", "'Активный цвет'", "'Палитра'")
-    for label in labels:
-        assert label in EDITOR, label
-    assert "`Область ${rid} · исходный цвет № ${k + 1} · `, r.zone ? `фотозона ${r.zone.number}: " in EDITOR and "['титан: ',\n" in EDITOR and "`рецепт: ${params(e.parameters)}" in EDITOR
-    assert "`Слоёв ${(t.recipes ?? (j.layers || []).length) + zones} из ${j.layer_cap}` + (zones ? ` (фотозон ${zones})` : '')" in EDITOR
-    assert "` · время слоёв цвета ${duration(t.seconds)} · средний ΔE ${num(t.mean_delta_e)}`" in EDITOR
-    assert "btn('Подробно по цветам…', () => modal('Подробно по цветам', rows," in COLOURS      # the wide table opens in a window
+def test_selection_inspector_and_color_modes_have_distinct_english_labels():
+    for label in ("Selection inspector", "Color selection…", "Merge regions", "Split finer…", "Create photo zone", "Source colors"):
+        assert label in EDITOR
+    assert "['colours', 'Document colors', parts.colours]" in VECTOR
 
 
 def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it_on_a_narrow_screen():
@@ -276,14 +269,14 @@ def test_a_palette_of_hundreds_shows_sixty_squares_and_more_on_request_and_keeps
   const squares = () => tree.querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => b.getAttribute('data-entry'));
   const pal = () => tree.querySelectorAll('section').find((s) => s.querySelector('.vw-ed-palette'));
   out.first = squares(); out.foot = pal().querySelector('.lst-foot').textContent;
-  await byText(pal(), 'button', 'Показать ещё 60').dispatch('click'); await tick();
+  await byText(pal(), 'button', 'Show 60 more').dispatch('click'); await tick();
   out.second = squares().length; out.foot2 = pal().querySelector('.lst-foot').textContent;
-  await byText(pal(), 'button', 'Показать ещё 10').dispatch('click'); await tick();
+  await byText(pal(), 'button', 'Show 10 more').dispatch('click'); await tick();
   out.third = squares().length; out.foot3 = pal().querySelector('.lst-foot').textContent;
 """)
     assert len(out["first"]) == 60 and out["first"][:2] == ["p000", "p001"]          # the lightest first while no area is pointed at
-    assert out["foot"] == "показано 60 из 130Показать ещё 60"
-    assert out["second"] == 120 and out["foot2"] == "показано 120 из 130Показать ещё 10"
+    assert out["foot"] == "showing 60 of 130Show 60 more"
+    assert out["second"] == 120 and out["foot2"] == "showing 120 of 130Show 10 more"
     assert out["third"] == 130 and out["foot3"] == ""
 
 
@@ -338,13 +331,13 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   await byText(tree, 'button', 'Пипетка').dispatch('click');
   await path('r3').dispatch('click');
   out.pipettePicked = tree.querySelectorAll('button').filter((b) => b.classList.contains('picked')).map((b) => b.getAttribute('data-entry'));
-  await byText(tree, 'button', 'Выделение').dispatch('click');
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
   await path('r1').dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true});
   out.selected = classed('vw-sel');
-  out.selection = section('Выделение').textContent;
-  await byText(section('Выделение'), 'button', 'Слить в один контур').dispatch('click'); await tick();
-  await byText(section('Выделение'), 'button', 'Не гравировать').dispatch('click'); await tick();
+  out.selection = section('Selection').textContent;
+  await byText(section('Selection'), 'button', 'Merge regions').dispatch('click'); await tick();
+  await byText(section('Selection'), 'button', 'Exclude from engraving').dispatch('click'); await tick();
   out.selectedAfter = classed('vw-sel');
   const layerBoxes = tree.querySelectorAll('input').filter((i) => (i.getAttribute('aria-label') || '').startsWith('Отметить слой'));
   for (const box of layerBoxes.slice(0, 2)) { box.checked = true; await box.dispatch('change'); }
@@ -380,7 +373,7 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
   out.postedAfterDrag = posted().length;
 """)
     assert out["altPicked"] == ["e13"] and out["pipettePicked"] == ["e12"]                # r4's own colour, then r3's colour's
-    assert out["selected"] == ["r1", "r2"] and "Выбрано областей: 2" in out["selection"] and out["selectedAfter"] == ["r1", "r2"]
+    assert out["selected"] == ["r1", "r2"] and "Selected regions: 2" in out["selection"] and out["selectedAfter"] == ["r1", "r2"]
     assert out["target"] == "e11" and out["layersChecked"] == 0
     assert out["posted"] == [{"op": "merge_regions", "regions": ["r1", "r2"]}, {"op": "exclude_region", "regions": ["r1", "r2"]},
                              {"op": "merge_titanium", "entries": ["e11", "e12"], "into": "e11"}, {"op": "merge_colours", "colours": [0, 1]}, {"op": "undo"}]
@@ -395,8 +388,8 @@ def test_pipette_selection_merges_history_far_outlines_views_zoom_and_pan(tmp_pa
 def test_the_merge_of_areas_is_offered_only_for_a_connected_selection_and_says_why_not(tmp_path):
     """Editor REQ-048, DEC-080: the button is enabled while the selected areas, two or more, are connected through shared borders."""
     out = run_editor(tmp_path, routes(), """
-  const merge = () => byText(section('Выделение'), 'button', 'Слить в один контур');
-  const shown = () => [merge().disabled, section('Выделение').textContent];
+  const merge = () => byText(section('Selection'), 'button', 'Merge regions');
+  const shown = () => [merge().disabled, section('Selection').textContent];
   await byText(tree, 'button', 'Выделение').dispatch('click');
   await path('r1').dispatch('click');
   out.one = shown();
@@ -413,9 +406,9 @@ def test_the_merge_of_areas_is_offered_only_for_a_connected_selection_and_says_w
   out.fetches = ctx.requests.filter((r) => r.path.endsWith('/neighbours')).length;
   out.posted = posted();
 """)
-    why = "не связаны общими границами"
-    assert out["one"][0] is True and why not in out["one"][1] and "соседние по границе" in out["one"][1]
-    assert out["apart"][0] is True and why in out["apart"][1] and "касания углом недостаточно" in out["apart"][1]
+    why = "do not share connected edges"
+    assert out["one"][0] is True and why not in out["one"][1] and "share an edge" in out["one"][1]
+    assert out["apart"][0] is True and why in out["apart"][1] and "touching at a corner is not enough" in out["apart"][1]
     assert out["chain"][0] is False and why not in out["chain"][1]
     assert out["pair"][0] is False and why not in out["pair"][1]
     assert out["stray"][0] is True and why in out["stray"][1]
@@ -431,13 +424,13 @@ def test_if_the_neighbours_cannot_be_read_the_merge_stays_offered_and_the_server
   await byText(tree, 'button', 'Выделение').dispatch('click');
   await path('r1').dispatch('click');
   await path('r3').dispatch('click', {shiftKey: true});
-  const merge = byText(section('Выделение'), 'button', 'Слить в один контур');
+  const merge = byText(section('Selection'), 'button', 'Merge regions');
   out.disabled = merge.disabled;
-  out.selection = section('Выделение').textContent;
+  out.selection = section('Selection').textContent;
   await merge.dispatch('click'); await tick();
   out.posted = posted();
 """)
-    assert out["disabled"] is False and "Не удалось проверить, какие области соседние" in out["selection"]
+    assert out["disabled"] is False and "Could not check neighboring regions" in out["selection"]
     assert out["posted"] == [{"op": "merge_regions", "regions": ["r1", "r3"]}]
 
 
@@ -449,7 +442,7 @@ def test_a_merge_that_makes_a_new_split_version_loads_its_picture_and_keeps_the_
   await path('r1').dispatch('click');
   await path('r2').dispatch('click', {shiftKey: true});
   svg().setAttribute('data-mark', 'first');
-  await byText(section('Выделение'), 'button', 'Слить в один контур').dispatch('click'); await tick(); await tick();
+  await byText(section('Selection'), 'button', 'Merge regions').dispatch('click'); await tick(); await tick();
   out.fresh = svg().getAttribute('data-mark') !== 'first' && tree.querySelectorAll('svg').filter((s) => (s.getAttribute('class') || '').includes('vw-ed-svg')).length === 1;
   out.viewBox = svg().getAttribute('viewBox');
   out.selected = classed('vw-sel');
@@ -552,7 +545,7 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
   out.better = [block.textContent, order(block)];
   const grid = () => dialog.querySelector('.lst-rows');
   out.near = order(grid());
-  const sorter = dialog.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const sorter = dialog.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   sorter.value = 'stable'; await sorter.dispatch('change'); out.stable = order(grid());
   sorter.value = 'fast'; await sorter.dispatch('change'); out.fast = order(grid());
   out.classes = Object.fromEntries(grid().querySelectorAll('button').filter((b) => b.getAttribute('data-entry')).map((b) => [b.getAttribute('data-entry'), b.className]));
@@ -566,7 +559,7 @@ def test_the_picker_offers_more_stable_colours_near_an_unconfirmed_one_and_order
     assert out["near"] == ["e12", "e11", "e13", "e14"]                                                            # by dE to the source colour of this row
     assert out["stable"] == ["e11", "e14", "e12", "e13"]                                                           # confirmed (the more confident first), once, doubtful
     assert out["fast"] == ["e12", "e11", "e13", "e14"]                                                             # equal times keep the order by dE; e14 has no estimate: last
-    assert out["chips"] == ["Все · 4", "проверены повтором · 2", "одна гравировка · 1", "сомнительные · 1"]
+    assert out["chips"] == ["All · 4", "проверены повтором · 2", "одна гравировка · 1", "сомнительные · 1"]
     assert out["repeated"] == ["e11", "e14"] and out["searched"] == ["e14"] and out["now"] is True
     assert "steady-stable" in out["classes"]["e11"] and "steady-single" in out["classes"]["e12"] and "steady-doubtful" in out["classes"]["e13"]
 
@@ -598,14 +591,14 @@ def test_a_colour_picked_for_the_selection_is_sent_as_one_paint_of_every_selecte
   await byText(tree, 'button', 'Выделение').dispatch('click');
   await path('r1').dispatch('click');
   await path('r3').dispatch('click', {shiftKey: true});
-  await byText(section('Выделение'), 'button', 'Цвет выделенному…').dispatch('click'); await tick(); await tick();
+  await byText(section('Selection'), 'button', 'Color selection…').dispatch('click'); await tick(); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   out.title = dialog.textContent;
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e13').dispatch('click');
   await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
   out.posted = posted();
 """)
-    assert "Цвет титана для выделенных областей (2)" in out["title"]
+    assert "Titanium color for selected regions (2)" in out["title"]
     assert out["posted"] == [{"op": "paint", "scope": "region", "regions": ["r1", "r3"], "entry_id": "e13"}]
 
 
@@ -656,6 +649,70 @@ def zone_routes(zoned=True) -> dict:
 
 
 @node
+def test_selected_photo_zone_has_basic_settings_in_the_inspector_without_resetting_the_canvas(tmp_path):
+    out = run_editor(tmp_path, zone_routes(), """
+  ctx.document.body.append(tree);
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
+  const originalView = svg().getAttribute('viewBox');
+  await path('r3').dispatch('click'); await tick();
+  const inspector = () => tree.querySelector('.vw-ed-inspector');
+  out.shown = [inspector().hidden, inspector().textContent.includes('Photo zone 1'), svg().getAttribute('viewBox') === originalView];
+  out.controls = [byLabel(inspector(), 'select', 'Engraving kind').value,
+    byLabel(inspector(), 'input', 'Image brightness, %').value,
+    inspector().querySelectorAll('details').map((d) => d.querySelector('summary').textContent)];
+  const brightness = byLabel(inspector(), 'input', 'Image brightness, %');
+  inspector().querySelector('.ge-gamma-calibration').open = true;
+  brightness.focus();
+  brightness.value = '15'; await brightness.dispatch('change'); await tick();
+  out.saved = posted().filter((op) => op.op === 'photo_set');
+  out.focus = ctx.document.activeElement && ctx.document.activeElement.getAttribute('aria-label');
+  out.expanded = inspector().querySelector('.ge-gamma-calibration').open;
+  out.view = svg().getAttribute('viewBox');
+  await byText(inspector(), 'button', 'Open detailed photo editor').dispatch('click');
+  out.opened = ctx.__went;
+""")
+    assert out["shown"] == [False, True, True]
+    assert out["controls"] == ["grayscale", "0", ["Gamma calibration", "Power calibration"]]
+    assert out["saved"] == [{"op": "photo_set", "zone": 1, "tone": {"brightness": 15, "contrast": 0, "gamma": 1}}]
+    assert out["focus"] == "Image brightness, %" and out["expanded"]
+    assert out["view"] == "0 0 40 20" and out["opened"] == ["/vector-zone?work=7&zone=1"]
+
+
+@node
+def test_photo_zone_inspector_rejects_invalid_power_before_saving(tmp_path):
+    out = run_editor(tmp_path, zone_routes(), """
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
+  await path('r3').dispatch('click'); await tick();
+  const inspector = () => tree.querySelector('.vw-ed-inspector');
+  const low = byLabel(inspector(), 'input', 'Min power, % (white)');
+  const high = byLabel(inspector(), 'input', 'Max power, % (black)');
+  low.value = '40'; await low.dispatch('change'); await tick();
+  out.invalid = [posted().length, high.getAttribute('aria-invalid'), inspector().textContent.includes('Min power must not exceed Max.')];
+  low.value = '10'; await low.dispatch('change'); await tick();
+  out.saved = posted().filter((op) => op.op === 'photo_set');
+""")
+    assert out["invalid"] == [0, "true", True]
+    assert out["saved"] == [{"op": "photo_set", "zone": 1, "min_power": 10, "max_power": 29}]
+
+
+@node
+def test_photo_zone_inspector_treats_a_held_slider_key_as_one_change(tmp_path):
+    out = run_editor(tmp_path, zone_routes(), """
+  await tree.querySelectorAll('button').find((b) => b.getAttribute('data-tool') === 'select').dispatch('click');
+  await path('r3').dispatch('click'); await tick();
+  const range = byLabel(tree.querySelector('.vw-ed-inspector'), 'input', 'Image brightness, % slider');
+  await range.dispatch('keydown', {key: 'ArrowRight'});
+  range.value = '1'; await range.dispatch('input'); await range.dispatch('change');
+  range.value = '2'; await range.dispatch('input'); await range.dispatch('change');
+  out.during = posted().length;
+  await range.dispatch('keyup', {key: 'ArrowRight'}); await tick();
+  out.after = posted().filter((op) => op.op === 'photo_set');
+""")
+    assert out["during"] == 0
+    assert out["after"] == [{"op": "photo_set", "zone": 1, "tone": {"brightness": 2, "contrast": 0, "gamma": 1}}]
+
+
+@node
 def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tmp_path):
     out = run_editor(tmp_path, zone_routes(zoned=False), """
   await byText(tree, 'button', 'Выделение').dispatch('click');
@@ -674,12 +731,12 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
   out.lines = svg().querySelectorAll('polyline').length;
   out.points = JSON.parse(ctx.requests.find((r) => r.path === '/api/vector/7/lasso').body).points;
   out.viewBox = svg().getAttribute('viewBox');
-  out.selection = section('Выделение').textContent;
+  out.selection = section('Selection').textContent;
   await lasso({altKey: true});
   out.removed = classed('vw-sel');
   await lasso({shiftKey: true});
   out.added = classed('vw-sel');
-  await byText(section('Выделение'), 'button', 'Сделать фотозоной').dispatch('click'); await tick();
+  await byText(section('Selection'), 'button', 'Create photo zone').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
   out.photoTab = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
 """)
@@ -688,7 +745,7 @@ def test_a_lasso_selects_the_regions_it_encloses_and_they_become_a_photo_zone(tm
     assert out["outline"] == ["M0 0 L0 10", "M0 0 L10 0", "M0 10 L10 10", "M10 0 L20 0", "M10 10 L20 10", "M20 0 L20 10"]   # one shape: not r1|r2
     assert out["selPaths"] == 2                                                      # its line and its halo, not a line per region
     assert out["points"][0] == [2, 2] and out["points"][2] == [12, 14] and out["viewBox"] == "0 0 40 20"   # mm under «meet», nothing panned
-    assert "Выбрано областей: 2" in out["selection"] and "Сделать фотозоной" in out["selection"] and "обвести мышью — лассо" not in out["selection"]
+    assert "Selected regions: 2" in out["selection"] and "Create photo zone" in out["selection"] and "обвести мышью — лассо" not in out["selection"]
     assert out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}] and out["photoTab"] == "true"
 
 
@@ -755,8 +812,8 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
   await byText(zone, 'button', 'Выделить').dispatch('click');
   out.selectedZone = classed('vw-sel');
   out.stayed = tree.querySelectorAll('button').find((b) => b.textContent === 'Фото' && b.getAttribute('role') === 'tab').getAttribute('aria-selected');
-  out.selection = section('Выделение').textContent;
-  await byText(section('Выделение'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
+  out.selection = section('Selection').textContent;
+  await byText(section('Selection'), 'button', 'Return to colors').dispatch('click'); await tick();
   await byText(tree, 'button', 'Фото').dispatch('click');
   await byText(section('Фотозоны'), 'button', 'Вернуть в цвета').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
@@ -776,7 +833,7 @@ def test_a_photo_zone_shows_its_picture_and_its_kind_scale_and_powers_change_it(
     assert out["others"] == [["500 мм/с · 60 кГц · 200 нсшаг 0.0212 мм · 3–40 % · без карты", "false", ["", ""]]] and not out["othersOpen"]
     assert "Другие шкалы этого лазера и титана: 1" in out["card"]
     assert out["bar"] == ["", "", "off"]                                             # the zone's Min..Max bright, the rest dimmed
-    assert out["selectedZone"] == ["r3", "r4"] and "из них в фотозонах: 2" in out["selection"] and "Добавить в фотозону 1" in out["selection"]
+    assert out["selectedZone"] == ["r3", "r4"] and "in photo zones: 2" in out["selection"] and "Add to photo zone 1" in out["selection"]
     assert out["stayed"] == "true"                                                   # «Выделить» keeps «Фото»: the selection is shown there
     zone_outline = ["M20 0 L20 10", "M20 0 L30 0", "M20 10 L30 10", "M30 0 L40 0", "M30 10 L40 10", "M40 0 L40 10"]   # r3 + r4, not r3|r4
     assert out["zoneOutline"] == zone_outline and out["zonesShownBefore"] is False and out["zonesShown"] is True   # framed on «Фото»
@@ -797,10 +854,10 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
     out = run_editor(tmp_path, zone_routes(zoned=False), """
   const tab = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') === 'tab');
   const tool = (name) => tree.querySelectorAll('button').find((b) => b.textContent === name && b.getAttribute('role') !== 'tab').getAttribute('aria-pressed');
-  const panelOf = (el) => { for (let n = el; n; n = n.parentNode) if (n.getAttribute && n.getAttribute('role') === 'tabpanel') return n.getAttribute('id'); return null; };
-  out.before = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  const panelOf = (el) => { for (let n = el; n; n = n.parentNode) if (n.classList && n.classList.contains('vw-ed-inspector')) return 'inspector'; return null; };
+  out.before = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
   await tab('Фото').dispatch('click');
-  out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  out.on = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
   out.status = tree.querySelector('.vw-ed-tool-status').textContent;
   out.stage = tree.querySelectorAll('div').find((d) => (d.className || '').startsWith('vw-ed-stage')).className;
   out.empty = section('Фотозоны').textContent;
@@ -808,19 +865,19 @@ def test_the_photo_tab_selects_regions_and_holds_the_selection_with_its_actions(
   await path('r2').dispatch('click', {shiftKey: true});
   out.selected = classed('vw-sel');
   out.sent = ctx.requests.filter((r) => r.method === 'POST').length;
-  out.actions = section('Выделение').querySelectorAll('button').map((b) => b.textContent);
-  await byText(section('Выделение'), 'button', 'Сделать фотозоной').dispatch('click'); await tick();
+  out.actions = section('Selection').querySelectorAll('button').map((b) => b.textContent);
+  await byText(section('Selection'), 'button', 'Create photo zone').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
   await tab('Кисть').dispatch('click');
-  out.back = [tool('Кисть'), tool('Выделение'), panelOf(section('Выделение'))];
+  out.back = [tool('Кисть'), tool('Выделение'), panelOf(section('Selection'))];
 """)
-    assert out["before"] == ["true", "false", "vw-ed-tab-panel-brush"]
-    assert out["on"] == ["false", "true", "vw-ed-tab-panel-photo"] and "tool-select" in out["stage"]
+    assert out["before"] == ["true", "false", "inspector"]
+    assert out["on"] == ["false", "true", "inspector"] and "tool-select" in out["stage"]
     assert "selection" in out["status"] and "selects a region" in out["status"]
-    assert "Обведите мышью (лассо) области на картинке" in out["empty"] and "в «Выделении» выше" in out["empty"]
+    assert "Select regions on the canvas" in out["empty"] and "inspector" in out["empty"]
     assert out["selected"] == ["r1", "r2"] and out["sent"] == 0                      # a click on «Фото» selects, it does not paint
-    assert "Сделать фотозоной" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]
-    assert out["back"] == ["false", "true", "vw-ed-tab-panel-brush"]                 # back on «Кисть»: the tool as left, the selection there
+    assert "Create photo zone" in out["actions"] and out["posted"] == [{"op": "photo_add", "regions": ["r1", "r2"]}]
+    assert out["back"] == ["false", "true", "inspector"]
 
 
 @node
@@ -838,7 +895,7 @@ def test_escape_drops_the_selection_a_lasso_being_drawn_and_the_line_under_the_p
   const field = tree.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number');
   await esc(field);
   out.after = [classed('vw-sel'), classed('vw-hot'), classed('vw-zone')];
-  out.selection = section('Выделение').textContent;
+  out.selection = section('Selection').textContent;
   await path('r2').dispatch('pointermove', {clientX: 21, clientY: 20});
   out.moved = classed('vw-hot');
   const card = tree.querySelectorAll('article').find((a) => a.classList.contains('vp-zone'));
@@ -912,7 +969,7 @@ def many_colours(n):
 
 @node
 def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sorted_and_opened_on_a_click(tmp_path):
-    """DEC-090: 33 source colours and 33 layers show 30 lines each and «Показать ещё 3»; «Сначала дальние (ΔE)» puts the farthest colour
+    """DEC-090: 33 source colours and 33 layers show 30 lines each and «Show 3 more»; «Сначала дальние (ΔE)» puts the farthest colour
     first; where a colour is known from and «Не гравировать» are under its line, only once it is opened."""
     j = many_colours(33)
     out = run_editor(tmp_path, {**routes(), "/api/vector/7": {"status": 200, "json": j}, "/api/vector/7/colouring": {"status": 200, "json": j}}, """
@@ -921,7 +978,7 @@ def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sort
   out.colourLines = mains(colours).length; out.colourCount = colours.querySelector('.lst-count').textContent;
   out.layerLines = mains(layers).length; out.layerCount = layers.querySelector('.lst-count').textContent;
   out.closed = [colours.querySelectorAll('button').some((b) => b.textContent === 'Не гравировать'), colours.querySelectorAll('.lst-det').filter((d) => !d.hidden).length];
-  const sort = colours.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const sort = colours.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   out.sorts = sort.querySelectorAll('option').map((o) => o.textContent);
   sort.value = 'far'; await sort.dispatch('change'); await tick();
   out.farthest = mains(colours).slice(0, 2).map((m) => m.querySelector('strong').textContent);
@@ -934,8 +991,8 @@ def test_a_work_of_many_colours_shows_its_colours_and_layers_by_pages_of_30_sort
   await box.dispatch('click', {stopPropagation() { stopped = true; }});
   out.boxStops = stopped;
 """)
-    assert (out["colourLines"], out["colourCount"]) == (30, "показано 30 из 33")
-    assert (out["layerLines"], out["layerCount"]) == (30, "показано 30 из 33")
+    assert (out["colourLines"], out["colourCount"]) == (30, "showing 30 of 33")
+    assert (out["layerLines"], out["layerCount"]) == (30, "showing 30 of 33")
     assert out["closed"] == [False, 0]                                                            # nothing open until a line is clicked
     assert out["sorts"] == ["По номеру", "Сначала дальние (ΔE)", "Больше площадь"]
     assert out["farthest"] == ["№ 33", "№ 32"]
@@ -949,12 +1006,12 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
     """Feature work-size-and-splitting-a-region-again, REQ-002: «Разбить мельче…» is offered for one selected region only; the window asks for
     2..8 colours, refuses another number before any request and sends ``split_region`` once."""
     out = run_editor(tmp_path, routes(colouring_view=view(version=2)), """
-  const finer = () => byText(section('Выделение'), 'button', 'Разбить мельче…');
+  const finer = () => byText(section('Selection'), 'button', 'Split finer…');
   await byText(tree, 'button', 'Выделение').dispatch('click');
   await path('r1').dispatch('click');
-  out.one = finer().disabled;
+  out.one = finer().disabled; out.oneReason = section('Selection').textContent;
   await path('r2').dispatch('click', {shiftKey: true});
-  out.two = finer().disabled;
+  out.two = finer().disabled; out.twoReason = section('Selection').textContent;
   await path('r2').dispatch('click', {shiftKey: true});
   await finer().dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
@@ -973,6 +1030,7 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
   out.closed = ctx.document.body.querySelector('.modal') == null;
 """)
     assert out["one"] is False and out["two"] is True
+    assert "Merge requires at least two" in out["oneReason"] and "Select one region to split it finer" in out["twoReason"]
     assert "Разбить область мельче" in out["dialog"] and "Внешняя граница и соседи остаются как были" in out["dialog"] and out["prefill"] == "3"
     # the wrong number is refused beside its box, which keeps it and is tied to the words; no request and no toast (ux-save-feedback-p0, REQ-003)
     assert out["refusedPosts"] == 0 and out["toasts"] == []

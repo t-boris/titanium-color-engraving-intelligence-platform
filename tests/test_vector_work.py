@@ -1098,7 +1098,7 @@ def test_the_screen_shows_the_two_sections_and_one_large_picture_painted_in_tita
   out.pictures = screen.querySelectorAll('svg').map((s) => s.getAttribute('class'));
 """)
     text = out["text"]
-    assert out["tabs"] == ["Разбиение", "Цвета", "AI", "Варианты", "Результат", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
+    assert out["tabs"] == ["Разбиение", "Document colors", "AI", "Варианты", "Результат", "Файл"] and out["inScreen"] == []          # one screen: tabs, the picture, the panel
     assert not any(old in text for old in ("1. Разбиение", "2. Цвета", "3. Файл LightBurn"))
     assert "vw-ed-svg" in out["pictures"] and "vw-areas" in out["pictures"]
     for part in ("Файл LightBurn", "Оценка времени всей работы", "лицо не найдено", "Слои титана", "Исходные цвета",
@@ -1320,9 +1320,9 @@ def test_an_export_refused_by_the_server_is_shown_translated_and_the_file_is_fet
   out.retry = failure ? failure.querySelectorAll('button').map((b) => b.textContent) : [];
 """)
     assert out["disabled"] is False and out["reenabled"]
-    assert any("Все области исключены: гравировать нечего" in t for t in out["toast"]) and not any("every region" in t for t in out["toast"])
+    assert any("every region is excluded: there is nothing to engrave" in t for t in out["toast"])
     assert f"GET /api/vector/{j['id']}/export.lbrn2" in out["requests"]
-    assert out["failure"].startswith("Файл не получен: Все области исключены: гравировать нечего") and out["retry"] == ["Повторить"]
+    assert out["failure"].startswith("Файл не получен: every region is excluded: there is nothing to engrave") and out["retry"] == ["Повторить"]
 
 
 def test_the_area_overlay_does_not_paint_the_chart_background_over_the_picture():
@@ -1495,7 +1495,7 @@ def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_
   const opened = regions.querySelectorAll('.lst-det').filter((d) => !d.hidden);
   out.opened = opened.map((d) => d.textContent);
   out.taskAfter = opened[0].querySelectorAll('select').map((s) => s.getAttribute('aria-label'));
-  const sort = regions.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Порядок');
+  const sort = regions.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Sort order');
   sort.value = 'weak'; await sort.dispatch('change'); await tick();
   out.weakFirst = mains(regions).slice(0, 5).map((m) => m.querySelector('strong').textContent);
   out.chips = regions.querySelectorAll('.lst-chip').map((c) => c.textContent);
@@ -1503,15 +1503,15 @@ def test_the_regions_and_the_history_of_a_traced_work_are_short_lists_edited_on_
   out.historyCount = history.querySelector('.lst-count').textContent;
   out.revert = history.querySelectorAll('.lst-act')[0].querySelectorAll('button').map((b) => b.textContent);
 """)
-    assert out["lines"] == 30 and out["count"] == "показано 30 из 36"
+    assert out["lines"] == 30 and out["count"] == "showing 30 of 36"
     assert out["first"].startswith("r1Есть рецепт") and "1.00 мм²" in out["first"] and f"группа {first['layer_key']}" in out["first"]
     assert out["actions"][:2] == ["Удалить", "Исключить (без рецепта)"]
     assert out["taskBefore"] == 0 and out["openAfterBox"] == 0 and out["boxStops"] is True         # the box marks the region, it does not open the line
     (opened,) = out["opened"]
     assert "Контур · 2.00 мм²" in opened and "Перенести" in opened and out["taskAfter"] == ["Задача области r2"]
     assert out["weakFirst"] == ["r9", "r18", "r27", "r36", "r1"]
-    assert out["chips"] == ["Все · 36", "Есть рецепт · 32", "Мало данных · 4"]
-    assert out["history"][0].startswith("v22") and out["history"][1].startswith("v21") and out["historyCount"] == "показано 20 из 22"
+    assert out["chips"] == ["All · 36", "Есть рецепт · 32", "Мало данных · 4"]
+    assert out["history"][0].startswith("v22") and out["history"][1].startswith("v21") and out["historyCount"] == "showing 20 of 22"
     assert out["revert"] == ["Вернуть эту версию"]
 
 

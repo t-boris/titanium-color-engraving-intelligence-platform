@@ -358,10 +358,11 @@ const Lettering = (() => {
       + 'квадратная — меняет размер, у пути тащатся его точки. Каждое изменение отменяется Ctrl+Z.');
     const blocked = h('div', {});
     const layers = h('div', {});
+    const fieldSection = h('section', {class: 'vw-ed-section lt-fields'}, fields);
     const el = h('div', {class: 'vw-ed-pane lt-pane'},
       h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Надписи'), h('span', {class: 'spacer'}),
         btn('Добавить надпись', () => add(), 'primary')), about, blocked, list, layers),
-      h('section', {class: 'vw-ed-section'}, fields));
+      o.externalFields ? null : fieldSection);
     const texts = () => view.texts || [];
     const spec = () => texts().find((t) => t.id === selected) || null;
 
@@ -385,6 +386,7 @@ const Lettering = (() => {
       if (id) last = id;
       built = null;
       render();
+      if (o.selectionChanged) o.selectionChanged(selected);
     }
 
     async function loadPalette() {
@@ -722,7 +724,7 @@ const Lettering = (() => {
       const hit = target && target.closest('[data-text]');
       const t = handle ? spec() : hit ? texts().find((x) => x.id === hit.getAttribute('data-text')) : null;
       if (!t || !t.shown) return false;
-      if (t.id !== selected) { selected = last = t.id; built = null; renderList(); renderFields(); }
+      if (t.id !== selected) { selected = last = t.id; built = null; renderList(); renderFields(); if (o.selectionChanged) o.selectionChanged(selected); }
       const kind = handle ? handle.getAttribute('data-handle') : 'move';
       drag = {kind, start: mm, t, index: handle ? Number(handle.getAttribute('data-index')) : null, moved: false, at: mm};
       draw();
@@ -911,7 +913,7 @@ const Lettering = (() => {
     /** The work as it is now (after any operation, undo or redo): the list, the chosen inscription's fields and the layer. */
     function update(next) {
       view = next;
-      if (selected && !spec()) { selected = null; built = null; }
+      if (selected && !spec()) { selected = null; built = null; if (o.selectionChanged) o.selectionChanged(null); }
       loadPalette();
       if (photoSvg) photoSvg.setAttribute('class', 'lt-over' + (o.open() ? ' open' : ''));
       render();
@@ -924,7 +926,8 @@ const Lettering = (() => {
 
     loadPalette();
     render();
-    return {el, layer, update, down, move, up, click, escape, attach, opened, redraw: draw, busy: () => !!drag || !!path, selected: () => selected};
+    return {el, fields: fieldSection, layer, update, down, move, up, click, escape, attach, opened, redraw: draw,
+      busy: () => !!drag || !!path, selected: () => selected, deselect: () => { if (selected) select(null); }};
   }
 
   return {create, fontWindow, SCRIPTS, KINDS, SOURCES};

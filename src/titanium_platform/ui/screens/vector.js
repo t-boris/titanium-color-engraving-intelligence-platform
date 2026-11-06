@@ -482,7 +482,7 @@
     show(j);
     parts = VectorColours.parts(j, run, permit);
     frame = VectorWorkspace.frame({head: [head.el, status.el, summaryBox, banner.el], editor: parts.editor, initial: 'colours', items: [
-      ['split', 'Разбиение', split], ['colours', 'Цвета', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
+      ['split', 'Разбиение', split], ['colours', 'Document colors', parts.colours], ['ai', 'AI', parts.ai], ['variants', 'Варианты', parts.variants],
       ['review', VectorReview.tabLabel(j), review], ['file', 'Файл', h('div', {class: 'stack'}, file, about)]]});
     if (accepted) {                                                   // back from accepting a result: what it did to this work (kept in the work, so it is told again)
       get(`/pairs/${accepted}/work-summary`).then((found) => {
