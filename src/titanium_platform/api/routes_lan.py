@@ -110,12 +110,12 @@ def forget_ai_key(request: Request):
 
 
 PAIR_PAGE = """<!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Подключение планшета</title>
+<title>Connect tablet</title>
 <style>
   body {margin:0;padding:32px 20px;background:#0f1522;color:#e6ecf7;font:16px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
   main {max-width:460px;margin:0 auto}
@@ -131,42 +131,36 @@ PAIR_PAGE = """<!doctype html>
 </head>
 <body>
 <main>
-  <h1>Подключение планшета</h1>
-  <p class="muted">Мастерская «__NAME__». Введите код с экрана «Сеть» на компьютере мастерской: он действует пять минут и один раз.</p>
+  <h1>Connect tablet</h1>
+  <p class="muted">Workshop “__NAME__”. Enter the code shown on the workshop computer’s Network screen. It is valid for five minutes and one use.</p>
   <form>
-    <label for="code">Код</label>
+    <label for="code">Code</label>
     <input id="code" name="code" class="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
-    <label for="name">Имя этого планшета</label>
-    <input id="name" name="name" maxlength="64" placeholder="Планшет">
-    <button type="submit">Подключить</button>
+    <label for="name">Tablet name</label>
+    <input id="name" name="name" maxlength="64" placeholder="Tablet">
+    <button type="submit">Connect</button>
   </form>
   <p id="note" role="alert"></p>
-  <p class="muted">Если браузер предупреждает о сертификате, сравните отпечаток центра сертификации мастерской, затем продолжите; чтобы
-    предупреждений не было, <a href="/api/lan/ca">скачайте сертификат</a> и установите его один раз как профиль.</p>
+  <p class="muted">If the browser warns about the certificate, compare the workshop certificate authority fingerprint before continuing. To avoid future warnings,
+    <a href="/api/lan/ca">download the certificate</a> and install it once as a profile.</p>
   <code>__FINGERPRINT__</code>
 </main>
 <script>
 (() => {
-  const RU = {
-    'there is no pairing code now: ask for a new one on the network screen of the workshop': 'Кода сейчас нет: попросите новый на экране «Сеть» мастерской',
-    'the pairing code was entered wrongly too many times and is cancelled: ask for a new one on the network screen of the workshop':
-      'Код введён неверно слишком много раз и отменён: попросите новый на экране «Сеть» мастерской',
-    'the pairing code is wrong: check the six digits on the network screen of the workshop': 'Код неверный: сверьте шесть цифр на экране «Сеть» мастерской',
-    'the name of the device is one to 64 characters': 'Имя планшета — от 1 до 64 знаков'};
   const form = document.querySelector('form'), note = document.getElementById('note'), button = form.querySelector('button');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     note.textContent = '';
     button.disabled = true;
     try {
-      const body = {code: form.code.value.trim(), name: form.name.value.trim() || 'Планшет'};
+      const body = {code: form.code.value.trim(), name: form.name.value.trim() || 'Tablet'};
       const answer = await fetch('/api/lan/pair', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
       let data = null;
       try { data = await answer.json(); } catch (_) { data = null; }
-      if (!answer.ok) { const raw = data && data.error ? data.error : 'Ошибка ' + answer.status; note.textContent = RU[raw] || raw; return; }
+      if (!answer.ok) { const raw = data && data.error ? data.error : 'Error ' + answer.status; note.textContent = raw; return; }
       location.href = '/';
     } catch (_) {
-      note.textContent = 'Нет связи с мастерской';
+      note.textContent = 'Cannot connect to the workshop';
     } finally {
       button.disabled = false;
     }

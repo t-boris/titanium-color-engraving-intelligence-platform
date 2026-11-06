@@ -140,7 +140,7 @@ def test_an_unpaired_tablet_reaches_only_the_pairing_page_the_pairing_call_and_t
     assert refused.status_code == 403 and "pair this tablet" in refused.json()["error"]
     assert tablet.post("/api/materials", json={"name": "x"}).status_code == 403
     page = tablet.get("/pair")
-    assert page.status_code == 200 and "Подключение планшета" in page.text and owner.get("/api/lan").json()["fingerprint"] in page.text
+    assert page.status_code == 200 and "Connect tablet" in page.text and owner.get("/api/lan").json()["fingerprint"] in page.text
     assert page.headers["cache-control"] == "no-store"
     ca = tablet.get("/api/lan/ca")
     assert ca.status_code == 200 and ca.content.startswith(b"-----BEGIN CERTIFICATE-----") and "titanium-workshop-ca.crt" in ca.headers["content-disposition"]
