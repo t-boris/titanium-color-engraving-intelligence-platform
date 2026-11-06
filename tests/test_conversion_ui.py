@@ -19,7 +19,7 @@ def test_the_vector_screen_is_loaded_after_the_helpers_it_uses_and_has_a_menu_en
         assert order[dep] < order["/screens/vector.js"], dep
     assert order["/screens/photo-form.js"] < order["/screens/plan.js"]      # the plan screen lists questioned entries with PhotoForm
     router = source("router.js")
-    assert "['/vector', 'Векторная работа']" in router and "vector: 'vector'" in router
+    assert "['/vector', 'Vector work']" in router and "vector: 'vector'" in router
     nav = re.search(r"const NAV = \[(.*?)\];", router, re.S).group(1)
     icons = re.search(r"const ICONS = \[(.*?)\];", router, re.S).group(1)
     assert nav.count("['/") == icons.count("'<")                          # one icon per menu entry, in menu order
@@ -101,8 +101,8 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
 def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour_within_the_threshold_is_chosen():
     start, plan = source("screens/artwork-start.js"), source("screens/artwork.js")
     # the time limit is a field read as colormap.time_limit reads it (above 0 seconds per cm², empty is none): the unit is told by the field, the box keeps a wrong text
-    assert "fd.append('max_time', v.max_time)" in start and "'Наибольшее время гравировки', maxTime, {quantity: 'maxTime'" in start
-    assert "выбирается самый быстрый" in start and "выбирается самый быстрый" in plan and "'Время на см²'" in plan
+    assert "fd.append('max_time', v.max_time)" in start and "'Maximum engraving time', maxTime, {quantity: 'maxTime'" in start
+    assert "The fastest estimated titanium color" in start and "выбирается самый быстрый" in plan and "'Время на см²'" in plan
     assert "{threshold: v.threshold, max_time: v.max_time}" in plan and "seconds(e.time_s_per_cm2)" in start
 
 
