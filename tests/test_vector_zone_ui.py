@@ -208,12 +208,12 @@ def test_a_zone_opens_on_the_scales_of_its_works_laser_lens_and_titanium_with_it
   out.head = [tree.querySelector('h2').textContent, tree.querySelectorAll('p').find((x) => x.className === 'sub').textContent, tree.querySelector('a.btn').getAttribute('href')];
   out.scales = requests.filter((r) => r.path === '/api/grey-scales').map((r) => Object.fromEntries(new URLSearchParams(r.url.split('?')[1])));
   out.opened = {chosen: chosen(tree), powers: powers(tree), shown: shown(tree)};
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   out.width = [width.value, !!width.disabled];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.layer = tree.textContent.includes('LightBurn file: layer C03 is a grayscale image after the color layers: Min 12 %, Max 28 %');
   out.missing = [!!button(tree, 'Test at work width'), tree.textContent.includes('Исходная цветная картинка'), tree.textContent.includes('чистка')];
-  out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые').querySelectorAll('option').map((o) => o.textContent);
+  out.choices = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'How to match grayscale').querySelectorAll('option').map((o) => o.textContent);
   out.tabs = tree.querySelectorAll('button').filter((t) => t.getAttribute('role') === 'tab').map((t) => t.textContent);
   out.steps = [button(tree, 'Undo').disabled, button(tree, 'Redo').disabled];
 """)
@@ -233,10 +233,10 @@ def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_s
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label'));
   colour.checked = true; await colour.dispatch('change'); await settle();
-  const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые');
+  const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'How to match grayscale');
   out.kept = tree.textContent.includes('Image preserved: image tones use a smooth scale path of 180 grays');
   choice.value = 'nearest'; await choice.dispatch('change'); await settle();
-  const contours = labelled(tree, 'Контуры');
+  const contours = labelled(tree, 'Contours');
   contours.checked = true; await contours.dispatch('change'); await settle();
   out.said = [tree.textContent.includes('Color matching: nearest scale colors differ from the image colors by a median 16,2 ΔE'),
               tree.textContent.includes('outlined with a 0.3 mm line — 1,2% of the image')];
@@ -254,7 +254,7 @@ def test_a_zone_chooses_its_greys_contours_powers_and_scale_and_each_change_is_s
     assert out["kept"] and out["said"] == [True, True] and out["shown"] == "/api/vector/9/photo/1/preview.png?v=4"
     assert out["scale"] == {"chosen": [True, False], "powers": ["1", "30"]}                  # another scale brings its measured span
     assert out["refused"] == [True, ["the contours must be on or off"]]                       # refused: the zone stays as it was
-    assert out["failedPrediction"][0] == "/api/vector/9/photo/1/preview.png?v=5" and "не удалось" in out["failedPrediction"][1]
+    assert out["failedPrediction"][0] == "/api/vector/9/photo/1/preview.png?v=5" and "failed" in out["failedPrediction"][1]
 
 
 @node
@@ -288,18 +288,18 @@ def test_undo_and_redo_are_the_works_from_the_head_and_ctrl_z_and_a_step_that_ta
 @node
 def test_the_kind_of_a_zone_is_chosen_from_its_picture_in_each_kind_and_a_dot_kind_shows_its_dots(tmp_path):
     out = run(tmp_path, """
-  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).dispatch('click'); await settle();
   const box = dialog();
   out.pictures = box.querySelectorAll('button.ge-kind').map((b) => b.querySelector('img').getAttribute('src'));
   await box.querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
-  out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
+  out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
   out.dot = labelled(tree, 'Dot power, %').value;
   out.layer = tree.textContent.includes('LightBurn file: layer C03 is an image in Jarvis mode, at 12,5 % power');
   out.closeup = tree.querySelectorAll('img').some((i) => (i.getAttribute('src') || '').startsWith('/api/vector/9/photo/1/closeup.png'));
   out.saves = saves();
 """)
     assert out["pictures"][6] == "/api/vector/9/photo/1/kinds/jarvis.png?v=1"
-    assert out["kind"] == "Вид: Jarvis" and out["dot"] == "12.5" and out["layer"] and out["closeup"]
+    assert out["kind"] == "Mode: Jarvis" and out["dot"] == "12.5" and out["layer"] and out["closeup"]
     assert out["saves"] == [{"kind": "jarvis"}]
 
 

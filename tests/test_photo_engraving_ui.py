@@ -395,17 +395,17 @@ def test_photo_work_keeps_precise_power_controls_in_calibration_group(tmp_path):
 @node
 def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved_and_its_prediction_shown(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  out.opened = {chosen: chosen(tree), powers: powers(tree), shown: shown(tree), width: labelled(tree, 'Ширина на титане, мм').value,
+  out.opened = {chosen: chosen(tree), powers: powers(tree), shown: shown(tree), width: labelled(tree, 'Width on titanium, mm').value,
                 title: tree.querySelector('h2').textContent};
   const max = labelled(tree, 'Max power, % (black)');
   max.value = '20'; await max.dispatch('change'); await wait(300); await settle();
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   width.value = '100'; await width.dispatch('change'); await settle();
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();
-  out.saves = saves(); out.shown = shown(tree); out.size = tree.textContent.includes('для 100 × 50 мм');
-  out.cleaning = [tree.textContent.includes('из них чистка ≈ 42 s'),
-                  tree.textContent.includes('Файл LightBurn: C00 — чистка CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 по прямоугольнику картинки, первой')];
+  out.saves = saves(); out.shown = shown(tree); out.size = tree.textContent.includes('for 100 × 50 mm');
+  out.cleaning = [tree.textContent.includes('cleaning ≈ 42 s'),
+                  tree.textContent.includes('LightBurn file: C00 — cleaning CLEAN-CROSSHATCH-P20-F48-V2000-PW200-I0.05 over the image rectangle first')];
   out.widths = requests.filter((r) => r.path === '/api/grey-scales/scale').map((r) => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
   out.between = tree.textContent.includes('100 mm: between measurements 38,4 and 150 mm');
   const ramp = tree.querySelectorAll('button').find((b) => b.textContent === 'Test at work width');
@@ -426,7 +426,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     assert opened["shown"] == "/api/photo-works/7/preview.png?v=0"
     assert out["saves"] == [{"min_power": 12, "max_power": 20}, {"width_mm": 100}, {"by_colour": True}]
     assert out["shown"] == "/api/photo-works/7/preview.png?v=3" and out["size"]
-    assert "предыдущий прогноз" in out["refused"]["predictionStatus"] and "не удалось" in out["refused"]["predictionStatus"]
+    assert "previous prediction" in out["refused"]["predictionStatus"] and "failed" in out["refused"]["predictionStatus"]
     assert out["cleaning"] == [True, True]                                                    # the file cleans first, and its time says so
     assert out["widths"][0] == "60" and out["widths"][-1] == "100" and out["between"]          # the scale and its colours at the work's width
     assert out["ramp"] == {"main": True, "says": True, "posted": ["POST"], "went": ["/experiment/plan-31"]}   # a ramp of the width not measured yet
@@ -434,7 +434,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
     # refused (ux-save-feedback-p0): the work stays as the server has it (the preview is the stored one), the typed 0 stays in its box, and the error
     # stays beside the work with what was typed and what is stored, until it is corrected or closed
     assert out["refused"] == {"width": "0", "shown": True, "preview": "/api/photo-works/7/preview.png?v=3",
-                              "predictionStatus": "Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.",
+                              "predictionStatus": "Showing the previous prediction; recalculation failed. Check the error and try again.",
                               "status": "Работа: Not saved: the screen differs from the saved values",
                               "error": "Could not save. the width of the picture must be 1..1000 mm"
                               "Entered but not saved — Ширина, мм: 0 (saved: 100).Close"}
@@ -443,7 +443,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
 @node
 def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_said(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Как подбирать серые'), contours = labelled(tree, 'Контуры');
+  const choice = tree.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'How to match grayscale'), contours = labelled(tree, 'Contours');
   const said = () => tree.textContent;
   out.before = {choice: !!choice.disabled, value: choice.value, contours: !!contours.disabled, on: contours.checked, said: said().includes('Outlines are off'),
                 options: choice.querySelectorAll('option').map((o) => o.textContent)};
@@ -452,7 +452,7 @@ def test_how_the_greys_are_chosen_and_the_contours_are_saved_in_the_work_and_sai
   out.drawing = {choice: !!choice.disabled, contours: !!contours.disabled, off: said().includes('Outlines are off'),
                  kept: said().includes('Image preserved: image tones use a smooth scale path of 180 grays (L* 87 to 42), with light-dark order matching the image by 98%')};
   contours.checked = true; await contours.dispatch('change'); await settle();
-  out.lined = said().includes('outlined with a 0.3 mm line — 1,2% of the image') && said().includes('Подобранные серые и контуры');
+  out.lined = said().includes('outlined with a 0.3 mm line — 1,2% of the image') && said().includes('Matched grayscale and contours');
   choice.value = 'nearest'; await choice.dispatch('change'); await settle();
   out.nearest = said().includes('Color matching: nearest scale colors differ from the image colors by a median 16,2 ΔE');
   out.saves = saves();
@@ -496,16 +496,16 @@ def test_another_scale_is_saved_in_the_work_the_picture_stays_and_min_and_max_be
 def test_changes_are_sent_one_after_another_in_their_order_and_the_last_one_is_shown(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   let release; hold.push(new Promise((r) => { release = r; }));
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   width.value = '80'; width.dispatch('change'); await settle();             // not awaited: the first answer is held
   width.value = '90'; width.dispatch('change'); await settle();
-  out.before = {sent: saves().length, waiting: tree.textContent.includes('Считаем прогноз'), image: shown(tree),
+  out.before = {sent: saves().length, waiting: tree.textContent.includes('Recalculating'), image: shown(tree),
     status: tree.querySelector('.ge-prediction-status').textContent};
   release(); await settle();
   out.after = {sent: saves(), shown: shown(tree), width: width.value};
 """)
     assert out["before"]["sent"] == 1 and out["before"]["waiting"] and out["before"]["image"] == "/api/photo-works/7/preview.png?v=0"
-    assert "предыдущий прогноз" in out["before"]["status"]                    # the second waits for the first
+    assert "previous prediction" in out["before"]["status"]                    # the second waits for the first
     assert out["after"] == {"sent": [{"width_mm": 80}, {"width_mm": 90}], "shown": "/api/photo-works/7/preview.png?v=2", "width": "90"}
 
 
@@ -696,7 +696,7 @@ def test_the_confirmation_tab_shows_the_works_engravings_predicted_beside_engrav
 def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind_has_one_power_picked_on_the_scale_strip(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
   out.before = !!dialog();
-  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).dispatch('click'); await settle();
   const box = dialog();
   const tiles = () => box.querySelectorAll('button.ge-kind');
   out.title = box.querySelector('h3').textContent;
@@ -707,7 +707,7 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   out.keep = !!button(box, 'Закрыть');
   await tiles().find((b) => b.querySelector('strong').textContent === 'Jarvis').dispatch('click'); await settle();
   out.closed = !dialog();
-  out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
+  out.kind = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
   out.minMax = !!labelled(tree, 'Min power, % (white)');
   out.dot = labelled(tree, 'Dot power, %').value;
   out.byColour = input(tree, (i) => i.getAttribute('type') === 'checkbox' && !i.getAttribute('aria-label')).disabled;
@@ -717,7 +717,7 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
   await tree.querySelector('.ge-strip.ge-pickable').dispatch('click', {clientX: 75}); await wait(300); await settle();
   out.mark = tree.querySelector('.ge-dotmark').getAttribute('style');
   await button(tree, 'Отменить').dispatch('click'); await settle();
-  out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).textContent;
+  out.undone = tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).textContent;
   out.saved = saves();
 """)
     assert not out["before"] and out["title"] == "Какая гравировка?"                     # an existing work asks only when the button is clicked
@@ -725,11 +725,11 @@ def test_the_kind_button_of_a_work_shows_its_picture_in_each_kind_and_a_dot_kind
                             "Newsprint", "Halftone", "Sketch"]
     assert out["pictures"][6] == "/api/photo-works/7/kinds/jarvis.png?v=1" and out["current"] == ["Grayscale сейчас"] and out["keep"]
     assert out["estimates"] == [False] + [True] * 9                                       # grayscale is measured, the dot kinds estimated
-    assert out["closed"] and out["kind"] == "Вид: Jarvis" and not out["minMax"] and out["dot"] == "12.5"
+    assert out["closed"] and out["kind"] == "Mode: Jarvis" and not out["minMax"] and out["dot"] == "12.5"
     assert out["byColour"] and out["closeup"] and out["says"] == [True, True, True] and out["ramp"]
     # the strip runs over the scale's measured powers 1..30 %: a click at three quarters of it is 22.75 %, rounded to 0.1 %
     assert out["saved"] == [{"kind": "jarvis"}, {"dot_power": 22.8}] and out["mark"].startswith("left:75.172")
-    assert out["undone"] == "Вид: Jarvis"                                                # undo takes back the power first
+    assert out["undone"] == "Mode: Jarvis"                                                # undo takes back the power first
 
 
 @node
@@ -746,7 +746,7 @@ def test_the_colouring_tab_colours_an_object_with_a_click_on_the_scales_colours_
   out.selected = row('Губы').getAttribute('aria-current');
   await swatch('Цвет шкалы 12,15 %').dispatch('click'); await settle();
   out.coloured = {chosen: swatch('Цвет шкалы 12,15 %').className.includes('is-chosen'), text: row('Губы').textContent.includes('12,15 %'),
-                  choice: select(tree, 'Как подбирать серые').value, said: tree.textContent.includes('Color by object: 1 object in assigned colors')};
+                  choice: select(tree, 'How to match grayscale').value, said: tree.textContent.includes('Color by object: 1 object in assigned colors')};
   const shift = input(tree, (i) => i.getAttribute('aria-label') === 'Светлее или темнее: Губы');
   shift.value = '-0.5'; await shift.dispatch('change'); await settle();
   await button(tree, 'Тёплая').dispatch('click'); await settle();
@@ -822,7 +822,7 @@ def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in
   const work = tree.querySelector('.ge-tone').parentNode; out.under = [work.className, work.children.indexOf(tree.querySelector('.ge-tone')) - work.children.indexOf(tree.querySelector('.ge-inputs'))];
   brightness.value = '-15'; await brightness.dispatch('change'); await wait(350); await settle();
   out.saves = saves();
-  out.said = tree.textContent.includes('Картинка изменена: яркость -15 %, контраст 0 %, гамма 1.');
+  out.said = tree.textContent.includes('Image adjusted: brightness -15 %, contrast 0 %, gamma 1.');
 """, work={"kind": "jarvis", "dot_power": 12.5, "tone": {"brightness": -15, "contrast": 0, "gamma": 1}, "tone_used": True})
     assert out["under"] == ["ge-work", 1] and out["saves"] == [{"tone": {"brightness": -15, "contrast": 0, "gamma": 1}}] and out["said"]
 
@@ -941,7 +941,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
   out.saves = saves();
   await button(tree, 'Отменить').dispatch('click'); await settle();
   out.undone = [tick().checked, width().value];
-  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Вид:')).dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.textContent.startsWith('Mode:')).dispatch('click'); await settle();
   await dialog().querySelectorAll('button.ge-kind').find((b) => b.querySelector('strong').textContent === 'Grayscale').dispatch('click'); await settle();
   out.grey = box().hidden;
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None})

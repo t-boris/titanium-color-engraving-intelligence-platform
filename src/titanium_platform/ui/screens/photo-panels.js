@@ -513,15 +513,7 @@ const PhotoPanels = (() => {
     return {el, show};
   }
 
-  /** Картинка работы на её шкале: ширина, подбор серых и контуры над картинкой, картинка рядом с прогнозом посередине, время под ней,
-      подробности — во вкладке «Картинка». Прогноз приходит с сервера готовым (``show(view, sc)``); всё это сохраняется в работе через
-      ``save`` (DEC-108). Владелец (работа или фотозона векторной работы) задаёт ``ramp`` — адрес «Пробы на ширине работы» (без него её нет),
-      ``variations`` (the address of the «Подобрать настройки» plate; none without it), ``original`` — адрес исходной цветной картинки, ``width`` — меняется ли ширина (у зоны она — по её областям), ``objects`` — есть ли
-      «Раскраска по объектам» (у зоны — с 0.23.1), ``layer(info)`` — что сказать о слое в файле LightBurn (без него — слой работы: чистка
-      первой, затем картинка в нуле) и ``stage(el, cols)`` — что положить поверх прогноза (надписи работы): ``el`` — картинка рядом с
-      прогнозом, ``cols`` — ширина каждой из двух половин в пикселях картинки. ``tone`` — яркость, контраст и гамма картинки (0.27.0),
-      владелец ставит их под ``inputs``. ``advice`` — адрес владельца, у которого лаборатория говорит, что известно о виде
-      (``PhotoQuality.advisor``: лучшие измеренные настройки, «Темнее», «Светлее», «Чётче», «Мягче» и предложенный опыт). */
+  /** Render the work image, prediction, calibration controls, and detailed engraving settings. */
   function calibrationControls(powers, dotWidth = null) {
     return h('details', {class: 'ge-calibration'}, h('summary', {}, 'Power and dot calibration'),
       h('p', {class: 'small muted'}, 'Min and Max map image tones to laser power. Dot correction adjusts the modeled dot width; measured-range limits still apply.'),
@@ -545,13 +537,13 @@ const PhotoPanels = (() => {
       previousImage.hidden = false;
       previousImage.setAttribute('src', before);
     }
-    const kind = btn('Вид: градации серого', () => chooseKind(), 'btn-small');
-    kind.setAttribute('title', 'Какая гравировка: градации серого или один из видов точками — с картинкой в каждом');
-    const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Ширина на титане, мм', style: 'width:6em', disabled: !widthFree,
-      title: widthFree ? null : 'Ширина зоны — по её областям: строки картинки длиной с зону'});
+    const kind = btn('Mode: grayscale', () => chooseKind(), 'btn-small');
+    kind.setAttribute('title', 'Choose grayscale or a dot engraving mode, each with a preview');
+    const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', 'aria-label': 'Width on titanium, mm', style: 'width:6em', disabled: !widthFree,
+      title: widthFree ? null : 'Zone width follows its areas; image lines span the zone'});
     const byColour = h('input', {type: 'checkbox'});
-    const choice = h('select', {'aria-label': 'Как подбирать серые', title: CHOICE_ABOUT}, CHOICES.filter(([v]) => objects || v !== 'objects').map(([v, t]) => h('option', {value: v}, t)));
-    const contours = h('input', {type: 'checkbox', 'aria-label': 'Контуры'});
+    const choice = h('select', {'aria-label': 'How to match grayscale', title: CHOICE_ABOUT}, CHOICES.filter(([v]) => objects || v !== 'objects').map(([v, t]) => h('option', {value: v}, t)));
+    const contours = h('input', {type: 'checkbox', 'aria-label': 'Contours'});
     const out = h('div', {class: 'ge-stage'});
     const foot = h('div', {class: 'ge-foot'});
     const details = h('div', {class: 'stack'});
@@ -566,24 +558,24 @@ const PhotoPanels = (() => {
       if (predictionStatus.parentNode !== out) out.prepend(predictionStatus);
     }
     const waiting = () => showPredictionStatus(out.querySelector('.pp-image')
-      ? 'Показан предыдущий прогноз. Считаем прогноз заново…' : 'Считаем прогноз…');
+      ? 'Showing the previous prediction. Recalculating…' : 'Calculating prediction…');
     const failed = () => showPredictionStatus(out.querySelector('.pp-image')
-      ? 'Показан предыдущий прогноз; пересчитать не удалось. Проверьте ошибку и повторите попытку.'
-      : 'Не удалось рассчитать прогноз. Проверьте ошибку и повторите попытку.');
+      ? 'Showing the previous prediction; recalculation failed. Check the error and try again.'
+      : 'Could not calculate the prediction. Check the error and try again.');
     const tone = toneSliders(save);
     const advisor = advice ? PhotoQuality.advisor(advice, (changes) => save(changes)) : null;
-    /** Что сказать о тоне картинки в подробностях: только когда он её меняет. */
+    /** Describe image tone only when it has changed. */
     const toneText = (view) => {
       if (!view.tone_used && !view.sharpness) return null;
       const t = {...TONE, ...(view.tone || {})};
-      return h('p', {class: 'small'}, `Картинка изменена: яркость ${value(t.brightness, 0)} %, контраст ${value(t.contrast, 0)} %, гамма ${value(t.gamma, 2)}. `
-        + (view.sharpness ? `Чёткость ${value(view.sharpness, 0)}. ` : '')
-        + 'Прогноз и файл LightBurn — с этими изменениями; в LightBurn яркость, контраст и гамма остаются стандартными (0 / 0 / 1), чтобы не применить их дважды.');
+      return h('p', {class: 'small'}, `Image adjusted: brightness ${value(t.brightness, 0)} %, contrast ${value(t.contrast, 0)} %, gamma ${value(t.gamma, 2)}. `
+        + (view.sharpness ? `Sharpness ${value(view.sharpness, 0)}. ` : '')
+        + 'The prediction and LightBurn file include these adjustments; LightBurn brightness, contrast, and gamma remain at their defaults (0 / 0 / 1) to avoid applying them twice.');
     };
     function show(view, sc) {
       const dots = dotted(view);
       tone.show(view);
-      fill(kind, `Вид: ${kindName(view.kind || GRAYSCALE)}`);
+      fill(kind, `Mode: ${kindName(view.kind || GRAYSCALE)}`);
       width.value = String(view.width_mm);
       width.removeAttribute('aria-invalid'); widthNote.textContent = '';
       byColour.checked = !!view.by_colour;
@@ -595,35 +587,35 @@ const PhotoPanels = (() => {
       const info = view.picture;
       if (!info) {
         fill(out, h('div', {class: 'ge-placeholder stack'}, h('p', {class: 'alert warn'}, I18N.tr(view.problem)),
-          h('p', {class: 'muted'}, 'Выберите измеренную шкалу слева: картинка останется, Min и Max станут измеренным диапазоном шкалы.')));
+          h('p', {class: 'muted'}, 'Select a measured scale on the left. The image will remain, and Min and Max will use the measured range.')));
         fill(foot);
-        fill(details, h('p', {class: 'muted'}, 'Прогноза нет: шкала этой работы не измерена.'));
+        fill(details, h('p', {class: 'muted'}, 'No prediction: this work’s scale has not been measured.'));
         return;
       }
       if (advisor) advisor.load(view);
       if (dots) { showDots(view, info, sc); return; }
       const t = info.time;
       const cleaning = t.layers.length > 1 ? t.layers[0] : null;      // the file cleans the titanium first (C00)
-      const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} мм`;
-      const lined = info.contours_report && info.contours_report.share > 0 ? ' и контуры' : '';
+      const size = `${value(info.size_mm.width, 1)} × ${value(info.size_mm.height, 1)} mm`;
+      const lined = info.contours_report && info.contours_report.share > 0 ? ' and contours' : '';
       const rampOnly = info.prediction_evidence && info.prediction_evidence.ramp_only;
       fill(out,
         info.applicability ? EvidenceSummary.applicability(info.applicability)
-          : rampOnly ? h('p', {class: 'small alert warn ge-prediction-evidence'}, 'В базе этот режим измерен только тестовой шкалой. Точность расчёта для фотогравировки не подтверждена.') : null,
-        h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Подобранные серые' : 'Картинка (как её видит LightBurn)') + lined), h('span', {}, 'Расчётный вид на титане')),
-        h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Картинка и её прогноз на титане'})));
+          : rampOnly ? h('p', {class: 'small alert warn ge-prediction-evidence'}, 'This mode has only been measured with a test scale. Prediction accuracy for photo engraving has not been verified.') : null,
+        h('div', {class: 'pp-captions'}, h('span', {}, (info.by_colour ? 'Matched grayscale' : 'Image (as seen by LightBurn)') + lined), h('span', {}, 'Predicted appearance on titanium')),
+        h('div', {class: 'pp-stage'}, h('img', {class: 'pp-image', src: info.preview, alt: 'Image and its prediction on titanium'})));
       if (stage) stage(out.querySelector('.pp-stage'), info.picture && info.picture.shown_width);
       const atSize = sizeText(info.scale_size);
       fill(foot,
-        info.power_usage ? h('span', {class: 'ge-power-usage small'}, `Мощность по подготовленным серым: ${value(info.power_usage.range[0], 1)}–${value(info.power_usage.range[1], 1)} %; медиана ${value(info.power_usage.median, 1)} %. Настройки Min / Max: ${value(info.power_range[0], 1)} / ${value(info.power_range[1], 1)} %.`) : null,
-        h('span', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}`),
+        info.power_usage ? h('span', {class: 'ge-power-usage small'}, `Power for prepared grayscale: ${value(info.power_usage.range[0], 1)}–${value(info.power_usage.range[1], 1)} %; median ${value(info.power_usage.median, 1)} %. Min / Max settings: ${value(info.power_range[0], 1)} / ${value(info.power_range[1], 1)} %.`) : null,
+        h('span', {}, h('strong', {}, `Engraving time: ≈ ${duration(t.seconds)}`), ` for ${size}`),
         atSize ? h('span', {title: atSize.long}, pill(atSize.short, atSize.tone)) : null,
-        info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % вне шкалы`, 'warn') : null);
+        info.outside_share > 0 ? pill(`${value(info.outside_share * 100, 1)} % outside the scale`, 'warn') : null);
       fill(details,
-        h('p', {}, h('strong', {}, `Время гравировки: ≈ ${duration(t.seconds)}`), ` для ${size}${sc ? ` на шкале ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
-          + (cleaning ? `, из них чистка ≈ ${duration(cleaning.seconds)}` : ''),
-          h('span', {class: 'muted small'}, ` — оценка: ${cleaning ? 'сначала чистка по прямоугольнику картинки, затем ' : ''}строки на всю ширину картинки (в градациях серого бьёт и белый — на Min), скорость, шаг строк и проходы; разгон и переходы не учтены.`)),
-        info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % картинки требует мощности вне измеренной шкалы: там прогноза нет, места заштрихованы.`) : null,
+        h('p', {}, h('strong', {}, `Engraving time: ≈ ${duration(t.seconds)}`), ` for ${size}${sc ? ` at scale ${value(sc.time_s_per_cm2, 0)} s/cm²` : ''}`
+          + (cleaning ? `, cleaning ≈ ${duration(cleaning.seconds)}` : ''),
+          h('span', {class: 'muted small'}, ` — estimate: ${cleaning ? 'cleaning the image rectangle first, then ' : ''}full-width image lines (in grayscale, white is also engraved at Min), speed, line spacing, and passes; acceleration and travel are excluded.`)),
+        info.outside_share > 0 ? h('p', {class: 'alert warn'}, `${value(info.outside_share * 100, 1)} % of the image requires power outside the measured scale: those areas are hatched and have no prediction.`) : null,
         matchText(info.colour_match),
         contoursText(view, info),
         toneText(view),
@@ -631,15 +623,15 @@ const PhotoPanels = (() => {
         ramp ? rampOffer(view, info.scale_size, ramp) : null,
         variations ? variationsOffer(view, variations) : null,
         advisor ? advisor.el : null,
-        h('p', {class: 'small'}, layer ? layer(info) : `Файл LightBurn: ${cleaning ? `C00 — чистка ${cleaning.name} по прямоугольнику картинки, первой (шкалы измерены на очищенных пластинах); C01 — ` : ''}`
-          + `слой-изображение в режиме градаций серого: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
-          + `${settingsText(view.scale, info.dpi)}. Картинка ${value(info.size_mm.width, 1)} мм в ширину, левый верхний угол в нуле.`),
+        h('p', {class: 'small'}, layer ? layer(info) : `LightBurn file: ${cleaning ? `C00 — cleaning ${cleaning.name} over the image rectangle first (scales were measured on cleaned plates); C01 — ` : ''}`
+          + `image layer in grayscale mode: Min ${value(info.power_range[0], 1)} %, Max ${value(info.power_range[1], 1)} %, `
+          + `${settingsText(view.scale, info.dpi)}. Image width ${value(info.size_mm.width, 1)} mm, with the top-left corner at the origin.`),
         h('ul', {class: 'small'}, info.notes.map((n) => h('li', {}, I18N.tr(n)))),
-        info.by_colour && original ? h('details', {}, h('summary', {class: 'small'}, 'Исходная цветная картинка'),
-          h('img', {class: 'pp-image', src: original, alt: 'Исходная картинка'})) : null,
-        h('p', {class: 'muted small'}, 'Серая картинка гравируется как есть. Цветная — либо как LightBurn переводит её в серый (по яркости), либо с подбором серых под цвета. '
-          + CHOICE_ABOUT + ' Контуры: ' + CONTOURS_ABOUT + ' Прогноз и файл LightBurn — одна и та же картинка; прогноз пересчитывается сам, когда меняются шкала, Min и Max, '
-          + 'ширина, подбор или контуры.'));
+        info.by_colour && original ? h('details', {}, h('summary', {class: 'small'}, 'Original color image'),
+          h('img', {class: 'pp-image', src: original, alt: 'Original image'})) : null,
+        h('p', {class: 'muted small'}, 'A grayscale image is engraved as is. A color image is converted to grayscale either by LightBurn based on brightness or by matching grayscale to colors. '
+          + CHOICE_ABOUT + ' Contours: ' + CONTOURS_ABOUT + ' The prediction and LightBurn file use the same image; the prediction is recalculated when the scale, Min, Max, '
+          + 'width, matching, or contours change.'));
     }
     /** Работа в виде точками: картинка рядом с точками на титане издалека (оценка по шкале), точки вблизи, мощность и файл. */
     function showDots(view, info, sc) {
