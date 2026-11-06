@@ -37,3 +37,7 @@ MarkView browser testing found that the optional study banner inserted literal '
 ### Implementation · 2026-11-06
 
 Full rerun: pytest -q -rs -n 12, 3005 passed, 0 skipped. During that run a MarkView browser check found and fixed ordinary-theme stray text; the affected router/accessibility tests were rerun afterwards: 52 passed. Wheel rebuilt after that fix. Workshop-lighting/tablet comparison and Electron UI review remain incomplete.
+
+### Implementation · 2026-11-06
+
+Lifecycle discrepancy: MarkView automatically changed this feature to implemented using prior merged commit 3641c79 (technical navigation only). This does not establish that the new branch's grid, density and study variant were merged or released, nor that REQ-001's workshop-lighting/tablet comparison or I-6 integrated review was completed. REQ-001 remains unticked. Do not treat the automatic feature status as proof of those remaining criteria.
