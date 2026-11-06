@@ -231,7 +231,7 @@ const ColorMap = (() => {
           ' · ', link(`/analysis/${m.pair_id}`, 'analysis'))))
         : h('p', {class: 'muted small'}, 'No measured regimes have produced this film yet.'));
     return h('div', {class: 'stack'}, h('h3', {}, 'What the film model says'),
-      h('p', {class: 'small'}, r.reachable_by_a_film ? 'The color lies on the interference spiral and is produced by a film of the indicated thickness. The thicknesses below are measured regimes, not calculations.'
+      h('p', {class: 'small'}, r.reachable_by_a_film ? 'The model places the color on the interference spiral and estimates the film thicknesses below. Any supporting measured regimes are identified separately.'
         : 'The color lies more than 8 ΔE from the interference spiral; this model finds no titanium oxide film that produces it.'),
       ...r.candidates.map(cand),
       h('p', {class: 'muted small'}, !r.partition ? 'Thickness-versus-dose settings are calculated for one laser and lens; select them in the Laser and lens filter.'

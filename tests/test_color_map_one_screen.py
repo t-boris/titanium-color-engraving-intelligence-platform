@@ -591,3 +591,20 @@ def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_w
     assert out["back"] == [f"#{back}", "← Return to work without changes" if opened else "← Return to zone without changes"]
     assert out["saved"] == [["/api/vector/41/photo/2/settings", {"dot_colour": "g-fill"}]] and out["went"] == [back]
     assert out["toasts"] == ["Dot color selected: the zone will show dots in this color"]
+
+
+@node
+def test_model_film_thickness_is_described_as_estimated_without_measured_regimes(tmp_path):
+    routes = routes_of(colours([]))
+    routes['/api/colors/settings'] = {'status': 200, 'json': {
+        'reachable_by_a_film': True, 'partition': None, 'kinetics': {'usable': False},
+        'candidates': [{'thickness_nm': 226, 'dark_share': 0.7, 'residual_de': 2.9,
+                        'by_regime': [], 'same_film_measured': []}],
+    }}
+    out = run(tmp_path, routes, """
+  await byText(tree, 'button', 'Find').dispatch('click'); await tick(); await tick();
+  out.text = tree.querySelector('.os-body').children[2].textContent;
+""")
+    assert 'Model prediction, not a measurement' in out['text']
+    assert 'estimates the film thicknesses below' in out['text']
+    assert 'No measured regimes have produced this film yet.' in out['text']
