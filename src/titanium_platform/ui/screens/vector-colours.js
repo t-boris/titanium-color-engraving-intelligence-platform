@@ -102,6 +102,8 @@ const VectorColours = (() => {
       stability and time open under the line. Pages of 30: every colour of a work is edited on one page. */
   function colourTable(run) {
     let j = null;
+    // a refusal of the server is told above the list that asked, not in a toast that goes away (ux-save-feedback-p0, REQ-003)
+    const place = Forms.notice({what: 'Изменение цвета', kept: 'Цвета работы остались прежними.'});
     const titanium = (c) => (c.entry_id == null ? null : j.entries[c.entry_id]);
     const list = App.list({id: 'vw.colour-table', items: [], page: 30, key: (c) => String(c.index),
       row: (c) => {
@@ -111,9 +113,10 @@ const VectorColours = (() => {
           c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`), c.outside_tolerance ? pill('вне допуска', 'bad') : null,
           h('span', {class: 'muted small'}, `областей ${c.regions}`)];
       },
-      actions: (c) => [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id}))),
-        c.status === 'hand' || c.status === 'accepted' ? btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null})) : null,
-        c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index})) : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index}))],
+      actions: (c) => [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id}, place))),
+        c.status === 'hand' || c.status === 'accepted' ? btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null}, place)) : null,
+        c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index}, place))
+          : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index}, place))],
       details: (c) => {
         const e = titanium(c);
         return facts([['Исходный цвет', `${labText(c.lab)} · областей ${c.regions}`],
@@ -128,7 +131,7 @@ const VectorColours = (() => {
         || a.index - b.index]],
       empty: 'Нет исходных цветов под такой выбор.'});
     const el = h('div', {class: 'vw-wide stack'}, h('p', {class: 'muted small'}, 'Строка — исходный цвет и цвет титана, которым он будет выгравирован, его рецепт и ΔE. '
-      + 'По щелчку на строке — как измерен цвет титана, откуда он известен, уверенность, стабильность и время.'), list.el);
+      + 'По щелчку на строке — как измерен цвет титана, откуда он известен, уверенность, стабильность и время.'), place.error, list.el);
     return {el, show(next) { j = next; list.items = j.colours; list.refresh(); }};
   }
 
@@ -137,6 +140,7 @@ const VectorColours = (() => {
       (DEC-090): a line per variant — its number and way, mean ΔE and «текущий» or «Вернуть»; its totals open under the line; the newest first. */
   function variantList(run) {
     let j = null;
+    const place = Forms.notice({what: 'Возврат варианта', kept: 'Работа осталась в прежней раскраске.'});
     const way = (v) => (v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
       + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : ''));
     // the server says whether a variant is restorable (a size change keeps the regions, DEC-002 of work-size-and-splitting-a-region-again);
@@ -146,7 +150,7 @@ const VectorColours = (() => {
     const list = App.list({id: 'vw.variants', items: [], key: (v) => String(v.number), className: 'vw-variants',
       row: (v) => [h('strong', {class: 'lst-text'}, `№ ${v.number} · ${way(v)}`), h('span', {class: 'muted small'}, `ΔE ${num(v.totals.mean_delta_e)}`),
         current(v) ? pill('текущий', 'ok') : elsewhere(v) ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}`) : null],
-      actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Вернуть', () => run({op: 'restore', variant: v.number}))]),
+      actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Вернуть', () => run({op: 'restore', variant: v.number}, place))]),
       details: (v) => h('div', {class: 'stack small'},
         h('div', {}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
           + (v.totals.seconds == null ? 'время не оценено' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`),
@@ -156,13 +160,13 @@ const VectorColours = (() => {
         ['de', 'Меньше ΔE', (a, b) => (a.totals.mean_delta_e ?? Infinity) - (b.totals.mean_delta_e ?? Infinity) || b.number - a.number],
         ['fast', 'Быстрее', (a, b) => (a.totals.seconds ?? Infinity) - (b.totals.seconds ?? Infinity) || b.number - a.number]],
       empty: 'Вариантов пока нет'});
-    return {el: list.el, show(next) { j = next; list.items = j.variants; list.refresh(); }};
+    return {el: h('div', {class: 'stack'}, place.error, list.el), show(next) { j = next; list.items = j.variants; list.refresh(); }};
   }
 
   /** «Художественно» (DEC-079): each press a new layout of hues from the chosen palette group; light places stay light. */
-  function artisticRow(run) {
+  function artisticRow(run, place) {
     const group = h('select', {'aria-label': 'Из каких цветов'}, SUBSETS.map(([v, name]) => h('option', {value: v}, name)));
-    return h('div', {class: 'row'}, btn(MODE.artistic, () => run({op: 'assign', mode: 'artistic', subset: group.value}), 'btn-small'),
+    return h('div', {class: 'row'}, btn(MODE.artistic, () => run({op: 'assign', mode: 'artistic', subset: group.value}, place), 'btn-small'),
       h('label', {class: 'row small'}, 'из ', group),
       h('span', {class: 'muted small'}, 'новая раскладка оттенков при каждом нажатии, порядок светлоты как на оригинале'));
   }
@@ -191,7 +195,7 @@ const VectorColours = (() => {
       if (!v) return;                                                // the description says what is wrong beside itself and stays as typed
       busy = true; self.disabled = true; self.textContent = 'AI подбирает цвета…';
       try {
-        await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: v.text} : {}), free_lightness: free.checked});
+        await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: v.text} : {}), free_lightness: free.checked}, aiForm);   // a refusal stays above the button
       } finally { busy = false; self.textContent = 'Раскрасить с помощью AI'; sync(j); }
     }, 'primary');
     function sync(next) {
@@ -207,7 +211,7 @@ const VectorColours = (() => {
       current.hidden = !now;
     }
     style.addEventListener('change', () => sync(j));
-    photo.addEventListener('change', () => permit(photo.checked));
+    photo.addEventListener('change', () => permit(photo.checked, aiForm));
     sync(j);
     const el = h('div', {class: 'stack vw-ai'}, h('h4', {}, 'Раскраска с помощью AI'),
       h('div', {class: 'vw-split-fields'}, field('Стиль', style, null), own),
@@ -238,7 +242,7 @@ const VectorColours = (() => {
       h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона)')),
       btn('Применить', () => {
         const v = form.collect();
-        if (v) run({op: 'settings', tolerance_de: v.tolerance_de, max_time: v.max_time, include_as_shot: asShot.checked});
+        if (v) run({op: 'settings', tolerance_de: v.tolerance_de, max_time: v.max_time, include_as_shot: asShot.checked}, form);     // a refusal is told beside its box, the typed values stay
       }), form.error);
   }
 
@@ -261,9 +265,10 @@ const VectorColours = (() => {
       kept.show(j);
     }
     show(j);
+    const modesPlace = Forms.notice({what: 'Перекраска', kept: 'Раскраска работы осталась прежней.'});
     const colours = h('div', {class: 'stack vw-colours'}, intro, empty, bar,
       h('div', {class: 'vw-modes'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'),
-        h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}), 'btn-small'))), artisticRow(run)),
+        h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}, modesPlace), 'btn-small'))), artisticRow(run, modesPlace), modesPlace.error),
       h('div', {class: 'row'}, btn('Подробно по цветам…', () => modal('Подробно по цветам', rows, [{label: 'Закрыть', run: (m) => m.close()}]))));
     const saved = h('div', {class: 'stack'}, h('h4', {}, 'Варианты раскраски'),
       h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept.el);

@@ -147,21 +147,25 @@ const Creation = (() => {
     const fileIn = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Картинка'});
     const filePicker = App.filePick(fileIn, 'Выбрать картинку');          // made once: going back to the first step shows the chosen file again
     const nameIn = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
-    const widthIn = h('input', {type: 'number', min: '0', step: 'any', value: DEFAULT_WIDTH, 'aria-label': 'Ширина на титане, мм'});
+    const Q = Forms.QUANTITIES;
+    const widthIn = Forms.numberInput(Q.workWidth, {value: DEFAULT_WIDTH});
     const M = {
-      thr: h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'}),
+      thr: Forms.numberInput(Q.deltaE, {placeholder: 'из правил'}),
       remember: h('input', {type: 'checkbox', checked: true}),
-      tolerance: h('input', {type: 'number', step: 'any', min: '0', value: '0.08', 'aria-label': 'Сглаживание границ, мм'}),
-      colours: h('input', {type: 'number', step: '1', min: '2', max: '29', value: 12}),
+      tolerance: Forms.numberInput(Q.vectorTolerance, {value: '0.08'}),
+      colours: Forms.numberInput(Q.photoColours, {value: 12}),
       detail: h('select', {'aria-label': 'Детальность'}, [['coarse', 'Крупно'], ['medium', 'Средне'], ['fine', 'Детально']].map(([v, l]) => h('option', {value: v, selected: v === 'medium'}, l))),
       algorithm: VectorSplit.picker((S.draft && S.draft.state && S.draft.state.method && S.draft.state.method.algorithm) || 'slic'),
       faces: h('input', {type: 'checkbox', checked: true}),
-      maxTime: h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'}),
+      maxTime: Forms.numberInput(Q.maxTime, {placeholder: 'без предела'}),
       asShot: h('input', {type: 'checkbox'}),
       markers: h('input', {type: 'checkbox'}),
       clean: h('input', {type: 'checkbox', checked: true}),
-      grey: h('input', {type: 'number', step: '1', min: '0', max: '255', placeholder: 'авто (Оцу)'}),
+      grey: Forms.numberInput(Q.greyThreshold, {placeholder: 'авто (Оцу)'}),
     };
+    // a step's fields are read as the server reads them; a wrong box says why beside itself and keeps what was typed, a refusal of the server stands where the field it
+    // names is. The boxes persist between the steps, the controllers are made again with each drawing of a step (ux-save-feedback-p0, REQ-003)
+    let pictureForm = Forms.create(), methodForm = Forms.create();
     M.algorithm.hint.setAttribute('style', 'grid-column:1 / -1');
     const methodState = () => ({thr: M.thr.value, remember: M.remember.checked, tolerance: M.tolerance.value, colours: M.colours.value, detail: M.detail.value,
       algorithm: M.algorithm.select.value, faces: M.faces.checked, maxTime: M.maxTime.value, asShot: M.asShot.checked, markers: M.markers.checked, clean: M.clean.checked, grey: M.grey.value});
@@ -288,10 +292,12 @@ const Creation = (() => {
       const saved = S.draft && S.draft.image;
       const shownName = filePicker.querySelector('.file-name');
       if (shownName && saved && !chosenFile()) shownName.textContent = `${saved.name} · сохранена в задаче`;      // the task keeps the picture: the person need not choose it again
+      pictureForm = Forms.create();
+      const imageField = pictureForm.add('image', 'Картинка', filePicker, {required: true, help: saved && !chosenFile() ? 'выберите другую, чтобы заменить' : 'PNG, JPEG, TIFF',
+        read: () => (chosenFile() || (S.draft && S.draft.image) ? {ok: true, value: chosenFile()} : {ok: false, message: 'Выберите картинку (PNG, JPEG, TIFF)'})});
+      const widthField = pictureForm.add('width', 'Ширина на титане', widthIn, {quantity: 'workWidth', required: true, help: 'высота — по пропорциям картинки'});
       return h('div', {class: 'stack'},
-        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'},
-          field('Картинка', filePicker, saved && !chosenFile() ? 'выберите другую, чтобы заменить' : 'PNG, JPEG, TIFF'),
-          field('Название работы', nameIn), field('Ширина на титане, мм', widthIn, 'высота — по пропорциям картинки')),
+        h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, imageField, field('Название работы', nameIn), widthField), pictureForm.error,
           saved && pictureSrc() ? h('figure', {class: 'creation-picture'}, h('img', {src: pictureSrc(), alt: `Картинка задачи: ${saved.name}`}),
             h('figcaption', {class: 'muted small'}, 'Сохранённая картинка')) : null),
         strip.el,
@@ -409,18 +415,26 @@ const Creation = (() => {
           ? 'Шкала — лучшая из измеренных в выпуске лаборатории; шкалу, Min, Max и ширину можно поменять в работе.'
           : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.');
       }
-      const thr = h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), M.thr, h('span', {class: 'small muted'}, toleranceHint()));
+      methodForm = Forms.create();
+      // the tolerance is required only while the rules of the laser and lens hold none (conversion._threshold)
+      const thr = methodForm.add('threshold', 'Допуск ΔE', M.thr, {quantity: 'deltaE', help: toleranceHint(),
+        read: () => (M.thr.value === '' ? (S.rules === null ? {ok: false, message: 'Задайте допуск ΔE: для этого лазера с линзой он не сохранён'} : {ok: true, value: null})
+          : Forms.readNumber(M.thr, Q.deltaE, {}))});
       const remember = h('label', {class: 'row small', hidden: S.rules !== null}, M.remember, h('span', {}, 'Запомнить для этого лазера с линзой'));
-      const common = [h('div', {class: 'f'}, thr, remember), field(r.id === 'colour' ? 'Сглаживание границ, мм' : 'Точность контура, мм', M.tolerance),
+      const common = [h('div', {class: 'f'}, thr, remember),
+        methodForm.add('tolerance', r.id === 'colour' ? 'Сглаживание границ' : 'Точность контура', M.tolerance, {quantity: 'vectorTolerance', required: true}),
         h('label', {class: 'row'}, M.markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))];
       if (r.id === 'colour') {
-        return h('div', {class: 'grid g2'}, field('Алгоритм разбиения', M.algorithm.select), field('Число цветов', M.colours, '2–29, с маркерами 2–28: чистка — первый слой'),
+        return h('div', {class: 'grid g2'}, field('Алгоритм разбиения', M.algorithm.select),
+          methodForm.add('colours', 'Число цветов', M.colours, {quantity: 'photoColours', required: true, constraint: '', help: '2–29, с маркерами 2–28: чистка — первый слой',
+            read: () => Forms.readNumber(M.colours, {...Q.photoColours, max: M.markers.checked ? 28 : 29}, {required: true})}),
           M.algorithm.hint, field('Детальность', M.detail, 'крупно — спокойные большие области, детально — мелкие'),
-          field('Наибольшее время гравировки, с/см²', M.maxTime, 'пусто — без предела; медленные цвета автоматика не берёт'),
+          methodForm.add('max_time', 'Наибольшее время гравировки', M.maxTime, {quantity: 'maxTime', help: 'пусто — без предела; медленные цвета автоматика не берёт'}),
           h('label', {class: 'row'}, M.faces, h('span', {}, 'Искать лица: глаза и губы делятся подробнее')),
           h('label', {class: 'row'}, M.asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона и без чистого титана)')), ...common);
       }
-      return h('div', {class: 'grid g2'}, field('Порог серого', M.grey, 'пусто — автоматически'), h('label', {class: 'row'}, M.clean, h('span', {}, 'Чистка первым слоем (C00)')), ...common);
+      return h('div', {class: 'grid g2'}, methodForm.add('grey', 'Порог серого', M.grey, {quantity: 'greyThreshold', help: 'пусто — автоматически'}),
+        h('label', {class: 'row'}, M.clean, h('span', {}, 'Чистка первым слоем (C00)')), ...common);
     }
 
     function methodStep() {
@@ -437,7 +451,7 @@ const Creation = (() => {
         S.returned && ready && ready.ready ? h('p', {class: 'alert ok', role: 'status'}, 'Недостающее добавлено: можно создавать работу. Картинка, название и настройки остались как были.') : null,
         blocked && ready && !ready.error ? gate(r, ready) : null,
         ready && ready.error ? h('p', {class: 'alert bad', role: 'alert'}, `Не удалось проверить, чего не хватает: ${ready.error}`) : null,
-        error,
+        methodForm.error, error,
         h('div', {class: 'row'}, btn('← Назад', () => goTo('result')), btn(r.id === 'photo' ? 'Дальше: какая гравировка →' : 'Создать работу', create, 'primary', blocked)));
     }
 
@@ -480,14 +494,12 @@ const Creation = (() => {
 
     async function toResult() {
       show('');
+      if (!pictureForm.collect()) return;                                           // the picture and the width: each wrong one says why beside itself
       const file = chosenFile();
-      if (!file && !(S.draft && S.draft.image)) { show('Выберите картинку (PNG, JPEG, TIFF)'); fileIn.focus(); return; }
-      const width = numberOf(widthIn.value);
-      if (!(width > 0)) { show('Ширина на титане должна быть положительным числом миллиметров'); widthIn.focus(); return; }
       if (!nameIn.value.trim() && file) nameIn.value = baseName(file.name);
       S.step = 'result';
       try { await send({file: file && file !== S.uploaded ? file : null}); }
-      catch (e) { S.step = 'picture'; show(e.message); return; }                    // a picture that is no picture is told here, and nothing is kept
+      catch (e) { S.step = 'picture'; pictureForm.fail(e); return; }                // a picture that is no picture is told beside it, and nothing is kept
       await goTo('result');
     }
 
@@ -503,12 +515,10 @@ const Creation = (() => {
       if (S.busy) return;
       show('');
       const r = RESULT[S.result], c = S.context, width = numberOf(widthIn.value);
-      if (!(width > 0)) { show('Ширина на титане должна быть положительным числом миллиметров'); return; }
-      if (r.work === 'vector' && M.thr.value === '' && S.rules === null) {
-        M.thr.focus(); toleranceHint();
-        show('Задайте допуск ΔE: для этого лазера с линзой он не сохранён');
-        drawStep(); M.thr.focus();
-        return;
+      if (!(width > 0)) { show('Ширина на титане должна быть положительным числом миллиметров: вернитесь на шаг картинки и исправьте её'); return; }
+      if (r.work === 'vector') {
+        toleranceHint();
+        if (!methodForm.collect()) return;                                         // every wrong box says why beside itself; nothing typed is lost
       }
       S.busy = true;
       const self = ev.currentTarget;
@@ -524,7 +534,7 @@ const Creation = (() => {
         await refreshBar();
         toast(r.work === 'photo' ? 'Работа фотогравировки создана' : 'Векторная работа создана', 'ok');
         go(r.work === 'photo' ? `/photo-engraving?work=${made.id}` : `/vector?plan=${made.id}`);
-      } catch (e) { show(e.message); self.disabled = false; }
+      } catch (e) { if (r.work === 'vector') methodForm.fail(e); else show(e.message); self.disabled = false; }
       finally { S.busy = false; }
     }
 

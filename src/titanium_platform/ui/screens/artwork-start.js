@@ -4,7 +4,7 @@
    порога выбирается самый быстрый по времени гравировки. */
 'use strict';
 const ArtworkParts = (() => {
-  const {h, btn, field, link, get, patch, go, modal, num, labText, swatch} = App;
+  const {h, btn, link, get, patch, go, modal, num, labText, swatch} = App;
   const params = (p) => `${num(p.power, 1)} % · ${num(p.frequency, 0)} кГц · ${num(p.speed, 0)} мм/с`;
   const seconds = (s) => (s == null ? 'время не оценить' : `${num(s, 1)} с/см²`);
   // the reason of a doubt joins one message per broken threshold with '; ' (knowledge.refresh): each is translated
@@ -13,22 +13,31 @@ const ArtworkParts = (() => {
   function startForm(lists, ctx) {
     const begin = ctx.start || {device: ctx.query.device, lens: ctx.query.lens};         // the laser and lens the workshop chose last; the address wins (REQ-001)
     const pick = App.laserLensPicker(lists, {device: begin.device, lens: begin.lens});
-    const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Изображение'});
-    const name = h('input', {placeholder: 'Название плана'}), width = h('input', {type: 'number', step: 'any', value: 60});
-    const thr = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'из правил'}), markers = h('input', {type: 'checkbox'});
-    const maxTime = h('input', {type: 'number', step: 'any', min: '0', placeholder: 'без предела'});
+    const img = h('input', {type: 'file', accept: 'image/*'});
+    const name = h('input', {placeholder: 'Название плана'}), width = Forms.numberInput(Forms.QUANTITIES.workWidth, {value: 60});
+    const thr = Forms.numberInput(Forms.QUANTITIES.deltaE, {placeholder: 'из правил'}), markers = h('input', {type: 'checkbox'});
+    const maxTime = Forms.numberInput(Forms.QUANTITIES.maxTime, {placeholder: 'без предела'});
     // REQ-020: цветное изображение или плоские цветные области; задача записывается в план и переходит к измерениям его фото
     const task = Tasks.chooser('color_image', {hint: 'цветное изображение — по умолчанию; «Заливка» — если это плоские цветные области'});
-    const err = h('p', {class: 'alert bad', role: 'alert', hidden: true});
-    const show = (m) => { err.textContent = m; err.hidden = !m; };
+    // every box says what it takes and, when it is wrong, why, beside itself with what was typed kept; a refusal of the server stands where the field it names is
+    const f = Forms.create();
+    const laserField = f.add('laser', 'Лазер', pick.laser, {read: () => ({ok: true, value: pick.deviceId()})});
+    const lensField = f.add('lens', 'Линза', pick.lens, {help: 'палитра — измерения этого лазера с этой линзой', read: () => ({ok: true, value: pick.lensValue()})});
+    const imageField = f.add('image', 'Изображение', App.filePick(img, 'Выбрать изображение'), {required: true,
+      read: () => (img.files[0] ? {ok: true, value: img.files[0]} : {ok: false, message: 'Добавьте изображение для цветной гравировки'})});
+    const nameField = f.add('name', 'Название плана', name, {required: true});               // conversion.start_discrete: «give the plan a name»
+    const widthField = f.add('width_mm', 'Ширина работы', width, {quantity: 'workWidth', required: true});
+    const thrField = f.add('threshold', 'Порог ΔE', thr, {quantity: 'deltaE', help: 'пусто — взять допуск из правил этого лазера с линзой; если его нет, порог нужно задать'});
+    const timeField = f.add('max_time', 'Наибольшее время гравировки', maxTime, {quantity: 'maxTime', help: 'пусто — без предела; более медленные рецепты не выбираются автоматически'});
     const submit = btn('Сопоставить цвета', async (ev) => {
-      show('');
-      if (!img.files[0]) return show('Добавьте изображение для цветной гравировки');
+      const v = f.collect();
+      if (!v) return;
+      if (!task.check()) return f.fail(new Error('Цели задачи заполнены неверно: исправьте отмеченные поля'));
       const fd = new FormData();
-      fd.append('device_id', pick.deviceId()); fd.append('lens_id', pick.lensValue()); fd.append('name', name.value); fd.append('width_mm', width.value);
-      fd.append('markers', markers.checked); fd.append('image', img.files[0]);
-      if (thr.value !== '') fd.append('threshold', thr.value);
-      if (maxTime.value !== '') fd.append('max_time', maxTime.value);
+      fd.append('device_id', v.laser); fd.append('lens_id', v.lens); fd.append('name', v.name); fd.append('width_mm', v.width_mm);
+      fd.append('markers', markers.checked); fd.append('image', v.image);
+      if (v.threshold != null) fd.append('threshold', v.threshold);
+      if (v.max_time != null) fd.append('max_time', v.max_time);
       task.append(fd);
       const self = ev.currentTarget;
       self.disabled = true;
@@ -36,15 +45,12 @@ const ArtworkParts = (() => {
         const p = await App.form('/discrete', fd);
         App.rememberContext({device: pick.deviceId(), lens: pick.lensId()});
         go('/artwork?plan=' + p.id);
-      } catch (e) { show(e.message); self.disabled = false; }
+      } catch (e) { f.fail(e); self.disabled = false; }
     }, 'primary');
     return h('div', {class: 'stack'}, h('div', {class: 'card empty'}, h('h3', {}, 'Добавьте изображение для цветной гравировки')),
-      h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),
-        field('Изображение', App.filePick(img, 'Выбрать изображение')), field('Название плана', name), field('Ширина работы, мм', width),
-        field('Порог ΔE', thr, 'пусто — взять допуск из правил этого лазера с линзой; если его нет, порог нужно задать'),
-        field('Наибольшее время гравировки, с/см²', maxTime, 'пусто — без предела; более медленные рецепты не выбираются автоматически')), task.el,
+      h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, laserField, lensField, imageField, nameField, widthField, thrField, timeField), task.el,
         h('p', {class: 'muted small'}, 'Из цветов титана в пределах порога ΔE выбирается самый быстрый по оценке времени гравировки; если такого нет, цвет недостижим.'),
-      h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')), err, submit));
+      h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения')), f.error, submit));
   }
 
   function replaceDialog(plan, m, palette, reload) {
@@ -52,11 +58,13 @@ const ArtworkParts = (() => {
     const rows = palette.map((e) => h('label', {class: 'row'}, h('input', {type: 'radio', name: 'rep', checked: e.id === chosen, onChange: () => { chosen = e.id; }}),
       swatch(e.lab), labText(e.lab), h('span', {class: 'muted small'}, `${params(e.parameters)} · ΔE ${num(e.expected_delta_e)} · уверенность ${num(e.confidence)} · ${seconds(e.time_s_per_cm2)}`)));
     const none = [h('p', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этого лазера с этой линзой')];
-    modal('Заменить цвет', h('div', {class: 'stack'}, h('p', {}, 'Выберите цвет из допустимой палитры (валидированные и производственные).'), ...(rows.length ? rows : none)), [
+    const place = Forms.notice({what: 'Замена цвета', kept: 'Выбор остался в окне, цвет не заменён.'});
+    modal('Заменить цвет', h('div', {class: 'stack'}, h('p', {}, 'Выберите цвет из допустимой палитры (валидированные и производственные).'), ...(rows.length ? rows : none), place.error), [
       {label: 'Отмена', run: (x) => x.close()},
       {label: 'Применить замену', cls: 'primary', run: async (x) => {
-        if (!chosen) throw new Error('Выберите цвет');
-        await patch('/discrete/' + plan.id, {replacements: {...plan.replacements, [m.source_key]: chosen}});
+        place.clear();
+        if (!chosen) return place.say('Выберите цвет из списка выше: без выбора заменять нечем.');
+        try { await patch('/discrete/' + plan.id, {replacements: {...plan.replacements, [m.source_key]: chosen}}); } catch (e) { return place.fail(e); }
         x.close(); reload();
       }}]);
   }
@@ -67,10 +75,15 @@ const ArtworkParts = (() => {
     const rows = all.map((e) => h('div', {class: 'alert warn'},
       h('label', {class: 'row'}, h('input', {type: 'checkbox', checked: picked.has(e.id), onChange: (ev) => { if (ev.target.checked) picked.add(e.id); else picked.delete(e.id); }}), swatch(e.lab), labText(e.lab)),
       h('p', {class: 'small'}, (e.doubt && doubt(e.doubt.reason)) || 'Параметры под вопросом'), link('/knowledge/' + e.id, 'Наблюдения')));
+    const place = Forms.notice({what: 'Разрешение', kept: 'Отметки остались в окне, план не изменён.'});
     modal('Включить параметры под вопросом в этот план', h('div', {class: 'stack'},
-      h('p', {}, 'Разрешение действует только для этого плана. Стадия знания и флаг не изменятся.'), ...(rows.length ? rows : [h('p', {}, 'Нет производственных параметров под вопросом')])), [
+      h('p', {}, 'Разрешение действует только для этого плана. Стадия знания и флаг не изменятся.'), ...(rows.length ? rows : [h('p', {}, 'Нет производственных параметров под вопросом')]), place.error), [
       {label: 'Отмена', run: (x) => x.close()},
-      {label: 'Применить к этому плану', cls: 'primary', run: async (x) => { await patch('/discrete/' + plan.id, {allowed_questioned: [...picked]}); x.close(); reload(); }}]);
+      {label: 'Применить к этому плану', cls: 'primary', run: async (x) => {
+        place.clear();
+        try { await patch('/discrete/' + plan.id, {allowed_questioned: [...picked]}); } catch (e) { return place.fail(e); }
+        x.close(); reload();
+      }}]);
   }
 
   return {startForm, replaceDialog, questionedDialog, params, seconds};

@@ -35,7 +35,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 40; i++) await wait(5); };
 const body = ctx.document.body;
 const button = (root, text) => root.querySelectorAll('button').find((b) => b.textContent === text);
-const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
+// a box is named by its aria-label or, in a field, by the label of the field (the unit and the permitted values are read after the name, not in it)
+const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label)
+  || (root.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === label.replace(/, мм$/, '')) || {firstControl: () => undefined}).firstControl();
 const tiles = (tree) => tree.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'radio');
 const heading = (root) => root.querySelector('h2').textContent;
 const alerts = (root) => root.querySelectorAll('[role]').filter((a) => a.getAttribute('role') === 'alert' && !a.hidden).map((a) => a.textContent);
@@ -113,7 +115,7 @@ def test_a_work_is_made_from_the_picture_through_the_three_steps_and_the_task_is
   await button(tree, 'Дальше →').dispatch('click'); await settle();
   out.third = [heading(tree), button(tree, 'Создать работу').disabled, alerts(tree)];
   await button(tree, 'Создать работу').dispatch('click'); await settle();
-  out.refused = [alerts(tree), [...ctx.__went]];                                        // the workshop holds no tolerance: the person is asked, nothing is made
+  out.refused = [[(tree.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === 'Допуск ΔE') || {errorText: () => undefined}).errorText()], [...ctx.__went]];                                        // the workshop holds no tolerance: the person is asked, nothing is made
   const thr = tree.querySelectorAll('input').find((i) => i.getAttribute('placeholder') === 'задайте');
   thr.value = '5'; await thr.dispatch('input');
   await button(tree, 'Создать работу').dispatch('click'); await settle();

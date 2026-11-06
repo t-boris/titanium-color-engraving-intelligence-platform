@@ -144,6 +144,7 @@ CHANGE = """
   out.posts = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.second = dialog().querySelector('h3').textContent;
   out.toast = ctx.document.body.querySelector('.toasts') ? ctx.document.body.querySelector('.toasts').textContent : '';
+  out.formError = dialog().querySelectorAll('.f-form-error').map((n) => n.textContent).join(' ');          // a refusal stands in the dialog, beside the form
 """
 
 
@@ -164,7 +165,7 @@ def test_the_dialog_of_new_work_changes_the_shared_choice_by_the_creation_dialog
 def test_a_choice_changed_to_a_setup_without_a_measured_scale_is_told_and_no_work_is_made_on_another_laser_scale(tmp_path):
     out = run(tmp_path, {}, CHANGE)                                                # the scales of the workshop are measured on titanium 3 only
     assert out["posts"] == [] and out["second"] == "Новая работа · шаг 1 из 2: картинка"
-    assert "нет измеренной шкалы серого" in out["toast"]
+    assert "нет измеренной шкалы серого" in out["formError"] and "нет измеренной шкалы серого" not in out["toast"]
 
 
 def test_the_dialog_of_photo_engraving_and_the_creation_screen_ask_which_kind_of_engraving_through_one_function():

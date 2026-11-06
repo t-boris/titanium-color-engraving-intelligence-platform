@@ -39,8 +39,10 @@ const App = (() => {
     const id = `f${++fieldSeq}`;
     const labelSpan = h('span', opts ? {id: `${id}-label`} : {}, label);
     const note = help ? h('span', {class: 'small muted', id: opts ? `${id}-help` : null}, help) : null;
+    // a quantity without a unit (a count, a ratio) says so to a screen reader: «без единицы»; the eyes get no extra words
     const facts = opts ? [opts.unit ? `единица: ${opts.unit}` : null, opts.constraint || null].filter(Boolean) : [];
-    const hint = facts.length ? h('span', {class: 'small muted f-constraint', id: `${id}-hint`}, facts.join(' · ')) : null;
+    const hint = facts.length || (opts && opts.unitless) ? h('span', {class: 'small muted f-constraint', id: `${id}-hint`},
+      opts.unitless && !opts.unit ? h('span', {class: 'sr-only'}, 'без единицы' + (facts.length ? ' · ' : '')) : null, facts.join(' · ')) : null;
     const body = opts && opts.unit && input ? h('span', {class: 'f-with-unit'}, input, h('span', {class: 'f-unit', 'aria-hidden': 'true'}, opts.unit)) : input;
     const el = h('label', {class: 'f'}, labelSpan, opts && opts.required ? h('span', {class: 'f-required'}, 'обязательно') : null, body, hint, note);
     let failure = null;
@@ -78,6 +80,7 @@ const App = (() => {
     };
     el.firstControl = () => controls()[0] || null;                         // not ``control``: a label's own read-only property
     el.errorText = () => (failure ? failure.textContent : '');
+    el.setHelp = (text) => { if (note) note.textContent = text; };           // for a field whose permitted values follow another choice (the laser, the axis)
     return el;
   }
   const link = (route, label) => h('a', {href: '#' + route}, label);

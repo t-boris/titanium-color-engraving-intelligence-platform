@@ -54,6 +54,24 @@ Review (2026-11-05, written before the release step):
   the final full run had to wait until the last agent reported (see lessons.md).
 
 
+## 0.39.1: the last open feature, finished (2026-11-05)
+
+The goal check refused to stop at 0.39.0: save-feedback and validation were still `implementing`, and the leftovers were work the agent could do.
+- [x] validation: R3 (stale answer), R4 (save failure kept beside the form, retry saves), R5 (back navigation) seen in a real Chrome on the
+      throw-away workshop; REQ-002 c1/c3 ticked; status `implemented` (the operator's timings and the screen reader stay «not executed»)
+- [x] save-feedback: server refusals of the plate dialog, the photo-engraving new-work dialog, the shooting-rig editor, the chart reference
+      and the controller table stay beside the form with the typed values; lettering and corner boxes, dot width and the research box have
+      a name, a unit and the server range; `forms.js` holds about 33 quantities, each compared with the Python rule by an edge test
+- [x] proof: `tests/test_every_control_named_ui.py` (40 screens/tabs, 18 dialogs, every plate type) and a real-Chrome sweep: 783 controls,
+      0 unnamed, 357 numeric, 0 without unit or range (the first sweep found 12 Lab boxes without a unit; fixed)
+- [x] REQ-003 c1/c2/c3 ticked; all nine features `implemented`, none `verified`
+- [x] whole suite `-n 12`, no skips: 2931 passed, 0 failed, 0 skipped (443 s); version 0.39.1 (`pyproject.toml`, `desktop/package.json`,
+      lock ×2), README entry, editable metadata reinstalled with `uv pip install -e . --no-deps --python .venv/bin/python`
+- [x] core rebuilt (bundled UI identical to source), frozen `--smoke` ok; `desktop` tests 33 passed; signed zip, codesign strict ok, packaged
+      hidden smoke 0.39.1 with `interface drawn` and no session token; sha256
+      `078c0ecc0803c5385138e93f30d5064e046424804c2fcde36fc3bd777f4ecedb`
+- [ ] one commit to `main`, push, pre-release v0.39.1 with the zip, digest verified after downloading it back
+
 # Desktop shell: a log file and a window self-check (0.38.1) — 2026-11-05
 
 The operator's window drew only the «Перейти к содержимому» link after the first start of 0.37.0 (no styles, no interface); it did not

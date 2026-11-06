@@ -84,7 +84,7 @@
         : Forms.readNumber(thr, Q.deltaE, {}))});
     const tolLabelText = () => (phoPhoto() ? 'Сглаживание границ' : 'Точность контура');
     const toleranceField = f.add('tolerance', tolLabelText(), tolerance, {quantity: 'vectorTolerance', required: true});
-    const coloursField = f.add('colours', 'Число цветов', colours, {required: true, constraint: '', help: '2–29, с маркерами 2–28: чистка — первый слой',
+    const coloursField = f.add('colours', 'Число цветов', colours, {quantity: 'photoColours', required: true, constraint: '', help: '2–29, с маркерами 2–28: чистка — первый слой',
       read: onlyPhoto(() => Forms.readNumber(colours, {...Q.photoColours, max: markers.checked ? 28 : 29}, {required: true}))});
     const detailField = f.add('detail', 'Детальность', detail, {required: true, help: 'крупно — спокойные большие области, детально — мелкие',
       read: onlyPhoto(() => ({ok: true, value: detail.value}))});
@@ -227,11 +227,12 @@
       return option(e.id, h('span', {}, swatch(e.lab), `K${e.id} · ${MODE[e.mode] || e.mode || 'режим не записан'}`),
         h('span', {class: 'muted small'}, `${params(e.parameters)} · расстояние ${num(c.distance)} · ожидаемая ошибка ΔE ${num(e.expected_delta_e)} · уверенность ${num(e.confidence)}`));
     }));
+    const place = Forms.notice({what: 'Выбор настроек', kept: 'У группы прежние настройки.'});
     modal(`Настройки группы «${group.key}»`, h('div', {class: 'stack'},
       h('p', {}, 'Только валидированные и производственные рецепты этого лазера, линзы и титана, режим LightBurn которых подходит задаче группы.'),
-      group.candidates.length ? rows : h('p', {class: 'alert warn'}, 'Подходящих рецептов нет: области группы останутся без данных.')), [
+      group.candidates.length ? rows : h('p', {class: 'alert warn'}, 'Подходящих рецептов нет: области группы останутся без данных.'), place.error), [
       {label: 'Отмена', run: (x) => x.close()},
-      {label: 'Применить', cls: 'primary', run: async (x) => { x.close(); await run({op: 'set_settings', group: group.key, knowledge_id: chosen}); }}]);
+      {label: 'Применить', cls: 'primary', run: async (x) => { if (await run({op: 'set_settings', group: group.key, knowledge_id: chosen}, place)) x.close(); }}]);
   }
 
   /** Сколько областей без данных — коротко; их номера — по «показать», а не сотнями в одном сообщении. */
@@ -245,7 +246,15 @@
   function jobView(j) {
     const id = j.id;
     const reload = () => App.render({preserveScroll: true});
-    const run = async (op) => { try { await post(`/vector/${id}/edit`, op); reload(); } catch (e) { fail(e); } };
+    // a refusal of the server is told beside the controls that asked, with what stayed as it was: ``place`` is a form or a notice (Forms.create, Forms.notice);
+    // a toast stays only for an action with nothing beside it (ux-save-feedback-p0, REQ-003). Answers whether the edit was accepted.
+    const run = async (op, place) => {
+      if (place) place.clear();
+      try { await post(`/vector/${id}/edit`, op); reload(); return true; } catch (e) { if (place) place.fail(e); else fail(e); return false; }
+    };
+    const barPlace = Forms.notice({what: 'Правка', kept: 'Работа осталась как была.'});                  // under the bar of the work
+    const listPlace = Forms.notice({what: 'Изменение области', kept: 'Область осталась как была.'});    // above the list of regions
+    const historyPlace = Forms.notice({what: 'Возврат версии', kept: 'Работа осталась в прежней версии.'});
     const selected = new Set();
     const size = j.document.size_mm;
     const exp = j.experiment || {};
@@ -272,17 +281,21 @@
         h('span', {class: 'lst-text muted small'}, [(TASKS.find(([t]) => t === r.task) || [r.task, r.task])[1],
           r.outline === 'closed' ? `${num(r.area_mm2, 2)} мм²` : 'центральная линия', `группа ${r.layer_key}`, r.knowledge_id ? 'K' + r.knowledge_id : 'без рецепта'].join(' · ')),
         r.target_sent ? pill('цвет передан планировщику') : null],
-      actions: (r) => [btn('Удалить', () => run({op: 'delete', region: r.id}), 'danger'),
-        r.status === 'excluded' ? btn('Вернуть', () => run({op: 'include', region: r.id})) : btn('Исключить (без рецепта)', () => run({op: 'exclude', region: r.id})),
-        r.status === 'weak' && r.kind === 'fill' && !r.target_sent ? btn('Планировщику', () => run({op: 'to_designer', region: r.id})) : null],
+      actions: (r) => [btn('Удалить', () => run({op: 'delete', region: r.id}, listPlace), 'danger'),
+        r.status === 'excluded' ? btn('Вернуть', () => run({op: 'include', region: r.id}, listPlace)) : btn('Исключить (без рецепта)', () => run({op: 'exclude', region: r.id}, listPlace)),
+        r.status === 'weak' && r.kind === 'fill' && !r.target_sent ? btn('Планировщику', () => run({op: 'to_designer', region: r.id}, listPlace)) : null],
       details: (r) => {
         const pr = r.prediction;
-        const task = h('select', {'aria-label': 'Задача области ' + r.id, style: 'min-width:130px', onChange: (ev) => run({op: 'set_task', region: r.id, task: ev.target.value})},
+        // the task is chosen at once; a refusal stands under the choice. The group is a name that must not be empty (vectorize.edit); its refusal stands under the box, the name stays
+        const taskPlace = Forms.notice({what: 'Смена задачи', kept: 'У области прежняя задача.'});
+        const task = h('select', {'aria-label': 'Задача области ' + r.id, style: 'min-width:130px', onChange: (ev) => run({op: 'set_task', region: r.id, task: ev.target.value}, taskPlace)},
           TASKS.filter(([t]) => r.outline === 'closed' || t === 'line').map(([t, l]) => h('option', {value: t, selected: t === r.task}, l)));
-        const group = h('input', {value: r.layer_key, style: 'min-width:90px;width:90px', 'aria-label': 'Группа настроек области ' + r.id});
+        const move = Forms.create();
+        const group = move.add('layer_key', `Группа настроек области ${r.id}`, h('input', {value: r.layer_key, style: 'min-width:90px;width:90px'}), {required: true});
         return h('div', {class: 'stack small'},
-          h('div', {class: 'toolbar'}, field('Задача', task), field('Группа настроек', group),
-            btn('Перенести', () => run({op: 'set_layer', region: r.id, layer_key: group.value}))),
+          h('div', {class: 'toolbar'}, field('Задача', task), group,
+            btn('Перенести', async () => { const v = move.collect(); if (v) await run({op: 'set_layer', region: r.id, layer_key: v.layer_key}, move); })),
+          taskPlace.error, move.error,
           h('div', {}, r.outline === 'closed' ? `Контур · ${num(r.area_mm2, 2)} мм²` : 'Центральная линия'),
           r.knowledge_id ? h('div', {}, 'Рецепт ', link('/knowledge/' + r.knowledge_id, 'K' + r.knowledge_id), ` · ${MODE[r.mode] || r.mode || 'режим не записан'} · ${params(r.parameters)}`)
             : h('div', {class: 'muted'}, 'Рецепта нет'),
@@ -324,7 +337,7 @@
     // the history of edits as a short list: the newest first, a version a line, «Вернуть эту версию» on the line
     const history = App.list({id: 'vw.job.history', items: j.history.map((e, pos) => ({...e, pos})), key: (e) => String(e.pos),
       row: (e) => [h('strong', {}, `v${e.version}`), h('span', {class: 'lst-text'}, OPS[e.op.op] || e.op.op), h('span', {class: 'muted small'}, e.at.replace('T', ' ').slice(0, 16))],
-      actions: (e) => (DOCUMENT_OPS.includes(e.op.op) && e.version !== j.document.version ? [btn('Вернуть эту версию', () => run({op: 'revert', version: e.version}))] : []),
+      actions: (e) => (DOCUMENT_OPS.includes(e.op.op) && e.version !== j.document.version ? [btn('Вернуть эту версию', () => run({op: 'revert', version: e.version}, historyPlace))] : []),
       search: (e) => `v${e.version} ${OPS[e.op.op] || e.op.op}`,
       sorts: [['new', 'Сначала новые', (a, b) => b.pos - a.pos], ['old', 'Сначала старые', (a, b) => a.pos - b.pos]], empty: 'Правок пока нет'});
 
@@ -347,11 +360,14 @@
           h('figcaption', {class: 'muted small'}, 'Контуры в цветах изображения; области без достаточных данных заштрихованы красным')))),
       h('div', {class: 'card toolbar'}, tolerance, btn('Применить точность', apply(toleranceForm, tolerance, (v) => ({op: 'set_tolerance', tolerance_mm: v.tolerance}))),
         thr, btn('Применить порог', apply(thresholdForm, thr, (v) => ({op: 'set_threshold', threshold: v.threshold}))), toleranceForm.error, thresholdForm.error,
-        btn('Объединить выбранные', () => (selected.size === 2 ? run({op: 'merge', regions: [...selected]}) : fail(new Error('Выберите ровно две области')))),
-        btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => { try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { fail(e); } })),
+        btn('Объединить выбранные', () => (selected.size === 2 ? run({op: 'merge', regions: [...selected]}, barPlace) : barPlace.say('Выберите ровно две области: отметьте их в списке ниже. Работа осталась как была.'))),
+        btn(j.markers_enabled ? 'Выключить маркеры' : 'Включить маркеры', async () => {
+          barPlace.clear();
+          try { await put(`/plans/${id}/markers`, {enabled: !j.markers_enabled}); reload(); } catch (e) { barPlace.fail(e); }
+        }), barPlace.error),
       j.weak.length ? weakSummary(j.weak) : null,
       h('div', {class: 'card'}, h('h3', {}, `Области: ${j.regions.length}`),
-        regions.el),
+        listPlace.error, regions.el),
       h('div', {class: 'card'}, h('h3', {}, 'Группы настроек'), h('p', {class: 'muted small'}, 'Одна группа — один рецепт; одинаковые рецепты разных групп выводятся в один слой LightBurn.'),
         table(['Группа', 'Нужно', 'Рецепт', '', 'Областей', 'Подходящих рецептов', ''], groups)),
       h('div', {class: 'card stack', id: 'vw-job-export'}, h('h3', {}, 'Экспорт'),
@@ -361,7 +377,7 @@
           recipe: table(['Слой', 'Режим', 'Задача', 'Областей', 'Прогнозный цвет', 'Уверенность · ошибка'], j.layers.map((l) => [`C${String(l.index).padStart(2, '0')} · ${l.name}`, MODE[l.mode] || l.mode || '—',
             l.task ? Tasks.name(l.task) : h('span', {class: 'muted small'}, 'смешанная: ' + (l.region_tasks || []).map((t) => (TASKS.find(([k]) => k === t) || [t, t])[1]).join(', ') + ' — по слою LightBurn'),
             `${l.region_ids.length}`, h('span', {}, swatch(l.prediction.lab), labText(l.prediction.lab)), `${num(l.prediction.confidence)} · ΔE ${num(l.prediction.expected_delta_e)}`]), 'Слоёв нет')})),
-      h('div', {class: 'card'}, h('h3', {}, 'История правок'), history.el));
+      h('div', {class: 'card'}, h('h3', {}, 'История правок'), historyPlace.error, history.el));
   }
 
   const duration = (s) => (s == null ? '—' : s >= 3600 ? `${Math.floor(s / 3600)} ч ${String(Math.round(s % 3600 / 60)).padStart(2, '0')} мин`
@@ -400,8 +416,15 @@
     const exp = j.experiment || {};
     const about = h('div', {class: 'stack'}), split = h('div', {}), file = h('div', {}), review = h('div', {class: 'stack'});
     let shown = null, queue = Promise.resolve(), parts = null, frame = null;
-    /** «Размер…» (REQ-001 фичи work-size-and-splitting-a-region-again): в той же очереди; ответ — работа целиком или null при отказе. */
-    const resize = (body) => (queue = queue.then(async () => { try { const work = await post(`/vector/${j.id}/size`, body); show(work); return work; } catch (e) { fail(e); return null; } }));
+    /** Where a refusal of the server is told. ``place`` is a form or a notice beside the controls that asked (``Forms.create()``, ``Forms.notice()``: both
+        have ``clear`` and ``fail``); it is cleared when the request goes out. Without one, the refusal is a toast, which is right only for an action
+        that has no control of its own, such as a click on the picture (ux-save-feedback-p0, REQ-003). */
+    const refuse = (place, e) => (place ? place.fail(e) : fail(e));
+    /** «Размер…» (REQ-001 фичи work-size-and-splitting-a-region-again): в той же очереди; ответ — работа целиком или null при отказе (он сказан в ``place``). */
+    const resize = (body, place) => (queue = queue.then(async () => {
+      if (place) place.clear();
+      try { const work = await post(`/vector/${j.id}/size`, body); show(work); return work; } catch (e) { refuse(place, e); return null; }
+    }));
     const head = VectorWorkspace.header(j, {file: () => frame.select('file'), renamed: (name) => { shown = {...shown, name}; head.update(shown); }, resize});
     // feature electron, REQ-085: a work pinned to a laboratory release shows its source under the head; a confirmed step returns the whole work
     const banner = LabSource.banner(`/vector/${j.id}`, 'vector', (work) => show(work));
@@ -438,14 +461,21 @@
       status.sync();
       if (parts) parts.update(next);
     }
-    async function send(op) {
-      try { show(await post(`/vector/${j.id}/colouring`, op)); return true; } catch (e) { fail(e); return false; }
+    async function send(op, place) {
+      if (place) place.clear();
+      try { show(await post(`/vector/${j.id}/colouring`, op)); return true; } catch (e) { refuse(place, e); return false; }
     }
-    const run = (op) => (queue = queue.then(() => send(op)));
-    /** Ползунок гладкости: в той же очереди, что и действия редактора; границы перерисовываются, цвета остаются (REQ-052). */
-    const smooth = (mm) => (queue = queue.then(async () => { try { show(await post(`/vector/${j.id}/smoothing`, {mm})); } catch (e) { fail(e); } }));
+    const run = (op, place) => (queue = queue.then(() => send(op, place)));
+    /** Ползунок гладкости: в той же очереди, что и действия редактора; границы перерисовываются, цвета остаются (REQ-052). Ответ: принято ли. */
+    const smooth = (mm, place) => (queue = queue.then(async () => {
+      if (place) place.clear();
+      try { show(await post(`/vector/${j.id}/smoothing`, {mm})); return true; } catch (e) { refuse(place, e); return false; }
+    }));
     /** Разрешение отправить уменьшенное фото AI (DEC-084): работа его помнит; в той же очереди, цвета не меняются. */
-    const permit = (allowed) => (queue = queue.then(async () => { try { show(await post(`/vector/${j.id}/ai-photo`, {allowed})); } catch (e) { fail(e); } }));
+    const permit = (allowed, place) => (queue = queue.then(async () => {
+      if (place) place.clear();
+      try { show(await post(`/vector/${j.id}/ai-photo`, {allowed})); return true; } catch (e) { refuse(place, e); return false; }
+    }));
     async function refresh() {
       try { show(await get('/vector/' + j.id)); } catch (e) { fail(e); }
     }

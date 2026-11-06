@@ -27,11 +27,12 @@ const Corners = (() => {
     // the corners by numbers: a person who cannot aim at the picture still places, moves and checks every corner
     const nums = names.map((name, i) => ['x', 'y'].map((axis) => h('input', {type: 'number', min: '0', max: '100', step: '0.1', class: 'corner-num',
       'aria-label': `Угол ${i + 1}: ${axis === 'x' ? 'слева' : 'сверху'}, %`})));
+    const numRules = nums.map((pair) => pair.map((input) => Forms.describe(input, 'cornerShare')));        // «единица: %, допустимо: от 0 до 100»
     const numNote = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'});
     const numbers = h('div', {class: 'corner-nums', role: 'group', 'aria-label': 'Углы числами, в процентах ширины и высоты снимка'},
       names.map((name, i) => h('div', {class: 'corner-num-row', role: 'group', 'aria-label': `Угол ${i + 1}: ${name}`},
         h('strong', {class: 'corner-num-name'}, `${i + 1}. ${name}`),
-        h('label', {class: 'f'}, h('span', {}, 'слева, %'), nums[i][0]), h('label', {class: 'f'}, h('span', {}, 'сверху, %'), nums[i][1]))));
+        h('label', {class: 'f'}, h('span', {}, 'слева, %'), nums[i][0], numRules[i][0]), h('label', {class: 'f'}, h('span', {}, 'сверху, %'), nums[i][1], numRules[i][1]))));
     const pct = (v) => String(Math.round(v * 1000) / 10);
     function syncNumbers() {
       nums.forEach(([x, y], i) => {

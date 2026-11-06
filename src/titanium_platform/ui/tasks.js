@@ -43,7 +43,7 @@ const Tasks = (() => {
       let el;
       if (g === 'target_lab') {
         const parts = ['L', 'a', 'b'].map((c) => h('input', {type: 'number', step: 'any', placeholder: c, 'aria-label': `${TaskText.GOAL[g]}: ${c}`, style: 'width:5em'}));
-        el = field(TaskText.GOAL[g], h('span', {class: 'row'}, ...parts), 'три числа: L от 0 до 100, a и b — любые', {constraint: 'допустимо: L от 0 до 100'});
+        el = field(TaskText.GOAL[g], h('span', {class: 'row'}, ...parts), 'три числа: L от 0 до 100, a и b — любые', {unitless: true, constraint: 'допустимо: L от 0 до 100'});
         reads[g] = () => {
           const typed = parts.map((i) => i.value.trim());
           if (typed.every((t) => t === '')) return {ok: true, value: null};

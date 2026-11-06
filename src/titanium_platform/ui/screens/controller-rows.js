@@ -2,7 +2,7 @@
    в паспорт лазера всё уходит одним сохранением (device-controller.js). Значение, введённое вами, считается подтверждённым. */
 'use strict';
 const ControllerRows = (() => {
-  const {h, pill, fail} = App;
+  const {h, pill} = App;
   const {TAB, HELP} = GlossaryController;
   const UNREAD = 'см. фото';
   const STATUS = {printed: ['напечатано', 'ok'], handwritten: ['от руки', 'warn'], confirmed: ['подтверждено', 'ok']};
@@ -40,16 +40,28 @@ const ControllerRows = (() => {
   }
 
   function addForm(fields, ctx) {
-    const f = {key: h('input', {placeholder: 'название, как в EZCAD', 'aria-label': 'Название настройки'}), value: h('input', {placeholder: 'значение', 'aria-label': 'Значение'}),
-      unit: h('input', {placeholder: 'ед.', 'aria-label': 'Единица', style: 'max-width:90px'})};
+    const f = {key: h('input', {placeholder: 'название, как в EZCAD'}), value: h('input', {placeholder: 'значение'}),
+      unit: h('input', {placeholder: 'ед.', style: 'max-width:90px'})};
+    // what is wrong is said beside the box it is about, and what was typed stays; the unit is free text and may stay empty
+    const form = Forms.create();
+    const boxes = [
+      form.add('key', 'Название настройки', f.key, {required: true, read: () => {
+        const key = f.key.value.trim();
+        if (!key) return {ok: false, message: 'Укажите название настройки'};
+        return fields.some((x) => x.key === key) ? {ok: false, message: 'Такая настройка в этом разделе уже есть'} : {ok: true, value: key};
+      }}),
+      form.add('value', 'Значение', f.value, {required: true, read: () => {
+        const value = parse(f.value.value);
+        return value === '' ? {ok: false, message: 'Укажите значение настройки'} : {ok: true, value};
+      }}),
+      form.add('unit', 'Единица', f.unit, {read: () => ({ok: true, value: f.unit.value.trim() || null})})];
     const add = () => {
-      const key = f.key.value.trim(), value = parse(f.value.value);
-      if (!key || value === '') return fail(new Error('Укажите название и значение настройки'));
-      if (fields.some((x) => x.key === key)) return fail(new Error('Такая настройка в этом разделе уже есть'));
-      fields.push({key, value, unit: f.unit.value.trim() || null, status: 'confirmed'});
+      const v = form.collect();
+      if (!v) return;
+      fields.push({key: v.key, value: v.value, unit: v.unit, status: 'confirmed'});
       ctx.change();
     };
-    return h('div', {class: 'row'}, f.key, f.value, f.unit, small('Добавить настройку в этот раздел', 'Добавить настройку', add, '+ Добавить'));
+    return h('div', {class: 'stack'}, h('div', {class: 'row'}, ...boxes, small('Добавить настройку в этот раздел', 'Добавить настройку', add, '+ Добавить')), form.error);
   }
   return {UNREAD, STATUS, working, row, addForm, small};
 })();

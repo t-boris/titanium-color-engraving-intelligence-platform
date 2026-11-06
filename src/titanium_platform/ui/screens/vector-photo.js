@@ -160,10 +160,12 @@ const VectorPhoto = (() => {
             recipe.missing ? h('p', {class: 'alert warn small'}, 'Этого цвета больше нет среди измерений карты цветов: выберите другой или верните точки на шкалу.') : null,
             h('p', {class: 'small muted'}, 'Каждая точка бьёт на настройках этого цвета; тон — сколько точек. В файле Min = Max.'));
         }
-        const power = number(`Мощность точек фотозоны ${zone.number}, %`, zone.dot_power, zone.span ? zone.span[0] : 0, zone.span ? zone.span[1] : 100);
-        // a power outside 0..100 % is refused beside the box and stays in it; nothing is sent (prediction_store.check_power_range)
-        const powerNote = Forms.watch(power, 'photoPower', (v) => ctx.act({op: 'photo_set', zone: zone.number, dot_power: v}));
-        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power), powerNote, swatches,
+        // the dots' power must lie inside the powers the scale was measured at, at this width (photo_zones.change): the work says them (``zone.span``);
+        // a power outside is refused beside the box and stays in it; nothing is sent
+        const rule = zone.span ? {...Forms.QUANTITIES.photoPower, label: 'Мощность точек', min: zone.span[0], max: zone.span[1], source: 'photo_zones.change (the measured span)'} : Forms.QUANTITIES.photoPower;
+        const power = number(`Мощность точек фотозоны ${zone.number}, %`, zone.dot_power, rule.min, rule.max);
+        const powerNote = Forms.watch(power, rule, (v) => ctx.act({op: 'photo_set', zone: zone.number, dot_power: v}));
+        return h('div', {class: 'vp-powers'}, h('label', {class: 'row small'}, h('span', {}, 'Мощность точек, %'), power, Forms.describe(power, rule)), powerNote, swatches,
           h('div', {class: 'row small'}, toMap, h('span', {class: 'muted'}, 'любой измеренный цвет этого лазера и титана')),
           h('p', {class: 'small muted'}, 'Каждая точка бьёт на этой мощности; тон — сколько точек. В файле Min = Max.'));
       }
@@ -186,7 +188,8 @@ const VectorPhoto = (() => {
       const tone = h('input', {type: 'checkbox', checked: !!zone.by_colour, 'aria-label': `Цвета по картинке, фотозона ${zone.number}`});
       tone.addEventListener('change', () => ctx.act({op: 'photo_set', zone: zone.number, by_colour: tone.checked}));
       return h('div', {class: 'vp-powers'},
-        h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low), lowNote, h('label', {class: 'row'}, h('span', {}, 'Max, %'), high), highNote),
+        h('div', {class: 'row small'}, h('label', {class: 'row'}, h('span', {}, 'Min, %'), low, Forms.describe(low, 'photoPower')), lowNote,
+          h('label', {class: 'row'}, h('span', {}, 'Max, %'), high, Forms.describe(high, 'photoPower')), highNote),
         h('label', {class: 'row small'}, tone, h('span', {}, 'Цвета по картинке: серые подобраны так, чтобы цвета титана шли за цветами картинки, '
           + 'как у векторных областей вокруг. Выключено — гравируются серые самой картинки.')),
         zone.by_colour ? h('p', {class: 'small muted'}, `${greysText(zone)}. Как подбирать серые и контуры — в «Открыть».`) : null);

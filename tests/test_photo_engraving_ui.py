@@ -112,7 +112,13 @@ ctx.fetch = async (url, opts = {}) => {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 10; i++) await wait(0); };
 const input = (tree, test) => tree.querySelectorAll('input').find(test);
-const labelled = (tree, label) => input(tree, (i) => i.getAttribute('aria-label') === label && i.getAttribute('type') !== 'range');
+/** A box by its name: its aria-label, or the label its field gives it (aria-labelledby) when the label is the name without the unit. */
+const named = (tree, i) => {
+  const by = i.getAttribute('aria-labelledby');
+  const label = by ? tree.querySelectorAll('[id]').find((n) => n.getAttribute('id') === by) : null;
+  return label ? label.textContent : i.getAttribute('aria-label');
+};
+const labelled = (tree, label) => input(tree, (i) => (i.getAttribute('aria-label') === label || named(tree, i) === label.replace(/, мм$/, '')) && i.getAttribute('type') !== 'range');
 const button = (tree, text) => tree.querySelectorAll('button').find((b) => b.textContent === text);
 const shown = (tree) => { const img = tree.querySelectorAll('img').find((i) => (i.className || '').includes('pp-image')); return img ? img.getAttribute('src') : null; };
 const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
@@ -716,7 +722,7 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
 @node
 def test_the_brightness_contrast_and_gamma_of_a_photo_work_are_saved_and_said_in_its_details(tmp_path):
     out = run(tmp_path, {"work": "7"}, """
-  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее';
+  const B = 'Яркость картинки, %';
   const brightness = labelled(tree, B);
   const work = tree.querySelector('.ge-tone').parentNode; out.under = [work.className, work.children.indexOf(tree.querySelector('.ge-tone')) - work.children.indexOf(tree.querySelector('.ge-inputs'))];
   brightness.value = '-15'; await brightness.dispatch('change'); await wait(350); await settle();
@@ -732,7 +738,7 @@ def test_colour_matching_keeps_tone_controls_enabled_and_sharpness_is_saved_and_
   const panel = tree.querySelector('.ge-tone');
   out.enabled = panel.querySelectorAll('input').every((i) => !i.disabled);
   out.note = panel.textContent.includes('Регулировки применяются после подбора серых');
-  const s = labelled(tree, 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления');
+  const s = labelled(tree, 'Чёткость картинки');
   s.value = '40'; await s.dispatch('change'); await wait(350); await settle();
   await button(tree, 'Как есть').dispatch('click'); await settle();
   out.saves = saves();
@@ -770,8 +776,8 @@ def test_a_lightburn_marker_has_independent_colour_and_photo_assessments(tmp_pat
 def test_a_tone_slider_dragged_saves_once_when_it_pauses_as_it_is_puts_the_picture_back_and_the_forecast_follows(tmp_path):
     """photo-zone-dots REQ-002 crit. 1: the sliders' own movement (their 'input' events) and «Как есть» on the photo work screen."""
     out = run(tmp_path, {"work": "7"}, """
-  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', C = 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее',
-        G = 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее';
+  const B = 'Яркость картинки, %', C = 'Контраст картинки, %',
+        G = 'Гамма картинки';
   const range = (label) => input(tree, (i) => i.getAttribute('aria-label') === label && i.getAttribute('type') === 'range');
   const both = () => [B, C, G].map((label) => [range(label).value, labelled(tree, label).value]);
   out.start = {sliders: [B, C, G].map((label) => [range(label).getAttribute('min'), range(label).getAttribute('max')]), values: both(),
@@ -802,7 +808,7 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
     out = run(tmp_path, {"work": "7"}, """
   const box = () => tree.querySelector('.ge-dotwidth');
   const tick = () => input(box(), (i) => i.getAttribute('type') === 'checkbox');
-  const width = () => labelled(tree, 'Ширина точки лазера, мм');
+  const width = () => labelled(tree, 'Ширина точки лазера');
   out.first = [box().hidden, tick().checked, width().value];
   tick().checked = true; await tick().dispatch('change'); await settle();
   out.empty = saves().length;
@@ -828,6 +834,22 @@ def test_a_dot_kind_corrects_the_dot_width_with_a_tick_and_a_width_in_mm_and_gra
     assert out["waits"] == 3                                                              # a tick with the width in the field sends it
     assert out["saves"] == [{"dot_width": 0.02}, {"dot_width": None}, {"dot_width": 0.02}, {"dot_width": 0.025}, {"dot_width": None}]
     assert out["undone"] == [True, "0.025"] and out["grey"]
+
+
+@node
+def test_a_dot_width_outside_what_lightburn_takes_stays_in_the_box_with_the_reason_and_is_not_saved(tmp_path):
+    out = run(tmp_path, {"work": "7"}, """
+  const width = () => labelled(tree, 'Ширина точки лазера');
+  const before = saves().length;
+  width().value = '0.5'; await width().dispatch('change'); await settle();
+  out.wrong = {saved: saves().length - before, kept: width().value, invalid: width().getAttribute('aria-invalid'),
+    words: (width().getAttribute('aria-describedby') || '').split(' ').map((id) => (tree.querySelectorAll('[id]').find((n) => n.getAttribute('id') === id) || {textContent: ''}).textContent).join(' | ')};
+  width().value = '0.02'; await width().dispatch('change'); await settle();
+  out.right = {saved: saves().length - before, invalid: width().getAttribute('aria-invalid')};
+""", work={"kind": "jarvis", "dot_power": 12.5, "dot_width": None})
+    assert out["wrong"]["saved"] == 0 and out["wrong"]["kept"] == "0.5" and out["wrong"]["invalid"] == "true"          # nothing is corrected, nothing is sent
+    assert "единица: мм" in out["wrong"]["words"] and "от 0,001 до 0,2" in out["wrong"]["words"] and "Допустимо: от 0,001 до 0,2 мм. Введено: 0,5" in out["wrong"]["words"]
+    assert out["right"]["saved"] == 1 and out["right"]["invalid"] is None
 
 
 def test_the_laboratory_says_what_it_knows_of_the_kind_and_a_step_darker_and_the_plate_it_proposes_are_made_from_the_work(tmp_path):

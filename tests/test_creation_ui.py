@@ -126,11 +126,15 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 12; i++) await wait(0); };
 const body = ctx.document.body;
 const button = (root, text) => root.querySelectorAll('button').find((b) => b.textContent === text);
-const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
+// a box is named by its aria-label or, in a field, by the label of the field (the unit and the permitted values are read after the name, not in it)
+const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label)
+  || (root.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === label.replace(/, мм$/, '')) || {firstControl: () => undefined}).firstControl();
 const dialog = () => body.querySelector('.modal');
 const sent = (method, path) => ctx.requests.filter((r) => r.method === method && r.path === path);
 const alerts = (root) => root.querySelectorAll('[role]').filter((a) => a.getAttribute('role') === 'alert' && !a.hidden).map((a) => a.textContent);
 const heading = (root) => root.querySelector('h2').textContent;
+/** The words a field says beside its box when it is wrong (ux-save-feedback-p0, REQ-003): found by the label of the field. */
+const fieldError = (root, text) => (root.querySelectorAll('label').find((l) => (l.querySelector('span') || {}).textContent === text) || {errorText: () => undefined}).errorText();
 /** Open the creation screen on ``query`` and put it in the page, as the router does. */
 async function screen(query = {}) {
   const tree = await ctx.__screens.new.render({query});
@@ -190,10 +194,10 @@ def test_the_first_step_asks_for_picture_name_and_size_and_a_missing_picture_or_
   out.steps = tree.querySelector('ol').querySelectorAll('li').map((li) => [li.textContent, li.getAttribute('aria-current')]);
   out.context = tree.querySelector('.work-context').textContent;
   await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.noPicture = alerts(tree);
+  out.noPicture = fieldError(tree, 'Картинка');
   await fillPicture(tree, {width: '0'});
   await button(tree, 'Дальше →').dispatch('click'); await settle();
-  out.noSize = alerts(tree);
+  out.noSize = [fieldError(tree, 'Ширина на титане'), labelled(tree, 'Ширина на титане, мм').value, labelled(tree, 'Ширина на титане, мм').getAttribute('aria-invalid')];
   out.posts = sent('POST', '/api/creation/drafts').length;
   out.classic = tree.querySelectorAll('a').map((a) => a.getAttribute('href')).filter((h) => h.includes('classic'));
 """)
@@ -201,8 +205,8 @@ def test_the_first_step_asks_for_picture_name_and_size_and_a_missing_picture_or_
     assert out["steps"] == [["1. Картинка и размер", "step"], ["2. Что получится", None], ["3. Настройки и создание", None]]
     for word in ("Лазер", "JPT 60", "F-Theta", "Plate", "Grade 5", "измерения этой мастерской"):
         assert word in out["context"]
-    assert out["noPicture"] == ["Выберите картинку (PNG, JPEG, TIFF)"]
-    assert out["noSize"] == ["Ширина на титане должна быть положительным числом миллиметров"]
+    assert out["noPicture"] == "Выберите картинку (PNG, JPEG, TIFF)"                          # each wrong box says why beside itself and keeps what was typed
+    assert out["noSize"] == ["Допустимо: больше 0 мм. Введено: 0", "0", "true"]
     assert out["posts"] == 0                                                    # a task is made only when the picture and the size are there
     assert out["classic"] == ["#/vector?new=1&classic=1"]                       # text and a layer task of its own stay in the one-page form
 
@@ -299,12 +303,12 @@ def test_the_algorithm_delta_e_smoothing_and_time_are_in_the_advanced_settings_o
   const pick = async (i) => { await tiles(tree)[i].dispatch('click'); await button(tree, 'Дальше →').dispatch('click'); await settle(); };
   await pick(0);
   const adv = tree.querySelector('details');
-  out.colour = [adv.querySelector('summary').textContent, adv.getAttribute('open'), adv.textContent.includes('Допуск ΔE'), adv.textContent.includes('Сглаживание границ, мм'),
+  out.colour = [adv.querySelector('summary').textContent, adv.getAttribute('open'), adv.textContent.includes('Допуск ΔE'), adv.textContent.includes('Сглаживание границ'),
     adv.textContent.includes('Алгоритм разбиения'), adv.textContent.includes('Наибольшее время гравировки')];
   out.outside = tree.querySelector('.card').textContent.replace(adv.textContent, '').includes('Допуск ΔE');
   await button(tree, '← Назад').dispatch('click'); await settle();
   await pick(2);
-  out.silhouette = [tree.querySelector('details').textContent.includes('Порог серого'), tree.querySelector('details').textContent.includes('Точность контура, мм'),
+  out.silhouette = [tree.querySelector('details').textContent.includes('Порог серого'), tree.querySelector('details').textContent.includes('Точность контура'),
     tree.querySelector('details').textContent.includes('Алгоритм разбиения')];
   await button(tree, '← Назад').dispatch('click'); await settle();
   await pick(1);
@@ -684,7 +688,7 @@ def test_a_task_that_cannot_be_saved_is_told_beside_the_form_and_the_form_keeps_
   await wait(700); await settle();
   out.note = tree.querySelectorAll('p').filter((p) => p.getAttribute('role') === 'status').map((p) => p.textContent);
 """)
-    assert out["alerts"] == ["Картинка пустая"] and out["step"].startswith("Новая работа · шаг 1 из 3")
+    assert out["alerts"] == ["Не получилось отправить: Картинка пустая. Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."] and out["step"].startswith("Новая работа · шаг 1 из 3")
     assert out["kept"] == ["Портрет", "80"] and out["later"].startswith("Новая работа · шаг 2 из 3")
     assert any(n.startswith("Задача не сохранена: Картинка этой незавершённой задачи не сохранена") for n in out["note"])
 
@@ -799,7 +803,7 @@ def test_a_work_the_server_refuses_leaves_the_task_open_and_the_form_as_it_was_a
   out.posts = sent('POST', '/api/vector').length;
   out.completedTwice = sent('POST', '/api/creation/drafts/1/complete').length;
 """)
-    assert out["alerts"] == ["Не удалось прочитать изображение"]
+    assert out["alerts"] == ["Не получилось отправить: Не удалось прочитать изображение. Всё, что вы ввели, осталось в форме — исправьте и отправьте снова."]
     assert out["completed"] == 0 and out["open"] == [1] and out["enabled"] is True and out["went"] == []
     assert out["posts"] == 2 and out["completedTwice"] == 1                                 # one refused, one made; the second click while busy sent nothing
 
@@ -989,7 +993,7 @@ def test_a_delta_e_tolerance_the_rules_do_not_hold_is_asked_for_before_anything_
   out.open = tree.querySelector('details').getAttribute('open');
   out.hint = tree.querySelector('details').textContent;
   await button(tree, 'Создать работу').dispatch('click'); await settle();
-  out.alerts = alerts(tree);
+  out.alerts = [fieldError(tree, 'Допуск ΔE')];                                       // beside the box, not above the buttons only
   out.nothing = [sent('POST', '/api/vector').length, sent('PUT', '/api/rules').length];
   const thr = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').includes('задайте'));
   thr.value = '4'; await thr.dispatch('input');

@@ -47,12 +47,19 @@
   }
 
   function predictDialog(pick) {
-    const L = h('input', {type: 'number', step: 'any', value: 50}), a = h('input', {type: 'number', step: 'any', value: 0}), b = h('input', {type: 'number', step: 'any', value: 0});
+    // model.predict_for_lab refuses a colour outside color.valid_lab (L 0 to 100, a and b from -128 to 127): the dialog says so beside the box and keeps what was typed
+    const form = Forms.create();
+    const fields = [form.add('L', 'L', Forms.numberInput(Forms.QUANTITIES.predictL, {value: 50}), {quantity: 'predictL', required: true}),
+      form.add('a', 'a', Forms.numberInput(Forms.QUANTITIES.predictAB, {value: 0}), {quantity: 'predictAB', required: true}),
+      form.add('b', 'b', Forms.numberInput(Forms.QUANTITIES.predictAB, {value: 0}), {quantity: 'predictAB', required: true})];
     const out = h('div', {class: 'stack'});
-    modal('Целевой цвет', h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, field('L (0–100)', L), field('a (−128…127)', a), field('b (−128…127)', b)), out), [
+    modal('Целевой цвет', h('div', {class: 'stack'}, h('div', {class: 'grid g3'}, ...fields), form.error, out), [
       {label: 'Закрыть', run: (m) => m.close()},
       {label: 'Подобрать параметры', cls: 'primary', run: async () => {
-        const r = await post('/predict', {device_id: pick.deviceId(), lens_id: pick.lensId(), lab: [+L.value, +a.value, +b.value]});
+        const v = form.collect();
+        if (!v) return;
+        let r;
+        try { r = await post('/predict', {device_id: pick.deviceId(), lens_id: pick.lensId(), lab: [v.L, v.a, v.b]}); } catch (e) { form.fail(e); return; }
         out.replaceChildren(!r.available
           ? h('div', {class: 'alert warn'}, 'Недостаточно данных для прогноза: параметры без уверенности, ошибки и стабильности не выдаются.')
           : h('div', {class: 'stack'}, r.outside_coverage ? h('div', {class: 'alert warn'}, 'Вне измеренного цветового пространства') : h('div', {class: 'alert ok'}, 'В пределах измеренного покрытия'),

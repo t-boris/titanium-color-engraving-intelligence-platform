@@ -245,8 +245,8 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
 def test_the_brightness_contrast_and_gamma_of_a_zone_are_saved_from_three_sliders_and_wait_while_its_greys_are_chosen_for_colours(tmp_path):
     out = run(tmp_path, """
   const slider = (name) => labelled(tree, name);
-  const B = 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', C = 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее',
-        G = 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее';
+  const B = 'Яркость картинки, %', C = 'Контраст картинки, %',
+        G = 'Гамма картинки';
   out.start = [slider(B).value, slider(C).value, slider(G).value, button(tree, 'Как есть').disabled, !!slider(B).disabled];
   slider(B).value = '20'; await slider(B).dispatch('change');
   slider(G).value = '1.5'; await slider(G).dispatch('change'); await wait(350); await settle();

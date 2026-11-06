@@ -88,7 +88,7 @@ def test_the_picture_fills_the_card_beside_the_panel_and_the_panel_goes_below_it
 
 
 def test_the_screen_updates_in_place_after_an_operation_and_sends_operations_one_after_another():
-    assert "const run = (op) => (queue = queue.then(() => send(op)));" in VECTOR
+    assert "const run = (op, place) => (queue = queue.then(() => send(op, place)));" in VECTOR
     assert "show(await post(`/vector/${j.id}/colouring`, op))" in VECTOR and "if (parts) parts.update(next);" in VECTOR
     assert "if (resplit) fill(split, VectorSplit.card(next, reload, smooth));" in VECTOR
     assert "I18N.tr(r.reason)" in LIFECYCLE and "Lifecycle.exportCard(j.lifecycle" in VECTOR      # the exact reason stays beside the export, under the readiness
@@ -938,6 +938,8 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
   await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick();
   out.refusedPosts = posted().length;
   out.toasts = ctx.document.body.querySelectorAll('.toast').map((t) => t.textContent);
+  out.beside = {text: dialog.querySelector('.f-error').textContent, invalid: input.getAttribute('aria-invalid'), kept: input.value,
+    described: input.getAttribute('aria-describedby').split(' ').some((id) => dialog.querySelector('.f-error').getAttribute('id') === id)};
   input.value = '4';
   await byText(dialog, 'button', 'Разбить').dispatch('click'); await tick(); await tick(); await tick();
   out.posted = posted();
@@ -945,5 +947,7 @@ def test_one_selected_region_is_split_finer_in_a_window_that_asks_into_how_many_
 """)
     assert out["one"] is False and out["two"] is True
     assert "Разбить область мельче" in out["dialog"] and "Внешняя граница и соседи остаются как были" in out["dialog"] and out["prefill"] == "3"
-    assert out["refusedPosts"] == 0 and any("целое от 2 до 8" in t for t in out["toasts"])
+    # the wrong number is refused beside its box, which keeps it and is tied to the words; no request and no toast (ux-save-feedback-p0, REQ-003)
+    assert out["refusedPosts"] == 0 and out["toasts"] == []
+    assert out["beside"] == {"text": "Допустимо: целое число, от 2 до 8. Введено: 12", "invalid": "true", "kept": "12", "described": True}
     assert out["posted"] == [{"op": "split_region", "region": "r1", "colours": 4}] and out["closed"] is True

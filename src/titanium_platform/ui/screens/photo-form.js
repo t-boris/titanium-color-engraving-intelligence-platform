@@ -42,10 +42,13 @@ const PhotoForm = (() => {
     const begin = revising ? null : await App.contextStart(ctx.query);                  // the laser and lens the workshop chose last; the address wins (REQ-001)
     const pick = App.laserLensPicker(lists, {device: revising ? revising.device_id : begin.device, lens: revising ? App.lensParam(revising.lens_id) : begin.lens,
       onChange: async () => { state.path = []; state.allowed = []; await loadPalette(); invalidate(); }});
-    const img = h('input', {type: 'file', accept: 'image/*', 'aria-label': 'Фотография для гравировки'});
+    const img = h('input', {type: 'file', accept: 'image/*'});
     const name = h('input', {placeholder: 'Название плана', value: revising ? `${revising.name} — исправление` : ''});
-    const width = h('input', {type: 'number', step: 'any', value: revising && revising.size_mm ? revising.size_mm.width : 80});
-    const bands = h('input', {type: 'number', step: '1', min: '1', max: String(maxBands), value: revising ? Math.min(revising.band_count, maxBands) : maxBands, 'aria-describedby': 'bands-help'});
+    // the width and the number of bands are read as the server reads them (conversion.raster: above 0; conversion._check_bands: a whole number from 1 to the
+    // layers LightBurn has, which the screen asks the server for); a wrong one is said beside its box and kept, as is a refusal of the server
+    const width = Forms.numberInput(Forms.QUANTITIES.workWidth, {value: revising && revising.size_mm ? revising.size_mm.width : 80});
+    const bands = Forms.numberInput({...Forms.QUANTITIES.bandCount, max: maxBands}, {value: revising ? Math.min(revising.band_count, maxBands) : maxBands});
+    let form_ = Forms.create();
     const markers = h('input', {type: 'checkbox', checked: revising ? revising.markers_enabled : false});
     // REQ-020: тоновое изображение для тонового режима, цветное — для цветового пути; задача записывается в план
     const DEFAULT_TASK = {tonal: 'tonal_image', color_path: 'color_image'};
@@ -80,8 +83,8 @@ const PhotoForm = (() => {
 
     async function doPreview() {
       show('');
-      if (!picture()) return show('Добавьте фотографию для гравировки');
-      try { state.preview = await form('/continuous/preview', body(false)); previewSig = signature(); draw(); } catch (e) { show(e.message); }
+      if (!form_.collect()) return;                                          // the photo, the width and the bands: each wrong one says why beside itself
+      try { state.preview = await form('/continuous/preview', body(false)); previewSig = signature(); draw(); } catch (e) { form_.fail(e); }
     }
     async function doCreate(ev) {
       if (!state.preview || previewSig !== signature()) return show('Сначала сделайте актуальный предпросмотр');
@@ -91,7 +94,7 @@ const PhotoForm = (() => {
         const p = await form('/continuous', body(true));
         if (!revising) App.rememberContext({device: pick.deviceId(), lens: pick.lensId()});
         toast(revising ? 'Исправленный план создан; прежний план не изменён' : 'План создан', 'ok'); go('/plans/' + p.id);
-      } catch (e) { show(e.message); self.disabled = false; }
+      } catch (e) { form_.fail(e); self.disabled = false; }
     }
 
     function sourcePicture() {
@@ -105,14 +108,19 @@ const PhotoForm = (() => {
       const questioned = all.filter((e) => e.questioned);
       const modeBtns = MODES.map(([id, label]) => h('button', {type: 'button', class: 'btn' + (state.mode === id ? ' primary' : ''), 'aria-pressed': state.mode === id,
         onClick: async () => { if (state.mode === id) return; state.mode = id; state.path = []; state.allowed = []; state.preview = null; task.set(DEFAULT_TASK[id]); await loadPalette(); draw(); }}, label));
+      form_ = Forms.create();
+      const photoField = form_.add('image', 'Фотография', App.filePick(img, 'Выбрать фотографию'), {required: true, help: revising && !img.files[0] ? 'сейчас — изображение исправляемого плана' : null,
+        read: () => (picture() ? {ok: true, value: picture()} : {ok: false, message: 'Добавьте фотографию для гравировки'})});
+      const widthField = form_.add('width_mm', 'Ширина работы', width, {quantity: 'workWidth', required: true});
+      const bandsField = form_.add('bands', 'Число полос', bands, {quantity: {...Forms.QUANTITIES.bandCount, max: maxBands}, required: true,
+        help: 'из 30 выходных слоёв LightBurn один остаётся для маркеров; картина полос обновляется при изменении'});
       fill(host,
         h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Непрерывная фотогравировка'), h('p', {class: 'sub'}, 'Одна передаточная функция, два режима. Параметры между измеренными наборами не интерполируются.')),
           h('span', {class: 'spacer'}), h('div', {class: 'row', role: 'group', 'aria-label': 'Подрежим фотогравировки'}, modeBtns), link('/colors', 'Карта цветов')),
         revising ? h('div', {class: 'alert ok'}, 'Исправление плана ', link('/plans/' + revising.id, `«${revising.name}»`),
           ': значения и изображение взяты из него. Будет создан новый план; прежний останется без изменений. Чтобы взять другое изображение, выберите его.') : null,
         h('div', {class: 'card stack'}, h('div', {class: 'grid g2'}, field('Лазер', pick.laser), field('Линза', pick.lens, 'палитра — измерения этого лазера с этой линзой'),
-          field('Фотография', App.filePick(img, 'Выбрать фотографию'), revising && !img.files[0] ? 'сейчас — изображение исправляемого плана' : null), field('Название плана', name), field('Ширина работы, мм', width),
-          field('Число полос', bands, `целое от 1 до ${maxBands}: из 30 выходных слоёв LightBurn один остаётся для маркеров; картина полос обновляется при изменении`)),
+          photoField, field('Название плана', name), widthField, bandsField), form_.error,
         task.el, h('label', {class: 'row'}, markers, h('span', {}, 'Регистрационные маркеры и идентификатор вне изображения'))),
         state.mode === 'color_path' ? pathPicker(palette, state, () => invalidate()) : null,
         state.mode === 'color_path' ? h('div', {class: 'card toolbar'}, btn('Включить параметры под вопросом в этот план', () => questionedDialog(questioned, state, async () => { await loadPalette(); invalidate(); }), '', !questioned.length),

@@ -937,7 +937,138 @@ def _server_verdicts():
             return True
         return run
     picture = np.zeros((4, 4, 3), np.uint8)
+
+    def _smoothing(v):
+        """vector_job.smooth reads the work first; the work is a stand-in, the rule is the one under test (a refusal is a ConversionError)."""
+        from unittest import mock
+        with mock.patch.object(vector_job, "_photo_job", return_value={}):
+            return past_the_check_errors((conversion.ConversionError,), lambda: vector_job.smooth(None, 1, v))
+
+    def _split_colours(v):
+        document = {"regions": [{"id": "r1"}], "palette": []}
+        return past_the_check_errors((conversion.ConversionError,), lambda: vector_job._split_region({"markers_enabled": False}, document, [], {"region": "r1", "colours": v}))
+
+    def past_the_check_errors(errors, call):
+        try:
+            call()
+        except errors:
+            return False
+        except Exception:                                                   # noqa: BLE001 - the rule under test passed; the rest needs a real work
+            return True
+        return True
+
+    def _rule(**kw):
+        import obs
+        world = obs.setup(store)
+        try:
+            setup.save_rules(store, *world["setup"], **kw)
+        except su.ValidationError:
+            return False
+        return True
+
+    def _lookup(**kw):
+        from pydantic import ValidationError
+        from titanium_platform.api.routes_devices import ResultLookupIn
+        body = {"power": 20.0, "frequency": 40.0, "speed": 900.0, "pulse_width": 200.0, "line_interval": 0.05, "passes": 1, **kw}
+        try:
+            ResultLookupIn(**body)
+        except ValidationError:
+            return False
+        return True
+    def _marker(**kw):
+        body = {"power": 20.0, "frequency": 40.0, "speed": 900.0, **kw}
+        try:
+            plans.save_marker_layer_settings(store, **body)
+        except (su.ValidationError, ValueError):
+            return False
+        return True
+    from titanium_platform import model as colour_model
+
+    def _search_target(**kw):
+        lab = {"L": 40.0, "a": 5.0, "b": 15.0, **kw}
+        try:
+            colormap.search(store, [lab["L"], lab["a"], lab["b"]])
+        except Exception:                                                   # noqa: BLE001 - any refusal of the search counts
+            return False
+        return True
+    from titanium_platform import capability_plates as cp, lettering
+    # a laser whose range of frequency is wide, so that only the rule of the quantity itself (positive) is left to judge
+    wide = {"repetition_rate_khz": {"min": 0.0001, "max": 1e9}, "pulse_steps": passport["pulse_steps"]}
+    plate_base = {"power": 20.0, "frequency": 48.0, "speed": 900.0, "pulse_width": 200.0, "line_interval": 0.025, "passes": 1, "global_passes": 1}
+
+    def _plate(**kw):
+        try:
+            cp._passport_defaults(wide, {**plate_base, **kw})
+        except su.ValidationError:
+            return False
+        return True
+
+    def _plate_size(v):
+        """capability_plates.preview judges the size before it builds anything: the builder is replaced by one that stops the call after the check."""
+        from unittest import mock
+        import obs
+        world = obs.setup(store)
+        material = setup.save_material(store, "plate stock")
+
+        def stop(*_):
+            raise RuntimeError("past the check")
+        with mock.patch.dict(cp.BUILDERS, {"calibration": stop}):
+            for axis in ("max_width_mm", "max_height_mm"):
+                try:
+                    cp.preview(store, world["device"]["id"], material["id"], "calibration", {**plate_base, axis: v})
+                except su.ValidationError:
+                    return False
+                except RuntimeError:
+                    continue
+        return True
+
+    def _axis(axis, companion, geometry="line"):
+        """A value on an axis of the matrix is judged with a partner that lies inside (the lower end must lie below the upper)."""
+        def check(v):
+            low, high = (v, companion) if v < companion else (companion, v)
+            other = "speed" if axis != "speed" else "power"
+            return accepts_with(su.ValidationError)(lambda: cp._matrix_settings(
+                {"matrix": {"x_axis": axis, "y_axis": other, "geometry": geometry, "x_min": low, "x_max": high}}, passport))
+        return check
+
+    def _matrix_key(**kw):
+        return accepts_with(su.ValidationError)(lambda: cp._matrix_settings({"matrix": kw}, passport))
+    grey_values = cp._passport_defaults(wide, {**plate_base, "speed": 150.0, "line_interval": 0.0169})[0]
+
+    def _grey_power(v):
+        low, high = (v, 50.0) if v < 50 else (50.0, v)
+        return past_the_check_errors((su.ValidationError,), lambda: cp._grey_scales({**grey_values, "scales": {"min_power": low, "max_power": high}}, passport))
+
+    def _copy_size(v):
+        from unittest import mock
+        with mock.patch.object(cp, "_variation_picture", return_value=np.zeros((20, 20, 3), np.uint8)):
+            return past_the_check_errors((su.ValidationError,), lambda: cp._photo_variations({**grey_values, "variations": {"picture_png": "x", "copy_mm": v}}, passport))
+
+    def _copy_min(v):
+        return accepts_with(su.ValidationError)(lambda: cp._variant({"min_power": v}, {**grey_values, "dither": "grayscale"}, wide, 1))
     checks = {
+        "platePower": lambda v: _plate(power=v), "plateSpeed": lambda v: _plate(speed=v), "plateInterval": lambda v: _plate(line_interval=v),
+        "platePasses": lambda v: _plate(passes=v) and _plate(global_passes=v), "plateSize": _plate_size,
+        "matrixPoints": lambda v: _matrix_key(x_count=v, y_count=2), "wobbleStep": lambda v: _matrix_key(wobble_step=v),
+        "plateAxisPower": _axis("power", 50.0), "plateAxisSpeed": _axis("speed", 5000.0), "plateAxisInterval": _axis("line_interval", 0.3, "fill"),
+        "plateAxisPasses": _axis("passes", 10.0), "plateAxisWobble": _axis("wobble_size", 0.3),
+        "greyPower": _grey_power,
+        "rampWidth": lambda v: accepts_with(su.ValidationError)(lambda: cp._grey_axis("columns", {"axis": "width", "values": [v]}, grey_values, wide)),
+        "fillWidth": lambda v: accepts_with(su.ValidationError)(lambda: cp._fill_widths([v])),
+        "copySize": _copy_size, "copyMinPower": _copy_min,
+        **{key: (lambda name: lambda v: accepts_with(su.ValidationError)(lambda: lettering._number(v, name)))(name) for key, name in (
+            ("letterHeight", "height_mm"), ("letterWidth", "width_pct"), ("letterSpacing", "spacing_mm"), ("lineSpacing", "line_pct"), ("letterRotation", "rotation"),
+            ("letterBend", "bend"), ("circleRadius", "radius_mm"), ("circleStart", "start_deg"), ("pathOffset", "offset_pct"), ("letterGap", "gap_mm"),
+            ("backingPadding", "padding_mm"), ("backingCorner", "corner_mm"), ("letterX", "x"), ("letterY", "y"))},
+        "pathPoint": lambda v: accepts_with(su.ValidationError)(lambda: lettering._points([[v, 0]])),
+        "dotWidth": lambda v: accepts_with(su.ValidationError)(lambda: photo_state.dot_width_in(v)),
+        "predictL": lambda v: accepts_with(ValueError)(lambda: colour_model.predict_for_lab([], [v, 0, 0])),
+        "predictAB": lambda v: accepts_with(ValueError)(lambda: colour_model.predict_for_lab([], [50, v, v])),
+        "targetL": lambda v: _search_target(L=v), "targetAB": lambda v: _search_target(a=v, b=v),
+        "searchTolerance": lambda v: accepts_with(su.ValidationError)(lambda: colormap.delta_tolerance(v)),
+        "bandCount": lambda v: accepts_with(conversion.ConversionError)(lambda: conversion._check_bands(v)),
+        "markerPower": lambda v: _marker(power=v), "markerFrequency": lambda v: _marker(frequency=v), "markerSpeed": lambda v: _marker(speed=v),
+        "markerPulse": lambda v: _marker(pulse_width=v), "markerInterval": lambda v: _marker(line_interval=v), "markerPasses": lambda v: _marker(passes=v),
         "workWidth": lambda v: accepts_with(conversion.ConversionError)(lambda: conversion.raster(picture[:, :, ::-1].copy(), v)),
         "photoColours": lambda v: accepts_with(conversion.ConversionError)(lambda: vector_job._split_settings({"n_colors": v}, False, [])),
         "maxTime": lambda v: accepts_with(su.ValidationError)(lambda: colormap.time_limit(v)),
@@ -982,6 +1113,15 @@ def _server_verdicts():
         "lensField": lambda v: accepts(lambda: lenses._clean("l", None, v, None, None)),
         "expansion": lambda v: accepts(lambda: lenses._clean("l", None, None, v, None)),
         "spot": lambda v: accepts(lambda: lenses._clean("l", None, None, None, None, v)),
+        "density": lambda v: accepts_with(conversion.ConversionError)(lambda: vector_job._split_settings({"n_colors": 5, "density": v}, False, [])),
+        "smoothing": _smoothing,
+        "similarity": lambda v: accepts_with(conversion.ConversionError)(lambda: vector_job._similarity(v)),
+        "splitColours": _split_colours,
+        "repeatThreshold": lambda v: _rule(repeat_threshold=v),
+        "deltaTolerance": lambda v: _rule(delta_tolerance=v),
+        "varianceThreshold": lambda v: _rule(variance_threshold=v),
+        "lookupPower": lambda v: _lookup(power=v), "lookupFrequency": lambda v: _lookup(frequency=v), "lookupSpeed": lambda v: _lookup(speed=v),
+        "lookupPulse": lambda v: _lookup(pulse_width=v), "lookupInterval": lambda v: _lookup(line_interval=v), "lookupPasses": lambda v: _lookup(passes=v),
     }
     return checks
 
@@ -1138,6 +1278,70 @@ LENS_TAB = """
   const writes = () => calls.filter((c) => !c.startsWith('GET'));
   const refreshed = [];
 """
+
+
+@node
+def test_the_rig_form_and_its_chart_reference_say_what_is_wrong_beside_the_box_and_keep_what_was_typed(tmp_path):
+    out = run(tmp_path, """
+  const SetupForms = require('vm').runInContext('SetupForms', ctx);
+  const labelled = (root, text) => root.querySelectorAll('label').find((l) => l.firstChild && l.firstChild.textContent.startsWith(text));
+  const inputOf = (root, text) => labelled(root, text).firstControl();
+  const writes = () => calls.filter((c) => !c.startsWith('GET'));
+  const rig = {id: 5, name: 'Rig', camera: 'cam', lighting: 'LED', angle: '90', reference_chart: 'ColorChecker Classic', legacy: false, last_used: false,
+    chart_reference: {published: true, source: 'ColorChecker', white_point: 'D50', observer: '2°', patches_lab: [[1, 2, 3]]}};
+  serve({'/setups/5': (opts) => ({status: 400, json: {error: 'camera is required', kind: 'invalid'}}),
+         '/setups/5/chart-reference': () => ({status: 400, json: {error: 'the white point must be one of D65, D50', kind: 'invalid'}})});
+  const tab = SetupForms.rigsTab([rig], () => {});
+  body.append(tab);
+  const card = tab.querySelectorAll('.card')[0];
+  inputOf(card, 'Камера').value = '   ';
+  await button(card, 'Сохранить установку').dispatch('click'); await wait();
+  out.empty = {writes: writes(), camera: labelled(card, 'Камера').errorText(), form: card.querySelectorAll('.f-form-error').pop().textContent};
+  inputOf(card, 'Камера').value = 'Sony A7';
+  await button(card, 'Сохранить установку').dispatch('click'); await wait();
+  out.refused = {writes: writes(), form: card.querySelectorAll('.f-form-error').pop().textContent, kept: inputOf(card, 'Камера').value, toasts: body.querySelectorAll('.toast').length};
+  // the chart reference: a list of 24 triples, L from 0 to 100, a and b from -128 to 127
+  const details = card.querySelector('details');
+  const values = details.querySelector('textarea');
+  values.value = '[[50, 0, 0]]';
+  await button(details, 'Сохранить эталонные значения').dispatch('click'); await wait();
+  out.short = {writes: writes().filter((c) => c.includes('chart')), message: labelled(details, 'Эталонные значения Lab').errorText(), kept: values.value};
+  values.value = JSON.stringify(Array.from({length: 24}, (_, i) => [i === 3 ? 120 : 50, 0, 0]));
+  await button(details, 'Сохранить эталонные значения').dispatch('click'); await wait();
+  out.range = labelled(details, 'Эталонные значения Lab').errorText();
+""", scripts=SCRIPTS + ["screens/setup-forms.js"])
+    assert out["empty"]["writes"] == [] and out["empty"]["camera"] == "Заполните это поле" and "«Камера»" in out["empty"]["form"]
+    assert out["refused"]["writes"] == ["PUT /setups/5"] and out["refused"]["kept"] == "Sony A7" and out["refused"]["toasts"] == 0
+    assert "осталось в форме" in out["refused"]["form"]                                       # said above the buttons, not in a toast that goes away
+    assert out["short"]["writes"] == [] and out["short"]["message"] == "Нужно ровно 24 тройки чисел [L, a, b]. Сейчас: 1" and out["short"]["kept"] == "[[50, 0, 0]]"
+    assert out["range"] == "Тройка 4: L от 0 до 100, a и b от -128 до 127. Введено: [120, 0, 0]"
+
+
+@node
+def test_the_controller_row_form_says_what_is_wrong_beside_the_box_and_keeps_what_was_typed(tmp_path):
+    out = run(tmp_path, """
+  const ControllerRows = require('vm').runInContext('ControllerRows', ctx);
+  const labelled = (root, text) => root.querySelectorAll('label').find((l) => l.firstChild && l.firstChild.textContent.startsWith(text));
+  const inputOf = (root, text) => labelled(root, text).firstControl();
+  const fields = [{key: 'Power', value: 20, unit: '%', status: 'confirmed'}];
+  let changed = 0;
+  const form = ControllerRows.addForm(fields, {change: () => { changed += 1; }});
+  body.append(form);
+  await button(form, '+ Добавить').dispatch('click'); await wait();
+  out.empty = {key: labelled(form, 'Название настройки').errorText(), value: labelled(form, 'Значение').errorText(), changed, toasts: body.querySelectorAll('.toast').length,
+    form: form.querySelector('.f-form-error').textContent};
+  inputOf(form, 'Название настройки').value = ' Power ';
+  inputOf(form, 'Значение').value = '35,5';
+  await button(form, '+ Добавить').dispatch('click'); await wait();
+  out.twice = {key: labelled(form, 'Название настройки').errorText(), value: labelled(form, 'Значение').errorText(), kept: [inputOf(form, 'Название настройки').value, inputOf(form, 'Значение').value], changed};
+  inputOf(form, 'Название настройки').value = 'Speed';
+  await button(form, '+ Добавить').dispatch('click'); await wait();
+  out.added = {fields, changed};
+""", scripts=SCRIPTS + ["screens/glossary-controller.js", "screens/controller-rows.js"])
+    assert out["empty"]["key"] == "Укажите название настройки" and out["empty"]["value"] == "Укажите значение настройки" and out["empty"]["changed"] == 0 and out["empty"]["toasts"] == 0
+    assert "«Название настройки»" in out["empty"]["form"]
+    assert out["twice"]["key"] == "Такая настройка в этом разделе уже есть" and out["twice"]["value"] == "" and out["twice"]["kept"] == [" Power ", "35,5"] and out["twice"]["changed"] == 0
+    assert out["added"]["fields"][1] == {"key": "Speed", "value": 35.5, "unit": None, "status": "confirmed"} and out["added"]["changed"] == 1
 
 
 @node

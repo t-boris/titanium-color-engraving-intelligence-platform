@@ -74,7 +74,8 @@
       range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; schedule(); });
       // prediction_store.check_power_range: 0 to 100 %; a value outside is kept in the box with the reason beside it and is not applied
       const note = Forms.watch(exact, 'photoPower', (v) => { range.value = v; schedule(); });
-      return {exact, box: h('div', {class: 'stack'}, h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, exact)), note)};
+      return {exact, box: h('div', {class: 'stack'}, h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, Forms.describe(range, 'photoPower'),
+        exact, Forms.describe(exact, 'photoPower'))), note)};
     };
     const tone = TONE(layer);
     const low = slider('min_power', 'Мин. мощность, %'), high = slider('max_power', 'Макс. мощность, %');

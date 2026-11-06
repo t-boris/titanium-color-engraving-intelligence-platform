@@ -143,7 +143,7 @@ const VectorWorkspace = (() => {
       if (Math.abs(value - size[edited]) < 0.05) { close(); return; }
       saving = true;
       try {
-        const work = await resize(edited === 'width' ? {width_mm: value} : {height_mm: value});
+        const work = await resize(edited === 'width' ? {width_mm: value} : {height_mm: value}, form);           // a refusal is told in this dialog, the boxes keep what was typed
         if (!work) { saving = false; return; }
         toast(`Размер работы теперь ${num(work.document.size_mm.width, 1)} × ${num(work.document.size_mm.height, 1)} мм; разбиение и цвета те же`, 'ok');
         close();

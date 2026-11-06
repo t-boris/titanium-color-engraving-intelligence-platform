@@ -89,17 +89,19 @@ const DeviceView = (() => {
     }
     if (device.lens && !byLens.has(String(device.lens.id))) byLens.set(String(device.lens.id), `${App.lensLabel(device.lens)} (установлена сейчас)`);
     const lensPicker = h('select', {}, [...byLens].map(([id, label]) => h('option', {value: id}, label)));
-    const inputs = [
-      ['Мощность, %', 'power', '0.1'], ['Частота, кГц', 'frequency', '1'], ['Скорость, мм/с', 'speed', '1'],
-      ['Импульс, нс', 'pulse_width', '1'], ['Шаг линий, мм', 'line_interval', '0.001'], ['Проходы', 'passes', '1'],
-    ].map(([label, key, step]) => [key, field(label, h('input', {type: 'number', min: key === 'passes' ? 1 : 0, step, required: true}))]);
+    // the lookup compares exact settings: the server takes any number here (a whole one for the passes), so no end is told and no value is adjusted;
+    // an empty or a non-number box is said beside it, and the other typed values stay (ux-save-feedback-p0, REQ-003)
+    const lookup = Forms.create();
+    const inputs = [['power', 'Мощность', 'lookupPower'], ['frequency', 'Частота', 'lookupFrequency'], ['speed', 'Скорость', 'lookupSpeed'],
+      ['pulse_width', 'Импульс', 'lookupPulse'], ['line_interval', 'Шаг линий', 'lookupInterval'], ['passes', 'Проходы', 'lookupPasses']]
+      .map(([key, label, quantity]) => lookup.add(key, label, Forms.numberInput(Forms.QUANTITIES[quantity]), {quantity, required: true}));
     const result = h('div', {});
     // REQ-020: результаты разных задач гравировки не смешиваются; можно искать только одну задачу
     const taskPicker = Tasks.select('', {empty: 'все задачи, каждая отдельно', aria: 'Задача гравировки'});
     const form = h('form', {class: 'stack', onsubmit: async (event) => {
       event.preventDefault();
-      const values = Object.fromEntries(inputs.map(([key, control]) => [key, +control.querySelector('input').value]));
-      if (inputs.some(([, control]) => control.querySelector('input').value === '')) return fail('Заполните все шесть параметров.');
+      const values = lookup.collect();
+      if (!values) return;
       try {
         const found = await post(`/devices/${device.id}/result-lookup`, {lens_id: lensPicker.value === '' ? null : +lensPicker.value, ...values,
           task: taskPicker.value || null});
@@ -119,10 +121,10 @@ const DeviceView = (() => {
           });
           result.replaceChildren(h('div', {class: 'stack'}, h('h4', {}, `Найдено сочетаний режима и титана: ${found.matches.length}`), ...cards));
         }
-      } catch (error) { fail(error); }
+      } catch (error) { lookup.fail(error); }
     }},
-      h('div', {class: 'grid g3'}, field('Историческая линза', lensPicker), ...inputs.map(([, control]) => control), field('Задача', taskPicker)),
-      h('button', {type: 'submit', class: 'btn primary'}, 'Найти измеренный результат'), result);
+      h('div', {class: 'grid g3'}, field('Историческая линза', lensPicker), ...inputs, field('Задача', taskPicker)),
+      lookup.error, h('button', {type: 'submit', class: 'btn primary'}, 'Найти измеренный результат'), result);
 
     return h('div', {class: 'stack'}, h('div', {class: 'card stack'}, h('h3', {}, 'База измерений: параметры → результат'),
       h('p', {class: 'muted small'}, 'Поиск измеренного результата по шести основным настройкам. Только принятые измерения используются для подбора; каждое ведёт к своему эксперименту.'), form),

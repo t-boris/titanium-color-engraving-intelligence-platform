@@ -217,7 +217,7 @@ def test_the_plate_dialog_starts_with_the_workshops_record_and_refuses_a_plate_w
       await button(stock, 'Снять выбор').dispatch('click');
       out.cleared = {value: stock.value, label: labelOf(stock)};
       await button(dialog.el, 'Создать плату').dispatch('click');
-      out.refused = {posted: sent('/api/capability-plates').length, toast: qa(doc.body, '.toast').map((t) => t.textContent)};
+      out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};      // said in the dialog, beside the field
       out.urls = stockUrls();
     """, ("PlateDialog", "MaterialPicker"))
     assert out["start"]["value"] == "88" and out["start"]["label"].startswith("Лист 88 · ") and out["start"]["records"] == 0
@@ -235,7 +235,7 @@ def test_the_plate_dialog_with_no_stock_record_asks_for_one_and_chooses_the_reco
       await stock.ready;
       out.none = {value: stock.value, label: labelOf(stock), cleared: q(stock, '.matpick-clear').hidden};
       await button(dialog.el, 'Создать плату').dispatch('click');
-      out.refused = {posted: sent('/api/capability-plates').length, toast: qa(doc.body, '.toast').map((t) => t.textContent)};
+      out.refused = {posted: sent('/api/capability-plates').length, toast: qa(dialog.el, '.f-error, .f-form-error').map((t) => t.textContent)};
       qa(dialog.el, 'input').find((i) => i.getAttribute('placeholder') === 'Например: лист Grade 2').value = 'Первый лист';
       await button(dialog.el, 'Сохранить заготовку').dispatch('click');
       await until(() => stock.record !== null && stock.record.name === 'Первый лист');

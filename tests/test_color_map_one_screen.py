@@ -153,12 +153,17 @@ def test_a_filter_is_remembered_and_the_next_query_carries_it(tmp_path):
   out.query = ctx.requests.slice(before).filter((r) => r.path === '/api/colors').map((r) => r.url);
   out.selected = labelled(left(), 'Как измерен').querySelector('select').value;
   const bad = labelled(left(), 'Не дольше, мин/см²').querySelector('input'); bad.value = 'abc'; await bad.dispatch('change');
-  out.toasts = ctx.__toasts;
+  const note = left().querySelectorAll('p').find((p) => p.getAttribute('role') === 'alert' && !p.hidden);
+  out.refusal = {toasts: ctx.__toasts || [], beside: note && note.textContent, kept: bad.value, invalid: bad.getAttribute('aria-invalid'),
+    described: bad.getAttribute('aria-describedby').split(' ').includes(note && note.getAttribute('id')), stored: JSON.parse(ctx.__store['color-map']).maxTime};
 """)
     assert out["stored"]["measurement"] == "relative" and out["stored"]["material"] == "Grade 5"
     assert out["after"]["maxTime"] == 30 and out["after"]["hide"] is True and out["after"]["measurement"] == "relative"
     assert len(out["query"]) == 1 and all(part in out["query"][0] for part in ("measurement=relative", "material=Grade+5", "max_time_s_per_cm2=30", "include_unreferenced=false"))
-    assert out["selected"] == "relative" and out["toasts"] == ["Введите время как минуты:секунды (например 0:30) или минуты числом"]
+    # the wrong text is refused beside its box, which keeps it, is marked and tied to the words; no toast, and the filter stays as it was (ux-save-feedback-p0, REQ-003)
+    assert out["selected"] == "relative"
+    assert out["refusal"] == {"toasts": [], "beside": "Введите время как минуты:секунды (например 0:30) или минуты числом, больше нуля. Введено: «abc». Поиск остался прежним.",
+                              "kept": "abc", "invalid": "true", "described": True, "stored": 30}
 
 
 @node

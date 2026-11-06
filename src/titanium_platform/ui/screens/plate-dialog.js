@@ -1,7 +1,7 @@
 /* Создание экспериментальной платы: лазер и материал задаются здесь, оборудование хранится в контексте опыта. */
 'use strict';
 const PlateDialog = (() => {
-  const {h, btn, field, get, post, toast, fail, modal, go} = App;
+  const {h, btn, field, get, post, toast, modal, go} = App;
   const UNCHECKED = 'поле линзы неизвестно — размещение не проверено';
 
   /** Проверка размещения по рабочему полю лазера и линзы (REQ-018): неизвестное поле — не «помещается», а «не проверено». */
@@ -44,25 +44,80 @@ const PlateDialog = (() => {
   async function open(devices, materials, reload, preset = {}) {
     const typeRows = await get('/plate-types');
     const available = (devices || []).filter((d) => d.lens);
+    // The numbers of the dialog are read strictly, with the rules the server states (ux-save-feedback-p0, REQ-003): a wrong one is marked beside its
+    // box with the reason and stays as typed; what the server refuses is said in the dialog, never in a toast that goes away.
+    const form = Forms.create();
+    const Q = Forms.QUANTITIES;
+    const dynamic = [];                              // [{el, words}]: boxes whose permitted values follow the laser or the chosen axis
+    const currentLaser = () => available.find((d) => String(d.id) === device.value) || available[0];
+    const frequencyRule = () => {
+      const r = currentLaser()?.passport?.repetition_rate_khz;
+      return r ? {...Q.frequency, min: +r.min, minOpen: false, max: +r.max} : Q.frequency;
+    };
+    const pulseRule = () => {
+      const steps = (currentLaser()?.passport?.pulse_steps || []).map((x) => +x.pulse_width_ns).filter(Number.isFinite);
+      return steps.length ? {...Q.pulseWidth, min: Math.min(...steps), minOpen: false, max: Math.max(...steps)} : Q.pulseWidth;
+    };
+    // the quantity a setting has on a matrix axis, on a grey-ramp axis and in a recipe or a patch (the three kinds of grid have slightly different domains)
+    const AXIS_RULES = {
+      matrix: {power: 'plateAxisPower', speed: 'plateAxisSpeed', line_interval: 'plateAxisInterval', passes: 'plateAxisPasses', wobble_size: 'plateAxisWobble'},
+      grey: {speed: 'plateSpeed', line_interval: 'plateAxisInterval', passes: 'platePasses', width: 'rampWidth'},
+      recipe: {power: 'platePower', speed: 'plateSpeed', line_interval: 'plateInterval', passes: 'platePasses'},
+    };
+    const axisRule = (kind, axis) => (axis === 'frequency' ? frequencyRule() : axis === 'pulse_width' ? pulseRule() : Q[AXIS_RULES[kind][axis]]);
+    const refreshRules = () => { for (const {el, words} of dynamic) el.setHelp(words()); };
+    // a box of a card that is hidden, or one the chosen kind does not use, is not asked (``o.card``, ``o.when``: functions, read when the dialog is sent)
+    const skipped = (o) => (o.card && o.card().style.display === 'none') || (o.when && !o.when());
+    const none = {ok: true, value: null};
+    /** A number box whose permitted values are computed (the laser's range, the chosen axis); ``o.after(result)`` adds a rule between boxes. */
+    const addNumber = (name, label, input, rule, o = {}) => {
+      const el = form.add(name, label, input, {required: true, help: 'допустимые значения — по выбранному лазеру и параметру',
+        read: () => (skipped(o) ? none : (o.after || ((r) => r))(Forms.readNumber(input, rule(), {required: true})))});
+      dynamic.push({el, words: () => Forms.rulesText(rule())});
+      return el;
+    };
+    /** A number box whose rule is fixed (a quantity of forms.js). */
+    const addFixed = (name, label, input, quantity, o = {}) => form.add(name, label, input, {quantity, required: true,
+      read: () => (skipped(o) ? none : (o.after || ((r) => r))(Forms.readNumber(input, Q[quantity], {required: true})))});
+    /** Numbers typed with commas («5, 20, 50»): each is read by ``rule``; ``o.max`` is how many the plate takes, ``o.distinct`` that no two are alike. */
+    const addList = (name, label, input, rule, o = {}) => {
+      const el = form.add(name, label, input, {required: !o.optional, help: 'числа через запятую', read: () => {
+        if (skipped(o)) return none;
+        const parts = input.value.split(/[,;\s]+/).filter(Boolean);
+        if (!parts.length) return o.optional ? none : {ok: false, message: 'Заполните это поле'};
+        const values = [];
+        for (const [i, part] of parts.entries()) {
+          const r = Forms.parse(part, rule(), {required: true});
+          if (!r.ok) return {ok: false, message: `Значение ${i + 1}: ${r.message}`};
+          values.push(r.value);
+        }
+        if (o.max && values.length > o.max) return {ok: false, message: `Не больше ${o.max} значений. Введено: ${values.length}`};
+        if (o.distinct && new Set(values).size !== values.length) return {ok: false, message: 'Значения должны быть разными'};
+        return (o.after || ((r) => r))({ok: true, value: values});
+      }});
+      dynamic.push({el, words: () => `${Forms.rulesText(rule())} · числа через запятую${o.max ? `, не больше ${o.max}` : ''}${o.distinct ? ', все разные' : ''}`});
+      return el;
+    };
     const type = h('select', {'aria-label': 'Тип экспериментальной платы'}, h('option', {value: '', selected: true}, 'выберите тип платы'));
     const device = h('select', {'aria-label': 'Лазер'}, available.map((d) => h('option', {value: d.id}, `${d.name}${d.serial ? ` · ${d.serial}` : ''}`)));
     // nothing is chosen until the caller or the workshop's last choice names a record (below); one concrete batch or sheet, never a grade
     const material = MaterialPicker.create({allowEmpty: true, clearLabel: 'Снять выбор', empty: 'выберите конкретную заготовку', title: 'Выбор заготовки для платы', name: 'Заготовка'});
     const desc = h('div', {class: 'stack muted small'});
     const hardware = h('p', {class: 'muted small'});
-    const maxWidth = h('input', {type: 'number', min: '1', max: '300', step: 'any', value: '100'});
-    const maxHeight = h('input', {type: 'number', min: '1', max: '300', step: 'any', value: '100'});
+    const maxWidth = Forms.numberInput(Q.plateSize, {value: '100'});
+    const maxHeight = Forms.numberInput(Q.plateSize, {value: '100'});
     const patch = {
-      count: h('select', {}, [1, 2, 4].map((n) => h('option', {value: n}, String(n)))),
-      size: h('select', {}, [3, 5].map((n) => h('option', {value: n}, `${n} × ${n} мм`))),
-      registration: h('select', {}, [h('option', {value: 'none'}, 'Без меток · минимум площади'),
+      count: h('select', {'aria-label': 'Число квадратов'}, [1, 2, 4].map((n) => h('option', {value: n}, String(n)))),
+      size: h('select', {'aria-label': 'Размер квадрата'}, [3, 5].map((n) => h('option', {value: n}, `${n} × ${n} мм`))),
+      registration: h('select', {'aria-label': 'Совмещение фото'}, [h('option', {value: 'none'}, 'Без меток · минимум площади'),
         h('option', {value: 'full'}, 'QR + 4 метки · проще совместить фото')]),
-      axis: h('select', {}, ['power', 'speed', 'frequency', 'pulse_width', 'line_interval', 'passes']
+      axis: h('select', {'aria-label': 'Менять параметр'}, ['power', 'speed', 'frequency', 'pulse_width', 'line_interval', 'passes']
         .map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
       values: h('input', {placeholder: 'Например: 5, 20, 50, 100'}),
     };
     const patchSweep = h('div', {class: 'grid g2'}, field('Менять параметр', patch.axis),
-      field('Значения по квадратам, слева направо', patch.values));
+      addList('patch_values', 'Значения по квадратам, слева направо', patch.values, () => axisRule('recipe', patch.axis.value), {card: () => smallCard, when: () => +patch.count.value > 1,
+        after: (r) => (r.ok && r.value.length !== +patch.count.value ? {ok: false, message: `Для ${patch.count.value} квадратов нужно ровно ${patch.count.value} чисел. Введено: ${r.value.length}`} : r)}));
     const previewText = h('div', {class: 'muted small', 'aria-live': 'polite'},
       'Размер покажем до создания файла; каждый файл чистит только свою область.');
     const smallCard = h('div', {class: 'card stack', style: 'display:none'},
@@ -92,13 +147,30 @@ const PlateDialog = (() => {
       xAxis: h('select', {'aria-label': 'Ось X матрицы'}), yAxis: h('select', {'aria-label': 'Ось Y матрицы'}),
       xMin: h('input', {type: 'number', step: 'any', value: 5}), xMax: h('input', {type: 'number', step: 'any', value: 100}),
       yMin: h('input', {type: 'number', step: 'any', value: 500}), yMax: h('input', {type: 'number', step: 'any', value: 10000}),
-      xCount: h('input', {type: 'number', min: '2', max: '7', step: '1', value: 5}),
-      yCount: h('input', {type: 'number', min: '2', max: '7', step: '1', value: 5}),
-      geometry: h('select', {}, [h('option', {value: 'line'}, 'Векторная линия'), h('option', {value: 'fill'}, 'Залитый участок'),
+      xCount: Forms.numberInput(Q.matrixPoints, {value: 5}),
+      yCount: Forms.numberInput(Q.matrixPoints, {value: 5}),
+      geometry: h('select', {'aria-label': 'Геометрия ячейки'}, [h('option', {value: 'line'}, 'Векторная линия'), h('option', {value: 'fill'}, 'Залитый участок'),
         h('option', {value: 'text'}, 'Заполненные буквы A8M трёх размеров'),
         h('option', {value: 'vector_text'}, 'Векторные буквы A8M B012 · 2/4 мм × 2')]),
-      wobbleStep: h('input', {type: 'number', min: '0.001', max: '1', step: 'any', value: '0.02'}),
+      wobbleStep: Forms.numberInput(Q.wobbleStep, {value: '0.02'}),
     };
+    /** The «от» and «до» boxes of an axis: both take what the chosen axis takes, and the lower end lies below the upper (the server says so too). */
+    const axisBox = (which, edge, label) => {
+      const rule = () => axisRule('matrix', matrix[which + 'Axis'].value);
+      return addNumber(`${which}_${edge}`, label, matrix[which + (edge === 'min' ? 'Min' : 'Max')], rule, {card: () => matrixCard,
+        after: (r) => {
+          if (!r.ok || edge === 'min') return r;
+          const low = Forms.parse(matrix[which + 'Min'].value, rule(), {required: true});
+          return low.ok && !(low.value < r.value) ? {ok: false, message: `Верхняя граница должна быть выше нижней (${String(low.value).replace('.', ',')}). Введено: ${String(r.value).replace('.', ',')}`} : r;
+        }});
+    };
+    /** The number of points of an axis; the grid has at most 28 cells (the server keeps two layers for the cleaning and the registration). */
+    const pointsBox = (which, label) => addFixed(`${which}_count`, label, matrix[which + 'Count'], 'matrixPoints', {card: () => matrixCard,
+      after: (r) => {
+        if (!r.ok || which === 'x') return r;
+        const across = Forms.parse(matrix.xCount.value, Q.matrixPoints, {required: true});
+        return across.ok && across.value * r.value > 28 ? {ok: false, message: `В сетке не больше 28 ячеек, сейчас ${across.value} × ${r.value} = ${across.value * r.value}. Уменьшите число точек`} : r;
+      }});
     const matrixAxes = Object.entries(MATRIX_AXES).map(([key, value]) => h('option', {value: key}, value.name));
     matrix.xAxis.replaceChildren(...matrixAxes.map((o) => o.cloneNode(true)));
     matrix.yAxis.replaceChildren(...matrixAxes.map((o) => o.cloneNode(true)));
@@ -106,60 +178,73 @@ const PlateDialog = (() => {
     const matrixCard = h('div', {class: 'card stack', style: 'display:none'},
       h('p', {class: 'muted small'}, 'Как в LightBurn Material Test: две выбранные оси меняются по сетке, остальные параметры остаются постоянными. До 28 ячеек; с чисткой и регистрацией получится не более 30 выходных слоёв.'),
       h('div', {class: 'grid g3'}, field('Ось X', matrix.xAxis), field('Ось Y', matrix.yAxis), field('Геометрия ячейки', matrix.geometry)),
-      h('div', {class: 'grid g3'}, field('X: от', matrix.xMin), field('X: до', matrix.xMax), field('Точек по X', matrix.xCount)),
-      h('div', {class: 'grid g3'}, field('Y: от', matrix.yMin), field('Y: до', matrix.yMax), field('Точек по Y', matrix.yCount)),
-      field('Шаг wobble, мм (при включении)', matrix.wobbleStep),
+      h('div', {class: 'grid g3'}, axisBox('x', 'min', 'X: от'), axisBox('x', 'max', 'X: до'), pointsBox('x', 'Точек по X')),
+      h('div', {class: 'grid g3'}, axisBox('y', 'min', 'Y: от'), axisBox('y', 'max', 'Y: до'), pointsBox('y', 'Точек по Y')),
+      addFixed('wobble_step', 'Шаг wobble (при включении)', matrix.wobbleStep, 'wobbleStep', {card: () => matrixCard}),
       h('p', {class: 'muted small'}, 'Для Q-Pulse используются только ступени из паспорта лазера. Шаг линий действует только для заливки и заполненных букв. Wobble проверяется на векторных линиях и однолинейных буквах.'));
     const grey = {
       rows: h('select', {'aria-label': 'Строки шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, greyAxisName(key)))),
       rowValues: h('input', {value: GREY_DEFAULTS.rowValues}),
       columns: h('select', {'aria-label': 'Столбцы шкал серого'}, GREY_AXES.map((key) => h('option', {value: key}, greyAxisName(key)))),
       columnValues: h('input', {value: GREY_DEFAULTS.columnValues}),
-      min: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.min}),
-      max: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: GREY_DEFAULTS.max}),
+      min: Forms.numberInput(Q.greyPower, {value: GREY_DEFAULTS.min}),
+      max: Forms.numberInput(Q.greyPower, {value: GREY_DEFAULTS.max}),
     };
     grey.rows.value = GREY_DEFAULTS.rows; grey.columns.value = GREY_DEFAULTS.columns;
     const greyCard = h('div', {class: 'card stack', style: 'display:none'},
       h('p', {class: 'muted small'}, 'Каждая полоска — свой слой-изображение LightBurn в режиме градаций серого: 16 ступеней от белого (слева, мощность Min) до чёрного (справа, мощность Max). '
         + 'Строки и столбцы меняют два постоянных параметра; остальные берутся из «Основных параметров опыта». До 7 строк и 4 столбцов.'),
-      h('div', {class: 'grid g2'}, field('Строки: параметр', grey.rows), field('Значения строк, через запятую', grey.rowValues)),
-      h('div', {class: 'grid g2'}, field('Столбцы: параметр', grey.columns), field('Значения столбцов, через запятую', grey.columnValues)),
-      h('div', {class: 'grid g2'}, field('Min мощность, % (белый)', grey.min), field('Max мощность, % (чёрный)', grey.max)),
+      h('div', {class: 'grid g2'}, field('Строки: параметр', grey.rows),
+        addList('row_values', 'Значения строк', grey.rowValues, () => axisRule('grey', grey.rows.value), {card: () => greyCard, max: 7, distinct: true})),
+      h('div', {class: 'grid g2'}, field('Столбцы: параметр', grey.columns),
+        addList('column_values', 'Значения столбцов', grey.columnValues, () => axisRule('grey', grey.columns.value), {card: () => greyCard, max: 4, distinct: true})),
+      h('div', {class: 'grid g2'}, addFixed('min_power', 'Min мощность (белый)', grey.min, 'greyPower', {card: () => greyCard}),
+        addFixed('max_power', 'Max мощность (чёрный)', grey.max, 'greyPower', {card: () => greyCard,
+          after: (r) => {
+            const low = Forms.parse(grey.min.value, Q.greyPower, {required: true});
+            return r.ok && low.ok && !(low.value < r.value) ? {ok: false, message: `Max должна быть больше Min (${String(low.value).replace('.', ',')}). Введено: ${String(r.value).replace('.', ',')}`} : r;
+          }})),
       h('p', {class: 'muted small'}, 'Шаг линий 0,0127 / 0,0169 / 0,0212 / 0,0254 мм — это 2000 / 1500 / 1200 / 1000 dpi. После фотографии каждая полоска станет шкалой «серый → цвет» в разделе «Фотогравировка».'),
       h('p', {class: 'muted small'}, 'Ширина полоски, мм — длина её строк: ступень — 1/16 ширины, не уже 1 мм (ширина от 16 мм). Без этой оси ширина полосок подбирается под предельную ширину платы, не больше 40 мм.'));
     const fill = {
-      widths: h('input', {value: FILL_WIDTHS, 'aria-label': 'Ширины полосок заливки'}),
+      widths: h('input', {value: FILL_WIDTHS}),
       axis: h('select', {'aria-label': 'Параметр рецептов заливки'}, FILL_AXES.map((key) => h('option', {value: key}, MATRIX_AXES[key].name))),
-      values: h('input', {placeholder: 'Пусто — один рецепт; например: 20, 40, 60', 'aria-label': 'Значения рецептов заливки'}),
+      values: h('input', {placeholder: 'Пусто — один рецепт; например: 20, 40, 60'}),
     };
     const fillCard = h('div', {class: 'card stack', style: 'display:none'},
       h('p', {class: 'muted small'}, 'Каждая полоска — свой слой заливки LightBurn (Scan) высотой 4 мм при постоянной мощности. Строки идут вдоль полоски, поэтому её ширина — длина строки. '
         + 'Рецепт — «Основные параметры опыта»; рецептов столько, сколько значений меняемого параметра. До 7 рецептов и 5 ширин, не больше 28 полосок.'),
-      field('Ширины полосок, мм, через запятую (3–300)', fill.widths),
-      h('div', {class: 'grid g2'}, field('Рецепты: меняемый параметр', fill.axis), field('Значения по рецептам, через запятую', fill.values)));
+      addList('fill_widths', 'Ширины полосок заливки', fill.widths, () => Q.fillWidth, {card: () => fillCard, max: 5, distinct: true}),
+      h('div', {class: 'grid g2'}, field('Рецепты: меняемый параметр', fill.axis),
+        addList('fill_recipes', 'Значения рецептов заливки', fill.values, () => axisRule('recipe', fill.axis.value), {card: () => fillCard, optional: true, max: 7})));
     // One picture at several settings: copies of an uploaded picture; without copies given the server changes one setting at a time around the base
     const photo = {
-      file: h('input', {type: 'file', accept: 'image/png,image/jpeg', 'aria-label': 'Картинка копий'}),
+      file: h('input', {type: 'file', accept: 'image/png,image/jpeg'}),
       kind: h('select', {'aria-label': 'Вид копий'}, PHOTO_KINDS.map(([key, name]) => h('option', {value: key}, name))),
-      size: h('input', {type: 'number', min: '8', max: '40', step: 'any', value: '18', 'aria-label': 'Размер копии, мм'}),
-      min: h('input', {type: 'number', min: '0', max: '100', step: 'any', value: '1', 'aria-label': 'Min мощность копий, %'}),
+      size: Forms.numberInput(Q.copySize, {value: '18'}),
+      min: Forms.numberInput(Q.copyMinPower, {value: '1'}),
     };
     const photoCard = h('div', {class: 'card stack', style: 'display:none'},
       h('p', {class: 'muted small'}, 'Восемь копий одной картинки рядом, под каждой — полоска серого на тех же настройках. Первая копия — на основных параметрах опыта, '
         + 'у остальных по одному изменению: в виде точками мощность −20 % и +20 %, скорость +40 %, шаг строк ×1,69, поправка ширины точки и два других вида; '
         + 'в градациях серого — Max, Min, шаг строк и скорость. Картинка берётся в настоящем размере: её длинная сторона — размер копии. '
         + 'Удобнее начинать со страницы фотоработы или фотозоны: кнопка «Подобрать настройки: 8 копий» берёт её картинку и настройки.'),
-      field('Картинка (PNG или JPEG)', photo.file),
-      h('div', {class: 'grid g3'}, field('Вид первой копии', photo.kind), field('Размер копии, мм (длинная сторона)', photo.size),
-        field('Min мощность, % (градации серого)', photo.min)));
+      form.add('picture', 'Картинка копий (PNG или JPEG)', photo.file, {required: true,
+        read: () => (skipped({card: () => photoCard}) ? none : (photo.file.files || [])[0] ? {ok: true, value: photo.file.files[0]} : {ok: false, message: 'Выберите картинку для копий (PNG или JPEG): без неё копий не будет'})}),
+      h('div', {class: 'grid g3'}, field('Вид первой копии', photo.kind),
+        addFixed('copy_mm', 'Размер копии (длинная сторона)', photo.size, 'copySize', {card: () => photoCard}),
+        addNumber('copy_min_power', 'Min мощность копий (градации серого)', photo.min, () => {
+          const power = Number(settings.power.value);
+          return Number.isFinite(power) && power > 0 ? {...Q.copyMinPower, max: power, maxOpen: true} : Q.copyMinPower;
+        }, {card: () => photoCard, when: () => photo.kind.value === 'grayscale'})));
     const settings = {
-      power: h('input', {type: 'number', min: '1', max: '100', step: 'any', value: DEFAULTS.power}),
-      frequency: h('input', {type: 'number', min: '1', step: 'any', value: DEFAULTS.frequency}),
-      speed: h('input', {type: 'number', min: '1', max: '10000', step: 'any', value: DEFAULTS.speed}),
+      power: Forms.numberInput(Q.platePower, {value: DEFAULTS.power}),
+      frequency: h('input', {type: 'number', step: 'any', inputmode: 'decimal', value: DEFAULTS.frequency}),
+      speed: Forms.numberInput(Q.plateSpeed, {value: DEFAULTS.speed}),
       pulse: h('select', {'aria-label': 'Длительность импульса'}),
-      interval: h('input', {type: 'number', min: '0.001', max: '1', step: 'any', value: DEFAULTS.line_interval}),
-      passes: h('input', {type: 'number', min: '1', max: '20', step: '1', value: DEFAULTS.passes}),
-      global: h('input', {type: 'number', min: '1', max: '20', step: '1', value: DEFAULTS.global_passes}),
+      interval: Forms.numberInput(Q.plateInterval, {value: DEFAULTS.line_interval}),
+      passes: Forms.numberInput(Q.platePasses, {value: DEFAULTS.passes}),
+      global: Forms.numberInput(Q.platePasses, {value: DEFAULTS.global_passes}),
     };
     // 200 нс — только начальное значение, и только если лазер даёт такую ступень; иначе длительность выбирает оператор (DEC-043)
     const pulseOptions = (laser, chosen) => {
@@ -248,12 +333,14 @@ const PlateDialog = (() => {
         if (cw) { pulseOptions(laser, cw.pulse_width_ns); settings.pulse.value = cw.pulse_width_ns; }
       }
     };
-    device.addEventListener('change', () => { fillHardware(); changeDescription(); });
+    device.addEventListener('change', () => { fillHardware(); changeDescription(); refreshRules(); });
     type.addEventListener('change', () => changeDescription(true));
     matrix.xAxis.addEventListener('change', () => updateMatrixAxes('xAxis'));
     matrix.yAxis.addEventListener('change', () => updateMatrixAxes('yAxis'));
     patch.count.addEventListener('change', patchDefaults);
     patch.axis.addEventListener('change', patchDefaults);
+    for (const choice of [matrix.xAxis, matrix.yAxis, grey.rows, grey.columns, fill.axis, patch.axis]) choice.addEventListener('change', () => refreshRules());   // the words follow the axis
+    settings.power.addEventListener('input', () => refreshRules());                                         // a copy's Min lies below the plate's power
     // a new test starts on the laser and titanium new work starts from (ux-work-creation-p0 REQ-001) unless the caller names others
     const start = preset.device != null || preset.material != null ? {} : await App.contextStart({});
     const laserWanted = preset.device ?? start.device, stockWanted = preset.material ?? start.material;
@@ -268,89 +355,91 @@ const PlateDialog = (() => {
       grade: h('input', {placeholder: 'Grade 2, Ti-6Al-4V…'}),
       batch: h('input', {placeholder: 'номер партии или листа'}),
     };
+    const stockNotice = Forms.notice({what: 'Запись заготовки', kept: 'Введённое осталось в форме.'});       // beside the form of the new stock, not in a toast
     const addMaterial = async () => {
+      stockNotice.clear();
       try {
         const saved = await post('/materials', {name: newMaterial.name.value.trim(), family: newMaterial.family.value.trim(), grade: newMaterial.grade.value.trim() || null,
           batch: newMaterial.batch.value.trim() || null, thickness_mm: null, surface: null});
         material.value = saved.id;                       // the new record is the one chosen
         newMaterial.name.value = newMaterial.grade.value = newMaterial.batch.value = '';
         toast('Заготовка сохранена и выбрана', 'ok');
-      } catch (e) { fail(e); }
+      } catch (e) { stockNotice.fail(e); }
     };
 
     // REQ-020: для какой задачи гравировки делается плата; по умолчанию — что исследует её тип (буквы — надписи, линии — линии…)
     const task = Tasks.chooser('', {empty: 'по типу платы', hint: 'каждая ячейка записывает и свою задачу: буквы — надписи, остальное — по режиму LightBurn'});
+    const typeField = form.add('test_type', 'Тип экспериментальной платы', type, {required: true,
+      read: () => (type.value ? {ok: true, value: type.value} : {ok: false, message: 'Выберите тип экспериментальной платы'})});
+    const deviceField = form.add('device_id', 'Лазер', device, {required: true,
+      read: () => { const laser = available.find((d) => String(d.id) === device.value); return laser ? {ok: true, value: +laser.id} : {ok: false, message: 'Выберите лазер с установленной линзой'}; }});
+    const materialField = form.add('material_id', 'Заготовка', material, {required: true,
+      read: () => (material.value ? {ok: true, value: +material.value} : {ok: false, message: 'Выберите конкретную заготовку: лист или партию, не марку'})});
+    const sizeFields = [addFixed('max_width_mm', 'Максимальная ширина платы', maxWidth, 'plateSize'), addFixed('max_height_mm', 'Максимальная высота платы', maxHeight, 'plateSize')];
+    const settingFields = [
+      addFixed('power', 'Базовая мощность', settings.power, 'platePower'),
+      addNumber('frequency', 'Базовая частота', settings.frequency, frequencyRule),
+      addFixed('speed', 'Базовая скорость', settings.speed, 'plateSpeed'),
+      form.add('pulse_width', 'Q-Pulse', settings.pulse, {required: true, unit: 'нс',
+        read: () => (settings.pulse.value === '' ? {ok: false, message: 'Выберите длительность импульса Q-Pulse из ступеней лазера'} : {ok: true, value: +settings.pulse.value})}),
+      addFixed('line_interval', 'Интервал линий', settings.interval, 'plateInterval'),
+      addFixed('passes', 'Проходы слоя', settings.passes, 'platePasses'),
+      addFixed('global_passes', 'Глобальные проходы', settings.global, 'platePasses')];
     const body = h('div', {class: 'stack'},
       h('p', {class: 'muted small'}, 'Выбери тест, лазер и заготовку. Рецепт предварительной очистки пока задан для титана.'),
-      field('Тип экспериментальной платы', type), desc, task.el,
-      field('Лазер', device), hardware,
-      field('Заготовка', material),
-      h('div', {class: 'grid g2'}, field('Максимальная ширина платы, мм', maxWidth),
-        field('Максимальная высота платы, мм', maxHeight)),
+      typeField, desc, task.el,
+      deviceField, hardware,
+      materialField,
+      h('div', {class: 'grid g2'}, ...sizeFields),
       matrixCard, smallCard, greyCard, fillCard, photoCard,
       h('details', {class: 'card'}, h('summary', {}, 'Добавить новую заготовку'),
         h('div', {class: 'stack', style: 'margin-top:12px'},
           h('div', {class: 'grid g3'}, field('Материал', newMaterial.family), field('Название / лист', newMaterial.name), field('Марка / сплав', newMaterial.grade), field('Партия', newMaterial.batch)),
-          btn('Сохранить заготовку', addMaterial))),
+          stockNotice.error, btn('Сохранить заготовку', addMaterial))),
       h('details', {class: 'card'}, h('summary', {}, 'Основные параметры опыта'),
         h('p', {class: 'muted small'}, 'Эти значения — настройки этой платы и сохраняются с ней. Тип платы сам перебирает указанные в описании оси; поля задают остальные условия. Для матрицы выбранные оси переопределяют соответствующие базовые значения. Для частотного теста выбирается CW-ступень, если она указана в паспорте.'),
-        h('div', {class: 'grid g3'}, field('Базовая мощность, %', settings.power), field('Базовая частота, кГц', settings.frequency), field('Базовая скорость, мм/с', settings.speed),
-          field('Q-Pulse, нс', settings.pulse), field('Интервал линий, мм', settings.interval), field('Проходы слоя', settings.passes),
-          field('Глобальные проходы', settings.global))),
+        h('div', {class: 'grid g3'}, ...settingFields)),
       h('details', {class: 'card'}, h('summary', {}, 'Параметры очистки и меток'),
         h('p', {class: 'muted small'}, 'В каждом LightBurn-файле первым будет слой чистки: 20% / 48 кГц / 2000 мм/с, Q-Pulse 200 нс, шаг 0,05 мм, один проход слоя и один глобальный проход, двунаправленно и cross-hatch. Затем идут чёрные подписи/метки и тестовые слои. Для выбранного лазера чистка автоматически подстраивается только если паспорт не поддерживает 48 кГц или 200 нс.')));
 
+    /** The body of the request, or null when a box is wrong (each wrong box is marked beside itself and keeps what was typed). */
     const requestBody = () => {
-      const laser = available.find((d) => String(d.id) === device.value);
-      if (!laser) throw new Error('Выбери лазер с установленной линзой');
-      if (!type.value) throw new Error('Выбери тип экспериментальной платы');
-      if (!material.value) throw new Error('Выбери или добавь конкретную заготовку');
-      if (settings.pulse.value === '') throw new Error('Выбери длительность импульса Q-Pulse из ступеней лазера');
-      const out = {device_id: +laser.id, material_id: +material.value, test_type: type.value,
-        power: +settings.power.value, frequency: +settings.frequency.value, speed: +settings.speed.value,
-        pulse_width: +settings.pulse.value, line_interval: +settings.interval.value,
-        passes: +settings.passes.value, global_passes: +settings.global.value,
-        max_width_mm: +maxWidth.value, max_height_mm: +maxHeight.value,
-        split_if_needed: true,
-        matrix: {x_axis: matrix.xAxis.value, y_axis: matrix.yAxis.value, geometry: matrix.geometry.value,
-          wobble_step: +matrix.wobbleStep.value,
-          x_min: +matrix.xMin.value, x_max: +matrix.xMax.value, x_count: +matrix.xCount.value,
-          y_min: +matrix.yMin.value, y_max: +matrix.yMax.value, y_count: +matrix.yCount.value}, ...task.body()};
-      const values = (input, label) => {
-        const numbers = input.value.split(/[,;\s]+/).filter(Boolean).map(Number);
-        if (!numbers.length || numbers.some((n) => !Number.isFinite(n))) throw new Error(`${label}: укажите числа через запятую`);
-        return numbers;
-      };
-      if (type.value === 'grey_scales') {
-        out.power = +grey.max.value;
-        out.scales = {rows: {axis: grey.rows.value, values: values(grey.rowValues, 'Строки')},
-          columns: {axis: grey.columns.value, values: values(grey.columnValues, 'Столбцы')}, min_power: +grey.min.value, max_power: +grey.max.value};
+      const v = form.collect();
+      if (!v) return null;
+      const out = {device_id: v.device_id, material_id: v.material_id, test_type: v.test_type,
+        power: v.power, frequency: v.frequency, speed: v.speed, pulse_width: v.pulse_width, line_interval: v.line_interval,
+        passes: v.passes, global_passes: v.global_passes, max_width_mm: v.max_width_mm, max_height_mm: v.max_height_mm, split_if_needed: true, ...task.body()};
+      if (v.test_type === 'material_matrix') {
+        out.matrix = {x_axis: matrix.xAxis.value, y_axis: matrix.yAxis.value, geometry: matrix.geometry.value, wobble_step: v.wobble_step,
+          x_min: v.x_min, x_max: v.x_max, x_count: v.x_count, y_min: v.y_min, y_max: v.y_max, y_count: v.y_count};
       }
-      if (type.value === 'fill_sizes') {
-        out.widths_mm = values(fill.widths, 'Ширины полосок');
-        out.recipes = fill.values.value.trim() ? values(fill.values, 'Рецепты').map((value) => ({[fill.axis.value]: value})) : [{}];
+      if (v.test_type === 'grey_scales') {
+        out.power = v.max_power;
+        out.scales = {rows: {axis: grey.rows.value, values: v.row_values}, columns: {axis: grey.columns.value, values: v.column_values},
+          min_power: v.min_power, max_power: v.max_power};
       }
-      if (type.value === 'photo_variations') {
-        const file = (photo.file.files || [])[0];
-        if (!file) throw new Error('Выберите картинку для копий (PNG или JPEG)');
-        out.variations = {picture_name: file.name, dither: photo.kind.value, copy_mm: +photo.size.value,
-          ...(photo.kind.value === 'grayscale' ? {min_power: +photo.min.value} : {})};
+      if (v.test_type === 'fill_sizes') {
+        out.widths_mm = v.fill_widths;
+        out.recipes = v.fill_recipes ? v.fill_recipes.map((value) => ({[fill.axis.value]: value})) : [{}];
       }
-      if (type.value === 'small_patches') {
+      if (v.test_type === 'photo_variations') {
+        out.variations = {picture_name: v.picture.name, dither: photo.kind.value, copy_mm: v.copy_mm,
+          ...(photo.kind.value === 'grayscale' ? {min_power: v.copy_min_power} : {})};
+      }
+      if (v.test_type === 'small_patches') {
         const count = +patch.count.value;
-        const numbers = patch.values.value.split(/[,;\s]+/).filter(Boolean).map(Number);
-        if (count > 1 && (numbers.length !== count || numbers.some((n) => !Number.isFinite(n)))) {
-          throw new Error(`Для ${count} квадратов укажите ровно ${count} числовых значения`);
-        }
         out.patch_size_mm = +patch.size.value;
         out.registration = patch.registration.value;
-        out.patches = count === 1 ? [{}] : numbers.map((value) => ({[patch.axis.value]: value}));
+        out.patches = count === 1 ? [{}] : v.patch_values.map((value) => ({[patch.axis.value]: value}));
       }
       return out;
     };
     smallCard.append(btn('Показать размер', async () => {
       try {
-        const result = await post('/capability-plates/preview', requestBody());
+        const sent = requestBody();
+        if (!sent) return;
+        const result = await post('/capability-plates/preview', sent);
+        form.clear();
         const parts = result.parts || [{summary: result.summary, output_layers: result.output_layers}];
         previewText.replaceChildren(...parts.map((part, index) => {
           const size = part.summary.size_mm;
@@ -359,15 +448,21 @@ const PlateDialog = (() => {
             `${part.summary.test_features} квадрат(а) · ${part.output_layers} выходных слоя · `,
             `очистка ${part.summary.clean_area_mm2} мм²`, placement(part.summary));
         }));
-      } catch (e) { fail(e); }
+      } catch (e) { form.fail(e); }
     }));
+    body.append(form.error);                         // above the buttons, where what the server refuses is said with what to do next
+    refreshRules();
 
     return modal('Создать экспериментальную плату', body, [
       {label: 'Отмена', run: (x) => x.close()},
       {label: 'Создать плату', cls: 'primary', run: async (x) => {
         const sent = requestBody();
-        if (sent.variations) sent.variations.picture_png = await base64Of(photo.file.files[0]);
-        const made = await post('/capability-plates', sent);
+        if (!sent) return;                            // a wrong box is marked beside itself; the dialog stays open with everything typed
+        let made;
+        try {
+          if (sent.variations) sent.variations.picture_png = await base64Of(photo.file.files[0]);
+          made = await post('/capability-plates', sent);
+        } catch (e) { form.fail(e); return; }
         const through = available.find((d) => d.id === sent.device_id);         // the next new work and test start where this test was made
         App.rememberContext({device: sent.device_id, lens: through && through.lens ? through.lens.id : null, material: sent.material_id});
         x.close();

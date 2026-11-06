@@ -138,7 +138,7 @@
     requestAnimationFrame(() => { if (chatBody.isConnected) chatBody.scrollTop = chatBody.scrollHeight; });
     if (!active.messages.length) chatBody.append(h('p', {class: 'muted small'},
       'Спросите, что уже известно, предложите критерий или попросите создать следующий тест. Созданный файл появится справа.'));
-    const input = h('textarea', {rows: '2', maxlength: '4000',
+    const input = h('textarea', {rows: '2', maxlength: '4000', 'aria-label': 'Сообщение AI-исследователю (не больше 4000 символов)',
       placeholder: 'Например: какие линии уже видны? Предложи следующий компактный тест и объясни, что он выяснит.'});
     let busy = false;
     const send = async (suggested) => {

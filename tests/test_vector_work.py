@@ -1197,7 +1197,7 @@ def test_an_eye_is_given_a_detail_and_moved_and_a_missing_one_marked_and_split_a
   await overlay.dispatch('pointerdown', {clientX: 5, clientY: 5, pointerId: 1});
   await overlay.dispatch('pointermove', {clientX: 20, clientY: 20});
   await overlay.dispatch('pointerup', {clientX: 20, clientY: 20});
-  const kind = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Что это за область');
+  const kind = tree.querySelectorAll('select').find((s) => (s.getAttribute('aria-label') || '').startsWith('Что это за область: отмечено вручную № 1'));
   out.kinds = kind.options.map((o) => o.value);
   kind.value = 'eye'; await kind.dispatch('change');
   out.pending = !tree.querySelectorAll('p').find((p) => p.textContent.startsWith('Изменения областей применятся')).hidden;
@@ -1443,7 +1443,7 @@ def test_the_editor_and_the_slider_are_wired_to_the_smoothness_of_the_work():
     editor = (UI / "screens" / "vector-editor.js").read_text(encoding="utf-8")
     assert "const geometryKey = (j) => `${j.document.version}:${j.smoothing_mm || 0}`;" in editor and "loadedVersion !== geometryKey(j)" in editor
     split_js = (UI / "screens" / "vector-split.js").read_text(encoding="utf-8")
-    assert "type: 'range'" in split_js and "'aria-label': 'Гладкость линий, мм'" in split_js and "max: String(j.smoothing_max_mm || 2)" in split_js
+    assert "type: 'range'" in split_js and "'aria-label': 'Гладкость линий, мм'" in split_js and "max: String(rule.max)" in split_js and "j.smoothing_max_mm || Forms.QUANTITIES.smoothing.max" in split_js
 
 
 def test_a_work_can_be_made_when_every_measured_colour_of_the_titanium_changed_under_its_settings(tmp_path):

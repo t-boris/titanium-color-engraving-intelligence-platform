@@ -2,7 +2,7 @@
 type: feature
 id: ux-validation-p0
 title: "[P0] Проверка пользы редизайна и предметных гарантий"
-status: implementing
+status: implemented
 owner: Boris Tsekinovsky
 created: 2026-11-05
 provenance: Created by an AI agent through MarkView from UX research 2026-11-05; n7, n48, n49, n50, n51, n52, n53, n54, n55, n56, n57, n58, n59; поручение пользователя создать задачи MarkView из исследования.

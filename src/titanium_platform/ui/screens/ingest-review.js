@@ -129,9 +129,9 @@ const IngestReview = (() => {
     const setRotation = (value) => {
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) return;
-      rotation = Math.max(0, Math.min(360, parsed));
+      rotation = parsed;                                                   // the slider, the buttons and the checked box keep it within 0 to 360
       rotationRange.value = rotation;
-      rotationNumber.value = rotation.toFixed(1);
+      rotationNumber.value = String(rotation);
       rotationNumber.removeAttribute('aria-invalid'); rotationNote.textContent = '';
       snapAdjustment();
     };
@@ -142,9 +142,9 @@ const IngestReview = (() => {
     const setScale = (value) => {
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) return;
-      schemeScale = Math.max(10, Math.min(800, parsed));
+      schemeScale = parsed;                                                // the slider and the checked box keep it within 10 to 800
       scaleRange.value = schemeScale;
-      scaleNumber.value = schemeScale.toFixed(1);
+      scaleNumber.value = String(schemeScale);
       scaleNumber.removeAttribute('aria-invalid'); scaleNote.textContent = '';
       snapAdjustment();
     };
@@ -155,6 +155,7 @@ const IngestReview = (() => {
     const zoomRange = h('input', {type: 'range', min: 25, max: 800, step: 25, value: 100,
       'aria-label': 'Масштаб просмотра фотографии, проценты'});
     const zoomValue = h('span', {class: 'muted small', 'aria-live': 'polite'}, '100%');
+    const zoomOut = btn('−', () => setZoom(zoom - 25)), zoomIn = btn('+', () => setZoom(zoom + 25));
     const viewRange = h('input', {type: 'range', min: 0, max: 360, step: .1, value: 0,
       'aria-label': 'Поворот фотографии для просмотра, градусы'});
     const viewNumber = h('input', {type: 'number', min: 0, max: 360, step: .1, value: 0,
@@ -174,16 +175,19 @@ const IngestReview = (() => {
     const setViewRotation = (value) => {
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) return;
-      viewRotation = Math.max(0, Math.min(360, parsed));
+      viewRotation = parsed;                                               // the slider, the buttons and the checked box keep it within 0 to 360
       viewRange.value = viewRotation;
-      viewNumber.value = viewRotation.toFixed(1);
+      viewNumber.value = String(viewRotation);
+      viewNumber.removeAttribute('aria-invalid'); viewNote.textContent = '';
       layoutView();
     };
     viewRange.addEventListener('input', () => setViewRotation(viewRange.value));
-    viewNumber.addEventListener('change', () => setViewRotation(viewNumber.value));
+    // how the photograph is looked at is no rule of the server: the box takes the turn the slider has (0 to 360 degrees) and says so beside itself when it is not
+    const viewNote = Forms.watch(viewNumber, 'viewRotation', setViewRotation, {required: true});
     const setZoom = (value) => {
-      zoom = Math.max(25, Math.min(800, Number(value) || 100));
+      zoom = Number(value);                                                // the slider and the buttons (disabled at the ends) keep it within 25 to 800
       zoomRange.value = zoom;
+      zoomOut.disabled = zoom <= 25; zoomIn.disabled = zoom >= 800;
       const detailed = zoom > 125;
       zoomValue.textContent = `${zoom}%${detailed ? ' · полный RAW' : ''}`;
       if (detailed !== highDetail) { highDetail = detailed; img.src = photoSrc(); contours.src = contourSrc(); }
@@ -225,8 +229,8 @@ const IngestReview = (() => {
     });
     const resetShift = btn('Сбросить совмещение', () => {
       shift = [0, 0]; rotation = 0; schemeScale = 100; mirrorHorizontal = mirrorVertical = false;
-      rotationRange.value = 0; rotationNumber.value = '0.0';
-      scaleRange.value = 100; scaleNumber.value = '100.0'; mirrorX.checked = mirrorY.checked = false;
+      rotationRange.value = 0; rotationNumber.value = '0';
+      scaleRange.value = 100; scaleNumber.value = '100'; mirrorX.checked = mirrorY.checked = false;
       clearTimeout(snapTimer); ++snapRequest; snapStatus.textContent = '';
       showAdjustment();
     });
@@ -265,22 +269,22 @@ const IngestReview = (() => {
           : h('span', {class: 'muted small'}, 'Цветовая коррекция недоступна: на фото не найдена отдельная калибровочная карта. Само фото при этом измерено.'),
         btn(visibility === 'lifted' ? 'Обычная яркость' : 'Поднять яркость', () => { visibility = visibility === 'lifted' ? 'normal' : 'lifted'; refresh(); })),
       viewport,
-      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Повернуть фото для просмотра'), viewRange,
-        viewNumber, h('span', {}, '°'),
+      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Повернуть фото для просмотра'), viewRange, Forms.describe(viewRange, 'viewRotation'),
+        viewNumber, Forms.describe(viewNumber, 'viewRotation'), h('span', {}, '°'), viewNote,
         btn('−90°', () => setViewRotation((viewRotation + 270) % 360)),
         btn('+90°', () => setViewRotation((viewRotation + 90) % 360))),
-      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Масштаб просмотра'), zoomRange, zoomValue,
-        btn('−', () => setZoom(zoom - 25)), btn('+', () => setZoom(zoom + 25)),
+      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Масштаб просмотра'), zoomRange, Forms.describe(zoomRange, 'viewZoom', {extra: 'шаг 25'}), zoomValue,
+        zoomOut, zoomIn,
         btn('Вписать', () => setZoom(100))));
     // the tool «Сдвиг и поворот схемы»: it moves the whole overlay on the photograph and checks the pair again with the result
     const shiftCard = h('div', {class: 'card stack'}, h('h3', {}, 'Сдвиг, поворот и масштаб всей схемы'),
       h('p', {class: 'muted small'}, 'Все контуры двигаются вместе, размеры в файле LightBurn сохраняются. Можно поправить и совмещение, которое программа считает верным.'),
-      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Поворот схемы на фото'), rotationRange,
-        rotationNumber, h('span', {}, '°'), rotationNote,
+      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Поворот схемы на фото'), rotationRange, Forms.describe(rotationRange, 'schemeRotation'),
+        rotationNumber, Forms.describe(rotationNumber, 'schemeRotation'), h('span', {}, '°'), rotationNote,
         btn('−90°', () => setRotation((rotation + 270) % 360)),
         btn('+90°', () => setRotation((rotation + 90) % 360))),
-      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Масштаб схемы на фото'), scaleRange,
-        scaleNumber, h('span', {}, '%'), scaleNote,
+      h('div', {class: 'row overlay-controls'}, h('span', {}, 'Масштаб схемы на фото'), scaleRange, Forms.describe(scaleRange, 'schemeScale'),
+        scaleNumber, Forms.describe(scaleNumber, 'schemeScale'), h('span', {}, '%'), scaleNote,
         h('label', {class: 'row'}, mirrorX, h('span', {}, 'Зеркально ↔')),
         h('label', {class: 'row'}, mirrorY, h('span', {}, 'Зеркально ↕'))),
       h('div', {class: 'row'}, toggleEdit, h('label', {class: 'row'}, snap,

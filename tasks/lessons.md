@@ -782,3 +782,13 @@ again in the next commit). Add the exact files a tool or an edit produced; check
   edit. Failures in files another agent is still editing are expected until it reports; the integrator re-runs the area after each
   report and the whole suite once at the end. A feature is not done while a criterion is "partial" without a named reason: send the
   agent back (BUG-003's kind step was missing from the wizard until it was sent back).
+
+## "Everything" means every criterion the agent can reach, before the release step (0.39.0 -> 0.39.1, 2026-11-05)
+
+- **What happened.** The goal said all nine features, implemented. I released 0.39.0 with two features still at `implementing` and listed
+  the leftovers as "what is not done". Two of them (unmigrated forms with no unit or range, and a validation record that had only been
+  tested in node) were work the agent could do; the goal check rightly refused to stop. The fix needed a patch release, 0.39.1.
+- **Rule.** Before the version bump, go through each feature's unticked criteria and sort them: reachable by the agent (build and prove it
+  now) or needing the operator, a screen reader, or Electron (record as not executed with the reason). Only the second kind may stay open
+  at release. A browser sweep that lists every unnamed control and every number without a unit is cheaper than arguing about which
+  forms were migrated. A fix after a published release is a new patch version; never rewrite the published one.

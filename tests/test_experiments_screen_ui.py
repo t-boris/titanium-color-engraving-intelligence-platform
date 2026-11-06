@@ -275,9 +275,11 @@ const {context, load, El} = require(%(dom)s);
 Object.defineProperty(El.prototype, 'style', {get() { return this._style || (this._style = {}); }});
 const data = JSON.parse(fs.readFileSync(%(data)s, 'utf8'));
 const ctx = context(data.routes);
-load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'screens/material-picker.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
+load(ctx, %(ui)s, [...%(tables)s, 'app.js', 'forms.js', 'dialogs.js', 'list.js', 'hardware.js', 'tasks.js', 'screens/material-picker.js', 'screens/plate-dialog.js', {code: 'globalThis.PlateDialog = PlateDialog;'}]);
 const tick = () => new Promise((r) => setTimeout(r, 0));
-const labelled = (root, label) => root.querySelectorAll('[aria-label]').find((el) => el.getAttribute('aria-label') === label);
+/** A control by its name: its aria-label, or the text of the label it points to (aria-labelledby). */
+const labelled = (root, label) => root.querySelectorAll('input, select, textarea, [aria-label]').find((el) => el.getAttribute('aria-label') === label
+  || (el.getAttribute('aria-labelledby') && root.querySelectorAll('[id]').some((n) => n.getAttribute('id') === el.getAttribute('aria-labelledby') && n.textContent === label)));
 const card = (input) => {                                                   // whether the card around an input is shown
   let el = input;
   while (!(el.className || '').split(' ').includes('card')) el = el.parentNode;
@@ -354,17 +356,81 @@ def test_the_plate_dialog_sends_the_picture_of_a_photo_variations_plate_its_kind
   ctx.btoa = (text) => Buffer.from(text, 'binary').toString('base64');
   out.none = await made({type: 'photo_variations'}, () => {});
   out.photo = await made({type: 'photo_variations'}, (box) => {
-    out.photoCard = card(labelled(box, 'Картинка копий')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
-    labelled(box, 'Картинка копий').files = [{name: 'yana.png', arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer}];
+    out.photoCard = card(labelled(box, 'Картинка копий (PNG или JPEG)')); out.greyCard = card(labelled(box, 'Строки шкал серого'));
+    labelled(box, 'Картинка копий (PNG или JPEG)').files = [{name: 'yana.png', arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer}];
     labelled(box, 'Вид копий').value = 'grayscale';
-    labelled(box, 'Размер копии, мм').value = '24';
-    labelled(box, 'Min мощность копий, %').value = '2';
+    labelled(box, 'Размер копии (длинная сторона)').value = '24';
+    labelled(box, 'Min мощность копий (градации серого)').value = '2';
   });
 """)
     assert out["none"] is None                                                       # nothing is sent without a picture
     assert out["photoCard"] == "" and out["greyCard"] == "none"
     assert out["photo"]["test_type"] == "photo_variations"
     assert out["photo"]["variations"] == {"picture_name": "yana.png", "dither": "grayscale", "copy_mm": 24, "min_power": 2, "picture_png": "iVBORw=="}
+
+
+@node
+def test_the_plate_dialog_says_the_unit_and_the_permitted_values_of_every_number_and_keeps_a_wrong_one_beside_its_box(tmp_path):
+    out = run_dialog(tmp_path, """
+  const words = (el) => (el.getAttribute('aria-describedby') || '').split(' ').map((id) => (ctx.document.getElementById(id) || {textContent: ''}).textContent).join(' ');
+  const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, {type: 'fill_sizes'});
+  await tick();
+  const box = dialog.el;
+  labelled(box, 'Заготовка').value = '1';
+  out.words = {width: words(labelled(box, 'Ширины полосок заливки')), power: words(labelled(box, 'Базовая мощность')), speed: words(labelled(box, 'Базовая скорость')),
+    frequency: words(labelled(box, 'Базовая частота')), size: words(labelled(box, 'Максимальная ширина платы')), passes: words(labelled(box, 'Глобальные проходы'))};
+  // a width below the least the server takes: nothing is sent, the reason stands beside the box and the typed text stays
+  labelled(box, 'Ширины полосок заливки').value = '5, 2, 40';
+  const before = ctx.requests.length;
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  for (let i = 0; i < 5; i += 1) await tick();
+  out.wrong = {posted: ctx.requests.slice(before).filter((r) => r.method === 'POST').length, kept: labelled(box, 'Ширины полосок заливки').value,
+    invalid: labelled(box, 'Ширины полосок заливки').getAttribute('aria-invalid'), beside: box.querySelectorAll('.f-error').map((n) => n.textContent),
+    summary: box.querySelectorAll('.f-form-error').map((n) => n.textContent), toasts: ctx.document.body.querySelectorAll('.toast').length};
+  // the laser's own range: 5000 kHz is above what this laser takes
+  labelled(box, 'Ширины полосок заливки').value = '5, 20';
+  labelled(box, 'Базовая частота').value = '5000';
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  for (let i = 0; i < 5; i += 1) await tick();
+  out.laser = box.querySelectorAll('.f-error').map((n) => n.textContent);
+""")
+    assert "от 3 до 300" in out["words"]["width"] and "единица: мм" in out["words"]["width"] and "не больше 5" in out["words"]["width"]
+    assert "больше 0 и не больше 100" in out["words"]["power"] and "единица: %" in out["words"]["power"]
+    assert "больше 0 и не больше 10000" in out["words"]["speed"] and "единица: мм/с" in out["words"]["speed"]
+    assert "от 1 до 4000" in out["words"]["frequency"] and "единица: кГц" in out["words"]["frequency"]       # the laser's own range
+    assert "от 1 до 300" in out["words"]["size"] and "от 1 до 20" in out["words"]["passes"] and "целое число" in out["words"]["passes"]
+    wrong = out["wrong"]
+    assert wrong["posted"] == 0 and wrong["kept"] == "5, 2, 40" and wrong["invalid"] == "true" and wrong["toasts"] == 0
+    assert any("Значение 2: Допустимо: от 3 до 300 мм. Введено: 2" in text for text in wrong["beside"])
+    assert any("Ширины полосок заливки" in text and "осталось в форме" in text for text in wrong["summary"])
+    assert any("Допустимо: от 1 до 4000 кГц. Введено: 5000" in text for text in out["laser"])
+
+
+@node
+def test_a_refusal_of_the_server_stays_in_the_plate_dialog_with_everything_typed(tmp_path):
+    out = run_dialog(tmp_path, """
+  data.routes['/api/capability-plates'] = {status: 400, json: {error: 'скорость теста не должна превышать 10000 мм/с', kind: 'invalid'}};
+  const dialog = await ctx.PlateDialog.open(data.devices, data.materials, null, {type: 'fill_sizes'});
+  await tick();
+  const box = dialog.el;
+  labelled(box, 'Заготовка').value = '1';
+  labelled(box, 'Базовая скорость').value = '900';
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Создать плату').dispatch('click');
+  for (let i = 0; i < 6; i += 1) await tick();
+  out.kept = labelled(box, 'Базовая скорость').value;
+  out.open = !!box.parentNode;
+  out.said = box.querySelectorAll('.f-form-error').map((n) => n.textContent).filter(Boolean);
+  out.toasts = ctx.document.body.querySelectorAll('.toast').length;
+  // the form of a new stock record inside the dialog: its refusal stands beside it too
+  data.routes['/api/materials'] = {status: 400, json: {error: 'material name is required', kind: 'invalid'}};
+  await box.querySelectorAll('button').find((b) => b.textContent === 'Сохранить заготовку').dispatch('click');
+  for (let i = 0; i < 6; i += 1) await tick();
+  out.stock = box.querySelectorAll('.f-form-error').map((n) => n.textContent).filter((t) => t.startsWith('Запись'));
+  out.toastsAfter = ctx.document.body.querySelectorAll('.toast').length;
+""")
+    assert out["open"] and out["kept"] == "900" and out["toasts"] == 0
+    assert len(out["stock"]) == 1 and "Запись заготовки не выполнена" in out["stock"][0] and out["toastsAfter"] == 0
+    assert len(out["said"]) == 1 and "скорость теста не должна превышать 10000 мм/с" in out["said"][0] and "осталось в форме" in out["said"][0]
 
 
 # -- the CSS ---------------------------------------------------------------------------------------------------------------------------

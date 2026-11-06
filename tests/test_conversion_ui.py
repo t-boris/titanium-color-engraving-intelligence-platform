@@ -29,7 +29,8 @@ def test_the_vector_screen_is_loaded_after_the_helpers_it_uses_and_has_a_menu_en
 def test_the_photo_form_takes_its_band_limit_from_the_server_and_never_offers_more(tmp_path):
     form = source("screens/photo-form.js")
     assert "255" not in form and "value: 32" not in form
-    assert "get('/continuous/limits')" in form and "max: String(maxBands)" in form and "value: revising ? Math.min(revising.band_count, maxBands) : maxBands" in form
+    # the box is the quantity of the form, narrowed to what the server says (its ends become the box's own limits: Forms.numberInput)
+    assert "get('/continuous/limits')" in form and "{...Forms.QUANTITIES.bandCount, max: maxBands}" in form and "value: revising ? Math.min(revising.band_count, maxBands) : maxBands" in form
     with TestClient(create_app(tmp_path / "d")) as c:
         assert c.get("/api/continuous/limits").json()["max_bands"] == conversion.MAX_BANDS == 29
 
@@ -99,9 +100,10 @@ def test_the_colouring_step_offers_every_operation_the_server_knows():
 
 def test_the_discrete_screens_offer_a_time_limit_and_say_that_the_fastest_colour_within_the_threshold_is_chosen():
     start, plan = source("screens/artwork-start.js"), source("screens/artwork.js")
-    assert "fd.append('max_time', maxTime.value)" in start and "Наибольшее время гравировки, с/см²" in start
+    # the time limit is a field read as colormap.time_limit reads it (above 0 seconds per cm², empty is none): the unit is told by the field, the box keeps a wrong text
+    assert "fd.append('max_time', v.max_time)" in start and "'Наибольшее время гравировки', maxTime, {quantity: 'maxTime'" in start
     assert "выбирается самый быстрый" in start and "выбирается самый быстрый" in plan and "'Время на см²'" in plan
-    assert "max_time: maxTime.value === '' ? null : +maxTime.value" in plan and "seconds(e.time_s_per_cm2)" in start
+    assert "{threshold: v.threshold, max_time: v.max_time}" in plan and "seconds(e.time_s_per_cm2)" in start
 
 
 def test_regions_without_evidence_are_counted_in_one_short_message_and_their_ids_shown_only_on_request():

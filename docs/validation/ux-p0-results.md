@@ -1,9 +1,10 @@
-# UX P0 validation results (release 0.39.0)
+# UX P0 validation results (releases 0.39.0 and 0.39.1)
 
 Record of what was run for feature `ux-validation-p0` (REQ-001..003). Protocol: [ux-p0-protocol.md](ux-p0-protocol.md). Data guarantees,
 legacy documents and the list of changed tests: [ux-p0-guarantees.md](ux-p0-guarantees.md). Date of every check: 2026-11-05.
 
-Build under check: commit `c89b339` (0.38.1) plus the uncommitted work of the nine `ux-*-p0` features, i.e. what becomes 0.39.0.
+Build under check: commit `c89b339` (0.38.1) plus the work of the nine `ux-*-p0` features, released as 0.39.0 (commit `4b8a783`); the
+finishing pass of the forms (section 2c) is 0.39.1.
 Nothing in this record is a claim of measured improvement: no before/after timing was taken (section 3).
 
 States: `passed` (where), `failed`, `not executed` (why). A check that was only read in code has no state.
@@ -14,6 +15,7 @@ States: `passed` (where), `failed`, `not executed` (why). A check that was only 
 |---|---|---|
 | all tests, tree finished | `.venv/bin/python -m pytest -q -rs -n 12` | 2924 passed, 0 failed, 0 skipped (454 s) |
 | final run, version 0.39.0, all docs and statuses in place | same | 2925 passed, 0 failed, 0 skipped (357 s) |
+| release gate of 0.39.1 (forms finished, control sweep test added), version 0.39.1 | same | 2931 passed, 0 failed, 0 skipped (443 s) |
 
 Node tests run screens on the fake DOM of `tests/ui_dom.js`. It now keeps real focus bookkeeping (`activeElement`, `contains`, removal of a
 node loses focus) and throws on assignment to names a built-in DOM element owns (`label.control` in Chrome is a read-only getter: an
@@ -31,6 +33,9 @@ Two kinds of evidence, kept apart.
 | R1 | multi-character search in the works catalog | typed «Work 16»: value kept, same input node connected, focus kept, caret at 7, 15 rows | passed |
 | R1 | search with no match, then reset | text «Работ по этим условиям нет», the condition named, «Сбросить поиск и фильтры» restores 20 rows and an empty search | passed |
 | R2 | two clicks on «Показать ещё» in one tick | one request (`offset=20&limit=20`), 40 rows, no duplicate row | passed |
+| R3 | stale answer: «Work 1» held 2.5 s, «Work 19» typed meanwhile | the list stayed that of «Work 19» (15 of 15) before and after the slow answer arrived; it never became «Work 1» (111 works) | passed |
+| R4 | save failure: material form, the first `PUT /api/materials/200` answered 500 (injected once, then passed through) | the error stays beside the form («Не получилось отправить… Всё, что вы ввели, осталось в форме»), the typed name kept, same input node; a second press saved (server name changed), the error left, «Материал сохранён» shown | passed |
+| R5 | back navigation: search «Work 16» + gallery view, open a work, `history.back()` | search «Work 16», gallery pressed, «15 из 15» restored; the address carries the place (`at=vector-168`) | passed |
 | R6 | dialog: Tab from the last control | focus wraps inside the dialog; the page behind is inert | passed |
 | R6 | nested dialog (material selector over the context dialog) | Escape closes only the top one; focus returns to the opener button inside the remaining dialog; second Escape returns it to «Изменить…» | passed |
 | R7 | skip link on `#/works` | route unchanged (`#/works`), focus on `#main` (`tabindex=-1`) | passed |
@@ -60,6 +65,22 @@ fails as it did in 0.38.1 (the route is `/knowledge/<id>`).
 | all 100 scripts load; `App.field`, `Forms`, `SaveState`, `Operations` work against a real DOM; nine screens visited | no script error |
 | ingest review of one seeded pair, three sizes | layout only |
 
+**(c) Control sweep of 0.39.1 (agent, headless Chrome over the DevTools protocol, own profile, throw-away workshop on port 8813, built through
+the real API with real vector, photo and ingest documents).** Every `input`, `select`, `textarea` is checked for an accessible name
+(`aria-label`, `aria-labelledby`, `label[for]`, wrapping label) and every numeric box for a unit and a range in its name or description.
+
+| scope | controls scanned | without a name | numeric | numeric without unit | numeric without range |
+|---|---|---|---|---|---|
+| real browser: `/vector?new=1&classic=1`, an open vector work (colour, area, photo-zone, file tabs), `/photo-engraving?work=…`, `/photo-preview`, `/ingest` with a pair review, `/devices` with the lens tab, `/network`, `/labs`, every `/setup` tab, `/designer`, `/plan/…`, `/experiment/…`, `/findings`, `/colors`, `/research`, the plate dialog of every plate type | 783 | 0 | 357 | 0 | 0 |
+| node (`tests/test_every_control_named_ui.py`: 40 screens and tabs, 18 dialogs, every plate type) | about 671 | 0 | 266 | 0 | 0 |
+
+The first browser sweep found 12 numeric boxes without a unit (the Lab boxes of the target colour); they were fixed and the sweep repeated.
+«Range» means the range the server enforces; a quantity with no server rule has a name and a unit and no invented limit. Not reachable in a
+throw-away workshop: a state that needs a running laser job and a live cloud sign-in; six list-row steps had no expandable rows.
+Server refusals of the plate dialog, the new-work dialog of photo engraving, the shooting-rig editor and chart-reference form and the
+controller table now stay beside the form with the typed values; about 33 quantities in `forms.js` are compared with the Python rules by
+an edge test. Final run of the interface tests of this pass: 638 passed, 0 failed, 0 skipped.
+
 ## 3. Not executed
 
 | id | check | why |
@@ -68,8 +89,6 @@ fails as it did in 0.38.1 (the route is `/knowledge/<id>`).
 | A2 | screen reader announcements (VoiceOver) of stage changes and final outcomes | needs a person with a screen reader |
 | A7 | Electron: keyboard path, 320 px, 800 × 600, 200 % | the packaged app was not driven; the packaged `--smoke` of the release build checks start-up only |
 | A1, A3, A4 | the same profiles in a real, resized window and the browser's own zoom | only emulated (section 2b) |
-| R3 | stale answer with a delayed server in a browser | node tests only (`test_ui_foundation.py`, `test_ux_guarantees.py`) |
-| R5 | back navigation in a browser | node tests only |
 | — | ingest-review overlay move / rotate / scale, detail candidates on a real photograph | no seeded photograph pair was driven by pointer |
 | — | focus order and trap with nested dialogs under a screen reader; announcements of tiles, impact panel, radiogroup | needs a screen reader |
 | — | a task actually running in the task panel while the person moves to another screen | panel tested in node and opened empty in a browser |
@@ -105,6 +124,6 @@ checks and the list of existing tests changed by the nine features: [ux-p0-guara
    review); before, it was only a last resort.
 4. The text strategy and the layer task exist only in the classic vector form (`/vector?new=1&classic=1`); the wizard offers the four
    results. Say whether the wizard should offer them.
-5. Server user errors carry no field name, so only validation lists map to fields; a `field` key on the backend would put more messages
-   beside their inputs. Speed has no documented limit, so none is enforced.
+5. Server user errors carry no field name, so only validation lists map to fields; a refusal that names no field is shown on the form with
+   what to do. A `field` key on the backend would put more messages beside their inputs. Speed has no documented limit, so none is enforced.
 6. The list of background tasks is not saved across a restart (the panel says so).

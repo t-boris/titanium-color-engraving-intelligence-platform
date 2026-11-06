@@ -145,15 +145,17 @@
       greyscale there is no correction: the field is hidden and the width waits in the work. */
   function dotWidthBox(save) {
     const on = h('input', {type: 'checkbox', 'aria-label': 'Поправка ширины точки'});
-    const width = h('input', {type: 'number', min: '0.001', max: '0.2', step: '0.001', 'aria-label': 'Ширина точки лазера, мм'});
-    const given = () => (width.value === '' ? null : Number(width.value));
+    const width = Forms.numberInput(Forms.QUANTITIES.dotWidth, {step: '0.001', 'aria-label': 'Ширина точки лазера'});
+    const given = () => { const r = Forms.parse(width.value, Forms.QUANTITIES.dotWidth); return r.ok ? r.value : null; };
     on.addEventListener('change', () => {
       if (!on.checked) save({dot_width: null});
       else if (given() != null) save({dot_width: given()});
     });
-    width.addEventListener('change', () => { on.checked = given() != null; save({dot_width: given()}); });
+    // a width outside what LightBurn takes is kept in the box with the reason beside it and is not saved; an empty box switches the correction off
+    const wrong = Forms.watch(width, 'dotWidth', (value) => { on.checked = value != null; save({dot_width: value}); });
+    const rules = Forms.describe(width, 'dotWidth');
     const el = h('label', {class: 'ge-power ge-dotwidth', title: DOT_WIDTH_ABOUT}, on, h('span', {class: 'small'}, 'Поправка ширины точки'), width,
-      h('span', {class: 'small'}, 'мм'));
+      h('span', {class: 'small'}, 'мм'), rules, wrong);
     function show(view) {
       el.hidden = !dotted(view) || !!view.problem;
       on.checked = view.dot_width != null;
@@ -328,7 +330,9 @@
     const begun = scale ? {context: null} : await App.contextStart({});       // the laser, lens and titanium new work starts from; null when it cannot be read
     const fileIn = h('input', {type: 'file', accept: PICTURES, 'aria-label': 'Картинка'});
     const name = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
-    const width = h('input', {type: 'number', min: '1', max: '1000', step: 'any', value: '50', 'aria-label': 'Ширина на титане, мм'});
+    // the width is read strictly with the server's own rule; a wrong one is marked beside its box and stays as typed (ux-save-feedback-p0, REQ-003)
+    const picture = Forms.create();
+    const widthField = picture.add('width_mm', 'Ширина на титане', Forms.numberInput(Forms.QUANTITIES.pictureWidth, {value: '50'}), {quantity: 'pictureWidth', required: true});
     fileIn.addEventListener('change', () => {
       const file = fileIn.files && fileIn.files[0];
       if (file && !name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '');
@@ -364,32 +368,37 @@
     const sharedStrip = begun.context && begun.context.device_id != null && begun.context.material_id != null
       ? WorkContext.strip(begun.context, {heading: 'Работа делается на', source: false, onChange: (saved) => { begun.context = saved; }}) : null;
     const shared = sharedStrip ? sharedStrip.el : null;
-    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), field('Ширина на титане, мм', width), shared, source.el, own,
+    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), widthField, shared, source.el, own,
       h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
         : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
-        + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'));
+        + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'), picture.error);
     const pictureStep = () => modal('Новая работа · шаг 1 из 2: картинка', fields, [
       {label: 'Отмена', run: (m) => m.close()},
       {label: 'Дальше →', cls: 'primary', run: async (m) => {
+        const values = picture.collect();
+        if (!values) return;                       // the wrong box is marked beside itself; the dialog stays with everything typed
         const file = fileIn.files && fileIn.files[0];
-        if (!file) throw new Error('Выберите картинку (PNG, JPEG, TIFF)');
-        const fd = new FormData();
-        fd.append('picture', file, file.name);
-        fd.append('name', name.value);
-        fd.append('width_mm', width.value);
-        const src = source.value();
-        if (src) {
-          fd.append('source', JSON.stringify({...src, device_id: pick.deviceId(), lens_id: pick.lensId()}));
-          const sc = releaseScales[+scaleSelect.value];
-          if (sc) fd.append('scale', JSON.stringify(sc.mode));
-        } else if (scale) fd.append('scale', JSON.stringify(scale));
-        else if (shared) {
-          // the work is made on a scale of the laser, lens and titanium shown above, never silently on another laser's
-          const own = await App.contextScale(begun.context, width.value);
-          if (!own) throw new Error('Для выбранных лазера, линзы и титана нет измеренной шкалы серого: выберите другие кнопкой «Изменить…» или добавьте тест в мастере создания работы');
-          fd.append('scale', JSON.stringify(own));
-        }
-        const made = await form('/photo-works', fd);
+        if (!file) { picture.fail(new Error('Выберите картинку (PNG, JPEG, TIFF)')); return; }
+        let made, src;
+        try {
+          const fd = new FormData();
+          fd.append('picture', file, file.name);
+          fd.append('name', name.value);
+          fd.append('width_mm', String(values.width_mm));
+          src = source.value();
+          if (src) {
+            fd.append('source', JSON.stringify({...src, device_id: pick.deviceId(), lens_id: pick.lensId()}));
+            const sc = releaseScales[+scaleSelect.value];
+            if (sc) fd.append('scale', JSON.stringify(sc.mode));
+          } else if (scale) fd.append('scale', JSON.stringify(scale));
+          else if (shared) {
+            // the work is made on a scale of the laser, lens and titanium shown above, never silently on another laser's
+            const own = await App.contextScale(begun.context, values.width_mm);
+            if (!own) throw new Error('Для выбранных лазера, линзы и титана нет измеренной шкалы серого: выберите другие кнопкой «Изменить…» или добавьте тест в мастере создания работы');
+            fd.append('scale', JSON.stringify(own));
+          }
+          made = await form('/photo-works', fd);
+        } catch (e) { picture.fail(e); return; }   // said in the dialog, beside the box the server names or above the buttons
         if (src && begun.context && begun.context.material_id != null) App.rememberContext({device: pick.deviceId(), lens: pick.lensId(), material: begun.context.material_id, source: src});
         m.close();
         kindStep(made.id);

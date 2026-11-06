@@ -310,15 +310,18 @@ const ColorMap = (() => {
         pick ? DotPick.action(pick, p) : null, where(p), filmOf(p, model),
         EvidenceSummary.disclosure('Подробности: цвет Lab, уверенность, источники', [
           h('p', {}, `${labText(p.display_lab)}${p.approximate ? ' · условный оттенок' : ''}`), trustLine(p), sourcesBlock(known, p.agreement, recipe ? recipe.lab : null)]),
-        btn('Найти такой же среди всех', () => { setTarget(p.display_lab); }, 'btn-small')); drawPlot();
+        btn('Найти такой же среди всех', () => { setTarget(tidy(p.display_lab)); }, 'btn-small')); drawPlot();
       if (how) {                                                // a step by the buttons: say which circle it is and keep the focus on the button that was pressed
         fill(stepNote, `Цвет ${how.n} из ${how.of}: ${p.title} · ${p.layer_name || 'слой ' + p.layer_index} · ${labText(p.display_lab)}`);
         const again = [...plotBox.querySelectorAll('button')].find((b) => b.getAttribute('data-step') === how.step);
         if (again) again.focus();
       } else fill(stepNote); }, target, picked, plane,
       model ? model.spiral : null, pick ? (p) => !DotPick.can(pick, p) : null));
+    // a colour taken from the picker or from a circle of the map is tidied to a tenth; a colour typed into the boxes is searched exactly as typed
+    const tidy = (lab) => lab.map((v) => +(+v).toFixed(1));
     async function setTarget(lab) {
-      target = lab.map((v) => +(+v).toFixed(1));
+      target = lab.map(Number);
+      searchForm.clear();
       L.value = target[0]; A.value = target[1]; B.value = target[2]; chip.replaceChildren(swatch(target));
       sessionStorage.setItem('color-map', JSON.stringify({...f, target}));
       const p = new URLSearchParams({L: target[0], a: target[1], b: target[2], limit: '12'});
@@ -328,8 +331,11 @@ const ColorMap = (() => {
       if (f.within) p.set('include_unreferenced', 'true');
       if (f.provisional) p.set('include_provisional', 'true');
       if (f.doubtful) p.set('hide_doubtful', 'true');
-      const [r, film] = await Promise.all([get('/colors/search?' + p),
-        get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}${partition ? '&' + partition : ''}`).catch(() => null)]);
+      let r, film;
+      try {
+        [r, film] = await Promise.all([get('/colors/search?' + p),
+          get(`/colors/settings?L=${target[0]}&a=${target[1]}&b=${target[2]}${partition ? '&' + partition : ''}`).catch(() => null)]);
+      } catch (e) { searchForm.fail(e); return; }                              // the refusal stands under the boxes, the typed colour stays in them
       drawPlot();
       // one entry per recipe: the same settings, laser and lens, titanium stock and kind of measurement; a re-photograph of one
       // engraving is not another repetition (DEC-021), so engravings and photographs are counted apart
@@ -372,21 +378,32 @@ const ColorMap = (() => {
           btn('Снять ограничение времени', () => remember({maxTime: null}), 'btn-small')) : null,
         film ? h('div', {class: 'stack'}, pill('Прогноз модели, не измерение', 'warn'), filmCard(film)) : null);
     }
-    const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(hexToLab(e.target.value))});
-    const L = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: target ? target[0] : 40, 'aria-label': 'L'});
-    const A = h('input', {type: 'number', step: 'any', value: target ? target[1] : 5, 'aria-label': 'a'});
-    const B = h('input', {type: 'number', step: 'any', value: target ? target[2] : 15, 'aria-label': 'b'});
+    const picker = h('input', {type: 'color', value: '#7a5a34', 'aria-label': 'Нужный цвет', onInput: (e) => setTarget(tidy(hexToLab(e.target.value)))});
+    // the search takes the three numbers as they are (api.routes_work.search_colors: any number); an empty or a non-number box is said beside it
+    const searchForm = Forms.create();
+    const L = Forms.numberInput(Forms.QUANTITIES.targetL, {value: target ? target[0] : 40});
+    const A = Forms.numberInput(Forms.QUANTITIES.targetAB, {value: target ? target[1] : 5});
+    const B = Forms.numberInput(Forms.QUANTITIES.targetAB, {value: target ? target[2] : 15});
+    const fieldL = searchForm.add('L', 'L', L, {quantity: 'targetL', required: true});
+    const fieldA = searchForm.add('a', 'a', A, {quantity: 'targetAB', required: true});
+    const fieldB = searchForm.add('b', 'b', B, {quantity: 'targetAB', required: true});
     const chip = h('span', {});
     // DEC-075: внутри допуска ΔE поиск ставит первыми самые быстрые рецепты; пусто — допуск из правил выбранного лазера и линзы
-    const tolerance = h('input', {type: 'number', step: 'any', min: 0, value: f.tolerance, placeholder: 'из правил', 'aria-label': 'Допуск ΔE',
-      onChange: (e) => { f.tolerance = e.target.value.trim(); if (target) setTarget(target); }});
+    // colormap.delta_tolerance: not negative; a wrong one stays in the box with the reason beside it, and the search is not changed
+    const tolerance = Forms.numberInput(Forms.QUANTITIES.searchTolerance, {value: f.tolerance, placeholder: 'из правил', 'aria-label': 'Допуск ΔE'});
+    const toleranceNote = Forms.watch(tolerance, 'searchTolerance', (v) => { f.tolerance = v === null ? '' : String(v); if (target) setTarget(target); });
+    const toleranceRules = Forms.describe(tolerance, 'searchTolerance', {extra: 'пусто — допуск из правил выбранного лазера и линзы'});
+    // colormap.time_limit: above 0 seconds; the box takes minutes:seconds («0:30») or minutes as a number; empty is no limit
+    const timeNote = Forms.notice({what: 'Ограничение времени', kept: 'Поиск остался прежним.'});
     const maxTime = h('input', {type: 'text', inputmode: 'decimal', placeholder: 'м:сс', value: f.maxTime ? mmss(f.maxTime) : '',
       'aria-label': 'Не дольше, минут:секунд на квадратный сантиметр', onChange: (e) => {
         const seconds = parseLimit(e.target.value);
-        if (Number.isNaN(seconds)) App.toast('Введите время как минуты:секунды (например 0:30) или минуты числом', 'bad');
-        else remember({maxTime: seconds});
+        if (Number.isNaN(seconds)) timeNote.say(`Введите время как минуты:секунды (например 0:30) или минуты числом, больше нуля. Введено: «${e.target.value.trim()}». Поиск остался прежним.`);
+        else { timeNote.clear(); remember({maxTime: seconds}); }
       }});
-    const find = btn('Найти', () => setTarget([+L.value, +A.value, +B.value]), 'primary');
+    timeNote.attach(maxTime);
+    const timeRules = Forms.describe(maxTime, {unit: 'мин:с на см²', min: 0, minOpen: true}, {extra: 'минуты:секунды («0:30») или минуты числом; пусто — без ограничения'});
+    const find = btn('Найти', () => { const v = searchForm.collect(); if (v) setTarget([v.L, v.a, v.b]); }, 'primary');
     drawPlot();
     if (target) setTarget(target);
 
@@ -408,7 +425,7 @@ const ColorMap = (() => {
         select('Материал', 'material', data.options.materials, f.material),
         select('Как измерен', 'measurement', ['calibrated', 'relative'], f.measurement, {calibrated: 'По эталонной карте', relative: 'Относительно камеры'}),
         select('Задача', 'task', data.options.tasks || [], f.task, Object.fromEntries((data.options.tasks || []).map((k) => [k, Tasks.name(k)]))),
-        h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime),
+        h('label', {class: 'f'}, h('span', {}, 'Не дольше, мин/см²'), maxTime, timeRules), timeNote.error,
         h('label', {class: 'row small'}, h('input', {type: 'checkbox', checked: f.hide, onChange: (e) => remember({hide: e.target.checked})}),
           'Скрыть цвета без чистого титана на снимке'),
         h('label', {class: 'row small', title: 'Кружок меньше, чем у гравировки, которую не повторяли: при повторах цвет менялся'},
@@ -422,20 +439,24 @@ const ColorMap = (() => {
             + 'Если на снимке нет чистого титана, цвет показан как снят (бледный кружок с точечным контуром) и в поиске по умолчанию не участвует. '
             + 'Диаметр кружка — уверенность в цвете этих настроек: у гравировки, которую не повторяли, он средний; каждый повтор с тем же цветом увеличивает его в 1,5 раза (до предела), каждая гравировка с другим цветом уменьшает в 1,5 раза (до предела). Если кружок меньше, чем у одной гравировки, цвет при повторах менялся: такие цвета помечены «сомнительный» и их можно скрыть. Выбрав цвет, вы видите уверенность в нём и все гравировки, из которых он известен. Цвет настроек — тот, в котором совпали гравировки; позднейшая переделка заменяет старый цвет.')))));
     // the map fills the middle; the colour picked on it is described in a strip under it
+    // the band only narrows which circles are drawn (a view, no server rule): L* itself runs from 0 to 100; a number outside is said beside its box and kept
+    const bandFrom = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: band[0], 'aria-label': 'Светлота от'});
+    const bandTo = h('input', {type: 'number', step: 'any', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до'});
+    const bandFromNote = Forms.watch(bandFrom, 'lightnessBand', (v) => remember({band: [v, band[1]]}), {required: true});
+    const bandToNote = Forms.watch(bandTo, 'lightnessBand', (v) => remember({band: [band[0], v]}), {required: true});
     const mapCol = h('div', {class: 'os-col'},
       h('div', {class: 'os-col-head'}, h('h3', {}, 'Карта цветов'), h('span', {class: 'spacer'}),
         ...[['ab', 'a* × b*'], ['La', 'a* × L*'], ['Lb', 'b* × L*']].map(([k, label]) => btn(label, () => remember({plane: k}), plane === k ? 'primary btn-small' : 'btn-small'))),
-      h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'),
-        h('input', {type: 'number', min: 0, max: 100, value: band[0], 'aria-label': 'Светлота от', onChange: (e) => remember({band: [+e.target.value, band[1]]})}),
-        h('span', {}, 'до'), h('input', {type: 'number', min: 0, max: 100, value: band[1], 'aria-label': 'Светлота до', onChange: (e) => remember({band: [band[0], +e.target.value]})}),
+      h('div', {class: 'cm-bar small'}, h('span', {}, 'Светлота L* от'), bandFrom, Forms.describe(bandFrom, 'lightnessBand'), bandFromNote,
+        h('span', {}, 'до'), bandTo, Forms.describe(bandTo, 'lightnessBand'), bandToNote,
         h('span', {class: 'muted'}, ` · показано ${shown().length} из ${data.points.length} · колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — приблизить`)),
       model && model.summary && model.summary.observations ? h('p', {class: 'cm-caption muted small'}, `Пунктир: спираль плёнки оксида по модели (медиана расхождения ${num(model.summary.median_de_coloured, 1)} ΔE на ${model.summary.coloured} цветных)`) : null,
       stepNote, plotBox, detail);
     // the wanted colour on top (always in view), the found recipes below (the only part that scrolls)
     const search = h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Какой цвет нужен')),
       h('div', {class: 'cm-target'}, h('div', {class: 'row'}, picker, chip),
-        h('div', {class: 'cm-lab'}, h('label', {class: 'f'}, h('span', {}, 'L (0–100)'), L), h('label', {class: 'f'}, h('span', {}, 'a'), A), h('label', {class: 'f'}, h('span', {}, 'b'), B)),
-        h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance), find),
+        h('div', {class: 'cm-lab'}, fieldL, fieldA, fieldB), searchForm.error,
+        h('div', {class: 'cm-target-row'}, h('label', {class: 'f'}, h('span', {}, 'Допуск ΔE'), tolerance, toleranceRules, toleranceNote), find),
         h('p', {class: 'muted small'}, 'Выберите цвет на палитре или введите L, a, b. Можно также нажать на любой цвет на карте и «Найти такой же среди всех».')),
       h('div', {class: 'os-scroll'}, results));
     return h('div', {class: 'os cm' + (pick ? ' cm-picking' : '')}, head, pick ? DotPick.banner(pick) : null, h('div', {class: 'os-body cm-body'}, filters, mapCol, search));

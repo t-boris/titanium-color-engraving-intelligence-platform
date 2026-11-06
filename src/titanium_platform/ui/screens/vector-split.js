@@ -10,7 +10,7 @@
    outside the changed areas stay as they were after «Разбить заново». */
 'use strict';
 const VectorSplit = (() => {
-  const {h, fill, btn, field, post, fail, toast, confirmBox} = App;
+  const {h, fill, btn, field, post, toast, confirmBox} = App;
   const NS = 'http://www.w3.org/2000/svg';
   const DENSITY = {min: 30, max: 250, step: 5};                     // vector_job.DENSITY
   const LEVELS = {coarse: 70, medium: 100, fine: 150};                // the former levels of detail, points of the same scale
@@ -42,20 +42,22 @@ const VectorSplit = (() => {
   /** Гладкость границ — ползунок в мм (0: как найдены): каждое движение перерисовывает границы сразу, разбиение и цвета остаются
       (REQ-052, DEC-083). Запросы идут по одному: пока один считается, берётся последнее положение, промежуточные пропускаются. */
   function smoothness(j, apply) {
-    const input = h('input', {type: 'range', min: '0', max: String(j.smoothing_max_mm || 2), step: '0.05', value: String(j.smoothing_mm || 0),
-      'aria-label': 'Гладкость линий, мм'});
+    const rule = {...Forms.QUANTITIES.smoothing, max: j.smoothing_max_mm || Forms.QUANTITIES.smoothing.max};       // the end is the work's own (vector_job.SMOOTHING_MAX_MM)
+    const input = h('input', {type: 'range', min: '0', max: String(rule.max), step: '0.05', value: String(j.smoothing_mm || 0), 'aria-label': 'Гладкость линий, мм'});
     const say = (v) => (+v === 0 ? 'как найдены' : `${App.num(+v, 2)} мм`);
     const readout = h('output', {class: 'vw-slider-value'}, say(input.value));
+    // a refusal of the server is told under the slider; the slider stays where it was put, the drawing is as it was
+    const place = Forms.notice({what: 'Сглаживание', kept: 'Границы остались прежними; ползунок стоит там, где вы его поставили.'});
     let sent = +input.value, busy = false, timer = null;
     async function pump() {
       if (busy) return;
       busy = true;
       try {
-        while (+input.value !== sent) { sent = +input.value; await apply(sent); }
-      } catch (e) { fail(e); sent = +input.value; } finally { busy = false; }
+        while (+input.value !== sent) { sent = +input.value; place.clear(); await apply(sent, place); }
+      } catch (e) { place.fail(e); sent = +input.value; } finally { busy = false; }
     }
     input.addEventListener('input', () => { readout.textContent = say(input.value); clearTimeout(timer); timer = setTimeout(pump, 120); });
-    return h('div', {class: 'vw-slider'}, input, readout);
+    return h('div', {}, h('div', {class: 'vw-slider'}, input, readout, Forms.describe(input, rule)), place.error);
   }
   /** The density (I-2): how many coarse superpixels lie along the picture's longer side, apart from the number of colours. The server counts
       the regions it would give with the same settings, the work unchanged (``count``); one request at a time, for the last position. */
@@ -65,23 +67,26 @@ const VectorSplit = (() => {
       'aria-label': 'Плотность областей'});
     const readout = h('output', {class: 'vw-slider-value'}, String(start));
     const count = h('p', {class: 'small vw-density-count'}, `сейчас областей: ${j.document.regions}`);
+    // the server counts the regions of the settings before the split; a refusal of that count is told under the slider (the count shown is the work's own)
+    const place = Forms.notice({what: 'Подсчёт областей', kept: 'Показано число областей, которое есть сейчас.'});
     let asked = null, busy = false, timer = null;
     async function pump() {
       if (busy) return;
       busy = true;
       try {
         while (JSON.stringify(settings()) !== asked) {
+          place.clear();
           if (settings().n_colors == null) { fill(count, `сейчас областей: ${j.document.regions}`); return; }          // the colours are wrong: the box says so, nothing is asked
           asked = JSON.stringify(settings());
           fill(count, 'считаю, сколько будет областей…');
           const r = await post(`/vector/${j.id}/split/preview`, settings());
           if (JSON.stringify(settings()) === asked) fill(count, `будет областей: ${r.regions} (сейчас ${j.document.regions}) · наименьшая ${App.num(r.min_area_mm2, 2)} мм²`);
         }
-      } catch (e) { fail(e); fill(count, `сейчас областей: ${j.document.regions}`); asked = null; } finally { busy = false; }
+      } catch (e) { place.fail(e); fill(count, `сейчас областей: ${j.document.regions}`); asked = null; } finally { busy = false; }
     }
     const recount = () => { clearTimeout(timer); timer = setTimeout(pump, 400); };
     input.addEventListener('input', () => { readout.textContent = input.value; recount(); });
-    return {input, count, recount, el: h('div', {class: 'vw-slider'}, input, readout)};
+    return {input, count, recount, el: h('div', {}, h('div', {class: 'vw-slider'}, input, readout, Forms.describe(input, 'density')), place.error)};
   }
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(NS, tag);
@@ -189,8 +194,8 @@ const VectorSplit = (() => {
     let areasKey = null;                                               // the areas as last drawn: a change of them recounts the regions
 
     /** An area's detail, one of four; a face has none of its own. */
-    const detailPicker = (value, set, name) => {
-      const select = h('select', {'aria-label': 'Детальность области'}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
+    const detailPicker = (value, set, name, which) => {
+      const select = h('select', {'aria-label': `Детальность области: ${which}`}, DETAILS.map(([v, l]) => h('option', {value: v, selected: v === (value || 'fine')}, l)));
       select.addEventListener('change', () => { set(select.value); draw(); });
       return mark(select, `${name}:detail`);
     };
@@ -283,18 +288,18 @@ const VectorSplit = (() => {
         const gone = removed.has(a.number), changedHere = adjusted.has(a.number);
         return h('div', {class: 'row'},
           h('span', {}, `${KIND[a.kind]} · найдено`, a.score == null ? '' : ` (оценка ${App.num(a.score)})`, gone ? ' · убрано' : changedHere ? ' · изменено' : ''),
-          !gone && FINE.includes(a.kind) ? detailPicker(effective(a).detail, (v) => adjust(a.number, {detail: v}), `found${a.number}`) : null,
+          !gone && FINE.includes(a.kind) ? detailPicker(effective(a).detail, (v) => adjust(a.number, {detail: v}), `found${a.number}`, `${KIND[a.kind].toLowerCase()}, найдено`) : null,
           !gone ? borderButton({found: a.number}) : null,
           !gone && changedHere ? mark(btn('Как найдено', () => { adjusted.delete(a.number); draw(); }), `found${a.number}:asfound`) : null,
           gone ? mark(btn('Вернуть', () => { removed.delete(a.number); draw(); }), `found${a.number}:toggle`)
             : mark(btn('Убрать', () => { removed.add(a.number); draw(); }), `found${a.number}:toggle`));
       });
       manual.forEach((a, i) => {
-        const kind = h('select', {'aria-label': 'Что это за область'}, MARKED.map(([v, l]) => h('option', {value: v, selected: v === (a.kind || 'manual')}, l)));
+        const kind = h('select', {'aria-label': `Что это за область: отмечено вручную № ${i + 1}`}, MARKED.map(([v, l]) => h('option', {value: v, selected: v === (a.kind || 'manual')}, l)));
         kind.addEventListener('change', () => { manual[i] = {...manual[i], kind: kind.value}; draw(); });
         mark(kind, `manual${i}:kind`);
         rows.push(h('div', {class: 'row'}, h('span', {}, `Отмечено вручную № ${i + 1}`), kind,
-          detailPicker(a.detail, (v) => { manual[i] = {...manual[i], detail: v === 'fine' ? undefined : v}; if (!manual[i].detail) delete manual[i].detail; }, `manual${i}`),
+          detailPicker(a.detail, (v) => { manual[i] = {...manual[i], detail: v === 'fine' ? undefined : v}; if (!manual[i].detail) delete manual[i].detail; }, `manual${i}`, `отмечено вручную № ${i + 1}`),
           borderButton({manual: i}),
           mark(btn('Убрать', () => { manual.splice(i, 1); if (editing && 'manual' in editing) editing = null; draw(); }), `manual${i}:toggle`)));
       });

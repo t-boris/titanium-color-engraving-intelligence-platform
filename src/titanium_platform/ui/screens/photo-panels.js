@@ -205,21 +205,25 @@ const PhotoPanels = (() => {
           for (const b of self.parentNode.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === self));
           load(false);
         }}, mm(z.row_mm)))) : null;
-    const slider = (label, short, start, moved = () => schedule()) => {
-      const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: start, 'aria-label': label});
-      const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: start, 'aria-label': label});
+    // the ends of the two powers are 0 to 100 % (prediction_store.check_power_range); the dots' power must lie inside the powers the scale was measured at,
+    // at this width (photo_zones.change), which the scale says (``span``): its rule is read again whenever the scale says another span
+    const dotRule = {...Forms.QUANTITIES.photoPower, label: 'Мощность точек', min: span ? span[0] : 0, max: span ? span[1] : 100, source: 'photo_zones.change (the measured span)'};
+    const slider = (label, short, start, moved = () => schedule(), rule = Forms.QUANTITIES.photoPower) => {
+      const range = h('input', {type: 'range', min: rule.min, max: rule.max, step: 0.1, value: start, 'aria-label': label});
+      const exact = h('input', {type: 'number', min: rule.min, max: rule.max, step: 'any', value: start, 'aria-label': label});
       range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; moved(); });
-      // prediction_store.check_power_range: 0 to 100 %; a value outside is kept in the box with the reason beside it and is not applied
+      // a value outside is kept in the box with the reason beside it and is not applied
       // (a wrong value goes on to the owner's save as well: its tracker then says «not saved» with what was typed, and the server gives its reason)
-      const note = Forms.watch(exact, 'photoPower', (v) => { range.value = v; moved(); }, {wrong: () => moved()});
-      return {exact, range, note, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+      const note = Forms.watch(exact, rule, (v) => { range.value = v; moved(); }, {wrong: () => moved()});
+      const notes = [Forms.describe(range, rule), Forms.describe(exact, rule)];
+      return {exact, range, note, notes, rule, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact, ...notes)};
     };
     const measured = [Math.ceil(span[0] * 10 - 1e-9) / 10, Math.floor(span[1] * 10 + 1e-9) / 10];
     const [lo0, hi0] = dot ? measured : initial || measured;
     const low = slider('Min мощность, % (белый)', 'Min, %', lo0);
     const high = slider('Max мощность, % (чёрный)', 'Max, %', hi0);
     let levelsShown = null;
-    const dotPower = dot ? slider('Мощность точек, %', 'Точки, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }) : null;
+    const dotPower = dot ? slider('Мощность точек, %', 'Точки, %', dot.power, () => { clearTimeout(timer); timer = setTimeout(() => pickDot(+dotPower.exact.value), 250); }, dotRule) : null;
     const dotSource = dot && (dot.map || dot.recipe) ? dotSourceBox(dot, () => pickDot(dot.power)) : null;
     /** Мощность точек ``p``: метка на полосе сразу, работа узнаёт её (сервер проверит, что шкала там измерена). */
     function pickDot(p) {
@@ -255,6 +259,11 @@ const PhotoPanels = (() => {
         const d = await get(`/grey-scales/scale?${modeQuery(sc.mode)}&min_power=${lo}&max_power=${hi}${atMm != null ? `&row_mm=${atMm}` : ''}`);
         if (stopped || mine !== seq) return;
         span = d.span;
+        if (dotPower && span) {                                           // the scale's span at this width is the rule of the dots' power
+          Object.assign(dotRule, {min: span[0], max: span[1]});
+          for (const part of [dotPower.range, dotPower.exact]) { part.setAttribute('min', String(span[0])); part.setAttribute('max', String(span[1])); }
+          for (const note of dotPower.notes) note.textContent = Forms.rulesText(dotRule);
+        }
         const size = sizeText(d.size);
         const levels = d.greys.levels;
         const unmeasured = 256 - d.greys.measured_levels;
@@ -454,18 +463,20 @@ const PhotoPanels = (() => {
     const defaults = {...TONE, sharpness: 0};
     // the limits are the server's (photo_state.TONE_LIMITS and the sharpness check); the slider has the step, the box the exact value
     const QUANTITY = {brightness: 'toneBrightness', contrast: 'toneContrast', gamma: 'toneGamma', sharpness: 'sharpness'};
-    const one = (key, label, short, step) => {
+    const one = (key, label, about, short, step) => {
       const q = Forms.QUANTITIES[QUANTITY[key]];
       const range = h('input', {type: 'range', min: q.min, max: q.max, step, value: defaults[key], 'aria-label': label});
       const exact = h('input', {type: 'number', min: q.min, max: q.max, step: 'any', value: defaults[key], 'aria-label': label});
       range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; later(); });
       const note = Forms.watch(exact, QUANTITY[key], (v) => { range.value = v; later(); }, {wrong: () => later()});
-      return {key, range, exact, note, box: h('label', {class: 'ge-power', title: label}, h('span', {class: 'small'}, short), range, exact)};
+      // the name is the name; the unit, the permitted values and what the number does are read after it
+      return {key, range, exact, note, box: h('label', {class: 'ge-power', title: `${label}: ${about}`}, h('span', {class: 'small'}, short), range, exact,
+        Forms.describe(range, q, {extra: about}), Forms.describe(exact, q, {extra: about}))};
     };
-    const all = [one('brightness', 'Яркость картинки, %: меньше нуля — темнее, больше — светлее', 'Яркость', 1),
-      one('contrast', 'Контраст картинки, %: больше нуля — светлое светлее и тёмное темнее', 'Контраст', 1),
-      one('gamma', 'Гамма картинки: меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.05),
-      one('sharpness', 'Чёткость картинки: усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 1)];
+    const all = [one('brightness', 'Яркость картинки, %', 'меньше нуля — темнее, больше — светлее', 'Яркость', 1),
+      one('contrast', 'Контраст картинки, %', 'больше нуля — светлое светлее и тёмное темнее', 'Контраст', 1),
+      one('gamma', 'Гамма картинки', 'меньше 1 — средние тона светлее, больше 1 — темнее', 'Гамма', 0.05),
+      one('sharpness', 'Чёткость картинки', 'усиление мелких деталей, 0 — без дополнительного усиления', 'Чёткость', 1)];
     const toneOf = (view) => ({...defaults, ...(view.tone || {}), sharpness: view.sharpness || 0});
     const set = (tone) => { for (const s of all) { s.range.value = String(tone[s.key]); s.exact.value = String(tone[s.key]); s.exact.removeAttribute('aria-invalid'); s.note.textContent = ''; } };
     async function send(values) {
@@ -657,7 +668,7 @@ const PhotoPanels = (() => {
           + 'гравируется как загружена. Вернуться к градациям серого — «Вид» над картинкой; всё, что было для них задано, сохранилось.'));
     }
     const inputs = h('div', {class: 'ge-inputs'}, kind,
-      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width), widthNote,
+      h('label', {class: 'row'}, h('span', {class: 'small'}, 'Ширина, мм'), width, Forms.describe(width, 'pictureWidth')), widthNote,
       h('label', {class: 'row', title: 'Серые подбираются под цвета картинки на этой шкале'}, byColour, h('span', {class: 'small'}, 'Подобрать серые под цвета')),
       choice,
       h('label', {class: 'row', title: 'Контуры: ' + CONTOURS_ABOUT}, contours, h('span', {class: 'small'}, 'Контуры')));
@@ -750,6 +761,7 @@ const PhotoPanels = (() => {
         const c = colours()[o.key] || null;
         const shift = h('input', {type: 'range', min: '-1', max: '1', step: '0.25', value: String(c ? c.shift : 0), disabled: off || !c,
           'aria-label': `Светлее или темнее: ${objectName(o.key)}`, title: 'Темнее ← → светлее'});
+        const shiftNote = Forms.describe(shift, 'objectShift', {extra: 'меньше нуля — темнее, больше — светлее; шаг 0,25'});
         shift.addEventListener('change', () => setShift(o.key, +shift.value));
         const clearIt = btn('Авто', () => clear(o.key), 'btn-small');
         clearIt.disabled = off || !c;
@@ -759,7 +771,7 @@ const PhotoPanels = (() => {
           h('span', {class: 'ge-nowrap'}, h('span', {class: 'sw', style: `background:${o.tint}`, title: 'цвет объекта на картинке объектов'}), objectName(o.key)),
           h('span', {class: 'small muted ge-nowrap'}, `${value(o.share * 100, 1)} % · на фото `, hexChip(o.hex)),
           h('span', {class: 'row ge-nowrap'}, c ? hexChip(hexOf(c)) : pill('авто', 'muted'), c ? `${value(c.power)} %` : null),
-          h('span', {class: 'row ge-nowrap'}, h('span', {class: 'small muted'}, 'темнее'), shift, h('span', {class: 'small muted'}, 'светлее'), clearIt));
+          h('span', {class: 'row ge-nowrap'}, h('span', {class: 'small muted'}, 'темнее'), shift, shiftNote, h('span', {class: 'small muted'}, 'светлее'), clearIt));
       })) : h('p', {class: 'muted'}, 'На картинке не нашлось объектов: раскрашивать нечего.'));
       fill(notes, (found.notes || []).map((n) => h('li', {}, I18N.tr(n))));
     }

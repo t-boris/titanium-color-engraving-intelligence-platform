@@ -182,11 +182,14 @@ const VectorEditor = (() => {
 
     const toolButtons = TOOLS.map(([t, label]) => btn(label, () => setTool(t)));
     const scopeButtons = SCOPES.map(([s, label]) => btn(label, () => setScope(s)));
-    const simNumber = h('input', {type: 'number', step: '0.5', min: '0.5', max: '50', value: state.similarity, 'aria-label': 'Похожесть, ΔE'});
-    const simRange = h('input', {type: 'range', step: '0.5', min: '0.5', max: '30', value: state.similarity, 'aria-label': 'Похожесть, ΔE, ползунком'});
-    simNumber.addEventListener('change', () => setSimilarity(simNumber.value));
-    simRange.addEventListener('input', () => setSimilarity(simRange.value));
-    const simBox = h('div', {class: 'vw-ed-sim', hidden: true}, h('span', {class: 'small'}, 'Похожесть, ΔE'), h('div', {class: 'row'}, simRange, simNumber),
+    // the server takes any delta E that is not negative (vector_job._similarity): the box takes the same and says so when it is not, keeping what was typed;
+    // the slider has its own reach (0,5 to 30), told with it
+    const simNumber = h('input', {type: 'number', step: '0.5', value: state.similarity, 'aria-label': 'Похожесть, ΔE'});
+    const simRange = h('input', {type: 'range', step: '0.5', min: String(Forms.VIEWS.similarityReach.min), max: String(Forms.VIEWS.similarityReach.max), value: state.similarity, 'aria-label': 'Похожесть, ΔE, ползунком'});
+    const simNote = Forms.watch(simNumber, 'similarity', (v) => setSimilarity(v));
+    simRange.addEventListener('input', () => { simNumber.removeAttribute('aria-invalid'); simNote.textContent = ''; setSimilarity(simRange.value); });
+    const simBox = h('div', {class: 'vw-ed-sim', hidden: true}, h('span', {class: 'small'}, 'Похожесть, ΔE'),
+      h('div', {class: 'row'}, simRange, Forms.describe(simRange, 'similarityReach', {extra: 'в поле рядом допустимо любое число не меньше 0'}), simNumber, Forms.describe(simNumber, 'similarity'), simNote),
       h('span', {class: 'small muted'}, 'заливка идёт по соседям, чей исходный цвет ближе этого ΔE к цвету щёлкнутой области; исключённые области её останавливают'));
     const scopeBox = h('div', {class: 'vw-ed-scope'}, h('h4', {}, 'Щелчок кистью меняет'),
       h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Что меняет щелчок кистью'}, scopeButtons), simBox);
@@ -726,10 +729,10 @@ const VectorEditor = (() => {
     }
 
     // --- действия: по одному, по порядку; экран обновляет run, редактор — update -----------------------------------------------
-    async function act(op, after) {
+    async function act(op, after, place) {
       pending += 1;
       el.classList.add('busy');
-      const ok = await run(op);
+      const ok = await run(op, place);
       pending -= 1;
       if (!pending) el.classList.remove('busy');
       if (ok && after) after();
@@ -754,9 +757,10 @@ const VectorEditor = (() => {
     }
 
     function setSimilarity(value) {
-      const v = clamp(Number(value) || SIMILARITY, 0.5, 50);
+      const v = Number(value);
+      if (!Number.isFinite(v) || v < 0) return;                                  // the box refuses it before (Forms.watch); nothing is changed here
       state.similarity = v;
-      simNumber.value = v; simRange.value = Math.min(v, 30);
+      simNumber.value = v; simRange.value = clamp(v, Forms.VIEWS.similarityReach.min, Forms.VIEWS.similarityReach.max);
       refreshHover();
     }
 
@@ -870,18 +874,21 @@ const VectorEditor = (() => {
     /** One selected region split again into finer regions by colour (work-size-and-splitting-a-region-again, REQ-002): the window asks
         into how many colours; the largest part keeps the region's id and colour, the others take the nearest titanium colours. */
     function splitFiner(rid) {
-      const count = h('input', {type: 'number', min: '2', max: '8', step: '1', value: '3', 'aria-label': 'Число цветов'});
+      // a whole number from 2 to 8 (vector_job._split_region); a wrong one is refused beside the box and stays in it, and so is a refusal of the server
+      const form = Forms.create();
+      const count = Forms.numberInput(Forms.QUANTITIES.splitColours, {value: '3'});
+      const countField = form.add('colours', 'Число цветов', count, {quantity: 'splitColours', required: true});
       const box = App.modal('Разбить область мельче', h('div', {class: 'stack'},
         h('p', {class: 'small muted'}, 'Картинка внутри области делится на столько цветов, сколько указано, самой мелкой сеткой; каждый связный кусок '
           + 'становится своей областью. Внешняя граница и соседи остаются как были. Самый большой кусок сохраняет номер области, куски его '
           + 'цвета — цвет области; каждый другой цвет становится новым цветом палитры с ближайшим цветом титана. Шаг можно отменить (Ctrl+Z).'),
-        App.field('Число цветов (2–8)', count)), [
+        countField, form.error), [
         {label: 'Отмена', run: (m) => m.close()},
         {label: 'Разбить', cls: 'primary', run: async (m) => {
-          const n = Math.round(parseFloat(count.value));
-          if (!(n >= 2 && n <= 8)) throw new Error('Число цветов — целое от 2 до 8');
+          const v = form.collect();
+          if (!v) return;
           const before = j.document.regions;
-          const ok = await act({op: 'split_region', region: rid, colours: n});
+          const ok = await act({op: 'split_region', region: rid, colours: v.colours}, null, form);
           if (ok) { toast(`Область разбита на ${App.plural(j.document.regions - before + 1, ['часть', 'части', 'частей'])}`, 'ok'); m.close(); }
         }}]);
       if (count.select) count.select();

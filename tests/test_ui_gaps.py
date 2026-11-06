@@ -29,7 +29,7 @@ def test_the_discrete_screen_renders_each_matchs_titanium_colour_errors_confiden
         assert field in screen, field
     for header in ("'Цвет титана'", "'ΔE до цели'", "'Ожидаемая ошибка записи'", "'Ожидаемая ошибка совпадения'", "'Уверенность'", "'Стабильность'"):
         assert header in screen, header
-    assert "Текущий порог ΔE: ${plan.threshold}" in screen and "field('Порог ΔE', thr)" in screen
+    assert "Текущий порог ΔE: ${plan.threshold}" in screen and "form.add('threshold', 'Порог ΔE'" in screen
 
 
 def test_the_plan_screen_renders_the_three_estimates_of_each_layer_from_its_prediction():

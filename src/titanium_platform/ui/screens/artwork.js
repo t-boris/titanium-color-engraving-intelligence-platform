@@ -4,7 +4,7 @@
    создать нельзя. Недостижимые цвета сами становятся целями планировщика. Форма и окна — artwork-start.js. */
 'use strict';
 (() => {
-  const {h, btn, field, link, pill, get, post, patch, put, fail, go, table, num, labText, swatch} = App;
+  const {h, btn, link, pill, get, post, patch, put, go, table, num, labText, swatch} = App;
   const {startForm, replaceDialog, questionedDialog, seconds} = ArtworkParts;
   const HOW = {fastest_within_threshold: 'самый быстрый в пределах порога', nearest: 'ближайший', replaced: 'замена оператора'};
   const STATUS = {matched: ['Сопоставлен', 'ok'], unreachable: ['Недостижим', 'bad'], replaced: ['Заменён вручную', 'ok'], excluded: ['Исключён', '']};
@@ -20,8 +20,14 @@
     const plan = await get('/plans/' + id), palette = await get(`/discrete/${id}/palette`);
     const unresolved = plan.matches.filter((m) => m.status === 'unreachable').length;
     const active = plan.matches.filter((m) => m.status === 'matched' || m.status === 'replaced').length;
-    const thr = h('input', {type: 'number', step: 'any', min: '0', value: plan.threshold, 'aria-label': 'Порог ΔE'});
-    const maxTime = h('input', {type: 'number', step: 'any', min: '0', value: plan.max_time ?? '', placeholder: 'без предела', 'aria-label': 'Наибольшее время, с/см²'});
+    // the threshold and the time limit are read as the server reads them (conversion._threshold, colormap.time_limit); a wrong box is said beside itself and keeps what
+    // was typed. What the server refuses about a decision on a colour stands above the table, with the plan as it was (ux-save-feedback-p0, REQ-003)
+    const form = Forms.create();
+    const thrField = form.add('threshold', 'Порог ΔE', Forms.numberInput(Forms.QUANTITIES.deltaE, {value: plan.threshold}), {quantity: 'deltaE', required: true});
+    const timeField = form.add('max_time', 'Наибольшее время гравировки', Forms.numberInput(Forms.QUANTITIES.maxTime, {value: plan.max_time ?? '', placeholder: 'без предела'}), {quantity: 'maxTime'});
+    const bar = Forms.notice({what: 'Изменение плана', kept: 'План остался как был.'});
+    const finish = Forms.notice({what: 'Создание плана', kept: 'План остался черновиком.'});
+    const edit = async (changes) => { bar.clear(); try { await patch('/discrete/' + id, changes); reload(); } catch (e) { bar.fail(e); } };
     const rows = plan.matches.map((m) => {
       const [label, kind] = STATUS[m.status];
       // the titanium colour the match was tested against, with its three estimates (REQ-002, REQ-004): carried by the match;
@@ -30,10 +36,10 @@
       const t = m.titanium || (entry ? {lab: entry.lab, confidence: entry.confidence, expected_delta_e: entry.expected_delta_e, stability: entry.stability} : null);
       const back = btn('Вернуть в сопоставление', async () => {
         const rep = Object.fromEntries(Object.entries(plan.replacements).filter(([k]) => k !== m.source_key));
-        await patch('/discrete/' + id, {exclusions: plan.exclusions.filter((k) => k !== m.source_key), replacements: rep}); reload();
+        await edit({exclusions: plan.exclusions.filter((k) => k !== m.source_key), replacements: rep});
       });
       const act = m.status === 'excluded' ? back : h('span', {class: 'row'}, btn('Заменить', () => replaceDialog(plan, m, palette, reload)),
-        btn('Исключить', async () => { await patch('/discrete/' + id, {exclusions: [...plan.exclusions, m.source_key]}); reload(); }));
+        btn('Исключить', () => edit({exclusions: [...plan.exclusions, m.source_key]})));
       const shown = t && m.status !== 'excluded';
       const time = m.time_s_per_cm2 ?? (entry ? entry.time_s_per_cm2 : null);
       return [h('span', {}, swatch(m.source_lab), labText(m.source_lab)), pill(label, kind),
@@ -45,17 +51,20 @@
         shown ? num(t.confidence) : '—', shown ? (t.stability.assessed ? 'дисперсия ' + num(t.stability.variance) : 'не оценена') : '—', act];
     });
     const markerBtn = btn(plan.markers_enabled ? 'Выключить регистрационные маркеры' : 'Включить регистрационные маркеры',
-      async () => { try { await put(`/plans/${id}/markers`, {enabled: !plan.markers_enabled}); reload(); } catch (e) { fail(e); } });
+      async () => { bar.clear(); try { await put(`/plans/${id}/markers`, {enabled: !plan.markers_enabled}); reload(); } catch (e) { bar.fail(e); } });
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Цветная гравировка · ' + plan.name),
         h('p', {class: 'sub'}, `Текущий порог ΔE: ${plan.threshold}. Он сравнивается с суммой расстояния до цели и ожидаемой ошибки записи (DEC-030).`)),
       h('span', {class: 'spacer'}), link(`/designer?device=${plan.device_id}&lens=${App.lensParam(plan.lens_id)}`, 'Цели экспериментов')),
       palette.length ? null : h('div', {class: 'alert warn'}, 'Нет валидированных или производственных цветов для этого лазера с этой линзой: все цвета недостижимы.'),
-      h('div', {class: 'card toolbar'}, field('Порог ΔE', thr), field('Наибольшее время, с/см²', maxTime),
+      h('div', {class: 'card stack'}, h('div', {class: 'toolbar'}, thrField, timeField,
         btn('Сопоставить цвета', async () => {
-          try { await patch('/discrete/' + id, {threshold: +thr.value, max_time: maxTime.value === '' ? null : +maxTime.value}); reload(); } catch (e) { fail(e); }
+          const v = form.collect();
+          if (!v) return;
+          bar.clear();
+          try { await patch('/discrete/' + id, {threshold: v.threshold, max_time: v.max_time}); reload(); } catch (e) { form.fail(e); }
         }),
-        btn('Включить параметры под вопросом в этот план', () => questionedDialog(plan, reload)), markerBtn),
+        btn('Включить параметры под вопросом в этот план', () => questionedDialog(plan, reload)), markerBtn), form.error, bar.error),
       h('div', {class: 'card'}, h('h3', {}, 'Цвета рисунка'),
         h('p', {class: 'muted small'}, `Ожидаемая ошибка совпадения = ΔE до цели + ожидаемая ошибка записи титана; цвет сопоставлен, если она не больше порога ${plan.threshold}. `,
           'Из подходящих цветов выбирается самый быстрый по оценке времени гравировки на см², при равном времени — ближайший',
@@ -72,7 +81,8 @@
       h('div', {class: 'row'}, btn('Создать план', async (ev) => {
         const self = ev.currentTarget;
         self.disabled = true;
-        try { await post(`/discrete/${id}/finalize`); go('/plans/' + id); } catch (e) { fail(e); self.disabled = false; }
-      }, 'primary', unresolved > 0 || active === 0)));
+        finish.clear();
+        try { await post(`/discrete/${id}/finalize`); go('/plans/' + id); } catch (e) { finish.fail(e); self.disabled = false; }
+      }, 'primary', unresolved > 0 || active === 0)), finish.error);
   }});
 })();

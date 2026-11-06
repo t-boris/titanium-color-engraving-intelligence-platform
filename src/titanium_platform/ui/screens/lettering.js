@@ -413,10 +413,16 @@ const Lettering = (() => {
     }
 
     // --- поля выбранной надписи -----------------------------------------------------------------------------------------------
+    // the quantity of forms.js that says each box's unit and the ends the server takes (lettering.NUMBERS)
+    const LETTER_QUANTITY = {height_mm: 'letterHeight', width_pct: 'letterWidth', spacing_mm: 'letterSpacing', line_pct: 'lineSpacing', rotation: 'letterRotation',
+      bend: 'letterBend', radius_mm: 'circleRadius', start_deg: 'circleStart', offset_pct: 'pathOffset', gap_mm: 'letterGap', padding_mm: 'backingPadding',
+      corner_mm: 'backingCorner', x: 'letterX', y: 'letterY'};
     function number(label, key, step, extra = {}) {
       const input = h('input', {type: 'number', step, 'aria-label': label, 'data-field': key, ...extra});
-      input.addEventListener('change', () => { if (input.value !== '') change({[key]: +input.value}); });
-      return {key, el: h('label', {class: 'f lt-num'}, h('span', {}, label), input), input};
+      const rules = Forms.describe(input, LETTER_QUANTITY[key]);
+      // a value the server would refuse stays in the box with the reason beside it and is not sent; an empty box changes nothing
+      const wrong = Forms.watch(input, LETTER_QUANTITY[key], (value) => { if (value != null) change({[key]: value}); });
+      return {key, el: h('label', {class: 'f lt-num'}, h('span', {}, label), input, rules, wrong), input, wrong};
     }
     function choice(label, key, options) {
       const buttons = options.map(([value, name]) => btn(name, () => (key === 'layout' && value === 'path' ? toPath() : change({[key]: value}))));
@@ -479,14 +485,15 @@ const Lettering = (() => {
       function row(i) {
         const axis = (name) => {
           const input = h('input', {type: 'number', step: '0.1', 'aria-label': `Точка ${i + 1}: ${name}, мм`, class: 'lt-point-input'});
-          input.addEventListener('change', () => {
-            if (input.value === '') return;
+          const rules = Forms.describe(input, 'pathPoint');
+          const wrong = Forms.watch(input, 'pathPoint', (value) => {
+            if (value == null) return;
             const pts = absoluteNow();
-            if (pts[i]) { pts[i] = name === 'x' ? [+input.value, pts[i][1]] : [pts[i][0], +input.value]; send(pts); }
+            if (pts[i]) { pts[i] = name === 'x' ? [value, pts[i][1]] : [pts[i][0], value]; send(pts); }
           });
-          return input;
+          return {input, notes: [rules, wrong]};
         };
-        const x = axis('x'), y = axis('y');
+        const [{input: x, notes: xNotes}, {input: y, notes: yNotes}] = [axis('x'), axis('y')];
         const insert = tool('Вставить после', `Вставить точку после точки ${i + 1}`, () => {
           const pts = absoluteNow(), a = pts[i], b = pts[i + 1] || (pts[i - 1] ? [2 * a[0] - pts[i - 1][0], 2 * a[1] - pts[i - 1][1]] : [a[0] + 5, a[1]]);
           pts.splice(i + 1, 0, i + 1 < pts.length ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : b);
@@ -497,7 +504,7 @@ const Lettering = (() => {
         x.setAttribute('data-ctl', 'x'); y.setAttribute('data-ctl', 'y');
         rows.push({x, y, insert, remove});
         return h('div', {class: 'lt-point-row', role: 'group', 'aria-label': `Точка ${i + 1}${i === 0 ? ' (место надписи)' : ''}`},
-          h('strong', {class: 'lt-point-no'}, String(i + 1)), h('label', {class: 'f'}, h('span', {}, 'x'), x), h('label', {class: 'f'}, h('span', {}, 'y'), y), insert, remove);
+          h('strong', {class: 'lt-point-no'}, String(i + 1)), h('label', {class: 'f'}, h('span', {}, 'x'), x, ...xNotes), h('label', {class: 'f'}, h('span', {}, 'y'), y, ...yNotes), insert, remove);
       }
       /** Show the points of ``t``: the rows are made again when their number changes (the control that had the focus gets it back, on the
           row that took the place of its own), else only the numbers change, except the field being typed in. */
@@ -624,7 +631,7 @@ const Lettering = (() => {
       if (focused !== p.text && !typing) p.text.value = t.text;
       fill(p.font, `Шрифт: ${t.font ? `${t.font.family} ${t.font.style}` : 'по умолчанию'}…`);
       for (const part of [p.height, p.width, p.spacing, p.line, p.bend, p.radius, p.start, p.offset, p.rotation, p.x, p.y, p.gap, p.padding, p.corner]) {
-        if (part.input !== focused) part.input.value = String(round(t[part.key], 3));
+        if (part.input !== focused) { part.input.value = String(round(t[part.key], 3)); part.input.removeAttribute('aria-invalid'); part.wrong.textContent = ''; }
       }
       p.inside.input.checked = !!t.inside;
       p.flip.input.checked = !!t.flip;
