@@ -1,36 +1,27 @@
-/* Надписи в работах (feature inscriptions-in-works, REQ-001..REQ-005, DEC-001..DEC-004): вкладка «Надписи» векторной работы и работы
-   фотогравировки, окно шрифтов и слой надписей поверх картинки работы.
-   Надпись — объект работы: текст, шрифт, высота букв, ширина, интервалы, расположение (прямо, дугой, по кругу, по пути), поворот, место,
-   цвет титана, зазор и подложка. Сервер раскладывает её сам и присылает контуры букв, подложки и врезки в мм работы; экран их рисует и
-   двигает: перетаскивание надписи — место, круглая ручка — поворот, квадратная — размер, точки пути — сам путь. Каждое изменение — одна
-   операция работы (text_add, text_set, text_copy, text_delete) и один шаг отмены. В векторной работе слой рисует врезку цветом чистого
-   титана, подложку и буквы их цветами (области под ними на картинке целые: врезает их файл); в фотогравировке это уже нарисовано на
-   прогнозе сервером, слой даёт только ручки и контур при перетаскивании.
-   Окно шрифтов: шрифты этого Mac, свои файлы (TTF, OTF, TTC) и Google Fonts — поиск, письменность, вид, избранные, у каждого семейства
-   его начертания и образец текста надписи этим шрифтом; семейство Google скачивается, когда оно видно в списке (до 2 МБ) или по кнопке. */
+/* Inscription controls, font selection, and the lettering layer for vector and photo works. */
 'use strict';
 const Lettering = (() => {
   const {h, fill, btn, get, post, form, del, toast, num, labText, modal, confirmBox, fail} = App;
   const NS = 'http://www.w3.org/2000/svg';
-  const LAYOUTS = [['line', 'Прямо'], ['arc', 'Дугой'], ['circle', 'По кругу'], ['path', 'По пути']];
-  const ALIGNS = [['left', 'Слева'], ['center', 'По центру'], ['right', 'Справа']];
-  const LETTERS = [['upright', 'Стоят прямо'], ['bent', 'Гнутся по кривой']];
-  const BACKINGS = [['none', 'Без подложки'], ['rect', 'Прямоугольник'], ['oval', 'Овал'], ['outline', 'По контуру букв']];
-  const SCRIPTS = {latin: 'Латиница', cyrillic: 'Кириллица', greek: 'Греческий', hebrew: 'Иврит', arabic: 'Арабский', armenian: 'Армянский',
-    georgian: 'Грузинский', devanagari: 'Деванагари', thai: 'Тайский', japanese: 'Японский', korean: 'Корейский', chinese: 'Китайский'};
-  const KINDS = {serif: 'С засечками', sans: 'Без засечек', handwriting: 'Рукописные', display: 'Декоративные', monospace: 'Моноширинные',
-    symbol: 'Символы', other: 'Другие'};
-  const SOURCES = {mac: 'Этого Mac', own: 'Свои', google: 'Google Fonts'};
-  const SAMPLE = 'Надпись Abc';
+  const LAYOUTS = [['line', 'Straight'], ['arc', 'Arc'], ['circle', 'Circle'], ['path', 'Path']];
+  const ALIGNS = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+  const LETTERS = [['upright', 'Upright'], ['bent', 'Bend along curve']];
+  const BACKINGS = [['none', 'No backing'], ['rect', 'Rectangle'], ['oval', 'Oval'], ['outline', 'Letter outline']];
+  const SCRIPTS = {latin: 'Latin', cyrillic: 'Cyrillic', greek: 'Greek', hebrew: 'Hebrew', arabic: 'Arabic', armenian: 'Armenian',
+    georgian: 'Georgian', devanagari: 'Devanagari', thai: 'Thai', japanese: 'Japanese', korean: 'Korean', chinese: 'Chinese'};
+  const KINDS = {serif: 'Serif', sans: 'Sans serif', handwriting: 'Handwriting', display: 'Display', monospace: 'Monospace',
+    symbol: 'Symbols', other: 'Other'};
+  const SOURCES = {mac: 'This Mac', own: 'Custom', google: 'Google Fonts'};
+  const SAMPLE = 'Lettering Abc';
   // the letters of a script other than Latin, to open the font window on the fonts that write the inscription (fonts.SCRIPTS)
   const LETTERS_OF = [['cyrillic', /[\u0400-\u04ff]/], ['greek', /[\u0370-\u03ff]/], ['hebrew', /[\u0590-\u05ff]/], ['arabic', /[\u0600-\u06ff]/],
     ['armenian', /[\u0530-\u058f]/], ['georgian', /[\u10a0-\u10ff]/], ['devanagari', /[\u0900-\u097f]/], ['thai', /[\u0e00-\u0e7f]/],
     ['japanese', /[\u3040-\u30ff]/], ['korean', /[\uac00-\ud7af]/], ['chinese', /[\u4e00-\u9fff]/]];
   const scriptOf = (text) => (LETTERS_OF.find(([, re]) => re.test(text || '')) || [''])[0];
-  const PAGE = 60;                            // семейств в окне шрифтов за раз
-  const AUTO_BYTES = 2 * 1024 * 1024;         // семейство Google не больше этого скачивается само, когда видно в списке
-  const TYPE_MS = 700;                        // текст надписи уходит на сервер, когда его перестали набирать на столько
-  const HANDLE_PX = 7;                        // радиус ручек на экране
+  const PAGE = 60;                            // font families shown at a time
+  const AUTO_BYTES = 2 * 1024 * 1024;         // maximum Google font family size downloaded automatically when visible
+  const TYPE_MS = 700;                        // debounce before sending inscription text to the server
+  const HANDLE_PX = 7;                        // handle radius on screen
   const MAX_POINTS = 400;                     // the most points of a path the server takes (lettering.MAX_POINTS)
   // A path drawn freehand keeps no wiggle smaller than STROKE_PX on screen (the hand's tremor and the pointer's step, which the operator
   // cannot place on purpose) or than a tenth of the letters' height (the server lays the letters on a smooth curve through the points:
@@ -65,21 +56,21 @@ const Lettering = (() => {
     for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
     return el;
   };
-  const turn = ([x, y], deg) => {                       // по часовой стрелке при y вниз, как на сервере
+  const turn = ([x, y], deg) => {                       // clockwise with y downward, as on the server
     const a = deg * Math.PI / 180;
     return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
   };
   const short = (text) => {
     const line = String(text || '').split('\n')[0];
-    return line.length > 28 ? line.slice(0, 27) + '…' : line || '(пусто)';
+    return line.length > 28 ? line.slice(0, 27) + '…' : line || '(empty)';
   };
   const storage = {
     read(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { return null; } },
-    write(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* без хранилища не запоминается */ } },
+    write(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* not persisted when storage is unavailable */ } },
   };
 
-  // --- окно шрифтов -----------------------------------------------------------------------------------------------------------
-  /** Окно шрифтов: ``current`` — шрифт надписи ({face, family, style}), ``sample`` — её текст; ``onPick(font)`` — выбранный. */
+  // --- font window -----------------------------------------------------------------------------------------------------------
+  /** Choose an inscription font, using the current font and sample text. */
   async function fontWindow(current, sample, onPick) {
     let catalogue;
     try { catalogue = await get('/fonts'); } catch (e) { return fail(e); }
@@ -87,21 +78,21 @@ const Lettering = (() => {
     let chosen = current ? {family: current.family, face: current.face} : null, shownCount = PAGE, polling = null;
     const queue = [], loading = new Set();
     let awaited = null;                         // a Google family chosen before its files were here: chosen when they arrive
-    const text = h('input', {type: 'text', value: (sample || '').split('\n').join(' ').slice(0, 60) || SAMPLE, 'aria-label': 'Образец текста'});
-    const search = h('input', {type: 'search', placeholder: 'Название шрифта', 'aria-label': 'Найти шрифт по названию'});
+    const text = h('input', {type: 'text', value: (sample || '').split('\n').join(' ').slice(0, 60) || SAMPLE, 'aria-label': 'Sample text'});
+    const search = h('input', {type: 'search', placeholder: 'Font name', 'aria-label': 'Find font by name'});
     const option = (value, label) => h('option', {value}, label);
-    const source = h('select', {'aria-label': 'Откуда шрифты'}, option('', 'Все шрифты'), Object.entries(SOURCES).map(([k, v]) => option(k, v)),
-      option('fav', 'Избранные'));
-    const script = h('select', {'aria-label': 'Письменность'}, option('', 'Любая письменность'), Object.entries(SCRIPTS).map(([k, v]) => option(k, v)));
-    const kind = h('select', {'aria-label': 'Вид шрифта'}, option('', 'Любой вид'), Object.entries(KINDS).map(([k, v]) => option(k, v)));
-    script.value = scriptOf(sample);              // the fonts that write the inscription's own letters first; «Любая письменность» shows all
-    const list = h('div', {class: 'lt-fonts', role: 'listbox', 'aria-label': 'Шрифты'});
+    const source = h('select', {'aria-label': 'Font source'}, option('', 'All fonts'), Object.entries(SOURCES).map(([k, v]) => option(k, v)),
+      option('fav', 'Favorites'));
+    const script = h('select', {'aria-label': 'Writing system'}, option('', 'Any writing system'), Object.entries(SCRIPTS).map(([k, v]) => option(k, v)));
+    const kind = h('select', {'aria-label': 'Font category'}, option('', 'Any category'), Object.entries(KINDS).map(([k, v]) => option(k, v)));
+    script.value = scriptOf(sample);              // the fonts that write the inscription's own letters first; «Any writing system» shows all
+    const list = h('div', {class: 'lt-fonts', role: 'listbox', 'aria-label': 'Fonts'});
     const more = h('div', {});
     const count = h('p', {class: 'small muted'});
     const status = h('p', {class: 'small lt-font-status', role: 'status', 'aria-live': 'polite'});   // says what Enter or Space chose, for a screen reader
     let active = chosen ? chosen.family : null;    // the row that holds the tab stop of the list (roving focus: arrow keys move it, Enter or Space chooses it)
     const googleBox = h('div', {class: 'stack small'});
-    const ownInput = h('input', {type: 'file', accept: '.ttf,.otf,.ttc', 'aria-label': 'Свой файл шрифта (TTF, OTF, TTC)'});
+    const ownInput = h('input', {type: 'file', accept: '.ttf,.otf,.ttc', 'aria-label': 'Custom font file (TTF, OTF, TTC)'});
     const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((seen) => {
       for (const e of seen) if (e.isIntersecting) { observer.unobserve(e.target); want(e.target.getAttribute('data-family')); }
     }, {root: null, rootMargin: '200px'});
@@ -116,7 +107,7 @@ const Lettering = (() => {
       return !q || f.family.toLowerCase().includes(q);
     });
 
-    /** Семейство Google, которое видно в списке, скачивается само (небольшое, по два за раз); большое — кнопкой. */
+    /** Download visible small Google font families automatically, two at a time; larger ones require a button. */
     function want(family) {
       const f = catalogue.families.find((x) => x.family === family && x.source === 'google' && !x.downloaded);
       if (!f || f.size > AUTO_BYTES || loading.has(family) || queue.includes(family)) return;
@@ -145,8 +136,8 @@ const Lettering = (() => {
     /** What is said aloud when a row is chosen (the status line is a polite live region); a family still to download says so. */
     function announce(f) {
       const style = f.faces.find((x) => chosen && x.id === chosen.face);
-      fill(status, f.faces.length ? `Выбран шрифт ${f.family}${style ? ', начертание ' + style.style : ''}. «Выбрать» подтверждает.`
-        : `Шрифт ${f.family} ещё не скачан: скачиваем из Google Fonts, он будет выбран, когда скачается.`);
+      fill(status, f.faces.length ? `Selected font ${f.family}${style ? ', style ' + style.style : ''}. Select confirms the choice.`
+        : `Font ${f.family} is not downloaded yet. Downloading from Google Fonts; it will be selected when ready.`);
     }
     /** Choose a row, by a click or by Enter or Space: the same act, and the row keeps the tab stop. */
     function pick(f, faceOf) {
@@ -159,27 +150,27 @@ const Lettering = (() => {
     function row(f) {
       const on = chosen && chosen.family === f.family;
       const star = h('button', {type: 'button', class: 'lt-star', 'data-ctl': 'star', 'aria-pressed': favourites.has(f.family) ? 'true' : 'false',
-        title: favourites.has(f.family) ? 'Убрать из избранных' : 'В избранные', 'aria-label': `${f.family}: избранный`,
+        title: favourites.has(f.family) ? 'Remove from favorites' : 'Add to favorites', 'aria-label': `${f.family}: favorite`,
         onClick: (ev) => { ev.stopPropagation(); if (favourites.has(f.family)) favourites.delete(f.family); else favourites.add(f.family);
           storage.write('lt.fav', [...favourites]); render(false); }}, favourites.has(f.family) ? '★' : '☆');
       const faceOf = () => (on && f.faces.find((x) => x.id === chosen.face)) || f.faces.find((x) => x.id === f.regular) || f.faces[0];
-      const styles = f.faces.length > 1 ? h('select', {'aria-label': `Начертание ${f.family}`, 'data-ctl': 'style', onClick: (ev) => ev.stopPropagation(),
+      const styles = f.faces.length > 1 ? h('select', {'aria-label': `Style ${f.family}`, 'data-ctl': 'style', onClick: (ev) => ev.stopPropagation(),
         onChange: (ev) => { chosen = {family: f.family, face: ev.target.value}; active = f.family; announce(f); render(false); }},
       f.faces.map((x) => h('option', {value: x.id, selected: faceOf() && x.id === faceOf().id}, x.style))) : f.faces.length ? h('span', {class: 'small muted'}, f.faces[0].style) : null;
       const fetchBtn = !f.faces.length && !(loading.has(f.family) || queue.includes(f.family))
-        ? btn(`Скачать (${num((f.size || 0) / 1024 / 1024, 1)} МБ)`, (ev) => { ev.stopPropagation(); loading.add(f.family); render(false);
+        ? btn(`Download (${num((f.size || 0) / 1024 / 1024, 1)} MB)`, (ev) => { ev.stopPropagation(); loading.add(f.family); render(false);
           downloadNow(f); }, 'btn-small') : null;
       if (fetchBtn) fetchBtn.setAttribute('data-ctl', 'download');
-      const remove = f.source === 'own' && f.faces.length ? btn('Удалить', (ev) => { ev.stopPropagation(); removeOwn(f); }, 'btn-small') : null;
+      const remove = f.source === 'own' && f.faces.length ? btn('Remove', (ev) => { ev.stopPropagation(); removeOwn(f); }, 'btn-small') : null;
       if (remove) remove.setAttribute('data-ctl', 'remove');
       const shown = !f.faces.length
-        ? (fetchBtn || h('span', {class: 'small muted'}, 'Скачиваем из Google Fonts…'))
-        : h('img', {class: 'lt-preview', src: preview(faceOf().id), alt: `${sampleText()} шрифтом ${f.family}`, loading: 'lazy'});
+        ? (fetchBtn || h('span', {class: 'small muted'}, 'Downloading from Google Fonts…'))
+        : h('img', {class: 'lt-preview', src: preview(faceOf().id), alt: `${sampleText()} in ${f.family}`, loading: 'lazy'});
       // the row is one option of the listbox: focusable (roving, see rove), chosen by a click, Enter or Space; the controls inside it
       // (favourite, style, download, remove) keep their own keys and never choose the row (a key is the row's only when it is the target)
       const el = h('div', {class: 'lt-font' + (on ? ' picked' : ''), role: 'option', tabindex: '-1', 'aria-selected': on ? 'true' : 'false', 'data-family': f.family,
-        'aria-label': f.faces.length ? f.family : `${f.family}, не скачан`, onClick: () => pick(f, faceOf)},
-      h('div', {class: 'lt-font-head'}, star, h('strong', {}, f.family), on ? h('span', {class: 'pill ok lt-chosen'}, 'выбран') : null,
+        'aria-label': f.faces.length ? f.family : `${f.family}, not downloaded`, onClick: () => pick(f, faceOf)},
+      h('div', {class: 'lt-font-head'}, star, h('strong', {}, f.family), on ? h('span', {class: 'pill ok lt-chosen'}, 'selected') : null,
         h('span', {class: 'pill'}, SOURCES[f.source] || f.source),
         h('span', {class: 'small muted'}, [KINDS[f.kind] || f.kind, f.scripts.map((s) => SCRIPTS[s] || s).join(', ')].filter(Boolean).join(' · ')),
         h('span', {class: 'spacer'}), styles, remove),
@@ -235,9 +226,9 @@ const Lettering = (() => {
       const mark = inRow ? {family: inRow.getAttribute('data-family'), ctl: now === inRow ? '' : now.getAttribute('data-ctl') || ''} : null;
       if (reset) shownCount = PAGE;
       const found = families();
-      fill(count, `Шрифтов: ${found.length} из ${catalogue.families.length}` + (catalogue.google.listed ? '' : ' · Google Fonts не загружен: кнопка ниже'));
-      fill(list, found.length ? found.slice(0, shownCount).map(row) : h('p', {class: 'muted small'}, 'Под такой поиск и фильтры шрифтов нет.'));
-      fill(more, found.length > shownCount ? btn(`Показать ещё (${found.length - shownCount})`, () => {
+      fill(count, `Fonts: ${found.length} of ${catalogue.families.length}` + (catalogue.google.listed ? '' : ' · Google Fonts list not loaded: use the button below'));
+      fill(list, found.length ? found.slice(0, shownCount).map(row) : h('p', {class: 'muted small'}, 'No fonts match the search and filters.'));
+      fill(more, found.length > shownCount ? btn(`Show more (${found.length - shownCount})`, () => {
         const first = shownCount;                              // the first row of the new portion takes the focus of the button that was pressed
         shownCount += PAGE;
         render(false);
@@ -259,16 +250,16 @@ const Lettering = (() => {
       const buttons = () => [...googleBox.querySelectorAll('button')];
       const held = document.activeElement && googleBox.contains(document.activeElement) ? buttons().indexOf(document.activeElement) : -1;
       fill(googleBox,
-        h('div', {class: 'row'}, btn(g.listed ? 'Обновить список Google Fonts' : 'Загрузить список Google Fonts', async (ev) => {
+        h('div', {class: 'row'}, btn(g.listed ? 'Refresh Google Fonts list' : 'Load Google Fonts list', async (ev) => {
           const self = ev.currentTarget;
           self.disabled = true;
           try { await post('/fonts/google/index'); await reload(); } catch (e) { fail(e); render(false); }
-        }), g.listed ? h('span', {class: 'muted'}, `семейств Google: ${g.families}`) : h('span', {class: 'muted'}, 'нужен интернет; шрифты этого Mac и свои работают без него')),
+        }), g.listed ? h('span', {class: 'muted'}, `Google families: ${g.families}`) : h('span', {class: 'muted'}, 'internet required; fonts on this Mac and custom fonts work offline')),
         g.listed ? h('div', {class: 'row'}, btn(script.value || kind.value
-          ? 'Скачать все Google: ' + [SCRIPTS[script.value], kind.value && KINDS[kind.value].toLowerCase()].filter(Boolean).join(', ')
-          : 'Скачать все Google выбранной письменности или вида', () => bulk(), '', !(script.value || kind.value) || !!s.running),
-        s.running ? h('span', {}, `скачано ${s.done} из ${s.total}…`) : s.total ? h('span', {class: 'muted'}, `скачано ${s.done} из ${s.total}`
-          + (s.failed && s.failed.length ? `, не скачались: ${s.failed.length}` : '')) : null) : null);
+          ? 'Download all Google: ' + [SCRIPTS[script.value], kind.value && KINDS[kind.value].toLowerCase()].filter(Boolean).join(', ')
+          : 'Download all Google fonts in the selected writing system or category', () => bulk(), '', !(script.value || kind.value) || !!s.running),
+        s.running ? h('span', {}, `downloaded ${s.done} of ${s.total}…`) : s.total ? h('span', {class: 'muted'}, `downloaded ${s.done} of ${s.total}`
+          + (s.failed && s.failed.length ? `, failed: ${s.failed.length}` : '')) : null) : null);
       const again = held >= 0 ? buttons()[held] : null;
       if (again && !again.disabled) again.focus();
     }
@@ -294,7 +285,7 @@ const Lettering = (() => {
 
     /** The operator's font taken away: each face's file (a file with several faces goes with the first of them). */
     function removeOwn(f) {
-      confirmBox('Удалить шрифт', `Удалить свой шрифт ${f.family} с этого компьютера? Надписи этим шрифтом попросят выбрать другой.`, 'Удалить', async () => {
+      confirmBox('Remove font', `Remove custom font ${f.family} from this computer? Inscriptions using it will require another font.`, 'Remove', async () => {
         let removed = 0;
         for (const x of f.faces) {
           try { await del(`/fonts/own/${encodeURIComponent(x.id)}`); removed++; } catch (e) { if (!removed) return fail(e); }
@@ -312,7 +303,7 @@ const Lettering = (() => {
       fd.append('font', file);
       try {
         const got = await form('/fonts/own', fd);
-        toast(`Шрифт добавлен: ${got.faces.map((x) => `${x.family} ${x.style}`).join(', ')}`, 'ok');
+        toast(`Font added: ${got.faces.map((x) => `${x.family} ${x.style}`).join(', ')}`, 'ok');
         chosen = {family: got.faces[0].family, face: got.faces[0].face};
         await reload();
       } catch (e) { fail(e); }
@@ -323,17 +314,17 @@ const Lettering = (() => {
     search.addEventListener('input', () => render());
     for (const s of [source, script, kind]) s.addEventListener('change', () => render());
     render();
-    modal('Шрифт надписи', h('div', {class: 'stack lt-font-window'},
-      h('div', {class: 'row'}, h('label', {class: 'f lt-grow'}, h('span', {}, 'Образец'), text), h('label', {class: 'f lt-grow'}, h('span', {}, 'Поиск'), search)),
+    modal('Inscription font', h('div', {class: 'stack lt-font-window'},
+      h('div', {class: 'row'}, h('label', {class: 'f lt-grow'}, h('span', {}, 'Sample'), text), h('label', {class: 'f lt-grow'}, h('span', {}, 'Search'), search)),
       h('div', {class: 'row lt-filters'}, source, script, kind),
-      h('div', {class: 'row'}, h('span', {class: 'small'}, 'Свой шрифт:'), App.filePick(ownInput, 'Добавить файл шрифта')),
+      h('div', {class: 'row'}, h('span', {class: 'small'}, 'Custom font:'), App.filePick(ownInput, 'Add font file')),
       count, status, list, more, googleBox,
-      h('p', {class: 'small muted'}, 'Образец нарисован так, как буквы попадут в файл; буква, которой нет в шрифте, — красная. Шрифты Google скачиваются, '
-        + 'когда видны в списке (до 2 МБ), остальные — кнопкой; скачанные остаются на этом компьютере. ★ — избранные (запоминает этот браузер).')),
-    [{label: 'Отмена', run: (m) => m.close()},
-      {label: 'Выбрать', cls: 'primary', run: async (m) => {
+      h('p', {class: 'small muted'}, 'The preview shows how letters will appear in the file; missing glyphs appear in red. Google fonts download '
+        + 'when visible in the list (up to 2 MB); use the button for larger families. Downloaded fonts stay on this computer. ★ marks favorites saved in this browser.')),
+    [{label: 'Cancel', run: (m) => m.close()},
+      {label: 'Select', cls: 'primary', run: async (m) => {
         const f = chosen && catalogue.families.find((x) => x.family === chosen.family && x.faces.some((y) => y.id === chosen.face));
-        if (!f) return toast('Выберите шрифт в списке');
+        if (!f) return toast('Select a font from the list');
         m.close();
         await onPick({face: chosen.face, family: f.family, style: f.faces.find((y) => y.id === chosen.face).style});
       }}], () => { clearInterval(polling); if (observer) observer.disconnect(); });

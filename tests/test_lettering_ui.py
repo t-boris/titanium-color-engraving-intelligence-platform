@@ -81,7 +81,7 @@ def test_the_font_window_names_every_script_kind_and_source_of_the_catalogue():
     letters = re.search(r"const LETTERS_OF = \[(.*?)\];", LETTERING, re.S).group(1)
     assert set(re.findall(r"\['(\w+)', /", letters)) == set(fonts.SCRIPTS) - {"latin"}     # the window opens on the script of the text
     assert "script.value = scriptOf(sample);" in LETTERING
-    assert f"const AUTO_BYTES = 2 * 1024 * 1024;" in LETTERING and "App.filePick(ownInput, 'Добавить файл шрифта')" in LETTERING
+    assert f"const AUTO_BYTES = 2 * 1024 * 1024;" in LETTERING and "App.filePick(ownInput, 'Add font file')" in LETTERING
 
 
 def test_the_photo_work_lays_the_layer_over_its_look_with_the_previews_own_gap():
@@ -192,7 +192,7 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
   const dialog = ctx.document.body.querySelector('.modal');
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e12').dispatch('click');
   await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
-  await byText(group('Расположение'), 'button', 'По кругу').dispatch('click'); await tick();
+  await byText(group('Расположение'), 'button', 'Circle').dispatch('click'); await tick();
   out.hidden = tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for')).map((d) => d.getAttribute('data-for') + ':' + d.hidden);
   await byText(pane, 'button', 'Копия').dispatch('click'); await tick();
   await byText(pane, 'button', 'Удалить').dispatch('click'); await tick();
@@ -282,15 +282,15 @@ def test_every_field_of_the_panel_sends_its_change_and_the_picture_shows_the_ans
     ['y, мм', '10'], ['Радиус круга, мм', '15'], ['Где на круге, °', '90'], ['Зазор вокруг букв, мм', '0.5'], ['Поле подложки, мм', '2'],
     ['Скругление углов, мм', '1']]) await set(label, value);
   await tick_('Внутри круга (читается против часовой)');
-  await press('Выравнивание', 'Справа');
-  await press('Буквы на кривой', 'Гнутся по кривой');
-  await press('Подложка', 'Овал');
+  await press('Выравнивание', 'Right');
+  await press('Буквы на кривой', 'Bend along curve');
+  await press('Подложка', 'Oval');
   data.routes['/api/vector/7/colouring'] = data.routes['/x/arc'];
-  await press('Расположение', 'Дугой');
+  await press('Расположение', 'Arc');
   out.arc = visible();
   await set('Изгиб, %', '-30');
   data.routes['/api/vector/7/colouring'] = data.routes['/x/path'];
-  await press('Расположение', 'По пути');
+  await press('Расположение', 'Path');
   out.path = visible();
   await set('Место на пути, %', '25');
   await tick_('Путь в обратную сторону');
@@ -485,31 +485,31 @@ def test_the_font_window_lists_filters_previews_downloads_and_chooses_a_face(tmp
   out.all = rows();
   out.preview = row('Arial').querySelector('img').getAttribute('src');
   out.picked = row('Arial').getAttribute('aria-selected');
-  out.count = win().querySelectorAll('p').find((p) => p.textContent.startsWith('Шрифтов:')).textContent;
-  await choose('Письменность', 'hebrew');
+  out.count = win().querySelectorAll('p').find((p) => p.textContent.startsWith('Fonts:')).textContent;
+  await choose('Writing system', 'hebrew');
   out.hebrew = rows();
-  out.bulk = byText(win(), 'button', 'Скачать все Google: Иврит').disabled;
-  await byText(row('Noto Sans Hebrew'), 'button', 'Скачать (0.3 МБ)').dispatch('click'); await wait(5);
+  out.bulk = byText(win(), 'button', 'Download all Google: Hebrew').disabled;
+  await byText(row('Noto Sans Hebrew'), 'button', 'Download (0.3 MB)').dispatch('click'); await wait(5);
   out.downloaded = row('Noto Sans Hebrew').querySelector('img').getAttribute('src');
-  await choose('Письменность', '');
-  await choose('Откуда шрифты', 'own');
+  await choose('Writing system', '');
+  await choose('Font source', 'own');
   out.own = rows();
-  out.remove = !!byText(row('My Hand'), 'button', 'Удалить');
+  out.remove = !!byText(row('My Hand'), 'button', 'Remove');
   out.hand = row('My Hand').querySelector('img').getAttribute('src');
-  await choose('Откуда шрифты', '');
-  const search = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Найти шрифт по названию');
+  await choose('Font source', '');
+  const search = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Find font by name');
   search.value = 'ari'; await search.dispatch('input');
   out.found = rows();
   search.value = ''; await search.dispatch('input');
-  await choose('Начертание Arial', 'f2');
-  await byText(win(), 'button', 'Выбрать').dispatch('click'); await tick();
+  await choose('Style Arial', 'f2');
+  await byText(win(), 'button', 'Select').dispatch('click'); await tick();
   out.closed = !ctx.document.body.querySelector('.modal');
   out.google = ctx.requests.filter((r) => r.path === '/api/fonts/google/family').map((r) => JSON.parse(r.body));
   out.ops = textOps();
 """)
     assert out["all"] == ["Arial", "My Hand", "Noto Sans Hebrew"] and out["picked"] == "true"
     assert out["preview"] == "/api/fonts/preview.svg?face=f1&text=HOH&height=10"          # the inscription's own text as the sample
-    assert out["count"].startswith("Шрифтов: 3 из 3")
+    assert out["count"].startswith("Fonts: 3 of 3")
     assert out["hebrew"] == ["Noto Sans Hebrew"] and out["bulk"] is False
     assert out["google"] == [{"family": "Noto Sans Hebrew"}] and out["downloaded"] == "/api/fonts/preview.svg?face=g1&text=HOH&height=10"
     assert out["own"] == ["My Hand"] and out["remove"] and out["found"] == ["Arial"]
@@ -545,19 +545,19 @@ def test_a_google_family_seen_in_the_list_is_downloaded_by_itself_and_a_large_on
   await ctx.__observer.seen(watched.map((el) => ({isIntersecting: true, target: el}))); await wait(10);
   out.after = asked();
   out.noto = row('Noto Sans Hebrew').querySelector('img').getAttribute('src');
-  out.big = row('Big Serif').querySelectorAll('button').map((b) => b.textContent).filter((t) => t.startsWith('Скачать'));
+  out.big = row('Big Serif').querySelectorAll('button').map((b) => b.textContent).filter((t) => t.startsWith('Download'));
 """)
     assert out["watched"] == ["Noto Sans Hebrew", "Big Serif"]                    # the families without their files
     assert out["before"] == []                                                     # nothing is downloaded before it is seen
     assert out["after"] == ["Noto Sans Hebrew"]                                    # seen: the small one downloaded at once
     assert out["noto"] == "/api/fonts/preview.svg?face=g1&text=HOH&height=10"      # and drawn in its regular face
-    assert out["big"] == ["Скачать (5.0 МБ)"]                                      # the large one waits for its button
+    assert out["big"] == ["Download (5.0 MB)"]                                      # the large one waits for its button
 
 
 @node
 def test_a_google_family_chosen_before_it_is_downloaded_is_downloaded_and_chosen(tmp_path):
     """inscriptions-in-works REQ-001 c2: «downloaded when it is chosen»: a click on the row of a family not downloaded yet, even one too large
-    to come by itself, downloads it and chooses it once it is here; «Выбрать» gives the inscription that font."""
+    to come by itself, downloads it and chooses it once it is here; «Select» gives the inscription that font."""
     r = editor_routes()
     r["/api/fonts"]["json"] = {**FONTS, "families": FONTS["families"] + [BIG]}
     r["/api/fonts/google/family"]["json"] = {"faces": [{"face": "b0", "family": "Big Serif", "style": "Regular"},
@@ -570,7 +570,7 @@ def test_a_google_family_chosen_before_it_is_downloaded_is_downloaded_and_chosen
   out.drawn = row('Big Serif').querySelector('img').getAttribute('src');
   await row('Big Serif').dispatch('click'); await wait(10);
   out.again = asked();                                    // a family already here is only chosen
-  await byText(win(), 'button', 'Выбрать').dispatch('click'); await tick();
+  await byText(win(), 'button', 'Select').dispatch('click'); await tick();
   out.ops = textOps();
 """)
     assert out["before"] == [[], "false"]
@@ -596,24 +596,24 @@ def test_a_bulk_download_of_a_script_and_a_kind_shows_its_progress_until_it_ends
   ctx.setInterval = (fn, ms) => every(fn, ms === 1000 ? 15 : ms);        // the window asks for the progress every second: here sooner
   const polls = () => ctx.requests.filter((x) => x.path === '/api/fonts/google/status').length;
   await openFonts();
-  await choose('Письменность', 'hebrew'); await choose('Вид шрифта', 'sans');
-  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Скачать все Google'));
+  await choose('Writing system', 'hebrew'); await choose('Font category', 'sans');
+  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Download all Google'));
   out.label = bulk().textContent;
   await bulk().dispatch('click'); await tick();
-  out.started = [win().textContent.includes('скачано 0 из 3…'), bulk().disabled];
+  out.started = [win().textContent.includes('downloaded 0 of 3…'), bulk().disabled];
   out.sent = ctx.requests.filter((x) => x.path === '/api/fonts/google/download').map((x) => JSON.parse(x.body));
   await wait(60);
-  out.running = [win().textContent.includes('скачано 1 из 3…'), bulk().disabled];
+  out.running = [win().textContent.includes('downloaded 1 of 3…'), bulk().disabled];
   data.routes['/api/fonts/google/status'] = data.routes['/x/status-after'];
   data.routes['/api/fonts'] = data.routes['/x/fonts-after'];
   await wait(60);
-  out.ended = [win().textContent.includes('скачано 3 из 3, не скачались: 1'), bulk().disabled];
+  out.ended = [win().textContent.includes('downloaded 3 of 3, failed: 1'), bulk().disabled];
   const before = polls();
   await wait(60);
   out.stopped = polls() === before;                                        // no more asking once it ended
   ctx.setInterval = every;
 """)
-    assert out["label"] == "Скачать все Google: Иврит, без засечек"
+    assert out["label"] == "Download all Google: Hebrew, sans serif"
     assert out["sent"] == [{"script": "hebrew", "kind": "sans"}]
     assert out["started"] == [True, True] and out["running"] == [True, True]            # its progress shown, no second one meanwhile
     assert out["ended"] == [True, False] and out["stopped"] is True
@@ -624,17 +624,17 @@ def test_a_bulk_download_by_a_category_alone_is_offered_in_the_font_window(tmp_p
     """inscriptions-in-works REQ-001 c2: a bulk download by category, with any script; with neither chosen there is nothing to download."""
     out = run_editor(tmp_path, editor_routes(), OPEN + FONT_WINDOW + """
   await openFonts();
-  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Скачать все Google'));
-  await choose('Письменность', ''); await choose('Вид шрифта', '');
+  const bulk = () => win().querySelectorAll('button').find((b) => b.textContent.startsWith('Download all Google'));
+  await choose('Writing system', ''); await choose('Font category', '');
   out.none = [bulk().textContent, bulk().disabled];
-  await choose('Вид шрифта', 'handwriting');
+  await choose('Font category', 'handwriting');
   out.label = bulk().textContent;
   out.disabled = bulk().disabled;
   await bulk().dispatch('click'); await tick();
   out.sent = ctx.requests.filter((x) => x.path === '/api/fonts/google/download').map((x) => JSON.parse(x.body));
 """)
-    assert out["none"] == ["Скачать все Google выбранной письменности или вида", True]
-    assert out["label"] == "Скачать все Google: рукописные" and out["disabled"] is False
+    assert out["none"] == ["Download all Google fonts in the selected writing system or category", True]
+    assert out["label"] == "Download all Google: handwriting" and out["disabled"] is False
     assert out["sent"] == [{"script": None, "kind": "handwriting"}]
 
 
@@ -649,15 +649,15 @@ def test_the_kind_filter_narrows_the_list_and_favourites_stay_marked_when_the_wi
   await openFonts();
   const offered = (label) => win().querySelectorAll('select').find((x) => x.getAttribute('aria-label') === label).querySelectorAll('option')
     .map((o) => [o.value, o.textContent]);
-  out.offered = {scripts: offered('Письменность'), kinds: offered('Вид шрифта')};
+  out.offered = {scripts: offered('Writing system'), kinds: offered('Font category')};
   out.kinds = {};
-  for (const kind of ['handwriting', 'sans', 'serif', '']) { await choose('Вид шрифта', kind); out.kinds[kind || 'any'] = rows(); }
+  for (const kind of ['handwriting', 'sans', 'serif', '']) { await choose('Font category', kind); out.kinds[kind || 'any'] = rows(); }
   await star('My Hand').dispatch('click');
   out.marked = ['My Hand', 'Arial'].map((f) => [star(f).getAttribute('aria-pressed'), star(f).textContent]);
   out.kept = kept.get('lt.fav');
-  await choose('Откуда шрифты', 'fav');
+  await choose('Font source', 'fav');
   out.favourites = rows();
-  await byText(win(), 'button', 'Отмена').dispatch('click'); await tick();
+  await byText(win(), 'button', 'Cancel').dispatch('click'); await tick();
   out.closed = !win();
   await openFonts();
   out.again = ['My Hand', 'Arial'].map((f) => star(f).getAttribute('aria-pressed'));
@@ -667,9 +667,9 @@ def test_the_kind_filter_narrows_the_list_and_favourites_stay_marked_when_the_wi
     scripts = dict(out["offered"]["scripts"])
     assert list(scripts)[1:] == list(fonts.SCRIPTS)                                 # every script the catalogue tells apart
     assert {k: scripts[k] for k in ("latin", "cyrillic", "hebrew", "arabic", "greek")} == {
-        "latin": "Латиница", "cyrillic": "Кириллица", "hebrew": "Иврит", "arabic": "Арабский", "greek": "Греческий"}
+        "latin": "Latin", "cyrillic": "Cyrillic", "hebrew": "Hebrew", "arabic": "Arabic", "greek": "Greek"}
     assert [k for k, _ in out["offered"]["kinds"]][1:] == list(fonts.KINDS)
-    assert dict(out["offered"]["kinds"])["serif"] == "С засечками" and dict(out["offered"]["kinds"])["monospace"] == "Моноширинные"
+    assert dict(out["offered"]["kinds"])["serif"] == "Serif" and dict(out["offered"]["kinds"])["monospace"] == "Monospace"
     assert out["kinds"] == {"handwriting": ["My Hand"], "sans": ["Arial", "Noto Sans Hebrew"], "serif": [],
                             "any": ["Arial", "My Hand", "Noto Sans Hebrew"]}
     assert out["marked"] == [["true", "★"], ["false", "☆"]] and json.loads(out["kept"]) == ["My Hand"]
@@ -685,7 +685,7 @@ def test_an_inscription_without_text_shows_the_sample_in_every_font(tmp_path):
     r["/api/vector/7"]["json"]["texts"][0]["text"] = ""
     out = run_editor(tmp_path, r, OPEN + FONT_WINDOW + """
   await openFonts();
-  out.sample = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Образец текста').value;
+  out.sample = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Sample text').value;
   out.previews = ['Arial', 'My Hand'].map((f) => row(f).querySelector('img').getAttribute('src'));
 """)
     assert re.search(r"const SAMPLE = '([^']+)';", LETTERING).group(1) == lettering.SAMPLE == out["sample"]
