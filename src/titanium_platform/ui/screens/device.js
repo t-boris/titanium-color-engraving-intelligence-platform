@@ -1,4 +1,4 @@
-/* Экран «Лазеры»: список, карточка лазера с паспортом, графиками, документами и расчётом рабочей точки (REQ-017). */
+/* Laser list and detail pages, including specifications, charts, documents and operating point (REQ-017). */
 'use strict';
 (() => {
   const {h, btn, field, link, pill, get, patch, del, toast, fail, confirmBox} = App;
@@ -6,8 +6,8 @@
 
   function chartsCard(d, charts) {
     const widths = charts.curves.map((c) => c.pulse_width_ns);
-    const prefer = widths.includes(200) ? 200 : widths[0];   // 200 нс — только если лазер даёт эту ступень (DEC-043)
-    const pick = h('select', {'aria-label': 'Длительность импульса'}, widths.map((w) => h('option', {value: w, selected: w === prefer}, w + ' нс')));
+    const prefer = widths.includes(200) ? 200 : widths[0];   // 200 ns only if the laser supports this step (DEC-043)
+    const pick = h('select', {'aria-label': 'Pulse duration'}, widths.map((w) => h('option', {value: w, selected: w === prefer}, w + ' ns')));
     const power = h('div', {}), energy = h('div', {});
     let mark = null;
     const draw = () => {
@@ -17,32 +17,32 @@
     };
     pick.addEventListener('change', draw);
     draw();
-    const onPoint = (o) => {   // точка из расчёта: на графиках она видна рядом с частотой среза
+    const onPoint = (o) => {   // show the calculated point alongside the cutoff frequency
       if (o.cw) { mark = null; return draw(); }
-      // Кривые — при 100 % мощности, поэтому точка ставится на кривую, а в подписи — значения при заданной мощности.
+      // Curves show 100% power; place the point on the curve and label its values at the selected power.
       const full = o.set_power_pct / 100, at = ` (${+o.set_power_pct.toPrecision(3)} %)`;
       mark = {width: o.pulse_width_ns,
-        power: {x: o.frequency_khz, y: o.output_power_w / full, label: `${+o.output_power_w.toPrecision(3)} Вт${at}`, color: '#ff9eaf'},
-        energy: {x: o.frequency_khz, y: o.pulse_energy_mj / full, label: `${+o.pulse_energy_mj.toPrecision(3)} мДж${at}`, color: '#ff9eaf'}};
+        power: {x: o.frequency_khz, y: o.output_power_w / full, label: `${+o.output_power_w.toPrecision(3)} W${at}`, color: '#ff9eaf'},
+        energy: {x: o.frequency_khz, y: o.pulse_energy_mj / full, label: `${+o.pulse_energy_mj.toPrecision(3)} mJ${at}`, color: '#ff9eaf'}};
       pick.value = String(o.pulse_width_ns); draw();
     };
-    const card = h('div', {class: 'card stack'}, h('h3', {}, 'Графики'),
-      h('p', {class: 'muted small'}, 'Все графики строятся из паспорта этого лазера. Расчёт по паспорту, не измерение: для измеренной кривой нужен измеритель мощности.'),
-      h('div', {class: 'grid g2'}, h('div', {}, h('h3', {}, 'Частота среза'), DevicePlots.cutoff(charts)), h('div', {}, h('h3', {}, 'Наибольшая энергия импульса'), DevicePlots.energy(charts))),
-      h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap'}, field('Длительность импульса', pick))),
-      h('div', {class: 'grid g2'}, h('div', {}, h('h3', {}, 'Мощность по частоте'), power), h('div', {}, h('h3', {}, 'Энергия импульса по частоте'), energy)));
+    const card = h('div', {class: 'card stack'}, h('h3', {}, 'Charts'),
+      h('p', {class: 'muted small'}, 'Charts use this laser’s specifications. They are modeled, not measured; a power meter is needed for a measured curve.'),
+      h('div', {class: 'grid g2'}, h('div', {}, h('h3', {}, 'Cutoff frequency'), DevicePlots.cutoff(charts)), h('div', {}, h('h3', {}, 'Maximum pulse energy'), DevicePlots.energy(charts))),
+      h('div', {class: 'toolbar'}, h('div', {class: 'f-wrap'}, field('Pulse duration', pick))),
+      h('div', {class: 'grid g2'}, h('div', {}, h('h3', {}, 'Power by frequency'), power), h('div', {}, h('h3', {}, 'Pulse energy by frequency'), energy)));
     return {card, onPoint};
   }
 
-  // Вкладки карточки лазера: каждый блок на своём месте, без длинной прокрутки. Адрес: #/devices/:id?tab=...
-  const TABS = [['overview', 'Обзор'], ['experiments', 'Эксперименты и база результатов'], ['charts', 'Графики'], ['pulses', 'Формы импульса'], ['report', 'Протокол'], ['lens', 'Линза'], ['controller', 'Настройки лазера'], ['documents', 'Документы']];
+  // Laser detail tabs use routes of the form #/devices/:id?tab=...
+  const TABS = [['overview', 'Overview'], ['experiments', 'Experiments and results'], ['charts', 'Charts'], ['pulses', 'Pulse waveforms'], ['report', 'Test report'], ['lens', 'Lens'], ['controller', 'Laser settings'], ['documents', 'Documents']];
 
   async function detail(id, wanted, section) {
     let d;
-    try { d = await get('/devices/' + id); } catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Лазер не найден'), link('/devices', 'К списку лазеров')); }
+    try { d = await get('/devices/' + id); } catch (e) { return h('div', {class: 'card empty'}, h('h3', {}, 'Laser not found'), link('/devices', 'Back to lasers')); }
     const tab = TABS.some((t) => t[0] === wanted) ? wanted : 'overview';
     const refresh = (deviceId) => { location.hash = `#/devices/${deviceId}?tab=${tab}`; App.render(); };
-    const openPill = pill('открытых вопросов: ' + d.open_questions.length, d.open_questions.length ? 'warn' : 'ok');
+    const openPill = pill('open questions: ' + d.open_questions.length, d.open_questions.length ? 'warn' : 'ok');
     openPill.dataset.openCount = '1';
     const counts = {lens: d.lens ? 1 : 0, pulses: (d.passport.waveforms || []).length, documents: d.documents.length, controller: ((d.passport.controller || {}).tabs || []).reduce((n, t) => n + t.fields.length, 0), report: ((d.passport.test_report || {}).rows || []).length};
     let body;
@@ -53,9 +53,9 @@
       const charts = await get(`/devices/${id}/charts`), plots = chartsCard(d, charts);
       body = h('div', {class: 'stack'}, DeviceCalc.calculator(d, plots.onPoint), plots.card);
     } else if (tab === 'pulses') {
-      body = DeviceReport.waveformsCard(d, await get(`/devices/${id}/charts`)) || h('div', {class: 'card'}, 'Формы импульса в паспорте не записаны');
+      body = DeviceReport.waveformsCard(d, await get(`/devices/${id}/charts`)) || h('div', {class: 'card'}, 'No pulse waveforms are recorded in the specifications');
     } else if (tab === 'report') {
-      body = h('div', {class: 'stack'}, DeviceReport.reportCard(d) || h('div', {class: 'card'}, 'Протокол испытаний не загружен'), DeviceView.stepsCard(d));
+      body = h('div', {class: 'stack'}, DeviceReport.reportCard(d) || h('div', {class: 'card'}, 'No test report uploaded'), DeviceView.stepsCard(d));
     } else if (tab === 'lens') {
       body = await DeviceLens.card(d, refresh);
     } else if (tab === 'controller') {
@@ -66,32 +66,32 @@
       const capabilityResults = await get(`/devices/${id}/capability-results`);
       body = h('div', {class: 'stack'}, DeviceCharacterCard.card(d), DeviceView.capabilityResultsCard(capabilityResults, id),
         DeviceView.passportCard(d),
-        h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Изменить паспорт: серийный номер, диаметр пятна, ступени, открытые вопросы')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
+        h('details', {class: 'card'}, h('summary', {}, h('strong', {}, 'Edit specifications: serial number, spot diameter, steps and open questions')), h('div', {style: 'margin-top:14px'}, DeviceForms.editForm(d, refresh))));
     }
     const technical = new Set(['charts', 'pulses', 'report', 'documents']);
     const tabLink = ([key, label]) => h('a', {href: `#/devices/${id}?tab=${key}`, 'aria-current': key === tab ? 'page' : null,
       class: 'btn' + (key === tab ? ' primary' : '')}, label + (counts[key] ? ` · ${counts[key]}` : ''));
-    const nav = h('nav', {class: 'stack device-navigation', 'aria-label': 'Разделы лазера'},
+    const nav = h('nav', {class: 'stack device-navigation', 'aria-label': 'Laser sections'},
       h('div', {class: 'row'}, TABS.filter(([key]) => !technical.has(key)).map(tabLink)),
-      h('details', {class: 'device-technical', open: technical.has(tab)}, h('summary', {}, 'Технические данные'),
+      h('details', {class: 'device-technical', open: technical.has(tab)}, h('summary', {}, 'Technical data'),
         h('div', {class: 'row'}, TABS.filter(([key]) => technical.has(key)).map(tabLink))));
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, d.title), h('p', {class: 'sub'}, [d.manufacturer, d.model].filter(Boolean).join(' · '))), h('span', {class: 'spacer'}),
-        openPill, link('/devices', 'Все лазеры'),
-        btn('Удалить лазер', () => confirmBox('Удалить лазер', 'Действие необратимо: паспорт и документы будут удалены. Лазер, на котором есть платы, планы или измерения, удалить нельзя.', 'Удалить',
-          async () => { await del('/devices/' + id); toast('Лазер удалён', 'ok'); reload(); }), 'danger')),
+        openPill, link('/devices', 'All lasers'),
+        btn('Delete laser', () => confirmBox('Delete laser', 'This permanently deletes the specifications and documents. A laser with plates, plans or measurements cannot be deleted.', 'Delete',
+          async () => { await del('/devices/' + id); toast('Laser deleted', 'ok'); reload(); }), 'danger')),
       nav, body);
   }
 
   async function list() {
     const devices = await get('/devices');
-    const head = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Лазеры'), h('p', {class: 'sub'}, 'Паспорт каждого лазера: длительности импульса, частоты среза, документы и графики.')));
+    const head = h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Lasers'), h('p', {class: 'sub'}, 'Specifications for each laser: pulse durations, cutoff frequencies, documents and charts.')));
     const rows = devices.map((d) => h('div', {class: 'card stack'}, h('h3', {}, link('/devices/' + d.id, d.title)),
-      h('p', {class: 'muted small'}, `${d.passport.rated_power_w} Вт · ступеней: ${d.passport.pulse_steps.length} · документов: ${d.documents.length} · линза: ${d.lens ? App.lensLabel(d.lens) : 'не установлена'}`),
-      d.open_questions.length ? pill('открытых вопросов: ' + d.open_questions.length, 'warn') : pill('вопросов нет', 'ok')));
-    const templates = h('div', {class: 'card stack'}, h('h3', {}, 'Добавить лазер'), h('div', {class: 'stack'}, await DeviceForms.templateForm(reload),
-      h('details', {}, h('summary', {}, 'Другая модель: ввести паспорт вручную'), DeviceForms.createForm(reload))));
-    return h('div', {class: 'stack'}, head, devices.length ? h('div', {class: 'grid g2'}, rows) : h('div', {class: 'card empty'}, h('h3', {}, 'Лазеров пока нет'), h('p', {}, 'Добавьте лазер из шаблона или введите паспорт.')), templates);
+      h('p', {class: 'muted small'}, `${d.passport.rated_power_w} W · steps: ${d.passport.pulse_steps.length} · documents: ${d.documents.length} · lens: ${d.lens ? App.lensLabel(d.lens) : 'not installed'}`),
+      d.open_questions.length ? pill('open questions: ' + d.open_questions.length, 'warn') : pill('no open questions', 'ok')));
+    const templates = h('div', {class: 'card stack'}, h('h3', {}, 'Add laser'), h('div', {class: 'stack'}, await DeviceForms.templateForm(reload),
+      h('details', {}, h('summary', {}, 'Another model: enter specifications manually'), DeviceForms.createForm(reload))));
+    return h('div', {class: 'stack'}, head, devices.length ? h('div', {class: 'grid g2'}, rows) : h('div', {class: 'card empty'}, h('h3', {}, 'No lasers yet'), h('p', {}, 'Add a laser from a template or enter its specifications.')), templates);
   }
 
   App.register({id: 'devices', async render(ctx) { return ctx.arg ? detail(ctx.arg, ctx.query.tab, ctx.query.section) : list(); }});
