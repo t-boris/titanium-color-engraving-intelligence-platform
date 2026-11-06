@@ -7,7 +7,7 @@ holds a workshop unless ``--force-into-existing`` is given, and never touches th
 It writes: ``count`` stock records (materials) and ``count`` works (vector and photo, a third of them photo works), through the same
 functions the application uses.
 The works are catalogue rows: they have no stored picture or document, so the works catalog, the stock list and the selectors can be
-loaded with them, but the vector and photo editors (and their own lists) report «Не удалось загрузить данные» for them.
+loaded with them, but the vector and photo editors (and their own lists) report “Could not load data” for them.
 """
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ def seed(data_dir: Path, count: int) -> dict:
         lasers = [devices.create_from_template(store, "jpt-ydflp-e-60-m7-m-r", name=name, serial=serial) for name, serial in (("Laser Alpha", "A-1"), ("Laser Beta", "B-1"))]
         lens = [lenses.create_lens(store, name, 174, 170) for name in ("F-Theta 175", "F-Theta 254")]
         with store.transaction():
-            stock = [su.save_material(store, f"Лист {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
-                                      surface="шлифовка" if i % 2 else None, family="Titanium" if i % 7 else "Steel") for i in range(count)]
+            stock = [su.save_material(store, f"Sheet {i + 1}", batch=f"B-{i + 1:04d}", grade=grades[i % 4], thickness_mm=0.5 + (i % 5) * 0.5,
+                                      surface="sanded" if i % 2 else None, family="Titanium" if i % 7 else "Steel") for i in range(count)]
             for n in range(count):
                 stamp = f"2026-10-{1 + n % 28:02d}T{n % 24:02d}:00:00+00:00"
                 vector = {"strategy": "photo", "size_mm": {"width": 50, "height": 30}, "document_version": 1, "history": [{"at": stamp}],
