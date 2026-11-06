@@ -953,8 +953,8 @@ def test_a_dot_zones_card_picks_its_dots_colour_on_the_colour_map_and_shows_a_co
   await byText(zone, 'button', 'Use scale').dispatch('click'); await tick();
   out.posted = ctx.requests.filter((r) => r.path === '/api/vector/7/colouring').map((r) => JSON.parse(r.body));
 """)
-    assert "Dots с карты цветов: 30 % · 500 mm/s · 60 kHz · 300 ns · spacing 0.02 mm" in out["card"] and out["buttons"] == [True, True]
-    assert "Jarvis · dots 30 % с карты цветов · brightness 20 %, contrast 0 %, gamma 1" in out["card"]
+    assert "Dots from color map: 30 % · 500 mm/s · 60 kHz · 300 ns · spacing 0.02 mm" in out["card"] and out["buttons"] == [True, True]
+    assert "Jarvis · dots 30 % from color map · brightness 20 %, contrast 0 %, gamma 1" in out["card"]
     assert out["posted"] == [{"op": "photo_set", "zone": 1, "dot_power": 20}]                       # «Use scale»: the scale's power puts it back
 
 

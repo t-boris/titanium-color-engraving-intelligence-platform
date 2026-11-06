@@ -806,8 +806,8 @@ def test_dots_with_a_colour_from_the_map_show_its_settings_and_go_back_to_the_sc
               mark: !!tree.querySelector('.ge-dotmark'), title: tree.querySelector('.ge-settings').textContent};
 """, work={"kind": "jarvis", "dot_power": 12.5, "dot_recipe": VIOLET})
     m = out["mapped"]
-    assert m["source"] == "Dotsс карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Another colorBack to scale"
-    assert not m["slider"] and not m["mark"] and m["ends"] == "1 %dots — с карты цветов30 %" and m["says"] == [True] * 6
+    assert m["source"] == "Dotsfrom color map: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi) · passes 1Another colorBack to scale"
+    assert not m["slider"] and not m["mark"] and m["ends"] == "1 %dots — from color map30 %" and m["says"] == [True] * 6
     assert m["title"].startswith("scale: 100 mm/s") and m["title"].endswith("dots use settings of the color map recipe")
     assert out["went"] == ["/colors?dots=7&setup=laser%3A1%2Flens%3A2"]
     assert out["back"] == {"saved": [{"dot_power": 12.5}], "source": "Color from map", "slider": "12.5", "mark": True,
@@ -1010,14 +1010,14 @@ def test_dots_taken_from_a_photographed_engraving_name_its_photograph_not_the_co
   out.title = tree.querySelector('.ge-settings').textContent;
   out.text = tree.textContent;
 """, work={"kind": "atkinson", "dot_power": 12.5, "dot_recipe": JARVIS_DOTS})
-    assert out["source"].startswith("Dotsпо фото № 149 (Jarvis): 25 % · 125 mm/s")
-    assert out["ends"] == "1 %dots — по фото № 149 (Jarvis)30 %"
-    assert out["title"].endswith("dots use settings of dots по фото № 149 (Jarvis)")
+    assert out["source"].startswith("Dotsfrom photo #149 (Jarvis): 25 % · 125 mm/s")
+    assert out["ends"] == "1 %dots — from photo #149 (Jarvis)30 %"
+    assert out["title"].endswith("dots use settings of dots from photo #149 (Jarvis)")
     text = out["text"]
     assert "с карты цветов" not in text.replace("Color from map", "") and "оценка по шкале" not in text
     assert "оценка по фото № 149 (Jarvis): этот вид на этих настройках ещё не гравировался" in text
     assert "Это оценка: этот вид на этих настройках ещё не гравировался. Цвет точки — как на фото № 149 (Jarvis), где сфотографированы точки этих настроек." in text
-    assert "— настройки точек по фото № 149 (Jarvis)." in text
+    assert "— настройки точек from photo #149 (Jarvis)." in text
 
 
 # a kind whose every engraving on the titanium came out a negative (DEC-006): the dots of another kind stand in for its best

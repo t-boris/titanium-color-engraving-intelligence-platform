@@ -318,7 +318,7 @@ def test_a_dot_zone_opens_the_colour_map_for_its_dots_and_a_colour_from_the_map_
   const max = labelled(tree, 'Dot power, %');
   max.value = '13'; await max.dispatch('change'); await wait(300); await settle();
   out.mapped = [!!button(tree, 'Another color'), !!button(tree, 'Back to scale'), !labelled(tree, 'Dot power, %'),
-                tree.textContent.includes('с карты цветов: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi)'),
+                tree.textContent.includes('from color map: 20 % · 500 mm/s · 60 kHz · 300 ns · interval 0,02 mm (1000 dpi)'),
                 tree.textContent.includes('LightBurn file: layer C03 is an image in Jarvis mode, at 13 % power (Min = Max for every dot), 500 mm/s')];
   await button(tree, 'Back to scale').dispatch('click'); await wait(300); await settle();
   out.saves = saves();

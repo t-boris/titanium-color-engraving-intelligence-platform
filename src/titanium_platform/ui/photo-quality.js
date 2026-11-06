@@ -18,11 +18,10 @@ const PhotoQuality = (() => {
   /** Значение настройки с единицей; поправка ширины точки без значения — выключена. */
   const setting = (key, v) => (key === 'dither' ? PhotoModes.label(v) : v == null ? (key === 'dot_width' ? 'выкл.' : '—') : value(v, DIGITS[key] ?? 2) + (UNIT[key] || ''));
   const changeText = (c) => `${SETTING[c.setting] || c.setting} ${setting(c.setting, c.from)} → ${setting(c.setting, c.to)}`;
-  /** Откуда точки рецепта работы или фотозоны (BUG-008): заливка карты цветов или сфотографированная фотогравировка (``source`` "photo") —
-      её фото и вид; «оценка», когда на этих настройках её не фотографировали (``basis`` "estimate"). */
+  /** Source of dot settings: a color-map fill or a photographed engraving, with estimates identified. */
   const fromPhoto = (r) => !!r && r.source === 'photo';
-  const recipeFrom = (r) => (!fromPhoto(r) ? 'с карты цветов' : !r.photo ? 'по оценке'
-    : `${r.basis === 'estimate' ? 'оценка по фото' : 'по фото'} № ${r.photo.pair_id} (${PhotoModes.label(r.photo.kind)})`);
+  const recipeFrom = (r) => (!fromPhoto(r) ? 'from color map' : !r.photo ? 'estimated'
+    : `${r.basis === 'estimate' ? 'estimated from photo' : 'from photo'} #${r.photo.pair_id} (${PhotoModes.label(r.photo.kind)})`);
   /** Что обычно исправляет вывод: настройка и куда её двигать (``PRIOR_MOVES``). */
   const moveText = (m) => (m.setting === 'dither' ? `вид → ${PhotoModes.label(m.to)}` : `${SETTING[m.setting] || m.setting} ${m.direction === 'up' ? 'больше' : 'меньше'}`);
   const FINDING = {
