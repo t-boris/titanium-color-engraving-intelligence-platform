@@ -118,7 +118,7 @@ const named = (tree, i) => {
   const label = by ? tree.querySelectorAll('[id]').find((n) => n.getAttribute('id') === by) : null;
   return label ? label.textContent : i.getAttribute('aria-label');
 };
-const labelled = (tree, label) => input(tree, (i) => (i.getAttribute('aria-label') === label || named(tree, i) === label.replace(/, мм$/, '')) && i.getAttribute('type') !== 'range');
+const labelled = (tree, label) => input(tree, (i) => (i.getAttribute('aria-label') === label || named(tree, i) === label.replace(/, (?:мм|mm)$/, '')) && i.getAttribute('type') !== 'range');
 const button = (tree, text) => tree.querySelectorAll('button').find((b) => b.textContent === text);
 const shown = (tree) => { const img = tree.querySelectorAll('img').find((i) => (i.className || '').includes('pp-image')); return img ? img.getAttribute('src') : null; };
 const saves = () => requests.filter((r) => r.path.endsWith('/settings')).map((r) => r.body);
@@ -243,14 +243,14 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
     out = run(tmp_path, {}, """
   out.cards = tree.querySelectorAll('article.vw-work-card').map((c) => c.textContent);
   out.thumb = tree.querySelector('a.vw-thumb').children[0].getAttribute('src');
-  await button(tree, 'Новая работа').dispatch('click'); await settle();
+  await button(tree, 'New work').dispatch('click'); await settle();
   let box = dialog();
   out.first = {title: box.querySelector('h3').textContent, buttons: box.querySelectorAll('button').map((b) => b.textContent)};
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  out.name = labelled(box, 'Название работы').value;
-  labelled(box, 'Ширина на титане, мм').value = '80';
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  out.name = labelled(box, 'Work name').value;
+  labelled(box, 'Width on titanium, mm').value = '80';
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   box = dialog();
   const tiles = () => box.querySelectorAll('button.ge-kind');
@@ -264,9 +264,9 @@ def test_the_list_shows_each_work_and_a_new_work_is_made_in_two_steps_the_pictur
   out.deleted = requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
 """, work={"id": 9})
     card = out["cards"][0]
-    assert "Портрет" in card and "60 × 30 мм" in card and "Min 12 % · Max 28 %" in card and "100 mm/s" in card
+    assert "Портрет" in card and "60 × 30 mm" in card and "Min 12 % · Max 28 %" in card and "100 mm/s" in card
     assert out["thumb"] == "/api/photo-works/9/thumb.png?v=2026-10-21T10%3A05%3A00"
-    assert out["first"] == {"title": "Новая работа · шаг 1 из 2: картинка", "buttons": ["×", "Отмена", "Дальше →"]}
+    assert out["first"] == {"title": "New work · step 1 of 2: image", "buttons": ["×", "Cancel", "Next →"]}
     assert out["name"] == "moto"                                              # the name follows the picture until the operator types one
     assert out["sent"] == [{"picture": "moto.jpg", "name": "moto", "width_mm": "80"}]   # no scale: the best measured one is taken
     second = out["second"]
@@ -283,23 +283,23 @@ def test_back_from_which_kind_returns_to_the_picture_as_it_was_and_leaving_the_s
     out = run(tmp_path, {}, """
   const posts = () => requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').length;
   const deleted = () => requests.filter((r) => r.method === 'DELETE').map((r) => r.path);
-  await button(tree, 'Новая работа').dispatch('click'); await settle();
+  await button(tree, 'New work').dispatch('click'); await settle();
   let box = dialog();
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  labelled(box, 'Название работы').value = 'Мото';
-  labelled(box, 'Ширина на титане, мм').value = '80';
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  labelled(box, 'Work name').value = 'Мото';
+  labelled(box, 'Width on titanium, mm').value = '80';
+  await button(box, 'Next →').dispatch('click'); await settle();
   await button(dialog(), '← Back').dispatch('click'); await settle();
   box = dialog();
-  out.back = {title: box.querySelector('h3').textContent, name: labelled(box, 'Название работы').value, width: labelled(box, 'Ширина на титане, мм').value,
+  out.back = {title: box.querySelector('h3').textContent, name: labelled(box, 'Work name').value, width: labelled(box, 'Width on titanium, mm').value,
               file: box.querySelector('.file-name').textContent, deleted: deleted(), went: [...ctx.__went]};
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.again = {title: dialog().querySelector('h3').textContent, posts: posts()};
   await press({key: 'Escape'}); await settle();
   out.escaped = {open: !!dialog(), deleted: deleted(), went: ctx.__went, saved: saves()};
 """, work={"id": 9})
-    assert out["back"] == {"title": "Новая работа · шаг 1 из 2: картинка", "name": "Мото", "width": "80", "file": "moto.jpg · 4 KB",
+    assert out["back"] == {"title": "New work · step 1 of 2: image", "name": "Мото", "width": "80", "file": "moto.jpg · 4 KB",
                            "deleted": ["/api/plans/9"], "went": []}
     assert out["again"] == {"title": "New work · step 2 of 2: which engraving?", "posts": 2}
     assert out["escaped"] == {"open": False, "deleted": ["/api/plans/9", "/api/plans/9"], "went": [], "saved": []}
@@ -536,11 +536,11 @@ def test_the_grey_scales_page_shows_each_scale_and_makes_a_new_work_on_the_chose
   out.pressed = sizeButtons(tree).map((b) => b.getAttribute('aria-pressed'));
   await pickScale(tree, 1); await settle();
   out.second = {chosen: chosen(tree), powers: powers(tree)};
-  await button(tree, 'Новая работа на этой шкале').dispatch('click'); await settle();
+  await button(tree, 'New work on this scale').dispatch('click'); await settle();
   const box = dialog();
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'girl.png', size: 2048}]; await file.dispatch('change');
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.tiles = dialog().querySelectorAll('button.ge-kind').length;
   await button(dialog(), 'Create in “Grayscale”').dispatch('click'); await settle();

@@ -1,4 +1,4 @@
-"""«Новая работа» of photo engraving and the work screen, with the shared context (feature ux-work-creation-p0, REQ-001, REQ-002). The two-step
+"""«New work» of photo engraving and the work screen, with the shared context (feature ux-work-creation-p0, REQ-001, REQ-002). The two-step
 dialog of BUG-003 (the picture, then «Какая гравировка?») is the base and is tested in test_photo_engraving_ui.py; here only what the shared context
 adds to it: the hand-over to the creation screen when nothing is measured, the context shown and its scale used, and the work's own context line.
 The harness of that file is reused with a small server for the creation routes added in front of its own."""
@@ -52,7 +52,7 @@ def run(tmp_path, query, body, work=None, context=CONTEXT, readiness=READY, read
 
 
 OPEN_DIALOG = """
-  await button(tree, 'Новая работа').dispatch('click'); await settle();
+  await button(tree, 'New work').dispatch('click'); await settle();
   let box = dialog();
 """
 
@@ -73,7 +73,7 @@ def test_an_answer_the_form_cannot_read_never_blocks_the_dialog(tmp_path):
   out.dialog = box !== null && box.querySelector('h3').textContent;
   out.went = [...ctx.__went];
 """, readiness_error=True)
-    assert out["dialog"] == "Новая работа · шаг 1 из 2: картинка" and out["went"] == []
+    assert out["dialog"] == "New work · step 1 of 2: image" and out["went"] == []
 
 
 @node
@@ -84,13 +84,13 @@ def test_new_work_shows_the_shared_laser_lens_and_titanium_and_is_made_on_the_sc
   out.shown = box.textContent;
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.asked = requests.filter((r) => r.path === '/api/grey-scales').map((r) => r.url);
   out.second = dialog().querySelector('h3').textContent;
   out.remembered = requests.filter((r) => r.path === '/api/creation/context' && r.method === 'PUT').length;
 """, scales=scales)
-    for word in ("Работа делается на", "JPT 60", "F-Theta", "Big Plate 150", "Grade 5", "This workshop’s measurements"):
+    for word in ("Work is made on", "JPT 60", "F-Theta", "Big Plate 150", "Grade 5", "This workshop’s measurements"):
         assert word in out["shown"]
     [sent] = out["sent"]
     assert json.loads(sent["scale"])["speed"] == 100 and json.loads(sent["scale"])["device_id"] == 1      # not the first scale listed: that is another laser's
@@ -102,10 +102,10 @@ def test_new_work_shows_the_shared_laser_lens_and_titanium_and_is_made_on_the_sc
 @node
 def test_without_a_shared_choice_the_dialog_is_as_it_was_and_the_best_scale_decides(tmp_path):
     out = run(tmp_path, {}, OPEN_DIALOG + """
-  out.shown = box.textContent.includes('Работа делается на');
+  out.shown = box.textContent.includes('Work is made on');
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.sent = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => Object.keys(r.body));
 """, context={**CONTEXT, "device_id": None, "material_id": None})
     assert out["shown"] is False and out["sent"] == [["picture", "name", "width_mm"]]               # no shared choice yet: as before, the best scale decides
@@ -115,14 +115,14 @@ def test_without_a_shared_choice_the_dialog_is_as_it_was_and_the_best_scale_deci
 def test_an_opened_photo_work_writes_its_own_laser_lens_titanium_and_source_under_its_title_whatever_the_shared_choice_is(tmp_path):
     other = {**CONTEXT, "device_id": 2, "material_id": 4, "device": {"id": 2, "name": "Mopa", "title": "Mopa 30"}}
     out = run(tmp_path, {"work": "7"}, """
-  const line = tree.querySelectorAll('p').find((p) => p.getAttribute('aria-label') === 'Лазер, линза и титан этой работы');
+  const line = tree.querySelectorAll('p').find((p) => p.getAttribute('aria-label') === 'Laser, lens, and titanium for this work');
   out.line = line.textContent;
 """, context=other)
     assert out["line"] == "Laser: JPT 60 · lens: F-Theta · 174 mm · stock: Big Plate 150 · measurements: this workshop"
 
 
 CHANGE = """
-  await button(tree, 'Новая работа').dispatch('click'); await settle();
+  await button(tree, 'New work').dispatch('click'); await settle();
   const box = dialog();
   const open = box.querySelectorAll('button').find((b) => b.textContent === 'Change…');
   out.heading = box.querySelector('.work-context').textContent.slice(0, 40);
@@ -140,7 +140,7 @@ CHANGE = """
   out.stillOpen = ctx.document.body.querySelectorAll('.modal').length;
   const file = input(box, (i) => i.getAttribute('type') === 'file');
   file.files = [{name: 'moto.jpg', size: 4096}]; await file.dispatch('change');
-  await button(box, 'Дальше →').dispatch('click'); await settle();
+  await button(box, 'Next →').dispatch('click'); await settle();
   out.posts = requests.filter((r) => r.path === '/api/photo-works' && r.method === 'POST').map((r) => r.body);
   out.second = dialog().querySelector('h3').textContent;
   out.toast = ctx.document.body.querySelector('.toasts') ? ctx.document.body.querySelector('.toasts').textContent : '';
@@ -153,7 +153,7 @@ def test_the_dialog_of_new_work_changes_the_shared_choice_by_the_creation_dialog
     scales = [scale(100, [2, 25])]
     scales[0]["mode"] = {**scales[0]["mode"], "material_id": 4}
     out = run(tmp_path, {}, CHANGE, scales=scales)
-    assert out["heading"].startswith("Работа делается на") and out["nested"] == ["New work context", False]       # the source is chosen below in this dialog
+    assert out["heading"].startswith("Work is made on") and out["nested"] == ["New work context", False]       # the source is chosen below in this dialog
     assert out["warned"] == [True, 0]                                                                          # read before «Apply»: nothing is saved yet
     assert out["put"] == [{"device_id": 1, "lens_id": 2, "material_id": 4, "source": None}] and "Sheet" in out["shown"] and out["stillOpen"] == 1
     [sent] = out["posts"]
@@ -164,8 +164,8 @@ def test_the_dialog_of_new_work_changes_the_shared_choice_by_the_creation_dialog
 @node
 def test_a_choice_changed_to_a_setup_without_a_measured_scale_is_told_and_no_work_is_made_on_another_laser_scale(tmp_path):
     out = run(tmp_path, {}, CHANGE)                                                # the scales of the workshop are measured on titanium 3 only
-    assert out["posts"] == [] and out["second"] == "Новая работа · шаг 1 из 2: картинка"
-    assert "нет измеренной шкалы серого" in out["formError"] and "нет измеренной шкалы серого" not in out["toast"]
+    assert out["posts"] == [] and out["second"] == "New work · step 1 of 2: image"
+    assert "No grayscale scale is measured" in out["formError"] and "No grayscale scale is measured" not in out["toast"]
 
 
 def test_the_dialog_of_photo_engraving_and_the_creation_screen_ask_which_kind_of_engraving_through_one_function():

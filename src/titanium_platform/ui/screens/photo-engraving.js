@@ -324,21 +324,18 @@
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
 
-  // ---- список работ, новая работа, шкалы серого ----------------------------------------------------------------------------------------
+  // ---- work list, new work, grayscale scales ----------------------------------------------------------------------------------------
 
-  /** «Новая работа» in two steps of one dialog. Step 1: the picture, the name and the width on titanium; «Дальше» makes the work on ``scale``
-      (from the scales page) or the best measured scale, Min and Max its measured span. Step 2: «Какая гравировка?» with the picture in each
-      kind, grayscale chosen; a click on a tile chooses its kind and «Создать» keeps the work in it and opens the work. Leaving step 2 any
-      other way («Назад», ×, Escape, a click outside) deletes the work step 1 made; «Назад» returns to step 1 with its fields as they were. */
+  /** Create a photo work in two steps and discard it if the mode choice is canceled. */
   async function newWork(scale) {
     // ux-work-creation-p0: with nothing measured to make a work on, the creation screen says what is missing and offers the starter test
     if (!scale && await App.handOverToCreation('photo')) return;
     const begun = scale ? {context: null} : await App.contextStart({});       // the laser, lens and titanium new work starts from; null when it cannot be read
-    const fileIn = h('input', {type: 'file', accept: PICTURES, 'aria-label': 'Картинка'});
-    const name = h('input', {autocomplete: 'off', 'aria-label': 'Название работы', placeholder: 'по имени файла'});
+    const fileIn = h('input', {type: 'file', accept: PICTURES, 'aria-label': 'Image'});
+    const name = h('input', {autocomplete: 'off', 'aria-label': 'Work name', placeholder: 'from file name'});
     // the width is read strictly with the server's own rule; a wrong one is marked beside its box and stays as typed (ux-save-feedback-p0, REQ-003)
     const picture = Forms.create();
-    const widthField = picture.add('width_mm', 'Ширина на титане', Forms.numberInput(Forms.QUANTITIES.pictureWidth, {value: '50'}), {quantity: 'pictureWidth', required: true});
+    const widthField = picture.add('width_mm', 'Width on titanium', Forms.numberInput(Forms.QUANTITIES.pictureWidth, {value: '50'}), {quantity: 'pictureWidth', required: true});
     fileIn.addEventListener('change', () => {
       const file = fileIn.files && fileIn.files[0];
       if (file && !name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '');
@@ -347,7 +344,7 @@
     // never chosen for the operator. With a release the own laser and lens the work is engraved with are asked, and the release's scale chosen.
     const source = LabSource.picker('photo', {onChange: switchSource});
     const own = h('div', {class: 'stack', hidden: true});
-    const scaleSelect = h('select', {'aria-label': 'Шкала выпуска'});
+    const scaleSelect = h('select', {'aria-label': 'Release scale'});
     let pick = null, releaseScales = [];
     async function switchSource(src) {
       own.hidden = !src;
@@ -357,8 +354,8 @@
       try {
         if (!pick) {
           pick = App.laserLensPicker(await App.hardwareLists());
-          fill(own, h('div', {class: 'grid g2'}, field('Свой лазер', pick.laser, 'на нём гравируется работа'), field('Своя линза', pick.lens),
-            field('Шкала выпуска', scaleSelect, 'первая — лучшая измеренная')));
+          fill(own, h('div', {class: 'grid g2'}, field('Your laser', pick.laser, 'the work is engraved on this laser'), field('Your lens', pick.lens),
+            field('Release scale', scaleSelect, 'the first is the best measured scale')));
         }
         const asked = JSON.stringify(src);
         const offered = await post('/labs/scales', src);
@@ -366,25 +363,25 @@
         releaseScales = offered.scales || [];
         fill(scaleSelect, releaseScales.map((sc, i) => h('option', {value: String(i)}, settingsText(sc.mode, sc.dpi) + (sc.span ? ` · ${value(sc.span[0], 1)}–${value(sc.span[1], 1)} %` : ''))));
         scaleSelect.disabled = !releaseScales.length;
-        if (!releaseScales.length) fill(scaleSelect, h('option', {value: ''}, 'выпуск не измерил шкал серого с этой установкой'));
+        if (!releaseScales.length) fill(scaleSelect, h('option', {value: ''}, 'the release has no grayscale scales measured for this setup'));
       } catch (e) { fail(e); }
     }
     // the work is made on the best scale of the shared laser, lens and titanium (REQ-001): they are shown here and a laboratory release below replaces them
-    // «Изменить…» opens the dialog of the creation screen (what the change makes unavailable is shown before «Применить»); the source is chosen below
+    // “Change…” opens the dialog of the creation screen (what the change makes unavailable is shown before “Apply”); the source is chosen below
     const sharedStrip = begun.context && begun.context.device_id != null && begun.context.material_id != null
-      ? WorkContext.strip(begun.context, {heading: 'Работа делается на', source: false, onChange: (saved) => { begun.context = saved; }}) : null;
+      ? WorkContext.strip(begun.context, {heading: 'Work is made on', source: false, onChange: (saved) => { begun.context = saved; }}) : null;
     const shared = sharedStrip ? sharedStrip.el : null;
-    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Выбрать картинку'), field('Название', name), widthField, shared, source.el, own,
-      h('p', {class: 'small muted'}, (scale ? `Шкала: ${settingsText(scale)}. Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.`
-        : 'Шкала — лучшая из измеренных, Min и Max — её измеренный диапазон; шкалу, Min, Max, ширину и подбор серых можно поменять в работе.')
-        + ' Шаг 2 — какая гравировка: ваша картинка в каждом виде.'), picture.error);
-    const pictureStep = () => modal('Новая работа · шаг 1 из 2: картинка', fields, [
-      {label: 'Отмена', run: (m) => m.close()},
-      {label: 'Дальше →', cls: 'primary', run: async (m) => {
+    const fields = h('div', {class: 'stack'}, App.filePick(fileIn, 'Choose image'), field('Name', name), widthField, shared, source.el, own,
+      h('p', {class: 'small muted'}, (scale ? `Scale: ${settingsText(scale)}. Min and Max use its measured range; the scale, Min, Max, width, and grayscale matching can be changed in the work.`
+        : 'The scale is the best measured one, and Min and Max use its measured range; the scale, Min, Max, width, and grayscale matching can be changed in the work.')
+        + ' Step 2 chooses an engraving mode and shows your image in each one.'), picture.error);
+    const pictureStep = () => modal('New work · step 1 of 2: image', fields, [
+      {label: 'Cancel', run: (m) => m.close()},
+      {label: 'Next →', cls: 'primary', run: async (m) => {
         const values = picture.collect();
         if (!values) return;                       // the wrong box is marked beside itself; the dialog stays with everything typed
         const file = fileIn.files && fileIn.files[0];
-        if (!file) { picture.fail(new Error('Выберите картинку (PNG, JPEG, TIFF)')); return; }
+        if (!file) { picture.fail(new Error('Choose an image (PNG, JPEG, TIFF)')); return; }
         let made, src;
         try {
           const fd = new FormData();
@@ -400,7 +397,7 @@
           else if (shared) {
             // the work is made on a scale of the laser, lens and titanium shown above, never silently on another laser's
             const own = await App.contextScale(begun.context, values.width_mm);
-            if (!own) throw new Error('Для выбранных лазера, линзы и титана нет измеренной шкалы серого: выберите другие кнопкой «Изменить…» или добавьте тест в мастере создания работы');
+            if (!own) throw new Error('No grayscale scale is measured for the selected laser, lens, and titanium. Choose another setup with Change… or add a test in the work creation wizard.');
             fd.append('scale', JSON.stringify(own));
           }
           made = await form('/photo-works', fd);
@@ -414,86 +411,86 @@
     pictureStep();
   }
 
-  const plateButton = (devices, cls) => btn('Пластина «Шкалы серого»', () => PlateDialog.open(devices, null, null, {type: 'grey_scales'}), cls,
+  const plateButton = (devices, cls) => btn('Grayscale scales plate', () => PlateDialog.open(devices, null, null, {type: 'grey_scales'}), cls,
     !devices.some((d) => d.lens));
 
   function workCard(w) {
     const open = () => go('/photo-engraving?work=' + w.id);
-    const copy = btn('Сделать копию', async (ev) => {
+    const copy = btn('Make a copy', async (ev) => {
       const self = ev.currentTarget;
       self.disabled = true;
-      try { const made = await post(`/photo-works/${w.id}/copy`, {}); toast('Копия создана и открыта: старая работа осталась как была', 'ok'); go('/photo-engraving?work=' + made.id); }
+      try { const made = await post(`/photo-works/${w.id}/copy`, {}); toast('Copy created and opened; the original work remains unchanged', 'ok'); go('/photo-engraving?work=' + made.id); }
       catch (e) { fail(e); self.disabled = false; }
     }, 'btn-small');
-    const remove = btn('Удалить', () => confirmBox(`Удалить работу «${w.name}»?`,
-      'Исчезнут картинка и настройки работы; вернуть работу будет нельзя. Чтобы сохранить её, сначала нажмите «Сделать копию».',
-      'Удалить', async () => { await del('/plans/' + w.id); toast('Работа удалена', 'ok'); App.render(); }), 'danger btn-small');
-    const thumb = h('a', {class: 'vw-thumb', href: '#/photo-engraving?work=' + w.id, 'aria-label': 'Открыть работу ' + w.name},
+    const remove = btn('Delete', () => confirmBox(`Delete work “${w.name}”?`,
+      'The work image and settings will be deleted and cannot be restored. To keep them, select Make a copy first.',
+      'Delete', async () => { await del('/plans/' + w.id); toast('Work deleted', 'ok'); App.render(); }), 'danger btn-small');
+    const thumb = h('a', {class: 'vw-thumb', href: '#/photo-engraving?work=' + w.id, 'aria-label': 'Open work ' + w.name},
       h('img', {src: `/api/photo-works/${w.id}/thumb.png?v=${encodeURIComponent(w.updated_at)}`, alt: '', loading: 'lazy'}));
     const title = h('h3', {}, w.name);
-    const pencil = VectorWorkspace.renameButton(w.id, w.name, (stored) => { w.name = stored; fill(title, stored); thumb.setAttribute('aria-label', 'Открыть работу ' + stored); }, '/photo-works');
+    const pencil = VectorWorkspace.renameButton(w.id, w.name, (stored) => { w.name = stored; fill(title, stored); thumb.setAttribute('aria-label', 'Open work ' + stored); }, '/photo-works');
     return h('article', {class: 'card vw-work-card'}, thumb,
       h('div', {class: 'stack vw-work-info'}, h('div', {class: 'vw-name-row'}, title, pencil),
-        h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} мм · картинка ${w.image_size[0]} × ${w.image_size[1]} пикс.`),
+        h('p', {class: 'small'}, `${value(w.width_mm, 1)} × ${value(w.height_mm, 1)} mm · image ${w.image_size[0]} × ${w.image_size[1]} px`),
         h('p', {class: 'small'}, settingsText(firedSettings(w), w.dpi)),
         dotted(w) ? h('p', {class: 'small'}, `${materialLabel(w.material)} · ${kindName(w.kind)} · `
-          + (fromMap(w) ? `точки ${value(w.dot_recipe.settings.power, 1)} % ${PhotoQuality.recipeFrom(w.dot_recipe)}` : `точки ${value(w.dot_power, 1)} % (оценка по шкале)`))
-          : h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · серые подобраны под цвета: ${w.colour_choice === 'nearest' ? 'ближайший цвет' : w.colour_choice === 'objects' ? 'раскраска по объектам' : 'рисунок сохранён'}` : ''}`
-            + (w.rules && w.rules.length ? ` · правил для частей: ${w.rules.length}` : '')),
-        h('p', {class: 'small'}, `Гравировка ≈ ${duration(w.time.seconds)}`),
-        h('p', {class: 'small muted'}, `изменена ${when(w.updated_at)}`),
-        h('div', {class: 'row'}, btn('Открыть', open, 'primary btn-small'), copy, remove)));
+          + (fromMap(w) ? `dots ${value(w.dot_recipe.settings.power, 1)} % ${PhotoQuality.recipeFrom(w.dot_recipe)}` : `dots ${value(w.dot_power, 1)} % (estimate from scale)`))
+          : h('p', {class: 'small'}, `${materialLabel(w.material)} · Min ${value(w.min_power, 1)} % · Max ${value(w.max_power, 1)} %${w.by_colour ? ` · grayscale matched to colors: ${w.colour_choice === 'nearest' ? 'nearest color' : w.colour_choice === 'objects' ? 'color by object' : 'image preserved'}` : ''}`
+            + (w.rules && w.rules.length ? ` · part rules: ${w.rules.length}` : '')),
+        h('p', {class: 'small'}, `Engraving ≈ ${duration(w.time.seconds)}`),
+        h('p', {class: 'small muted'}, `updated ${when(w.updated_at)}`),
+        h('div', {class: 'row'}, btn('Open', open, 'primary btn-small'), copy, remove)));
   }
 
-  /** «Мои работы»: сохранённые работы и «Новая работа»; оттуда же — шкалы серого и пластина для их измерения. */
+  /** List saved works and offer new work, grayscale scales, and the test plate. */
   async function listScreen() {
     const [works, devices] = await Promise.all([get('/photo-works'), get('/devices')]);
-    const create = () => btn('Новая работа', () => newWork(null), 'primary');
+    const create = () => btn('New work', () => newWork(null), 'primary');
     return h('div', {class: 'stack'},
-      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Фотогравировка'),
-        h('p', {class: 'sub'}, 'Мои работы: картинка в режиме градаций серого на измеренной шкале — какой она выйдет на титане, сколько гравируется, файл LightBurn. '
-          + 'Хранятся на этом компьютере. Откройте работу, чтобы продолжить, или сделайте копию, чтобы переделать, не потеряв прежнюю.')),
-        h('span', {class: 'spacer'}), h('a', {class: 'btn', href: '#/photo-engraving?scales=1'}, 'Шкалы серого'), plateButton(devices, ''), create()),
-      h('p', {class: 'small muted'}, 'Другие виды: ', link('/photo-preview', 'прогноз по файлу LightBurn'), ' · ', link('/photo', 'непрерывная полосами'), '.'),
+      h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Photo engraving'),
+        h('p', {class: 'sub'}, 'My works: preview a grayscale image on a measured scale, estimate engraving time, and create a LightBurn file. '
+          + 'Works are stored on this computer. Open one to continue or make a copy to revise it while keeping the original.')),
+        h('span', {class: 'spacer'}), h('a', {class: 'btn', href: '#/photo-engraving?scales=1'}, 'Grayscale scales'), plateButton(devices, ''), create()),
+      h('p', {class: 'small muted'}, 'Other views: ', link('/photo-preview', 'LightBurn file prediction'), ' · ', link('/photo', 'continuous strips'), '.'),
       works.length ? h('div', {class: 'vw-works'}, works.map(workCard))
-        : h('div', {class: 'card empty'}, h('h3', {}, 'Работ пока нет'),
-          h('p', {class: 'muted'}, 'Выберите картинку, её ширину на титане и название: работа покажет картинку рядом с прогнозом на лучшей измеренной шкале. '
-            + 'Если шкал ещё нет, сначала выгравируйте пластину «Шкалы серого» и добавьте её фотографию в «Эксперименты».'), create()));
+        : h('div', {class: 'card empty'}, h('h3', {}, 'No works yet'),
+          h('p', {class: 'muted'}, 'Choose an image, its width on titanium, and a name. The work shows the image beside a prediction using the best measured scale. '
+            + 'If there are no scales yet, engrave a Grayscale scales plate and add its photograph in Experiments.'), create()));
   }
 
   function kindsBlock() {
     const rows = Object.entries(PhotoModes.MODES).map(([key, m]) => h('li', {class: 'ge-entry'},
       h('div', {class: 'ge-entry-head'}, h('strong', {}, m.label),
-        key === 'grayscale' ? pill('здесь: по шкалам «серый → цвет»', 'ok') : m.family === 'depth' ? h('span', {class: 'muted small'}, PhotoModes.PREDICT[m.predict])
-          : pill('в работе — оценка по шкале: точка цвета шкалы при своей мощности', 'warn')),
-      h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Серый задаёт: '), PhotoModes.FAMILY[m.family]),
-      h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Важно в настройках: '), m.settings)));
-    return h('div', {class: 'stack'}, h('p', {class: 'small'}, ABOUT), h('h4', {}, 'Виды фотогравировки LightBurn и что здесь предсказывается'),
+        key === 'grayscale' ? pill('here: grayscale-to-color scales', 'ok') : m.family === 'depth' ? h('span', {class: 'muted small'}, PhotoModes.PREDICT[m.predict])
+          : pill('work estimate from the scale: a dot uses the scale color at its power', 'warn')),
+      h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Gray controls: '), PhotoModes.FAMILY[m.family]),
+      h('div', {class: 'small'}, h('span', {class: 'muted'}, 'Important settings: '), m.settings)));
+    return h('div', {class: 'stack'}, h('p', {class: 'small'}, ABOUT), h('h4', {}, 'LightBurn photo engraving modes and what is predicted here'),
       h('ul', {class: 'ge-entries'}, rows),
-      h('p', {class: 'small muted'}, 'Шаг строк: в градациях серого он один на всю картинку (dpi = 25,4 / шаг). Слишком частые строки, как у цветных заливок, перегревают металл, '
-        + 'и серый перестаёт давать разные цвета; пластина «Шкалы серого» по умолчанию сравнивает 2000, 1500, 1200 и 1000 dpi (0,0127–0,0254 мм).'));
+      h('p', {class: 'small muted'}, 'Line interval is uniform across a grayscale image (dpi = 25.4 / interval). Very closely spaced lines, as in color fills, can overheat the metal '
+        + 'and prevent grays from producing distinct colors. The Grayscale scales plate compares 2000, 1500, 1200, and 1000 dpi by default (0.0127–0.0254 mm).'));
   }
 
-  const ABOUT = 'Режим градаций серого: все настройки постоянны, кроме мощности. Серый картинки задаёт мощность от Min до Max, а мощность на титане даёт цвет — '
-    + 'поэтому одна серая картинка выходит несколькими цветами. Шкала показывает, какой серый каким цветом выходит при ваших настройках, по вашим измерениям.';
+  const ABOUT = 'In grayscale mode, all settings except power are fixed. Image gray sets power from Min to Max, and power produces color on titanium, '
+    + 'so one grayscale image produces several colors. The scale shows the color for each gray at your settings, using your measurements.';
 
-  /** «Шкалы серого» на один экран: шкалы слева, Min, Max, полоса и таблица серых посередине, подтверждение, точки и виды справа. */
+  /** Grayscale scales on one screen, with scales on the left, power and gray table in the center, and evidence tabs on the right. */
   async function scalesScreen(wanted) {
     const [{scales}, devices] = await Promise.all([get('/grey-scales'), get('/devices')]);
     let current = null, detail = null, selectedDetail = null;
-    const create = btn('Новая работа на этой шкале', () => newWork(current.mode), 'primary btn-small');
-    const head = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← Мои работы'),
-      h('div', {class: 'ge-title'}, h('h2', {}, 'Шкалы серого'), h('p', {class: 'sub'}, ABOUT)), plateButton(devices, 'btn-small'),
+    const create = btn('New work on this scale', () => newWork(current.mode), 'primary btn-small');
+    const head = h('div', {class: 'os-head'}, h('a', {class: 'btn btn-small', href: '#/photo-engraving'}, '← My works'),
+      h('div', {class: 'ge-title'}, h('h2', {}, 'Grayscale scales'), h('p', {class: 'sub'}, ABOUT)), plateButton(devices, 'btn-small'),
       scales.length ? create : null);
     if (!scales.length) {
       return h('div', {class: 'os ge'}, head, h('div', {class: 'os-body ge-empty'},
-        h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Шкал пока нет')),
-          h('div', {class: 'os-scroll stack'}, h('p', {}, 'Шкала появляется, когда принята фотография гравировки в режиме градаций серого: пластины «Шкалы серого» '
-            + 'или вашей фотогравировки (слой-изображение в файле LightBurn).'), kindsBlock()))));
+        h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'No scales yet')),
+          h('div', {class: 'os-scroll stack'}, h('p', {}, 'A scale appears when a photograph of a grayscale engraving is accepted: either a Grayscale scales plate '
+            + 'or your photo engraving (an image layer in a LightBurn file).'), kindsBlock()))));
     }
     const slots = newSlots();
-    const tabs = App.tabs([['confirm', 'Подтверждение', slots.confirm], ['points', 'Точки', slots.points], ['kinds', 'Виды', kindsBlock()]],
-      {initial: 'confirm', remember: 'ge.tab', label: 'Шкала', prefix: 'ge-tab'});
+    const tabs = App.tabs([['confirm', 'Confirmation', slots.confirm], ['points', 'Dots', slots.points], ['kinds', 'Modes', kindsBlock()]],
+      {initial: 'confirm', remember: 'ge.tab', label: 'Scale', prefix: 'ge-tab'});
     current = scales.find((sc) => modeQuery(sc.mode) === wanted) || scales[0];
     const list = scaleList('ge.scales', scales, () => current, (sc) => choose(sc),
       (sc) => sc === current && selectedDetail ? {...sc, ...selectedDetail} : sc);
@@ -506,8 +503,8 @@
     };
     choose(current);
     return h('div', {class: 'os ge'}, head, h('div', {class: 'os-body ge-body'},
-      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Измеренные шкалы (${scales.length})`)), h('div', {class: 'os-scroll'}, list.el)),
-      h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Серый → цвет'), slots.title),
+      h('div', {class: 'os-col'}, h('div', {class: 'os-col-head'}, h('h3', {}, `Measured scales (${scales.length})`)), h('div', {class: 'os-scroll'}, list.el)),
+      h('div', {class: 'os-col ge-centre'}, h('div', {class: 'os-col-head'}, h('h3', {}, 'Gray → color'), slots.title),
         h('div', {class: 'ge-work'}, slots.powers, slots.error, slots.bar, h('div', {class: 'ge-table'}, slots.scale))),
       h('div', {class: 'os-col ge-right'}, tabs.list, h('div', {class: 'os-scroll'}, tabs.panels))));
   }
