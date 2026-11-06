@@ -65,7 +65,7 @@ def test_the_panel_offers_every_field_of_an_inscription_within_the_servers_limit
         assert f"flag('" in LETTERING and f"', '{flag}')" in LETTERING, flag
     for op in lettering.OPS:
         assert f"op: '{op}'" in LETTERING, op
-    assert "colourPart('Цвет букв', 'entry_id', false)" in LETTERING and "colourPart('Цвет подложки', 'backing_entry_id', true)" in LETTERING
+    assert "colourPart('Letter color', 'entry_id', false)" in LETTERING and "colourPart('Backing color', 'backing_entry_id', true)" in LETTERING
     assert "pick: tools.pick ? (title, lab, entryId, onPick) => tools.pick(j, title, lab, entryId, onPick) : null" in EDITOR
 
 
@@ -162,14 +162,14 @@ def test_inscription_primary_fields_and_collapsed_groups_preserve_controls(tmp_p
   const groups = pane.querySelectorAll('details').filter((d) => d.classList.contains('lt-group'));
   out.groups = groups.map((d) => [d.querySelector('summary').textContent, !!d.open]);
   const parentGroup = (node) => { for (let n = node; n && n !== pane; n = n.parentNode) if (n.classList.contains('lt-group')) return n.querySelector('summary').textContent; return null; };
-  out.primary = [pane.querySelector('textarea'), field('Высота букв, мм'), group('Цвет букв')].map(parentGroup);
-  out.placement = [field('x, мм'), field('y, мм'), field('Поворот, °')].map(parentGroup);
-  out.shape = [field('Ширина, %'), group('Расположение')].map(parentGroup);
-  out.inlay = [field('Зазор вокруг букв, мм'), group('Подложка')].map(parentGroup);
+  out.primary = [pane.querySelector('textarea'), field('Letter height, mm'), group('Letter color')].map(parentGroup);
+  out.placement = [field('x, mm'), field('y, mm'), field('Rotation, °')].map(parentGroup);
+  out.shape = [field('Width, %'), group('Layout')].map(parentGroup);
+  out.inlay = [field('Gap around letters, mm'), group('Backing')].map(parentGroup);
 """)
-    assert out["groups"] == [["Размещение", False], ["Форма текста", False], ["Врезка", False]]
+    assert out["groups"] == [["Position", False], ["Text shape", False], ["Cutout", False]]
     assert out["primary"] == [None, None, None]
-    assert out["placement"] == ["Размещение"] * 3 and out["shape"] == ["Форма текста"] * 2 and out["inlay"] == ["Врезка"] * 2
+    assert out["placement"] == ["Position"] * 3 and out["shape"] == ["Text shape"] * 2 and out["inlay"] == ["Cutout"] * 2
 
 
 @node
@@ -179,23 +179,23 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
   out.order = svg().childNodes.filter((c) => c.nodeType === 1).slice(-2).map((c) => c.getAttribute('class'));
   out.drawn = drawnText('t1').childNodes.map((p) => [p.getAttribute('class'), p.getAttribute('fill'), p.getAttribute('fill-rule')]);
   out.items = [0, 1].map((n) => item(n).textContent);
-  await byText(pane, 'button', 'Добавить надпись').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Add inscription').dispatch('click'); await tick();
   await item(0).dispatch('click'); await tick();
   out.picked = item(0).getAttribute('aria-pressed');
   out.marks = svg().querySelectorAll('g').find((g) => g.classList.contains('lt-marks')).querySelectorAll('polygon, rect, circle').map((m) => m.getAttribute('class') + ':' + (m.getAttribute('data-handle') || ''));
-  out.height = field('Высота букв, мм').value;
-  field('Высота букв, мм').value = '12'; await field('Высота букв, мм').dispatch('change'); await tick();
+  out.height = field('Letter height, mm').value;
+  field('Letter height, mm').value = '12'; await field('Letter height, mm').dispatch('change'); await tick();
   await wait(5);
-  out.colour = group('Цвет букв').querySelectorAll('span').filter((x) => x.getAttribute('data-entry')).map((x) => x.getAttribute('data-entry'));
-  out.backingButtons = group('Цвет подложки').querySelectorAll('button').map((b) => b.textContent || b.getAttribute('aria-label'));
-  await byText(group('Цвет букв'), 'button', 'Выбрать…').dispatch('click'); await tick(); await tick();
+  out.colour = group('Letter color').querySelectorAll('span').filter((x) => x.getAttribute('data-entry')).map((x) => x.getAttribute('data-entry'));
+  out.backingButtons = group('Backing color').querySelectorAll('button').map((b) => b.textContent || b.getAttribute('aria-label'));
+  await byText(group('Letter color'), 'button', 'Choose…').dispatch('click'); await tick(); await tick();
   const dialog = ctx.document.body.querySelector('.modal');
   await dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === 'e12').dispatch('click');
   await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
-  await byText(group('Расположение'), 'button', 'Circle').dispatch('click'); await tick();
+  await byText(group('Layout'), 'button', 'Circle').dispatch('click'); await tick();
   out.hidden = tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for')).map((d) => d.getAttribute('data-for') + ':' + d.hidden);
-  await byText(pane, 'button', 'Копия').dispatch('click'); await tick();
-  await byText(pane, 'button', 'Удалить').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Copy').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Remove').dispatch('click'); await tick();
   const ta = pane.querySelectorAll('textarea')[0];
   ta.value = 'HOH\\nвторая'; await ta.dispatch('change'); await tick();
   out.ops = textOps();
@@ -203,11 +203,11 @@ def test_the_tab_draws_the_inscriptions_cut_into_the_picture_and_each_change_is_
     assert "show-texts" in out["svgClass"]
     assert out["order"] == ["lt-layer", "vw-outlines"]                       # over the regions, under the outlines that take no pointer
     assert out["drawn"] == [["lt-cut", "#e6e6e6", "evenodd"], ["lt-letters", "rgb(60,70,200)", "evenodd"]]   # the gap is clean titanium
-    assert out["items"][0].startswith("№ 1HOH") and "Arial" in out["items"][0] and "не выгравировать" in out["items"][1]
+    assert out["items"][0].startswith("#1HOH") and "Arial" in out["items"][0] and "cannot be engraved" in out["items"][1]
     assert out["picked"] == "true" and out["height"] == "4"
     assert out["marks"] == ["lt-frame:", "lt-handle:rotate", "lt-handle:size"]
-    assert out["colour"] == ["e14"]                                                                  # the colour chosen, then «Выбрать…»
-    assert out["backingButtons"] == ["Чистый титан", "Выбрать…"]
+    assert out["colour"] == ["e14"]                                                                  # the colour chosen, then «Choose…»
+    assert out["backingButtons"] == ["Clean titanium", "Choose…"]
     assert out["hidden"] == ["arc:true", "circle:true", "circle:true", "path:true", "curved:true", "backed:true", "backed:true"]
     assert out["ops"] == [{"op": "text_add", "text": {}}, {"op": "text_set", "id": "t1", "changes": {"height_mm": 12}},
                           {"op": "text_set", "id": "t1", "changes": {"entry_id": "e12"}}, {"op": "text_set", "id": "t1", "changes": {"layout": "circle"}},
@@ -222,7 +222,7 @@ def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_ba
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   await item(0).dispatch('click'); await tick(); await wait(5);
   const choose = async (label, entry) => {
-    await byText(group(label), 'button', 'Выбрать…').dispatch('click'); await tick(); await tick();
+    await byText(group(label), 'button', 'Choose…').dispatch('click'); await tick(); await tick();
     const dialog = ctx.document.body.querySelector('.modal');
     const swatch = (id) => dialog.querySelectorAll('button').find((b) => b.getAttribute('data-entry') === id);
     const seen = {text: dialog.textContent, letters: swatch('e14').getAttribute('title'), now: dialog.textContent.includes('Сейчас:')};
@@ -230,13 +230,13 @@ def test_the_colours_of_an_inscription_are_chosen_in_the_editors_window_and_a_ba
     await byText(dialog, 'button', 'Применить').dispatch('click'); await tick(); await tick();
     return seen;
   };
-  out.letters = await choose('Цвет букв', 'e13');
-  out.backing = await choose('Цвет подложки', 'e11');
-  await group('Цвет подложки').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Чистый титан').dispatch('click'); await tick();
+  out.letters = await choose('Letter color', 'e13');
+  out.backing = await choose('Backing color', 'e11');
+  await group('Backing color').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Clean titanium').dispatch('click'); await tick();
   out.ops = textOps();
 """)
-    assert "Цвет букв надписи № 1 (ΔE — до цвета букв)" in out["letters"]["text"] and out["letters"]["now"] is True
-    assert "Цвет подложки надписи № 1 (ΔE — до цвета букв)" in out["backing"]["text"] and out["backing"]["now"] is False   # clean titanium now
+    assert "Letter color for inscription #1 (ΔE to letter color)" in out["letters"]["text"] and out["letters"]["now"] is True
+    assert "Backing color for inscription #1 (ΔE to letter color)" in out["backing"]["text"] and out["backing"]["now"] is False   # clean titanium now
     assert "ΔE 0.00" in out["letters"]["letters"] and "ΔE 0.00" in out["backing"]["letters"]          # ΔE to the letters' colour (e14)
     assert "«Откуда» — из каких тестов и работ цвет известен" in out["letters"]["text"]                # the editor's window, as it is
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}},
@@ -276,24 +276,24 @@ def test_every_field_of_the_panel_sends_its_change_and_the_picture_shows_the_ans
   const tick_ = async (label) => { const f = field(label); f.checked = true; await f.dispatch('change'); await settle(); };
   const visible = () => tree.querySelectorAll('div').filter((d) => d.getAttribute('data-for') && !d.hidden).map((d) => d.getAttribute('data-for'));
   out.before = [painted(), guide(), visible()];
-  await set('Ширина, %', '150');
-  out.after = [painted(), guide(), visible(), field('Ширина, %').value];
-  for (const [label, value] of [['Интервал между буквами, мм', '0.5'], ['Между строками, %', '120'], ['Поворот, °', '30'], ['x, мм', '20'],
-    ['y, мм', '10'], ['Радиус круга, мм', '15'], ['Где на круге, °', '90'], ['Зазор вокруг букв, мм', '0.5'], ['Поле подложки, мм', '2'],
-    ['Скругление углов, мм', '1']]) await set(label, value);
-  await tick_('Внутри круга (читается против часовой)');
-  await press('Выравнивание', 'Right');
-  await press('Буквы на кривой', 'Bend along curve');
-  await press('Подложка', 'Oval');
+  await set('Width, %', '150');
+  out.after = [painted(), guide(), visible(), field('Width, %').value];
+  for (const [label, value] of [['Letter spacing, mm', '0.5'], ['Line spacing, %', '120'], ['Rotation, °', '30'], ['x, mm', '20'],
+    ['y, mm', '10'], ['Circle radius, mm', '15'], ['Position on circle, °', '90'], ['Gap around letters, mm', '0.5'], ['Backing padding, mm', '2'],
+    ['Corner radius, mm', '1']]) await set(label, value);
+  await tick_('Inside circle (reads counterclockwise)');
+  await press('Alignment', 'Right');
+  await press('Letters on curve', 'Bend along curve');
+  await press('Backing', 'Oval');
   data.routes['/api/vector/7/colouring'] = data.routes['/x/arc'];
-  await press('Расположение', 'Arc');
+  await press('Layout', 'Arc');
   out.arc = visible();
-  await set('Изгиб, %', '-30');
+  await set('Bend, %', '-30');
   data.routes['/api/vector/7/colouring'] = data.routes['/x/path'];
-  await press('Расположение', 'Path');
+  await press('Layout', 'Path');
   out.path = visible();
-  await set('Место на пути, %', '25');
-  await tick_('Путь в обратную сторону');
+  await set('Position on path, %', '25');
+  await tick_('Reverse path');
   out.ops = textOps();
 """)
     assert out["before"] == [[["lt-cut", SHOWN["cut"], "#e6e6e6"], ["lt-letters", SHOWN["letters"], "rgb(60,70,200)"],
@@ -335,9 +335,9 @@ def test_the_operator_reads_why_an_inscription_blocks_the_file_and_that_one_beyo
     blocked = f"inscription 1 cannot be engraved: {gone}"
     assert out["list"] == [["alert warn small", blocked]]
     assert out["text"].count(blocked) >= 2                          # the list and export both explain the blocker
-    assert out["pills"] == [["не выгравировать"], ["не выгравировать"]]                  # each one in the list
+    assert out["pills"] == [["cannot be engraved"], ["cannot be engraved"]]                  # each one in the list
     assert out["first"] == [["alert warn small", blocked], ["alert bad", gone],
-                            ["alert warn", "Часть надписи выходит за край работы: там она обрезана."]]
+                            ["alert warn", "Part of the inscription extends beyond the work and is clipped."]]
     assert out["second"] == [["alert warn small", blocked],
                              ["alert bad", unmeasured]]
 
@@ -348,7 +348,7 @@ def test_a_new_inscription_takes_the_font_of_the_one_chosen_or_changed_last(tmp_
     routes_["/api/vector/7"]["json"]["texts"][1]["font"] = HEBREW = {"face": "g1", "family": "Noto Sans Hebrew", "style": "Regular"}
     out = run_editor(tmp_path, routes_, OPEN + """
   const added = () => textOps().filter((op) => op.op === 'text_add').map((op) => op.text);
-  const add = async () => { await byText(pane, 'button', 'Добавить надпись').dispatch('click'); await tick(); };
+  const add = async () => { await byText(pane, 'button', 'Add inscription').dispatch('click'); await tick(); };
   const escape = async () => { await ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: tree}); await tick(); };
   await add();                                                      // none chosen yet: the server takes the work's last font
   await escape();                                                   // (the answer here is the same work: the last one in it is chosen)
@@ -398,11 +398,11 @@ def test_a_path_is_drawn_with_clicks_on_the_picture_its_first_point_the_place_an
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   await item(1).dispatch('click'); await tick();
   out.points = svg().querySelectorAll('circle').filter((c) => c.getAttribute('data-handle') === 'point').map((c) => [+c.getAttribute('cx'), +c.getAttribute('cy')]);
-  await byText(pane, 'button', 'Нарисовать путь заново').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Redraw path').dispatch('click'); await tick();
   for (const [x, y] of [[25, 50], [50, 50], [75, 62.5]]) await stage.dispatch('click', {clientX: x, clientY: y});
   out.drawing = svg().querySelectorAll('polyline').find((p) => p.classList.contains('lt-drawn')).getAttribute('points');
-  await byText(pane, 'button', 'Готово').dispatch('click'); await tick();
-  await byText(pane, 'button', 'Нарисовать путь заново').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Done').dispatch('click'); await tick();
+  await byText(pane, 'button', 'Redraw path').dispatch('click'); await tick();
   await stage.dispatch('click', {clientX: 25, clientY: 50});
   await ctx.document.dispatch('keydown', {key: 'Escape', code: 'Escape', target: tree}); await tick();
   out.dropped = svg().querySelectorAll('polyline').filter((p) => p.classList.contains('lt-drawn')).length;
@@ -419,7 +419,7 @@ def test_a_path_ends_with_enter_or_a_double_click_and_is_drawn_freehand_by_a_dra
     # the stage is 100 × 100 px, the work 40 × 20 mm: 2.5 px a mm, the picture 25 px from the top
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   await item(1).dispatch('click'); await tick();
-  const again = () => byText(pane, 'button', 'Нарисовать путь заново');
+  const again = () => byText(pane, 'button', 'Redraw path');
   const line = () => svg().querySelectorAll('polyline').find((p) => p.classList.contains('lt-drawn'));
   await again().dispatch('click'); await tick();
   for (const [x, y] of [[25, 50], [50, 50]]) await stage.dispatch('click', {clientX: x, clientY: y, detail: 1});
@@ -470,14 +470,14 @@ def test_letters_crowding_on_a_bend_of_a_path_are_warned_about_by_their_line(tmp
   await item(1).dispatch('click'); await tick();
   out.alerts = pane.querySelectorAll('p').filter((p) => p.classList.contains('alert')).map((p) => p.textContent);
 """)
-    assert any("строки 1, 2" in a and "изгиб" in a for a in out["alerts"]), out["alerts"]
+    assert any("lines 1, 2" in a and "bend" in a for a in out["alerts"]), out["alerts"]
 
 
 @node
 def test_the_font_window_lists_filters_previews_downloads_and_chooses_a_face(tmp_path):
     out = run_editor(tmp_path, editor_routes(), OPEN + """
   await item(0).dispatch('click'); await tick();
-  await byText(pane, 'button', 'Шрифт: Arial Regular…').dispatch('click'); await wait(5);
+  await byText(pane, 'button', 'Font: Arial Regular…').dispatch('click'); await wait(5);
   const win = () => ctx.document.body.querySelector('.modal');
   const rows = () => win().querySelectorAll('div').filter((d) => d.classList.contains('lt-font')).map((d) => d.getAttribute('data-family'));
   const row = (family) => win().querySelectorAll('div').find((d) => d.classList.contains('lt-font') && d.getAttribute('data-family') === family);
@@ -519,7 +519,7 @@ def test_the_font_window_lists_filters_previews_downloads_and_chooses_a_face(tmp
 
 FONT_WINDOW = """
   await item(0).dispatch('click'); await tick();
-  const openFonts = async () => { await byText(pane, 'button', 'Шрифт: Arial Regular…').dispatch('click'); await wait(5); };
+  const openFonts = async () => { await byText(pane, 'button', 'Font: Arial Regular…').dispatch('click'); await wait(5); };
   const win = () => ctx.document.body.querySelector('.modal');
   const rows = () => win().querySelectorAll('div').filter((d) => d.classList.contains('lt-font')).map((d) => d.getAttribute('data-family'));
   const row = (family) => win().querySelectorAll('div').find((d) => d.classList.contains('lt-font') && d.getAttribute('data-family') === family);
@@ -747,15 +747,15 @@ def test_a_photo_work_lays_its_inscriptions_over_the_look_and_a_drag_there_moves
   await over().dispatch('pointermove', {clientX: 85, clientY: 55});
   await over().dispatch('pointerup', {clientX: 85, clientY: 55}); await settle();
   out.sent = requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body);
-  out.x = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'x, мм').value;
+  out.x = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'x, mm').value;
   await press({key: 'z', code: 'KeyZ', ctrlKey: true}); await settle();
-  out.undone = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'x, мм').value;
+  out.undone = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'x, mm').value;
 """)
     s = 100 / 122
     assert out["closed"] == "lt-over" and out["open"] == "lt-over open" and out["inStage"]
     assert out["viewBox"] == "-62 0 122 30"
     assert out["drawnHere"] == ["lt-hit", "lt-outline"]               # the look draws the inscription: the layer only takes the pointer
-    assert any(row.startswith("C02") and "надписей 1" in row for row in out["layers"])
+    assert any(row.startswith("C02") and "inscriptions 1" in row for row in out["layers"])
     (sent,) = out["sent"]
     assert sent["op"] == "text_set" and sent["id"] == "t1"
     assert sent["changes"] == {"x": pytest.approx(30 + 10 / s, abs=2e-3), "y": pytest.approx(15 + 5 / s, abs=2e-3)}
@@ -770,7 +770,7 @@ def test_a_path_on_a_photo_work_is_drawn_freehand_and_ends_with_enter(tmp_path):
   const over = () => tree.querySelectorAll('svg').find((s) => (s.getAttribute('class') || '').startsWith('lt-over'));
   await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'ge-tab-texts').dispatch('click'); await settle();
   await tree.querySelectorAll('button').find((b) => b.classList.contains('lt-item')).dispatch('click'); await settle();
-  await tree.querySelectorAll('button').find((b) => b.textContent === 'Нарисовать путь').dispatch('click'); await settle();
+  await tree.querySelectorAll('button').find((b) => b.textContent === 'Draw path').dispatch('click'); await settle();
   await over().dispatch('pointerdown', {clientX: 70, clientY: 45, button: 0});
   for (let i = 1; i <= 20; i++) await over().dispatch('pointermove', {clientX: 70 + i, clientY: 45 + (i <= 10 ? i : 20 - i)});
   await over().dispatch('pointerup', {clientX: 90, clientY: 45});
@@ -819,8 +819,8 @@ def test_a_photo_works_inscription_takes_its_colours_in_the_editors_window_over_
   await tree.querySelectorAll('button').find((b) => b.getAttribute('id') === 'ge-tab-texts').dispatch('click'); await settle();
   await tree.querySelectorAll('button').find((b) => b.classList.contains('lt-item')).dispatch('click'); await settle();
   const group = (label) => tree.querySelectorAll('div').find((d) => d.getAttribute('aria-label') === label);
-  out.letters = group('Цвет букв').querySelectorAll('button').map((b) => b.textContent);
-  await group('Цвет букв').querySelectorAll('button').find((b) => b.textContent === 'Выбрать…').dispatch('click'); await settle();
+  out.letters = group('Letter color').querySelectorAll('button').map((b) => b.textContent);
+  await group('Letter color').querySelectorAll('button').find((b) => b.textContent === 'Choose…').dispatch('click'); await settle();
   const dialog = ctx.document.body.querySelector('.modal');
   out.text = dialog.textContent;
   out.swatches = dialog.querySelectorAll('button').map((b) => b.getAttribute('data-entry')).filter(Boolean);
@@ -828,7 +828,7 @@ def test_a_photo_works_inscription_takes_its_colours_in_the_editors_window_over_
   await dialog.querySelectorAll('button').find((b) => b.textContent === 'Применить').dispatch('click'); await settle();
   out.ops = requests.filter((r) => r.path.endsWith('/texts')).map((r) => r.body);
 """)
-    assert out["letters"] == ["Выбрать…"]                                                  # no squares to click in the tab any more
-    assert "Цвет букв надписи № 1 (ΔE — до цвета букв)" in out["text"] and "«Откуда» — из каких тестов и работ цвет известен" in out["text"]
+    assert out["letters"] == ["Choose…"]                                                  # no squares to click in the tab any more
+    assert "Letter color for inscription #1 (ΔE to letter color)" in out["text"] and "«Откуда» — из каких тестов и работ цвет известен" in out["text"]
     assert sorted(set(out["swatches"])) == sorted(e["id"] for e in PALETTE)
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"entry_id": "e13"}}]

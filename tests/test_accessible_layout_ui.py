@@ -32,7 +32,7 @@ KEYS = FONT_WINDOW + """
   const focusOn = async (el) => { el.focus(); await el.dispatch('focusin'); };           // the small DOM's focus() does not tell its parents, a browser does
   const here = () => { const a = ctx.document.activeElement; return a && (a.getAttribute('data-family') || a.getAttribute('aria-label')); };
   const statusLine = () => win().querySelectorAll('p').find((p) => p.getAttribute('role') === 'status').textContent;
-  const opener = () => byText(pane, 'button', 'Шрифт: Arial Regular…');
+  const opener = () => byText(pane, 'button', 'Font: Arial Regular…');
   const openWithFocus = async () => { opener().focus(); await opener().dispatch('click'); await wait(5); };
 """
 
@@ -52,7 +52,7 @@ def test_the_font_list_has_one_tab_stop_and_the_arrow_keys_home_and_end_move_it(
   await key(ctx.document.activeElement, 'PageDown'); out.page = here();
   out.picked = picked();                                       // moving the focus chooses nothing
 """)
-    assert out["roles"] == ["Шрифты", ["option", "option", "option"]]
+    assert out["roles"] == ["Fonts", ["option", "option", "option"]]
     assert out["first"] == ["Arial:row", "Arial:star", "Arial:style"]
     assert out["down"] == ["My Hand", ["My Hand:row", "My Hand:star", "My Hand:style", "My Hand:remove"]]
     assert out["end"] == ["Noto Sans Hebrew", ["Noto Sans Hebrew:row", "Noto Sans Hebrew:star", "Noto Sans Hebrew:download"]]
@@ -72,12 +72,12 @@ def test_enter_and_space_choose_the_row_and_the_choice_is_said_in_a_status_line(
   out.space = [picked(), here(), statusLine()];
   await key(rowsOf()[2], 'x');                                 // any other key is nobody's
   out.other = picked();
-  await byText(win(), 'button', 'Выбрать').dispatch('click'); await tick();
+  await byText(win(), 'button', 'Select').dispatch('click'); await tick();
   out.ops = textOps();
 """)
     assert out["enter"][:3] == [["My Hand"], "My Hand", ["My Hand:row", "My Hand:star", "My Hand:style", "My Hand:remove"]]
-    assert out["enter"][3] == "Выбран шрифт My Hand, начертание Regular. «Выбрать» подтверждает."
-    assert out["space"] == [["Arial"], "Arial", "Выбран шрифт Arial, начертание Regular. «Выбрать» подтверждает."]
+    assert out["enter"][3] == "Selected font My Hand, style Regular. Select confirms the choice."
+    assert out["space"] == [["Arial"], "Arial", "Selected font Arial, style Regular. Select confirms the choice."]
     assert out["other"] == ["Arial"]
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"font": {"face": "f1", "family": "Arial", "style": "Regular"}}}]
 
@@ -98,14 +98,14 @@ def test_the_buttons_and_the_style_list_inside_a_row_do_not_take_the_choice(tmp_
   out.stopped.push(await press(style));                                                           // a click that opens the list is not a click on the row
   style.value = 'o0'; await style.dispatch('change');                                             // a style: this family, this face, chosen
   out.style = [picked(), here(), row('My Hand').querySelector('img').getAttribute('src'), statusLine()];
-  await byText(win(), 'button', 'Выбрать').dispatch('click'); await tick();
+  await byText(win(), 'button', 'Select').dispatch('click'); await tick();
   out.ops = textOps();
 """)
-    assert out["keys"] == [["Arial"], "My Hand: избранный"]
+    assert out["keys"] == [["Arial"], "My Hand: favorite"]
     assert out["stopped"] == [True, True]
-    assert out["star"][:3] == [["Arial"], "My Hand: избранный", "true"] and out["star"][3] == ["My Hand:row", "My Hand:star", "My Hand:style", "My Hand:remove"]
-    assert out["style"][:3] == [["My Hand"], "Начертание My Hand", "/api/fonts/preview.svg?face=o0&text=HOH&height=10"]
-    assert out["style"][3] == "Выбран шрифт My Hand, начертание Thin. «Выбрать» подтверждает."
+    assert out["star"][:3] == [["Arial"], "My Hand: favorite", "true"] and out["star"][3] == ["My Hand:row", "My Hand:star", "My Hand:style", "My Hand:remove"]
+    assert out["style"][:3] == [["My Hand"], "Style My Hand", "/api/fonts/preview.svg?face=o0&text=HOH&height=10"]
+    assert out["style"][3] == "Selected font My Hand, style Thin. Select confirms the choice."
     assert out["ops"] == [{"op": "text_set", "id": "t1", "changes": {"font": {"face": "o0", "family": "My Hand", "style": "Thin"}}}]
 
 
@@ -114,18 +114,18 @@ def test_a_search_and_a_cancel_keep_the_chosen_font_and_the_focus_goes_back_to_t
     out = run_editor(tmp_path, editor_routes(), OPEN + KEYS + """
   await openWithFocus();
   await focusOn(rowsOf()[1]); await key(rowsOf()[1], 'Enter');
-  const search = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Найти шрифт по названию');
+  const search = win().querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Find font by name');
   search.focus(); search.value = 'noto'; await search.dispatch('input');
   out.found = [rowsOf().map((r) => r.getAttribute('data-family')), stops(), here(), picked()];     // the typed field keeps the focus; the chosen one is hidden, not lost
   search.value = ''; await search.dispatch('input');
   out.cleared = [picked(), stops()[0], here()];
-  await byText(win(), 'button', 'Отмена').dispatch('click'); await tick();
+  await byText(win(), 'button', 'Cancel').dispatch('click'); await tick();
   out.closed = [!ctx.document.body.querySelector('.modal'), ctx.document.activeElement === opener(), opener().textContent, textOps().length];
 """)
-    assert out["found"][0] == ["Noto Sans Hebrew"] and out["found"][1][0] == "Noto Sans Hebrew:row" and out["found"][2] == "Найти шрифт по названию"
+    assert out["found"][0] == ["Noto Sans Hebrew"] and out["found"][1][0] == "Noto Sans Hebrew:row" and out["found"][2] == "Find font by name"
     assert out["found"][3] == []
-    assert out["cleared"] == [["My Hand"], "My Hand:row", "Найти шрифт по названию"]
-    assert out["closed"] == [True, True, "Шрифт: Arial Regular…", 0]            # nothing was sent, the old font is still shown, the focus is back on its button
+    assert out["cleared"] == [["My Hand"], "My Hand:row", "Find font by name"]
+    assert out["closed"] == [True, True, "Font: Arial Regular…", 0]            # nothing was sent, the old font is still shown, the focus is back on its button
 
 
 @node
@@ -137,9 +137,9 @@ def test_the_next_portion_of_the_list_takes_the_focus_of_the_button_that_asked_f
     out = run_editor(tmp_path, r, OPEN + KEYS + """
   await openWithFocus();
   out.before = rowsOf().length;
-  const more = byText(win(), 'button', 'Показать ещё (11)');
+  const more = byText(win(), 'button', 'Show more (11)');
   more.focus(); await more.dispatch('click');
-  out.after = [rowsOf().length, here(), stops()[0], !!win().querySelectorAll('button').find((b) => b.textContent.startsWith('Показать ещё'))];
+  out.after = [rowsOf().length, here(), stops()[0], !!win().querySelectorAll('button').find((b) => b.textContent.startsWith('Show more'))];
 """)
     assert out["before"] == 60 and out["after"] == [71, "Face 059", "Face 059:row", False]
 
@@ -162,10 +162,10 @@ def test_a_google_family_is_downloaded_only_when_it_is_asked_for_and_a_failed_do
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map((d) => d.className);
 """)
     assert out["idle"] == [[], ["Noto Sans Hebrew:row", "Noto Sans Hebrew:star", "Noto Sans Hebrew:download"]]
-    assert out["button"] == "Скачать (0.3 МБ)" and out["asked"] == ["Noto Sans Hebrew"] and out["stopped"] is True
+    assert out["button"] == "Download (0.3 MB)" and out["asked"] == ["Noto Sans Hebrew"] and out["stopped"] is True
     assert out["focus"] == ["Noto Sans Hebrew", ["Arial"]]                  # the button was replaced by the note: the row keeps the focus; nothing chosen
     assert out["again"][1] == ["Arial"] and out["again"][0] == 2
-    assert out["again"][2].startswith("Шрифт Noto Sans Hebrew ещё не скачан")
+    assert out["again"][2].startswith("Font Noto Sans Hebrew is not downloaded yet")
     assert out["toast"] and all("bad" in c for c in out["toast"])
 
 
@@ -181,7 +181,7 @@ def with_texts(*texts, **routes_):
 
 TOOLS = OPEN + """
   const tool = (label) => pane.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === label);
-  const step = () => pane.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Шаг сдвига, мм');
+  const step = () => pane.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Move step, mm');
   const last = () => textOps().map((o) => o.changes);
 """
 
@@ -192,17 +192,17 @@ def test_buttons_move_turn_and_size_the_chosen_inscription_as_the_drag_and_its_h
     r = with_texts(text("t1", rotation=175.0, backing="rect", padding_mm=1.0, corner_mm=0.5, spacing_mm=0.2, x=20.0, y=10.0))
     out = run_editor(tmp_path, r, TOOLS + """
   await item(0).dispatch('click'); await tick();
-  out.groups = ['Сдвиг надписи', 'Поворот надписи', 'Размер надписи'].map((l) => !!group(l));
-  await tool('Сдвинуть вправо на шаг').dispatch('click'); await tick();
-  await tool('Сдвинуть вверх на шаг').dispatch('click'); await tick();
+  out.groups = ['Move inscription', 'Rotate inscription', 'Inscription size'].map((l) => !!group(l));
+  await tool('Move right by one step').dispatch('click'); await tick();
+  await tool('Move up by one step').dispatch('click'); await tick();
   step().value = '0.1'; await step().dispatch('change');
-  await tool('Сдвинуть влево на шаг').dispatch('click'); await tick();
+  await tool('Move left by one step').dispatch('click'); await tick();
   step().value = '5'; await step().dispatch('change');
-  await tool('Сдвинуть вниз на шаг').dispatch('click'); await tick();
-  await tool('Повернуть по часовой стрелке на 15°').dispatch('click'); await tick();           // 175 + 15 comes round to -170, as a drag's turn does
-  await tool('Повернуть против часовой стрелки на 1°').dispatch('click'); await tick();
-  await tool('Увеличить надпись на 10 %').dispatch('click'); await tick();
-  await tool('Уменьшить надпись на 10 %').dispatch('click'); await tick();
+  await tool('Move down by one step').dispatch('click'); await tick();
+  await tool('Rotate clockwise by 15°').dispatch('click'); await tick();           // 175 + 15 comes round to -170, as a drag's turn does
+  await tool('Rotate counterclockwise by 1°').dispatch('click'); await tick();
+  await tool('Increase inscription by 10 %').dispatch('click'); await tick();
+  await tool('Reduce inscription by 10 %').dispatch('click'); await tick();
   out.changes = last();
   out.names = pane.querySelectorAll('button').filter((b) => b.classList.contains('lt-tool')).map((b) => b.getAttribute('aria-label')).filter(Boolean).length;
 """)
@@ -222,8 +222,8 @@ def test_a_refused_change_leaves_the_inscription_where_it_was_and_says_why(tmp_p
     r["/api/vector/7/colouring"] = {"status": 422, "json": {"error": "x must be at most 100000", "kind": "invalid"}}
     out = run_editor(tmp_path, r, TOOLS + """
   await item(0).dispatch('click'); await tick();
-  await tool('Сдвинуть вправо на шаг').dispatch('click'); await wait(10);
-  out.x = field('x, мм').value;
+  await tool('Move right by one step').dispatch('click'); await wait(10);
+  out.x = field('x, mm').value;
   out.toast = ctx.document.body.querySelectorAll('div').filter((d) => d.classList.contains('toast')).map((d) => d.className);
   out.ops = last();
 """)
@@ -239,36 +239,36 @@ def test_a_path_is_made_edited_and_cut_by_numbers_and_the_focus_stays_in_the_tab
     two = text("t2", layout="path", points=[[0, 0], [20, 5]], x=5.0, y=15.0)
     r = with_texts(flat, three, after_cut=[flat, two])
     out = run_editor(tmp_path, r, TOOLS + """
-  const coord = (n, axis) => pane.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Точка ${n}: ${axis}, мм`);
-  const act = (n, what) => pane.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `${what} точ${what === 'Вставить' ? 'ку после точки' : 'ку'} ${n}`);
+  const coord = (n, axis) => pane.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === `Point ${n}: ${axis}, mm`);
+  const act = (n, what) => pane.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `${what === 'Insert' ? 'Insert point after point' : 'Remove point'} ${n}`);
   await item(0).dispatch('click'); await tick();
-  await byText(group('Расположение'), 'button', 'По пути').dispatch('click'); await tick();          // no points yet: a straight path of two is made
+  await byText(group('Layout'), 'button', 'Path').dispatch('click'); await tick();          // no points yet: a straight path of two is made
   await item(1).dispatch('click'); await tick();
-  out.rows = pane.querySelectorAll('input').filter((i) => /^Точка \\d+: /.test(i.getAttribute('aria-label') || '')).map((i) => [i.getAttribute('aria-label'), i.value]);
-  out.groups = pane.querySelectorAll('div').filter((d) => d.getAttribute('role') === 'group' && /^Точка \\d/.test(d.getAttribute('aria-label') || '')).map((d) => d.getAttribute('aria-label'));
+  out.rows = pane.querySelectorAll('input').filter((i) => /^Point \\d+: /.test(i.getAttribute('aria-label') || '')).map((i) => [i.getAttribute('aria-label'), i.value]);
+  out.groups = pane.querySelectorAll('div').filter((d) => d.getAttribute('role') === 'group' && /^Point \\d/.test(d.getAttribute('aria-label') || '')).map((d) => d.getAttribute('aria-label'));
   coord(2, 'x').value = '12.5'; await coord(2, 'x').dispatch('change'); await tick();
-  await act(1, 'Вставить').dispatch('click'); await tick();
-  await act(3, 'Вставить').dispatch('click'); await tick();
-  await act(1, 'Удалить').dispatch('click'); await tick();
-  out.canCut = [act(1, 'Удалить').disabled, act(3, 'Удалить').disabled];
+  await act(1, 'Insert').dispatch('click'); await tick();
+  await act(3, 'Insert').dispatch('click'); await tick();
+  await act(1, 'Remove').dispatch('click'); await tick();
+  out.canCut = [act(1, 'Remove').disabled, act(3, 'Remove').disabled];
   data.routes['/api/vector/7/colouring'] = data.routes['/x/after_cut'];                                // the server's answer to a cut: two points
   coord(3, 'y').focus();
-  await act(2, 'Удалить').dispatch('click'); await tick(); await tick();
-  out.after = [pane.querySelectorAll('input').filter((i) => /^Точка \\d+: /.test(i.getAttribute('aria-label') || '')).length,
-    ['1', '2'].map((n) => ['Вставить', 'Удалить'].map((w) => !!act(n, w) && act(n, w).disabled)), ctx.document.activeElement && ctx.document.activeElement.getAttribute('aria-label')];
+  await act(2, 'Remove').dispatch('click'); await tick(); await tick();
+  out.after = [pane.querySelectorAll('input').filter((i) => /^Point \\d+: /.test(i.getAttribute('aria-label') || '')).length,
+    ['1', '2'].map((n) => ['Insert', 'Remove'].map((w) => !!act(n, w) && act(n, w).disabled)), ctx.document.activeElement && ctx.document.activeElement.getAttribute('aria-label')];
   out.ops = last();
 """)
     assert out["ops"][0] == {"layout": "path", "rotation": 0, "x": 12.0, "y": 7.0, "points": [[0, 0], [24, 0]]}
-    assert out["rows"] == [["Точка 1: x, мм", "5"], ["Точка 1: y, мм", "15"], ["Точка 2: x, мм", "15"], ["Точка 2: y, мм", "15"],
-                           ["Точка 3: x, мм", "25"], ["Точка 3: y, мм", "20"]]
-    assert out["groups"] == ["Точка 1 (место надписи)", "Точка 2", "Точка 3"]
+    assert out["rows"] == [["Point 1: x, mm", "5"], ["Point 1: y, mm", "15"], ["Point 2: x, mm", "15"], ["Point 2: y, mm", "15"],
+                           ["Point 3: x, mm", "25"], ["Point 3: y, mm", "20"]]
+    assert out["groups"] == ["Point 1 (inscription position)", "Point 2", "Point 3"]
     assert out["ops"][1] == {"x": 5.0, "y": 15.0, "points": [[0, 0], [7.5, 0], [20, 5]]}                  # a point moved: relative to the first, unturned
     assert out["ops"][2] == {"x": 5.0, "y": 15.0, "points": [[0, 0], [5, 0], [10, 0], [20, 5]]}            # inserted halfway to the next
     assert out["ops"][3] == {"x": 5.0, "y": 15.0, "points": [[0, 0], [10, 0], [20, 5], [30, 10]]}          # after the last, further along the path
     assert out["ops"][4] == {"x": 15.0, "y": 15.0, "points": [[0, 0], [10, 5]]}                            # the first cut: the second is the place now
     assert out["canCut"] == [False, False]
     assert out["after"][0] == 4 and out["after"][1] == [[False, True], [False, True]]                       # two points stay: no more cutting
-    assert out["after"][2] and out["after"][2].startswith("Точка ")                                         # the focus did not fall out of the table
+    assert out["after"][2] and out["after"][2].startswith("Point ")                                         # the focus did not fall out of the table
 
 
 # -- REQ-001 c2: the picture of the vector editor and its regions without the pointer ------------------------------------------------
@@ -719,7 +719,7 @@ def test_an_inscription_picked_on_the_picture_slides_the_panel_out_on_its_tab_on
   narrow(true);
   await letters().dispatch('pointerdown', {clientX: 50, clientY: 50, button: 0});
   await stage.dispatch('pointerup', {clientX: 50, clientY: 50});
-  out.picked = [state(), tab.getAttribute('aria-selected'), field('x, мм').value];
+  out.picked = [state(), tab.getAttribute('aria-selected'), field('x, mm').value];
   await closer().dispatch('click');
   await letters().dispatch('pointerdown', {clientX: 50, clientY: 50, button: 0});          // the same inscription again, still chosen: the panel comes back
   await stage.dispatch('pointerup', {clientX: 50, clientY: 50});
@@ -798,7 +798,7 @@ def test_the_keyboard_stays_on_download_lightburn_when_the_card_is_drawn_again_a
   const host = ctx.document.createElement('div'); ctx.document.body.append(host);
   const draw = () => { host.replaceChildren(LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', reload: async () => { draw(); }})); };
   draw();
-  const pressed = () => byText(host, 'button', 'Скачать LightBurn');
+  const pressed = () => byText(host, 'button', 'Download LightBurn');
   const first = pressed(); first.focus();
   await first.dispatch('click'); await tick();
   const now = pressed();
@@ -821,7 +821,7 @@ def test_the_keyboard_goes_to_the_cards_heading_when_the_download_button_is_gone
   // the screen draws the card again without a download button (here: only the heading is left), so the heading is the nearest place
   const bare = () => { const c = ctx.document.createElement('div'); c.className = 'lc-export'; const hd = ctx.document.createElement('h4'); hd.textContent = 'Файл LightBurn'; c.append(hd); return c; };
   host.append(LC.exportCard(data.ready, {path: '/vector/7/export.lbrn2', name: 'vector.lbrn2', reload: async () => { host.replaceChildren(bare()); }}));
-  const btn = byText(host, 'button', 'Скачать LightBurn'); btn.focus();
+  const btn = byText(host, 'button', 'Download LightBurn'); btn.focus();
   await btn.dispatch('click'); await tick();
   const active = ctx.document.activeElement;
   out.tag = active && active.tagName.toLowerCase(); out.tabindex = active && active.getAttribute('tabindex');
@@ -865,10 +865,10 @@ def test_the_strip_is_open_on_a_wide_screen_and_folded_on_a_narrow_one_and_its_l
 """)
     assert out["wide"] == [True, "summary", 4]
     assert out["narrow"][0] is False and out["parts"] == 4
-    assert "сейчас: Файл получен" in out["narrow"][1] and "прогноз: измерено при другой ширине" in out["narrow"][1] and "оговорка" in out["narrow"][1]
+    assert "current: File downloaded" in out["narrow"][1] and "prediction: измерено при другой ширине" in out["narrow"][1] and "caveat" in out["narrow"][1]
     assert out["narrow"][2] == "true"
     assert out["states"] == [False, True, False]
-    assert "оговорк" not in out["calm"][0] and out["calm"][1] is None
+    assert "caveat" not in out["calm"][0] and out["calm"][1] is None
 
 
 @node
@@ -881,7 +881,7 @@ def test_the_strips_line_follows_the_boxes_after_the_screen_fills_them_again(tmp
   strip.sync();
   out.second = line(strip);
 """)
-    assert "сейчас: Файл получен" in out["first"] and "сейчас: Проверено" in out["second"]
+    assert "current: File downloaded" in out["first"] and "current: Verified" in out["second"]
 
 
 def test_the_strips_summary_is_hidden_on_a_wide_screen_and_shown_as_a_touch_sized_line_on_a_narrow_one():

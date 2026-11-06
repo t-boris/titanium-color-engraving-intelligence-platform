@@ -330,13 +330,8 @@ const Lettering = (() => {
       }}], () => { clearInterval(polling); if (observer) observer.disconnect(); });
   }
 
-  // --- вкладка и слой ---------------------------------------------------------------------------------------------------------
-  /** Надписи работы ``view``. ``o.act(op)`` отправляет операцию (true — принята), ``o.palette()`` — измеренные цвета титана работы,
-      ``o.size(view)`` — размер работы в мм, ``o.scale()`` — экранных пикселей на мм картинки редактора (у фотогравировки слой знает это
-      сам, :func:`attach`), ``o.drawn`` — слой рисует надписи сам (векторная работа), ``o.clean`` — цвет чистого титана для врезки,
-      ``o.open()`` — открыта ли вкладка, ``o.picked(id)`` — надпись выбрана на самой картинке (на узком экране хозяин открывает её свойства).
-      ``o.pick(title, lab, entryId, onPick)``: the host's window of measured colours (the editor's,
-      vector-colours.js: ΔE to ``lab``, time, where each colour is known from); a host without it shows the colours here to click. */
+  // --- tab and layer ---------------------------------------------------------------------------------------------------------
+  /** Manage inscriptions and render their interactive layer for a work. */
   function create(view, o) {
     let selected = null, entries = null, paletteError = null, drag = null, path = null, typing = null, built = null;
     let last = null;                          // the inscription chosen or changed last on this screen: a new one takes its font
@@ -344,15 +339,15 @@ const Lettering = (() => {
     const marks = svgEl('g', {class: 'lt-marks'});
     const list = h('div', {class: 'vw-ed-list lt-list'});
     const fields = h('div', {class: 'stack'});
-    const about = h('p', {class: 'small muted'}, 'Надпись врезается в картинку: буквы гравируются своим цветом титана, вокруг них — зазор чистого титана; '
-      + 'подложка (прямоугольник, овал или по контуру букв) — своим цветом или чистым титаном. Тащите надпись на картинке, круглая ручка поворачивает, '
-      + 'квадратная — меняет размер, у пути тащатся его точки. Каждое изменение отменяется Ctrl+Z.');
+    const about = h('p', {class: 'small muted'}, 'The inscription is cut into the image: letters use their titanium color with a gap of clean titanium around them; '
+      + 'the backing (rectangle, oval, or letter outline) uses its own color or clean titanium. Drag the inscription to move it; the round handle rotates it, '
+      + 'the square handle resizes it, and path points can be dragged. Undo changes with Ctrl+Z.');
     const blocked = h('div', {});
     const layers = h('div', {});
     const fieldSection = h('section', {class: 'vw-ed-section lt-fields'}, fields);
     const el = h('div', {class: 'vw-ed-pane lt-pane'},
-      h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Надписи'), h('span', {class: 'spacer'}),
-        btn('Добавить надпись', () => add(), 'primary')), about, blocked, list, layers),
+      h('section', {class: 'vw-ed-section'}, h('div', {class: 'row'}, h('h4', {}, 'Inscriptions'), h('span', {class: 'spacer'}),
+        btn('Add inscription', () => add(), 'primary')), about, blocked, list, layers),
       o.externalFields ? null : fieldSection);
     const texts = () => view.texts || [];
     const spec = () => texts().find((t) => t.id === selected) || null;
@@ -387,25 +382,25 @@ const Lettering = (() => {
       if (selected) renderFields(true);
     }
 
-    // --- список -------------------------------------------------------------------------------------------------------------
+    // --- list -------------------------------------------------------------------------------------------------------------
     function renderList() {
       fill(blocked, view.export_blocked && /^inscription /.test(view.export_blocked) ? h('p', {class: 'alert warn small'}, I18N.tr(view.export_blocked)) : null);
       fill(list, texts().length ? texts().map((t, i) => h('button', {type: 'button', class: 'vw-ed-item lt-item' + (t.id === selected ? ' picked' : ''),
         'aria-pressed': t.id === selected ? 'true' : 'false', onClick: () => select(t.id === selected ? null : t.id)},
       t.srgb ? h('span', {class: 'sw', style: `background:${rgb(t.srgb)}`}) : h('span', {class: 'sw lt-none'}),
-      h('strong', {}, `№ ${i + 1}`), h('span', {}, short(t.text)),
+      h('strong', {}, `#${i + 1}`), h('span', {}, short(t.text)),
       h('span', {class: 'muted small'}, t.font ? t.font.family : ''),
-      t.problem ? h('span', {class: 'pill bad'}, 'не выгравировать') : null))
-        : h('p', {class: 'small muted'}, 'Надписей нет. «Добавить надпись» поставит её в середину работы; потом её можно передвинуть, повернуть и изменить.'));
+      t.problem ? h('span', {class: 'pill bad'}, 'cannot be engraved') : null))
+        : h('p', {class: 'small muted'}, 'No inscriptions yet. Add inscription places one in the center of the work; you can then move, rotate, and edit it.'));
       // a photo work says here which layers of the file engrave the letters (a vector work lists them among its layers)
       const timed = new Map(((view.time && view.time.layers) || []).map((l) => [l.index, l.seconds]));
-      fill(layers, (view.text_layers || []).length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'В файле LightBurn после картинки, светлые первыми:'),
+      fill(layers, (view.text_layers || []).length ? h('div', {class: 'stack small'}, h('span', {class: 'muted'}, 'In the LightBurn file after the image, lightest first:'),
         view.text_layers.map((l) => h('div', {class: 'vw-ed-item'}, h('span', {class: 'sw', style: `background:${rgb(l.srgb)}`}),
-          h('strong', {}, `C${String(l.index).padStart(2, '0')}`), h('span', {class: 'muted'}, `${num(l.area_mm2, 1)} мм² · надписей ${l.texts.length}`
+          h('strong', {}, `C${String(l.index).padStart(2, '0')}`), h('span', {class: 'muted'}, `${num(l.area_mm2, 1)} mm² · inscriptions ${l.texts.length}`
             + (timed.has(l.index) ? ` · ≈ ${App.duration(timed.get(l.index))}` : ''))))) : null);
     }
 
-    // --- поля выбранной надписи -----------------------------------------------------------------------------------------------
+    // --- selected inscription fields -----------------------------------------------------------------------------------------------
     // the quantity of forms.js that says each box's unit and the ends the server takes (lettering.NUMBERS)
     const LETTER_QUANTITY = {height_mm: 'letterHeight', width_pct: 'letterWidth', spacing_mm: 'letterSpacing', line_pct: 'lineSpacing', rotation: 'letterRotation',
       bend: 'letterBend', radius_mm: 'circleRadius', start_deg: 'circleStart', offset_pct: 'pathOffset', gap_mm: 'letterGap', padding_mm: 'backingPadding',
@@ -428,7 +423,7 @@ const Lettering = (() => {
       return {key, input, el: h('label', {class: 'row small'}, input, h('span', {}, label))};
     }
 
-    /** «По пути» for an inscription: the server takes a path only with two points or more, so one that has none gets a straight path of two
+    /** “Path” for an inscription: the server takes a path only with two points or more, so one that has none gets a straight path of two
         from its place (as long as six letter heights), and its points are then edited on the picture or by number. */
     function toPath() {
       const t = spec();
@@ -440,9 +435,9 @@ const Lettering = (() => {
 
     // --- the same as the gestures, by buttons and numbers (ux-accessible-layout-p0, REQ-001) --------------------------------------
     let stepMm = 1;                                       // how far a button moves the inscription
-    const NUDGE = [['←', 'влево', -1, 0], ['↑', 'вверх', 0, -1], ['↓', 'вниз', 0, 1], ['→', 'вправо', 1, 0]];
-    const TURN = [['↶ 15°', 'против часовой стрелки на 15°', -15], ['↶ 1°', 'против часовой стрелки на 1°', -1], ['↷ 1°', 'по часовой стрелке на 1°', 1],
-      ['↷ 15°', 'по часовой стрелке на 15°', 15]];
+    const NUDGE = [['←', 'left', -1, 0], ['↑', 'up', 0, -1], ['↓', 'down', 0, 1], ['→', 'right', 1, 0]];
+    const TURN = [['↶ 15°', 'counterclockwise by 15°', -15], ['↶ 1°', 'counterclockwise by 1°', -1], ['↷ 1°', 'clockwise by 1°', 1],
+      ['↷ 15°', 'clockwise by 15°', 15]];
     const SIZE_STEP = 1.1;
     function tool(label, words, run) {
       const b = btn(label, run, 'btn-small lt-tool');
@@ -453,23 +448,23 @@ const Lettering = (() => {
         handle make (a size is about the frame's anchor, as the handle's), each one operation of the work and one step of undo. */
     function placeTools() {
       const t = () => spec();
-      const step = h('select', {'aria-label': 'Шаг сдвига, мм', onChange: (ev) => { stepMm = +ev.target.value; }},
+      const step = h('select', {'aria-label': 'Move step, mm', onChange: (ev) => { stepMm = +ev.target.value; }},
         [0.1, 0.5, 1, 5].map((v) => h('option', {value: v, selected: v === stepMm}, String(v).replace('.', ','))));
-      return h('div', {class: 'stack lt-place'}, h('span', {class: 'small'}, 'Положение и размер кнопками: то же, что тащить надпись и её ручки'),
+      return h('div', {class: 'stack lt-place'}, h('span', {class: 'small'}, 'Use buttons to position and size the inscription, just like dragging it and its handles'),
         h('div', {class: 'row lt-tools'},
-          h('label', {class: 'f lt-step'}, h('span', {}, 'Шаг, мм'), step),
-          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Сдвиг надписи'},
-            NUDGE.map(([sign, word, dx, dy]) => tool(sign, `Сдвинуть ${word} на шаг`, () => { const x = t(); return x && change({x: round(x.x + dx * stepMm, 3), y: round(x.y + dy * stepMm, 3)}); })))),
+          h('label', {class: 'f lt-step'}, h('span', {}, 'Step, mm'), step),
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Move inscription'},
+            NUDGE.map(([sign, word, dx, dy]) => tool(sign, `Move ${word} by one step`, () => { const x = t(); return x && change({x: round(x.x + dx * stepMm, 3), y: round(x.y + dy * stepMm, 3)}); })))),
         h('div', {class: 'row lt-tools'},
-          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Поворот надписи'},
-            TURN.map(([sign, word, deg]) => tool(sign, `Повернуть ${word}`, () => { const x = t(); return x && change({rotation: round(((x.rotation + deg + 540) % 360) - 180, 2)}); }))),
-          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Размер надписи'},
-            tool('Меньше', 'Уменьшить надпись на 10 %', () => { const x = t(); return x && change(scaled(x, 1 / SIZE_STEP)); }),
-            tool('Больше', 'Увеличить надпись на 10 %', () => { const x = t(); return x && change(scaled(x, SIZE_STEP)); }))));
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Rotate inscription'},
+            TURN.map(([sign, word, deg]) => tool(sign, `Rotate ${word}`, () => { const x = t(); return x && change({rotation: round(((x.rotation + deg + 540) % 360) - 180, 2)}); }))),
+          h('div', {class: 'vw-ed-group', role: 'group', 'aria-label': 'Inscription size'},
+            tool('Smaller', 'Reduce inscription by 10 %', () => { const x = t(); return x && change(scaled(x, 1 / SIZE_STEP)); }),
+            tool('Larger', 'Increase inscription by 10 %', () => { const x = t(); return x && change(scaled(x, SIZE_STEP)); }))));
     }
 
     /** The points of a path by number, in the work's mm (the place of the inscription is the first): the points on the picture, written down.
-        A row has «Вставить после» (between it and the next point; after the last, further along the path) and «Удалить» (two stay). */
+        A row has “Insert after” (between it and the next point; after the last, further along the path) and “Remove” (two stay). */
     function pointsEditor() {
       const box = h('div', {class: 'stack lt-points'});
       let rows = [];                                       // per point: {x, y, insert, remove} controls
@@ -477,7 +472,7 @@ const Lettering = (() => {
       const send = (pts) => { const t = spec(); return t && change(placed(pts, t.rotation)); };
       function row(i) {
         const axis = (name) => {
-          const input = h('input', {type: 'number', step: '0.1', 'aria-label': `Точка ${i + 1}: ${name}, мм`, class: 'lt-point-input'});
+          const input = h('input', {type: 'number', step: '0.1', 'aria-label': `Point ${i + 1}: ${name}, mm`, class: 'lt-point-input'});
           const rules = Forms.describe(input, 'pathPoint');
           const wrong = Forms.watch(input, 'pathPoint', (value) => {
             if (value == null) return;
@@ -487,16 +482,16 @@ const Lettering = (() => {
           return {input, notes: [rules, wrong]};
         };
         const [{input: x, notes: xNotes}, {input: y, notes: yNotes}] = [axis('x'), axis('y')];
-        const insert = tool('Вставить после', `Вставить точку после точки ${i + 1}`, () => {
+        const insert = tool('Insert after', `Insert point after point ${i + 1}`, () => {
           const pts = absoluteNow(), a = pts[i], b = pts[i + 1] || (pts[i - 1] ? [2 * a[0] - pts[i - 1][0], 2 * a[1] - pts[i - 1][1]] : [a[0] + 5, a[1]]);
           pts.splice(i + 1, 0, i + 1 < pts.length ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : b);
           return send(pts);
         });
-        const remove = tool('Удалить', `Удалить точку ${i + 1}`, () => { const pts = absoluteNow(); pts.splice(i, 1); return send(pts); });
+        const remove = tool('Remove', `Remove point ${i + 1}`, () => { const pts = absoluteNow(); pts.splice(i, 1); return send(pts); });
         for (const [b, name] of [[insert, 'insert'], [remove, 'remove']]) b.setAttribute('data-ctl', name);
         x.setAttribute('data-ctl', 'x'); y.setAttribute('data-ctl', 'y');
         rows.push({x, y, insert, remove});
-        return h('div', {class: 'lt-point-row', role: 'group', 'aria-label': `Точка ${i + 1}${i === 0 ? ' (место надписи)' : ''}`},
+        return h('div', {class: 'lt-point-row', role: 'group', 'aria-label': `Point ${i + 1}${i === 0 ? ' (inscription position)' : ''}`},
           h('strong', {class: 'lt-point-no'}, String(i + 1)), h('label', {class: 'f'}, h('span', {}, 'x'), x, ...xNotes), h('label', {class: 'f'}, h('span', {}, 'y'), y, ...yNotes), insert, remove);
       }
       /** Show the points of ``t``: the rows are made again when their number changes (the control that had the focus gets it back, on the
@@ -528,80 +523,80 @@ const Lettering = (() => {
     }
 
     function build() {
-      const textArea = h('textarea', {rows: 3, 'aria-label': 'Текст надписи', class: 'lt-text'});
+      const textArea = h('textarea', {rows: 3, 'aria-label': 'Inscription text', class: 'lt-text'});
       textArea.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(() => { typing = null; change({text: textArea.value}); }, TYPE_MS); });
       textArea.addEventListener('change', () => { clearTimeout(typing); typing = null; if (spec() && textArea.value !== spec().text) change({text: textArea.value}); });
-      const font = btn('Шрифт…', () => { const t = spec(); if (t) fontWindow(t.font, t.text, (picked) => change({font: picked})); });
+      const font = btn('Font…', () => { const t = spec(); if (t) fontWindow(t.font, t.text, (picked) => change({font: picked})); });
       const parts = {
         text: textArea, font,
-        height: number('Высота букв, мм', 'height_mm', '0.1', {min: '0.3', max: '500'}),
-        width: number('Ширина, %', 'width_pct', '1', {min: '10', max: '400'}),
-        spacing: number('Интервал между буквами, мм', 'spacing_mm', '0.1'),
-        line: number('Между строками, %', 'line_pct', '5', {min: '50', max: '400'}),
-        align: choice('Выравнивание', 'align', ALIGNS),
-        layout: choice('Расположение', 'layout', LAYOUTS),
-        letters: choice('Буквы на кривой', 'letters', LETTERS),
-        bend: number('Изгиб, %', 'bend', '1', {min: '-100', max: '100'}),
-        radius: number('Радиус круга, мм', 'radius_mm', '0.5', {min: '0.5'}),
-        start: number('Где на круге, °', 'start_deg', '1'),
-        inside: flag('Внутри круга (читается против часовой)', 'inside'),
-        offset: number('Место на пути, %', 'offset_pct', '1', {min: '0', max: '100'}),
-        flip: flag('Путь в обратную сторону', 'flip'),
-        rotation: number('Поворот, °', 'rotation', '1'),
-        x: number('x, мм', 'x', '0.1'), y: number('y, мм', 'y', '0.1'),
-        colour: colourPart('Цвет букв', 'entry_id', false),
-        gap: number('Зазор вокруг букв, мм', 'gap_mm', '0.05', {min: '0', max: '20'}),
-        backing: choice('Подложка', 'backing', BACKINGS),
-        padding: number('Поле подложки, мм', 'padding_mm', '0.1', {min: '0'}),
-        corner: number('Скругление углов, мм', 'corner_mm', '0.1', {min: '0'}),
-        backingColour: colourPart('Цвет подложки', 'backing_entry_id', true),
-        drawPath: btn('Нарисовать путь', () => startPath()),
+        height: number('Letter height, mm', 'height_mm', '0.1', {min: '0.3', max: '500'}),
+        width: number('Width, %', 'width_pct', '1', {min: '10', max: '400'}),
+        spacing: number('Letter spacing, mm', 'spacing_mm', '0.1'),
+        line: number('Line spacing, %', 'line_pct', '5', {min: '50', max: '400'}),
+        align: choice('Alignment', 'align', ALIGNS),
+        layout: choice('Layout', 'layout', LAYOUTS),
+        letters: choice('Letters on curve', 'letters', LETTERS),
+        bend: number('Bend, %', 'bend', '1', {min: '-100', max: '100'}),
+        radius: number('Circle radius, mm', 'radius_mm', '0.5', {min: '0.5'}),
+        start: number('Position on circle, °', 'start_deg', '1'),
+        inside: flag('Inside circle (reads counterclockwise)', 'inside'),
+        offset: number('Position on path, %', 'offset_pct', '1', {min: '0', max: '100'}),
+        flip: flag('Reverse path', 'flip'),
+        rotation: number('Rotation, °', 'rotation', '1'),
+        x: number('x, mm', 'x', '0.1'), y: number('y, mm', 'y', '0.1'),
+        colour: colourPart('Letter color', 'entry_id', false),
+        gap: number('Gap around letters, mm', 'gap_mm', '0.05', {min: '0', max: '20'}),
+        backing: choice('Backing', 'backing', BACKINGS),
+        padding: number('Backing padding, mm', 'padding_mm', '0.1', {min: '0'}),
+        corner: number('Corner radius, mm', 'corner_mm', '0.1', {min: '0'}),
+        backingColour: colourPart('Backing color', 'backing_entry_id', true),
+        drawPath: btn('Draw path', () => startPath()),
         place: placeTools(), points: pointsEditor(),
         info: h('div', {class: 'small stack'}),
       };
       parts.el = h('div', {class: 'stack'},
-        h('div', {class: 'row'}, h('h4', {}, 'Надпись'), h('span', {class: 'spacer'}), btn('Копия', () => act({op: 'text_copy', id: selected})),
-          btn('Удалить', () => act({op: 'text_delete', id: selected}))),
+        h('div', {class: 'row'}, h('h4', {}, 'Inscription'), h('span', {class: 'spacer'}), btn('Copy', () => act({op: 'text_copy', id: selected})),
+          btn('Remove', () => act({op: 'text_delete', id: selected}))),
         parts.info,
-        h('label', {class: 'f'}, h('span', {}, 'Текст (Enter — новая строка)'), textArea),
+        h('label', {class: 'f'}, h('span', {}, 'Text (Enter starts a new line)'), textArea),
         h('div', {class: 'row'}, font),
         h('div', {class: 'lt-grid'}, parts.height.el),
         parts.colour.el,
-        h('details', {class: 'lt-group'}, h('summary', {}, 'Размещение'),
+        h('details', {class: 'lt-group'}, h('summary', {}, 'Position'),
           h('div', {class: 'stack'}, h('div', {class: 'lt-grid'}, parts.rotation.el, parts.x.el, parts.y.el), parts.place)),
-        h('details', {class: 'lt-group'}, h('summary', {}, 'Форма текста'),
+        h('details', {class: 'lt-group'}, h('summary', {}, 'Text shape'),
           h('div', {class: 'stack'},
             h('div', {class: 'lt-grid'}, parts.width.el, parts.spacing.el, parts.line.el), parts.align.el, parts.layout.el,
             h('div', {class: 'lt-grid', 'data-for': 'arc'}, parts.bend.el),
             h('div', {class: 'lt-grid', 'data-for': 'circle'}, parts.radius.el, parts.start.el), h('div', {'data-for': 'circle'}, parts.inside.el),
-            h('div', {class: 'stack', 'data-for': 'path'}, h('div', {class: 'row'}, parts.drawPath, h('span', {class: 'small muted'}, 'щелчками или ведя мышью по картинке; Enter или двойной щелчок — готово')),
-              h('details', {class: 'lt-points-fold'}, h('summary', {}, 'Точки пути числами'), parts.points.el),
+            h('div', {class: 'stack', 'data-for': 'path'}, h('div', {class: 'row'}, parts.drawPath, h('span', {class: 'small muted'}, 'click or drag on the image; press Enter or double-click to finish')),
+              h('details', {class: 'lt-points-fold'}, h('summary', {}, 'Path points as numbers'), parts.points.el),
               h('div', {class: 'lt-grid'}, parts.offset.el), parts.flip.el),
             h('div', {'data-for': 'curved'}, parts.letters.el))),
-        h('details', {class: 'lt-group'}, h('summary', {}, 'Врезка'),
+        h('details', {class: 'lt-group'}, h('summary', {}, 'Cutout'),
           h('div', {class: 'stack'}, h('div', {class: 'lt-grid'}, parts.gap.el), parts.backing.el,
             h('div', {class: 'lt-grid', 'data-for': 'backed'}, parts.padding.el, parts.corner.el),
             h('div', {'data-for': 'backed'}, parts.backingColour.el))));
       return parts;
     }
 
-    /** A colour's field: with the host's window (``o.pick``) the colour chosen and «Выбрать…», which opens it; without one every measured
+    /** A colour's field: with the host's window (``o.pick``) the colour chosen and “Choose…”, which opens it; without one every measured
         colour to click. */
     function fillColour(part, value) {
-      if (!entries) return fill(part.box, h('p', {class: paletteError ? 'alert bad small' : 'muted small'}, paletteError || 'Загрузка цветов…'));
-      const title = (e) => `${labText(e.lab)}` + (e.time_s_per_cm2 == null ? '' : ` · ${num(e.time_s_per_cm2, 1)} с/см²`);
-      const clean = part.allowNone ? h('button', {type: 'button', class: 'vw-swatch lt-clean' + (value == null ? ' picked' : ''), title: 'Чистый титан: подложка не гравируется',
-        'aria-label': 'Чистый титан', 'aria-pressed': value == null ? 'true' : 'false', onClick: () => change({[part.key]: null})}) : null;
+      if (!entries) return fill(part.box, h('p', {class: paletteError ? 'alert bad small' : 'muted small'}, paletteError || 'Loading colors…'));
+      const title = (e) => `${labText(e.lab)}` + (e.time_s_per_cm2 == null ? '' : ` · ${num(e.time_s_per_cm2, 1)} s/cm²`);
+      const clean = part.allowNone ? h('button', {type: 'button', class: 'vw-swatch lt-clean' + (value == null ? ' picked' : ''), title: 'Clean titanium: backing is not engraved',
+        'aria-label': 'Clean titanium', 'aria-pressed': value == null ? 'true' : 'false', onClick: () => change({[part.key]: null})}) : null;
       if (!o.pick) {
         return fill(part.box, clean, entries.map((e) => h('button', {type: 'button', class: 'vw-swatch' + (String(e.id) === String(value) ? ' picked' : ''),
           style: `background:${rgb(e.srgb)}`, 'data-entry': e.id, title: title(e), 'aria-label': title(e), 'aria-pressed': String(e.id) === String(value) ? 'true' : 'false',
           onClick: () => change({[part.key]: e.id})})));
       }
-      if (!entries.length) return fill(part.box, clean, h('span', {class: 'small muted'}, 'Измеренных цветов титана для этой работы нет.'));
+      if (!entries.length) return fill(part.box, clean, h('span', {class: 'small muted'}, 'No measured titanium colors are available for this work.'));
       const now = entries.find((e) => String(e.id) === String(value));
       fill(part.box, clean, now ? h('span', {class: 'vw-swatch picked', style: `background:${rgb(now.srgb)}`, 'data-entry': now.id, 'aria-hidden': 'true'}) : null,
-        h('span', {class: 'small'}, now ? title(now) : value == null ? (part.allowNone ? '' : 'цвет не выбран') : 'этого цвета нет среди измеренных'),
-        btn('Выбрать…', () => choose(part)));
+        h('span', {class: 'small'}, now ? title(now) : value == null ? (part.allowNone ? '' : 'no color selected') : 'this color is not among the measurements'),
+        btn('Choose…', () => choose(part)));
     }
     /** The window of measured colours for a colour of the chosen inscription. ΔE is to the letters' colour: alternatives near it for the
         letters, how far a backing stands from them for the backing; while the letters have none, to the darkest measured colour, the one a
@@ -610,13 +605,13 @@ const Lettering = (() => {
       const t = spec();
       if (!t || !entries || !entries.length) return;
       const letters = entries.find((e) => String(e.id) === String(t.entry_id));
-      o.pick(`${part.label} надписи № ${texts().indexOf(t) + 1} (ΔE — до ${letters ? 'цвета букв' : 'самого тёмного измеренного цвета'})`, (letters || entries[0]).lab,
+      o.pick(`${part.label} for inscription #${texts().indexOf(t) + 1} (ΔE to ${letters ? 'letter color' : 'the darkest measured color'})`, (letters || entries[0]).lab,
         t[part.key], (id) => act({op: 'text_set', id: t.id, changes: {[part.key]: id}}));
     }
 
     function renderFields(paletteOnly = false) {
       const t = spec();
-      if (!t) { built = null; return fill(fields, texts().length ? h('p', {class: 'small muted'}, 'Выберите надпись в списке или на картинке.') : null); }
+      if (!t) { built = null; return fill(fields, texts().length ? h('p', {class: 'small muted'}, 'Select an inscription in the list or on the image.') : null); }
       if (!built) { built = build(); fill(fields, built.el); }
       const p = built;
       fillColour(p.colour, t.entry_id);
@@ -624,7 +619,7 @@ const Lettering = (() => {
       if (paletteOnly) return;
       const focused = document.activeElement;
       if (focused !== p.text && !typing) p.text.value = t.text;
-      fill(p.font, `Шрифт: ${t.font ? `${t.font.family} ${t.font.style}` : 'по умолчанию'}…`);
+      fill(p.font, `Font: ${t.font ? `${t.font.family} ${t.font.style}` : 'default'}…`);
       for (const part of [p.height, p.width, p.spacing, p.line, p.bend, p.radius, p.start, p.offset, p.rotation, p.x, p.y, p.gap, p.padding, p.corner]) {
         if (part.input !== focused) { part.input.value = String(round(t[part.key], 3)); part.input.removeAttribute('aria-invalid'); part.wrong.textContent = ''; }
       }
@@ -637,18 +632,18 @@ const Lettering = (() => {
         backed: t.backing !== 'none'};
       for (const box of p.el.querySelectorAll('[data-for]')) box.hidden = !visible[box.getAttribute('data-for')];
       p.corner.el.hidden = t.backing !== 'rect';
-      fill(p.drawPath, path ? 'Готово' : t.points && t.points.length ? 'Нарисовать путь заново' : 'Нарисовать путь');
+      fill(p.drawPath, path ? 'Done' : t.points && t.points.length ? 'Redraw path' : 'Draw path');
       p.points.update(t);
       const s = t.shown;
       fill(p.info,
         t.problem ? h('p', {class: 'alert bad'}, I18N.tr(t.problem)) : null,
-        s && s.clipped ? h('p', {class: 'alert warn'}, 'Часть надписи выходит за край работы: там она обрезана.') : null,
-        s && s.overflow ? h('p', {class: 'alert warn'}, 'Надпись не помещается на дуге или окружности: строка длиннее своей окружности или буквы заходят за центр. Увеличьте радиус (у дуги — уменьшите изгиб), уменьшите буквы или число строк.') : null,
-        s && s.crowded && s.crowded.length ? h('p', {class: 'alert warn'}, `Буквы налезают друг на друга на крутом изгибе пути (${s.crowded.length > 1 ? 'строки' : 'строка'} ${s.crowded.join(', ')}): `
-          + 'сделайте изгиб плавнее, уменьшите буквы, прибавьте интервал между ними или поверните путь в обратную сторону.') : null,
-        s && s.empty && !t.problem ? h('p', {class: 'alert warn'}, 'У надписи нет букв, которые гравируются: введите текст.') : null,
-        s ? h('p', {class: 'muted'}, `Буквы ${num(s.area_mm2, 1)} мм²` + (s.backing_mm2 ? ` · подложка ${num(s.backing_mm2, 1)} мм²` : '')
-          + (t.srgb ? '' : ' · цвет букв не выбран')) : null);
+        s && s.clipped ? h('p', {class: 'alert warn'}, 'Part of the inscription extends beyond the work and is clipped.') : null,
+        s && s.overflow ? h('p', {class: 'alert warn'}, 'The inscription does not fit on the arc or circle: a line exceeds its circumference or letters cross the center. Increase the radius (reduce arc bend), reduce letter size, or use fewer lines.') : null,
+        s && s.crowded && s.crowded.length ? h('p', {class: 'alert warn'}, `Letters overlap on a sharp path bend (${s.crowded.length > 1 ? 'lines' : 'line'} ${s.crowded.join(', ')}): `
+          + 'make the bend gentler, reduce letter size, increase spacing, or reverse the path.') : null,
+        s && s.empty && !t.problem ? h('p', {class: 'alert warn'}, 'The inscription has no engravable letters. Enter text.') : null,
+        s ? h('p', {class: 'muted'}, `Letters ${num(s.area_mm2, 1)} mm²` + (s.backing_mm2 ? ` · backing ${num(s.backing_mm2, 1)} mm²` : '')
+          + (t.srgb ? '' : ' · letter color not selected')) : null);
     }
 
     function render() {
@@ -657,7 +652,7 @@ const Lettering = (() => {
       draw();
     }
 
-    // --- слой на картинке ---------------------------------------------------------------------------------------------------
+    // --- layer over image ---------------------------------------------------------------------------------------------------
     const handleR = () => HANDLE_PX / Math.max(1e-6, pxPerMm());
     function draw() {
       while (layer.firstChild) layer.firstChild.remove();
@@ -834,21 +829,21 @@ const Lettering = (() => {
       while (pts.length > room) { tol *= 2; pts = simplify(samples, tol); }
       return pts;
     }
-    /** Enter while a path is drawn ends it, as «Готово» does; in a field Enter stays the field's (a new line of the text). */
+    /** Enter while a path is drawn ends it, as «Done» does; in a field Enter stays the field's (a new line of the text). */
     function pathKey(ev) {
       if (!path || ev.key !== 'Enter') return;
       if (!el.isConnected) return stopPath();
       const t = ev.target;
       if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;
       if (document.querySelector('.modal-bg')) return;
-      ev.preventDefault();                                 // a focused «Готово» would start a new path on its own Enter
+      ev.preventDefault();                                 // a focused «Done» would start a new path on its own Enter
       finishPath();
     }
     function startPath() {
       if (path) return finishPath();
       path = {points: [], stroke: null, line: null};
       document.addEventListener('keydown', pathKey);
-      toast('Щёлкайте по картинке точками пути или ведите мышью с нажатой кнопкой; Enter, двойной щелчок или «Готово» — путь готов, Esc — отменить');
+      toast('Click path points or drag over the image; press Enter, double-click, or Done to finish; press Esc to cancel');
       renderFields();
       draw();
     }
@@ -859,7 +854,7 @@ const Lettering = (() => {
     function finishPath() {
       const pts = path ? path.points : [];
       stopPath();
-      if (pts.length < 2) { toast('Путь — две точки или больше'); renderFields(); return draw(); }
+      if (pts.length < 2) { toast('A path needs at least two points'); renderFields(); return draw(); }
       change({layout: 'path', rotation: 0, ...placed(pts)});
     }
     /** Escape: a path being drawn is dropped; otherwise the chosen inscription is left. */
@@ -870,7 +865,7 @@ const Lettering = (() => {
       return false;
     }
 
-    // --- фотогравировка: слой поверх прогноза ------------------------------------------------------------------------------
+    // --- photo engraving: layer over prediction ------------------------------------------------------------------------------
     let photoSvg = null, photoBox = null, photoSkip = false;
     /** The layer over a photo work's look: ``stage`` holds the preview, the picture and its look side by side (``gap`` px between, each
         ``cols`` px wide), contained and centred in its box. The layer is an SVG over the same box, contained and centred the same way, in
@@ -888,7 +883,7 @@ const Lettering = (() => {
         const r = svg.getBoundingClientRect(), s = photoScale(), [x0, , w, hh] = photoBox;
         return [round(x0 + (ev.clientX - r.left - (r.width - w * s) / 2) / s, 3), round((ev.clientY - r.top - (r.height - hh * s) / 2) / s, 3)];
       };
-      svg.addEventListener('pointerdown', (ev) => { if (down(ev, toMm(ev))) { ev.preventDefault(); try { svg.setPointerCapture(ev.pointerId); } catch (_) { /* уже отпущен */ } } });
+      svg.addEventListener('pointerdown', (ev) => { if (down(ev, toMm(ev))) { ev.preventDefault(); try { svg.setPointerCapture(ev.pointerId); } catch (_) { /* already released */ } } });
       svg.addEventListener('pointermove', (ev) => move(ev, toMm(ev)));
       svg.addEventListener('pointerup', (ev) => { if (up(ev, toMm(ev))) photoSkip = true; });
       svg.addEventListener('click', (ev) => { if (photoSkip) { photoSkip = false; return; } click(ev, toMm(ev)); });
