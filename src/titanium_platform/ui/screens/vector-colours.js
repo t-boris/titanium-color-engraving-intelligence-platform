@@ -1,39 +1,32 @@
-/* Векторная работа из фотографии, вкладки «Цвета» и «AI» рабочего стола (REQ-042..REQ-049, REQ-050, DEC-001, DEC-075..DEC-077,
-   DEC-084, DEC-085): каждому исходному цвету сразу дан измеренный цвет титана этого лазера, линзы и заготовки — самый быстрый
-   в пределах допуска ΔE, иначе ближайший. Цвет дальше допуска помечен своим ΔE и обводится на картинке по запросу; файл он не
-   блокирует. Цвета, снятые без привязки к эталону, автоматика не берёт, пока их не включить; вручную их выбрать можно.
-   Вкладка «Цвета»: допуск и фильтры, автоматическая перекраска всей работы, варианты раскраски и подробная таблица цветов (в
-   окне). Вкладка «AI»: стиль из списка или своё описание, переключатель свободной светлоты и разрешение отправить уменьшенное
-   фото; без него AI видит только числа. Редактор (vector-editor.js) стоит в середине и справа, его собирает vector-workspace.js.
-   Каждое действие возвращает работу целиком; вкладки обновляются на месте, редактор сохраняет масштаб, инструмент и выделение. */
+/* Vector work color selection, variants, and AI coloring controls. */
 'use strict';
 const VectorColours = (() => {
   const {h, fill, btn, field, pill, fail, modal, facts, num, labText, agreed, CAUTION, steadiness, STEADY, originText, sourcesBlock} = App;
   const {chip, params, seconds, palette, de, duration, BASIS} = VectorEditor;
-  const MODES = [['closest', 'Ближе к оригиналу'], ['tonality', 'Сохранить тональность'], ['contrast', 'Контраст соседей'], ['random', 'Случайно']];
-  const MODE = {...Object.fromEntries(MODES), artistic: 'Художественно', fewer_layers: 'Меньше слоёв (прежний режим)', ai: 'AI'};   // the old mode only names variants saved with it
-  /** Palette groups for «Художественно» (vector-detail I-6): the measured colours its hues are laid out from. */
-  const SUBSETS = [['all', 'все цвета'], ['warm', 'тёплые'], ['cool', 'холодные'], ['bright', 'яркие']];
+  const MODES = [['closest', 'Closer to original'], ['tonality', 'Preserve tonality'], ['contrast', 'Contrast neighbors'], ['random', 'Random']];
+  const MODE = {...Object.fromEntries(MODES), artistic: 'Artistic', fewer_layers: 'Fewer layers (legacy mode)', ai: 'AI'};   // the old mode only names variants saved with it
+  /** Palette groups for «Artistic» (vector-detail I-6): the measured colours its hues are laid out from. */
+  const SUBSETS = [['all', 'all colors'], ['warm', 'warm'], ['cool', 'cool'], ['bright', 'bright']];
   const SUBSET = Object.fromEntries(SUBSETS);
-  /** Стили AI-раскраски (DEC-084): ключ, название и что получится; «своё описание» — текст оператора. */
+  /** AI coloring styles and their expected effects; custom descriptions are supplied by the operator. */
   const STYLES = [
-    ['realistic', 'Реалистично', 'Как на фото, насколько позволяет палитра: близкие цвета, соседние области остаются различимыми.'],
-    ['artistic', 'Артистично', 'Сюжет узнаётся, цвета как у художника: гармоничная гамма, тёплые света против холодных теней.'],
-    ['impressionism', 'Импрессионизм', 'Свет и цвет важнее линий: тёплые света, цветные тени, без плоского чёрного.'],
-    ['cubism', 'Кубизм', 'Плоские грани земляной гаммы, сильный контраст на каждой границе, даже если цвет уходит от натуры.'],
-    ['custom', 'Своё описание', 'Опишите словами, какой вид нужен: AI следует описанию в пределах измеренных цветов.']];
+    ['realistic', 'Realistic', 'Match the photo as closely as the palette allows, keeping adjacent regions distinct.'],
+    ['artistic', 'Artistic', 'Keep the subject recognizable with a harmonious palette and warm highlights against cool shadows.'],
+    ['impressionism', 'Impressionism', 'Emphasize light and color over lines, with warm highlights, colorful shadows, and no flat black.'],
+    ['cubism', 'Cubism', 'Use flat earth-tone facets and strong contrast at every boundary, even when colors differ from life.'],
+    ['custom', 'Custom description', 'Describe the desired appearance; AI follows it within measured colors.']];
   const STYLE = Object.fromEntries(STYLES.map(([id, name]) => [id, name]));
   const aiName = (ai) => 'AI · ' + (ai.style === 'custom' ? `«${(ai.text || '').slice(0, 40)}»` : STYLE[ai.style] || ai.style)
-    + (ai.free_lightness ? ' · светлота свободна' : '') + (ai.photo ? ' · с фото' : '');
-  const STATUS = {automatic: ['подобран автоматически', 'ok'], hand: ['выбран вручную', 'ok'], accepted: ['выбран вручную', 'ok'],
-    missing: ['цвета титана больше нет среди измерений', 'bad'], excluded: ['не гравируется', '']};
-  const HOW = {fastest_within_tolerance: 'самый быстрый в пределах допуска', nearest: 'ближайший', tonality: 'по тональности', random: 'случайно',
-    contrast: 'отличается от соседей', artistic: 'художественно, светлота по порядку',
-    cover: 'общий слой', nearest_outside_tolerance: 'ближайший, вне допуска', kept: 'выбор оператора', hand: 'выбор оператора', ai: 'выбор AI'};
-  const stability = (e) => (e.stability && e.stability.assessed ? 'дисперсия ' + num(e.stability.variance) : 'не оценено');
-  /** Уверенность в цвете настройки (REQ-045): число, сколько гравировок совпали и пометка, если автоматика цвет не берёт. */
-  const confidence = (e) => h('span', {}, e.confidence == null ? 'не оценено' : num(e.confidence), h('div', {class: 'muted small'}, agreed(e.agreement)),
-    e.caution ? pill(e.caution === 'superseded' ? 'заменён' : 'цвет менялся', 'bad') : null);
+    + (ai.free_lightness ? ' · free lightness' : '') + (ai.photo ? ' · with photo' : '');
+  const STATUS = {automatic: ['selected automatically', 'ok'], hand: ['selected manually', 'ok'], accepted: ['selected manually', 'ok'],
+    missing: ['titanium color no longer measured', 'bad'], excluded: ['not engraved', '']};
+  const HOW = {fastest_within_tolerance: 'fastest within tolerance', nearest: 'nearest', tonality: 'by tonality', random: 'random',
+    contrast: 'contrasts with neighbors', artistic: 'artistic, preserving lightness order',
+    cover: 'shared layer', nearest_outside_tolerance: 'nearest, outside tolerance', kept: 'operator choice', hand: 'operator choice', ai: 'AI choice'};
+  const stability = (e) => (e.stability && e.stability.assessed ? 'variance ' + num(e.stability.variance) : 'not assessed');
+  /** Color confidence, agreement count, and a warning when automatic selection excludes it. */
+  const confidence = (e) => h('span', {}, e.confidence == null ? 'not assessed' : num(e.confidence), h('div', {class: 'muted small'}, agreed(e.agreement)),
+    e.caution ? pill(e.caution === 'superseded' ? 'superseded' : 'color changed', 'bad') : null);
 
   const ORDERS = [['near', 'Closest to original color'], ['stable', 'Most stable'], ['fast', 'Fastest']];
   const RANK = {stable: 2, single: 1, doubtful: 0};
@@ -104,106 +97,105 @@ const VectorColours = (() => {
       {label: 'Apply', cls: 'primary', run: async (m) => { if (!chosen) return; m.close(); await onPick(chosen.id); }}]);
   }
 
-  /** «Подробно по цветам» as a short list (DEC-090): a line per source colour — its colour and number, the titanium colour, how it was chosen,
+  /** “Color details” as a short list (DEC-090): a line per source colour — its colour and number, the titanium colour, how it was chosen,
       the recipe and ΔE, with the actions on the whole colour; how the titanium colour was measured, where it is known from, its confidence,
       stability and time open under the line. Pages of 30: every colour of a work is edited on one page. */
   function colourTable(run) {
     let j = null;
     // a refusal of the server is told above the list that asked, not in a toast that goes away (ux-save-feedback-p0, REQ-003)
-    const place = Forms.notice({what: 'Изменение цвета', kept: 'Цвета работы остались прежними.'});
+    const place = Forms.notice({what: 'Color change', kept: 'Work colors remain unchanged.'});
     const titanium = (c) => (c.entry_id == null ? null : j.entries[c.entry_id]);
     const list = App.list({id: 'vw.colour-table', items: [], page: 30, key: (c) => String(c.index),
       row: (c) => {
         const e = titanium(c), [label, kind] = STATUS[c.status] || [null, ''];
-        return [chip(c.srgb, labText(c.lab)), h('strong', {}, `№ ${c.index + 1}`), '→', e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null,
+        return [chip(c.srgb, labText(c.lab)), h('strong', {}, `#${c.index + 1}`), '→', e ? chip(e.srgb, labText(e.lab)) : '—', label ? pill(label, kind) : null,
           h('span', {class: 'lst-text small'}, e ? params(e.parameters) : '—'),
-          c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`), c.outside_tolerance ? pill('вне допуска', 'bad') : null,
-          h('span', {class: 'muted small'}, `областей ${c.regions}`)];
+          c.delta_e == null ? null : h('span', {}, `ΔE ${num(c.delta_e)}`), c.outside_tolerance ? pill('outside tolerance', 'bad') : null,
+          h('span', {class: 'muted small'}, `regions ${c.regions}`)];
       },
-      actions: (c) => [btn('Изменить', () => pick(j, `Цвет группы № ${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id}, place))),
-        c.status === 'hand' || c.status === 'accepted' ? btn('Автоматически', () => run({op: 'set_colour', colour: c.index, entry_id: null}, place)) : null,
-        c.status === 'excluded' ? btn('Гравировать', () => run({op: 'include_colour', colour: c.index}, place))
-          : btn('Не гравировать', () => run({op: 'exclude_colour', colour: c.index}, place))],
+      actions: (c) => [btn('Change', () => pick(j, `Group color #${c.index + 1}`, c.lab, c.entry_id, (id) => run({op: 'set_colour', colour: c.index, entry_id: id}, place))),
+        c.status === 'hand' || c.status === 'accepted' ? btn('Automatic', () => run({op: 'set_colour', colour: c.index, entry_id: null}, place)) : null,
+        c.status === 'excluded' ? btn('Engrave', () => run({op: 'include_colour', colour: c.index}, place))
+          : btn('Do not engrave', () => run({op: 'exclude_colour', colour: c.index}, place))],
       details: (c) => {
         const e = titanium(c);
-        return facts([['Исходный цвет', `${labText(c.lab)} · областей ${c.regions}`],
-          ['Цвет титана', e ? h('span', {}, chip(e.srgb), ' ', labText(e.lab), c.how && HOW[c.how] ? ` · ${HOW[c.how]}` : '') : STATUS[c.status] ? STATUS[c.status][0] : '—'],
-          ['Рецепт', e ? params(e.parameters) : null], ['Как измерен', e ? BASIS[e.basis] || '—' : null],
-          ['Откуда', e ? `${originText(e.sources)} · фото ${e.photographs}` : null], ['Уверенность', e ? confidence(e) : null],
-          ['Стабильность', e ? stability(e) : null], ['Время', e ? seconds(e.time_s_per_cm2) : null]]);
+        return facts([['Original color', `${labText(c.lab)} · regions ${c.regions}`],
+          ['Titanium color', e ? h('span', {}, chip(e.srgb), ' ', labText(e.lab), c.how && HOW[c.how] ? ` · ${HOW[c.how]}` : '') : STATUS[c.status] ? STATUS[c.status][0] : '—'],
+          ['Recipe', e ? params(e.parameters) : null], ['Measurement basis', e ? BASIS[e.basis] || '—' : null],
+          ['Sources', e ? `${originText(e.sources)} · photos ${e.photographs}` : null], ['Confidence', e ? confidence(e) : null],
+          ['Stability', e ? stability(e) : null], ['Time', e ? seconds(e.time_s_per_cm2) : null]]);
       },
-      search: (c) => [`№ ${c.index + 1}`, titanium(c) ? params(titanium(c).parameters) : '', titanium(c) ? originText(titanium(c).sources) : ''].join(' '),
+      search: (c) => [`#${c.index + 1}`, titanium(c) ? params(titanium(c).parameters) : '', titanium(c) ? originText(titanium(c).sources) : ''].join(' '),
       filters: [VectorEditor.COLOUR_FILTER],
-      sorts: [...VectorEditor.COLOUR_SORTS, ['fast', 'Быстрее', (a, b) => ((titanium(a) || {}).time_s_per_cm2 ?? Infinity) - ((titanium(b) || {}).time_s_per_cm2 ?? Infinity)
+      sorts: [...VectorEditor.COLOUR_SORTS, ['fast', 'Fastest', (a, b) => ((titanium(a) || {}).time_s_per_cm2 ?? Infinity) - ((titanium(b) || {}).time_s_per_cm2 ?? Infinity)
         || a.index - b.index]],
-      empty: 'Нет исходных цветов под такой выбор.'});
-    const el = h('div', {class: 'vw-wide stack'}, h('p', {class: 'muted small'}, 'Строка — исходный цвет и цвет титана, которым он будет выгравирован, его рецепт и ΔE. '
-      + 'По щелчку на строке — как измерен цвет титана, откуда он известен, уверенность, стабильность и время.'), place.error, list.el);
+      empty: 'No source colors match this selection.'});
+    const el = h('div', {class: 'vw-wide stack'}, h('p', {class: 'muted small'}, 'Each row shows an original color, its titanium color, recipe, and ΔE. '
+      + 'Open a row to see measurement basis, sources, confidence, stability, and time.'), place.error, list.el);
     return {el, show(next) { j = next; list.items = j.colours; list.refresh(); }};
   }
 
   /** The colouring variants as a list (the tab is narrow); a variant of another split version cannot be restored until undo brings that
       version back. A short list
-      (DEC-090): a line per variant — its number and way, mean ΔE and «текущий» or «Вернуть»; its totals open under the line; the newest first. */
+      (DEC-090): a line per variant — its number and way, mean ΔE and “current” or “Restore”; its totals open under the line; the newest first. */
   function variantList(run) {
     let j = null;
-    const place = Forms.notice({what: 'Возврат варианта', kept: 'Работа осталась в прежней раскраске.'});
+    const place = Forms.notice({what: 'Restore variant', kept: 'The work keeps its previous coloring.'});
     const way = (v) => (v.mode === 'ai' && v.ai ? aiName(v.ai) : (MODE[v.mode] || '—') + (v.mode === 'artistic' ? ` · ${SUBSET[v.subset] || SUBSET.all}` : '')
-      + (v.mode === 'random' || v.mode === 'artistic' ? ` (вариант ${v.seed})` : ''));
+      + (v.mode === 'random' || v.mode === 'artistic' ? ` (variant ${v.seed})` : ''));
     // the server says whether a variant is restorable (a size change keeps the regions, DEC-002 of work-size-and-splitting-a-region-again);
     // a view without the flag goes by the split version
     const elsewhere = (v) => (v.restorable != null ? v.restorable === false : v.version != null && v.version !== j.document.version);
     const current = (v) => v.number === j.colouring.variant;
     const list = App.list({id: 'vw.variants', items: [], key: (v) => String(v.number), className: 'vw-variants',
-      row: (v) => [h('strong', {class: 'lst-text'}, `№ ${v.number} · ${way(v)}`), h('span', {class: 'muted small'}, `ΔE ${num(v.totals.mean_delta_e)}`),
-        current(v) ? pill('текущий', 'ok') : elsewhere(v) ? h('span', {class: 'muted small'}, `на разбиении № ${v.version}`) : null],
-      actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Вернуть', () => run({op: 'restore', variant: v.number}, place))]),
+      row: (v) => [h('strong', {class: 'lst-text'}, `#${v.number} · ${way(v)}`), h('span', {class: 'muted small'}, `ΔE ${num(v.totals.mean_delta_e)}`),
+        current(v) ? pill('current', 'ok') : elsewhere(v) ? h('span', {class: 'muted small'}, `on split #${v.version}`) : null],
+      actions: (v) => (current(v) || elsewhere(v) ? [] : [btn('Restore', () => run({op: 'restore', variant: v.number}, place))]),
       details: (v) => h('div', {class: 'stack small'},
-        h('div', {}, `рецептов ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · в допуске ${v.totals.within_tolerance} из ${v.totals.colours} · `
+        h('div', {}, `recipes ${v.totals.recipes} · ΔE ${num(v.totals.mean_delta_e)} · within tolerance ${v.totals.within_tolerance} of ${v.totals.colours} · `
           + (v.totals.seconds == null ? 'time not estimated' : duration(v.totals.seconds)) + ` · ${v.at.replace('T', ' ').slice(0, 16)}`),
-        elsewhere(v) ? h('div', {class: 'muted'}, `На разбиении № ${v.version}: вернуть можно отменой.`) : null),
-      search: (v) => `№ ${v.number} ${way(v)}`,
-      sorts: [['new', 'Сначала новые', (a, b) => b.number - a.number],
-        ['de', 'Меньше ΔE', (a, b) => (a.totals.mean_delta_e ?? Infinity) - (b.totals.mean_delta_e ?? Infinity) || b.number - a.number],
-        ['fast', 'Быстрее', (a, b) => (a.totals.seconds ?? Infinity) - (b.totals.seconds ?? Infinity) || b.number - a.number]],
-      empty: 'Вариантов пока нет'});
+        elsewhere(v) ? h('div', {class: 'muted'}, `On split #${v.version}; undo to return to it.`) : null),
+      search: (v) => `#${v.number} ${way(v)}`,
+      sorts: [['new', 'Newest first', (a, b) => b.number - a.number],
+        ['de', 'Lowest ΔE', (a, b) => (a.totals.mean_delta_e ?? Infinity) - (b.totals.mean_delta_e ?? Infinity) || b.number - a.number],
+        ['fast', 'Fastest', (a, b) => (a.totals.seconds ?? Infinity) - (b.totals.seconds ?? Infinity) || b.number - a.number]],
+      empty: 'No variants yet'});
     return {el: h('div', {class: 'stack'}, place.error, list.el), show(next) { j = next; list.items = j.variants; list.refresh(); }};
   }
 
-  /** «Художественно» (DEC-079): each press a new layout of hues from the chosen palette group; light places stay light. */
+  /** “Artistic” (DEC-079): each press a new layout of hues from the chosen palette group; light places stay light. */
   function artisticRow(run, place) {
-    const group = h('select', {'aria-label': 'Из каких цветов'}, SUBSETS.map(([v, name]) => h('option', {value: v}, name)));
+    const group = h('select', {'aria-label': 'Color group'}, SUBSETS.map(([v, name]) => h('option', {value: v}, name)));
     return h('div', {class: 'row'}, btn(MODE.artistic, () => run({op: 'assign', mode: 'artistic', subset: group.value}, place), 'btn-small'),
-      h('label', {class: 'row small'}, 'из ', group),
-      h('span', {class: 'muted small'}, 'новая раскладка оттенков при каждом нажатии, порядок светлоты как на оригинале'));
+      h('label', {class: 'row small'}, 'from ', group),
+      h('span', {class: 'muted small'}, 'a new hue arrangement on each click, preserving the original lightness order'));
   }
 
-  /** Раскраска с помощью AI: стиль, своё описание, свободная светлота, разрешение на фото и кнопка. Блок собирается один раз, поля не
-      сбрасываются при обновлении карточки; update ставит то, что работа помнит (разрешение, ключ, текущая раскраска AI). */
+  /** AI coloring controls preserve inputs while the work updates. */
   function aiBlock(j, run, permit) {
-    const style = h('select', {'aria-label': 'Стиль AI-раскраски'}, STYLES.map(([v, name]) => h('option', {value: v}, name)));
+    const style = h('select', {'aria-label': 'AI coloring style'}, STYLES.map(([v, name]) => h('option', {value: v}, name)));
     const hint = h('span', {class: 'small muted'});
-    const text = h('input', {type: 'text', placeholder: 'например: как витраж, много синего'});
+    const text = h('input', {type: 'text', placeholder: 'for example: stained glass with lots of blue'});
     // the description is asked for only with the style of the operator's own, and then it must be there and short enough (ai_colouring.request)
     const aiForm = Forms.create();
-    const own = aiForm.add('text', 'Своё описание', text, {required: true, maxLength: j.ai.max_text,
+    const own = aiForm.add('text', 'Custom description', text, {required: true, maxLength: j.ai.max_text,
       read: () => (style.value !== 'custom' ? {ok: true, value: null}
-        : (text.value.trim() === '' ? {ok: false, message: 'Опишите, как должна выглядеть раскраска'}
-          : text.value.trim().length > j.ai.max_text ? {ok: false, message: `Не больше ${j.ai.max_text} символов. Введено: ${text.value.trim().length}`} : {ok: true, value: text.value.trim()}))});
+        : (text.value.trim() === '' ? {ok: false, message: 'Describe the desired coloring'}
+          : text.value.trim().length > j.ai.max_text ? {ok: false, message: `Maximum ${j.ai.max_text} characters. Entered: ${text.value.trim().length}`} : {ok: true, value: text.value.trim()}))});
     const free = h('input', {type: 'checkbox'}), photo = h('input', {type: 'checkbox'});
     const off = h('p', {class: 'alert warn', hidden: true});
-    const WHY = {key: 'AI-раскраска выключена: не задан ключ OpenAI (его вводят на экране «Сеть»). Остальные способы работают.',
-      library: 'AI-раскраска выключена: на этом компьютере не установлена библиотека языковой модели. Установите зависимости приложения (команда в README), остальные способы работают.'};
+    const WHY = {key: 'AI coloring is disabled because no OpenAI key is configured. Set one on the Network screen; other coloring methods remain available.',
+      library: 'AI coloring is disabled because the language model library is not installed. Install the application dependencies as described in the README; other methods remain available.'};
     const current = h('p', {class: 'small'});
     let busy = false;
-    const go = btn('Раскрасить с помощью AI', async (ev) => {
+    const go = btn('Color with AI', async (ev) => {
       const self = ev.currentTarget;
       const v = aiForm.collect();
       if (!v) return;                                                // the description says what is wrong beside itself and stays as typed
-      busy = true; self.disabled = true; self.textContent = 'AI подбирает цвета…';
+      busy = true; self.disabled = true; self.textContent = 'AI is selecting colors…';
       try {
         await run({op: 'ai_colour', style: style.value, ...(style.value === 'custom' ? {text: v.text} : {}), free_lightness: free.checked}, aiForm);   // a refusal stays above the button
-      } finally { busy = false; self.textContent = 'Раскрасить с помощью AI'; sync(j); }
+      } finally { busy = false; self.textContent = 'Color with AI'; sync(j); }
     }, 'primary');
     function sync(next) {
       j = next;
@@ -214,23 +206,23 @@ const VectorColours = (() => {
       off.hidden = j.ai.available;
       fill(off, WHY[j.ai.missing] || WHY.key);
       const now = j.colouring.mode === 'ai' && j.colouring.ai ? j.colouring.ai : null;
-      fill(current, now ? ['Сейчас раскрашено AI: ', h('strong', {}, aiName(now).slice(5)), now.note ? ` — ${now.note}` : ''] : null);
+      fill(current, now ? ['Currently colored by AI: ', h('strong', {}, aiName(now).slice(5)), now.note ? ` — ${now.note}` : ''] : null);
       current.hidden = !now;
     }
     style.addEventListener('change', () => sync(j));
     photo.addEventListener('change', () => permit(photo.checked, aiForm));
     sync(j);
-    const el = h('div', {class: 'stack vw-ai'}, h('h4', {}, 'Раскраска с помощью AI'),
-      h('div', {class: 'vw-split-fields'}, field('Стиль', style, null), own),
+    const el = h('div', {class: 'stack vw-ai'}, h('h4', {}, 'AI coloring'),
+      h('div', {class: 'vw-split-fields'}, field('Style', style, null), own),
       aiForm.error,
       hint,
       h('div', {class: 'vw-split-actions'},
-        h('label', {class: 'row'}, free, h('span', {}, 'Свободная светлота: AI может менять порядок светлого и тёмного (по умолчанию он сохраняется)')),
-        h('label', {class: 'row'}, photo, h('span', {}, `Разрешить отправить уменьшенное фото (до ${j.ai.photo_px} px) для этой работы`)), go),
+        h('label', {class: 'row'}, free, h('span', {}, 'Free lightness: AI may change the light-to-dark order (preserved by default)')),
+        h('label', {class: 'row'}, photo, h('span', {}, `Allow sending a reduced photo (up to ${j.ai.photo_px} px) for this work`)), go),
       off, current,
-      h('p', {class: 'muted small'}, 'AI подбирает измеренные цвета титана каждому цвету картинки по принципам выбранного стиля. Он получает только числа: цвета картинки (Lab) '
-        + 'и их доли, какие цвета граничат и измеренные цвета титана; фото не видит, пока вы не разрешили. Цвета, выбранные вами вручную, остаются. '
-        + 'Выбор AI сохраняется в варианте и при возврате к нему не пересчитывается.'));
+      h('p', {class: 'muted small'}, 'AI selects measured titanium colors for each image color according to the chosen style. It receives only numerical data: image colors (Lab) '
+        + 'and their proportions, adjacent colors, and measured titanium colors. It does not receive the photo unless you allow it. Manual color choices remain. '
+        + 'AI choices are saved in the variant and are not recalculated when restored.'));
     return {el, update: sync};
   }
 
@@ -241,20 +233,19 @@ const VectorColours = (() => {
     const form = Forms.create();
     const Q = Forms.QUANTITIES;
     const tol = Forms.numberInput(Q.deltaE, {value: s.tolerance_de});
-    const maxTime = Forms.numberInput(Q.maxTime, {value: s.max_time ?? '', placeholder: 'без предела'});
+    const maxTime = Forms.numberInput(Q.maxTime, {value: s.max_time ?? '', placeholder: 'no limit'});
     const asShot = h('input', {type: 'checkbox', checked: s.include_as_shot});
-    const tolField = form.add('tolerance_de', 'Допуск ΔE', tol, {quantity: 'deltaE'});
-    const timeField = form.add('max_time', 'Наибольшее время', maxTime, {quantity: 'maxTime'});
+    const tolField = form.add('tolerance_de', 'ΔE tolerance', tol, {quantity: 'deltaE'});
+    const timeField = form.add('max_time', 'Maximum time', maxTime, {quantity: 'maxTime'});
     return h('div', {class: 'toolbar'}, tolField, timeField,
-      h('label', {class: 'row'}, asShot, h('span', {}, 'Включить цвета без привязки (сняты без эталона)')),
-      btn('Применить', () => {
+      h('label', {class: 'row'}, asShot, h('span', {}, 'Include uncalibrated colors (captured without a reference)')),
+      btn('Apply', () => {
         const v = form.collect();
         if (v) run({op: 'settings', tolerance_de: v.tolerance_de, max_time: v.max_time, include_as_shot: asShot.checked}, form);     // a refusal is told beside its box, the typed values stay
       }), form.error);
   }
 
-  /** Части рабочего стола: вкладка «Цвета» (``colours``), вкладка «AI» (``ai``) и редактор (``editor``; его картинка и панель
-      встают в рамку vector-workspace.js отдельно); update — на месте. */
+  /** Build the color and AI tabs and update them with the current work. */
   function parts(j, run, permit) {
     const editor = VectorEditor.create(j, run, {pick});
     const ai = aiBlock(j, run, permit);
@@ -263,22 +254,22 @@ const VectorColours = (() => {
     let settings = null;
     function show(next) {
       j = next;
-      fill(intro, `Палитра: измеренных цветов ${j.palette_size}. Каждому исходному цвету дан самый быстрый цвет в пределах допуска ΔE, иначе ближайший; `
-        + 'далёкие от оригинала можно обвести на картинке, файл они не блокируют.');
-      fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'Для этого лазера, линзы и титана этой марки нет измеренных цветов заливки: раскрасить нечем.'));
+      fill(intro, `Palette: ${j.palette_size} measured colors. Each original color uses the fastest color within ΔE tolerance, or the nearest otherwise; `
+        + 'colors far from the original can be outlined in the image and do not block the file.');
+      fill(empty, j.palette_size ? null : h('div', {class: 'alert warn'}, 'No measured fill colors are available for this laser, lens, and titanium grade.'));
       const key = JSON.stringify(j.settings);
-      if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // поля не сбрасываются, пока настройки те же
+      if (key !== settings) { settings = key; fill(bar, settingsBar(j, run)); }       // fields are retained while settings are unchanged
       detailed.show(j);
       kept.show(j);
     }
     show(j);
-    const modesPlace = Forms.notice({what: 'Перекраска', kept: 'Раскраска работы осталась прежней.'});
+    const modesPlace = Forms.notice({what: 'Recolor', kept: 'The work keeps its previous coloring.'});
     const colours = h('div', {class: 'stack vw-colours'}, intro, empty, bar,
-      h('div', {class: 'vw-modes'}, h('span', {class: 'muted small'}, 'Перекрасить автоматически всю работу:'),
+      h('div', {class: 'vw-modes'}, h('span', {class: 'muted small'}, 'Automatically recolor the entire work:'),
         h('div', {class: 'row'}, MODES.map(([mode, label]) => btn(label, () => run({op: 'assign', mode}, modesPlace), 'btn-small'))), artisticRow(run, modesPlace), modesPlace.error),
-      h('div', {class: 'row'}, btn('Подробно по цветам…', () => modal('Подробно по цветам', rows, [{label: 'Закрыть', run: (m) => m.close()}]))));
-    const saved = h('div', {class: 'stack'}, h('h4', {}, 'Варианты раскраски'),
-      h('p', {class: 'muted small'}, 'Каждая раскраска всей работы — автоматическая, от AI или после ваших правок — остаётся вариантом: к любому можно вернуться.'), kept.el);
+      h('div', {class: 'row'}, btn('Color details…', () => modal('Color details', rows, [{label: 'Close', run: (m) => m.close()}]))));
+    const saved = h('div', {class: 'stack'}, h('h4', {}, 'Coloring variants'),
+      h('p', {class: 'muted small'}, 'Every whole-work coloring, whether automatic, AI-generated, or edited, is saved as a variant you can restore.'), kept.el);
     return {colours, variants: saved, ai: ai.el, editor, update(next) { show(next); ai.update(next); editor.update(next); }};
   }
 

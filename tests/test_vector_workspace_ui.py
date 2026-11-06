@@ -92,7 +92,7 @@ def test_the_list_shows_each_work_with_its_thumbnail_and_facts_and_opens_copies_
         assert card["img"].startswith(f"/api/vector/{entry['id']}/thumb.png?v=") and card["link"] == f"#/vector?plan={entry['id']}"
         assert card["buttons"] == ["✎", "Open", "Make a copy", "Delete"]
         assert f"colors {entry['n_colours']} · regions {entry['regions']} · layers {entry['layers']}" in card["text"]
-    assert any("Coloring: AI · Кубизм" in card["text"] for card in out["cards"])
+    assert any("Coloring: AI · Cubism" in card["text"] for card in out["cards"])
     assert any("Coloring: Closer to original" in card["text"] or "Coloring: Preserve tonality" in card["text"] for card in out["cards"])
     assert any("By tone" in card["text"] for card in out["cards"]) and any("Mosaic" in card["text"] for card in out["cards"])
     assert out["opened"] == f"#/vector?plan={first['id']}" and out["copied"] == "#/vector?plan=77" and out["copyPosts"] == [f"/api/vector/{first['id']}/copy"]
@@ -141,8 +141,8 @@ def test_the_workspace_has_tabs_that_switch_panels_and_remember_the_open_one_and
   out.editorTabs = edTabs;
 """)
     assert has_class(out["root"], "workspace") and has_class(out["root"], "vw-work")
-    assert [name for name, _ in out["first"]] == ["Разбиение", "Document colors", "AI", "Варианты", "Результат", "Файл"]
-    assert out["first"] == [["Разбиение", "false"], ["Document colors", "true"], ["AI", "false"], ["Варианты", "false"], ["Результат", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
+    assert [name for name, _ in out["first"]] == ["Разбиение", "Document colors", "AI", "Варианты", "Result", "Файл"]
+    assert out["first"] == [["Разбиение", "false"], ["Document colors", "true"], ["AI", "false"], ["Варианты", "false"], ["Result", "false"], ["Файл", "false"]] and out["firstShown"] == ["vw-tab-panel-colours"], (out["first"], out["firstShown"])
     assert out["afterClick"][2] == ["AI", "true"] and out["afterClickShown"] == ["vw-tab-panel-ai"] and out["saved"] == "ai"
     assert out["afterArrow"] == ["vw-tab-panel-variants"] and out["restored"] == ["vw-tab-panel-variants"]            # the arrow key moves on; a rebuilt screen keeps the tab
     assert "Vector work" in out["head"] and j["name"] in out["head"] and "Engraving plan" in out["head"] and "split #" in out["head"] and "layers " in out["head"]
@@ -161,21 +161,21 @@ def test_the_colour_table_opens_in_a_window_and_the_ai_tab_says_when_the_library
     view = routes[f"/api/vector/{j['id']}"]["json"]
     view["ai"] = {**view["ai"], "available": False, "missing": "library"}
     out = run(tmp_path, routes, {"plan": str(j["id"])}, """
-  await byText(tree, 'button', 'Подробно по цветам…').dispatch('click');
+  await byText(tree, 'button', 'Color details…').dispatch('click');
   const dialog = ctx.document.body.querySelector('.modal');
   out.window = dialog.textContent; out.wide = dialog.querySelectorAll('div').some((d) => has(d, 'vw-wide'));
   out.lines = dialog.querySelectorAll('.lst-main').length;
   await dialog.querySelector('.lst-main').dispatch('click'); await tick();                       // a colour's line opens its titanium colour
   out.opened = dialog.querySelectorAll('.lst-det').filter((d) => !d.hidden).map((d) => d.textContent);
   const ai = tree.querySelectorAll('div').find((d) => d.className === 'stack vw-ai');
-  out.disabled = byText(ai, 'button', 'Раскрасить с помощью AI').disabled;
+  out.disabled = byText(ai, 'button', 'Color with AI').disabled;
   out.reason = ai.querySelectorAll('p').filter((p) => p.className === 'alert warn' && !p.hidden).map((p) => p.textContent);
 """)
-    assert "исходный цвет и цвет титана" in out["window"] and "Изменить" in out["window"] and out["wide"] is True
+    assert "original color, its titanium color" in out["window"] and "Change" in out["window"] and out["wide"] is True
     assert out["lines"] == len(view["colours"]) and "showing" in out["window"]                  # one line per source colour (DEC-090)
     (opened,) = out["opened"]
-    assert opened.startswith("Исходный цвет") and "Цвет титана" in opened and "Рецепт" in opened
-    assert out["disabled"] is True and len(out["reason"]) == 1 and "библиотека" in out["reason"][0] and "OPENAI_API_KEY" not in out["reason"][0]
+    assert opened.startswith("Original color") and "Titanium color" in opened and "Recipe" in opened
+    assert out["disabled"] is True and len(out["reason"]) == 1 and "library" in out["reason"][0] and "OPENAI_API_KEY" not in out["reason"][0]
 
 
 # -- the frame -------------------------------------------------------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def test_the_workspace_takes_the_screen_without_a_scrolling_page_and_the_section
     assert re.search(r"\.vw-work \.vw-editor \{display:contents\}", CSS)                                  # the editor's picture and panel are columns of the frame
     assert re.search(r"\.vw-work \.vw-ed-stage \{flex:1;height:auto", CSS)
     assert re.search(r"\.vw-panels \{flex:1;min-height:0;overflow:auto", CSS) and re.search(r"\.vw-ed-panes \{flex:1;min-height:0;overflow:auto", CSS)   # only a long list scrolls
-    narrow = re.search(r"@media \(max-width:1100px\) \{(.*?)\n\}", CSS[CSS.index("14) векторная работа"):], re.S)
+    narrow = re.search(r"@media \(max-width:1100px\) \{(.*?)\n\}", CSS[CSS.index("14) vector work"):], re.S)
     assert narrow and ".vw-work-body {grid-template-columns:minmax(0,1fr)}" in narrow.group(1) and ".vw-work {height:auto" in narrow.group(1)   # a phone scrolls as before
 
 
@@ -326,7 +326,7 @@ def test_the_header_of_a_work_renames_it_and_keeps_its_pencil_when_the_screen_is
   await byText(d, 'button', 'Save').dispatch('click'); await tick(); await tick();
   out.after = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label')];
   out.posts = posts();
-  await byText(tree, 'button', 'Случайно').dispatch('click'); await tick(); await tick();       // an operation: the screen shows the server's view again
+  await byText(tree, 'button', 'Random').dispatch('click'); await tick(); await tick();       // an operation: the screen shows the server's view again
   out.refreshed = [head().querySelector('h2').textContent, pencils().length, pencils()[0].getAttribute('aria-label'), head().querySelector('.sub').textContent.includes('split #')];
 """)
     assert out["before"] == [j["name"], 1, f"Rename work «{j['name']}»"] and out["prefill"] == j["name"]
@@ -426,27 +426,27 @@ def test_the_split_colours_the_colour_settings_and_the_ai_description_are_checke
   await byText(tree, 'button', 'Split again').dispatch('click'); await tick();
   out.asked = [dialog() != null, said(labelled('Number of colors'))];
   // the settings of the colours: the longest time must be above 0
-  const time = labelled('Наибольшее время').firstControl();
+  const time = labelled('Maximum time').firstControl();
   time.value = '0'; await time.dispatch('input');
-  await byText(tree, 'button', 'Применить').dispatch('click'); await tick();
-  out.time = [ctx.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/edit')).length, said(labelled('Наибольшее время')), time.value];
+  await byText(tree, 'button', 'Apply').dispatch('click'); await tick();
+  out.time = [ctx.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/edit')).length, said(labelled('Maximum time')), time.value];
   // the AI colouring with a description of its own: it must be there and short enough
-  const style = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Стиль AI-раскраски');
+  const style = tree.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'AI coloring style');
   style.value = 'custom'; await style.dispatch('change');
-  const text = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').startsWith('например'));
-  const go = byText(tree, 'button', 'Раскрасить с помощью AI');
+  const text = tree.querySelectorAll('input').find((i) => (i.getAttribute('placeholder') || '').startsWith('for example'));
+  const go = byText(tree, 'button', 'Color with AI');
   const posted = () => ctx.requests.filter((r) => r.method === 'POST').length;
   const mark = posted();
   text.value = '   '; await text.dispatch('input'); await go.dispatch('click'); await tick();
-  out.blankText = [posted() - mark, said(labelled('Своё описание')), go.disabled];
+  out.blankText = [posted() - mark, said(labelled('Custom description')), go.disabled];
   text.value = 'x'.repeat(401); await text.dispatch('input'); await go.dispatch('click'); await tick();
-  out.longText = [posted() - mark, said(labelled('Своё описание')), text.value.length];
+  out.longText = [posted() - mark, said(labelled('Custom description')), text.value.length];
 """)
     assert out["colours"][:2] == [True, 0] and "Allowed" in out["colours"][2][0] and "Entered: 99" in out["colours"][2][0]
     assert out["colours"][3:] == ["99", "true"]
     assert out["asked"] == [True, []]
     assert out["time"][0] == 0 and "Entered: 0" in out["time"][1][0] and out["time"][2] == "0"
-    assert out["blankText"] == [0, ["Опишите, как должна выглядеть раскраска"], False]
+    assert out["blankText"] == [0, ["Describe the desired coloring"], False]
     assert out["longText"][0] == 0 and "400" in out["longText"][1][0] and out["longText"][2] == 401
 
 
