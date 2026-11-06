@@ -33,7 +33,7 @@ let tree;
   const out = {};
   tree = await ctx.__screens.plan.render({arg: '22', query: {}});
   await tick(); await tick();
-  const card = tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === 'Слои и параметры');
+  const card = tree.querySelectorAll('div').find((d) => (d.querySelector('h3') || {}).textContent === 'Layers and settings');
   const mains = () => card.querySelectorAll('.lst-main');
 %(body)s
   const exportButton = tree.querySelectorAll('button').find((b) => b.textContent === 'Скачать LightBurn');
@@ -88,18 +88,18 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
     out = run(tmp_path, plan([zone(1, 3, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0}, by_colour=True, colour_choice="nearest", contours=True),
                               zone(2, 4, "jarvis", {**SETTINGS, "min_power": 20.0, "power": 20.0}, regions=("r4",), by_colour=True),
                               zone(3, 5, "grayscale", None, problem="the width of the picture must be 1..1000 mm")]))
-    assert out["rows"] == ["C02 P50-F1950-V1800-I0.01областей 1", "C03 Photo 1 grayscale P29Фотозона 1 · Grayscaleобластей 2",
-                           "C04 Photo 2 jarvis P20Фотозона 2 · Jarvisобластей 1", "Фотозона 3Фотозона 3 · Grayscaleне гравируетсяобластей 2"]
+    assert out["rows"] == ["C02 P50-F1950-V1800-I0.01regions 1", "C03 Photo 1 grayscale P29Photo zone 1 · Grayscaleregions 2",
+                           "C04 Photo 2 jarvis P20Photo zone 2 · Jarvisregions 1", "Photo zone 3Photo zone 3 · Grayscalecannot be engravedregions 2"]
     layer, gray, dots, bad = out["details"]
-    assert layer.startswith("50.0 % · 1950.0 кГц · 1800 мм/с · Q-Pulse 2 нс · шаг заливки 0.0100 мм · 1 проход(а)")
-    assert "Прогнозный цвет—" in layer and layer.endswith("Областей1")                           # no prediction: said, not left out
-    assert gray.startswith("Min 2.0 % – Max 29.0 % · 60.0 кГц · 150 мм/с · Q-Pulse 350 нс · шаг строк 0.0212 мм · 1 проход(а)")
-    assert gray.endswith("Изображение (Image), режим «Grayscale»: картинка работы в областях зоны, вне зоны прозрачна; "
+    assert layer.startswith("50.0 % · 1950.0 kHz · 1800 mm/s · Q-Pulse 2 ns · fill interval 0.0100 mm · 1 passes")
+    assert "Predicted color—" in layer and layer.endswith("Regions1")                           # no prediction: said, not left out
+    assert gray.startswith("Min 2.0 % – Max 29.0 % · 60.0 kHz · 150 mm/s · Q-Pulse 350 ns · line interval 0.0212 mm · 1 passes")
+    assert gray.endswith("Image layer, “Grayscale” mode: the work image inside the zone and transparent outside; "
                          "grays matched to colors: nearest color · contours")                         # how its greys are chosen (0.23.0)
-    assert dots.startswith("точки 20.0 % · 60.0 кГц") and dots.endswith("режим «Jarvis»: картинка работы в областях зоны, вне зоны прозрачна")
+    assert dots.startswith("dots 20.0 % · 60.0 kHz") and dots.endswith("“Jarvis” mode: the work image inside the zone and transparent outside")
     assert bad == "the width of the picture must be 1..1000 mm"
     assert out["chips"] == [["/api/vector/22/photo/1.png?v=k1", "vw-ed-zone-chip"], ["/api/vector/22/photo/2.png?v=k2", "vw-ed-zone-chip"]]
-    assert out["pictures"] == [["/api/vector/22/photo/1.png?v=k1", "Фотозона 1", "plan-zone-pic"], ["/api/vector/22/photo/2.png?v=k2", "Фотозона 2", "plan-zone-pic"]]
+    assert out["pictures"] == [["/api/vector/22/photo/1.png?v=k1", "Photo zone 1", "plan-zone-pic"], ["/api/vector/22/photo/2.png?v=k2", "Photo zone 2", "plan-zone-pic"]]
     assert out["export"] is False
     assert ".plan-zone-pic {" in CSS and ".vw-ed-zone-chip {" in CSS
 
@@ -107,7 +107,7 @@ def test_the_plan_of_a_vector_work_lists_each_photo_zone_as_its_image_layer_afte
 @node
 def test_a_work_engraved_only_as_photo_zones_still_has_its_layers_and_its_export(tmp_path):
     out = run(tmp_path, plan([zone(1, 2, "grayscale", {**SETTINGS, "min_power": 2.0, "power": 29.0})], layers=False))
-    assert out["rows"] == ["C02 Photo 1 grayscale P29Фотозона 1 · Grayscaleобластей 2"] and out["export"] is False
+    assert out["rows"] == ["C02 Photo 1 grayscale P29Photo zone 1 · Grayscaleregions 2"] and out["export"] is False
 
 
 def layers(n):
@@ -143,7 +143,7 @@ def test_a_plan_of_many_layers_shows_one_page_sorts_them_and_opens_a_layer_only_
     assert out["openBefore"] == 0                                                                   # nothing is open until a line is clicked
     assert out["sorted"] == ["C24 P24", "C23 P23", "C22 P22"]
     (opened,) = out["opened"]
-    assert opened.startswith("50.0 % · 1950.0 кГц") and "Ожидаемая ошибка ΔE2.40" in opened and "СтадияВалидировано" in opened
+    assert opened.startswith("50.0 % · 1950.0 kHz") and "Expected ΔE error2.40" in opened and "StageValidated" in opened
     assert "What is a stage?" in out["terms"]
     assert out["all"] == 24
 

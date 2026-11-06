@@ -37,7 +37,7 @@ def test_the_plan_screen_renders_the_three_estimates_of_each_layer_from_its_pred
     for field in ("num(pr.confidence)", "num(pr.expected_delta_e)", "pr.stability.assessed", "num(pr.stability.variance)"):
         assert field in screen, field
     # a layer is a line of a short list (DEC-090): its three estimates are the facts under the line, in this order
-    at = [screen.index(f"['{label}', pr ? ") for label in ("Уверенность", "Ожидаемая ошибка ΔE", "Стабильность")]
+    at = [screen.index(f"['{label}', pr ? ") for label in ("Confidence", "Expected ΔE error", "Stability")]
     assert at == sorted(at)
 
 
