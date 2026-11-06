@@ -51,7 +51,7 @@ WORK = {"id": 7, "name": "Inna Portrait", "min_power": 1, "max_power": 17,
         "scale": {"device_id": 1, "lens_id": 2, "material_id": 2, "speed": 150, "frequency": 60, "pulse_width": 350, "line_interval": 0.0254}}
 
 
-def run(tmp_path, query):
+def run(tmp_path, query, body=None):
     routes = {"/api/devices": {"status": 200, "json": [{"id": 1, "title": "JPT M7", "lens": {"id": 2}}]},
               "/api/lenses": {"status": 200, "json": [{"id": 2, "name": "F-Theta", "focal_length_mm": 174}]},
               "/api/materials": {"status": 200, "json": [{"id": 2, "name": "Big Plate 150", "grade": "Grade 5", "thickness_mm": 3},
@@ -62,7 +62,8 @@ def run(tmp_path, query):
               "/api/photo-works/7/export.lbrn2": {"status": 200, "text": "<LightBurnProject/>", "type": "application/octet-stream"},
               "/api/predictions/photo": {"status": 200, "json": REFUSED}}
     script = tmp_path / "screen.js"
-    script.write_text(HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "routes": json.dumps(routes),
+    harness = HARNESS if body is None else HARNESS[:HARNESS.index("(async () => {")] + body
+    script.write_text(harness % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "routes": json.dumps(routes),
                                  "ui": json.dumps(str(UI) + "/"), "tables": json.dumps(TABLES), "scripts": json.dumps(SCRIPTS), "glue": json.dumps(GLUE),
                                  "query": json.dumps(query)}, encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=120)
@@ -77,3 +78,82 @@ def test_a_photo_works_file_opens_with_its_setup_and_a_refused_file_switches_to_
     name = "Inna Portrait-P1-17.lbrn2"
     assert out["posted"] == [["2", "1", "2", name], ["3", "1", "2", name], ["2", "1", "2", name]]   # opened, another titanium, switched back
     assert out["titanium"] == "2"
+
+
+@node
+def test_previous_result_survives_failures_and_late_responses(tmp_path):
+    body = r"""
+const original = ctx.fetch;
+const pending = [];
+let delayed = false;
+ctx.fetch = (url, opts) => {
+  if (String(url) === '/api/predictions/photo' && delayed) return new Promise((resolve) => pending.push(resolve));
+  return original(url, opts);
+};
+const response = (data, status = 200) => ({ok: status < 300, status, headers: {get: () => 'application/json'}, json: async () => data});
+(async () => {
+  const tree = await ctx.__screens['photo-preview'].render({query: %(query)s});
+  ctx.document.body.append(tree);
+  await settle();
+  const button = tree.querySelectorAll('button').find((b) => b.textContent === 'Показать прогноз');
+  const status = tree.querySelectorAll('[role]').find((e) => e.getAttribute('role') === 'status' && e.getAttribute('aria-live') === 'polite');
+  const old = tree.textContent.includes('Файл «Inna Portrait-P1-17.lbrn2»');
+  delayed = true;
+  const first = button.dispatch('click'); await settle();
+  const waiting = [status.textContent, tree.textContent.includes('Файл «Inna Portrait-P1-17.lbrn2»')];
+  const second = button.dispatch('click'); await settle();
+  pending[1](response({...%(refused)s, file: 'new.lbrn2'})); await second; await settle();
+  pending[0](response({error: 'late failure'}, 500)); await first; await settle();
+  const latest = [tree.textContent.includes('Файл «new.lbrn2»'), status.textContent, tree.textContent.includes('late failure')];
+  const third = button.dispatch('click'); await settle();
+  pending[2](response({error: 'offline'}, 500)); await third; await settle();
+  console.log(JSON.stringify({old, waiting, latest, failure: [status.textContent, tree.textContent.includes('Файл «new.lbrn2»')]}));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+""".replace("%(refused)s", json.dumps(REFUSED))
+    out = run(tmp_path, {"work": "7"}, body)
+    assert out["old"] and out["waiting"][1] and "предыдущий прогноз" in out["waiting"][0]
+    assert out["latest"] == [True, "", False]
+    assert out["failure"][1] and "не удалось" in out["failure"][0]
+
+
+@node
+def test_slider_keeps_image_until_new_render_loads_and_ignores_stale_failures(tmp_path):
+    layer = {"index": 1, "name": "C01", "dither": "grayscale", "settings": {"overridden": [], "min_power": 10, "max_power": 80},
+             "axis": "power", "preview": "/old.png", "referenced": True, "reference": "chart", "mode": {}, "span": [0, 100],
+             "curve": {"points": []}, "outside_share": 0, "notes": []}
+    body = r"""
+const original = ctx.fetch, pending = [], images = [];
+ctx.Image = class { constructor() { images.push(this); } };
+ctx.fetch = (url, opts) => {
+  if (String(url) === '/api/predictions/photo') return Promise.resolve(response({cache_id: 'cache', file: 'test', layers: [%(layer)s]}));
+  if (String(url).startsWith('/api/predictions/photo/cache/')) return new Promise((resolve) => pending.push(resolve));
+  return original(url, opts);
+};
+const response = (data, code = 200) => ({ok: code < 300, status: code, headers: {get: () => 'application/json'}, json: async () => data});
+(async () => {
+  const tree = await ctx.__screens['photo-preview'].render({query: %(query)s}); await settle();
+  const img = tree.querySelector('.pp-image');
+  const range = tree.querySelectorAll('input').find((e) => e.getAttribute('type') === 'range');
+  const status = () => tree.querySelectorAll('[role]').filter((e) => e.getAttribute('role') === 'status' && e.getAttribute('aria-live') === 'polite').pop().textContent;
+  const initial = img.src;
+  range.value = '20'; await range.dispatch('input'); await wait(300);
+  range.value = '30'; await range.dispatch('input'); await wait(300);
+  pending[1](response({...%(layer)s, preview: '/new.png'})); await settle();
+  const beforeLoad = [img.src, status()];
+  pending[0](response({error: 'late failure'}, 500)); await settle();
+  const afterLate = [img.src, status()];
+  images[0].onerror();
+  const afterError = [img.src, status()];
+  const retry = tree.querySelectorAll('button').find((b) => b.textContent === 'Повторить пересчёт');
+  await retry.dispatch('click'); await wait(300);
+  pending[2](response({...%(layer)s, preview: '/new.png'})); await settle();
+  images[1].onload();
+  console.log(JSON.stringify({initial, beforeLoad, afterLate, afterError, final: [img.src, status()]}));
+})().catch((e) => { console.error(e.stack); process.exit(1); });
+""".replace("%(layer)s", json.dumps(layer))
+    out = run(tmp_path, {"work": "7"}, body)
+    assert out["initial"].startswith("/old.png?")
+    assert out["beforeLoad"][0] == out["initial"] and "предыдущий прогноз" in out["beforeLoad"][1]
+    assert out["afterLate"] == out["beforeLoad"]
+    assert out["afterError"][0] == out["initial"] and "не удалось" in out["afterError"][1]
+    assert out["final"][0].startswith("/new.png?min_power=30") and out["final"][1] == ""

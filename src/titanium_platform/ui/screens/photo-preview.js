@@ -72,6 +72,7 @@
       const range = h('input', {type: 'range', min: 0, max: 100, step: 0.1, value: layer.settings[key], 'aria-label': label});
       const exact = h('input', {type: 'number', min: 0, max: 100, step: 'any', value: layer.settings[key], 'aria-label': label, style: 'width:6em'});
       range.addEventListener('input', () => { exact.value = range.value; exact.removeAttribute('aria-invalid'); note.textContent = ''; schedule(); });
+      exact.addEventListener('input', () => { ++seq; clearTimeout(timer); status.textContent = 'Показан предыдущий прогноз; проверьте новые настройки.'; });
       // prediction_store.check_power_range: 0 to 100 %; a value outside is kept in the box with the reason beside it and is not applied
       const note = Forms.watch(exact, 'photoPower', (v) => { range.value = v; schedule(); });
       return {exact, box: h('div', {class: 'stack'}, h('label', {class: 'f'}, h('span', {}, label), h('span', {class: 'row'}, range, Forms.describe(range, 'photoPower'),
@@ -80,10 +81,13 @@
     const tone = TONE(layer);
     const low = slider('min_power', 'Мин. мощность, %'), high = slider('max_power', 'Макс. мощность, %');
     const error = h('p', {class: 'alert bad', role: 'alert', hidden: true});
+    const status = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'});
+    const retry = btn('Повторить пересчёт', () => { retry.hidden = true; schedule(); }, 'btn-small');
+    retry.hidden = true;
+    const previewUrl = (info, lo, hi) => tone ? info.preview : `${info.preview}?min_power=${lo}&max_power=${hi}`;
 
-    function draw(info) {
-      const lo = +low.exact.value, hi = +high.exact.value;
-      img.src = tone ? info.preview : `${info.preview}?min_power=${lo}&max_power=${hi}`;
+    function draw(info, lo = +low.exact.value, hi = +high.exact.value) {
+      img.src = previewUrl(info, lo, hi);
       // DEC-062: a prediction from camera-relative colours says so on the picture itself
       banner.hidden = info.referenced;
       banner.textContent = info.referenced ? '' : 'Цвета относительно камеры: такими их увидела камера при том освещении, без коррекции по эталонной карте'
@@ -97,18 +101,25 @@
       error.hidden = true;
       if (tone || !bounds.every((b) => b.ok)) return;                    // a wrong box keeps its text and says why beside itself
       const [lo, hi] = bounds.map((b) => b.value);
-      if (!(lo <= hi)) { error.textContent = 'Мин. мощность должна быть не выше макс.'; error.hidden = false; return; }
-      const mine = ++seq;
+      if (!(lo <= hi)) { error.textContent = 'Мин. мощность должна быть не выше макс.'; error.hidden = false; status.textContent = 'Показан предыдущий прогноз; проверьте новые настройки.'; return; }
+      const mine = seq;
+      status.textContent = 'Показан предыдущий прогноз; пересчитываем для новых настроек…';
       try {
         const info = await get(`/predictions/photo/${cacheId}/${layer.index}?min_power=${lo}&max_power=${hi}`);
-        if (mine === seq) draw(info);
-      } catch (e) { error.textContent = e.message; error.hidden = false; }
+        if (mine !== seq) return;
+        // Keep the old image until the new render is actually available, not merely until its metadata arrives.
+        const next = new Image();
+        next.onload = () => { if (mine === seq) { draw(info, lo, hi); status.textContent = ''; } };
+        next.onerror = () => failed('Не удалось загрузить изображение прогноза.');
+        next.src = previewUrl(info, lo, hi);
+      } catch (e) { failed(e.message); }
+      function failed(message) { if (mine === seq) { error.textContent = message; error.hidden = false; retry.hidden = false; status.textContent = 'Показан предыдущий прогноз; пересчитать не удалось. Измените настройку или повторите попытку.'; } }
     }
-    function schedule() { clearTimeout(timer); timer = setTimeout(rerender, 250); }
+    function schedule() { ++seq; clearTimeout(timer); retry.hidden = true; status.textContent = 'Показан предыдущий прогноз; ожидается пересчёт.'; timer = setTimeout(rerender, 250); }
     draw(layer);
     return h('section', {class: 'card stack'}, head,
       tone ? h('p', {class: 'muted small'}, 'В этом режиме каждая точка бьёт на мощности слоя: Min и Max не меняют результат, ползунков нет. Другая мощность — другой режим, его нужно измерить отдельно.')
-        : h('div', {class: 'grid g2'}, low.box, high.box), error, lost,
+        : h('div', {class: 'grid g2'}, low.box, high.box), status, error, retry, lost,
       h('div', {class: 'pp-captions'}, h('span', {}, 'Картинка из файла'), h('span', {}, 'Прогноз на титане')),
       h('div', {class: 'pp-stage'}, img, banner),
       about, curve);
@@ -153,22 +164,39 @@
     const overrides = OVERRIDES.map(([key, label]) => [key, form_.add(key, label, Forms.numberInput(Forms.QUANTITIES[OVERRIDE_QUANTITY[key]] || null, {placeholder: 'как в файле'}),
       OVERRIDE_QUANTITY[key] ? {quantity: OVERRIDE_QUANTITY[key]} : {})]);
     const results = h('div', {class: 'stack'});
+    const resultStatus = h('p', {class: 'small', role: 'status', 'aria-live': 'polite'});
+    let predictionSeq = 0, hasResults = false;
+
+    function invalidatePrediction() {
+      ++predictionSeq;
+      if (hasResults) resultStatus.textContent = 'Показан предыдущий прогноз. Настройки изменились; нажмите «Показать прогноз» для пересчёта.';
+      else resultStatus.textContent = '';
+    }
 
     async function predict() {
+      const mine = ++predictionSeq;
       const v = form_.collect();
-      if (!v) return;
+      if (!v) { resultStatus.textContent = hasResults ? 'Показан предыдущий прогноз; проверьте настройки перед пересчётом.' : ''; return; }
       const file = v.file;
       const fd = new FormData();
       fd.append('device_id', v.laser); fd.append('lens_id', v.lens); fd.append('material_id', v.material);
       for (const [key] of overrides) if (v[key] != null) fd.append(key, v[key]);
       fd.append('lightburn', file, file.name);
-      fill(results, h('p', {class: 'muted'}, 'Считаем прогноз…'));
+      resultStatus.textContent = hasResults ? 'Показан предыдущий прогноз; считаем новый…' : 'Считаем прогноз…';
       try {
         const out = await form('/predictions/photo', fd);
+        if (mine !== predictionSeq) return;
         await knowStocks(out.layers);
+        if (mine !== predictionSeq) return;
         fill(results, h('p', {class: 'muted small'}, `Файл «${out.file}» · слоёв изображения: ${out.layers.length}. Ползунки Min и Max перерисовывают прогноз без новой загрузки.`),
           ...out.layers.map((layer) => layerCard(layer, out.cache_id, elsewhere)));
-      } catch (e) { fill(results); form_.fail(e); }
+        hasResults = true;
+        resultStatus.textContent = '';
+      } catch (e) {
+        if (mine !== predictionSeq) return;
+        resultStatus.textContent = hasResults ? 'Показан предыдущий прогноз; пересчитать не удалось. Повторите попытку.' : 'Не удалось рассчитать прогноз. Повторите попытку.';
+        form_.fail(e);
+      }
     }
     /* Where the file's mode is measured, when the chosen laser, lens and titanium have no measurement of it: one button each switches to it. */
     const known = new Map();                                     // titanium id -> its record, read one by one for the lines below (never the whole catalogue)
@@ -194,17 +222,19 @@
         ...found.map((m) => h('div', {class: 'row'}, h('span', {class: 'small'}, setupLabel(m)), btn('Показать на нём', () => switchTo(m), 'btn-small'))));
     }
     if (preloaded) predict();
+    const setupForm = h('div', {class: 'card stack'},
+      h('div', {class: 'grid g2'}, fileField, matField, laserField, lensField),
+      fileNote,
+      h('details', {}, h('summary', {class: 'small'}, 'Другие настройки слоя (необязательно; пусто — как в файле)'),
+        h('div', {class: 'grid g3'}, overrides.map(([, fieldEl]) => fieldEl))),
+      form_.error, h('div', {class: 'toolbar'}, btn('Показать прогноз', predict, 'primary')));
+    setupForm.addEventListener('input', invalidatePrediction);
+    setupForm.addEventListener('change', invalidatePrediction);
     return h('div', {class: 'stack'},
       h('div', {class: 'row'}, h('div', {}, h('h2', {}, 'Предпросмотр фотогравировки'),
         h('p', {class: 'sub'}, 'Как картинка слоя-изображения выйдет на титане: в режиме градаций серого — при заданных Min и Max по измеренной кривой «мощность → цвет»; '
           + 'в режимах точек (Джарвис, Стаки и другие) — по тонам, измеренным в том же режиме. Там, где независимые гравировки расходятся, это видно.')),
         h('span', {class: 'spacer'}), link('/photo', 'Фотогравировка'), link('/colors', 'Карта цветов')),
-      h('div', {class: 'card stack'},
-        h('div', {class: 'grid g2'}, fileField, matField, laserField, lensField),
-        fileNote,
-        h('details', {}, h('summary', {class: 'small'}, 'Другие настройки слоя (необязательно; пусто — как в файле)'),
-          h('div', {class: 'grid g3'}, overrides.map(([, fieldEl]) => fieldEl))),
-        form_.error, h('div', {class: 'toolbar'}, btn('Показать прогноз', predict, 'primary'))),
-      results);
+      setupForm, resultStatus, results);
   }});
 })();
