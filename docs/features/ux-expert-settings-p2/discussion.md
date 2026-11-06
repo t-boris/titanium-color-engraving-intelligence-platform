@@ -129,3 +129,7 @@ Patch validation: the Linux amd64 container passed 78 contour, LightBurn and gra
 ### Codex · 2026-11-06
 
 Internal beta 0.40.1 was merged as PR #36, published and installed after a verified full workshop backup. The operator's MarkView tab and /api/version both report 0.40.1. The old CI run also showed a macOS LAN TLS read timeout; the same test passed repeatedly on the local Mac, so its cause is not yet established. The new full suite and CI continue; the physical tablet/workshop-light comparison remains deferred, and REQ-001 must not be marked accepted on simulated tests alone.
+
+### Codex · 2026-11-06
+
+CI for PR #36 passed all 3006 tests on Linux/Python 3.11, then failed its installed-wheel smoke because TestClient defaulted to Host: testserver, which the app correctly rejects with HTTP 421. Reproduced against the installed 0.40.1 wheel; the same endpoint responds 200 when the test client uses the loopback address. Correcting the CI test client; the release itself is unchanged.
