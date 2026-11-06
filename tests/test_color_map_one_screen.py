@@ -551,7 +551,7 @@ def test_the_map_picks_the_colour_of_a_photo_works_dots_and_says_why_a_colour_ca
   out.went = [...ctx.__went]; out.toasts = ctx.__toasts;
 """)
     assert out["asked"] == ["/api/colors?dots=37&setup=laser%3A1%2Flens%3A2"] and out["root"] == "os cm cm-picking"
-    assert out["banner"].startswith("Цвет точек для работы «Inna Portrait 2» · Аткинсон · 100 мм") and "на титане Grade 5" in out["banner"]
+    assert out["banner"].startswith("Цвет точек для работы «Inna Portrait 2» · Atkinson · 100 мм") and "на титане Grade 5" in out["banner"]
     assert "с шагом строк от 0,0085 мм" in out["banner"] and out["back"] == "#/photo-engraving?work=37"
     assert out["setup"] == ["Лазер и линзаJPT M7 · F-Theta 174"] and out["selects"] == 3            # the work's laser and lens, not a choice
     assert out["pale"] == ["1", "0.18", "1"]                                                          # what cannot be the dots is pale
@@ -587,7 +587,7 @@ def test_the_map_picks_the_colour_of_a_photo_zones_dots_and_goes_back_where_it_w
 """)
     back = "/vector?plan=41" if opened else "/vector-zone?work=41&zone=2"
     assert out["asked"] == ["/api/colors?dots=41&zone=2&setup=laser%3A1%2Flens%3A2"]
-    assert out["banner"] == "Цвет точек для фотозоны 2 работы «Яня портрет - 1» · Джарвис · 150 мм"
+    assert out["banner"] == "Цвет точек для фотозоны 2 работы «Яня портрет - 1» · Jarvis · 150 мм"
     assert out["back"] == [f"#{back}", "← К работе без изменений" if opened else "← К зоне без изменений"]
     assert out["saved"] == [["/api/vector/41/photo/2/settings", {"dot_colour": "g-fill"}]] and out["went"] == [back]
     assert out["toasts"] == ["Цвет точек выбран: зона покажет точки этим цветом"]
