@@ -27,9 +27,9 @@ def test_the_discrete_screen_renders_each_matchs_titanium_colour_errors_confiden
     for field in ("m.titanium", "swatch(t.lab)", "num(m.distance)", "num(t.expected_delta_e)", "num(m.match_error)", "num(t.confidence)",
                   "t.stability.assessed", "num(t.stability.variance)", "plan.threshold"):
         assert field in screen, field
-    for header in ("'Цвет титана'", "'ΔE до цели'", "'Ожидаемая ошибка записи'", "'Ожидаемая ошибка совпадения'", "'Уверенность'", "'Стабильность'"):
+    for header in ("'Titanium color'", "'ΔE to target'", "'Expected record error'", "'Expected match error'", "'Confidence'", "'Stability'"):
         assert header in screen, header
-    assert "Текущий порог ΔE: ${plan.threshold}" in screen and "form.add('threshold', 'Порог ΔE'" in screen
+    assert "Current ΔE threshold: ${plan.threshold}" in screen and "form.add('threshold', 'ΔE threshold'" in screen
 
 
 def test_the_plan_screen_renders_the_three_estimates_of_each_layer_from_its_prediction():
@@ -126,7 +126,7 @@ def run_translations(tmp_path, messages: list[str]) -> list[str]:
 def test_the_review_screen_prints_every_note_of_a_layer_whether_it_was_measured_or_skipped():
     dialogs, review = source("screens/ingest-dialogs.js"), source("screens/ingest-review.js")
     # skipped layer: its notes beside the status; measured layer: its notes under the colour
-    assert "pill(l.readable ? 'пропущен' : 'нечитаем', 'warn'), ' ', l.notes.map((n) => I18N.tr(n)).join('; ')" in dialogs
+    assert "pill(l.readable ? 'skipped' : 'unreadable', 'warn'), ' ', l.notes.map((n) => I18N.tr(n)).join('; ')" in dialogs
     assert "if (l.notes?.length) details.push(h('div', {class: 'muted small'}, l.notes.map((n) => I18N.tr(n)).join('; ')));" in dialogs
     assert "IngestDialogs.layersTable(check.layers)" in review and "h('h3', {}, 'Слои файла')" in review
 
@@ -243,10 +243,10 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     out = json.loads(done.stdout)
     files, supplied, tasks = out["files"], out["supplied"], out["tasks"]
     assert len(files["keys"]) == 20 and files["count"] == "showing 20 of 30" and files["keys"][:3] == ["29", "28", "0"]   # not measured first
-    assert "нечитаем" in files["lines"][0] and "пропущен" in files["lines"][1] and "измерен" in files["lines"][2]
-    assert "40.0 % · 1950 кГц · 1800 мм/с" in files["lines"][2] and "областей 2" in files["lines"][2]
-    assert files["chips"] == ["All · 30", "Нечитаемые · 1", "Пропущенные · 1", "Измеренные · 28"]
-    assert files["open"] == ["нечитаем pulse width is missing from this LightBurn layer"]                    # the result and its notes under the line
+    assert "unreadable" in files["lines"][0] and "skipped" in files["lines"][1] and "measured" in files["lines"][2]
+    assert "40.0 % · 1950 kHz · 1800 mm/s" in files["lines"][2] and "regions 2" in files["lines"][2]
+    assert files["chips"] == ["All · 30", "Unreadable · 1", "Skipped · 1", "Measured · 28"]
+    assert files["open"] == ["unreadable pulse width is missing from this LightBurn layer"]                    # the result and its notes under the line
     assert len(supplied["keys"]) == 20 and supplied["count"] == "showing 20 of 22" and supplied["fieldsBefore"] == 0
     assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
     assert supplied["fields"] == ["Проходы, слой «C00»: нет в файле"]

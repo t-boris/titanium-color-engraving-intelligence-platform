@@ -342,11 +342,11 @@ def test_a_blocker_is_explained_in_russian_and_links_to_the_tool_that_resolves_i
   const row = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
   out.differs = {text: text(row), tools: row.querySelectorAll('button').map(text)};
   await byText(row, 'Подтвердить использованный файл').dispatch('click'); await settle();
-  out.confirmDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Подтвердить использованный файл');
-  ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Отмена').dispatch('click'); await settle();
+  out.confirmDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Confirm the file used');
+  ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Cancel').dispatch('click'); await settle();
   await byText(row, 'Исправить пару').dispatch('click'); await settle();
-  out.fixDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Исправить пару');
-  ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Отмена').dispatch('click'); await settle();
+  out.fixDialog = ctx.document.body.querySelectorAll('h3').map(text).includes('Correct pair');
+  ctx.document.body.querySelectorAll('button').find((b) => text(b) === 'Cancel').dispatch('click'); await settle();
 
   tree = await draw('blank');
   const lost = head(tree).querySelectorAll('li').find((l) => l.classList.contains('rv-blocker'));
