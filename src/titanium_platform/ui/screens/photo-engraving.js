@@ -24,18 +24,18 @@
   const PREVIEW_GAP = 8;                     // px of white between the picture and its look in the preview (prediction.GAP)
   // ux-save-feedback-p0: what a change of the work is called when it could not be saved, and which of its fields the controls draw (a field
   // that was not saved stays in its control; the others are redrawn from the work as the server has it)
-  const SAVED_NAMES = {width_mm: 'Ширина, мм', by_colour: 'Подбор серых под цвета', colour_choice: 'Как подбирать серые', contours: 'Контуры',
-    tone: 'Яркость, контраст, гамма', sharpness: 'Чёткость', kind: 'Вид гравировки', scale: 'Шкала', min_power: 'Min, %', max_power: 'Max, %',
-    dot_power: 'Мощность точек, %', dot_width: 'Ширина точки, мм', ai_photo: 'AI видит картинку', rules: 'Правила AI', colouring: 'Раскраска'};
+  const SAVED_NAMES = {width_mm: 'Width, mm', by_colour: 'Match grayscale to colors', colour_choice: 'How to match grayscale', contours: 'Contours',
+    tone: 'Brightness, contrast, gamma', sharpness: 'Sharpness', kind: 'Engraving mode', scale: 'Scale', min_power: 'Min, %', max_power: 'Max, %',
+    dot_power: 'Dot power, %', dot_width: 'Dot width, mm', ai_photo: 'AI can see the image', rules: 'AI rules', colouring: 'Coloring'};
   const KEPT_IN_CONTROLS = ['width_mm', 'by_colour', 'colour_choice', 'contours', 'tone', 'sharpness', 'dot_width', 'ai_photo'];
-  /** Файл с сервера сохраняется на компьютер; ошибка сервера показывается переведённой, без перехода на адрес API. */
+  /** Save a server file locally and show errors without navigating to the API URL. */
   async function download(path, fallbackName) {
     let res;
-    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Нет связи с локальным сервисом. Запущено ли приложение?'); }
+    try { res = await fetch('/api' + path); } catch (_) { throw new Error('Cannot reach the local service. Is the application running?'); }
     if (!res.ok) {
       let raw = null;
       try { const d = await res.json(); raw = (d.detail || d).error; } catch (_) { raw = null; }
-      throw new Error(raw ? I18N.tr(raw) : `Ошибка сервера (${res.status}). Файл не получен.`);
+      throw new Error(raw ? I18N.tr(raw) : `Server error (${res.status}). The file was not received.`);
     }
     const name = decodeURIComponent((res.headers.get('content-disposition') || '').split("UTF-8''")[1] || fallbackName);
     const url = URL.createObjectURL(await res.blob());

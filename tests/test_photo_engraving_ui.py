@@ -437,7 +437,7 @@ def test_a_work_opens_on_its_scale_with_its_min_and_max_and_each_change_is_saved
                               "predictionStatus": "Showing the previous prediction; recalculation failed. Check the error and try again.",
                               "status": "Работа: Not saved: the screen differs from the saved values",
                               "error": "Could not save. the width of the picture must be 1..1000 mm"
-                              "Entered but not saved — Ширина, мм: 0 (saved: 100).Close"}
+                              "Entered but not saved — Width, mm: 0 (saved: 100).Close"}
 
 
 @node
