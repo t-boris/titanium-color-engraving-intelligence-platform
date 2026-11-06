@@ -145,9 +145,9 @@ def test_photo_review_explains_the_wrong_export_and_the_actual_tones_in_the_ui(t
                          'median_de': 18, 'max_de': 61, 'profile_usable': True,
                          'tone': {'levels': 10, 'steps': 15, 'black_L': 46, 'white_L': 88.4}}]}
     out = run(tmp_path, {'job': {'id': 46, 'reviews': [review]}}, "out.text = VR.view(data.job, run).textContent;")
-    assert 'Фотозона 1' in out['text'] and '250 → 350' in out['text'] and '1 → 2.9' in out['text']
+    assert 'Photo zone 1' in out['text'] and '250 → 350' in out['text'] and '1 → 2.9' in out['text']
     assert '18' in out['text'] and '61' in out['text'] and '46' in out['text'] and '88.4' in out['text']
-    assert 'undefined' not in out['text'] and 'участвуют в следующих прогнозах' in out['text']
+    assert 'undefined' not in out['text'] and 'inform future predictions' in out['text']
 
 
 def test_comparison_of_an_old_engraving_keeps_its_exported_split_size_and_smoothing_after_edits(work, job):

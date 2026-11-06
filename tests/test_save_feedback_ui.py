@@ -245,7 +245,7 @@ def photo(tmp_path, body, **kwargs):
   ctx.document.body.append(tree);
   const status = () => tree.querySelector('.save-line').textContent.replace(/ at \\d\\d:\\d\\d/, '');
   const failure = () => { const box = tree.querySelector('.save-error'); return box.hidden ? null : box.textContent; };
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   const failing = (test) => { const real = ctx.fetch; ctx.fetch = async (url, opts = {}) => {
     const path = String(url).split('?')[0];
     if (path.endsWith('/settings') && opts.body && test(JSON.parse(opts.body))) { requests.push({path, url: String(url), method: opts.method || 'GET', body: JSON.parse(opts.body)}); if (hold.length) await hold.shift(); throw new Error('network down'); }
@@ -262,13 +262,13 @@ def test_overlapping_width_changes_on_a_work_show_saving_until_the_last_answer(t
   width.value = '90'; width.dispatch('change'); await settle();
   out.start = {status: status(), sent: saves()};
   first(); await settle();
-  out.after_first = {status: status(), sent: saves(), waiting: tree.textContent.includes('Считаем прогноз'), failure: failure()};
+  out.after_first = {status: status(), sent: saves(), waiting: tree.textContent.includes('Recalculating'), failure: failure()};
   second(); await settle();
   out.end = {status: status(), shown: shown(tree), width: width.value, failure: failure()};
 """)
-    assert out["start"] == {"status": "Работа: Saving and calculating… · 1 more queued", "sent": [{"width_mm": 80}]}
-    assert out["after_first"] == {"status": "Работа: Saving and calculating…", "sent": [{"width_mm": 80}, {"width_mm": 90}], "waiting": True, "failure": None}
-    assert out["end"] == {"status": "Работа: Saved", "shown": "/api/photo-works/7/preview.png?v=2", "width": "90", "failure": None}
+    assert out["start"] == {"status": "Work: Saving and calculating… · 1 more queued", "sent": [{"width_mm": 80}]}
+    assert out["after_first"] == {"status": "Work: Saving and calculating…", "sent": [{"width_mm": 80}, {"width_mm": 90}], "waiting": True, "failure": None}
+    assert out["end"] == {"status": "Work: Saved", "shown": "/api/photo-works/7/preview.png?v=2", "width": "90", "failure": None}
 
 
 @node
@@ -276,17 +276,17 @@ def test_a_work_change_that_fails_keeps_what_was_typed_and_a_later_edit_does_not
     out = photo(tmp_path, """
   failing((b) => b.width_mm === 70);
   width.value = '70'; await width.dispatch('change'); await settle();
-  out.failed = {width: width.value, status: status(), failure: failure(), preview: shown(tree), waiting: tree.textContent.includes('Считаем прогноз')};
+  out.failed = {width: width.value, status: status(), failure: failure(), preview: shown(tree), waiting: tree.textContent.includes('Recalculating')};
   const colour = input(tree, (i) => i.getAttribute('type') === 'checkbox');
   colour.checked = true; await colour.dispatch('change'); await settle();                                  // another field is saved
   out.later = {status: status(), failure: failure() !== null, width: width.value, saves: saves(), colour: colour.checked};
 """)
     failed = out["failed"]
-    assert failed["width"] == "70" and failed["status"] == "Работа: Not saved: the screen differs from the saved values" and failed["waiting"] is False
+    assert failed["width"] == "70" and failed["status"] == "Work: Not saved: the screen differs from the saved values" and failed["waiting"] is False
     assert failed["failure"] == ("Could not save. Cannot reach the local service. Is the application running?"
-                                 "Entered but not saved — Ширина, мм: 70 (saved: 60).Close")
+                                 "Entered but not saved — Width, mm: 70 (saved: 60).Close")
     assert failed["preview"] == "/api/photo-works/7/preview.png?v=0"                                          # the stored work is drawn again, not the empty wait
-    assert out["later"] == {"status": "Работа: Not saved: the screen differs from the saved values", "failure": True, "width": "70", "colour": True,
+    assert out["later"] == {"status": "Work: Not saved: the screen differs from the saved values", "failure": True, "width": "70", "colour": True,
                             "saves": [{"width_mm": 70}, {"by_colour": True}]}
 
 
@@ -306,28 +306,28 @@ def test_a_work_change_failed_then_retried_then_edited_during_the_retry_ends_wit
   release(); await settle(); await settle();
   out.end = {sent: saves(), status: status(), failure: failure(), width: width.value, shown: shown(tree)};
 """)
-    assert out["failed"] == {"status": "Работа: Not saved: the screen differs from the saved values", "width": "70", "failure": True}
+    assert out["failed"] == {"status": "Work: Not saved: the screen differs from the saved values", "width": "70", "failure": True}
     assert out["retrying"]["sent"] == [{"width_mm": 70}, {"width_mm": 70}] and "Retrying save" in out["retrying"]["status"]
-    assert out["end"] == {"sent": [{"width_mm": 70}, {"width_mm": 70}, {"width_mm": 75}], "status": "Работа: Saved", "failure": None, "width": "75",
+    assert out["end"] == {"sent": [{"width_mm": 70}, {"width_mm": 70}, {"width_mm": 75}], "status": "Work: Saved", "failure": None, "width": "75",
                           "shown": "/api/photo-works/7/preview.png?v=2"}
 
 
 @node
 def test_an_undo_that_fails_is_not_offered_again_and_the_work_can_be_read_from_the_server(tmp_path):
     out = photo(tmp_path, """
-  const contours = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Контуры');
+  const contours = tree.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Contours');
   width.value = '80'; await width.dispatch('change'); await settle();        // something to undo
   const real = ctx.fetch;
   ctx.fetch = async (url, opts = {}) => (String(url).endsWith('/undo') ? {ok: false, status: 503, headers: {get: () => 'application/json'}, json: async () => ({error: 'busy'})} : real(url, opts));
-  await button(tree, 'Отменить').dispatch('click'); await settle();
+  await button(tree, 'Undo').dispatch('click'); await settle();
   const view = tree.querySelector('.save-state');
   out.failed = {status: status(), failure: failure() !== null, retry: !button(view, 'Retry saving').hidden, stored: !button(view, 'Show saved values').hidden};
   const reads = requests.filter((r) => r.path === '/api/photo-works/7' && r.method === 'GET').length;
   await button(view, 'Show saved values').dispatch('click'); await settle();
   out.read = {reads: requests.filter((r) => r.path === '/api/photo-works/7' && r.method === 'GET').length - reads, status: status(), failure: failure(), width: width.value};
 """)
-    assert out["failed"] == {"status": "Работа: Not saved", "failure": True, "retry": False, "stored": True}
-    assert out["read"] == {"reads": 1, "status": "Работа: Saved", "failure": None, "width": "80"}
+    assert out["failed"] == {"status": "Work: Not saved", "failure": True, "retry": False, "stored": True}
+    assert out["read"] == {"reads": 1, "status": "Work: Saved", "failure": None, "width": "80"}
 
 
 @node
@@ -340,8 +340,8 @@ def test_changes_that_fail_after_the_work_was_left_reach_the_task_panel(tmp_path
   release(); await settle();
   out.panel = require('vm').runInContext('Operations.items()', ctx).map((o) => ({title: o.title, state: o.state, error: o.error, recover: o.recover.label}));
 """)
-    assert out["panel"] == [{"title": "Работа «Портрет»: изменения не сохранены", "state": "failed", "recover": "Открыть работу",
-                             "error": "Cannot reach the local service. Is the application running? Ширина, мм: 70 (saved: 60)"}]
+    assert out["panel"] == [{"title": "Work “Портрет”: changes not saved", "state": "failed", "recover": "Open work",
+                             "error": "Cannot reach the local service. Is the application running? Width, mm: 70 (saved: 60)"}]
 
 
 # -- REQ-002: operations that go on while the person is elsewhere ----------------------------------------------------------------------

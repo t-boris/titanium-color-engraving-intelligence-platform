@@ -29,7 +29,7 @@ def spread(brief: dict, reverse: bool = False) -> dict:
     picks = [options[round(i * (len(options) - 1) / max(1, len(free) - 1))] for i in range(len(free))]
     if reverse:
         picks = picks[::-1]
-    return {"colours": {str(s["index"]): p["id"] for s, p in zip(free, picks)}, "note": "тёплые света, холодные тени"}
+    return {"colours": {str(s["index"]): p["id"] for s, p in zip(free, picks)}, "note": "warm highlights, cool shadows"}
 
 
 class Fake:
@@ -83,7 +83,7 @@ def test_a_style_gives_one_variant_of_measured_colours_and_the_model_sees_only_n
     palette_ids = {e["id"] for e in c["client"].get(f"/api/vector-palette?device_id={c['w']['setup'][0]}&lens_id={c['w']['setup'][1]}"
                                                     f"&material_id={c['ti']}").json()["entries"]}
     assert all(col["entry_id"] in palette_ids and col["how"] == "ai" for col in v["colours"])           # a measured colour for every colour
-    assert v["colouring"]["ai"] == {"style": "cubism", "text": None, "free_lightness": False, "photo": False, "note": "тёплые света, холодные тени"}
+    assert v["colouring"]["ai"] == {"style": "cubism", "text": None, "free_lightness": False, "photo": False, "note": "warm highlights, cool shadows"}
     variant = v["variants"][-1]
     assert variant["mode"] == "ai" and variant["ai"]["style"] == "cubism" and (v["undo"], v["redo"]) == (1, 0)
     brief = sent(fake.calls[0])                                                                         # numbers, no picture, no names
@@ -107,10 +107,10 @@ def test_every_style_of_the_list_is_told_to_the_model_in_its_own_words(work, job
 
 def test_an_own_description_is_the_wish_and_is_stored_with_the_variant(work, job, model):
     fake = model()
-    r = ai_op(work, job, style="custom", text="  как витраж, много синего  ")
+    r = ai_op(work, job, style="custom", text="  like stained glass, lots of blue  ")
     assert r.status_code == 200, r.text
-    assert "как витраж, много синего" in sent(fake.calls[0])["wish"]
-    assert r.json()["variants"][-1]["ai"]["text"] == "как витраж, много синего" and r.json()["variants"][-1]["ai"]["style"] == "custom"
+    assert "like stained glass, lots of blue" in sent(fake.calls[0])["wish"]
+    assert r.json()["variants"][-1]["ai"]["text"] == "like stained glass, lots of blue" and r.json()["variants"][-1]["ai"]["style"] == "custom"
 
 
 @pytest.mark.parametrize("op, message", [
@@ -323,7 +323,7 @@ def test_the_order_check_ignores_source_colours_of_the_same_lightness_and_the_op
 def test_the_screen_offers_the_styles_sends_the_choice_and_remembers_the_permission_for_the_photograph(work, job, model, tmp_path):
     c, j = work, job
     model()
-    done = ai_op(c, j, style="custom", text="как витраж", free_lightness=True).json()          # a view with an AI variant, as the server gives it
+    done = ai_op(c, j, style="custom", text="like stained glass", free_lightness=True).json()          # a view with an AI variant, as the server gives it
     routes = routes_of(c, j)
     routes[f"/api/vector/{j['id']}"]["json"] = done
     routes[f"/api/vector/{j['id']}/colouring"] = {"status": 200, "json": done}
@@ -334,31 +334,31 @@ def test_the_screen_offers_the_styles_sends_the_choice_and_remembers_the_permiss
   const select = block.querySelectorAll('select')[0];
   out.styles = select.options.map((o) => [o.value, o.textContent]);
   out.heading = block.querySelectorAll('h4')[0].textContent;
-  const text = block.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Своё описание');
+  const text = block.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'Custom description');
   const boxes = block.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'checkbox');
   out.checked = boxes.map((b) => b.checked);
   const labels = block.querySelectorAll('label').map((l) => l.textContent);
   out.labels = labels;
-  const go = byText(block, 'button', 'Раскрасить с помощью AI');
+  const go = byText(block, 'button', 'Color with AI');
   out.disabled = go.disabled;
-  out.current = block.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Сейчас раскрашено AI'));
+  out.current = block.querySelectorAll('p').map((p) => p.textContent).find((t) => t.startsWith('Currently colored by AI'));
   out.variants = tree.querySelectorAll('div').find((d) => d.classList.contains('vw-variants')).querySelectorAll('.lst-main').map((d) => d.textContent);   // a line each
   select.value = 'cubism'; await select.dispatch('change');
-  out.hint = block.querySelectorAll('span').map((s) => s.textContent).find((t) => t.startsWith('Плоские грани'));
+  out.hint = block.querySelectorAll('span').map((s) => s.textContent).find((t) => t.startsWith('Use flat earth-tone facets'));
   boxes[0].checked = true;
   await go.dispatch('click');
   boxes[1].checked = true; await boxes[1].dispatch('change');
   out.posted = ctx.requests.filter((r) => r.method === 'POST').map((r) => [r.path, JSON.parse(r.body)]);
   out.photoAfter = block.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'checkbox')[1].checked;
 """)
-    assert out["heading"] == "Раскраска с помощью AI"
-    assert out["styles"] == [["realistic", "Реалистично"], ["artistic", "Артистично"], ["impressionism", "Импрессионизм"], ["cubism", "Кубизм"],
-                             ["custom", "Своё описание"]]
+    assert out["heading"] == "AI coloring"
+    assert out["styles"] == [["realistic", "Realistic"], ["artistic", "Artistic"], ["impressionism", "Impressionism"], ["cubism", "Cubism"],
+                             ["custom", "Custom description"]]
     assert out["checked"] == [False, False] and out["disabled"] is False                          # free lightness off, no photograph, a key is set
-    assert any("Свободная светлота" in label for label in out["labels"]) and any("до 512 px" in label for label in out["labels"])
-    assert out["current"].startswith("Сейчас раскрашено AI: ") and "тёплые света, холодные тени" in out["current"] and "«как витраж»" in out["current"]
-    assert out["variants"] and out["variants"][0].startswith("№ 2 · AI · «как витраж» · светлота свободна")        # the newest first
-    assert out["hint"].startswith("Плоские грани земляной гаммы")
+    assert any("Free lightness" in label for label in out["labels"]) and any("up to 512 px" in label for label in out["labels"])
+    assert out["current"].startswith("Currently colored by AI: ") and "warm highlights, cool shadows" in out["current"] and "«like stained glass»" in out["current"]
+    assert out["variants"] and out["variants"][0].startswith("#2 · AI · «like stained glass» · free lightness")        # the newest first
+    assert out["hint"].startswith("Use flat earth-tone facets")
     ops = [(path, body) for path, body in out["posted"]]
     assert ops[0] == (f"/api/vector/{j['id']}/colouring", {"op": "ai_colour", "style": "cubism", "free_lightness": True})   # the choice, as typed
     assert ops[1] == (f"/api/vector/{j['id']}/ai-photo", {"allowed": True}) and out["photoAfter"] is True
@@ -371,13 +371,13 @@ def test_without_a_key_the_button_is_off_and_the_screen_says_why(work, job, mode
     routes = routes_of(c, j)
     out = run_screen(tmp_path, j, routes, """
   const block = tree.querySelectorAll('div').find((d) => d.className === 'stack vw-ai');
-  out.disabled = byText(block, 'button', 'Раскрасить с помощью AI').disabled;
+  out.disabled = byText(block, 'button', 'Color with AI').disabled;
   out.alert = block.querySelectorAll('p').filter((p) => p.className === 'alert warn').map((p) => [p.hidden, p.textContent]);
-  out.modes = tree.querySelectorAll('button').map((b) => b.textContent).filter((t) => ['Ближе к оригиналу', 'Сохранить тональность'].includes(t));
-  out.modesDisabled = tree.querySelectorAll('button').filter((b) => b.textContent === 'Ближе к оригиналу').map((b) => !!b.disabled);
+  out.modes = tree.querySelectorAll('button').map((b) => b.textContent).filter((t) => ['Closer to original', 'Preserve tonality'].includes(t));
+  out.modesDisabled = tree.querySelectorAll('button').filter((b) => b.textContent === 'Closer to original').map((b) => !!b.disabled);
 """)
-    assert out["disabled"] is True and len(out["alert"]) == 1 and out["alert"][0][0] is False and "«Сеть»" in out["alert"][0][1]
-    assert out["modes"] == ["Ближе к оригиналу", "Сохранить тональность"] and out["modesDisabled"] == [False]      # the other modes are unaffected
+    assert out["disabled"] is True and len(out["alert"]) == 1 and out["alert"][0][0] is False and "Network" in out["alert"][0][1]
+    assert out["modes"] == ["Closer to original", "Preserve tonality"] and out["modesDisabled"] == [False]      # the other modes are unaffected
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

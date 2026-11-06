@@ -53,7 +53,7 @@ def test_search_finds_a_record_by_name_batch_grade_surface_and_thickness_whateve
     assert [m["name"] for m in mc.page(store, search="b-0137")["items"]] == ["Лист 137"]
     assert mc.page(store, search="  GRADE   5 ")["total"] == 50                               # case and spacing do not matter; a «5» elsewhere does not match
     assert [m["name"] for m in mc.page(store, search="grade 5 b-0002")["items"]] == ["Лист 2"]   # the phrase runs over the fields in the order of a line
-    assert mc.page(store, search="2.5 мм")["total"] == 40                                    # the thickness of a record is searched too
+    assert mc.page(store, search="2.5 mm")["total"] == 40                                    # the thickness of a record is searched too
     assert mc.page(store, search="0137")["total"] == 1                                       # a part of a batch number
     nothing = mc.page(store, search="нет такого")
     assert (nothing["total"], nothing["all"]) == (0, 200)                                    # «nothing found» is told from «nothing added»

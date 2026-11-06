@@ -86,7 +86,7 @@ def test_a_photo_work_reloads_choices_on_resize_and_uses_the_detail_for_its_sele
     result = work_screen(tmp_path, {'work': '7'}, SNAPSHOT + """
   data.scale = %s;
   data.scales = data.scales.map(s => ({...s, size: {...s.size, row_mm:120, from_mm:[120]}}));
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   width.value = '120'; await width.dispatch('change'); await settle();
   out.after = snapshot();
   out.widths = requests.filter(r => r.path === '/api/grey-scales').map(r => new URLSearchParams(r.url.split('?')[1]).get('row_mm'));
@@ -110,14 +110,14 @@ def test_a_late_palette_response_for_a_resized_work_cannot_overwrite_its_undo(tm
     return result;
   };
   data.scale = %s;
-  const width = labelled(tree, 'Ширина на титане, мм');
+  const width = labelled(tree, 'Width on titanium, mm');
   width.value = '120'; await width.dispatch('change'); await settle();
   data.scale = %s;
-  await button(tree, 'Отменить').dispatch('click'); await settle();
+  await button(tree, 'Undo').dispatch('click'); await settle();
   out.undone = snapshot();
   release(); await settle();
   out.late = snapshot();
-  out.width = labelled(tree, 'Ширина на титане, мм').value;
+  out.width = labelled(tree, 'Width on titanium, mm').value;
 """ % (at_120, at_60), scale_data=response(60))
     assert result['width'] == '60'
     assert result['late'] == result['undone']

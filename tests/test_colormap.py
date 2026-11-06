@@ -333,8 +333,8 @@ def test_the_api_passes_the_time_filter_and_the_tolerance(tmp_path):
 def test_the_screen_shows_the_time_of_every_colour_filters_by_it_and_says_how_the_search_is_ordered():
     from pathlib import Path
     screen = (Path(colormap.__file__).parent / "ui" / "screens" / "color-map.js").read_text(encoding="utf-8")
-    assert "h('p', {class: 'muted'}, timeText(p))" in screen and "(оценка)" in screen          # every colour and every entry, an estimate
+    assert "h('p', {class: 'muted'}, timeText(p))" in screen and "(estimate)" in screen          # every colour and every entry, an estimate
     assert "'Maximum time, min/cm²'" in screen and "q.set('max_time_s_per_cm2', f.maxTime)" in screen   # stored in seconds
     assert "placeholder: 'm:ss'" in screen and "value: f.maxTime ? mmss(f.maxTime) : ''" in screen   # shown as minutes:seconds
     assert "p.set('tolerance_de', f.tolerance)" in screen and "o.by === 'time_within_tolerance'" in screen
-    assert "первыми идут самые быстрые" in screen
+    assert "the fastest by estimated time come first" in screen

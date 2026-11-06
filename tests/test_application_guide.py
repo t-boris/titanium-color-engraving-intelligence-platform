@@ -150,7 +150,7 @@ def test_other_material_can_be_catalogued_without_using_titanium_cleaning(store)
     steel = su.save_material(store, "Steel coin blank", family="Steel", grade="304", thickness_mm=1)
     guide = application_guide.suggest(store, laser["id"], steel["id"], "text")
     assert guide["status"] == "cleaning_recipe_needed" and guide["plate"] is None
-    with pytest.raises(su.ValidationError, match="рецепт очистки"):
+    with pytest.raises(su.ValidationError, match="cleaning recipe"):
         capability_plates.create(store, laser["id"], steel["id"], "text_readability", JOB)
 
 
@@ -166,7 +166,7 @@ def test_text_finding_ranks_contrast_but_does_not_claim_readability():
     assert finding["status"] == "contrast_candidate"
     assert finding["evidence"]["name"] == "TEXT-P30-V1200"
     assert finding["parameters"] is None
-    assert "читаемость" in finding["summary"]
+    assert "legibility" in finding["summary"]
 
 
 def test_text_matrix_cells_can_produce_preliminary_text_findings():
@@ -177,7 +177,7 @@ def test_text_matrix_cells_can_produce_preliminary_text_findings():
     finding = capability_results._text_case(rows)
     assert finding["status"] == "contrast_candidate"
     assert finding["evidence"]["parameters"]["speed"] == 500
-    assert "читаемость" in finding["summary"]
+    assert "legibility" in finding["summary"]
 
 
 def test_the_guide_starts_at_200_ns_only_when_the_laser_offers_it_and_otherwise_asks(store):

@@ -52,13 +52,13 @@ def run(tmp_path, answers):
 @node
 def test_the_header_shows_the_version_the_server_reports_and_asks_for_it_once(tmp_path):
     out = run(tmp_path, {"/api/version": {"status": 200, "json": {"version": "9.8.7", "data_dir": "/x"}}})
-    assert out["first"] == [["v9.8.7", "Версия приложения"]] and out["immediately"] == ["v9.8.7"] and out["asked"] == 1
+    assert out["first"] == [["v9.8.7", "Application version"]] and out["immediately"] == ["v9.8.7"] and out["asked"] == 1
 
 
 @node
 def test_a_server_that_does_not_answer_leaves_the_header_without_a_version_and_without_an_error(tmp_path):
     out = run(tmp_path, {"/api/version": {"status": 500, "json": {"error": "boom"}}})
-    assert out["first"] == [["", "Версия приложения"]]
+    assert out["first"] == [["", "Application version"]]
 
 
 def test_the_label_is_small_and_hidden_while_empty_and_the_header_keeps_its_height():
@@ -113,7 +113,7 @@ const banners = () => ctx.document.body.querySelectorAll('div').filter((el) => (
 @node
 def test_a_newer_server_version_shows_one_banner_that_reloads_the_page_and_survives_navigation(tmp_path):
     """After a deploy an open page still runs the old scripts (lessons: «a fix that is deployed does not reach a page that is already open»):
-    the version the page loaded with is compared with the server's, and a newer one shows a single banner with «Перезагрузить»."""
+    the version the page loaded with is compared with the server's, and a newer one shows a single banner with «Reload»."""
     script = tmp_path / "update.js"
     script.write_text(UPDATE_HARNESS % {"dom": json.dumps(str(Path(__file__).with_name("ui_dom.js"))), "ui": json.dumps(str(UI) + "/"),
                                         "tables": json.dumps(TABLES)}, encoding="utf-8")
@@ -121,7 +121,7 @@ def test_a_newer_server_version_shows_one_banner_that_reloads_the_page_and_survi
     assert done.returncode == 0, done.stderr[-2000:]
     out = json.loads(done.stdout)
     assert out["same"] == 0
-    assert len(out["after"]) == 1 and out["after"][0][0] == "status" and "v1.1.0" in out["after"][0][1] and "Перезагрузить" in out["after"][0][1]
+    assert len(out["after"]) == 1 and out["after"][0][0] == "status" and "v1.1.0" in out["after"][0][1] and "Reload" in out["after"][0][1]
     assert out["kept"] == 1 and out["header"] == ["v1.0.0"]          # the header keeps the version the page runs
     assert out["reloaded"] == 1 and out["down"] == 1
 
