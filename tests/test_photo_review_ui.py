@@ -194,7 +194,7 @@ def test_the_review_stage_shows_the_photograph_with_contours_and_a_summary_and_k
   out.inFolded = panel.querySelectorAll('h3').filter(folded).map(text);
 """)
     assert out["images"] == [f"/api/pairs/{pid}/photo.png", f"/api/pairs/{pid}/vector-overlay.png"] and out["visible"]
-    assert any("измерены" in line and "из" in line for line in out["summary"])                      # the summary line
+    assert any("measured" in line and "of" in line for line in out["summary"])                      # the summary line
     assert out["more"] == [["Measured layers and metrics", False]]                                      # collapsed
     assert out["layersListInPanel"] == 0                                                              # the layers are in their tool, not on the stage
     assert out["controlsInPanel"] == 2                                                                # only the view controls (turn and zoom) stay with the photograph
@@ -247,7 +247,7 @@ def test_each_tool_opens_its_region_moves_the_focus_there_and_closes_again(tmp_p
     for key, expanded, hidden, focused, controls, role, label in out["steps"]:
         assert expanded == "true" and hidden is False and focused and controls and role == "region", key
     assert out["allOpen"] == [True] * 6 and out["afterClose"] == ["false", True]
-    assert out["regionText"] == {"layers": "File layers", "tasks": "Engraving tasks", "matrix": "Parameter matrix", "corners": "Углы работы на фотографии"}
+    assert out["regionText"] == {"layers": "File layers", "tasks": "Engraving tasks", "matrix": "Parameter matrix", "corners": "Work corners on the photo"}
 
 
 def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(tmp_path, states):
@@ -260,12 +260,12 @@ def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(
   const tree = await draw('ready');
   await byText(tree, 'Align by detail').dispatch('click'); await settle();
   const box = region(tree, 'anchor');
-  const choose = box.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Кандидат на деталь');
+  const choose = box.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Candidate detail');
   out.requests = ctx.requests.filter((r) => r.path.endsWith('anchor-candidates')).map((r) => [r.method, r.path]);
   out.options = choose.options.map(text);
   out.intro = text(box.querySelector('p'));
-  out.names = box.querySelectorAll('button').map(text).filter((t) => t.includes('угол'));
-  const apply = byText(box, 'Привязать по выбранной детали');
+  out.names = box.querySelectorAll('button').map(text).filter((t) => /^[0-9][.] detail corner /.test(t));
+  const apply = byText(box, 'Align using selected detail');
   out.apply = [apply.disabled, apply.classList.contains('primary')];
   await apply.dispatch('click'); await settle();
   const sent = ctx.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/check'));
@@ -273,9 +273,9 @@ def test_workpiece_alignment_can_correct_an_alignment_automation_took_for_valid(
   out.reloads = reloads.length;
 """)
     assert out["requests"] == [["GET", f"/api/pairs/{pid}/anchor-candidates"]]
-    assert len(out["options"]) == 4 and out["options"][0].endswith("мм²")
-    assert out["intro"].startswith("Совмещение найдено автоматически")
-    assert out["names"] == [f"{i}. угол {i} детали" for i in (1, 2, 3, 4)]                    # the corners of a detail are not "top left" of the photograph
+    assert len(out["options"]) == 4 and out["options"][0].endswith("mm²")
+    assert out["intro"].startswith("Alignment was found automatically")
+    assert out["names"] == [f"{i}. detail corner {i}" for i in (1, 2, 3, 4)]                    # the corners of a detail are not "top left" of the photograph
     assert out["apply"] == [False, False]                                                         # the tool's own action, not the stage's primary one
     assert len(out["sent"]) == 1 and set(out["sent"][0]) == {"anchor"}
     anchor = out["sent"][0]["anchor"]
@@ -289,9 +289,9 @@ def test_the_detail_tool_says_why_it_has_nothing_to_offer_and_what_to_use_instea
     out = run_node(tmp_path, pairs, {f"/api/pairs/{pid}/anchor-candidates": {"status": 422, "json": {"error": "check the photograph before choosing a detail", "kind": "invalid"}}}, """
   let tree = await draw('ready');
   await byText(tree, 'Align by detail').dispatch('click'); await settle();
-  out.failed = [text(region(tree, 'anchor')), withText(region(tree, 'anchor'), 'Повторить').length];
+  out.failed = [text(region(tree, 'anchor')), withText(region(tree, 'anchor'), 'Retry').length];
   ctx.fetch = async (url) => ({ok: true, status: 200, headers: {get: () => 'application/json'}, json: async () => ({candidates: []}), text: async () => '{}'});
-  await byText(region(tree, 'anchor'), 'Повторить').dispatch('click'); await settle();
+  await byText(region(tree, 'anchor'), 'Retry').dispatch('click'); await settle();
   out.empty = text(region(tree, 'anchor'));
   tree = await draw('fresh');
   const before = ctx.requests.length;
@@ -299,9 +299,9 @@ def test_the_detail_tool_says_why_it_has_nothing_to_offer_and_what_to_use_instea
   out.unchecked = text(region(tree, 'anchor'));
   out.askedServer = ctx.requests.length - before;
 """)
-    assert "Не удалось получить детали файла" in out["failed"][0] and "check the photograph before choosing a detail" in out["failed"][0] and out["failed"][1] == 1   # translated, with a retry
-    assert "нет деталей" in out["empty"] and "Углы работы" in out["empty"]
-    assert "после первой проверки" in out["unchecked"] and out["askedServer"] == 0               # no request that the server would refuse
+    assert "Could not retrieve file details" in out["failed"][0] and "check the photograph before choosing a detail" in out["failed"][0] and out["failed"][1] == 1   # translated, with a retry
+    assert "has no details" in out["empty"] and "Work corners" in out["empty"]
+    assert "after the first pair check" in out["unchecked"] and out["askedServer"] == 0               # no request that the server would refuse
 
 
 def test_a_matrix_pair_has_its_matrix_tool_open_and_no_detail_tool(tmp_path):
@@ -441,7 +441,7 @@ def test_going_back_to_an_earlier_stage_keeps_what_was_typed_and_never_enables_a
     pair = ig.get_pair(store, pid)
     out = run_node(tmp_path, {"lacking": pair}, {}, """
   const tree = await draw('lacking');
-  const list = tree.querySelectorAll('div').find((d) => d.classList.contains('card') && d.querySelector('h3') && text(d.querySelector('h3')) === 'Настройки, которых нет в файле LightBurn');
+  const list = tree.querySelectorAll('div').find((d) => d.classList.contains('card') && d.querySelector('h3') && text(d.querySelector('h3')) === 'Settings missing from the LightBurn file');
   const numberField = () => list.querySelectorAll('input').find((i) => i.getAttribute('type') === 'number');
   if (!numberField()) { await list.querySelectorAll('.lst-main')[0].dispatch('click'); await settle(); }          // a single layer is open from the start
   const field = numberField();

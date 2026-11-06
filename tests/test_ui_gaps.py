@@ -53,7 +53,7 @@ def test_the_pair_review_offers_an_input_for_exactly_the_missing_settings_and_sh
     screen = source("screens/ingest-review.js")
     assert "l.missing_settings" in screen and "layer.missing_settings.map((s) => entry(layer, s))" in screen
     assert "post(`/pairs/${pair.id}/supplied-settings`, {layer_index: layer.index, setting, value})" in screen
-    assert "введено оператором" in screen and "given.at" in screen and "send(self, layer, setting, null)" in screen
+    assert "entered by operator" in screen and "given.at" in screen and "send(self, layer, setting, null)" in screen
     assert "await suppliedSettingsCard(pair, reload)" in screen
 
 
@@ -141,8 +141,8 @@ def test_the_matrix_review_shows_the_recognised_labels_the_uncertain_values_and_
     for uncertain in ("fit.y.read", "fit.y.agreeing", "fit.x.read", "fit.x.agreeing", "s.missing.map((x) => I18N.tr(x))",
                       "s.unusual.map(paramName)"):
         assert uncertain in card, uncertain                             # read against agreeing labels, missing and unusual values
-    assert "`параметры подтверждены ${stamp(m.confirmed_at)}`" in card and "pill('параметры ждут подтверждения', 'warn')" in card
-    assert "восстановлены по фотографии матрицы и подтверждаются оператором" in card and "не является исходным файлом" in card
+    assert "`settings confirmed ${stamp(m.confirmed_at)}`" in card and "pill('settings await confirmation', 'warn')" in card
+    assert "reconstructed from the matrix photograph and are confirmed by the operator" in card and "is not the original file" in card
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -208,7 +208,7 @@ def review_pair():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fields_and_choices_under_a_line(tmp_path):
-    """A file of 30 layers: «Слои файла», «Настройки, которых нет в файле LightBurn» and «Задачи гравировки» each show a page of 20 lines;
+    """A file of 30 layers: «Слои файла», «Settings missing from the LightBurn file» and «Задачи гравировки» each show a page of 20 lines;
     the layers not measured come first in «Слои файла»; the result, the fields of the missing settings and the task choice open under a
     line; a task chosen for a layer is sent and the layer stays open when the page is drawn again."""
     routes = {"/api/pairs/77/tasks": {"status": 200, "json": {}}}
@@ -221,7 +221,7 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     chips: files.querySelectorAll('.lst-chip').map((c) => c.textContent)};
   await lines(files)[0].dispatch('click'); await tick();
   out.files.open = opened(files);
-  const supplied = listOf(tree, 'Настройки, которых нет в файле LightBurn');
+  const supplied = listOf(tree, 'Settings missing from the LightBurn file');
   out.supplied = {keys: keys(supplied), count: supplied.querySelector('.lst-count').textContent, lines: lines(supplied).slice(0, 3).map((m) => m.textContent),
     fieldsBefore: supplied.querySelectorAll('input').filter((i) => i.getAttribute('type') === 'number').length};
   await lines(supplied)[0].dispatch('click'); await tick();
@@ -248,9 +248,9 @@ def test_the_review_shows_the_layers_of_a_long_file_as_short_lists_with_their_fi
     assert files["chips"] == ["All · 30", "Unreadable · 1", "Skipped · 1", "Measured · 28"]
     assert files["open"] == ["unreadable pulse width is missing from this LightBurn layer"]                    # the result and its notes under the line
     assert len(supplied["keys"]) == 20 and supplied["count"] == "showing 20 of 22" and supplied["fieldsBefore"] == 0
-    assert supplied["lines"][0] == "C00нет в файле: проходы" and "введено оператором: 1" in supplied["lines"][2]
-    assert supplied["fields"] == ["Проходы, слой «C00»: нет в файле"]
-    assert len(supplied["given"]) == 1 and "Проходы: 2" in supplied["given"][0] and "Убрать" in supplied["given"][0]
+    assert supplied["lines"][0] == "C00not in file: passes" and "entered by operator: 1" in supplied["lines"][2]
+    assert supplied["fields"] == ["Passes, layer “C00”: absent from file"]
+    assert len(supplied["given"]) == 1 and "Passes: 2" in supplied["given"][0] and "Remove" in supplied["given"][0]
     assert len(tasks["keys"]) == 20 and tasks["count"] == "showing 20 of 29" and tasks["choicesBefore"] == 0   # a layer without fill has no task
     assert tasks["sent"] == [["/api/pairs/77/tasks", {"layer_index": 1, "task": "text"}]] and tasks["reloads"] == 1
     assert tasks["reopened"] == ["1"]

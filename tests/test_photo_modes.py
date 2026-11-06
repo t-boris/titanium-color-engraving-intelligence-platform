@@ -43,12 +43,12 @@ def test_the_review_screen_shows_every_setting_the_summary_reads_from_an_image_l
     summary = lb.parse_bytes(data).layer(0).image_summary()
     assert summary["overscan"] is True and summary["line_interval_mm"]
     card = (Path(pm.__file__).parent / "ui" / "screens" / "ingest-review.js").read_text(encoding="utf-8")
-    card = card[card.index("'Слои-изображения'"):card.index("PhotoModes.get(i.dither) ?")]
+    card = card[card.index("'Image layers'"):card.index("PhotoModes.get(i.dither) ?")]
     shown = ("dpi", "line_interval_mm", "dot_width_mm", "dot_correction", "cleanup_pass", "passes", "min_power", "max_power", "cells_per_inch",
              "halftone_angle", "negative", "pass_through", "overscan")
     assert set(shown) | {"dither", "kind", "family", "sub_layers", "processing", "adjusted"} == set(summary)
     assert [key for key in shown if f"i.{key}" not in card] == []
-    assert "интервал строк" in card and "(overscan) включён" in card
+    assert "line spacing" in card and "overscan enabled" in card
 
 
 GREY = np.array([[0.0, 0.25, 0.5, 0.75, 1.0]])
